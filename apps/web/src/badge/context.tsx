@@ -119,10 +119,11 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
           const height = await reader!.coreHeight();
           setCoreHeight(height);
           const p = EPOCH_PARAMS[net];
-          let next = [...jobsRef.current];
-          let changed = false;
-          for (let i = 0; i < next.length; i++) {
-            const j = next[i]!;
+          // Work on a snapshot; merge into the latest list at the end (a request or removal may happen while a step awaits).
+          const snapshot = [...jobsRef.current];
+          const updates = new Map<string, BadgeJob>();
+          const added: BadgeJob[] = [];
+          for (const j of snapshot) {
             if (!isActive(j)) continue;
             const dueAt = j.state === 'scheduled' ? j.requestAt : (j.postAt ?? clientPostingWindow(p, j.epoch).from);
             if (height < dueAt) continue;
@@ -134,24 +135,25 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
             }
             if (Date.now() < notBefore.get(j.id)!) continue;
             const after = await step(deps, j, height);
-            if (JSON.stringify(after) !== JSON.stringify(j)) {
-              next[i] = after;
-              changed = true;
-            }
+            if (JSON.stringify(after) !== JSON.stringify(j)) updates.set(j.id, after);
           }
-          for (const j of [...next]) {
+          const current = () => snapshot.map((j) => updates.get(j.id) ?? j).concat(added);
+          for (const j of current()) {
             const issuer = trust.find((t) => t.identityId === j.issuer.identityId && t.enabled);
             if (!issuer) continue;
-            const r = await renewal(deps, next, j, height, issuer);
+            const r = await renewal(deps, current(), j, height, issuer);
             if (r) {
-              next = next.map((x) => (x.id === j.id ? { ...x, signer: { kind: 'external' as const } } : x)).concat(r);
-              changed = true;
+              // the voting key moves to the renewal job: one stored copy
+              updates.set(j.id, { ...j, signer: { kind: 'external' } });
+              added.push(r);
             }
           }
           // keep finished jobs of the last few epochs for the status list, drop older ones
           const keepFrom = Math.floor(height / (p.superblockCycle * p.epochCycles)) - 2;
-          const pruned = next.filter((j) => isActive(j) || j.epoch >= keepFrom);
-          if (changed || pruned.length !== next.length) await commit(pruned);
+          const latest = jobsRef.current;
+          const merged = latest.map((j) => updates.get(j.id) ?? j).concat(added.filter((a) => !latest.some((j) => j.id === a.id)));
+          const pruned = merged.filter((j) => isActive(j) || j.epoch >= keepFrom);
+          if (updates.size || added.length || pruned.length !== latest.length) await commit(pruned);
         } catch {
           /* Platform not reachable: next tick */
         } finally {
