@@ -51,6 +51,13 @@ test.describe('extra', () => {
     await expect(page.locator('.prov-pop:popover-open')).toBeVisible();
     await shoot(page, 'popover-light-desktop', false);
   });
+  test('@screenshots recount of recorded mainnet votes', async ({ page }) => {
+    await gotoFixtures(page, '/p/dash-growth-q4-2026');
+    await expect(page.getByTestId('collateral-check').locator('[data-verdict]')).toHaveAttribute('data-verdict', 'ok');
+    await page.getByRole('button', { name: 'Verify votes' }).click();
+    await expect(page.getByTestId('votes-check').locator('[data-votes]')).toHaveAttribute('data-votes', 'keys-reported', { timeout: 30_000 });
+    await shoot(page, 'votes-recorded-light-desktop');
+  });
   test('@screenshots duplicate-name chooser', async ({ page }) => {
     await gotoFixtures(page, '/p/Dash-Mass-Organic-Content-Attraction');
     await expect(page.locator('.chooser a')).toHaveCount(2);

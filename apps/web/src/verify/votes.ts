@@ -6,12 +6,11 @@
 // and validity per proTxHash, but the SML has no collateral outpoint, so the outpoint -> proTxHash
 // mapping stays bridge-reported unless the collateral is inside the ProRegTx itself
 // (collateralTxid == proTxHash). `keysFrom` tells the UI how far the result can be trusted.
-import { decodeAddress, normalizeMnId, tallyVotes, verifyVoteSignature, EVONODE_WEIGHT, REGULAR_MN_WEIGHT, VOTE_SIGNAL, type Network, type TallyVote } from '@govhub/verify';
+import { countVotes, decodeAddress, normalizeMnId, verifyVoteSignature, EVONODE_WEIGHT, REGULAR_MN_WEIGHT, VOTE_SIGNAL, type Network, type TallyVote } from '@govhub/verify';
 import type { BridgeMasternode, BridgeVote } from '../data/bridge.ts';
 import type { Tally } from '../data/types.ts';
-import { voteSetHash } from './voteset.ts';
 
-/** SML entry as streamed by DAPI subscribeToMasternodeList (only what we cross-check). */
+/** A masternode as the DAPI-agreed SML lists it (@govhub/dapi `SmlMasternode`; only what we cross-check). */
 export interface SmlEntry {
   votingAddress: string;
   isValid: boolean;
@@ -74,6 +73,17 @@ export interface VoteCheckResult {
   targets: TargetResult[];
 }
 
+/** One recount: a vote set (at one height) checked and counted, with what it concluded about the tallies published for that height. */
+export interface VoteRun {
+  result: VoteCheckResult;
+  /** Height the vote set is as of, as the bridge answered. Equals the requested `?height=` when the bridge could serve that tally's set. */
+  votesAsOf: number;
+  /** Height of the masternode-list snapshot the weights and keys came from. */
+  mnlistHeight: number;
+  /** The snapshot is the list the bridge says it built the tally from (null: not stated). A difference explains a mismatch. */
+  listMatches: boolean | null;
+}
+
 const weightOf = (t: BridgeMasternode['type']) => (t === 'evo' ? EVONODE_WEIGHT : REGULAR_MN_WEIGHT);
 
 function compareWith(t: Tally, w: VoteCheckResult['weighted'], u: VoteCheckResult['unweighted'], hash: string): FieldCompare[] {
@@ -119,8 +129,12 @@ export function verifyVotes(input: VoteCheckInput): VoteCheckResult {
     byOutpoint.set(op, { ...mn, keyId: dec && dec.type === 'p2pkh' ? dec.hash160 : null, duplicate });
   }
 
-  const good: TallyVote[] = [];
+  // The weight map is the whole MN list, PoSe-banned masternodes included (Core's CountMatchingVotes uses GetMNByCollateral, not
+  // GetValidMNByCollateral: object.cpp:888, vote.cpp:231). Ambiguous entries get no weight, so their votes are never counted.
   const weights = new Map<string, number>();
+  for (const [op, mn] of byOutpoint) if (!mn.duplicate) weights.set(op, weightOf(mn.type));
+
+  const good: TallyVote[] = [];
   let smlChecked = 0;
   let otherSignal = 0;
   let internalCollateral = 0;
@@ -157,14 +171,12 @@ export function verifyVotes(input: VoteCheckInput): VoteCheckResult {
       }
     }
     good.push({ mn: outpoint, outcome: v.outcome, time: v.time });
-    // Core counts every MN in the tip list, PoSe-banned ones included: CountMatchingVotes and
-    // CGovernanceVote::IsValid use GetMNByCollateral, not GetValidMNByCollateral (object.cpp:888, vote.cpp:231).
-    weights.set(outpoint, weightOf(mn.type));
     if (mn.collateralTxid.toLowerCase() === mn.proTxHash.toLowerCase()) internalCollateral++;
   }
 
-  const t = tallyVotes(good, weights, { now: input.now });
-  const hash = voteSetHash(t.current, (id) => weights.has(id));
+  // The same counting function the bridge publishes its tally with (@govhub/verify countVotes).
+  const t = countVotes(good, weights, { now: input.now });
+  const hash = t.voteSetHash;
   return {
     total: input.votes.length,
     verified: good.length,

@@ -41,6 +41,14 @@ test.describe('fixture mode', () => {
       await expect(collateral.locator(`[data-step="${step}"]`)).toHaveAttribute('data-status', 'ok');
     }
     await expect(collateral).toContainText('recorded.dapi.invalid');
+    // The recorded replay carries node claims only: confirmations and ChainLock are "reported", not "verified".
+    for (const step of ['confirmations', 'chainlock']) await expect(collateral.locator(`[data-step="${step}"]`)).toHaveAttribute('data-basis', 'reported');
+    await expect(collateral.locator('[data-step="chainlock"]')).toContainText('node-reported');
+    await expect(collateral.locator('[data-step="block"]')).toHaveCount(0);
+    await expect(collateral.locator('[data-step="hash"]')).toHaveAttribute('data-basis', 'verified');
+    const status = page.locator('.info-row', { hasText: 'Collateral status' });
+    await expect(status).toContainText('ChainLocked as a node reports');
+    await expect(status.locator('[data-prov="reported"]')).toBeVisible();
     // Content values now carry the verified mark.
     await expect(page.locator('.info-table [data-prov="verified"]').first()).toBeVisible();
 
@@ -54,6 +62,34 @@ test.describe('fixture mode', () => {
 
     expect(errors).toEqual([]);
     expect(await cspViolations(page)).toEqual([]);
+  });
+
+  test('recount of recorded mainnet votes reproduces the tally and voteSetHash', async ({ page }) => {
+    const errors = await watchPage(page);
+    await gotoFixtures(page, '/p/dash-growth-q4-2026');
+    await expect(page.getByRole('heading', { level: 1, name: 'dash-growth-q4-2026' })).toBeVisible();
+    // Evonodes weigh 4: 298 yes masternodes are 673 weighted votes.
+    await expect(page.locator('.info-table')).toContainText('673 yes, 475 no, 5 abstain');
+    await expect(page.locator('.info-table')).toContainText('298 yes, 160 no, 2 abstain');
+    await expect(page.getByTestId('collateral-check').locator('[data-verdict]')).toHaveAttribute('data-verdict', 'ok');
+
+    await page.getByRole('button', { name: 'Verify votes' }).click();
+    const votes = page.getByTestId('votes-check');
+    await expect(votes.locator('[data-votes]')).toHaveAttribute('data-votes', 'keys-reported', { timeout: 30_000 });
+    // 460 real signed votes by real masternodes: every signature recovers to the masternode's voting key.
+    await expect(votes).toContainText('Recount matches the Platform tally: 460 of 460 signatures check out');
+    await expect(votes).toContainText('recorded mainnet votes and masternodes');
+    await expect(votes).toContainText('(as of block 2,560,441)');
+    // Field by field, including the voteSetHash (34a829f3... in the bridge fixture), nothing differs.
+    const table = votes.locator('table.compare');
+    await expect(table.locator('tr', { hasText: 'Yes (weighted)' })).toContainText('673');
+    await expect(table.locator('tr', { hasText: 'Yes (MNs)' })).toContainText('298');
+    await expect(table.locator('tr', { hasText: 'voteSetHash' })).toContainText('34a829');
+    await expect(table.locator('td.bad')).toHaveCount(0);
+    await expect(table.locator('tr', { hasText: 'voteSetHash' }).locator('.visually-hidden').last()).toHaveText('matches');
+    // A bridge match on bridge-supplied keys is not "verified": the recounted tally keeps its Platform-proof label.
+    await expect(page.locator('.info-row', { hasText: 'Votes, weighted' }).locator('[data-prov]')).toHaveAttribute('data-prov', 'fixture');
+    expect(errors).toEqual([]);
   });
 
   test('provenance popover explains the source', async ({ page }) => {

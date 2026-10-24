@@ -19,6 +19,7 @@
     "@dashevo/evo-sdk": "5.0.0-rc.8",
     "@fontsource-variable/archivo": "^5.2.6",
     "@govhub/contracts-v1": "*",
+    "@govhub/dapi": "*",
     "@govhub/verify": "*",
     "@noble/curves": "^2.0.0",
     "@noble/hashes": "^2.0.0",

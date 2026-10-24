@@ -99,7 +99,7 @@ function ModeBanner() {
     return (
       <div className="banner banner-fixture" role="status">
         <p>
-          <b>Fixture snapshot.</b> 28 real mainnet proposals as Core saw them at block 2,560,391 on Oct 23, 2026, with recorded DAPI answers and synthetic voters. Nothing here is live.
+          <b>Fixture snapshot.</b> 28 real mainnet proposals as Core saw them at block 2,560,391 on Oct 23, 2026, with recorded DAPI answers, real recorded votes for three proposals and synthetic voters for the rest. Nothing here is live.
         </p>
         <button type="button" className="btn" onClick={() => setMode('live')}>
           Switch to live data
