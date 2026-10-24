@@ -30,6 +30,8 @@ function chain(o: {
   /** Proved read `n` of a kind: how many heights behind the tip it is, or an error to throw. */
   read?: (kind: 'doc' | 'nonce' | 'identity', n: number) => number | { error: unknown } | void;
   update?: (n: number) => Send;
+  /** Multiplies how long each sleep takes on the fake clock. */
+  slow?: number;
 }) {
   const version = o.version ?? 14;
   const clone = (s: State): State => ({ ...s, docs: new Map([...s.docs].map(([k, d]) => [k, { ...d, properties: { ...d.properties } }])), keys: new Map(s.keys) });
@@ -181,7 +183,9 @@ function chain(o: {
       },
     },
   };
-  const port = createEvoPlatform(evo as never, sdk as never, 'testnet', { sleep: async () => {} });
+  // Sleeps take no real time; they advance a fake clock (the send budget), `slow` times their length.
+  let clock = 0;
+  const port = createEvoPlatform(evo as never, sdk as never, 'testnet', { sleep: async (ms) => void (clock += ms * (o.slow ?? 1)), now: () => clock });
   /** A write by someone else (another tab): takes the next nonce. */
   const foreign = () => commit({ ...clone(tip()), nonce: tip().nonce + 1n });
   /** Any other change on Platform (a new block). */
@@ -361,6 +365,12 @@ describe('writeDocument: replace', () => {
     expect(theirs.reads.doc).toBe(1); // definitely not ours: no more reads
   });
 
+  it('an ambiguous send, then a proved read showing someone else\'s revision: stops with that message, no more sends', async () => {
+    const c = chain({ docs: [stored(4n, { displayName: 'other tab' })], send: () => ({ before: timeout() }) });
+    await expect(write(c, { action: 'replace', contractId: contract, type: 'profile', id: docId, revision: 3, data: { displayName: 'a' } })).rejects.toThrow(/changed on Platform meanwhile/);
+    expect(c.log.sends).toHaveLength(1);
+  });
+
   it('a replace of a document that is not on Platform ends with a message saying so, not "it may still appear"', async () => {
     const c = chain({});
     await expect(write(c, { action: 'replace', contractId: contract, type: 'profile', id: docId, revision: 3, data: { displayName: 'a' } })).rejects.toThrow(/not on Platform/);
@@ -426,10 +436,23 @@ describe('writeDocument: identity and key', () => {
     expect(e.reads.identity).toBe(2);
   });
 
-  it('a local SDK error before anything is sent (InvalidArgument) fails at once', async () => {
+  it('a local SDK error (InvalidArgument) is never re-sent; it fails once proved reads show nothing stored', async () => {
     const c = chain({ send: () => ({ before: err('invalid document', -1, 'InvalidArgument') }) });
     await expect(write(c, create())).rejects.toThrow(/invalid document/);
     expect(c.log.sends).toHaveLength(1);
+  });
+
+  it('a local SDK error after the transition executed (result conversion) is settled by a proved read: done, one document', async () => {
+    const c = chain({ send: () => ({ after: err('could not convert the proof result', -1, 'SerializationError') }) });
+    const r = await write(c, create());
+    expect(c.log.sends).toHaveLength(1);
+    expect([...c.tip().docs.keys()]).toEqual([r.id]);
+  });
+
+  it('no new send starts after the 2-minute budget', async () => {
+    const c = chain({ docs: [stored()], slow: 10, send: () => ({ before: timeout() }) }); // sleeps of 25, 50, 75 s
+    await expect(write(c, { action: 'replace', contractId: contract, type: 'profile', id: docId, revision: 3, data: { displayName: 'a' } })).rejects.toThrow(/did not confirm/);
+    expect(c.log.sends).toHaveLength(3);
   });
 
   it('refuses a wiped (all-zero) key and never touches the caller key', async () => {
@@ -489,7 +512,8 @@ describe('addKeys', () => {
       const c = chain({ update: () => ({ before: e }) });
       await expect(c.port.addKeys({ identityId: owner, master, keys: [k3] })).rejects.toThrow(/not found in signer/);
       expect(c.log.updates).toBe(1);
-      expect(c.reads.identity).toBe(2); // the read before the update and one settle read
+      // the read before the update, then one settle read after a consensus refusal, five after a local error (it may follow an execution)
+      expect(c.reads.identity).toBe(e.code === -1 ? 6 : 2);
     }
   });
 });

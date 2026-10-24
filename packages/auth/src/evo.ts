@@ -54,6 +54,8 @@ export function nonceConsumed(raw: bigint, n: bigint): boolean {
  */
 export type SendOutcome = 'future' | 'past' | 'lag' | 'ambiguous' | 'refused';
 const LOCAL_KINDS = new Set(['InvalidArgument', 'SerializationError', 'Config', 'NonceOverflow', 'NotImplemented', 'MissingDependency']);
+/** A consensus refusal: this transition was validated and refused. (A local SDK error can come after the transition executed.) */
+const consensusRefusal = (e: unknown) => errCode(e) >= 10000 || (e as { name?: unknown } | null)?.name === 'StateTransitionBroadcastError';
 export function classifySend(e: unknown): SendOutcome {
   const m = errText(e);
   const code = errCode(e);
@@ -90,6 +92,8 @@ function sameData(stored: Record<string, unknown>, data: Record<string, DocValue
 export interface EvoPlatformOptions {
   /** Waits between retries (tests inject a fake). */
   sleep?: (ms: number) => Promise<void>;
+  /** The clock of the send budget (tests inject a fake). */
+  now?: () => number;
 }
 
 /** Broadcast attempts per write; proved reads per settle (backoff 1, 2, 4, 8 s); reads before a delete gives up (about 7 s). */
@@ -103,6 +107,7 @@ const readBackoff = (i: number) => Math.min(1000 * 2 ** i, 8000);
 
 export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, opts: EvoPlatformOptions = {}): PlatformPort {
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const now = opts.now ?? Date.now;
   const w = evo as unknown as {
     Identity: new (id: Uint8Array | string) => Evo.Identity;
     Identifier: new (id: Uint8Array | string) => Evo.Identifier;
@@ -321,7 +326,7 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
         },
         idempotent: true,
         readOnFirstRefusal: true,
-        noMessage: 'This document was changed on Platform meanwhile; this change was not saved. Reload and try again.',
+        noMessage: 'This document was changed on Platform meanwhile (that may include this change). Reload and check.',
         unconfirmed: () => (absent ? 'This document is not on Platform (deleted, or not visible yet); this change was not confirmed. Reload and try again.' : undefined),
         result: () => ({ id: op.id, revision: op.revision + 1 }),
       };
@@ -384,14 +389,14 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
     const tryCheck = () => plan.check().catch(() => ({ state: 'pending' as Check, height: -1n }));
     /** Proved reads until the write shows as done (or definitely not ours). */
     const settled = async () => (await readUntil(tryCheck, (c) => c.state !== 'pending')).hit?.state === 'done';
-    const deadline = Date.now() + SEND_BUDGET_MS;
+    const deadline = now() + SEND_BUDGET_MS;
 
     let nonce = (first.hit.raw & NONCE_VALUE) + 1n;
     let st = sign(nonce);
     let sent = false; // an earlier send of ours may have executed
     let last: unknown;
     try {
-      for (let i = 0; i < MAX_SENDS && (i === 0 || Date.now() < deadline); i++) {
+      for (let i = 0; i < MAX_SENDS && (i === 0 || now() < deadline); i++) {
         try {
           await sdk.stateTransitions.broadcastAndWait(st);
           return plan.result();
@@ -399,15 +404,16 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
           last = e;
           const outcome = classifySend(e);
           if (outcome === 'refused') {
-            if (!sent && !plan.readOnFirstRefusal) throw e;
+            // Only a consensus refusal of a first send is final without a read: a local SDK error can follow an execution.
+            if (!sent && !plan.readOnFirstRefusal && consensusRefusal(e)) throw e;
             if (await settled()) return plan.result();
             throw e;
           }
           sent = true;
-          const now = await tryCheck();
-          if (now.state === 'done') return plan.result();
-          if (now.state === 'no') throw new Error(plan.noMessage);
-          const lastTry = i === MAX_SENDS - 1;
+          const seen = await tryCheck();
+          if (seen.state === 'done') return plan.result();
+          if (seen.state === 'no') throw new Error(plan.noMessage);
+          const lastTry = i === MAX_SENDS - 1 || now() >= deadline;
           if (outcome === 'past' && !lastTry) {
             // This nonce is spent. Sign again with a fresh one, unless the spender may have been our own transition (a create): then
             // only when a proved read shows the nonce used and, at a height at or above that read, our document absent.
@@ -485,9 +491,11 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
       let sentFrom: bigint | undefined;
       let ambiguous = false; // an earlier update may have executed
       const landed = (i: Evo.Identity | undefined) =>
-        !!i && (sentFrom === undefined || BigInt(i.revision) > sentFrom) && wanted.every((k) => { const p = i.getPublicKeyById(k.id); return !!p && bytesEqual(keyInfo(p).data, k.data); });
-      // A duplicate-key refusal (40206, 40207) says the keys may be there already: read patiently then, as after an ambiguous outcome.
-      const settled = async (e?: unknown) => (await readUntil(() => fetchIdentity(identityId), landed, ambiguous || [40206, 40207].includes(errCode(e)) ? READS : 1)).hit !== undefined;
+        !!i && (sentFrom === undefined || BigInt(i.revision) > sentFrom) && wanted.every((k) => { const p = i.getPublicKeyById(k.id); const ki = p && keyInfo(p); return !!ki && !ki.disabled && bytesEqual(ki.data, k.data); });
+      // Read patiently after an ambiguous outcome, a duplicate-key refusal (40206, 40207: the keys may be there already) or a local SDK
+      // error (it can follow an update that executed); a first other consensus refusal needs one read.
+      const patient = (e: unknown) => ambiguous || [40206, 40207].includes(errCode(e)) || !consensusRefusal(e);
+      const settled = async (e?: unknown) => (await readUntil(() => fetchIdentity(identityId), landed, patient(e) ? READS : 1)).hit !== undefined;
       const creation = () =>
         keys.map(
           (k) =>
@@ -503,7 +511,8 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
         );
       await withKeys([master, ...keys], null, async (signer) => {
         let last: unknown = new Error('identity not found');
-        for (let i = 0; i < MAX_SENDS; i++) {
+        const deadline = now() + SEND_BUDGET_MS;
+        for (let i = 0; i < MAX_SENDS && (i === 0 || now() < deadline); i++) {
           if (i) await sleep(sendBackoff(i - 1));
           const read = await readUntil(() => fetchIdentity(identityId), (x) => !!x);
           const identity = read.hit;

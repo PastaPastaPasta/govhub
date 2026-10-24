@@ -69,7 +69,10 @@ Each write is a batch transition built and signed once per nonce (`DocumentCreat
 | any other consensus refusal, or a local SDK error before sending (`InvalidArgument`, `SerializationError`, ...) | create / delete: final on the first send; replace (an earlier call may have landed), or any write after an earlier send: done only if proved reads (with backoff) show the write |
 | a proved read shows a replace can no longer apply (another revision or other data) | fail with that message |
 
-No new send starts after 2 minutes; the settle reads still run, and the final error says whether the write may still appear.
+No new send starts after 2 minutes (document writes and `addKeys`); the settle reads still run, and the final error says
+whether the write may still appear. Only a consensus refusal of a first send is final without a read: a local SDK error
+(`SerializationError`, ...) can be raised after the transition executed (result conversion in `broadcastAndWait`), so it is
+settled by proved reads before it is reported.
 
 Done means: create, a proved read finds the id it signed; replace, `$revision === revision + 1` with exactly our fields; delete,
 the document was found by a proved pre-read at height H0 (a document already gone fails fast) and a proved read shows it absent at
