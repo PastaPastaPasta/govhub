@@ -26,13 +26,14 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const LAGGING = /40101|document not found|nonce/i;
 
 /** Retries a write that a lagging node refused, as the phase-0 scripts had to. `fn` gets the attempt number (0 first). */
-async function lagRetry<T>(fn: (attempt: number) => Promise<T>, tries = 4): Promise<T> {
+async function lagRetry<T>(fn: (attempt: number) => Promise<T>, tries = 4, lagging: RegExp = LAGGING): Promise<T> {
   for (let i = 0; ; i++) {
     try {
       return await fn(i);
     } catch (e) {
-      if (i >= tries || !LAGGING.test(errText(e))) throw e;
-      await sleep(3000);
+      if (i >= tries || !lagging.test(errText(e))) throw e;
+      // Lagging nodes catch up within seconds to tens of seconds (a delete right after its create): back off 2.5 s, 5 s, 7.5 s, 10 s.
+      await sleep(Math.min(2500 * (i + 1), 10_000));
     }
   }
 }
@@ -114,7 +115,8 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network): P
   // sha256d(contract || owner || type || entropy); PV14 derives the id from the identity-contract nonce when $id is zero
   // (spikes/sdk5 README 8.3). A broadcast through a lagging node can fail with 40101 / a stale nonce before it executes: those are
   // retried, re-sending the same document. A PV14 create is never retried (a retry after a write that landed would make a second
-  // document); a PV13 create retried after it landed answers "already exists", which is success.
+  // document); a PV13 create retried after it landed answers "already exists", which is success only if a proved read finds the id it
+  // sent (the id comes from fresh entropy, so only this write can have stored it).
   const toSdk = (data: Record<string, DocValue>) => Object.fromEntries(Object.entries(data).map(([k, v]) => [k, typeof v === 'number' ? BigInt(v) : v]));
   async function writeDocument({ ownerId, key: callerKey, op }: { ownerId: string; key: SigningKey; op: DocumentWrite }): Promise<DocumentWritten> {
     // A private copy for the duration of the write: signing out mid-write wipes the session's key, not this one (wiped below).
@@ -135,14 +137,10 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network): P
     let run: (attempt: number) => Promise<DocumentWritten>;
     let retry = true;
     if (op.action === 'delete') {
-      run = (attempt) =>
+      // A 40101 on delete is a lagging node refusing before execution: retried, and after the last try it is an error, never success.
+      run = () =>
         withKeys([key], null, async (signer) => {
-          try {
-            await sdk.documents.delete({ document: { id: op.id, ownerId, dataContractId: op.contractId, documentTypeName: op.type }, identityKey: idKey, signer });
-          } catch (e) {
-            // A retried delete whose first attempt landed finds nothing to delete: that is the result we wanted.
-            if (!(attempt > 0 && /40101|document not found/i.test(errText(e)))) throw e;
-          }
+          await sdk.documents.delete({ document: { id: op.id, ownerId, dataContractId: op.contractId, documentTypeName: op.type }, identityKey: idKey, signer });
           return { id: op.id };
         });
     } else if (op.action === 'replace') {
@@ -173,14 +171,14 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network): P
           try {
             return await create();
           } catch (e) {
-            if (attempt > 0 && /already (exists|present)|duplicate/i.test(errText(e)) && (await sdk.documents.get(op.contractId, op.type, toBase58(id)).catch(() => undefined))) return { id: toBase58(id), revision: 1 };
+            if (attempt > 0 && /already (exists|present)|duplicate/i.test(errText(e)) && (await sdk.documents.getWithProof(op.contractId, op.type, toBase58(id)).then((r) => r.data, () => undefined))) return { id: toBase58(id), revision: 1 };
             throw e;
           }
         };
       }
     }
     try {
-      return await (retry ? lagRetry(run, 3) : run(0));
+      return await (retry ? lagRetry(run, 4) : run(0));
     } catch (e) {
       throw new Error(errText(e)); // WASM errors are not Error instances
     }
@@ -238,7 +236,7 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network): P
             ...(k.bound ? { contractBounds: w.ContractBounds.SingleContractDocumentType(k.bound.contractId, k.bound.documentType) } : {}),
           } as Evo.IdentityPublicKeyInCreationOptions),
       );
-      await withKeys([master, ...keys], null, (signer) => lagRetry(() => sdk.identities.update({ identity, addPublicKeys: add, signer })));
+      await withKeys([master, ...keys], null, (signer) => lagRetry(() => sdk.identities.update({ identity, addPublicKeys: add, signer }), 4, /40101|not found|nonce/i));
     },
     writeDocument: (o) => writeDocument(o),
     vault: {
