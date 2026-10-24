@@ -66,7 +66,8 @@ Each write is a batch transition built and signed once per nonce (`DocumentCreat
 |---|---|
 | `nonce too far in future`, 40101, ambiguous (timeout, transport, `ExecutionNotProved`, `tx already exists in cache`) | re-send the SAME signed transition |
 | `nonce already present in past / at tip`, `nonce too far in past` | sign again with a fresh proved nonce; a create only once a proved nonce read shows the nonce used and a later proved read shows its own id absent (no second document) |
-| any other consensus refusal, or a local SDK error before sending (`InvalidArgument`, `SerializationError`, ...) | create / delete: final on the first send; replace (an earlier call may have landed), or any write after an earlier send: done only if proved reads (with backoff) show the write |
+| any other consensus refusal | create / delete: final on the first send; replace (an earlier call may have landed), or any write after an earlier send: done only if proved reads (with backoff) show the write |
+| a local SDK error (`InvalidArgument`, `SerializationError`, ...) | never re-sent; done if proved reads show the write, else "it may still appear" (it can follow an execution) |
 | a proved read shows a replace can no longer apply (another revision or other data) | fail with that message |
 
 No new send starts after 2 minutes (document writes and `addKeys`); the settle reads still run, and the final error says

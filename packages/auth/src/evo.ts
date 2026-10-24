@@ -49,8 +49,9 @@ export function nonceConsumed(raw: bigint, n: bigint): boolean {
  *  - lag:       40101 document not found: a node that does not have the document yet; re-send the same transition.
  *  - ambiguous: timeouts, transport, ExecutionNotProved, "already exists in cache" and anything else without a consensus code: the
  *               transition may or may not have executed; settled by proved state, never taken as failure.
- *  - refused:   any other consensus error (a unique index, a stale revision, validation), or a local error the SDK raises before
- *               anything is sent (bad argument, serialization, config): this send was refused.
+ *  - refused:   any other consensus error (a unique index, a stale revision, validation), or a local SDK error (bad argument,
+ *               serialization, config): never re-sent. A local error can follow an execution (proof result conversion), so the
+ *               writer still settles it by proved reads.
  */
 export type SendOutcome = 'future' | 'past' | 'lag' | 'ambiguous' | 'refused';
 const LOCAL_KINDS = new Set(['InvalidArgument', 'SerializationError', 'Config', 'NonceOverflow', 'NotImplemented', 'MissingDependency']);
@@ -228,7 +229,7 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
     check(): Promise<{ state: Check; height: bigint }>;
     /** Signing again with another nonce cannot apply the write twice (replace and delete; a create would make a second document). */
     idempotent: boolean;
-    /** A refused first send is final without a read (create, delete); a replace is still checked (an earlier call may have landed). */
+    /** A consensus refusal of a first send is final without a read (create, delete); a replace is still checked (an earlier call may have landed). */
     readOnFirstRefusal: boolean;
     /** Why a 'no' check ends the write. */
     noMessage: string;
@@ -390,11 +391,12 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
     /** Proved reads until the write shows as done (or definitely not ours). */
     const settled = async () => (await readUntil(tryCheck, (c) => c.state !== 'pending')).hit?.state === 'done';
     const deadline = now() + SEND_BUDGET_MS;
+    let last: unknown;
+    const unconfirmed = () => new Error(plan.unconfirmed?.() ?? `Platform did not confirm this write (${errText(last)}). It may still appear; reload before trying again.`);
 
     let nonce = (first.hit.raw & NONCE_VALUE) + 1n;
     let st = sign(nonce);
     let sent = false; // an earlier send of ours may have executed
-    let last: unknown;
     try {
       for (let i = 0; i < MAX_SENDS && (i === 0 || now() < deadline); i++) {
         try {
@@ -407,7 +409,8 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
             // Only a consensus refusal of a first send is final without a read: a local SDK error can follow an execution.
             if (!sent && !plan.readOnFirstRefusal && consensusRefusal(e)) throw e;
             if (await settled()) return plan.result();
-            throw e;
+            if (consensusRefusal(e)) throw e;
+            throw unconfirmed(); // a local error that may have followed an execution: "may still appear", not a plain failure
           }
           sent = true;
           const seen = await tryCheck();
@@ -439,7 +442,7 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
         }
       }
       if (await settled()) return plan.result();
-      throw new Error(plan.unconfirmed?.() ?? `Platform did not confirm this write (${errText(last)}). It may still appear; reload before trying again.`);
+      throw unconfirmed();
     } finally {
       free(st);
     }
@@ -515,6 +518,7 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
         for (let i = 0; i < MAX_SENDS && (i === 0 || now() < deadline); i++) {
           if (i) await sleep(sendBackoff(i - 1));
           const read = await readUntil(() => fetchIdentity(identityId), (x) => !!x);
+          if (i && now() >= deadline) break;
           const identity = read.hit;
           if (!identity) {
             last = read.error ?? new Error('identity not found');
@@ -549,12 +553,12 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
         return r[0] ?? null;
       },
       async put({ contractId, ownerId, key, entry, existing }) {
-        const now = Date.now();
-        const data = { credentialId: entry.credentialId, recipientKey: entry.recipientKey, version: entry.version, authKeyId: entry.authKeyId, enc: entry.enc, sealed: entry.sealed, $updatedAt: now };
+        const t = Date.now();
+        const data = { credentialId: entry.credentialId, recipientKey: entry.recipientKey, version: entry.version, authKeyId: entry.authKeyId, enc: entry.enc, sealed: entry.sealed, $updatedAt: t };
         await writeDocument({
           ownerId,
           key,
-          op: existing ? { action: 'replace', contractId, type: 'vault', id: existing.id, revision: existing.revision, data } : { action: 'create', contractId, type: 'vault', data: { ...data, $createdAt: now } },
+          op: existing ? { action: 'replace', contractId, type: 'vault', id: existing.id, revision: existing.revision, data } : { action: 'create', contractId, type: 'vault', data: { ...data, $createdAt: t } },
         });
       },
       async remove({ contractId, ownerId, key, entry }) {
