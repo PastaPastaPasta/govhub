@@ -1,0 +1,74 @@
+[
+  {
+    "label": "createDapi: initial load = entry + statically imported chunks (pool, failover, budget, grpc-web, protobuf, sha256, broadcast)",
+    "rawKB": 23.8,
+    "gzipKB": 9.8,
+    "brotliKB": 8.6
+  },
+  {
+    "label": "  lazy chunk (loaded on first use): ",
+    "rawKB": 0.1,
+    "gzipKB": 0.1,
+    "brotliKB": 0.1
+  },
+  {
+    "label": "  lazy chunk (loaded on first use): verified, chainlock",
+    "rawKB": 5.4,
+    "gzipKB": 2.3,
+    "brotliKB": 2.1
+  },
+  {
+    "label": "  lazy chunk (loaded on first use): agreed-sml, sml, cbor",
+    "rawKB": 5.5,
+    "gzipKB": 2.6,
+    "brotliKB": 2.3
+  },
+  {
+    "label": "  lazy chunk (loaded on first use): watch, bloom, race",
+    "rawKB": 5.1,
+    "gzipKB": 2.5,
+    "brotliKB": 2.3
+  },
+  {
+    "label": "createDapi + every lazy chunk",
+    "rawKB": 39.8,
+    "gzipKB": 15.8,
+    "brotliKB": 14
+  },
+  {
+    "label": "DapiCore only (grpc-web + protobuf + 10 RPCs)",
+    "rawKB": 7.9,
+    "gzipKB": 3.4,
+    "brotliKB": 3
+  },
+  {
+    "label": "parsers (tx, block, header, merkleblock, CLSIG, ISDLOCK) + bloom + SML + CBOR",
+    "rawKB": 15.3,
+    "gzipKB": 6.5,
+    "brotliKB": 5.7
+  },
+  {
+    "label": "full barrel: every export of @govhub/dapi, no BLS/X11",
+    "rawKB": 43.3,
+    "gzipKB": 17,
+    "brotliKB": 15.2
+  },
+  {
+    "label": "@govhub/dapi/bls (noble bls12-381 + ChainLock rules)",
+    "rawKB": 75,
+    "gzipKB": 27.5,
+    "brotliKB": 24.1
+  },
+  {
+    "label": "@govhub/dapi/x11 (vendored @dashevo/x11-hash-js)",
+    "rawKB": 95.2,
+    "gzipKB": 40.5,
+    "brotliKB": 29.9
+  },
+  {
+    "label": "everything: barrel + bls + x11",
+    "rawKB": 207,
+    "gzipKB": 82.1,
+    "brotliKB": 66
+  }
+]
