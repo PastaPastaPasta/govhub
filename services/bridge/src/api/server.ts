@@ -9,6 +9,7 @@ import { proposalView } from '../proposal.ts';
 import { FUDGE_WINDOW_S, type ComputedTally } from '../tally.ts';
 import { dashCentralBudget, dashCentralProposal } from './dashcentral.ts';
 import { log, nowS } from '../log.ts';
+import { QUORUM_PROOF_EXPOSED_HEADERS, QUORUM_PROOF_PATH, registerQuorumProof } from './quorumproof.ts';
 
 const HASH_RE = /^[0-9a-f]{64}$/;
 const SERVICE_VERSION = '0.1.0';
@@ -106,15 +107,19 @@ const byOutpoint = (x: { collateral_txid: string; collateral_n: number }, y: { c
 
 const READ_METHODS = ['GET', 'HEAD', 'OPTIONS'];
 
-export function createApi(b: Bridge): Hono {
+/** The one POST: a read-only query whose parameters do not fit a URL comfortably (same semantics as the GET). */
+const methodsFor = (path: string): string[] => (path === QUORUM_PROOF_PATH ? [...READ_METHODS, 'POST'] : READ_METHODS);
+
+export function createApi(b: Bridge, deps: { now?: () => number } = {}): Hono {
   const app = new Hono();
-  app.use('*', cors({ origin: '*', allowMethods: READ_METHODS, maxAge: 86400 }));
+  app.use('*', cors({ origin: '*', allowMethods: (_origin, c) => methodsFor(c.req.path), allowHeaders: ['content-type'], exposeHeaders: QUORUM_PROOF_EXPOSED_HEADERS, maxAge: 86400 }));
   // Read-only API. The bridge may be published without a proxy in front (Cloudflare Tunnel), so it refuses
   // every other method itself instead of relying on Caddy's method filter, and sets the header Caddy would add.
   app.use('*', async (c, next) => {
     c.header('X-Content-Type-Options', 'nosniff');
-    if (READ_METHODS.includes(c.req.method)) return next();
-    c.header('Allow', READ_METHODS.join(', '));
+    const allowed = methodsFor(c.req.path);
+    if (allowed.includes(c.req.method)) return next();
+    c.header('Allow', allowed.join(', '));
     return c.json({ error: 'read-only API' }, 405);
   });
   app.onError((e, c) => {
@@ -342,6 +347,10 @@ export function createApi(b: Bridge): Hono {
     const j = dashCentralProposal(b, hash);
     return c.json(j, j.status === 'ok' ? 200 : 404);
   });
+
+  // Relay of Core's getquorumproofchain (DIP 175). Self-authenticating from the client's checkpoint; see quorumproof.ts.
+  // Registered per call so tests (and operators' `b.rpc`) see the live client.
+  if (b.cfg.quorumProof.enabled) registerQuorumProof(app, { call: (m, p, o) => b.rpc.call(m, p, o) }, b.cfg, deps.now);
 
   return app;
 }

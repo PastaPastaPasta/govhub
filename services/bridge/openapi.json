@@ -3,7 +3,7 @@
   "info": {
     "title": "govhub bridge API",
     "version": "0.1.0",
-    "description": "Read-only API of a govhub bridge: Dash governance proposals, the signed votes behind every tally, masternode-list snapshots and budget cycles, plus a DashCentral-compatible subset. Everything here is reported by the bridge; clients verify it (gov hash, collateral, vote signatures against the voting keys, recount, voteSetHash) with @govhub/verify. Hashes are lowercase hex in RPC/display byte order. Amounts in /v1 are integer duffs (1 DASH = 1e8). CORS is open; only GET/HEAD/OPTIONS are served.",
+    "description": "Read-only API of a govhub bridge: Dash governance proposals, the signed votes behind every tally, masternode-list snapshots and budget cycles, plus a DashCentral-compatible subset. Everything here is reported by the bridge; clients verify it (gov hash, collateral, vote signatures against the voting keys, recount, voteSetHash) with @govhub/verify. Hashes are lowercase hex in RPC/display byte order. Amounts in /v1 are integer duffs (1 DASH = 1e8). CORS is open; only GET/HEAD/OPTIONS are served, plus POST on /v1/quorum-proof (a query with a JSON body).",
     "license": { "name": "MIT" }
   },
   "servers": [{ "url": "http://127.0.0.1:8787" }],
@@ -91,6 +91,363 @@
             "content": { "application/json": { "schema": { "type": "object", "required": ["asOfHeight", "cycle"], "properties": { "asOfHeight": { "type": "integer" }, "cycle": { "$ref": "#/components/schemas/Cycle" }, "last": { "oneOf": [{ "$ref": "#/components/schemas/Cycle" }, { "type": "null" }] }, "fundingThreshold": { "type": "integer" }, "governance": { "type": "object", "description": "getgovernanceinfo as Core returned it" } } } } }
           },
           "503": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/quorum-proof": {
+      "get": {
+        "summary": "Quorum proof chain from a checkpoint (Dash Core v24 getquorumproofchain, DIP 175)",
+        "description": "Relays the bridge's dashd `getquorumproofchain`. The proof is self-authenticating from the client's checkpoint, so the bridge is an untrusted relay. Responses are cached for 15 s (identical concurrent requests share one Core call), Core calls are limited to 2 at a time, cache misses are rate limited per client, and checkpoints more than QUORUM_PROOF_MAX_SPAN (default 250000) blocks below the tip are refused. Needs Core v24.0.0-rc.4 or newer; Core 23.x answers 501. CORS: any origin; X-Proof-* and Retry-After are exposed.",
+        "parameters": [
+          {
+            "name": "checkpoint",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{64}$"
+            },
+            "description": "Block hash (display hex) of the checkpoint the client already trusts. The proof chain leads from it to a recent ChainLocked state."
+          },
+          {
+            "name": "height",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647,
+              "default": 0
+            },
+            "description": "Minimum target height. 0 = the latest ChainLock."
+          },
+          {
+            "name": "quorumHash",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{64}$"
+            },
+            "description": "Also return the opening of this quorum's commitment (bootstrap format). Must be given together with llmqType."
+          },
+          {
+            "name": "llmqType",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 255
+            },
+            "description": "LLMQ type of quorumHash. Must be given together with quorumHash."
+          },
+          {
+            "name": "nodeCount",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 15,
+              "default": 0
+            },
+            "description": "Also return this many eligible EvoNode records (bootstrap format)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "DASHNC02 quorum proof chain (raw bytes of `proof_hex`), or, when quorumHash or nodeCount asked for records, the bootstrap (raw bytes of `bootstrap_hex`). The bytes authenticate themselves from the checkpoint; verify them, never trust this response or its headers.",
+            "headers": {
+              "X-Proof-Target-Height": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Informational: height of the target state. Not authenticated."
+              },
+              "X-Proof-Format": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "chain",
+                    "bootstrap"
+                  ]
+                },
+                "description": "Informational: which Core field the body is. Not authenticated."
+              },
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad request: invalid or unknown parameter/field, quorumHash without llmqType, malformed JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProofError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`checkpoint-unknown` (the checkpoint is not a block on the active chain), or the endpoint is disabled on this bridge (QUORUM_PROOF=0, body is then the generic `{error: \"not found\"}`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProofError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`not-yet`: the requested minimum height is not ChainLocked yet; retry later",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProofError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "`too-large`: POST body over 1 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProofError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`checkpoint-too-old` (more than QUORUM_PROOF_MAX_SPAN blocks below the tip), or `no-bridge` (Core found no bridge from the checkpoint to a snapshot, the requested quorum is not in the target root, or the chain changed while building: retry)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProofError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate-limited`: per-client limit on cache misses",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "seconds"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProofError"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "`unsupported`: this bridge's dashd has no getquorumproofchain (needs Dash Core v24)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProofError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`core`: Core unreachable, timed out (90 s), or answered something unusable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProofError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`busy`: all proof workers and the queue are in use",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "seconds"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProofError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Same as GET, with a JSON body (compatible with the quorum-list-server POST /proofs body)",
+        "description": "Fields are exactly those of the GET query, in camelCase; unknown fields are rejected; body limit 1 KB. quorumHash, llmqType and nodeCount are optional here.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProofRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "DASHNC02 quorum proof chain (raw bytes of `proof_hex`), or, when quorumHash or nodeCount asked for records, the bootstrap (raw bytes of `bootstrap_hex`). The bytes authenticate themselves from the checkpoint; verify them, never trust this response or its headers.",
+            "headers": {
+              "X-Proof-Target-Height": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Informational: height of the target state. Not authenticated."
+              },
+              "X-Proof-Format": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "chain",
+                    "bootstrap"
+                  ]
+                },
+                "description": "Informational: which Core field the body is. Not authenticated."
+              },
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad request: invalid or unknown parameter/field, quorumHash without llmqType, malformed JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProofError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`checkpoint-unknown` (the checkpoint is not a block on the active chain), or the endpoint is disabled on this bridge (QUORUM_PROOF=0, body is then the generic `{error: \"not found\"}`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProofError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`not-yet`: the requested minimum height is not ChainLocked yet; retry later",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProofError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "`too-large`: POST body over 1 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProofError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`checkpoint-too-old` (more than QUORUM_PROOF_MAX_SPAN blocks below the tip), or `no-bridge` (Core found no bridge from the checkpoint to a snapshot, the requested quorum is not in the target root, or the chain changed while building: retry)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProofError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate-limited`: per-client limit on cache misses",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "seconds"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProofError"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "`unsupported`: this bridge's dashd has no getquorumproofchain (needs Dash Core v24)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProofError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`core`: Core unreachable, timed out (90 s), or answered something unusable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProofError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`busy`: all proof workers and the queue are in use",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "seconds"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProofError"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -331,6 +688,68 @@
           "status": { "const": "ok" },
           "budget": { "type": "object", "properties": { "total_amount": { "type": "number" }, "all_proposals": { "type": "integer" }, "budget_requested": { "type": "number" }, "budget_allocated": { "type": "number" }, "budget_left": { "type": "number" }, "superblock": { "type": "integer" }, "payment_date": { "type": "string" }, "voting_deadline": { "type": "string" }, "voting_deadline_height": { "type": "integer" }, "funding_threshold": { "type": "integer" }, "as_of_height": { "type": "integer" } } },
           "proposals": { "type": "array", "items": { "$ref": "#/components/schemas/DcProposal" } }
+        }
+      },
+      "ProofRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "checkpoint"
+        ],
+        "properties": {
+          "checkpoint": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{64}$"
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647,
+            "default": 0
+          },
+          "quorumHash": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{64}$"
+          },
+          "llmqType": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 255
+          },
+          "nodeCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 15,
+            "default": 0
+          }
+        }
+      },
+      "ProofError": {
+        "type": "object",
+        "required": [
+          "error",
+          "message"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "enum": [
+              "bad-request",
+              "too-large",
+              "checkpoint-unknown",
+              "not-yet",
+              "checkpoint-too-old",
+              "no-bridge",
+              "rate-limited",
+              "unsupported",
+              "core",
+              "busy"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 200
+          }
         }
       },
       "DcError": { "type": "object", "properties": { "status": { "const": "error" }, "error_type": { "type": "string" }, "error_message": { "type": "string" } } }

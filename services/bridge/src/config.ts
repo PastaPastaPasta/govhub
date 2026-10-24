@@ -3,9 +3,30 @@
 // (CORE_RPC_PASSWORD_FILE, BRIDGE_IDENTITY_KEY_FILE); CORE_RPC_PASSWORD exists for local development only.
 import { readFileSync } from 'node:fs';
 import type { Network } from '@govhub/verify';
+import { validateProxyList } from './api/clientip.ts';
 
 export type CoreNetwork = Extract<Network, 'mainnet' | 'testnet' | 'regtest' | 'devnet'>;
 export type PlatformNetwork = 'mainnet' | 'testnet';
+
+export interface QuorumProofConfig {
+  enabled: boolean;
+  /** Refuse checkpoints older than this many blocks below the tip (proof cost grows linearly with the span). */
+  maxSpan: number;
+  /** Per-client token bucket, charged on cache misses only. */
+  ratePerMin: number;
+  rateBurst: number;
+  /** Concurrent Core calls. */
+  workers: number;
+  /** Requests allowed to wait for a worker; more get 503. */
+  queue: number;
+  cacheTtlMs: number;
+  cacheEntries: number;
+  cacheBytes: number;
+  /** Deadline of one getquorumproofchain call. */
+  deadlineMs: number;
+  /** A worker whose call died without an answer stays reserved this long (Core keeps building after its client is gone). */
+  cooldownMs: number;
+}
 
 export interface BridgeConfig {
   coreNetwork: CoreNetwork;
@@ -21,7 +42,16 @@ export interface BridgeConfig {
     zmqUrl: string;
   };
   dbPath: string;
-  http: { host: string; port: number };
+  http: {
+    host: string;
+    port: number;
+    /** Header carrying the client IP set by the proxy in front (e.g. `cf-connecting-ip` behind cloudflared). Empty = the socket address. */
+    clientIpHeader: string;
+    /** Socket peers allowed to supply `clientIpHeader` (IPv4 CIDRs, exact IPv6). Empty = any peer. */
+    trustedProxyCidrs: string[];
+  };
+  /** GET/POST /v1/quorum-proof: relay of Core's `getquorumproofchain` (Dash Core v24, DIP 175). */
+  quorumProof: QuorumProofConfig;
   publish: {
     enabled: boolean;
     govContractId: string;
@@ -80,6 +110,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BridgeConfig {
   let rpcPassword = env.CORE_RPC_PASSWORD ?? '';
   if (env.CORE_RPC_PASSWORD_FILE) rpcPassword = readSecretFile(env.CORE_RPC_PASSWORD_FILE, 'CORE_RPC_PASSWORD_FILE');
 
+  const trustedProxyCidrs = str(env, 'TRUSTED_PROXY_CIDRS', '')
+    .split(',')
+    .map((x) => x.trim())
+    .filter(Boolean);
+  validateProxyList(trustedProxyCidrs);
+
   const publishEnabled = bool(env, 'PUBLISH', true);
   const cfg: BridgeConfig = {
     coreNetwork,
@@ -93,7 +129,25 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BridgeConfig {
       zmqUrl: env.CORE_ZMQ_URL ?? 'tcp://127.0.0.1:29998',
     },
     dbPath: str(env, 'DB_PATH', './data/bridge.sqlite'),
-    http: { host: str(env, 'HTTP_HOST', '127.0.0.1'), port: int(env, 'HTTP_PORT', 8787, 0) },
+    http: {
+      host: str(env, 'HTTP_HOST', '127.0.0.1'),
+      port: int(env, 'HTTP_PORT', 8787, 0),
+      clientIpHeader: str(env, 'CLIENT_IP_HEADER', '').toLowerCase(),
+      trustedProxyCidrs,
+    },
+    quorumProof: {
+      enabled: bool(env, 'QUORUM_PROOF', true),
+      maxSpan: int(env, 'QUORUM_PROOF_MAX_SPAN', 250_000, 1),
+      ratePerMin: int(env, 'QUORUM_PROOF_RATE_PER_MIN', 12, 1),
+      rateBurst: int(env, 'QUORUM_PROOF_RATE_BURST', 4, 1),
+      workers: int(env, 'QUORUM_PROOF_WORKERS', 2, 1),
+      queue: int(env, 'QUORUM_PROOF_QUEUE', 8, 0),
+      cacheTtlMs: int(env, 'QUORUM_PROOF_CACHE_TTL_MS', 15_000, 0),
+      cacheEntries: 64,
+      cacheBytes: 16 * 1024 * 1024,
+      deadlineMs: int(env, 'QUORUM_PROOF_DEADLINE_MS', 90_000, 1),
+      cooldownMs: int(env, 'QUORUM_PROOF_COOLDOWN_MS', 120_000),
+    },
     publish: {
       enabled: publishEnabled,
       govContractId: str(env, 'GOV_CONTRACT_ID', ''),
@@ -140,6 +194,7 @@ export function describeConfig(c: BridgeConfig): Record<string, unknown> {
     zmqUrl: c.core.zmqUrl || null,
     dbPath: c.dbPath,
     http: c.http,
+    quorumProof: c.quorumProof,
     publish: { ...c.publish, identityKeyFile: c.publish.identityKeyFile ? '(set)' : '' },
     reconcileIntervalSec: c.reconcileIntervalSec,
   };

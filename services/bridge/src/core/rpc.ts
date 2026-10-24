@@ -31,6 +31,11 @@ const RPC_IN_WARMUP = -28;
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+export interface CallOptions {
+  timeoutMs?: number;
+  retries?: number;
+}
+
 export class CoreRpc {
   readonly url: string;
   private readonly auth: string;
@@ -49,9 +54,12 @@ export class CoreRpc {
     this.fetchImpl = opts.fetch ?? fetch;
   }
 
-  async call<T = unknown>(method: string, params: unknown[] = []): Promise<T> {
+  /** `opts` override the client's per-attempt timeout and retry count for this call (e.g. one slow, non-idempotent-cost call). */
+  async call<T = unknown>(method: string, params: unknown[] = [], opts: CallOptions = {}): Promise<T> {
+    const timeoutMs = opts.timeoutMs ?? this.timeoutMs;
+    const retries = opts.retries ?? this.retries;
     let lastErr: unknown;
-    for (let attempt = 0; attempt <= this.retries; attempt++) {
+    for (let attempt = 0; attempt <= retries; attempt++) {
       if (attempt > 0) await sleep(this.retryDelayMs * 2 ** (attempt - 1));
       let res: Response;
       try {
@@ -59,7 +67,7 @@ export class CoreRpc {
           method: 'POST',
           headers: { 'content-type': 'application/json', authorization: this.auth },
           body: JSON.stringify({ jsonrpc: '1.0', id: this.nextId++, method, params }),
-          signal: AbortSignal.timeout(this.timeoutMs),
+          signal: AbortSignal.timeout(timeoutMs),
         });
       } catch (e) {
         lastErr = e;
@@ -75,7 +83,7 @@ export class CoreRpc {
         body = undefined;
       }
       if (body && body.error) {
-        if (body.error.code === RPC_IN_WARMUP && attempt < this.retries) {
+        if (body.error.code === RPC_IN_WARMUP && attempt < retries) {
           lastErr = new CoreRpcError(method, body.error.code, body.error.message);
           continue;
         }
