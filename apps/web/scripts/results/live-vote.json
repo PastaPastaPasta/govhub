@@ -97,5 +97,18 @@
         "rightKey": "cancelled"
       }
     }
-  ]
+  ],
+  "directVoteraw": {
+    "at": "2026-10-24T18:51:08Z",
+    "by": "apps/web/scripts/sign-test-vote.ts (src/voting/plan.ts signPlanned, testnet binary-hash scheme) + dash-cli voteraw on the testnet dashd (24.0.0-rc.4)",
+    "masternode": "masternode-1",
+    "proTxHash": "bc77a5a2cec455c79fb92fb683dbd87a2a92b663c9a46d0c50d11889b4aeb121",
+    "collateral": "4ee3ff5074723d995f4cb957a954587c6c637a42655ada8f4054037b28d1e7a8-95",
+    "govHash": "ab31c1fffb2eef4587f4ba85a92ddf98b3256aaf96542fe5221a0532d620708d",
+    "outcome": "abstain",
+    "time": 1792867868,
+    "voteHash": "91bfc0b53993965c42b5a2b99f5887e3306d6fc059723b35c24448654ed0a357",
+    "coreAnswer": "Voted successfully",
+    "getcurrentvotes": "91bfc0b53993965c42b5a2b99f5887e3306d6fc059723b35c24448654ed0a357: 4ee3ff5074723d995f4cb957a954587c6c637a42655ada8f4054037b28d1e7a8-95:1792867868:abstain:funding:1"
+  }
 }

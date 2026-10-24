@@ -35,10 +35,10 @@ buckets), `seal.ts` (encryption), `keyring.ts` (load / open / save, unlockers), 
 
 | | |
 |---|---|
-| Content key | `K` = 32 random bytes, **new on every write**. Body = `nonce(24) || XChaCha20-Poly1305(K, nonce, AAD, padded plaintext)`, split into 4,096-byte fields `c0` (`c1`, `c2`) |
-| AAD | `"govhub/keyring/v1" || 0x00 || contractId || ownerId || kind || version || bucket || SHA-256(wraps)` |
-| Wraps | 8 slots x 80 B in random order; a used slot is RFC 9180 HPKE `SealBase(pkR, info, "", K)` = enc(32) + ciphertext(48); a filler is the X25519 public key of a throwaway secret + 48 random bytes, so the two cannot be told apart (a random 32-byte prefix would not be a curve point half the time). `info = "govhub/keyring/v1/wrap" || 0x00 || contractId || ownerId || kind`. Readers try every slot |
-| Seed unlocker | `pkR` = HPKE `DeriveKeyPair(HKDF-SHA256(ikm = BIP39 entropy, salt = "govhub/keyring/v1/seed", info = network || 0x00 || ownerId))`. Never published (it exists only inside the ciphertext) |
+| Content key | `K` = 32 random bytes, **new on every write**. Body = `nonce(24) \|\| XChaCha20-Poly1305(K, nonce, AAD, padded plaintext)`, split into 4,096-byte fields `c0` (`c1`, `c2`) |
+| AAD | `"govhub/keyring/v1" \|\| 0x00 \|\| contractId \|\| ownerId \|\| kind \|\| version \|\| bucket \|\| SHA-256(wraps)` |
+| Wraps | 8 slots x 80 B in random order; a used slot is RFC 9180 HPKE `SealBase(pkR, info, "", K)` = enc(32) + ciphertext(48); a filler is the X25519 public key of a throwaway secret + 48 random bytes, so the two cannot be told apart (a random 32-byte prefix would not be a curve point half the time). `info = "govhub/keyring/v1/wrap" \|\| 0x00 \|\| contractId \|\| ownerId \|\| kind`. Readers try every slot |
+| Seed unlocker | `pkR` = HPKE `DeriveKeyPair(HKDF-SHA256(ikm = BIP39 entropy, salt = "govhub/keyring/v1/seed", info = network \|\| 0x00 \|\| ownerId))`. Never published (it exists only inside the ciphertext) |
 | Passkey unlocker | the passkey vault's PRF key (`recipientFromPrf`, same PRF input), i.e. the same X25519 key as the passkey's `forum.vault` entry; the HPKE info differs. One ceremony opens both |
 | Sizes | plaintext starts with `keyringId` (16) and `generation` (u32). bucket 1: 4,096 B (<= 32 keys, 24 node labels, 8 unlockers, labels <= 32 UTF-8 bytes); bucket 2: 12,288 B (<= 96 keys, 80 labels). Pending votes: 16 / 60. The bucket is chosen from counts only, so the chain learns "bucket 1 or 2", never a count. Beyond bucket 2 the encoder refuses |
 | Leaks | that the identity has a keyring and a pending-votes document, the bucket, and when either changes (a pending update hints "this identity scheduled votes around now", not which or how many) |

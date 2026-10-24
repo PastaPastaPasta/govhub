@@ -108,7 +108,7 @@ Environment variables; an empty value means the default.
 | `MAX_HELD_PER_MN` | `64` | held votes per masternode; more is 429 `too-many-held` |
 | `MAX_HELD_TOTAL` | `100000` | held (and in-flight) votes over all masternodes; more is 503 `relay-full` |
 | `RATE_IP_PER_MIN` | `30` | token bucket per client IP for every POST (burst = this value); 429 `rate-limited` with `Retry-After` |
-| `RATE_MN_PER_HOUR` | `24` | votes actually queued per masternode outpoint in any rolling hour (duplicates and votes Core already has do not count; in memory: a restart resets it) |
+| `RATE_MN_PER_HOUR` | `120` | votes actually queued per masternode outpoint in any rolling hour (one vote per active proposal must fit: mainnet has ~30) (duplicates and votes Core already has do not count; in memory: a restart resets it) |
 | `CLIENT_IP_HEADER` | | header carrying the client IP; empty = the socket address. `cf-connecting-ip`: the single value. `x-forwarded-for`: the RIGHTMOST entry (the one the trusted proxy appended; entries to its left are client-supplied). IPv6 clients share a bucket per /64, IPv4 and IPv4-mapped per address |
 | `TRUSTED_PROXY_CIDRS` | | comma-separated IPv4 addresses / CIDRs and exact IPv6 addresses allowed to supply `CLIENT_IP_HEADER`; a request from any other socket peer is bucketed by its socket address and the header is ignored. Empty = trust the header from any peer, which is right when only cloudflared / caddy can reach the port (the compose setup) |
 | `PROPOSAL_SUBMIT` | `1` | `0` answers 501 on `/v1/proposals/submit` |

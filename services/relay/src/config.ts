@@ -91,7 +91,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RelayConfig {
     maxHoldS: int(env, 'MAX_HOLD_S', 3_456_000, 1),
     maxHeldPerMn: int(env, 'MAX_HELD_PER_MN', 64, 1),
     rateIpPerMin: int(env, 'RATE_IP_PER_MIN', 30, 1),
-    rateMnPerHour: int(env, 'RATE_MN_PER_HOUR', 24, 1),
+    rateMnPerHour: int(env, 'RATE_MN_PER_HOUR', 120, 1),
     clientIpHeader: str(env, 'CLIENT_IP_HEADER', '').toLowerCase(),
     trustedProxyCidrs,
     maxPastS: int(env, 'MAX_PAST_S', 86_400, 1),
