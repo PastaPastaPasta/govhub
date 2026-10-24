@@ -81,7 +81,7 @@ wallet disabled (the bridge needs none); `DASHD_EXTRA_ARGS=-disablewallet=0` tur
 |---|---|
 | `docker-compose.yml` | base stack, **mainnet**: `dashd`, `bridge`, `cloudflared` (profile `tunnel`), `caddy` (profile `proxy`) |
 | `docker-compose.testnet.yml` | override: v24 image, testnet Core, testnet Platform |
-| `docker-compose.relay-tunnel-guest.yml` | override (after `docker-compose.tunnel-guest.yml`): the gateway also forwards to this stack's relay (section 11.5) |
+| `docker-compose.relay-tunnel-guest.yml` | override (after `docker-compose.tunnel-guest.yml`): the gateway also forwards to this stack's relay (section 11.4) |
 | `docker-compose.regtest.yml` | override: isolated chain, `PUBLISH=0`, no identity secret |
 | `docker-compose.p2p.yml` | override: publish dashd's P2P port (set `DASHD_P2P_PORT`) |
 | `docker-compose.tunnel-guest.yml` | override: serve this stack's bridge through another stack's cloudflared, via a gateway on a `tunnel` network (section 11.3) |
@@ -599,7 +599,7 @@ bridge's. It sends its own CORS headers (`Access-Control-Allow-Origin: *`, no cr
 Before the first start you need an issuer identity, a `badge` contract and the offline keys
 (`services/issuer/README.md`, "Keys"). Then:
 
-1. `.env` section 6: `ISSUER_IDENTITY_ID`, `BADGE_CONTRACT_ID`, and `COMPOSE_PROFILES=issuer` (for example
+1. `.env` section 7: `ISSUER_IDENTITY_ID`, `BADGE_CONTRACT_ID`, and `COMPOSE_PROFILES=issuer` (for example
    `tunnel,issuer`). Leave `ISSUER_MAX_STAGED_KEYS=1` on mainnet.
 2. Secrets in `secrets/` (`init.sh` creates the first two):
    - `issuer_hmac_secret`: random hex for the stateless challenges. Keep it, or open challenges die on a restart.

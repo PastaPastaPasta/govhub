@@ -16,7 +16,9 @@ test.describe('MN badge, live testnet', () => {
     const comment = page.locator(`#comment-${st.comment.id}`);
     await expect(comment).toBeVisible({ timeout: 180_000 });
     await expect(comment.locator('.chip-mn')).toHaveText('MN · vouched by govhub', { timeout: 120_000 });
-    // the filter default flips to "Proposal owner + MN owners" once a trusted badge is live
-    await expect(page.getByRole('radio', { name: 'Proposal owner + MN owners' })).toBeChecked();
+    // without a deep link, the filter default flips to "Proposal owner + MN owners" once a trusted badge is live
+    await page.goto(`/p/h/${st.comment.govHash}`);
+    await expect(page.getByRole('radio', { name: 'Proposal owner + MN owners' })).toBeChecked({ timeout: 180_000 });
+    await expect(page.locator(`#comment-${st.comment.id} .chip-mn`)).toHaveText('MN · vouched by govhub', { timeout: 120_000 });
   });
 });

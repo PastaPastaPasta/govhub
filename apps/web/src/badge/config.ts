@@ -90,7 +90,16 @@ export function parseTrustList(v: unknown): { issuers: TrustedIssuer[]; errors: 
   return { issuers, errors };
 }
 
-export function loadTrustList(net: CoreNetwork, storage: Pick<Storage, 'getItem'> | undefined = globalThis.localStorage): TrustedIssuer[] {
+/** `localStorage` throws when site data is blocked: read it inside a try (a default parameter would throw outside it). */
+function local(): Storage | undefined {
+  try {
+    return globalThis.localStorage ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function loadTrustList(net: CoreNetwork, storage: Pick<Storage, 'getItem'> | undefined = local()): TrustedIssuer[] {
   try {
     const raw = storage?.getItem(KEY(net));
     if (raw) return parseTrustList(JSON.parse(raw)).issuers;
@@ -100,12 +109,20 @@ export function loadTrustList(net: CoreNetwork, storage: Pick<Storage, 'getItem'
   return BADGE_NETWORKS[net].defaultIssuers.map((i) => ({ ...i }));
 }
 
-export function saveTrustList(net: CoreNetwork, list: TrustedIssuer[], storage: Pick<Storage, 'setItem'> | undefined = globalThis.localStorage): void {
-  storage?.setItem(KEY(net), JSON.stringify(list));
+export function saveTrustList(net: CoreNetwork, list: TrustedIssuer[], storage: Pick<Storage, 'setItem'> | undefined = local()): void {
+  try {
+    storage?.setItem(KEY(net), JSON.stringify(list));
+  } catch {
+    /* not persisted: the list still applies to this page */
+  }
 }
 
-export function resetTrustList(net: CoreNetwork, storage: Pick<Storage, 'removeItem'> | undefined = globalThis.localStorage): TrustedIssuer[] {
-  storage?.removeItem(KEY(net));
+export function resetTrustList(net: CoreNetwork, storage: Pick<Storage, 'removeItem'> | undefined = local()): TrustedIssuer[] {
+  try {
+    storage?.removeItem(KEY(net));
+  } catch {
+    /* nothing stored */
+  }
   return BADGE_NETWORKS[net].defaultIssuers.map((i) => ({ ...i }));
 }
 

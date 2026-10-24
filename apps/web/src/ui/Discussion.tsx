@@ -86,7 +86,9 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
   const badges = useBadges(authors);
   const badged = useCallback((id: string) => badges.byOwner.has(id), [badges.byOwner]);
   const BADGES_LIVE = badges.live;
-  const filter = chosenFilter ?? defaultFilter(BADGES_LIVE);
+  // A deep link shows everyone until the reader picks a view: badges load after the thread, so a later switch to the badge
+  // filter would hide the linked comment.
+  const filter = chosenFilter ?? (focus ? 'all' : defaultFilter(BADGES_LIVE));
   const roots = useMemo(() => buildThreads(comments), [comments]);
   const targets = useMemo(() => comments.map((c) => ({ commentId: c.id })), [comments]);
   const reactions = useReactions(targets);

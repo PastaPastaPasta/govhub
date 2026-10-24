@@ -76,8 +76,13 @@ export class EpochManager {
     // Keys of epochs whose issuance window closed (plus the reorg margin) are destroyed.
     for (const e of keyEpochs(d.keyDir)) {
       if (e < epoch && height >= epochStart(d.params, e) + margin) {
-        destroyKey(d.keyDir, e);
-        log.info('destroyed the key of a closed epoch', { epoch: e });
+        // a file the service cannot remove (wrong owner, read-only directory) must not stop the rest of the housekeeping
+        try {
+          destroyKey(d.keyDir, e);
+          log.info('destroyed the key of a closed epoch', { epoch: e });
+        } catch (err) {
+          log.error('could not destroy the key of a closed epoch: remove it by hand', { epoch: e, error: errText(err) });
+        }
       }
     }
     // Token rows of closed windows are deleted; only the per-epoch count stays.
