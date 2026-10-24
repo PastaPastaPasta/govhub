@@ -107,6 +107,13 @@ const byOutpoint = (x: { collateral_txid: string; collateral_n: number }, y: { c
 export function createApi(b: Bridge): Hono {
   const app = new Hono();
   app.use('*', cors({ origin: '*', allowMethods: ['GET', 'HEAD', 'OPTIONS'], maxAge: 86400 }));
+  // Read-only API. The bridge may be published without a proxy in front (Cloudflare Tunnel), so it refuses
+  // every other method itself instead of relying on Caddy's method filter.
+  app.use('*', async (c, next) => {
+    if (c.req.method === 'GET' || c.req.method === 'HEAD' || c.req.method === 'OPTIONS') return next();
+    c.header('Allow', 'GET, HEAD, OPTIONS');
+    return c.json({ error: 'read-only API' }, 405);
+  });
   app.onError((e, c) => {
     log.error('api error', { path: c.req.path, error: String(e?.stack ?? e) });
     return c.json({ error: 'internal error' }, 500);
