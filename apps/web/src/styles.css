@@ -1127,6 +1127,467 @@ details summary {
   }
 }
 
+/* ---- social: session, discussion, claims ----------------------------------------------------- */
+.btn-s {
+  font-size: 0.8125rem;
+  padding: 0.1875rem 0.5rem;
+}
+.btn-danger {
+  border-color: var(--fail);
+  color: var(--fail);
+}
+.linkish {
+  all: unset;
+  color: var(--accent-ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.linkish:focus-visible {
+  outline: 2px solid var(--accent);
+}
+.notice-warn {
+  border-inline-start: 3px solid var(--warn-fill);
+  padding: 0.375rem 0.625rem;
+  background: color-mix(in srgb, var(--warn-fill) 10%, var(--surface));
+  color: var(--ink);
+}
+.session-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding-inline: 0.375rem;
+}
+.dialog {
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-m);
+  background: var(--surface);
+  color: var(--ink);
+  padding: 0;
+  inline-size: min(34rem, calc(100vw - 2rem));
+  box-shadow: 0 18px 48px rgb(0 0 0 / 0.25);
+}
+.dialog::backdrop {
+  background: rgb(7 19 29 / 0.45);
+}
+.dialog-body {
+  padding: 1.25rem;
+  display: grid;
+  gap: 0.75rem;
+}
+.dialog .form {
+  margin: 0;
+}
+.signin-picks {
+  display: grid;
+  gap: 0.5rem;
+}
+.signin-picks .btn {
+  text-align: start;
+}
+
+.avatar {
+  border-radius: var(--radius-s);
+  flex: none;
+  display: block;
+}
+.avatar-bg {
+  fill: var(--sunk);
+}
+.avatar-wrap {
+  display: inline-flex;
+  flex: none;
+}
+.author {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.375rem;
+  flex-wrap: wrap;
+  min-inline-size: 0;
+}
+.author-name {
+  font-weight: 640;
+  overflow-wrap: anywhere;
+}
+.author-dpns {
+  font-size: 0.8125rem;
+  color: var(--accent-ink);
+}
+.author-id {
+  font-size: 0.75rem;
+  color: var(--ink-3);
+}
+.chip-owner {
+  color: var(--pass);
+  border-radius: var(--radius-s);
+}
+.owner-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  flex-wrap: wrap;
+}
+
+.community-vote {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  flex-wrap: wrap;
+}
+.votes {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
+}
+.vote {
+  all: unset;
+  display: inline-grid;
+  place-items: center;
+  inline-size: 1.625rem;
+  block-size: 1.5rem;
+  border-radius: var(--radius-s);
+  color: var(--ink-3);
+  cursor: pointer;
+}
+.vote svg {
+  fill: currentColor;
+}
+.vote:hover {
+  background: var(--sunk);
+  color: var(--ink);
+}
+.vote:focus-visible {
+  outline: 2px solid var(--accent);
+}
+.vote-up.on {
+  color: var(--pass);
+}
+.vote-down.on {
+  color: var(--fail);
+}
+.vote:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.vote-score {
+  min-inline-size: 1.75rem;
+  text-align: center;
+  font-weight: 650;
+  font-size: 0.875rem;
+}
+
+.discussion {
+  max-inline-size: 60rem;
+}
+.discussion-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.discussion-head h2 {
+  margin: 0;
+}
+.discussion-tools {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.seg {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  padding: 2px;
+  margin: 0;
+  display: inline-flex;
+}
+.seg label {
+  font-size: 0.8125rem;
+  padding: 0.1875rem 0.625rem;
+  border-radius: var(--radius-s);
+  cursor: pointer;
+  color: var(--ink-2);
+}
+.seg label.on {
+  background: var(--sunk);
+  color: var(--ink);
+  font-weight: 600;
+}
+.seg input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.seg label:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+}
+.filter-note {
+  margin-block: 0.5rem 1rem;
+}
+.signin-cta {
+  margin-block: 0.75rem 1.25rem;
+}
+
+.composer {
+  display: grid;
+  gap: 0.375rem;
+  margin-block: 0.5rem 1.25rem;
+}
+.composer textarea,
+.composer-preview {
+  font: inherit;
+  font-size: 0.9375rem;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-s);
+  padding: 0.5rem 0.625rem;
+  inline-size: 100%;
+  min-block-size: 6rem;
+  resize: vertical;
+}
+.composer-tabs {
+  display: flex;
+  gap: 0.25rem;
+}
+.composer-tabs .on {
+  color: var(--ink);
+  box-shadow: inset 0 -2px 0 var(--accent);
+  border-radius: 0;
+}
+.composer-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.thread,
+.replies {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.thread {
+  display: grid;
+  gap: 0.75rem;
+}
+.replies {
+  margin-block-start: 0.5rem;
+  margin-inline-start: 0.875rem;
+  padding-inline-start: 0.875rem;
+  border-inline-start: 2px solid var(--line);
+  display: grid;
+  gap: 0.5rem;
+}
+.replies-flat {
+  margin-inline-start: 0;
+}
+.comment > article {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  padding: 0.625rem 0.875rem;
+}
+.comment-owner > article {
+  border-inline-start: 3px solid var(--pass);
+}
+.comment-hidden > article {
+  border-style: dashed;
+  background: var(--sunk); /* not opacity: that would trap the "Hide…" menu in a stacking context */
+}
+.comment-focus > article {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.comment-placeholder > p {
+  padding: 0.25rem 0.5rem;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-s);
+}
+.comment-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.comment-time {
+  margin-inline-start: auto;
+  font-size: 0.8125rem;
+  color: var(--ink-3);
+  text-decoration: none;
+}
+.comment-time:hover {
+  text-decoration: underline;
+}
+.hidden-note {
+  color: var(--warn);
+  margin-block-start: 0.25rem;
+}
+.comment-body {
+  margin-block: 0.375rem 0.25rem;
+}
+.comment-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  flex-wrap: wrap;
+}
+.menu {
+  position: relative;
+}
+.menu > summary {
+  list-style: none;
+  margin: 0;
+  color: var(--ink-2);
+}
+.menu > summary::-webkit-details-marker {
+  display: none;
+}
+.menu-body {
+  position: absolute;
+  z-index: 5;
+  inset-block-start: calc(100% + 4px);
+  inset-inline-start: 0;
+  inline-size: max-content;
+  max-inline-size: 20rem;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-m);
+  padding: 0.5rem;
+  display: grid;
+  gap: 0.375rem;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.15);
+}
+
+.md {
+  display: grid;
+  gap: 0.5rem;
+  overflow-wrap: anywhere;
+}
+.md p,
+.md ul,
+.md ol,
+.md blockquote {
+  margin: 0;
+}
+.md ul,
+.md ol {
+  padding-inline-start: 1.25rem;
+}
+.md blockquote {
+  border-inline-start: 3px solid var(--line-strong);
+  padding-inline-start: 0.75rem;
+  color: var(--ink-2);
+}
+.md code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  background: var(--sunk);
+  padding: 0.05em 0.3em;
+  border-radius: 2px;
+}
+.md pre code {
+  background: none;
+  padding: 0;
+}
+.md hr {
+  border: 0;
+  border-block-start: 1px solid var(--line);
+  inline-size: 100%;
+}
+.md-h {
+  font-weight: 680;
+}
+.md-h1 {
+  font-size: 1.1875rem;
+}
+.md-h2 {
+  font-size: 1.0625rem;
+}
+.md-badlink {
+  color: var(--ink-2);
+  text-decoration: line-through dotted;
+}
+.md-image {
+  font-size: 0.875rem;
+}
+.md-table {
+  overflow-x: auto;
+}
+.md-table th,
+.md-table td {
+  border: 1px solid var(--line);
+  padding: 0.25rem 0.5rem;
+}
+.al-center {
+  text-align: center;
+}
+.al-right {
+  text-align: end;
+}
+.al-left {
+  text-align: start;
+}
+
+.claim-panel {
+  margin-block-start: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--surface);
+  padding: 0 0.875rem;
+}
+.claim-panel > summary {
+  margin-block: 0.625rem;
+  font-weight: 600;
+}
+.claim-body {
+  display: grid;
+  gap: 0.75rem;
+  padding-block-end: 0.875rem;
+}
+.claim-form {
+  margin: 0;
+}
+.claim-form .check {
+  display: flex;
+  gap: 0.375rem;
+  align-items: baseline;
+  flex-wrap: wrap;
+  font-size: 0.875rem;
+}
+.sign-howto {
+  margin: 0;
+  padding-inline-start: 1.1rem;
+  display: grid;
+  gap: 0.25rem;
+}
+.sign-howto code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+}
+.owner-post {
+  margin-block-start: 2rem;
+  max-inline-size: 60rem;
+  display: grid;
+  gap: 0.75rem;
+}
+.owner-post > h2 {
+  font-size: 1.375rem;
+}
+.post-editor {
+  margin: 0;
+}
+.raw-collapsed > summary {
+  font-size: 1rem;
+}
+.card-comments {
+  color: var(--ink-2);
+  text-decoration: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

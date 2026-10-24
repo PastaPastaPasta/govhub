@@ -3,7 +3,7 @@
 import type { Registry } from '../config/registry.ts';
 import { b64ToHex } from '../lib/bytes.ts';
 import { GOV_SCHEMAS } from './queries.ts';
-import { assertQuery, type DocQuery } from '@govhub/contracts-v1/queryLint';
+import { assertQuery, type ContractSchemas, type DocQuery } from '@govhub/contracts-v1/queryLint';
 import type { Cycle, Proposal, Tally } from './types.ts';
 
 type EvoModule = typeof import('@dashevo/evo-sdk');
@@ -44,12 +44,12 @@ export interface DocsResult {
   height: number | null;
 }
 
-/** documents.queryWithProof with the PV13 lint applied first (a bad shape would silently return []). */
-export async function queryDocs(r: Registry, q: DocQuery): Promise<DocsResult> {
-  assertQuery(GOV_SCHEMAS, q);
+/** documents.queryWithProof against any contract, with the PV13 lint applied first (a bad shape would silently return []). */
+export async function queryContract(r: Registry, contractId: string, schemas: ContractSchemas, q: DocQuery): Promise<DocsResult> {
+  assertQuery(schemas, q);
   const sdk = await getSdk(r);
   const res = await sdk.documents.queryWithProof({
-    dataContractId: r.govContractId,
+    dataContractId: contractId,
     documentTypeName: q.documentTypeName,
     where: q.where as unknown[],
     ...(q.orderBy ? { orderBy: q.orderBy as unknown[] } : {}),
@@ -60,6 +60,9 @@ export async function queryDocs(r: Registry, q: DocQuery): Promise<DocsResult> {
   const h = (res as { metadata?: { height?: unknown } }).metadata?.height;
   return { docs, height: h === undefined || h === null ? null : Number(h) };
 }
+
+/** A gov-contract query. */
+export const queryDocs = (r: Registry, q: DocQuery): Promise<DocsResult> => queryContract(r, r.govContractId, GOV_SCHEMAS, q);
 
 // ---- document JSON -> domain ------------------------------------------------------------------
 const num = (d: Record<string, unknown>, k: string): number => {

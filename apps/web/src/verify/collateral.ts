@@ -2,7 +2,7 @@
 // fields, check the collateral transaction fetched over DAPI, and check that the denormalised
 // fields shown in the UI are the ones committed in dataHex.
 import type { VerifiedTransaction } from '@govhub/dapi';
-import { checkCollateralTx, GOVERNANCE_FEE_CONFIRMATIONS, governanceObjectHash, parseProposalData } from '@govhub/verify';
+import { checkCollateralTx, GOVERNANCE_FEE_CONFIRMATIONS, governanceObjectHash, inputKeyIds, parseProposalData } from '@govhub/verify';
 import { DUFFS_PER_DASH } from '../lib/format.ts';
 import type { Proposal } from '../data/types.ts';
 
@@ -45,6 +45,11 @@ export interface CollateralVerdict {
   steps: Step[];
   govHashComputed?: string;
   chain?: ChainFacts;
+  /**
+   * hash160s of the keys that signed the collateral's inputs (claim method 3). Set only when the transaction's txid
+   * matched the proposal's collateral and it burns to the recomputed gov hash.
+   */
+  inputKeys?: string[];
 }
 
 type ProposalCore = Pick<Proposal, 'govHash' | 'parentHash' | 'revision' | 'time' | 'dataHex' | 'collateralTxid' | 'collateralHeight' | 'name' | 'url' | 'paymentAddress' | 'paymentAmount' | 'startEpoch' | 'endEpoch'>;
@@ -117,9 +122,11 @@ export function verifyCollateral(p: ProposalCore, lookup: TxLookup | { error: st
     );
   }
 
+  let inputKeys: string[] | undefined;
   if (govHashComputed) {
     const raw = governanceObjectHash({ parentHash: p.parentHash, revision: p.revision, time: p.time, dataHex: p.dataHex }).raw;
     const r = checkCollateralTx(lookup.raw, raw, { expectedTxid: p.collateralTxid.toLowerCase() });
+    if (r.valid) inputKeys = inputKeyIds(lookup.raw);
     steps.push(
       r.valid
         ? { id: 'collateral', status: 'ok', label: 'OP_RETURN and outputs', detail: `output ${r.opReturnIndex} burns ${(Number(r.tx!.vout[r.opReturnIndex!]!.value) / DUFFS_PER_DASH).toFixed(8)} DASH to the gov hash; every output is P2PKH or OP_RETURN; txid matches` }
@@ -167,5 +174,5 @@ export function verifyCollateral(p: ProposalCore, lookup: TxLookup | { error: st
   const critical: Step['id'][] = ['hash', 'fields', 'tx', 'collateral', 'confirmations'];
   const ok = steps.filter((s) => critical.includes(s.id)).every((s) => s.status === 'ok') && !steps.some((s) => s.status === 'fail');
   const chain: ChainFacts = { height: lookup.height, merkle: proof.merkle, chainLocked: lookup.chainLocked, provenConfirmations: proven, lockDepth: anchored && cl ? cl.verifiedConfirmations : null, confirmations: lookup.confirmations };
-  return { ok, steps, chain, ...(govHashComputed ? { govHashComputed } : {}) };
+  return { ok, steps, chain, ...(govHashComputed ? { govHashComputed } : {}), ...(inputKeys ? { inputKeys } : {}) };
 }

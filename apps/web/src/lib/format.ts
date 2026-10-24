@@ -68,6 +68,19 @@ export function formatDateTime(unixS: number, locale = 'en-US', timeZone?: strin
   }).format(unixS * 1000);
 }
 
+/** 1 duff = 1,000 Platform credits. */
+export const CREDITS_PER_DUFF = 1000;
+
+/** Platform credits as DASH. `approx` rounds to two significant digits for fee estimates ("about 0.00056 DASH"). */
+export function formatCredits(credits: number | bigint, approx = false, locale = 'en-US'): string {
+  const duffs = Number(credits) / CREDITS_PER_DUFF;
+  if (!approx || duffs === 0) return formatDash(Math.round(duffs), locale);
+  return `${nf(locale, 0, 8).format(Number((duffs / DUFFS_PER_DASH).toPrecision(2)))} DASH`;
+}
+
+/** "3 hours ago" for a Platform millisecond timestamp. */
+export const formatAgoMs = (ms: number, nowS: number): string => (Math.abs(ms / 1000 - nowS) < 90 ? 'just now' : formatRelative(Math.floor(ms / 1000), nowS));
+
 /** Hostname of a proposal URL for display, or null when it is not an http(s) URL. */
 export function urlHost(url: string): string | null {
   try {

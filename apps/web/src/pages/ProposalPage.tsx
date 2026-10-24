@@ -3,6 +3,12 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { parseProposalData } from '@govhub/verify';
 import { useApp } from '../app/context.tsx';
+import { useForum } from '../app/forum.tsx';
+import { Discussion } from '../ui/Discussion.tsx';
+import { ClaimPanel, OwnerPost, OwnerValue, ownerProvenance, useOwnership, useOwnerPost } from '../ui/Ownership.tsx';
+import { openSignIn } from '../ui/SignIn.tsx';
+import { useReactions } from '../ui/useReactions.ts';
+import { Votes } from '../ui/Votes.tsx';
 import type { Proposal, Provenance, Sourced } from '../data/types.ts';
 import { formatDash, formatDate, formatDateTime, formatInt, formatRelative, formatSigned, shortHash, urlHost } from '../lib/format.ts';
 import { votingDeadlineTime } from '../lib/governance.ts';
@@ -109,8 +115,41 @@ function chainStatus(c: ChainFacts): { text: string; prov: Provenance } {
   };
 }
 
+function RawData({ json, dataHex, bytes }: { json: string; dataHex: string; bytes: number }) {
+  return (
+    <>
+      <p className="muted small">
+        Exactly what the governance hash commits to ({formatInt(bytes)} bytes). The URL is the owner's own page; govhub does not host or check its content.
+      </p>
+      <pre className="code">{json}</pre>
+      <details>
+        <summary>dataHex</summary>
+        <pre className="code break">{dataHex}</pre>
+      </details>
+    </>
+  );
+}
+
+/** Community up/down vote on the proposal (`reaction` kind 2): not a Core governance vote. */
+function CommunityVote({ govHash }: { govHash: string }) {
+  const { session } = useForum();
+  const targets = useMemo(() => [{ govHash }], [govHash]);
+  const { scores, vote, error } = useReactions(targets);
+  const s = scores.get(govHash) ?? { up: 0, down: 0, net: 0 };
+  return (
+    <div className="community-vote" data-testid="community-vote">
+      <span className="small muted">Community vote</span>
+      <Votes score={s} signedIn={!!session} label="Community vote on this proposal" onVote={(v) => (session ? vote({ govHash }, v) : (openSignIn(), Promise.resolve()))} />
+      <span className="small muted">
+        {s.up} up, {s.down} down. Anyone with an identity can vote; masternode funding votes are the tally above.
+      </span>
+      {error && <span className="error small">{error}</span>}
+    </div>
+  );
+}
+
 function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
-  const { source, gov, params } = useApp();
+  const { source, gov, params, mode } = useApp();
   const p = sp.value;
   const now = source.now();
   const tallies = useAsync(() => source.tallies([p.govHash]), [source, p.govHash]);
@@ -127,6 +166,11 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
     }
   }, [parsed.text]);
 
+  const own = useOwnership(p, collateral.verdict);
+  const ownerId = own.verdict?.owner?.identityId ?? null;
+  const post = useOwnerPost(p.govHash, ownerId);
+  // The owner's description replaces the raw fields once it exists (they stay one click away).
+  const postShown = !!post.state?.post && post.state.body !== null;
   const contentProv = contentProvenance(p, sp.prov, collateral.verdict);
   // The shown tally is one of the two published ones; a recount of the votes can upgrade or downgrade its provenance.
   const shownName = row.tally === row.bridgeTally ? BRIDGE_TARGET : PLATFORM_TARGET;
@@ -170,6 +214,7 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
           )}
         </p>
         {row.state && row.absYes !== null && row.threshold && <PassingBar absYes={row.absYes} threshold={row.threshold.value} state={row.state} />}
+        <CommunityVote govHash={p.govHash} />
       </header>
 
       <div className="proposal-body">
@@ -234,8 +279,8 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
                 Platform as of block {formatInt(row.platformTally.value.asOfHeight)}, bridge live as of block {formatInt(row.bridgeTally.value.asOfHeight)}; showing the newer one
               </Item>
             )}
-            <Item label="Owner" prov={contentProv}>
-              Not claimed yet. Pays to <span className="mono-ish break">{p.paymentAddress}</span>
+            <Item label="Owner" prov={ownerProvenance(own.verdict?.owner ?? null, mode === 'fixtures') ?? contentProv}>
+              <OwnerValue p={p} own={own} />
             </Item>
             <Item label="Collateral" prov={contentProv}>
               <span className="mono-ish break">{p.collateralTxid}</span> <span className="muted">at block {formatInt(p.collateralHeight)}</span>
@@ -257,27 +302,27 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
               </Item>
             )}
           </dl>
+          <ClaimPanel p={p} own={own} collateral={collateral.verdict} />
         </section>
 
         <VerificationPanel proposal={p} collateral={collateral} targets={targets} onVotes={setVotes} />
       </div>
 
-      <section aria-labelledby="raw-title" className="raw">
-        <h2 id="raw-title">Raw proposal data</h2>
-        <p className="muted small">
-          Exactly what the governance hash commits to ({formatInt(parsed.dataBytes)} bytes). The URL is the owner's own page; govhub does not host or check its content.
-        </p>
-        <pre className="code">{json}</pre>
-        <details>
-          <summary>dataHex</summary>
-          <pre className="code break">{p.dataHex}</pre>
-        </details>
-      </section>
+      {ownerId && <OwnerPost govHash={p.govHash} ownerId={ownerId} post={post} />}
 
-      <section aria-labelledby="discussion-title" className="discussion">
-        <h2 id="discussion-title">Discussion</h2>
-        <p className="muted">Comments are stored on Dash Platform and arrive in the next phase. Until then, the proposal's own page is linked above.</p>
-      </section>
+      {postShown ? (
+        <details className="raw raw-collapsed">
+          <summary>Raw proposal data (what the governance hash commits to)</summary>
+          <RawData json={json} dataHex={p.dataHex} bytes={parsed.dataBytes} />
+        </details>
+      ) : (
+        <section aria-labelledby="raw-title" className="raw">
+          <h2 id="raw-title">Raw proposal data</h2>
+          <RawData json={json} dataHex={p.dataHex} bytes={parsed.dataBytes} />
+        </section>
+      )}
+
+      <Discussion govHash={p.govHash} owner={ownerId} />
     </article>
   );
 }
