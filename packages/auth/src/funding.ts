@@ -134,8 +134,15 @@ export class FundingError extends Error {
 
 const sleep = (ms: number, signal?: AbortSignal) =>
   new Promise<void>((res, rej) => {
+    if (signal?.aborted) return rej(signal.reason);
     const t = setTimeout(res, ms);
     signal?.addEventListener('abort', () => (clearTimeout(t), rej(signal.reason)), { once: true });
+  });
+/** Rejects when `signal` aborts (also when it already has). */
+const aborted = (signal?: AbortSignal) =>
+  new Promise<never>((_, rej) => {
+    if (signal?.aborted) return rej(signal.reason);
+    signal?.addEventListener('abort', () => rej(signal.reason), { once: true });
   });
 
 const outpointBytes = (txid: string, vout: number) => concatBytes(reversed(hexToBytes(txid)), u32le(vout));
@@ -263,7 +270,7 @@ export async function runFunding(o: FundingOptions): Promise<{ identityId: strin
       watchers.push(w);
       update(); // the address may be shown now: the subscription is live
       check();
-      await Promise.race([funded, new Promise((_, rej) => signal?.addEventListener('abort', () => rej(signal.reason), { once: true }))]);
+      await Promise.race([funded, aborted(signal)]);
       // A wallet may split a payment across txs that arrive together: give the streams a moment before locking.
       await sleep(1500, signal);
       w.cancel();
@@ -281,8 +288,10 @@ export async function runFunding(o: FundingOptions): Promise<{ identityId: strin
     }
     const lock = rec.lock;
     if (rec.state === 'locking' || rec.state === 'locked') {
-      // Watch the lock's txid and inputs on several nodes BEFORE broadcasting: its IS-lock arrives within seconds and only once.
-      if (!rec.isLock) {
+      // A lock already mined (a resume) is not re-sent, and its IS-lock is gone for good (never replayed): straight to the chain proof.
+      const mined = rec.state === 'locked' && !rec.isLock ? await minedHeight(dapi, lock.txid, signal).catch(() => 0) : 0;
+      // Otherwise watch the lock's txid and inputs on several nodes BEFORE broadcasting: its IS-lock arrives within seconds, once.
+      if (!rec.isLock && !mined) {
         const f = new BloomFilter(2 + rec.deposits.length).insert(h160).insert(reversed(hexToBytes(lock.txid)));
         for (const d of rec.deposits) f.insert(outpointBytes(d.txid, d.vout));
         const lw = await dapi.watchTransactions(
@@ -302,14 +311,14 @@ export async function runFunding(o: FundingOptions): Promise<{ identityId: strin
         );
         watchers.push(lw);
       }
-      if (rec.state === 'locking' || !(await minedHeight(dapi, lock.txid, signal).catch(() => 0))) {
+      if (!mined) {
         // Re-sending the same bytes is harmless; nodes answering "already known" count as success.
         await dapi.broadcastTransaction(hexToBytes(lock.raw), { signal });
         rec.broadcastAt ??= Date.now();
       }
       rec.state = 'locked';
       update('asset lock broadcast');
-      const deadline = Date.now() + (o.isLockWaitMs ?? 60_000);
+      const deadline = mined ? 0 : Date.now() + (o.isLockWaitMs ?? 60_000);
       while (!rec.isLock && Date.now() < deadline) await sleep(250, signal);
       for (const w of watchers.splice(0)) w.cancel();
       rec.state = 'registering';
