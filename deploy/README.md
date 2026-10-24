@@ -546,14 +546,26 @@ docker compose up -d
 docker compose up -d --no-deps cloudflared        # only cloudflared is recreated
 ```
 
-Then add the hostname to the tunnel, in the Cloudflare dashboard or with `scripts/cloudflare-tunnel.sh --reuse`
-and **every** route: `gov-bridge-testnet.example.org -> http://govhub-testnet-bridge:8787`. Check from
-cloudflared's network namespace (its image has no shell or wget):
+Then add the hostname to the tunnel. `--reuse` **replaces the whole ingress list** of the tunnel, so give it every
+route, and run it from the host (mainnet) checkout:
+
+```sh
+scripts/cloudflare-tunnel.sh --account <id> --zone example.org --name govhub --reuse \
+  --route gov-bridge.example.org=http://bridge:8787 \
+  --route gov-bridge-testnet.example.org=http://govhub-testnet-bridge:8787
+```
+
+> **Warning:** a route you leave out is deleted from the tunnel, and the hostname stops answering. The Cloudflare
+> dashboard (as the reference deployment uses) is an alternative: add the one public hostname
+> `gov-bridge-testnet.example.org -> http://govhub-testnet-bridge:8787` there and nothing else changes.
+
+Check from cloudflared's network namespace (its image has no shell or wget). The two bridges are told apart by the
+`network` field of `/v1/status`:
 
 ```sh
 N="--network container:govhub-cloudflared-1"
-docker run --rm $N busybox wget -q -O- http://govhub-testnet-bridge:8787/v1/status | grep -o 'Dash Core:[0-9.]*'   # 24.x
-docker run --rm $N busybox wget -q -O- http://bridge:8787/v1/status | grep -o 'Dash Core:[0-9.]*'                  # still the host's
+docker run --rm $N busybox wget -q -O- http://govhub-testnet-bridge:8787/v1/status | grep -o '"network":"[a-z]*"'   # "testnet"
+docker run --rm $N busybox wget -q -O- http://bridge:8787/v1/status | grep -o '"network":"[a-z]*"'                  # "mainnet", still the host's
 ```
 
 While cloudflared is attached, the guest's `docker compose down` cannot remove `<project>_tunnel` (the
