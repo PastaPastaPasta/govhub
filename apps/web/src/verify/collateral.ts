@@ -24,6 +24,8 @@ export interface Step {
   label: string;
   detail: string;
   basis?: StepBasis;
+  /** Technical detail for "how this was checked" (node notes, parameters). */
+  more?: string;
 }
 
 /** What the chain lookup established, for the provenance of the collateral line. */
@@ -38,6 +40,8 @@ export interface ChainFacts {
   lockDepth: number | null;
   /** The node's claim. */
   confirmations: number;
+  /** The block is in the chain this browser verified (headers from the checkpoint); `confirmations` below is then counted from its tip. */
+  anchored?: { tip: number; confirmations: number; chainLockHeight: number; final: boolean };
 }
 
 export interface CollateralVerdict {
@@ -52,6 +56,8 @@ export interface CollateralVerdict {
   inputKeys?: string[];
   /** The transaction could not be fetched for reasons that say nothing about the proposal (nodes unreachable, timeouts). */
   inconclusive?: boolean;
+  /** Why the verified chain could not be built (the old per-transaction proof was used instead). */
+  anchorError?: string;
 }
 
 /** A failed lookup: `notFound` when several distinct DAPI nodes answered NOT_FOUND (the collateral is not on this chain). */
@@ -121,21 +127,23 @@ export function verifyCollateral(p: ProposalCore, lookup: TxLookup | LookupError
   const { proof } = lookup;
   const num = (n: number) => n.toLocaleString('en-US');
   steps.push({ id: 'tx', status: 'ok', label: 'Collateral transaction', detail: `${lookup.raw.length} bytes from DAPI node ${lookup.node}` });
-  // A merkle proof only shows the transaction is in the block a node named; nothing checks proof-of-work, so a node could invent a
-  // block. Only a BLS-valid ChainLock covering that block ties it to the chain ("anchored"); until then the block and the second
-  // node's opinion are what we have.
-  const anchored = lookup.chainLocked === 'verified' && proof.chainLock !== null;
+  // A merkle proof only shows the transaction is in the block a node named. "anchored": that block is the one at its height in the chain
+  // this browser verified from the checkpoint (work and difficulty checked). "locked": a BLS-valid ChainLock covers it (final).
+  const anc = proof.anchor;
+  const cl = proof.chainLock;
+  const locked = lookup.chainLocked === 'verified' && cl !== null;
+  const proven = !!anc || locked;
   if (proof.merkle) {
     const checks = `the whole block was fetched, its merkle root recomputed from every txid and the coinbase height matches${proof.blockHash === 'verified' ? '; the header hashes (X11) to the block hash' : ''}`;
-    steps.push({
-      id: 'block',
-      status: 'ok',
-      basis: anchored ? 'verified' : 'reported',
-      label: 'Block inclusion',
-      detail: anchored ? `in block ${num(lookup.height)}: ${checks}` : `in block ${num(lookup.height)} as a node names it: ${checks}. Without a verified ChainLock nothing ties that block to the chain`,
-    });
+    steps.push(
+      anc
+        ? { id: 'block', status: 'ok', basis: 'verified', label: 'Block inclusion', detail: `in block ${num(lookup.height)} of the chain verified in this browser`, more: `${checks}; its hash is the verified hash at that height` }
+        : locked
+          ? { id: 'block', status: 'ok', basis: 'verified', label: 'Block inclusion', detail: `in block ${num(lookup.height)}, which a verified ChainLock covers`, more: checks }
+          : { id: 'block', status: 'ok', basis: 'reported', label: 'Block inclusion', detail: `in block ${num(lookup.height)} as a node names it; nothing ties that block to the chain`, more: checks },
+    );
   }
-  if (!anchored) {
+  if (!proven) {
     const sec = lookup.second;
     steps.push(
       !sec
@@ -161,43 +169,57 @@ export function verifyCollateral(p: ProposalCore, lookup: TxLookup | LookupError
     steps.push({ id: 'collateral', status: 'skip', label: 'OP_RETURN and outputs', detail: 'skipped: no hash to look for' });
   }
 
-  // A ChainLock proof gives a floor for the confirmations; without it the number is the node's claim.
-  const cl = proof.chainLock;
-  const proven = anchored && cl && cl.verifiedConfirmations >= GOVERNANCE_FEE_CONFIRMATIONS ? cl.verifiedConfirmations : null;
-  if (proven !== null) {
-    steps.push({ id: 'confirmations', status: 'ok', basis: 'verified', label: 'Confirmations', detail: `at least ${num(proven)} (Core needs ${GOVERNANCE_FEE_CONFIRMATIONS}), proven by the ChainLock; the node claims ${num(lookup.confirmations)}` });
+  // Confirmations: from the verified tip when anchored (a lower bound: a node can withhold newer blocks, not invent them), else the
+  // ChainLock's depth, else the node's word.
+  const provenConf = anc ? anc.confirmations : locked && cl ? cl.verifiedConfirmations : null;
+  if (provenConf !== null && provenConf >= GOVERNANCE_FEE_CONFIRMATIONS) {
+    steps.push({
+      id: 'confirmations', status: 'ok', basis: 'verified', label: 'Confirmations',
+      detail: `${anc ? '' : 'at least '}${num(provenConf)} (Core needs ${GOVERNANCE_FEE_CONFIRMATIONS})`,
+      more: anc ? `verified tip ${num(anc.tip)} - block ${num(lookup.height)} + 1; the node claims ${num(lookup.confirmations)}` : `headers from the block up to the verified ChainLock; the node claims ${num(lookup.confirmations)}`,
+    });
   } else {
+    // A proven count below 6 is only a lower bound (newer blocks may be withheld): the node's number stands, labelled as such.
     const confOk = lookup.confirmations >= GOVERNANCE_FEE_CONFIRMATIONS;
-    steps.push({ id: 'confirmations', status: confOk ? 'ok' : 'fail', basis: 'reported', label: 'Confirmations', detail: `${num(lookup.confirmations)} (Core needs ${GOVERNANCE_FEE_CONFIRMATIONS}), node-reported` });
+    steps.push({
+      id: 'confirmations', status: confOk ? 'ok' : 'fail', basis: 'reported', label: 'Confirmations', detail: `${num(lookup.confirmations)} (Core needs ${GOVERNANCE_FEE_CONFIRMATIONS}), node-reported`,
+      ...(provenConf !== null ? { more: `only ${num(provenConf)} proven so far` } : {}),
+    });
   }
-  const why = proof.notes.length ? ` (${proof.notes.join('; ')})` : '';
+  const notes = proof.notes.length ? proof.notes.join('; ') : undefined;
   // "proof failed" (as opposed to "block too old" or "no verifier") means the machinery ran and something did not check out.
   const proofFailed = proof.notes.some((n) => /chainlock proof failed/i.test(n));
+  const quorum = (c: NonNullable<typeof cl>) => (c.exact ? 'signed by the quorum Core selects' : "signed by a quorum of the proven masternode list (Core's exact choice could not be reproduced)");
   steps.push(
-    anchored && cl
+    locked && cl
       ? {
-          id: 'chainlock',
-          status: 'ok',
-          basis: 'verified',
-          label: 'ChainLock',
-          detail: `BLS-valid ChainLock on block ${num(cl.height)} covers the block through a header chain of ${num(cl.verifiedConfirmations)} X11-checked headers; ${cl.exact ? 'signed by the quorum Core selects' : 'signed by a quorum from the masternode list (Core\'s exact choice could not be reproduced)'}`,
+          id: 'chainlock', status: 'ok', basis: 'verified', label: 'ChainLock',
+          detail: `final: covered by the BLS-verified ChainLock on block ${num(cl.height)}`,
+          more: `${quorum(cl)}; ${num(cl.verifiedConfirmations)} verified headers from the block to the locked one`,
         }
-      : lookup.chainLocked === 'claimed'
-        ? { id: 'chainlock', status: proofFailed ? 'warn' : 'ok', basis: 'reported', label: 'ChainLock', detail: `block is ChainLocked (node-reported; ${proofFailed ? 'the signature proof FAILED' : 'the signature was not verified'}${why})` }
-        : { id: 'chainlock', status: 'warn', basis: 'reported', label: 'ChainLock', detail: `node reports no ChainLock yet${why}` },
+      : anc
+        ? { id: 'chainlock', status: 'warn', basis: 'verified', label: 'ChainLock', detail: `not final yet: the block is newer than the newest verified ChainLock (block ${num(anc.chainLockHeight)})`, ...(notes ? { more: notes } : {}) }
+        : lookup.chainLocked === 'claimed'
+          ? { id: 'chainlock', status: proofFailed ? 'warn' : 'ok', basis: 'reported', label: 'ChainLock', detail: `a node reports it ChainLocked; ${proofFailed ? 'checking the signature FAILED' : 'the signature was not checked'}`, ...(notes ? { more: notes } : {}) }
+          : { id: 'chainlock', status: 'warn', basis: 'reported', label: 'ChainLock', detail: 'a node reports no ChainLock yet', ...(notes ? { more: notes } : {}) },
   );
   if (p.collateralHeight) {
     const same = lookup.height === p.collateralHeight;
     steps.push({
       id: 'height',
       status: same ? 'ok' : 'warn',
-      basis: anchored ? 'verified' : 'reported',
+      basis: proven ? 'verified' : 'reported',
       label: 'Collateral height',
-      detail: same ? `block ${num(lookup.height)}${anchored ? ' (committed in the block\'s coinbase, which a ChainLock covers)' : ''}` : `chain says ${num(lookup.height)}, published ${num(p.collateralHeight)}`,
+      detail: same ? `block ${num(lookup.height)}${proven ? ' (the coinbase of the verified block commits to it)' : ''}` : `chain says ${num(lookup.height)}, published ${num(p.collateralHeight)}`,
     });
   }
   const critical: Step['id'][] = ['hash', 'fields', 'tx', 'collateral', 'confirmations'];
   const ok = steps.filter((s) => critical.includes(s.id)).every((s) => s.status === 'ok') && !steps.some((s) => s.status === 'fail');
-  const chain: ChainFacts = { height: lookup.height, merkle: proof.merkle, chainLocked: lookup.chainLocked, provenConfirmations: proven, lockDepth: anchored && cl ? cl.verifiedConfirmations : null, confirmations: lookup.confirmations };
+  const chain: ChainFacts = {
+    height: lookup.height, merkle: proof.merkle, chainLocked: lookup.chainLocked, confirmations: lookup.confirmations,
+    provenConfirmations: provenConf !== null && provenConf >= GOVERNANCE_FEE_CONFIRMATIONS ? provenConf : null,
+    lockDepth: locked && cl ? cl.verifiedConfirmations : null,
+    ...(anc ? { anchored: { tip: anc.tip, confirmations: anc.confirmations, chainLockHeight: anc.chainLockHeight, final: locked } } : {}),
+  };
   return { ok, steps, chain, ...(govHashComputed ? { govHashComputed } : {}), ...(ok && inputKeys ? { inputKeys } : {}) };
 }

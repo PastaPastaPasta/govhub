@@ -2,10 +2,10 @@
 // weighted tally and voteSetHash, and compare with each published tally (Platform doc, bridge).
 //
 // Trust: signatures prove "the holder of voting key K signed this". Which key belongs to which
-// collateral outpoint comes from the bridge's MN list. The DAPI SML cross-check confirms key, type
-// and validity per proTxHash, but the SML has no collateral outpoint, so the outpoint -> proTxHash
-// mapping stays bridge-reported unless the collateral is inside the ProRegTx itself
-// (collateralTxid == proTxHash). `keysFrom` tells the UI how far the result can be trusted.
+// collateral outpoint comes from the bridge's MN list. The proven SML (anchored to the verified chain)
+// confirms key and validity per proTxHash, and its type from entry version 2; each voter's ProRegTx
+// (hash-checked) proves its collateral outpoint and type. With both, every counted vote's weight and key
+// rest on the chain, not on the bridge. `keysFrom` tells the UI how far the result can be trusted.
 import { countVotes, decodeAddress, normalizeMnId, verifyVoteSignature, EVONODE_WEIGHT, REGULAR_MN_WEIGHT, VOTE_SIGNAL, type Network, type TallyVote } from '@govhub/verify';
 import type { BridgeMasternode, BridgeVote } from '../data/bridge.ts';
 import type { Tally } from '../data/types.ts';
@@ -16,6 +16,14 @@ export interface SmlEntry {
   isValid: boolean;
   /** 0 regular, 1 evonode */
   nType: number;
+  /** The list's merkle root covers nType (entry version >= 2). */
+  typeProven: boolean;
+}
+
+/** A masternode's registration as its ProRegTx proves it (@govhub/dapi ProRegInfo). */
+export interface ProReg {
+  type: number;
+  collateral: { txid: string; index: number };
 }
 
 export interface VoteTarget {
@@ -35,6 +43,8 @@ export interface VoteCheckInput {
   targets: VoteTarget[];
   /** proTxHash -> SML entry, when the SML cross-check ran. */
   sml?: ReadonlyMap<string, SmlEntry> | null;
+  /** proTxHash -> ProRegTx facts: proves the outpoint -> proTxHash mapping and the type. */
+  proReg?: ReadonlyMap<string, ProReg> | null;
 }
 
 export type VoteProblem = 'bad-signature' | 'unknown-masternode' | 'duplicate-masternode' | 'sml-mismatch';
@@ -70,8 +80,8 @@ export interface VoteCheckResult {
   smlChecked: number;
   /** Counted votes whose masternode is missing from, or differs in, the DAPI list (left or re-keyed since, or a lying bridge). */
   smlUnconfirmed: number;
-  /** Counted MNs whose outpoint -> proTxHash binding is checkable without a ProRegTx fetch. */
-  internalCollateral: number;
+  /** Counted votes whose outpoint -> proTxHash binding (and type) the masternode's ProRegTx proved. */
+  collateralProven: number;
   targets: TargetResult[];
 }
 
@@ -140,7 +150,7 @@ export function verifyVotes(input: VoteCheckInput): VoteCheckResult {
   let smlChecked = 0;
   let smlUnconfirmed = 0;
   let otherSignal = 0;
-  let internalCollateral = 0;
+  let collateralProven = 0;
   for (const v of input.votes) {
     const outpoint = normalizeMnId(`${v.collateralTxid}-${v.collateralIndex}`);
     if (v.signal !== VOTE_SIGNAL.FUNDING) {
@@ -170,13 +180,24 @@ export function verifyVotes(input: VoteCheckInput): VoteCheckResult {
       if (!e) {
         smlUnconfirmed++;
         note(outpoint, 'sml-mismatch', `proTxHash ${mn.proTxHash.slice(0, 12)}… not in the DAPI masternode list`);
-      } else if (e.votingAddress !== mn.votingAddress || (e.nType === 1) !== (mn.type === 'evo')) {
+      } else if (e.votingAddress !== mn.votingAddress || (e.typeProven && (e.nType === 1) !== (mn.type === 'evo'))) {
         smlUnconfirmed++;
-        note(outpoint, 'sml-mismatch', 'voting address or type differs from the DAPI masternode list');
+        note(outpoint, 'sml-mismatch', 'voting address or type differs from the proven masternode list');
+      } else if (input.proReg) {
+        const reg = input.proReg.get(mn.proTxHash.toLowerCase());
+        if (!reg) {
+          smlUnconfirmed++;
+          note(outpoint, 'sml-mismatch', 'registration (ProRegTx) could not be checked');
+        } else if (normalizeMnId(`${reg.collateral.txid}-${reg.collateral.index}`) !== outpoint || (reg.type === 1) !== (mn.type === 'evo')) {
+          smlUnconfirmed++;
+          note(outpoint, 'sml-mismatch', "collateral or type differs from the masternode's ProRegTx");
+        } else collateralProven++;
+      } else if (!e.typeProven) {
+        smlUnconfirmed++;
+        note(outpoint, 'sml-mismatch', 'type not covered by the list (older entry) and no ProRegTx checked');
       }
     }
     good.push({ mn: outpoint, outcome: v.outcome, time: v.time });
-    if (mn.collateralTxid.toLowerCase() === mn.proTxHash.toLowerCase()) internalCollateral++;
   }
 
   // The same counting function the bridge publishes its tally with (@govhub/verify countVotes).
@@ -192,10 +213,11 @@ export function verifyVotes(input: VoteCheckInput): VoteCheckResult {
     weighted: t.weighted,
     unweighted: t.unweighted,
     voteSetHash: hash,
-    keysFrom: input.sml && smlUnconfirmed === 0 ? 'sml' : 'bridge',
+    // Keys, types and collateral all proven: the proven list for keys, the ProRegTxs for collateral and type.
+    keysFrom: input.sml && input.proReg && smlUnconfirmed === 0 ? 'sml' : 'bridge',
     smlChecked,
     smlUnconfirmed,
-    internalCollateral,
+    collateralProven,
     targets: input.targets.map((target) => {
       const compare = compareWith(target.tally, t.weighted, t.unweighted, hash);
       return { name: target.name, asOfHeight: target.tally.asOfHeight, compare, matches: compare.every((c) => c.ok) };

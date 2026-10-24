@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type DependencyList } from 'react';
 import { useApp, type Load } from '../app/context.tsx';
 import type { Proposal } from '../data/types.ts';
+import type { ChainReport } from '../verify/chain.ts';
 import { runVerification } from '../verify/client.ts';
 import type { CollateralVerdict } from '../verify/collateral.ts';
 
@@ -72,3 +73,33 @@ export function useCollateralCheck(p: Proposal | undefined) {
 }
 
 export type CollateralCheck = ReturnType<typeof useCollateralCheck>;
+
+/**
+ * Chain facts for the proposal page (threshold, superblock schedule and budget, payments), once the collateral check has placed the
+ * collateral in the verified chain. Live DAPI only: recorded data has no header chain.
+ */
+export function useChainReport(p: Proposal | undefined, verdict: CollateralVerdict | null) {
+  const { source } = useApp();
+  const [report, setReport] = useState<ChainReport | null>(null);
+  const [progress, setProgress] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const from = verdict?.chain?.anchored ? verdict.chain.height : null;
+  const live = source.dapiDescriptor().kind === 'live';
+  useEffect(() => {
+    if (!p || !live || from === null) return;
+    let on = true;
+    setReport(null);
+    setError(null);
+    runVerification({ kind: 'chain', proposal: p, from, dapi: source.dapiDescriptor(), network: source.coreNetwork, now: source.now() }, (m) => on && setProgress(m)).then(
+      (r) => on && setReport(r.report),
+      (e: Error) => on && setError(e.message),
+    );
+    return () => {
+      on = false;
+    };
+  }, [p, source, from, live]);
+  const unavailable = !live ? 'needs live DAPI nodes (recorded data has no header chain)' : verdict && from === null ? (verdict.anchorError ?? 'the collateral could not be placed in the verified chain') : null;
+  return { report, progress, error, unavailable };
+}
+
+export type ChainCheck = ReturnType<typeof useChainReport>;

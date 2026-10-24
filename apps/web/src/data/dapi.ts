@@ -1,6 +1,6 @@
 // Core data over DAPI, through @govhub/dapi: node pool with failover (nodes from the user's quorum-service URL or a
 // static list), the collateral transaction with its proof, and the agreed masternode list.
-import { AllNodesFailedError, createDapi, VerificationError, type Dapi, type DapiOptions, type VerifiedTransaction } from '@govhub/dapi';
+import { AllNodesFailedError, createDapi, VerificationError, type AnchoredChain, type Dapi, type DapiOptions, type VerifiedTransaction } from '@govhub/dapi';
 import type { Registry } from '../config/registry.ts';
 import type { CoreNetwork } from './types.ts';
 import type { TxLookup } from '../verify/collateral.ts';
@@ -42,7 +42,7 @@ async function claimedTransaction(dapi: Dapi, txid: string, note: string): Promi
     confirmations: c.confirmations,
     chainLocked: c.isChainLocked ? 'claimed' : 'no',
     instantLocked: c.isInstantLocked ? 'claimed' : 'no',
-    proof: { merkle: false, blockHash: 'claimed', chainLock: null, notes: [note] },
+    proof: { merkle: false, blockHash: 'claimed', chainLock: null, anchor: null, notes: [note] },
     node,
   };
 }
@@ -67,11 +67,11 @@ async function secondOpinion(dapi: Dapi, txid: string, first: TxLookup): Promise
  * proof machinery fails for transport reasons (nodes unreachable, timeouts), the node's claim is used and the reason is recorded in
  * `proof.notes`; if a node's answer was inconsistent, the lookup fails instead of quietly asking the next (possibly same) node.
  */
-export async function lookupCollateral(dapi: Dapi, txid: string, o: { verify: boolean; onProgress?: (message: string) => void }): Promise<TxLookup> {
+export async function lookupCollateral(dapi: Dapi, txid: string, o: { verify: boolean; anchor?: AnchoredChain; onProgress?: (message: string) => void }): Promise<TxLookup> {
   let lookup: TxLookup;
   if (o.verify) {
     try {
-      const v: VerifiedTransaction = await dapi.getVerifiedTransaction(txid);
+      const v: VerifiedTransaction = await dapi.getVerifiedTransaction(txid, o.anchor ? { anchor: o.anchor } : {});
       lookup = { raw: v.raw, height: v.height, confirmations: v.confirmations, chainLocked: v.chainLocked, instantLocked: v.instantLocked, proof: v.proof, node: v.node };
     } catch (e) {
       if (isAbort(e) || isLie(e)) throw e;
@@ -81,8 +81,8 @@ export async function lookupCollateral(dapi: Dapi, txid: string, o: { verify: bo
   } else {
     lookup = await claimedTransaction(dapi, txid, 'node answer, block proof not requested');
   }
-  // A merkle proof does not tie the block to the chain (no proof-of-work check); only a verified ChainLock does. Otherwise a second node weighs in.
-  if (lookup.chainLocked !== 'verified') {
+  // A merkle proof alone does not tie the block to the chain; the verified chain or a verified ChainLock does. Otherwise a second node weighs in.
+  if (lookup.chainLocked !== 'verified' && !lookup.proof.anchor) {
     o.onProgress?.('Asking a second node for the same transaction');
     lookup.second = await secondOpinion(dapi, txid, lookup);
   }

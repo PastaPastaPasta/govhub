@@ -1,0 +1,39 @@
+{
+  "ranAt": "2026-10-24T19:14:02.593Z",
+  "cold": {
+    "proposal": "DCG-Operations-Aug-Nov-26",
+    "collateralCheckMs": 14069,
+    "chainFactsMs": 24484,
+    "anchor": {
+      "cache": 2,
+      "smlFetch": 5269,
+      "headers": 11069,
+      "smlProof": 66,
+      "sml": 74,
+      "chainlock": 491,
+      "total": 11644
+    },
+    "headers": {
+      "cached": 0,
+      "fetched": 44945
+    }
+  },
+  "warm": {
+    "proposal": "dash-growth-q4-2026",
+    "collateralCheckMs": 5390,
+    "chainFactsMs": 6190,
+    "anchor": {
+      "cache": 2,
+      "headers": 674,
+      "smlFetch": 2633,
+      "smlProof": 68,
+      "sml": 2978,
+      "chainlock": 325,
+      "total": 3984
+    },
+    "headers": {
+      "cached": 44945,
+      "fetched": 0
+    }
+  }
+}

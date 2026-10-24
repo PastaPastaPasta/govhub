@@ -1,20 +1,24 @@
 /// <reference lib="webworker" />
-// Verification worker: all hashing, signature recovery, DAPI fetches, the ChainLock proof and the SML
-// download run here so the page stays responsive.
-import { AllNodesFailedError, createDapi, GrpcError, type Dapi } from '@govhub/dapi';
+// Verification worker: all hashing, signature recovery, DAPI fetches, the anchored chain (headers, masternode list, ChainLock)
+// and the vote recounts run here so the page stays responsive.
+import { AllNodesFailedError, createDapi, GrpcError, type AnchoredChain, type Dapi } from '@govhub/dapi';
 import { installRecordedDapi, RECORDED_NODE } from '../data/dapiRecorded.ts';
 import { createWebDapi, lookupCollateral } from '../data/dapi.ts';
-import { BridgeError, type BridgeVotes } from '../data/bridge.ts';
+import { BridgeError, type Bridge, type BridgeMnList, type BridgeVotes } from '../data/bridge.ts';
 import { makeBridge } from '../data/bridgeFactory.ts';
+import type { CoreNetwork } from '../data/types.ts';
+import { payments, scheduleAndBudget, summarize, threshold, EST_BLOCK_SECONDS } from './chain.ts';
 import { verifyCollateral } from './collateral.ts';
-import type { DapiDescriptor, WorkerRequest, WorkerResponse } from './protocol.ts';
+import type { DapiDescriptor, SmlUsed, WorkerRequest, WorkerResponse } from './protocol.ts';
+import { rankRecounts, type RecountedProposal } from './ranking.ts';
+import { headerStore, proRegCache } from './stores.ts';
 import { loadVerifiers } from './verifiers.ts';
-import { verifyVotes, type SmlEntry, type VoteRun, type VoteTarget } from './votes.ts';
+import { verifyVotes, type ProReg, type SmlEntry, type VoteRun, type VoteTarget } from './votes.ts';
 
 declare const self: DedicatedWorkerGlobalScope;
 const post = (m: WorkerResponse) => self.postMessage(m);
 
-/** One client per DAPI setting: the SML fetched for the ChainLock proof is reused by the vote check (5 min cache). */
+/** One client per DAPI setting: the anchored chain (and its proven SML) is reused by every check for a minute. */
 const clients = new Map<string, Dapi>();
 
 async function dapiFor(d: DapiDescriptor): Promise<Dapi> {
@@ -52,34 +56,87 @@ function isNotFound(e: unknown, recorded: boolean): boolean {
   return nf.size === e.errors.length && nf.size >= (recorded ? 1 : 2);
 }
 
+/** The chain this worker verified (cached in IndexedDB per network, extended on each use), reaching down to `from`. */
+function anchor(dapi: Dapi, network: CoreNetwork, progress: (m: string) => void, from?: number): Promise<AnchoredChain> {
+  return dapi.anchorChain({ ...(from ? { from } : {}), store: headerStore('chain'), onProgress: progress });
+}
+
+/** The proven list as the vote check uses it (types count as proven only where the list's hash covers them). */
+function smlEntries(a: AnchoredChain): { entries: Map<string, SmlEntry>; used: SmlUsed } {
+  const entries = new Map(a.sml.masternodes.map((m) => [m.proTxHash, { votingAddress: m.votingAddress, isValid: m.isValid, nType: m.nType, typeProven: m.nVersion >= 2 }]));
+  const validWeighted = a.sml.masternodes.reduce((n, m) => n + (m.isValid ? (m.nType === 1 ? 4 : m.nType === 0 ? 1 : 0) : 0), 0);
+  return { entries, used: { height: a.sml.proof.height, blockHash: a.sml.proof.blockHash, node: a.sml.node, validWeighted } };
+}
+
+/** ProRegTx facts for the masternodes behind these votes (the bridge's outpoint -> proTxHash mapping is what they check). */
+async function proRegFor(dapi: Dapi, network: CoreNetwork, votes: BridgeVotes, list: BridgeMnList, progress: (m: string) => void): Promise<Map<string, ProReg>> {
+  const byOutpoint = new Map(list.masternodes.map((m) => [`${m.collateralTxid.toLowerCase()}-${m.collateralIndex}`, m.proTxHash.toLowerCase()]));
+  const hashes = [...new Set(votes.votes.map((v) => byOutpoint.get(`${v.collateralTxid.toLowerCase()}-${v.collateralIndex}`)).filter((h): h is string => !!h))];
+  return dapi.getProRegInfo(hashes, {
+    cache: proRegCache(network),
+    onProgress: (done, total) => { if (done === 1 || done % 50 === 0 || done === total) progress(`Checking ${total.toLocaleString('en-US')} masternode registrations (${done.toLocaleString('en-US')} done; cached afterwards)`); },
+  });
+}
+
 async function handle(req: WorkerRequest): Promise<void> {
   const progress = (message: string) => post({ id: req.id, kind: 'progress', message });
   if (req.kind === 'collateral') {
     progress('Finding DAPI nodes');
     let lookup: Parameters<typeof verifyCollateral>[1];
+    let anchorError: string | null = null;
     try {
       const dapi = await dapiFor(req.dapi);
       const verify = req.dapi.kind === 'live' && !req.light;
+      let a: AnchoredChain | undefined;
+      if (verify) {
+        // The verified chain down to the collateral's block: cached headers are reused, only the missing ones are fetched.
+        try {
+          a = await anchor(dapi, dapi.network, progress, req.proposal.collateralHeight || undefined);
+        } catch (e) {
+          anchorError = (e as Error).message;
+          progress('The chain could not be verified; falling back to the block and ChainLock proof');
+        }
+      }
       progress(verify ? 'Fetching the collateral transaction and proving it into a block' : 'Fetching the collateral transaction');
-      lookup = await lookupCollateral(dapi, req.proposal.collateralTxid, { verify, onProgress: progress });
+      lookup = await lookupCollateral(dapi, req.proposal.collateralTxid, { verify, onProgress: progress, ...(a ? { anchor: a } : {}) });
+      // the published height was too high (or missing): anchor down to the real block and look again
+      if (a && !lookup.proof.anchor && lookup.height > 0 && lookup.height < a.chain.lo) {
+        a = await anchor(dapi, dapi.network, progress, lookup.height);
+        lookup = await lookupCollateral(dapi, req.proposal.collateralTxid, { verify, onProgress: progress, anchor: a });
+      }
     } catch (e) {
       lookup = { error: (e as Error).message, ...(isNotFound(e, req.dapi.kind === 'recorded') ? { notFound: true } : {}) };
     }
-    post({ id: req.id, kind: 'collateral', verdict: verifyCollateral(req.proposal, lookup) });
+    const verdict = verifyCollateral(req.proposal, lookup);
+    if (anchorError) verdict.anchorError = anchorError;
+    post({ id: req.id, kind: 'collateral', verdict });
+    return;
+  }
+
+  if (req.kind === 'chain') {
+    if (req.dapi.kind !== 'live') throw new Error('chain facts need live DAPI nodes (recorded data has no header chain)');
+    const dapi = await dapiFor(req.dapi);
+    const a = await anchor(dapi, req.network, progress, req.from || undefined);
+    progress('Computing the funding threshold from the proven masternode list');
+    const th = await threshold(dapi, a, req.network, proRegCache(req.network), progress);
+    progress('Reading superblock coinbases for this proposal\'s payments');
+    const pay = req.from ? await payments(dapi, a, req.proposal, req.network, req.from, req.now) : null;
+    post({ id: req.id, kind: 'chain', report: { network: req.network, anchor: summarize(a), ...scheduleAndBudget(a, req.network, req.now), threshold: th, payments: pay } });
     return;
   }
 
   const bridge = makeBridge(req.bridge);
-  let sml: { entries: Map<string, SmlEntry>; nodes: string[]; height: number | null; validWeighted: number } | null = null;
+  if (req.kind === 'ranking') {
+    post({ id: req.id, kind: 'ranking', result: await ranking(req, bridge, progress) });
+    return;
+  }
+
+  let sml: ReturnType<typeof smlEntries> | null = null;
+  let dapi: Dapi | null = null;
   if (req.crossCheckSml && req.dapi.kind === 'live') {
-    progress('Getting the masternode list from several DAPI nodes and comparing it (about 1.4 MB each)');
-    const agreed = await (await dapiFor(req.dapi)).getSml();
-    sml = {
-      entries: new Map(agreed.masternodes.map((m) => [m.proTxHash, { votingAddress: m.votingAddress, isValid: m.isValid, nType: m.nType }])),
-      nodes: agreed.agreedBy,
-      height: agreed.height,
-      validWeighted: agreed.masternodes.reduce((n, m) => n + (m.isValid ? (m.nType === 1 ? 4 : 1) : 0), 0),
-    };
+    progress('Verifying the chain and the masternode list (cached after the first time)');
+    dapi = await dapiFor(req.dapi);
+    sml = smlEntries(await anchor(dapi, req.network, progress));
   }
 
   const runs: VoteRun[] = [];
@@ -99,12 +156,41 @@ async function handle(req: WorkerRequest): Promise<void> {
     origin = votes.origin ?? origin;
     progress(`Fetching the masternode list at block ${votes.tallyHeight.toLocaleString('en-US')}`);
     const mnlist = await bridge.mnlist(votes.tallyHeight);
+    const proReg = dapi ? await proRegFor(dapi, req.network, votes, mnlist, progress) : null;
     progress(`Checking ${votes.votes.length} signatures`);
-    const result = verifyVotes({ govHash: req.govHash, votes: votes.votes, masternodes: mnlist.masternodes, network: req.network, now: req.now, targets: g.targets, sml: sml?.entries ?? null });
+    const result = verifyVotes({ govHash: req.govHash, votes: votes.votes, masternodes: mnlist.masternodes, network: req.network, now: req.now, targets: g.targets, sml: sml?.entries ?? null, proReg });
     // votesAsOf is the height of the tally whose set was actually served (<= the requested height), not the height echoed back.
     runs.push({ result, votesAsOf: votes.tallyHeight, mnlistHeight: mnlist.height, listMatches: votes.mnListHash && mnlist.listHash ? votes.mnListHash === mnlist.listHash : null });
   }
-  post({ id: req.id, kind: 'votes', bridge: bridge.name, runs, ...(origin ? { origin } : {}), sml: sml ? { nodes: sml.nodes, height: sml.height, validWeighted: sml.validWeighted } : null });
+  post({ id: req.id, kind: 'votes', bridge: bridge.name, runs, ...(origin ? { origin } : {}), sml: sml ? sml.used : null });
+}
+
+/** Every listed proposal's live vote set, recounted against the proven list and ProRegTxs, then ranked like Core's candidate. */
+async function ranking(req: Extract<WorkerRequest, { kind: 'ranking' }>, bridge: Bridge, progress: (m: string) => void) {
+  if (req.dapi.kind !== 'live') throw new Error('the funding order needs live DAPI nodes');
+  const dapi = await dapiFor(req.dapi);
+  const a = await anchor(dapi, req.network, progress);
+  const { entries } = smlEntries(a);
+  const th = await threshold(dapi, a, req.network, proRegCache(req.network), progress);
+  const lists = new Map<number, Promise<BridgeMnList>>();
+  const recounts: RecountedProposal[] = [];
+  for (const [i, p] of req.proposals.entries()) {
+    progress(`Recounting ${p.name} (${i + 1} of ${req.proposals.length})`);
+    const base = { govHash: p.govHash, name: p.name, amount: p.paymentAmount, startEpoch: p.startEpoch, endEpoch: p.endEpoch };
+    try {
+      const votes = await bridge.votes(p.govHash);
+      if (!lists.has(votes.tallyHeight)) lists.set(votes.tallyHeight, bridge.mnlist(votes.tallyHeight));
+      const list = await lists.get(votes.tallyHeight)!;
+      const proReg = await proRegFor(dapi, req.network, votes, list, progress);
+      const r = verifyVotes({ govHash: p.govHash, votes: votes.votes, masternodes: list.masternodes, network: req.network, now: req.now, targets: [], sml: entries, proReg });
+      const bad = Object.entries(r.problems).filter(([k, n]) => n > 0 && k !== 'sml-mismatch').map(([k, n]) => `${n} ${k.replace(/-/g, ' ')}`);
+      recounts.push({ ...base, absYes: r.weighted.yes - r.weighted.no, proven: r.keysFrom === 'sml', ...(r.keysFrom !== 'sml' ? { problem: `${r.smlUnconfirmed} votes not proven${bad.length ? `, ${bad.join(', ')}` : ''}` } : {}) });
+    } catch (e) {
+      recounts.push({ ...base, absYes: 0, proven: false, problem: `not recounted: ${(e as Error).message}` });
+    }
+  }
+  const sb = scheduleAndBudget(a, req.network, req.now);
+  return rankRecounts(recounts, th, sb.budget, Math.round(req.now + (sb.schedule.next - a.tip) * EST_BLOCK_SECONDS));
 }
 
 self.onmessage = (ev: MessageEvent<WorkerRequest>) => {
