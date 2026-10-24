@@ -1,0 +1,94 @@
+{
+ "at": "2026-10-24T08:43:52.561Z",
+ "network": "testnet",
+ "protocol": 14,
+ "identity": "u6",
+ "ownerId": "4TEp8FeD7iMD9nKMGBK492ZnbESdwFPPXtvjRA6Zrxhv",
+ "contract": "HfLWUEWnp4YCQ9Mzp9DexG58WPKvHm7SahMVSuzKSQRw",
+ "spentCredits": "47737746",
+ "spentTDash": "0.00047738",
+ "broadcasts": 9,
+ "results": [
+  {
+   "step": "cleanup delete BhpmLJwQ",
+   "ok": true,
+   "outcome": "done BhpmLJwQzAEcgtYh2WavVsfYRxv2k35XZQYgRso5NMcU",
+   "ms": 2366,
+   "sends": 1,
+   "distinctTransitions": 1,
+   "events": [
+    "nonce read 75 at height 641853",
+    "send #4 nonce 76 e96c27501f0f"
+   ]
+  },
+  {
+   "step": "cleanup delete 9BCiQWH9",
+   "ok": true,
+   "outcome": "done 9BCiQWH9shNFQ8gsy72UCZqtzPnjanpzKRfeRFgbyamM",
+   "ms": 2812,
+   "sends": 1,
+   "distinctTransitions": 1,
+   "events": [
+    "nonce read 76 at height 641854",
+    "send #5 nonce 77 e85c6b9a4ad2"
+   ]
+  },
+  {
+   "step": "cleanup delete Et6o4zfz",
+   "ok": true,
+   "outcome": "done Et6o4zfzLTQzAhrFD44bjH6bwFZEGnLpK2T7y5xqVW5F",
+   "ms": 2886,
+   "sends": 1,
+   "distinctTransitions": 1,
+   "events": [
+    "nonce read 77 at height 641856",
+    "send #6 nonce 78 109fa1ee28ba"
+   ]
+  },
+  {
+   "step": "cleanup delete smwX9ZZB",
+   "ok": true,
+   "outcome": "done smwX9ZZBJBpFzyPEAcGTyqCNHMyMqAqp4hVV6vu3hjB",
+   "ms": 1847,
+   "sends": 1,
+   "distinctTransitions": 1,
+   "events": [
+    "nonce read 78 at height 641858",
+    "send #7 nonce 79 5a42fc022c47"
+   ]
+  },
+  {
+   "step": "cleanup delete FaKy6Cz9",
+   "ok": true,
+   "outcome": "done FaKy6Cz9XbEpJiJVJyUqC3t6QkaeCr7eFKVaG4Y5cLsj",
+   "ms": 1835,
+   "sends": 1,
+   "distinctTransitions": 1,
+   "events": [
+    "nonce read 79 at height 641859",
+    "send #8 nonce 80 fbfac30480c6"
+   ]
+  },
+  {
+   "step": "cleanup delete EXcHWMAG",
+   "ok": true,
+   "outcome": "done EXcHWMAGZyDVzhWeUUSrcgzhjhZomkvdZsTsCSvnjjUB",
+   "ms": 1906,
+   "sends": 1,
+   "distinctTransitions": 1,
+   "events": [
+    "nonce read 80 at height 641860",
+    "send #9 nonce 81 0f8a5dd15bd4"
+   ]
+  }
+ ],
+ "nonceCache": {
+  "1 facade create (fills the cache)": "ok",
+  "bypass 1": "nonce read 70 at height 641846; send #1 nonce 71 04cdbc850c87",
+  "2 facade create with identityNonceStaleTimeS: 0 (cache last fetched seconds ago)": "ok",
+  "bypass 3": "nonce read 72 at height 641849; send #2 nonce 73 96b92655c979",
+  "3 facade create after refreshIdentityNonce": "ok",
+  "bypass 5": "nonce read 74 at height 641852; send #3 nonce 75 538eeee41a17",
+  "4 control: facade create after a cache-bypassing write, no refresh": "error (past): Identity 4TEp8FeD7iMD9nKMGBK492ZnbESdwFPPXtvjRA6Zrxhv is trying to set an invalid identity nonce. The current identity nonce is 75, we are setting 75, error is nonce already present at tip"
+ }
+}

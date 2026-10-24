@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-10-24T08:01:15.819Z",
+  "ranAt": "2026-10-24T08:50:46.191Z",
   "proposal": "OrchardPay (8410614191c3f2df69a224a1c34ebc745288700515fdece6ad3764bfc1c987fe) in testnet gov 3ueAfbVe8LvCxYWk7bKvXxc5uHe7E1TDJHzN3k3ZDehZ",
   "claimProposal": {
     "name": "govhub-claim-test",
@@ -18,25 +18,25 @@
     "moderator": "pasted HIGH key (@govhub/auth key path)"
   },
   "docs": {
-    "comment": "4r9CrTak2iDcQKWoN5gn5G2VHYqhyR6MLHVnmKmEqikb",
-    "reply": "4CD5KjRvuV8oEmpfjpR9rz4ky7Ro8pRFffVCXYz4R4vB",
-    "reaction": "9vnSGPzpsi5DbKuE4uAcpSbWWbMszan1tqDFvzrQp2tQ",
-    "modBlock": "85gYrGgXNpfwMYPWaYhkGHHS79YqhRGutjm3rXcAMwLh",
-    "userBlock": "3sSg6ofJjv4M1r8rpsfTrYVt8zs6utRaeJ2SB5vPwyMU",
+    "comment": "C2BsPBFASM2jCLHrcCvaWNmBnYSuM8bhKb1A1zzHQXmy",
+    "reply": "7DbR1ffR8H53SXBgS38dSyDhjHnXNK1jqyGzZ5p3WzU1",
+    "reaction": "8U8c2WYMXPgUP8TWfJNkZHZ1HjYkLAWDYAsXKVpR3uXT",
+    "modBlock": "HN2oZy7nbpMyg6KbAtocsDSBrHBqCbA8Kpr8qgz7kpEq",
+    "userBlock": "3UeTr4QJKVQMVuYiD3S6W3i3nUzmDAEVh3ESghDbfxTm",
     "claim": "8xFkBzyzXRpepLCvi72XvAwT5uS5GLupdTg2wRSStxBp",
     "proposalPost": "FBVVVzo5rbmzBLc8pjFqPeLjjubfeTsAPwvxBHPSTR3W"
   },
   "credits": {
-    "author": "41478601",
-    "claimant": "4799800",
-    "moderator": "46653508",
-    "total": "92931909"
+    "author": "41452681",
+    "claimant": "4791220",
+    "moderator": "46695588",
+    "total": "92939489"
   },
   "tDash": {
-    "author": 0.00041478601,
-    "claimant": 0.000047998,
-    "moderator": 0.00046653508,
-    "total": 0.00092931909
+    "author": 0.00041452681,
+    "claimant": 0.0000479122,
+    "moderator": 0.00046695588,
+    "total": 0.00092939489
   },
   "notes": "comment, reply, reaction, both blocks were deleted again (deletes refund storage); claim and proposalPost stay as test fixtures"
 }

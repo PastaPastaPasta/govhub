@@ -1,0 +1,248 @@
+{
+ "at": "2026-10-24T09:24:21.225Z",
+ "network": "testnet",
+ "protocol": 14,
+ "identity": "u6",
+ "ownerId": "4TEp8FeD7iMD9nKMGBK492ZnbESdwFPPXtvjRA6Zrxhv",
+ "contract": "HfLWUEWnp4YCQ9Mzp9DexG58WPKvHm7SahMVSuzKSQRw",
+ "spentCredits": "80505608",
+ "spentTDash": "0.00080506",
+ "broadcasts": 25,
+ "results": [
+  {
+   "step": "create (plain)",
+   "ok": true,
+   "outcome": "done 9WkfBC98wcxT5K8G2T7QNV9gW6GAgLjyuEQyfBQUaNCE rev 1",
+   "ms": 2256,
+   "sends": 1,
+   "distinctTransitions": 1,
+   "events": [
+    "nonce read 106 at height 641927",
+    "send #1 nonce 107 5f6b5554baf4"
+   ]
+  },
+  {
+   "step": "create, landed but the client saw a timeout",
+   "ok": true,
+   "outcome": "done CTKa7frn2sbptQyytVFJhmpprcz8ojgeaakefcKn1BCz rev 1",
+   "ms": 1840,
+   "sends": 1,
+   "distinctTransitions": 1,
+   "events": [
+    "nonce read 107 at height 641928",
+    "send #2 nonce 108 82b1a8a5d2c3 [landed-timeout]"
+   ]
+  },
+  {
+   "step": "create, \"too far in future\" from a lagging node: same transition re-sent",
+   "ok": true,
+   "outcome": "done CAyduagE5UKFh9LJtABu19hnawjgLSBSpGqv7oar5W53 rev 1",
+   "ms": 4210,
+   "sends": 2,
+   "distinctTransitions": 1,
+   "events": [
+    "nonce read 108 at height 641929",
+    "send #3 nonce 109 0ce6a1f3d3ab [future]",
+    "send #4 nonce 109 0ce6a1f3d3ab"
+   ]
+  },
+  {
+   "step": "create, stale nonce read: real \"nonce already present\", signed again",
+   "ok": true,
+   "outcome": "done AxNYkHKexoaSqz36WeYMqxg69Toyz8ireDV8D53hBNSP rev 1",
+   "ms": 3138,
+   "sends": 2,
+   "distinctTransitions": 2,
+   "events": [
+    "nonce read served stale (108 for 109)",
+    "send #5 nonce 109 634f959bfdd0",
+    "real error (past): Failed to broadcast: Protocol error: Identity 4TEp8FeD7iMD9nKMGBK492ZnbESdwFPPXtvjRA6Zrxhv is trying to set an invalid identity nonce. The current identity nonce is 109, we are setting 109, error is nonce already present",
+    "nonce read 109 at height 641931",
+    "send #6 nonce 110 df708d069bb4"
+   ]
+  },
+  {
+   "step": "replace, landed but the client saw a timeout",
+   "ok": true,
+   "outcome": "done 9WkfBC98wcxT5K8G2T7QNV9gW6GAgLjyuEQyfBQUaNCE rev 2",
+   "ms": 1965,
+   "sends": 1,
+   "distinctTransitions": 1,
+   "events": [
+    "nonce read 110 at height 641933",
+    "send #7 nonce 111 f24a902f74ed [landed-timeout]"
+   ]
+  },
+  {
+   "step": "replace repeated after it landed: real stale-revision refusal, settled as done",
+   "ok": true,
+   "outcome": "done 9WkfBC98wcxT5K8G2T7QNV9gW6GAgLjyuEQyfBQUaNCE rev 2",
+   "ms": 1799,
+   "sends": 1,
+   "distinctTransitions": 1,
+   "events": [
+    "nonce read 111 at height 641934",
+    "send #8 nonce 112 86d2feddfeb7",
+    "real error (refused): Failed to wait for state transition result: state transition broadcast error: Document 9WkfBC98wcxT5K8G2T7QNV9gW6GAgLjyuEQyfBQUaNCE has invalid revision Some(2). The desired revision is 2"
+   ]
+  },
+  {
+   "step": "replace, stale nonce read: real \"nonce already present\", signed again",
+   "ok": true,
+   "outcome": "done 9WkfBC98wcxT5K8G2T7QNV9gW6GAgLjyuEQyfBQUaNCE rev 3",
+   "ms": 1862,
+   "sends": 2,
+   "distinctTransitions": 2,
+   "events": [
+    "nonce read served stale (111 for 112)",
+    "send #9 nonce 112 308506703e96",
+    "real error (past): Failed to broadcast: Protocol error: Identity 4TEp8FeD7iMD9nKMGBK492ZnbESdwFPPXtvjRA6Zrxhv is trying to set an invalid identity nonce. The current identity nonce is 112, we are setting 112, error is nonce already present",
+    "nonce read 112 at height 641935",
+    "send #10 nonce 113 f0a91e17a8bc"
+   ]
+  },
+  {
+   "step": "replace with someone else's revision: a real refusal stays an error",
+   "ok": true,
+   "outcome": "error: Failed to wait for state transition result: state transition broadcast error: Document 9WkfBC98wcxT5K8G2T7QNV9gW6GAgLjyuEQyfBQUaNCE has invalid revision Some(3). The desired revision is 2",
+   "ms": 1926,
+   "sends": 1,
+   "distinctTransitions": 1,
+   "events": [
+    "nonce read 113 at height 641936",
+    "send #11 nonce 114 7c47d34bd07a",
+    "real error (refused): Failed to wait for state transition result: state transition broadcast error: Document 9WkfBC98wcxT5K8G2T7QNV9gW6GAgLjyuEQyfBQUaNCE has invalid revision Some(3). The desired revision is 2"
+   ]
+  },
+  {
+   "step": "delete, landed but the client saw a timeout",
+   "ok": true,
+   "outcome": "done 9WkfBC98wcxT5K8G2T7QNV9gW6GAgLjyuEQyfBQUaNCE",
+   "ms": 1818,
+   "sends": 1,
+   "distinctTransitions": 1,
+   "events": [
+    "nonce read 114 at height 641937",
+    "send #12 nonce 115 98c92e694a2d [landed-timeout]"
+   ]
+  },
+  {
+   "step": "delete of a deleted document: fails fast",
+   "ok": true,
+   "outcome": "error: Nothing to delete: this document is not on Platform (it may already be deleted).",
+   "ms": 7593,
+   "sends": 0,
+   "distinctTransitions": 0,
+   "events": []
+  },
+  {
+   "step": "delete, \"too far in future\": same transition re-sent",
+   "ok": true,
+   "outcome": "done CTKa7frn2sbptQyytVFJhmpprcz8ojgeaakefcKn1BCz",
+   "ms": 5286,
+   "sends": 2,
+   "distinctTransitions": 1,
+   "events": [
+    "nonce read 115 at height 641938",
+    "send #13 nonce 116 cfcfb985e5fd [future]",
+    "send #14 nonce 116 cfcfb985e5fd"
+   ]
+  },
+  {
+   "step": "delete, stale nonce read: signed again",
+   "ok": true,
+   "outcome": "done CAyduagE5UKFh9LJtABu19hnawjgLSBSpGqv7oar5W53",
+   "ms": 2269,
+   "sends": 2,
+   "distinctTransitions": 2,
+   "events": [
+    "nonce read served stale (115 for 116)",
+    "send #15 nonce 116 827eb279d970",
+    "real error (past): Failed to broadcast: Protocol error: Identity 4TEp8FeD7iMD9nKMGBK492ZnbESdwFPPXtvjRA6Zrxhv is trying to set an invalid identity nonce. The current identity nonce is 116, we are setting 116, error is nonce already present",
+    "nonce read 116 at height 641939",
+    "send #16 nonce 117 49cc9b94ce31"
+   ]
+  },
+  {
+   "step": "delete (plain)",
+   "ok": true,
+   "outcome": "done AxNYkHKexoaSqz36WeYMqxg69Toyz8ireDV8D53hBNSP",
+   "ms": 1638,
+   "sends": 1,
+   "distinctTransitions": 1,
+   "events": [
+    "nonce read 117 at height 641940",
+    "send #17 nonce 118 f746642c1698"
+   ]
+  },
+  {
+   "step": "cleanup delete 96aK5iHm",
+   "ok": true,
+   "outcome": "done 96aK5iHmBCTiApgYESVVzuJoJHenpCtiNH94BpeuPJWY",
+   "ms": 2178,
+   "sends": 1,
+   "distinctTransitions": 1,
+   "events": [
+    "nonce read 123 at height 641948",
+    "send #21 nonce 124 afe80b38ac9b"
+   ]
+  },
+  {
+   "step": "cleanup delete 3uGK7G5u",
+   "ok": true,
+   "outcome": "done 3uGK7G5u9X48PXLMvsBnE8kASC6UhppTwQXSsV7AePtV",
+   "ms": 2649,
+   "sends": 1,
+   "distinctTransitions": 1,
+   "events": [
+    "nonce read 124 at height 641949",
+    "send #22 nonce 125 455cbe3cf8a5"
+   ]
+  },
+  {
+   "step": "cleanup delete B5zLagy1",
+   "ok": true,
+   "outcome": "done B5zLagy1XWNRreqgvTRMaFSdJvXXs69jbSrkNkTerSr8",
+   "ms": 1845,
+   "sends": 1,
+   "distinctTransitions": 1,
+   "events": [
+    "nonce read 125 at height 641951",
+    "send #23 nonce 126 e030ecf2c0e6"
+   ]
+  },
+  {
+   "step": "cleanup delete 38HMm87M",
+   "ok": true,
+   "outcome": "done 38HMm87MM8iQL9HTbYnWpnwH8HSPgaUaL3LijUu8YpVm",
+   "ms": 1835,
+   "sends": 1,
+   "distinctTransitions": 1,
+   "events": [
+    "nonce read 126 at height 641952",
+    "send #24 nonce 127 352b8642782d"
+   ]
+  },
+  {
+   "step": "cleanup delete 8qQgS59m",
+   "ok": true,
+   "outcome": "done 8qQgS59m5ePzs9NQ2PJMq1p7pBghREKiji1uN9xrnMej",
+   "ms": 1818,
+   "sends": 1,
+   "distinctTransitions": 1,
+   "events": [
+    "nonce read 127 at height 641953",
+    "send #25 nonce 128 2bf217351f39"
+   ]
+  }
+ ],
+ "nonceCache": {
+  "1 facade create (fills the cache)": "error (past): Identity 4TEp8FeD7iMD9nKMGBK492ZnbESdwFPPXtvjRA6Zrxhv is trying to set an invalid identity nonce. The current identity nonce is 118, we are setting 118, error is nonce already present at tip",
+  "bypass 1": "nonce read 118 at height 641941; send #18 nonce 119 ddb91659bb6d",
+  "2 facade create with identityNonceStaleTimeS: 0 (cache last fetched seconds ago)": "ok",
+  "bypass 3": "nonce read 120 at height 641943; send #19 nonce 121 a1765441da81",
+  "3 facade create after refreshIdentityNonce": "ok",
+  "bypass 5": "nonce read 122 at height 641946; send #20 nonce 123 3cb544abf309",
+  "4 control: facade create after a cache-bypassing write, no refresh": "error (past): Identity 4TEp8FeD7iMD9nKMGBK492ZnbESdwFPPXtvjRA6Zrxhv is trying to set an invalid identity nonce. The current identity nonce is 123, we are setting 123, error is nonce already present at tip"
+ }
+}
