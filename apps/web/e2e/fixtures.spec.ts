@@ -18,7 +18,7 @@ test.describe('fixture mode', () => {
     const cards = page.locator('article.card');
     await expect(cards.first()).toContainText('DCG-Operations-Aug-Nov-26');
     await expect(cards.first()).toContainText('Passing +355');
-    await expect(cards.first()).toContainText('per month');
+    await expect(cards.first()).toContainText('per superblock (~monthly)');
     const failing = page.locator('article.card', { hasText: 'GEG-PPP-30M-Film-On-Chain' });
 
     // Infinite scroll: 12 first, the rest after scrolling.

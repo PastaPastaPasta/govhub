@@ -1,21 +1,23 @@
 import { Link } from 'react-router-dom';
 import { formatDash, formatInt, shortAddress, shortHash } from '../lib/format.ts';
-import type { PaymentSchedule } from '../lib/governance.ts';
+import { perSuperblock, type GovParams, type PaymentSchedule } from '../lib/governance.ts';
+import { useApp } from '../app/context.tsx';
 import type { Row } from '../lib/view.ts';
 import type { CheckState } from '../verify/checks.ts';
 import { FailedNote } from './HiddenToggle.tsx';
 import { PassingBar } from './PassingBar.tsx';
 import { ProvMark } from './Provenance.tsx';
 
-export function paymentText(amountDuffs: number, s: PaymentSchedule | null): string {
+export function paymentText(amountDuffs: number, s: PaymentSchedule | null, params: GovParams): string {
   const amount = formatDash(amountDuffs);
   if (!s) return `${amount} per payment`;
   if (s.oneTime) return `${amount} one-time${s.remaining === 0 ? ' (paid or expired)' : ''}`;
   if (s.total === 0) return `${amount}, no superblock in its window`;
-  return `${amount} per month (${s.remaining === 0 ? 'ended' : `${s.remaining} of ${s.total} remaining`})`;
+  return `${amount} ${perSuperblock(params)}, ${s.remaining === 0 ? 'ended' : `${s.remaining} of ${s.total} remaining`}`;
 }
 
 export function ProposalCard({ row, href, comments, urlOwner, check }: { row: Row; href: string; comments?: number | undefined; urlOwner?: string | null; check?: CheckState }) {
+  const { params } = useApp();
   const p = row.p.value;
   const t = row.tally?.value;
   const failed = check?.status === 'failed' ? check.reason : null;
@@ -48,7 +50,7 @@ export function ProposalCard({ row, href, comments, urlOwner, check }: { row: Ro
       )}
 
       <p className="card-pay">
-        {paymentText(p.paymentAmount, row.schedule)} <ProvMark prov={row.p.prov} />
+        {paymentText(p.paymentAmount, row.schedule, params)} <ProvMark prov={row.p.prov} />
       </p>
 
       <footer className="card-foot">
