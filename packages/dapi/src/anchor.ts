@@ -38,7 +38,7 @@ const FASTEST_SPACING_S = 30;
 interface State extends ProofAnchorState { stored?: StoredChain; last?: AnchoredChain; inflight?: Promise<AnchoredChain> }
 const states = new WeakMap<Dapi, State>();
 
-const now = () => Math.floor(Date.now() / 1000);
+export const now = (): number => Math.floor(Date.now() / 1000);
 
 function hashMany(v: Verifiers): (headers: Uint8Array) => Uint8Array {
   if (v.hashHeaders) return v.hashHeaders;

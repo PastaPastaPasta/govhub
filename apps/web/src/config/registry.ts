@@ -415,10 +415,10 @@ export function parseRegistry(input: unknown): { registry: Registry; errors: str
     // added with quorum-proof anchoring: settings saved before it get the profile's sources
     quorumProofs: o.quorumProofs === undefined
       ? d.quorumProofs.map((q) => ({ ...q }))
-      : named(o.quorumProofs, 'quorum proof source').map((q, i) => {
+      : named(o.quorumProofs, 'quorum proof source').map((q, i): ProofSourceEndpoint => {
         const kind = ((o.quorumProofs as unknown[])[i] as Record<string, unknown> | null)?.kind;
         if (kind !== 'bridge' && kind !== 'quorum-list') errors.push(`quorum proof source ${i + 1}: kind must be "bridge" or "quorum-list"`);
-        return { ...q, kind: kind === 'quorum-list' ? 'quorum-list' : 'bridge' } as ProofSourceEndpoint;
+        return { ...q, kind: kind === 'quorum-list' ? 'quorum-list' : 'bridge' };
       }),
     priceFeed: pf && typeof pf === 'object' ? { name: typeof pf.name === 'string' ? pf.name : 'price feed', url: httpsUrl(pf.url, 'price feed URL', errors) } : null,
     accounts: optionalNamed(o.accounts, d.accounts, 'accounts service'),

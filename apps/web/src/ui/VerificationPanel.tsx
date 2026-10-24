@@ -68,41 +68,56 @@ function How({ rows }: { rows: Array<[string, string]> }) {
 
 const n = formatInt;
 
+type Anchor = ChainReport['anchor'];
+
+/** What the chain rests on: a quorum proof's ChainLock quorums, or the header checkpoint and proof of work. */
+function trustRow(a: Anchor): Row {
+  const tr = a.trust;
+  if (tr.kind === 'proof-of-work') {
+    return {
+      id: 'trust', status: 'ok', label: 'Trust root',
+      detail: `the pinned header checkpoint at block ${n(tr.checkpoint.height)}, plus proof of work${a.weak ? ' (not secure on this network)' : ''}`,
+      more: `no ChainLock proof was used${tr.fallback ? `: ${tr.fallback}` : ''}`,
+    };
+  }
+  const start = tr.from.height === tr.checkpoint.height ? 'from that checkpoint' : `from block ${n(tr.from.height)}, which this browser proved from that checkpoint earlier`;
+  return {
+    id: 'trust', status: 'ok', label: 'Trust root',
+    detail: `the ChainLock quorums of the pinned checkpoint at block ${n(tr.checkpoint.height)}, plus BLS`,
+    more: tr.proofBytes === 0
+      ? `the ChainLock on block ${n(tr.from.height)}, which this browser proved from that checkpoint earlier with a Dash Core v24 quorum proof (DIP 175); no newer one was available yet. No proof of work involved`
+      : `a Dash Core v24 quorum proof (DIP 175) from ${tr.source} (untrusted: the proof authenticates itself) ${start}: ${n(tr.links)} ChainLock quorum handoffs, each a BLS signature by a quorum already trusted on the block that mined the next one, ${(tr.proofBytes / 1024).toFixed(1)} KB, verified in WebAssembly by Dash Core's own rules. No proof of work involved`,
+  };
+}
+
+function chainRow(a: Anchor): Row {
+  const hashes = `${n(a.tip - a.lo + 1)} block hashes from ${n(a.lo)}`;
+  const fetched = `${n(a.headers.cached)} came from this browser's cache, ${n(a.headers.fetched)} were downloaded (${(a.ms.total! / 1000).toFixed(1)} s)`;
+  if (a.trust.kind === 'quorum-proof') {
+    return {
+      id: 'chain', status: 'ok', label: 'Chain',
+      detail: `verified to the ChainLocked block ${n(a.tip)}`,
+      more: `${hashes}, each header's X11 hash linked to the next one's up to the proven ChainLocked block (a ChainLock is final, so no proof of work or difficulty check is needed); ${fetched}`,
+    };
+  }
+  return {
+    id: 'chain', status: 'ok', label: 'Chain',
+    detail: `${a.weak ? 'checked' : 'verified'} from the pinned checkpoint to block ${n(a.tip)}`,
+    more: `${hashes}: hash links down to the checkpoint at ${n(a.checkpoint)}, and above it every header's proof of work, difficulty (Dark Gravity Wave) and timestamp checked like Core does; ${fetched}`,
+  };
+}
+
 /** The chain facts as rows: each says exactly what was proven and what is an estimate. */
 function chainRows(r: ChainReport, cycle: Cycle | null, nowS: number): Row[] {
   const a = r.anchor, s = r.schedule, t = r.threshold, budget = budgetFact(r, cycle);
-  const tr = a.trust, proof = tr.kind === 'quorum-proof' ? tr : null, pow = tr.kind === 'proof-of-work' ? tr : null;
-  const fetched = `${n(a.headers.cached)} came from this browser's cache, ${n(a.headers.fetched)} were downloaded (${(a.ms.total! / 1000).toFixed(1)} s)`;
   const selected = `quorum ${shortHash(a.chainLock.quorumHash, 8)} from the proven masternode list${a.chainLock.exact ? ', the quorum Core selects' : " (Core's exact choice could not be reproduced)"}`;
   const rows: Row[] = [
-    proof
-      ? {
-        id: 'trust', status: 'ok', label: 'Trust root',
-        detail: `the ChainLock quorums of the pinned checkpoint at block ${n(proof.checkpoint.height)}, plus BLS`,
-        more: proof.proofBytes === 0
-          ? `the ChainLock on block ${n(proof.from.height)}, which this browser proved from that checkpoint earlier with a Dash Core v24 quorum proof (DIP 175); no newer one was available yet. No proof of work involved`
-          : `a Dash Core v24 quorum proof (DIP 175) from ${proof.source} (untrusted: the proof authenticates itself) ${proof.from.height === proof.checkpoint.height ? 'from that checkpoint' : `from block ${n(proof.from.height)}, which this browser proved from that checkpoint earlier`}: ${n(proof.links)} ChainLock quorum handoffs, each a BLS signature by a quorum already trusted on the block that mined the next one, ${(proof.proofBytes / 1024).toFixed(1)} KB, verified in WebAssembly by Dash Core's own rules. No proof of work involved`,
-      }
-      : {
-        id: 'trust', status: 'ok', label: 'Trust root',
-        detail: `the pinned header checkpoint at block ${n(tr.checkpoint.height)}, plus proof of work${a.weak ? ' (not secure on this network)' : ''}`,
-        more: `no ChainLock proof was used${pow?.fallback ? `: ${pow.fallback}` : ''}`,
-      },
-    proof
-      ? {
-        id: 'chain', status: 'ok', label: 'Chain',
-        detail: `verified to the ChainLocked block ${n(a.tip)}`,
-        more: `${n(a.tip - a.lo + 1)} block hashes from ${n(a.lo)}, each header's X11 hash linked to the next one's up to the proven ChainLocked block (a ChainLock is final, so no proof of work or difficulty check is needed); ${fetched}`,
-      }
-      : {
-        id: 'chain', status: 'ok', label: 'Chain',
-        detail: `${a.weak ? 'checked' : 'verified'} from the pinned checkpoint to block ${n(a.tip)}`,
-        more: `${n(a.tip - a.lo + 1)} block hashes from ${n(a.lo)}: hash links down to the checkpoint at ${n(a.checkpoint)}, and above it every header's proof of work, difficulty (Dark Gravity Wave) and timestamp checked like Core does; ${fetched}`,
-      },
+    trustRow(a),
+    chainRow(a),
     {
       id: 'chainlock', status: 'ok', label: 'ChainLock',
       detail: `block ${n(a.chainLock.height)} and everything below it are final`,
-      more: proof
+      more: a.trust.kind === 'quorum-proof'
         ? `BLS signature verified by the quorum proof from the checkpoint; consistent with Core's quorum selection: ${selected}`
         : `BLS signature of ${selected}`,
     },

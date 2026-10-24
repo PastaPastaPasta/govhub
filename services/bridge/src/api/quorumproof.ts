@@ -36,6 +36,8 @@ const HASH_RE = /^[0-9a-fA-F]{64}$/;
 const HEX_RE = /^(?:[0-9a-fA-F]{2})+$/;
 const INT_RE = /^\d{1,10}$/;
 const FIELDS = ['checkpoint', 'height', 'quorumHash', 'llmqType', 'nodeCount'] as const;
+const isField = (k: string): boolean => (FIELDS as readonly string[]).includes(k);
+const cut = (s: string): string => s.slice(0, MAX_MESSAGE);
 
 export interface ProofRequest {
   /** 64 lowercase hex, display byte order. */
@@ -58,7 +60,7 @@ export class ProofError extends Error {
   readonly code: string;
   readonly retryAfter: number | undefined;
   constructor(status: ProofError['status'], code: string, message: string, retryAfter?: number) {
-    super(message.slice(0, MAX_MESSAGE));
+    super(cut(message));
     this.status = status;
     this.code = code;
     this.retryAfter = retryAfter;
@@ -105,7 +107,7 @@ function validate(raw: Record<string, unknown>, num: (v: unknown) => number): Pa
 export function parseProofQuery(params: URLSearchParams): Parsed {
   const raw: Record<string, unknown> = {};
   for (const k of new Set(params.keys())) {
-    if (!(FIELDS as readonly string[]).includes(k)) return { ok: false, message: `unknown query parameter ${JSON.stringify(k.slice(0, 40))}` };
+    if (!isField(k)) return { ok: false, message: `unknown query parameter ${JSON.stringify(k.slice(0, 40))}` };
     if (params.getAll(k).length > 1) return { ok: false, message: `query parameter ${k} given more than once` };
     raw[k] = params.get(k);
   }
@@ -116,7 +118,7 @@ export function parseProofQuery(params: URLSearchParams): Parsed {
 export function parseProofBody(body: unknown): Parsed {
   if (typeof body !== 'object' || body === null || Array.isArray(body)) return { ok: false, message: 'body must be a JSON object' };
   const raw = body as Record<string, unknown>;
-  for (const k of Object.keys(raw)) if (!(FIELDS as readonly string[]).includes(k)) return { ok: false, message: `unknown field ${JSON.stringify(k.slice(0, 40))}` };
+  for (const k of Object.keys(raw)) if (!isField(k)) return { ok: false, message: `unknown field ${JSON.stringify(k.slice(0, 40))}` };
   return validate(raw, (v) => (typeof v === 'number' ? v : NaN));
 }
 
@@ -192,7 +194,6 @@ interface CoreProof {
   target?: { height?: unknown };
 }
 
-const cut = (s: string) => s.slice(0, MAX_MESSAGE);
 const isTimeout = (e: unknown) => e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError');
 
 export class QuorumProofService {

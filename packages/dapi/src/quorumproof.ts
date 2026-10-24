@@ -65,13 +65,18 @@ export const QUORUM_CHECKPOINTS: Record<Network, ProofState> = {
 /** Largest proof accepted from a source (Core's MAX_PROOF_BYTES). */
 export const MAX_PROOF_BYTES = 1024 * 1024;
 
+export interface PlatformQuorum {
+  quorumHash: string;
+  llmqType: number;
+}
+
 export interface ProofRequest {
   /** Display-order hash of the trusted state the proof must start from. */
   checkpoint: string;
   /** Minimum target height (0: the newest ChainLock the source has). */
   height: number;
   /** For sources that only serve bootstrap envelopes (the quorum list server): a Platform quorum to open. Untrusted hint. */
-  platformQuorum?: () => Promise<{ quorumHash: string; llmqType: number } | null>;
+  platformQuorum?: () => Promise<PlatformQuorum | null>;
   signal?: AbortSignal;
 }
 
@@ -129,23 +134,31 @@ function withTimeout(signal: AbortSignal | undefined, ms: number): { signal: Abo
 }
 
 const HASH = /^[0-9a-f]{64}$/;
+const withoutScheme = (url: string): string => url.replace(/^[a-z]+:\/\//i, '');
+
+/** Sends one request under the source's timeout and the caller's signal, withholding credentials and referrer from the untrusted host. */
+function proofRequester(o: SourceOptions): (name: string, url: string, init: RequestInit, r: ProofRequest) => Promise<Uint8Array> {
+  const f = o.fetch ?? globalThis.fetch.bind(globalThis);
+  return async (name, url, init, r) => {
+    const t = withTimeout(r.signal, o.timeoutMs ?? 95_000);
+    try {
+      return await readProof(name, await f(url, { ...init, signal: t.signal, credentials: 'omit', referrerPolicy: 'no-referrer' }));
+    } finally {
+      t.done();
+    }
+  };
+}
 
 /** A govhub bridge's `GET /v1/quorum-proof` (services/bridge): the bare `DASHNC02` chain, proxied from its dashd. */
 export function bridgeProofSource(base: string, o: SourceOptions = {}): ProofSource {
   const root = base.replace(/\/+$/, '');
-  const f = o.fetch ?? globalThis.fetch.bind(globalThis);
+  const name = withoutScheme(root), request = proofRequester(o);
   return {
-    name: root.replace(/^[a-z]+:\/\//i, ''),
+    name,
     async fetch(r) {
       if (!HASH.test(r.checkpoint)) throw new Error('checkpoint must be a display-order block hash');
-      const t = withTimeout(r.signal, o.timeoutMs ?? 95_000);
-      try {
-        const q = new URLSearchParams({ checkpoint: r.checkpoint, height: String(r.height) });
-        const res = await f(`${root}/v1/quorum-proof?${q}`, { signal: t.signal, credentials: 'omit', referrerPolicy: 'no-referrer' });
-        return await readProof(this.name, res);
-      } finally {
-        t.done();
-      }
+      const q = new URLSearchParams({ checkpoint: r.checkpoint, height: String(r.height) });
+      return request(name, `${root}/v1/quorum-proof?${q}`, {}, r);
     },
   };
 }
@@ -155,26 +168,14 @@ export function bridgeProofSource(base: string, o: SourceOptions = {}): ProofSou
  * quorum, so it needs a quorum hash to ask for (any active Platform quorum: the record is checked but not used here).
  */
 export function quorumListProofSource(url: string, o: SourceOptions = {}): ProofSource {
-  const f = o.fetch ?? globalThis.fetch.bind(globalThis);
+  const name = withoutScheme(url), request = proofRequester(o);
   return {
-    name: url.replace(/^[a-z]+:\/\//i, ''),
+    name,
     async fetch(r) {
       const q = await r.platformQuorum?.();
-      if (!q) throw new ProofSourceError(`${this.name}: no Platform quorum to request`);
-      const t = withTimeout(r.signal, o.timeoutMs ?? 95_000);
-      try {
-        const res = await f(url, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ checkpoint: r.checkpoint, height: r.height, quorumHash: q.quorumHash, llmqType: q.llmqType, nodeCount: 0 }),
-          signal: t.signal,
-          credentials: 'omit',
-          referrerPolicy: 'no-referrer',
-        });
-        return await readProof(this.name, res);
-      } finally {
-        t.done();
-      }
+      if (!q) throw new ProofSourceError(`${name}: no Platform quorum to request`);
+      const body = JSON.stringify({ checkpoint: r.checkpoint, height: r.height, quorumHash: q.quorumHash, llmqType: q.llmqType, nodeCount: 0 });
+      return request(name, url, { method: 'POST', headers: { 'content-type': 'application/json' }, body }, r);
     },
   };
 }

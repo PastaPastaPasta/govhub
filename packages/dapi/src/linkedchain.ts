@@ -39,6 +39,8 @@ export interface StoredLinkedChain {
 }
 
 const fail = (height: number, msg: string): never => { throw new VerificationError('header-chain', `block ${height}: ${msg}`, height); };
+/** Whether the last of the run's `n` headers hashes to `hash`. */
+const endsWith = (run: HeaderRun, n: number, hash: Uint8Array): boolean => bytesEqual(run.hashes.subarray((n - 1) * 32), hash);
 
 export class LinkedChain implements VerifiedChain {
   readonly network: Network;
@@ -73,7 +75,7 @@ export class LinkedChain implements VerifiedChain {
   static fromTop(network: Network, run: HeaderRun, top: { height: number; hash: Uint8Array }): LinkedChain {
     const n = checkRun(run);
     if (run.from + n - 1 !== top.height) throw new VerificationError('header-chain', `the header run must end at the ChainLocked block ${top.height}`);
-    if (!bytesEqual(run.hashes.subarray((n - 1) * 32), top.hash)) fail(top.height, 'is not the ChainLocked block');
+    if (!endsWith(run, n, top.hash)) fail(top.height, 'is not the ChainLocked block');
     const c = new LinkedChain(network, run.from, Uint8Array.from(prevHashOf(run.headers, 0)), run.hashes.slice());
     c.#keepRaw(run, n);
     return c;
@@ -95,7 +97,7 @@ export class LinkedChain implements VerifiedChain {
     const n = checkRun(run);
     if (run.from !== this.hi + 1 || run.from + n - 1 !== top.height) throw new VerificationError('header-chain', `run ${run.from}..${run.from + n - 1} does not reach from ${this.hi + 1} to the ChainLocked block ${top.height}`);
     if (!bytesEqual(prevHashOf(run.headers, 0), this.hashAt(this.hi)!)) fail(run.from, 'does not link to the verified chain');
-    if (!bytesEqual(run.hashes.subarray((n - 1) * 32), top.hash)) fail(top.height, 'is not the ChainLocked block');
+    if (!endsWith(run, n, top.hash)) fail(top.height, 'is not the ChainLocked block');
     const next = new Uint8Array(this.#hashes.length + run.hashes.length);
     next.set(this.#hashes);
     next.set(run.hashes, this.#hashes.length);
@@ -107,7 +109,7 @@ export class LinkedChain implements VerifiedChain {
   extendDown(run: HeaderRun): void {
     const n = checkRun(run);
     if (run.from + n !== this.#lo) throw new VerificationError('header-chain', `run ends at ${run.from + n - 1}, expected ${this.#lo - 1}`);
-    if (!bytesEqual(run.hashes.subarray((n - 1) * 32), this.#prevOfLo)) fail(this.#lo - 1, 'is not the parent of the verified chain');
+    if (!endsWith(run, n, this.#prevOfLo)) fail(this.#lo - 1, 'is not the parent of the verified chain');
     const next = new Uint8Array(this.#hashes.length + run.hashes.length);
     next.set(run.hashes);
     next.set(this.#hashes, run.hashes.length);

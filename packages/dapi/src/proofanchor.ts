@@ -16,11 +16,11 @@ import type { Dapi } from './client.ts';
 import { type ChainLock, parseHeader } from './dash.ts';
 import { VerificationError } from './errors.ts';
 import { LinkedChain, type StoredLinkedChain } from './linkedchain.ts';
-import { type ProofSource, ProofSourceError, type ProofState, QUORUM_CHECKPOINTS, type VerifiedQuorumProof } from './quorumproof.ts';
+import { type PlatformQuorum, type ProofSource, ProofSourceError, type ProofState, QUORUM_CHECKPOINTS, type VerifiedQuorumProof } from './quorumproof.ts';
 import { parseSmlDecoded } from './sml.ts';
 import { proveSml } from './smlproof.ts';
 import type { AnchorOptions, AnchoredChain, Verifiers } from './types.ts';
-import { FRESH_S, MAX_STORED, type RawSml, applyRun, fetchHeaders, fetchSml, proveAgainstChain, quorumsWithHeights } from './anchor.ts';
+import { FRESH_S, MAX_STORED, type RawSml, applyRun, fetchHeaders, fetchSml, now, proveAgainstChain, quorumsWithHeights } from './anchor.ts';
 
 /** The proof path could not be completed; the caller falls back to proof of work and reports `message`. */
 export class ProofUnavailableError extends Error {
@@ -40,8 +40,6 @@ const CATCH_UP_MS = 2500;
 /** What `trust.source` says when the ChainLock is the one this browser proved earlier (no source had a newer one). */
 export const SAVED_SOURCE = 'this browser (proved earlier)';
 
-const nowS = () => Math.floor(Date.now() / 1000);
-
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(signal.reason);
@@ -57,7 +55,7 @@ interface Got { proof: VerifiedQuorumProof; source: ProofSource | null; bytes: n
 interface ProofContext {
   verify: NonNullable<Verifiers['verifyQuorumProof']>;
   hash: (h: Uint8Array) => Uint8Array;
-  platformQuorum: () => Promise<{ quorumHash: string; llmqType: number } | null>;
+  platformQuorum: () => Promise<PlatformQuorum | null>;
   down: Map<string, number>;
   clock: () => number;
   signal: AbortSignal | undefined;
@@ -112,8 +110,8 @@ function savedChainLock(stored: StoredLinkedChain, ctx: ProofContext): Got | nul
 }
 
 /** The median Platform quorum of the (unproven) list: only a hint for the quorum list server, which must open some quorum. */
-function platformQuorumOf(network: Network, smlP: Promise<RawSml>): () => Promise<{ quorumHash: string; llmqType: number } | null> {
-  let memo: Promise<{ quorumHash: string; llmqType: number } | null> | undefined;
+function platformQuorumOf(network: Network, smlP: Promise<RawSml>): () => Promise<PlatformQuorum | null> {
+  let memo: Promise<PlatformQuorum | null> | undefined;
   return () => (memo ??= smlP.then((raw) => {
     const type = PLATFORM_LLMQ[network];
     const qs = parseSmlDecoded(raw.decoded).quorums.filter((q) => q.llmqType === type).map((q) => q.quorumHash).sort();
@@ -142,7 +140,7 @@ export async function anchorByProof(
   const root = o.quorumCheckpoint ?? QUORUM_CHECKPOINTS[d.network];
   if (root.network !== d.network) throw new Error(`the quorum checkpoint is for ${root.network}, not ${d.network}`);
   const rootRef = { height: root.height, blockHash: root.blockHash };
-  const clock = o.now ?? nowS;
+  const clock = o.now ?? now;
   const progress = o.onProgress ?? (() => {});
   const p = CHAINLOCK_PARAMS[d.network];
   const ctx: ProofContext = { verify: v.verifyQuorumProof, hash, platformQuorum: platformQuorumOf(d.network, smlP), down: st.down, clock, signal: o.signal };
@@ -164,11 +162,13 @@ export async function anchorByProof(
   t = Date.now();
   progress('Fetching a ChainLock proof from the quorum checkpoint');
   const reasons: string[] = [];
-  const attempt = (from: ProofState) => fetchProof(sources, from, 0, ctx).catch((e: unknown) => {
+  // a failed fetch is no proof (null, with its reason noted when asked), unless the caller gave up
+  const orNull = (p: Promise<Got>, failures?: string[]) => p.catch((e: unknown) => {
     if (o.signal?.aborted) throw e;
-    reasons.push((e as Error).message);
+    failures?.push((e as Error).message);
     return null;
   });
+  const attempt = (from: ProofState) => orNull(fetchProof(sources, from, 0, ctx), reasons);
   const first = (stored ? ((await attempt(stored.state)) ?? savedChainLock(stored, ctx)) : null) ?? (await attempt(root));
   if (!first) throw new ProofUnavailableError(reasons.join('; '));
   let got: Got = first;
@@ -180,10 +180,6 @@ export async function anchorByProof(
   let raw = await smlP;
   let smlProof = proveSml(raw.decoded);
   ms.smlProof = Date.now() - t;
-  const orNull = (p: Promise<Got>) => p.catch((e: unknown) => {
-    if (o.signal?.aborted) throw e;
-    return null;
-  });
   for (let tries = 0, refetched = false; ;) {
     if (got.proof.state.height < smlProof.height) {
       const asked = got.source ? [got.source] : sources;
@@ -252,7 +248,7 @@ export async function anchorByProof(
   t = Date.now();
   const cl: ChainLock = { height: top.height, blockHash: target.blockHash, blockHashInternal: top.hash, signature: got.proof.chainLock.signature };
   let named = false;
-  const resolve = (hash_: string, ro: { signal?: AbortSignal }) => { named = true; return d.resolveBlockHeight(hash_, ro); };
+  const resolve = (blockHash: string, ro: { signal?: AbortSignal }) => { named = true; return d.resolveBlockHeight(blockHash, ro); };
   const quorums = await quorumsWithHeights(d, linked, sml.quorums, p.llmqType, p.dkgInterval, o, resolve);
   const check = v.verifyChainLock(cl, quorums, { network: d.network, smlHeight: sml.proof.height });
   if (!check.ok) throw new VerificationError('chainlock', `ChainLock on block ${top.height} not accepted by the proven list's quorums (${check.reason})`);
@@ -276,8 +272,11 @@ export async function anchorByProof(
     stats: { cachedHeaders: cached, fetchedHeaders: fetched, ms: { ...ms, total: Date.now() - t0 } },
   };
   if (!keepStored && o.proofStore) {
-    const atTop = linked.hi === top.height ? { state: target, header: got.proof.chainLock.header, signature: got.proof.chainLock.signature } : stored!.chainLock.header && stored!.chainLock.signature ? { state: stored!.state, header: stored!.chainLock.header, signature: stored!.chainLock.signature } : null;
-    if (atTop) await o.proofStore.save(linked.toStored(rootRef, atTop.state, { header: atTop.header, signature: atTop.signature }, maxStored)).catch(() => {});
+    // the run ends at the proven ChainLock, or (a source served an older one) still at the saved one, whose state and lock go with it
+    const atProven = linked.hi === top.height;
+    const state = atProven ? target : stored!.state;
+    const { header, signature } = atProven ? got.proof.chainLock : stored!.chainLock;
+    if (header && signature) await o.proofStore.save(linked.toStored(rootRef, state, { header, signature }, maxStored)).catch(() => {});
   }
   return out;
 }

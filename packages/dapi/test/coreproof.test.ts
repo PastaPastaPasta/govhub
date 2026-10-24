@@ -43,9 +43,9 @@ function layout(b: Uint8Array) {
 }
 
 const flip = (b: Uint8Array, at: number, mask = 1): Uint8Array => { const c = Uint8Array.from(b); c[at]! ^= mask; return c; };
-const rejects = (proof: Uint8Array, trusted: ProofState, kind?: QuorumProofError['kind']) => {
+const rejects = (proof: Uint8Array, trusted: ProofState, kind?: QuorumProofError['kind'], minimumHeight?: number) => {
   let err: unknown;
-  try { verifyQuorumProof(proof, trusted); } catch (e) { err = e; }
+  try { verifyQuorumProof(proof, trusted, minimumHeight); } catch (e) { err = e; }
   expect(err).toBeInstanceOf(QuorumProofError);
   if (kind) expect((err as QuorumProofError).kind).toBe(kind);
   return (err as QuorumProofError).message;
@@ -84,11 +84,8 @@ describe.each(['testnet', 'mainnet'] as const)('%s real proofs', (network) => {
   });
 
   it('enforces the minimum height before any signature work', () => {
-    expect(() => verifyQuorumProof(proof, root, f.target.height + 1)).toThrow(QuorumProofError);
+    rejects(proof, root, 'stale', f.target.height + 1);
     expect(verifyQuorumProof(proof, root, f.target.height).state.height).toBe(f.target.height);
-    let kind;
-    try { verifyQuorumProof(proof, root, f.target.height + 1); } catch (e) { kind = (e as QuorumProofError).kind; }
-    expect(kind).toBe('stale');
   });
 
   it('rejects forged links: a changed signature, header or mined commitment, or a reused certificate', () => {
@@ -166,10 +163,11 @@ describe('single-bit flips', () => {
     const f = load('testnet');
     const proof = unhex(f.delta.proof_hex), trusted = state(f.delta.checkpoint), want = state(f.delta.target);
     const l = layout(proof);
-    const pathAt = (start: number, dataLen: number) => start + dataLen;      // a path follows its blob
-    const seedCount = pathAt(l.seed, new DataView(proof.buffer, proof.byteOffset).getUint32(l.seed - 4, true)) + 4;
+    const dv = new DataView(proof.buffer, proof.byteOffset);
+    // the 4-byte leaf counts of the seed's and the target coinbase's Merkle paths (each path follows its blob)
+    const seedCount = l.seed + dv.getUint32(l.seed - 4, true) + 4;
     const coinbaseBlob = l.target + 180;
-    const coinbaseCount = coinbaseBlob + 4 + new DataView(proof.buffer, proof.byteOffset).getUint32(coinbaseBlob, true) + 4;
+    const coinbaseCount = coinbaseBlob + 4 + dv.getUint32(coinbaseBlob, true) + 4;
     const counts = [seedCount, coinbaseCount];
     let checked = 0;
     for (let at = 0; at < proof.length; at += 3) {

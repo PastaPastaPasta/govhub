@@ -4,7 +4,7 @@
 // Instantiated synchronously on first use, like the X11 module.
 import { hashBytes, hashHex } from './bytes.ts';
 import type { Network } from './chainlock.ts';
-import { MAX_PROOF_BYTES, type ProofState, type VerifiedQuorumProof, QuorumProofError } from './quorumproof.ts';
+import { MAX_PROOF_BYTES, type ProofState, QuorumProofError, type QuorumProofErrorKind, type VerifiedQuorumProof } from './quorumproof.ts';
 import { CORE_PROOF_WASM_BASE64 } from './vendor/core-proof-wasm.ts';
 
 interface CoreProofExports {
@@ -27,6 +27,8 @@ function api(): CoreProofExports {
 
 const STATE_BYTES = 101;
 const NETWORK_WIRE: Record<Network, number> = { mainnet: 0, testnet: 1 };
+/** The module's rejection statuses other than 1 (invalid): see core-proof-wasm/src/lib.rs. */
+const REJECTION_KIND: Partial<Record<number, QuorumProofErrorKind>> = { 2: 'stale', 3: 'untrusted-checkpoint' };
 
 function encodeState(s: ProofState): Uint8Array {
   const out = new Uint8Array(STATE_BYTES);
@@ -76,7 +78,7 @@ export function verifyQuorumProof(proof: Uint8Array, trusted: ProofState, minimu
     const out = new Uint8Array(w.memory.buffer, w.out_ptr(), w.out_len()).slice();
     if (status !== 0) {
       const reason = new TextDecoder().decode(out);
-      throw new QuorumProofError(status === 2 ? 'stale' : status === 3 ? 'untrusted-checkpoint' : 'invalid', reason);
+      throw new QuorumProofError(REJECTION_KIND[status] ?? 'invalid', reason);
     }
     if (out.length !== STATE_BYTES + 4 + 80 + 96 + 2) throw new QuorumProofError('invalid', 'verifier output size');
     const state = decodeState(out.subarray(0, STATE_BYTES));
