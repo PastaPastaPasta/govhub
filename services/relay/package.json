@@ -1,0 +1,28 @@
+{
+  "name": "@govhub/relay",
+  "version": "0.1.0",
+  "private": true,
+  "description": "govhub relay: a queue in front of dashd that broadcasts signed masternode governance funding votes with voteraw, immediately or at a client-chosen release time, and submits proposals.",
+  "type": "module",
+  "engines": { "node": ">=22.18" },
+  "bin": { "relay": "./bin/relay.mjs" },
+  "scripts": {
+    "relay": "node ./bin/relay.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@govhub/verify": "*",
+    "@hono/node-server": "^1.14.0",
+    "@noble/hashes": "^2.0.0",
+    "better-sqlite3": "^12.4.1",
+    "hono": "^4.7.0"
+  },
+  "devDependencies": {
+    "@noble/curves": "^2.0.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.0.0",
+    "typescript": "~5.9.2",
+    "vitest": "^3.0.0"
+  }
+}
