@@ -59,7 +59,7 @@ watcher.cancel();
 | `dapi.getBlock({height}\|{hash})` | Parsed block; its merkle root is recomputed (mismatch = lying node, next node) |
 | `dapi.resolveBlockHeight(hash)` | Height from the block's coinbase, cached |
 | `dapi.getVerifiedTransaction(txid, {chainLock, maxHeaderSpan, waitForChainLockMs, headerTimeoutMs})` | See [Trust notes](#trust-notes) |
-| `dapi.getSml({force, nodes, minAgree, hedgeAfterMs})` | Full SML accepted only if >= 2 of 3 nodes return identical content; cached; cancels the losers |
+| `dapi.getSml({force, nodes, minAgree, hedgeAfterMs})` | Full SML accepted only if >= 2 of 3 nodes return identical content (tip, roots, quorum keys, evonode endpoints and every masternode's voting address / type / validity, in `sml.masternodes`); cached; cancels the losers |
 | `dapi.refreshNodesFromSml({mode: 'append'\|'replace'})` | Adds the agreed SML's valid `platform_https` evonodes to the pool |
 | `dapi.verifyChainLock(cl)` | BLS check with Core's quorum selection (needs `verifiers.verifyChainLock`) |
 | `dapi.watchAddressForDeposit(hash160, handlers, opts)` / `dapi.watchTransactions(filter, handlers, opts, match)` | Merged streams on 3 nodes; see below |
