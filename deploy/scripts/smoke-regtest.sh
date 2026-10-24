@@ -7,10 +7,8 @@
 #   3. wait until the bridge's /v1/status reports the proposal
 #   4. tear everything down (containers, volumes, temp secrets), even on failure
 #
-# Usage: deploy/scripts/smoke-regtest.sh [--keep] [--stub]
+# Usage: deploy/scripts/smoke-regtest.sh [--keep]
 #   --keep   leave the stack running afterwards (you must `docker compose -p <project> down -v`)
-#   --stub   use the placeholder bridge (docker-compose.bridge-stub.yml) and skip the bridge check.
-#            Exercises only the Core side. Automatic when services/bridge/Dockerfile is absent.
 #
 # Environment:
 #   SMOKE_TIMEOUT_S     seconds to wait for the bridge to report the proposal (default 120)
@@ -27,11 +25,9 @@ DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_ROOT="$(cd "$DEPLOY_DIR/.." && pwd)"
 
 KEEP=0
-STUB=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --keep) KEEP=1 ;;
-    --stub) STUB=1 ;;
     -h | --help) awk 'NR > 1 && !/^#/ { exit } NR > 1' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
@@ -79,10 +75,7 @@ if [ "${SMOKE_SOURCE_ONLY:-0}" = 1 ]; then
   return 0 2> /dev/null || exit 0
 fi
 
-if [ ! -f "$REPO_ROOT/services/bridge/Dockerfile" ] && [ "$STUB" -eq 0 ]; then
-  echo "note: services/bridge/Dockerfile not found, falling back to --stub (Core side only)" >&2
-  STUB=1
-fi
+[ -f "$REPO_ROOT/services/bridge/Dockerfile" ] || { echo "services/bridge/Dockerfile not found" >&2; exit 2; }
 
 for tool in docker curl; do
   command -v "$tool" > /dev/null 2>&1 || { echo "missing prerequisite: $tool" >&2; exit 2; }
@@ -108,9 +101,6 @@ free_port() {
 BRIDGE_PORT_HOST="${SMOKE_BRIDGE_PORT:-$(free_port)}"
 
 COMPOSE_FILE_VALUE="docker-compose.yml:docker-compose.regtest.yml"
-if [ "$STUB" -eq 1 ]; then
-  COMPOSE_FILE_VALUE="$COMPOSE_FILE_VALUE:docker-compose.bridge-stub.yml"
-fi
 
 # A per-run bridge image tag: building must never re-tag the image a real stack on this host uses.
 BRIDGE_IMAGE_TAG="smoke-$$"
@@ -159,7 +149,7 @@ cleanup() {
   fi
   log "tearing down"
   dc down -v --remove-orphans > /dev/null 2>&1 || true
-  # Only the per-run bridge image; dashd/busybox/caddy images are shared and stay.
+  # Only the per-run bridge image; the dashd and caddy images are shared and stay.
   docker image rm "govhub-bridge:$BRIDGE_IMAGE_TAG" > /dev/null 2>&1 || true
   rm -rf "$SECRETS_TMP"
   if [ "$rc" -eq 0 ]; then log "PASS"; else log "FAIL"; fi
@@ -174,11 +164,7 @@ trap cleanup EXIT
 log "project $PROJECT, compose files: $COMPOSE_FILE_VALUE"
 dc config -q
 # --wait returns once every service is running/healthy; the bridge waits on dashd's health check.
-if [ "$STUB" -eq 1 ]; then
-  dc up -d --wait --wait-timeout 300
-else
-  dc up -d --build --wait --wait-timeout 600
-fi
+dc up -d --build --wait --wait-timeout 600
 log "stack is up: $(dc ps --format '{{.Service}}={{.Health}}' | tr '\n' ' ')"
 
 # ---- 2. mine, prepare, submit -----------------------------------------------------------------
@@ -216,8 +202,22 @@ log "governance hash $GOVHASH"
 cli gobject get "$GOVHASH" | grep -q '"DataString"' || { log "Core does not list the object"; exit 1; }
 
 # ---- 3. the bridge ----------------------------------------------------------------------------
-if [ "$STUB" -eq 1 ]; then
-  log "stub bridge: skipping the bridge check (Core side verified: prepare, confirm, submit, get)"
-else
-  wait_for_bridge "http://127.0.0.1:$BRIDGE_PORT_HOST/v1/status" "$GOVHASH" "${SMOKE_TIMEOUT_S:-120}"
+wait_for_bridge "http://127.0.0.1:$BRIDGE_PORT_HOST/v1/status" "$GOVHASH" "${SMOKE_TIMEOUT_S:-120}"
+
+# The bridge verified what it archived: gov hash recomputed, collateral fetched with getrawtransaction and checked.
+verified=0
+body=""
+for _ in $(seq 1 30); do
+  body="$(curl -fsS --max-time 5 "http://127.0.0.1:$BRIDGE_PORT_HOST/v1/proposals/$GOVHASH" 2> /dev/null || true)"
+  if printf '%s' "$body" | grep -q '"verified":{"hash":true,"data":true,"collateral":true}'; then
+    verified=1
+    break
+  fi
+  sleep 2
+done
+if [ "$verified" -ne 1 ]; then
+  log "bridge did not verify the proposal's hash, data and collateral; last body:"
+  printf '%s\n' "${body:0:800}"
+  exit 1
 fi
+log "bridge verified the proposal (hash, data, collateral)"

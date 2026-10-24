@@ -44,8 +44,6 @@ jobs:
             compose_file: docker-compose.yml:docker-compose.testnet.yml:docker-compose.p2p.yml
             profiles: proxy
             p2p_port: "19999"
-          - name: regtest + bridge stub
-            compose_file: docker-compose.yml:docker-compose.regtest.yml:docker-compose.bridge-stub.yml
     steps:
       - uses: actions/checkout@v4
 
