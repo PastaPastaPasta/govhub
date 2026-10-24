@@ -1,0 +1,95 @@
+name: deploy-lint
+
+# Static checks for deploy/: every compose combination must render, the RPC and ZMQ ports must
+# never be published, the scripts must pass shellcheck and the Caddyfile must validate.
+# The live regtest smoke test (deploy/scripts/smoke-regtest.sh) is not run here yet: it needs the
+# bridge image from services/bridge/Dockerfile.
+
+on:
+  pull_request:
+    paths:
+      - "deploy/**"
+      - ".github/workflows/deploy-lint.yml"
+  push:
+    branches: [main, master, phase1]
+    paths:
+      - "deploy/**"
+      - ".github/workflows/deploy-lint.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  compose-config:
+    name: compose config (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: mainnet
+            compose_file: docker-compose.yml
+          - name: testnet
+            compose_file: docker-compose.yml:docker-compose.testnet.yml
+          - name: regtest
+            compose_file: docker-compose.yml:docker-compose.regtest.yml
+          - name: mainnet + proxy profile
+            compose_file: docker-compose.yml
+            profiles: proxy
+          - name: testnet + p2p + proxy profile
+            compose_file: docker-compose.yml:docker-compose.testnet.yml:docker-compose.p2p.yml
+            profiles: proxy
+            p2p_port: "19999"
+          - name: regtest + bridge stub
+            compose_file: docker-compose.yml:docker-compose.regtest.yml:docker-compose.bridge-stub.yml
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Docker Compose version
+        run: docker compose version
+
+      - name: docker compose config
+        working-directory: deploy
+        env:
+          COMPOSE_FILE: ${{ matrix.compose_file }}
+          COMPOSE_PROFILES: ${{ matrix.profiles }}
+          DASHD_P2P_PORT: ${{ matrix.p2p_port }}
+        run: docker compose config > "$RUNNER_TEMP/rendered.yml"
+
+      - name: RPC (9998) and ZMQ (29998) must not be published to the host
+        working-directory: deploy
+        env:
+          COMPOSE_FILE: ${{ matrix.compose_file }}
+          COMPOSE_PROFILES: ${{ matrix.profiles }}
+          DASHD_P2P_PORT: ${{ matrix.p2p_port }}
+        run: |
+          set -euo pipefail
+          published="$(docker compose config --format json | jq -r '
+            .services[] | (.ports // [])[] | "\(.target) \(.published // "")"')"
+          echo "published ports (target published):"
+          echo "${published:-<none>}"
+          if echo "$published" | awk '{print $1, $2}' | grep -E '^(9998|29998) |^[0-9]+ (9998|29998)$'; then
+            echo "::error::RPC or ZMQ port is published to the host"
+            exit 1
+          fi
+
+  scripts:
+    name: shellcheck and Caddyfile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: shellcheck
+        run: |
+          shellcheck --version
+          shellcheck -x deploy/scripts/*.sh deploy/dashd/entrypoint.sh
+
+      - name: sh -n on the container entrypoint (POSIX sh, not bash)
+        run: sh -n deploy/dashd/entrypoint.sh
+
+      - name: Caddyfile validates
+        run: |
+          docker run --rm \
+            -e DOMAIN=gov.example.org -e CORS_ALLOW_ORIGIN='*' \
+            -v "$GITHUB_WORKSPACE/deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
