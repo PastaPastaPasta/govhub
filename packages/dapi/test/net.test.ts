@@ -60,6 +60,15 @@ describe('grpc-web over a real socket', () => {
       expect(await h.closed).toMatchObject({ reason: 'error', error: { code: 4, message: 'idle timeout' } });
     });
   });
+  it('rejects compressed frames and caps the size of a unary body', async () => {
+    await withServer((req, res) => {
+      if (req.url!.endsWith('/gz')) res.writeHead(200, GW).end(Buffer.from([1, 0, 0, 0, 1, 7]));
+      else { res.writeHead(200, GW); const big = Buffer.alloc(1 << 20, 1); const w = () => { for (let i = 0; i < 40 && !res.destroyed; i++) res.write(big); if (!res.destroyed) setTimeout(w, 1); }; w(); }
+    }, async (base) => {
+      await expect(unary(base, 'gz', none)).rejects.toMatchObject({ code: 12 });
+      await expect(unary(base, 'big', none, { timeoutMs: 5000 })).rejects.toMatchObject({ code: 8, message: expect.stringMatching(/too large/) });
+    });
+  });
   it('stream: an oversized message is rejected instead of buffered', async () => {
     await withServer((_req, res) => { const f = new Uint8Array(5); new DataView(f.buffer).setUint32(1, 10_000); res.writeHead(200, GW); res.end(f); }, async (base) => {
       const h = stream(base, 'big', none, { onMessage: () => {}, maxMessageBytes: 100 });

@@ -1,5 +1,5 @@
 // Multi-node helpers: race unary calls, and merge N streams with dedupe (IS-lock delivery robustness).
-import type { StreamClose } from './grpcweb.ts';
+import { type StreamClose, abortReason } from './grpcweb.ts';
 
 export interface RaceFailure { node: string; error: unknown }
 export interface RaceResult<T> { value: T; node: string; ms: number; failures: RaceFailure[] }
@@ -18,7 +18,7 @@ export function race<T>(
     const failures: RaceFailure[] = [];
     let next = 0, inflight = 0, done = false;
     const finish = (f: () => void) => { if (done) return; done = true; ctrl.abort(); signal?.removeEventListener('abort', onExt); f(); };
-    const onExt = () => finish(() => reject(signal!.reason ?? new DOMException('aborted', 'AbortError')));
+    const onExt = () => finish(() => reject(abortReason(signal!)));
     if (signal?.aborted) return onExt();
     signal?.addEventListener('abort', onExt, { once: true });
 

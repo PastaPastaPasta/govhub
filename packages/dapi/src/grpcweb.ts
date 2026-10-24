@@ -85,6 +85,7 @@ export class FrameParser {
     const out: Frame[] = [];
     for (;;) {
       if (this.buf.length < 5) break;
+      if (this.buf[0]! & 1) throw new GrpcError(12, 'compressed grpc-web frames are not supported');
       const len = new DataView(this.buf.buffer, this.buf.byteOffset).getUint32(1);
       if (len > this.#max) throw new GrpcError(8, `message of ${len} bytes exceeds the ${this.#max} byte limit`);
       if (this.buf.length < 5 + len) break;
@@ -116,11 +117,13 @@ function statusOf(headers: Headers, trailers: Record<string, string> | null): { 
 
 const rateInfo = (h: Headers): RateInfo => ({ limit: h.get('ratelimit-limit'), remaining: h.get('ratelimit-remaining'), reset: h.get('ratelimit-reset') });
 
-const isAbort = (e: unknown): boolean => (e as { name?: string })?.name === 'AbortError';
+export const isAbort = (e: unknown): boolean => (e as { name?: string })?.name === 'AbortError';
+/** Why `signal` aborted (always set by real AbortSignals; the fallback is for hand-made ones). */
+export const abortReason = (s: AbortSignal): unknown => s.reason ?? new DOMException('aborted', 'AbortError');
 const errText = (e: unknown): string => String((e as { message?: unknown })?.message ?? e);
 
 /** Propagate an external AbortSignal into ctrl (also if it is already aborted). Returns an unlink function. */
-function link(signal: AbortSignal | undefined, ctrl: AbortController): () => void {
+export function link(signal: AbortSignal | undefined, ctrl: AbortController): () => void {
   if (!signal) return () => {};
   if (signal.aborted) { ctrl.abort(signal.reason); return () => {}; }
   const on = () => ctrl.abort(signal.reason);
@@ -155,7 +158,16 @@ export async function unary(base: string, method: string, req: Uint8Array, { sig
   const timer = setTimeout(() => ctrl.abort(new GrpcError(4, 'deadline exceeded')), timeoutMs);
   try {
     const res = await open(base + method, req, ctrl.signal);
-    const bytes = new Uint8Array(await res.arrayBuffer());
+    // read through a capped reader: a hostile node cannot make us buffer an unbounded body before the frame limit applies
+    const reader = res.body!.getReader(), chunks: Uint8Array[] = [];
+    for (let size = 0; ;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      size += value.length;
+      if (size > DEFAULT_MAX_MESSAGE + 1024) { void reader.cancel().catch(() => {}); throw new GrpcError(8, 'response body too large'); }
+      chunks.push(value);
+    }
+    const bytes = concat(...chunks);
     let msg: Uint8Array | null = null, trailers: Record<string, string> | null = null;
     for (const f of new FrameParser().push(bytes)) { if (f.trailer) trailers = parseTrailers(f.data); else msg = f.data; }
     const st = statusOf(res.headers, trailers);
@@ -165,6 +177,7 @@ export async function unary(base: string, method: string, req: Uint8Array, { sig
   } catch (e) {
     if (isAbort(e) && ctrl.signal.reason instanceof GrpcError) throw ctrl.signal.reason;
     if (!isAbort(e) && !(e instanceof GrpcError) && ctrl.signal.reason instanceof GrpcError) throw ctrl.signal.reason; // body read aborted by our deadline
+    if (e instanceof TypeError) throw new GrpcError(14, `network error: ${errText(e)}`, { network: true }); // connection dropped mid-body
     throw e;
   } finally {
     clearTimeout(timer);

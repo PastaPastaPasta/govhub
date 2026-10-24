@@ -223,11 +223,31 @@ describe('getVerifiedTransaction', () => {
   });
   it('a ChainLock older than the block leaves the claim in place with a note', async () => {
     const old = Uint8Array.from(fx.chainLockBytes); new DataView(old.buffer).setInt32(0, fx.height - 1, true);
-    fake = installFakeDapi(net(1, () => honest({ chainLock: old })));
-    const v = await new Dapi({ nodes: [N(1)], verifiers }).getVerifiedTransaction(fx.txid);
+    fake = installFakeDapi(net(3, () => honest({ chainLock: old })));
+    const v = await new Dapi({ nodes: nodes(3), verifiers }).getVerifiedTransaction(fx.txid);
     expect(v.chainLocked).toBe('claimed');
     expect(v.proof.notes[0]).toMatch(/predates/);
   });
+  it('waitForChainLockMs waits for a newer ChainLock than the one sent first', async () => {
+    const old = Uint8Array.from(fx.chainLockBytes); new DataView(old.buffer).setInt32(0, fx.height - 1, true);
+    const node: FakeNode = { ...honest(), streams: { subscribeToBlockHeadersWithChainLocks: (_r, ctl) => {
+      ctl.send(resp.headers(fx.headers)); ctl.send(resp.chainLock(old));
+      setTimeout(() => ctl.send(resp.chainLock(fx.chainLockBytes)), 150);
+    }, subscribeToMasternodeList: (_r, ctl) => ctl.send(resp.sml(fx.smlBytes)) } };
+    fake = installFakeDapi({ [N(1)]: node, [N(2)]: node, [N(3)]: node });
+    const d = new Dapi({ nodes: nodes(3), verifiers });
+    expect((await d.getVerifiedTransaction(fx.txid)).chainLocked).toBe('claimed'); // no waiting by default
+    const v = await d.getVerifiedTransaction(fx.txid, { waitForChainLockMs: 2000 });
+    expect(v.chainLocked).toBe('verified');
+  });
+  it('an SML that cannot be agreed on is a note, not a failure of the header-stream node', async () => {
+    fake = installFakeDapi(net(3, (i) => honest({ sml: smlVariant((d) => { d.merkleRootMNList = String(i + 1).repeat(64); }) })));
+    const d = new Dapi({ nodes: nodes(3), verifiers });
+    const v = await d.getVerifiedTransaction(fx.txid);
+    expect(v).toMatchObject({ chainLocked: 'claimed' });
+    expect(v.proof.notes[0]).toMatch(/sml|SML/);
+    expect(fake.calls.filter((c) => c.endsWith('subscribeToBlockHeadersWithChainLocks')).length).toBe(0); // never opened a header stream
+  }, 20_000);
   it('an invalid ChainLock signature is never "verified"', async () => {
     const bad = Uint8Array.from(fx.chainLockBytes); bad[60]! ^= 1;
     fake = installFakeDapi(net(2, () => honest({ chainLock: bad })));
@@ -243,8 +263,8 @@ describe('getVerifiedTransaction', () => {
     expect(v.proof.notes[0]).toMatch(/header chain breaks/);
   });
   it('refuses to hash more than maxHeaderSpan headers', async () => {
-    fake = installFakeDapi(net(1));
-    const v = await new Dapi({ nodes: [N(1)], verifiers }).getVerifiedTransaction(fx.txid, { maxHeaderSpan: 5 });
+    fake = installFakeDapi(net(3));
+    const v = await new Dapi({ nodes: nodes(3), verifiers }).getVerifiedTransaction(fx.txid, { maxHeaderSpan: 5 });
     expect(v.chainLocked).toBe('claimed');
     expect(v.proof.notes[0]).toMatch(/maxHeaderSpan/);
   });
@@ -288,6 +308,24 @@ describe('getSml: cross-node agreement', () => {
     expect(s.agreedBy.sort()).toEqual([N(4), N(5)]);
     expect(s.asked.length).toBe(5);
     await until(() => fake!.open.size === 0);
+  });
+  it('one caller aborting does not fail another caller sharing the fetch, and the cache still fills', async () => {
+    fake = installFakeDapi(net(3, () => ({ ...honest(), delayMs: 60 })));
+    const d = new Dapi({ nodes: nodes(3) });
+    const ac = new AbortController();
+    const a = d.getSml({ signal: ac.signal });
+    const b = d.getSml();
+    setTimeout(() => ac.abort(), 10);
+    await expect(a).rejects.toThrow(/abort/i);
+    expect((await b).agreedBy.length).toBe(2);
+    const calls = fake.calls.length;
+    await d.getSml();
+    expect(fake.calls.length).toBe(calls); // served from the cache the surviving fetch filled
+  });
+  it('a pre-aborted signal rejects immediately without touching the network', async () => {
+    fake = installFakeDapi(net(3));
+    const ac = new AbortController(); ac.abort();
+    await expect(new Dapi({ nodes: nodes(3) }).getSml({ signal: ac.signal })).rejects.toThrow(/abort/i);
   });
   it('a single reachable node cannot satisfy the default agreement of 2', async () => {
     fake = installFakeDapi({ [N(1)]: honest(), [N(2)]: { dead: true }, [N(3)]: { dead: true } });
@@ -494,6 +532,56 @@ describe('watchAddressForDeposit', () => {
     expect(ev.txs).toHaveLength(1);
     w.cancel(); await w.closed;
     expect(ev.errors.some((e) => e.phase === 'stream-closed')).toBe(true);
+  });
+
+  it('a replacement stream starts near the tip instead of replaying from the original height', async () => {
+    const heights: number[] = [];
+    const blockVariant = (i: number): Uint8Array => { const b = Uint8Array.from(merkleBlockBytes); b[76] = i + 1; return resp.merkleBlock(b); };
+    const rec = (msgs: () => Uint8Array[], endAfterMs?: number): FakeNode => ({
+      unary: {},
+      streams: { subscribeToTransactionsWithProofs: (req, ctl) => {
+        heights.push(num(req, 3));
+        setTimeout(() => { for (const m of msgs()) ctl.send(m); }, 5);
+        if (endAfterMs) setTimeout(() => ctl.end(14), endAfterMs);
+      } },
+    });
+    fake = installFakeDapi({ [N(1)]: rec(() => [0, 1, 2, 3, 4, 5].map(blockVariant), 80), [N(2)]: rec(() => []), [N(3)]: rec(() => []), [N(4)]: rec(() => []), [N(5)]: rec(() => []) });
+    const d = new Dapi({ nodes: nodes(5), pool: new NodePool(nodes(5), { random: () => 0.999999 }) });
+    let seen = 0;
+    const w = await d.watchAddressForDeposit(hash160, { ...handlers().h, onBlock: () => { seen++; } }, { fromHeight: 1000 });
+    await until(() => heights.length >= 4, 4000);
+    expect(seen).toBe(6);
+    expect(heights.slice(0, 3)).toEqual([1000, 1000, 1000]);
+    expect(heights[3]).toBe(1003); // 6 blocks seen, minus a 3 block margin
+    w.cancel(); await w.closed;
+  });
+
+  it('an idle stream is replaced without blaming the node or reporting an error', async () => {
+    fake = installFakeDapi(net(5, () => watcherNode(() => [])));
+    const { h, ev } = handlers();
+    const d = new Dapi({ nodes: nodes(5) });
+    const w = await d.watchAddressForDeposit(hash160, h, { idleTimeoutMs: 60 });
+    await until(() => w.stats().opened.length >= 5, 4000);
+    expect(ev.errors.filter((e) => e.phase === 'stream-closed')).toEqual([]);
+    expect(nodes(5).some((n) => d.pool.cooling(n))).toBe(false);
+    w.cancel(); await w.closed;
+  });
+
+  it('a throwing onError never breaks the watcher; a pre-aborted signal never starts it', async () => {
+    fake = installFakeDapi(net(3, () => watcherNode(() => [resp.isLocks([Uint8Array.of(9)])])));
+    const w = await new Dapi({ nodes: nodes(3) }).watchAddressForDeposit(hash160, { onTx: () => {}, onIsLock: () => {}, onError: () => { throw new Error('observer bug'); } });
+    await flush(60);
+    expect(w.stats().live).toBeGreaterThan(0);
+    w.cancel(); await w.closed;
+    const ac = new AbortController(); ac.abort();
+    await expect(new Dapi({ nodes: nodes(3) }).watchAddressForDeposit(hash160, handlers().h, { signal: ac.signal, fromHeight: 5 })).rejects.toThrow(/abort/i);
+  });
+
+  it('a single-node pool can still become ready', async () => {
+    fake = installFakeDapi({ [N(1)]: watcherNode(() => []) });
+    const w = await new Dapi({ nodes: [N(1)] }).watchAddressForDeposit(hash160, handlers().h, { fromHeight: 5 });
+    expect(w.stats().live).toBe(1);
+    w.cancel(); await w.closed;
   });
 
   it('fails clearly when no streams can be opened, and leaves nothing running', async () => {

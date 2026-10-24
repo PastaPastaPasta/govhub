@@ -1,5 +1,7 @@
 // Evonode discovery. The quorum service lists nodes (CORS *); usable ones are ENABLED with versionCheck "success".
 // The URL is a user-replaceable setting: pass your own (any endpoint returning the same JSON shape) or a static list.
+import { link } from './grpcweb.ts';
+
 export const MAINNET_NODE_LIST = 'https://quorums.mainnet.networks.dash.org/masternodes';
 export const TESTNET_NODE_LIST = 'https://quorums.testnet.networks.dash.org/masternodes';
 
@@ -19,8 +21,7 @@ interface ServiceNode { status?: string; versionCheck?: string; addresses?: { pl
 /** Fetch `host:port` platform_https endpoints from a quorum-service-compatible URL. */
 export async function fetchNodes(url: string = MAINNET_NODE_LIST, { signal, timeoutMs = 10_000, requireVersionCheck = true }: FetchNodesOptions = {}): Promise<string[]> {
   const ctrl = new AbortController();
-  const onAbort = () => ctrl.abort(signal?.reason);
-  if (signal?.aborted) ctrl.abort(signal.reason); else signal?.addEventListener('abort', onAbort, { once: true });
+  const unlink = link(signal, ctrl);
   const timer = setTimeout(() => ctrl.abort(new Error('node list timeout')), timeoutMs);
   try {
     const res = await fetch(url, { signal: ctrl.signal });
@@ -36,7 +37,7 @@ export async function fetchNodes(url: string = MAINNET_NODE_LIST, { signal, time
     return out;
   } finally {
     clearTimeout(timer);
-    signal?.removeEventListener('abort', onAbort);
+    unlink();
   }
 }
 

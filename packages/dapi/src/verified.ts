@@ -7,10 +7,9 @@ import type { Dapi } from './client.ts';
 import type { DapiCore } from './core.ts';
 import { type Block, type ChainLock, coinbaseHeight, parseBlock, parseChainLock, parseHeader, parseTx } from './dash.ts';
 import { VerificationError } from './errors.ts';
-import { GrpcError } from './grpcweb.ts';
+import { GrpcError, abortReason, isAbort } from './grpcweb.ts';
 import type { CallOptions, GetVerifiedTransactionOptions, Tristate, VerifiedTransaction, Verifiers } from './types.ts';
 
-const isAbort = (e: unknown): boolean => (e as { name?: string })?.name === 'AbortError';
 const heights = new WeakMap<Dapi, Map<string, number>>();
 
 export async function getBlock(d: Dapi, q: { height: number } | { hash: string }, o?: CallOptions): Promise<{ block: Block; raw: Uint8Array; node: string }> {
@@ -40,16 +39,22 @@ export async function resolveBlockHeight(d: Dapi, hash: string, o?: CallOptions)
   return value;
 }
 
+/** The agreed SML with the base height of every signing-type quorum resolved (the inputs of Core's quorum selection). */
+async function loadQuorums(d: Dapi, o: CallOptions, force = false) {
+  const p = CHAINLOCK_PARAMS[d.network];
+  const sml = await getSml(d, { force, signal: o.signal });
+  await Promise.all(sml.quorums.filter((q) => q.llmqType === p.llmqType && q.baseHeight === undefined).map(async (q) => {
+    q.baseHeight = await resolveBlockHeight(d, q.quorumHash, o);
+  }));
+  return sml;
+}
+
 export async function verifyChainLock(d: Dapi, cl: ChainLock, o: CallOptions = {}): Promise<ChainLockCheck> {
   const v = await d.crypto();
   if (!v.verifyChainLock) throw new Error('verifyChainLock verifier not configured (pass verifiers.verifyChainLock from @govhub/dapi/bls)');
-  const p = CHAINLOCK_PARAMS[d.network];
   let r: ChainLockCheck | undefined;
   for (let attempt = 0; attempt < 2; attempt++) {
-    const sml = await getSml(d, { force: attempt > 0, signal: o.signal });
-    await Promise.all(sml.quorums.filter((q) => q.llmqType === p.llmqType && q.baseHeight === undefined).map(async (q) => {
-      q.baseHeight = await resolveBlockHeight(d, q.quorumHash, o);
-    }));
+    const sml = await loadQuorums(d, o, attempt > 0);
     r = v.verifyChainLock(cl, sml.quorums, { network: d.network, smlHeight: sml.height });
     if (r.ok || r.reason !== 'stale-sml') return r;
   }
@@ -88,6 +93,8 @@ export async function getVerifiedTransaction(d: Dapi, txid: string, o: GetVerifi
     else if (!v.verifyChainLock) notes.push('no BLS verifier: ChainLock signature not checked');
     else {
       try {
+        // quorum data first, outside the per-node retry: an SML that cannot be agreed on is nobody's header-stream fault
+        await loadQuorums(d, o);
         const r = await d.call((core, signal) => proveChainLock(d, core, base.height, base.blockHash!, v, o, signal), { ...o, attempts: 2 });
         if ('chainLock' in r.value) chainLock = r.value.chainLock; else notes.push(r.value.reason);
       } catch (e) {
@@ -111,24 +118,25 @@ async function proveChainLock(
   let cl: ChainLock | null = null;
   await new Promise<void>((resolve, reject) => {
     let settled = false;
-    const done = (err?: unknown) => { if (settled) return; settled = true; clearTimeout(timer); unlink(); h.cancel(); if (err) reject(err); else resolve(); };
-    const onAbort = () => done(signal?.reason ?? new DOMException('aborted', 'AbortError'));
+    const done = (err?: unknown) => { if (settled) return; settled = true; clearTimeout(timer); clearTimeout(wake); unlink(); h.cancel(); if (err) reject(err); else resolve(); };
+    const onAbort = () => done(abortReason(signal!));
     const unlink = () => signal?.removeEventListener('abort', onAbort);
-    if (signal?.aborted) return reject(signal.reason ?? new DOMException('aborted', 'AbortError'));
+    if (signal?.aborted) return reject(abortReason(signal));
     signal?.addEventListener('abort', onAbort, { once: true });
-    const waitUntil = Date.now() + (o.waitForChainLockMs ?? 0);
+    const wait = o.waitForChainLockMs ?? 0, waitUntil = Date.now() + wait;
     const check = () => {
       if (!cl) return;
-      if (cl.height < height) { if (Date.now() >= waitUntil) done(); return; }
+      if (cl.height < height) { if (Date.now() >= waitUntil) done(); return; } // no newer lock yet: keep waiting until waitUntil
       if (cl.height - height > maxSpan || headers.length > cl.height - height) done();
     };
-    const timer = setTimeout(() => done(new GrpcError(4, 'header stream timed out')), o.headerTimeoutMs ?? 20_000);
+    const timer = setTimeout(() => done(new GrpcError(4, 'header stream timed out')), (o.headerTimeoutMs ?? 20_000) + wait);
+    const wake = wait > 0 ? setTimeout(() => { try { check(); } catch (e) { done(e); } }, wait + 50) : undefined;
     const h = core.subscribeToBlockHeadersWithChainLocks({ fromHeight: height }, (ev) => {
       try {
         if (ev.type === 'headers') { for (const x of ev.headers) if (headers.length <= maxSpan + 8) headers.push(x); } else cl = parseChainLock(ev.chainLock);
         check();
       } catch (e) { done(e); }
-    }, { idleTimeoutMs: 20_000, connectTimeoutMs: d.options.timeoutMs ?? 15000 });
+    }, { idleTimeoutMs: Math.max(20_000, wait + 5000), connectTimeoutMs: d.options.timeoutMs ?? 15000 });
     void h.closed.then((r) => { if (r.reason !== 'cancelled') done(r.reason === 'error' ? r.error : new GrpcError(14, 'header stream ended early', { network: true })); });
   });
   const lock = cl as ChainLock | null;

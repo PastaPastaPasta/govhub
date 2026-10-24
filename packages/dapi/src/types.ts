@@ -132,8 +132,10 @@ export interface WatchOptions {
   readyStreams?: number;
   /** Give up on becoming ready after this long. Default 15 s. */
   readyTimeoutMs?: number;
-  /** A silent stream is replaced after this long (blocks arrive every 2.5 min on average). Default 5 min. */
+  /** A silent stream is replaced after this long. Blocks are the only heartbeat and come every 2.5 min on average (gaps over
+   *  15 min are rare, about 0.3%). Replacing an idle stream is not counted against the node. Default 15 min. */
   idleTimeoutMs?: number;
+  /** Cap on replacement streams over the watcher's lifetime. Default unlimited: replacements are paced by jittered backoff. */
   maxReplacements?: number;
   signal?: AbortSignal;
 }

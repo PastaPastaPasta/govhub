@@ -1,5 +1,5 @@
 // Node pool: random selection, per-node request budget (evonodes allow ~150 req/min) and failure cooldowns.
-import { GrpcError } from './grpcweb.ts';
+import { GrpcError, abortReason } from './grpcweb.ts';
 import { sample } from './nodes.ts';
 
 export interface PoolOptions {
@@ -87,9 +87,9 @@ export function backoffMs(attempt: number, base = 150, cap = 3000, random: () =>
 
 export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
-    if (signal?.aborted) return reject(signal.reason ?? new DOMException('aborted', 'AbortError'));
+    if (signal?.aborted) return reject(abortReason(signal));
     const t = setTimeout(() => { signal?.removeEventListener('abort', onAbort); resolve(); }, ms);
-    const onAbort = () => { clearTimeout(t); reject(signal!.reason ?? new DOMException('aborted', 'AbortError')); };
+    const onAbort = () => { clearTimeout(t); reject(abortReason(signal!)); };
     signal?.addEventListener('abort', onAbort, { once: true });
   });
 }

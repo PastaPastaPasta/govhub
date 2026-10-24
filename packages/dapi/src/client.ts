@@ -7,7 +7,7 @@ import { DapiCore } from './core.ts';
 import type { Block, ChainLock, Tx } from './dash.ts';
 import { parseTx } from './dash.ts';
 import { AllNodesFailedError, VerificationError } from './errors.ts';
-import { GrpcError } from './grpcweb.ts';
+import { GrpcError, isAbort } from './grpcweb.ts';
 import { MAINNET_NODE_LIST, TESTNET_NODE_LIST, fetchNodes } from './nodes.ts';
 import { NodePool, backoffMs, sleep } from './pool.ts';
 import type { Network } from './chainlock.ts';
@@ -15,7 +15,6 @@ import type {
   AgreedSml, CallOptions, DapiOptions, GetVerifiedTransactionOptions, SmlOptions, VerifiedTransaction, Verifiers, WatchHandlers, WatchOptions, Watcher,
 } from './types.ts';
 
-const isAbort = (e: unknown): boolean => (e as { name?: string })?.name === 'AbortError';
 const defaultRetryable = (e: unknown): boolean => !(e instanceof GrpcError && (e.code === 3 || e.code === 9));
 
 export class Dapi {

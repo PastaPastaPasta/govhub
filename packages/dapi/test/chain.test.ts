@@ -126,6 +126,15 @@ describe('SML parsing', () => {
     const tampered = parseSml(unhex(raw.replace(hex(new TextEncoder().encode(key)), hex(new TextEncoder().encode(key.replace(/^./, key[0] === 'a' ? 'b' : 'a'))))));
     expect(tampered.digest).not.toBe(a.digest);
   });
+  it('drops evonode endpoints that are not host:port, and the digest covers the tip height', () => {
+    const ok = { blockHash: '00'.repeat(32), baseBlockHash: '00'.repeat(32), merkleRootMNList: '11'.repeat(32), merkleRootQuorums: '22'.repeat(32), newQuorums: [] };
+    const mn = (endpoint: string) => ({ nType: 1, isValid: true, proRegTxHash: 'aa'.repeat(32), addresses: { platform_https: [endpoint] } });
+    const s = parseSml(encodeCbor({ ...ok, mnList: [mn('1.2.3.4:443'), mn('evil.com/x#:443'), mn('http://a:1'), mn('a b:1')] }));
+    expect(s.evonodes.map((e) => e.endpoint)).toEqual(['1.2.3.4:443']);
+    expect(s.evonodeCount).toBe(4);
+    const bumped = (blockHeight: number) => parseSml(encodeCbor({ ...ok, mnList: [], cbTx: hex(withHeight(blockHeight)) })).digest;
+    expect(bumped(100)).not.toBe(bumped(101));
+  });
   it('rejects malformed diffs', () => {
     const ok = { blockHash: '00'.repeat(32), baseBlockHash: '00'.repeat(32), merkleRootMNList: '11'.repeat(32), merkleRootQuorums: '22'.repeat(32), mnList: [], newQuorums: [] };
     expect(parseSml(encodeCbor(ok)).quorums).toEqual([]);
@@ -135,6 +144,13 @@ describe('SML parsing', () => {
     expect(() => parseSml(encodeCbor([1]))).toThrow(/not a map/);
   });
 });
+
+function withHeight(h: number): Uint8Array {
+  // minimal coinbase v3 type 5 with a DIP4 payload (version u16, height u32)
+  const payload = new Uint8Array(6); new DataView(payload.buffer).setUint16(0, 2, true); new DataView(payload.buffer).setUint32(2, h, true);
+  const input = [...new Uint8Array(32), 0xff, 0xff, 0xff, 0xff, 1, 0x51, 0xff, 0xff, 0xff, 0xff];
+  return Uint8Array.from([3, 0, 5, 0, 1, ...input, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0x51, 0, 0, 0, 0, payload.length, ...payload]);
+}
 
 // ---- ChainLock rules ----
 const mainnet = CHAINLOCK_PARAMS.mainnet;
@@ -204,16 +220,17 @@ describe('Core quorum-set selection (quorumsman.cpp ScanQuorums window rules)', 
   it('after the mining window the store block is the window end: all four quorums, complete', () => {
     const r = chainLockCandidateSets(tip33, 33 * 288 + 100 + 8, mainnet);
     expect(hashes(r.sets)).toEqual([[33, 32, 31, 30]]);
-    expect(r.incomplete).toBe(false);
+    expect(r.complete).toEqual([true]);
   });
   it('before the window the newest quorum is not active yet, so a tip-only SML is incomplete', () => {
     const r = chainLockCandidateSets(tip33, 33 * 288 + 5 + 8, mainnet);
     expect(hashes(r.sets)).toEqual([[32, 31, 30]]);
-    expect(r.incomplete).toBe(true);
+    expect(r.complete).toEqual([false]);
   });
   it('inside the window both possibilities are offered (the SML does not say when the commitment was mined)', () => {
     const r = chainLockCandidateSets(tip33, 33 * 288 + 24 + 8, mainnet);
     expect(hashes(r.sets)).toEqual([[33, 32, 31, 30], [32, 31, 30]]);
+    expect(r.complete).toEqual([true, false]); // only the set that includes the new quorum is as big as Core's
   });
   it('the window end block itself already includes the quorum; the window start does not decide', () => {
     expect(hashes(chainLockCandidateSets(tip33, 33 * 288 + 28 + 8, mainnet).sets)).toEqual([[33, 32, 31, 30]]);
@@ -250,8 +267,9 @@ describe('Core quorum-set selection (quorumsman.cpp ScanQuorums window rules)', 
     const height = 34 * 288 + 24 + 8;
     const rid = chainLockRequestId(height);
     const byScore = (qs: Synth[]) => [...qs].sort((a, b) => Buffer.compare(quorumScore(2, a.quorumHash, rid), quorumScore(2, b.quorumHash, rid)))[0]!;
-    expect(verifyChainLock(mk(byScore(tip34), height), tip34).ok).toBe(true); // q34 already mined
-    expect(verifyChainLock(mk(byScore([q31, q32, q33]), height), tip34).ok).toBe(true); // not yet mined
+    expect(verifyChainLock(mk(byScore(tip34), height), tip34)).toMatchObject({ ok: true, exact: true }); // q34 already mined: complete set
+    const old = verifyChainLock(mk(byScore([q31, q32, q33]), height), tip34); // q34 not yet mined: Core's set also holds q30, which the SML lacks
+    expect(old).toMatchObject({ ok: true, exact: byScore(tip34) === byScore([q31, q32, q33]) });
   });
   it('an incomplete SML accepts any known quorum of the set but reports exact: false', () => {
     const height = 33 * 288 + 5 + 8; // needs q29, which a tip-only SML lacks

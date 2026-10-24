@@ -69,8 +69,9 @@ export interface CandidateSets {
   /** Possible "active quorum" sets Core could have used for this ChainLock height (newest first). Usually one; two when the
    *  signing height falls inside a mining window, because the SML does not say which block a commitment was mined in. */
   sets: SmlQuorum[][];
-  /** The SML knows fewer quorums than Core's set at that height would hold: an older SML is needed to be exact. */
-  incomplete: boolean;
+  /** Per set: it holds as many quorums as Core's would (activeCount), so selecting its rank 0 is exactly Core's choice. A shorter
+   *  set means the SML lacks older quorums Core would also have considered: an older SML would be needed to be exact. */
+  complete: boolean[];
   /** The store block is newer than the SML's tip, so quorums mined since may be missing: refetch the SML. */
   stale: boolean;
 }
@@ -88,7 +89,7 @@ export interface CandidateSets {
  * (blockprocessor mining window), which decides membership exactly except while the store block sits inside that window.
  */
 export function chainLockCandidateSets(quorums: readonly SmlQuorum[], height: number, p: ChainLockParams, smlHeight?: number | null): CandidateSets {
-  const empty: CandidateSets = { sets: [], incomplete: false, stale: false };
+  const empty: CandidateSets = { sets: [], complete: [], stale: false };
   const start = height - SIGN_HEIGHT_OFFSET;
   if (start < 0) return empty;
   const mine = quorums.filter((q) => q.llmqType === p.llmqType);
@@ -107,6 +108,7 @@ export function chainLockCandidateSets(quorums: readonly SmlQuorum[], height: nu
   const options = maybe.length ? [newest([...sure, ...maybe]), newest(sure)] : [newest(sure)];
   const seen = new Set<string>();
   const sets = options.filter((s) => { const k = s.map((q) => q.quorumHash).join(); if (!s.length || seen.has(k)) return false; seen.add(k); return true; });
+  // a short set is only a problem when the SML itself was full: a chain that never had `activeCount` quorums has short sets in Core too
   const tipFull = mine.length >= p.activeCount;
-  return { sets, incomplete: tipFull && options.some((s) => s.length < p.activeCount), stale: smlHeight != null && store > smlHeight };
+  return { sets, complete: sets.map((s) => !tipFull || s.length >= p.activeCount), stale: smlHeight != null && store > smlHeight };
 }

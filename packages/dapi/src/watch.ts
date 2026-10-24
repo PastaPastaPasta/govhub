@@ -4,6 +4,7 @@ import { bytesEqual, hex } from './bytes.ts';
 import type { Dapi } from './client.ts';
 import { type MerkleBlock, type Tx, classifyScript, parseInstantLock, parseMerkleBlock, parseTx } from './dash.ts';
 import { AllNodesFailedError, VerificationError } from './errors.ts';
+import { GrpcError, abortReason } from './grpcweb.ts';
 import { backoffMs } from './pool.ts';
 import { mergeStreams } from './race.ts';
 import type { DepositEvent, IsLockEvent, WatchHandlers, WatchOptions, Watcher } from './types.ts';
@@ -17,12 +18,14 @@ export async function watchTransactions(
   d: Dapi, filter: BloomFilterData, handlers: WatchHandlers, o: WatchOptions = {}, match: (tx: Tx) => number[] = () => [0],
 ): Promise<Watcher> {
   if (filter.vData.length < 200) throw new Error('bloom filter must be at least 200 bytes (smaller ones match everything on DAPI nodes)');
+  if (o.signal?.aborted) throw abortReason(o.signal);
   await d.ready();
-  const wanted = o.streams ?? 3, readyNeeded = Math.min(o.readyStreams ?? 2, wanted);
+  const wanted = o.streams ?? 3, readyNeeded = Math.max(1, Math.min(o.readyStreams ?? 2, wanted, d.pool.size));
   const fromHeight = o.fromHeight ?? Math.max(0, (await d.getBestBlockHeight({ signal: o.signal })).height - (o.lookback ?? 3));
   const live = new Set<string>(), seenTx = new Set<string>();
-  const onError = handlers.onError ?? (() => {});
-  let open = 0, readyDone = false, resolveReady!: () => void;
+  // handler errors must never break the stream machinery
+  const onError = (e: unknown, ctx: { phase: string; node?: string }) => { try { handlers.onError?.(e, ctx); } catch { /* observer failed */ } };
+  let open = 0, blocks = 0, readyDone = false, resolveReady!: () => void;
   const ready = new Promise<void>((r) => { resolveReady = r; });
   const noteOpen = () => { open++; if (!readyDone && open >= readyNeeded) { readyDone = true; resolveReady(); } };
 
@@ -30,8 +33,11 @@ export async function watchTransactions(
     () => { const n = d.pool.pick(1, live)[0]; if (n) live.add(n); return n; },
     (node, emit) => {
       let opened = false;
-      d.pool.charge(node);
-      const h = d.core(node).subscribeToTransactionsWithProofs(filter, { fromHeight }, (ev) => {
+      try { d.pool.charge(node); } catch (e) { live.delete(node); throw e; }
+      // one merkleblock arrives per block, so blocks seen so far say how far the tip has moved: a replacement stream (opened hours
+      // after the first) starts a few blocks before that point instead of replaying everything again
+      const start = fromHeight + Math.max(0, blocks - 3);
+      const h = d.core(node).subscribeToTransactionsWithProofs(filter, { fromHeight: start }, (ev) => {
         try {
           if (ev.type === 'rawtxs') {
             for (const raw of ev.txs) {
@@ -48,7 +54,7 @@ export async function watchTransactions(
             emit('mb:' + hex(b.header.raw), { k: 'block', b });
           }
         } catch (e) { onError(e, { phase: 'stream-event', node }); }
-      }, { idleTimeoutMs: o.idleTimeoutMs ?? 300_000, connectTimeoutMs: d.options.timeoutMs ?? 15000, onOpen: () => { opened = true; noteOpen(); } });
+      }, { idleTimeoutMs: o.idleTimeoutMs ?? 900_000, connectTimeoutMs: d.options.timeoutMs ?? 15000, onOpen: () => { opened = true; noteOpen(); } });
       void h.closed.then(() => { live.delete(node); if (opened) open--; });
       return h;
     },
@@ -57,13 +63,16 @@ export async function watchTransactions(
       else if (item.k === 'is') {
         const e = { ...item.e, known: seenTx.has(item.e.lock.txid), node };
         void Promise.resolve().then(() => handlers.onIsLock(e)).catch((err) => onError(err, { phase: 'islock-persist', node }));
-      } else handlers.onBlock?.(item.b, node);
+      } else { blocks++; handlers.onBlock?.(item.b, node); }
     },
     {
-      n: wanted, maxReplacements: o.maxReplacements ?? 100, replaceDelayMs: (k) => backoffMs(Math.min(k, 6), 200, 5000),
+      // Replacements are paced by jittered backoff rather than capped: a watcher that lives for hours must keep replacing streams.
+      n: wanted, maxReplacements: o.maxReplacements ?? Infinity, replaceDelayMs: (k) => backoffMs(Math.min(k, 6), 200, 5000),
       onClose: (node, res) => {
         const r = res as { reason?: string; error?: unknown };
-        if (r.reason === 'error') { d.pool.fail(node, r.error); onError(r.error, { phase: 'stream-closed', node }); }
+        if (r.reason !== 'error') return;
+        // a silent stream (idle timeout, code 4) is normal between blocks: replace it without blaming the node
+        if (!(r.error instanceof GrpcError && r.error.code === 4 && /idle/.test(r.error.message))) { d.pool.fail(node, r.error); onError(r.error, { phase: 'stream-closed', node }); }
       },
     },
   );
@@ -75,13 +84,13 @@ export async function watchTransactions(
   let timer: ReturnType<typeof setTimeout> | undefined;
   const failed = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(failure()), o.readyTimeoutMs ?? 15_000);
-    void merged.closed.then(() => { if (!readyDone) reject(failure()); });
+    void merged.closed.then(() => { if (!readyDone) reject(o.signal?.aborted ? abortReason(o.signal) : failure()); });
   });
   try {
     await Promise.race([ready, failed]);
   } catch (e) {
     merged.cancel();
-    throw e;
+    throw o.signal?.aborted ? abortReason(o.signal) : e;
   } finally {
     clearTimeout(timer);
     failed.catch(() => {}); // the losing branch must not surface as an unhandled rejection

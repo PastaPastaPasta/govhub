@@ -4,6 +4,7 @@
 import { sha256d, hex, unhex } from './bytes.ts';
 import { type Cbor, decodeCbor } from './cbor.ts';
 import { coinbaseHeight, parseTx } from './dash.ts';
+import { isEndpoint } from './nodes.ts';
 
 /** Core's LLMQType enum (src/llmq/params.h). */
 export const LLMQ_TYPE = { LLMQ_50_60: 1, LLMQ_400_60: 2, LLMQ_400_85: 3, LLMQ_100_67: 4, LLMQ_60_75: 5 } as const;
@@ -68,7 +69,7 @@ export function parseSml(bytes: Uint8Array): Sml {
     evonodeCount++;
     const a = isObj(m.addresses) ? m.addresses : undefined;
     const p = a && Array.isArray(a.platform_https) ? a.platform_https[0] : undefined;
-    if (valid && typeof p === 'string') evonodes.push({ proTxHash: str(m, 'proRegTxHash'), endpoint: p });
+    if (valid && isEndpoint(p)) evonodes.push({ proTxHash: str(m, 'proRegTxHash'), endpoint: p }); // anything else never becomes a request URL
   }
 
   const quorums: SmlQuorum[] = arr(d, 'newQuorums').map((q) => {
@@ -85,7 +86,7 @@ export function parseSml(bytes: Uint8Array): Sml {
   }
 
   const canon = [
-    blockHash, merkleRootMNList, merkleRootQuorums, mnList.length, validMnCount,
+    blockHash, height, merkleRootMNList, merkleRootQuorums, mnList.length, validMnCount,
     ...quorums.map((q) => `${q.llmqType}:${q.quorumHash}:${q.quorumIndex}:${q.quorumPublicKey}:${q.quorumVvecHash}`).sort(),
     ...evonodes.map((e) => `${e.proTxHash}@${e.endpoint}`).sort(),
   ].join('\n');

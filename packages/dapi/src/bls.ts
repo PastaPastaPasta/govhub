@@ -9,6 +9,7 @@ import {
 import type { ChainLock } from './dash.ts';
 import type { SmlQuorum } from './sml.ts';
 
+
 const bls = bls12_381.longSignatures;
 
 /** Verify one signature of `signHash` under a quorum public key. Never throws: malformed input is simply "not valid". */
@@ -41,18 +42,19 @@ export interface VerifyChainLockOptions {
  */
 export function verifyChainLock(cl: ChainLock, quorums: readonly SmlQuorum[], o: VerifyChainLockOptions = {}): ChainLockCheck {
   const p = o.params ?? CHAINLOCK_PARAMS[o.network ?? 'mainnet'];
-  const { sets, incomplete, stale } = chainLockCandidateSets(quorums, cl.height, p, o.smlHeight);
+  const { sets, complete, stale } = chainLockCandidateSets(quorums, cl.height, p, o.smlHeight);
   if (!sets.length) return { ok: false, reason: 'no-quorum', exact: true };
   const requestId = chainLockRequestId(cl.height);
-  const check = (q: SmlQuorum): ChainLockCheck | null =>
-    blsVerify(cl.signature, chainLockSignHash(p.llmqType, q.quorumHash, requestId, cl.blockHashInternal), unhex(q.quorumPublicKey))
-      ? { ok: true, quorumHash: q.quorumHash, exact: !incomplete && !stale }
-      : null;
-  for (const set of sets) {
+  for (const [i, set] of sets.entries()) {
     // Complete set: only the rank-0 quorum counts. Incomplete set: Core's rank-0 may be a quorum this SML lacks, so any known
     // quorum of the set whose signature verifies is accepted and reported as inexact.
+    const exact = complete[i]! && !stale;
     const ranked = set.map((q) => ({ q, s: quorumScore(p.llmqType, q.quorumHash, requestId) })).sort((a, b) => compareBytes(a.s, b.s));
-    for (const { q } of incomplete ? ranked : ranked.slice(0, 1)) { const r = check(q); if (r) return r; }
+    for (const { q } of complete[i]! ? ranked.slice(0, 1) : ranked) {
+      if (blsVerify(cl.signature, chainLockSignHash(p.llmqType, q.quorumHash, requestId, cl.blockHashInternal), unhex(q.quorumPublicKey))) {
+        return { ok: true, quorumHash: q.quorumHash, exact };
+      }
+    }
   }
-  return { ok: false, reason: stale ? 'stale-sml' : 'bad-signature', exact: !incomplete && !stale };
+  return { ok: false, reason: stale ? 'stale-sml' : 'bad-signature', exact: complete.every(Boolean) && !stale };
 }
