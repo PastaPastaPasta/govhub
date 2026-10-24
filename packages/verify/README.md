@@ -174,10 +174,10 @@ Regtest needs `-txindex=1 -acceptnonstdtxn=1` (the multi-OP_RETURN variant is no
    `multi-op-return`, so those only appear if mined by a cooperating miner.) The matching output may be at any index; > 1 DASH is accepted.
 3. **Testnet votes do not use message signing** (plan §5.1 only mentions the DarkCoin magic). On testnet Core verifies the binary vote hash
    (`vote.cpp:176`), so (a) the browser/relay must pick the scheme from the network (`voteSchemeFor`), (b) the "offline-sign with `signmessage`" mode in §5.1 cannot work on testnet,
-   (c) outcome precedes signal in the binary preimage. **Verified against a live testnet node (2026-10-24):** 33 signed votes on 2 proposals from 22
-   masternodes, as dashd v24.0.0-rc.4 published them on ZMQ, all recover to the `votingAddress` Core lists for their masternode and none verify with
-   the message scheme (`test/testnet-votes.test.ts`, fixture `test/fixtures/testnet-votes.json`; regtest uses the message path, and no RPC signs a
-   hash, so signing on this path is still covered by `signVote` round trips only).
+   (c) outcome precedes signal in the binary preimage. **Verified against a live testnet node (2026-10-24), both directions:** 34 signed votes on 3
+   proposals from 23 masternodes, as dashd v24.0.0-rc.4 published them on ZMQ, all recover to the `votingAddress` Core lists for their masternode
+   and none verify with the message scheme; one of them is an ABSTAIN signed with `signVote` and submitted with `voteraw`, which Core accepted
+   (`test/testnet-votes.test.ts`, fixture `test/fixtures/testnet-votes.json`).
 4. **Core's signatures are deterministic (RFC 6979) like noble's**, so signatures are byte-identical, not just verifiable. Useful for golden tests.
 5. **Core accepts more signature encodings than SignCompact emits**: any header byte (only `(h-27)&3` and `&4` matter) and high-S, because governance votes are checked with `CHashSigner::VerifyHash`,
    not `VerifyHashCanonical` (which only the evo shares code uses). `recoverVoteSigner` mirrors Core by default (relays/verifiers must not reject votes Core accepts); pass `{strict:true}` to require canonical headers 27..34 + low-S

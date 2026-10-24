@@ -1,7 +1,7 @@
 {
- "recordedAt": "2026-10-24T18:24:33.889Z",
- "source": "ZMQ rawgovernancevote from testnet dashd /Dash Core:24.0.0/ (R730 CT 185) during a governance re-sync; voting addresses from protx list registered true 1578664",
- "height": 1578664,
+ "recordedAt": "2026-10-24T18:35:41.192Z",
+ "source": "ZMQ rawgovernancevote from testnet dashd /Dash Core:24.0.0/ (R730 CT 185) during a governance re-sync; voting addresses from protx list registered true 1578672",
+ "height": 1578672,
  "votes": [
   {
    "hash": "0bb6f25e09a80fce73564931f3fbc2bc48b28145fe6514324d51dd4a91752184",
@@ -23,6 +23,13 @@
    "rawHex": "a8e7d1287b0354408fda5a65427a636c7c5854a957b94c5f993d727450ffe34e6b0000007fabed938b4f291b0621166c95c0b8640cd89d5bb1a0a627b35f05a09c05f5c60100000001000000dcd0356800000000411fa55fa9201966b061a73e4103f7a4e5ef267aede8bdb3ab55fd50d94a21f3c2fe2711c78190711d0d2fc03e96ccd157e2453cd850874df5e7f9b9435c3829d5a2",
    "proTxHash": "63dc5ee3b0ae326b1d590c1253aceb6b50982721e6d8b20e862433a2a6438c60",
    "votingAddress": "ycWKMJBAVyX9kCYLQvY6EzPwZQ71m7C37d"
+  },
+  {
+   "hash": "22b24d1b6fe0bad0299d7ccde8913d9ca9a10fdaceced633aae7864ff97fec11",
+   "govHash": "a9a2a15a9c7177878ff902a2007f93f52db2587f0bf9d0c7f56445a31ff7f654",
+   "rawHex": "a8e7d1287b0354408fda5a65427a636c7c5854a957b94c5f993d727450ffe34e6200000054f6f71fa34564f5c7d0f90b7f58b22df5937f00a202f98f8777719c5aa1a2a903000000010000005ffadc6a00000000411f9e70ccff70c11da368ea00208711fe251673dec3d36453053bd19db29c65387d4516d4b309ddf7f1117e8108473af12a66b6775a48a0700f34ee782540f973fe",
+   "proTxHash": "520c7377bf695cde36a0dc0ddd9aea060ce4a4cdce59022e7d74f501e5fa71c0",
+   "votingAddress": "yR4Mn6cc9jNJoRdPqweQimdS2ba1R3RLz7"
   },
   {
    "hash": "263e6cf108ea3b0836a5b5554b84bf75ed904b6ae076c6a1d8465b6c57d110d0",
