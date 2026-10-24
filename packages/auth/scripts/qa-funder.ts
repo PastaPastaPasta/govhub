@@ -5,7 +5,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSy
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { parseTx, type Dapi } from '@govhub/dapi';
-import { addressOf, buildAssetLock, buildPayment, hash160, hexToBytes, p2pkhScript, publicKeyOf, randomBytes, wifOf } from '../src/index.ts';
+import { addressOf, buildAssetLock, buildPayment, buildProposalCollateral, hash160, hexToBytes, p2pkhScript, publicKeyOf, randomBytes, wifOf } from '../src/index.ts';
 
 const QA = join(homedir(), '.local/share/evovote-v2-qa-20261018');
 export const PHASE2_DIR = join(homedir(), '.local/share/govhub-phase2');
@@ -58,6 +58,15 @@ export function qaFunder(dapi: Dapi) {
       await dapi.broadcastTransaction(p.raw);
       const out = p.changeVout === null ? null : parseTx(p.raw).outputs[p.changeVout]!.value;
       record(what, p.txid, duffs, u.value - duffs - (out ?? 0n), out === null ? null : { vout: p.changeVout!, value: out });
+      return p.txid;
+    },
+    /** A proposal collateral: 1 tDASH burnt in OP_RETURN <gov hash, raw order>. */
+    async payCollateral(govHashRaw: Uint8Array): Promise<string> {
+      const u = await utxo();
+      const p = buildProposalCollateral({ utxos: [u], key, govHashRaw });
+      await dapi.broadcastTransaction(p.raw);
+      const out = p.changeVout === null ? null : parseTx(p.raw).outputs[p.changeVout]!.value;
+      record('proposal collateral', p.txid, 100_000_000n, u.value - 100_000_000n - (out ?? 0n), out === null ? null : { vout: p.changeVout!, value: out });
       return p.txid;
     },
     /** A starter voucher shaped like dash-faucet-cf's (change first, so the burn is at vout 1). Returns the dashpay:// link. */

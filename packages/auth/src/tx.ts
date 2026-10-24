@@ -202,6 +202,28 @@ export function buildPayment(o: { utxos: readonly Utxo[]; key: Uint8Array; to: A
   return { raw, txid: parseTx(raw).txid, changeVout };
 }
 
+/**
+ * A governance proposal collateral (PLAN 6.1): `OP_RETURN <32-byte gov hash, RAW byte order>` worth `burnDuffs` (Core: >= 1 DASH,
+ * GOVERNANCE_PROPOSAL_FEE_TX) plus P2PKH change to `key`. Every output is P2PKH or unspendable, as IsCollateralValid requires.
+ */
+export function buildProposalCollateral(o: { utxos: readonly Utxo[]; key: Uint8Array; govHashRaw: Uint8Array; burnDuffs?: bigint; feePerByte?: bigint }): { raw: Uint8Array; txid: string; changeVout: number | null } {
+  if (o.govHashRaw.length !== 32) throw new Error('the governance hash must be 32 bytes');
+  const burn = o.burnDuffs ?? 100_000_000n;
+  if (burn < 100_000_000n) throw new Error('Core requires at least 1 DASH of collateral');
+  const total = o.utxos.reduce((a, u) => a + u.value, 0n);
+  const own = p2pkhScript(hash160(publicKeyOf(o.key)));
+  const outputs: TxOutput[] = [{ value: burn, script: concatBytes(Uint8Array.of(0x6a, 0x20), o.govHashRaw) }];
+  const fee = BigInt(estimateSize(o.utxos.length, [34, own.length], 0)) * (o.feePerByte ?? FEE_PER_BYTE);
+  const change = total - burn - fee;
+  if (change < 0n) throw new Error('insufficient funds');
+  const changeVout = change >= 1000n ? outputs.push({ value: change, script: own }) - 1 : null;
+  const raw = signAll(
+    { version: 2, type: 0, inputs: o.utxos.map((u) => ({ txid: u.txid, vout: u.vout, scriptSig: new Uint8Array(0), sequence: 0xffffffff })), outputs, lockTime: 0, extraPayload: null },
+    o.key,
+  );
+  return { raw, txid: parseTx(raw).txid, changeVout };
+}
+
 export class AssetLockError extends Error {
   constructor(message: string) {
     super(message);
