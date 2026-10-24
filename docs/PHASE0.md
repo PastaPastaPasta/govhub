@@ -78,7 +78,9 @@ PV14, so its fees approximate PV13 rather than match it exactly. Mainnet was use
   access is over DAPI, so this only affects tooling.
 
 ## Still open
-1. One real testnet `voteraw` with the binary-hash scheme. It needs a testnet MN voting key.
+1. ~~One real testnet `voteraw` with the binary-hash scheme.~~ Done in phase 3 (2026-10-24): votes signed by `@govhub/verify`
+   `signVote` and by the web app's voting code were accepted by testnet Core (`voteraw`, directly and through the relay); see
+   services/relay/README.md "Live testnet run".
 2. Android seed restore. Needs a device, so this is for the user.
 3. A faucet route for 0.003 vouchers at the portal's amount. This lives in dash-faucet-cf, alongside
    its separate vout fix.

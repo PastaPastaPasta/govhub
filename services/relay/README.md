@@ -178,6 +178,21 @@ Core's message (proposal data is public). Only proposals (`parentHash` `0`, revi
 broadcaster on both vote-signature schemes; `proposals.test.ts` uses the real regtest fixtures from
 `packages/verify/test/fixtures`; `privacy.test.ts` checks the SQLite files for any trace of the client address.
 
+## Live testnet run (2026-10-24)
+
+The relay ran in the testnet stack on the reference host (deploy/README.md 11.4) against `dashd 24.0.0-rc.4`, with votes
+signed by the web app's own code (`apps/web/scripts/live-vote.ts`, results in `apps/web/scripts/results/live-vote.json`) on a
+cheap test proposal `ab31c1ff…708d` (`packages/auth/scripts/testnet-proposal.ts`):
+
+| Vote | Result |
+|---|---|
+| immediate YES, masternode-2 | `voteraw` "Voted successfully", `confirmed` by the relay within 20 s, in `gobject getcurrentvotes` and in the bridge's counted set |
+| deferred ABSTAIN, masternode-3, nTime = release ~10 min ahead | `held`, broadcast at release minus the margin, `confirmed`; in Core and the bridge with the signed nTime |
+| deferred NO, masternode-4, then a cancel | a cancel signed by another masternode's voting key refused (403), the voting key's own cancel accepted; never reached Core |
+
+Together with a direct `voteraw` of a browser-signed vote this is the first validation of the testnet binary-hash scheme from
+govhub's own signing code: Core accepted every vote, and `governanceVoteHash` equals Core's vote hash for each.
+
 ## Not done
 
 - No Tor/onion listener, no relay-to-relay gossip, and no mixing: the operator sees IPs and timing (see above).

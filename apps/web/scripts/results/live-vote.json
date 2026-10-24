@@ -18,7 +18,7 @@
           "relayId": "02eb94ef1f1105baa6e8175ae733dd6e",
           "statusAtSubmit": "held",
           "check": {
-            "at": "2026-10-24T19:03:59.690Z",
+            "at": "2026-10-24T19:06:29.220Z",
             "relay": {
               "id": "02eb94ef1f1105baa6e8175ae733dd6e",
               "voteHash": "1af3180b935e432f02ab83271ddbb1894dd2776d7a7f772eee7882aba0912214",
@@ -48,7 +48,7 @@
           "relayId": "bad8743155572a8f402edc80b7ec12aa",
           "statusAtSubmit": "held",
           "check": {
-            "at": "2026-10-24T19:03:59.701Z",
+            "at": "2026-10-24T19:06:29.231Z",
             "relay": {
               "id": "bad8743155572a8f402edc80b7ec12aa",
               "voteHash": "ca31692f1a6888de0f95cf0cd927e7a84639afa5de6503db275ebbcb5126004a",
@@ -58,7 +58,11 @@
               "confirmedAt": 1792868561,
               "lastError": null
             },
-            "bridgeCurrent": null
+            "bridgeCurrent": {
+              "outcome": 3,
+              "time": 1792868551,
+              "ours": true
+            }
           }
         },
         {
@@ -74,7 +78,7 @@
           "relayId": "07d0d39c013d60f977e1035579489805",
           "statusAtSubmit": "held",
           "check": {
-            "at": "2026-10-24T19:03:59.709Z",
+            "at": "2026-10-24T19:06:29.237Z",
             "relay": {
               "id": "07d0d39c013d60f977e1035579489805",
               "voteHash": "9833ed1a940a28b73c939ea7b212ea8299c0a1b0b932ebf539be1d1672d6d751",
