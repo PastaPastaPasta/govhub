@@ -149,6 +149,8 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
   const kr = useRef<OpenedKeyring | null>(null);
   kr.current = keyring;
   const watchedRef = useRef<WatchedVote[]>([]);
+  /** a cast or cancel is changing votes: the watchdog does not re-broadcast meanwhile */
+  const castingRef = useRef(false);
   watchedRef.current = watched;
   const identityId = session?.identityId ?? null;
   const touch = () => setVersion((v) => v + 1);
@@ -371,7 +373,9 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         const k = kr.current;
         if (!k) throw new Error('Open the keyring first.');
         const c = k.content;
-        const draft: OpenedKeyring = { ...k, content: { ...c, unlockers: [...c.unlockers], keys: [...c.keys], labels: [...c.labels] } };
+        const seen = Number(localStorage.getItem(generationKey(registry.platformNetwork, k.ownerId)) ?? 0);
+        // a replayed older keyring is saved ABOVE the highest generation seen here, so the rollback check stays meaningful
+        const draft: OpenedKeyring = { ...k, content: { ...c, generation: Math.max(c.generation, seen), unlockers: [...c.unlockers], keys: [...c.keys], labels: [...c.labels] } };
         change(draft);
         try {
           await persist(draft, o.unconfirmedOk);
@@ -384,7 +388,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         touch();
         o.after?.();
       }),
-    [run, persist],
+    [run, persist, registry.platformNetwork],
   );
 
   const addKey = useCallback(
@@ -618,21 +622,17 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
    * 'sent' when some relay already broadcast it (or is broadcasting it).
    */
   const cancelEverywhere = useCallback(
-    async (v: WatchedVote): Promise<'cancelled' | 'sent'> => {
+    async (v: WatchedVote): Promise<'cancelled' | 'sent' | 'unknown'> => {
       const k = kr.current;
       const owner = mns.owned.find((m) => mnId(m) === mnId(v));
       const key = k && owner ? k.content.keys[owner.keyIndex] : undefined;
       if (!key) throw new Error('Unlock the keyring holding this masternode’s voting key to cancel.');
       const sig = cancelSignature(key.privateKey, key.compressed, coreNetwork, v.voteHash);
-      let refs = v.refs;
-      // The first submission's answer was lost (no id): a relay may hold it anyway. Re-submitting returns the stored record (or
-      // stores it now), which gives the id to cancel.
-      if (!refs.length) {
-        const found = await Promise.allSettled(relays.map((r) => send(v, r)));
-        refs = found.flatMap((f) => (f.status === 'fulfilled' ? f.value.refs : []));
-      }
+      // No relay id: the submission's answer was lost, so a relay may hold it without us knowing which. It cannot be cancelled
+      // safely (re-submitting to find it could store and release it); the caller treats it as possibly sent.
+      if (!v.refs.length) return 'unknown';
       let sent = false;
-      for (const r of refs) {
+      for (const r of v.refs) {
         try {
           await new RelayClient(r.relay).cancel(r.id, sig);
         } catch (e) {
@@ -648,7 +648,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       }
       return sent ? 'sent' : 'cancelled';
     },
-    [mns.owned, coreNetwork, relays, send],
+    [mns.owned, coreNetwork],
   );
 
   const cast = useCallback(
@@ -678,19 +678,29 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
           if (!c || c.time < w.time) current.set(ck, { outcome: w.outcome, time: w.time });
         }
         let plan = planWith(current, intents);
-        const planned = new Set(plan.ok.map((p) => currentKey(p.mn, p.govHash)));
+        // masternodes that get a new vote, plus those whose new choice equals the current vote (skipped as "already voted"):
+        // a held vote of ours for either would otherwise go out later and win
+        const keep = new Set([
+          ...plan.ok.map((p) => currentKey(p.mn, p.govHash)),
+          ...intents.filter((i) => current.get(currentKey(i.mn, i.govHash))?.outcome === i.outcome).map((i) => currentKey(i.mn, i.govHash)),
+        ]);
         const cancelled: string[] = [];
         let replan = false;
-        for (const w of watchedRef.current.filter((x) => x.status === 'held' && planned.has(currentKey(x, x.govHash)))) {
-          if ((await cancelEverywhere(w)) === 'cancelled') cancelled.push(w.voteHash);
-          else {
-            replan = true;
-            const ck = currentKey(w, w.govHash);
-            const c = current.get(ck);
-            if (!c || c.time < w.time) current.set(ck, { outcome: w.outcome, time: w.time });
+        castingRef.current = true;
+        try {
+          for (const w of watchedRef.current.filter((x) => x.status === 'held' && keep.has(currentKey(x, x.govHash)))) {
+            if ((await cancelEverywhere(w)) === 'cancelled') cancelled.push(w.voteHash);
+            else {
+              // went out, or cannot be cancelled safely: it counts as the current vote, and the new one is timed after it
+              replan = true;
+              const ck = currentKey(w, w.govHash);
+              const c = current.get(ck);
+              if (!c || c.time < w.time) current.set(ck, { outcome: w.outcome, time: w.time });
+            }
           }
+        } finally {
+          if (cancelled.length) updateWatched((list) => list.map((x) => (cancelled.includes(x.voteHash) ? { ...x, status: 'cancelled' } : x)));
         }
-        if (cancelled.length) updateWatched((list) => list.map((x) => (cancelled.includes(x.voteHash) ? { ...x, status: 'cancelled' } : x)));
         if (replan) plan = planWith(current, intents);
         const signed: WatchedVote[] = plan.ok.map((p) => {
           const owner = mns.owned.find((m) => mnId(m) === mnId(p.mn));
@@ -711,7 +721,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
           try {
             sent.push(await send(signed[i]!, relay));
           } catch (e) {
-            failures.push(`${signed[i]!.proTxHash.slice(0, 10)}…: ${errorText(e)}`);
+            failures.push(`not accepted by a relay yet (kept and retried) ${signed[i]!.proTxHash.slice(0, 10)}…: ${errorText(e)}`);
             sent.push(signed[i]!); // kept: the watchdog re-sends it
           }
           updateWatched((w) => mergeWatched(w, [sent[sent.length - 1]!]));
@@ -719,8 +729,11 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         // the backup is created only when the user asks for it, but an existing one is always kept current (cancelled votes leave it)
         const backup = mergeWatched(watchedRef.current, sent).map((x) => (cancelled.includes(x.voteHash) ? { ...x, status: 'cancelled' as const } : x));
         await backupPending(backup, opts.mode === 'deferred' && !!opts.backupOnPlatform).catch((e) => failures.push(`backup on Platform failed: ${errorText(e)}`));
-        if (failures.length) setError(`Some votes were not accepted by a relay yet (they are kept and retried): ${failures.join('; ')}`);
+        if (failures.length) setError(failures.join('; '));
+        castingRef.current = false;
         return plan;
+      }).finally(() => {
+        castingRef.current = false;
       }),
     [run, relays, coreNetwork, mns.owned, send, updateWatched, backupPending, cancelEverywhere],
   );
@@ -740,7 +753,9 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       run('Cancelling the held vote', async () => {
         const v = watchedRef.current.find((x) => x.voteHash === voteHash);
         if (!v) return;
-        const r = await cancelEverywhere(v);
+        castingRef.current = true;
+        const r = await cancelEverywhere(v).finally(() => (castingRef.current = false));
+        if (r === 'unknown') throw new Error('It is not known which relay holds this vote (its submission was never confirmed), so it cannot be cancelled. Vote again instead: the new vote is timed later and wins.');
         updateWatched((list) => list.map((x) => (x.voteHash === voteHash ? { ...x, status: r === 'cancelled' ? 'cancelled' : 'broadcast' } : x)));
         if (r !== 'cancelled') throw new Error('Too late: a relay has already broadcast this vote. Vote again to change it (Core allows one change per hour).');
         await backupPending(watchedRef.current.filter((x) => x.voteHash !== voteHash), false).catch(() => {});
@@ -800,7 +815,8 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
           if (all.some((x) => x === 'broadcast' || x === 'confirmed' || x === 'sending')) status = 'broadcast';
           else if (all.length && all.every((x) => x === 'cancelled')) status = 'cancelled';
           else if (all.length && all.every((x) => x === 'failed' || x === 'superseded' || x === 'cancelled')) status = all.includes('superseded') ? 'superseded' : 'failed';
-          if (isOpen({ ...v, status }) && needsRebroadcast(v, now)) {
+          const unchanged = !castingRef.current && watchedRef.current.find((x) => x.voteHash === v.voteHash) === v;
+          if (unchanged && isOpen({ ...v, status }) && needsRebroadcast(v, now)) {
             const relay = pickRebroadcastRelay(v, relays);
             rebroadcasts += 1;
             if (relay) {

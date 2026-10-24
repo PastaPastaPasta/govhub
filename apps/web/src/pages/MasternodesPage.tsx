@@ -277,7 +277,7 @@ function Unlockers() {
           <p>
             This keyring could not be verified as yours{ring.authenticated === null ? ' (only your recovery phrase can verify it)' : ''}. Anyone in this list can open it and every key you add. Remove what you do not recognise, then confirm.
           </p>
-          <button type="button" className="btn" onClick={k.confirmUnlockers}>
+          <button type="button" className="btn" onClick={k.confirmUnlockers} disabled={!!k.busy}>
             These are mine
           </button>
         </div>

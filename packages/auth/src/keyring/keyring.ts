@@ -112,7 +112,9 @@ export interface OpenedKeyring {
 }
 
 function opened(o: Omit<OpenedKeyring, 'close'>): OpenedKeyring {
-  return { ...o, close: () => wipeKeysContent(o.content) };
+  // reads the LIVE content: callers may replace `content` (draft-then-commit edits), and every key in it must be wiped
+  const k: OpenedKeyring = { ...o, close: () => wipeKeysContent(k.content) };
+  return k;
 }
 
 export function emptyKeyring(ownerId: string, unlockers: Unlocker[]): OpenedKeyring {
