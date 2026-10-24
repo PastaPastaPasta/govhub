@@ -18,6 +18,7 @@ import {
   enabledBridges,
   LEGACY_STORAGE_KEY,
   loadRegistry,
+  migrateV1,
   parseRegistry,
   PROFILES,
   profileRegistry,
@@ -58,6 +59,15 @@ const v1 = (over: Record<string, unknown> = {}) => ({
   faucet: { name: 'faucet.dashhq.org', url: 'https://faucet.dashhq.org' },
   forum: TESTNET_FORUM,
   ...over,
+});
+
+describe('relay defaults', () => {
+  it('Dev uses the mainnet relay; an empty version 1 relay list is not kept as a custom override', () => {
+    expect(defaultRegistry().relays.map((r) => r.url)).toEqual(['https://gov-relay.dashhq.org']);
+    const m = migrateV1(v1());
+    expect('relays' in m).toBe(false);
+    expect(migrateV1(v1({ relays: [{ name: 'mine', url: 'https://relay.example.org' }] })).relays).toEqual([{ name: 'mine', url: 'https://relay.example.org' }]);
+  });
 });
 
 describe('profiles', () => {

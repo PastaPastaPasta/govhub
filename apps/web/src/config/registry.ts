@@ -17,6 +17,8 @@ export const TESTNET_GOV_CONTRACT_ID = '5gMnJLDpcoMaQCQNqmHtBiSqCxRCmroXFAffPNdJ
 export const TESTNET_BRIDGE_IDENTITY_ID = '24tL6v5jMR1H9dtUoTgbedePsMJtYPk4Q4bo6h8jTdK9';
 /** The testnet relay (services/relay; deploy/README.md 11.4): masternode votes on Core testnet go through it. */
 export const TESTNET_RELAY: NamedUrl = { name: 'gov-relay-testnet.dashhq.org', url: 'https://gov-relay-testnet.dashhq.org' };
+/** The mainnet relay: masternode votes on Core mainnet (the Dev profile today, Mainnet later) go through it. */
+export const MAINNET_RELAY: NamedUrl = { name: 'gov-relay.dashhq.org', url: 'https://gov-relay.dashhq.org' };
 
 export interface BridgeEndpoint {
   name: string;
@@ -136,7 +138,7 @@ export const PROFILES: Record<ProfileId, NetworkProfile> = {
     platformNetwork: 'testnet',
     govContractId: DEV_GOV_CONTRACT_ID,
     bridge: { url: 'https://gov-bridge.dashhq.org', identityId: DEV_BRIDGE_IDENTITY_ID },
-    relays: [],
+    relays: [MAINNET_RELAY],
     forum: TESTNET_FORUM,
     deployed: true,
   },
@@ -249,7 +251,11 @@ export function migrateV1(o: Record<string, unknown>): Record<string, unknown> {
     const dev = o.govContractId === undefined || o.govContractId === DEV_GOV_CONTRACT_ID ? { coreNetwork: PROFILES.dev.coreNetwork, platformNetwork: PROFILES.dev.platformNetwork } : {};
     const dapi = (o.dapi ?? {}) as Record<string, unknown>;
     const quorum = dev.coreNetwork && dapi.source !== 'manual' ? { dapi: { ...dapi, source: 'quorum', quorumUrl: QUORUM_SERVICE[dev.coreNetwork] } } : {};
-    return { ...o, version: 2, profile: 'dev', ...dev, ...quorum };
+    // Version 1 always saved `relays: []` (it had no relay to offer), so an empty list is the old default, not a choice:
+    // drop it so the profile's relays apply.
+    const { relays, ...rest } = o;
+    const keepRelays = Array.isArray(relays) && relays.length > 0 ? { relays } : {};
+    return { ...rest, ...keepRelays, version: 2, profile: 'dev', ...dev, ...quorum };
   }
   const d = profileRegistry('testnet') as unknown as Record<string, unknown>;
   const devContract = (x: unknown) => x === DEV_GOV_CONTRACT_ID;
@@ -381,7 +387,7 @@ export function parseRegistry(input: unknown): { registry: Registry; errors: str
     platform: { trusted: platform.trusted !== false, addresses },
     govContractId,
     bridges,
-    relays: named(o.relays, 'relay'),
+    relays: o.relays === undefined ? d.relays.map((r) => ({ ...r })) : named(o.relays, 'relay'),
     priceFeed: pf && typeof pf === 'object' ? { name: typeof pf.name === 'string' ? pf.name : 'price feed', url: httpsUrl(pf.url, 'price feed URL', errors) } : null,
     accounts: optionalNamed(o.accounts, d.accounts, 'accounts service'),
     faucet: optionalNamed(o.faucet, d.faucet, 'faucet'),
