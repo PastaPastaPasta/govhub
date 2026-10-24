@@ -1,10 +1,84 @@
 // Endpoint registry editor (PLAN §1.1): edit, export/import JSON, share as a ?config= link, reset.
 import { useEffect, useRef, useState } from 'react';
+import { COSTS, isIdentifier } from '@govhub/forum';
 import { useApp } from '../app/context.tsx';
+import { useForum } from '../app/forum.tsx';
+import { errText, formatCredits } from '../lib/format.ts';
 import { defaultRegistry, exportRegistry, parseRegistry, QUORUM_SERVICE, resetRegistry, shareLink, type BridgeEndpoint, type Registry } from '../config/registry.ts';
 import { cacheClear } from '../data/cache.ts';
 
 const lines = (s: string) => s.split(/[\s,]+/).map((x) => x.trim()).filter(Boolean);
+
+/** Block-list subscriptions (PLAN §9): kept in this browser, and in the user's `blockSubs` document when they publish. */
+function BlockListSettings() {
+  const { registry } = useApp();
+  const { moderation, session, setSubs, balance } = useForum();
+  const [defaultOff, setDefaultOff] = useState(moderation.subs.defaultOff);
+  const [lists, setLists] = useState(moderation.subs.lists.join('\n'));
+  const [msg, setMsg] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    setDefaultOff(moderation.subs.defaultOff);
+    setLists(moderation.subs.lists.join('\n'));
+  }, [moderation.subs]);
+  const ids = lines(lists);
+  const bad = ids.filter((x) => !isIdentifier(x));
+  const save = async (publish: boolean) => {
+    if (bad.length) return setMsg({ kind: 'error', text: `Not identity ids: ${bad.join(', ')}` });
+    setBusy(true);
+    setMsg(null);
+    try {
+      await setSubs({ defaultOff, lists: [...new Set(ids)], ...(moderation.subs.doc ? { doc: moderation.subs.doc } : {}) }, publish);
+      setMsg({ kind: 'ok', text: publish ? 'Saved to your blockSubs document on Platform.' : 'Saved in this browser.' });
+    } catch (e) {
+      setMsg({ kind: 'error', text: errText(e) });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const cost = moderation.subs.doc ? COSTS.blockSubsReplace : COSTS.blockSubsCreate;
+  return (
+    <section className="form" aria-labelledby="blocklists-title">
+      <h2 id="blocklists-title">Block lists</h2>
+      <p className="muted small">
+        Blocked comments and authors are hidden, never deleted: every discussion has a "show hidden" switch. Lists are Platform documents; you can follow anyone's.
+      </p>
+      <fieldset>
+        <legend>Lists you follow</legend>
+        <label className="check">
+          <input type="checkbox" checked={!defaultOff} onChange={(e) => setDefaultOff(!e.target.checked)} /> The default list, {registry.forum.moderationName}{' '}
+          <span className="mono-ish small">{registry.forum.moderationIdentityId}</span>
+        </label>
+        <label>
+          Other lists: the identity ids of their owners, one per line
+          <textarea rows={3} className="code" value={lists} onChange={(e) => setLists(e.target.value)} spellCheck={false} />
+        </label>
+        <ul className="small muted">
+          {moderation.lists.map((l) => (
+            <li key={`${l.source}-${l.ownerId}`}>
+              {l.name}: {l.blocks.length} {l.blocks.length === 1 ? 'block' : 'blocks'}
+            </li>
+          ))}
+        </ul>
+        {moderation.error && <p className="error small">{moderation.error}</p>}
+        {session && moderation.subs.doc && <p className="muted small">While you are signed in, your blockSubs document on Platform decides; changes here are saved to it.</p>}
+        <div className="form-actions">
+          {!(session && moderation.subs.doc) && (
+            <button type="button" className="btn" disabled={busy} onClick={() => save(false)}>
+              Save in this browser
+            </button>
+          )}
+          {session && (
+            <button type="button" className="btn btn-primary" disabled={busy} onClick={() => save(true)}>
+              Save to Platform (about {formatCredits(cost, true)}; balance {balance === null ? '…' : formatCredits(balance)})
+            </button>
+          )}
+        </div>
+        {msg && <p className={msg.kind === 'ok' ? 'notice' : 'error'}>{msg.text}</p>}
+      </fieldset>
+    </section>
+  );
+}
 
 export function SettingsPage() {
   const { registry, setRegistry, mode, setMode } = useApp();
@@ -12,7 +86,11 @@ export function SettingsPage() {
   const [json, setJson] = useState('');
   const [msg, setMsg] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  useEffect(() => setDraft(registry), [registry]);
+  const [portalsText, setPortalsText] = useState(registry.forum.claimPortals.join(' '));
+  useEffect(() => {
+    setDraft(registry);
+    setPortalsText(registry.forum.claimPortals.join(' '));
+  }, [registry]);
 
   const set = <K extends keyof Registry>(k: K, v: Registry[K]) => setDraft((d) => ({ ...d, [k]: v }));
   const setBridge = (i: number, patch: Partial<BridgeEndpoint>) => set('bridges', draft.bridges.map((b, j) => (j === i ? { ...b, ...patch } : b)));
@@ -167,6 +245,41 @@ export function SettingsPage() {
           </label>
         </fieldset>
 
+        <fieldset>
+          <legend>Forum and moderation</legend>
+          <div className="row2">
+            <label>
+              Forum contract
+              <input value={draft.forum.contractId} onChange={(e) => set('forum', { ...draft.forum, contractId: e.target.value.trim() })} spellCheck={false} />
+            </label>
+            <label>
+              Moderation (mod) contract
+              <input value={draft.forum.modContractId} onChange={(e) => set('forum', { ...draft.forum, modContractId: e.target.value.trim() })} spellCheck={false} />
+            </label>
+          </div>
+          <div className="row2">
+            <label>
+              Default block list: owner identity
+              <input value={draft.forum.moderationIdentityId} onChange={(e) => set('forum', { ...draft.forum, moderationIdentityId: e.target.value.trim() })} spellCheck={false} />
+            </label>
+            <label>
+              Default block list: name
+              <input value={draft.forum.moderationName} onChange={(e) => set('forum', { ...draft.forum, moderationName: e.target.value })} />
+            </label>
+          </div>
+          <label>
+            Hosts accepted in URL-embedded ownership claims (https://host/p/&lt;identity&gt;/&lt;name&gt;)
+            <input
+              value={portalsText}
+              onChange={(e) => {
+                setPortalsText(e.target.value);
+                set('forum', { ...draft.forum, claimPortals: lines(e.target.value) });
+              }}
+              spellCheck={false}
+            />
+          </label>
+        </fieldset>
+
         <div className="form-actions">
           <button type="submit" className="btn btn-primary">
             Save settings
@@ -192,6 +305,8 @@ export function SettingsPage() {
           </p>
         )}
       </form>
+
+      <BlockListSettings />
 
       <section className="form" aria-labelledby="share-title">
         <h2 id="share-title">Export, import and share</h2>

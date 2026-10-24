@@ -2,7 +2,7 @@
   "name": "@govhub/web",
   "version": "0.0.0",
   "private": true,
-  "description": "govhub web app: read-only Dash governance portal reading Platform with proofs (phase 1).",
+  "description": "govhub web app: Dash governance portal reading and writing Platform directly, with proofs.",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "e2e": "playwright test",
-    "e2e:live": "GOVHUB_LIVE=1 playwright test --grep @live",
+    "e2e:live": "GOVHUB_LIVE=1 VITE_GOVHUB_DEV_SIGNIN=1 playwright test --grep @live",
     "screenshots": "SCREENSHOTS=1 playwright test --grep @screenshots",
     "record:dapi": "node scripts/record-dapi.mjs"
   },
@@ -20,6 +20,7 @@
     "@fontsource-variable/archivo": "^5.2.6",
     "@govhub/contracts-v1": "*",
     "@govhub/dapi": "*",
+    "@govhub/forum": "*",
     "@govhub/verify": "*",
     "@noble/curves": "^2.0.0",
     "@noble/hashes": "^2.0.0",

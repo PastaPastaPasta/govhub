@@ -2,12 +2,13 @@
   "name": "@govhub/contracts-v1",
   "version": "0.0.0",
   "private": true,
-  "description": "govhub v1 data contracts (PV13): gov, forum, badge, mod.",
+  "description": "govhub v1 data contracts (PV13): gov, forum, badge, mod, and the PV13 query-shape lint.",
   "type": "module",
   "exports": {
     "./gov.json": "./gov.json",
     "./forum.json": "./forum.json",
     "./badge.json": "./badge.json",
-    "./mod.json": "./mod.json"
+    "./mod.json": "./mod.json",
+    "./queryLint": "./queryLint.ts"
   }
 }

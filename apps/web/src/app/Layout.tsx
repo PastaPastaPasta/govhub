@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { resolveConfigParam, type Registry } from '../config/registry.ts';
 import { formatInt } from '../lib/format.ts';
 import { ProvLegend } from '../ui/Provenance.tsx';
+import { SessionControl } from '../ui/SignIn.tsx';
 import { useApp, type Theme } from './context.tsx';
 
 const THEMES: Array<{ id: Theme; label: string }> = [
@@ -80,6 +81,9 @@ function ConfigSummary({ r }: { r: Registry }) {
     ['Bridges', r.bridges.map((b) => `${b.name} (${b.httpBase}${b.enabled ? '' : ', off'})`).join(', ') || 'none'],
     ['Relays', r.relays.map((x) => x.url).join(', ') || 'none'],
     ['Price feed', r.priceFeed?.url ?? 'none'],
+    ['Forum contracts', `forum ${r.forum.contractId}, mod ${r.forum.modContractId}`],
+    ['Default block list', `${r.forum.moderationName} (${r.forum.moderationIdentityId})`],
+    ['Claim portals', r.forum.claimPortals.join(', ') || 'none'],
   ];
   return (
     <dl className="config-summary">
@@ -160,6 +164,7 @@ export function Layout() {
             {mode === 'fixtures' && <span className="chip chip-fixture">fixtures</span>}
           </p>
           <ThemeSwitch />
+          <SessionControl />
         </div>
       </header>
       <ConfigOffer />

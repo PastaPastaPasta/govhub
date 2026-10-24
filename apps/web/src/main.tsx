@@ -4,6 +4,7 @@ import { BrowserRouter, Link, Route, Routes } from 'react-router-dom';
 import '@fontsource-variable/archivo/wdth.css';
 import './styles.css';
 import { AppProvider, useApp } from './app/context.tsx';
+import { ForumProvider } from './app/forum.tsx';
 import { Layout } from './app/Layout.tsx';
 import { preloadSdk } from './data/platform.ts';
 import { ActivePage } from './pages/ActivePage.tsx';
@@ -38,17 +39,20 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
       <AppProvider>
-        <SdkWarmup />
-        <Routes>
-          <Route element={<Layout />}>
-            <Route index element={<ActivePage />} />
-            <Route path="past" element={<PastPage />} />
-            <Route path="p/h/:hash" element={<ProposalByHash />} />
-            <Route path="p/:name" element={<ProposalByName />} />
-            <Route path="settings" element={<SettingsPage />} />
-            <Route path="*" element={<NotFoundPage />} />
-          </Route>
-        </Routes>
+        <ForumProvider>
+          <SdkWarmup />
+          <Routes>
+            <Route element={<Layout />}>
+              <Route index element={<ActivePage />} />
+              <Route path="past" element={<PastPage />} />
+              <Route path="p/h/:hash" element={<ProposalByHash />} />
+              <Route path="p/:name" element={<ProposalByName />} />
+              <Route path="p/:identity/:name" element={<ProposalByName />} />
+              <Route path="settings" element={<SettingsPage />} />
+              <Route path="*" element={<NotFoundPage />} />
+            </Route>
+          </Routes>
+        </ForumProvider>
       </AppProvider>
     </BrowserRouter>
   </StrictMode>,

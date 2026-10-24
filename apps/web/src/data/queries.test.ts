@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import forumSchemas from '@govhub/contracts-v1/forum.json';
 import badgeSchemas from '@govhub/contracts-v1/badge.json';
 import { activeProposals, GOV_SCHEMAS, latestCycles, pastProposals, proposalByHash, proposalsByName, talliesFor, tallyByHash } from './queries.ts';
-import { lintQuery, type ContractSchemas, type DocQuery } from './queryLint.ts';
+import { lintQuery, type ContractSchemas, type DocQuery } from '@govhub/contracts-v1/queryLint';
 
 const H = 'a5465cdb6caf234cc9b8b776b1e3b60f319367504527e80a669bf41811419901';
 const H2 = 'f64341933c383620eb01d3eb8dccebf6400490a03b1cf0a7d2700747d8a4163b';
