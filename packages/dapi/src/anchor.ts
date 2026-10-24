@@ -21,7 +21,7 @@ import { type Sml, type SmlQuorum, parseSmlDecoded } from './sml.ts';
 import { type SmlProof, proveSml } from './smlproof.ts';
 import type { AnchorOptions, AnchoredChain, ProvenSml, Verifiers } from './types.ts';
 import type { VerifiedChain } from './linkedchain.ts';
-import { type ProofAnchorState, anchorByProof } from './proofanchor.ts';
+import { ChainLockConflictError, type ProofAnchorState, anchorByProof } from './proofanchor.ts';
 
 /** Headers per stream request. Nodes stream ~1-2k headers/s each, with a heavy tail, so ranges are split and run in parallel. */
 const CHUNK = 2000;
@@ -88,7 +88,8 @@ async function run(d: Dapi, st: State, o: AnchorOptions): Promise<AnchoredChain>
         st.last = out;
         return out;
       } catch (e) {
-        if (o.signal?.aborted) throw e;
+        // two verified ChainLocks on different blocks at one height: refuse, never paper over it with proof of work
+        if (o.signal?.aborted || e instanceof ChainLockConflictError) throw e;
         fallback = (e as Error).message;
         o.onProgress?.('No usable ChainLock proof; verifying the chain by proof of work instead');
       }

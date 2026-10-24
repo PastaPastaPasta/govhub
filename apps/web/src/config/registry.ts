@@ -426,6 +426,11 @@ export function parseRegistry(input: unknown): { registry: Registry; errors: str
     forum: parseForum(o.forum, d.forum, errors),
   };
   if (registry.dapi.source === 'manual' && nodes.length === 0) errors.push('manual DAPI source needs at least one node');
+  // Core network changed from the profile's while the proof sources stayed the profile's defaults: use that network's public source
+  // (the profile's bridge serves the other network). A proof for the wrong network would only fail and fall back to proof of work.
+  if (registry.coreNetwork !== d.coreNetwork && JSON.stringify(registry.quorumProofs) === JSON.stringify(d.quorumProofs)) {
+    registry.quorumProofs = [{ ...QUORUM_PROOF_SERVICE[registry.coreNetwork] }];
+  }
   // A profile's contract holds that profile's networks' data: read under other networks it would be computed with the wrong rules.
   for (const p of Object.values(PROFILES)) {
     if (p.govContractId && p.govContractId === govContractId && (registry.coreNetwork !== p.coreNetwork || registry.platformNetwork !== p.platformNetwork)) {

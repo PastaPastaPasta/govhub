@@ -148,8 +148,8 @@ describe('testnet anchorChain on a quorum proof', () => {
     await expect(anchorByProof(d, { down: new Map() }, { ...base, proofSources: [source()], proofStore }, v, x11Many, fetchSml(d, { signal }), signal))
       .rejects.toThrow(/conflicts with the one this browser verified earlier/);
     expect(proofStore.saved).toBe(before);
-    // through anchorChain the proof path refuses the same way (here the proof-of-work fallback has nothing to work with)
-    await expect(dapiFor([N(1), N(2)]).anchorChain({ ...base, proofSources: [source()], proofStore })).rejects.toThrow();
+    // anchorChain fails closed: a conflict is not a reason to fall back to proof of work
+    await expect(dapiFor([N(1), N(2)]).anchorChain({ ...base, proofSources: [source()], proofStore })).rejects.toThrow(/conflicts with the one this browser verified earlier/);
     expect(proofStore.saved).toBe(before);
   });
 

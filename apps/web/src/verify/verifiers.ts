@@ -4,6 +4,9 @@
 import type { Verifiers } from '@govhub/dapi';
 
 export async function loadVerifiers(): Promise<Verifiers> {
-  const [{ x11, x11Many }, { verifyChainLock }, { verifyQuorumProof }] = await Promise.all([import('@govhub/dapi/x11'), import('@govhub/dapi/bls'), import('@govhub/dapi/coreproof')]);
-  return { hashHeader: x11, hashHeaders: x11Many, verifyChainLock, verifyQuorumProof };
+  // the proof verifier is optional: if its chunk fails to load, anchoring falls back to proof of work (and says so) instead of failing
+  const [{ x11, x11Many }, { verifyChainLock }, coreproof] = await Promise.all([
+    import('@govhub/dapi/x11'), import('@govhub/dapi/bls'), import('@govhub/dapi/coreproof').catch(() => null),
+  ]);
+  return { hashHeader: x11, hashHeaders: x11Many, verifyChainLock, ...(coreproof ? { verifyQuorumProof: coreproof.verifyQuorumProof } : {}) };
 }

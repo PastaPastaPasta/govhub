@@ -22,6 +22,17 @@ import { proveSml } from './smlproof.ts';
 import type { AnchorOptions, AnchoredChain, Verifiers } from './types.ts';
 import { FRESH_S, MAX_STORED, type RawSml, applyRun, fetchHeaders, fetchSml, now, proveAgainstChain, quorumsWithHeights } from './anchor.ts';
 
+/**
+ * A proven ChainLock on another block than one this browser verified earlier at that height: a ChainLock quorum signed two blocks.
+ * Not a reason to fall back to proof of work: anchoring fails closed.
+ */
+export class ChainLockConflictError extends VerificationError {
+  constructor(message: string) {
+    super('chainlock-conflict', message);
+    this.name = 'ChainLockConflictError';
+  }
+}
+
 /** The proof path could not be completed; the caller falls back to proof of work and reports `message`. */
 export class ProofUnavailableError extends Error {
   constructor(message: string) {
@@ -217,7 +228,7 @@ export async function anchorByProof(
   // A ChainLock at or below the saved top (a source serving an older, still fresh one) must be the block this browser verified at
   // that height: two verified ChainLocks on different blocks mean a quorum signed dishonestly. Refuse, and keep what is stored.
   if (chain && top.height <= chain.hi && top.height >= chain.lo && chain.hashHexAt(top.height) !== target.blockHash) {
-    throw new VerificationError('chainlock', `the proven ChainLock on block ${top.height} conflicts with the one this browser verified earlier`);
+    throw new ChainLockConflictError(`the proven ChainLock on block ${top.height} conflicts with the one this browser verified earlier`);
   }
   const keepStored = !!chain && top.height < chain.lo; // cannot be compared with what is stored: anchor afresh, store nothing over it
   if (keepStored) chain = null;

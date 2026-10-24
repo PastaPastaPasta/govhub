@@ -78,6 +78,10 @@ describe('endpoint registry', () => {
     expect(custom.registry.quorumProofs).toEqual([{ name: 'mine', url: 'https://proofs.example/proofs', kind: 'quorum-list' }]);
     expect(parseRegistry({ ...older, quorumProofs: [{ name: 'x', url: 'http://evil.example', kind: 'bridge' }] }).errors.join()).toMatch(/https/);
     expect(parseRegistry({ ...older, quorumProofs: [{ name: 'x', url: 'https://a.example', kind: 'other' }] }).errors.join()).toMatch(/kind/);
+    // another Core network than the profile's, proof sources left at the profile's: that network's public source instead
+    const dev = profileRegistry('dev');
+    const moved = parseRegistry({ ...dev, coreNetwork: 'testnet', dapi: { ...dev.dapi, quorumUrl: 'https://quorums.testnet.networks.dash.org/masternodes' } });
+    expect(moved.registry.quorumProofs).toEqual([{ name: 'quorums.testnet.networks.dash.org', url: 'https://quorums.testnet.networks.dash.org/proofs', kind: 'quorum-list' }]);
   });
 
   it('allows http only for localhost (local bridge development)', () => {
