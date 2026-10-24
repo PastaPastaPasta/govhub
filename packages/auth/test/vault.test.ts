@@ -116,7 +116,7 @@ describe('vault service: the chain check', () => {
   it('stores a seed session and opens it back into a session with the HIGH key', async () => {
     const { w, fp, ctx } = setup();
     const s = await signInWithSeed(w, { identityIndex: 0, identityId: ownerId }, fp);
-    await storeInVault(ctx, s, cred, recipient);
+    await storeInVault(ctx, s, assertion());
     expect(fp.vaultDocs).toHaveLength(1);
     const back = await openVault(ctx, assertion());
     expect(back.source).toBe('passkey');
@@ -128,8 +128,8 @@ describe('vault service: the chain check', () => {
   it('stores a key session as a KEY bundle (no seed) and replaces the entry on a second store', async () => {
     const { w, fp, ctx } = setup();
     const s = makeSession({ network: 'testnet', identityId: ownerId, identityIndex: null, keyId: 2, securityLevel: L.HIGH, source: 'key', privateKey: w.identityKey(0, 2).privateKey, wallet: null });
-    await storeInVault(ctx, s, cred, recipient);
-    await storeInVault(ctx, s, cred, recipient);
+    await storeInVault(ctx, s, assertion());
+    await storeInVault(ctx, s, assertion());
     expect(fp.vaultDocs).toHaveLength(1);
     expect(fp.vaultDocs[0]!.revision).toBe(2);
     const back = await openVault(ctx, assertion());
@@ -146,6 +146,36 @@ describe('vault service: the chain check', () => {
     const plantedKey = sealEntry({ contractId: contract, ownerId: owner, credentialId: cred, recipientKey: recipient, authKeyId: 2, bundle: keyBundle() });
     fp.vaultDocs = [{ ...plantedKey, id: 'y', ownerId, revision: 1 }];
     await expect(openVault(ctx, assertion())).rejects.toThrow(/isn't an active key/);
+  });
+
+  it('M4: refuses a seed that holds a key of the identity but not its MASTER key 0', async () => {
+    const { fp, ctx } = setup();
+    // someone who could write to the identity added their own seed's HIGH key (id 9) and planted a SEED entry
+    const other = SeedWallet.fromPhrase('abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about', 'testnet');
+    fp.identities.get(ownerId)!.push({ id: 9, purpose: P, securityLevel: L.HIGH, type: KeyType.ECDSA_SECP256K1, data: other.identityKey(0, 9).publicKey, disabled: false, bound: false });
+    const planted = sealEntry({ contractId: contract, ownerId: owner, credentialId: cred, recipientKey: recipient, authKeyId: 9, bundle: { format: BundleFormat.SEED, identityIndex: 0, entropy: other.entropy() } });
+    fp.vaultDocs.push({ ...planted, id: 'p', ownerId, revision: 1 });
+    await expect(openVault(ctx, assertion())).rejects.toThrow(/doesn't control/);
+  });
+
+  it('storeInVault checks the passkey handle and refuses an ended session', async () => {
+    const { w, fp, ctx } = setup();
+    const s = await signInWithSeed(w, { identityIndex: 0, identityId: ownerId }, fp);
+    await expect(storeInVault(ctx, s, assertion(userHandleFor(toBase58(randomBytes(32)), contractId)))).rejects.toThrow(/another identity/);
+    await expect(storeInVault(ctx, s, { ...assertion(), credentialId: randomBytes(8) })).rejects.toThrow(/credential id/);
+    s.end();
+    await expect(storeInVault(ctx, s, assertion())).rejects.toThrow(/ended/);
+    expect(fp.vaultDocs).toHaveLength(0);
+  });
+
+  it('a failed key read is reported as itself, not as a refused key', async () => {
+    const { w, fp, ctx } = setup();
+    const s = makeSession({ network: 'testnet', identityId: ownerId, identityIndex: null, keyId: 2, securityLevel: L.HIGH, source: 'key', privateKey: w.identityKey(0, 2).privateKey, wallet: null });
+    await storeInVault(ctx, s, assertion());
+    fp.identityKeys = async () => {
+      throw new Error('node timeout');
+    };
+    await expect(openVault(ctx, assertion())).rejects.toThrow(/node timeout/);
   });
 
   it('refuses a passkey from another vault or with no handle', async () => {

@@ -10,7 +10,7 @@ import { CREATE_KEYS } from './layout.ts';
 import type { AssetLockProofInput, PlatformPort, SigningKey } from './platform.ts';
 import type { SeedWallet } from './seed.ts';
 import { identityIdFromOutpoint, locateCredit } from './tx.ts';
-import { minedHeight, redact, waitForChainLockedHeight } from './funding.ts';
+import { classifyRegistrationError, minedHeight, redact, waitForChainLockedHeight } from './funding.ts';
 
 export interface Voucher {
   txid: string;
@@ -63,37 +63,53 @@ export async function redeemVoucher(o: RedeemOptions): Promise<{ identityId: str
     const { creditIndex, creditDuffs } = locateCredit(tx, hash160(publicKeyOf(voucher.privateKey)));
     const identityId = identityIdFromOutpoint(tx.txid, creditIndex);
     o.onUpdate?.('voucher found', identityId);
-    if ((await platform.identityKeys(identityId)) !== null) {
-      // Already redeemed. If it was by this seed (an interrupted earlier attempt), that is success.
-      const mine = wallet.identityKey(o.identityIndex, 0);
+    /** The identity exists: success if this seed made it (an interrupted earlier attempt), else the voucher was used by someone else. */
+    const existing = async (): Promise<boolean> => {
       const k = await platform.identityKeys(identityId);
-      const ok = k?.some((x) => x.id === 0 && bytesEqual(x.data, mine.publicKey));
+      if (k === null) return false;
+      const mine = wallet.identityKey(o.identityIndex, 0);
+      const ok = k.some((x) => x.id === 0 && bytesEqual(x.data, mine.publicKey));
       wipe(mine.privateKey);
-      if (ok) return { identityId, creditDuffs, proofKind: 'chain' };
+      if (ok) return true;
       throw new VoucherError('This voucher has already been used.');
-    }
+    };
+    if (await existing()) return { identityId, creditDuffs, proofKind: 'chain' };
     for (const k of CREATE_KEYS) keys.push({ ...k, privateKey: wallet.identityKey(o.identityIndex, k.id).privateKey });
-    let proof: AssetLockProofInput | null = voucher.isLock ? { kind: 'instant', tx: claim.raw, isLock: voucher.isLock, creditIndex } : null;
-    if (proof) {
+    const create = async (proof: AssetLockProofInput) => {
+      signal?.throwIfAborted();
       try {
         await platform.createIdentity({ proof, assetLockKey: voucher.privateKey, keys });
       } catch (e) {
-        proof = null;
+        const outcome = classifyRegistrationError(e);
+        if (outcome === 'key-conflict') throw new VoucherError('These keys already belong to another identity. Sign in with this recovery phrase instead.');
+        if (outcome === 'used' || (await existing())) return;
+        throw e;
+      }
+    };
+    let proofKind: 'instant' | 'chain' = 'chain';
+    if (voucher.isLock) {
+      try {
+        await create({ kind: 'instant', tx: claim.raw, isLock: voucher.isLock, creditIndex });
+        proofKind = 'instant';
+      } catch (e) {
+        if (e instanceof VoucherError) throw e;
         o.onUpdate?.(`IS-lock proof refused (${redact(String((e as Error)?.message ?? e)).slice(0, 120)}); using a chain-lock proof`);
       }
     }
-    if (!proof) {
+    if (proofKind === 'chain') {
       if (!(await minedHeight(dapi, tx.txid, signal))) o.onUpdate?.('waiting for the voucher to be mined');
       const cl = await waitForChainLockedHeight(dapi, platform, tx.txid, { pollMs: o.pollMs, signal, onWait: (m, p) => o.onUpdate?.(m ? `mined at ${m}; waiting for Platform's chain lock (${p})` : 'waiting for the voucher to be mined') });
-      proof = { kind: 'chain', txid: tx.txid, creditIndex, coreChainLockedHeight: cl };
-      o.onUpdate?.('registering the identity');
-      await platform.createIdentity({ proof, assetLockKey: voucher.privateKey, keys });
+      // The wait can take minutes; the voucher may have been redeemed meanwhile (here or elsewhere).
+      if (!(await existing())) {
+        o.onUpdate?.('registering the identity');
+        await create({ kind: 'chain', txid: tx.txid, creditIndex, coreChainLockedHeight: cl });
+      }
     }
     for (let i = 0; (await platform.identityKeys(identityId)) === null; i++) {
       if (i >= 20) throw new VoucherError('Platform accepted the identity but it is not visible yet. Try signing in with your phrase in a minute.');
       await new Promise((r) => setTimeout(r, 3000));
     }
-    return { identityId, creditDuffs, proofKind: proof.kind };
+    return { identityId, creditDuffs, proofKind };
   } finally {
     for (const k of keys) wipe(k.privateKey);
   }

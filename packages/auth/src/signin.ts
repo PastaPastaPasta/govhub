@@ -21,17 +21,31 @@ export interface Session {
   readonly source: SessionSource;
   readonly privateKey: Uint8Array;
   readonly wallet: SeedWallet | null;
+  /** The passkey this session was opened with (source 'passkey'). */
+  readonly credentialId?: Uint8Array;
+  /** True once `end()` ran: the key bytes are zero and must never be used again (refused by runFunding and storeInVault). */
+  readonly ended: boolean;
   end(): void;
 }
 
-export function makeSession(o: Omit<Session, 'end'>): Session {
+export function makeSession(o: Omit<Session, 'end' | 'ended'>): Session {
+  let ended = false;
   return {
     ...o,
+    get ended() {
+      return ended;
+    },
     end() {
+      ended = true;
       wipe(o.privateKey);
       o.wallet?.wipe();
     },
   };
+}
+
+/** Throws when a session was ended (signed out, or restored from the back/forward cache after its key was wiped). */
+export function assertLive(s: Session): void {
+  if (s.ended || s.privateKey.every((b) => b === 0)) throw new SignInError('This session has ended. Sign in again.');
 }
 
 export class SignInError extends Error {
@@ -156,6 +170,7 @@ export async function signInWithKey(input: string, platform: PlatformPort, pick?
  * (and must be the seed's); returns the ids added.
  */
 export async function addLaterKeys(s: Session, platform: PlatformPort, which: readonly KeySpec[] = LATER_KEYS): Promise<number[]> {
+  assertLive(s);
   if (!s.wallet || s.identityIndex === null) throw new SignInError('Adding keys needs your recovery phrase (the MASTER key signs the update).');
   const onChain = await platform.identityKeys(s.identityId);
   if (!onChain) throw new SignInError("This identity couldn't be found.");

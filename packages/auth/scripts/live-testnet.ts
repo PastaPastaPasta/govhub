@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { createDapi } from '@govhub/dapi';
 import {
   addLaterKeys, bytesToHex, CREDITS_PER_DUFF, discoverIdentities, generatePhrase, hash160, openVault, parseVoucher,
-  randomBytes, recipientFromPrf, redeemVoucher, runFunding, SeedWallet, signInWithKey, signInWithSeed, storeInVault, wifOf,
+  randomBytes, redeemVoucher, runFunding, SeedWallet, signInWithKey, signInWithSeed, storeInVault, wifOf,
   type FundingRecord, type FundingStore, type PlatformPort,
 } from '../src/index.ts';
 import { createEvoPlatform } from '../src/evo.ts';
@@ -174,7 +174,7 @@ if (steps.has('vault')) {
   const cred = randomBytes(16);
   const prf = randomBytes(32);
   const before = await balanceSettled(s.identityId);
-  await storeInVault(ctx, s, cred, recipientFromPrf(prf).publicKey);
+  await storeInVault(ctx, s, { credentialId: cred, userHandle: userHandleFor(s.identityId, FORUM), prfOutput: prf });
   let opened = null;
   for (let i = 0; i < 10 && !opened; i++) {
     opened = await openVault(ctx, { credentialId: cred, userHandle: userHandleFor(s.identityId, FORUM), prfOutput: prf }).catch((e) => (log(`vault open: ${redactErr(e)}`), null));

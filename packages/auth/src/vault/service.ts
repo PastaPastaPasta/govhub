@@ -5,12 +5,13 @@
 // this passkey's (public) recipient key. Nothing from an opened bundle is used until it is checked against the owner's keys, read
 // fresh with proofs: a seed must derive an enabled HIGH/CRITICAL authentication key of the owner at its identity index; a key must
 // BE such a key, with the id, level and point on chain. Only then does a session exist.
-import { identifierBytes } from '../bytes.ts';
-import { KeyType, SecurityLevel } from '../keys.ts';
+import { identifierBytes, wipe } from '../bytes.ts';
+import { KeyType, privateKeyMatches, SecurityLevel } from '../keys.ts';
+import { MASTER_KEY_ID } from '../layout.ts';
 import type { PlatformPort, VaultEntryDoc } from '../platform.ts';
 import { SeedWallet } from '../seed.ts';
-import { checkSessionKey, makeSession, pickSeedKey, SignInError, type Session } from '../signin.ts';
-import { BundleFormat, openEntry, sealEntry, wipeBundle, type VaultBundle } from './bundle.ts';
+import { assertLive, checkSessionKey, makeSession, pickSeedKey, SignInError, type Session } from '../signin.ts';
+import { BundleFormat, openEntry, recipientFromPrf, sealEntry, wipeBundle, type VaultBundle } from './bundle.ts';
 import { parseUserHandle, type PasskeyAssertion } from './webauthn.ts';
 
 export interface VaultContext {
@@ -34,10 +35,16 @@ export function bundleForSession(s: Session): VaultBundle {
 }
 
 /**
- * Writes (or replaces) the entry for `credentialId`, sealed to the recipient key derived from `prfOutput` in THIS tab (a stored
- * recipient key is never trusted). Signed with the session key.
+ * Writes (or replaces) the entry for a passkey, sealed to the recipient key derived here from the PRF output of an assertion made in
+ * THIS tab (a stored recipient key is never trusted). The assertion's user handle must name this identity and this vault. Signed with
+ * the session key; refused for an ended session. Returns the recipient key (for waitForEntry).
  */
-export async function storeInVault(ctx: VaultContext, s: Session, credentialId: Uint8Array, recipientKey: Uint8Array): Promise<void> {
+export async function storeInVault(ctx: VaultContext, s: Session, a: PasskeyAssertion): Promise<Uint8Array> {
+  assertLive(s);
+  const { credentialId } = a;
+  if (credentialId.length < 16 || credentialId.length > 255) throw new VaultError('This passkey has an unusual credential id and cannot be used.');
+  if (parseUserHandle(a.userHandle, ctx.contractId).identityId !== s.identityId) throw new VaultError('This passkey belongs to another identity.');
+  const recipientKey = recipientFromPrf(a.prfOutput).publicKey;
   const bundle = bundleForSession(s);
   try {
     const sealed = sealEntry({ contractId: identifierBytes(ctx.contractId), ownerId: identifierBytes(s.identityId), credentialId, recipientKey, authKeyId: s.keyId, bundle });
@@ -49,6 +56,7 @@ export async function storeInVault(ctx: VaultContext, s: Session, credentialId: 
       entry: { credentialId, recipientKey, version: sealed.version, authKeyId: sealed.authKeyId, enc: sealed.enc, sealed: sealed.sealed },
       existing,
     });
+    return recipientKey;
   } finally {
     wipeBundle(bundle);
   }
@@ -78,21 +86,39 @@ export async function openVault(ctx: VaultContext, a: PasskeyAssertion): Promise
   try {
     if (bundle.format === BundleFormat.SEED) {
       const wallet = SeedWallet.fromEntropy(bundle.entropy, network);
-      const keys = await ctx.platform.identityKeys(identityId);
-      const picked = keys && pickSeedKey(wallet, bundle.identityIndex, keys);
+      let keys;
+      try {
+        keys = await ctx.platform.identityKeys(identityId);
+      } catch (e) {
+        wallet.wipe();
+        throw e;
+      }
+      // The seed must be THE seed of this identity: its key 0 at the bundle's index is the identity's enabled MASTER key 0. A seed
+      // that merely holds a HIGH key someone added (a planted entry) is refused, so a top-up can never pay to an outsider's key.
+      const master = keys?.find((k) => k.id === MASTER_KEY_ID);
+      const k0 = wallet.identityKey(bundle.identityIndex, MASTER_KEY_ID);
+      const ownsMaster = !!master && !master.disabled && master.securityLevel === SecurityLevel.MASTER && privateKeyMatches(k0.privateKey, master);
+      wipe(k0.privateKey);
+      const picked = ownsMaster && keys ? pickSeedKey(wallet, bundle.identityIndex, keys) : null;
       if (!picked) {
         wallet.wipe();
         throw new SignInError("The key in this passkey doesn't control the identity it names. Remove this passkey and add it again from a trusted device.");
       }
-      return makeSession({ network, identityId, identityIndex: bundle.identityIndex, keyId: picked.key.id, securityLevel: picked.key.securityLevel, source: 'passkey', privateKey: picked.privateKey, wallet });
+      return makeSession({ network, identityId, identityIndex: bundle.identityIndex, keyId: picked.key.id, securityLevel: picked.key.securityLevel, source: 'passkey', privateKey: picked.privateKey, wallet, credentialId: a.credentialId.slice() });
     }
     if (bundle.format === BundleFormat.KEY) {
-      const onChain = await checkSessionKey(ctx.platform, identityId, bundle.key.keyId, bundle.key.privateKey).catch(() => null);
+      // Only "not a key of this identity" is a refusal; a failed read propagates as itself.
+      let onChain = null;
+      try {
+        onChain = await checkSessionKey(ctx.platform, identityId, bundle.key.keyId, bundle.key.privateKey);
+      } catch (e) {
+        if (!(e instanceof SignInError)) throw e;
+      }
       if (!onChain || onChain.securityLevel !== bundle.key.securityLevel) {
         throw new SignInError("The key in this passkey isn't an active key of the identity any more. Remove this passkey and add it again.");
       }
       const privateKey = bundle.key.privateKey.slice();
-      return makeSession({ network, identityId, identityIndex: null, keyId: onChain.id, securityLevel: onChain.securityLevel, source: 'passkey', privateKey, wallet: null });
+      return makeSession({ network, identityId, identityIndex: null, keyId: onChain.id, securityLevel: onChain.securityLevel, source: 'passkey', privateKey, wallet: null, credentialId: a.credentialId.slice() });
     }
     throw new VaultError('This passkey holds masternode voting keys, not a sign-in.');
   } finally {
@@ -103,6 +129,7 @@ export async function openVault(ctx: VaultContext, a: PasskeyAssertion): Promise
 export const listPasskeys = (ctx: VaultContext, identityId: string): Promise<VaultEntryDoc[]> => ctx.platform.vault.list(ctx.contractId, identityId);
 
 export async function removePasskey(ctx: VaultContext, s: Session, entry: VaultEntryDoc): Promise<void> {
+  assertLive(s);
   await ctx.platform.vault.remove({
     contractId: ctx.contractId,
     ownerId: s.identityId,

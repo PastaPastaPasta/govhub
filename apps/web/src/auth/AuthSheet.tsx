@@ -2,8 +2,8 @@
 // signed-in views reached from the account menu (top-up, passkeys). Secrets are held in component state only while a view needs
 // them; the session takes ownership of the seed when sign-in completes, and closing the sheet drops the rest.
 import {
-  addressOf, discoverIdentities, generatePhrase, isValidPhrase, normalizePhrase, parseVoucher, pendingFundings, PhraseError, redeemVoucher, registrationFundingPath,
-  SeedWallet, signInWithKey, signInWithSeed, wipe, type FoundIdentity, type FundingRecord, type PhraseLength,
+  addressOf, discardFunding, discoverIdentities, generatePhrase, isValidPhrase, localPasskeys, nextTopUpIndex, normalizePhrase, parseVoucher, pendingFundings, PhraseError,
+  redeemVoucher, registrationFundingPath, SeedWallet, signInWithKey, signInWithSeed, toBase64, wipe, type FoundIdentity, type FundingRecord, type PhraseLength,
 } from '@govhub/auth';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useAuth, type SheetView } from './context.tsx';
@@ -69,6 +69,7 @@ function SheetContent({ view }: { view: SheetView }) {
 
 function Choose() {
   const { openSheet, store, network } = useAuth();
+  const [, rerender] = useState(0);
   const pending = pendingFundings(store, network).filter((r) => r.kind === 'create');
   const options: Array<{ v: SheetView; title: string; text: string }> = [
     { v: 'create', title: 'Create a new identity', text: 'A new recovery phrase that DashPay, Dash Evo Tool and Yappr can restore. Fund it with DASH or a faucet voucher.' },
@@ -81,8 +82,28 @@ function Choose() {
       {pending.length > 0 && (
         <div className="notice-box" role="status">
           <p>
-            <b>An identity setup is in progress</b> (deposit address <span className="mono-ish">{pending[0]!.address}</span>). Enter its recovery phrase to continue.
+            <b>{pending.length === 1 ? 'An identity setup is' : `${pending.length} identity setups are`} in progress.</b> Enter the recovery phrase to continue one.
           </p>
+          <ul className="pending-list">
+            {pending.map((r) => (
+              <li key={r.key}>
+                <span className="mono-ish">{r.address}</span>
+                <span className="muted small">{r.deposits.length || r.lock ? 'payment received' : 'no payment yet'}</span>
+                {!r.deposits.length && !r.lock && (
+                  <button
+                    type="button"
+                    className="btn btn-quiet"
+                    onClick={() => {
+                      discardFunding(store, r.key);
+                      rerender((n) => n + 1);
+                    }}
+                  >
+                    Discard
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
           <button type="button" className="btn" onClick={() => openSheet('phrase')}>
             Continue
           </button>
@@ -449,14 +470,26 @@ function KeySignIn() {
 function TopUp() {
   const { session, store, network, refreshBalance, closeSheet } = useAuth();
   const [done, setDone] = useState(false);
+  // A passkey made on another device may have been planted by someone who once held one of this identity's keys. A key session from
+  // such an entry derives its top-up address from that key, so the payer is warned first.
+  const foreignPasskey = !!session?.credentialId && !localPasskeys.list(localStorage, session.identityId).includes(toBase64(session.credentialId));
+  const [acknowledged, setAcknowledged] = useState(false);
   // Continue an unfinished top-up if there is one, else start the next index.
-  const topUpIndex = useMemo(() => {
-    if (!session) return 0;
-    const mine = store.list().filter((r) => r.kind === 'topup' && r.network === network && r.identityId === session.identityId);
-    const pending = mine.find((r) => r.state !== 'done');
-    return pending?.topUpIndex ?? mine.length;
-  }, [session, store, network]);
+  const topUpIndex = useMemo(() => (session ? nextTopUpIndex(store, network, session.identityId) : 0), [session, store, network]);
   if (!session) return <p className="muted">Sign in first.</p>;
+  if (foreignPasskey && !acknowledged) {
+    return (
+      <div className="notice-box" role="alert">
+        <p>
+          You signed in with a passkey that was not added in this browser. Only continue if you added it yourself: anyone who once held one of your keys could have
+          added a passkey, and its key decides where this top-up is paid.
+        </p>
+        <button type="button" className="btn" onClick={() => setAcknowledged(true)}>
+          I added this passkey, continue
+        </button>
+      </div>
+    );
+  }
   if (done) {
     return (
       <div>
@@ -475,7 +508,7 @@ function TopUp() {
         wallet={session.wallet}
         identityIndex={session.identityIndex ?? 0}
         topUp={{ identityId: session.identityId, index: topUpIndex }}
-        sessionKey={session.wallet ? undefined : session.privateKey}
+        session={session.wallet ? undefined : session}
         onDone={() => {
           refreshBalance();
           setDone(true);

@@ -1337,6 +1337,21 @@ li[data-status='now'] > .fund-dot {
     background: var(--accent);
   }
 }
+.pending-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.25rem;
+  inline-size: 100%;
+}
+.pending-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  align-items: center;
+  overflow-wrap: anywhere;
+}
 .passkeys h3 {
   margin-block-start: 0.5rem;
 }

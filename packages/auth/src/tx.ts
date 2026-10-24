@@ -118,6 +118,14 @@ const estimateSize = (inputs: number, outputScripts: readonly number[], payload:
 
 /** PLAN risk list: DAPI has no fee estimate; Core's default minimum relay fee is 1000 duffs/kB, so 1 duff/byte. */
 export const FEE_PER_BYTE = 1n;
+/** Platform refuses asset locks with more inputs (rs-platform-version `max_asset_lock_transaction_inputs`, v3/v4). */
+export const MAX_ASSET_LOCK_INPUTS = 100;
+
+/** The Core fee of an asset lock spending `inputs` P2PKH outputs with no change (what buildAssetLock will charge). */
+export function estimateAssetLockFee(inputs: number, feePerByte = FEE_PER_BYTE): bigint {
+  const payloadLen = assetLockPayload([{ value: 0n, script: p2pkhScript(new Uint8Array(20)) }]).length;
+  return BigInt(estimateSize(inputs, [BURN_SCRIPT.length], payloadLen)) * feePerByte;
+}
 
 export interface BuiltAssetLock {
   raw: Uint8Array;
@@ -143,8 +151,11 @@ export function buildAssetLock(o: {
   lockDuffs?: bigint;
   change?: { script: Uint8Array; duffs: bigint };
   feePerByte?: bigint;
+  /** Platform's floor for the lock (MIN_CREATE_LOCK_DUFFS / MIN_TOPUP_LOCK_DUFFS): below it the burn would buy nothing. */
+  minLockDuffs?: bigint;
 }): BuiltAssetLock {
   if (!o.utxos.length) throw new Error('no funds to lock');
+  if (o.utxos.length > MAX_ASSET_LOCK_INPUTS) throw new AssetLockError(`an asset lock may spend at most ${MAX_ASSET_LOCK_INPUTS} payments`);
   const total = o.utxos.reduce((a, u) => a + u.value, 0n);
   const credit = p2pkhScript(o.creditPubKeyHash);
   const outScripts = [BURN_SCRIPT.length, ...(o.change ? [o.change.script.length] : [])];
@@ -153,6 +164,7 @@ export function buildAssetLock(o: {
   const changeDuffs = o.change?.duffs ?? 0n;
   const lockDuffs = o.lockDuffs ?? total - fee - changeDuffs;
   if (lockDuffs <= 0n || total - lockDuffs - changeDuffs < fee) throw new Error(`not enough funds: ${total} duffs cannot cover the lock and a ${fee} duff fee`);
+  if (o.minLockDuffs !== undefined && lockDuffs < o.minLockDuffs) throw new AssetLockError(`the lock would be ${lockDuffs} duffs after fees; Platform needs at least ${o.minLockDuffs}`);
   const leftover = total - lockDuffs - changeDuffs - fee;
   if (leftover !== 0n && !o.change) throw new Error('lockDuffs leaves an unspent remainder and no change output');
   const outputs: TxOutput[] = [];

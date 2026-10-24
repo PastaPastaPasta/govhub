@@ -2,7 +2,7 @@
 // key) is sealed to the X25519 key derived from it and kept in a `forum.vault` document on Platform (@govhub/auth vault).
 // Without PRF support nothing is written: the provider is told to drop the new passkey and the user keeps their phrase.
 import {
-  identifierBytes, listPasskeys, localPasskeys, openVault, prfInput, recipientFromPrf, removePasskey, storeInVault, toBase64, waitForEntry, wipe, type VaultEntryDoc,
+  identifierBytes, listPasskeys, localPasskeys, openVault, prfInput, removePasskey, storeInVault, toBase64, waitForEntry, wipe, type VaultEntryDoc,
 } from '@govhub/auth';
 import { createPasskey, forgetPasskey, getPasskeyPrf, PasskeyError, prfSupport, PRF_UNAVAILABLE_MESSAGE, userHandleFor } from '@govhub/auth/webauthn';
 import { useCallback, useEffect, useState } from 'react';
@@ -104,8 +104,7 @@ export function Passkeys() {
       if (created.prf && toBase64(created.prf) !== toBase64(prf)) throw new PasskeyError('This passkey gave two different keys. It cannot be used.', 'failed');
       setStep('saving');
       const c = await ctx();
-      const recipient = recipientFromPrf(prf).publicKey;
-      await storeInVault(c, session, created.credentialId, recipient);
+      const recipient = await storeInVault(c, session, a);
       await waitForEntry(c, session.identityId, created.credentialId, recipient);
       localPasskeys.add(localStorage, session.identityId, toBase64(created.credentialId));
       setStep('done');

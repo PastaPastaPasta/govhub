@@ -1,28 +1,40 @@
 // Funding an identity from external DASH, all over DAPI (PLAN 4.4, Dash Bridge's flow without Insight):
 //   1. a one-time key at the DIP-13 funding path (registration m/9'/c'/5'/1'/i', top-up m/9'/c'/5'/2'/i'/n)
-//   2. watchAddressForDeposit subscribes BEFORE the address is shown (IS-locks are never replayed)
-//   3. type-8 asset lock spending the deposit, its bytes persisted before broadcast; a second watcher on the lock's txid and
-//      inputs is open BEFORE the broadcast, and its IS-lock bytes are persisted the moment they arrive
+//   2. watchAddressForDeposit subscribes BEFORE the address is shown (IS-locks are never replayed); a deposit counts once it is
+//      IS-locked or merkle-proven in a block, P2PKH outputs only; the watcher stays open until the end so late payments are reported
+//   3. type-8 asset lock spending the deposits (refused below Platform's minimum or above 100 inputs), its bytes persisted before
+//      broadcast; a second watcher on the lock's txid and inputs is open BEFORE the broadcast and its IS-lock bytes are persisted on
+//      arrival; a lock whose inputs the network rejects (spent / missing) is dropped and rebuilt from the deposits that still count
 //   4. instant proof (IS-lock); otherwise, or when Platform refuses it, a chain proof at Platform's coreChainLockedHeight
 //   5. identities.create / identities.topUp, then a proved read that the identity (or the new balance) is there
-// Progress is a FundingRecord in a FundingStore: txids, the signed lock tx, the IS-lock, heights. Never a key or the phrase: a
-// reload resumes once the user unlocks the same seed again (the one-time key is re-derived from it).
-import { BloomFilter, type Dapi, type Watcher } from '@govhub/dapi';
+// Progress is a FundingRecord in a FundingStore, keyed by the funding key's hash160 (so seeds never collide): txids, the signed lock
+// tx, the IS-lock, heights. Never a key or the phrase: a reload resumes once the user unlocks the same seed (or, for a seedless
+// top-up, pastes the same key) again. One tab at a time per record (Web Locks, where the platform has them).
+import { BloomFilter, classifyScript, type Dapi, type Watcher } from '@govhub/dapi';
 import { hmac } from '@noble/hashes/hmac.js';
 import { sha256 } from '@noble/hashes/sha2.js';
-import { bytesToHex, concatBytes, hash160, hexToBytes, identifierBytes, reversed, u32be, u32le, wipe } from './bytes.ts';
+import { bytesEqual, bytesToHex, concatBytes, hash160, hexToBytes, identifierBytes, reversed, u32be, u32le, wipe } from './bytes.ts';
 import { addressOf, isValidPrivateKey, publicKeyOf, type Network } from './keys.ts';
-import { CREATE_KEYS, MIN_CREATE_DEPOSIT_DUFFS, MIN_TOPUP_DEPOSIT_DUFFS } from './layout.ts';
+import { CREATE_KEYS, MIN_CREATE_DEPOSIT_DUFFS, MIN_CREATE_LOCK_DUFFS, MIN_TOPUP_DEPOSIT_DUFFS, MIN_TOPUP_LOCK_DUFFS } from './layout.ts';
 import type { AssetLockProofInput, PlatformPort, SigningKey } from './platform.ts';
 import { registrationFundingPath, topUpFundingPath, type SeedWallet } from './seed.ts';
-import { buildAssetLock, identityIdFromOutpoint, type Utxo } from './tx.ts';
+import { assertLive, type Session } from './signin.ts';
+import { buildAssetLock, estimateAssetLockFee, identityIdFromOutpoint, MAX_ASSET_LOCK_INPUTS, type Utxo } from './tx.ts';
 
 export type FundingKind = 'create' | 'topup';
 export type FundingState = 'awaiting-deposit' | 'locking' | 'locked' | 'registering' | 'done';
 
+export interface Deposit {
+  txid: string;
+  vout: number;
+  value: string;
+  /** IS-locked or merkle-proven in a block: only these are spent by the lock. */
+  confirmed: boolean;
+}
+
 /** Persisted progress. Public data only (anyone could read it off the chain once broadcast). */
 export interface FundingRecord {
-  v: 1;
+  v: 2;
   key: string;
   kind: FundingKind;
   network: Network;
@@ -32,7 +44,9 @@ export interface FundingRecord {
   identityId?: string;
   address: string;
   watchFromHeight?: number;
-  deposits: Array<{ txid: string; vout: number; value: string }>;
+  deposits: Deposit[];
+  /** Payments that arrived after the lock was built: they stay at the one-time address (the seed / key still controls it). */
+  lateDeposits?: Array<{ txid: string; vout: number; value: string }>;
   lock?: { raw: string; txid: string; creditIndex: number; burnVout: number; lockDuffs: string; feeDuffs: string };
   broadcastAt?: number;
   isLock?: string;
@@ -54,35 +68,32 @@ export interface FundingStore {
 /** localStorage (or any Storage) under `govhub.funding.<key>`. */
 export function storageFundingStore(storage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem' | 'key' | 'length'>): FundingStore {
   const P = 'govhub.funding.';
+  const parse = (raw: string | null): FundingRecord | null => {
+    try {
+      const r = raw ? (JSON.parse(raw) as FundingRecord) : null;
+      return r && r.v === 2 ? r : null;
+    } catch {
+      return null;
+    }
+  };
   return {
-    load: (key) => {
-      try {
-        const raw = storage.getItem(P + key);
-        return raw ? (JSON.parse(raw) as FundingRecord) : null;
-      } catch {
-        return null;
-      }
-    },
+    load: (key) => parse(storage.getItem(P + key)),
     save: (rec) => storage.setItem(P + rec.key, JSON.stringify({ ...rec, updatedAt: Date.now() })),
     remove: (key) => storage.removeItem(P + key),
     list: () => {
       const out: FundingRecord[] = [];
       for (let i = 0; i < storage.length; i++) {
         const k = storage.key(i);
-        if (!k?.startsWith(P)) continue;
-        try {
-          out.push(JSON.parse(storage.getItem(k) ?? '') as FundingRecord);
-        } catch {
-          /* ignore a damaged record */
-        }
+        const r = k?.startsWith(P) ? parse(storage.getItem(k)) : null;
+        if (r) out.push(r);
       }
       return out;
     },
   };
 }
 
-export const fundingKey = (kind: FundingKind, network: Network, identityIndex: number, topUpIndex?: number): string =>
-  kind === 'create' ? `${network}.create.${identityIndex}` : `${network}.topup.${identityIndex}.${topUpIndex ?? 0}`;
+/** Records are keyed by the funding key's hash160, so two seeds (or two sessions) in one browser never share a record. */
+export const fundingRecordKey = (network: Network, kind: FundingKind, keyHash160: Uint8Array): string => `${network}.${kind}.${bytesToHex(keyHash160)}`;
 
 export interface FundingView {
   state: FundingState;
@@ -90,7 +101,11 @@ export interface FundingView {
   /** `dash:<address>?amount=<min>` for the QR code. */
   uri: string;
   minDuffs: number;
+  /** Counted deposits (IS-locked or in a block). */
   receivedDuffs: bigint;
+  /** Seen but not yet IS-locked or mined. */
+  pendingDuffs: bigint;
+  lateDuffs: bigint;
   depositTxids: string[];
   lockTxid?: string;
   isLocked: boolean;
@@ -100,6 +115,7 @@ export interface FundingView {
 }
 
 export interface FundingOptions {
+  /** The seed: derives the funding key (and, for create, the identity keys). */
   wallet: SeedWallet | null;
   dapi: Dapi;
   platform: PlatformPort;
@@ -110,10 +126,10 @@ export interface FundingOptions {
   /** topup only. */
   topUp?: { identityId: string; index: number };
   /**
-   * Top-up without a seed (key-paste sessions): the one-time key comes from `sessionTopUpKey` instead of the DIP-13 path, so a
-   * reload resumes once the same key is pasted again. `wallet` may then be null.
+   * Top-up without a seed (key-paste sessions): the one-time key comes from `sessionTopUpKey(session key)` instead of the DIP-13 path,
+   * so a reload resumes once the same key is pasted again. Refused once the session has ended.
    */
-  sessionKey?: Uint8Array;
+  session?: Session;
   minDepositDuffs?: number;
   /** How long to wait for the asset lock's IS-lock before switching to the chain-lock proof. Default 60 s. */
   isLockWaitMs?: number;
@@ -151,6 +167,10 @@ const errText = (e: unknown): string => {
   if (e && typeof e === 'object' && 'message' in e) return String((e as { message: unknown }).message);
   return String(e);
 };
+const errCode = (e: unknown): number | undefined => {
+  const c = (e as { code?: unknown } | null)?.code;
+  return typeof c === 'number' ? c : undefined;
+};
 /** Messages from the SDK can echo transition bytes; strip long hex/base58/base64 runs before showing or logging them. */
 export const redact = (s: string): string => s.replace(/[0-9a-fA-F]{64,}/g, '[hex]').replace(/[1-9A-HJ-NP-Za-km-z]{50,}/g, '[b58]').replace(/[A-Za-z0-9+/=]{80,}/g, '[b64]');
 
@@ -170,7 +190,7 @@ export async function minedHeight(dapi: Dapi, txid: string, signal?: AbortSignal
     const { value } = await dapi.call((core, s) => core.getTransaction(txid, { signal: s }), { signal });
     return value.height > 0 ? value.height : 0;
   } catch (e) {
-    if ((e as { code?: number }).code === 5) return 0;
+    if (errCode(e) === 5) return 0;
     throw e;
   }
 }
@@ -188,47 +208,84 @@ export async function waitForChainLockedHeight(dapi: Dapi, platform: PlatformPor
   }
 }
 
-/** Refusals that a chain proof can fix: Platform could not verify the IS-lock (quorum rotated away, or a node lagging). */
-const instantProofRefused = (msg: string) => /instant ?lock|islock|InvalidInstantAssetLockProof|signature|quorum/i.test(msg);
-/** The lock was already consumed: the earlier attempt landed even though its answer was lost. */
-const alreadyUsed = (msg: string) => /already (been )?(used|consumed|exists)|IdentityAlreadyExists|AssetLockTransactionIsAlreadyUsed|already completely used/i.test(msg);
+/**
+ * What Platform's answer to a registration means. Only the consensus errors themselves count (rs-dpp errors/consensus/codes.rs):
+ *  - 'used': the outpoint is already consumed (10504) or the identity exists (40200): an earlier attempt landed
+ *  - 'key-conflict': a key is already registered to another identity (40206 / 40207)
+ *  - 'instant-refused': Platform could not verify the IS-lock; a chain proof may still work
+ *  - 'other': anything else (network errors, timeouts): check the result, never assume success
+ */
+export type RegistrationOutcome = 'used' | 'key-conflict' | 'instant-refused' | 'other';
+export function classifyRegistrationError(e: unknown): RegistrationOutcome {
+  const code = errCode(e);
+  const m = errText(e);
+  if (code === 10504 || code === 40200 || /\b(IdentityAssetLockTransactionOutPointAlreadyConsumedError|IdentityAlreadyExistsError)\b/.test(m)) return 'used';
+  if (code === 40206 || code === 40207 || /\b(DuplicatedIdentityPublicKeyStateError|DuplicatedIdentityPublicKeyIdStateError)\b/.test(m)) return 'key-conflict';
+  if (/\b(InvalidInstantAssetLockProofSignatureError|InvalidInstantAssetLockProofError|InvalidAssetLockProofCoreChainHeightError)\b/.test(m) || /instant ?lock|islock/i.test(m)) return 'instant-refused';
+  return 'other';
+}
+
+/** The network rejected the lock's inputs: a deposit was double-spent, replaced or never existed. */
+const inputsRejected = (e: unknown) => /missing-?inputs|bad-txns-inputs-missingorspent|txn-mempool-conflict|inputs.*(spent|missing)/i.test(errText(e));
+
+/** Runs `fn` holding an exclusive Web Lock named for the record, when the platform has Web Locks (browsers; not Node 22). */
+async function withRecordLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const locks = (globalThis.navigator as { locks?: { request(n: string, o: { ifAvailable: boolean }, cb: (l: unknown) => Promise<T>): Promise<T> } } | undefined)?.locks;
+  if (!locks) return fn();
+  return locks.request(`govhub.funding.${key}`, { ifAvailable: true }, async (l) => {
+    if (!l) throw new FundingError('This funding is already running in another tab or window. Continue it there.');
+    return fn();
+  });
+}
 
 /**
  * Runs (or resumes) one funding. Resolves with the identity id once Platform proves it (create) or proves the larger balance (top-up).
  * Persists after every step; calling it again with the same seed and indexes continues where it stopped.
  */
 export async function runFunding(o: FundingOptions): Promise<{ identityId: string; record: FundingRecord }> {
-  const { wallet, dapi, platform, store, kind, identityIndex, signal } = o;
+  const { wallet, dapi, platform, kind, identityIndex } = o;
   const network = platform.network;
   if (dapi.network !== network || (wallet && wallet.network !== network)) throw new FundingError(`network mismatch: seed ${wallet?.network}, DAPI ${dapi.network}, Platform ${network}`);
   if (kind === 'topup' && !o.topUp) throw new FundingError('top-up target missing');
-  if (!wallet && !(kind === 'topup' && o.sessionKey)) throw new FundingError('funding needs the recovery phrase (or, for a top-up, the signed-in key)');
-  const minDuffs = o.minDepositDuffs ?? (kind === 'create' ? MIN_CREATE_DEPOSIT_DUFFS : MIN_TOPUP_DEPOSIT_DUFFS);
-  const key = wallet ? fundingKey(kind, network, identityIndex, o.topUp?.index) : `${network}.topup.k.${o.topUp!.identityId}.${o.topUp!.index}`;
+  if (o.session) assertLive(o.session);
+  if (!wallet && !(kind === 'topup' && o.session)) throw new FundingError('funding needs the recovery phrase (or, for a top-up, the signed-in key)');
   const fk = wallet
     ? wallet.derive(kind === 'create' ? registrationFundingPath(network, identityIndex) : topUpFundingPath(network, identityIndex, o.topUp!.index))
-    : sessionTopUpKey(o.sessionKey!, o.topUp!.identityId, o.topUp!.index);
+    : sessionTopUpKey(o.session!.privateKey, o.topUp!.identityId, o.topUp!.index);
+  const key = fundingRecordKey(network, kind, hash160(fk.publicKey));
+  try {
+    return await withRecordLock(key, () => fund(o, fk, key));
+  } finally {
+    wipe(fk.privateKey);
+  }
+}
+
+async function fund(o: FundingOptions, fk: { privateKey: Uint8Array; publicKey: Uint8Array }, key: string): Promise<{ identityId: string; record: FundingRecord }> {
+  const { wallet, dapi, platform, store, kind, identityIndex, signal } = o;
+  const network = platform.network;
+  const minDuffs = o.minDepositDuffs ?? (kind === 'create' ? MIN_CREATE_DEPOSIT_DUFFS : MIN_TOPUP_DEPOSIT_DUFFS);
+  const minLock = BigInt(kind === 'create' ? MIN_CREATE_LOCK_DUFFS : MIN_TOPUP_LOCK_DUFFS);
   const h160 = hash160(fk.publicKey);
   const address = addressOf(fk.publicKey, network);
   const log = o.log ?? (() => {});
   const now = Date.now();
-  let rec: FundingRecord =
+  const rec: FundingRecord =
     store.load(key) ??
     ({
-      v: 1, key, kind, network, identityIndex, topUpIndex: o.topUp?.index, identityId: o.topUp?.identityId, address, deposits: [], state: 'awaiting-deposit', createdAt: now, updatedAt: now,
+      v: 2, key, kind, network, identityIndex, topUpIndex: o.topUp?.index, identityId: o.topUp?.identityId, address, deposits: [], state: 'awaiting-deposit', createdAt: now, updatedAt: now,
     } satisfies FundingRecord);
-  if (rec.address !== address) {
-    wipe(fk.privateKey);
-    throw new FundingError('the saved funding record belongs to another recovery phrase');
-  }
+  if (rec.address !== address) throw new FundingError('the saved funding record belongs to another key');
   const save = () => store.save(rec);
-  const received = () => rec.deposits.reduce((a, d) => a + BigInt(d.value), 0n);
+  const sum = (l: ReadonlyArray<{ value: string }>) => l.reduce((a, d) => a + BigInt(d.value), 0n);
+  const counted = () => rec.deposits.filter((d) => d.confirmed);
   const view = (note?: string): FundingView => ({
     state: rec.state,
     address,
     uri: `dash:${address}?amount=${(minDuffs / 1e8).toFixed(8).replace(/0+$/, '').replace(/\.$/, '')}`,
     minDuffs,
-    receivedDuffs: received(),
+    receivedDuffs: sum(counted()),
+    pendingDuffs: sum(rec.deposits.filter((d) => !d.confirmed)),
+    lateDuffs: sum(rec.lateDeposits ?? []),
     depositTxids: [...new Set(rec.deposits.map((d) => d.txid))],
     lockTxid: rec.lock?.txid,
     isLocked: !!rec.isLock,
@@ -242,154 +299,204 @@ export async function runFunding(o: FundingOptions): Promise<{ identityId: strin
   };
   const watchers: Watcher[] = [];
   try {
-    // ---- 1-2: deposit -----------------------------------------------------------------------------------------------------
-    if (rec.state === 'awaiting-deposit') {
-      rec.watchFromHeight ??= Math.max(0, (await tipHeight(dapi, signal)) - 3);
-      save();
-      let resolveFunded!: () => void;
-      const funded = new Promise<void>((r) => (resolveFunded = r));
-      const check = () => {
-        if (received() >= BigInt(minDuffs)) resolveFunded();
-      };
+    // ---- 1-2: deposits. The watcher stays open until the end: payments after the lock are reported as late. ----------------
+    rec.watchFromHeight ??= Math.max(0, (await tipHeight(dapi, signal)) - 3);
+    save();
+    const lockedTxids = new Set<string>();
+    let wake: () => void = () => {};
+    const confirm = (txid: string) => {
+      let changed = false;
+      for (const d of rec.deposits) if (d.txid === txid && !d.confirmed) changed = d.confirmed = true;
+      if (changed) {
+        update(`payment ${txid.slice(0, 12)}… confirmed`);
+        wake();
+      }
+    };
+    if (rec.state !== 'done') {
       const w = await dapi.watchAddressForDeposit(
         h160,
         {
-          onTx: ({ tx, matches }) => {
-            for (const vout of matches) {
-              if (rec.deposits.some((d) => d.txid === tx.txid && d.vout === vout)) continue;
-              rec.deposits.push({ txid: tx.txid, vout, value: tx.outputs[vout]!.value.toString() });
+          onTx: ({ tx }) => {
+            if (tx.txid === rec.lock?.txid) return;
+            // P2PKH outputs to the one-time key only (the watcher also matches P2SH with the same hash).
+            const outs = tx.outputs.flatMap((out, vout) => {
+              const c = classifyScript(out.script);
+              return c.type === 'p2pkh' && bytesEqual(c.hash, h160) ? [{ txid: tx.txid, vout, value: out.value.toString() }] : [];
+            });
+            if (!outs.length) return;
+            if (rec.lock) {
+              const late = (rec.lateDeposits ??= []);
+              for (const d of outs) if (!late.some((x) => x.txid === d.txid && x.vout === d.vout) && !rec.deposits.some((x) => x.txid === d.txid && x.vout === d.vout)) late.push(d);
+              update(`a payment arrived after the lock was made (${tx.txid.slice(0, 12)}…); it stays at the deposit address`);
+              return;
             }
-            update(`deposit ${tx.txid.slice(0, 12)}… seen`);
-            check();
+            for (const d of outs) if (!rec.deposits.some((x) => x.txid === d.txid && x.vout === d.vout)) rec.deposits.push({ ...d, confirmed: lockedTxids.has(d.txid) });
+            update(`payment ${tx.txid.slice(0, 12)}… seen; waiting for InstantSend or a block`);
+            wake();
           },
-          onIsLock: () => {},
+          onIsLock: ({ lock }) => {
+            lockedTxids.add(lock.txid);
+            confirm(lock.txid);
+          },
+          onBlock: (b) => {
+            for (const t of b.matched) {
+              lockedTxids.add(t);
+              confirm(t);
+            }
+          },
           onError: (e, ctx) => log(`watch ${ctx.phase}: ${redact(errText(e))}`),
         },
         { fromHeight: rec.watchFromHeight, signal },
       );
       watchers.push(w);
-      update(); // the address may be shown now: the subscription is live
-      check();
-      await Promise.race([funded, aborted(signal)]);
-      // A wallet may split a payment across txs that arrive together: give the streams a moment before locking.
-      await sleep(1500, signal);
-      w.cancel();
-      rec.state = 'locking';
-      update();
     }
+    update(); // the address may be shown now: the subscription is live
 
-    // ---- 3: asset lock ------------------------------------------------------------------------------------------------------
-    if (!rec.lock) {
-      const utxos: Utxo[] = rec.deposits.map((d) => ({ txid: d.txid, vout: d.vout, value: BigInt(d.value) }));
-      const built = buildAssetLock({ utxos, fundingKey: fk.privateKey, creditPubKeyHash: h160 });
-      rec.lock = { raw: bytesToHex(built.raw), txid: built.txid, creditIndex: built.creditIndex, burnVout: built.burnVout, lockDuffs: built.lockDuffs.toString(), feeDuffs: built.feeDuffs.toString() };
-      if (kind === 'create') rec.identityId = identityIdFromOutpoint(built.txid, built.creditIndex);
-      update('asset lock built');
-    }
-    const lock = rec.lock;
-    if (rec.state === 'locking' || rec.state === 'locked') {
-      // A lock already mined (a resume) is not re-sent, and its IS-lock is gone for good (never replayed): straight to the chain proof.
-      const mined = rec.state === 'locked' && !rec.isLock ? await minedHeight(dapi, lock.txid, signal).catch(() => 0) : 0;
-      // Otherwise watch the lock's txid and inputs on several nodes BEFORE broadcasting: its IS-lock arrives within seconds, once.
-      if (!rec.isLock && !mined) {
-        const f = new BloomFilter(2 + rec.deposits.length).insert(h160).insert(reversed(hexToBytes(lock.txid)));
-        for (const d of rec.deposits) f.insert(outpointBytes(d.txid, d.vout));
-        const lw = await dapi.watchTransactions(
-          f.toJSON(),
-          {
-            onTx: () => {},
-            onIsLock: ({ lock: l, bytes }) => {
-              if (l.txid !== lock.txid || rec.isLock) return;
-              rec.isLock = bytesToHex(bytes);
-              if (rec.broadcastAt) rec.isLockAfterMs = Date.now() - rec.broadcastAt;
-              update('IS-lock received');
+    {
+      // ---- wait until the counted deposits make a lock above Platform's floor ----
+      if (rec.state === 'awaiting-deposit') {
+        for (;;) {
+          const c = counted();
+          if (c.length > MAX_ASSET_LOCK_INPUTS) throw new FundingError(`More than ${MAX_ASSET_LOCK_INPUTS} separate payments arrived; an asset lock cannot spend them all. Contact support with the deposit address.`);
+          if (c.length && sum(c) - estimateAssetLockFee(c.length) >= minLock && sum(c) >= BigInt(minDuffs)) break;
+          await Promise.race([new Promise<void>((r) => (wake = r)), aborted(signal)]);
+        }
+        // A wallet may split a payment across txs that arrive together: give the streams a moment before locking.
+        await sleep(1500, signal);
+        rec.state = 'locking';
+        update();
+      }
+
+      // ---- 3: asset lock ----
+      if (!rec.lock) {
+        const c = counted();
+        const utxos: Utxo[] = c.map((d) => ({ txid: d.txid, vout: d.vout, value: BigInt(d.value) }));
+        const built = buildAssetLock({ utxos, fundingKey: fk.privateKey, creditPubKeyHash: h160, minLockDuffs: minLock });
+        rec.deposits = c; // only the counted deposits are spent; unconfirmed ones would make the lock unrelayable
+        rec.lock = { raw: bytesToHex(built.raw), txid: built.txid, creditIndex: built.creditIndex, burnVout: built.burnVout, lockDuffs: built.lockDuffs.toString(), feeDuffs: built.feeDuffs.toString() };
+        if (kind === 'create') rec.identityId = identityIdFromOutpoint(built.txid, built.creditIndex);
+        update('asset lock built');
+      }
+      const lock = rec.lock;
+      if (rec.state === 'locking' || rec.state === 'locked') {
+        // A lock already mined (a resume) is not re-sent, and its IS-lock is gone for good (never replayed): straight to the chain proof.
+        const mined = rec.state === 'locked' && !rec.isLock ? await minedHeight(dapi, lock.txid, signal).catch(() => 0) : 0;
+        // Otherwise watch the lock's txid and inputs on several nodes BEFORE broadcasting: its IS-lock arrives within seconds, once.
+        if (!rec.isLock && !mined) {
+          const f = new BloomFilter(2 + rec.deposits.length).insert(h160).insert(reversed(hexToBytes(lock.txid)));
+          for (const d of rec.deposits) f.insert(outpointBytes(d.txid, d.vout));
+          const lw = await dapi.watchTransactions(
+            f.toJSON(),
+            {
+              onTx: () => {},
+              onIsLock: ({ lock: l, bytes }) => {
+                if (l.txid !== lock.txid || rec.isLock) return;
+                rec.isLock = bytesToHex(bytes);
+                if (rec.broadcastAt) rec.isLockAfterMs = Date.now() - rec.broadcastAt;
+                update('IS-lock received');
+              },
+              onError: (e, ctx) => log(`lock watch ${ctx.phase}: ${redact(errText(e))}`),
             },
-            onError: (e, ctx) => log(`lock watch ${ctx.phase}: ${redact(errText(e))}`),
-          },
-          { fromHeight: Math.max(0, (await tipHeight(dapi, signal)) - 2), signal },
-          (tx) => (tx.txid === lock.txid ? [0] : []),
-        );
-        watchers.push(lw);
+            { fromHeight: Math.max(0, (await tipHeight(dapi, signal)) - 2), signal },
+            (tx) => (tx.txid === lock.txid ? [0] : []),
+          );
+          watchers.push(lw);
+        }
+        if (!mined) {
+          try {
+            // Re-sending the same bytes is harmless; nodes answering "already known" count as success.
+            await dapi.broadcastTransaction(hexToBytes(lock.raw), { signal });
+          } catch (e) {
+            if (!inputsRejected(e) || rec.isLock) throw e;
+            // A deposit was double-spent or replaced: forget this lock and the deposits, replay the address from the start.
+            log(`lock rejected: ${redact(errText(e))}`);
+            rec.lock = undefined;
+            rec.identityId = kind === 'create' ? undefined : rec.identityId;
+            rec.deposits = [];
+            rec.broadcastAt = undefined;
+            rec.state = 'awaiting-deposit';
+            update('the network rejected the payment the lock spends; waiting for a valid payment');
+            for (const w of watchers.splice(0)) w.cancel();
+            return await fund(o, fk, key);
+          }
+          rec.broadcastAt ??= Date.now();
+        }
+        rec.state = 'locked';
+        update('asset lock broadcast');
+        const deadline = mined ? 0 : Date.now() + (o.isLockWaitMs ?? 60_000);
+        while (!rec.isLock && Date.now() < deadline) await sleep(250, signal);
+        rec.state = 'registering';
+        update(rec.isLock ? undefined : 'no IS-lock seen; using a chain-lock proof');
       }
-      if (!mined) {
-        // Re-sending the same bytes is harmless; nodes answering "already known" count as success.
-        await dapi.broadcastTransaction(hexToBytes(lock.raw), { signal });
-        rec.broadcastAt ??= Date.now();
-      }
-      rec.state = 'locked';
-      update('asset lock broadcast');
-      const deadline = mined ? 0 : Date.now() + (o.isLockWaitMs ?? 60_000);
-      while (!rec.isLock && Date.now() < deadline) await sleep(250, signal);
-      for (const w of watchers.splice(0)) w.cancel();
-      rec.state = 'registering';
-      update(rec.isLock ? undefined : 'no IS-lock seen; using a chain-lock proof');
     }
 
-    // ---- 4-5: register on Platform -----------------------------------------------------------------------------------------
+    // ---- 4-5: register on Platform ----
+    const lock = rec.lock!;
     const identityId = rec.identityId!;
-    const exists = async () => (kind === 'create' ? (await platform.identityKeys(identityId)) !== null : false);
-    const before = async () => (rec.balanceBefore ??= ((await platform.balance(identityId)) ?? 0n).toString());
     if (kind === 'topup') {
-      await before();
+      rec.balanceBefore ??= ((await platform.balance(identityId)) ?? 0n).toString();
       save();
     }
-    if (await exists()) {
-      rec.state = 'done';
-      update('identity already registered');
-      return { identityId, record: rec };
-    }
-    const signingKeys: SigningKey[] =
-      kind === 'create' ? CREATE_KEYS.map((k) => ({ ...k, privateKey: wallet!.identityKey(identityIndex, k.id).privateKey })) : [];
-    try {
-      const submit = async (proof: AssetLockProofInput) => {
-        rec.proofKind = proof.kind;
-        update(proof.kind === 'instant' ? 'registering with the IS-lock proof' : 'registering with a chain-lock proof');
-        if (kind === 'create') await platform.createIdentity({ proof, assetLockKey: fk.privateKey, keys: signingKeys });
-        else await platform.topUpIdentity({ identityId, proof, assetLockKey: fk.privateKey });
-      };
-      const chainProof = async (): Promise<AssetLockProofInput> => {
-        const cl = await waitForChainLockedHeight(dapi, platform, lock.txid, {
-          pollMs: o.pollMs,
-          signal,
-          onWait: (m, p) => o.onUpdate?.(view(m ? `mined at ${m}; waiting for Platform's chain lock (${p})` : 'waiting for the asset lock to be mined')),
-        });
-        return { kind: 'chain', txid: lock.txid, creditIndex: lock.creditIndex, coreChainLockedHeight: cl };
-      };
-      let done = false;
-      if (rec.isLock) {
-        try {
-          await submit({ kind: 'instant', tx: hexToBytes(lock.raw), isLock: hexToBytes(rec.isLock), creditIndex: lock.creditIndex });
-          done = true;
-        } catch (e) {
-          const m = errText(e);
-          log(`instant proof: ${redact(m)}`);
-          if (alreadyUsed(m)) done = true;
-          else if (!instantProofRefused(m) && (await settled(kind, platform, identityId, rec))) done = true;
+    if (!(await settled(kind, platform, identityId, rec))) {
+      const signingKeys: SigningKey[] =
+        kind === 'create' ? CREATE_KEYS.map((k) => ({ ...k, privateKey: wallet!.identityKey(identityIndex, k.id).privateKey })) : [];
+      try {
+        const submit = async (proof: AssetLockProofInput) => {
+          signal?.throwIfAborted();
+          rec.proofKind = proof.kind;
+          update(proof.kind === 'instant' ? 'registering with the IS-lock proof' : 'registering with a chain-lock proof');
+          if (kind === 'create') await platform.createIdentity({ proof, assetLockKey: fk.privateKey, keys: signingKeys });
+          else await platform.topUpIdentity({ identityId, proof, assetLockKey: fk.privateKey });
+        };
+        const refused = (e: unknown, outcome: RegistrationOutcome): never => {
+          if (outcome === 'key-conflict')
+            throw new FundingError('One of these keys is already registered to another identity. Sign in with this recovery phrase instead; the locked funds can be claimed by that identity with support.');
+          throw new FundingError(`Platform refused the registration: ${redact(errText(e))}`);
+        };
+        let done = false;
+        if (rec.isLock) {
+          try {
+            await submit({ kind: 'instant', tx: hexToBytes(lock.raw), isLock: hexToBytes(rec.isLock), creditIndex: lock.creditIndex });
+            done = true;
+          } catch (e) {
+            const outcome = classifyRegistrationError(e);
+            log(`instant proof: ${outcome}: ${redact(errText(e))}`);
+            if (outcome === 'used') done = true;
+            else if (outcome === 'key-conflict') refused(e, outcome);
+            else if (outcome === 'other' && (await settled(kind, platform, identityId, rec))) done = true;
+          }
         }
-      }
-      if (!done && !(await settled(kind, platform, identityId, rec))) {
-        try {
-          await submit(await chainProof());
-        } catch (e) {
-          const m = errText(e);
-          log(`chain proof: ${redact(m)}`);
-          if (!alreadyUsed(m)) throw new FundingError(`Platform refused the registration: ${redact(m)}`);
+        if (!done && !(await settled(kind, platform, identityId, rec))) {
+          const cl = await waitForChainLockedHeight(dapi, platform, lock.txid, {
+            pollMs: o.pollMs,
+            signal,
+            onWait: (m, p) => o.onUpdate?.(view(m ? `mined at ${m}; waiting for Platform's chain lock (${p})` : 'waiting for the asset lock to be mined')),
+          });
+          // The wait can take minutes: an earlier submission may have landed meanwhile.
+          if (!(await settled(kind, platform, identityId, rec))) {
+            try {
+              await submit({ kind: 'chain', txid: lock.txid, creditIndex: lock.creditIndex, coreChainLockedHeight: cl });
+            } catch (e) {
+              const outcome = classifyRegistrationError(e);
+              log(`chain proof: ${outcome}: ${redact(errText(e))}`);
+              if (outcome !== 'used' && !(outcome === 'other' && (await settled(kind, platform, identityId, rec)))) refused(e, outcome);
+            }
+          }
         }
+      } finally {
+        for (const k of signingKeys) wipe(k.privateKey);
       }
-    } finally {
-      for (const k of signingKeys) wipe(k.privateKey);
-    }
-    // A proved read must show the result; nodes can lag a block or two.
-    for (let i = 0; !(await settled(kind, platform, identityId, rec)); i++) {
-      if (i >= 20) throw new FundingError('Platform accepted the transition but the result is not visible yet. Reload in a minute to check again.');
-      await sleep(3000, signal);
+      // A proved read must show the result; nodes can lag a block or two.
+      for (let i = 0; !(await settled(kind, platform, identityId, rec)); i++) {
+        if (i >= 20) throw new FundingError('Platform accepted the transition but the result is not visible yet. Reload in a minute to check again.');
+        await sleep(3000, signal);
+      }
     }
     rec.state = 'done';
-    update();
+    update(rec.lateDeposits?.length ? 'done; a later payment is still at the deposit address' : undefined);
     return { identityId, record: rec };
   } finally {
     for (const w of watchers) w.cancel();
-    wipe(fk.privateKey);
   }
 }
 
@@ -405,10 +512,12 @@ async function settled(kind: FundingKind, platform: PlatformPort, identityId: st
 }
 
 /**
- * One-time top-up key for a session without a seed: HMAC-SHA256(sessionKey, "govhub/topup/v1" || identityId || u32be(n)), re-drawn
- * with a counter in the (negligible) case it is not a valid scalar. Deterministic, so nothing secret has to be stored to resume.
+ * One-time top-up key for a session without a seed: HMAC-SHA256(sessionKey, "govhub/topup/v1" || identityId || u32be(n) || ctr),
+ * re-drawn with the counter in the (negligible) case it is not a valid scalar. Deterministic, so nothing secret has to be stored to
+ * resume. Refuses anything that is not a valid private key (a wiped, all-zero session key would give a key anyone can compute).
  */
 export function sessionTopUpKey(sessionKey: Uint8Array, identityId: string, n: number): { privateKey: Uint8Array; publicKey: Uint8Array } {
+  if (!isValidPrivateKey(sessionKey)) throw new FundingError('The signed-in key is not available any more. Sign in again.');
   for (let ctr = 0; ; ctr++) {
     const k = hmac(sha256, sessionKey, concatBytes(new TextEncoder().encode('govhub/topup/v1'), identifierBytes(identityId), u32be(n), Uint8Array.of(ctr)));
     if (isValidPrivateKey(k)) return { privateKey: k, publicKey: publicKeyOf(k) };
@@ -422,3 +531,19 @@ export const pendingFundings = (store: FundingStore, network: Network): FundingR
     .list()
     .filter((r) => r.network === network && r.state !== 'done')
     .sort((a, b) => b.updatedAt - a.updatedAt);
+
+/** A record may be discarded only while nothing was paid to it (no deposit seen, no lock built). Returns whether it was. */
+export function discardFunding(store: FundingStore, key: string): boolean {
+  const r = store.load(key);
+  if (!r || r.state !== 'awaiting-deposit' || r.deposits.length || r.lock || r.lateDeposits?.length) return false;
+  store.remove(key);
+  return true;
+}
+
+/** The top-up index to use for `identityId`: an unfinished one first, else the next after those already made in this browser. */
+export function nextTopUpIndex(store: FundingStore, network: Network, identityId: string): number {
+  const mine = store.list().filter((r) => r.kind === 'topup' && r.network === network && r.identityId === identityId);
+  const pending = mine.find((r) => r.state !== 'done');
+  if (pending?.topUpIndex !== undefined) return pending.topUpIndex;
+  return mine.reduce((m, r) => Math.max(m, (r.topUpIndex ?? -1) + 1), 0);
+}

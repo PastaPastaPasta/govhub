@@ -1,15 +1,21 @@
-// runFunding against a scripted DAPI and Platform: ordering (watch before showing the address, watch before broadcast), IS-lock
-// persistence, the chain-lock fallback, resume without rebuilding the lock, and records that hold no secrets.
+// runFunding against a scripted DAPI and Platform: ordering (watch before showing the address, watch before broadcast), deposits
+// counted only once IS-locked or mined, IS-lock persistence, the chain-lock fallback, resume without rebuilding the lock, records keyed
+// per funding key (no collisions between seeds), error classification, ended sessions, and records that hold no secrets.
 import { parseTx, type Dapi, type WatchHandlers } from '@govhub/dapi';
 import { describe, expect, it } from 'vitest';
 import { bytesToHex, hash160, hexToBytes } from '../src/bytes.ts';
-import { fundingKey, runFunding, sessionTopUpKey, type FundingRecord, type FundingStore, type FundingView } from '../src/funding.ts';
-import { addressOf, wifOf } from '../src/keys.ts';
+import {
+  classifyRegistrationError, discardFunding, fundingRecordKey, nextTopUpIndex, pendingFundings, runFunding, sessionTopUpKey, type FundingRecord, type FundingStore, type FundingView,
+} from '../src/funding.ts';
+import { addressOf, publicKeyOf, wifOf } from '../src/keys.ts';
+import { MIN_CREATE_LOCK_DUFFS } from '../src/layout.ts';
 import type { AssetLockProofInput, PlatformPort } from '../src/platform.ts';
 import { registrationFundingPath, SeedWallet } from '../src/seed.ts';
-import { buildPayment, identityIdFromOutpoint } from '../src/tx.ts';
+import { makeSession } from '../src/signin.ts';
+import { AssetLockError, buildAssetLock, buildPayment, identityIdFromOutpoint } from '../src/tx.ts';
 
 const PHRASE = 'legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth title';
+const PHRASE_B = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
 
 function memStore(): FundingStore & { m: Map<string, FundingRecord> } {
   const m = new Map<string, FundingRecord>();
@@ -20,13 +26,17 @@ interface Script {
   events: string[];
   deliverIsLock: boolean;
   mined: number;
+  /** Error thrown by the next broadcast, once. */
+  rejectNextBroadcast?: string;
 }
 
-/** A DAPI that pays the watched address once the address is shown, and IS-locks whatever is broadcast. */
+/** A DAPI whose deposit watcher reports payments (IS-locked unless told otherwise) and which IS-locks whatever is broadcast. */
 function fakeDapi(s: Script) {
-  const watchers: WatchHandlers[] = [];
+  const deposits: WatchHandlers[] = [];
+  const locks: WatchHandlers[] = [];
   let broadcast: Uint8Array | null = null;
-  const dapi = {
+  const isLock = (h: WatchHandlers, txid: string) => void h.onIsLock({ lock: { txid } as never, bytes: hexToBytes('01' + 'ab'.repeat(100)), known: true, node: 'n' });
+  return {
     network: 'testnet',
     call: async (fn: (core: unknown) => Promise<unknown>) => ({
       value: await fn({
@@ -37,30 +47,40 @@ function fakeDapi(s: Script) {
     }),
     watchAddressForDeposit: async (_h: Uint8Array, h: WatchHandlers) => {
       s.events.push('watch-deposit');
-      watchers.push(h);
-      return { cancel: () => s.events.push('cancel-deposit') };
+      deposits.push(h);
+      return { cancel: () => {} };
     },
     watchTransactions: async (_f: unknown, h: WatchHandlers) => {
       s.events.push('watch-lock');
-      watchers.push(h);
+      locks.push(h);
       return { cancel: () => {} };
     },
     broadcastTransaction: async (raw: Uint8Array) => {
       s.events.push('broadcast');
+      if (s.rejectNextBroadcast) {
+        const m = s.rejectNextBroadcast;
+        s.rejectNextBroadcast = undefined;
+        throw new Error(m);
+      }
       broadcast = raw;
       const txid = parseTx(raw).txid;
-      if (s.deliverIsLock) setTimeout(() => void watchers.at(-1)!.onIsLock({ lock: { txid } as never, bytes: hexToBytes('01' + 'ab'.repeat(100)), known: true, node: 'n' }), 5);
+      if (s.deliverIsLock) setTimeout(() => isLock(locks.at(-1)!, txid), 5);
       return { txid, node: 'n' };
     },
-    pay(raw: Uint8Array) {
+    /** A payment as the deposit stream sees it; `lock: false` leaves it unconfirmed until `confirm`. */
+    pay(raw: Uint8Array, o: { lock?: boolean } = {}) {
       const tx = parseTx(raw);
-      watchers[0]!.onTx({ tx, raw, matches: [0], node: 'n' });
+      deposits.at(-1)!.onTx({ tx, raw, matches: tx.outputs.map((_, i) => i), node: 'n' });
+      if (o.lock !== false) isLock(deposits.at(-1)!, tx.txid);
+      return tx.txid;
+    },
+    confirm(txid: string) {
+      deposits.at(-1)!.onBlock?.({ matched: [txid] } as never, 'n');
     },
   };
-  return dapi;
 }
 
-function fakePlatform(o: { refuseInstant?: boolean; onRefuse?: () => void } = {}) {
+function fakePlatform(o: { refuseInstant?: boolean; onRefuse?: () => void; failWith?: unknown } = {}) {
   const created = new Map<string, AssetLockProofInput>();
   const p: PlatformPort & { created: typeof created; calls: string[] } = {
     network: 'testnet',
@@ -73,6 +93,7 @@ function fakePlatform(o: { refuseInstant?: boolean; onRefuse?: () => void } = {}
     coreChainLockedHeight: async () => 2000,
     createIdentity: async ({ proof }) => {
       p.calls.push(proof.kind);
+      if (o.failWith) throw o.failWith;
       if (proof.kind === 'instant' && o.refuseInstant) {
         o.onRefuse?.();
         throw new Error('Invalid instant lock signature');
@@ -88,12 +109,13 @@ function fakePlatform(o: { refuseInstant?: boolean; onRefuse?: () => void } = {}
 }
 
 const funderKey = hexToBytes('33'.repeat(32));
-const deposit = (to: string, duffs: bigint) => {
-  const w = SeedWallet.fromPhrase(PHRASE, 'testnet');
-  const k = w.derive(registrationFundingPath('testnet', 0));
-  expect(addressOf(k.publicKey, 'testnet')).toBe(to);
-  return buildPayment({ utxos: [{ txid: 'cd'.repeat(32), vout: 0, value: 10_000_000n }], key: funderKey, to: [{ pubKeyHash: hash160(k.publicKey), duffs }] }).raw;
+let funderTx = 0;
+const payTo = (to: string, duffs: bigint) => {
+  const h = hash160(SeedWallet.fromPhrase(PHRASE, 'testnet').derive(registrationFundingPath('testnet', 0)).publicKey);
+  expect(addressOf(SeedWallet.fromPhrase(PHRASE, 'testnet').derive(registrationFundingPath('testnet', 0)).publicKey, 'testnet')).toBe(to);
+  return buildPayment({ utxos: [{ txid: (++funderTx).toString(16).padStart(64, 'c'), vout: 0, value: 10_000_000n }], key: funderKey, to: [{ pubKeyHash: h, duffs }] }).raw;
 };
+const keyFor = (phrase: string) => fundingRecordKey('testnet', 'create', hash160(SeedWallet.fromPhrase(phrase, 'testnet').derive(registrationFundingPath('testnet', 0)).publicKey));
 
 describe('runFunding (create)', () => {
   it('shows the address only after the watcher is live, watches before broadcasting, persists the IS-lock, registers', async () => {
@@ -108,14 +130,14 @@ describe('runFunding (create)', () => {
         views.push(v);
         if (v.state === 'awaiting-deposit' && views.length === 1) {
           s.events.push('address-shown');
-          dapi.pay(deposit(v.address, 1_000_000n));
+          dapi.pay(payTo(v.address, 1_000_000n));
         }
       },
     });
     expect(s.events.slice(0, 2)).toEqual(['watch-deposit', 'address-shown']);
     expect(s.events.indexOf('watch-lock')).toBeLessThan(s.events.indexOf('broadcast'));
     expect(platform.calls).toEqual(['instant']);
-    const rec = store.m.get(fundingKey('create', 'testnet', 0))!;
+    const rec = store.m.get(keyFor(PHRASE))!;
     expect(rec.state).toBe('done');
     expect(rec.isLock).toMatch(/^01/);
     expect(rec.identityId).toBe(r.identityId);
@@ -123,45 +145,46 @@ describe('runFunding (create)', () => {
     // no key material in the record
     const w = SeedWallet.fromPhrase(PHRASE, 'testnet');
     const json = JSON.stringify(rec);
-    for (const secret of [w.derive(registrationFundingPath('testnet', 0)).privateKey, w.identityKey(0, 2).privateKey, w.entropy()]) {
+    for (const secret of [w.derive(registrationFundingPath('testnet', 0)).privateKey, w.identityKey(0, 2).privateKey]) {
       expect(json).not.toContain(bytesToHex(secret));
-      expect(json).not.toContain(wifOf(secret.length === 32 ? secret : new Uint8Array(32).fill(1), 'testnet'));
+      expect(json).not.toContain(wifOf(secret, 'testnet'));
     }
+    expect(json).not.toContain(bytesToHex(w.entropy()));
   });
 
-  it('falls back to a chain-lock proof when Platform refuses the IS-lock, and resumes without rebuilding the lock', async () => {
+  it('counts a payment only once it is IS-locked or mined, and reports payments after the lock as late', async () => {
     const s: Script = { events: [], deliverIsLock: true, mined: 0 };
     const dapi = fakeDapi(s);
     const store = memStore();
-    const wallet = SeedWallet.fromPhrase(PHRASE, 'testnet');
-    // first run: stop right after the asset lock is built and broadcast (abort while waiting for the IS-lock)
-    const ac = new AbortController();
-    s.deliverIsLock = false;
-    await runFunding({
-      wallet, dapi: dapi as unknown as Dapi, platform: fakePlatform(), store, kind: 'create', identityIndex: 0, isLockWaitMs: 60_000, signal: ac.signal,
+    let unconfirmed = '';
+    let shown = false;
+    const views: FundingView[] = [];
+    const run = runFunding({
+      wallet: SeedWallet.fromPhrase(PHRASE, 'testnet'), dapi: dapi as unknown as Dapi, platform: fakePlatform(), store, kind: 'create', identityIndex: 0, isLockWaitMs: 2000,
       onUpdate: (v) => {
-        if (v.state === 'awaiting-deposit' && !v.receivedDuffs) dapi.pay(deposit(v.address, 1_000_000n));
-        if (v.state === 'locked') ac.abort();
+        views.push(v);
+        if (v.state === 'awaiting-deposit' && !shown) {
+          shown = true;
+          unconfirmed = dapi.pay(payTo(v.address, 1_000_000n), { lock: false });
+        }
       },
-    }).catch(() => {});
-    const first = store.m.get(fundingKey('create', 'testnet', 0))!;
-    expect(first.state).toBe('locked');
-    const lockTxid = first.lock!.txid;
-    // second run (a reload): the lock is not mined yet, so the same bytes are re-sent and the IS-lock arrives; Platform refuses it
-    // (say its quorum rotated away), so a chain proof at Platform's height follows once the lock is mined
-    s.deliverIsLock = true;
-    s.mined = 0;
-    const platform = fakePlatform({ refuseInstant: true, onRefuse: () => (s.mined = 1500) });
-    const r = await runFunding({ wallet, dapi: dapi as unknown as Dapi, platform, store, kind: 'create', identityIndex: 0, isLockWaitMs: 2000, pollMs: 10 });
-    const rec = store.m.get(fundingKey('create', 'testnet', 0))!;
-    expect(rec.lock!.txid).toBe(lockTxid);
-    expect(platform.calls).toEqual(['instant', 'chain']);
-    expect((platform.created.get(r.identityId) as { coreChainLockedHeight: number }).coreChainLockedHeight).toBe(2000);
-    expect(rec.state).toBe('done');
-    expect(s.events.filter((e) => e === 'broadcast')).toHaveLength(2);
+    });
+    await new Promise((r) => setTimeout(r, 2500));
+    expect(views.at(-1)!.state).toBe('awaiting-deposit');
+    expect(views.at(-1)!.pendingDuffs).toBe(1_000_000n);
+    expect(views.at(-1)!.receivedDuffs).toBe(0n);
+    dapi.confirm(unconfirmed); // now it is in a block
+    await new Promise((r) => setTimeout(r, 1700));
+    const rec0 = store.m.get(keyFor(PHRASE))!;
+    expect(rec0.lock).toBeDefined();
+    dapi.pay(payTo(rec0.address, 70_000n)); // after the lock: late
+    await run;
+    const rec = store.m.get(keyFor(PHRASE))!;
+    expect(rec.lateDeposits).toHaveLength(1);
+    expect(views.at(-1)!.lateDuffs).toBe(70_000n);
   });
 
-  it('does not re-send or wait for an IS-lock when the lock is already mined (IS-locks are never replayed)', async () => {
+  it('falls back to a chain-lock proof when Platform refuses the IS-lock, and resumes without rebuilding the lock', async () => {
     const s: Script = { events: [], deliverIsLock: false, mined: 0 };
     const dapi = fakeDapi(s);
     const store = memStore();
@@ -170,7 +193,32 @@ describe('runFunding (create)', () => {
     await runFunding({
       wallet, dapi: dapi as unknown as Dapi, platform: fakePlatform(), store, kind: 'create', identityIndex: 0, isLockWaitMs: 60_000, signal: ac.signal,
       onUpdate: (v) => {
-        if (v.state === 'awaiting-deposit' && !v.receivedDuffs) dapi.pay(deposit(v.address, 1_000_000n));
+        if (v.state === 'awaiting-deposit' && !v.receivedDuffs && !v.pendingDuffs) dapi.pay(payTo(v.address, 1_000_000n));
+        if (v.state === 'locked') ac.abort();
+      },
+    }).catch(() => {});
+    const first = store.m.get(keyFor(PHRASE))!;
+    expect(first.state).toBe('locked');
+    s.deliverIsLock = true;
+    const platform = fakePlatform({ refuseInstant: true, onRefuse: () => (s.mined = 1500) });
+    const r = await runFunding({ wallet, dapi: dapi as unknown as Dapi, platform, store, kind: 'create', identityIndex: 0, isLockWaitMs: 2000, pollMs: 10 });
+    const rec = store.m.get(keyFor(PHRASE))!;
+    expect(rec.lock!.txid).toBe(first.lock!.txid);
+    expect(platform.calls).toEqual(['instant', 'chain']);
+    expect((platform.created.get(r.identityId) as { coreChainLockedHeight: number }).coreChainLockedHeight).toBe(2000);
+    expect(s.events.filter((e) => e === 'broadcast')).toHaveLength(2);
+  });
+
+  it('does not re-send or wait for an IS-lock when the lock is already mined', async () => {
+    const s: Script = { events: [], deliverIsLock: false, mined: 0 };
+    const dapi = fakeDapi(s);
+    const store = memStore();
+    const wallet = SeedWallet.fromPhrase(PHRASE, 'testnet');
+    const ac = new AbortController();
+    await runFunding({
+      wallet, dapi: dapi as unknown as Dapi, platform: fakePlatform(), store, kind: 'create', identityIndex: 0, isLockWaitMs: 60_000, signal: ac.signal,
+      onUpdate: (v) => {
+        if (v.state === 'awaiting-deposit' && !v.receivedDuffs && !v.pendingDuffs) dapi.pay(payTo(v.address, 1_000_000n));
         if (v.state === 'locked') ac.abort();
       },
     }).catch(() => {});
@@ -181,20 +229,137 @@ describe('runFunding (create)', () => {
     expect(s.events.filter((e) => e === 'broadcast')).toHaveLength(1);
   });
 
-  it('refuses a saved record that belongs to another phrase', async () => {
+  it('rebuilds the lock when the network rejects its inputs', async () => {
+    const s: Script = { events: [], deliverIsLock: true, mined: 0, rejectNextBroadcast: 'bad-txns-inputs-missingorspent' };
+    const dapi = fakeDapi(s);
     const store = memStore();
-    store.save({ v: 1, key: fundingKey('create', 'testnet', 0), kind: 'create', network: 'testnet', identityIndex: 0, address: 'yNotMine', deposits: [], state: 'awaiting-deposit', createdAt: 0, updatedAt: 0 });
-    const dapi = fakeDapi({ events: [], deliverIsLock: false, mined: 0 });
-    await expect(runFunding({ wallet: SeedWallet.fromPhrase(PHRASE, 'testnet'), dapi: dapi as unknown as Dapi, platform: fakePlatform(), store, kind: 'create', identityIndex: 0 })).rejects.toThrow(/another recovery phrase/);
+    let paid = 0;
+    await runFunding({
+      wallet: SeedWallet.fromPhrase(PHRASE, 'testnet'), dapi: dapi as unknown as Dapi, platform: fakePlatform(), store, kind: 'create', identityIndex: 0, isLockWaitMs: 2000,
+      onUpdate: (v) => {
+        if (v.state === 'awaiting-deposit' && !v.receivedDuffs && !v.pendingDuffs && paid < 2) {
+          paid++;
+          dapi.pay(payTo(v.address, 1_000_000n));
+        }
+      },
+    });
+    expect(paid).toBe(2);
+    expect(s.events.filter((e) => e === 'broadcast')).toHaveLength(2);
+    expect(store.m.get(keyFor(PHRASE))!.state).toBe('done');
+  });
+
+  it('M5: a key conflict is its own error, and a transient error is never taken for "already used"', async () => {
+    const store = memStore();
+    const s: Script = { events: [], deliverIsLock: true, mined: 1500 };
+    const dapi = fakeDapi(s);
+    const conflict = Object.assign(new Error('DuplicatedIdentityPublicKeyStateError: public key already in use'), { code: 40206 });
+    await expect(
+      runFunding({
+        wallet: SeedWallet.fromPhrase(PHRASE, 'testnet'), dapi: dapi as unknown as Dapi, platform: fakePlatform({ failWith: conflict }), store, kind: 'create', identityIndex: 0, isLockWaitMs: 500, pollMs: 10,
+        onUpdate: (v) => v.state === 'awaiting-deposit' && !v.receivedDuffs && !v.pendingDuffs && dapi.pay(payTo(v.address, 1_000_000n)),
+      }),
+    ).rejects.toThrow(/already registered to another identity/);
+    expect(classifyRegistrationError(Object.assign(new Error('x'), { code: 10504 }))).toBe('used');
+    expect(classifyRegistrationError(new Error('IdentityAlreadyExistsError: identity exists'))).toBe('used');
+    expect(classifyRegistrationError(new Error('connection already closed'))).toBe('other');
+    expect(classifyRegistrationError(new Error('the request has already been used by another stream'))).toBe('other');
+    expect(classifyRegistrationError(new Error('InvalidInstantAssetLockProofSignatureError'))).toBe('instant-refused');
+    // a transient error is surfaced on both proofs, never treated as success
+    const s2: Script = { events: [], deliverIsLock: true, mined: 1500 };
+    const d2 = fakeDapi(s2);
+    const p2 = fakePlatform({ failWith: new Error('deadline exceeded; the request was already retried') });
+    await expect(
+      runFunding({
+        wallet: SeedWallet.fromPhrase(PHRASE, 'testnet'), dapi: d2 as unknown as Dapi, platform: p2, store: memStore(), kind: 'create', identityIndex: 0, isLockWaitMs: 500, pollMs: 10,
+        onUpdate: (v) => v.state === 'awaiting-deposit' && !v.receivedDuffs && !v.pendingDuffs && d2.pay(payTo(v.address, 1_000_000n)),
+      }),
+    ).rejects.toThrow(/Platform refused the registration/);
+    expect(p2.calls).toEqual(['instant', 'chain']);
+  });
+
+  it('M1: refuses a lock below Platform minimum after fees and more than 100 inputs', () => {
+    const k = hexToBytes('11'.repeat(32));
+    const h = hash160(publicKeyOf(k));
+    expect(() => buildAssetLock({ utxos: [{ txid: 'ab'.repeat(32), vout: 0, value: BigInt(MIN_CREATE_LOCK_DUFFS) }], fundingKey: k, creditPubKeyHash: h, minLockDuffs: BigInt(MIN_CREATE_LOCK_DUFFS) })).toThrow(AssetLockError);
+    const many = Array.from({ length: 101 }, (_, i) => ({ txid: i.toString(16).padStart(64, '0'), vout: 0, value: 10_000n }));
+    expect(() => buildAssetLock({ utxos: many, fundingKey: k, creditPubKeyHash: h })).toThrow(/at most 100/);
+  });
+
+  it('M1: keeps waiting while the counted deposits would lock less than the minimum after fees', async () => {
+    const s: Script = { events: [], deliverIsLock: true, mined: 0 };
+    const dapi = fakeDapi(s);
+    const store = memStore();
+    const views: FundingView[] = [];
+    let n = 0;
+    const ac = new AbortController();
+    const run = runFunding({
+      wallet: SeedWallet.fromPhrase(PHRASE, 'testnet'), dapi: dapi as unknown as Dapi, platform: fakePlatform(), store, kind: 'create', identityIndex: 0, minDepositDuffs: 1, signal: ac.signal,
+      onUpdate: (v) => {
+        views.push(v);
+        if (v.state === 'awaiting-deposit' && n++ === 0) dapi.pay(payTo(v.address, BigInt(MIN_CREATE_LOCK_DUFFS) + 10n)); // fee eats it
+      },
+    }).catch((e) => e);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(views.at(-1)!.state).toBe('awaiting-deposit');
+    expect(views.at(-1)!.receivedDuffs).toBe(BigInt(MIN_CREATE_LOCK_DUFFS) + 10n);
+    ac.abort();
+    await run;
+    expect(store.m.get(keyFor(PHRASE))!.lock).toBeUndefined();
   });
 });
 
-describe('sessionTopUpKey', () => {
-  it('is deterministic per (key, identity, n) and differs across them', () => {
-    const k = hexToBytes('44'.repeat(32));
+describe('H1: records per funding key', () => {
+  it('two seeds in one browser never share a record; a stale record does not block another seed; discard only without payments', async () => {
+    const store = memStore();
+    // a stale, unpaid record of phrase B at identity index 0
+    const ac = new AbortController();
+    const dapiB = fakeDapi({ events: [], deliverIsLock: true, mined: 0 });
+    const runB = runFunding({ wallet: SeedWallet.fromPhrase(PHRASE_B, 'testnet'), dapi: dapiB as unknown as Dapi, platform: fakePlatform(), store, kind: 'create', identityIndex: 0, signal: ac.signal, onUpdate: () => ac.abort() }).catch(() => {});
+    await runB;
+    expect(pendingFundings(store, 'testnet')).toHaveLength(1);
+    // phrase A, same index, same store: its own record, completes
+    const s: Script = { events: [], deliverIsLock: true, mined: 0 };
+    const dapi = fakeDapi(s);
+    await runFunding({
+      wallet: SeedWallet.fromPhrase(PHRASE, 'testnet'), dapi: dapi as unknown as Dapi, platform: fakePlatform(), store, kind: 'create', identityIndex: 0, isLockWaitMs: 2000,
+      onUpdate: (v) => v.state === 'awaiting-deposit' && !v.receivedDuffs && !v.pendingDuffs && dapi.pay(payTo(v.address, 1_000_000n)),
+    });
+    expect(store.m.size).toBe(2);
+    expect(store.m.get(keyFor(PHRASE))!.state).toBe('done');
+    // the unpaid stale one can be discarded, the paid one cannot
+    expect(discardFunding(store, keyFor(PHRASE))).toBe(false);
+    expect(discardFunding(store, keyFor(PHRASE_B))).toBe(true);
+    expect(pendingFundings(store, 'testnet')).toHaveLength(0);
+  });
+
+  it('picks the next top-up index after the ones made in this browser', () => {
+    const store = memStore();
     const id = 'FUfinhTAJRUff12BbJLZa7ZUqjJne8Xqyh9aiJdeKiXh';
+    const base = { v: 2 as const, kind: 'topup' as const, network: 'testnet' as const, identityIndex: 0, identityId: id, address: 'y', deposits: [], createdAt: 0, updatedAt: 0 };
+    expect(nextTopUpIndex(store, 'testnet', id)).toBe(0);
+    store.save({ ...base, key: 'a', topUpIndex: 0, state: 'done' });
+    store.save({ ...base, key: 'b', topUpIndex: 1, state: 'done' });
+    expect(nextTopUpIndex(store, 'testnet', id)).toBe(2);
+    store.save({ ...base, key: 'c', topUpIndex: 2, state: 'locked' });
+    expect(nextTopUpIndex(store, 'testnet', id)).toBe(2);
+  });
+});
+
+describe('H2: ended sessions', () => {
+  const id = 'FUfinhTAJRUff12BbJLZa7ZUqjJne8Xqyh9aiJdeKiXh';
+  it('sessionTopUpKey is deterministic, differs per index, and refuses a wiped (all-zero) key', () => {
+    const k = hexToBytes('44'.repeat(32));
     expect(bytesToHex(sessionTopUpKey(k, id, 0).privateKey)).toBe(bytesToHex(sessionTopUpKey(k, id, 0).privateKey));
     expect(bytesToHex(sessionTopUpKey(k, id, 0).privateKey)).not.toBe(bytesToHex(sessionTopUpKey(k, id, 1).privateKey));
-    expect(bytesToHex(sessionTopUpKey(k, id, 0).privateKey)).not.toBe(bytesToHex(k));
+    expect(() => sessionTopUpKey(new Uint8Array(32), id, 0)).toThrow(/Sign in again/);
+  });
+
+  it('runFunding refuses a session that has ended', async () => {
+    const s = makeSession({ network: 'testnet', identityId: id, identityIndex: null, keyId: 2, securityLevel: 2, source: 'key', privateKey: hexToBytes('44'.repeat(32)), wallet: null });
+    s.end();
+    expect(s.ended).toBe(true);
+    await expect(
+      runFunding({ wallet: null, session: s, dapi: fakeDapi({ events: [], deliverIsLock: false, mined: 0 }) as unknown as Dapi, platform: fakePlatform(), store: memStore(), kind: 'topup', identityIndex: 0, topUp: { identityId: id, index: 0 } }),
+    ).rejects.toThrow(/ended/);
   });
 });

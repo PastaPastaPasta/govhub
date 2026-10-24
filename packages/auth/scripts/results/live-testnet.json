@@ -1,10 +1,10 @@
 {
-  "at": "2026-10-24T06:01:34.857Z",
+  "at": "2026-10-24T06:40:12.671Z",
   "network": "testnet",
   "platformVersion": 14,
-  "ledger": {
-    "paidFromQaDuffs": "2400000",
-    "l1FeesDuffs": "692"
+  "qaWalletSinceFunderTracking": {
+    "paidDuffs": "1000000",
+    "feesDuffs": "918"
   },
   "create": {
     "identityId": "FUfinhTAJRUff12BbJLZa7ZUqjJne8Xqyh9aiJdeKiXh",
@@ -32,13 +32,13 @@
   },
   "topup": {
     "identityId": "FUfinhTAJRUff12BbJLZa7ZUqjJne8Xqyh9aiJdeKiXh",
-    "index": 0,
+    "index": 1,
     "proofKind": "instant",
     "lockedDash": "0.00099794",
-    "balanceBeforeDash": "0.01893190",
-    "balanceAfterDash": "0.01984963",
-    "topUpFeeCredits": "8021440",
-    "seconds": 9
+    "balanceBeforeDash": "0.01857672",
+    "balanceAfterDash": "0.01949289",
+    "topUpFeeCredits": "8176800",
+    "seconds": 12
   },
   "signin": {
     "discovered": [
@@ -56,8 +56,8 @@
     "identityId": "FUfinhTAJRUff12BbJLZa7ZUqjJne8Xqyh9aiJdeKiXh",
     "opened": true,
     "sameKey": true,
-    "writeCostCredits": "53328980",
-    "writeCostDash": "0.00053329"
+    "writeCostCredits": "32179060",
+    "writeCostDash": "0.00032179"
   },
   "addkeys": {
     "identityId": "FUfinhTAJRUff12BbJLZa7ZUqjJne8Xqyh9aiJdeKiXh",

@@ -73,12 +73,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (current.current && current.current.network !== registry.platformNetwork) signOut();
   }, [registry.platformNetwork, signOut]);
-  // Wipe the key when the tab goes away (best effort; the memory is released anyway).
+  // Leaving the page signs out completely: the key is wiped and the session dropped, so a page restored from the back/forward cache
+  // never shows a session whose key bytes are already zero (they would derive keys anyone can compute).
   useEffect(() => {
-    const end = () => current.current?.end();
-    addEventListener('pagehide', end);
-    return () => removeEventListener('pagehide', end);
-  }, []);
+    const onHide = () => signOut();
+    const onShow = (e: PageTransitionEvent) => e.persisted && signOut();
+    addEventListener('pagehide', onHide);
+    addEventListener('pageshow', onShow);
+    return () => {
+      removeEventListener('pagehide', onHide);
+      removeEventListener('pageshow', onShow);
+    };
+  }, [signOut]);
 
   const value = useMemo<AuthCtx>(
     () => ({

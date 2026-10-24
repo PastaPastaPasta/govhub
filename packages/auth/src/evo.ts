@@ -50,10 +50,25 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network): P
   };
 
   const pk = (priv: Uint8Array) => w.PrivateKey.fromBytes(priv, network);
-  const signerFor = (keys: readonly SigningKey[]) => {
+  // WASM copies of private keys (PrivateKey objects, the signer's key map) are freed as soon as the call is done (best effort:
+  // free() releases the WASM memory; it does not promise zeroing).
+  const withKeys = async <T>(keys: readonly SigningKey[], extra: Uint8Array | null, fn: (signer: Evo.IdentitySigner, extraKey: Evo.PrivateKey | null) => Promise<T>): Promise<T> => {
     const s = new w.IdentitySigner();
-    for (const k of keys) s.addKey(pk(k.privateKey));
-    return s;
+    const pks = keys.map((k) => pk(k.privateKey));
+    const x = extra ? pk(extra) : null;
+    try {
+      for (const k of pks) s.addKey(k);
+      return await fn(s, x);
+    } finally {
+      // An object the SDK took by value is already consumed; freeing it again is a no-op we ignore.
+      for (const o of [...pks, x, s]) {
+        try {
+          o?.free();
+        } catch {
+          /* already consumed */
+        }
+      }
+    }
   };
   const proofOf = (p: AssetLockProofInput) =>
     p.kind === 'instant'
@@ -125,12 +140,12 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network): P
           new w.IdentityPublicKey({ keyId: k.id, purpose: PURPOSE[k.purpose]!, securityLevel: LEVEL[k.securityLevel]!, keyType: KTYPE[k.type]!, isReadOnly: false, data: evoPub(k.privateKey) }),
         );
       }
-      await sdk.identities.create({ identity, assetLockProof: alp, signer: signerFor(keys), assetLockPrivateKey: pk(assetLockKey) });
+      await withKeys(keys, assetLockKey, (signer, alk) => sdk.identities.create({ identity, assetLockProof: alp, signer, assetLockPrivateKey: alk! }));
     },
     async topUpIdentity({ identityId, proof, assetLockKey }) {
       const identity = await fetchIdentity(identityId);
       if (!identity) throw new Error('identity not found');
-      await sdk.identities.topUp({ identity, assetLockProof: proofOf(proof), assetLockPrivateKey: pk(assetLockKey) });
+      await withKeys([], assetLockKey, (_s, alk) => sdk.identities.topUp({ identity, assetLockProof: proofOf(proof), assetLockPrivateKey: alk! }));
     },
     async addKeys({ identityId, master, keys }) {
       const identity = await fetchIdentity(identityId);
@@ -147,7 +162,7 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network): P
             ...(k.bound ? { contractBounds: w.ContractBounds.SingleContractDocumentType(k.bound.contractId, k.bound.documentType) } : {}),
           } as Evo.IdentityPublicKeyInCreationOptions),
       );
-      await lagRetry(() => sdk.identities.update({ identity, addPublicKeys: add, signer: signerFor([master, ...keys]) }));
+      await withKeys([master, ...keys], null, (signer) => lagRetry(() => sdk.identities.update({ identity, addPublicKeys: add, signer })));
     },
     vault: {
       list: (contractId, ownerId) => queryVault(contractId, [['$ownerId', '==', ownerId]], [['$ownerId', 'asc'], ['credentialId', 'asc']]),
@@ -161,7 +176,7 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network): P
         if (!identity || !idKey) throw new Error('signing key not found on the identity');
         const props = { credentialId: entry.credentialId, recipientKey: entry.recipientKey, version: entry.version, authKeyId: entry.authKeyId, enc: entry.enc, sealed: entry.sealed };
         const now = BigInt(Date.now());
-        const signer = signerFor([key]);
+        await withKeys([key], null, async (signer) => {
         if (existing) {
           const doc = w.Document.fromObject(
             { $formatVersion: '0', $id: identifierBytes(existing.id), $ownerId: identifierBytes(ownerId), $dataContractId: identifierBytes(contractId), $type: 'vault', $revision: BigInt(existing.revision + 1), $updatedAt: now, ...props } as never,
@@ -176,12 +191,13 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network): P
           );
           await lagRetry(() => sdk.documents.create({ document: doc, identityKey: idKey, signer }));
         }
+        });
       },
       async remove({ contractId, ownerId, key, entry }) {
         const identity = await fetchIdentity(ownerId);
         const idKey = identity?.getPublicKeyById(key.id);
         if (!identity || !idKey) throw new Error('signing key not found on the identity');
-        await lagRetry(() => sdk.documents.delete({ document: { id: entry.id, ownerId, dataContractId: contractId, documentTypeName: 'vault' }, identityKey: idKey, signer: signerFor([key]) }));
+        await withKeys([key], null, (signer) => lagRetry(() => sdk.documents.delete({ document: { id: entry.id, ownerId, dataContractId: contractId, documentTypeName: 'vault' }, identityKey: idKey, signer })));
       },
     },
   };

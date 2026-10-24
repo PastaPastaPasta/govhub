@@ -1,6 +1,6 @@
 // Funding screen: QR for the one-time deposit address, live status, IS-lock, done. The address is only shown once the DAPI
 // deposit watcher is subscribed (runFunding calls onUpdate after the streams are live), because IS-locks are never replayed.
-import { runFunding, type FundingView, type SeedWallet } from '@govhub/auth';
+import { runFunding, type FundingView, type SeedWallet, type Session } from '@govhub/auth';
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from './context.tsx';
 import { Qr } from './Qr.tsx';
@@ -11,7 +11,8 @@ export interface FundingPanelProps {
   wallet: SeedWallet | null;
   identityIndex: number;
   topUp?: { identityId: string; index: number };
-  sessionKey?: Uint8Array;
+  /** Seedless top-ups: the key-paste session whose key derives the one-time key. */
+  session?: Session;
   onDone(identityId: string): void;
 }
 
@@ -39,7 +40,7 @@ export function FundingPanel(p: FundingPanelProps) {
     (async () => {
       const port = await platform();
       const r = await runFunding({
-        wallet: p.wallet, dapi: dapi(), platform: port, store, kind: p.kind, identityIndex: p.identityIndex, topUp: p.topUp, sessionKey: p.sessionKey,
+        wallet: p.wallet, dapi: dapi(), platform: port, store, kind: p.kind, identityIndex: p.identityIndex, topUp: p.topUp, session: p.session,
         signal: ac.signal, onUpdate: (v) => !ac.signal.aborted && setView(v),
       });
       if (!ac.signal.aborted) done.current(r.identityId);
@@ -83,6 +84,11 @@ export function FundingPanel(p: FundingPanelProps) {
               </a>
             </div>
             {view.receivedDuffs > 0n && <p className="notice">Received {formatDuffs(view.receivedDuffs)} so far.</p>}
+            {view.pendingDuffs > 0n && (
+              <p className="muted small" data-testid="pending-deposit">
+                {formatDuffs(view.pendingDuffs)} seen; it counts once InstantSend locks it or it is in a block.
+              </p>
+            )}
             <p className="muted small">Everything you send is locked for Platform credits. This page is watching the network; keep it open until it finishes.</p>
           </div>
         </div>
@@ -97,6 +103,12 @@ export function FundingPanel(p: FundingPanelProps) {
         ))}
       </ol>
       {view.note && <p className="muted small" data-testid="funding-note">{view.note}</p>}
+      {view.lateDuffs > 0n && (
+        <p className="notice-box" role="status">
+          {formatDuffs(view.lateDuffs)} arrived at {view.address} after the asset lock was made. It was not used and is still there; your
+          recovery phrase (or key) controls that address. Use it in a later top-up or move it with a wallet.
+        </p>
+      )}
       {view.lockTxid && (
         <p className="muted small break">
           Asset lock transaction {view.lockTxid}
