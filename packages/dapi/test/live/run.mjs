@@ -74,7 +74,8 @@ try {
   check('getVerifiedTransaction(collateral): chainLocked "verified", merkle ok, block hash X11-verified, height from coinbase',
     c.ok && c.chainLocked === 'verified' && c.height === exp.COLLATERAL_HEIGHT && c.blockHash === exp.COLLATERAL_BLOCK && c.proof.merkle && c.proof.blockHash === 'verified', c);
   check('  ...with an exact Core-selected quorum and >= 700 verified confirmations', c.ok && c.proof.chainLock?.exact === true && c.proof.chainLock.verifiedConfirmations >= 700 && c.proof.notes.length === 0, c.proof);
-  check('  ...a warm second call (SML and quorum heights cached) is verified and faster', col.warm.ok && col.warm.chainLocked === 'verified' && col.warm.ms < c.ms, { cold: c.ms, warm: col.warm.ms });
+  // latency is dominated by which random nodes answer (a slow one costs seconds before failover), so timings are reported, not asserted
+  check('  ...a warm second call (SML and quorum heights cached) is verified too', col.warm.ok && col.warm.chainLocked === 'verified' && col.warm.proof.chainLock?.exact === true, { coldMs: c.ms, warmMs: col.warm.ms });
   check('X11 and BLS were loaded lazily, once', col.loaded.x11 === 1 && col.loaded.bls === 1, col.loaded);
 
   // 3. recent confirmed tx and a coinbase

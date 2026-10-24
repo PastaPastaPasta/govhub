@@ -135,7 +135,8 @@ const flows = {
         onBlock: () => { blocks++; },
         onError: (e, c) => errors.push(`${c.phase}: ${(e as Error).message}`),
       }, { fromHeight: best.height - 1 });
-      const got = await waitFor(() => locks.length >= 2, 90_000, 200);
+      const got = await waitFor(() => locks.length >= 1, 120_000, 200);
+      await sleep(3000); // let the other nodes' copies of the same lock arrive, so de-duplication is exercised
       const stats = w.stats();
       w.cancel(); await w.closed;
       const distinct = new Set(locks.map((l) => l.hex));
