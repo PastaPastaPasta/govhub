@@ -1,0 +1,28 @@
+// Headless Chromium only. Playwright builds the app, starts `vite preview` (the CSP is only in
+// the built index.html) and stops it when the run ends; nothing is left running.
+import { defineConfig, devices } from '@playwright/test';
+
+const PORT = 4317;
+
+export default defineConfig({
+  testDir: './e2e',
+  timeout: 60_000,
+  expect: { timeout: 15_000 },
+  fullyParallel: true,
+  workers: process.env.CI ? 2 : 4,
+  reporter: [['list']],
+  use: {
+    baseURL: `http://localhost:${PORT}`,
+    headless: true,
+    trace: 'retain-on-failure',
+  },
+  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], headless: true } }],
+  webServer: {
+    command: `npx vite build --logLevel warn && npx vite preview --port ${PORT} --strictPort`,
+    url: `http://localhost:${PORT}`,
+    reuseExistingServer: false,
+    timeout: 180_000,
+    stdout: 'ignore',
+    stderr: 'pipe',
+  },
+});

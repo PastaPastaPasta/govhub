@@ -1,0 +1,7 @@
+# Cloudflare Pages response headers. A <meta> CSP cannot set frame-ancestors, so framing (and
+# clickjacking the "Use these settings" button of a ?config= link) is blocked here.
+/*
+  Content-Security-Policy: frame-ancestors 'none'
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
