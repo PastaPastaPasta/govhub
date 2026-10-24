@@ -46,7 +46,11 @@ export interface ChainFacts {
    */
   weak?: string | null;
   /** The block is in the chain this browser verified (headers from the checkpoint); `confirmations` below is then counted from its tip. */
-  anchored?: { tip: number; confirmations: number; chainLockHeight: number; final: boolean; /** proof of work does not protect it (testnet) */ weak: string | null };
+  anchored?: {
+    tip: number; confirmations: number; chainLockHeight: number; final: boolean;
+    /** proof of work does not protect it (testnet, proof-of-work path only) */ weak: string | null;
+    /** what the verified chain rests on: ChainLocks proven from the quorum checkpoint, or proof of work */ trust?: 'quorum-proof' | 'proof-of-work';
+  };
 }
 
 export interface CollateralVerdict {
@@ -133,7 +137,8 @@ export function verifyCollateral(p: ProposalCore, lookup: TxLookup | LookupError
   const num = (n: number) => n.toLocaleString('en-US');
   steps.push({ id: 'tx', status: 'ok', label: 'Collateral transaction', detail: `${lookup.raw.length} bytes from DAPI node ${lookup.node}` });
   // A merkle proof only shows the transaction is in the block a node named. "anchored": that block is the one at its height in the chain
-  // this browser verified from the checkpoint (work and difficulty checked). "locked": a BLS-valid ChainLock covers it (final).
+  // this browser verified from a pinned checkpoint (hash links down from a ChainLock proven from the quorum checkpoint, or work and
+  // difficulty checked). "locked": a BLS-valid ChainLock covers it (final).
   const anc = proof.anchor;
   const cl = proof.chainLock;
   const locked = lookup.chainLocked === 'verified' && cl !== null;
@@ -218,9 +223,10 @@ export function verifyCollateral(p: ProposalCore, lookup: TxLookup | LookupError
       detail: same ? `block ${num(lookup.height)}${proven ? ' (the coinbase of the verified block commits to it)' : ''}` : `chain says ${num(lookup.height)}, published ${num(p.collateralHeight)}`,
     });
   }
-  // Where proof of work protects nothing (testnet) the chain facts are consistent, not secure: they stay "reported". That includes the
-  // fallback per-transaction ChainLock proof used when the chain could not be anchored, which is never "verified" off mainnet.
-  const weak = anc?.weak ?? (network === 'mainnet' ? null : `${network} difficulty is too low for proof of work to stop a malicious node from forging the chain`);
+  // Where the chain rests on proof of work that protects nothing (testnet) the chain facts are consistent, not secure: they stay
+  // "reported". That includes the fallback per-transaction ChainLock proof used when the chain could not be anchored, which is never
+  // "verified" off mainnet. An anchored chain says itself (`weak` is null on the quorum-proof path, on every network).
+  const weak = anc ? anc.weak : network === 'mainnet' ? null : `${network} difficulty is too low for proof of work to stop a malicious node from forging the chain`;
   if (weak) {
     for (const st of steps) {
       if (st.basis === 'verified' && (['block', 'confirmations', 'chainlock', 'height'] as const).includes(st.id as 'block')) {
@@ -236,7 +242,7 @@ export function verifyCollateral(p: ProposalCore, lookup: TxLookup | LookupError
     provenConfirmations: provenConf !== null && provenConf >= GOVERNANCE_FEE_CONFIRMATIONS ? provenConf : null,
     lockDepth: locked && cl ? cl.verifiedConfirmations : null,
     ...(weak ? { weak } : {}),
-    ...(anc ? { anchored: { tip: anc.tip, confirmations: anc.confirmations, chainLockHeight: anc.chainLockHeight, final: locked, weak: anc.weak } } : {}),
+    ...(anc ? { anchored: { tip: anc.tip, confirmations: anc.confirmations, chainLockHeight: anc.chainLockHeight, final: locked, weak: anc.weak, ...(anc.trust ? { trust: anc.trust } : {}) } } : {}),
   };
   return { ok, steps, chain, ...(govHashComputed ? { govHashComputed } : {}), ...(ok && inputKeys ? { inputKeys } : {}) };
 }

@@ -1,6 +1,6 @@
 // IndexedDB stores for the verification worker: the verified header run per network (@govhub/dapi HeaderStore) and proven
 // ProRegTx facts (ProRegCache). Both hold only what this browser verified; a missing or broken database just means "cold".
-import type { HeaderStore, ProRegCache, ProRegInfo, StoredChain } from '@govhub/dapi';
+import type { HeaderStore, Network, ProRegCache, ProRegInfo, StoredChain } from '@govhub/dapi';
 
 const DB = 'govhub-verify';
 const CHAINS = 'chains';
@@ -37,10 +37,13 @@ function run<T>(store: string, mode: IDBTransactionMode, f: (s: IDBObjectStore) 
   );
 }
 
-/** One verified header run per network. It does not depend on which nodes served it (it is verified from the pinned checkpoint). */
-export function headerStore(scope: string): HeaderStore {
+/**
+ * One verified header run per network and scope ('chain': proof of work; 'qchain': ChainLock-anchored, with the last proven state). It
+ * does not depend on which nodes or proof sources served it (it is verified from the pinned checkpoint).
+ */
+export function headerStore<T extends { network: Network } = StoredChain>(scope: string): HeaderStore<T> {
   return {
-    load: async (network) => (await run<StoredChain>(CHAINS, 'readonly', (s) => s.get(`${scope}:${network}`))) ?? null,
+    load: async (network) => (await run<T>(CHAINS, 'readonly', (s) => s.get(`${scope}:${network}`))) ?? null,
     save: async (chain) => void (await run(CHAINS, 'readwrite', (s) => void s.put(chain, `${scope}:${chain.network}`))),
   };
 }

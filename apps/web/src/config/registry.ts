@@ -34,6 +34,14 @@ export interface NamedUrl {
   url: string;
 }
 
+/**
+ * A source of DIP 175 quorum proofs (Dash Core v24 `getquorumproofchain`): a bridge's `/v1/quorum-proof`, or a quorum list server's
+ * `/proofs`. Untrusted: a proof authenticates itself from the checkpoint pinned in the app, so a source can only withhold.
+ */
+export interface ProofSourceEndpoint extends NamedUrl {
+  kind: 'bridge' | 'quorum-list';
+}
+
 /** Social layer endpoints (PLAN §3.1 `forum` and `mod`, §9 moderation). */
 export interface ForumEndpoints {
   /** the open `forum` contract: comments, reactions, claims, posts, user block lists */
@@ -64,6 +72,9 @@ export interface Registry {
   govContractId: string;
   bridges: BridgeEndpoint[];
   relays: NamedUrl[];
+  /** Quorum proof sources, tried in order: chain facts anchor on ChainLocks proven from the pinned quorum checkpoint (no proof of work).
+   *  When none answers with a valid proof (none listed, dashd older than v24), the app falls back to proof of work and says so. */
+  quorumProofs: ProofSourceEndpoint[];
   priceFeed: NamedUrl | null;
   /** Central login (accounts service, PLAN 4.2). Not built yet: the interface is in @govhub/auth `central.ts`. */
   accounts: NamedUrl | null;
@@ -75,6 +86,12 @@ export interface Registry {
 export const QUORUM_SERVICE: Record<CoreNetwork, string> = {
   mainnet: 'https://quorums.mainnet.networks.dash.org/masternodes',
   testnet: 'https://quorums.testnet.networks.dash.org/masternodes',
+};
+
+/** The public quorum list servers' proof relays (dashpay/quorum-list-server #15). Testnet serves proofs; mainnet answered 403 (2026-10-24). */
+export const QUORUM_PROOF_SERVICE: Record<CoreNetwork, ProofSourceEndpoint> = {
+  mainnet: { name: 'quorums.mainnet.networks.dash.org', url: 'https://quorums.mainnet.networks.dash.org/proofs', kind: 'quorum-list' },
+  testnet: { name: 'quorums.testnet.networks.dash.org', url: 'https://quorums.testnet.networks.dash.org/proofs', kind: 'quorum-list' },
 };
 
 /** Dev profile `gov` contract: MAINNET Core proposals published on testnet Platform (phase 0/1; owner = the Dev bridge identity). */
@@ -110,6 +127,8 @@ export interface NetworkProfile {
   bridge: { url: string; identityId: string } | null;
   /** Relays for masternode votes on this profile's Core network (votes never cross networks). */
   relays: NamedUrl[];
+  /** Bridges whose dashd serves quorum proofs for this profile's Core network (before the public quorum list server). */
+  proofBridges: string[];
   forum: ForumEndpoints | null;
   /** Not deployed: shown, but cannot be selected. */
   deployed: boolean;
@@ -126,6 +145,7 @@ export const PROFILES: Record<ProfileId, NetworkProfile> = {
     govContractId: TESTNET_GOV_CONTRACT_ID,
     bridge: { url: 'https://gov-bridge-testnet.dashhq.org', identityId: TESTNET_BRIDGE_IDENTITY_ID },
     relays: [TESTNET_RELAY],
+    proofBridges: ['https://gov-bridge-testnet.dashhq.org'],
     forum: TESTNET_FORUM,
     deployed: true,
   },
@@ -139,6 +159,8 @@ export const PROFILES: Record<ProfileId, NetworkProfile> = {
     govContractId: DEV_GOV_CONTRACT_ID,
     bridge: { url: 'https://gov-bridge.dashhq.org', identityId: DEV_BRIDGE_IDENTITY_ID },
     relays: [MAINNET_RELAY],
+    // its dashd (23.1.8) has no getquorumproofchain yet: it answers 501 and chain facts use proof of work until it runs v24
+    proofBridges: ['https://gov-bridge.dashhq.org'],
     forum: TESTNET_FORUM,
     deployed: true,
   },
@@ -152,6 +174,7 @@ export const PROFILES: Record<ProfileId, NetworkProfile> = {
     govContractId: '',
     bridge: null,
     relays: [],
+    proofBridges: [],
     forum: null,
     deployed: false,
   },
@@ -205,6 +228,7 @@ export function profileRegistry(id: ProfileId): Registry {
     govContractId: p.govContractId,
     bridges: profileBridges(p),
     relays: p.relays.map((r) => ({ ...r })),
+    quorumProofs: [...p.proofBridges.map((url): ProofSourceEndpoint => ({ name: url.replace(/^[a-z]+:\/\//i, ''), url, kind: 'bridge' })), { ...QUORUM_PROOF_SERVICE[p.coreNetwork] }],
     priceFeed: { ...PRICE_FEED },
     accounts: null,
     faucet: { ...DEFAULT_FAUCET },
@@ -215,7 +239,7 @@ export function profileRegistry(id: ProfileId): Registry {
 export const defaultRegistry = (): Registry => profileRegistry(DEFAULT_PROFILE);
 
 /** Settings that may differ from the profile, in the order Settings shows them. */
-export const OVERRIDABLE = ['coreNetwork', 'platformNetwork', 'govContractId', 'dapi', 'platform', 'bridges', 'relays', 'priceFeed', 'accounts', 'faucet', 'forum'] as const;
+export const OVERRIDABLE = ['coreNetwork', 'platformNetwork', 'govContractId', 'dapi', 'platform', 'bridges', 'relays', 'quorumProofs', 'priceFeed', 'accounts', 'faucet', 'forum'] as const;
 export type Overridable = (typeof OVERRIDABLE)[number];
 
 /** The fields of `r` that differ from its profile's defaults (shown as "custom"). */
@@ -388,6 +412,14 @@ export function parseRegistry(input: unknown): { registry: Registry; errors: str
     govContractId,
     bridges,
     relays: o.relays === undefined ? d.relays.map((r) => ({ ...r })) : named(o.relays, 'relay'),
+    // added with quorum-proof anchoring: settings saved before it get the profile's sources
+    quorumProofs: o.quorumProofs === undefined
+      ? d.quorumProofs.map((q) => ({ ...q }))
+      : named(o.quorumProofs, 'quorum proof source').map((q, i) => {
+        const kind = ((o.quorumProofs as unknown[])[i] as Record<string, unknown> | null)?.kind;
+        if (kind !== 'bridge' && kind !== 'quorum-list') errors.push(`quorum proof source ${i + 1}: kind must be "bridge" or "quorum-list"`);
+        return { ...q, kind: kind === 'quorum-list' ? 'quorum-list' : 'bridge' } as ProofSourceEndpoint;
+      }),
     priceFeed: pf && typeof pf === 'object' ? { name: typeof pf.name === 'string' ? pf.name : 'price feed', url: httpsUrl(pf.url, 'price feed URL', errors) } : null,
     accounts: optionalNamed(o.accounts, d.accounts, 'accounts service'),
     faucet: optionalNamed(o.faucet, d.faucet, 'faucet'),

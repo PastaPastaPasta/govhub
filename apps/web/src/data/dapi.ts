@@ -10,9 +10,11 @@ export interface DapiConfig {
   quorumUrl: string;
   nodes: string[];
   network: CoreNetwork;
+  /** Where the verification worker gets quorum proofs (anchoring on ChainLocks; empty: proof of work only). */
+  proofSources?: Registry['quorumProofs'];
 }
 
-export const dapiConfig = (r: Registry): DapiConfig => ({ source: r.dapi.source, quorumUrl: r.dapi.quorumUrl, nodes: r.dapi.nodes, network: r.coreNetwork });
+export const dapiConfig = (r: Registry): DapiConfig => ({ source: r.dapi.source, quorumUrl: r.dapi.quorumUrl, nodes: r.dapi.nodes, network: r.coreNetwork, proofSources: r.quorumProofs });
 
 /**
  * A client for the user's DAPI settings. Pass `verifiers` only where verification runs (the worker): they pull in X11 and BLS,

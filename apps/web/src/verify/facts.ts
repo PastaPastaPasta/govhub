@@ -19,7 +19,8 @@ export function collateralStatus(c: ChainFacts): { text: string; prov: Provenanc
   const source = 'collateral check in this browser';
   if (c.anchored) {
     const a = c.anchored;
-    const detail = 'the block is the one at its height in the chain verified from the checkpoint; confirmations counted from the verified tip; ChainLock BLS-verified';
+    const root = a.trust === 'quorum-proof' ? 'ChainLocks proven from the pinned quorum checkpoint (no proof of work)' : 'the pinned checkpoint and proof of work';
+    const detail = `the block is the one at its height in the chain verified from ${root}; confirmations counted from the verified tip; ChainLock BLS-verified`;
     return {
       text: `at least ${formatInt(a.confirmations)} confirmations; ${a.final ? `final (ChainLocked at block ${formatInt(a.chainLockHeight)})` : `not ChainLocked yet (newest lock: block ${formatInt(a.chainLockHeight)})`}`,
       prov: a.weak ? { kind: 'reported', source, detail: `${detail}; not secure: ${a.weak}` } : { kind: 'verified', source, detail },
