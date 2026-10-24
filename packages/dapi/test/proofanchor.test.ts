@@ -10,6 +10,7 @@ import { hashHex, unhex } from '../src/bytes.ts';
 import { Dapi } from '../src/client.ts';
 import { verifyQuorumProof } from '../src/coreproof.ts';
 import type { StoredLinkedChain } from '../src/linkedchain.ts';
+import { SAVED_SOURCE } from '../src/proofanchor.ts';
 import { num } from '../src/pb.ts';
 import { type ProofSource, ProofSourceError, type ProofState } from '../src/quorumproof.ts';
 import type { HeaderStore, Verifiers } from '../src/types.ts';
@@ -105,11 +106,55 @@ describe('testnet anchorChain on a quorum proof', () => {
     expect(fake.calls.some((c) => c.endsWith('getBlock'))).toBe(false); // every ChainLock quorum's base block came from the linked run
     expect(proofStore.saved).toMatchObject({ version: 2, kind: 'chainlock', chainLock: { height: f.target.height, blockHash: f.target.blockHash }, state: f.target });
 
-    // the next session asks for a proof from the saved state first; this source cannot bridge from it, so it falls back to the pin
+    // the next session asks for a proof from the saved state first; there is no newer ChainLock, so the saved one (still under an
+    // hour old) serves again, with no proof from the pin and no headers downloaded
     const b = await dapiFor([N(1), N(2), N(3)]).anchorChain({ ...base, proofSources: [src], proofStore });
-    expect(src.asked).toEqual([f.checkpoint.blockHash, f.target.blockHash, f.checkpoint.blockHash]);
+    expect(src.asked).toEqual([f.checkpoint.blockHash, f.target.blockHash]);
     expect(b.stats).toMatchObject({ cachedHeaders: a.chain.hi - a.chain.lo + 1, fetchedHeaders: 0 });
-    expect(b.trust.kind).toBe('quorum-proof');
+    expect(b.trust).toMatchObject({ kind: 'quorum-proof', source: SAVED_SOURCE, from: { height: f.target.height }, links: 0 });
+    expect(b.chainLock).toMatchObject({ height: f.target.height, blockHash: f.target.blockHash });
+
+    // once the saved ChainLock is over an hour old it cannot serve: the pin is asked again
+    src.asked.length = 0;
+    const later = f.now + 3600 + 60;
+    await expect(dapiFor([N(1), N(2), N(3)]).anchorChain({ ...base, now: () => later, proofSources: [src], proofStore })).rejects.toThrow();
+    expect(src.asked).toEqual([f.target.blockHash, f.checkpoint.blockHash]);
+  });
+
+  it('reuses a result for a minute within one client', async () => {
+    fake = installFakeDapi({ [N(1)]: node(), [N(2)]: node() });
+    const src = source();
+    const d = dapiFor([N(1), N(2)]);
+    const a = await d.anchorChain({ ...base, proofSources: [src] });
+    expect(await d.anchorChain({ ...base, proofSources: [src] })).toBe(a);
+    expect(src.asked.length).toBe(1);
+  });
+
+  it('refuses a ChainLock that conflicts with one verified earlier, and keeps what is stored', async () => {
+    fake = installFakeDapi({ [N(1)]: node(), [N(2)]: node() });
+    const proofStore = memoryStore<StoredLinkedChain>();
+    await dapiFor([N(1), N(2)]).anchorChain({ ...base, proofSources: [source()], proofStore });
+    // the stored top at T is another block (as if a quorum had signed two blocks at one height)
+    const s = proofStore.saved!;
+    const other = Uint8Array.from(s.hashes);
+    other[other.length - 1]! ^= 1;
+    const otherHash = hashHex(other.subarray(other.length - 32));
+    proofStore.saved = { ...s, hashes: other, chainLock: { ...s.chainLock, blockHash: otherHash }, state: { ...s.state, blockHash: otherHash } };
+    const before = proofStore.saved;
+    const err = await dapiFor([N(1), N(2)]).anchorChain({ ...base, proofSources: [source()], proofStore }).catch((e: Error) => e);
+    expect(err).toBeInstanceOf(Error); // the proof path refused; the proof-of-work fallback has nothing to work with here
+    expect(proofStore.saved).toBe(before);
+  });
+
+  it('starts over from the pin when the stored entry is damaged', async () => {
+    fake = installFakeDapi({ [N(1)]: node(), [N(2)]: node() });
+    const proofStore = memoryStore<StoredLinkedChain>();
+    await dapiFor([N(1), N(2)]).anchorChain({ ...base, proofSources: [source()], proofStore });
+    proofStore.saved = { ...proofStore.saved!, hashes: proofStore.saved!.hashes.subarray(0, 31) };
+    const src = source();
+    const a = await dapiFor([N(1), N(2)]).anchorChain({ ...base, proofSources: [src], proofStore });
+    expect(src.asked).toEqual([f.checkpoint.blockHash]);
+    expect(a.trust).toMatchObject({ kind: 'quorum-proof', from: { height: f.checkpoint.height } });
   });
 
   it('reaches down to an older block of interest by linkage alone', async () => {

@@ -4,7 +4,7 @@
 // Instantiated synchronously on first use, like the X11 module.
 import { hashBytes, hashHex } from './bytes.ts';
 import type { Network } from './chainlock.ts';
-import { type ProofState, type VerifiedQuorumProof, QuorumProofError } from './quorumproof.ts';
+import { MAX_PROOF_BYTES, type ProofState, type VerifiedQuorumProof, QuorumProofError } from './quorumproof.ts';
 import { CORE_PROOF_WASM_BASE64 } from './vendor/core-proof-wasm.ts';
 
 interface CoreProofExports {
@@ -56,13 +56,21 @@ function decodeState(b: Uint8Array): ProofState {
  */
 export function verifyQuorumProof(proof: Uint8Array, trusted: ProofState, minimumHeight = 0): VerifiedQuorumProof {
   if (!Number.isInteger(minimumHeight) || minimumHeight < 0 || minimumHeight > 0xffffffff) throw new RangeError('minimumHeight must be a u32');
+  if (proof.length > MAX_PROOF_BYTES) throw new QuorumProofError('invalid', 'proof size limit');
   const w = api();
   const t = encodeState(trusted);
   const pp = w.alloc(proof.length), tp = w.alloc(STATE_BYTES);
   try {
     new Uint8Array(w.memory.buffer, pp, proof.length).set(proof);
     new Uint8Array(w.memory.buffer, tp, STATE_BYTES).set(t);
-    const status = w.verify(pp, proof.length, tp, minimumHeight);
+    let status: number;
+    try {
+      status = w.verify(pp, proof.length, tp, minimumHeight);
+    } catch (e) {
+      // a trap (panic = abort, out of memory) leaves the instance's allocator in an unknown state: start a fresh one next time
+      wasm = undefined;
+      throw new QuorumProofError('invalid', `verifier trapped: ${(e as Error).message}`);
+    }
     const out = new Uint8Array(w.memory.buffer, w.out_ptr(), w.out_len()).slice();
     if (status !== 0) {
       const reason = new TextDecoder().decode(out);
@@ -80,7 +88,9 @@ export function verifyQuorumProof(proof: Uint8Array, trusted: ProofState, minimu
       from: trusted,
     };
   } finally {
-    w.dealloc(pp, proof.length);
-    w.dealloc(tp, STATE_BYTES);
+    if (wasm === w) {
+      w.dealloc(pp, proof.length);
+      w.dealloc(tp, STATE_BYTES);
+    }
   }
 }

@@ -84,7 +84,9 @@ async function run(d: Dapi, st: State, o: AnchorOptions): Promise<AnchoredChain>
     else if (!v.verifyQuorumProof) fallback = 'the quorum proof verifier is not loaded';
     else {
       try {
-        return await anchorByProof(d, st, o, v, hash, sml(), smlCtrl.signal);
+        const out = await anchorByProof(d, st, o, v, hash, sml(), smlCtrl.signal);
+        st.last = out;
+        return out;
       } catch (e) {
         if (o.signal?.aborted) throw e;
         fallback = (e as Error).message;
@@ -436,10 +438,13 @@ export async function proveAgainstChain(
 }
 
 /** Base heights of the signing-type quorums, from the verified chain (they are multiples of the DKG interval), else the block's coinbase. */
-export async function quorumsWithHeights(d: Dapi, chain: VerifiedChain, quorums: readonly SmlQuorum[], llmqType: number, dkg: number, o: { signal?: AbortSignal }): Promise<SmlQuorum[]> {
+export async function quorumsWithHeights(
+  d: Dapi, chain: VerifiedChain, quorums: readonly SmlQuorum[], llmqType: number, dkg: number, o: { signal?: AbortSignal },
+  resolve: (hash: string, o: { signal?: AbortSignal }) => Promise<number> = (h, ro) => d.resolveBlockHeight(h, ro),
+): Promise<SmlQuorum[]> {
   return Promise.all(quorums.filter((q) => q.llmqType === llmqType).map(async (q) => {
     for (let h = chain.hi - (chain.hi % dkg); h >= chain.lo; h -= dkg) if (chain.hashHexAt(h) === q.quorumHash) return { ...q, baseHeight: h };
-    return { ...q, baseHeight: await d.resolveBlockHeight(q.quorumHash, o) };
+    return { ...q, baseHeight: await resolve(q.quorumHash, o) };
   }));
 }
 

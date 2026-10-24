@@ -83,7 +83,7 @@ export interface ProofSource {
 
 /**
  * A source failed to deliver (it never makes a proof valid or invalid). `code` is the bridge's error code when it sent one:
- * `unsupported` (its dashd has no `getquorumproofchain`), `not-yet` (no ChainLock at the requested minimum yet), ...
+ * `unsupported` (its dashd has no `getquorumproofchain`), `not-yet` (no ChainLock at the requested minimum yet), ..., or `timeout`.
  */
 export class ProofSourceError extends Error {
   readonly status: number | undefined;
@@ -121,7 +121,7 @@ async function readProof(name: string, res: Response): Promise<Uint8Array> {
 
 function withTimeout(signal: AbortSignal | undefined, ms: number): { signal: AbortSignal; done: () => void } {
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(new ProofSourceError(`no proof within ${Math.round(ms / 1000)} s`)), ms);
+  const timer = setTimeout(() => ctrl.abort(new ProofSourceError(`no proof within ${Math.round(ms / 1000)} s`, undefined, 'timeout')), ms);
   const onAbort = () => ctrl.abort(signal!.reason);
   if (signal?.aborted) ctrl.abort(signal.reason);
   else signal?.addEventListener('abort', onAbort, { once: true });

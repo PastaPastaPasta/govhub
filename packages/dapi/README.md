@@ -151,10 +151,13 @@ masternode and quorum roots its coinbase commits to.
    interest, by **hash linkage only**: each header's X11 hash is the next one's prevHash, ending at T's hash (`src/linkedchain.ts`). A ChainLock is
    final, so no work, difficulty or time rule is needed.
 4. **SML** proven against S's coinbase, exactly as on the proof-of-work path.
-5. **ChainLock again.** T's signature is checked against the quorum Core's `SelectQuorumForSigning` picks from the proven list (`exact` as below).
-   The proof already verified it from the checkpoint; this ties the selection rules to proven keys.
-6. **Store.** The run and T's state are saved (`proofStore`, keyed per network and checkpoint). The next proof starts from T: about 1.7 KB and
-   20 ms to verify instead of the full chain. If a source cannot bridge from it (unknown to its node, or no newer ChainLock yet), the pin is used.
+5. **Selection check.** T's signature is checked against the quorum Core's `SelectQuorumForSigning` picks from the proven list (`exact` as below).
+   The list is itself proven through T, so this is a consistency check, not a second root of trust: T rests on the proof alone. A quorum base
+   block missing from the linked run (it should never be) is looked up from a node and makes the result inexact.
+6. **Store.** The run, T's state, header and ChainLock signature are saved (`proofStore`, keyed per network and checkpoint). The next proof starts
+   from T: about 1.7 KB and 20 ms to verify instead of the full chain. When no source has a newer ChainLock yet, the saved one serves again while
+   it is under an hour old. Otherwise the pin is used. A proven ChainLock that conflicts with the saved run (another block at a height it covers) is
+   refused, and a lower state is never saved over a higher one. Within one client a result is reused for a minute.
 
 If no source yields a valid, fresh proof (none configured, a dashd older than v24 answers 501, HTTP 403, a forged proof), anchoring falls back to the
 proof-of-work path with its own labels, and `trust: { kind: 'proof-of-work', fallback }` records why. A source that cannot serve proofs at all is

@@ -79,7 +79,9 @@ function chainRows(r: ChainReport, cycle: Cycle | null, nowS: number): Row[] {
       ? {
         id: 'trust', status: 'ok', label: 'Trust root',
         detail: `the ChainLock quorums of the pinned checkpoint at block ${n(proof.checkpoint.height)}, plus BLS`,
-        more: `a Dash Core v24 quorum proof (DIP 175) from ${proof.source} (untrusted: the proof authenticates itself) ${proof.from.height === proof.checkpoint.height ? 'from that checkpoint' : `from block ${n(proof.from.height)}, which this browser proved from that checkpoint earlier`}: ${n(proof.links)} ChainLock quorum handoffs, each a BLS signature by a quorum already trusted on the block that mined the next one, ${(proof.proofBytes / 1024).toFixed(1)} KB, verified in WebAssembly by Dash Core's own rules; no proof of work involved`,
+        more: proof.proofBytes === 0
+          ? `the ChainLock on block ${n(proof.from.height)}, which this browser proved from that checkpoint earlier with a Dash Core v24 quorum proof (DIP 175); no newer one was available yet. No proof of work involved`
+          : `a Dash Core v24 quorum proof (DIP 175) from ${proof.source} (untrusted: the proof authenticates itself) ${proof.from.height === proof.checkpoint.height ? 'from that checkpoint' : `from block ${n(proof.from.height)}, which this browser proved from that checkpoint earlier`}: ${n(proof.links)} ChainLock quorum handoffs, each a BLS signature by a quorum already trusted on the block that mined the next one, ${(proof.proofBytes / 1024).toFixed(1)} KB, verified in WebAssembly by Dash Core's own rules. No proof of work involved`,
       }
       : {
         id: 'trust', status: 'ok', label: 'Trust root',
@@ -101,7 +103,7 @@ function chainRows(r: ChainReport, cycle: Cycle | null, nowS: number): Row[] {
       id: 'chainlock', status: 'ok', label: 'ChainLock',
       detail: `block ${n(a.chainLock.height)} and everything below it are final`,
       more: proof
-        ? `BLS signature verified by the quorum proof, and again against ${selected}`
+        ? `BLS signature verified by the quorum proof from the checkpoint; consistent with Core's quorum selection: ${selected}`
         : `BLS signature of ${selected}`,
     },
     {

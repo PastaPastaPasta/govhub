@@ -32,8 +32,8 @@ export interface StoredLinkedChain {
   prevOfLo: Uint8Array;
   /** 32 bytes per height lo..hi, internal order. */
   hashes: Uint8Array;
-  /** The proof-verified ChainLock the run ends at (hi). */
-  chainLock: { height: number; blockHash: string };
+  /** The proof-verified ChainLock the run ends at (hi): its header and signature let it serve again while it is fresh. */
+  chainLock: { height: number; blockHash: string; header?: Uint8Array; signature?: Uint8Array };
   /** The proof-verified state of that block: the next proof may start from it instead of the checkpoint. */
   state: ProofState;
 }
@@ -79,10 +79,11 @@ export class LinkedChain implements VerifiedChain {
     return c;
   }
 
-  /** Resume from a cache entry proven from the same pinned checkpoint (it was verified when written). */
-  static fromStored(s: StoredLinkedChain, root: { height: number; blockHash: string }): LinkedChain | null {
-    if (s.version !== 2 || s.kind !== 'chainlock' || s.root.height !== root.height || s.root.blockHash !== root.blockHash) return null;
-    if (s.hashes.length % 32 || s.hashes.length === 0 || s.prevOfLo.length !== 32) return null;
+  /** Resume from a cache entry proven from the same pinned checkpoint on `network` (it was verified when written). */
+  static fromStored(s: StoredLinkedChain, root: { height: number; blockHash: string }, network: Network): LinkedChain | null {
+    if (s.version !== 2 || s.kind !== 'chainlock' || s.network !== network || s.root.height !== root.height || s.root.blockHash !== root.blockHash) return null;
+    if (!(s.hashes instanceof Uint8Array) || !(s.prevOfLo instanceof Uint8Array) || s.hashes.length % 32 || s.hashes.length === 0 || s.prevOfLo.length !== 32) return null;
+    if (!Number.isSafeInteger(s.lo) || s.lo < 1 || !Number.isSafeInteger(s.chainLock.height) || !s.state) return null;
     const c = new LinkedChain(s.network, s.lo, s.prevOfLo, s.hashes);
     if (c.hi !== s.chainLock.height || c.hashHexAt(c.hi) !== s.chainLock.blockHash) return null;
     if (s.state.network !== s.network || s.state.height !== s.chainLock.height || s.state.blockHash !== s.chainLock.blockHash) return null;
@@ -116,8 +117,11 @@ export class LinkedChain implements VerifiedChain {
     this.#keepRaw(run, n);
   }
 
-  /** State to persist, keeping at most `maxHeights` heights from the top. `state` must be the proof-verified state of hi. */
-  toStored(root: StoredLinkedChain['root'], state: ProofState, maxHeights = Infinity): StoredLinkedChain {
+  /**
+   * State to persist, keeping at most `maxHeights` heights from the top. `state` must be the proof-verified state of hi, `lock` its
+   * header and ChainLock signature.
+   */
+  toStored(root: StoredLinkedChain['root'], state: ProofState, lock: { header: Uint8Array; signature: Uint8Array }, maxHeights = Infinity): StoredLinkedChain {
     const top = this.hashHexAt(this.hi)!;
     if (state.height !== this.hi || state.blockHash !== top || state.network !== this.network) throw new Error('toStored: the state is not the top block');
     let lo = this.#lo, prevOfLo = this.#prevOfLo, hashes = this.#hashes;
@@ -129,7 +133,7 @@ export class LinkedChain implements VerifiedChain {
     }
     return {
       version: 2, kind: 'chainlock', network: this.network, root: { ...root }, lo, prevOfLo: Uint8Array.from(prevOfLo), hashes: Uint8Array.from(hashes),
-      chainLock: { height: this.hi, blockHash: top }, state: { ...state },
+      chainLock: { height: this.hi, blockHash: top, header: Uint8Array.from(lock.header), signature: Uint8Array.from(lock.signature) }, state: { ...state },
     };
   }
 
