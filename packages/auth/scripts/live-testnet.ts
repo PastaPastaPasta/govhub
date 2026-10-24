@@ -2,52 +2,41 @@
 //
 //   npx vite-node scripts/live-testnet.ts [create] [voucher] [topup] [signin] [vault]     (default: all, in that order)
 //
-// Funding comes from the EvoVote QA wallet (~/.local/share/evovote-v2-qa-20261018/wallet.key), the way spikes/sdk5 used it: its UTXO
-// is read from testnet Insight (tooling only; the app itself never uses Insight), payments are built by @govhub/auth's own tx code
-// and broadcast over DAPI. Test key material (phrases, voucher keys) and the run state live in ~/.local/share/govhub-phase2/
+// Funding comes from the EvoVote QA wallet through scripts/qa-funder.ts (the way spikes/sdk5 used it): payments are built by
+// @govhub/auth's own tx code and broadcast over DAPI; Insight is read once for the starting UTXO (tooling only, never the app). Test key material (phrases, voucher keys) and the run state live in ~/.local/share/govhub-phase2/
 // (0700 / 0600), never in the repo; nothing secret is printed. Results without secrets go to scripts/results/live-testnet.json.
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createDapi, parseTx, type Dapi } from '@govhub/dapi';
+import { createDapi } from '@govhub/dapi';
 import {
-  addLaterKeys, addressOf, buildAssetLock, buildPayment, bytesToHex, CREDITS_PER_DUFF, discoverIdentities, generatePhrase, hash160, hexToBytes, openVault, p2pkhScript, parseVoucher,
-  publicKeyOf, randomBytes, recipientFromPrf, redeemVoucher, runFunding, SeedWallet, signInWithKey, signInWithSeed, storeInVault, wifOf,
+  addLaterKeys, bytesToHex, CREDITS_PER_DUFF, discoverIdentities, generatePhrase, hash160, openVault, parseVoucher,
+  randomBytes, recipientFromPrf, redeemVoucher, runFunding, SeedWallet, signInWithKey, signInWithSeed, storeInVault, wifOf,
   type FundingRecord, type FundingStore, type PlatformPort,
 } from '../src/index.ts';
 import { createEvoPlatform } from '../src/evo.ts';
 import { userHandleFor } from '../src/vault/webauthn.ts';
+import { PHASE2_DIR, qaFunder, writePrivate } from './qa-funder.ts';
 
 const NET = 'testnet' as const;
-const DIR = join(homedir(), '.local/share/govhub-phase2');
-const STATE = join(DIR, 'live-state.json');
-const QA = join(homedir(), '.local/share/evovote-v2-qa-20261018');
+const STATE = join(PHASE2_DIR, 'live-state.json');
 const FORUM = 'HfLWUEWnp4YCQ9Mzp9DexG58WPKvHm7SahMVSuzKSQRw';
-const INSIGHT = 'https://insight.testnet.networks.dash.org/insight-api';
 const here = dirname(fileURLToPath(import.meta.url));
 
 interface State {
   phraseA?: string;
   phraseB?: string;
-  funder?: { txid: string; vout: number; value: string };
   fundings: Record<string, FundingRecord>;
-  voucher?: { txid: string; wif: string; lockDuffs: string; burnVout: number; creditIndex: number };
-  ledger: { paidFromQaDuffs: string; l1FeesDuffs: string };
+  /** The voucher link holds its private key: this file is 0600 outside the repo. */
+  voucher?: { txid: string; link: string; lockDuffs: string; burnVout: number; creditIndex: number };
   results: Record<string, unknown>;
 }
 
 function load(): State {
-  return existsSync(STATE) ? JSON.parse(readFileSync(STATE, 'utf8')) : { fundings: {}, ledger: { paidFromQaDuffs: '0', l1FeesDuffs: '0' }, results: {} };
+  return existsSync(STATE) ? JSON.parse(readFileSync(STATE, 'utf8')) : { fundings: {}, results: {} };
 }
-function save(s: State) {
-  mkdirSync(DIR, { recursive: true, mode: 0o700 });
-  chmodSync(DIR, 0o700);
-  writeFileSync(`${STATE}.tmp`, JSON.stringify(s, null, 2), { mode: 0o600 });
-  renameSync(`${STATE}.tmp`, STATE);
-}
+const save = (s: State) => writePrivate(STATE, s);
 const st = load();
-const ledgerAdd = (k: keyof State['ledger'], d: bigint) => (st.ledger[k] = (BigInt(st.ledger[k]) + d).toString());
 const dash = (credits: bigint) => (Number(credits) / 1e11).toFixed(8);
 const log = (m: string) => console.log(`[${new Date().toISOString().slice(11, 19)}] ${m}`);
 const redactErr = (e: unknown) => String((e as Error)?.message ?? e).replace(/[0-9a-fA-F]{64,}/g, '[hex]');
@@ -58,33 +47,6 @@ const store: FundingStore = {
   remove: (k) => (delete st.fundings[k], save(st)),
   list: () => Object.values(st.fundings),
 };
-
-// ---- the QA-wallet funder ------------------------------------------------------------------------------------------------
-const qaKey = hexToBytes(readFileSync(join(QA, 'wallet.key'), 'utf8').trim());
-const qaAddress = readFileSync(join(QA, 'wallet-address.txt'), 'utf8').trim();
-if (addressOf(publicKeyOf(qaKey), NET) !== qaAddress) throw new Error('QA wallet key/address mismatch');
-
-async function funderUtxo(): Promise<{ txid: string; vout: number; value: bigint }> {
-  if (st.funder) return { ...st.funder, value: BigInt(st.funder.value) };
-  const r = await fetch(`${INSIGHT}/addr/${qaAddress}/utxo`, { headers: { 'user-agent': 'curl/8.7.1' } });
-  const u = ((await r.json()) as Array<{ txid: string; vout: number; satoshis: number }>).sort((a, b) => b.satoshis - a.satoshis)[0];
-  if (!u) throw new Error('QA wallet is empty');
-  return { txid: u.txid, vout: u.vout, value: BigInt(u.satoshis) };
-}
-
-async function pay(dapi: Dapi, toHash160: Uint8Array, duffs: bigint): Promise<string> {
-  const utxo = await funderUtxo();
-  const p = buildPayment({ utxos: [utxo], key: qaKey, to: [{ pubKeyHash: toHash160, duffs }] });
-  await dapi.broadcastTransaction(p.raw);
-  const parsedChange = p.changeVout === null ? null : { txid: p.txid, vout: p.changeVout, value: parseTx(p.raw).outputs[p.changeVout]!.value.toString() };
-  const fee = utxo.value - duffs - (parsedChange ? BigInt(parsedChange.value) : 0n);
-  st.funder = parsedChange ?? undefined;
-  ledgerAdd('paidFromQaDuffs', duffs);
-  ledgerAdd('l1FeesDuffs', fee);
-  save(st);
-  log(`QA wallet paid ${Number(duffs) / 1e8} tDASH in ${p.txid} (fee ${fee} duffs)`);
-  return p.txid;
-}
 
 // ---- setup ---------------------------------------------------------------------------------------------------------------
 const steps = new Set(process.argv.slice(2).length ? process.argv.slice(2) : ['create', 'voucher', 'topup', 'signin', 'vault']);
@@ -98,6 +60,12 @@ const sdk = evo.EvoSDK.testnetTrusted({ settings: { timeoutMs: 40000, retries: 2
 await sdk.connect();
 const platform: PlatformPort = createEvoPlatform(evo, sdk, NET);
 const dapi = createDapi({ network: NET });
+const funder = qaFunder(dapi);
+const pay = async (h: Uint8Array, duffs: bigint) => {
+  const txid = await funder.pay(h, duffs);
+  log(`QA wallet paid ${Number(duffs) / 1e8} tDASH in ${txid}`);
+  return txid;
+};
 log(`connected: Platform protocol ${sdk.version()}, DAPI ${(await dapi.ready()).length} nodes`);
 
 async function balanceSettled(id: string): Promise<bigint> {
@@ -123,7 +91,7 @@ if (steps.has('create')) {
       if (v.state === 'awaiting-deposit' && !paid) {
         paid = true;
         // the watcher is live: now "scan the QR" (pay the address)
-        void pay(dapi, hash160(wallet.derive(`m/9'/1'/5'/1'/0'`).publicKey), 2_000_000n).catch((e) => log(`pay failed: ${redactErr(e)}`));
+        void pay(hash160(wallet.derive(`m/9'/1'/5'/1'/0'`).publicKey), 2_000_000n).catch((e) => log(`pay failed: ${redactErr(e)}`));
       }
     },
   });
@@ -140,25 +108,13 @@ if (steps.has('create')) {
 // ---- 2. voucher: mint one ourselves (burn NOT at vout 0), redeem into a new identity of phrase B --------------------------
 if (steps.has('voucher')) {
   if (!st.voucher) {
-    const vkey = randomBytes(32);
-    const utxo = await funderUtxo();
     const lockDuffs = 300_000n; // the PLAN's 0.003 DASH starter
-    const built = buildAssetLock({
-      utxos: [utxo], fundingKey: qaKey, creditPubKeyHash: hash160(publicKeyOf(vkey)), lockDuffs,
-      change: { script: p2pkhScript(hash160(publicKeyOf(qaKey))), duffs: utxo.value - lockDuffs - 1000n },
-    });
-    st.voucher = { txid: built.txid, wif: wifOf(vkey, NET), lockDuffs: lockDuffs.toString(), burnVout: built.burnVout, creditIndex: built.creditIndex };
+    const v = await funder.mintVoucher(lockDuffs);
+    st.voucher = { txid: v.txid, link: v.link, lockDuffs: lockDuffs.toString(), burnVout: v.burnVout, creditIndex: 0 };
     save(st);
-    await dapi.broadcastTransaction(built.raw);
-    const changeValue = utxo.value - lockDuffs - built.feeDuffs;
-    st.funder = { txid: built.txid, vout: 0, value: changeValue.toString() };
-    ledgerAdd('paidFromQaDuffs', lockDuffs);
-    ledgerAdd('l1FeesDuffs', built.feeDuffs);
-    save(st);
-    log(`voucher minted: ${built.txid}, burn at vout ${built.burnVout}, credit index ${built.creditIndex}`);
+    log(`voucher minted: ${v.txid}, burn at vout ${v.burnVout}`);
   }
-  const link = `dashpay://invite?assetlocktx=${st.voucher.txid}&pk=${st.voucher.wif}&islock=null`;
-  const voucher = parseVoucher(link, NET);
+  const voucher = parseVoucher(st.voucher.link, NET);
   const wallet = SeedWallet.fromPhrase(st.phraseB!, NET);
   const t0 = Date.now();
   const r = await redeemVoucher({ voucher, wallet, identityIndex: 0, dapi, platform, onUpdate: (n) => log(`voucher: ${n}`) });
@@ -184,7 +140,7 @@ if (steps.has('topup')) {
       log(`topup: ${v.state}${v.note ? ` (${v.note})` : ''}`);
       if (v.state === 'awaiting-deposit' && !paid) {
         paid = true;
-        void pay(dapi, hash160(wallet.derive(`m/9'/1'/5'/2'/${found.identityIndex}'/${index}`).publicKey), 100_000n).catch((e) => log(`pay failed: ${redactErr(e)}`));
+        void pay(hash160(wallet.derive(`m/9'/1'/5'/2'/${found.identityIndex}'/${index}`).publicKey), 100_000n).catch((e) => log(`pay failed: ${redactErr(e)}`));
       }
     },
   });
@@ -248,8 +204,9 @@ if (steps.has('addkeys')) {
   log(`addkeys: added ${added.join(',') || 'none'}; identity has ${keys?.length} keys; cost ${dash(before - after)} DASH`);
 }
 
-const results = { at: new Date().toISOString(), network: 'testnet', platformVersion: sdk.version(), ledger: st.ledger, ...st.results };
+const f = funder.state();
+const results = { at: new Date().toISOString(), network: 'testnet', platformVersion: sdk.version(), qaWalletSinceFunderTracking: { paidDuffs: f.spentDuffs.toString(), feesDuffs: f.feesDuffs.toString() }, ...st.results };
 mkdirSync(join(here, 'results'), { recursive: true });
 writeFileSync(join(here, 'results/live-testnet.json'), JSON.stringify(results, null, 2) + '\n');
-log(`done: QA wallet paid ${Number(st.ledger.paidFromQaDuffs) / 1e8} tDASH + ${st.ledger.l1FeesDuffs} duffs fees`);
+log(`done: QA wallet paid ${Number(f.spentDuffs) / 1e8} tDASH + ${f.feesDuffs} duffs fees (funder.json)`);
 process.exit(0);

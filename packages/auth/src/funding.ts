@@ -8,8 +8,10 @@
 // Progress is a FundingRecord in a FundingStore: txids, the signed lock tx, the IS-lock, heights. Never a key or the phrase: a
 // reload resumes once the user unlocks the same seed again (the one-time key is re-derived from it).
 import { BloomFilter, type Dapi, type Watcher } from '@govhub/dapi';
-import { bytesToHex, concatBytes, hash160, hexToBytes, reversed, u32le, wipe } from './bytes.ts';
-import { addressOf, type Network } from './keys.ts';
+import { hmac } from '@noble/hashes/hmac.js';
+import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex, concatBytes, hash160, hexToBytes, identifierBytes, reversed, u32be, u32le, wipe } from './bytes.ts';
+import { addressOf, isValidPrivateKey, publicKeyOf, type Network } from './keys.ts';
 import { CREATE_KEYS, MIN_CREATE_DEPOSIT_DUFFS, MIN_TOPUP_DEPOSIT_DUFFS } from './layout.ts';
 import type { AssetLockProofInput, PlatformPort, SigningKey } from './platform.ts';
 import { registrationFundingPath, topUpFundingPath, type SeedWallet } from './seed.ts';
@@ -98,7 +100,7 @@ export interface FundingView {
 }
 
 export interface FundingOptions {
-  wallet: SeedWallet;
+  wallet: SeedWallet | null;
   dapi: Dapi;
   platform: PlatformPort;
   store: FundingStore;
@@ -107,6 +109,11 @@ export interface FundingOptions {
   identityIndex: number;
   /** topup only. */
   topUp?: { identityId: string; index: number };
+  /**
+   * Top-up without a seed (key-paste sessions): the one-time key comes from `sessionTopUpKey` instead of the DIP-13 path, so a
+   * reload resumes once the same key is pasted again. `wallet` may then be null.
+   */
+  sessionKey?: Uint8Array;
   minDepositDuffs?: number;
   /** How long to wait for the asset lock's IS-lock before switching to the chain-lock proof. Default 60 s. */
   isLockWaitMs?: number;
@@ -185,13 +192,15 @@ const alreadyUsed = (msg: string) => /already (been )?(used|consumed|exists)|Ide
  */
 export async function runFunding(o: FundingOptions): Promise<{ identityId: string; record: FundingRecord }> {
   const { wallet, dapi, platform, store, kind, identityIndex, signal } = o;
-  const network = wallet.network;
-  if (dapi.network !== network || platform.network !== network) throw new FundingError(`network mismatch: seed ${network}, DAPI ${dapi.network}, Platform ${platform.network}`);
+  const network = platform.network;
+  if (dapi.network !== network || (wallet && wallet.network !== network)) throw new FundingError(`network mismatch: seed ${wallet?.network}, DAPI ${dapi.network}, Platform ${network}`);
   if (kind === 'topup' && !o.topUp) throw new FundingError('top-up target missing');
+  if (!wallet && !(kind === 'topup' && o.sessionKey)) throw new FundingError('funding needs the recovery phrase (or, for a top-up, the signed-in key)');
   const minDuffs = o.minDepositDuffs ?? (kind === 'create' ? MIN_CREATE_DEPOSIT_DUFFS : MIN_TOPUP_DEPOSIT_DUFFS);
-  const path = kind === 'create' ? registrationFundingPath(network, identityIndex) : topUpFundingPath(network, identityIndex, o.topUp!.index);
-  const key = fundingKey(kind, network, identityIndex, o.topUp?.index);
-  const fk = wallet.derive(path);
+  const key = wallet ? fundingKey(kind, network, identityIndex, o.topUp?.index) : `${network}.topup.k.${o.topUp!.identityId}.${o.topUp!.index}`;
+  const fk = wallet
+    ? wallet.derive(kind === 'create' ? registrationFundingPath(network, identityIndex) : topUpFundingPath(network, identityIndex, o.topUp!.index))
+    : sessionTopUpKey(o.sessionKey!, o.topUp!.identityId, o.topUp!.index);
   const h160 = hash160(fk.publicKey);
   const address = addressOf(fk.publicKey, network);
   const log = o.log ?? (() => {});
@@ -321,7 +330,7 @@ export async function runFunding(o: FundingOptions): Promise<{ identityId: strin
       return { identityId, record: rec };
     }
     const signingKeys: SigningKey[] =
-      kind === 'create' ? CREATE_KEYS.map((k) => ({ ...k, privateKey: wallet.identityKey(identityIndex, k.id).privateKey })) : [];
+      kind === 'create' ? CREATE_KEYS.map((k) => ({ ...k, privateKey: wallet!.identityKey(identityIndex, k.id).privateKey })) : [];
     try {
       const submit = async (proof: AssetLockProofInput) => {
         rec.proofKind = proof.kind;
@@ -383,6 +392,18 @@ async function settled(kind: FundingKind, platform: PlatformPort, identityId: st
     return b !== null && rec.balanceBefore !== undefined && b > BigInt(rec.balanceBefore);
   } catch {
     return false;
+  }
+}
+
+/**
+ * One-time top-up key for a session without a seed: HMAC-SHA256(sessionKey, "govhub/topup/v1" || identityId || u32be(n)), re-drawn
+ * with a counter in the (negligible) case it is not a valid scalar. Deterministic, so nothing secret has to be stored to resume.
+ */
+export function sessionTopUpKey(sessionKey: Uint8Array, identityId: string, n: number): { privateKey: Uint8Array; publicKey: Uint8Array } {
+  for (let ctr = 0; ; ctr++) {
+    const k = hmac(sha256, sessionKey, concatBytes(new TextEncoder().encode('govhub/topup/v1'), identifierBytes(identityId), u32be(n), Uint8Array.of(ctr)));
+    if (isValidPrivateKey(k)) return { privateKey: k, publicKey: publicKeyOf(k) };
+    wipe(k);
   }
 }
 

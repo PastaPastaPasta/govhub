@@ -12,4 +12,4 @@ export * from './central.ts';
 export * from './vault/bundle.ts';
 export * from './vault/service.ts';
 export { deriveKeyPair, openBase, sealBase } from './vault/hpke.ts';
-export { bytesToHex, hexToBytes, hash160, randomBytes, toBase58, toBase64, fromBase64, wipe } from './bytes.ts';
+export { bytesToHex, fromBase64, hash160, hexToBytes, identifierBytes, randomBytes, toBase58, toBase64, wipe } from './bytes.ts';
