@@ -231,8 +231,9 @@ cheap test proposal `ab31c1ff…708d` (`packages/auth/scripts/testnet-proposal.t
 | deferred ABSTAIN, masternode-3, nTime = release ~10 min ahead | `held`, broadcast at release minus the margin, `confirmed`; in Core and the bridge with the signed nTime |
 | deferred NO, masternode-4, then a cancel | a cancel signed by another masternode's voting key refused (403), the voting key's own cancel accepted; never reached Core |
 
-Together with a direct `voteraw` of a browser-signed vote this is the first validation of the testnet binary-hash scheme from
-govhub's own signing code: Core accepted every vote, and `governanceVoteHash` equals Core's vote hash for each.
+Together with a direct `voteraw` of a browser-signed vote this validates the testnet binary-hash scheme end to end from the web
+app's signing code through the relay (the testnet-stack work independently confirmed `signVote` with one `voteraw`, see
+`packages/verify/test/fixtures/testnet-votes.json`): Core accepted every vote, and `governanceVoteHash` equals Core's vote hash.
 
 ## Not done
 
