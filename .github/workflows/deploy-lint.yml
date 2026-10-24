@@ -23,6 +23,10 @@ jobs:
   compose-config:
     name: compose config (${{ matrix.name }})
     runs-on: ubuntu-latest
+    env:
+      COMPOSE_FILE: ${{ matrix.compose_file }}
+      COMPOSE_PROFILES: ${{ matrix.profiles }}
+      DASHD_P2P_PORT: ${{ matrix.p2p_port }}
     strategy:
       fail-fast: false
       matrix:
@@ -50,25 +54,17 @@ jobs:
 
       - name: docker compose config
         working-directory: deploy
-        env:
-          COMPOSE_FILE: ${{ matrix.compose_file }}
-          COMPOSE_PROFILES: ${{ matrix.profiles }}
-          DASHD_P2P_PORT: ${{ matrix.p2p_port }}
-        run: docker compose config > "$RUNNER_TEMP/rendered.yml"
+        run: docker compose config --quiet
 
       - name: RPC (9998) and ZMQ (29998) must not be published to the host
         working-directory: deploy
-        env:
-          COMPOSE_FILE: ${{ matrix.compose_file }}
-          COMPOSE_PROFILES: ${{ matrix.profiles }}
-          DASHD_P2P_PORT: ${{ matrix.p2p_port }}
         run: |
           set -euo pipefail
           published="$(docker compose config --format json | jq -r '
             .services[] | (.ports // [])[] | "\(.target) \(.published // "")"')"
           echo "published ports (target published):"
           echo "${published:-<none>}"
-          if echo "$published" | awk '{print $1, $2}' | grep -E '^(9998|29998) |^[0-9]+ (9998|29998)$'; then
+          if echo "$published" | grep -E '^(9998|29998) |^[0-9]+ (9998|29998)$'; then
             echo "::error::RPC or ZMQ port is published to the host"
             exit 1
           fi
