@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clientIssuanceWindow, displayEpochsAt, displayWindow, EPOCH_PARAMS, epochLength, epochOf, epochStart, issuanceWindow, issuingEpochAt, keyDeadline, postingWindow } from '../src/epoch.ts';
+import { displayEpochsAt, displayWindow, EPOCH_PARAMS, epochLength, epochOf, epochStart, extraPostingWindow, issuanceWindow, issuingEpochsAt, keyDeadline, postingWindow, privateRequestWindow, reportWindow } from '../src/epoch.ts';
 import { clientPostingWindow, pickHeight, pickPostHeight, pickRequestHeight, requestableEpoch } from '../src/schedule.ts';
 
 const M = EPOCH_PARAMS.mainnet;
@@ -21,13 +21,15 @@ describe('epochs', () => {
   });
   it('windows', () => {
     const E = 2742;
-    expect(issuanceWindow(T, E)).toEqual({ from: 2741 * 576, to: 2742 * 576 });
-    expect(clientIssuanceWindow(T, E)).toEqual({ from: 2741 * 576 + 3, to: 2742 * 576 - 3 });
+    expect(issuanceWindow(T, E)).toEqual({ from: 2741 * 576, to: 2743 * 576 }); // during E-1 and during E
+    expect(privateRequestWindow(T, E)).toEqual({ from: 2741 * 576 + 3, to: 2742 * 576 - 3 });
     expect(postingWindow(T, E)).toEqual({ from: 2742 * 576, to: 2742 * 576 + 72 });
+    expect(extraPostingWindow(T, E)).toEqual({ from: 2742 * 576, to: 2742 * 576 + 288 });
     expect(displayWindow(T, E)).toEqual({ from: 2742 * 576, to: 2743 * 576 + 72 });
+    expect(reportWindow(T, E)).toEqual({ from: 2743 * 576, to: 2743 * 576 + 72 });
     expect(keyDeadline(T, E)).toBe(2741 * 576);
-    expect(issuingEpochAt(T, 2741 * 576)).toBe(2742);
-    expect(issuingEpochAt(T, 2742 * 576 - 1)).toBe(2742);
+    expect(issuingEpochsAt(T, 2741 * 576)).toEqual([2741, 2742]);
+    expect(issuingEpochsAt(T, 2742 * 576 - 1)).toEqual([2741, 2742]);
   });
   it('display epochs: current, plus the previous during W', () => {
     const s = epochStart(T, 2742);
@@ -58,7 +60,7 @@ describe('scheduling', () => {
   });
   it('request heights fall inside the client issuance window', () => {
     const E = 2742;
-    const w = clientIssuanceWindow(T, E);
+    const w = privateRequestWindow(T, E);
     for (let i = 0; i < 200; i++) {
       const h = pickRequestHeight(T, E, w.from - 50)!;
       expect(h >= w.from && h < w.to).toBe(true);
@@ -78,5 +80,20 @@ describe('scheduling', () => {
     const s = epochStart(T, 2741);
     expect(requestableEpoch(T, s + 10)).toBe(2742);
     expect(requestableEpoch(T, s + 576 - 2)).toBe(2743);
+  });
+  it('standard mode asks for the current epoch and posts at once, never before S(E)', () => {
+    const s = epochStart(T, 2742);
+    expect(requestableEpoch(T, s + 10, 'standard')).toBe(2742);
+    expect(requestableEpoch(T, s + 576 - 2, 'standard')).toBe(2743); // last margin blocks: the next epoch
+    expect(pickPostHeight(T, 2742, s + 10, 'standard')).toBe(s + 10);
+    expect(pickPostHeight(T, 2743, s + 575, 'standard')).toBe(s + 576);
+  });
+  it('extra-private posts spread over the first half of the epoch', () => {
+    const w = clientPostingWindow(T, 2742, 'extra');
+    for (let i = 0; i < 200; i++) {
+      const h = pickPostHeight(T, 2742, 0, 'extra');
+      expect(h >= w.from && h < w.to).toBe(true);
+    }
+    expect(w.to - w.from).toBeGreaterThan(200);
   });
 });
