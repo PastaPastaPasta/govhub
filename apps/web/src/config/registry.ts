@@ -84,10 +84,18 @@ export function attestorsFor(r: Registry): string[] {
   return [...new Set(ids)];
 }
 
+/**
+ * The project's reference bridge (deploy/README.md, "Reference deployment"): mainnet Core, publishing into the testnet
+ * `gov` contract, matching the phase-1 network defaults below.
+ */
+export const DEFAULT_BRIDGE_URL = 'https://gov-bridge.dashhq.org';
+
+/** VITE_GOVHUB_BRIDGE_URL replaces the default bridge for a build; empty or `none` builds with no bridge. */
 function envBridges(): BridgeEndpoint[] {
-  const url = import.meta.env?.VITE_GOVHUB_BRIDGE_URL as string | undefined;
-  if (!url) return [];
-  return [{ name: 'govhub bridge', httpBase: url.replace(/\/+$/, ''), govContractId: TESTNET_GOV_CONTRACT, bridgeIdentityId: TESTNET_BRIDGE_IDENTITY, enabled: true }];
+  const env = (import.meta.env?.VITE_GOVHUB_BRIDGE_URL as string | undefined)?.trim();
+  if (env === '' || env === 'none') return [];
+  const url = (env ?? DEFAULT_BRIDGE_URL).replace(/\/+$/, '');
+  return [{ name: url.replace(/^[a-z]+:\/\//i, ''), httpBase: url, govContractId: TESTNET_GOV_CONTRACT, bridgeIdentityId: TESTNET_BRIDGE_IDENTITY, enabled: true }];
 }
 
 export function defaultRegistry(): Registry {

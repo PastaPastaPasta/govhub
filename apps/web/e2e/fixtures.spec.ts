@@ -158,7 +158,7 @@ test.describe('settings', () => {
     await expect(page.getByRole('alert')).toContainText('must be an https URL');
 
     await page.getByRole('button', { name: 'Reset to defaults' }).click();
-    await expect(page.getByText('No bridge configured.')).toBeVisible();
+    await expect(page.getByLabel('URL', { exact: true })).toHaveValue('https://gov-bridge.dashhq.org');
   });
 
   test('?config= share link asks before applying', async ({ page }) => {
