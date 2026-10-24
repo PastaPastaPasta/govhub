@@ -88,6 +88,7 @@ wallet disabled (the bridge needs none); `DASHD_EXTRA_ARGS=-disablewallet=0` tur
 | `caddy/Caddyfile` | TLS reverse proxy; GET/HEAD/OPTIONS only, CORS handled here |
 | `scripts/init.sh` | prerequisite check, secrets directory (mode 0700), `.env` |
 | `scripts/cloudflare-tunnel.sh` | creates the Cloudflare Tunnel, its ingress and DNS, and writes the token file (section 11) |
+| `scripts/backup.sh` | online backup of the bridge archive with retention (sections 6 and 13) |
 | `scripts/smoke-regtest.sh` | end-to-end regtest test |
 
 Choosing a network means choosing which files are layered. `COMPOSE_FILE` in `.env` does it, and
@@ -268,9 +269,10 @@ docker run --rm --user root -v govhub_bridge-data:/data -v "$PWD/backups:/backup
   /data/bridge.sqlite ".backup /backup/bridge-$(date +%F).sqlite"
 ```
 
-The bridge image can also do it itself, with no third-party image (section 13 has the cron job):
-`docker compose exec -T bridge node bin/bridge.mjs backup /data/bridge-$(date +%F).sqlite`, then
-`docker compose cp bridge:/data/bridge-<date>.sqlite backups/` and delete the copy in the volume.
+The bridge image can also do it itself, with no third-party image: `scripts/backup.sh [DIR] [KEEP_DAYS]`
+runs `bridge backup` in the container, copies the file out, checks it with `PRAGMA integrity_check`
+(when `sqlite3` is installed), deletes copies older than KEEP_DAYS and exits non-zero on any failure.
+Section 13 has a cron job for it.
 
 Replace `govhub_bridge-data` with `<project>_bridge-data`. The volume must be mounted read-write
 even though the command only reads: SQLite's WAL mode needs the `-shm` file, and `.backup` is the
@@ -341,7 +343,9 @@ the bridge runs from day one.
 - **RPC (9998) and ZMQ (29998) are never published.** There is no `ports:` entry for them in any
   compose file, dashd's `rpcallowip` is limited to the compose subnet (`GOVHUB_SUBNET`), and CI
   fails if a rendered config publishes either port. They are reachable from containers on the
-  compose network. On a Linux host, anyone with a shell there can also reach the container's IP
+  compose network. The public-facing services (`cloudflared`, `caddy`) are on a separate `edge`
+  network with only the bridge, outside `rpcallowip`, so no tunnel ingress or proxy rule can expose
+  dashd. On a Linux host, anyone with a shell there can also reach the container's IP
   directly (RPC is password-protected; ZMQ has no authentication but carries public data), so do
   not give untrusted users host accounts. The wallet is disabled outside regtest. Do not
   "temporarily" publish these ports to debug.
@@ -462,7 +466,11 @@ Cloudflare, and the container only needs the tunnel token.
    **replaces** its ingress with exactly the routes given plus a 404 catch-all, creates or updates a
    proxied `CNAME <host> -> <tunnel-id>.cfargotunnel.com` per route, and writes the token to
    `secrets/cloudflare_tunnel_token` (0600; `--token-out` for another path). It prints no secret.
-   `CF_API_TOKEN_FILE=<file>` works instead of the variable.
+   `CF_API_TOKEN_FILE=<file>` works instead of the variable. If the tunnel already exists the script
+   stops unless you pass `--reuse`, so a second stack cannot take over the first one's tunnel by
+   accident. It also refuses to repoint a CNAME that points somewhere other than a tunnel unless you
+   pass `--force-dns`. If you ran it on another machine, copy the token file into `secrets/` and
+   re-run `scripts/init.sh` as root, which chowns it to uid 1000 so cloudflared can read it.
 3. In `.env`: `COMPOSE_PROFILES=tunnel`, then `docker compose up -d`. `docker compose logs
    cloudflared` should show four `Registered tunnel connection` lines.
 4. Check from outside:
@@ -477,7 +485,7 @@ Routes are compose service names, because cloudflared is on the compose network.
 accounts services land, re-run the script with every route (it replaces the whole ingress list):
 
 ```sh
-scripts/cloudflare-tunnel.sh --account <id> --zone example.org \
+scripts/cloudflare-tunnel.sh --account <id> --zone example.org --reuse \
   --route gov-bridge.example.org=http://bridge:8787 \
   --route gov-relay.example.org=http://relay:<port> \
   --route gov-accounts.example.org=http://accounts:<port>
@@ -494,7 +502,8 @@ permissions).
 
 The tunnel token lets anyone run a connector for your hostnames: keep it like the identity key, in
 `secrets/` only. To rotate it, refresh the token in the Cloudflare dashboard (or API), re-run the
-script so it writes the new token, and run `docker compose up -d cloudflared`.
+script with `--reuse` and **every** `--route` (it replaces the whole ingress list) so it writes the
+new token, and run `docker compose up -d cloudflared`.
 
 ### 11.2 Caddy (alternative)
 
@@ -586,10 +595,11 @@ reachability and sync, the ZMQ counters and gaps, archive counts, tally mismatch
 last publish pass with the identity's credits before and after.
 
 **Backups of the SQLite archive.** The archive is the one thing here that cannot be rebuilt
-(section 6). `/etc/cron.d/govhub-backup` takes an online backup daily at 03:30 and keeps 30 days:
+(section 6). `/etc/cron.d/govhub-backup` takes an online backup daily at 03:30, keeps 30 days and logs
+to syslog (`journalctl -t govhub-backup`):
 
 ```
-30 3 * * * root cd /opt/govhub/deploy && f=bridge-$(date +\%F).sqlite && docker compose exec -T bridge node bin/bridge.mjs backup /data/$f >/dev/null 2>&1 && docker compose cp bridge:/data/$f /opt/govhub-backups/$f >/dev/null 2>&1 && docker compose exec -T bridge rm -f /data/$f && find /opt/govhub-backups -name 'bridge-*.sqlite' -mtime +30 -delete
+30 3 * * * root /opt/govhub/deploy/scripts/backup.sh /opt/govhub-backups 30 2>&1 | logger -t govhub-backup
 ```
 
 Check a copy with `sqlite3 /opt/govhub-backups/bridge-<date>.sqlite 'PRAGMA integrity_check'`. These
