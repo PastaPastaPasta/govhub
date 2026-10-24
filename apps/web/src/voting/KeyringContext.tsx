@@ -151,6 +151,8 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
   const watchedRef = useRef<WatchedVote[]>([]);
   /** a cast or cancel is changing votes: the watchdog does not re-broadcast meanwhile */
   const castingRef = useRef(false);
+  /** watchdog re-sends in flight, by vote hash: a cancel waits for them, so it also reaches the relay just sent to */
+  const inflightRef = useRef(new Map<string, Promise<unknown>>());
   watchedRef.current = watched;
   const identityId = session?.identityId ?? null;
   const touch = () => setVersion((v) => v + 1);
@@ -501,9 +503,10 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
             throw e;
           });
           if (existing) {
-            if (existing.authenticated !== true) {
+            const seen = Number(localStorage.getItem(generationKey(registry.platformNetwork, existing.ownerId)) ?? 0);
+            if (existing.authenticated !== true || existing.content.generation < seen) {
               existing.close();
-              throw new Error('Your saved keyring could not be verified as yours. Open it first and check its unlockers.');
+              throw new Error('Your saved keyring could not be verified as yours (or is older than one this browser saw). Open it first and check its unlockers.');
             }
             for (const key of k.content.keys) if (!existing.content.keys.some((x) => votingKeyId(x.privateKey, x.compressed) === votingKeyId(key.privateKey, key.compressed))) existing.content.keys.push({ ...key, privateKey: key.privateKey.slice() });
             try {
@@ -524,7 +527,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         }
         auth.refreshBalance();
       }),
-    [run, session, storeCtx, opened, auth],
+    [run, session, storeCtx, opened, auth, registry.platformNetwork],
   );
 
   // ---- masternodes for the keys ----
@@ -586,12 +589,12 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
 
   const updateWatched = useCallback(
     (f: (w: WatchedVote[]) => WatchedVote[]) => {
-      setWatched((w) => {
-        const next = pruneWatched(f(w), nowS());
-        // memory-only keyrings keep nothing on the device, not even signed votes
-        if (identityId && !memoryOnly) saveWatched(localStorage, coreNetwork, identityId, next);
-        return next;
-      });
+      // computed from (and written to) the ref synchronously, so the watchdog's "unchanged" check always sees the latest records
+      const next = pruneWatched(f(watchedRef.current), nowS());
+      watchedRef.current = next;
+      // memory-only keyrings keep nothing on the device, not even signed votes
+      if (identityId && !memoryOnly) saveWatched(localStorage, coreNetwork, identityId, next);
+      setWatched(next);
     },
     [identityId, coreNetwork, memoryOnly],
   );
@@ -628,6 +631,9 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       const key = k && owner ? k.content.keys[owner.keyIndex] : undefined;
       if (!key) throw new Error('Unlock the keyring holding this masternode’s voting key to cancel.');
       const sig = cancelSignature(key.privateKey, key.compressed, coreNetwork, v.voteHash);
+      // a watchdog re-send may be on its way to another relay: wait for it, then use the latest refs
+      await inflightRef.current.get(v.voteHash)?.catch(() => {});
+      v = watchedRef.current.find((x) => x.voteHash === v.voteHash) ?? v;
       // No relay id: the submission's answer was lost, so a relay may hold it without us knowing which. It cannot be cancelled
       // safely (re-submitting to find it could store and release it); the caller treats it as possibly sent.
       if (!v.refs.length) return 'unknown';
@@ -755,7 +761,11 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         if (!v) return;
         castingRef.current = true;
         const r = await cancelEverywhere(v).finally(() => (castingRef.current = false));
-        if (r === 'unknown') throw new Error('It is not known which relay holds this vote (its submission was never confirmed), so it cannot be cancelled. Vote again instead: the new vote is timed later and wins.');
+        if (r === 'unknown') {
+          // never re-sent from here any more; only a relay that silently got the lost submission could still release it
+          updateWatched((list) => list.map((x) => (x.voteHash === voteHash ? { ...x, restored: true } : x)));
+          throw new Error('It is not known whether a relay holds this vote (its submission was never confirmed). This browser will not send it again, but if a relay did receive it, it could still be released: vote again to be sure, the new vote is timed later and wins.');
+        }
         updateWatched((list) => list.map((x) => (x.voteHash === voteHash ? { ...x, status: r === 'cancelled' ? 'cancelled' : 'broadcast' } : x)));
         if (r !== 'cancelled') throw new Error('Too late: a relay has already broadcast this vote. Vote again to change it (Core allows one change per hour).');
         await backupPending(watchedRef.current.filter((x) => x.voteHash !== voteHash), false).catch(() => {});
@@ -821,9 +831,19 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
             rebroadcasts += 1;
             if (relay) {
               try {
-                const n = await send(v, relay);
+                const p = send(v, relay);
+                inflightRef.current.set(v.voteHash, p);
+                let n: WatchedVote;
+                try {
+                  n = await p;
+                } finally {
+                  inflightRef.current.delete(v.voteHash);
+                }
                 refs = n.refs;
                 relayStatus = { ...relayStatus, ...n.relayStatus };
+                // the new relay's id is recorded at once, whatever happens to this tick's other updates, so it can be cancelled
+                const ref = n.refs.find((r) => r.relay === relay);
+                if (ref) updateWatched((w) => w.map((x) => (x.voteHash === v.voteHash && !x.refs.some((r) => r.relay === relay) ? { ...x, refs: [...x.refs, ref] } : x)));
               } catch {
                 /* tried; counted */
               }
