@@ -12,9 +12,9 @@ import type { Dapi } from './client.ts';
 import { type Cbor, decodeCbor } from './cbor.ts';
 import { type ChainLock, parseChainLock, parseHeader } from './dash.ts';
 import { VerificationError } from './errors.ts';
-import { GrpcError, abortReason, isAbort } from './grpcweb.ts';
+import { GrpcError, abortReason, isAbort, link } from './grpcweb.ts';
 import { CHECKPOINTS, type Checkpoint, DGW_WINDOW, HeaderChain, type HeaderRun, type StoredChain } from './headerchain.ts';
-import { POW_PARAMS } from './pow.ts';
+import { MAX_FUTURE_BLOCK_TIME, POW_PARAMS } from './pow.ts';
 import { type Sml, type SmlQuorum, parseSmlDecoded } from './sml.ts';
 import { type SmlProof, proveSml } from './smlproof.ts';
 import type { AnchorOptions, AnchoredChain, ProvenSml, Verifiers } from './types.ts';
@@ -22,8 +22,14 @@ import type { AnchorOptions, AnchoredChain, ProvenSml, Verifiers } from './types
 /** Headers per stream request. Nodes stream ~1-2k headers/s each, with a heavy tail, so ranges are split and run in parallel. */
 const CHUNK = 2000;
 const PARALLEL = 16;
-/** Stored heights cap (~13 MB of hashes): the low end is dropped first. */
+/** Stored heights cap (~13 MB of hashes): the low end is dropped first. Also the deepest block an anchor reaches down to. */
 const MAX_STORED = 400_000;
+/** The newest ChainLocked block must be younger than this, or the nodes may be withholding newer blocks (stale facts). */
+const FRESH_S = 3600;
+/** The minimum-height rule assumes blocks come no slower than this (150 s target; DGW keeps the real average near 158 s). */
+const SLOWEST_SPACING_S = 225;
+/** No honest chain grows faster than one block per this many seconds: caps node-claimed heights (a huge claim is a DoS). */
+const FASTEST_SPACING_S = 30;
 
 interface State { stored?: StoredChain; last?: AnchoredChain; inflight?: Promise<AnchoredChain> }
 const states = new WeakMap<Dapi, State>();
@@ -57,6 +63,18 @@ export function anchorChain(d: Dapi, o: AnchorOptions = {}): Promise<AnchoredCha
 }
 
 async function run(d: Dapi, st: State, o: AnchorOptions): Promise<AnchoredChain> {
+  // the list download runs beside the headers: stop it whenever the run ends early
+  const smlCtrl = new AbortController();
+  const unlink = link(o.signal, smlCtrl);
+  try {
+    return await runInner(d, st, o, smlCtrl.signal);
+  } finally {
+    smlCtrl.abort();
+    unlink();
+  }
+}
+
+async function runInner(d: Dapi, st: State, o: AnchorOptions, smlSignal: AbortSignal): Promise<AnchoredChain> {
   const t0 = Date.now(), ms: Record<string, number> = {};
   const lap = (k: string, t: number) => { ms[k] = (ms[k] ?? 0) + Date.now() - t; };
   const v = await d.crypto();
@@ -75,10 +93,14 @@ async function run(d: Dapi, st: State, o: AnchorOptions): Promise<AnchoredChain>
 
   // 2. the tip a node claims, the masternode list and the newest ChainLock, in parallel with the header download
   t = Date.now();
-  const best = await tipHint(d, o);
+  // a node's tip claim only sizes the download; cap it by what the clock allows since the checkpoint
+  const tip = Math.min((await tipHint(d, o)).height, cp.height + Math.ceil((clock() + MAX_FUTURE_BLOCK_TIME - cp.time) / FASTEST_SPACING_S));
+  const best = { height: tip };
   const tSml = Date.now();
-  const smlP = fetchSml(d, o);
+  const smlP = fetchSml(d, { signal: smlSignal });
   smlP.then(() => { ms.smlFetch = Date.now() - tSml; }, () => {}); // download of the ~1.4 MB list, in parallel with the headers
+  const maxStored = o.maxStoredHeights ?? MAX_STORED;
+  if (o.from !== undefined && o.from < tip - maxStored) throw new Error(`block ${o.from} is more than ${maxStored.toLocaleString('en-US')} blocks deep: too old to verify here`);
   const want = Math.min(o.from ?? Infinity, cp.height - DGW_WINDOW);
   let fetched = 0;
   const fetchRun = async (from: number, to: number): Promise<HeaderRun> => {
@@ -101,6 +123,8 @@ async function run(d: Dapi, st: State, o: AnchorOptions): Promise<AnchoredChain>
   }
   lap('headers', t);
   const extendTo = async (h: number) => {
+    // a node's list or lock a few blocks newer than its tip claim is normal; far beyond it is not
+    if (h > chain!.hi + 64) throw new VerificationError('height', `block ${h} is far above the tip the nodes reported (${chain!.hi})`);
     if (h > chain!.hi) await applyRun(d, await fetchRun(chain!.hi + 1, h), hash, (x) => chain!.extendUp(x, { pow, now: clock() }), o);
   };
 
@@ -111,7 +135,7 @@ async function run(d: Dapi, st: State, o: AnchorOptions): Promise<AnchoredChain>
   const sml = await proveAgainstChain(d, chain, first, hash, extendTo, o, ms).catch(async (e) => {
     if (isAbort(e)) throw e;
     // one more node: the first may have sent a list from a block we cannot place, or a bad one
-    return proveAgainstChain(d, chain!, await fetchSml(d, o, [first.node]), hash, extendTo, o, ms);
+    return proveAgainstChain(d, chain!, await fetchSml(d, { signal: smlSignal }, [first.node]), hash, extendTo, o, ms);
   });
   lap('sml', t);
 
@@ -127,15 +151,27 @@ async function run(d: Dapi, st: State, o: AnchorOptions): Promise<AnchoredChain>
   if (!check.ok) throw new VerificationError('chainlock', `ChainLock on block ${cl.height} not accepted (${check.reason})`);
   lap('chainlock', t);
 
-  // 5. persist the final part (up to the lock); never anything above it
-  const stored = chain.toStored({ height: cl.height, blockHash: cl.blockHash }, o.maxStoredHeights ?? MAX_STORED);
+  // 5. freshness: facts "as of now" need a recent lock, a chain as long as the clock requires, and a list from about then
+  let clHeader = chain.rawAt(cl.height);
+  if (!clHeader) {
+    clHeader = (await fetchHeaders(d, cl.height, cl.height, hash, o)).headers;
+    if (!bytesEqual(hash(clHeader), chain.hashAt(cl.height)!)) throw new VerificationError('chainlock', `block ${cl.height} from the node is not the verified one`);
+  }
+  const clTime = parseHeader(clHeader).time, nowS = clock();
+  if (clTime < nowS - FRESH_S) throw new VerificationError('stale', `the newest ChainLock (block ${cl.height}) is ${Math.round((nowS - clTime) / 60)} minutes old: newer blocks may be withheld`);
+  const minHeight = cp.height + Math.floor((nowS - FRESH_S - cp.time) / SLOWEST_SPACING_S);
+  if (cl.height < minHeight) throw new VerificationError('stale', `the chain ends at block ${cl.height}, below the ${minHeight} the time since the checkpoint requires`);
+  if (sml.proof.height < cl.height - 8) throw new VerificationError('stale', `the masternode list is from block ${sml.proof.height}, older than the ChainLock (${cl.height})`);
+
+  // 6. persist the final part (up to the lock); never anything above it
+  const stored = chain.toStored({ height: cl.height, blockHash: cl.blockHash }, maxStored);
   if (stored && (!st.stored || stored.chainLock.height >= st.stored.chainLock.height || stored.lo < st.stored.lo)) {
     st.stored = stored;
     await o.store?.save(stored).catch(() => {});
   }
   const out: AnchoredChain = {
     network: d.network, checkpoint: cp, chain, tip: chain.hi,
-    chainLock: { height: cl.height, blockHash: cl.blockHash, quorumHash: check.quorumHash, exact: check.exact },
+    chainLock: { height: cl.height, blockHash: cl.blockHash, quorumHash: check.quorumHash, exact: check.exact, time: clTime },
     sml, at: Date.now(),
     stats: { cachedHeaders: cached, fetchedHeaders: fetched, ms: { ...ms, total: Date.now() - t0 } },
   };

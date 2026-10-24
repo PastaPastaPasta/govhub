@@ -13,9 +13,16 @@ function compactSize(n: number): Uint8Array {
   if (n <= 0xffff) return Uint8Array.of(0xfd, n & 0xff, n >> 8);
   return Uint8Array.of(0xfe, n & 0xff, (n >> 8) & 0xff, (n >> 16) & 0xff, n >>> 24);
 }
-const u16le = (n: number) => Uint8Array.of(n & 0xff, n >> 8);
+/** Little-endian u16. Refuses anything outside 0..0xffff: wrapping would let a different value serialize to the same bytes. */
+function u16le(n: number): Uint8Array {
+  if (!Number.isInteger(n) || n < 0 || n > 0xffff) throw new Error(`sml: ${n} does not fit 16 bits`);
+  return Uint8Array.of(n & 0xff, n >> 8);
+}
 const u16be = (n: number) => Uint8Array.of(n >> 8, n & 0xff);
-const i16le = (n: number) => u16le(n & 0xffff);
+function i16le(n: number): Uint8Array {
+  if (!Number.isInteger(n) || n < -0x8000 || n > 0x7fff) throw new Error(`sml: ${n} does not fit a signed 16-bit field`);
+  return u16le(n & 0xffff);
+}
 
 const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 /** Base58Check decode (version byte + payload). Throws on a bad character or checksum. */
@@ -146,6 +153,8 @@ const PROTX_VERSION = { LegacyBLS: 1, BasicBLS: 2, ExtAddr: 3 } as const;
  */
 export function smlEntryBytes(e: Json): Uint8Array {
   const version = num(e, 'nVersion'), type = num(e, 'nType');
+  // MnType is Regular (0) or Evo (1) (evo/dmn_types.h); any other value would only be "proven" through its 16-bit encoding
+  if (type !== 0 && type !== 1) throw new Error(`sml: unknown masternode type ${type}`);
   if (version < 1 || version > 3) throw new Error(`sml: unsupported entry version ${version}`);
   const parts: Uint8Array[] = [hash32(e, 'proRegTxHash'), hash32(e, 'confirmedHash')];
 
@@ -214,7 +223,7 @@ export const LLMQ_SIZE: Readonly<Record<number, number>> = {
  * ToJson prints them in that same encoding (llmq/core_write.cpp:26-29), so the hex is used as is.
  */
 export function commitmentBytes(q: Json): Uint8Array {
-  const version = num(q, 'version'), type = num(q, 'llmqType');
+  const version = num(q, 'version'), type = num(q, 'llmqType'); // llmqType is checked against LLMQ_SIZE below (all < 256)
   if (version < 1 || version > 4) throw new Error(`quorum: unsupported commitment version ${version}`);
   const size = LLMQ_SIZE[type];
   if (size === undefined) throw new Error(`quorum: unknown LLMQ type ${type}`);
@@ -243,7 +252,11 @@ export function commitmentBytes(q: Json): Uint8Array {
  */
 export function quorumsMerkleRoot(quorums: readonly Json[]): Uint8Array {
   const hashes = quorums.map((q) => sha256d(commitmentBytes(q))).sort(compareBytes);
-  return merkleRoot(hashes).root;
+  // a repeated commitment can hash to the same root (CVE-2012-2459); Core rejects it (evo/cbtx.cpp:151-153)
+  for (let i = 1; i < hashes.length; i++) if (compareBytes(hashes[i - 1]!, hashes[i]!) === 0) throw new Error('sml: duplicate quorum commitment');
+  const { root, mutated } = merkleRoot(hashes);
+  if (mutated) throw new Error('sml: mutated quorum merkle tree');
+  return root;
 }
 
 // ---- coinbase payload -------------------------------------------------------------------------------------------------------
@@ -322,7 +335,7 @@ export function proveSml(d: Json): SmlProof {
     seen.add(k);
   }
   const mn = mnListMerkleRoot(mnList as Json[]);
-  if (mn.mutated) throw new Error('sml: mutated MN-list merkle tree'); // CalcCbTxMerkleRootMNList rejects it (simplifiedmns.cpp:166-168)
+  if (mn.mutated) throw new Error('sml: mutated MN-list merkle tree'); // CalcCbTxMerkleRootMNList rejects it (simplifiedmns.cpp:137-139)
   if (!bytesEqual(mn.root, cb.merkleRootMNList)) throw new Error(`sml: merkleRootMNList mismatch (recomputed ${hashHex(mn.root)}, coinbase ${hashHex(cb.merkleRootMNList)})`);
 
   const quorums = Array.isArray(d.newQuorums) ? (d.newQuorums as Json[]) : null;

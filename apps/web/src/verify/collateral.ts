@@ -175,7 +175,7 @@ export function verifyCollateral(p: ProposalCore, lookup: TxLookup | LookupError
   if (provenConf !== null && provenConf >= GOVERNANCE_FEE_CONFIRMATIONS) {
     steps.push({
       id: 'confirmations', status: 'ok', basis: 'verified', label: 'Confirmations',
-      detail: `${anc ? '' : 'at least '}${num(provenConf)} (Core needs ${GOVERNANCE_FEE_CONFIRMATIONS})`,
+      detail: `at least ${num(provenConf)} (Core needs ${GOVERNANCE_FEE_CONFIRMATIONS})`,
       more: anc ? `verified tip ${num(anc.tip)} - block ${num(lookup.height)} + 1; the node claims ${num(lookup.confirmations)}` : `headers from the block up to the verified ChainLock; the node claims ${num(lookup.confirmations)}`,
     });
   } else {

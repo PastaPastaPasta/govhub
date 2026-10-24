@@ -17,7 +17,7 @@ export function collateralStatus(c: ChainFacts): { text: string; prov: Provenanc
   if (c.anchored) {
     const a = c.anchored;
     return {
-      text: `${formatInt(a.confirmations)} confirmations; ${a.final ? `final (ChainLocked at block ${formatInt(a.chainLockHeight)})` : `not ChainLocked yet (newest lock: block ${formatInt(a.chainLockHeight)})`}`,
+      text: `at least ${formatInt(a.confirmations)} confirmations; ${a.final ? `final (ChainLocked at block ${formatInt(a.chainLockHeight)})` : `not ChainLocked yet (newest lock: block ${formatInt(a.chainLockHeight)})`}`,
       prov: { kind: 'verified', source, detail: 'the block is the one at its height in the chain verified from the checkpoint; confirmations counted from the verified tip; ChainLock BLS-verified' },
     };
   }
@@ -66,11 +66,15 @@ export function paymentsFact(r: ChainReport | null): { made: { text: string; pro
   const p = r?.payments;
   if (!r || !p) return null;
   const heights = p.paid.map((x) => formatInt(x.height)).join(', ');
-  const unread = p.unread.length ? `; ${p.unread.length} superblocks could not be read, so this is a lower bound` : '';
+  const how = `${p.paid.length ? `paid in superblock${p.paid.length > 1 ? 's' : ''} ${heights}` : 'no payment found'}: each superblock in the payment window, from the collateral's block to the verified tip (${formatInt(p.checked.length)} checked), was read from its coinbase in the verified chain`;
+  const doubt = [
+    ...(p.unread.length ? [`${p.unread.length} superblocks could not be read`] : []),
+    ...(p.ambiguous.length ? [`${p.ambiguous.length} matching payments could equally be for another proposal with the same address and amount`] : []),
+  ];
   return {
     made: {
-      text: `${formatInt(p.paid.length)}${p.unread.length ? ' or more' : ''}`,
-      prov: verified(`${p.paid.length ? `paid in superblock${p.paid.length > 1 ? 's' : ''} ${heights}` : 'no payment found'}: each superblock from the collateral's block to the verified tip (${formatInt(p.checked.length)} checked) was read from its coinbase in the verified chain${unread}`),
+      text: `${formatInt(p.paid.length)}${p.unread.length || p.ambiguous.length ? ' or more' : ''}`,
+      prov: doubt.length ? { kind: 'reported', source: 'superblock coinbases', detail: `${how}; not exact: ${doubt.join('; ')}` } : verified(how),
     },
     remaining: {
       text: `${formatInt(p.remainingEstimate)} more possible`,
@@ -92,7 +96,7 @@ export function fundedFact(rk: RankingResult | null, govHash: string): { text: s
   const e = rk?.entries.find((x) => x.govHash === govHash);
   if (!rk || !e) return null;
   const text = e.funded ? `Yes, in the next superblock (rank ${e.rank})` : e.rank !== null ? `Passing (rank ${e.rank}), but not in the next superblock` : 'No';
-  const basis = `recount of all ${rk.entries.length} proposals the bridge lists, ranked by Core's rules against the proven threshold and budget (a proposal the bridge leaves out cannot be detected)`;
+  const basis = `recount of the votes the bridge served for all ${rk.entries.length} proposals it lists, each reproducing its published tally, ranked by Core's rules against the proven threshold and budget (a vote or proposal the bridge withholds cannot be detected)`;
   return rk.verified && !e.timeSensitive
     ? { text, prov: verified(basis) }
     : { text, prov: { kind: 'reported', source: 'funding order', detail: `${basis}; not verified: ${rk.reasons.join('; ') || 'the superblock time decides it'}` } };

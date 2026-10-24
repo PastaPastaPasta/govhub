@@ -22,7 +22,11 @@ export type WorkerRequest =
   /** `light`: the node's word for the transaction plus a second node's, without the block proof (background checks of whole lists). */
   | { id: number; kind: 'collateral'; proposal: Proposal; dapi: DapiDescriptor; light?: boolean }
   /** Chain facts for the page: threshold, schedule, budget, payments. `from`: the collateral's verified height. */
-  | { id: number; kind: 'chain'; proposal: Proposal; from: number; dapi: DapiDescriptor; network: CoreNetwork; now: number }
+  | {
+      id: number; kind: 'chain'; proposal: Proposal; from: number; dapi: DapiDescriptor; network: CoreNetwork; now: number;
+      /** Other listed proposals: a payment to the same address and amount inside their window is ambiguous. */
+      others: Array<Pick<Proposal, 'govHash' | 'paymentAddress' | 'paymentAmount' | 'startEpoch' | 'endEpoch'>>;
+    }
   | {
       id: number;
       kind: 'votes';

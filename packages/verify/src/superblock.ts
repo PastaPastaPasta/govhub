@@ -132,7 +132,7 @@ export function payeeScript(address: string, network: Network): Uint8Array | nul
 
 /**
  * Index of a coinbase output paying exactly `amount` duffs to `address`, or -1. CSuperblock::IsValid requires every trigger
- * payment to appear as such an output, script and amount equal (superblock.cpp:303-310), so a found output is the payment; it
+ * payment to appear as such an output, script and amount equal (superblock.cpp:313-322), so a found output is the payment; it
  * cannot tell two proposals with the same address and amount apart.
  */
 export function findPayment(outputs: ReadonlyArray<{ value: bigint; script: Uint8Array }>, address: string, amount: bigint, network: Network): number {

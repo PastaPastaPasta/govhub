@@ -134,7 +134,7 @@ export interface AnchoredChain {
   /** The highest verified header (a node could withhold newer blocks: heights are lower bounds of the real tip). */
   tip: number;
   /** BLS-valid ChainLock on a block of `chain`: everything at or below `height` is final. */
-  chainLock: { height: number; blockHash: string; quorumHash: string; exact: boolean };
+  chainLock: { height: number; blockHash: string; quorumHash: string; exact: boolean; /** the locked header's time */ time: number };
   sml: ProvenSml;
   /** ms epoch when this was established. */
   at: number;

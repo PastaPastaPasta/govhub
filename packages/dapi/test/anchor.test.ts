@@ -102,7 +102,7 @@ describe.each(['mainnet', 'testnet'] as const)('%s anchorChain', (network) => {
   it('extends the cached run down to an older block of interest', async () => {
     fake = installFakeDapi({ [N(1)]: node(f), [N(2)]: node(f) });
     const store = memoryStore();
-    const cp = { height: f.from + 600, hash: f.hashAt(f.from + 600) };
+    const cp = f.cpAt(f.from + 600);
     await dapiFor([N(1), N(2)], network).anchorChain({ ...base, checkpoint: cp, store });
     expect(store.saved!.lo).toBe(cp.height - 24);
     const b = await dapiFor([N(1), N(2)], network).anchorChain({ ...base, checkpoint: cp, store, from: f.from });
@@ -124,6 +124,12 @@ describe.each(['mainnet', 'testnet'] as const)('%s anchorChain', (network) => {
     fake.restore();
     fake = installFakeDapi({ [N(1)]: node(f, { chainLock: true }), [N(2)]: node(f, { chainLock: true }) });
     await expect(dapiFor([N(1), N(2)], network).anchorChain(base)).rejects.toThrow(/ChainLock|chain/);
+  });
+
+  it('refuses stale facts (an old newest ChainLock) and blocks deeper than it keeps', async () => {
+    fake = installFakeDapi({ [N(1)]: node(f), [N(2)]: node(f) });
+    await expect(dapiFor([N(1), N(2)], network).anchorChain({ ...base, now: () => f.now + 2 * 3600 })).rejects.toThrow(/minutes old/);
+    await expect(dapiFor([N(1), N(2)], network).anchorChain({ ...base, from: f.from, maxStoredHeights: 100 })).rejects.toThrow(/too old to verify here/);
   });
 
   it('serves blocks of the anchored chain only when they hash to the verified hash', async () => {

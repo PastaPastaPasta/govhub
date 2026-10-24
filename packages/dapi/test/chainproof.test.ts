@@ -58,7 +58,7 @@ describe.each(Object.entries(nets))('%s HeaderChain', (net, f) => {
   const network = net as 'mainnet';
   it('verifies a run from a checkpoint and extends down and up', () => {
     const mid = f.from + 600;
-    const cp = { height: mid, hash: f.hashAt(mid) };
+    const cp = f.cpAt(mid);
     const c = HeaderChain.fromCheckpoint(network, cp, runOf(f, mid - DGW_WINDOW, mid + 400), o);
     expect([c.lo, c.hi]).toEqual([mid - DGW_WINDOW, mid + 400]);
     c.extendUp(runOf(f, mid + 401, f.top), o);
@@ -93,6 +93,18 @@ describe.each(Object.entries(nets))('%s HeaderChain', (net, f) => {
     fake.hashes.fill(0xff); // hash way above target
     expect(() => c.extendUp(fake, o)).toThrow(/proof of work/);
     expect(() => c.extendUp(runOf(f, f.from + at + 1, f.from + at + 2), o)).toThrow(/expected/);
+  });
+
+  it('pins bits and time that match the pinned header (CHECKPOINTS)', () => {
+    const pin = CHECKPOINTS[network];
+    expect(f.cpAt(pin.height)).toEqual(pin);
+  });
+
+  it('refuses headers whose difficulty is more than 8x below the checkpoint (a cheap fork after a fast DGW drop)', () => {
+    // the same honest headers against a checkpoint pinned 100x harder: every normal-difficulty header is now "too easy"
+    const hard = { ...f.checkpoint, bits: 0x19000000 | Math.floor((f.checkpoint.bits & 0xffffff) / 100) };
+    const c = HeaderChain.fromCheckpoint(network, hard, runOf(f, f.from, f.checkpoint.height), o);
+    expect(() => c.extendUp(runOf(f, f.checkpoint.height + 1, f.top), o)).toThrow(/more than 8x below the checkpoint/);
   });
 
   it('stores only up to the ChainLock and resumes from the store', () => {
@@ -145,6 +157,16 @@ describe.each(Object.entries(nets))('%s SML proof', (net, f) => {
     const list = d.mnList as Record<string, unknown>[];
     edit(list.filter((e) => e.nVersion === 2)[7]!, list);
     expect(() => proveSml(d)).toThrow(/merkleRootMNList mismatch|platformNodeID|platform HTTP|not/);
+  });
+
+  it('refuses a type that only matches through 16-bit wrapping, and a repeated quorum commitment', () => {
+    const d = clone(f.sml);
+    (d.mnList as Record<string, unknown>[]).find((e) => e.nVersion === 2 && e.nType === 0)!.nType = 65536;
+    expect(() => proveSml(d)).toThrow(/unknown masternode type/);
+    const q = clone(f.sml);
+    const qs = q.newQuorums as unknown[];
+    qs.push(structuredClone(qs[qs.length - 1]));
+    expect(() => proveSml(q)).toThrow(/duplicate quorum commitment/);
   });
 
   it('fails when a masternode is dropped or a quorum key changes', () => {

@@ -38,7 +38,7 @@ function Steps({ steps }: { steps: Row[] }) {
     <>
       <ol className="steps">
         {steps.map((s) => (
-          <li key={s.id} className={`step step-${s.status}`} data-step={s.id} data-status={s.status} data-basis={s.basis ?? 'verified'}>
+          <li key={s.id} className={`step step-${s.status}`} data-step={s.id} data-status={s.status} data-basis={s.basis ?? (s.status === 'ok' ? 'verified' : 'reported')}>
             <ProvGlyph kind={stepGlyph(s)} />
             <span className="step-label">{s.label}</span>
             <span className="step-detail">{s.detail}</span>
@@ -106,9 +106,9 @@ function chainRows(r: ChainReport, cycle: Cycle | null, nowS: number): Row[] {
   const p = r.payments;
   if (p) {
     rows.push({
-      id: 'payments', status: p.unread.length ? 'warn' : 'ok', label: 'Payments made',
-      detail: `${n(p.paid.length)}${p.paid.length ? ` (superblock${p.paid.length > 1 ? 's' : ''} ${p.paid.map((x) => n(x.height)).join(', ')})` : ''}; ${n(p.remainingEstimate)} more possible (estimate)`,
-      more: `${n(p.checked.length)} superblocks from the collateral's block to the verified tip read from their coinbases, each block proven to be the verified one${p.unread.length ? `; not read: ${p.unread.map((u) => `${n(u.height)} (${u.error})`).join(', ')}` : ''}. "More possible" counts later superblocks whose estimated time falls in the payment window`,
+      id: 'payments', status: p.unread.length || p.ambiguous.length ? 'warn' : 'ok', basis: p.unread.length || p.ambiguous.length ? 'reported' : 'verified', label: 'Payments made',
+      detail: `${n(p.paid.length)}${p.unread.length || p.ambiguous.length ? ' or more' : ''}${p.paid.length ? ` (superblock${p.paid.length > 1 ? 's' : ''} ${p.paid.map((x) => n(x.height)).join(', ')})` : ''}; ${n(p.remainingEstimate)} more possible (estimate)`,
+      more: `${n(p.checked.length)} superblocks in the payment window from the collateral's block to the verified tip read from their coinbases, each block proven to be the verified one${p.unread.length ? `; not read: ${p.unread.map((u) => `${n(u.height)} (${u.error})`).join(', ')}` : ''}${p.ambiguous.length ? `; payments another proposal with the same address and amount could account for: ${p.ambiguous.map((x) => n(x.height)).join(', ')}` : ''}. "More possible" counts later superblocks whose estimated time falls in the payment window`,
     });
   }
   return rows;
@@ -122,7 +122,7 @@ function ChainBlock({ chain, cycle, nowS }: { chain: ChainCheck; cycle: Cycle | 
       {report ? (
         <>
           <p className="verdict verdict-ok" data-chain="verified" data-ms={JSON.stringify(report.anchor.ms)} data-headers={JSON.stringify(report.anchor.headers)}>
-            <ProvGlyph kind="verified" /> Chain verified to block {n(report.anchor.tip)}
+            <ProvGlyph kind="verified" /> Chain verified to block {n(report.anchor.tip)}, ChainLocked {formatRelative(report.anchor.chainLock.time, nowS)}
           </p>
           <Steps steps={chainRows(report, cycle, nowS)} />
         </>
@@ -181,13 +181,13 @@ function RankingBlock({ done, govHash }: { done: RankingDone; govHash: string })
                 {n(e.absYes)} <ProvGlyph kind={e.proven ? 'verified' : 'reported'} />
               </td>
               <td className="r">{formatDash(e.amount)}</td>
-              <td>{e.funded ? (e.timeSensitive ? 'paid (depends on timing)' : 'paid') : e.rank ? 'not paid' : '–'}</td>
+              <td>{e.funded ? (e.timeSensitive ? 'in it (depends on timing)' : 'in it') : e.rank ? 'not in it' : '–'}</td>
             </tr>
           ))}
         </tbody>
       </table>
       <p className="muted small">
-        Threshold {n(r.threshold.value)}, budget {formatDash(Number(r.budget.limit))} for superblock {n(r.budget.height)}, {formatDash(r.allocated)} allocated. Ranked by net yes votes, then hash, filled greedily within the budget and each proposal's payment window, as Core builds the superblock. Only the proposals the bridge lists can be ranked; one it leaves out would not show.
+        Threshold {n(r.threshold.value)}, budget {formatDash(Number(r.budget.limit))} for superblock {n(r.budget.height)}, {formatDash(r.allocated)} allocated. Ranked by net yes votes, then hash, filled greedily within the budget and each proposal's payment window, as Core builds the superblock. Each recount uses the votes the bridge served and must reproduce its published tally; a vote or proposal the bridge withholds would not show.
       </p>
     </div>
   );

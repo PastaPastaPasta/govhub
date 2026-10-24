@@ -18,7 +18,7 @@ export interface AnchorSummary {
   lo: number;
   tip: number;
   checkpoint: number;
-  chainLock: { height: number; blockHash: string; quorumHash: string; exact: boolean };
+  chainLock: { height: number; blockHash: string; quorumHash: string; exact: boolean; time: number };
   sml: { height: number; blockHash: string; entries: number; quorums: number };
   headers: { cached: number; fetched: number };
   ms: Record<string, number>;
@@ -37,10 +37,12 @@ export interface ThresholdFact {
 }
 
 export interface PaymentsFact {
-  /** Superblocks of the verified chain from the collateral's block to the tip, each read from its coinbase. */
+  /** Superblocks of the verified chain in the proposal's window (from the collateral's block on), each read from its coinbase. */
   checked: number[];
   /** Those whose coinbase pays the proposal's address its exact amount. */
   paid: Array<{ height: number; output: number; time: number }>;
+  /** Payments another listed proposal (same address and amount, its window too) could equally account for. */
+  ambiguous: Array<{ height: number; with: string }>;
   /** Superblocks that could not be read (the count above is then a lower bound). */
   unread: Array<{ height: number; error: string }>;
   /** Later superblocks whose estimated time falls inside the proposal window (Core's estimate: now + blocks * 2.62 min). */
@@ -108,20 +110,33 @@ export async function threshold(dapi: Dapi, a: AnchoredChain, network: CoreNetwo
   }
 }
 
+/**
+ * Core pays a proposal in a superblock whose time, as Core estimates it when the maturity window opens (now + blocks * 2.62 min,
+ * signing.cpp:58-59), lies in [start - 2 h, end + 2 h] (signing.cpp:86-99). The real block time is within hours of that estimate,
+ * so a day of slack on each side keeps every real payment and no payment of another proposal's period.
+ */
+const WINDOW_SLACK_S = 86_400;
+type Payee = Pick<Proposal, 'paymentAddress' | 'paymentAmount' | 'startEpoch' | 'endEpoch'>;
+const inWindow = (p: Payee, t: number) => t >= p.startEpoch - FUDGE_S - WINDOW_SLACK_S && t <= p.endEpoch + FUDGE_S + WINDOW_SLACK_S;
+
 /** Superblocks from the collateral's block to the verified tip, each fetched as a proven block of the chain, checked for this proposal's payment. */
-export async function payments(dapi: Dapi, a: AnchoredChain, p: Pick<Proposal, 'collateralHeight' | 'paymentAddress' | 'paymentAmount' | 'startEpoch' | 'endEpoch'>, network: CoreNetwork, from: number, nowS: number): Promise<PaymentsFact> {
-  const out: PaymentsFact = { checked: [], paid: [], unread: [], remainingEstimate: 0 };
-  const cycleS = GOV_CHAIN_PARAMS[network].superblockCycle * EST_BLOCK_SECONDS;
+export async function payments(
+  dapi: Dapi, a: AnchoredChain, p: Payee, others: ReadonlyArray<Payee & { govHash: string }>, network: CoreNetwork, from: number, nowS: number,
+): Promise<PaymentsFact> {
+  const out: PaymentsFact = { checked: [], paid: [], ambiguous: [], unread: [], remainingEstimate: 0 };
+  const twins = others.filter((o) => o.paymentAddress === p.paymentAddress && o.paymentAmount === p.paymentAmount);
   for (const h of superblocksBetween(Math.max(from, a.chain.lo), a.tip, network)) {
     try {
       const { block } = await dapi.getAnchoredBlock(a, h);
       const time = block.header.time;
-      // A superblock long after the window cannot pay it; one long before cannot either (Core's window is end/start +- 2 h around
-      // its own estimate of the superblock time, which is within a cycle of the real one).
-      if (time > p.endEpoch + FUDGE_S + cycleS) break;
+      if (time > p.endEpoch + FUDGE_S + WINDOW_SLACK_S) break;
+      if (!inWindow(p, time)) continue;
       out.checked.push(h);
       const i = findPayment(block.txs[0]!.outputs, p.paymentAddress, BigInt(p.paymentAmount), network);
-      if (i >= 0) out.paid.push({ height: h, output: i, time });
+      if (i < 0) continue;
+      const twin = twins.find((o) => inWindow(o, time));
+      if (twin) out.ambiguous.push({ height: h, with: twin.govHash });
+      else out.paid.push({ height: h, output: i, time });
     } catch (e) {
       out.unread.push({ height: h, error: (e as Error).message });
     }

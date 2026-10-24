@@ -79,26 +79,34 @@ export type CollateralCheck = ReturnType<typeof useCollateralCheck>;
  * collateral in the verified chain. Live DAPI only: recorded data has no header chain.
  */
 export function useChainReport(p: Proposal | undefined, verdict: CollateralVerdict | null) {
-  const { source } = useApp();
+  const { source, gov } = useApp();
   const [report, setReport] = useState<ChainReport | null>(null);
   const [progress, setProgress] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const from = verdict?.chain?.anchored ? verdict.chain.height : null;
+  // only for a proposal whose content and collateral checked out: payments are matched by its committed address and amount
+  const from = verdict?.ok && verdict.chain?.anchored ? verdict.chain.height : null;
+  const active = gov.active.data;
   const live = source.dapiDescriptor().kind === 'live';
   useEffect(() => {
     if (!p || !live || from === null) return;
     let on = true;
     setReport(null);
     setError(null);
-    runVerification({ kind: 'chain', proposal: p, from, dapi: source.dapiDescriptor(), network: source.coreNetwork, now: source.now() }, (m) => on && setProgress(m)).then(
+    const others = (active ?? []).map((x) => x.value).filter((o) => o.govHash !== p.govHash).map(({ govHash, paymentAddress, paymentAmount, startEpoch, endEpoch }) => ({ govHash, paymentAddress, paymentAmount, startEpoch, endEpoch }));
+    runVerification({ kind: 'chain', proposal: p, from, others, dapi: source.dapiDescriptor(), network: source.coreNetwork, now: source.now() }, (m) => on && setProgress(m)).then(
       (r) => on && setReport(r.report),
       (e: Error) => on && setError(e.message),
     );
     return () => {
       on = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the active list only refines payment ambiguity; not a reason to rerun
   }, [p, source, from, live]);
-  const unavailable = !live ? 'needs live DAPI nodes (recorded data has no header chain)' : verdict && from === null ? (verdict.anchorError ?? 'the collateral could not be placed in the verified chain') : null;
+  const unavailable = !live
+    ? 'needs live DAPI nodes (recorded data has no header chain)'
+    : verdict && from === null
+      ? (!verdict.ok ? 'the collateral check did not pass' : (verdict.anchorError ?? 'the collateral could not be placed in the verified chain'))
+      : null;
   return { report, progress, error, unavailable };
 }
 

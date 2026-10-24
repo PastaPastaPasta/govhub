@@ -1,38 +1,38 @@
 {
-  "ranAt": "2026-10-24T19:14:02.593Z",
+  "ranAt": "2026-10-24T19:50:32.248Z",
   "cold": {
     "proposal": "DCG-Operations-Aug-Nov-26",
-    "collateralCheckMs": 14069,
-    "chainFactsMs": 24484,
+    "collateralCheckMs": 20157,
+    "chainFactsMs": 30086,
     "anchor": {
-      "cache": 2,
-      "smlFetch": 5269,
-      "headers": 11069,
-      "smlProof": 66,
-      "sml": 74,
-      "chainlock": 491,
-      "total": 11644
+      "cache": 1,
+      "smlFetch": 1390,
+      "headers": 16695,
+      "smlProof": 58,
+      "sml": 65,
+      "chainlock": 561,
+      "total": 17330
     },
     "headers": {
       "cached": 0,
-      "fetched": 44945
+      "fetched": 44958
     }
   },
   "warm": {
     "proposal": "dash-growth-q4-2026",
-    "collateralCheckMs": 5390,
-    "chainFactsMs": 6190,
+    "collateralCheckMs": 3370,
+    "chainFactsMs": 3665,
     "anchor": {
       "cache": 2,
-      "headers": 674,
-      "smlFetch": 2633,
-      "smlProof": 68,
-      "sml": 2978,
-      "chainlock": 325,
-      "total": 3984
+      "headers": 237,
+      "smlFetch": 1109,
+      "smlProof": 71,
+      "sml": 1306,
+      "chainlock": 295,
+      "total": 2058
     },
     "headers": {
-      "cached": 44945,
+      "cached": 44958,
       "fetched": 0
     }
   }

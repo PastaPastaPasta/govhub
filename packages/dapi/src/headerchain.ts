@@ -3,18 +3,31 @@
 // Trust: the checkpoint is a constant in this file (like Core's own checkpoints, chainparams.cpp:306-347). Headers BELOW it are
 // authenticated by hash linkage down from it (X11 preimage resistance). Headers ABOVE it must also pass Core's header rules: proof
 // of work against nBits, nBits equal to Dark Gravity Wave's value, timestamp above the median of the last 11 and at most 2 h in the
-// future. A node can therefore only serve a chain above the checkpoint by mining it at full network difficulty. A ChainLock on top
-// (checked elsewhere) makes the verified part final.
+// future. Consensus rules alone let a forger lower the difficulty quickly (DGW retargets every block and timestamps are free within
+// MTP and +2 h), so two floors are added that Core does not need (it has most-work selection; a light client does not):
+//   - every header's target is at most WORK_FLOOR_FACTOR times the checkpoint's (testnet's minimum-difficulty blocks excepted, which
+//     consensus allows only after a 10-minute gap), so each forged header costs at least 1/8 of a real block's work;
+//   - the anchor (anchor.ts) needs a recent ChainLocked block at least (now - 1 h - checkpoint time) / 225 s above the checkpoint, so
+//     a forged chain must have that many headers.
+// Together: forging costs about one real block of work per hour since the pin (~4% of the network's hash rate, sustained). Real
+// difficulty falling 8x below the pin, or blocks coming 43% slower than the 150 s target, fails closed (nothing verified) until
+// the pin moves. A ChainLock on top (checked elsewhere) makes the verified part final.
 import { bytesEqual, hashBytes, hashHex } from './bytes.ts';
 import type { Network } from './chainlock.ts';
 import { VerificationError } from './errors.ts';
-import { type HeaderTiming, MAX_FUTURE_BLOCK_TIME, type PowParams, checkProofOfWork, medianTimePast, nextWorkRequired } from './pow.ts';
+import { type HeaderTiming, MAX_FUTURE_BLOCK_TIME, type PowParams, checkProofOfWork, compactToTarget, medianTimePast, nextWorkRequired } from './pow.ts';
 
 export interface Checkpoint {
   height: number;
   /** Display-order block hash. */
   hash: string;
+  /** That header's nBits and time: the work floor and the clock the minimum-height rule counts from. */
+  bits: number;
+  time: number;
 }
+
+/** A header's target may be at most this many times the checkpoint's (see the trust note above). */
+export const WORK_FLOOR_FACTOR = 8;
 
 /**
  * Pinned per network. Each pin was checked by `scripts/checkpoint.mjs` to descend from Dash Core's newest hard-coded checkpoint
@@ -23,8 +36,8 @@ export interface Checkpoint {
  * on a device downloads every header from the lower of (checkpoint - 24, block of interest) to the tip.
  */
 export const CHECKPOINTS: Record<Network, Checkpoint> = {
-  mainnet: { height: 2_560_000, hash: '0000000000000007c3d73af34a556850b5748c66812021a136387bec1dd79675' },
-  testnet: { height: 1_578_000, hash: '0000009c0b6cbd13862a8049d0a117a4210ae6eeb90d8022cd2276e875fe639c' },
+  mainnet: { height: 2_560_000, hash: '0000000000000007c3d73af34a556850b5748c66812021a136387bec1dd79675', bits: 0x19255f53, time: 1_792_745_925 },
+  testnet: { height: 1_578_000, hash: '0000009c0b6cbd13862a8049d0a117a4210ae6eeb90d8022cd2276e875fe639c', bits: 0x1e00fe75, time: 1_792_771_823 },
 };
 
 /** DGW looks back 24 headers (pow.cpp:84), MTP 11 (chain.h:281). */
@@ -41,7 +54,7 @@ export interface HeaderRun {
 
 export interface CheckOptions {
   pow: PowParams;
-  /** Unix seconds; headers more than 2 h ahead are rejected like Core does (validation.cpp:4509). */
+  /** Unix seconds; headers more than 2 h ahead are rejected like Core does (validation.cpp:4510). */
   now: number;
 }
 
@@ -135,7 +148,7 @@ export class HeaderChain {
 
   /** Resume from a cache entry (it was fully verified when written, and its checkpoint must be today's). */
   static fromStored(s: StoredChain, cp: Checkpoint): HeaderChain | null {
-    if (s.version !== 1 || s.checkpoint.height !== cp.height || s.checkpoint.hash !== cp.hash) return null;
+    if (s.version !== 1 || s.checkpoint.height !== cp.height || s.checkpoint.hash !== cp.hash || s.checkpoint.bits !== cp.bits || s.checkpoint.time !== cp.time) return null;
     if (s.hashes.length % 32 || s.hashes.length === 0 || s.prevOfLo.length !== 32 || s.timings.length !== DGW_WINDOW) return null;
     const c = new HeaderChain(s.network, cp, s.lo, s.prevOfLo, s.hashes, s.timings);
     if (c.hi !== s.chainLock.height || hashHex(c.hashAt(c.hi)!) !== s.chainLock.blockHash) return null;
@@ -149,11 +162,16 @@ export class HeaderChain {
     if (run.from !== this.hi + 1) throw new VerificationError('header-chain', `run starts at ${run.from}, expected ${this.hi + 1}`);
     if (!bytesEqual(prevHashOf(run.headers, 0), this.hashAt(this.hi)!)) fail(run.from, 'does not link to the verified chain');
     const timings = this.#timings.slice();
+    const floor = compactToTarget(this.checkpoint.bits).target * BigInt(WORK_FLOOR_FACTOR);
     for (let i = 0; i < n; i++) {
       const height = run.from + i, t = timingOf(run.headers, i), hash = run.hashes.subarray(i * 32, i * 32 + 32);
-      // validation.cpp:4487 (bad-diffbits), :4310 (high-hash), :4505 (time-too-old), :4509 (time-too-new)
+      const last = timings[timings.length - 1]!;
+      // validation.cpp:4488 (bad-diffbits), :4311 (high-hash), :4506 (time-too-old), :4510 (time-too-new)
       if (t.bits !== nextWorkRequired(timings, t.time, o.pow)) fail(height, 'difficulty (nBits) is not what Dark Gravity Wave requires');
       if (!checkProofOfWork(hash, t.bits, o.pow)) fail(height, 'proof of work does not meet its target');
+      // the work floor; consensus' own minimum-difficulty blocks (testnet, after a 4-spacing gap: pow.cpp:191-204) are exempt
+      const minDifficultyBlock = o.pow.allowMinDifficulty && t.time > last.time + o.pow.targetSpacing * 4;
+      if (!minDifficultyBlock && compactToTarget(t.bits).target > floor) fail(height, `difficulty is more than ${WORK_FLOOR_FACTOR}x below the checkpoint's`);
       if (t.time <= medianTimePast(timings)) fail(height, 'timestamp is not above the median of the previous 11');
       if (t.time > o.now + MAX_FUTURE_BLOCK_TIME) fail(height, 'timestamp is more than 2 hours in the future');
       timings.push(t);

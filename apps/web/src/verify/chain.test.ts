@@ -50,7 +50,7 @@ describe('payments read from superblock coinbases of the verified chain', () => 
 
   it('finds the payment in superblock 2,558,864 and estimates what is left', async () => {
     const a = { ...anchor, chain: { lo: 2_540_000 } } as unknown as AnchoredChain;
-    const p = await payments(dapi({ 2_558_864: sbBlock, 2_542_248: sbBlock }), a, prop, 'mainnet', 2_545_000, fx.now);
+    const p = await payments(dapi({ 2_558_864: sbBlock, 2_542_248: sbBlock }), a, prop, [], 'mainnet', 2_545_000, fx.now);
     expect(p.checked).toEqual([2_558_864]);
     expect(p.paid).toEqual([{ height: 2_558_864, output: expect.any(Number), time: parseBlock(sbBlock).header.time }]);
     const f = paymentsFact({ payments: p } as never)!;
@@ -58,12 +58,25 @@ describe('payments read from superblock coinbases of the verified chain', () => 
     expect(f.remaining.prov.kind).toBe('reported'); // the future is an estimate
   });
 
+  it('a payment outside the window is not this proposal\'s, and one another listed proposal could account for is ambiguous', async () => {
+    const a = { ...anchor, chain: { lo: 2_540_000 } } as unknown as AnchoredChain;
+    const sbTime = parseBlock(sbBlock).header.time;
+    const late = await payments(dapi({ 2_558_864: sbBlock }), a, { ...prop, startEpoch: sbTime + 3 * 86_400, endEpoch: sbTime + 90 * 86_400 }, [], 'mainnet', 2_545_000, fx.now);
+    expect(late).toMatchObject({ checked: [], paid: [] });
+    const twin = { ...prop, govHash: 'ee'.repeat(32) };
+    const amb = await payments(dapi({ 2_558_864: sbBlock }), a, prop, [twin], 'mainnet', 2_545_000, fx.now);
+    expect(amb.paid).toEqual([]);
+    expect(amb.ambiguous).toEqual([{ height: 2_558_864, with: twin.govHash }]);
+    const f = paymentsFact({ payments: amb } as never)!;
+    expect(f.made).toMatchObject({ text: '0 or more', prov: { kind: 'reported' } });
+  });
+
   it('an unreadable superblock makes the count a lower bound, and another address is not a payment', async () => {
     const a = { ...anchor, chain: { lo: 2_540_000 } } as unknown as AnchoredChain;
-    const p = await payments(dapi({}), a, prop, 'mainnet', 2_545_000, fx.now);
+    const p = await payments(dapi({}), a, prop, [], 'mainnet', 2_545_000, fx.now);
     expect(p.unread.map((u) => u.height)).toEqual([2_558_864]);
-    expect(paymentsFact({ payments: p } as never)!.made.text).toBe('0 or more');
-    const other = await payments(dapi({ 2_558_864: sbBlock }), a, { ...prop, paymentAmount: prop.paymentAmount + 1 }, 'mainnet', 2_545_000, fx.now);
+    expect(paymentsFact({ payments: p } as never)!.made).toMatchObject({ text: '0 or more', prov: { kind: 'reported' } });
+    const other = await payments(dapi({ 2_558_864: sbBlock }), a, { ...prop, paymentAmount: prop.paymentAmount + 1 }, [], 'mainnet', 2_545_000, fx.now);
     expect(other.paid).toEqual([]);
   });
 });

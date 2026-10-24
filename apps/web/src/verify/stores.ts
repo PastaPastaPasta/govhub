@@ -37,7 +37,7 @@ function run<T>(store: string, mode: IDBTransactionMode, f: (s: IDBObjectStore) 
   );
 }
 
-/** One verified header run per network (and data scope, so a custom node set does not share a cache with the default). */
+/** One verified header run per network. It does not depend on which nodes served it (it is verified from the pinned checkpoint). */
 export function headerStore(scope: string): HeaderStore {
   return {
     load: async (network) => (await run<StoredChain>(CHAINS, 'readonly', (s) => s.get(`${scope}:${network}`))) ?? null,

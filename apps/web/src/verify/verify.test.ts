@@ -156,7 +156,7 @@ describe('what is verified and what is node-reported (ChainLock, confirmations, 
     expect(v.ok).toBe(true);
     expect(stepOf(v, 'block')).toMatchObject({ basis: 'verified' });
     expect(stepOf(v, 'block').detail).toContain('chain verified in this browser');
-    expect(stepOf(v, 'confirmations')).toMatchObject({ status: 'ok', basis: 'verified', detail: '1,000 (Core needs 6)' });
+    expect(stepOf(v, 'confirmations')).toMatchObject({ status: 'ok', basis: 'verified', detail: 'at least 1,000 (Core needs 6)' });
     expect(stepOf(v, 'chainlock')).toMatchObject({ status: 'ok', basis: 'verified' });
     expect(stepOf(v, 'height').basis).toBe('verified');
     expect(v.steps.some((s) => s.id === 'crosscheck')).toBe(false); // no second node needed
@@ -308,6 +308,10 @@ describe('vote verification against the fixture bridge (synthetic voters)', () =
     expect(r.problems['duplicate-masternode']).toBe(2);
     const dupOutpoint = [...mns, { ...mns[2]!, proTxHash: 'ee'.repeat(32) }];
     expect(check({ masternodes: dupOutpoint }).problems['duplicate-masternode']).toBe(1);
+    // a vote dropped this way never counts as a proven recount, even with every remaining key proven
+    const sml = new Map(dupProTx.map((m) => [m.proTxHash, { votingAddress: m.votingAddress, isValid: true, nType: 0, typeProven: true }]));
+    const reg = new Map(dupProTx.map((m) => [m.proTxHash.toLowerCase(), { type: m.type === 'evo' ? 1 : 0, collateral: { txid: m.collateralTxid, index: m.collateralIndex } }]));
+    expect(check({ masternodes: dupProTx, sml, proReg: reg }).keysFrom).toBe('bridge');
   });
 
   it('votes on other signals are skipped, not counted as problems', () => {

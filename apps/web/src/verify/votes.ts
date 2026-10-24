@@ -214,7 +214,9 @@ export function verifyVotes(input: VoteCheckInput): VoteCheckResult {
     unweighted: t.unweighted,
     voteSetHash: hash,
     // Keys, types and collateral all proven: the proven list for keys, the ProRegTxs for collateral and type.
-    keysFrom: input.sml && input.proReg && smlUnconfirmed === 0 ? 'sml' : 'bridge',
+    // and nothing dropped on the way: a bad signature, an unknown or a duplicated masternode is a vote the bridge's set should not
+    // contain (Core keeps only valid votes of listed masternodes), so the recount could be missing what it stood for.
+    keysFrom: input.sml && input.proReg && Object.values(problems).every((n) => n === 0) ? 'sml' : 'bridge',
     smlChecked,
     smlUnconfirmed,
     collateralProven,

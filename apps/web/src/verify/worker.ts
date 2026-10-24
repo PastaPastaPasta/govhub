@@ -11,6 +11,7 @@ import { claimedWeight, payments, scheduleAndBudget, summarize, threshold, EST_B
 import { verifyCollateral } from './collateral.ts';
 import type { DapiDescriptor, SmlUsed, WorkerRequest, WorkerResponse } from './protocol.ts';
 import { rankRecounts, type RecountedProposal } from './ranking.ts';
+import { BRIDGE_TARGET } from './verdict.ts';
 import { headerStore, proRegCache } from './stores.ts';
 import { loadVerifiers } from './verifiers.ts';
 import { verifyVotes, type ProReg, type SmlEntry, type VoteRun, type VoteTarget } from './votes.ts';
@@ -89,19 +90,29 @@ async function handle(req: WorkerRequest): Promise<void> {
       let a: AnchoredChain | undefined;
       if (verify) {
         // The verified chain down to the collateral's block: cached headers are reused, only the missing ones are fetched.
-        try {
-          a = await anchor(dapi, progress, req.proposal.collateralHeight || undefined);
-        } catch (e) {
-          anchorError = (e as Error).message;
-          progress('The chain could not be verified; falling back to the block and ChainLock proof');
+        // The published height only sizes the first download; if it is unusable (too deep, a lie) anchor without it, and the
+        // merkle-proven height decides below.
+        for (const from of [req.proposal.collateralHeight || undefined, undefined]) {
+          try {
+            a = await anchor(dapi, progress, from);
+            break;
+          } catch (e) {
+            anchorError = (e as Error).message;
+            if (from === undefined) progress('The chain could not be verified; falling back to the block and ChainLock proof');
+          }
         }
+        if (a) anchorError = null;
       }
       progress(verify ? 'Fetching the collateral transaction and proving it into a block' : 'Fetching the collateral transaction');
       lookup = await lookupCollateral(dapi, req.proposal.collateralTxid, { verify, onProgress: progress, ...(a ? { anchor: a } : {}) });
       // the published height was too high (or missing): anchor down to the real block and look again
-      if (a && !lookup.proof.anchor && lookup.height > 0 && lookup.height < a.chain.lo) {
-        a = await anchor(dapi, progress, lookup.height);
-        lookup = await lookupCollateral(dapi, req.proposal.collateralTxid, { verify, onProgress: progress, anchor: a });
+      if (a && !lookup.proof.anchor && lookup.proof.merkle && lookup.height > 0 && lookup.height < a.chain.lo) {
+        try {
+          a = await anchor(dapi, progress, lookup.height);
+          lookup = await lookupCollateral(dapi, req.proposal.collateralTxid, { verify, onProgress: progress, anchor: a });
+        } catch (e) {
+          anchorError = (e as Error).message; // keep the first lookup (its own ChainLock proof, or the node's word)
+        }
       }
     } catch (e) {
       lookup = { error: (e as Error).message, ...(isNotFound(e, req.dapi.kind === 'recorded') ? { notFound: true } : {}) };
@@ -119,7 +130,7 @@ async function handle(req: WorkerRequest): Promise<void> {
     progress('Computing the funding threshold from the proven masternode list');
     const th = await threshold(dapi, a, req.network, proRegCache(req.network), progress);
     progress('Reading superblock coinbases for this proposal\'s payments');
-    const pay = req.from ? await payments(dapi, a, req.proposal, req.network, req.from, req.now) : null;
+    const pay = req.from ? await payments(dapi, a, req.proposal, req.others, req.network, req.from, req.now) : null;
     post({ id: req.id, kind: 'chain', report: { network: req.network, anchor: summarize(a), ...scheduleAndBudget(a, req.network, req.now), threshold: th, payments: pay } });
     return;
   }
@@ -173,6 +184,8 @@ async function ranking(req: Extract<WorkerRequest, { kind: 'ranking' }>, bridge:
   const th = await threshold(dapi, a, req.network, proRegCache(req.network), progress);
   const lists = new Map<number, Promise<BridgeMnList>>();
   const recounts: RecountedProposal[] = [];
+  // Each recount must reproduce the tally the bridge published for that height, like the per-proposal check ("Tally verified").
+  const published = await bridge.tallies();
   for (const [i, p] of req.proposals.entries()) {
     progress(`Recounting ${p.name} (${i + 1} of ${req.proposals.length})`);
     const base = { govHash: p.govHash, name: p.name, amount: p.paymentAmount, startEpoch: p.startEpoch, endEpoch: p.endEpoch };
@@ -181,9 +194,12 @@ async function ranking(req: Extract<WorkerRequest, { kind: 'ranking' }>, bridge:
       if (!lists.has(votes.tallyHeight)) lists.set(votes.tallyHeight, bridge.mnlist(votes.tallyHeight));
       const list = await lists.get(votes.tallyHeight)!;
       const proReg = await proRegFor(dapi, req.network, votes, list, progress);
-      const r = verifyVotes({ govHash: p.govHash, votes: votes.votes, masternodes: list.masternodes, network: req.network, now: req.now, targets: [], sml: entries, proReg });
-      const bad = Object.entries(r.problems).filter(([k, n]) => n > 0 && k !== 'sml-mismatch').map(([k, n]) => `${n} ${k.replace(/-/g, ' ')}`);
-      recounts.push({ ...base, absYes: r.weighted.yes - r.weighted.no, proven: r.keysFrom === 'sml', ...(r.keysFrom !== 'sml' ? { problem: `${r.smlUnconfirmed} votes not proven${bad.length ? `, ${bad.join(', ')}` : ''}` } : {}) });
+      const tally = published.find((t) => t.govHash === p.govHash && t.asOfHeight === votes.tallyHeight);
+      const r = verifyVotes({ govHash: p.govHash, votes: votes.votes, masternodes: list.masternodes, network: req.network, now: req.now, targets: tally ? [{ name: BRIDGE_TARGET, tally }] : [], sml: entries, proReg });
+      const matches = !!tally && r.targets[0]!.matches;
+      const bad = Object.entries(r.problems).filter(([, n]) => n > 0).map(([k, n]) => `${n} ${k.replace(/-/g, ' ')}`);
+      const problem = r.keysFrom !== 'sml' ? `not every vote proven (${bad.join(', ') || 'keys'})` : !tally ? `no published tally at block ${votes.tallyHeight}` : !matches ? 'the recount differs from the published tally' : null;
+      recounts.push({ ...base, absYes: r.weighted.yes - r.weighted.no, proven: problem === null, ...(problem ? { problem } : {}) });
     } catch (e) {
       recounts.push({ ...base, absYes: 0, proven: false, problem: `not recounted: ${(e as Error).message}` });
     }
