@@ -349,7 +349,9 @@ Shape **B3**: `$ownerId == <I>`, `epoch == E`.
 `issuerId` identifier, `epoch` u32, `keyId` b32, `msgPrefix` exactly 32 B, `sig` bytes 256..384 (256 for
 RSA-2048, 384 for RSA-3072; the exact length per `keyId` is checked by the reader). **Decided (phase 0):** issuer keys are
 RSA-2048 or RSA-3072 only, so `spki` is capped at 422 B to match `sig` ≤ 384 B. The badge contract registered on
-testnet during phase 0 predates this cap (it allows 90..600) and is replaced at the next registration. Index:
+testnet during phase 0 (`3SrZbofJnMgWNiHFzpHc5u7wSRgCFJykZwKq3haqyMfc`) predates this cap (it allowed 90..600). It has been
+replaced: the current testnet contract is `2aYj4Dkix7xXBUTZFCDBjpcqqLi9Tg5oUwBgHUJBNGCU`, registered on 2026-10-24 from the
+current `badge.json`. Index:
 `byIssuerEpochOwner` **unique `[issuerId, epoch, $ownerId]`**: at most one badge per author per issuer per
 epoch, exactly the uniqueness PLAN 3.1 asks for, but ordered so that the reader query below is legal.
 
