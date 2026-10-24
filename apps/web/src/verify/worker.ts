@@ -135,6 +135,12 @@ async function handle(req: WorkerRequest): Promise<void> {
     return;
   }
 
+  if (req.kind === 'anchor') {
+    if (req.dapi.kind !== 'live') throw new Error('recorded data has no header chain');
+    post({ id: req.id, kind: 'anchor', anchor: summarize(await anchor(await dapiFor(req.dapi), progress)) });
+    return;
+  }
+
   if (req.kind === 'chain') {
     if (req.dapi.kind !== 'live') throw new Error('chain facts need live DAPI nodes (recorded data has no header chain)');
     const dapi = await dapiFor(req.dapi);

@@ -38,7 +38,7 @@ export function tallyProvenance(shown: { name: string; prov: Provenance; tally: 
   const more = (s: string) => ({ ...shown.prov, detail: `${shown.prov.detail ? `${shown.prov.detail}; ` : ''}${s}` });
   if (target.matches) {
     return r.keysFrom === 'sml'
-      ? { kind: 'verified', source: src, detail: 'every field and the voteSetHash match; voting keys confirmed by the masternode list that DAPI nodes agree on' }
+      ? { kind: 'verified', source: src, detail: 'every field and the voteSetHash match; voting keys, types and collateral confirmed by the proven masternode list and each voter\'s registration. Votes the bridge did not serve cannot be detected' }
       : more('recount matches, but the voting keys are as the bridge reports them');
   }
   if (!comparable(run, target)) return more(`votes are as of block ${run.votesAsOf}, this tally as of block ${target.asOfHeight}`);

@@ -1,7 +1,7 @@
 // Messages between the page and the verification worker. Everything is structured-clone safe.
 import type { DapiConfig } from '../data/dapi.ts';
 import type { CoreNetwork, Proposal } from '../data/types.ts';
-import type { ChainReport } from './chain.ts';
+import type { AnchorSummary, ChainReport } from './chain.ts';
 import type { CollateralVerdict } from './collateral.ts';
 import type { RankingResult } from './ranking.ts';
 import type { VoteRun, VoteTarget } from './votes.ts';
@@ -42,6 +42,8 @@ export type WorkerRequest =
       now: number;
       crossCheckSml: boolean;
     }
+  /** The anchored chain alone (the header's chain shield): trust root, verified tip, ChainLock. */
+  | { id: number; kind: 'anchor'; dapi: DapiDescriptor }
   /** Recount every listed proposal's live votes and rank them like Core's superblock candidate. */
   | { id: number; kind: 'ranking'; proposals: Proposal[]; bridge: BridgeDescriptor; dapi: DapiDescriptor; network: CoreNetwork; now: number };
 
@@ -49,6 +51,7 @@ export type WorkerResponse =
   | { id: number; kind: 'progress'; message: string }
   | { id: number; kind: 'collateral'; verdict: CollateralVerdict }
   | { id: number; kind: 'chain'; report: ChainReport }
+  | { id: number; kind: 'anchor'; anchor: AnchorSummary }
   | {
       id: number;
       kind: 'votes';
