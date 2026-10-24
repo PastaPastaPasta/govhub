@@ -20,6 +20,8 @@ test.setTimeout(15 * 60_000);
 const GOV = process.env.GOVHUB_VOTE_PROPOSAL ?? '';
 const RELAY = process.env.GOVHUB_VOTE_RELAY ?? 'http://127.0.0.1:18791';
 const MN = process.env.GOVHUB_VOTE_MN ?? 'masternode-5';
+/** 1 yes, 2 no, 3 abstain: pick one that differs from the masternode's current vote on a re-run */
+const OUTCOME = process.env.GOVHUB_VOTE_OUTCOME ?? '1';
 const PHRASE = JSON.parse(readFileSync(join(homedir(), '.local/share/govhub-phase2/e2e-phrase.json'), 'utf8')).phrase as string;
 
 // The Testnet profile (Core and Platform testnet, the testnet bridge) with the relay reached through an ssh tunnel until its public
@@ -101,7 +103,7 @@ test('@live-vote keyring saved on Platform, restored after signing in again, the
   await signInWithPhrase(page);
   const panel = page.getByTestId('mn-vote-panel');
   await expect(panel.getByTestId('vote-mn-row').first()).toBeVisible({ timeout: 180_000 });
-  await panel.getByTestId('vote-choice').selectOption('1');
+  await panel.getByTestId('vote-choice').selectOption(OUTCOME);
   await panel.getByTestId('vote-send').click();
   await expect(panel.getByTestId('vote-result')).toContainText('signed and handed to a relay', { timeout: 120_000 });
 
@@ -109,7 +111,7 @@ test('@live-vote keyring saved on Platform, restored after signing in again, the
   console.log(`step 6: the watchdog sees it in the bridge`);
   await page.goto('/masternodes');
   await signInWithPhrase(page);
-  const row = page.getByTestId('watched-row').first();
+  const row = page.getByTestId('watched-row').first(); // newest release first
   await expect(row).toHaveAttribute('data-status', 'confirmed', { timeout: 6 * 60_000 });
   results.voteConfirmedInBridge = true;
   mkdirSync('e2e/results', { recursive: true });

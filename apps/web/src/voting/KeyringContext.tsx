@@ -38,10 +38,10 @@ import { getSdk } from '../data/platform.ts';
 import type { SmlEntry } from '../verify/votes.ts';
 import { matchMasternodes, proveCollaterals, votingKeyId, type OwnedMasternode } from './masternodes.ts';
 import { bridgeVerdict, fromPending, isOpen, type WatchStatus, loadWatched, mergeWatched, needsRebroadcast, pickRebroadcastRelay, pruneWatched, saveWatched, toPending, type WatchedVote } from './pending.ts';
-import { currentKey, deferredWindow, mnId, planDeferred, planImmediate, signPlanned, submitDelays, type CurrentVote, type Intent, type PlanResult } from './plan.ts';
+import { currentKey, deferredWindow, mnId, planDeferred, planImmediate, signPlanned, submitDelays, voteFields, type CurrentVote, type Intent, type PlanResult } from './plan.ts';
 import { cancelSignature, normalizeRelayUrl, RelayClient, RelayError } from './relay.ts';
 import { KEYRING_STASH_EVENT, takeStash } from './stash.ts';
-import { bytesEqual, decodeWif, governanceVoteHash, verifyVoteSignature, VOTE_MAX_FUTURE_S } from '@govhub/verify';
+import { bytesEqual, decodeWif, governanceVoteHash, recoverVoteSigner, verifyVoteSignature, VOTE_MAX_FUTURE_S } from '@govhub/verify';
 
 export type KeyringStatus = 'signed-out' | 'fixtures' | 'checking' | 'absent' | 'locked' | 'open' | 'error';
 
@@ -167,7 +167,6 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
   const watchedRef = useRef<WatchedVote[]>([]);
   /** a cast or cancel is changing votes: the watchdog does not re-broadcast meanwhile */
   const castingRef = useRef(false);
-  const currentVotesRef = useRef<(g: string[]) => Promise<Map<string, CurrentVote>>>(async () => new Map());
   /** watchdog re-sends in flight, by vote hash: a cancel waits for them, so it also reaches the relay just sent to */
   const inflightRef = useRef(new Map<string, Promise<unknown>>());
   /** The ref is the single source of truth for watched votes (async code reads it); the state only re-renders. */
@@ -616,7 +615,8 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
             const key = keyOf.get(mnId(v));
             if (v.signal !== 1 || !key || v.time > now + VOTE_MAX_FUTURE_S) continue;
             const fields = { collateralTxid: v.collateralTxid, collateralIndex: v.collateralIndex, govHashDisplay: h, signal: v.signal, outcome: v.outcome, time: v.time };
-            if (verifyVoteSignature(v.sig, fields, hexToBytes(votingKeyId(key.privateKey, key.compressed)), coreNetwork)) out.set(currentKey(v, h), { outcome: v.outcome, time: v.time });
+            const ck = currentKey(v, h);
+            if ((out.get(ck)?.time ?? -1) < v.time && verifyVoteSignature(v.sig, fields, hexToBytes(votingKeyId(key.privateKey, key.compressed)), coreNetwork)) out.set(ck, { outcome: v.outcome, time: v.time });
           }
         }),
       );
@@ -625,7 +625,6 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
     [bridge, mns.owned, coreNetwork],
   );
 
-  currentVotesRef.current = currentVotes;
   const updateWatchedRef = useRef<(f: (w: WatchedVote[]) => WatchedVote[]) => void>(() => {});
 
   const updateWatched = useCallback(
@@ -849,8 +848,32 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
     const tickOnce = async () => {
       const open = watchedRef.current.filter(isOpen);
       if (!open.length || stop) return;
-      // only votes our key signed count (currentVotes re-verifies each one)
-      const current = await currentVotesRef.current([...new Set(open.map((v) => v.govHash))]);
+      // Only bridge votes signed by the same voting key as ours count. The key comes from our own stored signature, so this works
+      // while the keyring is locked too (no private key needed).
+      const current = new Map<string, CurrentVote>();
+      if (bridge) {
+        const signerOf = new Map<string, Uint8Array>();
+        for (const v of open) {
+          const r = recoverVoteSigner(v.sig, voteFields({ mn: v, govHash: v.govHash, outcome: v.outcome, time: v.time }), coreNetwork);
+          if (r) signerOf.set(currentKey(v, v.govHash), r.keyId);
+        }
+        const nowT = nowS();
+        for (const h of new Set(open.map((v) => v.govHash))) {
+          let vs;
+          try {
+            vs = await bridge.votes(h);
+          } catch {
+            continue; // no tally yet
+          }
+          for (const b of vs.votes) {
+            const ck = currentKey(b, h);
+            const keyId = signerOf.get(ck);
+            if (!keyId || b.signal !== 1 || b.time > nowT + VOTE_MAX_FUTURE_S || (current.get(ck)?.time ?? -1) >= b.time) continue;
+            const fields = { collateralTxid: b.collateralTxid, collateralIndex: b.collateralIndex, govHashDisplay: h, signal: b.signal, outcome: b.outcome, time: b.time };
+            if (verifyVoteSignature(b.sig, fields, keyId, coreNetwork)) current.set(ck, { outcome: b.outcome, time: b.time });
+          }
+        }
+      }
       const now = nowS();
       const updates: WatchedVote[] = [];
       // an update is applied only to the record this tick started from (a cancel or a new cast in the meantime wins)
@@ -919,7 +942,13 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         if (status !== v.status || relayStatus !== (v.relayStatus ?? {}) || refs !== v.refs || rebroadcasts !== v.rebroadcasts || retryAt !== v.retryAt)
           updates.push({ ...v, status, relayStatus, refs, rebroadcasts, ...(retryAt !== undefined ? { retryAt } : {}) });
       }
-      if (updates.length) (identityRef.current === tickFor ? updateWatchedRef.current : updateWatched)((w) => w.map((x) => (from.get(x.voteHash) === x ? (updates.find((u) => u.voteHash === x.voteHash) ?? x) : x)));
+      if (updates.length && identityRef.current !== tickFor) {
+        // signed out meanwhile: that identity's saved list was reloaded (fresh objects), so match by vote hash and unchanged status
+        updateWatched((w) => w.map((x) => {
+          const u = updates.find((y) => y.voteHash === x.voteHash);
+          return u && x.status === from.get(x.voteHash)?.status ? { ...x, status: u.status, relayStatus: u.relayStatus, rebroadcasts: u.rebroadcasts, ...(u.retryAt !== undefined ? { retryAt: u.retryAt } : {}) } : x;
+        }));
+      } else if (updates.length) updateWatchedRef.current((w) => w.map((x) => (from.get(x.voteHash) === x ? (updates.find((u) => u.voteHash === x.voteHash) ?? x) : x)));
     };
     void tick();
     const t = setInterval(() => void tick(), 30_000);

@@ -172,7 +172,7 @@ export function VoteComposer({ proposals, compact = false }: { proposals: Propos
         </tfoot>
       </table>
       <p className="small muted">
-        Current votes come from the bridge's live vote set; each is shown only if its signature checks out against your masternode's voting key here, so a bridge cannot invent or alter them (it could still withhold a newer one). The verification panel above recounts the whole set against the proven masternode list.
+        Current votes come from the bridge's live vote set; each is shown only if its signature checks out against your masternode's voting key here, so a bridge cannot invent or alter them (it could still withhold a newer one). The verification panel on each proposal page recounts the whole set against the proven masternode list.
       </p>
       <fieldset className="vote-timing">
         <legend>When</legend>
@@ -200,7 +200,7 @@ export function VoteComposer({ proposals, compact = false }: { proposals: Propos
         )}
       </fieldset>
       <div className="form-actions">
-        <button type="button" className="btn btn-primary" disabled={!intents.length || !!k.busy || !k.relays.length} onClick={go} data-testid="vote-send">
+        <button type="button" className="btn btn-primary" disabled={!intents.length || !!k.busy || !k.relays.length || loading} onClick={go} data-testid="vote-send">
           {k.busy?.startsWith('Signing') ? `${k.busy}…` : `Sign and ${mode === 'now' ? 'send' : 'schedule'} ${intents.length} vote${intents.length === 1 ? '' : 's'}`}
         </button>
         {!k.relays.length && <span className="error small">No relay configured (Settings).</span>}
