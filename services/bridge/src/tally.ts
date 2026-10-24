@@ -211,7 +211,7 @@ export function coreCurrentFundingVotes(current: Record<string, string>): Set<st
   return out;
 }
 
-export function compareWithCore(t: ComputedTally, funding: { YesCount: number; NoCount: number; AbstainCount: number; AbsoluteYesCount: number }, coreCurrent: Set<string>): CoreComparison {
+export function compareWithCore(t: Pick<ComputedTally, 'govHash' | 'counted' | 'weighted' | 'absoluteYes'>, funding: { YesCount: number; NoCount: number; AbstainCount: number; AbsoluteYesCount: number }, coreCurrent: Set<string>): CoreComparison {
   const ours = new Set(t.counted.map((v) => v.hash));
   const missingSigned = [...coreCurrent].filter((h) => !ours.has(h)).sort();
   const extra = [...ours].filter((h) => !coreCurrent.has(h)).sort();

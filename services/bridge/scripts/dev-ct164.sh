@@ -4,6 +4,7 @@
 #
 #   scripts/dev-ct164.sh backfill
 #   BRIDGE_RUN_SECONDS=540 scripts/dev-ct164.sh run          # run for a bounded time, then stop cleanly
+#   scripts/dev-ct164.sh exec node scripts/record-fixtures.ts  # any command, with the tunnel and env
 #
 # Secrets are read from files outside the repo:
 #   ~/.local/share/govhub-dev/mainnet.rpcpw      Core RPC password (0600)
@@ -27,8 +28,10 @@ cleanup() {
 trap cleanup EXIT INT TERM
 for _ in $(seq 1 50); do
   nc -z 127.0.0.1 "$rpc_port" 2>/dev/null && break
+  kill -0 "$tunnel" 2>/dev/null || { echo "ssh tunnel to $host failed" >&2; exit 1; }
   sleep 0.2
 done
+kill -0 "$tunnel" 2>/dev/null || { echo "ssh tunnel to $host failed" >&2; exit 1; }
 
 export CORE_NETWORK="${CORE_NETWORK:-mainnet}"
 export PLATFORM_NETWORK="${PLATFORM_NETWORK:-testnet}"
@@ -43,7 +46,11 @@ export HTTP_PORT="${HTTP_PORT:-8787}"
 export PUBLISH="${PUBLISH:-0}"
 
 cd "$here"
-if [ "${1:-}" = "run" ] && [ -n "${BRIDGE_RUN_SECONDS:-}" ]; then
+if [ "${1:-}" = "exec" ]; then
+  # run any command with the tunnel and the env above, e.g. `scripts/dev-ct164.sh exec node scripts/record-fixtures.ts`
+  shift
+  "$@"
+elif [ "${1:-}" = "run" ] && [ -n "${BRIDGE_RUN_SECONDS:-}" ]; then
   node bin/bridge.mjs run &
   bridge_pid=$!
   for _ in $(seq 1 "$BRIDGE_RUN_SECONDS"); do
