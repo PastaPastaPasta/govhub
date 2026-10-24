@@ -1,7 +1,7 @@
 // View model: joins a proposal with its tallies and the cycle into what a card / page shows.
 import type { Cycle, Proposal, Provenance, ProvenanceKind, Sourced, Tally } from '../data/types.ts';
 import { checkContent } from '../verify/collateral.ts';
-import { absoluteYes, fundingThreshold, passState, paymentSchedule, type GovParams, type PassState, type PaymentSchedule } from './governance.ts';
+import { absoluteYes, compareRank, fundingThreshold, passState, paymentSchedule, type GovParams, type PassState, type PaymentSchedule } from './governance.ts';
 
 export interface Row {
   p: Sourced<Proposal>;
@@ -71,8 +71,10 @@ export function deriveRow(
 
 /** Core's funding order (absYes desc, then hash desc), computed here so Platform and bridge ranks never mix; no tally last. */
 export function byRank(a: Row, b: Row): number {
-  if (a.absYes === null || b.absYes === null) return a.absYes === null ? (b.absYes === null ? a.p.value.name.localeCompare(b.p.value.name) : 1) : -1;
-  return b.absYes - a.absYes || (a.p.value.govHash < b.p.value.govHash ? 1 : a.p.value.govHash > b.p.value.govHash ? -1 : 0);
+  if (a.absYes === null && b.absYes === null) return a.p.value.name.localeCompare(b.p.value.name);
+  if (a.absYes === null) return 1;
+  if (b.absYes === null) return -1;
+  return compareRank({ govHash: a.p.value.govHash, absYes: a.absYes }, { govHash: b.p.value.govHash, absYes: b.absYes });
 }
 
 /** Canonical link: /p/<name> unless the name is ambiguous among `names`, then /p/h/<govHash>. */

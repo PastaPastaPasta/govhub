@@ -9,14 +9,13 @@ import { votingDeadlineTime } from '../lib/governance.ts';
 import { deriveRow, weakest } from '../lib/view.ts';
 import { BRIDGE_TARGET, PLATFORM_TARGET, tallyProvenance } from '../verify/verdict.ts';
 import type { VoteTarget } from '../verify/votes.ts';
-import { useAsync } from '../ui/hooks.ts';
+import { useAsync, useCollateralCheck } from '../ui/hooks.ts';
 import { PassingBar } from '../ui/PassingBar.tsx';
 import { paymentText } from '../ui/ProposalCard.tsx';
 import { ProvMark } from '../ui/Provenance.tsx';
-import { useCollateralCheck, VerificationPanel } from '../ui/VerificationPanel.tsx';
-import type { WorkerResponse } from '../verify/protocol.ts';
-
-type VotesDone = Extract<WorkerResponse, { kind: 'votes' }>;
+import { VerificationPanel } from '../ui/VerificationPanel.tsx';
+import type { CollateralVerdict } from '../verify/collateral.ts';
+import type { VotesDone } from '../verify/protocol.ts';
 
 export function ProposalByHash() {
   const { hash = '' } = useParams();
@@ -85,6 +84,14 @@ function Item({ label, children, prov }: { label: string; children: ReactNode; p
   );
 }
 
+/** Once the browser has checked the collateral, its provenance replaces the source's. */
+function contentProvenance(p: Proposal, sourced: Provenance, verdict: CollateralVerdict | null): Provenance {
+  if (!verdict) return sourced;
+  const source = 'collateral check in this browser';
+  if (verdict.ok) return { kind: 'verified', source, detail: `hash recomputed from dataHex; collateral ${shortHash(p.collateralTxid, 6)} checked over DAPI` };
+  return { kind: 'mismatch', source, detail: verdict.steps.filter((s) => s.status === 'fail').map((s) => s.label).join(', ') };
+}
+
 function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
   const { source, gov, params } = useApp();
   const p = sp.value;
@@ -103,15 +110,10 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
     }
   }, [parsed.text]);
 
-  // Once the browser has checked something, its provenance replaces the source's.
-  const v = collateral.verdict;
-  const contentProv: Provenance = v
-    ? v.ok
-      ? { kind: 'verified', source: 'collateral check in this browser', detail: `hash recomputed from dataHex; collateral ${shortHash(p.collateralTxid, 6)} checked over DAPI` }
-      : { kind: 'mismatch', source: 'collateral check in this browser', detail: v.steps.filter((s) => s.status === 'fail').map((s) => s.label).join(', ') }
-    : sp.prov;
-  const shownName = row.tally && row.tally === row.bridgeTally ? BRIDGE_TARGET : PLATFORM_TARGET;
-  const tallyProv: Provenance | null = row.tally ? tallyProvenance({ name: shownName, prov: row.tally.prov, tally: row.tally.value }, votes?.result, votes?.votesAsOf ?? 0) : null;
+  const contentProv = contentProvenance(p, sp.prov, collateral.verdict);
+  // The shown tally is one of the two published ones; a recount of the votes can upgrade or downgrade its provenance.
+  const shownName = row.tally === row.bridgeTally ? BRIDGE_TARGET : PLATFORM_TARGET;
+  const tallyProv = row.tally ? tallyProvenance({ name: shownName, prov: row.tally.prov, tally: row.tally.value }, votes?.result, votes?.votesAsOf ?? 0) : null;
   const targets = useMemo<VoteTarget[]>(
     () => [
       ...(row.platformTally ? [{ name: PLATFORM_TARGET, tally: row.platformTally.value }] : []),
@@ -124,6 +126,7 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
   // Only link a URL that is the hash-committed one (the synchronous check passed).
   const host = row.content.ok ? urlHost(p.url) : null;
   const sched = row.schedule;
+  const deadline = cycle ? `${formatRelative(votingDeadlineTime(cycle.value, params), now)}, block ${formatInt(cycle.value.votingDeadlineHeight)}` : null;
 
   return (
     <article className="proposal">
@@ -177,10 +180,7 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
             </Item>
             {cycle && (
               <Item label="Voting deadline" prov={cycle.prov}>
-                {(() => {
-                  const d = votingDeadlineTime(cycle.value, params);
-                  return `${formatRelative(d, now)}, block ${formatInt(cycle.value.votingDeadlineHeight)}`;
-                })()}
+                {deadline}
               </Item>
             )}
             <Item label="Votes, weighted" prov={tallyProv}>

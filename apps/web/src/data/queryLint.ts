@@ -54,9 +54,12 @@ export interface LintResult {
   index?: string;
 }
 
+const SYSTEM_IDENTIFIERS = new Set(['$ownerId', '$id']);
+const SYSTEM_INTEGERS = new Set(['$createdAt', '$updatedAt', '$createdAtCoreBlockHeight', '$createdAtBlockHeight', '$updatedAtBlockHeight']);
+
 function systemProp(name: string): PropDef | undefined {
-  if (name === '$ownerId' || name === '$id') return { type: 'array', byteArray: true, contentMediaType: IDENTIFIER, minItems: 32, maxItems: 32 };
-  if (name === '$createdAt' || name === '$updatedAt' || name === '$createdAtCoreBlockHeight' || name === '$createdAtBlockHeight' || name === '$updatedAtBlockHeight') return { type: 'integer' };
+  if (SYSTEM_IDENTIFIERS.has(name)) return { type: 'array', byteArray: true, contentMediaType: IDENTIFIER, minItems: 32, maxItems: 32 };
+  if (SYSTEM_INTEGERS.has(name)) return { type: 'integer' };
   return undefined;
 }
 
@@ -88,6 +91,26 @@ function valueError(field: string, def: PropDef, v: unknown): string | null {
     default:
       return null;
   }
+}
+
+/** R5/R6 errors for one where clause's value (or every value of an `in` list). */
+function whereValueErrors(field: string, def: PropDef, op: WhereOp, v: unknown): string[] {
+  if (op !== 'in') {
+    const e = valueError(field, def, v);
+    return e ? [e] : [];
+  }
+  if (!Array.isArray(v) || v.length === 0 || v.length > MAX_LIMIT) return [`${field}: in-list must have 1..${MAX_LIMIT} values (R5)`];
+  const errors: string[] = [];
+  if (new Set(v.map((x) => JSON.stringify(x))).size !== v.length) errors.push(`${field}: in-list has duplicates (R5)`);
+  // One bad value is enough to report; the rest would repeat the same message.
+  for (const x of v) {
+    const e = valueError(field, def, x);
+    if (e) {
+      errors.push(e);
+      break;
+    }
+  }
+  return errors;
 }
 
 /** Index properties in order. */
@@ -129,22 +152,7 @@ export function lintQuery(schemas: ContractSchemas, q: DocQuery): LintResult {
       errors.push(`${f}: not a property of ${q.documentTypeName}`);
       continue;
     }
-    if (op === 'in') {
-      if (!Array.isArray(v) || v.length === 0 || v.length > MAX_LIMIT) errors.push(`${f}: in-list must have 1..${MAX_LIMIT} values (R5)`);
-      else {
-        if (new Set(v.map((x) => JSON.stringify(x))).size !== v.length) errors.push(`${f}: in-list has duplicates (R5)`);
-        for (const x of v) {
-          const e = valueError(f, def, x);
-          if (e) {
-            errors.push(e);
-            break;
-          }
-        }
-      }
-    } else {
-      const e = valueError(f, def, v);
-      if (e) errors.push(e);
-    }
+    errors.push(...whereValueErrors(f, def, op, v));
   }
   if (q.where.filter((w) => w[1] === 'in').length > 1) errors.push('only one in clause per query (R3)');
 
@@ -195,7 +203,7 @@ export function lintQuery(schemas: ContractSchemas, q: DocQuery): LintResult {
     if (!contiguous) errors.push(`orderBy [${orderProps.join(', ')}] is not a contiguous run of ${chosen.ix.name} in index order (R3)`);
     const start = pos[0]!;
     const end = pos[pos.length - 1]!;
-    if (start > chosen.prefix) errors.push(`orderBy skips index properties after the equality prefix (R3)`);
+    if (start > chosen.prefix) errors.push('orderBy skips index properties after the equality prefix (R3)');
     if (chosen.rangePos >= 0 && (chosen.rangePos < start || chosen.rangePos > end)) errors.push(`orderBy must include the range/in property ${props[chosen.rangePos]} (R3)`);
     else if (chosen.rangePos >= 0 && end !== chosen.rangePos) errors.push(`orderBy must end on the range/in property ${props[chosen.rangePos]}, nothing after it (R1/R3)`);
   } else if (chosen.rangePos >= 0) {

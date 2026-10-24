@@ -26,3 +26,5 @@ export type WorkerResponse =
   | { id: number; kind: 'collateral'; verdict: CollateralVerdict }
   | { id: number; kind: 'votes'; result: VoteCheckResult; bridge: string; mnlistHeight: number; votesAsOf: number; sml: { nodes: string[]; validWeighted: number } | null }
   | { id: number; kind: 'error'; message: string };
+
+export type VotesDone = Extract<WorkerResponse, { kind: 'votes' }>;

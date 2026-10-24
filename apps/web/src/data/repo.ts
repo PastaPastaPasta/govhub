@@ -47,8 +47,10 @@ export function fixtureSource(registry: Registry): DataSource {
   const snap = loadFixtures();
   let now = 0;
   void snap.then((s) => (now = s.now));
-  const prov = (detail?: string): Provenance => ({ kind: 'fixture', source: 'mainnet snapshot', detail: detail ?? 'Core block 2,560,391, recorded 2026-10-23' });
-  const wrap = <T>(value: T, detail?: string): Sourced<T> => ({ value, prov: prov(detail) });
+  const wrap = <T>(value: T, detail = 'Core block 2,560,391, recorded 2026-10-23'): Sourced<T> => ({
+    value,
+    prov: { kind: 'fixture', source: 'mainnet snapshot', detail },
+  });
   return {
     mode: 'fixtures',
     registry,
@@ -73,7 +75,12 @@ export function fixtureSource(registry: Registry): DataSource {
     },
     async tallies(hashes) {
       const s = await snap;
-      return new Map(hashes.flatMap((h) => (s.tallies.has(h) ? [[h, wrap(s.tallies.get(h)!, 'vote counts from gobject list; voters synthetic')] as const] : [])));
+      const out = new Map<string, Sourced<Tally>>();
+      for (const h of hashes) {
+        const t = s.tallies.get(h);
+        if (t) out.set(h, wrap(t, 'vote counts from gobject list; voters synthetic'));
+      }
+      return out;
     },
     async bridgeTallies() {
       return new Map();
@@ -90,6 +97,14 @@ export function fixtureSource(registry: Registry): DataSource {
 }
 
 // ---- live -----------------------------------------------------------------------------------
+/** A value read from Platform with the Platform height it was proven at. */
+interface Proven<T> {
+  value: T;
+  height: number | null;
+}
+
+const nowSeconds = (): number => Math.floor(Date.now() / 1000);
+
 export function liveSource(registry: Registry): DataSource {
   const contract = shortHash(registry.govContractId, 4);
   const proof = (height: number | null, extra?: string): Provenance => ({
@@ -101,7 +116,7 @@ export function liveSource(registry: Registry): DataSource {
   const cacheKey = (k: string) => `${registry.platformNetwork}:${registry.govContractId}:${k}`;
 
   /** Proven read with an IndexedDB copy: `onStale` gets the cached value (and its age) first. */
-  async function cached<T>(key: string, onStale: ((v: T, note: string) => void) | undefined, run: () => Promise<{ value: T; height: number | null }>): Promise<{ value: T; height: number | null }> {
+  async function cached<T>(key: string, onStale: ((v: T, note: string) => void) | undefined, run: () => Promise<Proven<T>>): Promise<Proven<T>> {
     let fresh = false;
     if (onStale) {
       void cacheGet<T>(cacheKey(key)).then((c) => {
@@ -128,12 +143,19 @@ export function liveSource(registry: Registry): DataSource {
 
   const reported = (b: Bridge, detail?: string): Provenance => ({ kind: 'reported', source: b.name, ...(detail ? { detail } : {}) });
   let dapiNodes: Promise<string[]> | null = null;
-  const nodes = () => (dapiNodes ??= resolveNodes(dapiConfig(registry), 6).catch((e) => ((dapiNodes = null), Promise.reject(e))));
+  /** DAPI nodes, resolved once; a failed resolution is not remembered. */
+  function nodes(): Promise<string[]> {
+    dapiNodes ??= resolveNodes(dapiConfig(registry), 6).catch((e: unknown) => {
+      dapiNodes = null;
+      throw e;
+    });
+    return dapiNodes;
+  }
 
   return {
     mode: 'live',
     registry,
-    now: () => Math.floor(Date.now() / 1000),
+    now: nowSeconds,
 
     async cycle(onStale) {
       try {
@@ -154,7 +176,7 @@ export function liveSource(registry: Registry): DataSource {
     },
 
     async active(onStale) {
-      const now = Math.floor(Date.now() / 1000);
+      const now = nowSeconds();
       let platformError: unknown = null;
       const { value: fromPlatform, height } = await cached<Proposal[]>(
         'active',
@@ -186,9 +208,10 @@ export function liveSource(registry: Registry): DataSource {
     },
 
     async pastPage(cursor) {
-      const r = await queryDocs(registry, pastProposals(Math.floor(Date.now() / 1000), cursor));
+      const r = await queryDocs(registry, pastProposals(nowSeconds(), cursor));
       const items = r.docs.map((d) => ({ value: docToProposal(d), prov: proof(r.height) }));
-      return { items, ...(r.docs.length === PAGE && items.at(-1)?.value.docId ? { next: items.at(-1)!.value.docId } : {}) };
+      const next = r.docs.length === PAGE ? items.at(-1)?.value.docId : undefined;
+      return next ? { items, next } : { items };
     },
 
     async proposal(h) {

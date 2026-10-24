@@ -1,18 +1,17 @@
 // The "can't lie" panel: collateral check runs automatically in the worker; vote verification
 // runs on demand (it downloads every signed vote and the MN list from a bridge).
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useApp } from '../app/context.tsx';
 import type { Proposal } from '../data/types.ts';
 import { formatInt, shortHash } from '../lib/format.ts';
-import type { CollateralVerdict, Step } from '../verify/collateral.ts';
 import { runVerification } from '../verify/client.ts';
-import type { WorkerResponse } from '../verify/protocol.ts';
-import { ProvGlyph } from './Provenance.tsx';
+import type { Step } from '../verify/collateral.ts';
+import type { VotesDone } from '../verify/protocol.ts';
 import { voteVerdict, type VoteLevel } from '../verify/verdict.ts';
 import type { VoteTarget } from '../verify/votes.ts';
-
-type VotesDone = Extract<WorkerResponse, { kind: 'votes' }>;
+import type { CollateralCheck } from './hooks.ts';
+import { ProvGlyph } from './Provenance.tsx';
 
 const STEP_GLYPH: Record<Step['status'], 'verified' | 'mismatch' | 'reported' | 'fixture'> = { ok: 'verified', fail: 'mismatch', warn: 'reported', skip: 'fixture' };
 
@@ -30,40 +29,12 @@ function Steps({ steps }: { steps: Step[] }) {
   );
 }
 
-export function useCollateralCheck(p: Proposal | undefined) {
-  const { source } = useApp();
-  const [verdict, setVerdict] = useState<CollateralVerdict | null>(null);
-  const [progress, setProgress] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    if (!p) return;
-    let live = true;
-    setVerdict(null);
-    setError(null);
-    runVerification({ kind: 'collateral', proposal: p, dapi: source.dapiDescriptor() }, (m) => live && setProgress(m)).then(
-      (r) => live && setVerdict(r.verdict),
-      (e: Error) => live && setError(e.message),
-    );
-    return () => {
-      live = false;
-    };
-  }, [p, source]);
-  return { verdict, progress, error };
-}
-
-const VERDICT_CLASS: Record<VoteLevel, string> = {
-  verified: 'verdict-ok',
-  'keys-reported': 'verdict-partial',
-  'different-height': 'verdict-partial',
-  mismatch: 'verdict-fail',
-  'no-tally': 'verdict-pending',
-};
-const VERDICT_GLYPH: Record<VoteLevel, 'verified' | 'mismatch' | 'reported'> = {
-  verified: 'verified',
-  'keys-reported': 'reported',
-  'different-height': 'reported',
-  mismatch: 'mismatch',
-  'no-tally': 'reported',
+const VERDICT_STYLE: Record<VoteLevel, { className: string; glyph: 'verified' | 'mismatch' | 'reported' }> = {
+  verified: { className: 'verdict-ok', glyph: 'verified' },
+  'keys-reported': { className: 'verdict-partial', glyph: 'reported' },
+  'different-height': { className: 'verdict-partial', glyph: 'reported' },
+  mismatch: { className: 'verdict-fail', glyph: 'mismatch' },
+  'no-tally': { className: 'verdict-pending', glyph: 'reported' },
 };
 
 function verdictText(level: VoteLevel, verified: number, total: number, matched: string | undefined, fixtures: boolean): string {
@@ -79,9 +50,89 @@ function verdictText(level: VoteLevel, verified: number, total: number, matched:
       return `Recount differs from the published tallies, which are older than the votes (${sigs}). Expected between tally updates`;
     case 'mismatch':
       return `Tally mismatch: the recount from ${formatInt(verified)} valid votes differs from a tally at the same height`;
-    default:
+    case 'no-tally':
       return `${sigs}; there is no published tally to compare with`;
   }
+}
+
+/** The recount, what it concluded about each published tally, and what it could not check. */
+function VotesResult({ done, fixtures }: { done: VotesDone; fixtures: boolean }) {
+  const r = done.result;
+  const vv = voteVerdict(r, done.votesAsOf);
+  const style = VERDICT_STYLE[vv.level];
+  const problems = Object.entries(r.problems).filter(([, n]) => n > 0);
+  return (
+    <div className="votes-result" data-votes={vv.level}>
+      <p className={`verdict ${style.className}`}>
+        <ProvGlyph kind={style.glyph} />
+        {verdictText(vv.level, r.verified, r.total, vv.matched?.name, fixtures)}
+      </p>
+      <p className="muted small">
+        {formatInt(r.total)} votes from {done.bridge} (as of block {formatInt(done.votesAsOf)}), masternode list at block {formatInt(done.mnlistHeight)}
+        {done.sml && `, voting keys confirmed against the DAPI masternode list from ${done.sml.nodes.join(' and ')} (${formatInt(r.smlChecked)} checked; ${formatInt(done.sml.validWeighted)} weighted valid MNs)`}
+        {r.rejectedTime > 0 && `, ${r.rejectedTime} dropped for a time Core would reject`}
+        {r.otherSignal > 0 && `, ${r.otherSignal} votes on other signals skipped`}. Superseded votes are counted once, latest wins.
+        {r.keysFrom === 'sml' && r.internalCollateral < r.verified && ` Which collateral belongs to which masternode is as the bridge reports it for ${formatInt(r.verified - r.internalCollateral)} votes (ProRegTx check not done yet).`}
+      </p>
+      {problems.length > 0 && (
+        <ul className="problems">
+          {problems.map(([k, n]) => (
+            <li key={k}>
+              {formatInt(n)} {k.replace(/-/g, ' ')}
+            </li>
+          ))}
+        </ul>
+      )}
+      {r.targets.length > 0 && (
+        <table className="compare">
+          <thead>
+            <tr>
+              <th scope="col">Field</th>
+              <th scope="col" className="r">
+                Recounted
+              </th>
+              {r.targets.map((t) => (
+                <th scope="col" className="r" key={t.name}>
+                  {t.name}
+                  <br />
+                  <span className="muted">block {formatInt(t.asOfHeight)}</span>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {r.targets[0]!.compare.map((c, i) => (
+              <tr key={c.field}>
+                <th scope="row">{c.field}</th>
+                <td className="r">{typeof c.computed === 'number' ? formatInt(c.computed) : shortHash(c.computed, 6)}</td>
+                {r.targets.map((t) => {
+                  const tc = t.compare[i]!;
+                  return (
+                    <td key={t.name} className={`r${tc.ok ? '' : ' bad'}`}>
+                      {typeof tc.expected === 'number' ? formatInt(tc.expected) : shortHash(tc.expected || '(none)', 6)} <ProvGlyph kind={tc.ok ? 'verified' : 'mismatch'} />
+                      <span className="visually-hidden">{tc.ok ? 'matches' : 'differs'}</span>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {r.examples.length > 0 && (
+        <details>
+          <summary>Problem votes</summary>
+          <ul className="small mono-ish">
+            {r.examples.map((x, i) => (
+              <li key={i}>
+                {shortHash(x.outpoint, 8)}: {x.problem}, {x.detail}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
+  );
 }
 
 export function VerificationPanel({
@@ -91,7 +142,7 @@ export function VerificationPanel({
   onVotes,
 }: {
   proposal: Proposal;
-  collateral: ReturnType<typeof useCollateralCheck>;
+  collateral: CollateralCheck;
   /** Published tallies to compare the recount with. */
   targets: VoteTarget[];
   onVotes(r: VotesDone | null): void;
@@ -126,10 +177,6 @@ export function VerificationPanel({
       (e: Error) => setVotes({ running: false, error: e.message }),
     );
   };
-
-  const r = votes.result?.result;
-  const vv = r && votes.result ? voteVerdict(r, votes.result.votesAsOf) : null;
-  const problems = r ? Object.entries(r.problems).filter(([, n]) => n > 0) : [];
 
   return (
     <section className="verify" aria-labelledby="verify-title">
@@ -167,7 +214,7 @@ export function VerificationPanel({
             </p>
             <div className="verify-actions">
               <button type="button" className="btn btn-primary" onClick={verifyVotes} disabled={votes.running}>
-                {votes.running ? 'Verifying…' : r ? 'Verify again' : 'Verify votes'}
+                {votes.running ? 'Verifying…' : votes.result ? 'Verify again' : 'Verify votes'}
               </button>
               {mode === 'live' && (
                 <label className="check">
@@ -183,78 +230,7 @@ export function VerificationPanel({
           </p>
         )}
         {votes.error && <p className="error">Vote verification failed: {votes.error}</p>}
-        {r && votes.result && (
-          <div className="votes-result" data-votes={vv!.level}>
-            <p className={`verdict ${VERDICT_CLASS[vv!.level]}`}>
-              <ProvGlyph kind={VERDICT_GLYPH[vv!.level]} />
-              {verdictText(vv!.level, r.verified, r.total, vv!.matched?.name, mode === 'fixtures')}
-            </p>
-            <p className="muted small">
-              {formatInt(r.total)} votes from {votes.result.bridge} (as of block {formatInt(votes.result.votesAsOf)}), masternode list at block {formatInt(votes.result.mnlistHeight)}
-              {votes.result.sml && `, voting keys confirmed against the DAPI masternode list from ${votes.result.sml.nodes.join(' and ')} (${formatInt(r.smlChecked)} checked; ${formatInt(votes.result.sml.validWeighted)} weighted valid MNs)`}
-              {r.rejectedTime > 0 && `, ${r.rejectedTime} dropped for a time Core would reject`}
-              {r.otherSignal > 0 && `, ${r.otherSignal} votes on other signals skipped`}. Superseded votes are counted once, latest wins.
-              {r.keysFrom === 'sml' && r.internalCollateral < r.verified && ` Which collateral belongs to which masternode is as the bridge reports it for ${formatInt(r.verified - r.internalCollateral)} votes (ProRegTx check not done yet).`}
-            </p>
-            {problems.length > 0 && (
-              <ul className="problems">
-                {problems.map(([k, n]) => (
-                  <li key={k}>
-                    {formatInt(n)} {k.replace(/-/g, ' ')}
-                  </li>
-                ))}
-              </ul>
-            )}
-            {r.targets.length > 0 && (
-              <table className="compare">
-                <thead>
-                  <tr>
-                    <th scope="col">Field</th>
-                    <th scope="col" className="r">
-                      Recounted
-                    </th>
-                    {r.targets.map((t) => (
-                      <th scope="col" className="r" key={t.name}>
-                        {t.name}
-                        <br />
-                        <span className="muted">block {formatInt(t.asOfHeight)}</span>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {r.targets[0]!.compare.map((c, i) => (
-                    <tr key={c.field}>
-                      <th scope="row">{c.field}</th>
-                      <td className="r">{typeof c.computed === 'number' ? formatInt(c.computed) : shortHash(c.computed, 6)}</td>
-                      {r.targets.map((t) => {
-                        const tc = t.compare[i]!;
-                        return (
-                          <td key={t.name} className={`r${tc.ok ? '' : ' bad'}`}>
-                            {typeof tc.expected === 'number' ? formatInt(tc.expected) : shortHash(tc.expected || '(none)', 6)} <ProvGlyph kind={tc.ok ? 'verified' : 'mismatch'} />
-                            <span className="visually-hidden">{tc.ok ? 'matches' : 'differs'}</span>
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-            {r.examples.length > 0 && (
-              <details>
-                <summary>Problem votes</summary>
-                <ul className="small mono-ish">
-                  {r.examples.map((x, i) => (
-                    <li key={i}>
-                      {shortHash(x.outpoint, 8)}: {x.problem}, {x.detail}
-                    </li>
-                  ))}
-                </ul>
-              </details>
-            )}
-          </div>
-        )}
+        {votes.result && <VotesResult done={votes.result} fixtures={mode === 'fixtures'} />}
       </div>
     </section>
   );

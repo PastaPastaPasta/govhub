@@ -106,11 +106,16 @@ export interface BudgetSelection {
   allocated: number;
 }
 
-/** Compare display-hex hashes as 256-bit numbers (display hex is big-endian). */
-const hashDesc = (a: string, b: string): number => (a.toLowerCase() < b.toLowerCase() ? 1 : a.toLowerCase() > b.toLowerCase() ? -1 : 0);
+/** Core's funding order: absYes desc, then hash desc (display hex is big-endian, so string order is numeric order). */
+export function compareRank(a: { govHash: string; absYes: number }, b: { govHash: string; absYes: number }): number {
+  if (a.absYes !== b.absYes) return b.absYes - a.absYes;
+  const ah = a.govHash.toLowerCase();
+  const bh = b.govHash.toLowerCase();
+  return ah < bh ? 1 : ah > bh ? -1 : 0;
+}
 
 export function rankProposals<T extends { govHash: string; absYes: number }>(entries: readonly T[]): T[] {
-  return [...entries].sort((a, b) => b.absYes - a.absYes || hashDesc(a.govHash, b.govHash));
+  return [...entries].sort(compareRank);
 }
 
 /** CreateSuperblockCandidate's selection: passing proposals in rank order, skipping what doesn't fit or isn't due. */
