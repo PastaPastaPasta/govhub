@@ -83,6 +83,7 @@ export class Bridge {
       this.core.reachable = true;
       this.core.lastError = null;
       this.core.blockchainSynced = !!sync.IsBlockchainSynced;
+      this.ingest.chainSynced = this.core.blockchainSynced;
       this.core.governanceSynced = !!sync.IsSynced;
       if (!this.core.version) this.core.version = (await this.rpc.getNetworkInfo()).subversion;
       try {
@@ -105,11 +106,12 @@ export class Bridge {
     let delay = 2000;
     for (;;) {
       if (this.stopping) return false;
-      if ((await this.probeCore()) && this.core.blockchainSynced) return true;
+      // a peerless regtest node may never report a synced chain; there the chain is whatever was mined
+      if ((await this.probeCore()) && (this.core.blockchainSynced || this.cfg.coreNetwork === 'regtest')) return true;
       if (Date.now() - t0 > maxWaitMs) return false;
       log.info('waiting for Core', { reachable: this.core.reachable, blockchainSynced: this.core.blockchainSynced, error: this.core.lastError });
       await sleep(delay);
-      delay = Math.min(delay * 2, 60_000);
+      delay = Math.min(delay * 2, 30_000);
     }
   }
 
@@ -120,13 +122,11 @@ export class Bridge {
     const height = await this.ingest.refreshHeight();
     await this.ingest.ensureSnapshot(height);
     if (opts.reconcile ?? nowS() - this.lastReconcileAt >= this.cfg.reconcileIntervalSec) {
-      if (this.core.governanceSynced) {
-        const r = await this.ingest.reconcileObjects();
-        log.info('reconciled with gobject list', r);
-        this.lastReconcileAt = nowS();
-      } else {
-        log.warn('Core governance not synced yet (mnsync): skipping reconciliation');
-      }
+      // a peerless regtest node never finishes mnsync; archive what Core lists anyway, but only a synced node's list says
+      // which objects were dropped
+      const r = await this.ingest.reconcileObjects({ markRemoved: this.core.governanceSynced });
+      log.info('reconciled with gobject list', { ...r, governanceSynced: this.core.governanceSynced });
+      this.lastReconcileAt = nowS();
     }
     this.ingest.verifyPendingVotes(1_000_000);
     const { info, nextBudgetDuffs } = await this.ingest.snapshotBudget();

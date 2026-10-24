@@ -1,9 +1,9 @@
 // Read-only HTTP API. Spec: services/bridge/openapi.json (OpenAPI 3.1). CORS open for GETs.
+// Proposal / tally / cycle objects use the field names of the Platform `gov` documents (packages/contracts-v1), plus extras.
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { VOTE_OUTCOME_NAMES, VOTE_SIGNAL_NAMES } from '@govhub/verify';
 import type { Bridge } from '../bridge.ts';
-import type { GovObjectRow, VoteRow } from '../archive/db.ts';
+import type { GovObjectRow, TallyRow, VoteRow } from '../archive/db.ts';
 import { latestSnapshot, snapshotAt } from '../mnlist.ts';
 import { proposalView } from '../proposal.ts';
 import { FUDGE_WINDOW_S, type ComputedTally } from '../tally.ts';
@@ -24,17 +24,18 @@ export function proposalJson(b: Bridge, r: GovObjectRow) {
   const tip = b.ingest.height;
   const t = b.lastRun?.tallies.find((x) => x.govHash === r.hash);
   return {
-    hash: r.hash,
+    govHash: r.hash,
+    parentHash: r.parent_hash,
+    revision: r.revision,
+    time: r.time,
+    dataHex: r.data_hex,
     name: v?.name ?? null,
     url: v?.url ?? null,
     paymentAddress: v?.paymentAddress ?? null,
-    paymentAmount: v ? (v.paymentAmountDuffs !== null ? duffsToDash(v.paymentAmountDuffs) : String(v.paymentAmount)) : null,
-    paymentAmountDuffs: v?.paymentAmountDuffs ?? null,
+    /** duffs, as Core's ParsePaymentAmount reads payment_amount (null if Core could not pay it) */
+    paymentAmount: v?.paymentAmountDuffs ?? null,
     startEpoch: v?.startEpoch ?? null,
     endEpoch: v?.endEpoch ?? null,
-    time: r.time,
-    revision: r.revision,
-    parentHash: r.parent_hash,
     collateralTxid: r.collateral_hash,
     collateralHeight: r.collateral_height,
     collateralConfirmations: r.collateral_height !== null && tip ? tip - r.collateral_height + 1 : null,
@@ -43,40 +44,47 @@ export function proposalJson(b: Bridge, r: GovObjectRow) {
     firstSeenHeight: r.first_seen_height,
     firstSeenTime: r.first_seen_time,
     source: r.source,
-    tally: t ? tallySummary(b, t) : null,
+    tally: t ? tallyJson(b, t) : null,
   };
 }
 
-export function tallySummary(b: Bridge, t: ComputedTally) {
+export function tallyJson(b: Bridge, t: ComputedTally) {
   const c = b.lastComparisons.get(t.govHash);
   return {
     govHash: t.govHash,
     asOfHeight: t.asOfHeight,
-    weighted: t.weighted,
-    unweighted: t.unweighted,
-    absoluteYes: t.absoluteYes,
-    voteCount: t.counted.length,
+    yesWeighted: t.weighted.yes,
+    noWeighted: t.weighted.no,
+    abstainWeighted: t.weighted.abstain,
+    yesCount: t.unweighted.yes,
+    noCount: t.unweighted.no,
+    abstainCount: t.unweighted.abstain,
     voteSetHash: t.voteSetHash,
     rank: t.rank,
-    passing: t.passing,
     inNextBudget: t.inNextBudget,
     margin: t.margin,
+    absoluteYes: t.absoluteYes,
+    passing: t.passing,
+    voteCount: t.counted.length,
     staleKeyVotes: t.staleKey,
-    core: c ? { match: c.match, yes: c.core.yes, no: c.core.no, abstain: c.core.abstain, absoluteYes: c.core.absoluteYes, missingSigned: c.missingSigned.length, extra: c.extra.length } : null,
+    mnListHash: t.listHash,
+    core: c ? { match: c.match, yesWeighted: c.core.yes, noWeighted: c.core.no, abstainWeighted: c.core.abstain, absoluteYes: c.core.absoluteYes, missingSigned: c.missingSigned.length, extra: c.extra.length } : null,
   };
 }
 
 function voteJson(v: VoteRow, extra: { weight?: number; proTxHash?: string | null; counted?: boolean } = {}) {
   return {
     hash: v.hash,
-    rawHex: v.raw_hex,
-    collateralOutpoint: `${v.collateral_txid}-${v.collateral_n}`,
+    collateralTxid: v.collateral_txid,
+    collateralIndex: v.collateral_n,
     proTxHash: extra.proTxHash ?? v.pro_tx_hash,
     weight: extra.weight ?? null,
-    outcome: VOTE_OUTCOME_NAMES[v.outcome] ?? String(v.outcome),
-    signal: VOTE_SIGNAL_NAMES[v.signal] ?? String(v.signal),
+    signal: v.signal,
+    outcome: v.outcome,
     time: v.time,
-    signatureHex: v.sig_hex,
+    /** base64 of the 65-byte compact signature (the `voteraw` argument) */
+    sig: Buffer.from(v.sig_hex, 'hex').toString('base64'),
+    rawHex: v.raw_hex,
     signatureStatus: v.sig_status,
     signerKeyId: v.signer_keyid,
     firstSeenHeight: v.first_seen_height,
@@ -89,16 +97,18 @@ function voteJson(v: VoteRow, extra: { weight?: number; proTxHash?: string | nul
 export function cycleJson(b: Bridge) {
   if (!b.lastRun || !b.govInfo) return null;
   const run = b.lastRun;
-  const cycles = b.cycles(run);
-  const toJson = (c: (typeof cycles)[number]) => ({ ...c, budgetDash: duffsToDash(c.budget), allocatedDash: duffsToDash(c.allocated), paidDash: duffsToDash(c.paid) });
+  const [next, last] = b.cycles(run);
   return {
     asOfHeight: run.height,
-    governance: b.govInfo,
+    cycle: next!,
+    last: last ?? null,
     fundingThreshold: run.threshold,
-    next: toJson(cycles[0]!),
-    last: cycles[1] ? toJson(cycles[1]) : null,
+    governance: b.govInfo,
   };
 }
+
+const byOutpoint = (x: { collateral_txid: string; collateral_n: number }, y: { collateral_txid: string; collateral_n: number }) =>
+  x.collateral_txid < y.collateral_txid ? -1 : x.collateral_txid > y.collateral_txid ? 1 : x.collateral_n - y.collateral_n;
 
 export function createApi(b: Bridge): Hono {
   const app = new Hono();
@@ -106,24 +116,30 @@ export function createApi(b: Bridge): Hono {
   app.onError((e, c) => c.json({ error: String(e.message ?? e) }, 500));
   app.notFound((c) => c.json({ error: 'not found' }, 404));
 
+  // Always 200 while the process serves HTTP (health checks); `core.reachable` says whether Core answers.
   app.get('/v1/status', (c) => {
     const db = b.db;
     const count = (sql: string) => (db.prepare(sql).get() as { n: number }).n;
     const byStatus = Object.fromEntries((db.prepare('SELECT sig_status s, COUNT(*) n FROM votes GROUP BY sig_status').all() as Array<{ s: string; n: number }>).map((r) => [r.s, r.n]));
     const snap = latestSnapshot(db);
-    const mismatches = [...b.lastComparisons.values()].filter((x) => !x.match).length;
+    const proposals = count('SELECT COUNT(*) n FROM gov_objects WHERE type = 1');
     return c.json({
       service: 'govhub-bridge',
       version: SERVICE_VERSION,
-      coreNetwork: b.cfg.coreNetwork,
+      network: b.cfg.coreNetwork,
       platformNetwork: b.cfg.platformNetwork,
+      height: b.ingest.height,
+      bestBlockHash: b.ingest.tipHash || null,
+      govContractId: b.cfg.publish.govContractId || null,
+      bridgeIdentityId: b.platform?.identityId || null,
+      proposals,
       startedAt: b.startedAt,
       now: nowS(),
-      core: { ...b.core, height: b.ingest.height, tipHash: b.ingest.tipHash || null, lastChainLockHash: b.ingest.lastChainLockHash || null },
+      core: { ...b.core, lastChainLockHash: b.ingest.lastChainLockHash || null },
       zmq: b.zmq ? { url: b.cfg.core.zmqUrl, received: b.zmq.received, gaps: b.zmq.gaps, lastMessageAt: b.zmq.lastMessageAt ? Math.floor(b.zmq.lastMessageAt / 1000) : null } : null,
       archive: {
         objects: count('SELECT COUNT(*) n FROM gov_objects'),
-        proposals: count('SELECT COUNT(*) n FROM gov_objects WHERE type = 1'),
+        proposals,
         triggers: count('SELECT COUNT(*) n FROM gov_objects WHERE type = 2'),
         votes: count('SELECT COUNT(*) n FROM votes'),
         votesByStatus: byStatus,
@@ -133,14 +149,8 @@ export function createApi(b: Bridge): Hono {
       },
       ingest: b.ingest.stats,
       lastReconcileAt: b.lastReconcileAt || null,
-      tallies: { asOfHeight: b.lastRun?.height ?? null, computedAt: b.lastTallyAt || null, proposals: b.lastRun?.tallies.length ?? 0, coreMismatches: mismatches },
-      publish: {
-        enabled: b.cfg.publish.enabled,
-        platformNetwork: b.cfg.platformNetwork,
-        govContractId: b.cfg.publish.govContractId || null,
-        identityId: b.platform?.identityId || null,
-        last: b.lastPublish ? { ...b.lastPublish, skipped: b.lastPublish.skipped.length } : null,
-      },
+      tallies: { asOfHeight: b.lastRun?.height ?? null, computedAt: b.lastTallyAt || null, count: b.lastRun?.tallies.length ?? 0, coreMismatches: [...b.lastComparisons.values()].filter((x) => !x.match).length },
+      publish: { enabled: b.cfg.publish.enabled, platformNetwork: b.cfg.platformNetwork, last: b.lastPublish ? { ...b.lastPublish, skipped: b.lastPublish.skipped.length } : null },
     });
   });
 
@@ -168,7 +178,6 @@ export function createApi(b: Bridge): Hono {
     return c.json({
       ...proposalJson(b, r),
       rawHex: r.raw_hex,
-      dataHex: r.data_hex,
       dataString: Buffer.from(r.data_hex, 'hex').toString('utf8'),
       collateralRawTxHex: r.collateral_raw_hex,
       collateralBlockHash: r.collateral_blockhash,
@@ -180,28 +189,67 @@ export function createApi(b: Bridge): Hono {
   app.get('/v1/proposals/:hash/votes', (c) => {
     const hash = c.req.param('hash').toLowerCase();
     if (!HASH_RE.test(hash)) return c.json({ error: 'hash must be 64 hex chars' }, 400);
-    const all = c.req.query('all') === '1';
-    const t = b.lastRun?.tallies.find((x) => x.govHash === hash);
-    if (!t && !all) {
-      const known = b.db.prepare('SELECT 1 FROM gov_objects WHERE hash = ?').get(hash);
-      return known ? c.json({ error: 'no tally for this proposal (not active or not computed yet); use ?all=1 for archived votes' }, 404) : c.json({ error: 'unknown proposal' }, 404);
+    const known = b.db.prepare('SELECT 1 FROM gov_objects WHERE hash = ?').get(hash);
+    if (!known) return c.json({ error: 'unknown proposal' }, 404);
+    const base = { govHash: hash, network: b.cfg.coreNetwork, voteSetHashVersion: 'govhub-voteset-v1' };
+
+    // every archived vote on the proposal, flagged with whether the live tally counts it
+    if (c.req.query('all') === '1') {
+      const t = b.lastRun?.tallies.find((x) => x.govHash === hash);
+      const counted = new Map((t?.counted ?? []).map((v) => [v.hash, v]));
+      const votes = (b.db.prepare('SELECT * FROM votes WHERE parent_hash = ? ORDER BY collateral_txid, collateral_n, time').all(hash) as VoteRow[]).map((v) => {
+        const cv = counted.get(v.hash);
+        return voteJson(v, { weight: cv?.weight, proTxHash: cv?.proTxHash, counted: !!cv });
+      });
+      return c.json({ ...base, asOfHeight: t?.asOfHeight ?? null, voteSetHash: t?.voteSetHash ?? null, count: votes.length, votes });
     }
-    const counted = new Map((t?.counted ?? []).map((v) => [v.hash, v]));
-    const votes = all
-      ? (b.db.prepare('SELECT * FROM votes WHERE parent_hash = ? ORDER BY collateral_txid, collateral_n, time').all(hash) as VoteRow[]).map((v) => {
-          const cv = counted.get(v.hash);
-          return voteJson(v, { weight: cv?.weight, proTxHash: cv?.proTxHash, counted: !!cv });
-        })
-      : [...counted.values()].sort((x, y) => (x.collateral_txid < y.collateral_txid ? -1 : x.collateral_txid > y.collateral_txid ? 1 : x.collateral_n - y.collateral_n)).map((v) => voteJson(v, { weight: v.weight, proTxHash: v.proTxHash }));
+
+    // the vote set behind the tally in force at a past height (e.g. a published tally document's asOfHeight)
+    const hq = c.req.query('height');
+    if (hq !== undefined) {
+      const h = Number(hq);
+      if (!Number.isInteger(h) || h < 0) return c.json({ error: 'height must be a non-negative integer' }, 400);
+      const maxH = b.lastRun?.height ?? (b.db.prepare('SELECT MAX(as_of_height) h FROM tallies').get() as { h: number | null }).h ?? -1;
+      if (h > maxH) return c.json({ error: `height ${h} is above the latest tally height ${maxH}` }, 404);
+      const row = b.db.prepare('SELECT * FROM tallies WHERE gov_hash = ? AND as_of_height <= ? ORDER BY as_of_height DESC, id DESC LIMIT 1').get(hash, h) as TallyRow | undefined;
+      if (!row || row.counted_votes === null) return c.json({ error: 'no recorded vote set for this proposal at or below that height' }, 404);
+      const hashes = JSON.parse(row.counted_votes) as string[];
+      const get = b.db.prepare('SELECT * FROM votes WHERE hash = ?');
+      const list = b.ingest.lists.load(row.list_hash);
+      const votes = hashes
+        .map((vh) => get.get(vh) as VoteRow)
+        .sort(byOutpoint)
+        .map((v) => {
+          const e = list?.byOutpoint.get(`${v.collateral_txid}-${v.collateral_n}`);
+          return voteJson(v, { weight: e?.weight, proTxHash: e?.proTxHash ?? v.pro_tx_hash });
+        });
+      return c.json({
+        ...base,
+        asOfHeight: h,
+        tallyHeight: row.as_of_height,
+        mnListHash: row.list_hash,
+        voteSetHash: row.vote_set_hash,
+        yesWeighted: row.yes_weighted,
+        noWeighted: row.no_weighted,
+        abstainWeighted: row.abstain_weighted,
+        count: votes.length,
+        votes,
+      });
+    }
+
+    // live: the counted set of the latest tally
+    const t = b.lastRun?.tallies.find((x) => x.govHash === hash);
+    if (!t) return c.json({ error: 'no live tally for this proposal (inactive, or not computed yet); use ?height= or ?all=1' }, 404);
+    const votes = [...t.counted].sort(byOutpoint).map((v) => voteJson(v, { weight: v.weight, proTxHash: v.proTxHash }));
     return c.json({
-      govHash: hash,
-      asOfHeight: t?.asOfHeight ?? null,
-      mnListHash: t?.listHash ?? null,
-      voteSetHash: t?.voteSetHash ?? null,
-      voteSetHashVersion: 'govhub/voteset/v1',
-      network: b.cfg.coreNetwork,
-      weighted: t?.weighted ?? null,
-      unweighted: t?.unweighted ?? null,
+      ...base,
+      asOfHeight: t.asOfHeight,
+      tallyHeight: t.asOfHeight,
+      mnListHash: t.listHash,
+      voteSetHash: t.voteSetHash,
+      yesWeighted: t.weighted.yes,
+      noWeighted: t.weighted.no,
+      abstainWeighted: t.weighted.abstain,
       count: votes.length,
       votes,
     });
@@ -217,9 +265,9 @@ export function createApi(b: Bridge): Hono {
       fundingThreshold: run.threshold,
       validWeighted: run.validWeighted,
       nextSuperblock: run.nextSuperblock,
-      budget: duffsToDash(run.budgetDuffs),
-      allocated: duffsToDash(run.allocatedDuffs),
-      tallies: run.tallies.map((t) => tallySummary(b, t)),
+      budget: run.budgetDuffs,
+      allocated: run.allocatedDuffs,
+      tallies: run.tallies.map((t) => tallyJson(b, t)),
     });
   });
 
@@ -247,12 +295,13 @@ export function createApi(b: Bridge): Hono {
         totalWeighted: l.list.totalWeighted,
         masternodes: l.list.entries.map((e) => ({
           proTxHash: e.proTxHash,
-          collateralOutpoint: `${e.collateralTxid}-${e.collateralN}`,
+          collateralTxid: e.collateralTxid,
+          collateralIndex: e.collateralN,
           type: e.type === 'Evo' ? 'evo' : e.type === 'Regular' ? 'regular' : e.type,
           weight: e.weight,
           votingAddress: e.votingAddress,
           keyIdVoting: e.votingKeyId,
-          isValid: e.isValid,
+          valid: e.isValid,
           poseBanHeight: e.poseBanHeight,
         })),
       },

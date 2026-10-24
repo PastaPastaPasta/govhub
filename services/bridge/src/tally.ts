@@ -6,12 +6,11 @@
 //  - weights: GetMNByCollateral on the TIP list, so PoSe-banned MNs still count; Regular 1, Evo 4
 //                                                                            governance/object.cpp:880-895, evo/deterministicmns.cpp:104-116
 //  - votes whose signer no longer matches the MN's voting key are dropped    governance/governance.cpp:1150-1195, votedb.cpp:81-101
-//  - passing threshold max(nGovernanceMinQuorum, m_valid_weighted / 10)     governance/governance.cpp:1206-1218 (= getgovernanceinfo.fundingthreshold)
+//  - passing threshold max(nGovernanceMinQuorum, m_valid_weighted / 10)     governance/governance.cpp:1208-1209 (= getgovernanceinfo.fundingthreshold)
 //  - candidate order: absolute yes desc, ties by proposal hash desc          governance/governance.cpp:1221-1226
 //  - budget fill: skip what does not fit, window [start-2h, end+2h] around an estimated SB time now + Δh * 2.62 min
 //                                                                            governance/signing.cpp:23, :58-104
-import { sha256 } from '@noble/hashes/sha2.js';
-import { bytesToHex, compactSize, concatBytes, hexToBytes, tallyVotes, utf8ToBytes, VOTE_OUTCOME, VOTE_SIGNAL } from '@govhub/verify';
+import { tallyVotes, voteSetHash, VOTE_SIGNAL } from '@govhub/verify';
 import type { DB, GovObjectRow, VoteRow } from './archive/db.ts';
 import type { MnList } from './mnlist.ts';
 import { proposalView, type ProposalView } from './proposal.ts';
@@ -20,26 +19,6 @@ import { proposalView, type ProposalView } from './proposal.ts';
 export const FUDGE_WINDOW_S = 2 * 3600;
 /** Core's superblock time estimate uses 2.62 minutes per block (signing.cpp:59). */
 export const SB_SECONDS_PER_BLOCK = 2.62 * 60;
-
-export const VOTE_SET_DOMAIN = 'govhub/voteset/v1';
-
-/**
- * voteSetHash (v1) = SHA-256( UTF-8 "govhub/voteset/v1"
- *                             || for each counted vote, ordered by (collateral txid DISPLAY hex ascending, collateral index ascending):
- *                                  CompactSize(len(raw)) || raw )
- * where `raw` is the vote's exact SER_NETWORK serialization (what ZMQ `rawgovernancevote` carries and /v1/proposals/{hash}/votes
- * returns as `rawHex`). "Counted" = the one current vote per masternode that contributes to yes/no/abstain. Output: 32 bytes,
- * stored on Platform as-is and shown as lowercase hex (no byte reversal).
- */
-export function voteSetHash(votes: Array<{ collateral_txid: string; collateral_n: number; raw_hex: string }>): string {
-  const sorted = [...votes].sort((a, b) => (a.collateral_txid < b.collateral_txid ? -1 : a.collateral_txid > b.collateral_txid ? 1 : a.collateral_n - b.collateral_n));
-  const parts: Uint8Array[] = [utf8ToBytes(VOTE_SET_DOMAIN)];
-  for (const v of sorted) {
-    const raw = hexToBytes(v.raw_hex);
-    parts.push(compactSize(raw.length), raw);
-  }
-  return bytesToHex(sha256(concatBytes(...parts)));
-}
 
 export interface ComputedTally {
   govHash: string;
@@ -81,8 +60,8 @@ export function tallyProposal(db: DB, govHash: string, list: { list: MnList; byO
   const byKey = new Map<string, VoteRow>();
   for (const v of eligible) byKey.set(`${v.collateral_txid}-${v.collateral_n}|${v.time}|${v.outcome}`, v);
   const counted: ComputedTally['counted'] = [];
+  // "counted" = the current vote of every masternode in the weight map (govhub-voteset-v1, packages/verify/src/voteset.ts)
   for (const [mn, cur] of t.current) {
-    if (cur.outcome === VOTE_OUTCOME.NONE) continue;
     const e = list.byOutpoint.get(mn);
     if (!e) continue;
     const row = byKey.get(`${mn}|${cur.time}|${cur.outcome}`);
@@ -96,7 +75,7 @@ export function tallyProposal(db: DB, govHash: string, list: { list: MnList; byO
     unweighted: t.unweighted,
     absoluteYes: t.absoluteYes,
     counted,
-    voteSetHash: voteSetHash(counted),
+    voteSetHash: voteSetHash(counted.map((v) => ({ mn: `${v.collateral_txid}-${v.collateral_n}`, outcome: v.outcome, time: v.time }))),
     staleKey,
   };
 }
@@ -258,8 +237,8 @@ export function storeTally(db: DB, t: ComputedTally, cmp: CoreComparison | null)
   if (same) return false;
   db.prepare(
     `INSERT INTO tallies(gov_hash, as_of_height, list_hash, computed_at, yes_weighted, no_weighted, abstain_weighted, yes_count, no_count, abstain_count,
-       vote_count, vote_set_hash, rank, in_next_budget, margin, core_yes, core_no, core_abstain, core_absolute, core_match, mismatch)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       vote_count, vote_set_hash, rank, in_next_budget, margin, core_yes, core_no, core_abstain, core_absolute, core_match, mismatch, counted_votes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     t.govHash,
     t.asOfHeight,
@@ -282,6 +261,7 @@ export function storeTally(db: DB, t: ComputedTally, cmp: CoreComparison | null)
     cmp?.core.absoluteYes ?? null,
     cmp ? (cmp.match ? 1 : 0) : null,
     cmp && !cmp.match ? JSON.stringify({ core: cmp.core, bridge: cmp.bridge, missingSigned: cmp.missingSigned.length, extra: cmp.extra.length, missingSample: cmp.missingSigned.slice(0, 20), extraSample: cmp.extra.slice(0, 20) }) : null,
+    JSON.stringify(t.counted.map((v) => v.hash).sort()),
   );
   return true;
 }

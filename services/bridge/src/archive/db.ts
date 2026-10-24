@@ -135,7 +135,9 @@ CREATE TABLE IF NOT EXISTS tallies (
   core_abstain INTEGER,
   core_absolute INTEGER,
   core_match INTEGER,
-  mismatch TEXT
+  mismatch TEXT,
+  -- JSON array of the vote hashes behind vote_set_hash (lets the API serve the exact set of a past tally)
+  counted_votes TEXT
 );
 CREATE INDEX IF NOT EXISTS tallies_gov ON tallies(gov_hash, id);
 
@@ -190,8 +192,15 @@ export function openArchive(path: string): DB {
   db.pragma('synchronous = NORMAL');
   db.pragma('foreign_keys = ON');
   db.exec(SCHEMA);
+  migrate(db);
   db.prepare("INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', '1')").run();
   return db;
+}
+
+/** Additive migrations for archives created by earlier versions (columns are only ever added). */
+function migrate(db: DB): void {
+  const cols = new Set((db.prepare('PRAGMA table_info(tallies)').all() as Array<{ name: string }>).map((c) => c.name));
+  if (!cols.has('counted_votes')) db.exec('ALTER TABLE tallies ADD COLUMN counted_votes TEXT');
 }
 
 export function recordEvent(db: DB, kind: string, detail: unknown): void {
@@ -295,6 +304,7 @@ export interface TallyRow {
   core_absolute: number | null;
   core_match: number | null;
   mismatch: string | null;
+  counted_votes: string | null;
 }
 
 export interface PlatformDocRow {

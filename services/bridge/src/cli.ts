@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { serve } from '@hono/node-server';
 import { createApi } from './api/server.ts';
+import { openArchive } from './archive/db.ts';
 import { Bridge } from './bridge.ts';
 import { describeConfig, loadConfig } from './config.ts';
 import { errText, log } from './log.ts';
@@ -15,6 +16,7 @@ commands:
                            --govdat imports objects and signed votes from a COPY of dashd's governance.dat
   publish --once [--force] one refresh + publish pass (--force ignores the replace throttle)
   verify [--no-core]       recompute hashes, signatures, collateral and tallies from the archive and diff against Core
+  backup <file>            online, consistent copy of the SQLite archive (safe while \`run\` is writing)
   healthcheck              exit 0 if GET /v1/status on HTTP_PORT answers 200
 
 configuration: environment variables (see README.md "Configuration")`;
@@ -44,6 +46,22 @@ async function main(): Promise<number> {
   }
   const cfg = loadConfig();
   log.info('config', describeConfig(cfg));
+
+  if (cmd === 'backup') {
+    const out = args[0];
+    if (!out) {
+      console.error('usage: bridge backup <file>');
+      return 2;
+    }
+    const db = openArchive(cfg.dbPath);
+    try {
+      await db.backup(out);
+    } finally {
+      db.close();
+    }
+    console.log(JSON.stringify({ backup: out, from: cfg.dbPath }));
+    return 0;
+  }
 
   if (cmd === 'run') {
     const bridge = new Bridge(cfg);

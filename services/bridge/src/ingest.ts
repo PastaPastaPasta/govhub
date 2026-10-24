@@ -34,6 +34,8 @@ export class Ingestor {
   height = 0;
   tipHash = '';
   lastChainLockHash = '';
+  /** Set by the bridge from `mnsync status` (IsBlockchainSynced). */
+  chainSynced = false;
   stats: IngestStats = { objectsNew: 0, votesNew: 0, votesDuplicate: 0, badMessages: 0 };
   private verifyScheduled = false;
   private snapshotInFlight: Promise<MnList | null> | null = null;
@@ -76,6 +78,8 @@ export class Ingestor {
         return;
       }
       case 'hashblock': {
+        // during initial block download Core publishes every connected block: leave height tracking to the RPC poll then
+        if (!this.chainSynced) return;
         const hash = parseHashBody(m.body);
         try {
           const h = await this.rpc.getBlockHeader(hash);
@@ -83,7 +87,6 @@ export class Ingestor {
             this.height = h.height;
             this.tipHash = hash;
           }
-          void this.ensureSnapshot(h.height);
         } catch (e) {
           log.warn('hashblock: header lookup failed', { hash, error: String(e) });
         }
@@ -289,9 +292,10 @@ export class Ingestor {
   /**
    * `gobject list all`: archive objects Core has that we missed (e.g. before the listener ran) and mark the ones Core dropped.
    * Proposals carry no signature or outpoint, so their exact network bytes are rebuilt (revision 1; `gobject list` does not
-   * return the revision) and accepted only if the rebuilt hash equals Core's.
+   * return the revision) and accepted only if the rebuilt hash equals Core's. `markRemoved` = false while Core's governance
+   * sync is incomplete (its list is partial then).
    */
-  async reconcileObjects(): Promise<{ inCore: number; added: number; removed: number }> {
+  async reconcileObjects(opts: { markRemoved: boolean } = { markRemoved: true }): Promise<{ inCore: number; added: number; removed: number }> {
     const list = await this.rpc.gobjectList('all', 'all');
     const at = nowS();
     let added = 0;
@@ -302,7 +306,8 @@ export class Ingestor {
       this.db.prepare('UPDATE gov_objects SET in_core = 1, last_seen_in_core = ?, removed_from_core_at = NULL WHERE hash = ?').run(at, hash);
     }
     let removed = 0;
-    for (const r of this.db.prepare('SELECT hash FROM gov_objects WHERE in_core = 1').all() as Array<{ hash: string }>) {
+    // an unsynced Core lists only part of the governance set: do not mark anything as dropped then
+    for (const r of opts.markRemoved ? (this.db.prepare('SELECT hash FROM gov_objects WHERE in_core = 1').all() as Array<{ hash: string }>) : []) {
       if (!seen.has(r.hash)) {
         this.db.prepare('UPDATE gov_objects SET in_core = 0, removed_from_core_at = ? WHERE hash = ?').run(at, r.hash);
         removed++;

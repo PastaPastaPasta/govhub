@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@dashevo/evo-sdk": "5.0.0-rc.8",
-    "@govhub/verify": "0.0.0",
+    "@govhub/verify": "*",
     "@hono/node-server": "^1.14.0",
     "@noble/hashes": "^2.0.0",
     "better-sqlite3": "^12.4.1",

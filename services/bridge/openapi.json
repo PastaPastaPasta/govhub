@@ -1,0 +1,339 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "govhub bridge API",
+    "version": "0.1.0",
+    "description": "Read-only API of a govhub bridge: Dash governance proposals, the signed votes behind every tally, masternode-list snapshots and budget cycles, plus a DashCentral-compatible subset. Everything here is reported by the bridge; clients verify it (gov hash, collateral, vote signatures against the voting keys, recount, voteSetHash) with @govhub/verify. Hashes are lowercase hex in RPC/display byte order. Amounts in /v1 are integer duffs (1 DASH = 1e8). CORS is open; only GET/HEAD/OPTIONS are served.",
+    "license": { "name": "MIT" }
+  },
+  "servers": [{ "url": "http://127.0.0.1:8787" }],
+  "paths": {
+    "/v1/status": {
+      "get": {
+        "summary": "Bridge, Core, archive and publisher status",
+        "description": "Always 200 while the process serves HTTP (container health checks). `core.reachable` tells whether Core answers.",
+        "responses": { "200": { "description": "status", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Status" } } } } }
+      }
+    },
+    "/v1/proposals": {
+      "get": {
+        "summary": "Proposals in the archive",
+        "parameters": [
+          { "name": "state", "in": "query", "schema": { "type": "string", "enum": ["active", "past", "all"], "default": "active" }, "description": "active = in Core's current set and end_epoch + 2 h not passed" }
+        ],
+        "responses": {
+          "200": {
+            "description": "proposals, newest first",
+            "content": { "application/json": { "schema": { "type": "object", "required": ["state", "count", "proposals"], "properties": { "state": { "type": "string" }, "asOfHeight": { "type": ["integer", "null"] }, "count": { "type": "integer" }, "proposals": { "type": "array", "items": { "$ref": "#/components/schemas/Proposal" } } } } } }
+          },
+          "400": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/proposals/{hash}": {
+      "get": {
+        "summary": "One proposal with the raw governance object and the raw collateral transaction",
+        "parameters": [{ "$ref": "#/components/parameters/Hash" }],
+        "responses": {
+          "200": { "description": "proposal", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProposalDetail" } } } },
+          "400": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/proposals/{hash}/votes": {
+      "get": {
+        "summary": "The signed votes behind a tally",
+        "description": "Default: the counted votes of the live tally (one current vote per masternode in the tally's MN list). `height=H`: the counted set of the tally in force at height H (use a published `tally` document's asOfHeight to recount exactly what it claims). `all=1`: every archived vote on the proposal, each flagged `counted`. Recount: verify each `sig` against the voting key of the masternode owning collateralTxid:collateralIndex (mainnet: message scheme over `<txid>-<n>|<govHash>|<signal>|<outcome>|<time>`), apply Core's latest-wins rule, weight regular 1 / evo 4, and compare voteSetHash (govhub-voteset-v1, packages/verify/README.md section 7).",
+        "parameters": [
+          { "$ref": "#/components/parameters/Hash" },
+          { "name": "height", "in": "query", "schema": { "type": "integer", "minimum": 0 } },
+          { "name": "all", "in": "query", "schema": { "type": "string", "enum": ["1"] } }
+        ],
+        "responses": {
+          "200": { "description": "votes", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/VoteSet" } } } },
+          "400": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/tallies": {
+      "get": {
+        "summary": "Live tallies of the active proposals, in Core's budget order",
+        "responses": {
+          "200": {
+            "description": "tallies",
+            "content": { "application/json": { "schema": { "type": "object", "required": ["asOfHeight", "tallies"], "properties": { "asOfHeight": { "type": "integer" }, "mnListHash": { "type": "string" }, "computedAt": { "type": "integer" }, "fundingThreshold": { "type": "integer" }, "validWeighted": { "type": "integer" }, "nextSuperblock": { "type": "integer" }, "budget": { "type": "integer", "description": "duffs" }, "allocated": { "type": "integer", "description": "duffs" }, "tallies": { "type": "array", "items": { "$ref": "#/components/schemas/Tally" } } } } } }
+          },
+          "503": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/mnlist": {
+      "get": {
+        "summary": "The masternode-list snapshot the live tallies use",
+        "responses": { "200": { "description": "snapshot", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MnList" } } } }, "404": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/mnlist/{height}": {
+      "get": {
+        "summary": "The snapshot in force at a height (latest snapshot at or below it)",
+        "parameters": [{ "name": "height", "in": "path", "required": true, "schema": { "type": "integer", "minimum": 0 } }],
+        "responses": { "200": { "description": "snapshot", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MnList" } } } }, "400": { "$ref": "#/components/responses/Error" }, "404": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/cycle": {
+      "get": {
+        "summary": "Budget cycle of the next superblock (and the last one, with what it paid)",
+        "responses": {
+          "200": {
+            "description": "cycle",
+            "content": { "application/json": { "schema": { "type": "object", "required": ["asOfHeight", "cycle"], "properties": { "asOfHeight": { "type": "integer" }, "cycle": { "$ref": "#/components/schemas/Cycle" }, "last": { "oneOf": [{ "$ref": "#/components/schemas/Cycle" }, { "type": "null" }] }, "fundingThreshold": { "type": "integer" }, "governance": { "type": "object", "description": "getgovernanceinfo as Core returned it" } } } } }
+          },
+          "503": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/budget": {
+      "get": {
+        "summary": "DashCentral-compatible budget overview",
+        "description": "DashCentral field names. title, owner_username and comment_amount are null (not known to the bridge). Payment counts are schedule estimates.",
+        "responses": { "200": { "description": "budget", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DcBudget" } } } }, "503": { "description": "not computed yet", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DcError" } } } } }
+      }
+    },
+    "/api/v1/proposal": {
+      "get": {
+        "summary": "DashCentral-compatible single proposal",
+        "parameters": [{ "name": "hash", "in": "query", "required": true, "schema": { "type": "string", "pattern": "^[0-9a-fA-F]{64}$" } }],
+        "responses": {
+          "200": { "description": "proposal", "content": { "application/json": { "schema": { "type": "object", "required": ["status", "proposal"], "properties": { "status": { "const": "ok" }, "proposal": { "allOf": [{ "$ref": "#/components/schemas/DcProposal" }, { "type": "object", "properties": { "description_base64_bb": { "type": "null" }, "description_base64_html": { "type": "null" }, "comments": { "type": "null" } } }] } } } } } },
+          "400": { "description": "bad hash", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DcError" } } } },
+          "404": { "description": "unknown", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DcError" } } } }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "Hash": { "name": "hash", "in": "path", "required": true, "schema": { "type": "string", "pattern": "^[0-9a-fA-F]{64}$" }, "description": "governance object hash, display hex" }
+    },
+    "responses": {
+      "Error": { "description": "error", "content": { "application/json": { "schema": { "type": "object", "required": ["error"], "properties": { "error": { "type": "string" } } } } } }
+    },
+    "schemas": {
+      "Hex32": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+      "Status": {
+        "type": "object",
+        "required": ["service", "version", "network", "height", "proposals", "core", "archive"],
+        "properties": {
+          "service": { "const": "govhub-bridge" },
+          "version": { "type": "string" },
+          "network": { "type": "string", "enum": ["mainnet", "testnet", "regtest", "devnet"], "description": "Core network" },
+          "platformNetwork": { "type": "string" },
+          "height": { "type": "integer" },
+          "bestBlockHash": { "type": ["string", "null"] },
+          "govContractId": { "type": ["string", "null"] },
+          "bridgeIdentityId": { "type": ["string", "null"] },
+          "proposals": { "type": "integer", "description": "proposals in the archive" },
+          "startedAt": { "type": "integer" },
+          "now": { "type": "integer" },
+          "core": { "type": "object", "properties": { "reachable": { "type": "boolean" }, "lastError": { "type": ["string", "null"] }, "blockchainSynced": { "type": "boolean" }, "governanceSynced": { "type": "boolean" }, "txindexSynced": { "type": ["boolean", "null"] }, "version": { "type": ["string", "null"] }, "lastChainLockHash": { "type": ["string", "null"] } } },
+          "zmq": { "type": ["object", "null"], "properties": { "url": { "type": "string" }, "received": { "type": "integer" }, "gaps": { "type": "integer", "description": "sequence gaps seen (dropped messages or dashd restarts)" }, "lastMessageAt": { "type": ["integer", "null"] } } },
+          "archive": { "type": "object", "properties": { "objects": { "type": "integer" }, "proposals": { "type": "integer" }, "triggers": { "type": "integer" }, "votes": { "type": "integer" }, "votesByStatus": { "type": "object", "additionalProperties": { "type": "integer" } }, "mnSnapshots": { "type": "integer" }, "latestSnapshotHeight": { "type": ["integer", "null"] }, "badMessages": { "type": "integer" } } },
+          "ingest": { "type": "object" },
+          "lastReconcileAt": { "type": ["integer", "null"] },
+          "tallies": { "type": "object", "properties": { "asOfHeight": { "type": ["integer", "null"] }, "computedAt": { "type": ["integer", "null"] }, "count": { "type": "integer" }, "coreMismatches": { "type": "integer" } } },
+          "publish": { "type": "object" }
+        }
+      },
+      "Proposal": {
+        "type": "object",
+        "description": "Field names of the Platform gov `proposal` document, plus bridge extras.",
+        "required": ["govHash", "parentHash", "revision", "time", "dataHex", "collateralTxid", "verified", "inCore"],
+        "properties": {
+          "govHash": { "$ref": "#/components/schemas/Hex32" },
+          "parentHash": { "$ref": "#/components/schemas/Hex32" },
+          "revision": { "type": "integer" },
+          "time": { "type": "integer" },
+          "dataHex": { "type": "string" },
+          "name": { "type": ["string", "null"] },
+          "url": { "type": ["string", "null"] },
+          "paymentAddress": { "type": ["string", "null"] },
+          "paymentAmount": { "type": ["integer", "null"], "description": "duffs per superblock (Core's ParsePaymentAmount); null if Core cannot pay it" },
+          "startEpoch": { "type": ["integer", "null"] },
+          "endEpoch": { "type": ["integer", "null"] },
+          "collateralTxid": { "$ref": "#/components/schemas/Hex32" },
+          "collateralHeight": { "type": ["integer", "null"] },
+          "collateralConfirmations": { "type": ["integer", "null"] },
+          "verified": { "type": "object", "properties": { "hash": { "type": "boolean" }, "data": { "type": "boolean" }, "collateral": { "type": "boolean" } } },
+          "inCore": { "type": "boolean" },
+          "firstSeenHeight": { "type": "integer" },
+          "firstSeenTime": { "type": "integer" },
+          "source": { "type": "string", "enum": ["zmq", "rpc", "govdat"] },
+          "tally": { "oneOf": [{ "$ref": "#/components/schemas/Tally" }, { "type": "null" }] }
+        }
+      },
+      "ProposalDetail": {
+        "allOf": [
+          { "$ref": "#/components/schemas/Proposal" },
+          {
+            "type": "object",
+            "properties": {
+              "rawHex": { "type": ["string", "null"], "description": "Governance::Object, SER_NETWORK bytes (what ZMQ rawgovernanceobject carries)" },
+              "dataString": { "type": "string" },
+              "collateralRawTxHex": { "type": ["string", "null"] },
+              "collateralBlockHash": { "type": ["string", "null"] },
+              "verification": { "type": "object" },
+              "removedFromCoreAt": { "type": ["integer", "null"] }
+            }
+          }
+        ]
+      },
+      "Tally": {
+        "type": "object",
+        "description": "Field names of the Platform gov `tally` document, plus extras. Weighted counts: regular 1, evo 4, PoSe-banned masternodes included (Core's CountMatchingVotes).",
+        "required": ["govHash", "asOfHeight", "yesWeighted", "noWeighted", "abstainWeighted", "yesCount", "noCount", "abstainCount", "voteSetHash", "rank", "inNextBudget", "margin"],
+        "properties": {
+          "govHash": { "$ref": "#/components/schemas/Hex32" },
+          "asOfHeight": { "type": "integer" },
+          "yesWeighted": { "type": "integer" },
+          "noWeighted": { "type": "integer" },
+          "abstainWeighted": { "type": "integer" },
+          "yesCount": { "type": "integer" },
+          "noCount": { "type": "integer" },
+          "abstainCount": { "type": "integer" },
+          "voteSetHash": { "$ref": "#/components/schemas/Hex32" },
+          "rank": { "type": "integer", "description": "1-based position in Core's order (absolute yes desc, hash desc)" },
+          "inNextBudget": { "type": "boolean", "description": "funded by the next superblock if it happened now (threshold, budget fill, payment window)" },
+          "margin": { "type": "integer", "description": "absolute yes minus the funding threshold" },
+          "absoluteYes": { "type": "integer" },
+          "passing": { "type": "boolean" },
+          "voteCount": { "type": "integer" },
+          "staleKeyVotes": { "type": "integer" },
+          "mnListHash": { "type": "string" },
+          "core": { "type": ["object", "null"], "description": "Core's own FundingResult and vote-set comparison", "properties": { "match": { "type": "boolean" }, "yesWeighted": { "type": "integer" }, "noWeighted": { "type": "integer" }, "abstainWeighted": { "type": "integer" }, "absoluteYes": { "type": "integer" }, "missingSigned": { "type": "integer" }, "extra": { "type": "integer" } } }
+        }
+      },
+      "Vote": {
+        "type": "object",
+        "required": ["hash", "collateralTxid", "collateralIndex", "signal", "outcome", "time", "sig", "rawHex"],
+        "properties": {
+          "hash": { "$ref": "#/components/schemas/Hex32" },
+          "collateralTxid": { "$ref": "#/components/schemas/Hex32" },
+          "collateralIndex": { "type": "integer" },
+          "proTxHash": { "type": ["string", "null"] },
+          "weight": { "type": ["integer", "null"] },
+          "signal": { "type": "integer", "description": "1 = funding" },
+          "outcome": { "type": "integer", "description": "0 none, 1 yes, 2 no, 3 abstain" },
+          "time": { "type": "integer" },
+          "sig": { "type": "string", "description": "base64 of the 65-byte compact signature" },
+          "rawHex": { "type": "string", "description": "CGovernanceVote SER_NETWORK bytes, as relayed by Core" },
+          "signatureStatus": { "type": "string", "enum": ["pending", "valid", "invalid", "unknown-mn", "bls-unverified", "malformed"] },
+          "signerKeyId": { "type": ["string", "null"] },
+          "firstSeenHeight": { "type": "integer" },
+          "firstSeenTime": { "type": "integer" },
+          "source": { "type": "string" },
+          "counted": { "type": "boolean" }
+        }
+      },
+      "VoteSet": {
+        "type": "object",
+        "required": ["govHash", "network", "voteSetHashVersion", "count", "votes"],
+        "properties": {
+          "govHash": { "$ref": "#/components/schemas/Hex32" },
+          "network": { "type": "string" },
+          "voteSetHashVersion": { "const": "govhub-voteset-v1" },
+          "asOfHeight": { "type": ["integer", "null"] },
+          "tallyHeight": { "type": "integer", "description": "height at which this vote set was computed (<= asOfHeight)" },
+          "mnListHash": { "type": "string" },
+          "voteSetHash": { "type": ["string", "null"] },
+          "yesWeighted": { "type": "integer" },
+          "noWeighted": { "type": "integer" },
+          "abstainWeighted": { "type": "integer" },
+          "count": { "type": "integer" },
+          "votes": { "type": "array", "items": { "$ref": "#/components/schemas/Vote" } }
+        }
+      },
+      "MnList": {
+        "type": "object",
+        "required": ["height", "listHash", "masternodes"],
+        "properties": {
+          "height": { "type": "integer" },
+          "blockHash": { "type": "string" },
+          "listHash": { "type": "string", "description": "SHA-256 over the canonical entry list (bridge-internal identifier)" },
+          "count": { "type": "integer" },
+          "validCount": { "type": "integer" },
+          "validWeighted": { "type": "integer" },
+          "totalWeighted": { "type": "integer" },
+          "masternodes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["proTxHash", "collateralTxid", "collateralIndex", "type", "weight", "votingAddress", "valid"],
+              "properties": {
+                "proTxHash": { "type": "string" },
+                "collateralTxid": { "type": "string" },
+                "collateralIndex": { "type": "integer" },
+                "type": { "type": "string", "enum": ["regular", "evo"] },
+                "weight": { "type": "integer" },
+                "votingAddress": { "type": "string" },
+                "keyIdVoting": { "type": ["string", "null"] },
+                "valid": { "type": "boolean", "description": "not PoSe-banned (counts toward the funding threshold); banned masternodes' votes still count" },
+                "poseBanHeight": { "type": "integer" }
+              }
+            }
+          }
+        }
+      },
+      "Cycle": {
+        "type": "object",
+        "description": "Field names of the Platform gov `cycle` document (amounts in duffs).",
+        "required": ["superblockHeight", "budget", "allocated", "votingDeadlineHeight", "estTime", "validWeighted", "paid"],
+        "properties": {
+          "superblockHeight": { "type": "integer" },
+          "budget": { "type": "integer" },
+          "allocated": { "type": "integer" },
+          "votingDeadlineHeight": { "type": "integer" },
+          "estTime": { "type": "integer", "description": "estimate (2.62 min per block) before the superblock, its block time after" },
+          "validWeighted": { "type": "integer" },
+          "paid": { "type": "integer", "description": "0 until the superblock; then the sum of trigger payments found in its coinbase" }
+        }
+      },
+      "DcProposal": {
+        "type": "object",
+        "properties": {
+          "hash": { "type": "string" },
+          "name": { "type": ["string", "null"] },
+          "url": { "type": ["string", "null"] },
+          "dw_url": { "type": "string" },
+          "title": { "type": "null" },
+          "date_added": { "type": "string" },
+          "date_end": { "type": ["string", "null"] },
+          "voting_deadline": { "type": ["string", "null"] },
+          "will_be_funded": { "type": "boolean" },
+          "remaining_yes_votes_until_funding": { "type": ["integer", "null"] },
+          "in_next_budget": { "type": "boolean" },
+          "monthly_amount": { "type": ["number", "null"] },
+          "total_payment_count": { "type": ["integer", "null"] },
+          "remaining_payment_count": { "type": ["integer", "null"] },
+          "yes": { "type": ["integer", "null"] },
+          "no": { "type": ["integer", "null"] },
+          "abstain": { "type": ["integer", "null"] },
+          "order": { "type": ["integer", "null"] },
+          "comment_amount": { "type": "null" },
+          "owner_username": { "type": "null" }
+        }
+      },
+      "DcBudget": {
+        "type": "object",
+        "required": ["status", "budget", "proposals"],
+        "properties": {
+          "status": { "const": "ok" },
+          "budget": { "type": "object", "properties": { "total_amount": { "type": "number" }, "all_proposals": { "type": "integer" }, "budget_requested": { "type": "number" }, "budget_allocated": { "type": "number" }, "budget_left": { "type": "number" }, "superblock": { "type": "integer" }, "payment_date": { "type": "string" }, "voting_deadline": { "type": "string" }, "voting_deadline_height": { "type": "integer" }, "funding_threshold": { "type": "integer" }, "as_of_height": { "type": "integer" } } },
+          "proposals": { "type": "array", "items": { "$ref": "#/components/schemas/DcProposal" } }
+        }
+      },
+      "DcError": { "type": "object", "properties": { "status": { "const": "error" }, "error_type": { "type": "string" }, "error_message": { "type": "string" } } }
+    }
+  }
+}

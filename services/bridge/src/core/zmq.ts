@@ -7,6 +7,7 @@ import { log } from '../log.ts';
 
 export const ZMQ_TOPICS = ['rawgovernanceobject', 'rawgovernancevote', 'hashblock', 'hashchainlock'] as const;
 export type ZmqTopic = (typeof ZMQ_TOPICS)[number];
+export const ZMQ_RECEIVE_HWM = 200_000;
 
 export interface ZmqMessage {
   topic: ZmqTopic;
@@ -60,8 +61,9 @@ export class ZmqListener {
   start(): void {
     if (this.running) return;
     this.running = true;
-    // receiveHighWaterMark 0 = unlimited on our side; Core's publisher HWM (default 1000) is configured in dash.conf.
-    const sock = new Subscriber({ receiveHighWaterMark: 0, reconnectInterval: 1000, tcpKeepalive: 1 });
+    // A governance re-sync replays tens of thousands of votes in a burst; keep the receive queue far above ZMQ's default 1000
+    // (Core's publisher side is raised in dash.conf, zmqpub*hwm=200000). ZMQ reconnects on its own while dashd restarts.
+    const sock = new Subscriber({ receiveHighWaterMark: ZMQ_RECEIVE_HWM, reconnectInterval: 1000, reconnectMaxInterval: 30_000, tcpKeepalive: 1 });
     this.sock = sock;
     for (const t of ZMQ_TOPICS) sock.subscribe(t);
     sock.connect(this.url);
