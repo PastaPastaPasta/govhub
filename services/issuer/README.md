@@ -51,11 +51,11 @@ runs `issuer healthcheck` (exit 0 if `GET /healthz` answers).
 |---|---|---|
 | 1 | shape: `request` is a string, `signature` is base64 of 65 bytes, `blindedMsg` is base64; the request parses in canonical form | `bad-request` |
 | 2 | `net` is this issuer's network; the issuer is this identity | `wrong-network`, `wrong-issuer` |
-| 3 | `epoch` is the epoch being issued at the cached tip, `issuingEpochAt(tip)`; the answer carries `issuingEpoch` | `wrong-epoch` |
+| 3 | `epoch` is the current or the next epoch at the cached tip (`issuingEpochsAt`); the answer carries the current one as `issuingEpoch` | `wrong-epoch` |
 | 4 | a key is ready for that epoch (see "Keys"); the request's `keyId` is that key | `unavailable`, `wrong-key` |
 | 5 | the challenge in `nonce` is authentic and not expired; `sha256(blindedMsg)` equals the bound hash; `blindedMsg` has modulus length | `bad-challenge`, `bad-request` |
 | 6 | **authentication**: the public key recovered from the `signmessage` signature has the hash160 that is `keyIDVoting` of the proTxHash in the **current** list (cached) | `unauthorized` |
-| 7 | at most 6 requests per MN per minute (memory only); the tip, read fresh from dashd, is still inside `E-1` | `unavailable`, `wrong-epoch` |
+| 7 | at most 6 requests per MN per minute (memory only); the tip, read fresh from dashd, still issues E (inside `E-1` or `E`) | `unavailable`, `wrong-epoch` |
 | 8 | **eligibility**: the MN is valid (not PoSe-banned) now; it was registered **and** valid at `S(E-1)` (cached snapshot); its collateral outpoint is the same at both heights | `not-eligible` |
 | 9 | the token store has existed since the window opened; atomic dedup in SQLite, then sign and verify | `unavailable`, `already-issued` |
 
@@ -102,7 +102,7 @@ the bridge's origin.
 | Endpoint | |
 |---|---|
 | `GET /healthz` | `{"ok": true}` |
-| `GET /v1/info` | variant, network, issuer and contract ids, epoch parameters, dashd height, issuing epoch, `keyId`, `ready`, the client request window, challenge TTL. **Advisory only**: clients derive epoch and `keyId` from proved Platform data and the core height |
+| `GET /v1/info` | variant, network, issuer and contract ids, epoch parameters, dashd height, issuing epochs (current, next), `keyIds` per epoch, `ready`, challenge TTL. **Advisory only**: clients derive epoch and `keyId` from proved Platform data and the core height |
 | `POST /v1/challenge` | `{nonce, expiresAt}` (`nonce` is hex) |
 | `POST /v1/token` | body `{request, signature, blindedMsg}` (signature and blindedMsg in base64) returns `{blindSig, epoch}` (`blindSig` in base64) |
 
@@ -115,7 +115,7 @@ Errors are `{error, message}`:
 | `bad-challenge` | 401 | the challenge is invalid or expired; fetch a new one |
 | `unauthorized` | 403 | the signature is not from the voting key of that proTxHash |
 | `not-eligible` | 403 | PoSe-banned now, not valid or not registered at `S(E-1)`, or collateral changed |
-| `wrong-epoch` | 409 | not the epoch being issued, or issuance for it has closed |
+| `wrong-epoch` | 409 | neither the current nor the next epoch, or issuance for it has closed |
 | `wrong-key` | 409 | the request names another key than this epoch's `issuerKey` |
 | `already-issued` | 409 | this MN (or its collateral) already has a token for this epoch |
 | `unavailable` | 503 | no key ready, lists not loaded, Core or signing failed, the per-MN limit, or the global limit (with `Retry-After: 5`) |
@@ -131,8 +131,9 @@ Every response carries `Access-Control-Allow-Origin: *` (no credentials), `Cache
 
 ## Epochs and timing
 
-The issuer mints tokens for the **next** epoch E while the dashd tip is in `[S(E-1), S(E))`. Clients stay `margin`
-blocks from both ends, because Platform's chain-locked height lags the dashd tip. The full table, the display
+The issuer mints tokens for the **current** epoch (Standard mode) and the **next** one (the private modes): a token for E
+while the dashd tip is in `[S(E-1), S(E+1))`. It therefore holds the keys of both epochs. Clients stay `margin` blocks
+from the boundaries, because Platform's chain-locked height lags the dashd tip. The full table, the display
 window and the delay a new badge sees (testnet up to ~27 hours, mainnet up to ~32 days) are in
 `packages/badge/README.md`. Testnet epochs are 576 blocks (about a day) on purpose.
 
@@ -157,32 +158,43 @@ is already published for the epoch.
 
 On the server:
 
-- `ISSUER_KEY_DIR` holds `epoch-<E>.pem` for the epoch being issued and at most `ISSUER_MAX_STAGED_KEYS` later ones
+- `ISSUER_KEY_DIR` holds `epoch-<E>.pem` for the two epochs being issued (current and next) and at most `ISSUER_MAX_STAGED_KEYS` later ones
   (default 1, so the roll-over needs no operator at the boundary). With more staged keys the issuer **refuses to
   issue** and says so in `/v1/info` and the log. Every staged key is a future epoch that a server compromise could
   mint badges for.
 - Before using a key, the issuer reads the proved `issuerKey` for the epoch and refuses if it is missing, was
   published at or after `S(E-1)`, has `keyId != SHA256(spki)`, or the private key does not match the published SPKI.
   The file must not be readable by group or others.
-- Once the issuance window of an epoch has closed (`S(E)` plus the margin), its key is destroyed: overwritten with zeros,
+- Once the issuance window of an epoch has closed (`S(E+1)` plus the margin), its key is destroyed: overwritten with zeros,
   fsynced, unlinked. On ZFS, btrfs and SSDs old blocks may survive; that is a property of the host, not of this code.
 
 Keep the identity's MASTER and CRITICAL keys offline (CRITICAL signs the `issuerKey` documents). Only the HIGH key goes
 to the server, and only for `issuerReport` documents. Key files are JSON
 `{"identityId", "keyId", "privateKeyHex" | "wif"}`.
 
-## What is stored and logged
+## What is stored and logged (logging policy)
 
-- Token rows: `(epoch, proTxHash, collateral, sha256(blindedMsg))`. No IP, no timestamp, no request string, no
-  signature. SQLite runs with `secure_delete`, `synchronous = FULL` and WAL.
-- Once an epoch's issuance window has closed (plus the margin), its rows are deleted and the WAL is checkpointed
-  (`TRUNCATE`), so the old frames do not linger. Only the per-epoch count stays, and the epoch is marked closed, so late
+The owner's rule: users may accept that the issuer could learn which masternode a badge belongs to (Standard mode), but
+**we keep no logs of anything that could link them**. Every layer, checked:
+
+| Layer | What it keeps |
+|---|---|
+| Token store (SQLite, `issuer-data`) | only `(epoch, proTxHash, collateral, sha256(blindedMsg))` for one-token-per-MN dedup and idempotent retries, plus per-epoch counts. No request times, IPs, user agents, request strings or signatures. Rows are deleted (`secure_delete`) when the epoch's issuance window closes, at `S(E+1)` plus the margin. Rollback journal, not WAL: a WAL would keep every insert in order until a checkpoint, i.e. the order in which masternodes got tokens. SSD and filesystem remnants are a host property |
+| Application logs (stderr, kept by Docker's json-file driver) | lifecycle and error lines with no MN, outpoint, address or request detail; requests only as hourly aggregate counters. Hono's error handler is replaced and `console` is silenced in `issuer run`, so no library prints a request. `test/logging.test.ts` runs a full flow with `cf-connecting-ip`/user-agent headers at debug level and searches all output for the proTxHash, outpoint, IP and user agent |
+| Rate limits | in memory only (per MN after authentication, a global budget), never persisted |
+| Tunnel gateway (Caddy, `caddy/tunnel-gateway-issuer.Caddyfile`) | nothing: no access log, and the default logger (which writes proxy errors with the client address) is discarded |
+| cloudflared | `--loglevel fatal`: no per-request lines at all (debug logs every request; info, warn and error log failed origin requests with a time). Watch tunnel health on the metrics port or with `cloudflared tunnel info` |
+| Cloudflare's edge | outside our control: Cloudflare sees request metadata (client IP, time, path). An operator can reduce what it keeps by turning off Logpush, Web Analytics and similar features for the issuer's hostname where the plan allows |
+
+- SQLite runs with `secure_delete`, `synchronous = FULL` and a rollback journal (`journal_mode = DELETE`).
+- Once an epoch's issuance window has closed (plus the margin), its rows are deleted. Only the per-epoch count stays, and the epoch is marked closed, so late
   requests for it get `wrong-epoch`. Keep `/data` and the key directory out of host backups and snapshots.
 - After the window closes the issuer publishes `issuerReport {epoch, tokensIssued}` with the HIGH key, once per epoch
-  it served. Readers accept it only if it was created in `[S(E), S(E)+W]` and is plausible, and compare it with the
+  it served. Tokens for E can be issued until `S(E+1)` (Standard mode), so the report is published after that, and
+  readers accept it only if it was created in `[S(E+1), S(E+1)+W]` and is plausible, and compare it with the
   number of valid badges. If a report for the epoch already exists with another count (another instance, or a stolen
   report key), the issuer logs an error: the document is immutable. It publishes only once Platform's core height has
-  reached `S(E)`. A stolen HIGH key can publish reports for future epochs now: readers reject them as out of window,
+  reached `S(E+1)`. A stolen HIGH key can publish reports for future epochs now: readers reject them as out of window,
   but the unique index then blocks the real report, so those epochs can never be audited; recovery needs a new issuer
   identity.
 - Logs are JSON lines on stderr. They never contain IPs, proTxHashes, request strings, blinded messages or

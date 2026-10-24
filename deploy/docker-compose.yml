@@ -227,7 +227,9 @@ services:
     user: "1000:1000"
     depends_on:
       - bridge
-    command: ["tunnel", "--metrics", "127.0.0.1:20241", "run"]
+    # loglevel fatal: no per-request lines at all (debug logs every request; info, warn and error log each failed origin request
+    # with a timestamp). Watch the tunnel on the metrics port or with `cloudflared tunnel info` instead of its log.
+    command: ["tunnel", "--loglevel", "fatal", "--metrics", "127.0.0.1:20241", "run"]
     # edge only: cloudflared reaches the bridge, never dashd's RPC or ZMQ, whatever ingress Cloudflare
     # is told to serve.
     networks:

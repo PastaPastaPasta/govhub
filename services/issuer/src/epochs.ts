@@ -1,6 +1,6 @@
 // Epoch housekeeping, run on a timer: which key may sign, destroying keys and token rows of closed windows, and the per-epoch
 // issuerReport. Every step works from the dashd tip; the issuerKey check reads Platform with proofs.
-import { deriveKeyId, epochStart, equalBytes, issuingEpochAt, keyDeadline, toHex, type EpochParams } from '@govhub/badge';
+import { deriveKeyId, epochStart, equalBytes, issuingEpochsAt, keyDeadline, reportWindow, toHex, type EpochParams } from '@govhub/badge';
 import type { IdentityKeyFile } from './config.ts';
 import type { CoreView, MnLists } from './core.ts';
 import type { TokenStore } from './db.ts';
@@ -26,16 +26,21 @@ export interface EpochManagerDeps {
 
 export interface EpochStatus {
   height: number | null;
-  issuingEpoch: number | null;
-  keyId: string | null;
+  /** the current epoch (Standard mode) and the next one (private modes) */
+  issuingEpochs: number[];
+  /** hex keyId per issuing epoch that has a ready key */
+  keyIds: Record<number, string>;
+  /** at least one issuing epoch has a ready key */
   ready: boolean;
   problem: string | null;
 }
 
 export class EpochManager {
   readonly #d: EpochManagerDeps;
-  #active: ActiveKey | null = null;
-  #status: EpochStatus = { height: null, issuingEpoch: null, keyId: null, ready: false, problem: 'starting' };
+  /** ready keys by epoch: at most the current and the next one */
+  #active = new Map<number, ActiveKey>();
+  #status: EpochStatus = { height: null, issuingEpochs: [], keyIds: {}, ready: false, problem: 'starting' };
+  #blocked = false;
 
   constructor(deps: EpochManagerDeps) {
     this.#d = deps;
@@ -46,7 +51,7 @@ export class EpochManager {
   }
 
   activeKey(epoch: number): ActiveKey | null {
-    return this.#active && this.#active.epoch === epoch && this.#status.ready ? this.#active : null;
+    return this.#blocked ? null : (this.#active.get(epoch) ?? null);
   }
 
   async tick(): Promise<void> {
@@ -58,24 +63,26 @@ export class EpochManager {
       this.#status = { ...this.#status, ready: false, problem: `Core: ${errText(e)}` };
       return;
     }
-    const epoch = issuingEpochAt(d.params, height);
+    const [current, next] = issuingEpochsAt(d.params, height);
     const margin = d.params.boundaryMarginBlocks;
     // A syncing node's tip is not the network's: no start height, no lists, no issuing until it has caught up (N8).
     const synced = await d.core.synced().catch((e: unknown) => `getblockchaininfo failed: ${errText(e)}`);
     if (synced !== true) {
-      this.#status = { height, issuingEpoch: epoch, keyId: null, ready: false, problem: typeof synced === 'string' ? synced : 'dashd is not synced' };
+      this.#blocked = true;
+      this.#status = { height, issuingEpochs: [current, next], keyIds: {}, ready: false, problem: typeof synced === 'string' ? synced : 'dashd is not synced' };
       return;
     }
     d.store.markStarted(height);
     try {
-      await d.lists.refresh(epochStart(d.params, epoch - 1), margin);
+      // a token for E needs the MN valid at S(E-1): S(current-1) and S(current)
+      await d.lists.refresh([epochStart(d.params, current - 1), epochStart(d.params, current)], margin);
     } catch (e) {
       log.warn('masternode list refresh failed', { error: errText(e) });
     }
 
-    // Keys of epochs whose issuance window closed (plus the reorg margin) are destroyed.
+    // Keys of epochs whose issuance window closed (at S(E+1), plus the reorg margin) are destroyed.
     for (const e of keyEpochs(d.keyDir)) {
-      if (e < epoch && height >= epochStart(d.params, e) + margin) {
+      if (e < current && height >= epochStart(d.params, e + 1) + margin) {
         // a file the service cannot remove (wrong owner, read-only directory) must not stop the rest of the housekeeping
         try {
           destroyKey(d.keyDir, e);
@@ -86,22 +93,29 @@ export class EpochManager {
       }
     }
     // Token rows of closed windows are deleted; only the per-epoch count stays.
-    const closable = height >= epochStart(d.params, epoch - 1) + margin ? epoch - 1 : epoch - 2;
+    const closable = height >= epochStart(d.params, current) + margin ? current - 1 : current - 2;
     if (closable >= 1) {
       const n = d.store.closeThrough(closable);
       if (n) log.info('deleted token records of closed epochs', { throughEpoch: closable, rows: n });
     }
 
-    const staged = keyEpochs(d.keyDir).filter((e) => e > epoch);
-    let problem: string | null = null;
-    if (staged.length > d.maxStagedKeys) problem = `${staged.length} keys for later epochs are on the server (max ${d.maxStagedKeys}): remove them`;
-    else if (this.#active?.epoch !== epoch) problem = await this.#load(epoch);
-    if (problem) {
-      if (this.#active?.epoch !== epoch) this.#active = null;
-      // once per change, not every tick
-      if (problem !== this.#status.problem) log.error('issuance unavailable', { epoch, problem });
-    }
-    this.#status = { height, issuingEpoch: epoch, keyId: this.#active ? toHex(this.#active.keyId) : null, ready: !problem && !!this.#active, problem };
+    // the server signs with the keys of the current and the next epoch; staged keys are those after them
+    for (const e of [...this.#active.keys()]) if (e !== current && e !== next) this.#active.delete(e);
+    const staged = keyEpochs(d.keyDir).filter((e) => e > next);
+    const problems: string[] = [];
+    this.#blocked = staged.length > d.maxStagedKeys;
+    if (this.#blocked) problems.push(`${staged.length} keys for later epochs are on the server (max ${d.maxStagedKeys}): remove them`);
+    else
+      for (const e of [current, next]) {
+        if (this.#active.has(e)) continue;
+        const p = await this.#load(e);
+        if (p) problems.push(p);
+      }
+    const problem = problems.length ? problems.join('; ') : null;
+    // once per change, not every tick
+    if (problem && problem !== this.#status.problem) log.error('issuance (partly) unavailable', { epochs: [current, next], problem });
+    const keyIds = Object.fromEntries([...this.#active].map(([e, k]) => [e, toHex(k.keyId)]));
+    this.#status = { height, issuingEpochs: [current, next], keyIds, ready: !this.#blocked && this.#active.size > 0, problem };
 
     await this.#report().catch((e) => log.warn('issuerReport failed', { error: errText(e) }));
   }
@@ -133,7 +147,7 @@ export class EpochManager {
     } catch (e) {
       return `key file of epoch ${epoch}: ${errText(e)}`;
     }
-    this.#active = { epoch, keyId: doc.keyId, signer };
+    this.#active.set(epoch, { epoch, keyId: doc.keyId, signer });
     d.store.openEpoch(epoch);
     log.info('signing key ready', { epoch, keyId: toHex(doc.keyId), modulusBits: signer.modulusBytes * 8 });
     return null;
@@ -152,11 +166,12 @@ export class EpochManager {
         d.store.markReported(epoch, 'existing');
         continue;
       }
-      // Readers accept a report created in [S(E), S(E)+W] of PLATFORM's core height, which can lag the dashd tip (N7).
+      // Tokens for E can be issued until S(E+1), so readers accept a report created in [S(E+1), S(E+1)+W] of PLATFORM's core
+      // height, which can lag the dashd tip (N7).
       const ph = await platform.coreHeight();
-      const from = epochStart(d.params, epoch);
-      if (ph < from) continue;
-      if (ph > from + d.params.graceBlocks) log.error('issuerReport is late: readers will flag this epoch', { epoch, platformCoreHeight: ph });
+      const w = reportWindow(d.params, epoch);
+      if (ph < w.from) continue;
+      if (ph > w.to) log.error('issuerReport is late: readers will flag this epoch', { epoch, platformCoreHeight: ph });
       const tokensIssued = d.store.issued(epoch);
       const id = await platform.publishIssuerReport(d.reportKey, { epoch, tokensIssued });
       d.store.markReported(epoch, id);

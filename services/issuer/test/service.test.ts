@@ -113,12 +113,12 @@ describe('token issuance', () => {
     const lists = new MnLists(w.core);
     const snapH = epochStart(P, E - 1);
     w.core.tip = snapH + 1; // not settled (margin 3)
-    await lists.refresh(snapH, P.boundaryMarginBlocks);
+    await lists.refresh([snapH], P.boundaryMarginBlocks);
     expect(seen).toEqual(['tip']);
     expect(lists.snapshot(snapH)).toBeNull();
     w.core.tip = snapH + 3;
-    await lists.refresh(snapH, P.boundaryMarginBlocks);
-    await lists.refresh(snapH, P.boundaryMarginBlocks);
+    await lists.refresh([snapH], P.boundaryMarginBlocks);
+    await lists.refresh([snapH], P.boundaryMarginBlocks);
     expect(seen).toEqual(['tip', 'tip', snapH, 'tip']);
     expect(lists.snapshot(snapH)?.size).toBe(1);
     expect(lists.now?.height).toBe(snapH + 3);
@@ -150,17 +150,17 @@ describe('token issuance', () => {
     const w = await world();
     const mn = w.core.add(fakeMn());
     const e = await expectError(issue(w, (await clientRequest(w, mn, { epoch: E + 1 })).body), 'wrong-epoch');
-    expect(e.issuingEpoch).toBe(E);
+    expect(e.issuingEpoch).toBe(E - 1); // the current epoch; E (the next one) is issued too
   });
 
-  it('the tip is re-read after authentication: a token is never issued once S(E) is reached', async () => {
+  it('the tip is re-read after authentication: a token for E is never issued once S(E+1) is reached', async () => {
     const w = await world();
     const mn = w.core.add(fakeMn());
     const r = await clientRequest(w, mn);
     const lists = w.core.liveLists();
-    const stale = { get now() { return { height: epochStart(P, E) - 1, list: lists.now!.list }; }, snapshot: lists.snapshot };
+    const stale = { get now() { return { height: epochStart(P, E + 1) - 1, list: lists.now!.list }; }, snapshot: lists.snapshot };
     const { TokenService } = await import('../src/service.ts');
-    const svc = new TokenService({ network: 'testnet', params: P, issuerId: w.issuerId, core: { tipHeight: async () => epochStart(P, E) }, lists: stale, store: w.store, challenges: w.challenges, activeKey: () => ({ epoch: E, keyId: w.key.keyId, signer: w.signer }), nowSec: () => w.now.sec });
+    const svc = new TokenService({ network: 'testnet', params: P, issuerId: w.issuerId, core: { tipHeight: async () => epochStart(P, E + 1) }, lists: stale, store: w.store, challenges: w.challenges, activeKey: () => ({ epoch: E, keyId: w.key.keyId, signer: w.signer }), nowSec: () => w.now.sec });
     const err = await expectError(svc.issue(r.body as never), 'wrong-epoch');
     expect(err.issuingEpoch).toBe(E + 1);
   });
@@ -171,18 +171,29 @@ describe('token issuance', () => {
     await expectError(issue(w, (await clientRequest(w, mn, { net: 'mainnet' })).body), 'wrong-network');
     await expectError(issue(w, (await clientRequest(w, mn, { issuerId: bytesToId(rnd(32)) })).body), 'wrong-issuer');
     await expectError(issue(w, (await clientRequest(w, mn, { epoch: E + 1 })).body), 'wrong-epoch');
-    await expectError(issue(w, (await clientRequest(w, mn, { epoch: E - 1 })).body), 'wrong-epoch');
+    await expectError(issue(w, (await clientRequest(w, mn, { epoch: E - 1 })).body), 'unavailable'); // current epoch, no key for it here
+    await expectError(issue(w, (await clientRequest(w, mn, { epoch: E - 2 })).body), 'wrong-epoch');
     await expectError(issue(w, (await clientRequest(w, mn, { keyId: rnd(32) })).body), 'wrong-key');
     expect(w.core.calls).toBe(0); // none of these touched MN state
   });
 
-  it('epoch boundaries: at S(E) tokens for E are no longer issued', async () => {
+  it('epoch boundaries: tokens for E during E-1 and during E (Standard mode), not from S(E+1)', async () => {
+    const w = await world();
+    const a = w.core.add(fakeMn());
+    const b = w.core.add(fakeMn());
+    w.core.tip = epochStart(P, E) + 10; // inside E: the current epoch
+    expect((await issue(w, (await clientRequest(w, a)).body)).epoch).toBe(E);
+    w.core.tip = epochStart(P, E + 1);
+    await expectError(issue(w, (await clientRequest(w, b)).body), 'wrong-epoch');
+  });
+
+  it('one token per MN and epoch whichever mode asked: early (during E-1) then again during E is refused', async () => {
     const w = await world();
     const mn = w.core.add(fakeMn());
-    w.core.tip = epochStart(P, E);
-    await expectError(issue(w, (await clientRequest(w, mn)).body), 'wrong-epoch');
-    w.core.tip = epochStart(P, E) - 1;
-    expect((await issue(w, (await clientRequest(w, mn)).body)).epoch).toBe(E);
+    await issue(w, (await clientRequest(w, mn)).body); // during E-1, for the next epoch E
+    w.core.tip = epochStart(P, E) + 10;
+    await expectError(issue(w, (await clientRequest(w, mn)).body), 'already-issued'); // during E, for the current epoch E
+    expect(w.store.issued(E)).toBe(1);
   });
 
   it('challenges: expired, forged, or from another issuer are refused', async () => {

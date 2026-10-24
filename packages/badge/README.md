@@ -111,18 +111,22 @@ few blocks.
 
 | Window | Heights | Used by |
 |---|---|---|
-| issuance of tokens for E | `S(E-1) <= h < S(E)` (the issuer's dashd tip) | issuer |
-| client request for E | `[S(E-1) + margin, S(E) - margin)`, one uniformly random height | `pickRequestHeight` |
-| client posting of the badge | `[S(E) + margin, S(E) + W]`, one uniformly random height | `pickPostHeight` |
+| issuance of tokens for E | `S(E-1) <= h < S(E+1)` (the issuer's dashd tip): the next epoch during E-1, the current one during E | issuer |
+| Standard request for E | at once, during E (`[S(E), S(E+1) - margin)`) | client |
+| Private / Extra request for E | `[S(E-1) + margin, S(E) - margin)`, one uniformly random height (`privateRequestWindow`) | `pickRequestHeight` |
+| posting of the badge | Standard: at once (never before `S(E)`); Private: `[S(E) + margin, S(E) + W]`; Extra: `[S(E) + margin, S(E) + L/2]`, one uniformly random height | `pickPostHeight` |
 | display of a badge for E | `S(E) <= h <= S(E+1) + W`, for the badge's `$createdAtCoreBlockHeight` **and** for the reader's current height | reader |
 | `issuerKey` for E | created strictly before `S(E-1)` (`keyDeadline`) | reader, issuer |
+| `issuerReport` for E | created in `[S(E+1), S(E+1) + W]` (`reportWindow`): after E's issuance window closed | reader, issuer |
 
 Heights on Platform are `$createdAtCoreBlockHeight`, which Drive sets from the block, so they cannot be back-dated.
 Epoch 0 is not used: the window functions and `acceptIssuerKey` require `E >= 1`.
 
-Because every token for E is issued before any badge for E can be posted, the issuer cannot match a token to a
-badge by timing. There is no fast path for late joiners. The old epoch's badge is still shown until `S(E+1) + W`,
-so renewal can happen at a random time without a visible gap.
+**Privacy modes** (PLAN §8.8, owner decision): **Standard** (default) asks for the current epoch and posts at once, so
+the badge shows within minutes and the issuer could match token and badge by timing; the UI says so, and the issuer
+keeps no records that would let it. **Private** and **Extra private** ask for the next epoch during this one, so every
+private token for E exists before any of those badges can be posted, and the issuer cannot match them by timing. The
+old epoch's badge is still shown until `S(E+1) + W`, so renewal can happen without a visible gap.
 
 ### Testnet timing
 
@@ -130,9 +134,10 @@ Testnet has a superblock every 24 blocks (about 1 hour). One cycle per epoch wou
 badge document every hour, and a browser open every hour to renew. 24 cycles make an epoch about a day: renewal
 is daily and a new badge still shows within about a day. W = 72 is the same ~12% of an epoch as on mainnet.
 
-How long a new badge takes: a request is for the next epoch E. It is sent at a random height in E-1's window, and
-the badge is posted at a random height in `[S(E) + margin, S(E) + W]`. So a badge first shows between about 0 and
-one epoch plus W after the user asked:
+How long a new badge takes: in Standard mode, minutes (as soon as an epoch with a published key is current). In the
+private modes a request is for the next epoch E, sent at a random height in E-1's window, and the badge is posted at
+a random height in `[S(E) + margin, S(E) + W]` (Extra: the first half of E). So a private badge first shows between
+about 0 and one epoch plus W after the user asked (Extra: plus up to half an epoch):
 
 | | up to |
 |---|---|
@@ -163,10 +168,11 @@ Rules that live above this package (in `apps/web/src/badge/reader.ts`):
 - Never a count, a history or a type; at most one badge per identity per issuer.
 - Badges are never summed across issuers. k issuers can give one MN k badges, shown per issuer.
 - Audit (apps/web): the verified badges of (issuer, E) are counted against the issuer's own `issuerReport.tokensIssued`.
-  A report counts only if it was created in `[S(E), S(E)+W]` (a stolen report key cannot fix future counts in advance)
+  Tokens for E can be issued until `S(E+1)`, so a report counts only if it was created in `[S(E+1), S(E+1)+W]` (a stolen
+  report key cannot fix future counts in advance); an issuer flagged for E-1 is hidden for E too
   and is plausible: at most the masternode count of the **proven** list (`@govhub/dapi` anchored chain, SML checked
   against the CbTx `merkleRootMNList`) plus 5%, capped by a pinned bound (testnet 500, mainnet 4,000) that is also the
-  fallback when the list cannot be proven. More badges than tokens, an implausible report, no valid report once `S(E)+W`
+  fallback when the list cannot be proven. More badges than tokens, an implausible report, no valid report once `S(E+1)+W`
   has passed, or more badges than the audit can count (it counts one past the bound) flags the issuer and hides its
   badges for that epoch. Anyone can post invalid `mnBadge` documents, so thousands of them could push an honest issuer's
   epoch past the count limit (a costly griefing path, accepted).
@@ -183,7 +189,8 @@ Verification is cheap: about 20 to 30 microseconds per badge in Chromium (spike 
 - `blind()` is 16 to 40 ms of JS bignum arithmetic (sjcl, not constant-time; the exposure is local to the user's own
   browser). Run it in a Worker.
 - Derive epoch and `keyId` from a proved `issuerKey` and the core height, never from the issuer's `/v1/info`.
-- A due action found when the app opens waits a random 30 s to 10 min (`resumeDelayMs`).
+- Private modes: a due action found when the app opens waits a random 30 s to 10 min (`resumeDelayMs`). Standard mode
+  runs at once.
 - A signature that fails `finalize` means the issuer is broken or hostile: start over and flag it.
 
 ## Module map
@@ -193,8 +200,8 @@ Verification is cheap: about 20 to 30 microseconds per badge in Chromium (spike 
 | `src/client.ts` | `importIssuerKey`, `prepare`, `blind`, `finalize`, `verify`, `bindIssuerKey`, `prepareBadge`, `verifyBadgeSignature`, `VARIANT`, `ALLOWED_MODULUS_BITS`, `SPKI_LEN` |
 | `src/format.ts` | `buildBadgeMessage`, `parseBadgeMessage`, `deriveKeyId`, `NET_BYTE`, `isNetwork`, length constants |
 | `src/request.ts` | `buildTokenRequest`, `buildTokenRequestFor`, `parseTokenRequest`, `requestBindsBlindedMsg` |
-| `src/epoch.ts` | `EPOCH_PARAMS`, `epochStart`, `epochOf`, `issuingEpochAt`, `issuanceWindow`, `clientIssuanceWindow`, `postingWindow`, `displayWindow`, `inDisplayWindow`, `displayEpochsAt`, `keyDeadline` |
-| `src/schedule.ts` | `pickRequestHeight`, `pickPostHeight`, `clientPostingWindow`, `requestableEpoch`, `resumeDelayMs` |
+| `src/epoch.ts` | `EPOCH_PARAMS`, `epochStart`, `epochOf`, `issuingEpochsAt`, `issuanceWindow`, `privateRequestWindow`, `postingWindow`, `extraPostingWindow`, `reportWindow`, `displayWindow`, `inDisplayWindow`, `displayEpochsAt`, `keyDeadline` |
+| `src/schedule.ts` | `PrivacyMode`, `PRIVACY_MODES`, `pickRequestHeight`, `pickPostHeight` (per mode), `clientPostingWindow`, `requestableEpoch` (per mode), `resumeDelayMs` |
 | `src/reader.ts` | `acceptIssuerKey`, `verifyMnBadge` and the document types |
 | `src/docs.ts` | parsers for the JSON `Document.toJSON()` returns (`parseIssuerKeyDoc`, `parseIssuerRevocationDoc`, `parseMnBadgeDoc`, `parseIssuerReportDoc`) and field builders for writers. Parsers throw on malformed input; a reader treats that as "no valid document" |
 | `src/bytes.ts` | hex, base64, base58 ids, `sha256`, constant-time `equalBytes`, `randomBelow` |

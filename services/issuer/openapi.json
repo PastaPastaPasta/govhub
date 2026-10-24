@@ -82,43 +82,28 @@
                       ],
                       "description": "the issuer's dashd tip"
                     },
-                    "issuingEpoch": {
-                      "type": [
-                        "integer",
-                        "null"
-                      ],
-                      "description": "tokens are minted for this epoch now"
-                    },
-                    "keyId": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
-                      "description": "hex SHA256(spki) of the key in use"
-                    },
                     "ready": {
                       "type": "boolean"
-                    },
-                    "window": {
-                      "type": [
-                        "object",
-                        "null"
-                      ],
-                      "properties": {
-                        "from": {
-                          "type": "integer"
-                        },
-                        "to": {
-                          "type": "integer"
-                        }
-                      },
-                      "description": "client request window (heights) for issuingEpoch"
                     },
                     "challengeTtlSec": {
                       "type": "integer"
                     },
                     "note": {
                       "type": "string"
+                    },
+                    "issuingEpochs": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      },
+                      "description": "the epochs tokens are minted for now: the current one (Standard mode) and the next one (private modes)"
+                    },
+                    "keyIds": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "description": "hex SHA256(spki) of the ready key, by epoch"
                     }
                   }
                 }
@@ -163,7 +148,7 @@
     "/v1/token": {
       "post": {
         "summary": "Blind-sign a badge token for one masternode",
-        "description": "`request` is the canonical string govhub-badge-req:v2|<net>|<issuerId>|<epoch>|<keyIdHex>|<proTxHash>|<nonce>|<sha256(blindedMsg)> and `signature` is Dash signmessage over it by the MN's VOTING key. One token per (proTxHash, epoch) and per (collateral, epoch) at this issuer; a retry with the same blindedMsg returns the same blindSig. Authentication failures all return 403 unauthorized. Global rate limit: 503 with Retry-After.",
+        "description": "`request` is the canonical string govhub-badge-req:v2|<net>|<issuerId>|<epoch>|<keyIdHex>|<proTxHash>|<nonce>|<sha256(blindedMsg)> and `signature` is Dash signmessage over it by the MN's VOTING key. The request's epoch must be the current or the next one. One token per (proTxHash, epoch) and per (collateral, epoch) at this issuer; a retry with the same blindedMsg returns the same blindSig. Authentication failures all return 403 unauthorized. Global rate limit: 503 with Retry-After.",
         "requestBody": {
           "required": true,
           "content": {

@@ -45,9 +45,12 @@ describe('epoch manager', () => {
   it('loads the key for the issuing epoch when it matches the proved issuerKey', async () => {
     const t = await setup([E, E + 1]);
     await t.m.tick();
-    expect(t.m.status).toMatchObject({ issuingEpoch: E, ready: true, problem: null });
+    // issuing E-1 (current: no key for it here) and E (next)
+    expect(t.m.status).toMatchObject({ issuingEpochs: [E - 1, E], ready: true });
+    expect(t.m.status.problem).toMatch(/no key file for epoch/);
     expect(t.m.activeKey(E)?.epoch).toBe(E);
     expect(t.m.activeKey(E + 1)).toBeNull();
+    expect(t.m.activeKey(E - 1)).toBeNull();
   });
 
   it('refuses a key that differs from the published SPKI, a late issuerKey, or a missing one', async () => {
@@ -88,12 +91,16 @@ describe('epoch manager', () => {
     await t.m.tick();
     t.store.reserve({ epoch: E, windowFrom: 0, proTxHash: 'a', collateral: 'a', blindedHash: rnd(32) }, () => rnd(256));
     t.store.reserve({ epoch: E, windowFrom: 0, proTxHash: 'b', collateral: 'b', blindedHash: rnd(32) }, () => rnd(256));
-    // inside the reorg margin after S(E): nothing destroyed yet
-    t.core.tip = epochStart(P, E) + P.boundaryMarginBlocks - 1;
+    // during E the key of E still signs (Standard mode)
+    t.core.tip = epochStart(P, E) + 10;
+    await t.m.tick();
+    expect(t.m.activeKey(E)?.epoch).toBe(E);
+    // inside the reorg margin after S(E+1): nothing destroyed yet
+    t.core.tip = epochStart(P, E + 1) + P.boundaryMarginBlocks - 1;
     await t.m.tick();
     expect(existsSync(join(t.dir, keyFileName(E)))).toBe(true);
-    expect(t.m.status.issuingEpoch).toBe(E + 1);
-    t.core.tip = epochStart(P, E) + P.boundaryMarginBlocks;
+    expect(t.m.status.issuingEpochs).toEqual([E + 1, E + 2]);
+    t.core.tip = epochStart(P, E + 1) + P.boundaryMarginBlocks;
     await t.m.tick();
     expect(existsSync(join(t.dir, keyFileName(E)))).toBe(false);
     expect(t.store.issued(E)).toBe(2);
@@ -109,15 +116,15 @@ describe('epoch manager', () => {
     expect(t.m.status).toMatchObject({ ready: false, problem: 'dashd is not synced' });
   });
 
-  it('the report waits for Platform\'s core height to reach S(E)', async () => {
+  it('the report waits for Platform\'s core height to reach S(E+1) (tokens for E can be issued during E)', async () => {
     const t = await setup([E, E + 1]);
     await t.m.tick();
     t.store.reserve({ epoch: E, windowFrom: 0, proTxHash: 'a', collateral: 'a', blindedHash: rnd(32) }, () => rnd(256));
-    t.core.tip = epochStart(P, E) + P.boundaryMarginBlocks;
-    t.platformHeight = epochStart(P, E) - 1;
+    t.core.tip = epochStart(P, E + 1) + P.boundaryMarginBlocks;
+    t.platformHeight = epochStart(P, E + 1) - 1;
     await t.m.tick();
     expect(t.reports).toEqual([]);
-    t.platformHeight = epochStart(P, E) + 1;
+    t.platformHeight = epochStart(P, E + 1) + 1;
     await t.m.tick();
     expect(t.reports).toEqual([{ epoch: E, tokensIssued: 1 }]);
   });

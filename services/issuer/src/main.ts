@@ -12,6 +12,9 @@ import { createApp } from './server.ts';
 import { TokenService } from './service.ts';
 
 export async function runService(): Promise<void> {
+  // The issuer writes its own (policy-checked) lines through log.ts. Libraries that print to the console, e.g. the HTTP server
+  // on an aborted or failed response, could write request details to stdout, which Docker keeps: silence them all.
+  for (const m of ['log', 'info', 'warn', 'error', 'debug', 'trace'] as const) console[m] = () => undefined;
   const cfg = loadConfig();
   const params = EPOCH_PARAMS[cfg.network];
   const core = createCoreView(createRpc({ url: cfg.core.rpcUrl, user: cfg.core.rpcUser, password: cfg.core.rpcPassword, timeoutMs: cfg.core.rpcTimeoutMs }), cfg.network);

@@ -7,6 +7,7 @@
 // A user's own write right after a request cannot be prevented; every tab shows a note during the cooldown.
 const REQUEST_KEY = 'govhub.badge.lastRequestMs';
 const WRITE_KEY = 'govhub.badge.lastWriteMs';
+const PRIVATE_KEY = 'govhub.badge.lastPrivateRequestMs';
 export const COOLDOWN_MS = 30 * 60_000;
 
 type Store = Pick<Storage, 'getItem' | 'setItem'> | undefined;
@@ -50,6 +51,18 @@ export function noteIdentityWrite(storage: Store = local(), now = Date.now()): v
 export function noteRequestSent(storage: Store = local(), now = Date.now()): void {
   write(storage, REQUEST_KEY, now);
   emit();
+}
+
+/** A Private/Extra request: Standard jobs in this browser wait for its cooldown too, so they cannot undo its separation. */
+export function notePrivateRequest(storage: Store = local(), now = Date.now()): void {
+  write(storage, PRIVATE_KEY, now);
+  write(storage, REQUEST_KEY, now);
+  emit();
+}
+
+/** Standard jobs never wait for anything of their own, only for a Private request's cooldown in this browser (review M1). */
+export function mayStandard(storage: Store = local(), now = Date.now()): boolean {
+  return now - read(storage, PRIVATE_KEY, now) >= COOLDOWN_MS;
 }
 
 export function mayRequest(storage: Store = local(), now = Date.now()): boolean {

@@ -99,14 +99,13 @@ export class MnLists {
     this.#core = core;
   }
 
-  async refresh(snapshotHeight: number, settle: number): Promise<void> {
+  async refresh(snapshotHeights: readonly number[], settle: number): Promise<void> {
     const height = await this.#core.tipHeight();
     const list = await this.#core.mnList('tip');
     this.#now = { height, list };
-    if (!this.#snaps.has(snapshotHeight) && height >= snapshotHeight + settle) {
-      this.#snaps.set(snapshotHeight, await this.#core.mnList(snapshotHeight));
-      for (const k of this.#snaps.keys()) if (k < snapshotHeight) this.#snaps.delete(k);
-    }
+    for (const h of snapshotHeights) if (!this.#snaps.has(h) && height >= h + settle) this.#snaps.set(h, await this.#core.mnList(h));
+    const oldest = Math.min(...snapshotHeights);
+    for (const k of this.#snaps.keys()) if (k < oldest) this.#snaps.delete(k);
   }
 
   get now(): { height: number; list: Map<string, MnState> } | null {

@@ -7,7 +7,7 @@
 //                                                 OFFLINE: publish the manifest's issuerKey documents (CRITICAL key)
 //   issuer epoch --network N --height H           print the epoch schedule around height H
 import { parseArgs } from 'node:util';
-import { EPOCH_PARAMS, epochStart, fromHex, isNetwork, issuingEpochAt, keyDeadline, toHex, type BadgeNetwork } from '@govhub/badge';
+import { EPOCH_PARAMS, epochOf, epochStart, fromHex, isNetwork, keyDeadline, toHex, type BadgeNetwork } from '@govhub/badge';
 import { readIdentityKeyFile } from './config.ts';
 import { keygen, manifestSpki, readManifest } from './keys.ts';
 import { errText } from './log.ts';
@@ -62,7 +62,7 @@ async function main(): Promise<void> {
       const manifest = readManifest(values.dir);
       if (!manifest.length) throw new Error(`no manifest.json in ${values.dir}; run keygen first`);
       let height = await platform.coreHeight();
-      const issuing = issuingEpochAt(p, height);
+      const issuing = epochOf(p, height); // the current epoch is issued too (Standard mode)
       console.error(`platform core height ${height}: issuing for epoch ${issuing}`);
       for (const m of manifest) {
         const existing = await platform.issuerKey(key.identityId, m.epoch);
@@ -95,8 +95,8 @@ async function main(): Promise<void> {
       const { values } = parseArgs({ args: rest, options: { network: { type: 'string' }, height: { type: 'string' } } });
       const p = EPOCH_PARAMS[net(values.network)];
       const h = num(values.height, '--height');
-      const e = issuingEpochAt(p, h) - 1;
-      console.log(JSON.stringify({ height: h, epoch: e, S: epochStart(p, e), next: epochStart(p, e + 1), issuingFor: e + 1, keyDeadlineForIssuing: keyDeadline(p, e + 1), params: p }));
+      const e = epochOf(p, h);
+      console.log(JSON.stringify({ height: h, epoch: e, S: epochStart(p, e), next: epochStart(p, e + 1), issuingFor: [e, e + 1], keyDeadlineForNext: keyDeadline(p, e + 1), params: p }));
       return;
     }
     default:
@@ -106,6 +106,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((e) => {
-  console.error(`error: ${errText(e)}`);
+  // straight to stderr: `issuer run` silences `console` (no library may print request details)
+  process.stderr.write(`error: ${errText(e)}\n`);
   process.exit(1);
 });

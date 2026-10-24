@@ -5,10 +5,12 @@
 //   L  = epoch length in blocks = superblockCycle * epochCycles
 //   S(E) = E * L                    (a superblock height: superblocks are the multiples of superblockCycle)
 //   epoch(h) = floor(h / L)
-//   tokens for E are minted only while S(E-1) <= h < S(E)            (the issuance window)
-//   badges for E are posted at a uniformly random height in [S(E), S(E) + W]
-//   a badge for E is shown while S(E) <= h <= S(E+1) + W, and its own height must be in that range too
+//   tokens for E are minted while S(E-1) <= h < S(E+1) (the issuance window): during E-1 (the private modes ask early) and
+//   during E itself (Standard mode asks for the current epoch and posts at once)
+//   a badge for E is never created before S(E); it is shown while S(E) <= h <= S(E+1) + W, and its own height must be in
+//   that range too
 //   the issuerKey for E must have been created before S(E-1)
+//   the issuerReport for E is published once E's issuance window has closed: created in [S(E+1), S(E+1) + W]
 //
 // Heights are Core block heights. On Platform the relevant height is `$createdAtCoreBlockHeight` (Drive sets it to the
 // block's core chain-locked height, so it cannot be back-dated) and the coreChainLockedHeight in proved metadata.
@@ -75,25 +77,45 @@ export interface HeightRange {
   to: number;
 }
 
-/** The epoch an issuer mints tokens for at `height`: the next one. */
-export const issuingEpochAt = (p: EpochParams, height: number): number => epochOf(p, height) + 1;
+/** The epochs an issuer mints tokens for at `height`: the current one (Standard mode) and the next one (private modes). */
+export const issuingEpochsAt = (p: EpochParams, height: number): [number, number] => {
+  const e = epochOf(p, height);
+  return [e, e + 1];
+};
 
-/** Tokens for E: S(E-1) <= h < S(E). */
+/** Tokens for E: S(E-1) <= h < S(E+1). */
 export function issuanceWindow(p: EpochParams, epoch: number): HeightRange {
   checkEpoch(epoch);
-  return { from: epochStart(p, epoch - 1), to: epochStart(p, epoch) };
+  return { from: epochStart(p, epoch - 1), to: epochStart(p, epoch + 1) };
 }
 
-/** Where a client schedules its request: the issuance window minus the boundary margins on both sides. */
-export function clientIssuanceWindow(p: EpochParams, epoch: number): HeightRange {
-  const w = issuanceWindow(p, epoch);
-  return { from: w.from + p.boundaryMarginBlocks, to: w.to - p.boundaryMarginBlocks };
+/**
+ * Where a client in a private mode schedules its request for E: during E-1 only (every such token exists before any badge for
+ * E can be posted), minus the boundary margins on both sides.
+ */
+export function privateRequestWindow(p: EpochParams, epoch: number): HeightRange {
+  checkEpoch(epoch);
+  return { from: epochStart(p, epoch - 1) + p.boundaryMarginBlocks, to: epochStart(p, epoch) - p.boundaryMarginBlocks };
 }
 
-/** Badges for E are posted in [S(E), S(E) + W] (inclusive); clients start `boundaryMarginBlocks` after S(E). */
+/** Private mode posts badges for E in [S(E), S(E) + W] (inclusive). */
 export function postingWindow(p: EpochParams, epoch: number): HeightRange {
   checkEpoch(epoch);
   const s = epochStart(p, epoch);
+  return { from: s, to: s + p.graceBlocks };
+}
+
+/** Extra-private mode posts badges for E anywhere in the first half of E. */
+export function extraPostingWindow(p: EpochParams, epoch: number): HeightRange {
+  checkEpoch(epoch);
+  const s = epochStart(p, epoch);
+  return { from: s, to: s + Math.floor(epochLength(p) / 2) };
+}
+
+/** The issuerReport for E counts if created in [S(E+1), S(E+1) + W]: after E's issuance window closed, promptly. */
+export function reportWindow(p: EpochParams, epoch: number): HeightRange {
+  checkEpoch(epoch);
+  const s = epochStart(p, epoch + 1);
   return { from: s, to: s + p.graceBlocks };
 }
 
@@ -115,4 +137,4 @@ export function displayEpochsAt(p: EpochParams, height: number): number[] {
 }
 
 /** The issuerKey for E must exist before minting for E starts: created strictly before S(E-1). */
-export const keyDeadline = (p: EpochParams, epoch: number): number => issuanceWindow(p, epoch).from;
+export const keyDeadline = (p: EpochParams, epoch: number): number => epochStart(p, epoch - 1);

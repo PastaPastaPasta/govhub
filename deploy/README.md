@@ -480,7 +480,7 @@ Cloudflare, and the container only needs the tunnel token.
    the tunnel, its ingress and DNS as they were. If you ran it on another machine, copy the token file into `secrets/` and
    re-run `scripts/init.sh` as root, which chowns it to uid 1000 so cloudflared can read it.
 3. In `.env`: `COMPOSE_PROFILES=tunnel`, then `docker compose up -d`. `docker compose logs
-   cloudflared` should show four `Registered tunnel connection` lines.
+   cloudflared` shows nothing on success: cloudflared runs at loglevel fatal (no request logs, section 11.5). Check it from outside (step 4).
 4. Check from outside:
 
    ```sh
@@ -610,7 +610,7 @@ Before the first start you need an issuer identity, a `badge` contract and the o
 3. `docker compose up -d --build issuer`, then check:
 
    ```sh
-   curl -s http://127.0.0.1:8789/v1/info | jq '{network, issuingEpoch, height, ready, keyId}'    # ready must be true
+   curl -s http://127.0.0.1:8789/v1/info | jq '{network, issuingEpochs, height, ready, keyIds}'    # ready must be true
    docker compose logs --no-log-prefix issuer | jq -c 'select(.level == "error" or .level == "warn")'
    ```
 
@@ -633,6 +633,20 @@ Before the first start you need an issuer identity, a `badge` contract and the o
 `caddy/tunnel-gateway-issuer.Caddyfile` (8787 bridge, 8788 relay, 8789 issuer) with the extra alias
 `${ISSUER_TUNNEL_ALIAS:-<project>-issuer}`, for example `govhub-testnet-issuer`, so the route is
 `http://govhub-testnet-issuer:8789`.
+
+**Logging policy (issuer).** Nothing that could link a badge request to a client may be kept (owner decision; the full
+table is in `services/issuer/README.md`, "What is stored and logged"):
+
+- the issuer's token store keeps only the dedup rows, deleted when the epoch's window closes, and no times or addresses;
+- the issuer's own stdout/stderr (kept by Docker's json-file driver) has no MN ids, outpoints, addresses or per-request
+  lines, only hourly counters;
+- the tunnel gateway runs `caddy/tunnel-gateway-issuer.Caddyfile` with no access log and the default logger discarded;
+- cloudflared runs at `--loglevel fatal` (no per-request lines; debug logs every request, and info, warn and error log
+  failed origin requests with a time). The `Registered tunnel connection` lines are info, so check the tunnel with `cloudflared tunnel info` or the
+  metrics port instead of the log;
+- Cloudflare's edge sees request metadata and is outside our control. Turn off Logpush, Web Analytics and other request
+  logging for the issuer hostname where the plan allows. Do not put a logging proxy (or Caddy's `log` directive) in front
+  of the issuer.
 
 **State.** The `issuer-data` volume holds the dedup rows of the open issuance window and the per-epoch counts that become
 `issuerReport`. It is small. If it is lost during a window, MNs can get a second token and the report undercounts,
@@ -843,6 +857,12 @@ Testnet ids:
 | Superseded | `3SrZbofJnMgWNiHFzpHc5u7wSRgCFJykZwKq3haqyMfc` (phase 0): it allowed `spki` of 90..600 bytes |
 | `issuerKey` documents | epochs 2742 to 2755, published at core height about 1,578,675. The deadline for epoch 2742 was 1,578,816 (`S(2741)`) |
 
+**Cutover to privacy modes (current-epoch tokens).** Issuers before that change published E's `issuerReport` in
+`[S(E), S(E)+W]`; readers now accept it only in `[S(E+1), S(E+1)+W]`, and a report cannot be replaced (one per issuer and
+epoch). Deploy the new issuer and web build together, before an epoch boundary, and expect the epoch whose report the old
+issuer already wrote (and, through the sticky rule, the next one) to show as unaudited. The old issuer also destroyed the
+current epoch's key at `S(E)`, so Standard requests work from the next epoch on.
+
 Testnet epochs are 576 blocks, about a day (`packages/badge/README.md`, "Testnet timing"). With the keys above, tokens
 for epoch 2742 are issued from block 1,578,816 to 1,579,391, and the first badges show from block 1,579,392. The last
 published key is for epoch 2755, so publish more keys (`issuer keygen`, `issuer publish-keys`) at least 3 epochs before
@@ -853,7 +873,7 @@ Update (as root, from `/opt/govhub-issuer/deploy`):
 ```sh
 cd /opt/govhub-issuer && git pull
 cd deploy && docker compose build issuer && docker compose up -d --no-deps issuer
-curl -s http://127.0.0.1:8789/v1/info | jq '{network, issuingEpoch, height, ready, keyId}'
+curl -s http://127.0.0.1:8789/v1/info | jq '{network, issuingEpochs, height, ready, keyIds}'
 ```
 
 To add keys: generate and publish them on an offline machine, then copy `epoch-<E>.pem` into

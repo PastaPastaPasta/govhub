@@ -1,14 +1,15 @@
 // "Get MN badge" (PLAN §8.5): pick an MN (paste its voting key; the MN keyring calls the same requestBadge with its own signer),
-// schedule a token request for the next epoch, and follow the request until the badge is posted.
+// choose a privacy mode (Standard: now; Private / Extra private: later, harder to link), and follow the request until the badge is
+// posted.
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { clientIssuanceWindow, epochLength, EPOCH_PARAMS, epochOf, epochStart, postingWindow, requestableEpoch } from '@govhub/badge';
+import { EPOCH_PARAMS, epochStart, PRIVACY_MODES, type EpochParams, type PrivacyMode } from '@govhub/badge';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { errText, formatInt } from '../lib/format.ts';
 import { openSignIn } from '../ui/SignIn.tsx';
 import { BadgeLeaks } from './BadgeLeaks.tsx';
-import { etaSeconds, type BadgeJob } from './client.ts';
+import { etaSeconds, requestWindow, type BadgeJob } from './client.ts';
 import { useBadgeCtx } from './context.tsx';
 
 function eta(height: number, now: number | null): string {
@@ -17,6 +18,31 @@ function eta(height: number, now: number | null): string {
   const s = etaSeconds(height, now);
   const h = s / 3600;
   return `block ${formatInt(height)} (in ${h >= 48 ? `${Math.round(h / 24)} days` : h >= 1 ? `${Math.round(h)} h` : `${Math.max(1, Math.round(s / 60))} min`})`;
+}
+
+/** The privacy modes, one sentence each (PLAN §8.5); the details are in BadgeLeaks. */
+export const MODES: Record<PrivacyMode, { label: string; summary: string }> = {
+  standard: {
+    label: 'Standard',
+    summary: 'Fast: your badge appears now. The issuer could tell which masternode it belongs to; the govhub issuer keeps no records that would let it.',
+  },
+  private: {
+    label: 'Private',
+    summary:
+      'Your badge appears at the start of the next epoch, at a random time, among the others who chose Private with the same issuer, so the issuer cannot tell by timing which masternode it belongs to.',
+  },
+  extra: {
+    label: 'Extra private',
+    summary: 'Like Private, but the badge goes out at a random time across the first half of the next epoch, which makes timing even harder to match.',
+  },
+};
+
+function requestedText(job: BadgeJob, p: EpochParams, coreHeight: number | null): string {
+  if (job.mode !== 'standard') {
+    return `Scheduled: the request for epoch ${job.epoch} goes out at a random time, around ${eta(job.requestAt, coreHeight)}. Keep this app open now and then until the badge is posted.`;
+  }
+  if (job.requestAt > (coreHeight ?? 0)) return `Requested: epoch ${job.epoch} starts at block ${formatInt(epochStart(p, job.epoch))}; the badge is posted then.`;
+  return 'Requesting now: your badge is posted in a minute or two.';
 }
 
 const STATE: Record<BadgeJob['state'], string> = {
@@ -36,8 +62,10 @@ function JobRow({ job, now, onRemove }: { job: BadgeJob; now: number | null; onR
       </div>
       <div className="small muted">
         {job.proTxHash ? <>MN <span className="mono-ish">{job.proTxHash.slice(0, 12)}…</span></> : 'masternode forgotten'}
-        {job.state === 'scheduled' && <> · request at {eta(job.requestAt, now)} (window closes at block {formatInt(clientIssuanceWindow(p, job.epoch).to)})</>}
-        {job.state === 'token' && <> · posting at {eta(job.postAt ?? postingWindow(p, job.epoch).from, now)}</>}
+        {' · '}
+        {MODES[job.mode].label}
+        {job.state === 'scheduled' && <> · request at {eta(job.requestAt, now)} (window closes at block {formatInt(requestWindow(p, job.epoch, job.mode).to)})</>}
+        {job.state === 'token' && job.postAt !== undefined && <> · posting at {eta(job.postAt, now)}</>}
         {job.state === 'posted' && <> · shown until block {formatInt(epochStart(p, job.epoch + 1) + p.graceBlocks)}</>}
         {job.signer.kind === 'wif' && job.keepKey && ' · voting key kept (encrypted) for renewal'}
       </div>
@@ -54,7 +82,7 @@ function JobRow({ job, now, onRemove }: { job: BadgeJob; now: number | null; onR
 export function BadgePage() {
   const { registry, mode } = useApp();
   const { session } = useForum();
-  const { contractId, trust, jobs, coreHeight, requestBadge, removeJob, reader } = useBadgeCtx();
+  const { contractId, trust, jobs, coreHeight, requestBadge, removeJob, reader, privacy, setPrivacy } = useBadgeCtx();
   const net = registry.platformNetwork;
   const p = EPOCH_PARAMS[net];
   const enabled = trust.filter((t) => t.enabled);
@@ -65,15 +93,14 @@ export function BadgePage() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
 
-  const next = coreHeight !== null ? requestableEpoch(p, coreHeight) : null;
   const submit = async () => {
     setBusy(true);
     setMsg(null);
     try {
       const issuer = enabled.find((t) => t.identityId === issuerId);
-      const job = await requestBadge(wif, proTxHash, { ...(issuer ? { issuer } : {}), keepKey });
+      const job = await requestBadge(wif, proTxHash, { ...(issuer ? { issuer } : {}), keepKey, mode: privacy });
       setWif('');
-      setMsg({ kind: 'ok', text: `Scheduled: the request for epoch ${job.epoch} goes out at a random time, around ${eta(job.requestAt, coreHeight)}. Keep this app open now and then until the badge is posted.` });
+      setMsg({ kind: 'ok', text: requestedText(job, p, coreHeight) });
     } catch (e) {
       setMsg({ kind: 'error', text: errText(e) });
     } finally {
@@ -100,16 +127,15 @@ export function BadgePage() {
         </p>
       ) : (
         <div className="form">
-          <p className="small muted">
-            Epochs are {formatInt(epochLength(p))} blocks ({formatInt(p.epochCycles)} superblock cycle{p.epochCycles === 1 ? '' : 's'}).{' '}
-            {coreHeight !== null && next !== null && (
-              <>
-                Now: block {formatInt(coreHeight)}, epoch {epochOf(p, coreHeight)}. A request made now is for epoch {next}: it is sent at a random height before block{' '}
-                {formatInt(clientIssuanceWindow(p, next).to)}, and the badge is posted at a random height from block {formatInt(epochStart(p, next) + p.boundaryMarginBlocks)} to{' '}
-                {formatInt(postingWindow(p, next).to)}.
-              </>
-            )}
-          </p>
+          <fieldset className="badge-modes">
+            <legend>Privacy</legend>
+            {PRIVACY_MODES.map((m) => (
+              <label key={m} className="check">
+                <input type="radio" name="badge-mode" checked={privacy === m} onChange={() => setPrivacy(m)} data-testid={`badge-mode-${m}`} /> <b>{MODES[m].label}</b>
+                {m === 'standard' && ' (default)'}. {MODES[m].summary}
+              </label>
+            ))}
+          </fieldset>
           <fieldset>
             <legend>Masternode</legend>
             <label>

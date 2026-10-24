@@ -1,4 +1,9 @@
-// Getting an MN badge (PLAN §8.5), as a small state machine per job:
+// Getting an MN badge (PLAN §8.5), as a small state machine per job, in one of three privacy modes (PrivacyMode):
+//   standard  token for the CURRENT epoch, requested and posted at once: the badge shows within minutes, and the issuer could link
+//             the masternode to the identity by timing (we keep no records that would let us)
+//   private   token for the NEXT epoch at a random height in this epoch, badge at a random height in [S(E), S(E)+W], kept apart
+//             from this browser's other Platform writes; not posted if the issuer's count for the previous epoch is too small
+//   extra     as private, with the badge spread over the first half of the epoch
 //
 //   scheduled --(core height >= requestAt, in the issuance window of E)--> token --(height >= postAt)--> posted
 //        \--> expired (window closed) / failed (refused, or the issuer's answer did not verify: the issuer is flagged)
@@ -15,8 +20,8 @@ import {
   BLOCK_SECONDS,
   buildTokenRequestFor,
   bytesToBase64,
-  clientIssuanceWindow,
   displayWindow,
+  epochStart,
   epochLength,
   EPOCH_PARAMS,
   fromHex,
@@ -25,9 +30,13 @@ import {
   pickPostHeight,
   pickRequestHeight,
   prepareBadge,
+  privateRequestWindow,
   requestableEpoch,
   toHex,
   type BadgeNetwork,
+  type EpochParams,
+  type HeightRange,
+  type PrivacyMode,
 } from '@govhub/badge';
 import type { TrustedIssuer } from './config.ts';
 import type { KeyLookup } from './reader.ts';
@@ -46,6 +55,7 @@ export interface BadgeJob {
   ownerId: string;
   issuer: Pick<TrustedIssuer, 'name' | 'identityId' | 'url'>;
   epoch: number;
+  mode: PrivacyMode;
   /** hex SHA256(spki) and the spki (base64), from the proved issuerKey */
   keyId: string;
   spki: string;
@@ -93,6 +103,8 @@ export interface ClientDeps {
   reportedTokens(issuer: Pick<TrustedIssuer, 'identityId'>, epoch: number): Promise<number | null>;
   /** a badge is posted only when at least this many tokens were issued for its epoch */
   minAnonymitySet: number;
+  /** the reader's audit flags the issuer for this epoch */
+  issuerFlagged(issuer: Pick<TrustedIssuer, 'name' | 'identityId' | 'url'>, epoch: number): Promise<boolean>;
 }
 
 export class BadgeRequestError extends Error {}
@@ -103,8 +115,15 @@ const ACTIVE: readonly JobState[] = ['scheduled', 'token'];
 export interface RequestOptions {
   issuer: TrustedIssuer;
   keepKey?: boolean;
+  /** default 'standard' */
+  mode?: PrivacyMode;
   /** tests and the live script only: request at once instead of at a random height */
   immediate?: boolean;
+}
+
+/** Where a job's request may go out: Standard during its (current) epoch, the private modes during the epoch before. */
+export function requestWindow(p: EpochParams, epoch: number, mode: PrivacyMode): HeightRange {
+  return mode === 'standard' ? { from: epochStart(p, epoch), to: epochStart(p, epoch + 1) - p.boundaryMarginBlocks } : privateRequestWindow(p, epoch);
 }
 
 export async function createJob(d: ClientDeps, jobs: readonly BadgeJob[], voting: string | VotingSigner, proTxHashHex: string, coreHeight: number, o: RequestOptions): Promise<BadgeJob> {
@@ -112,11 +131,14 @@ export async function createJob(d: ClientDeps, jobs: readonly BadgeJob[], voting
   if (!/^[0-9a-f]{64}$/.test(proTxHash)) throw new BadgeRequestError('The proTxHash must be 64 hex characters.');
   if (typeof voting === 'string' && !voting.trim()) throw new BadgeRequestError('Paste the MN voting key (WIF).');
   const p = EPOCH_PARAMS[d.net];
-  let epoch = requestableEpoch(p, coreHeight);
+  const mode = o.mode ?? 'standard';
+  let epoch = requestableEpoch(p, coreHeight, mode);
   if (epoch === null) throw new BadgeRequestError('No issuance window is open.');
-  // With little of the window left the request would go out in this same visit: ask for the next epoch instead (review H1).
-  const w = clientIssuanceWindow(p, epoch);
-  if (!o.immediate && w.to - Math.max(coreHeight, w.from) < epochLength(p) / 4) epoch++;
+  // Private modes: with little of the window left the request would go out in this same visit, so ask for the next epoch (H1).
+  if (mode !== 'standard' && !o.immediate) {
+    const w = privateRequestWindow(p, epoch);
+    if (w.to - Math.max(coreHeight, w.from) < epochLength(p) / 4) epoch++;
+  }
   if (jobs.some((j) => j.issuer.identityId === o.issuer.identityId && j.epoch === epoch && j.state !== 'expired' && j.state !== 'failed'))
     throw new BadgeRequestError(`You already have a badge request with ${o.issuer.name} for epoch ${epoch}. One badge per issuer is all an identity can show; asking with more MNs would only tell the issuer they belong together.`);
   const wif = typeof voting === 'string' ? voting.trim() : null;
@@ -134,7 +156,8 @@ export async function createJob(d: ClientDeps, jobs: readonly BadgeJob[], voting
   const spki = bytesToBase64(key.key.spki);
   const preparedMsg = bytesToBase64(prepared.preparedMsg);
   const blinded = await d.worker({ kind: 'blind', spki, preparedMsg });
-  const requestAt = o.immediate ? coreHeight : (pickRequestHeight(p, epoch, coreHeight) ?? coreHeight);
+  // Standard: at once (the request window starts at S(E) for a job made in E's last blocks); private: a random height
+  const requestAt = mode === 'standard' ? Math.max(coreHeight, epochStart(p, epoch)) : o.immediate ? coreHeight : (pickRequestHeight(p, epoch, coreHeight) ?? coreHeight);
   return {
     v: 1,
     id: randomId(),
@@ -143,6 +166,7 @@ export async function createJob(d: ClientDeps, jobs: readonly BadgeJob[], voting
     ownerId: d.ownerId,
     issuer: { name: o.issuer.name, identityId: o.issuer.identityId, url: o.issuer.url },
     epoch,
+    mode,
     keyId: toHex(key.key.keyId),
     spki,
     proTxHash,
@@ -179,8 +203,15 @@ export async function step(d: ClientDeps, job: BadgeJob, height: number): Promis
   const p = EPOCH_PARAMS[job.net];
   const j: BadgeJob = { ...job };
   if (j.state === 'scheduled') {
-    if (height >= clientIssuanceWindow(p, j.epoch).to)
-      return wipe({ ...j, state: 'expired', note: 'The request window closed before the request could be sent: the app was not open during a quiet half hour (no posts, comments or other requests from this browser), or the issuer was unreachable.' });
+    if (height >= requestWindow(p, j.epoch, j.mode).to)
+      return wipe({
+        ...j,
+        state: 'expired',
+        note:
+          j.mode === 'standard'
+            ? 'The epoch ended before the request could be sent (the app was closed, or the issuer was unreachable).'
+            : 'The request window closed before the request could be sent: the app was not open during a quiet half hour (no posts, comments or other requests from this browser), or the issuer was unreachable.',
+      });
     if (height < j.requestAt) return j;
     if (!d.trusted(j.issuer.identityId)) return { ...j, note: `${j.issuer.name} is not on your trust list (or is turned off): the request waits.` };
     const keySource = j.signer;
@@ -212,25 +243,31 @@ export async function step(d: ClientDeps, job: BadgeJob, height: number): Promis
         return wipe({ ...j, state: 'failed', issuerFlagged: true, note: `${j.issuer.name} answered with a signature that does not verify. The request is void; consider removing this issuer from your trust list.` });
       }
       const done = wipe({ ...j, state: 'token', sig, note: undefined });
-      return { ...done, postAt: pickPostHeight(p, j.epoch, height) };
+      return { ...done, postAt: pickPostHeight(p, j.epoch, height, j.mode) };
     } catch (e) {
       return backoff(j, `Could not reach the issuer (${(e as Error).message}); trying again later.`);
     }
   }
   if (j.state === 'token') {
     if (height > displayWindow(p, j.epoch).to) return wipe({ ...j, state: 'expired', note: 'The badge was never posted and its display window is over.' });
-    const postAt = j.postAt ?? pickPostHeight(p, j.epoch, height);
+    const postAt = j.postAt ?? pickPostHeight(p, j.epoch, height, j.mode);
     if (height < postAt) return { ...j, postAt };
     if (!d.trusted(j.issuer.identityId)) return { ...backoff(j, `${j.issuer.name} is not on your trust list (or is turned off): the badge is not posted.`), postAt };
     try {
       // a key revoked since the token was issued voids the badge for readers: do not post it (N12)
       const { key } = await d.issuerKey({ ...j.issuer, enabled: true }, j.epoch);
       if (!key || key.revokedFrom !== null) return wipe({ ...j, state: 'expired', note: `${j.issuer.name}'s key for epoch ${j.epoch} is no longer valid: the badge is not posted.` });
-      // Too few tokens this epoch and the badge would stand out (review R1); no report yet: wait for it.
-      const tokens = await d.reportedTokens(j.issuer, j.epoch);
-      if (tokens === null) return { ...backoff(j, `Waiting for ${j.issuer.name}'s token count for epoch ${j.epoch} before posting.`), postAt };
-      if (tokens < d.minAnonymitySet)
-        return wipe({ ...j, state: 'expired', note: `Only ${tokens} token${tokens === 1 ? ' was' : 's were'} issued for epoch ${j.epoch}: a badge among so few would stand out, so it is not posted. The next epoch's badge will be, if more masternodes take part.` });
+      // Private modes: a badge among very few stands out (review R1). Tokens for E can be issued until S(E+1), so E's own report
+      // comes too late; the crowd size is read from the issuer's report for E-1 (published from S(E)). No report yet: wait for
+      // it until its window has passed; an issuer that had no key for E-1 (so no report) is posted without the check.
+      if (j.mode !== 'standard') {
+        // readers hide an issuer flagged on E-1 for E anyway: posting would only expose the user (review M2)
+        if (await d.issuerFlagged(j.issuer, j.epoch - 1)) return wipe({ ...j, state: 'expired', note: `${j.issuer.name} failed the audit for epoch ${j.epoch - 1}, so readers hide its badges for epoch ${j.epoch}: the badge is not posted.` });
+        const tokens = await d.reportedTokens(j.issuer, j.epoch - 1);
+        if (tokens === null && height <= epochStart(p, j.epoch) + p.graceBlocks) return { ...backoff(j, `Waiting for ${j.issuer.name}'s token count for epoch ${j.epoch - 1} before posting.`), postAt };
+        if (tokens !== null && tokens < d.minAnonymitySet)
+          return wipe({ ...j, state: 'expired', note: `Only ${tokens} token${tokens === 1 ? ' was' : 's were'} issued in epoch ${j.epoch - 1}: a badge among so few would stand out, so it is not posted. Next time, more masternodes may take part (or use Standard mode).` });
+      }
       if (await d.hasBadge(j.issuer.identityId, j.epoch)) return wipe({ ...j, state: 'posted', note: 'Already posted.' });
       const id = await d.postBadge(mnBadgeData({ issuerId: idToBytes(j.issuer.identityId), epoch: j.epoch, keyId: fromHex(j.keyId), msgPrefix: base64ToBytes(j.msgPrefix), sig: base64ToBytes(j.sig!) }));
       return wipe({ ...j, state: 'posted', badgeId: id, note: undefined });
@@ -266,11 +303,12 @@ export async function renewal(d: ClientDeps, jobs: readonly BadgeJob[], prev: Ba
   if (!prev.keepKey || prev.signer.kind !== 'wif' || !prev.proTxHash || (prev.state !== 'token' && prev.state !== 'posted')) return null;
   const p = EPOCH_PARAMS[prev.net];
   const next = prev.epoch + 1;
-  const w = clientIssuanceWindow(p, next);
+  const w = requestWindow(p, next, prev.mode);
   if (height < w.from || height >= w.to) return null;
   if (jobs.some((x) => x.issuer.identityId === prev.issuer.identityId && x.epoch === next)) return null;
   try {
-    return await createJob(d, jobs, prev.signer.wif, prev.proTxHash, height, { issuer, keepKey: true });
+    const job = await createJob(d, jobs, prev.signer.wif, prev.proTxHash, height, { issuer, keepKey: true, mode: prev.mode });
+    return job.epoch >= next ? job : null; // late in a private window createJob moves on to the epoch after: the chain goes on
   } catch {
     return null;
   }

@@ -3,9 +3,10 @@
 // fetched and verified one by one. An identity shows at most one badge per issuer, never a count, never summed across issuers.
 //
 // Audit: an issuer whose verified badge count for an epoch exceeds its own issuerReport (tokensIssued) is flagged and its badges
-// for that epoch are not shown. A report counts only if it was created in [S(E), S(E)+W] (so a stolen report key cannot fix
-// future counts in advance, and a report written after counting the badges does not count) and is plausible (not more tokens
-// than masternodes). Once S(E)+W has passed without a valid report the issuer is flagged as unaudited.
+// for that epoch are not shown. Tokens for E can be issued until S(E+1) (Standard mode asks during E), so a report counts only if
+// it was created in [S(E+1), S(E+1)+W] (a stolen report key cannot fix future counts in advance) and is plausible (not more
+// tokens than masternodes). Once S(E+1)+W has passed without a valid report the issuer is flagged as unaudited. Because E's
+// report arrives only as E ends, a flag on E-1 also hides the issuer's badges for E.
 import type { DocQuery } from '@govhub/contracts-v1/queryLint';
 import type { AcceptedIssuerKey, BadgeNetwork, ReaderConfig } from '@govhub/badge';
 import { BADGE_NETWORKS, type TrustedIssuer } from './config.ts';
@@ -137,8 +138,11 @@ export class BadgeReader {
       for (const epoch of b.displayEpochsAt(b.EPOCH_PARAMS[this.#net], now)) {
         const { key } = await this.key(issuer, epoch);
         if (!key) continue;
+        // E's report exists only once E's issuance window has closed (S(E+1)), so an issuer caught on the previous epoch stays
+        // distrusted for this one too
         const audit = await this.audit(issuer, epoch, now);
         if (audit.flagged) continue;
+        if (epoch > 1 && (await this.audit(issuer, epoch - 1, now)).flagged) continue;
         for (let i = 0; i < uniq.length; i += 100) {
           const res = await this.#query(badgesOfAuthors(issuer.identityId, epoch, uniq.slice(i, i + 100)));
           for (const d of res.docs) {
@@ -158,7 +162,7 @@ export class BadgeReader {
     return { byOwner, coreHeight: now };
   }
 
-  /** tokensIssued of the issuer's report for the epoch if the report is valid (created in [S(E), S(E)+W], plausible), else null. */
+  /** tokensIssued of the issuer's report for the epoch if the report is valid (created in [S(E+1), S(E+1)+W]), else null. */
   async reportedTokens(issuer: Pick<TrustedIssuer, 'identityId'>, epoch: number): Promise<number | null> {
     const b = await this.#lib();
     const p = b.EPOCH_PARAMS[this.#net];
@@ -166,7 +170,7 @@ export class BadgeReader {
     if (!rep.docs[0]) return null;
     try {
       const r = b.parseIssuerReportDoc(rep.docs[0]);
-      const w = b.postingWindow(p, epoch);
+      const w = b.reportWindow(p, epoch);
       if (r.epoch !== epoch || r.createdAtCoreBlockHeight < w.from || r.createdAtCoreBlockHeight > w.to) return null;
       return r.tokensIssued;
     } catch {
@@ -186,6 +190,11 @@ export class BadgeReader {
       const { key, problem } = await this.key(issuer, epoch);
       if (!key) return { ...base, badges: 0, complete: true, tokensIssued: null, flagged: false, flagReason: null, keyProblem: problem };
       const cfg = await this.#cfg();
+      // count the badges that were valid in E's display window, also when auditing a past epoch (the sticky flag below)
+      const at = Math.min(coreHeight, b.displayWindow(b.EPOCH_PARAMS[this.#net], epoch).to);
+      // A revocation cannot shrink the count after the fact (that would clear a flag), but badges made after the revocation was
+      // published (a key thief) do not count: the cut-off is the later of its effective height and its own creation height.
+      const auditKey = { ...key, revokedFrom: key.revokedFrom === null ? null : Math.max(key.revokedFrom, key.revocationCreatedAt ?? 0) };
       let count = 0;
       let after: string | undefined;
       let pages = 0;
@@ -195,7 +204,7 @@ export class BadgeReader {
         pages++;
         for (const d of res.docs) {
           try {
-            if ((await b.verifyMnBadge(cfg, key, b.parseMnBadgeDoc(d), coreHeight)).ok) count++;
+            if ((await b.verifyMnBadge(cfg, auditKey, b.parseMnBadgeDoc(d), at)).ok) count++;
           } catch {
             /* malformed: not counted */
           }
@@ -207,13 +216,17 @@ export class BadgeReader {
         after = String(res.docs[res.docs.length - 1]!.$id);
       }
       const tokensIssued = await this.reportedTokens(issuer, epoch);
-      const bound = tokensIssued === null ? { value: this.#maxPlausible, source: 'pinned bound' } : await this.#bound();
-      const reportDue = coreHeight > b.postingWindow(b.EPOCH_PARAMS[this.#net], epoch).to;
+      const bound = await this.#bound();
+      const reportDue = coreHeight > b.reportWindow(b.EPOCH_PARAMS[this.#net], epoch).to;
       let flagReason: string | null = null;
       if (tokensIssued !== null && tokensIssued > bound.value) flagReason = `reported ${tokensIssued} tokens, more than there are masternodes (${bound.source})`;
       else if (tokensIssued !== null && count > tokensIssued) flagReason = `${count} valid badges but only ${tokensIssued} tokens reported`;
       else if (tokensIssued === null && reportDue) flagReason = 'no valid issuerReport for this epoch';
       else if (tokensIssued !== null && !complete) flagReason = 'too many badges to audit';
+      // before E's report can exist (it comes at S(E+1)), at least the badge count must stay plausible
+      else if (tokensIssued === null && count > bound.value) flagReason = `more valid badges than there are masternodes (${bound.source})`;
+      // accepted risk: anyone with very many identities could post junk badges to push an epoch past the count limit
+      else if (tokensIssued === null && !complete) flagReason = 'too many badges to audit';
       // only a flag is final: badge counts only grow and a report is immutable; anything else is re-read after the TTL (N3)
       entry.final = flagReason !== null;
       return { ...base, badges: count, complete, tokensIssued, flagged: flagReason !== null, flagReason, keyProblem: null };
@@ -243,7 +256,8 @@ export class BadgeReader {
     for (const issuer of this.#issuers) {
       for (const epoch of b.displayEpochsAt(b.EPOCH_PARAMS[this.#net], now)) {
         const a = await this.audit(issuer, epoch, now);
-        if (!a.flagged && a.badges > 0) return true;
+        const prevFlagged = epoch > 1 && (await this.audit(issuer, epoch - 1, now)).flagged;
+        if (!a.flagged && !prevFlagged && a.badges > 0) return true;
       }
     }
     return false;

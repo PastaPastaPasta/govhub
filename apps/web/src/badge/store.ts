@@ -52,7 +52,8 @@ export function encryptedJobStore(slot: string, identityId: string, key: CryptoK
       const { iv, ct } = JSON.parse(raw) as { iv: string; ct: string };
       const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(iv), additionalData: aad }, key, unb64(ct));
       const jobs = JSON.parse(unpad(new Uint8Array(pt))) as BadgeJob[];
-      return Array.isArray(jobs) ? jobs.filter((j) => j && j.v === 1 && j.ownerId === identityId) : [];
+      // jobs saved before privacy modes existed were made under the private rules
+      return Array.isArray(jobs) ? jobs.filter((j) => j && j.v === 1 && j.ownerId === identityId).map((j) => ({ ...j, mode: j.mode ?? 'private' })) : [];
     },
     async save(jobs) {
       if (!jobs.length) return storage.removeItem(jobStorageKey(slot));
