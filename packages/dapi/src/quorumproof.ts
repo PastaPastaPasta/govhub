@@ -98,7 +98,7 @@ export class ProofSourceError extends Error {
 
 interface SourceOptions {
   fetch?: typeof fetch;
-  /** Per request. Default 60 s (a cold proof from an old checkpoint can take a while on testnet). */
+  /** Per request. Default 95 s: above the bridge's 90 s Core deadline, so a slow cold proof is not taken for a dead source. */
   timeoutMs?: number;
 }
 
@@ -138,7 +138,7 @@ export function bridgeProofSource(base: string, o: SourceOptions = {}): ProofSou
     name: root.replace(/^[a-z]+:\/\//i, ''),
     async fetch(r) {
       if (!HASH.test(r.checkpoint)) throw new Error('checkpoint must be a display-order block hash');
-      const t = withTimeout(r.signal, o.timeoutMs ?? 60_000);
+      const t = withTimeout(r.signal, o.timeoutMs ?? 95_000);
       try {
         const q = new URLSearchParams({ checkpoint: r.checkpoint, height: String(r.height) });
         const res = await f(`${root}/v1/quorum-proof?${q}`, { signal: t.signal, credentials: 'omit', referrerPolicy: 'no-referrer' });
@@ -161,7 +161,7 @@ export function quorumListProofSource(url: string, o: SourceOptions = {}): Proof
     async fetch(r) {
       const q = await r.platformQuorum?.();
       if (!q) throw new ProofSourceError(`${this.name}: no Platform quorum to request`);
-      const t = withTimeout(r.signal, o.timeoutMs ?? 60_000);
+      const t = withTimeout(r.signal, o.timeoutMs ?? 95_000);
       try {
         const res = await f(url, {
           method: 'POST',

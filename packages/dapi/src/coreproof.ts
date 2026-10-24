@@ -59,12 +59,14 @@ export function verifyQuorumProof(proof: Uint8Array, trusted: ProofState, minimu
   if (proof.length > MAX_PROOF_BYTES) throw new QuorumProofError('invalid', 'proof size limit');
   const w = api();
   const t = encodeState(trusted);
-  const pp = w.alloc(proof.length), tp = w.alloc(STATE_BYTES);
+  let pp = 0, tp = 0;
   try {
-    new Uint8Array(w.memory.buffer, pp, proof.length).set(proof);
-    new Uint8Array(w.memory.buffer, tp, STATE_BYTES).set(t);
     let status: number;
     try {
+      pp = w.alloc(proof.length);
+      tp = w.alloc(STATE_BYTES);
+      new Uint8Array(w.memory.buffer, pp, proof.length).set(proof);
+      new Uint8Array(w.memory.buffer, tp, STATE_BYTES).set(t);
       status = w.verify(pp, proof.length, tp, minimumHeight);
     } catch (e) {
       // a trap (panic = abort, out of memory) leaves the instance's allocator in an unknown state: start a fresh one next time

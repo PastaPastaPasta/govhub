@@ -10,7 +10,8 @@ import { hashHex, unhex } from '../src/bytes.ts';
 import { Dapi } from '../src/client.ts';
 import { verifyQuorumProof } from '../src/coreproof.ts';
 import type { StoredLinkedChain } from '../src/linkedchain.ts';
-import { SAVED_SOURCE } from '../src/proofanchor.ts';
+import { SAVED_SOURCE, anchorByProof } from '../src/proofanchor.ts';
+import { fetchSml } from '../src/anchor.ts';
 import { num } from '../src/pb.ts';
 import { type ProofSource, ProofSourceError, type ProofState } from '../src/quorumproof.ts';
 import type { HeaderStore, Verifiers } from '../src/types.ts';
@@ -141,8 +142,14 @@ describe('testnet anchorChain on a quorum proof', () => {
     const otherHash = hashHex(other.subarray(other.length - 32));
     proofStore.saved = { ...s, hashes: other, chainLock: { ...s.chainLock, blockHash: otherHash }, state: { ...s.state, blockHash: otherHash } };
     const before = proofStore.saved;
-    const err = await dapiFor([N(1), N(2)]).anchorChain({ ...base, proofSources: [source()], proofStore }).catch((e: Error) => e);
-    expect(err).toBeInstanceOf(Error); // the proof path refused; the proof-of-work fallback has nothing to work with here
+    const d = dapiFor([N(1), N(2)]);
+    const v = await d.crypto();
+    const signal = new AbortController().signal;
+    await expect(anchorByProof(d, { down: new Map() }, { ...base, proofSources: [source()], proofStore }, v, x11Many, fetchSml(d, { signal }), signal))
+      .rejects.toThrow(/conflicts with the one this browser verified earlier/);
+    expect(proofStore.saved).toBe(before);
+    // through anchorChain the proof path refuses the same way (here the proof-of-work fallback has nothing to work with)
+    await expect(dapiFor([N(1), N(2)]).anchorChain({ ...base, proofSources: [source()], proofStore })).rejects.toThrow();
     expect(proofStore.saved).toBe(before);
   });
 

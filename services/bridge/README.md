@@ -107,7 +107,7 @@ until V24 activates) answers `501 unsupported`.
 
 Load control, mirroring the quorum-list-server relay: responses are cached for 15 s (64 entries, 16 MB), a request with a
 minimum `height` is also answered from a cached proof of the same checkpoint and records whose target height is at or above
-it (whatever height that proof was requested with; the highest target wins), and identical
+it (whatever height that proof was requested with; an exact-key hit first, else the covering proof with the highest target), and identical
 concurrent requests share one Core call; at most 2 Core calls run at once with 8 waiting, beyond that `503`; cache
 misses (not hits, not joins of a running call) cost the client a token of its bucket (12 per minute, burst 4); the
 checkpoint's height is looked up first (`getblockheader`, cached) and checkpoints more than 100000 blocks below the tip

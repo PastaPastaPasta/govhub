@@ -29,6 +29,8 @@
 	@readonly method GET HEAD
 	handle @readonly {
 		reverse_proxy bridge:8787 {
+			# the bridge rate-limits /v1/quorum-proof per client by this header (CLIENT_IP_HEADER): never let a client choose it
+			header_up Cf-Connecting-Ip {remote_host}
 			header_down -Access-Control-Allow-Origin
 			header_down -Access-Control-Allow-Methods
 			header_down -Access-Control-Allow-Headers

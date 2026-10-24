@@ -157,7 +157,8 @@ masternode and quorum roots its coinbase commits to.
 6. **Store.** The run, T's state, header and ChainLock signature are saved (`proofStore`, keyed per network and checkpoint). The next proof starts
    from T: about 1.7 KB and 20 ms to verify instead of the full chain. When no source has a newer ChainLock yet, the saved one serves again while
    it is under an hour old. Otherwise the pin is used. A proven ChainLock that conflicts with the saved run (another block at a height it covers) is
-   refused, and a lower state is never saved over a higher one. Within one client a result is reused for a minute.
+   refused, and within a run a lower state is never saved over a higher one (two tabs saving at once can still leave the lower one: the next
+   proof is then a little longer). Within one client a result is reused for a minute.
 
 If no source yields a valid, fresh proof (none configured, a dashd older than v24 answers 501, HTTP 403, a forged proof), anchoring falls back to the
 proof-of-work path with its own labels, and `trust: { kind: 'proof-of-work', fallback }` records why. A source that cannot serve proofs at all is

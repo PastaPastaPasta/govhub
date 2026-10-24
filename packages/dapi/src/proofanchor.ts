@@ -104,7 +104,7 @@ async function fetchProof(sources: readonly ProofSource[], from: ProofState, min
 /** The ChainLock this browser proved and saved, while it is fresh: what to anchor on when no source has a newer one yet. */
 function savedChainLock(stored: StoredLinkedChain, ctx: ProofContext): Got | null {
   const { header, signature } = stored.chainLock;
-  if (!header || !signature || header.length !== 80 || signature.length !== 96) return null;
+  if (!(header instanceof Uint8Array) || !(signature instanceof Uint8Array) || header.length !== 80 || signature.length !== 96) return null;
   if (!bytesEqual(ctx.hash(header), hashBytes(stored.state.blockHash))) return null;
   const time = parseHeader(header).time;
   if (time < ctx.clock() - FRESH_S) return null;
@@ -150,7 +150,10 @@ export async function anchorByProof(
   // 1. what this browser already verified: hashes down from an earlier proven ChainLock, and that block's state
   let t = Date.now();
   const loaded = (await o.proofStore?.load(d.network).catch(() => null)) ?? null;
-  let chain = loaded ? LinkedChain.fromStored(loaded, rootRef, d.network) : null;
+  let chain: LinkedChain | null = null;
+  try {
+    chain = loaded ? LinkedChain.fromStored(loaded, rootRef, d.network) : null;
+  } catch { /* a damaged entry: start over from the pin (and overwrite it) */ }
   const stored = chain && loaded!.state.height > root.height ? loaded! : null;
   if (!stored) chain = null;
   const cached = chain ? chain.hi - chain.lo + 1 : 0;
@@ -177,15 +180,20 @@ export async function anchorByProof(
   let raw = await smlP;
   let smlProof = proveSml(raw.decoded);
   ms.smlProof = Date.now() - t;
+  const orNull = (p: Promise<Got>) => p.catch((e: unknown) => {
+    if (o.signal?.aborted) throw e;
+    return null;
+  });
   for (let tries = 0, refetched = false; ;) {
     if (got.proof.state.height < smlProof.height) {
-      if (tries >= CATCH_UP_TRIES) throw new ProofUnavailableError(`no source has a ChainLock at the masternode list's block ${smlProof.height} yet`);
+      const asked = got.source ? [got.source] : sources;
+      if (tries >= CATCH_UP_TRIES || asked.every((s) => (st.down.get(s.name) ?? 0) > Date.now())) {
+        throw new ProofUnavailableError(`no source has a ChainLock at the masternode list's block ${smlProof.height} yet`);
+      }
       progress(`Waiting for a ChainLock on block ${smlProof.height.toLocaleString('en-US')}`);
       await sleep(CATCH_UP_MS * ++tries, o.signal);
-      const next: Got | null = await fetchProof(got.source ? [got.source] : sources, got.proof.from, smlProof.height, ctx).catch((e: unknown) => {
-        if (o.signal?.aborted) throw e;
-        return null;
-      });
+      // from where the ChainLock came; the saved one (no source) may be a block a source's node cannot bridge from: then the pin
+      const next = (await orNull(fetchProof(asked, got.proof.from, smlProof.height, ctx))) ?? (got.source ? null : await orNull(fetchProof(sources, root, smlProof.height, ctx)));
       if (next) got = next;
     } else if (smlProof.height < got.proof.state.height - SIGN_HEIGHT_OFFSET) {
       if (refetched) throw new VerificationError('stale', `the masternode list is from block ${smlProof.height}, more than ${SIGN_HEIGHT_OFFSET} blocks below the ChainLock (${got.proof.state.height})`);
