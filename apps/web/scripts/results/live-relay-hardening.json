@@ -1,0 +1,26 @@
+{
+  "at": "2026-10-24T20:14:50.302Z",
+  "govHash": "ab31c1fffb2eef4587f4ba85a92ddf98b3256aaf96542fe5221a0532d620708d",
+  "relay": "http://127.0.0.1:18791",
+  "replay": {
+    "vote": "masternode-1 (collateral index 95), sent earlier by a direct voteraw, taken from the bridge's public vote set",
+    "answer": {
+      "status": 409,
+      "code": "already-current"
+    }
+  },
+  "fresh": {
+    "masternode": "masternode-6",
+    "voteHash": "e20c86eca0edc5b37e0afb7b812bac32729c4640d723bb86e6130002b21f748a",
+    "outcome": "abstain",
+    "time": 1792872890,
+    "relayStatus": "confirmed"
+  },
+  "replayOfOwnRelayedVote": {
+    "vote": "masternode-3 (index 18), relayed earlier by this relay",
+    "answer": {
+      "status": 200,
+      "note": "idempotent: the stored record (confirmed) is returned, nothing is stored or counted again"
+    }
+  }
+}

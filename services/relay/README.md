@@ -230,6 +230,8 @@ cheap test proposal `ab31c1ff…708d` (`packages/auth/scripts/testnet-proposal.t
 | immediate YES, masternode-2 | `voteraw` "Voted successfully", `confirmed` by the relay within 20 s, in `gobject getcurrentvotes` and in the bridge's counted set |
 | deferred ABSTAIN, masternode-3, nTime = release ~10 min ahead | `held`, broadcast at release minus the margin, `confirmed`; in Core and the bridge with the signed nTime |
 | deferred NO, masternode-4, then a cancel | a cancel signed by another masternode's voting key refused (403), the voting key's own cancel accepted; never reached Core |
+| after hardening (redeployed): a public vote Core already counts, replayed from the bridge | 409 `already-current`, nothing stored or counted (`apps/web/scripts/results/live-relay-hardening.json`) |
+| after hardening: a fresh immediate ABSTAIN, masternode-6 | `confirmed` |
 
 Together with a direct `voteraw` of a browser-signed vote this validates the testnet binary-hash scheme end to end from the web
 app's signing code through the relay (the testnet-stack work independently confirmed `signVote` with one `voteraw`, see
