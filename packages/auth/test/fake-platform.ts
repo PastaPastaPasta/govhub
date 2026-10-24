@@ -47,6 +47,11 @@ export class FakePlatform implements PlatformPort {
   async addKeys(): Promise<void> {
     throw new Error('not in unit tests');
   }
+  writes: unknown[] = [];
+  async writeDocument(o: { op: unknown }) {
+    this.writes.push(o.op);
+    return { id: toBase58(crypto.getRandomValues(new Uint8Array(32))), revision: 1 };
+  }
   vault = {
     list: async (_c: string, owner: string) => this.vaultDocs.filter((d) => d.ownerId === owner),
     byCredential: async (_c: string, owner: string, cred: Uint8Array) => this.vaultDocs.find((d) => d.ownerId === owner && bytesEqual(d.credentialId, cred)) ?? null,

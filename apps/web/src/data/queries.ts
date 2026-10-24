@@ -2,7 +2,7 @@
 // packages/contracts-v1/README.md. queries.test.ts runs each through the PV13 linter.
 import govSchemas from '@govhub/contracts-v1/gov.json';
 import { hexToB64 } from '../lib/bytes.ts';
-import { assertQuery, type ContractSchemas, type DocQuery } from './queryLint.ts';
+import { assertQuery, type ContractSchemas, type DocQuery } from '@govhub/contracts-v1/queryLint';
 
 export const GOV_SCHEMAS = govSchemas as unknown as ContractSchemas;
 export const PAGE = 100;

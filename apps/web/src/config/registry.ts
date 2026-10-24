@@ -18,6 +18,20 @@ export interface NamedUrl {
   url: string;
 }
 
+/** Social layer endpoints (PLAN §3.1 `forum` and `mod`, §9 moderation). */
+export interface ForumEndpoints {
+  /** the open `forum` contract: comments, reactions, claims, posts, user block lists */
+  contractId: string;
+  /** the `mod` contract that holds the default block list */
+  modContractId: string;
+  /** owner of the default list (only it can write `mod.block`) */
+  moderationIdentityId: string;
+  /** shown as the default list's name */
+  moderationName: string;
+  /** hosts accepted for URL-embedded claims, https://<portal>/p/<identityId>/<name> */
+  claimPortals: string[];
+}
+
 export interface Registry {
   version: 1;
   coreNetwork: CoreNetwork;
@@ -31,12 +45,11 @@ export interface Registry {
   bridges: BridgeEndpoint[];
   relays: NamedUrl[];
   priceFeed: NamedUrl | null;
-  /** The `forum` contract (comments, reactions, the passkey `vault`), on `platformNetwork`. */
-  forumContractId: string;
   /** Central login (accounts service, PLAN 4.2). Not built yet: the interface is in @govhub/auth `central.ts`. */
   accounts: NamedUrl | null;
   /** Starter-voucher faucet (PLAN 4.3). Vouchers are pasted as links; the app never calls the mainnet invitation endpoint itself. */
   faucet: NamedUrl | null;
+  forum: ForumEndpoints;
 }
 
 export const QUORUM_SERVICE: Record<CoreNetwork, string> = {
@@ -47,9 +60,29 @@ export const QUORUM_SERVICE: Record<CoreNetwork, string> = {
 /** Testnet `gov` contract from phase 0 (owner = the bridge identity). */
 export const TESTNET_GOV_CONTRACT = '3ueAfbVe8LvCxYWk7bKvXxc5uHe7E1TDJHzN3k3ZDehZ';
 export const TESTNET_BRIDGE_IDENTITY = '9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv';
-/** Testnet `forum` contract from phase 0 (holds `vault`). */
-export const TESTNET_FORUM_CONTRACT = 'HfLWUEWnp4YCQ9Mzp9DexG58WPKvHm7SahMVSuzKSQRw';
 export const DEFAULT_FAUCET: NamedUrl = { name: 'faucet.dashhq.org', url: 'https://faucet.dashhq.org' };
+
+/**
+ * Testnet `forum` and `mod` contracts from phase 0. The moderation identity on testnet is the phase-0 spike owner
+ * (the `mod` contract's owner, the only identity that can create `mod.block`); mainnet uses a separate key.
+ */
+export const TESTNET_FORUM: ForumEndpoints = {
+  contractId: 'HfLWUEWnp4YCQ9Mzp9DexG58WPKvHm7SahMVSuzKSQRw',
+  modContractId: 'CWJ5PyMMKwchk5H3FjX9enVQToWZUFA1xQaRn8zNZVjY',
+  moderationIdentityId: TESTNET_BRIDGE_IDENTITY,
+  moderationName: 'govhub moderation',
+  claimPortals: ['gov.dashhq.org'],
+};
+
+/**
+ * Identities whose `claimAttestation` documents count (PLAN §6.3 method 4): the hosting team, i.e. the owner of the
+ * gov contract in use. The contract restricts creation to its owner; this list is the reader's own check.
+ */
+export function attestorsFor(r: Registry): string[] {
+  const ids = r.bridges.filter((b) => b.govContractId === r.govContractId && b.bridgeIdentityId).map((b) => b.bridgeIdentityId);
+  if (r.govContractId === TESTNET_GOV_CONTRACT) ids.push(TESTNET_BRIDGE_IDENTITY);
+  return [...new Set(ids)];
+}
 
 function envBridges(): BridgeEndpoint[] {
   const url = import.meta.env?.VITE_GOVHUB_BRIDGE_URL as string | undefined;
@@ -68,9 +101,9 @@ export function defaultRegistry(): Registry {
     bridges: envBridges(),
     relays: [],
     priceFeed: { name: 'CoinGecko', url: 'https://api.coingecko.com/api/v3/simple/price?ids=dash&vs_currencies=usd' },
-    forumContractId: TESTNET_FORUM_CONTRACT,
     accounts: null,
     faucet: DEFAULT_FAUCET,
+    forum: { ...TESTNET_FORUM, claimPortals: [...TESTNET_FORUM.claimPortals] },
   };
 }
 
@@ -99,6 +132,28 @@ const network = (v: unknown, field: string, errors: string[]): CoreNetwork => {
   errors.push(`${field} must be "mainnet" or "testnet"`);
   return 'mainnet';
 };
+
+const HOST = /^[a-z0-9.-]+(?::\d{1,5})?$/i;
+
+/** Settings saved before the social layer existed have no `forum` section: they get the defaults. */
+function parseForum(v: unknown, d: ForumEndpoints, errors: string[]): ForumEndpoints {
+  if (v === undefined) return d;
+  const x = (v ?? {}) as Record<string, unknown>;
+  const id = (k: 'contractId' | 'modContractId' | 'moderationIdentityId'): string => {
+    const s = typeof x[k] === 'string' ? (x[k] as string) : '';
+    if (!B58_ID.test(s)) errors.push(`forum.${k} must be a base58 identifier`);
+    return s;
+  };
+  const portals = Array.isArray(x.claimPortals) ? x.claimPortals.filter((p): p is string => typeof p === 'string') : d.claimPortals;
+  for (const p of portals) if (!HOST.test(p)) errors.push(`claim portal "${p}" must be a host name`);
+  return {
+    contractId: id('contractId'),
+    modContractId: id('modContractId'),
+    moderationIdentityId: id('moderationIdentityId'),
+    moderationName: typeof x.moderationName === 'string' && x.moderationName.trim() ? x.moderationName.trim().slice(0, 60) : d.moderationName,
+    claimPortals: portals.map((p) => p.toLowerCase()),
+  };
+}
 
 /** Validates untrusted JSON into a Registry. Unknown keys are dropped. */
 export function parseRegistry(input: unknown): { registry: Registry; errors: string[] } {
@@ -136,8 +191,6 @@ export function parseRegistry(input: unknown): { registry: Registry; errors: str
     });
   const pf = o.priceFeed as Record<string, unknown> | null | undefined;
   // Fields added in phase 2: absent in older saved settings, so they default instead of failing.
-  const forumContractId = o.forumContractId === undefined ? d.forumContractId : typeof o.forumContractId === 'string' ? o.forumContractId : '';
-  if (!B58_ID.test(forumContractId)) errors.push('forumContractId must be a base58 identifier');
   const optionalNamed = (v: unknown, fallback: NamedUrl | null, what: string): NamedUrl | null => {
     if (v === undefined) return fallback;
     if (!v || typeof v !== 'object') return null;
@@ -158,9 +211,9 @@ export function parseRegistry(input: unknown): { registry: Registry; errors: str
     bridges,
     relays: named(o.relays, 'relay'),
     priceFeed: pf && typeof pf === 'object' ? { name: typeof pf.name === 'string' ? pf.name : 'price feed', url: httpsUrl(pf.url, 'price feed URL', errors) } : null,
-    forumContractId,
     accounts: optionalNamed(o.accounts, d.accounts, 'accounts service'),
     faucet: optionalNamed(o.faucet, d.faucet, 'faucet'),
+    forum: parseForum(o.forum, d.forum, errors),
   };
   if (registry.dapi.source === 'manual' && nodes.length === 0) errors.push('manual DAPI source needs at least one node');
   return { registry, errors };

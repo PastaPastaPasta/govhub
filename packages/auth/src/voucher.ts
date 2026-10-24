@@ -10,7 +10,7 @@ import { CREATE_KEYS } from './layout.ts';
 import type { AssetLockProofInput, PlatformPort, SigningKey } from './platform.ts';
 import type { SeedWallet } from './seed.ts';
 import { identityIdFromOutpoint, locateCredit } from './tx.ts';
-import { classifyRegistrationError, minedHeight, redact, waitForChainLockedHeight } from './funding.ts';
+import { classifyRegistrationError, minedHeight, redact, sleep, waitForChainLockedHeight } from './funding.ts';
 
 export interface Voucher {
   txid: string;
@@ -85,7 +85,7 @@ export async function redeemVoucher(o: RedeemOptions): Promise<{ identityId: str
         // 'used' only says the outpoint is consumed: success only if the identity it made is this seed's (existing() throws otherwise).
         // A just-made identity can lag a block behind on the node read, so a 'used' answer is re-checked a few times.
         for (let i = 0; i < (outcome === 'used' ? 5 : 1); i++) {
-          if (i) await new Promise((r) => setTimeout(r, 2000));
+          if (i) await sleep(2000, signal);
           if (await existing()) return;
         }
         if (outcome === 'used') throw new VoucherError('This voucher has already been used.');

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { defaultRegistry, exportRegistry, loadRegistry, parseRegistry, resolveConfigParam, saveRegistry, shareLink, textToB64url } from './registry.ts';
+import { attestorsFor, defaultRegistry, exportRegistry, loadRegistry, parseRegistry, resolveConfigParam, saveRegistry, shareLink, textToB64url } from './registry.ts';
 import { resolveMode } from './mode.ts';
 
 class MemStorage {
@@ -40,6 +40,18 @@ describe('endpoint registry', () => {
     expect(errs).toContain('must be host:port');
     expect(errs).toContain('quorum service URL must be an https URL');
     expect(errs).toContain('govContractId');
+  });
+
+  it('forum endpoints: defaults for settings saved before phase 2, validated when present', () => {
+    const { forum: _f, ...old } = defaultRegistry();
+    const parsed = parseRegistry(old);
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.registry.forum).toEqual(defaultRegistry().forum);
+    const bad = parseRegistry({ ...defaultRegistry(), forum: { contractId: 'x', modContractId: '', moderationIdentityId: '9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv', claimPortals: ['ok.org', 'https://no'] } });
+    const errs = bad.errors.join('\n');
+    for (const e of ['forum.contractId must be', 'forum.modContractId must be', 'claim portal "https://no"']) expect(errs).toContain(e);
+    expect(errs).not.toContain('moderationIdentityId');
+    expect(attestorsFor(defaultRegistry())).toEqual(['9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv']);
   });
 
   it('allows http only for localhost (local bridge development)', () => {

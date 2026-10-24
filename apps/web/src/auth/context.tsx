@@ -1,13 +1,19 @@
-// Session state. The signing key lives in this tab's memory only (a Session from @govhub/auth); signing out or closing the tab
-// drops it. Keeping it across visits is opt-in and goes through the passkey vault, never plain storage.
+// Sign-in state for the real sessions (@govhub/auth: seed, pasted key, passkey). The app has ONE signed-in session, held by
+// ForumProvider as the app-level `Session` (session/session.ts); a real sign-in is wrapped by appSessionFromAuth and handed to it, so
+// every write goes through @govhub/auth's document writer. This provider adds what only real sessions have (funding records, the
+// sign-in sheet, top-ups and passkeys). The signing key lives in this tab's memory only; keeping it across visits is opt-in and goes
+// through the passkey vault, never plain storage.
 import { storageFundingStore, type FundingStore, type Network, type PlatformPort, type Session } from '@govhub/auth';
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useApp } from '../app/context.tsx';
+import { useForum } from '../app/forum.tsx';
+import { appSessionFromAuth, type AppAuthSession } from '../session/authSession.ts';
 import { getAuthDapi, getPlatformPort } from './runtime.ts';
 
 export type SheetView = 'choose' | 'create' | 'phrase' | 'key' | 'passkey' | 'topup' | 'passkeys';
 
 interface AuthCtx {
+  /** The real auth session behind the app session, when the app is signed in through @govhub/auth. */
   session: Session | null;
   /** Credits; null while unknown. */
   balance: bigint | null;
@@ -32,47 +38,25 @@ export function useAuth(): AuthCtx {
   return c;
 }
 
+/** Fired by `openSignIn()` (ui/SignIn.tsx): "Sign in to comment" buttons open the sheet. */
+export const OPEN_SIGNIN_EVENT = 'govhub:signin';
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { registry } = useApp();
-  const [session, setSession] = useState<Session | null>(null);
-  const [balance, setBalance] = useState<bigint | null>(null);
+  const forum = useForum();
   const [sheet, setSheet] = useState<SheetView | null>(null);
-  const current = useRef<Session | null>(null);
   const store = useMemo(() => storageFundingStore(localStorage), []);
-
   const platform = useCallback(() => getPlatformPort(registry), [registry]);
   const dapi = useCallback(() => getAuthDapi(registry), [registry]);
 
-  const refreshBalance = useCallback(() => {
-    const s = current.current;
-    if (!s) return;
-    platform()
-      .then((p) => p.balance(s.identityId))
-      .then((b) => current.current === s && setBalance(b), () => {});
-  }, [platform]);
-
-  const signIn = useCallback(
-    (s: Session) => {
-      if (current.current && current.current !== s) current.current.end();
-      current.current = s;
-      setSession(s);
-      setBalance(null);
-      refreshBalance();
-    },
-    [refreshBalance],
-  );
+  const session = (forum.session as Partial<AppAuthSession> | null)?.auth ?? null;
+  const { signIn: forumSignIn, signOut: forumSignOut } = forum;
+  const signIn = useCallback((s: Session) => forumSignIn(appSessionFromAuth(s, platform)), [forumSignIn, platform]);
   const signOut = useCallback(() => {
-    current.current?.end();
-    current.current = null;
-    setSession(null);
-    setBalance(null);
+    forumSignOut(); // closes the app session, which ends the auth session (wipes the key and the seed)
     setSheet(null);
-  }, []);
+  }, [forumSignOut]);
 
-  // A session belongs to one Platform network: switching networks in Settings signs out.
-  useEffect(() => {
-    if (current.current && current.current.network !== registry.platformNetwork) signOut();
-  }, [registry.platformNetwork, signOut]);
   // Leaving the page signs out completely: the key is wiped and the session dropped, so a page restored from the back/forward cache
   // never shows a session whose key bytes are already zero (they would derive keys anyone can compute).
   useEffect(() => {
@@ -85,13 +69,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       removeEventListener('pageshow', onShow);
     };
   }, [signOut]);
+  useEffect(() => {
+    const open = () => setSheet('choose');
+    addEventListener(OPEN_SIGNIN_EVENT, open);
+    return () => removeEventListener(OPEN_SIGNIN_EVENT, open);
+  }, []);
 
   const value = useMemo<AuthCtx>(
     () => ({
-      session, balance, network: registry.platformNetwork, forumContractId: registry.forumContractId, signIn, signOut, refreshBalance, platform, dapi, store,
-      sheet, openSheet: setSheet, closeSheet: () => setSheet(null),
+      session, balance: session ? forum.balance : null, network: registry.platformNetwork, forumContractId: registry.forum.contractId, signIn, signOut,
+      refreshBalance: forum.refreshBalance, platform, dapi, store, sheet, openSheet: setSheet, closeSheet: () => setSheet(null),
     }),
-    [session, balance, registry.platformNetwork, registry.forumContractId, signIn, signOut, refreshBalance, platform, dapi, store, sheet],
+    [session, forum.balance, forum.refreshBalance, registry.platformNetwork, registry.forum.contractId, signIn, signOut, platform, dapi, store, sheet],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

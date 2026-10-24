@@ -29,6 +29,10 @@ interface Script {
   /** Error thrown by the next `rejectCount` broadcasts (default 1). */
   rejectNextBroadcast?: string;
   rejectCount?: number;
+  /** getTransaction fails with a network error (not NOT_FOUND). */
+  lookupFails?: boolean;
+  /** Deliver the lock's IS-lock even when its broadcast is refused (another node relayed it). */
+  isLockOnRefusal?: boolean;
 }
 
 /** A DAPI whose deposit watcher reports payments (IS-locked unless told otherwise) and which IS-locks whatever is broadcast. */
@@ -44,6 +48,7 @@ function fakeDapi(s: Script) {
       value: await fn({
         getBestBlockHeight: async () => 1000,
         getTransaction: async (txid: string) => {
+          if (s.lookupFails) throw Object.assign(new Error('upstream connect error'), { code: 14 });
           if (!known.has(txid)) throw Object.assign(new Error('not found'), { code: 5 });
           return { raw: broadcast, height: s.mined, confirmations: 1 };
         },
@@ -66,6 +71,7 @@ function fakeDapi(s: Script) {
         const m = s.rejectNextBroadcast;
         s.rejectCount = (s.rejectCount ?? 1) - 1;
         if (s.rejectCount <= 0) s.rejectNextBroadcast = undefined;
+        if (s.isLockOnRefusal) isLock(locks.at(-1)!, parseTx(raw).txid);
         throw new Error(m);
       }
       broadcast = raw;
@@ -110,6 +116,7 @@ function fakePlatform(o: { refuseInstant?: boolean; onRefuse?: () => void; failW
     },
     topUpIdentity: async () => {},
     addKeys: async () => {},
+    writeDocument: async () => ({ id: 'x' }),
     vault: { list: async () => [], byCredential: async () => null, put: async () => {}, remove: async () => {} },
   };
   return p;
@@ -271,6 +278,42 @@ describe('runFunding (create)', () => {
     expect(rec.state).toBe('done');
     expect(rec.rejectedLocks).toHaveLength(1);
     expect(rec.rejectedLocks![0]).not.toBe(rec.lock!.txid);
+  });
+
+  it('a failed lookup is never taken for "the lock does not exist": no rebuild, the run stops and a resume retries', async () => {
+    const s: Script = { events: [], deliverIsLock: false, mined: 0, rejectNextBroadcast: 'bad-txns-inputs-missingorspent', rejectCount: 99 };
+    const dapi = fakeDapi(s);
+    const store = memStore();
+    let shown = false;
+    const run = runFunding({
+      wallet: SeedWallet.fromPhrase(PHRASE, 'testnet'), dapi: dapi as unknown as Dapi, platform: fakePlatform(), store, kind: 'create', identityIndex: 0, isLockWaitMs: 100, pollMs: 10,
+      onUpdate: (v) => {
+        if (v.state === 'awaiting-deposit' && !shown) {
+          shown = true;
+          dapi.pay(payTo(v.address, 1_000_000n));
+        }
+        if (v.state === 'locking' && v.lockTxid) s.lookupFails = true;
+      },
+    });
+    await expect(run).rejects.toThrow(/upstream connect error/);
+    const rec = store.m.get(keyFor(PHRASE))!;
+    expect(rec.lock).toBeDefined();
+    expect(rec.rejectedLocks ?? []).toHaveLength(0);
+  });
+
+  it('an IS-lock seen while the broadcast is being refused means the lock is out there: no rebuild', async () => {
+    const s: Script = { events: [], deliverIsLock: false, mined: 1500, rejectNextBroadcast: 'bad-txns-inputs-missingorspent', rejectCount: 99, isLockOnRefusal: true };
+    const dapi = fakeDapi(s);
+    const store = memStore();
+    const platform = fakePlatform();
+    await runFunding({
+      wallet: SeedWallet.fromPhrase(PHRASE, 'testnet'), dapi: dapi as unknown as Dapi, platform, store, kind: 'create', identityIndex: 0, isLockWaitMs: 500, pollMs: 10,
+      onUpdate: (v) => v.state === 'awaiting-deposit' && !v.receivedDuffs && !v.pendingDuffs && dapi.pay(payTo(v.address, 1_000_000n)),
+    });
+    const rec = store.m.get(keyFor(PHRASE))!;
+    expect(rec.rejectedLocks ?? []).toHaveLength(0);
+    expect(rec.isLock).toBeDefined();
+    expect(platform.calls).toEqual(['instant']);
   });
 
   it('M5: a key conflict is its own error, and a transient error is never taken for "already used"', async () => {

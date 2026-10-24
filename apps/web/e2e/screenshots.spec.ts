@@ -58,6 +58,30 @@ test.describe('extra', () => {
     await expect(page.getByTestId('votes-check').locator('[data-votes]')).toHaveAttribute('data-votes', 'keys-reported', { timeout: 30_000 });
     await shoot(page, 'votes-recorded-light-desktop');
   });
+  test('@screenshots discussion with hidden comments shown, signed in, reply open', async ({ page }) => {
+    await gotoFixtures(page, '/p/OrchardPay');
+    await page.getByTestId('session-button').click();
+    await page.getByRole('button', { name: /^Alice$/ }).click();
+    const d = page.getByTestId('discussion');
+    await d.getByTestId('toggle-hidden').click();
+    await d.locator('li.comment > article', { hasText: 'who audits' }).getByRole('button', { name: 'Reply' }).click();
+    await d.scrollIntoViewIfNeeded();
+    await page.evaluate(() => document.fonts.ready);
+    await d.screenshot({ path: 'screenshots/discussion-light-desktop.png', animations: 'disabled' });
+  });
+  test('@screenshots owner post and owner label (attestation)', async ({ page }) => {
+    await gotoFixtures(page, '/p/dash-growth-q4-2026');
+    await expect(page.getByTestId('owner-post').getByRole('heading')).toBeVisible();
+    await shoot(page, 'owner-post-light-desktop');
+  });
+  test('@screenshots claim panel', async ({ page }) => {
+    await gotoFixtures(page, '/p/OrchardPay');
+    await page.getByTestId('session-button').click();
+    await page.getByRole('button', { name: /^Alice$/ }).click();
+    const panel = page.getByTestId('claim-panel');
+    await panel.locator('summary').click();
+    await panel.screenshot({ path: 'screenshots/claim-light-desktop.png', animations: 'disabled' });
+  });
   test('@screenshots duplicate-name chooser', async ({ page }) => {
     await gotoFixtures(page, '/p/Dash-Mass-Organic-Content-Attraction');
     await expect(page.locator('.chooser a')).toHaveCount(2);

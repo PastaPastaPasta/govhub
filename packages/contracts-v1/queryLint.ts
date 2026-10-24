@@ -1,5 +1,5 @@
-// PV13 query-shape linter. Encodes the rules in packages/contracts-v1/README.md ("Writing and
-// querying"), because PV13 mainnet answers a bad shape with a silent `[]` instead of an error.
+// PV13 query-shape linter, shared by every package that queries the v1 contracts. Encodes the rules in
+// README.md ("Writing and querying"), because PV13 mainnet answers a bad shape with a silent `[]` instead of an error.
 //   R1  equality prefix of ONE index, then at most one range or `in` on the NEXT property, nothing after
 //   R1b if the where does not cover every property of that index, orderBy must end on its last property
 //   R2  `in` only on the last property of the index

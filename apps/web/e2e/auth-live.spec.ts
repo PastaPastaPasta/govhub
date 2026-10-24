@@ -18,21 +18,38 @@ const dapi = createDapi({ network: 'testnet' });
 const funder = qaFunder(dapi);
 const credits = (t: string) => Math.round(Number(t.replace(/[^0-9.]/g, '')) * 1e11);
 
+const panel = (page: Page) => page.locator('dialog[open]');
+async function signedIn(page: Page, timeout: number) {
+  await expect(page.getByTestId('session-button')).not.toHaveText('Sign in', { timeout });
+}
 async function openAccount(page: Page) {
-  await page.getByTestId('account-button').click();
-  await expect(page.getByTestId('identity-id')).toBeVisible();
+  await page.getByTestId('session-button').click();
+  await expect(page.getByTestId('session-identity')).toBeVisible();
+}
+async function closeAccount(page: Page) {
+  await panel(page).getByRole('button', { name: 'Close', exact: true }).click();
+}
+async function identity(page: Page): Promise<string> {
+  await openAccount(page);
+  const id = (await page.getByTestId('session-identity').innerText()).trim();
+  await closeAccount(page);
+  return id;
 }
 async function balance(page: Page): Promise<number> {
   await openAccount(page);
-  await expect(page.getByTestId('balance')).not.toHaveText('…', { timeout: 60_000 });
-  const b = credits(await page.getByTestId('balance').innerText());
-  await page.getByTestId('account-button').click();
+  await expect(page.getByTestId('session-balance')).not.toHaveText('reading…', { timeout: 60_000 });
+  const b = credits(await page.getByTestId('session-balance').innerText());
+  await closeAccount(page);
   return b;
 }
 async function signOut(page: Page) {
   await openAccount(page);
-  await page.getByRole('menuitem', { name: 'Sign out' }).click();
+  await panel(page).getByRole('button', { name: 'Sign out' }).click();
   await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible();
+}
+async function accountAction(page: Page, name: 'Top up' | 'Add passkey') {
+  await openAccount(page);
+  await panel(page).getByRole('button', { name }).click();
 }
 async function payDepositAddress(page: Page, duffs: bigint) {
   const address = (await page.getByTestId('deposit-address').innerText({ timeout: 120_000 })).trim();
@@ -69,11 +86,9 @@ test('@live-auth create, fund, sign in with phrase, passkey and top up on testne
   await page.getByRole('button', { name: /Pay with DASH/ }).click();
   const tCreate = Date.now();
   results.depositTxid = await payDepositAddress(page, 500_000n);
-  await expect(page.getByTestId('account-button')).toBeVisible({ timeout: 5 * 60_000 });
+  await signedIn(page, 5 * 60_000);
   results.createSeconds = Math.round((Date.now() - tCreate) / 1000);
-  await openAccount(page);
-  const identityId = (await page.getByTestId('identity-id').innerText()).trim();
-  await page.getByTestId('account-button').click();
+  const identityId = await identity(page);
   results.identityId = identityId;
   results.balanceAfterCreate = await balance(page);
   console.log(`created ${identityId} in ${results.createSeconds} s`);
@@ -84,12 +99,11 @@ test('@live-auth create, fund, sign in with phrase, passkey and top up on testne
   await page.getByRole('button', { name: /I have a recovery phrase/ }).click();
   await page.getByTestId('phrase-input').fill(phrase.join(' '));
   await page.getByRole('button', { name: 'Sign in' }).last().click();
-  await expect(page.getByTestId('account-button')).toBeVisible({ timeout: 120_000 });
-  await openAccount(page);
-  await expect(page.getByTestId('identity-id')).toHaveText(identityId);
+  await signedIn(page, 120_000);
+  expect(await identity(page)).toBe(identityId);
 
   // ---- 3. add a passkey (PRF) ----
-  await page.getByRole('menuitem', { name: 'Add passkey' }).click();
+  await accountAction(page, 'Add passkey');
   await page.getByRole('button', { name: 'Add a passkey' }).click();
   await page.getByRole('button', { name: 'Confirm with the passkey' }).click();
   await expect(page.getByTestId('passkey-saved')).toBeVisible({ timeout: 180_000 });
@@ -105,13 +119,14 @@ test('@live-auth create, fund, sign in with phrase, passkey and top up on testne
   await page.getByRole('button', { name: 'Sign in' }).click();
   await page.getByRole('button', { name: /Use a passkey/ }).click();
   await page.getByRole('button', { name: 'Use a passkey' }).click();
-  await expect(page.getByTestId('account-button')).toBeVisible({ timeout: 120_000 });
+  await signedIn(page, 120_000);
   await openAccount(page);
-  await expect(page.getByTestId('identity-id')).toHaveText(identityId);
-  await expect(page.locator('.account-facts')).toContainText('passkey');
+  await expect(page.getByTestId('session-identity')).toHaveText(identityId);
+  await expect(panel(page)).toContainText('passkey, key 2');
+  await closeAccount(page);
 
   // ---- 5. top up from the passkey session (its bundle is the seed: DIP-13 top-up key) ----
-  await page.getByRole('menuitem', { name: 'Top up' }).click();
+  await accountAction(page, 'Top up');
   const tTop = Date.now();
   results.topUpDepositTxid = await payDepositAddress(page, 100_000n);
   await expect(page.getByText('Top-up complete')).toBeVisible({ timeout: 5 * 60_000 });
@@ -135,11 +150,9 @@ test('@live-auth create, fund, sign in with phrase, passkey and top up on testne
   await page.getByPlaceholder(/dashpay:\/\/invite/).fill(voucher.link);
   const tV = Date.now();
   await page.getByRole('button', { name: 'Redeem' }).click();
-  await expect(page.getByTestId('account-button')).toBeVisible({ timeout: 10 * 60_000 });
+  await signedIn(page, 10 * 60_000);
   results.voucherSeconds = Math.round((Date.now() - tV) / 1000);
-  await openAccount(page);
-  results.voucherIdentityId = (await page.getByTestId('identity-id').innerText()).trim();
-  await page.getByTestId('account-button').click();
+  results.voucherIdentityId = await identity(page);
   results.voucherIdentityBalance = await balance(page);
 
   // Exact balances from Platform (proved reads in Node), for the credits-spent ledger.

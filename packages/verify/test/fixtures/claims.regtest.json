@@ -1,0 +1,194 @@
+{
+  "generatedAt": 1792820661,
+  "chain": "regtest",
+  "messageFormat": "govhub-claim|<net>|<govHash>|<identityId>",
+  "identities": {
+    "I1": "3TwtH8AEteAAgd7TB4pvSe6dhF1Azz8RogJsCwxWGi8G",
+    "I2": "8bqAgcUo5A5rakseMvqu2R2nfuydfenpRbTvwv63dJHX"
+  },
+  "addresses": {
+    "A": "yS74EQCAMHS1VWaY9auqLwfp4LW5Z1rUia",
+    "B": "yiNmzQTh53FbFYTrYM1dLoeB2xuSxtTcrE",
+    "P2SH": "8uN3nH1VcUb8Gu7MUnyZTJdFZ9NLPE32ad"
+  },
+  "proposals": [
+    {
+      "label": "url-embedded",
+      "parentHash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "revision": 1,
+      "time": 1792820661,
+      "dataHex": "7b22656e645f65706f6368223a313838373432383636312c226e616d65223a22636c61696d2d75726c222c227061796d656e745f61646472657373223a2279533734455143414d48533156576159396175714c776670344c57355a3172556961222c227061796d656e745f616d6f756e74223a31302c2273746172745f65706f6368223a313739323832303636312c2274797065223a312c2275726c223a2268747470733a2f2f676f762e6461736868712e6f72672f702f335477744838414574654141676437544234707653653664684631417a7a38526f674a7343777857476938472f636c61696d2d75726c227d",
+      "govHash": "d79570fcf8a09c71172b5b103661aecac929de78c9b765275b96a93f1ea63cec",
+      "collateralTxid": "559fdd9211e400f99834b7a9920c5a8835d9c6c360d0e92c81b571311ede267c",
+      "rawCollateralTx": "02000000011078f761435cff8260ed2b335258b331f371cdcfe8fd0e5b9714069cdb8e73e70000000069463043021f452af1e3cd2818f7bcf3a69b1c9cd632173eeed54e50dd97a37e52ce868bd102207b91b260de4765a4bb750d330d1fa2d2a86fcfe09a6d9b60a1f799a1b501762f012103e7a5ebe444419254cf7360ea1857c6343332102a095d225c70ffbd1d1923b190feffffff0200e1f50500000000226a20ec3ca61e3fa9965b2765b7c978de29c9caae6136105b2b17719ca0f8fc7095d7dc89459e0b0000001976a91460be49b354da25f1f7ddc57ee6ed1ba0703bd4f388acd2000000",
+      "collateralInputs": [
+        {
+          "address": "ydeTYFqXEj3jD6jZgcY4Pgi3WKeJXBx2ag",
+          "type": "pubkeyhash",
+          "prevTxid": "e7738edb9c0614975b0efde8cfcd71f331b35852332bed6082ff5c4361f77810",
+          "prevVout": 0
+        }
+      ]
+    },
+    {
+      "label": "pay-p2pkh",
+      "parentHash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "revision": 1,
+      "time": 1792820662,
+      "dataHex": "7b22656e645f65706f6368223a313838373432383636312c226e616d65223a22636c61696d2d706179222c227061796d656e745f61646472657373223a2279533734455143414d48533156576159396175714c776670344c57355a3172556961222c227061796d656e745f616d6f756e74223a31302c2273746172745f65706f6368223a313739323832303636312c2274797065223a312c2275726c223a2268747470733a2f2f6578616d706c652e6f72672f636c61696d2d706179227d",
+      "govHash": "3e0399d3c76c5239c01b51978e42d97fc6ce6d8725e273c25294f086321a8347",
+      "collateralTxid": "a8a579e3b58936f56a549b45fa98c3b479182813a0e759fdd86100886d9080b6",
+      "rawCollateralTx": "02000000018e5690259ccad47a04b863a6761ef9b508fbfece9ebad9fad70b0d62fba7b69f000000006a473044022011046563a3f5025aa4942b94f1ad93162b1d6e288349c443abbb67bf6e78312402201c009871aa95499a90a3411542328df1e9329ef85ef84968554de3a1f54a2eae012103e7a5ebe444419254cf7360ea1857c6343332102a095d225c70ffbd1d1923b190feffffff0200e1f50500000000226a2047831a3286f09452c273e225876dcec67fd9428e97511bc039526cc7d399033edc89459e0b0000001976a914338d4420af9c30b58a9456ad1e766319088ecfaf88acd2000000",
+      "collateralInputs": [
+        {
+          "address": "ydeTYFqXEj3jD6jZgcY4Pgi3WKeJXBx2ag",
+          "type": "pubkeyhash",
+          "prevTxid": "9fb6a7fb620d0bd7fad9ba9ecefefb08b5f91e76a663b8047ad4ca9c2590568e",
+          "prevVout": 0
+        }
+      ]
+    },
+    {
+      "label": "pay-p2sh",
+      "parentHash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "revision": 1,
+      "time": 1792820663,
+      "dataHex": "7b22656e645f65706f6368223a313838373432383636312c226e616d65223a22636c61696d2d70327368222c227061796d656e745f61646472657373223a2238754e336e483156635562384775374d556e795a544a64465a394e4c504533326164222c227061796d656e745f616d6f756e74223a31302c2273746172745f65706f6368223a313739323832303636312c2274797065223a312c2275726c223a2268747470733a2f2f6578616d706c652e6f72672f636c61696d2d70327368227d",
+      "govHash": "f8fffefd12fa13350177036bdef0e8585ab99640d8251eafd5e00b7dadeb8511",
+      "collateralTxid": "d2d0f8ec628a38adeeb6137655efd18872a56a700b9ef5364e258a34f4aad470",
+      "rawCollateralTx": "02000000019796b7dddb398fa326c2e7d8e8098ccca6089fc41ba402e272c23246497168f8000000006a473044022005db5316770bc2cf4938edbdf60b40d67d537a4abaf1447f3366390018298cf802202eb25771aa516f9e16db4d0804a771c3ce050f668a61aecf709090fdd096f4f0012103e7a5ebe444419254cf7360ea1857c6343332102a095d225c70ffbd1d1923b190feffffff0200e1f50500000000226a201185ebad7d0be0d5af1e25d84096b95a58e8f0de6b0377013513fa12fdfefff8dc89459e0b0000001976a914bec1309bfbd7724effcfa1499fe2da4e3a08871f88acd2000000",
+      "collateralInputs": [
+        {
+          "address": "ydeTYFqXEj3jD6jZgcY4Pgi3WKeJXBx2ag",
+          "type": "pubkeyhash",
+          "prevTxid": "f86871494632c272e202a41bc49f08a6cc8c09e8d8e7c226a38f39dbddb79697",
+          "prevVout": 0
+        }
+      ]
+    },
+    {
+      "label": "url-wrong-name",
+      "parentHash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "revision": 1,
+      "time": 1792820664,
+      "dataHex": "7b22656e645f65706f6368223a313838373432383636312c226e616d65223a22636c61696d2d75726c2d78222c227061796d656e745f61646472657373223a2279694e6d7a5154683533466246595472594d31644c6f654232787553787454637245222c227061796d656e745f616d6f756e74223a31302c2273746172745f65706f6368223a313739323832303636312c2274797065223a312c2275726c223a2268747470733a2f2f676f762e6461736868712e6f72672f702f386271416763556f35413572616b73654d7671753252326e6675796466656e705262547677763633644a48582f736f6d652d6f746865722d6e616d65227d",
+      "govHash": "ea07fb76580123bb187f3c925c132c072ce11a88d17ed864b75e54d3785f8a8b",
+      "collateralTxid": "b2a8a4a4a167a1d15dec449585e094b00ab75c0040162ca4bc6e0cbd805c1691",
+      "rawCollateralTx": "02000000013a9a447688f9a024ed6bc441543b4c83deeaafb2a5808e3c99b433afe0c36413000000006a47304402200f64412e096a725cff1dab293226dc5ed18136cec412bab302e8643d177826b90220068e57116c40f4969584c760b3d754aa2cce80811a87f1ed17df01fda761e694012103e7a5ebe444419254cf7360ea1857c6343332102a095d225c70ffbd1d1923b190feffffff0200e1f50500000000226a208b8a5f78d3545eb764d87ed1881ae12c072c135c923c7f18bb23015876fb07eadc89459e0b0000001976a9140678d043901762cf7120047b5a80a03c8cd6878e88acd2000000",
+      "collateralInputs": [
+        {
+          "address": "ydeTYFqXEj3jD6jZgcY4Pgi3WKeJXBx2ag",
+          "type": "pubkeyhash",
+          "prevTxid": "1364c3e0af33b4993c8e80a5b2afeade834c3b5441c46bed24a0f98876449a3a",
+          "prevVout": 0
+        }
+      ]
+    }
+  ],
+  "signatures": [
+    {
+      "label": "pay-p2pkh-valid",
+      "proposal": "pay-p2pkh",
+      "method": 2,
+      "address": "yS74EQCAMHS1VWaY9auqLwfp4LW5Z1rUia",
+      "identity": "I1",
+      "net": "regtest",
+      "message": "govhub-claim|regtest|3e0399d3c76c5239c01b51978e42d97fc6ce6d8725e273c25294f086321a8347|3TwtH8AEteAAgd7TB4pvSe6dhF1Azz8RogJsCwxWGi8G",
+      "sigBase64": "IMt7NeUgxFqJsT20MDAA+/bThPOERSFag1MFZdJMYOC7Fvo8lD8hJIIzOHopmfXqss5Vfa2nZnQi5zCiCn55P5Q=",
+      "coreVerify": true,
+      "negative": {
+        "address": "yS74EQCAMHS1VWaY9auqLwfp4LW5Z1rUia",
+        "message": "govhub-claim|regtest|3e0399d3c76c5239c01b51978e42d97fc6ce6d8725e273c25294f086321a8347|8bqAgcUo5A5rakseMvqu2R2nfuydfenpRbTvwv63dJHX",
+        "coreVerify": false
+      }
+    },
+    {
+      "label": "pay-p2pkh-wrong-signer",
+      "proposal": "pay-p2pkh",
+      "method": 2,
+      "address": "yiNmzQTh53FbFYTrYM1dLoeB2xuSxtTcrE",
+      "identity": "I1",
+      "net": "regtest",
+      "message": "govhub-claim|regtest|3e0399d3c76c5239c01b51978e42d97fc6ce6d8725e273c25294f086321a8347|3TwtH8AEteAAgd7TB4pvSe6dhF1Azz8RogJsCwxWGi8G",
+      "sigBase64": "H2rfn24nrIrf4Vznm3GJKnZXjKSy7nqAT4rY7hc4K7YxaRqS9dzkB1q9QcORMB0O7V2oUeqfU7VxYJpRjzT6sbU=",
+      "coreVerify": true,
+      "negative": {
+        "address": "yS74EQCAMHS1VWaY9auqLwfp4LW5Z1rUia",
+        "message": "govhub-claim|regtest|3e0399d3c76c5239c01b51978e42d97fc6ce6d8725e273c25294f086321a8347|3TwtH8AEteAAgd7TB4pvSe6dhF1Azz8RogJsCwxWGi8G",
+        "coreVerify": false
+      }
+    },
+    {
+      "label": "collateral-pay-p2pkh",
+      "proposal": "pay-p2pkh",
+      "method": 3,
+      "address": "ydeTYFqXEj3jD6jZgcY4Pgi3WKeJXBx2ag",
+      "identity": "I2",
+      "net": "regtest",
+      "message": "govhub-claim|regtest|3e0399d3c76c5239c01b51978e42d97fc6ce6d8725e273c25294f086321a8347|8bqAgcUo5A5rakseMvqu2R2nfuydfenpRbTvwv63dJHX",
+      "sigBase64": "IJy67qoKYLT/ira1pGVhHD23ik3CjXj56BXS179Za2zDCyNyZfvpBLywY+hGmaQaFwzL1GrzxdrXTWOq+i7dE90=",
+      "coreVerify": true,
+      "negative": {
+        "address": "ydeTYFqXEj3jD6jZgcY4Pgi3WKeJXBx2ag",
+        "message": "govhub-claim|regtest|3e0399d3c76c5239c01b51978e42d97fc6ce6d8725e273c25294f086321a8347|3TwtH8AEteAAgd7TB4pvSe6dhF1Azz8RogJsCwxWGi8G",
+        "coreVerify": false
+      }
+    },
+    {
+      "label": "collateral-url-embedded",
+      "proposal": "url-embedded",
+      "method": 3,
+      "address": "ydeTYFqXEj3jD6jZgcY4Pgi3WKeJXBx2ag",
+      "identity": "I2",
+      "net": "regtest",
+      "message": "govhub-claim|regtest|d79570fcf8a09c71172b5b103661aecac929de78c9b765275b96a93f1ea63cec|8bqAgcUo5A5rakseMvqu2R2nfuydfenpRbTvwv63dJHX",
+      "sigBase64": "IMC5nzn7QYjrldk4FKhQu5tXKmbgMk3H3IvKrcHyYLSUU1mmPIepPfO+P5QO+Ru9GHOExOe13TJZiIjvkD1j2To=",
+      "coreVerify": true,
+      "negative": {
+        "address": "ydeTYFqXEj3jD6jZgcY4Pgi3WKeJXBx2ag",
+        "message": "govhub-claim|regtest|d79570fcf8a09c71172b5b103661aecac929de78c9b765275b96a93f1ea63cec|3TwtH8AEteAAgd7TB4pvSe6dhF1Azz8RogJsCwxWGi8G",
+        "coreVerify": false
+      }
+    },
+    {
+      "label": "net-mainnet",
+      "proposal": "pay-p2pkh",
+      "method": 2,
+      "address": "yS74EQCAMHS1VWaY9auqLwfp4LW5Z1rUia",
+      "identity": "I1",
+      "net": "mainnet",
+      "message": "govhub-claim|mainnet|3e0399d3c76c5239c01b51978e42d97fc6ce6d8725e273c25294f086321a8347|3TwtH8AEteAAgd7TB4pvSe6dhF1Azz8RogJsCwxWGi8G",
+      "sigBase64": "IAuoQLIG/6KD0ZhPB0kZAy6hTVh/VmL1izl2ycJad7/ZB0ES6SMumqYk1y36sZ6O2x0gEVH4//ILLkptR34zg3A=",
+      "coreVerify": true,
+      "negative": {
+        "address": "yS74EQCAMHS1VWaY9auqLwfp4LW5Z1rUia",
+        "message": "govhub-claim|regtest|3e0399d3c76c5239c01b51978e42d97fc6ce6d8725e273c25294f086321a8347|3TwtH8AEteAAgd7TB4pvSe6dhF1Azz8RogJsCwxWGi8G",
+        "coreVerify": false
+      }
+    },
+    {
+      "label": "govhash-raw-order",
+      "proposal": "pay-p2pkh",
+      "method": 2,
+      "address": "yS74EQCAMHS1VWaY9auqLwfp4LW5Z1rUia",
+      "identity": "I1",
+      "net": "regtest",
+      "message": "govhub-claim|regtest|47831a3286f09452c273e225876dcec67fd9428e97511bc039526cc7d399033e|3TwtH8AEteAAgd7TB4pvSe6dhF1Azz8RogJsCwxWGi8G",
+      "sigBase64": "IA75VSqSzQBE/eWvnuUuZIART1u9eGvEussqlTvC6kIvFN0RcE6oRsn/dRDC5ZZtdUtMVODqONgfUO2k2oRpyiY=",
+      "coreVerify": true,
+      "negative": {
+        "address": "yS74EQCAMHS1VWaY9auqLwfp4LW5Z1rUia",
+        "message": "govhub-claim|regtest|3e0399d3c76c5239c01b51978e42d97fc6ce6d8725e273c25294f086321a8347|3TwtH8AEteAAgd7TB4pvSe6dhF1Azz8RogJsCwxWGi8G",
+        "coreVerify": false
+      }
+    }
+  ],
+  "errors": [
+    {
+      "label": "pay-p2sh-signmessage",
+      "address": "8uN3nH1VcUb8Gu7MUnyZTJdFZ9NLPE32ad",
+      "message": "govhub-claim|regtest|f8fffefd12fa13350177036bdef0e8585ab99640d8251eafd5e00b7dadeb8511|3TwtH8AEteAAgd7TB4pvSe6dhF1Azz8RogJsCwxWGi8G",
+      "coreError": "error code: -3\nerror message:\nAddress does not refer to key"
+    }
+  ]
+}

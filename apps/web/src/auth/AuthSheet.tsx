@@ -6,6 +6,10 @@ import {
   redeemVoucher, registrationFundingPath, SeedWallet, signInWithKey, signInWithSeed, toBase64, wipe, type FoundIdentity, type FundingRecord, type PhraseLength,
 } from '@govhub/auth';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useApp } from '../app/context.tsx';
+import { useForum } from '../app/forum.tsx';
+import { FIXTURE_IDS } from '../data/fixtureForum.ts';
+import { fixtureSession } from '../session/fixture.ts';
 import { useAuth, type SheetView } from './context.tsx';
 import { FundingPanel } from './FundingPanel.tsx';
 import { PasskeySignIn, Passkeys } from './Passkeys.tsx';
@@ -67,8 +71,40 @@ function SheetContent({ view }: { view: SheetView }) {
   }
 }
 
+/** Fixture mode: sample identities whose writes go into the in-memory fixture store (no keys, no network). */
+function SampleIdentities() {
+  const { registry } = useApp();
+  const { forum, signIn } = useForum();
+  const { closeSheet } = useAuth();
+  const store = forum.store;
+  if (!store) return null;
+  const pick = (identityId: string, label: string) => {
+    signIn(fixtureSession(store, identityId, label));
+    closeSheet();
+  };
+  return (
+    <div className="notice-box">
+      <p>
+        <b>Fixture mode:</b> sign in to a sample identity. Writes go into this tab's sample data and cost pretend credits from a 0.003 DASH starter.
+      </p>
+      <div className="signin-picks">
+        <button type="button" className="btn" onClick={() => pick(FIXTURE_IDS.alice, 'fixture identity')}>
+          Alice
+        </button>
+        <button type="button" className="btn" onClick={() => pick(FIXTURE_IDS.growth, 'fixture identity')}>
+          Dash Growth team (owns dash-growth-q4-2026)
+        </button>
+        <button type="button" className="btn" onClick={() => pick(registry.forum.moderationIdentityId, 'fixture moderator')}>
+          Moderator (default block list)
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function Choose() {
   const { openSheet, store, network } = useAuth();
+  const { mode } = useApp();
   const [, rerender] = useState(0);
   const pending = pendingFundings(store, network).filter((r) => r.kind === 'create');
   const options: Array<{ v: SheetView; title: string; text: string }> = [
@@ -79,6 +115,7 @@ function Choose() {
   ];
   return (
     <div className="sheet-choose">
+      {mode === 'fixtures' && <SampleIdentities />}
       {pending.length > 0 && (
         <div className="notice-box" role="status">
           <p>
@@ -346,8 +383,9 @@ function PhraseSignIn() {
     let handedOver = false;
     try {
       // An unfinished identity setup for this phrase continues first: its deposit may already be on the chain.
-      const resume = pendingFundings(store, network).find(
-        (r) => r.kind === 'create' && r.address === addressOf(wallet.derive(registrationFundingPath(network, r.identityIndex)).publicKey, network),
+      // Hidden (discarded) records too: a payment made while no tab watched is only found by replaying their address.
+      const resume = store.list().find(
+        (r) => r.network === network && r.kind === 'create' && r.state !== 'done' && r.address === addressOf(wallet.derive(registrationFundingPath(network, r.identityIndex)).publicKey, network),
       );
       if (resume) return setState({ phrase, found: [], resume });
       const port = await platform();

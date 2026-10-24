@@ -8,9 +8,9 @@
 //  - A broadcast through a lagging node can fail with 40101 / nonce errors right after a write: retried here.
 //  - WASM errors are not Error instances: read `.message`.
 import type * as Evo from '@dashevo/evo-sdk';
-import { concatBytes, fromBase64, identifierBytes, randomBytes, sha256d, toBase64 } from './bytes.ts';
+import { concatBytes, fromBase64, identifierBytes, randomBytes, sha256d, toBase58, toBase64 } from './bytes.ts';
 import { publicKeyOf as evoPub, type IdentityKeyInfo, type Network } from './keys.ts';
-import type { AssetLockProofInput, PlatformPort, SigningKey, VaultEntryDoc } from './platform.ts';
+import type { AssetLockProofInput, DocValue, DocumentWrite, DocumentWritten, PlatformPort, SigningKey, VaultEntryDoc } from './platform.ts';
 
 type EvoModule = typeof Evo;
 type Sdk = InstanceType<EvoModule['EvoSDK']>;
@@ -110,6 +110,65 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network): P
     return [...res.data.values()].filter((x): x is Evo.Document => !!x).map((x) => toEntry(x.toJSON(w.PlatformVersion.latest() as never) as Record<string, unknown>));
   };
 
+  // ---- the one document writer (govhub's forum writes, the passkey vault) ----
+  // Integers go to the SDK as bigint. PV13 has no Document.generateId and checks $id against
+  // sha256d(contract || owner || type || entropy); PV14 derives the id from the identity-contract nonce when $id is zero
+  // (spikes/sdk5 README 8.3). A broadcast through a lagging node can fail with 40101 / a stale nonce before it executes: those are
+  // retried, re-sending the same document. A PV14 create is never retried (a retry after a write that landed would make a second
+  // document); a PV13 create retried after it landed answers "already exists", which is success.
+  const toSdk = (data: Record<string, DocValue>) => Object.fromEntries(Object.entries(data).map(([k, v]) => [k, typeof v === 'number' ? BigInt(v) : v]));
+  async function writeDocument({ ownerId, key, op }: { ownerId: string; key: SigningKey; op: DocumentWrite }): Promise<DocumentWritten> {
+    const identity = await fetchIdentity(ownerId);
+    const idKey = identity?.getPublicKeyById(key.id);
+    if (!identity || !idKey) throw new Error('signing key not found on the identity');
+    const owner = identifierBytes(ownerId);
+    const contract = identifierBytes(op.contractId);
+    let run: () => Promise<DocumentWritten>;
+    let retry = true;
+    if (op.action === 'delete') {
+      run = () => withKeys([key], null, async (signer) => {
+        await sdk.documents.delete({ document: { id: op.id, ownerId, dataContractId: op.contractId, documentTypeName: op.type }, identityKey: idKey, signer });
+        return { id: op.id };
+      });
+    } else if (op.action === 'replace') {
+      const document = w.Document.fromObject(
+        { $formatVersion: '0', $id: identifierBytes(op.id), $ownerId: owner, $dataContractId: contract, $type: op.type, $revision: BigInt(op.revision + 1), ...toSdk(op.data) } as never,
+        w.PlatformVersion.latest() as never,
+      );
+      run = () => withKeys([key], null, async (signer) => {
+        await sdk.documents.replace({ document, identityKey: idKey, signer });
+        return { id: op.id, revision: op.revision + 1 };
+      });
+    } else {
+      const entropy = randomBytes(32);
+      const pv13 = sdk.version() <= 13;
+      const id = pv13 ? sha256d(concatBytes(contract, owner, new TextEncoder().encode(op.type), entropy)) : new Uint8Array(32);
+      const document = w.Document.fromObject(
+        { $formatVersion: '0', $id: id, $ownerId: owner, $dataContractId: contract, $type: op.type, $revision: 1n, $entropy: entropy, ...toSdk(op.data) } as never,
+        w.PlatformVersion.latest() as never,
+      );
+      const create = () => withKeys([key], null, async (signer) => ({ id: (await sdk.documents.create({ document, identityKey: idKey, signer })).id.toString(), revision: 1 }));
+      if (!pv13) {
+        retry = false;
+        run = create;
+      } else {
+        run = async () => {
+          try {
+            return await create();
+          } catch (e) {
+            if (/already exists|duplicate/i.test(errText(e))) return { id: toBase58(id), revision: 1 };
+            throw e;
+          }
+        };
+      }
+    }
+    try {
+      return await (retry ? lagRetry(run, 3) : run());
+    } catch (e) {
+      throw new Error(errText(e)); // WASM errors are not Error instances
+    }
+  }
+
   return {
     network,
     async identityByUniqueKeyHash(h) {
@@ -164,6 +223,7 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network): P
       );
       await withKeys([master, ...keys], null, (signer) => lagRetry(() => sdk.identities.update({ identity, addPublicKeys: add, signer })));
     },
+    writeDocument: (o) => writeDocument(o),
     vault: {
       list: (contractId, ownerId) => queryVault(contractId, [['$ownerId', '==', ownerId]], [['$ownerId', 'asc'], ['credentialId', 'asc']]),
       async byCredential(contractId, ownerId, credentialId) {
@@ -171,33 +231,16 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network): P
         return r[0] ?? null;
       },
       async put({ contractId, ownerId, key, entry, existing }) {
-        const identity = await fetchIdentity(ownerId);
-        const idKey = identity?.getPublicKeyById(key.id);
-        if (!identity || !idKey) throw new Error('signing key not found on the identity');
-        const props = { credentialId: entry.credentialId, recipientKey: entry.recipientKey, version: entry.version, authKeyId: entry.authKeyId, enc: entry.enc, sealed: entry.sealed };
-        const now = BigInt(Date.now());
-        await withKeys([key], null, async (signer) => {
-        if (existing) {
-          const doc = w.Document.fromObject(
-            { $formatVersion: '0', $id: identifierBytes(existing.id), $ownerId: identifierBytes(ownerId), $dataContractId: identifierBytes(contractId), $type: 'vault', $revision: BigInt(existing.revision + 1), $updatedAt: now, ...props } as never,
-            w.PlatformVersion.latest() as never,
-          );
-          await lagRetry(() => sdk.documents.replace({ document: doc, identityKey: idKey, signer }));
-        } else {
-          const entropy = randomBytes(32);
-          const doc = w.Document.fromObject(
-            { $formatVersion: '0', $id: await docId(contractId, ownerId, 'vault', entropy), $ownerId: identifierBytes(ownerId), $dataContractId: identifierBytes(contractId), $type: 'vault', $revision: 1n, $entropy: entropy, $createdAt: now, $updatedAt: now, ...props } as never,
-            w.PlatformVersion.latest() as never,
-          );
-          await lagRetry(() => sdk.documents.create({ document: doc, identityKey: idKey, signer }));
-        }
+        const now = Date.now();
+        const data = { credentialId: entry.credentialId, recipientKey: entry.recipientKey, version: entry.version, authKeyId: entry.authKeyId, enc: entry.enc, sealed: entry.sealed, $updatedAt: now };
+        await writeDocument({
+          ownerId,
+          key,
+          op: existing ? { action: 'replace', contractId, type: 'vault', id: existing.id, revision: existing.revision, data } : { action: 'create', contractId, type: 'vault', data: { ...data, $createdAt: now } },
         });
       },
       async remove({ contractId, ownerId, key, entry }) {
-        const identity = await fetchIdentity(ownerId);
-        const idKey = identity?.getPublicKeyById(key.id);
-        if (!identity || !idKey) throw new Error('signing key not found on the identity');
-        await withKeys([key], null, (signer) => lagRetry(() => sdk.documents.delete({ document: { id: entry.id, ownerId, dataContractId: contractId, documentTypeName: 'vault' }, identityKey: idKey, signer })));
+        await writeDocument({ ownerId, key, op: { action: 'delete', contractId, type: 'vault', id: entry.id } });
       },
     },
   };

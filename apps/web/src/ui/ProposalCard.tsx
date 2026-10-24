@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { formatDash, formatInt, shortAddress } from '../lib/format.ts';
+import { formatDash, formatInt, shortAddress, shortHash } from '../lib/format.ts';
 import type { PaymentSchedule } from '../lib/governance.ts';
 import type { Row } from '../lib/view.ts';
 import { PassingBar } from './PassingBar.tsx';
@@ -13,7 +13,7 @@ export function paymentText(amountDuffs: number, s: PaymentSchedule | null): str
   return `${amount} per month (${s.remaining === 0 ? 'ended' : `${s.remaining} of ${s.total} remaining`})`;
 }
 
-export function ProposalCard({ row, href }: { row: Row; href: string }) {
+export function ProposalCard({ row, href, comments, urlOwner }: { row: Row; href: string; comments?: number | undefined; urlOwner?: string | null }) {
   const p = row.p.value;
   const t = row.tally?.value;
   return (
@@ -28,7 +28,12 @@ export function ProposalCard({ row, href }: { row: Row; href: string }) {
           </p>
         )}
         <p className="card-owner">
-          Owner not claimed yet. Pays <span className="mono-ish">{shortAddress(p.paymentAddress)}</span>
+          {urlOwner && (
+            <>
+              Owner <span className="mono-ish" title={`${urlOwner}, named in the hashed proposal URL`}>{shortHash(urlOwner, 4)}</span>.{' '}
+            </>
+          )}
+          Pays <span className="mono-ish">{shortAddress(p.paymentAddress)}</span>
         </p>
       </header>
 
@@ -61,12 +66,13 @@ export function ProposalCard({ row, href }: { row: Row; href: string }) {
         )}
         <p className="card-meta">
           {t?.inNextBudget ? <span className="chip chip-funded">In next budget</span> : row.state?.passing ? <span className="chip chip-over" title="Passing, but the budget is full or the next superblock is outside its payment window">Not in next payout</span> : null}
-          <span className="card-comments" title="Comments arrive in phase 2">
+          <Link to={href} className="card-comments" title={comments === undefined ? 'Counting comments…' : `${comments} ${comments === 1 ? 'comment' : 'comments'} (hidden ones not counted)`} data-testid="card-comments">
             <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
               <path d="M2 2.5h10v7H6l-3 2.5v-2.5H2z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
             </svg>
-            <span className="visually-hidden">Comments: </span>&ndash;
-          </span>
+            <span className="visually-hidden">Comments: </span>
+            {comments === undefined ? '–' : formatInt(comments)}
+          </Link>
         </p>
       </footer>
     </article>

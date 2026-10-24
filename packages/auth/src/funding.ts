@@ -152,11 +152,13 @@ export class FundingError extends Error {
   }
 }
 
-const sleep = (ms: number, signal?: AbortSignal) =>
+/** Abort-aware sleep; the abort listener is removed when the timer fires (long waits poll many times). */
+export const sleep = (ms: number, signal?: AbortSignal) =>
   new Promise<void>((res, rej) => {
     if (signal?.aborted) return rej(signal.reason);
-    const t = setTimeout(res, ms);
-    signal?.addEventListener('abort', () => (clearTimeout(t), rej(signal.reason)), { once: true });
+    const onAbort = () => (clearTimeout(t), rej(signal!.reason));
+    const t = setTimeout(() => (signal?.removeEventListener('abort', onAbort), res()), ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
   });
 /** Rejects when `signal` aborts (also when it already has). */
 const aborted = (signal?: AbortSignal) =>
@@ -232,14 +234,17 @@ export function classifyRegistrationError(e: unknown): RegistrationOutcome {
 /** The network rejected the lock's inputs: a deposit was double-spent, replaced or not seen yet by that node. */
 const inputsRejected = (e: unknown) => /missing-?inputs|bad-txns-inputs-missingorspent|txn-mempool-conflict|inputs.*(spent|missing)/i.test(errText(e));
 
-/** Whether nodes know the lock: its mined height, 0 while in the mempool, 'unknown' when not found (or the lookup failed). */
+/**
+ * Whether nodes know the lock: its mined height, 0 while in the mempool, 'unknown' only for NOT_FOUND (dapi.call asks a second node
+ * before believing it). Any other failure throws: a failed lookup is never evidence that the lock does not exist.
+ */
 async function lockStatus(dapi: Dapi, txid: string, signal?: AbortSignal): Promise<number | 'unknown'> {
   try {
     const { value } = await dapi.call((core, s) => core.getTransaction(txid, { signal: s }), { signal });
     return value.height > 0 ? value.height : 0;
   } catch (e) {
-    if (signal?.aborted) throw e;
-    return 'unknown';
+    if (errCode(e) === 5) return 'unknown';
+    throw e;
   }
 }
 
@@ -247,7 +252,7 @@ async function lockStatus(dapi: Dapi, txid: string, signal?: AbortSignal): Promi
  * Broadcasts the lock. "Inputs missing or spent" is only believed after the lock's own txid is still unknown and three attempts a few
  * seconds apart (other nodes, which may simply not have seen the deposit yet) agree. Returns false only then; other errors throw.
  */
-async function broadcastLock(dapi: Dapi, lock: { raw: string; txid: string }, signal: AbortSignal | undefined, log: (m: string) => void): Promise<boolean> {
+async function broadcastLock(dapi: Dapi, lock: { raw: string; txid: string }, isLocked: () => boolean, signal: AbortSignal | undefined, log: (m: string) => void): Promise<boolean> {
   for (let attempt = 0; ; attempt++) {
     try {
       // Re-sending the same bytes is harmless; nodes answering "already known" count as success.
@@ -256,7 +261,8 @@ async function broadcastLock(dapi: Dapi, lock: { raw: string; txid: string }, si
     } catch (e) {
       if (!inputsRejected(e)) throw e;
       log(`lock broadcast refused (${attempt + 1}): ${redact(errText(e))}`);
-      if ((await lockStatus(dapi, lock.txid, signal)) !== 'unknown') return true;
+      // An IS-lock for it (seen by the lock watcher meanwhile) or any node knowing it means it is out there.
+      if (isLocked() || (await lockStatus(dapi, lock.txid, signal)) !== 'unknown') return true;
       if (attempt >= 2) return false;
       await sleep(4000 * (attempt + 1), signal);
     }
@@ -419,7 +425,8 @@ async function fund(o: FundingOptions, fk: { privateKey: Uint8Array; publicKey: 
       if (!inputs) throw new FundingError('the payments no longer cover the minimum; wait for more or contact support');
       const utxos: Utxo[] = inputs.map((d) => ({ txid: d.txid, vout: d.vout, value: BigInt(d.value) }));
       const built = buildAssetLock({ utxos, fundingKey: fk.privateKey, creditPubKeyHash: h160, minLockDuffs: minLock });
-      if (rec.rejectedLocks?.includes(built.txid)) throw new FundingError('The network keeps refusing this payment. Wait a few minutes and try again, or contact support with the deposit address.');
+      // The same deposits sign into the same bytes (RFC 6979): a lock refused before comes back here and is checked again below, which
+      // also finds it when it was in fact mined (a mined lock's re-send is always refused).
       // Everything not spent by this lock (unconfirmed payments, dust, outputs over the input cap) is reported as late: it stays at the address.
       const left = rec.deposits.filter((d) => !inputs.some(same(d))).map(({ txid, vout, value }) => ({ txid, vout, value }));
       if (left.length) (rec.lateDeposits ??= []).push(...left);
@@ -457,13 +464,17 @@ async function fund(o: FundingOptions, fk: { privateKey: Uint8Array; publicKey: 
         watchers.push(lw);
       }
       if (status === 'unknown') {
-        const sent = await broadcastLock(dapi, lock, signal, log);
+        const sent = await broadcastLock(dapi, lock, () => !!rec.isLock, signal, log);
         if (!sent) {
           // Every node refused the inputs and none knows the lock: a deposit was double-spent or replaced. Forget this lock (never
           // rebuild its bytes), replay the address from the start, at most twice.
-          if ((rec.rejectedLocks?.length ?? 0) >= 2) throw new FundingError('The network refused the payment twice. Contact support with the deposit address.');
           (rec.rejectedLocks ??= []).push(lock.txid);
+          if (rec.rejectedLocks.length >= 3) {
+            update('the network refused the payment three times');
+            throw new FundingError('The network refused the payment three times. Try again later, or contact support with the deposit address.');
+          }
           rec.lock = undefined;
+          rec.isLock = rec.isLockAfterMs = rec.proofKind = undefined;
           if (kind === 'create') rec.identityId = undefined;
           rec.deposits = [];
           rec.lateDeposits = undefined; // replayed and counted again

@@ -11,6 +11,25 @@ export type AssetLockProofInput =
   | { kind: 'instant'; tx: Uint8Array; isLock: Uint8Array; creditIndex: number }
   | { kind: 'chain'; txid: string; creditIndex: number; coreChainLockedHeight: number };
 
+/** A document field value: byte arrays and identifiers as bytes, integers as numbers (sent as bigint), strings, booleans. */
+export type DocValue = Uint8Array | number | string | boolean;
+
+/**
+ * One document write. Structurally the same as @govhub/forum's `DocumentOp`, so forum writes pass straight through; `revision` on
+ * replace is the stored revision (the writer sends revision + 1). This is the single document writer of the app (evo.ts).
+ */
+export type DocumentWrite =
+  | { action: 'create'; contractId: string; type: string; data: Record<string, DocValue> }
+  | { action: 'replace'; contractId: string; type: string; id: string; revision: number; data: Record<string, DocValue> }
+  | { action: 'delete'; contractId: string; type: string; id: string };
+
+export interface DocumentWritten {
+  /** base58 id (derived for creates) */
+  id: string;
+  /** revision after the write (1 for creates) */
+  revision?: number;
+}
+
 export interface VaultEntryDoc {
   /** Document id (base58). */
   id: string;
@@ -42,6 +61,8 @@ export interface PlatformPort {
   topUpIdentity(o: { identityId: string; proof: AssetLockProofInput; assetLockKey: Uint8Array }): Promise<void>;
   /** IdentityUpdate adding `keys`, signed by the MASTER key (each new key also signs its own registration). */
   addKeys(o: { identityId: string; master: SigningKey; keys: readonly SigningKey[] }): Promise<void>;
+  /** Signs one document transition with `key` (an AUTHENTICATION key of `ownerId` the contract accepts) and broadcasts it. */
+  writeDocument(o: { ownerId: string; key: SigningKey; op: DocumentWrite }): Promise<DocumentWritten>;
   vault: {
     list(contractId: string, ownerId: string): Promise<VaultEntryDoc[]>;
     byCredential(contractId: string, ownerId: string, credentialId: Uint8Array): Promise<VaultEntryDoc | null>;
