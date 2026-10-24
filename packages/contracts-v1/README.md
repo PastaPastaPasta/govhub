@@ -6,7 +6,7 @@ takes):
 | File | Contract | Owner / who writes | Types |
 |---|---|---|---|
 | `gov.json` | `gov` | the bridge identity; every type `creationRestrictionMode: 1` | `proposal`, `tally`, `cycle`, `claimAttestation` |
-| `forum.json` | `forum` | open | `profile`, `comment`, `reaction`, `claim`, `proposalPost`, `proposalDraft`, `block`, `blockSubs`, `settings`, `vault` |
+| `forum.json` | `forum` | open | `profile`, `comment`, `reaction`, `claim`, `proposalPost`, `proposalDraft`, `block`, `blockSubs`, `settings`, `vault`, `keyring` |
 | `badge.json` | `badge` | open (each issuer / MN writes under its own `$ownerId`) | `issuerKey`, `issuerRevocation`, `issuerReport`, `mnBadge` |
 | `mod.json` | `mod` | the moderation identity; `creationRestrictionMode: 1` | `block` |
 
@@ -288,6 +288,34 @@ stop a replace from changing `credentialId` or `recipientKey`; clients must trea
 | F13 | my vault entries | `$ownerId == <b58>` | `[[$ownerId, asc],[credentialId, asc]]` |
 | F13b | the entry for one credential | `$ownerId == <b58>`, `credentialId == <b64>` | - |
 
+### `keyring` (mutable, deletable) — added in phase 3
+
+The encrypted masternode keyring (PLAN 4.2, 5.1, 5.2; crypto and layout in `packages/auth/src/keyring/`). Two documents per
+identity: `kind` 0 = the voting keys, node labels and unlockers, `kind` 1 = signed votes waiting at a relay. Everything inside is
+encrypted in the browser; the operator and the chain see only the bucket.
+
+`kind` 0..255, `version` 1..255, `bucket` 1..255, `wraps` bytes 80..1280 (today always 640: 8 HPKE slots of 80 B, unused ones
+random), `c0` bytes 32..5120 (required), `c1`, `c2` bytes 32..5120 (optional). The ciphertext is split into 4,096-byte fields:
+bucket 1 uses `c0`, bucket 2 uses `c0..c2` (12,288 B; a transition stays far below 20,480 B). No timestamps are stored (none is
+required), so a document carries no more metadata than Drive's own. Index: `byOwnerKind` unique `[$ownerId, kind]`.
+
+Caps (the bucket depends on counts only, never on byte lengths): bucket 1 = up to 32 voting keys, 24 node labels and 8 unlockers;
+bucket 2 = up to 96 keys and 80 labels. Pending votes: 16 / 60. Beyond bucket 2 the client refuses. What leaks: that the identity
+has a keyring (and pending votes), which bucket, and when it changes; never how many keys or masternodes.
+
+The bounds are deliberately wider than what version 1 writes (`wraps` up to 16 slots, fields up to 5,120 B), so a later client
+version can change the layout without a contract change; readers check the exact sizes for the version they know.
+
+| ID | Purpose | where | orderBy |
+|---|---|---|---|
+| K1 | my keyring (kind 0) or my pending votes (kind 1) | `$ownerId == <b58>`, `kind == <0 or 1>` | - |
+
+**Testnet:** added to the deployed `forum` contract `HfLWUEWnp4YCQ9Mzp9DexG58WPKvHm7SahMVSuzKSQRw` with a DataContractUpdate on
+2026-10-24 (contract version 1 -> 2, signed by the owner's CRITICAL key, fee 0.46036245 DASH; adding a document type to an existing
+contract is allowed at PV13 and PV14, a new index on an existing type is not). Live write costs with the u6 test identity
+(`packages/auth/scripts/results/testnet-forum-keyring.json`): create bucket 1 0.00160 DASH, replace to bucket 2 0.00229, back to
+bucket 1 refunds 0.00212, pending document create 0.00153. Mainnet registers `forum` fresh from this file.
+
 ---
 
 ## `badge`
@@ -385,3 +413,4 @@ second-to-last property (`X2b`), `in` combined with a range on the next property
 | `issuerKey`, `issuerRevocation` | HIGH (implicit) | CRITICAL signature | an online HIGH key cannot publish or revoke issuer keys |
 | gov types | `canBeDeleted` unspecified | `true` | lets the bridge retract a wrong/reorged publication |
 | `vault` | "Yappr shape, no refersTo" | also no `immutable`, no `bytes` type | neither exists on PV13 |
+| `keyring` | not in PLAN 3.1 (PLAN 4.2 keeps MN keys in the central envelope or the passkey vault) | its own type | `vault.sealed` is capped at 256 B: 7 keys, no labels; the keyring needs 4-12 KB padded |
