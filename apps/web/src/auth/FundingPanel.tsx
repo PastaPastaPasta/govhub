@@ -47,11 +47,12 @@ export function FundingPanel(p: FundingPanelProps) {
     return () => ac.abort();
     // The funding is keyed by what it funds; a new attempt is an explicit retry.
   }, [p.kind, p.identityIndex, p.topUp?.identityId, p.topUp?.index, attempt]); // eslint-disable-line react-hooks/exhaustive-deps
+  const retry = () => setAttempt((a) => a + 1);
 
   if (!view) {
     return (
       <div className="funding" data-state="connecting">
-        {error ? <ErrorBox text={error} retry={() => setAttempt((a) => a + 1)} /> : <p className="muted"><span className="spinner" aria-hidden="true" /> Connecting to the Dash network…</p>}
+        {error ? <ErrorBox text={error} retry={retry} /> : <p className="muted"><span className="spinner" aria-hidden="true" /> Connecting to the Dash network…</p>}
       </div>
     );
   }
@@ -102,7 +103,7 @@ export function FundingPanel(p: FundingPanelProps) {
           {view.identityId && p.kind === 'create' && <> · identity {view.identityId}</>}
         </p>
       )}
-      {error && <ErrorBox text={error} retry={() => setAttempt((a) => a + 1)} />}
+      {error && <ErrorBox text={error} retry={retry} />}
     </div>
   );
 }

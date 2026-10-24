@@ -9,6 +9,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from './context.tsx';
 import { errorText, rpId } from './runtime.ts';
 
+const isCancelled = (e: unknown): boolean => e instanceof PasskeyError && e.code === 'cancelled';
+
 function usePrfSupport() {
   const [s, setS] = useState<'yes' | 'no' | 'unknown' | null>(null);
   useEffect(() => void prfSupport().then(setS), []);
@@ -32,7 +34,7 @@ export function PasskeySignIn() {
       }
       closeSheet();
     } catch (e) {
-      setError(e instanceof PasskeyError && e.code === 'cancelled' ? null : errorText(e));
+      setError(isCancelled(e) ? null : errorText(e));
     } finally {
       setBusy(false);
     }
@@ -55,8 +57,6 @@ export function PasskeySignIn() {
     </div>
   );
 }
-
-const b64 = (b: Uint8Array) => toBase64(b);
 
 export function Passkeys() {
   const { session, forumContractId, platform, refreshBalance } = useAuth();
@@ -90,7 +90,7 @@ export function Passkeys() {
       setCreated({ credentialId: c.credentialId, prf: c.prfOutput });
       setStep('confirm');
     } catch (e) {
-      if (!(e instanceof PasskeyError && e.code === 'cancelled')) setError(errorText(e));
+      if (!isCancelled(e)) setError(errorText(e));
     }
   };
   // A second ceremony restricted to the new passkey: the PRF it gives is what the entry is sealed to (and must equal the create-time one).
@@ -101,13 +101,13 @@ export function Passkeys() {
     try {
       const a = await getPasskeyPrf({ rpId: rpId(), prfInput: pi, allow: [created.credentialId] });
       prf = a.prfOutput;
-      if (created.prf && b64(created.prf) !== b64(prf)) throw new PasskeyError('This passkey gave two different keys. It cannot be used.', 'failed');
+      if (created.prf && toBase64(created.prf) !== toBase64(prf)) throw new PasskeyError('This passkey gave two different keys. It cannot be used.', 'failed');
       setStep('saving');
       const c = await ctx();
       const recipient = recipientFromPrf(prf).publicKey;
       await storeInVault(c, session, created.credentialId, recipient);
       await waitForEntry(c, session.identityId, created.credentialId, recipient);
-      localPasskeys.add(localStorage, session.identityId, b64(created.credentialId));
+      localPasskeys.add(localStorage, session.identityId, toBase64(created.credentialId));
       setStep('done');
       refreshBalance();
       reload();
@@ -116,7 +116,7 @@ export function Passkeys() {
         await forgetPasskey(rpId(), created.credentialId);
         setError(PRF_UNAVAILABLE_MESSAGE);
         setStep('idle');
-      } else if (e instanceof PasskeyError && e.code === 'cancelled') {
+      } else if (isCancelled(e)) {
         // keep the confirm button
       } else {
         setError(errorText(e));
@@ -131,7 +131,7 @@ export function Passkeys() {
     try {
       await removePasskey(await ctx(), session, entry);
       setEntries((l) => l?.filter((x) => x !== entry) ?? null);
-      if (mine.has(b64(entry.credentialId))) await forgetPasskey(rpId(), entry.credentialId);
+      if (mine.has(toBase64(entry.credentialId))) await forgetPasskey(rpId(), entry.credentialId);
       refreshBalance();
     } catch (e) {
       setError(errorText(e));
@@ -176,9 +176,9 @@ export function Passkeys() {
         <ul className="passkey-list">
           {entries.map((e) => (
             <li key={e.id}>
-              <span className="mono-ish">{b64(e.credentialId).slice(0, 12)}…</span>
+              <span className="mono-ish">{toBase64(e.credentialId).slice(0, 12)}…</span>
               <span className="muted small">
-                {mine.has(b64(e.credentialId)) ? 'this device' : 'another device'}
+                {mine.has(toBase64(e.credentialId)) ? 'this device' : 'another device'}
                 {e.createdAt ? ` · added ${new Date(e.createdAt).toLocaleDateString()}` : ''}
               </span>
               <button type="button" className="btn btn-quiet" onClick={() => remove(e)}>
@@ -188,7 +188,7 @@ export function Passkeys() {
           ))}
         </ul>
       )}
-      {entries && entries.some((e) => !mine.has(b64(e.credentialId))) && (
+      {entries && entries.some((e) => !mine.has(toBase64(e.credentialId))) && (
         <p className="muted small">Remove any passkey you don't recognise: anyone who once held one of your keys could have added it.</p>
       )}
     </div>

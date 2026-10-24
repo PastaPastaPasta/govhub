@@ -5,7 +5,7 @@ import {
   addressOf, discoverIdentities, generatePhrase, isValidPhrase, normalizePhrase, parseVoucher, pendingFundings, PhraseError, redeemVoucher, registrationFundingPath,
   SeedWallet, signInWithKey, signInWithSeed, wipe, type FoundIdentity, type FundingRecord, type PhraseLength,
 } from '@govhub/auth';
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useAuth, type SheetView } from './context.tsx';
 import { FundingPanel } from './FundingPanel.tsx';
 import { PasskeySignIn, Passkeys } from './Passkeys.tsx';
@@ -449,13 +449,14 @@ function KeySignIn() {
 function TopUp() {
   const { session, store, network, refreshBalance, closeSheet } = useAuth();
   const [done, setDone] = useState(false);
-  const target = useMemo(() => {
-    if (!session) return null;
+  // Continue an unfinished top-up if there is one, else start the next index.
+  const topUpIndex = useMemo(() => {
+    if (!session) return 0;
     const mine = store.list().filter((r) => r.kind === 'topup' && r.network === network && r.identityId === session.identityId);
     const pending = mine.find((r) => r.state !== 'done');
-    return { index: pending?.topUpIndex ?? mine.length };
+    return pending?.topUpIndex ?? mine.length;
   }, [session, store, network]);
-  if (!session || !target) return <SignedOutNote />;
+  if (!session) return <p className="muted">Sign in first.</p>;
   if (done) {
     return (
       <div>
@@ -473,7 +474,7 @@ function TopUp() {
         kind="topup"
         wallet={session.wallet}
         identityIndex={session.identityIndex ?? 0}
-        topUp={{ identityId: session.identityId, index: target.index }}
+        topUp={{ identityId: session.identityId, index: topUpIndex }}
         sessionKey={session.wallet ? undefined : session.privateKey}
         onDone={() => {
           refreshBalance();
@@ -482,8 +483,4 @@ function TopUp() {
       />
     </div>
   );
-}
-
-export function SignedOutNote(): ReactNode {
-  return <p className="muted">Sign in first.</p>;
 }
