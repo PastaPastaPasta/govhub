@@ -1,0 +1,20 @@
+# tunnel-gateway with the relay (docker-compose.relay-tunnel-guest.yml): the guest stack's ONLY service on the shared `tunnel`
+# network forwards to the bridge (8787) and the relay (8788). Plain HTTP; TLS ends at Cloudflare. The bridge and the relay set
+# their own CORS headers and enforce their own method and body limits; the gateway only forwards (the relay reads the client
+# address from cf-connecting-ip, which passes through unchanged).
+{
+	admin off
+	auto_https off
+	persist_config off
+}
+
+:8787 {
+	reverse_proxy bridge:8787
+}
+
+:8788 {
+	request_body {
+		max_size 16KB
+	}
+	reverse_proxy relay:8788
+}
