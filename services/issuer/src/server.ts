@@ -2,7 +2,7 @@
 // origin without credentials, no cookies, no caching, and no per-request logs (only counts).
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
-import { bytesToBase64, clientIssuanceWindow, VARIANT, type BadgeNetwork, type EpochParams } from '@govhub/badge';
+import { bytesToBase64, VARIANT, type BadgeNetwork, type EpochParams } from '@govhub/badge';
 import type { EpochManager } from './epochs.ts';
 import { IssueError, type TokenService } from './service.ts';
 
@@ -47,10 +47,9 @@ export function createApp(d: ServerDeps): Hono {
       contractId: d.contractId,
       epochParams: d.params,
       height: s.height,
-      issuingEpoch: s.issuingEpoch,
-      keyId: s.keyId,
+      issuingEpochs: s.issuingEpochs,
+      keyIds: s.keyIds,
       ready: s.ready,
-      window: s.issuingEpoch ? clientIssuanceWindow(d.params, s.issuingEpoch) : null,
       challengeTtlSec: d.challengeTtlSec,
       note: 'Advisory only: clients derive the epoch and keyId from proved Platform data and the core height, never from this.',
     });
@@ -82,5 +81,10 @@ export function createApp(d: ServerDeps): Hono {
   });
 
   app.notFound((c) => c.json({ error: 'not-found' }, 404));
+  // Hono's default error handler prints the error (with request details) to stderr, which Docker keeps: answer without logging.
+  app.onError((_e, c) => {
+    bump(d.counters, 'internal');
+    return c.json({ error: 'unavailable', message: 'internal error' }, 503);
+  });
   return app;
 }

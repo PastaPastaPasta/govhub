@@ -10,7 +10,7 @@
 //      in E-1's window; valid now; in the list and valid at S(E-1) with the same collateral
 //   5. atomic dedup on (proTxHash, epoch) and (collateral, epoch); a retry with the same SHA256(blindedMsg) gets the same signature
 //   6. OpenSSL raw RSA signature, verified before it is returned
-import { base64ToBytes, buildTokenRequest, equalBytes, idToBytes, issuanceWindow, issuingEpochAt, parseTokenRequest, requestBindsBlindedMsg, toHex, type BadgeNetwork, type EpochParams, type TokenRequest } from '@govhub/badge';
+import { base64ToBytes, buildTokenRequest, epochStart, equalBytes, idToBytes, issuingEpochsAt, parseTokenRequest, requestBindsBlindedMsg, toHex, type BadgeNetwork, type EpochParams, type TokenRequest } from '@govhub/badge';
 import { recoverMessageSigner } from '@govhub/verify';
 import type { Challenges } from './challenge.ts';
 import type { CoreView, MnLists } from './core.ts';
@@ -139,8 +139,10 @@ export class TokenService {
     if (!equalBytes(req.issuerId, this.#issuerBytes)) throw new IssueError('wrong-issuer', 'the request names another issuer');
     const now = d.lists.now;
     if (!now) throw new IssueError('unavailable', 'the masternode list is not loaded yet');
-    const epoch = issuingEpochAt(d.params, now.height);
-    if (req.epoch !== epoch) throw new IssueError('wrong-epoch', `tokens are issued for epoch ${epoch} now (height ${now.height})`, epoch);
+    // tokens for the current epoch (Standard mode) and the next one (private modes)
+    const [current, next] = issuingEpochsAt(d.params, now.height);
+    if (req.epoch !== current && req.epoch !== next) throw new IssueError('wrong-epoch', `tokens are issued for epochs ${current} and ${next} now (height ${now.height})`, current);
+    const epoch = req.epoch;
     const key = d.activeKey(epoch);
     if (!key) throw new IssueError('unavailable', `no signing key is ready for epoch ${epoch}`);
     if (!equalBytes(req.keyId, key.keyId)) throw new IssueError('wrong-key', `the request names another key than the issuerKey of epoch ${epoch}`);
@@ -158,9 +160,10 @@ export class TokenService {
     const tip = await this.#tip();
     // a list that stopped refreshing (protx list failing while getblockcount works) is not used (N9)
     if (tip - now.height > MAX_LIST_LAG) throw new IssueError('unavailable', 'the masternode list is out of date');
-    if (issuingEpochAt(d.params, tip) !== epoch) throw new IssueError('wrong-epoch', `issuance for epoch ${epoch} has closed (height ${tip})`, issuingEpochAt(d.params, tip));
+    const [tipCurrent, tipNext] = issuingEpochsAt(d.params, tip);
+    if (epoch !== tipCurrent && epoch !== tipNext) throw new IssueError('wrong-epoch', `issuance for epoch ${epoch} is not open (height ${tip})`, tipCurrent);
     if (!mnNow.valid) throw new IssueError('not-eligible', 'the masternode is not valid (PoSe-banned) now');
-    const snapHeight = issuanceWindow(d.params, epoch).from;
+    const snapHeight = epochStart(d.params, epoch - 1);
     const snapList = d.lists.snapshot(snapHeight);
     if (!snapList) throw new IssueError('unavailable', `the masternode list at the snapshot height ${snapHeight} is not loaded yet`);
     const snap = snapList.get(proTxHash);
