@@ -103,7 +103,7 @@ describe('masternode discovery', () => {
   const keyId = bytesToHex(decodeAddress(e.votingAddress, 'testnet')!.hash160);
   const bridge: BridgeMasternode[] = protx.map((x) => ({ proTxHash: x.proTxHash, collateralTxid: x.collateralHash, collateralIndex: x.collateralIndex, votingAddress: x.votingAddress, type: x.type === 'Evo' ? 'evo' : 'regular', valid: true }));
   it('matches by the SML when there is one, and labels the bridge-only path', () => {
-    const sml = new Map(protx.map((x) => [x.proTxHash, { votingAddress: x.votingAddress, isValid: true, nType: x.type === 'Evo' ? 1 : 0 }]));
+    const sml = new Map(protx.map((x) => [x.proTxHash, { votingAddress: x.votingAddress, isValid: true, nType: x.type === 'Evo' ? 1 : 0, typeProven: true }]));
     const a = matchMasternodes([{ index: 0, keyId }], bridge, sml, 'testnet');
     expect(a.owned.map((m) => m.proTxHash)).toEqual([e.proTxHash]);
     expect(a.owned[0]!.provenance.key).toBe('sml');
@@ -144,8 +144,8 @@ describe('watched votes', () => {
   });
   it('bridge verdicts, rebroadcast timing and relay choice', () => {
     const v = base();
-    expect(bridgeVerdict(v, { collateralTxid: mn.collateralTxid, collateralIndex: 1, signal: 1, outcome: 1, time: NOW, sig: '' })).toBe('confirmed');
-    expect(bridgeVerdict(v, { collateralTxid: mn.collateralTxid, collateralIndex: 1, signal: 1, outcome: 2, time: NOW + 5, sig: '' })).toBe('superseded');
+    expect(bridgeVerdict(v, { outcome: 1, time: NOW })).toBe('confirmed');
+    expect(bridgeVerdict(v, { outcome: 2, time: NOW + 5 })).toBe('superseded');
     expect(bridgeVerdict(v, undefined)).toBeNull();
     expect(needsRebroadcast(v, NOW + 599)).toBe(false);
     expect(needsRebroadcast(v, NOW + 600)).toBe(true);

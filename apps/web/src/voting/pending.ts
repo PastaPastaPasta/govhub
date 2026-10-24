@@ -66,10 +66,10 @@ export function pruneWatched(list: readonly WatchedVote[], now: number): Watched
 }
 
 /**
- * The bridge's view decides "confirmed": the masternode's current funding vote on the proposal is exactly ours (same nTime and
+ * The bridge's view, after our own signature check (currentVotes), decides "confirmed": the masternode's current funding vote on the proposal is exactly ours (same nTime and
  * outcome). A later current vote means ours was superseded (by the user, or by another wallet holding the key).
  */
-export function bridgeVerdict(v: WatchedVote, current: BridgeVote | undefined): 'confirmed' | 'superseded' | null {
+export function bridgeVerdict(v: WatchedVote, current: Pick<BridgeVote, 'outcome' | 'time'> | undefined): 'confirmed' | 'superseded' | null {
   if (!current) return null;
   if (current.time === v.time && current.outcome === v.outcome) return 'confirmed';
   if (current.time > v.time) return 'superseded';

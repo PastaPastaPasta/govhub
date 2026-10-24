@@ -171,6 +171,9 @@ export function VoteComposer({ proposals, compact = false }: { proposals: Propos
           </tr>
         </tfoot>
       </table>
+      <p className="small muted">
+        Current votes come from the bridge's live vote set; each is shown only if its signature checks out against your masternode's voting key here, so a bridge cannot invent or alter them (it could still withhold a newer one). The verification panel above recounts the whole set against the proven masternode list.
+      </p>
       <fieldset className="vote-timing">
         <legend>When</legend>
         <label className="check">
