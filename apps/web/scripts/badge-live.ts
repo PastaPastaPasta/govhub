@@ -4,6 +4,7 @@
 //   npx vite-node scripts/badge-live.ts setup     # two test identities (QA wallet vouchers), pick testnet MNs
 //   npx vite-node scripts/badge-live.ts request   # during the issuance window of the target epoch: tokens, refusals
 //   npx vite-node scripts/badge-live.ts post      # from S(E)+margin: post, read back as another reader, tamper checks, audit
+//   npx vite-node scripts/badge-live.ts comment   # A comments on a Dev-profile proposal (for the UI check: e2e/badge-live.spec.ts)
 //   npx vite-node scripts/badge-live.ts status
 //
 // MN voting keys come from ~/workspace/dash-network-configs/testnet.yml (the owner key doubles as the voting key on these MNs; the
@@ -57,6 +58,8 @@ interface State {
   mns?: { main: { name: string; proTxHash: string }; shared: Array<{ name: string; proTxHash: string }>; sharedNote: string; extra?: Array<{ name: string; proTxHash: string }> };
   epoch?: number;
   jobA?: BadgeJob;
+  /** A's comment, where the e2e check looks for the chip */
+  comment?: { govHash: string; id: string };
   results: Record<string, unknown>;
   timeline: Array<{ at: string; height: number; what: string }>;
 }
@@ -307,6 +310,18 @@ if (cmd === 'post') {
   await mark(`read back: A=${JSON.stringify(st.results.readBack)} verify=${JSON.stringify(st.results.verify)} audit=${JSON.stringify(st.results.audit)}`);
 }
 
+if (cmd === 'comment' && !st.comment) {
+  const { forumOps } = await import('@govhub/forum');
+  const { PROFILES } = await import('../src/config/registry.ts');
+  const dev = PROFILES.dev;
+  const govHash = '32892957257817ac823f59813e0601b13e30aa0ba68ce9ac9795566f6bd37a84'; // a live mainnet proposal in the Dev profile
+  const op = forumOps({ forum: dev.forum!.contractId, mod: dev.forum!.modContractId, gov: dev.govContractId }).comment(govHash, 'govhub badge live test: this comment should carry "MN · vouched by govhub" once the epoch-2742 badge is posted.');
+  const r = await port.writeDocument({ ownerId: st.ids.A.identityId!, key: highKey('A'), op: op as never });
+  st.comment = { govHash, id: r.id };
+  save();
+  await mark(`A commented on ${govHash.slice(0, 12)}…: ${r.id}`);
+}
+
 if (cmd === 'status' || cmd === 'post' || cmd === 'request') {
   const h = await coreHeight();
   const e = st.epoch ?? epochOf(P, h) + 1;
@@ -320,6 +335,7 @@ if (cmd === 'status' || cmd === 'post' || cmd === 'request') {
         identities: { A: st.ids.A.identityId ?? null, B: st.ids.B.identityId ?? null },
         mns: st.mns ? { main: st.mns.main.name, shared: st.mns.shared.map((m) => m.name), note: st.mns.sharedNote } : null,
         jobA: st.jobA ? { state: st.jobA.state, note: st.jobA.note ?? null, epoch: st.jobA.epoch } : null,
+        comment: st.comment ?? null,
         results: st.results,
         timeline: st.timeline,
       },
