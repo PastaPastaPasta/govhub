@@ -49,10 +49,10 @@ with `cd spikes/sdk5 && npm run validate && npm run validate:docs`.
   Documents use HIGH. `issuerKey` and `issuerRevocation` additionally set
   `signatureSecurityLevelRequirement: 1`, so an online HIGH key on an issuer server cannot publish or
   revoke issuer keys.
-- **Hash byte order** (`govHash`, `parentHash`, `voteSetHash`, `collateralTxid`): the spike does not decide
-  it. Core prints uint256 hashes byte-reversed in RPC, and PLAN section 2 needs the *raw* (unreversed) hash in the
-  collateral `OP_RETURN`. **Recommendation: store every hash in RPC/display order (hex-decode the RPC string) and
-  convert only at the OP_RETURN boundary.** `govHash` is the join key between bridge-written and user-written
+- **Hash byte order** (`govHash`, `parentHash`, `voteSetHash`, `collateralTxid`): **decided (phase 0): every
+  hash is stored in RPC/display order** (hex-decode the string that `gobject list`/`getrawtransaction` print).
+  Conversion to the raw (internal) order happens only at the collateral `OP_RETURN` boundary, inside
+  `@govhub/verify`. `govHash` is the join key between bridge-written and user-written
   documents (`comment`, `reaction`, `claim`, `proposalPost`, `proposalDraft`); two clients that disagree
   silently see no comments. Fix the order together with the gov-hash test vector (phase 0, `gobject check`)
   and pin it in `packages/verify`.
@@ -290,7 +290,7 @@ All types are immutable, undeletable, non-transferable. All require `$createdAtC
 
 ### `issuerKey` (CRITICAL signature)
 
-`epoch` u32, `spki` bytes 90..600 (RSA-2048 = 294 B, RSA-3072 = 422 B, RSA-4096 = 550 B), `keyId` b32 (= SHA-256(spki), checked by readers), `variant` string,
+`epoch` u32, `spki` bytes 294..422 (rsaEncryption SPKI DER: RSA-2048 = 294 B, RSA-3072 = 422 B; nothing else is allowed), `keyId` b32 (= SHA-256(spki), checked by readers), `variant` string,
 fixed by `const` to `RSABSSA-SHA384-PSS-Randomized` so a deterministic variant cannot be published.
 Index: `byOwnerEpoch` unique `[$ownerId, epoch]` (one key per issuer per epoch).
 
@@ -313,11 +313,9 @@ Shape **B3**: `$ownerId == <I>`, `epoch == E`.
 ### `mnBadge`
 
 `issuerId` identifier, `epoch` u32, `keyId` b32, `msgPrefix` exactly 32 B, `sig` bytes 256..384 (256 for
-RSA-2048, 384 for RSA-3072; the exact length per `keyId` is checked by the reader). **Open decision before
-mainnet:** `issuerKey.spki` admits RSA-4096 (550 B) but `sig` stops at 384 B, so a 4096-bit issuer could
-publish a key it can never issue badges for (the sizes follow PLAN 8.3/8.4 literally). Either cap
-`spki.maxItems` at 422 or raise `sig.maxItems` to 512; this repo's JSON (and the registered testnet contract)
-keep the PLAN values. Index:
+RSA-2048, 384 for RSA-3072; the exact length per `keyId` is checked by the reader). **Decided (phase 0):** issuer keys are
+RSA-2048 or RSA-3072 only, so `spki` is capped at 422 B to match `sig` ≤ 384 B. The badge contract registered on
+testnet during phase 0 predates this cap (it allows 90..600) and is replaced at the next registration. Index:
 `byIssuerEpochOwner` **unique `[issuerId, epoch, $ownerId]`**: at most one badge per author per issuer per
 epoch, exactly the uniqueness PLAN 3.1 asks for, but ordered so that the reader query below is legal.
 

@@ -1,5 +1,5 @@
 {
-  "at": "2026-10-24T02:46:59.201Z",
+  "at": "2026-10-24T02:48:27.421Z",
   "engines": [
     "wasm-dpp 4.1.1 @PV13",
     "wasm-dpp 5.0.0-rc.8 @PV13",
@@ -11,7 +11,7 @@
   "rows": [
     "| gov | PASS (4267 B) | PASS (4267 B) | PASS (4270 B) | PASS (4266 B) | PASS (4266 B) | PASS (4269 B) |",
     "| forum | PASS (5959 B) | PASS (5959 B) | PASS (5962 B) | PASS (5958 B) | PASS (5958 B) | PASS (5961 B) |",
-    "| badge | PASS (2530 B) | PASS (2530 B) | PASS (2533 B) | PASS (2529 B) | PASS (2529 B) | PASS (2532 B) |",
+    "| badge | PASS (2532 B) | PASS (2532 B) | PASS (2535 B) | PASS (2531 B) | PASS (2531 B) | PASS (2534 B) |",
     "| mod | PASS (720 B) | PASS (720 B) | PASS (723 B) | PASS (719 B) | PASS (719 B) | PASS (722 B) |"
   ],
   "failures": 0

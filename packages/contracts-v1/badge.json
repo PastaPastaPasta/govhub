@@ -11,7 +11,7 @@
     ],
     "properties": {
       "epoch": {"type": "integer", "minimum": 0, "maximum": 4294967295, "position": 0},
-      "spki": {"type": "array", "byteArray": true, "minItems": 90, "maxItems": 600, "position": 1},
+      "spki": {"type": "array", "byteArray": true, "minItems": 294, "maxItems": 422, "position": 1},
       "keyId": {"type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": 2},
       "variant": {"type": "string", "const": "RSABSSA-SHA384-PSS-Randomized", "position": 3}
     },

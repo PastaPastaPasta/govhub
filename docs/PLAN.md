@@ -1,4 +1,4 @@
-# DashCentral-on-Platform — plan r3.1 (2026-10-23)
+# DashCentral-on-Platform — plan r3.2 (2026-10-24)
 
 Working name **govhub**, at `gov.dashhq.org`. It replicates dashcentral.org's governance features
 and includes all of EvoVote (vote.dashhq.org stays live for now). All app data is on Dash
@@ -46,6 +46,48 @@ blind-signature issuers. Anything marked *estimate* is measured in phase 0.
 The faucet's vout bug is being fixed separately.
 
 ---
+
+## Phase 0 results (r3.2): these override the sections below
+
+The full report is in [`PHASE0.md`](PHASE0.md).
+
+**SDK and DAPI**
+- **evo-sdk 5.0.0-rc.8 on mainnet PV13 (read-only): works.** It stays at version 13, connect takes
+  63–143 ms, and the first proven query takes 0.5–0.9 s. The SDK chunk is 8.7 MiB gzipped.
+- **evo-sdk 5.x has no Core API.** The browser uses our own grpc-web DAPI client (`packages/dapi`,
+  ~9 KB gzipped, plus 24 KB for ChainLock BLS verification). Every Core flow in §4.4 and §6.1 was
+  proven from a real browser origin against mainnet.
+- **IS-locks arrive 1.0–3.3 s after the transaction and are never replayed.** Deposit watchers must
+  subscribe *before* showing the QR code and must persist the IS-lock bytes. Otherwise only the
+  chain-lock proof path is left.
+
+**Votes and hashes**
+- **Testnet votes are signed over the binary vote hash, not with message signing** (vote.cpp:176).
+  Offline `signmessage` mode is mainnet only. Both schemes are in `@govhub/verify`; the testnet one
+  still needs one real `voteraw`.
+- **Hash byte order is decided:** every hash on Platform is in RPC/display order. Only the
+  collateral `OP_RETURN` uses raw order, and the conversion lives in `@govhub/verify`. Its hash and
+  collateral checks match Core on regtest and on all 28 live mainnet proposals.
+
+**Identities and costs**
+- **Identities are created with 3 keys** (MASTER, CRITICAL, HIGH: 0.00106 DASH). The 6-key layout
+  costs 0.00182. TRANSFER and the DashPay ENC/DEC keys are added later only when needed: the same
+  derivation paths, key id = index, so wallets still restore it.
+- **A 0.003 DASH starter covers that identity plus about 3 short comments.** A first reaction costs
+  about as much as a comment (0.0005 DASH), and flipping one costs 0.00003.
+
+**Queries and schemas**
+- **Query rule (PV13):** Drive breaks ties between candidate indexes by index name. Every query must
+  carry an `orderBy` ending on the intended index's last property. `where` values for byte arrays
+  are base64 strings.
+
+**Badges**
+- **Readers take the issuer and epoch from the proved `issuerKey` document, never from the badge.**
+  The blind signature doesn't authenticate them.
+- The issuer signs with OpenSSL raw RSA (0.3 ms) and verifies before returning. The library's JS
+  signer is about 700× slower and skips that check.
+- Clients run `blind()` in a Worker.
+- Readers verify 100 badges in about 2 ms.
 
 ## 0. Constraints that shape the design
 
@@ -154,10 +196,10 @@ values stay below 2^63, because PV14 re-keys unsigned integers around the midpoi
 
 | Type | Fields | Indexes |
 |---|---|---|
-| `issuerKey` | `epoch` u32, `spki` ≤600 B, `keyId` = SHA256(spki), `variant` = "RSABSSA-SHA384-PSS-Randomized" | **unique [$ownerId, epoch]** (one key per issuer per epoch; blocks key tagging) |
+| `issuerKey` | `epoch` u32, `spki` 294–422 B (rsaEncryption DER, RSA-2048/3072 only), `keyId` = SHA256(spki), `variant` = "RSABSSA-SHA384-PSS-Randomized" | **unique [$ownerId, epoch]** (one key per issuer per epoch; blocks key tagging) |
 | `issuerRevocation` | `epoch`, `keyId`, `effectiveCoreHeight` | unique [$ownerId, epoch] |
 | `issuerReport` | `epoch`, `tokensIssued` | unique [$ownerId, epoch] |
-| `mnBadge` | `issuerId`, `epoch`, `keyId`, `msgPrefix` (32 B), `sig` (256 or 384 B) | unique [$ownerId, issuerId, epoch] |
+| `mnBadge` | `issuerId`, `epoch`, `keyId`, `msgPrefix` (32 B), `sig` (256 or 384 B) | unique [issuerId, epoch, $ownerId] (phase 0: this order is needed so readers can query `$ownerId in [...]`) |
 
 **`mod`**: owned by the moderation identity. Holds the default `block` list.
 
