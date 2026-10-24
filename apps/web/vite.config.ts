@@ -35,6 +35,8 @@ function cspPlugin(): Plugin {
 }
 
 export default defineConfig({
+  // GOVHUB_BASE is the URL prefix when served from a sub-path (e.g. GitHub Pages at /govhub/).
+  base: process.env.GOVHUB_BASE ?? '/',
   plugins: [react(), cspPlugin()],
   worker: { format: 'es' },
   build: {
