@@ -31,6 +31,12 @@ export interface Registry {
   bridges: BridgeEndpoint[];
   relays: NamedUrl[];
   priceFeed: NamedUrl | null;
+  /** The `forum` contract (comments, reactions, the passkey `vault`), on `platformNetwork`. */
+  forumContractId: string;
+  /** Central login (accounts service, PLAN 4.2). Not built yet: the interface is in @govhub/auth `central.ts`. */
+  accounts: NamedUrl | null;
+  /** Starter-voucher faucet (PLAN 4.3). Vouchers are pasted as links; the app never calls the mainnet invitation endpoint itself. */
+  faucet: NamedUrl | null;
 }
 
 export const QUORUM_SERVICE: Record<CoreNetwork, string> = {
@@ -41,6 +47,9 @@ export const QUORUM_SERVICE: Record<CoreNetwork, string> = {
 /** Testnet `gov` contract from phase 0 (owner = the bridge identity). */
 export const TESTNET_GOV_CONTRACT = '3ueAfbVe8LvCxYWk7bKvXxc5uHe7E1TDJHzN3k3ZDehZ';
 export const TESTNET_BRIDGE_IDENTITY = '9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv';
+/** Testnet `forum` contract from phase 0 (holds `vault`). */
+export const TESTNET_FORUM_CONTRACT = 'HfLWUEWnp4YCQ9Mzp9DexG58WPKvHm7SahMVSuzKSQRw';
+export const DEFAULT_FAUCET: NamedUrl = { name: 'faucet.dashhq.org', url: 'https://faucet.dashhq.org' };
 
 function envBridges(): BridgeEndpoint[] {
   const url = import.meta.env?.VITE_GOVHUB_BRIDGE_URL as string | undefined;
@@ -59,6 +68,9 @@ export function defaultRegistry(): Registry {
     bridges: envBridges(),
     relays: [],
     priceFeed: { name: 'CoinGecko', url: 'https://api.coingecko.com/api/v3/simple/price?ids=dash&vs_currencies=usd' },
+    forumContractId: TESTNET_FORUM_CONTRACT,
+    accounts: null,
+    faucet: DEFAULT_FAUCET,
   };
 }
 
@@ -123,6 +135,15 @@ export function parseRegistry(input: unknown): { registry: Registry; errors: str
       return { name: typeof x.name === 'string' && x.name ? x.name.slice(0, 60) : `${what} ${i + 1}`, url: httpsUrl(x.url, `${what} ${i + 1} URL`, errors) };
     });
   const pf = o.priceFeed as Record<string, unknown> | null | undefined;
+  // Fields added in phase 2: absent in older saved settings, so they default instead of failing.
+  const forumContractId = o.forumContractId === undefined ? d.forumContractId : typeof o.forumContractId === 'string' ? o.forumContractId : '';
+  if (!B58_ID.test(forumContractId)) errors.push('forumContractId must be a base58 identifier');
+  const optionalNamed = (v: unknown, fallback: NamedUrl | null, what: string): NamedUrl | null => {
+    if (v === undefined) return fallback;
+    if (!v || typeof v !== 'object') return null;
+    const x = v as Record<string, unknown>;
+    return { name: typeof x.name === 'string' && x.name ? x.name.slice(0, 60) : what, url: httpsUrl(x.url, `${what} URL`, errors) };
+  };
   const registry: Registry = {
     version: 1,
     coreNetwork: network(o.coreNetwork, 'coreNetwork', errors),
@@ -137,6 +158,9 @@ export function parseRegistry(input: unknown): { registry: Registry; errors: str
     bridges,
     relays: named(o.relays, 'relay'),
     priceFeed: pf && typeof pf === 'object' ? { name: typeof pf.name === 'string' ? pf.name : 'price feed', url: httpsUrl(pf.url, 'price feed URL', errors) } : null,
+    forumContractId,
+    accounts: optionalNamed(o.accounts, d.accounts, 'accounts service'),
+    faucet: optionalNamed(o.faucet, d.faucet, 'faucet'),
   };
   if (registry.dapi.source === 'manual' && nodes.length === 0) errors.push('manual DAPI source needs at least one node');
   return { registry, errors };

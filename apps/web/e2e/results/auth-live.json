@@ -1,0 +1,20 @@
+{
+  "network": "testnet",
+  "at": "2026-10-24T06:16:09.120Z",
+  "depositTxid": "ebfb1a46c7a8823f0512085f5a0abd120480dd6ac1e49ee16ad1db3e5e97a496",
+  "createSeconds": 10,
+  "identityId": "Ci3YuA7hFFhEizyKPzLrjWVC8M6s1RM1GrQojYkrKKRE",
+  "balanceAfterCreate": 393000000,
+  "balanceAfterPasskey": 393000000,
+  "topUpDepositTxid": "92954217c3052bd4c3e7436318e39f8ae0a4bbc3a1c119b4fdcaf710e8d8bfb2",
+  "topUpSeconds": 7,
+  "balanceAfterTopUp": 430000000,
+  "voucherTxid": "dce82d8477ca8cc9bc467c18bef9956d31fd02097193143292e83d31b4911c70",
+  "voucherBurnVout": 1,
+  "voucherSeconds": 360,
+  "voucherIdentityId": "Hq5Kz5LRkVG3R39oS2jYYiBMtdoEXd91eUC8Vf3XbyME",
+  "voucherIdentityBalance": 193000000,
+  "tDashSentFromQaWallet": 0.009,
+  "l1FeesDuffs": 692,
+  "totalSeconds": 383
+}

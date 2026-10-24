@@ -1,0 +1,54 @@
+// The services sign-in and funding run on: Platform through evo-sdk (lazy, shared with the read path) and Core DAPI on the
+// PLATFORM network (an asset lock must be on the Core chain Platform follows, even while phase 1 reads mainnet Core data).
+import type { PlatformPort } from '@govhub/auth';
+import type { Dapi } from '@govhub/dapi';
+import { QUORUM_SERVICE, type Registry } from '../config/registry.ts';
+import { createWebDapi } from '../data/dapi.ts';
+import { getSdk } from '../data/platform.ts';
+
+let port: { key: string; value: Promise<PlatformPort> } | null = null;
+
+export function getPlatformPort(r: Registry): Promise<PlatformPort> {
+  const key = JSON.stringify([r.platformNetwork, r.platform]);
+  if (port?.key === key) return port.value;
+  const value = (async () => {
+    const [evo, sdk, { createEvoPlatform }] = await Promise.all([import('@dashevo/evo-sdk'), getSdk(r), import('@govhub/auth/evo')]);
+    return createEvoPlatform(evo, sdk, r.platformNetwork);
+  })();
+  port = { key, value };
+  value.catch(() => {
+    if (port?.value === value) port = null;
+  });
+  return value;
+}
+
+let dapi: { key: string; value: Dapi } | null = null;
+
+/** DAPI on the Platform network: the user's DAPI settings when the networks match, else that network's quorum service. */
+export function getAuthDapi(r: Registry): Dapi {
+  const cfg =
+    r.coreNetwork === r.platformNetwork
+      ? { source: r.dapi.source, quorumUrl: r.dapi.quorumUrl, nodes: r.dapi.nodes, network: r.platformNetwork }
+      : { source: 'quorum' as const, quorumUrl: QUORUM_SERVICE[r.platformNetwork], nodes: [], network: r.platformNetwork };
+  const key = JSON.stringify(cfg);
+  if (dapi?.key !== key) dapi = { key, value: createWebDapi(cfg) };
+  return dapi.value;
+}
+
+/** WebAuthn relying party: this host (localhost in development and the e2e tests). */
+export const rpId = (): string => location.hostname;
+
+/** 1 DASH = 1e11 credits. */
+export function formatCredits(credits: bigint): string {
+  const whole = credits / 100_000_000_000n;
+  const frac = (credits % 100_000_000_000n).toString().padStart(11, '0').slice(0, 8);
+  return `${whole}.${frac} DASH`;
+}
+
+export const formatDuffs = (duffs: number | bigint): string => `${(Number(duffs) / 1e8).toFixed(8).replace(/0+$/, '').replace(/\.$/, '')} DASH`;
+
+/** Error text safe to show: no long hex / base58 runs (the SDK can echo transition bytes). */
+export function errorText(e: unknown): string {
+  const m = e && typeof e === 'object' && 'message' in e ? String((e as { message: unknown }).message) : String(e);
+  return m.replace(/[0-9a-fA-F]{64,}/g, '[…]').replace(/[1-9A-HJ-NP-Za-km-z]{50,}/g, '[…]').slice(0, 400);
+}
