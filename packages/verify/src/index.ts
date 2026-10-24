@@ -1,5 +1,6 @@
 export * from './address.ts';
 export * from './bytes.ts';
+export * from './claim.ts';
 export * from './collateral.ts';
 export * from './corejson.ts';
 export * from './govhash.ts';
