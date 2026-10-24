@@ -3,7 +3,7 @@
 import type { Registry } from '../config/registry.ts';
 import { b64ToHex } from '../lib/bytes.ts';
 import { GOV_SCHEMAS } from './queries.ts';
-import { assertQuery, type DocQuery } from './queryLint.ts';
+import { assertQuery, type DocQuery } from '@govhub/contracts-v1/queryLint';
 import type { Cycle, Proposal, Tally } from './types.ts';
 
 type EvoModule = typeof import('@dashevo/evo-sdk');
