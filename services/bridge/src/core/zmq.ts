@@ -3,7 +3,7 @@
 // A PUB socket silently DROPS messages for a slow subscriber once the high-water mark is reached, but the sequence number still
 // advances, so every gap is detectable here and is reported to the caller (which then reconciles over RPC).
 import { Subscriber } from 'zeromq';
-import { log } from '../log.ts';
+import { log, nowS } from '../log.ts';
 
 export const ZMQ_TOPICS = ['rawgovernanceobject', 'rawgovernancevote', 'hashblock', 'hashchainlock'] as const;
 export type ZmqTopic = (typeof ZMQ_TOPICS)[number];
@@ -100,7 +100,7 @@ export class ZmqListener {
           }
         }
         try {
-          await this.handlers.onMessage({ topic, body: new Uint8Array(body), seq, receivedAt: Math.floor(Date.now() / 1000) });
+          await this.handlers.onMessage({ topic, body: new Uint8Array(body), seq, receivedAt: nowS() });
         } catch (e) {
           log.error('zmq handler failed', { topic, seq, error: String((e as Error)?.stack ?? e) });
         }

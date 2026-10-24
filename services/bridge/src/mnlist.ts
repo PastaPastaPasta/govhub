@@ -3,6 +3,7 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex, decodeAddress, utf8ToBytes, type Network } from '@govhub/verify';
 import type { DB, MnEntryRow } from './archive/db.ts';
 import type { CoreRpc, ProTxEntry } from './core/rpc.ts';
+import { nowS } from './log.ts';
 
 /** GetMnType(type).voting_weight (evo/dmn_types.h:32-46): Regular 1, Evo 4, anything else 0. */
 export function mnWeight(type: string): number {
@@ -71,7 +72,7 @@ export function finishList(entries: MnEntry[]): MnList {
 }
 
 export function storeMnList(db: DB, list: MnList, height: number, blockHash: string): void {
-  const now = Math.floor(Date.now() / 1000);
+  const now = nowS();
   db.transaction(() => {
     const known = db.prepare('SELECT 1 FROM mn_lists WHERE list_hash = ?').get(list.listHash);
     if (!known) {
@@ -139,16 +140,22 @@ const rowToEntry = (r: MnEntryRow): MnEntry => ({
   registeredHeight: r.registered_height,
 });
 
+/** A stored list plus its entries indexed by "<collateral txid>-<n>". */
+export interface LoadedMnList {
+  list: MnList;
+  byOutpoint: Map<string, MnEntry>;
+}
+
 /** Small cache of loaded lists keyed by list hash (lists are immutable once stored). */
 export class MnListCache {
   private readonly db: DB;
-  private readonly cache = new Map<string, { list: MnList; byOutpoint: Map<string, MnEntry> }>();
+  private readonly cache = new Map<string, LoadedMnList>();
 
   constructor(db: DB) {
     this.db = db;
   }
 
-  load(listHash: string): { list: MnList; byOutpoint: Map<string, MnEntry> } | null {
+  load(listHash: string): LoadedMnList | null {
     const hit = this.cache.get(listHash);
     if (hit) return hit;
     const head = this.db.prepare('SELECT * FROM mn_lists WHERE list_hash = ?').get(listHash) as any;

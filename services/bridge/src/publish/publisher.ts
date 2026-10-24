@@ -4,9 +4,10 @@
 //  - after a failed create the unique index is re-queried before retrying, so a create that landed is never duplicated.
 // Query shapes follow packages/contracts-v1/README.md (PV13 rules: base64 byteArray values, equality on the unique index).
 import { createHash } from 'node:crypto';
+import { bytesToHex } from '@govhub/verify';
 import type { DB, GovObjectRow, PlatformDocRow } from '../archive/db.ts';
 import type { BridgeConfig } from '../config.ts';
-import { errText, log } from '../log.ts';
+import { errText, log, nowS } from '../log.ts';
 import { proposalView } from '../proposal.ts';
 import type { ComputedTally, CoreComparison, TallyRun } from '../tally.ts';
 import { displayHashB64, displayHashBytes, type PlatformClient, type PlatformDoc } from './platform.ts';
@@ -28,7 +29,7 @@ export interface PublishSummary {
 /** Plain values -> canonical JSON for change detection (bigint as string, bytes as hex). */
 function canonical(props: Record<string, unknown>, omit: string[] = []): string {
   const keys = Object.keys(props).filter((k) => !omit.includes(k)).sort();
-  return JSON.stringify(keys.map((k) => [k, props[k]]), (_k, v) => (typeof v === 'bigint' ? v.toString() : v instanceof Uint8Array ? Buffer.from(v).toString('hex') : v));
+  return JSON.stringify(keys.map((k) => [k, props[k]]), (_k, v) => (typeof v === 'bigint' ? v.toString() : v instanceof Uint8Array ? bytesToHex(v) : v));
 }
 const contentHash = (s: string) => createHash('sha256').update(s).digest('hex');
 
@@ -161,11 +162,11 @@ export class Publisher {
          ON CONFLICT(contract_id, doc_type, doc_key) DO UPDATE SET doc_id = excluded.doc_id, revision = excluded.revision, content_hash = excluded.content_hash,
            content_json = excluded.content_json, published_at = excluded.published_at`,
       )
-      .run(this.platform.contractId, type, key, id, revision, contentHash(canonical(props, VOLATILE[type])), json, Math.floor(Date.now() / 1000));
+      .run(this.platform.contractId, type, key, id, revision, contentHash(canonical(props, VOLATILE[type])), json, nowS());
   }
 
   private logWrite(type: DocType, key: string, op: string, id: string | null, revision: number | null, ok: boolean, error: string | null, attempts: number): void {
-    this.db.prepare('INSERT INTO publish_log(at, contract_id, doc_type, doc_key, op, doc_id, revision, ok, error, attempts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(Math.floor(Date.now() / 1000), this.platform.contractId, type, key, op, id, revision, ok ? 1 : 0, error, attempts);
+    this.db.prepare('INSERT INTO publish_log(at, contract_id, doc_type, doc_key, op, doc_id, revision, ok, error, attempts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(nowS(), this.platform.contractId, type, key, op, id, revision, ok ? 1 : 0, error, attempts);
   }
 
   /** The document behind a unique index on Platform (proved read), or null. */

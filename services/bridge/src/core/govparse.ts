@@ -11,7 +11,7 @@
 //  - Governance::Object::GetHash          src/governance/common.cpp:23-39
 //  - COutPoint                            src/primitives/transaction.h (READWRITE(hash, n)); ToStringShort = "<txid>-<n>"
 //  - ZMQ publishers                       src/zmq/zmqpublishnotifier.cpp:457-473 (`CDataStream ss(SER_NETWORK, ...); ss << *vote / *govobj`)
-import { Reader, bytesToHex, concatBytes, compactSize, i32le, i64le, sha256d, u32le, uint256ToDisplay, utf8ToBytes, uint256FromDisplay } from '@govhub/verify';
+import { Reader, bytesToHex, concatBytes, compactSize, hexToBytes, i32le, i64le, isHex, sha256d, u32le, uint256ToDisplay, utf8ToBytes, uint256FromDisplay } from '@govhub/verify';
 
 export interface Outpoint {
   /** DISPLAY hex (as RPCs print it). */
@@ -159,10 +159,8 @@ export function govObjectHash(o: Pick<ParsedGovObject, 'parentHash' | 'revision'
 }
 
 function hexToBytesStrict(hex: string): Uint8Array {
-  if (!/^(?:[0-9a-fA-F]{2})*$/.test(hex)) throw new Error('invalid hex');
-  const out = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.slice(2 * i, 2 * i + 2), 16);
-  return out;
+  if (!isHex(hex)) throw new Error('invalid hex');
+  return hexToBytes(hex);
 }
 
 /** Parses a 32-byte ZMQ hash body (hashblock / hashchainlock): Core sends the hash in DISPLAY byte order (zmqpublishnotifier.cpp, reversed copy). */

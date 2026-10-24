@@ -12,7 +12,8 @@
 //                                                                            governance/signing.cpp:23, :58-104
 import { tallyVotes, voteSetHash, VOTE_SIGNAL } from '@govhub/verify';
 import type { DB, GovObjectRow, VoteRow } from './archive/db.ts';
-import type { MnList } from './mnlist.ts';
+import { nowS } from './log.ts';
+import type { LoadedMnList } from './mnlist.ts';
 import { proposalView, type ProposalView } from './proposal.ts';
 
 /** GOVERNANCE_FUDGE_WINDOW (signing.cpp:23). */
@@ -37,13 +38,16 @@ export interface ComputedTally {
   passing: boolean;
 }
 
+/** The masternode key ("<collateral txid>-<n>") a vote belongs to. */
+const voteMn = (v: VoteRow): string => `${v.collateral_txid}-${v.collateral_n}`;
+
 /** Tally of one proposal from the archive against an MN list. */
-export function tallyProposal(db: DB, govHash: string, list: { list: MnList; byOutpoint: Map<string, MnList['entries'][number]> }, asOfHeight: number, now: number): Omit<ComputedTally, 'rank' | 'inNextBudget' | 'margin' | 'passing'> {
+export function tallyProposal(db: DB, govHash: string, list: LoadedMnList, asOfHeight: number, now: number): Omit<ComputedTally, 'rank' | 'inNextBudget' | 'margin' | 'passing'> {
   const rows = db.prepare("SELECT * FROM votes WHERE parent_hash = ? AND signal = ? AND sig_status = 'valid'").all(govHash, VOTE_SIGNAL.FUNDING) as VoteRow[];
   const eligible: VoteRow[] = [];
   let staleKey = 0;
   for (const v of rows) {
-    const e = list.byOutpoint.get(`${v.collateral_txid}-${v.collateral_n}`);
+    const e = list.byOutpoint.get(voteMn(v));
     if (!e || e.votingKeyId !== v.signer_keyid) {
       staleKey++;
       continue;
@@ -53,12 +57,12 @@ export function tallyProposal(db: DB, govHash: string, list: { list: MnList; byO
   const weights = new Map<string, number>();
   for (const e of list.list.entries) weights.set(`${e.collateralTxid}-${e.collateralN}`, e.weight);
   const t = tallyVotes(
-    eligible.map((v) => ({ mn: `${v.collateral_txid}-${v.collateral_n}`, outcome: v.outcome, time: v.time })),
+    eligible.map((v) => ({ mn: voteMn(v), outcome: v.outcome, time: v.time })),
     weights,
     { now },
   );
   const byKey = new Map<string, VoteRow>();
-  for (const v of eligible) byKey.set(`${v.collateral_txid}-${v.collateral_n}|${v.time}|${v.outcome}`, v);
+  for (const v of eligible) byKey.set(`${voteMn(v)}|${v.time}|${v.outcome}`, v);
   const counted: ComputedTally['counted'] = [];
   // "counted" = the current vote of every masternode in the weight map (govhub-voteset-v1, packages/verify/src/voteset.ts)
   for (const [mn, cur] of t.current) {
@@ -75,7 +79,7 @@ export function tallyProposal(db: DB, govHash: string, list: { list: MnList; byO
     unweighted: t.unweighted,
     absoluteYes: t.absoluteYes,
     counted,
-    voteSetHash: voteSetHash(counted.map((v) => ({ mn: `${v.collateral_txid}-${v.collateral_n}`, outcome: v.outcome, time: v.time }))),
+    voteSetHash: voteSetHash(counted.map((v) => ({ mn: voteMn(v), outcome: v.outcome, time: v.time }))),
     staleKey,
   };
 }
@@ -147,7 +151,7 @@ export interface TallyRun {
 
 export function computeAll(
   db: DB,
-  list: { list: MnList; byOutpoint: Map<string, MnList['entries'][number]> },
+  list: LoadedMnList,
   height: number,
   gov: { governanceminquorum: number; fundingthreshold: number; nextsuperblock: number },
   budgetDuffs: number,
@@ -243,7 +247,7 @@ export function storeTally(db: DB, t: ComputedTally, cmp: CoreComparison | null)
     t.govHash,
     t.asOfHeight,
     t.listHash,
-    Math.floor(Date.now() / 1000),
+    nowS(),
     t.weighted.yes,
     t.weighted.no,
     t.weighted.abstain,
@@ -263,6 +267,6 @@ export function storeTally(db: DB, t: ComputedTally, cmp: CoreComparison | null)
     cmp && !cmp.match ? JSON.stringify({ core: cmp.core, bridge: cmp.bridge, missingSigned: cmp.missingSigned.length, extra: cmp.extra.length, missingSample: cmp.missingSigned.slice(0, 20), extraSample: cmp.extra.slice(0, 20) }) : null,
     null,
   );
-  db.prepare('INSERT OR IGNORE INTO vote_sets(gov_hash, vote_set_hash, vote_hashes, created_at) VALUES (?, ?, ?, ?)').run(t.govHash, t.voteSetHash, JSON.stringify(t.counted.map((v) => v.hash).sort()), Math.floor(Date.now() / 1000));
+  db.prepare('INSERT OR IGNORE INTO vote_sets(gov_hash, vote_set_hash, vote_hashes, created_at) VALUES (?, ?, ?, ?)').run(t.govHash, t.voteSetHash, JSON.stringify(t.counted.map((v) => v.hash).sort()), nowS());
   return true;
 }

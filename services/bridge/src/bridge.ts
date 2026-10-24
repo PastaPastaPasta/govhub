@@ -3,15 +3,13 @@ import { openArchive, recordEvent, setMeta, type DB } from './archive/db.ts';
 import { readIdentityKeyFile, type BridgeConfig } from './config.ts';
 import { CoreRpc, type GovernanceInfo } from './core/rpc.ts';
 import { ZmqListener } from './core/zmq.ts';
-import { dashToDuffs, Ingestor } from './ingest.ts';
-import { errText, log } from './log.ts';
+import { Ingestor } from './ingest.ts';
+import { errText, log, nowS } from './log.ts';
 import { latestSnapshot, snapshotAt, snapshotMnList } from './mnlist.ts';
 import { PlatformClient } from './publish/platform.ts';
 import { Publisher, type CycleValues, type PublishSummary } from './publish/publisher.ts';
-import { triggerView } from './proposal.ts';
 import { coreCurrentFundingVotes, compareWithCore, computeAll, storeTally, type CoreComparison, type TallyRun } from './tally.ts';
 
-const nowS = () => Math.floor(Date.now() / 1000);
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 export interface CoreState {
@@ -281,5 +279,3 @@ export class Bridge {
     this.db.close();
   }
 }
-
-export { dashToDuffs, triggerView };

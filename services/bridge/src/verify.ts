@@ -2,7 +2,8 @@
 import { checkCollateralTx, hexToBytes, uint256FromDisplay, validateProposalData } from '@govhub/verify';
 import type { GovObjectRow, VoteRow } from './archive/db.ts';
 import type { Bridge } from './bridge.ts';
-import { govObjectHash, parseRawGovObject, parseRawVote } from './core/govparse.ts';
+import { govObjectHash, NULL_OUTPOINT, parseRawGovObject, parseRawVote } from './core/govparse.ts';
+import { nowS } from './log.ts';
 import { latestSnapshot } from './mnlist.ts';
 import { computeAll } from './tally.ts';
 
@@ -40,7 +41,7 @@ export async function verifyArchive(b: Bridge, opts: { withCore: boolean }): Pro
         rep.objects.rawMismatch.push(r.hash);
       }
     } else if (r.type === 1) {
-      const h = govObjectHash({ parentHash: r.parent_hash, revision: r.revision, time: r.time, dataHex: r.data_hex, masternodeOutpoint: { txid: '0'.repeat(64), n: 0xffffffff }, sig: new Uint8Array() });
+      const h = govObjectHash({ parentHash: r.parent_hash, revision: r.revision, time: r.time, dataHex: r.data_hex, masternodeOutpoint: NULL_OUTPOINT, sig: new Uint8Array() });
       if ((h === r.hash ? 1 : 0) !== r.hash_ok) rep.objects.hashMismatch.push(r.hash);
     }
     if (r.type === 1) {
@@ -85,7 +86,7 @@ export async function verifyArchive(b: Bridge, opts: { withCore: boolean }): Pro
   } else if (latest) {
     const bs = db.prepare('SELECT * FROM budget_snapshots ORDER BY height DESC LIMIT 1').get() as { governance_info: string; next_budget_duffs: number } | undefined;
     if (bs) {
-      const run = computeAll(db, b.ingest.lists.load(latest.listHash)!, latest.height, JSON.parse(bs.governance_info), bs.next_budget_duffs, Math.floor(Date.now() / 1000));
+      const run = computeAll(db, b.ingest.lists.load(latest.listHash)!, latest.height, JSON.parse(bs.governance_info), bs.next_budget_duffs, nowS());
       rep.tallies.asOfHeight = run.height;
       rep.tallies.proposals = run.tallies.length;
       rep.tallies.thresholdBridge = run.threshold;

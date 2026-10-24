@@ -93,14 +93,12 @@ export class CoreRpc {
   getBlockHash = (height: number) => this.call<string>('getblockhash', [height]);
   getBlockHeader = (hash: string) => this.call<BlockHeader>('getblockheader', [hash, true]);
   getBlock = (hash: string, verbosity = 2) => this.call<any>('getblock', [hash, verbosity]);
-  getBestChainLock = () => this.call<{ blockhash: string; height: number }>('getbestchainlock');
   getIndexInfo = () => this.call<Record<string, { synced: boolean; best_block_height: number }>>('getindexinfo');
   getGovernanceInfo = () => this.call<GovernanceInfo>('getgovernanceinfo');
   getSuperblockBudget = (height: number) => this.call<number>('getsuperblockbudget', [height]);
   gobjectList = (signal = 'all', type = 'all') => this.call<Record<string, GobjectListEntry>>('gobject', ['list', signal, type]);
   gobjectGet = (hash: string) => this.call<GobjectGetResult>('gobject', ['get', hash]);
   gobjectCurrentVotes = (hash: string) => this.call<Record<string, string>>('gobject', ['getcurrentvotes', hash]);
-  getRawTransactionHex = (txid: string) => this.call<string>('getrawtransaction', [txid, false]);
   getRawTransactionVerbose = (txid: string) => this.call<RawTxVerbose>('getrawtransaction', [txid, true]);
   /** `protx list registered true <height>`: every registered MN (incl. PoSe-banned) at `height` with its state. */
   protxListRegistered = (height: number) => this.call<ProTxEntry[]>('protx', ['list', 'registered', true, height]);

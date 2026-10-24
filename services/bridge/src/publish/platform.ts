@@ -6,7 +6,8 @@
 //  - WasmSdkError is not an Error: use errText();
 //  - lagging DAPI nodes answer 40101 "not found" / nonce errors right after a write: retry; "nonce already present in past"
 //    means the SDK's cached nonce is stale: refreshIdentityNonce and retry.
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
+import { concatBytes, hexToBytes, sha256d, utf8ToBytes } from '@govhub/verify';
 import { errText, log } from '../log.ts';
 import type { IdentityKeyFile, PlatformNetwork } from '../config.ts';
 
@@ -14,7 +15,7 @@ type Evo = typeof import('@dashevo/evo-sdk');
 
 const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 
-export function base58ToBytes(s: string): Uint8Array {
+function base58ToBytes(s: string): Uint8Array {
   let v = 0n;
   for (const c of s) {
     const i = B58.indexOf(c);
@@ -33,26 +34,9 @@ export function base58ToBytes(s: string): Uint8Array {
   return Uint8Array.from(out);
 }
 
-export function bytesToBase58(b: Uint8Array): string {
-  let v = 0n;
-  for (const x of b) v = (v << 8n) | BigInt(x);
-  let out = '';
-  while (v > 0n) {
-    out = B58[Number(v % 58n)] + out;
-    v /= 58n;
-  }
-  for (const x of b) {
-    if (x !== 0) break;
-    out = '1' + out;
-  }
-  return out;
-}
-
-const sha256d = (b: Uint8Array) => createHash('sha256').update(createHash('sha256').update(b).digest()).digest();
-
 /** PV13 document id: sha256d(contractId || ownerId || typeName || entropy) (spikes/sdk5 §8.3, mainnet-docid-probe.ts). */
-export function pv13DocumentId(contractId: string, ownerId: string, typeName: string, entropy: Uint8Array): Uint8Array {
-  return Uint8Array.from(sha256d(Buffer.concat([base58ToBytes(contractId), base58ToBytes(ownerId), Buffer.from(typeName, 'utf8'), entropy])));
+function pv13DocumentId(contractId: string, ownerId: string, typeName: string, entropy: Uint8Array): Uint8Array {
+  return sha256d(concatBytes(base58ToBytes(contractId), base58ToBytes(ownerId), utf8ToBytes(typeName), entropy));
 }
 
 export interface PlatformDoc {
@@ -209,5 +193,5 @@ export class PlatformClient {
 }
 
 /** Display-order hex hash -> 32 bytes (no reversal: Platform stores RPC/display order, contracts-v1 README "Hash byte order"). */
-export const displayHashBytes = (hex: string): Uint8Array => Uint8Array.from(Buffer.from(hex, 'hex'));
+export const displayHashBytes = (hex: string): Uint8Array => hexToBytes(hex);
 export const displayHashB64 = (hex: string): string => Buffer.from(hex, 'hex').toString('base64');

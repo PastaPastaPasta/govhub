@@ -1,4 +1,4 @@
-// JSON-lines logger on stderr. Never pass key material or RPC credentials in `fields`.
+// JSON-lines logger on stderr (plus the tiny errText / nowS helpers). Never pass key material or RPC credentials in `fields`.
 type Level = 'debug' | 'info' | 'warn' | 'error';
 const ORDER: Record<Level, number> = { debug: 10, info: 20, warn: 30, error: 40 };
 
@@ -19,6 +19,9 @@ export const log = {
     threshold = ORDER[level];
   },
 };
+
+/** Current unix time in whole seconds. */
+export const nowS = (): number => Math.floor(Date.now() / 1000);
 
 /** Message text of anything thrown, including evo-sdk's WasmSdkError (not an Error subclass). */
 export function errText(e: unknown): string {

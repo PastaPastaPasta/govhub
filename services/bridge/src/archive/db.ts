@@ -2,6 +2,7 @@
 import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { nowS } from '../log.ts';
 
 export type DB = Database.Database;
 
@@ -213,11 +214,7 @@ function migrate(db: DB): void {
 }
 
 export function recordEvent(db: DB, kind: string, detail: unknown): void {
-  db.prepare('INSERT INTO events(at, kind, detail) VALUES (?, ?, ?)').run(Math.floor(Date.now() / 1000), kind, JSON.stringify(detail));
-}
-
-export function getMeta(db: DB, key: string): string | undefined {
-  return (db.prepare('SELECT value FROM meta WHERE key = ?').get(key) as { value: string } | undefined)?.value;
+  db.prepare('INSERT INTO events(at, kind, detail) VALUES (?, ?, ?)').run(nowS(), kind, JSON.stringify(detail));
 }
 
 export function setMeta(db: DB, key: string, value: string): void {

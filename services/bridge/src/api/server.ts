@@ -8,17 +8,10 @@ import { latestSnapshot, snapshotAt } from '../mnlist.ts';
 import { proposalView } from '../proposal.ts';
 import { FUDGE_WINDOW_S, type ComputedTally } from '../tally.ts';
 import { dashCentralBudget, dashCentralProposal } from './dashcentral.ts';
-import { log } from '../log.ts';
+import { log, nowS } from '../log.ts';
 
 const HASH_RE = /^[0-9a-f]{64}$/;
-const nowS = () => Math.floor(Date.now() / 1000);
-export const SERVICE_VERSION = '0.1.0';
-
-export function duffsToDash(d: number): string {
-  const neg = d < 0;
-  const a = Math.abs(d);
-  return `${neg ? '-' : ''}${Math.floor(a / 1e8)}.${String(a % 1e8).padStart(8, '0')}`;
-}
+const SERVICE_VERSION = '0.1.0';
 
 export function proposalJson(b: Bridge, r: GovObjectRow) {
   const v = proposalView(r.data_hex);

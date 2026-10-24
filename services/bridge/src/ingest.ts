@@ -1,22 +1,19 @@
 // Ingest: archive governance objects and signed votes (ZMQ, RPC reconciliation, governance.dat), verify them, and keep
 // masternode-list / budget snapshots. Everything is written to SQLite before anything is derived from it.
-import { bytesToHex, checkCollateralTx, hexToBytes, recoverVoteSigner, uint256FromDisplay, validateProposalData, VOTE_SIGNAL } from '@govhub/verify';
+import { bytesToHex, checkCollateralTx, hexToBytes, recoverVoteSigner, uint256FromDisplay, validateProposalData } from '@govhub/verify';
 import { recordEvent, type DB, type GovObjectRow, type VoteRow, type VoteStatus } from './archive/db.ts';
 import type { CoreNetwork } from './config.ts';
-import { govObjectHash, NULL_OUTPOINT, parseHashBody, parseRawGovObject, parseRawVote, serializeGovObject, type Outpoint, type ParsedGovObject, type ParsedVote } from './core/govparse.ts';
+import { govObjectHash, NULL_OUTPOINT, outpointKey, parseHashBody, parseRawGovObject, parseRawVote, serializeGovObject, type Outpoint, type ParsedGovObject, type ParsedVote } from './core/govparse.ts';
 import { parseGovernanceDat } from './core/govdat.ts';
 import type { CoreRpc, GobjectListEntry } from './core/rpc.ts';
 import type { ZmqMessage } from './core/zmq.ts';
-import { log } from './log.ts';
+import { log, nowS } from './log.ts';
 import { latestSnapshot, MnListCache, snapshotAt, snapshotMnList, type MnList } from './mnlist.ts';
 import { triggerView } from './proposal.ts';
 
 export const GOV_TYPE_PROPOSAL = 1;
-export const GOV_TYPE_TRIGGER = 2;
 
 export type Source = 'zmq' | 'rpc' | 'govdat';
-
-const nowS = () => Math.floor(Date.now() / 1000);
 
 export interface IngestStats {
   objectsNew: number;
@@ -111,7 +108,7 @@ export class Ingestor {
   archiveObject(o: ParsedGovObject | RpcObject, source: Source, height: number, at = nowS()): boolean {
     const raw = 'raw' in o && o.raw ? bytesToHex(o.raw) : null;
     const sig = 'sig' in o && o.sig ? bytesToHex(o.sig) : null;
-    const outpoint = o.masternodeOutpoint && o.masternodeOutpoint.txid !== NULL_OUTPOINT.txid ? `${o.masternodeOutpoint.txid}-${o.masternodeOutpoint.n}` : null;
+    const outpoint = o.masternodeOutpoint && o.masternodeOutpoint.txid !== NULL_OUTPOINT.txid ? outpointKey(o.masternodeOutpoint) : null;
     let hashOk = 0;
     if (raw !== null || o.type === GOV_TYPE_PROPOSAL) {
       try {
@@ -437,7 +434,7 @@ export interface RpcObject {
   sig?: Uint8Array;
 }
 
-export function rpcObject(hash: string, e: GobjectListEntry): RpcObject {
+function rpcObject(hash: string, e: GobjectListEntry): RpcObject {
   const o: RpcObject = { hash, type: e.ObjectType, parentHash: '0'.repeat(64), revision: 1, time: e.CreationTime, collateralHash: e.CollateralHash, dataHex: e.DataHex.toLowerCase() };
   if (e.SigningMasternode) {
     const m = /^([0-9a-f]{64})-(\d+)$/.exec(e.SigningMasternode);
@@ -455,8 +452,6 @@ export function rpcObject(hash: string, e: GobjectListEntry): RpcObject {
 }
 
 /** DASH amounts from RPC (JSON numbers with <= 8 decimals) to integer duffs. */
-export function dashToDuffs(x: number): number {
+function dashToDuffs(x: number): number {
   return Math.round(x * 1e8);
 }
-
-export const isFundingVote = (v: { signal: number }) => v.signal === VOTE_SIGNAL.FUNDING;
