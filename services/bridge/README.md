@@ -207,8 +207,9 @@ archive (gov hash recomputed from the document, collateral re-checked, tallies m
 ## Tests
 
 `npm test` (vitest) runs on recorded mainnet data only: 28 proposals as published on ZMQ with their collateral txs, 633
-signed votes on three proposals with the MN entries of their voters, a trimmed real `governance.dat`, and Core RPC
-responses. They check parser round trips and hashes, every signature, tallies and `voteSetHash` equal to Core's numbers
+signed votes on three proposals with the MN entries of their voters, and a trimmed real `governance.dat`
+(`scripts/record-fixtures.ts` can also record Core RPC responses into `test/fixtures/rpc/`; the API/RPC shapes are covered by
+the fixture-backed tests and the regtest smoke test). They check parser round trips and hashes, every signature, tallies and `voteSetHash` equal to Core's numbers
 and vote set, a full client-side recount from the HTTP API alone, budget ordering/fill/window, publisher idempotency,
 throttling, restart adoption and the mismatch hold (against a fake Platform), RPC retry rules, ZMQ framing over a real
 socket (needs local TCP binding), config rules and that `openapi.json` covers every route.
@@ -227,6 +228,11 @@ socket (needs local TCP binding), config rules and that `openapi.json` covers ev
 - **Read-back:** `scripts/readback.ts` read all 58 back with proofs: 58/58 match the archive (every proposal's gov hash
   recomputes from the document, collateral re-checks, tallies equal Core-matched archive rows). The contract also holds two
   synthetic proposals written by the phase-0 cost spike; the script lists them as not from this archive.
+- **Caveat:** those 28 `tally` documents were published before `voteSetHash` was aligned with the web app on
+  govhub-voteset-v1, so their `voteSetHash` uses the bridge's first definition (SHA-256 over the raw vote bytes). The counts,
+  rank, margin and inNextBudget are correct. The next publish pass replaces them (content changed); a forced re-publish
+  needs Core: `PUBLISH=1 TALLY_PUBLISH_INTERVAL_S=0 BRIDGE_RUN_SECONDS=300 scripts/dev-ct164.sh run`, then
+  `scripts/readback.ts`. It was not run because SSH to CT 164 started failing (agent refused the key) after the change.
 
 ## FINDINGS
 
