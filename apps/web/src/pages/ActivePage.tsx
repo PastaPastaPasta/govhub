@@ -1,0 +1,46 @@
+import { useMemo } from 'react';
+import { useApp } from '../app/context.tsx';
+import { BudgetHeader } from '../ui/BudgetHeader.tsx';
+import { ProposalCard } from '../ui/ProposalCard.tsx';
+import { useReveal } from '../ui/hooks.ts';
+import { byRank, countNames, deriveRow, proposalHref } from '../lib/view.ts';
+
+export function ActivePage() {
+  const { gov, source, params } = useApp();
+  const now = source.now();
+  const rows = useMemo(() => {
+    const ps = gov.active.data ?? [];
+    return ps.map((p) => deriveRow(p, gov.tallies, gov.bridgeTallies, gov.cycle.data ?? null, params, now)).sort(byRank);
+  }, [gov.active.data, gov.tallies, gov.bridgeTallies, gov.cycle.data, params, now]);
+  const names = useMemo(() => countNames(rows.map((r) => r.p.value)), [rows]);
+  const { count, sentinel, more } = useReveal(rows.length, 12);
+
+  return (
+    <>
+      <BudgetHeader />
+      <section aria-labelledby="active-title" className="list-section">
+        <div className="list-head">
+          <h1 id="active-title">Active proposals</h1>
+          <p className="muted">Sorted by rank: net yes votes, the order Core funds them in.</p>
+        </div>
+        {gov.active.loading && rows.length === 0 ? (
+          <div className="grid" aria-busy="true">
+            {Array.from({ length: 6 }, (_, i) => (
+              <div key={i} className="card card-skeleton" />
+            ))}
+          </div>
+        ) : rows.length === 0 ? (
+          <p className="empty">No active proposals to show.</p>
+        ) : (
+          <div className="grid">
+            {rows.slice(0, count).map((r) => (
+              <ProposalCard key={r.p.value.govHash} row={r} href={proposalHref(r.p.value, names)} />
+            ))}
+          </div>
+        )}
+        <div ref={sentinel} className="sentinel" aria-hidden="true" />
+        {more && <p className="muted small center">Scroll for more</p>}
+      </section>
+    </>
+  );
+}

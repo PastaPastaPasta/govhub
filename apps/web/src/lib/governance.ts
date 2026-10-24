@@ -38,8 +38,8 @@ export interface PassState {
   /** Yes votes still needed (0 when passing). */
   needed: number;
   /**
-   * Traffic light: pass = passing and inside the budget; warn = passing but the budget is full, or
-   * within 10% of the threshold; fail = otherwise.
+   * Traffic light: pass = passing and in the next payout; warn = passing but not paid next (budget full
+   * or outside its window), or within 10% of the threshold; fail = otherwise.
    */
   light: Light;
 }

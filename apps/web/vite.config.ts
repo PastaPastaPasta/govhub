@@ -11,7 +11,9 @@ import react from '@vitejs/plugin-react';
 export const CSP = [
   "default-src 'self'",
   "script-src 'self' 'wasm-unsafe-eval'",
-  "worker-src 'self'",
+  // blob: is evo-sdk's off-main-thread WASM decompress+compile worker (it falls back to the main
+  // thread, janking for seconds). Only scripts already allowed by script-src can create one.
+  "worker-src 'self' blob:",
   "style-src 'self'",
   "img-src 'self' data:",
   "font-src 'self'",
@@ -38,6 +40,13 @@ export default defineConfig({
     target: 'es2022',
     // evo-sdk is one ~12 MB ESM chunk with the WASM inlined; it is lazy-loaded after first paint.
     chunkSizeWarningLimit: 14000,
+    rollupOptions: {
+      onwarn(w, warn) {
+        // @scure/base has a harmless misplaced /* @__PURE__ */ comment.
+        if (w.code === 'INVALID_ANNOTATION' && w.id?.includes('@scure/base')) return;
+        warn(w);
+      },
+    },
   },
   optimizeDeps: { exclude: ['@dashevo/evo-sdk'] },
   preview: { port: 4317, strictPort: true },

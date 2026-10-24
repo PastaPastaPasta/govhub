@@ -86,7 +86,7 @@ export function verifyCollateral(p: ProposalCore, lookup: TxLookup | { error: st
   }
 
   const confOk = lookup.confirmations >= GOVERNANCE_FEE_CONFIRMATIONS;
-  steps.push({ id: 'confirmations', status: confOk ? 'ok' : 'fail', label: 'Confirmations', detail: `${lookup.confirmations} (Core needs ${GOVERNANCE_FEE_CONFIRMATIONS}), node-reported` });
+  steps.push({ id: 'confirmations', status: confOk ? 'ok' : 'fail', label: 'Confirmations', detail: `${lookup.confirmations.toLocaleString('en-US')} (Core needs ${GOVERNANCE_FEE_CONFIRMATIONS}), node-reported` });
   steps.push({
     id: 'chainlock',
     status: lookup.isChainLocked ? 'ok' : 'warn',
@@ -95,7 +95,7 @@ export function verifyCollateral(p: ProposalCore, lookup: TxLookup | { error: st
   });
   if (p.collateralHeight) {
     const same = lookup.height === p.collateralHeight;
-    steps.push({ id: 'height', status: same ? 'ok' : 'warn', label: 'Collateral height', detail: same ? `block ${lookup.height}` : `chain says ${lookup.height}, published ${p.collateralHeight}` });
+    steps.push({ id: 'height', status: same ? 'ok' : 'warn', label: 'Collateral height', detail: same ? `block ${lookup.height.toLocaleString('en-US')}` : `chain says ${lookup.height.toLocaleString('en-US')}, published ${p.collateralHeight.toLocaleString('en-US')}` });
   }
   const critical: Step['id'][] = ['hash', 'fields', 'tx', 'collateral', 'confirmations'];
   const ok = steps.filter((s) => critical.includes(s.id)).every((s) => s.status === 'ok');
