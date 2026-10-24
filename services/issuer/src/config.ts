@@ -89,7 +89,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): IssuerConfig {
     dbPath: str(env, 'DB_PATH', './data/issuer.sqlite'),
     http: { host: str(env, 'HTTP_HOST', '127.0.0.1'), port: int(env, 'HTTP_PORT', 8789) },
     reportKeyFile: str(env, 'ISSUER_REPORT_KEY_FILE', ''),
-    maxTokenRequestsPerSec: int(env, 'ISSUER_MAX_TOKEN_RPS', 200, 1),
+    maxTokenRequestsPerSec: int(env, 'ISSUER_MAX_TOKEN_RPS', 2000, 1),
     tickSec: int(env, 'ISSUER_TICK_S', 30, 1),
   };
 }

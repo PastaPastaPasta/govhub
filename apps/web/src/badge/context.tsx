@@ -15,7 +15,7 @@ import { createJob, isActive, renewal, step, type BadgeJob, type ClientDeps, typ
 import { badgeQuery, badgesOfAuthors } from './queries.ts';
 import { createBadgeReader, type BadgeReader } from './reader.ts';
 import { deriveStoreKey, encryptedJobStore, jobStorageKey, memoryJobStore, type JobStore } from './store.ts';
-import { mayPost, mayRequest, noteRequestSent, onVisitChange, requestCooldownLeft } from './visit.ts';
+import { mayPost, mayRequest, noteIdentityWrite, noteRequestSent, onVisitChange, requestCooldownLeft } from './visit.ts';
 import { badgeWorker } from './workerClient.ts';
 
 export interface BadgeCtx {
@@ -80,6 +80,7 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
 
   const [jobs, setJobs] = useState<BadgeJob[]>([]);
   const [coreHeight, setCoreHeight] = useState<number | null>(null);
+  const [storeError, setStoreError] = useState<string | null>(null);
   // the note shows in every tab while a request's cooldown runs
   const [cooldown, setCooldown] = useState(() => requestCooldownLeft());
   useEffect(() => {
@@ -187,16 +188,25 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
         const leftMs = Math.max(0, end - height) * 150_000;
         notBefore.set(j.id, Date.now() + (okTicks === 0 ? resumeDelayMs(Math.min(600_000, leftMs / 2)) : 0));
       }
-      const ready = due.filter((j) => Date.now() >= notBefore.get(j.id)!);
+      // a job whose last attempt failed waits its backoff (retryAt), so it does not monopolise visits
+      const ready = due.filter((j) => Date.now() >= notBefore.get(j.id)! && Date.now() >= (j.retryAt ?? 0));
       // only requests that can actually go out now (trusted issuer, a signer): one that would wait must not hold up posts (N2)
       const requests = ready
         .filter((j) => j.state === 'scheduled' && deps.trusted(j.issuer.identityId) && (j.signer.kind === 'wif' || signers.current.has(j.proTxHash)))
         .sort((a, b) => clientIssuanceWindow(p, a.epoch).to - clientIssuanceWindow(p, b.epoch).to);
       const posts = ready.filter((j) => j.state === 'token');
-      // H1/N1: one token request (the one whose window closes first) only when no write and no other request happened in this
-      // browser for the cooldown; posts only once the cooldown after the last request is over. The rest waits.
-      if (requests.length && mayRequest()) await run(requests[0]!);
-      else if (posts.length && mayPost()) for (const j of posts) await run(j);
+      // H1/N1: posts first (finite: one per issuer and epoch), and only once the cooldown after the last request is over; otherwise
+      // one token request (the one whose window closes first), only when nothing was written and nothing requested in this browser
+      // for the cooldown. The check and the mark happen under a browser-wide lock, so two tabs cannot both pass it (round 3 L1).
+      await withLock('govhub-badge-activity', async () => {
+        if (posts.length && mayPost()) {
+          noteIdentityWrite(); // before the post path's reads: the write is on its way
+          for (const j of posts) await run(j);
+        } else if (requests.length && mayRequest()) {
+          noteRequestSent();
+          await run(requests[0]!);
+        }
+      });
       if (!live) return TICK_MS;
       // renewals: create the next epoch's job (no network to the issuer; blinding only)
       const current = () => snapshot.map((j) => updates.get(j.id) ?? j).concat(added);
@@ -204,17 +214,19 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
         const issuer = trustRef.current.find((t) => t.identityId === j.issuer.identityId && t.enabled);
         if (!issuer) continue;
         const r = await renewal(deps, current(), j, height, issuer);
-        if (r) {
-          updates.set(j.id, { ...j, signer: { kind: 'external' }, proTxHash: '' }); // the key and the MN move to the renewal job
-          added.push(r);
-        }
+        if (r) added.push(r);
       }
       if (!live) return TICK_MS;
       const keepFrom = Math.floor(height / (p.superblockCycle * p.epochCycles)) - 2;
       await commit((latest) => {
         // a renewal made from an older snapshot must not duplicate a job added meanwhile for the same issuer and epoch (N11)
         const fresh = added.filter((a) => !latest.some((j) => j.id === a.id || (j.issuer.identityId === a.issuer.identityId && j.epoch === a.epoch && j.state !== 'failed' && j.state !== 'expired')));
-        const merged = latest.map((j) => updates.get(j.id) ?? j).concat(fresh);
+        // the kept voting key moves to a renewal job only if that job is kept (round 3 L4)
+        const handedOver = new Set(fresh.map((a) => `${a.issuer.identityId}:${a.epoch - 1}`));
+        const merged = latest
+          .map((j) => updates.get(j.id) ?? j)
+          .map((j) => (handedOver.has(`${j.issuer.identityId}:${j.epoch}`) && j.signer.kind === 'wif' ? { ...j, signer: { kind: 'external' as const }, proTxHash: '' } : j))
+          .concat(fresh);
         return merged.filter((j) => isActive(j) || j.epoch >= keepFrom);
       });
       okTicks++;
@@ -224,7 +236,14 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
     (async () => {
       // one store per (identity, signing key): the store key comes from the key, so another key of the same identity has its own
       const s = authSession ? encryptedJobStore(`${ownerId}.${authSession.auth.keyId}`, ownerId, await deriveStoreKey(authSession.auth.privateKey, ownerId)) : memoryJobStore();
-      const loaded = await s.load(); // throws when stored data does not decrypt: then nothing is ever saved over it (N5)
+      let loaded: BadgeJob[];
+      try {
+        loaded = await s.load(); // throws when stored data does not decrypt: then nothing is ever saved over it (N5)
+      } catch {
+        if (live) setStoreError('Your saved badge requests could not be decrypted with this sign-in key. Sign in with the key you used for them.');
+        return;
+      }
+      setStoreError(null);
       if (!live) return;
       store = s;
       commitRef.current = commit;
@@ -261,6 +280,7 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
   const requestBadge = useCallback<BadgeCtx['requestBadge']>(
     async (voting, proTxHash, opts = {}) => {
       const commit = commitRef.current;
+      if (storeError) throw new Error(storeError);
       if (!deps || !reader || !commit) throw new Error(mode === 'live' ? 'Sign in to request a badge.' : 'Badges need live data (Settings).');
       const issuer = opts.issuer ?? trust.find((t) => t.enabled);
       if (!issuer) throw new Error('Your trust list has no enabled issuer.');
@@ -272,7 +292,7 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
       });
       return job;
     },
-    [deps, reader, trust, mode],
+    [deps, reader, trust, mode, storeError],
   );
 
   const registerVotingSigner = useCallback((proTxHash: string, signer: VotingSigner) => {

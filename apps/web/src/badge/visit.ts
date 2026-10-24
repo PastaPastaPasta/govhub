@@ -12,31 +12,46 @@ export const COOLDOWN_MS = 30 * 60_000;
 type Store = Pick<Storage, 'getItem' | 'setItem'> | undefined;
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
-const read = (s: Store, k: string) => Number(s?.getItem(k) ?? 0) || 0;
+/** A stored time in the future (the clock was ahead) counts as now; unreadable storage counts as "just now" (fail closed). */
+function read(s: Store, k: string, now: number): number {
+  try {
+    const v = Number(s?.getItem(k) ?? 0) || 0;
+    return Math.min(v, now);
+  } catch {
+    return now;
+  }
+}
+function write(s: Store, k: string, now: number): void {
+  try {
+    s?.setItem(k, String(now));
+  } catch {
+    /* storage blocked: the read side fails closed */
+  }
+}
 
 /** Called for every Platform state transition of a signed-in identity (documents, identity create/top-up/update). */
 export function noteIdentityWrite(storage: Store = globalThis.localStorage, now = Date.now()): void {
-  storage?.setItem(WRITE_KEY, String(now));
+  write(storage, WRITE_KEY, now);
   emit();
 }
 
 /** Called before anything is sent to an issuer (challenge included). */
 export function noteRequestSent(storage: Store = globalThis.localStorage, now = Date.now()): void {
-  storage?.setItem(REQUEST_KEY, String(now));
+  write(storage, REQUEST_KEY, now);
   emit();
 }
 
 export function mayRequest(storage: Store = globalThis.localStorage, now = Date.now()): boolean {
-  return now - read(storage, REQUEST_KEY) >= COOLDOWN_MS && now - read(storage, WRITE_KEY) >= COOLDOWN_MS;
+  return now - read(storage, REQUEST_KEY, now) >= COOLDOWN_MS && now - read(storage, WRITE_KEY, now) >= COOLDOWN_MS;
 }
 
 export function mayPost(storage: Store = globalThis.localStorage, now = Date.now()): boolean {
-  return now - read(storage, REQUEST_KEY) >= COOLDOWN_MS;
+  return now - read(storage, REQUEST_KEY, now) >= COOLDOWN_MS;
 }
 
 /** Milliseconds left of the cooldown after the last request (0 when none is running): the note shows while this is > 0. */
 export function requestCooldownLeft(storage: Store = globalThis.localStorage, now = Date.now()): number {
-  return Math.max(0, read(storage, REQUEST_KEY) + COOLDOWN_MS - now);
+  return Math.max(0, read(storage, REQUEST_KEY, now) + COOLDOWN_MS - now);
 }
 
 /** Changes in this tab, and in other tabs (storage events). */

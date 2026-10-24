@@ -75,7 +75,8 @@ export function parseTrustList(v: unknown): { issuers: TrustedIssuer[]; errors: 
   for (const [i, x] of (Array.isArray(v) ? v : []).entries()) {
     const o = (x ?? {}) as Record<string, unknown>;
     // printable ASCII only, so a look-alike of a default issuer's name cannot pass the name checks (N16)
-    const name = typeof o.name === 'string' && /^[\x20-\x7e]+$/.test(o.name.trim()) ? o.name.trim().slice(0, 40) : '';
+    const raw = typeof o.name === 'string' ? o.name.replace(/\s+/g, ' ').slice(0, 40).trim() : '';
+    const name = /^[\x20-\x7e]+$/.test(raw) ? raw : '';
     const url = httpsUrl(o.url);
     if (!name) errors.push(`issuer ${i + 1}: a name in plain letters, digits and punctuation is required`);
     else if (!isIdentifier(o.identityId)) errors.push(`${name}: identityId must be a base58 identity id`);

@@ -79,7 +79,7 @@ Notes:
   would leak the key. Signing runs inside the SQLite transaction, so a failure stores nothing.
 - Core is read-only: `getblockcount`, `protx list`. If Core is unreachable or the lists are not loaded, the answer is
   `503 unavailable`. The issuer currently uses the stack's RPC credential, which allows every RPC; before mainnet,
-  give it its own `rpcauth` user with `rpcwhitelist=<user>:getblockcount,protx` (not done yet).
+  give it its own `rpcauth` user with `rpcwhitelist=<user>:getblockcount,getblockchaininfo,protx` (not done yet).
 
 ### Challenges
 
@@ -120,10 +120,11 @@ Errors are `{error, message}`:
 | `already-issued` | 409 | this MN (or its collateral) already has a token for this epoch |
 | `unavailable` | 503 | no key ready, lists not loaded, Core or signing failed, the per-MN limit, or the global limit (with `Retry-After: 5`) |
 
-Limits: a per-MN limit (6 per minute) after authentication, and a global `ISSUER_MAX_TOKEN_RPS` (default 200) on
+Limits: a per-MN limit (6 per minute) after authentication, and a global `ISSUER_MAX_TOKEN_RPS` (default 2000) on
 requests that pass the cheap checks (shape, epoch, key, challenge HMAC, blinded-message hash) and so reach signature
 recovery; junk does not consume it. Add a per-IP rate limit at the edge (Cloudflare) against floods of valid-looking
-requests; the issuer itself keeps no IP state. Rejecting a stranger's request costs a parse, an HMAC and a signature recovery, with no RPC. No per-IP
+requests: this is **required** in production, because well-formed requests with forged signatures (a challenge can be
+reused for its TTL; epoch and keyId are public) do consume the global budget. The issuer itself keeps no IP state. Rejecting a stranger's request costs a parse, an HMAC and a signature recovery, with no RPC. No per-IP
 state is kept.
 Every response carries `Access-Control-Allow-Origin: *` (no credentials), `Cache-Control: no-store`,
 `Referrer-Policy: no-referrer` and `X-Content-Type-Options: nosniff`.
@@ -209,7 +210,7 @@ Environment variables plus secret files. An empty value means the default. Secre
 | `DB_PATH` | `./data/issuer.sqlite` | the image sets `/data/issuer.sqlite` |
 | `HTTP_HOST` / `HTTP_PORT` | `127.0.0.1` / `8789` | the image sets `0.0.0.0` |
 | `ISSUER_REPORT_KEY_FILE` | | **required**: the identity's HIGH key file for `issuerReport` (readers flag an issuer without reports, clients post no badge without one). Must belong to `ISSUER_IDENTITY_ID` |
-| `ISSUER_MAX_TOKEN_RPS` | `200` | requests per second allowed into signature recovery (per-MN limits apply after authentication) |
+| `ISSUER_MAX_TOKEN_RPS` | `2000` | requests per second allowed into signature recovery (per-MN limits apply after authentication) |
 | `ISSUER_TICK_S` | `30` | seconds between epoch housekeeping runs (min 1) |
 | `ISSUER_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 
@@ -237,11 +238,13 @@ The badge flow is in `apps/web/src/badge`:
 - The key and epoch come from the proved `issuerKey` and Platform's core height. The request is sent at a random
   height in the issuance window (the next epoch's, if less than a quarter of the current one is left), and the badge is
   posted at a random height in the posting window.
-- **Visit separation** (`visit.ts`): a page load does either one token request or identity writes, never both. A request
-  waits for a visit in which the identity has written nothing (every `Session.signAndBroadcastDocument` marks the visit),
-  and requests from one browser are at least 30 minutes apart across tabs and identities. After a request the app shows a
-  note asking the user not to post until the next visit. One scheduler per identity runs across tabs (Web Locks), and
-  every save merges into the latest stored jobs under a lock.
+- **Activity separation** (`visit.ts`), browser-wide and time-based (localStorage, across tabs, reloads and identities): a
+  token request goes out only after half an hour without any Platform write from this browser (every identity state
+  transition is recorded at the PlatformPort) and without another request; badge posts wait half an hour after the last
+  request, and go before requests. The check and the mark run under a browser-wide Web Lock. A failed request waits a
+  random 1 to 3 hours. During the cooldown every tab asks the user not to post. One scheduler per identity runs across
+  tabs (Web Locks), and every save merges into the latest stored jobs under a lock. Jobs are stored per (identity,
+  signing key); an entry that does not decrypt is never overwritten.
 - A badge is posted only when the issuer's report for the epoch shows at least the network's minimum number of tokens
   (testnet 3, mainnet 10): a badge among two or three would stand out.
 - One request per issuer per epoch per identity. More would only tell the issuer which MNs belong together.
@@ -263,7 +266,7 @@ The badge means "controls the voting key of a valid masternode, according to iss
 | Issuer knowledge | The issuer learns which MNs asked, when, and their IP and browser. A badge is anonymous only among the MNs that asked that issuer in that epoch |
 | Same IP | The issuer sees the request's IP address; the DAPI nodes the app uses see the same address when the identity reads or writes. An operator running both (on testnet, and likely on mainnet, the issuer's operator runs evonodes) links the MN to the identity whatever the timing. The Cloudflare tunnel also sees request bodies with client IPs. Use Tor or a VPN, and a second independent issuer |
 | Small crowds | A badge that appears for the first time (or stops) can be matched to an MN that started (or stopped) asking at the same time when few others did. The client posts nothing below the minimum token count; the issuer still chooses whom it serves |
-| Same visit | Visit separation keeps the scheduler's request and the identity's writes apart, but a user who writes from the identity right after a request (despite the note) links them for the issuer |
+| Session timing | The half-hour separation stops exact matching, not statistical matching: requests go out only while the app is open, so over many epochs an issuer can still correlate request times with sessions in which an identity writes later. It covers this browser and origin only; a user who writes right after a request (despite the note) links the two |
 | Public fingerprinting | Comments that state votes can be matched against public per-MN vote records. Keep voting and commenting separate |
 | Delegated voting keys | A host or pool that holds a voting key can mint a badge for it. Accepted |
 | Wait time | A new MN waits up to one epoch plus W (testnet ~27 hours, mainnet ~32 days) |

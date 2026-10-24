@@ -248,7 +248,7 @@ describe('badge client', () => {
       [{ ok: false, status: 409, error: 'already-issued', message: 'x' }, 'failed'],
       [{ ok: false, status: 403, error: 'unauthorized', message: 'x' }, 'failed'],
       [{ ok: false, status: 409, error: 'wrong-epoch', message: 'x' }, 'expired'],
-      [{ ok: false, status: 503, error: 'unavailable', message: 'x' }, 'scheduled'],
+      [{ ok: false, status: 503, error: 'unavailable', message: 'x' }, 'scheduled'], // with a 1-3 h backoff (checked below)
       [{ ok: false, status: 401, error: 'bad-challenge', message: 'x' }, 'scheduled'],
     ] as const) {
       const t = setup({ answer: () => answer });
@@ -257,6 +257,7 @@ describe('badge client', () => {
       const out = await step(t.deps, job, h);
       expect(out.state, answer.error).toBe(state);
       if (state !== 'scheduled') expect(out.inv).toBeUndefined();
+      else expect(out.retryAt! - Date.now()).toBeGreaterThan(3_500_000);
     }
     const evil = setup({ answer: () => ({ ok: true, blindSig: bytesToBase64(rnd(256)) }) });
     await evil.platform.addKey(E);
@@ -411,9 +412,11 @@ describe('trust list and storage', () => {
       { name: '', identityId: bytesToId(rnd(32)), url: 'https://a.b' },
       { name: 'TEST', identityId: bytesToId(rnd(32)), url: 'https://a.b' },
       { name: 'govhub', identityId: bytesToId(rnd(32)), url: 'https://a.b' },
+      { name: 'govhub' + ' '.repeat(34) + 'x', identityId: bytesToId(rnd(32)), url: 'https://a.b' },
+      { name: 'gоvhub', identityId: bytesToId(rnd(32)), url: 'https://a.b' },
     ]);
-    expect(issuers).toHaveLength(1);
-    expect(errors).toHaveLength(7);
+    expect(issuers.map((i) => i.name)).toEqual(['test', 'govhub x']); // padding collapses: what is shown is what is compared
+    expect(errors).toHaveLength(8);
     expect(errors.join(' ')).toMatch(/already has this name|another issuer on the list has this name/);
     expect(errors.join(' ')).toMatch(/belongs to a default issuer/);
   });

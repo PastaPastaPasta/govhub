@@ -61,8 +61,9 @@ export class EpochManager {
     const epoch = issuingEpochAt(d.params, height);
     const margin = d.params.boundaryMarginBlocks;
     // A syncing node's tip is not the network's: no start height, no lists, no issuing until it has caught up (N8).
-    if (!(await d.core.synced().catch(() => false))) {
-      this.#status = { height, issuingEpoch: epoch, keyId: null, ready: false, problem: 'dashd is not synced' };
+    const synced = await d.core.synced().catch((e: unknown) => `getblockchaininfo failed: ${errText(e)}`);
+    if (synced !== true) {
+      this.#status = { height, issuingEpoch: epoch, keyId: null, ready: false, problem: typeof synced === 'string' ? synced : 'dashd is not synced' };
       return;
     }
     d.store.markStarted(height);

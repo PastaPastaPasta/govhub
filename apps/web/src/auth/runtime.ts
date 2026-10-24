@@ -14,7 +14,17 @@ let port: { key: string; value: Promise<PlatformPort> } | null = null;
  * (badge/visit.ts), so each one is recorded before it is sent.
  */
 function markWrites(p: PlatformPort): PlatformPort {
-  const mark = <A extends unknown[], R>(f: (...a: A) => Promise<R>) => (...a: A) => (noteIdentityWrite(), f(...a));
+  // recorded when the write starts and again when it ends (retries can run long)
+  const mark =
+    <A extends unknown[], R>(f: (...a: A) => Promise<R>) =>
+    async (...a: A) => {
+      noteIdentityWrite();
+      try {
+        return await f(...a);
+      } finally {
+        noteIdentityWrite();
+      }
+    };
   return {
     ...p,
     createIdentity: mark(p.createIdentity),

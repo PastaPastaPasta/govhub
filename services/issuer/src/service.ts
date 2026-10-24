@@ -82,7 +82,8 @@ export interface TokenServiceDeps {
   perMnPerMinute?: number;
   /**
    * Requests per second allowed past the cheap checks (shape, epoch, key, challenge HMAC, blinded-message hash), i.e. into signature
-   * recovery; default 200. Junk that fails the cheap checks does not consume it (N6).
+   * recovery; default 2000 (a recovery costs about 0.1 ms). Junk that fails the cheap checks does not consume it (N6); well-formed
+   * floods are for the edge's per-IP limit.
    */
   maxRecoveriesPerSec?: number;
 }
@@ -196,7 +197,7 @@ export class TokenService {
       this.#second = s;
       this.#inSecond = 0;
     }
-    if (++this.#inSecond > (this.#d.maxRecoveriesPerSec ?? 200)) throw new IssueError('unavailable', 'busy, retry later');
+    if (++this.#inSecond > (this.#d.maxRecoveriesPerSec ?? 2000)) throw new IssueError('unavailable', 'busy, retry later');
   }
 
   /** A few requests per MN per minute, counted only after authentication (memory only, nothing about the requester). */

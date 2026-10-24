@@ -66,7 +66,7 @@ export class BadgeReader {
     this.#issuers = o.issuers.filter((i) => i.enabled);
     this.#maxPlausible = o.maxPlausibleTokens ?? 5_000;
     // the audit must be able to count up to the plausible bound (N4)
-    this.#maxAuditPages = o.maxAuditPages ?? Math.ceil(this.#maxPlausible / 100);
+    this.#maxAuditPages = o.maxAuditPages ?? Math.ceil((this.#maxPlausible + 1) / 100);
     this.#ttl = o.ttlMs ?? TTL_MS;
   }
 
@@ -203,7 +203,9 @@ export class BadgeReader {
             ? `${count} valid badges but only ${tokensIssued} tokens reported`
             : tokensIssued === null && reportDue
               ? 'no valid issuerReport for this epoch'
-              : null;
+              : tokensIssued !== null && !complete
+                ? 'too many badges to audit'
+                : null;
       // only a flag is final: badge counts only grow and a report is immutable; anything else is re-read after the TTL (N3)
       entry.final = flagReason !== null;
       return { ...base, badges: count, complete, tokensIssued, flagged: flagReason !== null, flagReason, keyProblem: null };

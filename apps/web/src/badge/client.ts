@@ -68,6 +68,8 @@ export interface BadgeJob {
   /** the issuer returned something that did not verify */
   issuerFlagged?: boolean;
   attempts: number;
+  /** after a failed attempt: not before this time (ms), a random 1-3 h later */
+  retryAt?: number;
 }
 
 export interface ClientDeps {
@@ -153,6 +155,11 @@ export async function createJob(d: ClientDeps, jobs: readonly BadgeJob[], voting
   };
 }
 
+/** A failed attempt waits a random 1 to 3 hours, so one unreachable issuer does not take every quiet half hour. */
+function backoff(j: BadgeJob, note: string): BadgeJob {
+  return { ...j, note, retryAt: Date.now() + 3_600_000 + Math.floor(Math.random() * 7_200_000) };
+}
+
 /** Errors the issuer answers that end a job (the rest are retried while the window is open). */
 const FINAL: Record<string, string> = {
   'already-issued': 'This masternode already got a token from this issuer for this epoch (another browser or an earlier request).',
@@ -169,7 +176,8 @@ export async function step(d: ClientDeps, job: BadgeJob, height: number): Promis
   const p = EPOCH_PARAMS[job.net];
   const j: BadgeJob = { ...job };
   if (j.state === 'scheduled') {
-    if (height >= clientIssuanceWindow(p, j.epoch).to) return wipe({ ...j, state: 'expired', note: 'The request window closed before the request could be sent (the app was not open, or the issuer was unreachable).' });
+    if (height >= clientIssuanceWindow(p, j.epoch).to)
+      return wipe({ ...j, state: 'expired', note: 'The request window closed before the request could be sent: the app was not open during a quiet half hour (no posts, comments or other requests from this browser), or the issuer was unreachable.' });
     if (height < j.requestAt) return j;
     if (!d.trusted(j.issuer.identityId)) return { ...j, note: `${j.issuer.name} is not on your trust list (or is turned off): the request waits.` };
     const signer: VotingSigner | undefined = j.signer.kind === 'wif' ? ((w) => async (m: string) => d.signWithWif(w, m))(j.signer.wif) : d.externalSigner(j.proTxHash);
@@ -186,12 +194,12 @@ export async function step(d: ClientDeps, job: BadgeJob, height: number): Promis
       if (!answer.ok) {
         if (answer.error === 'wrong-epoch') {
           // an issuer whose node lags is still on an earlier epoch: try again later
-          if (answer.issuingEpoch !== undefined && answer.issuingEpoch < j.epoch) return { ...j, note: `The issuer is still on epoch ${answer.issuingEpoch}; trying again.` };
+          if (answer.issuingEpoch !== undefined && answer.issuingEpoch < j.epoch) return backoff(j, `The issuer is still on epoch ${answer.issuingEpoch}; trying again later.`);
           return wipe({ ...j, state: 'expired', note: `The issuer is no longer issuing for epoch ${j.epoch}.` });
         }
         const final = FINAL[answer.error];
         if (final) return wipe({ ...j, state: 'failed', note: final.endsWith('.') ? final : `${final}: ${answer.message}` });
-        return { ...j, note: `The issuer is not available (${answer.message}); trying again.` };
+        return backoff(j, `The issuer is not available (${answer.message}); trying again later.`);
       }
       let sig: string;
       try {
@@ -202,7 +210,7 @@ export async function step(d: ClientDeps, job: BadgeJob, height: number): Promis
       const done = wipe({ ...j, state: 'token', sig, note: undefined });
       return { ...done, postAt: pickPostHeight(p, j.epoch, height) };
     } catch (e) {
-      return { ...j, note: `Could not reach the issuer (${(e as Error).message}); trying again.` };
+      return backoff(j, `Could not reach the issuer (${(e as Error).message}); trying again later.`);
     }
   }
   if (j.state === 'token') {
@@ -213,7 +221,7 @@ export async function step(d: ClientDeps, job: BadgeJob, height: number): Promis
     try {
       // a key revoked since the token was issued voids the badge for readers: do not post it (N12)
       const { key } = await d.issuerKey({ ...j.issuer, enabled: true }, j.epoch);
-      if (!key || (key.revokedFrom !== null && key.revokedFrom <= height)) return wipe({ ...j, state: 'expired', note: `${j.issuer.name}'s key for epoch ${j.epoch} is no longer valid: the badge is not posted.` });
+      if (!key || key.revokedFrom !== null) return wipe({ ...j, state: 'expired', note: `${j.issuer.name}'s key for epoch ${j.epoch} is no longer valid: the badge is not posted.` });
       // Too few tokens this epoch and the badge would stand out (review R1); no report yet: wait for it.
       const tokens = await d.reportedTokens(j.issuer, j.epoch);
       if (tokens === null) return { ...j, postAt, note: `Waiting for ${j.issuer.name}'s token count for epoch ${j.epoch} before posting.` };
@@ -223,7 +231,7 @@ export async function step(d: ClientDeps, job: BadgeJob, height: number): Promis
       const id = await d.postBadge(mnBadgeData({ issuerId: idToBytes(j.issuer.identityId), epoch: j.epoch, keyId: fromHex(j.keyId), msgPrefix: base64ToBytes(j.msgPrefix), sig: base64ToBytes(j.sig!) }));
       return wipe({ ...j, state: 'posted', badgeId: id, note: undefined });
     } catch (e) {
-      return { ...j, postAt, note: `Posting the badge failed (${(e as Error).message}); trying again.` };
+      return { ...backoff(j, `Posting the badge failed (${(e as Error).message}); trying again later.`), postAt };
     }
   }
   return j;

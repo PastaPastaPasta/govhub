@@ -310,6 +310,19 @@ if (cmd === 'post') {
   await mark(`read back: A=${JSON.stringify(st.results.readBack)} verify=${JSON.stringify(st.results.verify)} audit=${JSON.stringify(st.results.audit)}`);
 }
 
+if (cmd === 'keys') {
+  // the published issuerKey documents, as a fresh reader accepts them (proved queries, reader rules)
+  const r = newReader();
+  const out: Record<number, string> = {};
+  for (let e = 2741; e <= 2756; e++) {
+    const k = await r.key(ISSUER, e);
+    out[e] = k.key ? `ok ${Buffer.from(k.key.key.keyId).toString('hex').slice(0, 16)}… ${k.key.key.modulusBytes * 8}-bit` : `no: ${k.problem}`;
+  }
+  st.results.issuerKeys = out;
+  save();
+  console.log(JSON.stringify(out, null, 2));
+}
+
 if (cmd === 'comment' && !st.comment) {
   const { forumOps } = await import('@govhub/forum');
   const { PROFILES } = await import('../src/config/registry.ts');
