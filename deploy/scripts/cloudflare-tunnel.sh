@@ -127,7 +127,7 @@ done
 
 # Token for `cloudflared tunnel run`. Written, never printed.
 token="$(cf GET "/accounts/$ACCOUNT/cfd_tunnel/$tunnel_id/token" | jq -r '.')"
-[ -n "$token" ] && [ "$token" != null ] || die "empty tunnel token"
+if [ -z "$token" ] || [ "$token" = null ]; then die "empty tunnel token"; fi
 mkdir -p "$(dirname "$TOKEN_OUT")"
 (umask 077 && printf '%s\n' "$token" > "$TOKEN_OUT")
 # Same rule as init.sh: the containers run as uid 1000.
