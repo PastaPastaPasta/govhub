@@ -32,7 +32,7 @@ export function BadgeLeaks({ net, open = false }: { net: CoreNetwork; open?: boo
           mode with the same issuer (the issuer knows who they are). It is not posted if the issuer reported fewer than {minSet} tokens for the epoch before: that is the
           issuer’s own count and includes Standard tokens, so the real crowd can be smaller. A badge that appears for the first time, or stops, can still be matched to a
           masternode that started or stopped asking at the same time when few others did. A request waits for half an hour without Platform writes from this browser,
-          and posts wait half an hour after a request. A badge appears up to one epoch ({days(epochLength(p))}) after you ask.
+          and posts wait half an hour after a request. A badge appears up to about one epoch plus {days(p.graceBlocks)} after you ask (Extra private: plus up to half an epoch more; an epoch is {days(epochLength(p))}).
         </li>
         <li>
           <b>Extra private</b>: like Private, but the badge is posted at a random time across the first half of the next epoch.

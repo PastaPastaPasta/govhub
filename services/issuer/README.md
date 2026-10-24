@@ -165,7 +165,7 @@ On the server:
 - Before using a key, the issuer reads the proved `issuerKey` for the epoch and refuses if it is missing, was
   published at or after `S(E-1)`, has `keyId != SHA256(spki)`, or the private key does not match the published SPKI.
   The file must not be readable by group or others.
-- Once the issuance window of an epoch has closed (`S(E)` plus the margin), its key is destroyed: overwritten with zeros,
+- Once the issuance window of an epoch has closed (`S(E+1)` plus the margin), its key is destroyed: overwritten with zeros,
   fsynced, unlinked. On ZFS, btrfs and SSDs old blocks may survive; that is a property of the host, not of this code.
 
 Keep the identity's MASTER and CRITICAL keys offline (CRITICAL signs the `issuerKey` documents). Only the HIGH key goes
@@ -183,7 +183,7 @@ The owner's rule: users may accept that the issuer could learn which masternode 
 | Application logs (stderr, kept by Docker's json-file driver) | lifecycle and error lines with no MN, outpoint, address or request detail; requests only as hourly aggregate counters. Hono's error handler is replaced and `console` is silenced in `issuer run`, so no library prints a request. `test/logging.test.ts` runs a full flow with `cf-connecting-ip`/user-agent headers at debug level and searches all output for the proTxHash, outpoint, IP and user agent |
 | Rate limits | in memory only (per MN after authentication, a global budget), never persisted |
 | Tunnel gateway (Caddy, `caddy/tunnel-gateway-issuer.Caddyfile`) | nothing: no access log, and the default logger (which writes proxy errors with the client address) is discarded |
-| cloudflared | `--loglevel error`: no per-request lines (debug logs every request; info and warn log failed origin requests with a time and cfRay). Only while an origin is down does it log a line per request, without the client address |
+| cloudflared | `--loglevel fatal`: no per-request lines at all (debug logs every request; info, warn and error log failed origin requests with a time). Watch tunnel health on the metrics port or with `cloudflared tunnel info` |
 | Cloudflare's edge | outside our control: Cloudflare sees request metadata (client IP, time, path). An operator can reduce what it keeps by turning off Logpush, Web Analytics and similar features for the issuer's hostname where the plan allows |
 
 - SQLite runs with `secure_delete`, `synchronous = FULL` and a rollback journal (`journal_mode = DELETE`).

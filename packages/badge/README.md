@@ -200,8 +200,8 @@ Verification is cheap: about 20 to 30 microseconds per badge in Chromium (spike 
 | `src/client.ts` | `importIssuerKey`, `prepare`, `blind`, `finalize`, `verify`, `bindIssuerKey`, `prepareBadge`, `verifyBadgeSignature`, `VARIANT`, `ALLOWED_MODULUS_BITS`, `SPKI_LEN` |
 | `src/format.ts` | `buildBadgeMessage`, `parseBadgeMessage`, `deriveKeyId`, `NET_BYTE`, `isNetwork`, length constants |
 | `src/request.ts` | `buildTokenRequest`, `buildTokenRequestFor`, `parseTokenRequest`, `requestBindsBlindedMsg` |
-| `src/epoch.ts` | `EPOCH_PARAMS`, `epochStart`, `epochOf`, `issuingEpochAt`, `issuanceWindow`, `clientIssuanceWindow`, `postingWindow`, `displayWindow`, `inDisplayWindow`, `displayEpochsAt`, `keyDeadline` |
-| `src/schedule.ts` | `pickRequestHeight`, `pickPostHeight`, `clientPostingWindow`, `requestableEpoch`, `resumeDelayMs` |
+| `src/epoch.ts` | `EPOCH_PARAMS`, `epochStart`, `epochOf`, `issuingEpochsAt`, `issuanceWindow`, `privateRequestWindow`, `postingWindow`, `extraPostingWindow`, `reportWindow`, `displayWindow`, `inDisplayWindow`, `displayEpochsAt`, `keyDeadline` |
+| `src/schedule.ts` | `PrivacyMode`, `PRIVACY_MODES`, `pickRequestHeight`, `pickPostHeight` (per mode), `clientPostingWindow`, `requestableEpoch` (per mode), `resumeDelayMs` |
 | `src/reader.ts` | `acceptIssuerKey`, `verifyMnBadge` and the document types |
 | `src/docs.ts` | parsers for the JSON `Document.toJSON()` returns (`parseIssuerKeyDoc`, `parseIssuerRevocationDoc`, `parseMnBadgeDoc`, `parseIssuerReportDoc`) and field builders for writers. Parsers throw on malformed input; a reader treats that as "no valid document" |
 | `src/bytes.ts` | hex, base64, base58 ids, `sha256`, constant-time `equalBytes`, `randomBelow` |

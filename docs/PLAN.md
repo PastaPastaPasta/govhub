@@ -522,7 +522,7 @@ force it. If people accept us learning that's ok. Just we keep no logs for stuff
   arrives only as E ends).
 - **No linkable logs:** the issuer stores only the dedup rows (epoch, proTxHash, collateral, H(blindedMsg)), deleted when the
   epoch's window closes; no request times, IPs or user agents anywhere (DB, application logs, the tunnel gateway, cloudflared
-  at loglevel error). Cloudflare's edge is outside our control (`services/issuer/README.md`, "Logging policy").
+  at loglevel fatal). Cloudflare's edge is outside our control (`services/issuer/README.md`, "Logging policy").
 
 ---
 
