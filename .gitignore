@@ -12,3 +12,6 @@ test-results/
 *.key
 *.wif
 secrets/
+
+# agent worktrees
+.claude/
