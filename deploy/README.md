@@ -857,6 +857,12 @@ Testnet ids:
 | Superseded | `3SrZbofJnMgWNiHFzpHc5u7wSRgCFJykZwKq3haqyMfc` (phase 0): it allowed `spki` of 90..600 bytes |
 | `issuerKey` documents | epochs 2742 to 2755, published at core height about 1,578,675. The deadline for epoch 2742 was 1,578,816 (`S(2741)`) |
 
+**Cutover to privacy modes (current-epoch tokens).** Issuers before that change published E's `issuerReport` in
+`[S(E), S(E)+W]`; readers now accept it only in `[S(E+1), S(E+1)+W]`, and a report cannot be replaced (one per issuer and
+epoch). Deploy the new issuer and web build together, before an epoch boundary, and expect the epoch whose report the old
+issuer already wrote (and, through the sticky rule, the next one) to show as unaudited. The old issuer also destroyed the
+current epoch's key at `S(E)`, so Standard requests work from the next epoch on.
+
 Testnet epochs are 576 blocks, about a day (`packages/badge/README.md`, "Testnet timing"). With the keys above, tokens
 for epoch 2742 are issued from block 1,578,816 to 1,579,391, and the first badges show from block 1,579,392. The last
 published key is for epoch 2755, so publish more keys (`issuer keygen`, `issuer publish-keys`) at least 3 epochs before

@@ -50,7 +50,8 @@ export function openTokenStore(path: string): TokenStore {
   // Rollback journal, not WAL: a WAL keeps every committed page version in order until a checkpoint, which would be an ordered
   // record of which masternodes got tokens (review H3). With DELETE the journal is removed after each transaction, and
   // secure_delete zeroes freed content in the database file.
-  db.pragma('journal_mode = DELETE');
+  const jm = db.pragma('journal_mode = DELETE', { simple: true });
+  if (path !== ':memory:' && jm !== 'delete') throw new Error(`token store: journal_mode is ${String(jm)}, expected delete (is another process using ${path}?)`);
   db.pragma('synchronous = FULL');
   db.pragma('secure_delete = ON');
   // A database from before the started_height guard ran from before its windows opened (it has the epochs table but no meta).

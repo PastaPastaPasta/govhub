@@ -15,6 +15,13 @@ const IP = '203.0.113.77';
 const UA = 'Mozilla/5.0 (badge-log-test)';
 
 describe('no linkable logs', () => {
+  it('`issuer run` still reports a fatal startup error on stderr although console is silenced', async () => {
+    const { spawnSync } = await import('node:child_process');
+    const r = spawnSync(process.execPath, [new URL('../bin/issuer.mjs', import.meta.url).pathname, 'run'], { env: { PATH: process.env.PATH ?? '' }, encoding: 'utf8' });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/^error: /m);
+  });
+
   let out: string[];
   beforeEach(() => {
     out = [];

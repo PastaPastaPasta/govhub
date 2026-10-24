@@ -106,6 +106,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((e) => {
-  console.error(`error: ${errText(e)}`);
+  // straight to stderr: `issuer run` silences `console` (no library may print request details)
+  process.stderr.write(`error: ${errText(e)}\n`);
   process.exit(1);
 });

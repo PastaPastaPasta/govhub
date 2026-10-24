@@ -258,7 +258,7 @@ export async function step(d: ClientDeps, job: BadgeJob, height: number): Promis
       if (!key || key.revokedFrom !== null) return wipe({ ...j, state: 'expired', note: `${j.issuer.name}'s key for epoch ${j.epoch} is no longer valid: the badge is not posted.` });
       // Private modes: a badge among very few stands out (review R1). Tokens for E can be issued until S(E+1), so E's own report
       // comes too late; the crowd size is read from the issuer's report for E-1 (published from S(E)). No report yet: wait for
-      // it until its window has passed; an issuer without one (new, or for that epoch) is posted without the check.
+      // it until its window has passed; an issuer that had no key for E-1 (so no report) is posted without the check.
       if (j.mode !== 'standard') {
         // readers hide an issuer flagged on E-1 for E anyway: posting would only expose the user (review M2)
         if (await d.issuerFlagged(j.issuer, j.epoch - 1)) return wipe({ ...j, state: 'expired', note: `${j.issuer.name} failed the audit for epoch ${j.epoch - 1}, so readers hide its badges for epoch ${j.epoch}: the badge is not posted.` });

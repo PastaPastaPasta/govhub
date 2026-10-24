@@ -57,6 +57,8 @@ export interface AcceptedIssuerKey {
   epoch: number;
   /** badges created at or after this core height are void (issuerRevocation), else null */
   revokedFrom: number | null;
+  /** the core height the revocation itself was created at (it cannot be back-dated), or null */
+  revocationCreatedAt: number | null;
 }
 
 export type Verdict<T> = { ok: true; value: T } | { ok: false; reason: string };
@@ -87,13 +89,15 @@ export async function acceptIssuerKey(
     return no(`issuerKey spki rejected: ${(e as Error).message}`);
   }
   let revokedFrom: number | null = null;
+  let revocationCreatedAt: number | null = null;
   if (revocation) {
     // Fail closed: any revocation the issuer published for this epoch voids the epoch's key from its height on.
     if (!equalBytes(revocation.ownerId, expected.issuerId) || revocation.epoch !== expected.epoch) return no('revocation does not match the issuer/epoch');
     revokedFrom = isU32(revocation.effectiveCoreHeight) ? revocation.effectiveCoreHeight : 0;
+    revocationCreatedAt = isU32(revocation.createdAtCoreBlockHeight) ? revocation.createdAtCoreBlockHeight : 0;
   }
   const bound = bindIssuerKey(key, { net: cfg.net, contractId: cfg.contractId, issuerId: expected.issuerId, epoch: expected.epoch });
-  return { ok: true, value: { key: bound, issuerId: expected.issuerId, epoch: expected.epoch, revokedFrom } };
+  return { ok: true, value: { key: bound, issuerId: expected.issuerId, epoch: expected.epoch, revokedFrom, revocationCreatedAt } };
 }
 
 /** Checks one proved mnBadge document against an accepted key, at the current core height `nowHeight`. */

@@ -162,7 +162,7 @@ export class BadgeReader {
     return { byOwner, coreHeight: now };
   }
 
-  /** tokensIssued of the issuer's report for the epoch if the report is valid (created in [S(E), S(E)+W], plausible), else null. */
+  /** tokensIssued of the issuer's report for the epoch if the report is valid (created in [S(E+1), S(E+1)+W]), else null. */
   async reportedTokens(issuer: Pick<TrustedIssuer, 'identityId'>, epoch: number): Promise<number | null> {
     const b = await this.#lib();
     const p = b.EPOCH_PARAMS[this.#net];
@@ -192,7 +192,9 @@ export class BadgeReader {
       const cfg = await this.#cfg();
       // count the badges that were valid in E's display window, also when auditing a past epoch (the sticky flag below)
       const at = Math.min(coreHeight, b.displayWindow(b.EPOCH_PARAMS[this.#net], epoch).to);
-      const auditKey = { ...key, revokedFrom: null };
+      // A revocation cannot shrink the count after the fact (that would clear a flag), but badges made after the revocation was
+      // published (a key thief) do not count: the cut-off is the later of its effective height and its own creation height.
+      const auditKey = { ...key, revokedFrom: key.revokedFrom === null ? null : Math.max(key.revokedFrom, key.revocationCreatedAt ?? 0) };
       let count = 0;
       let after: string | undefined;
       let pages = 0;
@@ -202,7 +204,6 @@ export class BadgeReader {
         pages++;
         for (const d of res.docs) {
           try {
-            // the issuer's own revocation must not shrink its count after the fact (it would clear a flag): count as unrevoked
             if ((await b.verifyMnBadge(cfg, auditKey, b.parseMnBadgeDoc(d), at)).ok) count++;
           } catch {
             /* malformed: not counted */
@@ -223,7 +224,9 @@ export class BadgeReader {
       else if (tokensIssued === null && reportDue) flagReason = 'no valid issuerReport for this epoch';
       else if (tokensIssued !== null && !complete) flagReason = 'too many badges to audit';
       // before E's report can exist (it comes at S(E+1)), at least the badge count must stay plausible
-      else if (tokensIssued === null && (count > bound.value || !complete)) flagReason = `more valid badges than there are masternodes (${bound.source})`;
+      else if (tokensIssued === null && count > bound.value) flagReason = `more valid badges than there are masternodes (${bound.source})`;
+      // accepted risk: anyone with very many identities could post junk badges to push an epoch past the count limit
+      else if (tokensIssued === null && !complete) flagReason = 'too many badges to audit';
       // only a flag is final: badge counts only grow and a report is immutable; anything else is re-read after the TTL (N3)
       entry.final = flagReason !== null;
       return { ...base, badges: count, complete, tokensIssued, flagged: flagReason !== null, flagReason, keyProblem: null };

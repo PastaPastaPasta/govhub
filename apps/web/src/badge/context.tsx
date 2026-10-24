@@ -212,7 +212,10 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
       const due = snapshot.filter((j) => isActive(j) && !updates.has(j.id) && height >= (j.state === 'scheduled' ? j.requestAt : (j.postAt ?? clientPostingWindow(p, j.epoch, j.mode === 'extra' ? 'extra' : 'private').from)));
       // Standard mode: no waiting of any kind (the user accepted that the issuer could link the two by timing): request, then post
       // (only a Private request's cooldown in this browser holds them, so they cannot undo its separation)
-      for (const j of due.filter((x) => x.mode === 'standard' && Date.now() >= (x.retryAt ?? 0) && mayStandard())) {
+      // checked under the activity lock, so it cannot interleave with another tab's Private request (the lock is brief per job)
+      const standardDue = due.filter((x) => x.mode === 'standard' && Date.now() >= (x.retryAt ?? 0));
+      const standardOk = standardDue.length ? await withLock('govhub-badge-activity', async () => mayStandard(), { signal: ac.signal }) : false;
+      for (const j of standardOk ? standardDue : []) {
         let cur = j;
         for (let i = 0; i < 2 && isActive(cur) && Date.now() >= (cur.retryAt ?? 0) && (cur.state === 'token' ? height >= (cur.postAt ?? 0) : height >= cur.requestAt); i++) {
           const before = cur;
