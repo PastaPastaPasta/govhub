@@ -29,6 +29,7 @@ DASH_CLI="dash-cli -datadir=... -regtest -rpcport=... -rpcuser=... -rpcpassword=
 | Messages | `dashMessageHash(msg)`, `signMessage(priv, msg)` (base64), `signMessageRaw`, `verifyMessage(addr, sig, msg, network)`, `recoverMessageSigner(sig, msg, network)` |
 | Tally | `tallyVotes(votes, weights, {now?}) -> {weighted, unweighted, absoluteYes, current, unknownMasternodes, rejected}`, `normalizeMnId` |
 | Vote set | `countVotes(votes, weights, {now?}) -> tallyVotes result + {counted, voteSetHash}` (the one counting rule, used by the bridge and the web app), `voteSetHash(entries)`, `voteSetPreimage(entries)`, `VOTE_SET_DOMAIN` (govhub-voteset-v1, section 7) |
+| Superblocks | `superblockSchedule(height, network) -> {last, next, votingDeadline, inMaturityWindow}`, `superblocksBetween`, `isSuperblockHeight`, `superblockPaymentsLimit(height, network)` (duffs, bigint), `superblockShareOfBlock`, `fundingThreshold(validWeighted, network)`, `payeeScript`, `findPayment(outputs, address, amount, network)`, `GOV_CHAIN_PARAMS` |
 | Addresses | `decodeAddress`, `encodeAddress`, `p2pkhAddress`, `decodeWif`, `encodeWif`; `Network = 'mainnet' \| 'testnet' \| 'regtest'` |
 
 Conventions: **hashes cross the API in two forms**. `display` hex is what RPCs/explorers print (and what goes in
@@ -139,6 +140,22 @@ publishes and a client recounts.
 Vectors: `test/voteset.test.ts` (pinned with coreutils `shasum`) and the bridge's recorded mainnet fixture
 (`services/bridge/test/fixtures`).
 
+### 8. Superblocks: schedule, limit, payments (`superblock.ts`)
+
+Pure functions of chain parameters and a height (feed them a verified height):
+
+* **Schedule**: `CSuperblock::GetNearestSuperblocksHeights` (governance/superblock.cpp:126-143), `IsValidBlockHeight` (:119-124); the trigger is
+  built from the first block of the maturity window, `next - nSuperblockMaturityWindow` (governance/signing.cpp:41-43). Parameters: mainnet
+  start 614,820, cycle 16,616, maturity 1,662 (chainparams.cpp:171-175); testnet 4,200 / 24 / 8 (:380-384).
+* **Payments limit**: `CSuperblock::GetPaymentsLimit` (superblock.cpp:145-162) feeds a fixed nBits (1, or powLimit's compact form on
+  min-difficulty networks) into `GetBlockSubsidyHelper` (validation.cpp:1809-1870): base 5 DASH from V20 (mainnet 1,987,776; testnet 905,100), a
+  1/14 cut per 210,240 blocks of the previous height, 20% treasury from V20 (10% before), times the cycle. Mainnet 2,575,480: 682,826,378,160 duffs,
+  equal to `getgovernanceinfo.governancebudget` (6828.2637816) on 2026-10-24.
+* **Payment found**: `CSuperblock::IsValid` requires every trigger payment as a coinbase output with the same script and amount
+  (superblock.cpp:303-310), so `findPayment` matching P2PKH/P2SH script + exact duffs is the check; it cannot tell two proposals with the same
+  address and amount apart. The recorded mainnet superblock 2,558,864 pays 6 proposals, 5,393 DASH in total, what the bridge recorded as paid.
+* **Threshold**: `max(nGovernanceMinQuorum, m_valid_weighted / 10)` (governance.cpp:1208-1209).
+
 ## Fixtures (`test/fixtures/`)
 
 | file | content | produced by |
@@ -148,6 +165,7 @@ Vectors: `test/voteset.test.ts` (pinned with coreutils `shasum`) and the bridge'
 | `check.regtest.json` | 52 `gobject check` verdicts (valid/invalid incl. parser quirks) | same |
 | `messages.regtest.json` | 4 regtest keys x 7 messages: Core `signmessagewithprivkey` signatures + `verifymessage` | same |
 | `plaintx.regtest.json` | an ordinary wallet tx (negative collateral case) | same |
+| `superblock-mainnet.json`, `superblock-testnet.json` | the coinbase of the newest superblock (mainnet 2,558,864; testnet 1,578,672) | `packages/dapi/scripts/record-anchor-fixtures.mjs` |
 | `mainnet-proposals.json` | all 28 proposals in mainnet Core (height 2,560,391) with the raw collateral txs | `scripts/fetch-mainnet-vectors.mjs` (public JSON-RPC, read-only) |
 
 The generator talks only to `dash-cli`, never to this package, so fixtures are "what Core says". Regtest keys are worthless.
@@ -156,7 +174,7 @@ Regtest needs `-txindex=1 -acceptnonstdtxn=1` (the multi-OP_RETURN variant is no
 
 ## Test status
 
-* 317 offline tests pass (+5 live-Core tests, skipped unless DASH_CLI is set) (`npm test`), `tsc --noEmit` clean, and the package imports under plain Node 22 type stripping (`test/node-strip.test.ts`; no enums or parameter properties anywhere).
+* 359 offline tests pass (+5 live-Core tests, skipped unless DASH_CLI is set) (`npm test`), `tsc --noEmit` clean, and the package imports under plain Node 22 type stripping (`test/node-strip.test.ts`; no enums or parameter properties anywhere).
 * Hash: 4 + 10 regtest objects and 28 mainnet proposals reproduce Core's hash exactly; 4 more built by `buildProposalDataHex` in the live test.
 * Collateral: 4 Core-prepared txs + 28 real mainnet txs accepted; all 10 `gobject submit` verdicts reproduced (reversed hash, 0.99999999 DASH,
   extra P2SH / P2PK output, hash+1 byte, missing OP_RETURN rejected; 1.5 DASH, extra OP_RETURN, hash output not first accepted).
