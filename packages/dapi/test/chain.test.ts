@@ -141,8 +141,8 @@ describe('SML parsing', () => {
     const list = [mn('aa', 'Xvoting1'), mn('BB', 'Xvoting2', 1, false), { nType: 0, isValid: true, proRegTxHash: 'cc'.repeat(32) }];
     const s = parseSml(encodeCbor({ ...ok, mnList: list }));
     expect(s.masternodes).toEqual([
-      { proTxHash: 'aa'.repeat(32), votingAddress: 'Xvoting1', nType: 0, isValid: true },
-      { proTxHash: 'bb'.repeat(32), votingAddress: 'Xvoting2', nType: 1, isValid: false }, // a banned masternode is listed, flagged invalid
+      { proTxHash: 'aa'.repeat(32), votingAddress: 'Xvoting1', nType: 0, nVersion: 1, isValid: true },
+      { proTxHash: 'bb'.repeat(32), votingAddress: 'Xvoting2', nType: 1, nVersion: 1, isValid: false }, // a banned masternode is listed, flagged invalid
     ]);
     const digest = (l: Array<ReturnType<typeof mn>>) => parseSml(encodeCbor({ ...ok, mnList: l })).digest;
     expect(digest([mn('aa', 'Xvoting1'), mn('BB', 'Xvoting2', 1, false)])).toBe(digest([mn('BB', 'Xvoting2', 1, false), mn('aa', 'Xvoting1')]));

@@ -11,8 +11,9 @@ import { GrpcError, isAbort } from './grpcweb.ts';
 import { MAINNET_NODE_LIST, TESTNET_NODE_LIST, fetchNodes } from './nodes.ts';
 import { NodePool, backoffMs, sleep } from './pool.ts';
 import type { Network } from './chainlock.ts';
+import type { ProRegCache, ProRegInfo } from './protx.ts';
 import type {
-  AgreedSml, CallOptions, DapiOptions, GetVerifiedTransactionOptions, SmlOptions, VerifiedTransaction, Verifiers, WatchHandlers, WatchOptions, Watcher,
+  AgreedSml, AnchorOptions, AnchoredChain, CallOptions, DapiOptions, GetVerifiedTransactionOptions, SmlOptions, VerifiedTransaction, Verifiers, WatchHandlers, WatchOptions, Watcher,
 } from './types.ts';
 
 const defaultRetryable = (e: unknown): boolean => !(e instanceof GrpcError && (e.code === 3 || e.code === 9));
@@ -133,6 +134,28 @@ export class Dapi {
    */
   getVerifiedTransaction(txid: string, o?: GetVerifiedTransactionOptions): Promise<VerifiedTransaction> {
     return import('./verified.ts').then((m) => m.getVerifiedTransaction(this, txid, o));
+  }
+
+  /**
+   * The chain this client verifies itself (see anchor.ts): headers from the pinned checkpoint (and down to `from`) to the tip with
+   * work and difficulty checked, the masternode list proven into one of its blocks, and the newest ChainLock verified with a
+   * quorum that list proves. Needs the X11 and BLS verifiers. Cached and extended incrementally (`store` persists it).
+   */
+  anchorChain(o?: AnchorOptions): Promise<AnchoredChain> {
+    return import('./anchor.ts').then((m) => m.anchorChain(this, o));
+  }
+
+  /**
+   * Type and collateral of masternodes, each proven by its ProRegTx (fetched by proTxHash, checked by hashing). Cached through
+   * `cache`; registration facts never change.
+   */
+  getProRegInfo(hashes: readonly string[], o?: CallOptions & { cache?: ProRegCache; parallel?: number; onProgress?: (done: number, total: number) => void }): Promise<Map<string, ProRegInfo>> {
+    return import('./protx.ts').then((m) => m.getProRegInfo(this, hashes, o));
+  }
+
+  /** A block of an anchored chain by height, proven to be the verified one (merkle root recomputed, header hashed to the verified hash). */
+  getAnchoredBlock(anchor: AnchoredChain, height: number, o?: CallOptions): Promise<{ block: Block; raw: Uint8Array; node: string }> {
+    return import('./verified.ts').then((m) => m.getAnchoredBlock(this, anchor, height, o));
   }
 
   /**
