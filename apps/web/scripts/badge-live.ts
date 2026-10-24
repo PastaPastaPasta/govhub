@@ -5,6 +5,8 @@
 //   npx vite-node scripts/badge-live.ts request   # during the issuance window of the target epoch: tokens, refusals
 //   npx vite-node scripts/badge-live.ts post      # from S(E)+margin: post, read back as another reader, tamper checks, audit
 //   npx vite-node scripts/badge-live.ts comment   # A comments on a Dev-profile proposal (for the UI check: e2e/badge-live.spec.ts)
+//   npx vite-node scripts/badge-live.ts standard  # Standard mode, any time an epoch with a key is current: token for the current
+//                                                 # epoch, posted at once, read back, duplicate refused, tamper rejected
 //   npx vite-node scripts/badge-live.ts status
 //
 // MN voting keys come from ~/workspace/dash-network-configs/testnet.yml (the owner key doubles as the voting key on these MNs; the
@@ -18,7 +20,7 @@ import {
   base64ToBytes,
   bytesToBase64,
   bytesToId,
-  clientIssuanceWindow,
+  privateRequestWindow,
   EPOCH_PARAMS,
   epochOf,
   epochStart,
@@ -58,6 +60,7 @@ interface State {
   mns?: { main: { name: string; proTxHash: string }; shared: Array<{ name: string; proTxHash: string }>; sharedNote: string; extra?: Array<{ name: string; proTxHash: string }> };
   epoch?: number;
   jobA?: BadgeJob;
+  standardA?: BadgeJob;
   /** A's comment, where the e2e check looks for the chip */
   comment?: { govHash: string; id: string };
   results: Record<string, unknown>;
@@ -221,26 +224,26 @@ if (cmd === 'request') {
     const keys = ymlKeys();
     const h = await mark('request phase start');
     const epoch = epochOf(P, h) + 1;
-    const w = clientIssuanceWindow(P, epoch);
+    const w = privateRequestWindow(P, epoch);
     if (h < w.from || h >= w.to) throw new Error(`not inside the client issuance window of epoch ${epoch} (${w.from}..${w.to})`);
     st.epoch = epoch;
     const reader = newReader();
     // 1. A + main MN: the real client path (createJob blinds, step requests, finalizes, verifies)
-    let job = st.jobA && st.jobA.epoch === epoch ? st.jobA : await createJob(deps('A', reader), [], keys.get(st.mns.main.name)!, st.mns.main.proTxHash, h, { issuer: ISSUER, keepKey: false, immediate: true });
+    let job = st.jobA && st.jobA.epoch === epoch ? st.jobA : await createJob(deps('A', reader), [], keys.get(st.mns.main.name)!, st.mns.main.proTxHash, h, { issuer: ISSUER, keepKey: false, immediate: true, mode: 'private' });
     job = await step(deps('A', reader), job, h);
     st.jobA = job;
     save();
     st.results.tokenA = { state: job.state, note: job.note ?? null };
     await mark(`token for A from ${st.mns.main.name}: ${job.state}${job.note ? ` (${job.note})` : ''}`);
     // 2. the same MN again in the same epoch (B, a fresh blinded message): must be refused
-    let dup = await createJob(deps('B', reader), [], keys.get(st.mns.main.name)!, st.mns.main.proTxHash, h, { issuer: ISSUER, keepKey: false, immediate: true });
+    let dup = await createJob(deps('B', reader), [], keys.get(st.mns.main.name)!, st.mns.main.proTxHash, h, { issuer: ISSUER, keepKey: false, immediate: true, mode: 'private' });
     dup = await step(deps('B', reader), dup, h);
     st.results.secondRequestSameMn = { state: dup.state, note: dup.note ?? null, refused: dup.state === 'failed' && /already got a token/.test(dup.note ?? '') };
     await mark(`second request, same MN, same epoch: ${dup.state} (${dup.note ?? ''})`);
     // 3. two MNs that share one voting key: each gets its own token (used by B; B can post only one badge)
     const shared: unknown[] = [];
     for (const m of st.mns.shared) {
-      let j = await createJob(deps('B', reader), [], keys.get(m.name)!, m.proTxHash, h, { issuer: ISSUER, keepKey: false, immediate: true });
+      let j = await createJob(deps('B', reader), [], keys.get(m.name)!, m.proTxHash, h, { issuer: ISSUER, keepKey: false, immediate: true, mode: 'private' });
       j = await step(deps('B', reader), j, h);
       shared.push({ mn: m.name, state: j.state, note: j.note ?? null });
       await mark(`shared-voting-key MN ${m.name}: ${j.state}${j.note ? ` (${j.note})` : ''}`);
@@ -249,13 +252,60 @@ if (cmd === 'request') {
     // 4. two more MNs (B), so the epoch has at least the 3 tokens a badge needs before it is posted
     const extra: unknown[] = [];
     for (const m of st.mns.extra ?? []) {
-      let j = await createJob(deps('B', reader), [], keys.get(m.name)!, m.proTxHash, h, { issuer: ISSUER, keepKey: false, immediate: true });
+      let j = await createJob(deps('B', reader), [], keys.get(m.name)!, m.proTxHash, h, { issuer: ISSUER, keepKey: false, immediate: true, mode: 'private' });
       j = await step(deps('B', reader), j, h);
       extra.push({ mn: m.name, state: j.state, note: j.note ?? null });
       await mark(`extra MN ${m.name}: ${j.state}${j.note ? ` (${j.note})` : ''}`);
     }
     st.results.extraTokens = extra;
     save();
+  } finally {
+    close();
+  }
+}
+
+if (cmd === 'standard') {
+  if (!st.ids.A.identityId || !st.mns) throw new Error('run setup first');
+  const close = await tunnel();
+  try {
+    const keys = ymlKeys();
+    const h = await mark('standard phase start');
+    const reader = newReader();
+    const dA = deps('A', reader);
+    let job = st.standardA && st.standardA.state !== 'failed' && st.standardA.state !== 'expired' ? st.standardA : await createJob(dA, [], keys.get(st.mns.main.name)!, st.mns.main.proTxHash, h, { issuer: ISSUER, keepKey: false, mode: 'standard' });
+    for (let i = 0; i < 3 && (job.state === 'scheduled' || job.state === 'token'); i++) {
+      const now = await coreHeight();
+      job = await step(dA, job, now);
+      st.standardA = job;
+      save();
+      await mark(`standard A (${st.mns.main.name}, epoch ${job.epoch}): ${job.state}${job.note ? ` (${job.note})` : ''}`);
+    }
+    // the same MN again in the same epoch (B, a fresh blinded message): must be refused
+    let dup = await createJob(deps('B', reader), [], keys.get(st.mns.main.name)!, st.mns.main.proTxHash, h, { issuer: ISSUER, keepKey: false, mode: 'standard' });
+    dup = await step(deps('B', reader), dup, await coreHeight());
+    st.results.standardDuplicate = { state: dup.state, note: dup.note ?? null, refused: dup.state === 'failed' && /already got a token/.test(dup.note ?? '') };
+    await mark(`standard duplicate, same MN, same epoch: ${dup.state} (${dup.note ?? ''})`);
+    // read back as another reader; a tampered copy is rejected
+    const other = newReader();
+    const A = st.ids.A.identityId!;
+    const view = await other.badgesFor([A]);
+    const docs = (await query(badgesOfAuthors(ISSUER.identityId, job.epoch, [A]))).docs;
+    const doc = parseMnBadgeDoc(docs[0]!);
+    const key = (await other.key(ISSUER, job.epoch)).key!;
+    const cfg = { net: NET, contractId: idToBytes(CONTRACT) };
+    const bad = doc.sig.slice();
+    bad[17]! ^= 1;
+    st.results.standard = {
+      epoch: job.epoch,
+      state: job.state,
+      readBack: view.byOwner.get(A) ?? null,
+      original: await verifyMnBadge(cfg, key, doc, view.coreHeight),
+      tamperedSig: await verifyMnBadge(cfg, key, { ...doc, sig: bad }, view.coreHeight),
+      copiedToB: await verifyMnBadge(cfg, key, { ...doc, ownerId: idToBytes(st.ids.B.identityId!) }, view.coreHeight),
+      badgeHeight: doc.createdAtCoreBlockHeight,
+    };
+    save();
+    await mark(`standard read back: ${JSON.stringify(st.results.standard)}`);
   } finally {
     close();
   }
@@ -343,7 +393,7 @@ if (cmd === 'status' || cmd === 'post' || cmd === 'request') {
       {
         coreHeight: h,
         targetEpoch: e,
-        issuanceWindow: clientIssuanceWindow(P, e),
+        privateRequestWindow: privateRequestWindow(P, e),
         postFrom: epochStart(P, e) + P.boundaryMarginBlocks,
         identities: { A: st.ids.A.identityId ?? null, B: st.ids.B.identityId ?? null },
         mns: st.mns ? { main: st.mns.main.name, shared: st.mns.shared.map((m) => m.name), note: st.mns.sharedNote } : null,

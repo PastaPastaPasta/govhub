@@ -5,13 +5,13 @@
 // a store lock, and token requests kept COOLDOWN_MS away from any Platform write from this browser and from each other (visit.ts),
 // so the issuer's view of a request and the public view of this identity's writes do not line up.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { clientIssuanceWindow, clientPostingWindow, displayWindow, epochLength, EPOCH_PARAMS, resumeDelayMs } from '@govhub/badge';
+import { clientPostingWindow, displayWindow, epochLength, EPOCH_PARAMS, isPrivacyMode, resumeDelayMs, type PrivacyMode } from '@govhub/badge';
 import { signMessageWif } from '@govhub/verify';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import type { AppAuthSession } from '../session/authSession.ts';
 import { BADGE_NETWORKS, loadTrustList, resetTrustList, saveTrustList, type TrustedIssuer } from './config.ts';
-import { createJob, isActive, renewal, step, type BadgeJob, type ClientDeps, type VotingSigner } from './client.ts';
+import { createJob, isActive, renewal, requestWindow, step, type BadgeJob, type ClientDeps, type VotingSigner } from './client.ts';
 import { badgeQuery, badgesOfAuthors } from './queries.ts';
 import { createBadgeReader, type BadgeReader } from './reader.ts';
 import { deriveStoreKey, encryptedJobStore, jobStorageKey, memoryJobStore, type JobStore } from './store.ts';
@@ -34,7 +34,10 @@ export interface BadgeCtx {
    * signer (the keyring), which must be registered with registerVotingSigner when the request runs. Resolves once the request is
    * scheduled; it is sent later, at a random height in the issuance window, in a visit without public writes of this identity.
    */
-  requestBadge(voting: string | VotingSigner, proTxHash: string, opts?: { issuer?: TrustedIssuer; keepKey?: boolean }): Promise<BadgeJob>;
+  requestBadge(voting: string | VotingSigner, proTxHash: string, opts?: { issuer?: TrustedIssuer; keepKey?: boolean; mode?: PrivacyMode }): Promise<BadgeJob>;
+  /** the user's privacy mode for new requests (remembered per identity in this browser); default 'standard' */
+  privacy: PrivacyMode;
+  setPrivacy(mode: PrivacyMode): void;
   /** The keyring registers a signer for an MN while it is unlocked; call the returned function to unregister. */
   registerVotingSigner(proTxHash: string, signer: VotingSigner): () => void;
   removeJob(id: string): void;
@@ -99,6 +102,30 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
   const jobsRef = useRef<BadgeJob[]>([]);
   /** the current effect run's merge-and-save (null while no identity is loaded) */
   const commitRef = useRef<((m: Mutate) => Promise<BadgeJob[]>) | null>(null);
+  const wakeRef = useRef<() => void>(() => undefined);
+  // the privacy mode, remembered per identity in this browser (not on Platform: it says something about the user)
+  const modeKey = `govhub.badge.mode.v1.${session?.identityId ?? '-'}`;
+  const readMode = (k: string): PrivacyMode => {
+    try {
+      const v = globalThis.localStorage?.getItem(k);
+      return isPrivacyMode(v) ? v : 'standard';
+    } catch {
+      return 'standard';
+    }
+  };
+  const [privacy, setPrivacyState] = useState<PrivacyMode>(() => readMode(modeKey));
+  useEffect(() => setPrivacyState(readMode(modeKey)), [modeKey]);
+  const setPrivacy = useCallback(
+    (m: PrivacyMode) => {
+      try {
+        globalThis.localStorage?.setItem(modeKey, m);
+      } catch {
+        /* not remembered */
+      }
+      setPrivacyState(m);
+    },
+    [modeKey],
+  );
   const authSession = session && 'auth' in session ? (session as AppAuthSession) : null;
 
   const deps = useMemo<ClientDeps | null>(() => {
@@ -156,7 +183,9 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
     const sleep = (ms: number) =>
       new Promise<void>((r) => {
         const t = setTimeout(r, ms);
-        ac.signal.addEventListener('abort', () => (clearTimeout(t), r()), { once: true });
+        const done = () => (clearTimeout(t), r());
+        wakeRef.current = done; // a Standard request wakes the scheduler at once
+        ac.signal.addEventListener('abort', done, { once: true });
       });
 
     const notBefore = new Map<string, number>();
@@ -176,24 +205,36 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
       };
       // windows that closed: no network involved
       for (const j of snapshot.filter(isActive)) {
-        const closed = j.state === 'scheduled' ? height >= clientIssuanceWindow(p, j.epoch).to : height > displayWindow(p, j.epoch).to;
+        const closed = j.state === 'scheduled' ? height >= requestWindow(p, j.epoch, j.mode).to : height > displayWindow(p, j.epoch).to;
         if (closed) await run(j);
       }
-      const due = snapshot.filter((j) => isActive(j) && !updates.has(j.id) && height >= (j.state === 'scheduled' ? j.requestAt : (j.postAt ?? clientPostingWindow(p, j.epoch).from)));
+      const due = snapshot.filter((j) => isActive(j) && !updates.has(j.id) && height >= (j.state === 'scheduled' ? j.requestAt : (j.postAt ?? clientPostingWindow(p, j.epoch, j.mode === 'extra' ? 'extra' : 'private').from)));
+      // Standard mode: no waiting of any kind (the user accepted that the issuer could link the two by timing): request, then post
+      for (const j of due.filter((x) => x.mode === 'standard' && Date.now() >= (x.retryAt ?? 0))) {
+        let cur = j;
+        for (let i = 0; i < 2 && isActive(cur) && (cur.state === 'token' ? height >= (cur.postAt ?? 0) : height >= cur.requestAt); i++) {
+          const before = cur;
+          cur = await step(deps, cur, height);
+          if (JSON.stringify(cur) === JSON.stringify(before)) break;
+          updates.set(j.id, cur);
+        }
+        if (!live) return TICK_MS;
+      }
+      const privateDue = due.filter((j) => j.mode !== 'standard' && !updates.has(j.id));
       // A due action found on the first tick of a visit waits a random 30 s - 10 min, so it is not tied to the page load (L1: the
       // first SUCCESSFUL tick).
-      for (const j of due) {
+      for (const j of privateDue) {
         if (notBefore.has(j.id)) continue;
-        const end = j.state === 'scheduled' ? clientIssuanceWindow(p, j.epoch).to : clientPostingWindow(p, j.epoch).to;
+        const end = j.state === 'scheduled' ? requestWindow(p, j.epoch, j.mode).to : clientPostingWindow(p, j.epoch, j.mode === 'extra' ? 'extra' : 'private').to;
         const leftMs = Math.max(0, end - height) * 150_000;
         notBefore.set(j.id, Date.now() + (okTicks === 0 ? resumeDelayMs(Math.min(600_000, leftMs / 2)) : 0));
       }
       // a job whose last attempt failed waits its backoff (retryAt), so it does not monopolise visits
-      const ready = due.filter((j) => Date.now() >= notBefore.get(j.id)! && Date.now() >= (j.retryAt ?? 0));
+      const ready = privateDue.filter((j) => Date.now() >= notBefore.get(j.id)! && Date.now() >= (j.retryAt ?? 0));
       // only requests that can actually go out now (trusted issuer, a signer): one that would wait must not hold up posts (N2)
       const requests = ready
         .filter((j) => j.state === 'scheduled' && deps.trusted(j.issuer.identityId) && (j.signer.kind === 'wif' || signers.current.has(j.proTxHash)))
-        .sort((a, b) => clientIssuanceWindow(p, a.epoch).to - clientIssuanceWindow(p, b.epoch).to);
+        .sort((a, b) => requestWindow(p, a.epoch, a.mode).to - requestWindow(p, b.epoch, b.mode).to);
       // only posts that can go out: a post for an untrusted issuer would mark a write every tick and starve requests (round 4)
       const posts = ready.filter((j) => j.state === 'token' && deps.trusted(j.issuer.identityId));
       // H1/N1: posts first (finite: one per issuer and epoch), and only once the cooldown after the last request is over; otherwise
@@ -298,14 +339,15 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
       const issuer = opts.issuer ?? trust.find((t) => t.enabled);
       if (!issuer) throw new Error('Your trust list has no enabled issuer.');
       const height = await reader.coreHeight();
-      const job = await createJob(deps, jobsRef.current, voting, proTxHash, height, { issuer, ...(opts.keepKey !== undefined ? { keepKey: opts.keepKey } : {}) });
+      const job = await createJob(deps, jobsRef.current, voting, proTxHash, height, { issuer, mode: opts.mode ?? privacy, ...(opts.keepKey !== undefined ? { keepKey: opts.keepKey } : {}) });
       await commit((latest) => {
         if (latest.some((j) => j.issuer.identityId === job.issuer.identityId && j.epoch === job.epoch && (j.state === 'scheduled' || j.state === 'token' || j.state === 'posted'))) throw new Error('Another tab already requested this badge.');
         return [...latest, job];
       });
+      if (job.mode === 'standard') wakeRef.current();
       return job;
     },
-    [deps, reader, trust, mode, storeError],
+    [deps, reader, trust, mode, storeError, privacy],
   );
 
   const registerVotingSigner = useCallback((proTxHash: string, signer: VotingSigner) => {
@@ -319,8 +361,8 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
   const removeJob = useCallback((id: string) => void commitRef.current?.((latest) => latest.filter((j) => j.id !== id)).catch(() => undefined), []);
 
   const value = useMemo<BadgeCtx>(
-    () => ({ contractId, trust, setTrust, resetTrust, reader, jobs, coreHeight, requestBadge, registerVotingSigner, removeJob }),
-    [contractId, trust, setTrust, resetTrust, reader, jobs, coreHeight, requestBadge, registerVotingSigner, removeJob],
+    () => ({ contractId, trust, setTrust, resetTrust, reader, jobs, coreHeight, requestBadge, registerVotingSigner, removeJob, privacy, setPrivacy }),
+    [contractId, trust, setTrust, resetTrust, reader, jobs, coreHeight, requestBadge, registerVotingSigner, removeJob, privacy, setPrivacy],
   );
   return (
     <Ctx.Provider value={value}>

@@ -6,7 +6,7 @@ import {
   blind,
   bytesToBase64,
   bytesToId,
-  clientIssuanceWindow,
+  privateRequestWindow,
   displayWindow,
   EPOCH_PARAMS,
   epochStart,
@@ -51,7 +51,7 @@ class FakePlatform {
     let docs: Record<string, unknown>[] = [];
     if (q.documentTypeName === 'issuerRevocation') docs = this.revocation && w.epoch === this.revocation.epoch ? [this.revocation] : [];
     if (q.documentTypeName === 'issuerKey') docs = w.$ownerId === issuer.identityId && this.keys.has(w.epoch as number) ? [this.keys.get(w.epoch as number)!] : [];
-    if (q.documentTypeName === 'issuerReport' && this.reports.has(w.epoch as number)) docs = [{ $ownerId: issuer.identityId, $createdAtCoreBlockHeight: this.reportHeight ?? epochStart(P, w.epoch as number) + 4, epoch: w.epoch, tokensIssued: this.reports.get(w.epoch as number) }];
+    if (q.documentTypeName === 'issuerReport' && this.reports.has(w.epoch as number)) docs = [{ $ownerId: issuer.identityId, $createdAtCoreBlockHeight: this.reportHeight ?? epochStart(P, (w.epoch as number) + 1) + 4, epoch: w.epoch, tokensIssued: this.reports.get(w.epoch as number) }];
     if (q.documentTypeName === 'mnBadge') {
       const inList = (w.$ownerId as string[] | undefined) ?? null;
       docs = this.badges.filter((b) => b.issuerId === w.issuerId && b.epoch === w.epoch && (!inList || inList.includes(b.$ownerId as string)));
@@ -141,9 +141,9 @@ describe('badge client', () => {
     const v = votingKey();
     const pt = proTx();
     const h = epochStart(P, E - 1) + 50;
-    const job = await createJob(t.deps, [], v.wif, pt, h, { issuer });
+    const job = await createJob(t.deps, [], v.wif, pt, h, { issuer, mode: 'private' });
     expect(job.epoch).toBe(E);
-    const w = clientIssuanceWindow(P, E);
+    const w = privateRequestWindow(P, E);
     expect(job.requestAt >= h && job.requestAt < w.to).toBe(true);
     expect(job.inv && job.blindedMsg && job.preparedMsg).toBeTruthy();
     // not due yet
@@ -167,7 +167,7 @@ describe('badge client', () => {
     const waiting = await step(t.deps, got, got.postAt!);
     expect(waiting.note).toMatch(/Waiting for test's token count/);
     expect(waiting.retryAt! - Date.now()).toBeGreaterThan(3_500_000); // backs off, so it does not mark a write every tick
-    t.platform.reports.set(E, 3);
+    t.platform.reports.set(E - 1, 3) // the crowd check reads the previous epoch's report;
     expect((await step(t.deps, got, got.postAt! - 1)).state).toBe('token');
     const posted = await step(t.deps, got, got.postAt!);
     expect(posted.state).toBe('posted');
@@ -179,12 +179,36 @@ describe('badge client', () => {
     expect(await reader2.live()).toBe(true);
   });
 
+  it('Standard mode (the default): a token for the CURRENT epoch, then posted at once, no crowd check; readers accept it', async () => {
+    const t = setup();
+    await t.platform.addKey(E);
+    const h = epochStart(P, E) + 10;
+    t.platform.core = h;
+    const job = await createJob(t.deps, [], votingKey().wif, proTx(), h, { issuer });
+    expect(job).toMatchObject({ mode: 'standard', epoch: E, requestAt: h });
+    const tok = await step(t.deps, job, h);
+    expect(tok).toMatchObject({ state: 'token', postAt: h });
+    const posted = await step(t.deps, tok, h); // no report exists for E-1: Standard does not wait for one
+    expect(posted.state).toBe('posted');
+    const view = await new BadgeReader({ net: 'testnet', contractId, issuers: [issuer], query: (q) => t.platform.query(q) }).badgesFor([t.ownerId]);
+    expect(view.byOwner.get(t.ownerId)).toEqual(['test']);
+  });
+
+  it('Standard mode in the last blocks of an epoch asks for the next one and posts from its start', async () => {
+    const t = setup();
+    await t.platform.addKey(E + 1);
+    const h = epochStart(P, E + 1) - 1;
+    const job = await createJob(t.deps, [], votingKey().wif, proTx(), h, { issuer, mode: 'standard' });
+    expect(job).toMatchObject({ epoch: E + 1, requestAt: epochStart(P, E + 1) });
+    expect((await step(t.deps, job, h)).state).toBe('scheduled');
+  });
+
   it('a badge among too few tokens is not posted, and the MN link is forgotten', async () => {
     const t = setup();
     await t.platform.addKey(E);
     const h = epochStart(P, E - 1) + 50;
-    const tok = await step(t.deps, await createJob(t.deps, [], votingKey().wif, proTx(), h, { issuer, immediate: true }), h);
-    t.platform.reports.set(E, 2);
+    const tok = await step(t.deps, await createJob(t.deps, [], votingKey().wif, proTx(), h, { issuer, mode: 'private', immediate: true }), h);
+    t.platform.reports.set(E - 1, 2);
     const out = await step(t.deps, tok, tok.postAt!);
     expect(out.state).toBe('expired');
     expect(out.note).toMatch(/would stand out/);
@@ -196,24 +220,24 @@ describe('badge client', () => {
     const t = setup();
     await t.platform.addKey(E);
     await t.platform.addKey(E + 1);
-    const late = clientIssuanceWindow(P, E).to - 20; // less than a quarter of 576 blocks left
-    expect((await createJob(t.deps, [], votingKey().wif, proTx(), late, { issuer })).epoch).toBe(E + 1);
-    expect((await createJob(t.deps, [], votingKey().wif, proTx(), epochStart(P, E - 1) + 50, { issuer })).epoch).toBe(E);
-    const j = await createJob(t.deps, [], votingKey().wif, proTx(), epochStart(P, E - 1) + 50, { issuer, immediate: true });
+    const late = privateRequestWindow(P, E).to - 20; // less than a quarter of 576 blocks left
+    expect((await createJob(t.deps, [], votingKey().wif, proTx(), late, { issuer, mode: 'private' })).epoch).toBe(E + 1);
+    expect((await createJob(t.deps, [], votingKey().wif, proTx(), epochStart(P, E - 1) + 50, { issuer, mode: 'private' })).epoch).toBe(E);
+    const j = await createJob(t.deps, [], votingKey().wif, proTx(), epochStart(P, E - 1) + 50, { issuer, mode: 'private', immediate: true });
     const untrusted = await step({ ...t.deps, trusted: () => false }, j, j.requestAt);
     expect(untrusted.state).toBe('scheduled');
     expect(untrusted.note).toMatch(/not on your trust list/);
     const t2 = setup();
     await t2.platform.addKey(E);
     t2.platform.revocation = { $ownerId: issuer.identityId, $createdAtCoreBlockHeight: 1, epoch: E, keyId: t2.platform.keys.get(E)!.keyId, effectiveCoreHeight: 5 };
-    await expect(createJob(t2.deps, [], votingKey().wif, proTx(), epochStart(P, E - 1) + 50, { issuer })).rejects.toThrow(/revoked/);
+    await expect(createJob(t2.deps, [], votingKey().wif, proTx(), epochStart(P, E - 1) + 50, { issuer, mode: 'private' })).rejects.toThrow(/revoked/);
   });
 
   it('a lagging issuer (still on an earlier epoch) does not expire the job', async () => {
     const t = setup({ answer: () => ({ ok: false, status: 409, error: 'wrong-epoch', message: 'x', issuingEpoch: E - 1 }) });
     await t.platform.addKey(E);
     const h = epochStart(P, E - 1) + 50;
-    const out = await step(t.deps, await createJob(t.deps, [], votingKey().wif, proTx(), h, { issuer, immediate: true }), h);
+    const out = await step(t.deps, await createJob(t.deps, [], votingKey().wif, proTx(), h, { issuer, mode: 'private', immediate: true }), h);
     expect(out.state).toBe('scheduled');
     expect(out.note).toMatch(/still on epoch/);
   });
@@ -222,28 +246,28 @@ describe('badge client', () => {
     const t = setup();
     await t.platform.addKey(E);
     const h = epochStart(P, E - 1) + 50;
-    const job = await createJob(t.deps, [], votingKey().wif, proTx(), h, { issuer, keepKey: false, immediate: true });
-    await expect(createJob(t.deps, [job], votingKey().wif, proTx(), h, { issuer })).rejects.toThrow(/already have a badge request/);
+    const job = await createJob(t.deps, [], votingKey().wif, proTx(), h, { issuer, mode: 'private', keepKey: false, immediate: true });
+    await expect(createJob(t.deps, [job], votingKey().wif, proTx(), h, { issuer, mode: 'private' })).rejects.toThrow(/already have a badge request/);
     const done = await step(t.deps, job, h);
     expect(done.state).toBe('token');
     expect(done.signer.kind).toBe('external');
     expect(job.keepKey).toBe(false);
-    expect((await createJob(t.deps, [], votingKey().wif, proTx(), h, { issuer })).keepKey).toBe(false); // default: not kept
+    expect((await createJob(t.deps, [], votingKey().wif, proTx(), h, { issuer, mode: 'private' })).keepKey).toBe(false); // default: not kept
   });
 
   it('refuses without a valid proved issuerKey, a bad proTxHash, or a WIF of another network', async () => {
     const t = setup();
     const h = epochStart(P, E - 1) + 50;
-    await expect(createJob(t.deps, [], votingKey().wif, proTx(), h, { issuer })).rejects.toThrow(/no valid key/);
+    await expect(createJob(t.deps, [], votingKey().wif, proTx(), h, { issuer, mode: 'private' })).rejects.toThrow(/no valid key/);
     await t.platform.addKey(E);
-    await expect(createJob(t.deps, [], votingKey().wif, 'abc', h, { issuer })).rejects.toThrow(/64 hex/);
+    await expect(createJob(t.deps, [], votingKey().wif, 'abc', h, { issuer, mode: 'private' })).rejects.toThrow(/64 hex/);
     const mainnetWif = encodeWif(secp256k1.utils.randomSecretKey(), true, 'mainnet');
-    await expect(createJob(t.deps, [], mainnetWif, proTx(), h, { issuer })).rejects.toThrow(/WIF/);
+    await expect(createJob(t.deps, [], mainnetWif, proTx(), h, { issuer, mode: 'private' })).rejects.toThrow(/WIF/);
     // a key published too late (at or after S(E-1)) is not accepted
     t.platform.keys.get(E)!.$createdAtCoreBlockHeight = epochStart(P, E - 1);
     const t2 = setup();
     t2.platform.keys = t.platform.keys;
-    await expect(createJob(t2.deps, [], votingKey().wif, proTx(), h, { issuer })).rejects.toThrow(/too late/);
+    await expect(createJob(t2.deps, [], votingKey().wif, proTx(), h, { issuer, mode: 'private' })).rejects.toThrow(/too late/);
   });
 
   it('issuer refusals end the job; transient errors keep it; a non-verifying answer flags the issuer', async () => {
@@ -257,7 +281,7 @@ describe('badge client', () => {
     ] as const) {
       const t = setup({ answer: () => answer });
       await t.platform.addKey(E);
-      const job = await createJob(t.deps, [], votingKey().wif, proTx(), h, { issuer, immediate: true });
+      const job = await createJob(t.deps, [], votingKey().wif, proTx(), h, { issuer, mode: 'private', immediate: true });
       const out = await step(t.deps, job, h);
       expect(out.state, answer.error).toBe(state);
       if (state !== 'scheduled') expect(out.inv).toBeUndefined();
@@ -265,7 +289,7 @@ describe('badge client', () => {
     }
     const evil = setup({ answer: () => ({ ok: true, blindSig: bytesToBase64(rnd(256)) }) });
     await evil.platform.addKey(E);
-    const job = await createJob(evil.deps, [], votingKey().wif, proTx(), h, { issuer, immediate: true });
+    const job = await createJob(evil.deps, [], votingKey().wif, proTx(), h, { issuer, mode: 'private', immediate: true });
     const out = await step(evil.deps, job, h);
     expect(out).toMatchObject({ state: 'failed', issuerFlagged: true });
   });
@@ -274,8 +298,8 @@ describe('badge client', () => {
     const t = setup();
     await t.platform.addKey(E);
     const h = epochStart(P, E - 1) + 50;
-    const job = await createJob(t.deps, [], votingKey().wif, proTx(), h, { issuer });
-    expect((await step(t.deps, job, clientIssuanceWindow(P, E).to)).state).toBe('expired');
+    const job = await createJob(t.deps, [], votingKey().wif, proTx(), h, { issuer, mode: 'private' });
+    expect((await step(t.deps, job, privateRequestWindow(P, E).to)).state).toBe('expired');
     const tok = await step(t.deps, { ...job, requestAt: h }, h);
     expect((await step(t.deps, tok, displayWindow(P, E).to + 1)).state).toBe('expired');
   });
@@ -285,7 +309,7 @@ describe('badge client', () => {
     await t.platform.addKey(E);
     await t.platform.addKey(E + 1);
     const h = epochStart(P, E - 1) + 50;
-    const job = await step(t.deps, await createJob(t.deps, [], votingKey().wif, proTx(), h, { issuer, immediate: true, keepKey: true }), h);
+    const job = await step(t.deps, await createJob(t.deps, [], votingKey().wif, proTx(), h, { issuer, mode: 'private', immediate: true, keepKey: true }), h);
     expect(job.signer.kind).toBe('wif');
     expect(await renewal(t.deps, [job], job, h, issuer)).toBeNull(); // E+1's window is not open yet
     const r = await renewal(t.deps, [job], job, epochStart(P, E) + 10, issuer);
@@ -380,17 +404,33 @@ describe('badge reader', () => {
     expect((await unproven.audit(issuer, E, p.core)).flagged).toBe(false);
   });
 
-  it('a report counts only if created in [S(E), S(E)+W] and plausible; none after S(E)+W flags the issuer', async () => {
+  it('an issuer flagged on the previous epoch stays hidden in this one (its report for this epoch comes only as it ends)', async () => {
+    const p = new FakePlatform();
+    await p.addKey(E - 1);
+    await p.addKey(E);
+    const a = bytesToId(rnd(32));
+    const b = bytesToId(rnd(32));
+    await issued(p, a, E - 1, { $createdAtCoreBlockHeight: epochStart(P, E - 1) + 5 });
+    await issued(p, b, E - 1, { $createdAtCoreBlockHeight: epochStart(P, E - 1) + 6 });
+    await issued(p, a, E);
+    p.reports.set(E - 1, 1); // two badges for E-1, one token reported
+    p.core = epochStart(P, E) + P.graceBlocks + 10;
+    const r = new BadgeReader({ net: 'testnet', contractId, issuers: [issuer], query: (q) => p.query(q) });
+    expect((await r.audit(issuer, E - 1, p.core)).flagged).toBe(true);
+    expect((await r.badgesFor([a])).byOwner.size).toBe(0);
+  });
+
+  it('a report counts only if created in [S(E+1), S(E+1)+W] and plausible; none after S(E+1)+W flags the issuer', async () => {
     const p = new FakePlatform();
     await p.addKey(E);
     const o = bytesToId(rnd(32));
     await issued(p, o);
     const fresh = () => new BadgeReader({ net: 'testnet', contractId, issuers: [issuer], query: (q) => p.query(q), maxPlausibleTokens: 2000 });
     p.reports.set(E, 5);
-    p.reportHeight = epochStart(P, E) - 1; // published before the epoch: a pre-set count
+    p.reportHeight = epochStart(P, E + 1) - 1; // published before E's issuance window closed: a pre-set count
     expect(await fresh().reportedTokens(issuer, E)).toBeNull();
     expect((await fresh().audit(issuer, E, p.core)).flagged).toBe(false); // not due yet
-    p.core = epochStart(P, E) + P.graceBlocks + 1;
+    p.core = epochStart(P, E + 1) + P.graceBlocks + 1;
     expect(await fresh().audit(issuer, E, p.core)).toMatchObject({ flagged: true, flagReason: 'no valid issuerReport for this epoch' });
     p.reportHeight = null;
     p.reports.set(E, 4294967295);
