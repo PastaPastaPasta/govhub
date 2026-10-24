@@ -320,6 +320,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       const k = emptyKeyring(identityId, []);
       for (const d of DEMO_KEYS) k.content.keys.push({ privateKey: fixtureMnKey(d.index).slice(), compressed: true, label: d.label });
       opened(k, true);
+      setMnNonce((n) => n + 1); // same demo keys for every sample identity: the lookup must still run again
       return;
     }
     setWatched(loadWatched(localStorage, coreNetwork, identityId));
@@ -764,16 +765,20 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
     async (v: WatchedVote): Promise<WatchedVote> => {
       let last: string | null = null;
       let afterS = 0;
+      const maybeAt = new Set(v.maybeAt ?? []);
+      const withMaybe = (x: WatchedVote): WatchedVote => (maybeAt.size ? { ...x, maybeAt: [...maybeAt] } : x);
       for (const relay of relayOrder()) {
         try {
           const st = await relayFor(relay).submit(v, coreNetwork);
           noteHealth(relay, true);
+          maybeAt.delete(relay);
           const { lastSendError: _e, nextSendAt: _n, ...rest } = v;
-          return applyRelayState({ ...rest, status: 'held' }, relay, st);
+          return withMaybe(applyRelayState({ ...rest, status: 'held' }, relay, st));
         } catch (e) {
           const c = classifySubmitError(e, relay);
-          if (c.kind === 'sent') return { ...v, status: 'broadcast', lastSendError: undefined };
-          if (c.kind === 'final') return { ...v, status: c.status, ...(c.status === 'failed' ? { failReason: c.text } : { replacedBy: '', failReason: c.text }) };
+          if (c.kind === 'sent') return withMaybe({ ...v, status: 'broadcast', lastSendError: undefined });
+          if (c.kind === 'final') return withMaybe({ ...v, status: c.status, ...(c.status === 'failed' ? { failReason: c.text } : { replacedBy: '', failReason: c.text }) });
+          if (c.kind === 'retry' && c.maybeReceived) maybeAt.add(relay);
           if (!(e instanceof RelayError && e.status !== undefined)) noteHealth(relay, false, c.text);
           last = c.text;
           afterS = Math.max(afterS, c.afterS ?? 0);
@@ -781,7 +786,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         }
       }
       const attempts = (v.sendAttempts ?? 0) + 1;
-      return { ...v, status: 'queued', sendAttempts: attempts, lastSendError: last ?? 'no relay is configured (Settings, Relays)', nextSendAt: nowS() + Math.max(afterS, sendRetryDelay(attempts)) };
+      return withMaybe({ ...v, status: 'queued', sendAttempts: attempts, lastSendError: last ?? 'no relay is configured (Settings, Relays)', nextSendAt: nowS() + Math.max(afterS, sendRetryDelay(attempts)) });
     },
     [relayOrder, relayFor, coreNetwork, noteHealth],
   );
@@ -803,6 +808,8 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       // No relay id: the submission's answer was lost, so a relay may hold it without us knowing which. It cannot be cancelled
       // safely (re-submitting to find it could store and release it); the caller treats it as possibly sent.
       if (!v.refs.length) return 'unknown';
+      // a relay whose answer timed out may hold it too, under an id we never learned
+      const unsure = (v.maybeAt ?? []).some((r) => !v.refs.some((x) => x.relay === r));
       let sent = false;
       let firstError: unknown = null;
       // every relay is tried even when one fails, so one unreachable relay never leaves the others holding the vote
@@ -821,7 +828,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         }
       }
       if (firstError) throw firstError;
-      return sent ? 'sent' : 'cancelled';
+      return sent ? 'sent' : unsure ? 'unknown' : 'cancelled';
     },
     [mns.owned, coreNetwork, relayFor],
   );
@@ -853,6 +860,8 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
           const c = current.get(ck);
           if (!c || c.time < w.time) current.set(ck, { outcome: w.outcome, time: w.time });
         }
+        // a queued vote being sent right now (watchdog) may land at a relay: wait, so it is cancelled like any held vote
+        await Promise.all([...inflightRef.current.values()].map((p) => p.catch(() => {})));
         let plan = planWith(current, intents);
         // masternodes that get a new vote, plus those whose new choice equals the current vote (skipped as "already voted"):
         // a held vote of ours for either would otherwise go out later and win
@@ -887,7 +896,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
           const key = owner ? k.content.keys[owner.keyIndex] : undefined;
           if (!key) throw new Error(`No key for masternode ${p.mn.proTxHash.slice(0, 12)}…`);
           const prev = currentIn.get(currentKey(p.mn, p.govHash)) ?? null;
-          return { ...signPlanned(p, key.privateKey, key.compressed, coreNetwork), refs: [], status: 'queued', rebroadcasts: 0, signedAt: now, weight: owner?.type === 'evo' ? 4 : 1, prev, ...(opts.mode === 'now' && p.time > now ? { hourRule: true } : {}) };
+          return { ...signPlanned(p, key.privateKey, key.compressed, coreNetwork), refs: [], status: 'queued', rebroadcasts: 0, signedAt: now, weight: owner?.type === 'evo' ? 4 : 1, prev, ...(opts.mode === 'now' && p.time > now ? { hourRule: true } : {}), ...(memoryOnly ? { ephemeral: true } : {}) };
         });
         // every signed vote is kept (queued) before the first request, so a failed or interrupted send never loses one
         updateWatched((w) => mergeWatched(w, signed));
@@ -914,29 +923,31 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       }).finally(() => {
         castingRef.current = false;
       }),
-    [run, relays, coreNetwork, updateWatched, backupPending, cancelEverywhere, trySend],
+    [run, relays, coreNetwork, updateWatched, backupPending, cancelEverywhere, trySend, memoryOnly],
   );
 
   const submitSigned = useCallback(
     (v: Omit<WatchedVote, 'refs' | 'status' | 'rebroadcasts'>) =>
       run('Sending the signed vote', async () => {
         if (!relays.length) throw new Error('No relay is configured (Settings, Relays).');
-        const queued: WatchedVote = { ...v, refs: [], status: 'queued', rebroadcasts: 0, signedAt: nowS() };
+        const queued: WatchedVote = { ...v, refs: [], status: 'queued', rebroadcasts: 0, signedAt: nowS(), ...(memoryOnly ? { ephemeral: true } : {}) };
         updateWatched((list) => mergeWatched(list, [queued]));
         const after = await trySend(queued);
         updateWatched((list) => list.map((x) => (x.voteHash === after.voteHash ? after : x)));
         kickRef.current();
       }),
-    [run, relays, trySend, updateWatched],
+    [run, relays, trySend, updateWatched, memoryOnly],
   );
 
   const cancel = useCallback(
     (voteHash: string) =>
       run('Cancelling the held vote', async () => {
+        // a send of this vote may be on its way (watchdog): wait for its answer, then decide on the latest record
+        await inflightRef.current.get(voteHash)?.catch(() => {});
         const v = watchedRef.current.find((x) => x.voteHash === voteHash);
         if (!v) return;
         // never left this browser: taking it out of the queue is the cancel
-        if (v.status === 'queued') {
+        if (v.status === 'queued' && !v.maybeAt?.length) {
           updateWatched((list) => list.map((x) => (x.voteHash === voteHash ? { ...x, status: 'cancelled' } : x)));
           return;
         }
@@ -1004,8 +1015,9 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       const urgent = list.some(
         (v) => v.status === 'broadcast' || v.status === 'confirmed' || (v.status === 'queued' && (v.nextSendAt ?? 0) - now < 10) || (v.status === 'held' && Math.max(v.releaseAt, ...Object.values(v.relayInfo ?? {}).map((i) => i.nextAttemptAt ?? 0)) - now < 90),
       );
-      const nextSend = Math.min(...list.filter((v) => sendDue({ ...v, nextSendAt: 0 }, now)).map((v) => (v.nextSendAt ?? now) - now));
-      const base = urgent ? TICK_FAST_MS * (1 + quiet * 0.5) : TICK_SLOW_MS;
+      // while a cast is sending, its own votes are not the watchdog's to send: no 1-second ticks for them
+      const nextSend = castingRef.current ? Infinity : Math.min(...list.filter((v) => sendDue({ ...v, nextSendAt: 0 }, now)).map((v) => (v.nextSendAt ?? now) - now));
+      const base = urgent || castingRef.current ? TICK_FAST_MS * (1 + quiet * 0.5) : TICK_SLOW_MS;
       schedule(Math.max(1000, Math.min(base, Number.isFinite(nextSend) ? nextSend * 1000 + 200 : base)));
     };
     kickRef.current = () => {
@@ -1030,9 +1042,22 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       if (!castingRef.current) {
         for (const v of watchedRef.current.filter((x) => sendDue(x, now))) {
           if (stop || castingRef.current || identityRef.current !== tickFor) break;
-          const after = await trySend(v);
-          const from = new Map([[v.voteHash, v]]);
-          apply(from, [after]);
+          const p = trySend(v);
+          inflightRef.current.set(v.voteHash, p);
+          let after: WatchedVote;
+          try {
+            after = await p;
+          } finally {
+            inflightRef.current.delete(v.voteHash);
+          }
+          const nowRec = watchedRef.current.find((x) => x.voteHash === v.voteHash);
+          if (nowRec && nowRec !== v && (nowRec.status === 'cancelled' || nowRec.status === 'dropped') && after.refs.length) {
+            // withdrawn while the relay was taking it: remember where it is, and take it back there
+            updateWatchedRef.current((w) => w.map((x) => (x.voteHash === v.voteHash ? { ...x, refs: after.refs, relayStatus: after.relayStatus, relayInfo: after.relayInfo } : x)));
+            void cancelEverywhere({ ...after, status: 'held' }).catch(() => {});
+            continue;
+          }
+          apply(new Map([[v.voteHash, v]]), [after]);
           changed ||= after.status !== v.status;
         }
       }
@@ -1087,9 +1112,11 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
                 weights,
                 { now },
               );
-              const mine = t.current.get(normalizeMnId(`${v.collateralTxid}-${v.collateralIndex}`));
-              if (mine && Number(mine.time) === v.time && mine.outcome === v.outcome && (!vs.voteSetHash || vs.voteSetHash === t.voteSetHash)) {
-                next = { ...next, countedAt: now, tally: { before: tallyBefore(t.weighted, v.outcome, weights.get(normalizeMnId(`${v.collateralTxid}-${v.collateralIndex}`)) ?? v.weight ?? 1, v.prev?.outcome), after: t.weighted } };
+              const me = normalizeMnId(`${v.collateralTxid}-${v.collateralIndex}`);
+              const mine = t.current.get(me);
+              // counted = in the weight map of the tally's list (an unknown masternode's vote counts for nothing) and the recount is the bridge's set
+              if (mine && weights.has(me) && Number(mine.time) === v.time && mine.outcome === v.outcome && vs.voteSetHash && vs.voteSetHash === t.voteSetHash) {
+                next = { ...next, countedAt: now, tally: { before: tallyBefore(t.weighted, v.outcome, weights.get(me)!, v.prev?.outcome), after: t.weighted } };
               }
             } catch {
               /* list not readable now: next tick */

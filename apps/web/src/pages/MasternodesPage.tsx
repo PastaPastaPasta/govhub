@@ -244,7 +244,7 @@ function LookupProgress() {
   const secs = Math.max(0, Math.round((now - (k.mns.startedAt ?? now)) / 1000));
   return (
     <p className="kr-progress small" role="status" data-testid="mn-progress">
-      <span className="spinner" aria-hidden="true" /> {STEP_NAME[k.mns.step ?? 'bridge'][0]!.toUpperCase() + STEP_NAME[k.mns.step ?? 'bridge'].slice(1)}… <span className="muted">{secs} s</span>
+      <span className="spinner" aria-hidden="true" /> {STEP_NAME[k.mns.step ?? 'bridge'][0]!.toUpperCase() + STEP_NAME[k.mns.step ?? 'bridge'].slice(1)}… <span className="muted" aria-hidden="true">{secs} s</span>
       {secs >= 15 && <span className="muted"> Slower than usual; it gives up and says so within a minute.</span>}
     </p>
   );

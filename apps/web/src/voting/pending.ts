@@ -60,6 +60,10 @@ export interface WatchedVote extends SignedVoteRecord {
   /** at signing: the masternode's weight (1 regular, 4 evonode) and its current vote, for the tally change shown on success */
   weight?: number;
   prev?: { outcome: number; time: number } | null;
+  /** signed with a memory-only keyring: kept in this tab only, never written to storage */
+  ephemeral?: boolean;
+  /** relays a submission timed out at: they may hold the vote without us knowing its id (a cancel cannot be sure) */
+  maybeAt?: string[];
   /** planned later than asked because of Core's one-change-per-hour rule (the masternode voted on this proposal < 1 h ago) */
   hourRule?: boolean;
   /** counted: the proposal's weighted tally without and with this vote (the recount), for the success card */
@@ -88,7 +92,8 @@ const isRecord = (x: unknown): x is Record<string, unknown> => !!x && typeof x =
 /**
  * Version-1 records to version 2. v1 used `held` both for "a relay holds it" and "never left this browser", and marked a never-sent
  * vote `superseded` as soon as a newer one was signed. Nothing is lost: a never-sent vote stays queued (it is sent once a relay is
- * reachable) unless a newer vote of the same masternode on the same proposal exists, which is what the user wanted to go out.
+ * reachable) unless the user signed another vote of the same masternode on the same proposal after it (list order, not nTime: an
+ * hour-rule or deferred vote can carry a later nTime than one signed after it), which is what the user wanted to go out.
  */
 type V1Vote = Omit<WatchedVote, 'status'> & { status: string };
 
@@ -97,7 +102,7 @@ export function migrateV1(list: readonly Record<string, unknown>[]): WatchedVote
   const newest = new Map<string, V1Vote>();
   for (const v of votes) {
     const k = currentKey(v, v.govHash);
-    if ((newest.get(k)?.time ?? -Infinity) < v.time) newest.set(k, v);
+    newest.set(k, v); // v1 appended each new vote: the last one for a target is the one the user signed last
   }
   return votes.map((v): WatchedVote => {
     const refs = Array.isArray(v.refs) ? v.refs : [];
@@ -134,14 +139,17 @@ export function loadWatched(storage: Pick<Storage, 'getItem'>, network: string, 
       return [];
     }
   };
-  const v2 = read(keyV2(network, identityId));
-  if (v2) return v2.map((x) => x as unknown as WatchedVote).filter((x) => STATUSES.has(x.status));
+  const v2 = read(keyV2(network, identityId))?.map((x) => x as unknown as WatchedVote).filter((x) => STATUSES.has(x.status)) ?? null;
   const v1 = read(keyV1(network, identityId));
-  return v1 ? migrateV1(v1) : [];
+  if (!v1) return v2 ?? [];
+  // a tab of the previous version (open across a deploy) may still write v1: its records join v2 instead of being lost
+  const known = new Set((v2 ?? []).map((x) => x.voteHash));
+  return [...(v2 ?? []), ...migrateV1(v1).filter((x) => !known.has(x.voteHash))];
 }
 
 /** Writes version 2 and only then removes a version-1 list, so a failed write never loses the queued votes. */
-export function saveWatched(storage: Pick<Storage, 'setItem' | 'removeItem'>, network: string, identityId: string | null, votes: readonly WatchedVote[]): void {
+export function saveWatched(storage: Pick<Storage, 'setItem' | 'removeItem'>, network: string, identityId: string | null, all: readonly WatchedVote[]): void {
+  const votes = all.filter((v) => !v.ephemeral); // signed with a memory-only keyring: never stored
   if (!votes.length) storage.removeItem(keyV2(network, identityId));
   else storage.setItem(keyV2(network, identityId), JSON.stringify(votes));
   storage.removeItem(keyV1(network, identityId));
@@ -149,16 +157,19 @@ export function saveWatched(storage: Pick<Storage, 'setItem' | 'removeItem'>, ne
 
 const sameTarget = (a: WatchedVote, b: WatchedVote): boolean => a.voteHash !== b.voteHash && a.govHash.toLowerCase() === b.govHash.toLowerCase() && mnId(a) === mnId(b);
 
+/** Signed before `b` (signing order; nTime breaks ties, since an hour-rule or deferred vote's nTime says nothing about when it was signed). */
+const signedBefore = (a: WatchedVote, b: WatchedVote): boolean => (a.signedAt ?? 0) < (b.signedAt ?? 0) || ((a.signedAt ?? 0) === (b.signedAt ?? 0) && a.time < b.time);
+
 /**
- * Adds or replaces records by vote hash. A newer vote for the same (masternode, proposal) drops an older one that never left this
- * browser (it is taken out of the send queue, with a note). Older votes that did leave are NOT marked here: a held one is cancelled
+ * Adds or replaces records by vote hash. A vote signed later for the same (masternode, proposal) drops an older one that never left
+ * this browser (it is taken out of the send queue, with a note). Older votes that did leave are NOT marked here: a held one is cancelled
  * by the cast, and one that went out stays what it is until the newer vote actually wins in the bridge (bridgeVerdict).
  */
 export function mergeWatched(list: readonly WatchedVote[], add: readonly WatchedVote[]): WatchedVote[] {
   const out = new Map(list.map((v) => [v.voteHash, v]));
   for (const v of add) {
     for (const o of out.values()) {
-      if (sameTarget(o, v) && o.time < v.time && o.status === 'queued') out.set(o.voteHash, { ...o, status: 'dropped', replacedBy: v.voteHash });
+      if (sameTarget(o, v) && o.status === 'queued' && signedBefore(o, v)) out.set(o.voteHash, { ...o, status: 'dropped', replacedBy: v.voteHash });
     }
     out.set(v.voteHash, { ...out.get(v.voteHash), ...v });
   }

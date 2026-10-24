@@ -90,7 +90,7 @@ export function describeVote(v: WatchedVote, now: number, fmt: TimeFmt): VoteVie
         ? { badge: 'Counted', tone: 'ok', line: 'Counted by the network: the tally’s vote set includes it, and the recount matches.' }
         : { badge: 'On the network', tone: 'ok', line: 'Seen by the network: the bridge’s vote set has it, signature checked against your voting key.' };
     case 'failed':
-      return { badge: 'Failed', tone: 'bad', line: `Not sent: ${v.failReason ?? relayCodeText(lead?.info.lastError)}.` };
+      return { badge: 'Failed', tone: 'bad', line: `${v.refs.length ? 'Did not reach the network' : 'Not sent'}: ${v.failReason ?? relayCodeText(lead?.info.lastError)}.` };
     case 'replaced':
       return { badge: 'Replaced', tone: 'quiet', line: v.replacedBy ? 'Replaced by your newer vote, which is now the one that counts.' : 'Replaced by a newer vote of this masternode that was not cast in this browser.' };
     case 'dropped':
@@ -127,7 +127,7 @@ export function trackerSteps(v: WatchedVote, now: number, fmt: TimeFmt): Step[] 
       case 'signed':
         return true;
       case 'relay':
-        return v.refs.length > 0 || v.status === 'confirmed';
+        return v.refs.length > 0 || v.status === 'broadcast' || v.status === 'confirmed';
       case 'broadcast':
         return leftRelay;
       case 'seen':
@@ -171,7 +171,7 @@ export function trackerSteps(v: WatchedVote, now: number, fmt: TimeFmt): Step[] 
 }
 
 export type SubmitOutcome =
-  | { kind: 'retry'; text: string; afterS?: number; tryOther: boolean }
+  | { kind: 'retry'; text: string; afterS?: number; tryOther: boolean; maybeReceived?: boolean }
   | { kind: 'sent'; text: string }
   | { kind: 'final'; status: 'failed' | 'replaced' | 'dropped'; text: string };
 
@@ -183,7 +183,9 @@ export function classifySubmitError(e: unknown, relay: string): SubmitOutcome {
   const host = relayHost(relay);
   if (!(e instanceof RelayError) || e.status === undefined) {
     const msg = e instanceof Error ? e.message : String(e);
-    return { kind: 'retry', text: /unreachable/.test(msg) ? `${host} is unreachable` : msg, tryOther: true };
+    // a request that timed out may have reached the relay; a refused connection or a failed DNS lookup did not
+    const maybeReceived = /timeout|timed out|aborted/i.test(msg);
+    return { kind: 'retry', text: maybeReceived ? `${host} did not answer in time` : /unreachable/.test(msg) ? `${host} is unreachable` : msg, tryOther: true, ...(maybeReceived ? { maybeReceived } : {}) };
   }
   const code = e.code ?? '';
   if (e.status === 429 || e.status >= 500 || code === 'relay-full' || code === 'core-unavailable') {
@@ -191,7 +193,9 @@ export function classifySubmitError(e: unknown, relay: string): SubmitOutcome {
   }
   if (code === 'already-current') return { kind: 'sent', text: 'Core already has this vote' };
   if (code === 'newer-vote-in-core') return { kind: 'final', status: 'replaced', text: 'Core already has a vote of this masternode with the same or a later time' };
-  if (code === 'later-vote-held') return { kind: 'final', status: 'dropped', text: `${host} already holds a later vote of this masternode on this proposal` };
+  if (code === 'later-vote-held') return { kind: 'final', status: 'failed', text: `${host} already holds a later-timed vote of this masternode on this proposal (cast from another device?); cancel that one, then vote again` };
+  // one relay's Core or masternode list lags (a brand-new proposal or masternode): another relay, or this one later, may accept it
+  if (code === 'unknown-proposal' || code === 'unknown-mn') return { kind: 'retry', text: `${host}: ${e.message}`, tryOther: true };
   return { kind: 'final', status: 'failed', text: `${host} refused it: ${e.message}` };
 }
 

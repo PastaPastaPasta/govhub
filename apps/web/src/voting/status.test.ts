@@ -55,6 +55,29 @@ describe('storage migration (v1 -> v2)', () => {
     expect(migrateV1([sentThenSuperseded])[0]).toMatchObject({ status: 'replaced', replacedBy: '' });
     for (const s of ['broadcast', 'confirmed', 'failed', 'cancelled']) expect(migrateV1([{ ...held, status: s }])[0]!.status).toBe(s);
   });
+  it('signing order, not nTime, decides which never-sent vote the user wanted', () => {
+    // signed second but with the earlier nTime (the first one was an hour-rule or deferred vote)
+    const first = { ...signed(1, NOW + 3720), refs: [], status: 'held', rebroadcasts: 0 };
+    const second = { ...signed(2, NOW + 600), refs: [], status: 'held', rebroadcasts: 0 };
+    const [a, b] = migrateV1([first, second]);
+    expect(b!.status).toBe('queued');
+    expect(a).toMatchObject({ status: 'dropped', replacedBy: second.voteHash });
+  });
+  it('merges v1 records a tab of the old version wrote next to v2', () => {
+    const st = new MemStorage();
+    const kept = vote({}, 1, NOW);
+    st.setItem('govhub.votes.v2.testnet.id1', JSON.stringify([kept]));
+    const late = { ...signed(3, NOW), govHash: 'dd'.repeat(32), refs: [], status: 'held', rebroadcasts: 0 };
+    st.setItem('govhub.votes.v1.testnet.id1', JSON.stringify([late, { ...kept, status: 'held' }]));
+    const all = loadWatched(st, 'testnet', 'id1');
+    expect(all.map((v) => v.voteHash).sort()).toEqual([kept.voteHash, late.voteHash].sort());
+    expect(all.find((v) => v.voteHash === kept.voteHash)!.status).toBe('queued'); // v2's record wins
+  });
+  it('never stores votes signed with a memory-only keyring', () => {
+    const st = new MemStorage();
+    saveWatched(st, 'testnet', 'id1', [vote({ ephemeral: true })]);
+    expect(st.getItem('govhub.votes.v2.testnet.id1')).toBeNull();
+  });
   it('reads v1 when there is no v2, writes v2 and only then removes v1', () => {
     const st = new MemStorage();
     const v1 = [{ ...signed(2, NOW), refs: [], status: 'held', rebroadcasts: 0 }];
@@ -86,6 +109,10 @@ describe('replacing votes', () => {
     // another masternode or another proposal is never touched
     const other = { ...vote({}, 1, NOW - 100), govHash: 'ee'.repeat(32) };
     expect(mergeWatched([other], [newer])[0]!.status).toBe('queued');
+    // signed earlier but timed later (deferred / hour rule): still dropped by the vote signed after it
+    const deferred = vote({ signedAt: NOW - 50 }, 1, NOW + 86400);
+    const now = vote({ signedAt: NOW }, 2, NOW);
+    expect(mergeWatched([deferred], [now]).find((x) => x.voteHash === deferred.voteHash)!.status).toBe('dropped');
   });
   it('replaced only when the newer vote wins in the bridge (Core keeps the latest nTime)', () => {
     const old = vote({ status: 'broadcast', refs: [{ relay: R1, id: 'ab'.repeat(16) }] }, 1, NOW - 100);
@@ -164,7 +191,10 @@ describe('relay answers and submission errors', () => {
     expect(classifySubmitError(new RelayError('full', 503, 'relay-full'), R1)).toMatchObject({ kind: 'retry', tryOther: true });
     expect(classifySubmitError(new RelayError('have it', 409, 'already-current'), R1).kind).toBe('sent');
     expect(classifySubmitError(new RelayError('newer', 409, 'newer-vote-in-core'), R1)).toMatchObject({ kind: 'final', status: 'replaced' });
-    expect(classifySubmitError(new RelayError('later', 409, 'later-vote-held'), R1)).toMatchObject({ kind: 'final', status: 'dropped' });
+    expect(classifySubmitError(new RelayError('later', 409, 'later-vote-held'), R1)).toMatchObject({ kind: 'final', status: 'failed' });
+    // one relay's view lags: try the other one
+    expect(classifySubmitError(new RelayError('Core does not know this governance object', 404, 'unknown-proposal'), R1)).toMatchObject({ kind: 'retry', tryOther: true });
+    expect(classifySubmitError(new RelayError(`relay ${R1} unreachable: signal timed out`), R1)).toMatchObject({ kind: 'retry', maybeReceived: true, text: 'gov-relay-testnet.dashhq.org did not answer in time' });
     expect(classifySubmitError(new RelayError('the masternode is PoSe-banned', 409, 'mn-banned'), R1)).toMatchObject({ kind: 'final', status: 'failed', text: 'gov-relay-testnet.dashhq.org refused it: the masternode is PoSe-banned' });
   });
   it('retries queued votes with backoff, never restored ones', () => {

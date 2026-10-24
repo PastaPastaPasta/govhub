@@ -52,7 +52,11 @@ export function VoteSuccess({ vote, name, proposalName }: { vote: WatchedVote; n
   const [checking, setChecking] = useState(false);
   const [proofError, setProofError] = useState<string | null>(null);
   const ref = useRef<HTMLElement>(null);
-  useEffect(() => ref.current?.focus({ preventScroll: true }), []);
+  // take focus only from the voting controls (or nothing): never out of a field the user is typing in elsewhere
+  useEffect(() => {
+    const a = document.activeElement;
+    if (!a || a === document.body || a.closest('[data-testid="vote-composer"]')) ref.current?.focus({ preventScroll: true });
+  }, []);
   const word = OUTCOME_NAME[vote.outcome].toUpperCase();
   const outcomeName = OUTCOME_NAME[vote.outcome];
   const signed = useMemo(
@@ -75,7 +79,7 @@ export function VoteSuccess({ vote, name, proposalName }: { vote: WatchedVote; n
   };
   const recount = typeof document !== 'undefined' ? document.getElementById('verify-title') : null;
   return (
-    <section ref={ref} tabIndex={-1} className="vwin" data-testid="vote-success" aria-labelledby={`win-${vote.voteHash}`}>
+    <section ref={ref} tabIndex={-1} className="vwin" role="status" data-testid="vote-success" aria-labelledby={`win-${vote.voteHash}`}>
       <div className="vwin-mark" aria-hidden="true">
         <span className="vwin-ring" />
         {BURST.map((b, i) => (
