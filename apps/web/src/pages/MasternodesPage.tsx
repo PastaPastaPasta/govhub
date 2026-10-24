@@ -1,64 +1,67 @@
-// /masternodes: the keyring ("add my masternodes"). Voting keys, the masternodes each one controls, labels, how the keyring is
-// stored and unlocked, and offline signing.
+// /masternodes: the keyring ("add my masternodes"). Your masternodes grouped by the voting key they came from, your votes, adding
+// a key, and how the keyring opens and locks.
 import { bytesToHex, UnlockerType } from '@govhub/auth';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { useApp } from '../app/context.tsx';
 import { useAuth } from '../auth/context.tsx';
-import { shortHash } from '../lib/format.ts';
+import { shortAddress } from '../lib/format.ts';
 import { openSignIn } from '../ui/SignIn.tsx';
-import { WatchedList } from '../ui/VotePanel.tsx';
+import { CopyButton, HashCopy, useNow } from '../ui/vote/common.tsx';
+import { VotesList } from '../ui/vote/VotesList.tsx';
 import { useKeyring } from '../voting/KeyringContext.tsx';
-import { votingAddressOf } from '../voting/masternodes.ts';
+import { STEP_NAME } from '../voting/lookup.ts';
+import { votingAddressOf, votingKeyId, type OwnedMasternode } from '../voting/masternodes.ts';
 import '../voting/voting.css';
 
 const IDLE_CHOICES = [5, 15, 30, 60, 240];
 
-function KeyringStatusLine() {
+/** "Unlocked · opens with your recovery phrase · locks after 15 min" */
+function statusLine(k: ReturnType<typeof useKeyring>): string {
+  const ring = k.keyring!;
+  const mins = ring.content.idleLockMinutes;
+  if (k.demo) return 'Demo keyring · fixture data and pretend relays, nothing reaches the network';
+  if (k.memoryOnly) return `Unlocked · memory only, nothing is saved · wiped after ${mins} idle min`;
+  const seeds = ring.content.unlockers.filter((u) => u.type === UnlockerType.SEED).length;
+  const passkeys = ring.content.unlockers.length - seeds;
+  const opens = [seeds ? 'your recovery phrase' : '', passkeys ? `${passkeys} passkey${passkeys > 1 ? 's' : ''}` : ''].filter(Boolean).join(' or ');
+  return `Unlocked · opens with ${opens || 'nothing (add an unlocker)'} · locks after ${mins} min`;
+}
+
+function Header() {
   const k = useKeyring();
-  const { session } = useAuth();
-  const ring = k.keyring;
-  if (k.status === 'fixtures') return <p className="notice-box">Voting needs live data. Switch to live data in Settings.</p>;
-  if (k.status === 'signed-out')
-    return (
-      <div className="notice-box">
-        <p>Sign in to keep your masternode voting keys in an encrypted keyring that comes back whenever you sign in again.</p>
-        <button type="button" className="btn btn-primary" onClick={openSignIn}>
-          Sign in
-        </button>
-      </div>
-    );
-  if (k.status === 'checking') return <p className="muted"><span className="spinner" aria-hidden="true" /> Looking for your keyring on Platform…</p>;
-  if (k.status === 'open' && ring) {
-    const seeds = ring.content.unlockers.filter((u) => u.type === UnlockerType.SEED).length;
-    const passkeys = ring.content.unlockers.length - seeds;
-    return (
-      <p className="notice-box" data-testid="keyring-status">
-        {k.memoryOnly ? (
-          <span>
-            <b>Memory only.</b> Neither the keys nor the votes you sign are saved anywhere; they are wiped when you sign out, close the tab or after {ring.content.idleLockMinutes} idle minutes.
-          </span>
+  const open = k.status === 'open' && !!k.keyring;
+  return (
+    <header className="kr-head">
+      <div className="kr-head-text">
+        <h1 id="mn-page-title">My masternodes</h1>
+        {open ? (
+          <p className="kr-state" data-testid="keyring-status">
+            <span className="vdot vdot-on" aria-hidden="true" />
+            {statusLine(k)}
+          </p>
         ) : (
-          <span>
-            <b>Saved on Platform, encrypted in this browser.</b> It opens with {seeds ? 'your recovery phrase' : ''}
-            {seeds && passkeys ? ' and ' : ''}
-            {passkeys ? `${passkeys} passkey${passkeys > 1 ? 's' : ''}` : ''}. govhub never sees the keys. It locks after {ring.content.idleLockMinutes} idle minutes.
-          </span>
+          <p className="kr-state muted">Vote with your masternodes from any proposal. Only the voting key is needed.</p>
         )}
-      </p>
-    );
-  }
-  if (k.status === 'locked' && session?.source === 'key')
-    return (
-      <p className="notice-box" data-testid="keyring-keypaste">
-        You signed in with a pasted key. A saved keyring is encrypted to your recovery phrase and passkeys, so a pasted key cannot open it. Unlock it with your phrase or a passkey below, or use a memory-only keyring.
-      </p>
-    );
-  return null;
+      </div>
+      {open && (
+        <div className="kr-head-actions">
+          <Link className="btn btn-primary" to="/votes">
+            Vote on proposals
+          </Link>
+          {!k.demo && (
+            <button type="button" className="btn" onClick={k.lock} data-testid="keyring-lock">
+              Lock now
+            </button>
+          )}
+        </div>
+      )}
+    </header>
+  );
 }
 
 function Unlock() {
   const k = useKeyring();
+  const { session } = useAuth();
   const [phrase, setPhrase] = useState('');
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -66,19 +69,22 @@ function Unlock() {
     setPhrase('');
   };
   return (
-    <section className="form" aria-labelledby="unlock-title">
+    <section className="kr-card kr-gate" aria-labelledby="unlock-title">
       <h2 id="unlock-title">Unlock your keyring</h2>
-      <div className="form-actions">
-        <button type="button" className="btn btn-primary" onClick={() => void k.unlockWithPasskey().catch(() => {})} disabled={!!k.busy}>
-          Unlock with a passkey
-        </button>
-      </div>
-      <form onSubmit={submit} className="form">
-        <label>
-          Or type your recovery phrase
+      {session?.source === 'key' && (
+        <p className="small muted" data-testid="keyring-keypaste">
+          You signed in with a pasted key, which cannot open a saved keyring. Use your recovery phrase or a passkey, or memory-only keys.
+        </p>
+      )}
+      <button type="button" className="btn btn-primary" onClick={() => void k.unlockWithPasskey().catch(() => {})} disabled={!!k.busy}>
+        Unlock with a passkey
+      </button>
+      <form onSubmit={submit} className="kr-form">
+        <label className="kr-field">
+          <span>Or type your recovery phrase</span>
           <input type="password" value={phrase} onChange={(e) => setPhrase(e.target.value)} autoComplete="off" spellCheck={false} data-testid="unlock-phrase" />
         </label>
-        <div className="form-actions">
+        <div className="kr-row">
           <button type="submit" className="btn" disabled={!phrase.trim() || !!k.busy}>
             Unlock with the phrase
           </button>
@@ -96,29 +102,24 @@ function Create() {
   const { session } = useAuth();
   const canSave = !!session?.wallet;
   return (
-    <section className="form" aria-labelledby="create-title">
+    <section className="kr-card kr-gate" aria-labelledby="create-title">
       <h2 id="create-title">Add your masternodes</h2>
-      <p>
-        Paste a masternode <b>voting key</b>. govhub finds every masternode that key votes for, and you can vote with all of them from any proposal.
-      </p>
-      <ul className="small muted">
-        <li>
-          <b>Save encrypted on Platform</b>: the keys are encrypted in this browser to your recovery phrase (and any passkeys you add) and stored in a document only you can open. Sign in again on any device and they are back.
-        </li>
-        <li>
-          <b>Memory only</b>: nothing is stored, not even the votes you sign; the keys are gone when you sign out or close the tab.
-        </li>
-      </ul>
-      <p className="small muted">Saving writes an encrypted document with your identity's credits: about 0.0016 DASH the first time, and a little for each change.</p>
-      {!canSave && <p className="notice-box small">Saving needs your recovery phrase in this session (sign in with it, or with a passkey that keeps it). A pasted key cannot open a saved keyring.</p>}
-      <div className="form-actions">
-        <button type="button" className="btn btn-primary" onClick={() => void k.createKeyring(false).catch(() => {})} disabled={!canSave || !!k.busy} data-testid="create-keyring">
-          Save encrypted on Platform
-        </button>
-        <button type="button" className="btn" onClick={() => void k.createKeyring(true).catch(() => {})} disabled={!!k.busy} data-testid="memory-keyring">
-          Memory only
-        </button>
+      <p>Paste a masternode voting key once; govhub finds every masternode it votes for. Choose where the key lives:</p>
+      <div className="kr-choice">
+        <div>
+          <button type="button" className="btn btn-primary" onClick={() => void k.createKeyring(false).catch(() => {})} disabled={!canSave || !!k.busy} data-testid="create-keyring">
+            Save encrypted on Platform
+          </button>
+          <p className="small muted">Encrypted in this browser to your recovery phrase (and passkeys you add). Back on any device when you sign in. About 0.0016 DASH in credits the first time.</p>
+        </div>
+        <div>
+          <button type="button" className="btn" onClick={() => void k.createKeyring(true).catch(() => {})} disabled={!!k.busy} data-testid="memory-keyring">
+            Memory only
+          </button>
+          <p className="small muted">Nothing is stored, not even the votes you sign. Gone when you sign out or close the tab.</p>
+        </div>
       </div>
+      {!canSave && <p className="vwarn small">Saving needs your recovery phrase in this session (sign in with it, or with a passkey that keeps it).</p>}
     </section>
   );
 }
@@ -127,234 +128,356 @@ function AddKey() {
   const k = useKeyring();
   const [wif, setWif] = useState('');
   const [label, setLabel] = useState('');
+  const [added, setAdded] = useState<{ keyId: string; label: string } | null>(null);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     try {
-      await k.addKey(wif, label);
+      const keyId = await k.addKey(wif, label);
+      setAdded({ keyId, label: label.trim() });
       setWif('');
       setLabel('');
     } catch {
       /* shown by the provider */
     }
   };
+  // what the new key found, once the lookup that includes it is done
+  const ring = k.keyring;
+  const idx = added && ring ? ring.content.keys.findIndex((x) => votingKeyId(x.privateKey, x.compressed) === added.keyId) : -1;
+  const ready = added && idx >= 0 && k.mns.forKeys.includes(added.keyId) && k.mns.phase !== 'loading';
+  const found = ready ? k.mns.owned.filter((m) => m.keyIndex === idx).length : 0;
+  const adding = k.busy === 'Adding the voting key';
   return (
-    <form className="form vote-addkey" onSubmit={submit} aria-label="Add a voting key">
-      <label>
-        Voting key ({k.coreNetwork} WIF)
-        <input type="password" value={wif} onChange={(e) => setWif(e.target.value)} autoComplete="off" spellCheck={false} data-testid="voting-key-input" />
-      </label>
-      <label>
-        Label (optional)
-        <input value={label} onChange={(e) => setLabel(e.target.value)} maxLength={32} data-testid="voting-key-label" />
-      </label>
-      <div className="form-actions">
-        <button type="submit" className="btn btn-primary" disabled={!wif.trim() || !!k.busy} data-testid="voting-key-add">
-          {k.busy === 'Adding the voting key' ? 'Adding…' : 'Add key'}
+    <section className="kr-card" aria-labelledby="addkey-title">
+      <h2 id="addkey-title">Add a voting key</h2>
+      <form className="kr-form" onSubmit={submit} aria-label="Add a voting key">
+        <label className="kr-field">
+          <span>Voting key ({k.coreNetwork} WIF)</span>
+          <input type="password" value={wif} onChange={(e) => setWif(e.target.value)} autoComplete="off" spellCheck={false} data-testid="voting-key-input" aria-describedby="addkey-warn" />
+        </label>
+        <p className="kr-inline-warn small" id="addkey-warn">
+          Only the voting key. Never an owner, payout or collateral key: a voting key can only vote.
+        </p>
+        <label className="kr-field">
+          <span>Name (optional)</span>
+          <input value={label} onChange={(e) => setLabel(e.target.value)} maxLength={32} placeholder="e.g. rack 2" data-testid="voting-key-label" />
+        </label>
+        <button type="submit" className="btn btn-primary" disabled={!wif.trim() || !!k.busy || k.demo} data-testid="voting-key-add">
+          {adding ? 'Adding…' : 'Add key'}
         </button>
-      </div>
-      <p className="small muted">Only the voting key. Never paste an owner, collateral or payout key here: a voting key can only vote.</p>
-    </form>
+        {k.demo && <p className="small muted">The demo keyring has its keys already.</p>}
+      </form>
+      {added && idx >= 0 && (
+        <p className={`kr-found small ${ready && !found ? 'vwarn' : ''}`} role="status" data-testid="addkey-result">
+          {!ready ? (
+            <>
+              <span className="spinner" aria-hidden="true" /> Looking up the masternodes for {added.label || 'this key'}…
+            </>
+          ) : found ? (
+            <>
+              ✓ {added.label || 'This key'} controls {found} masternode{found === 1 ? '' : 's'}.
+            </>
+          ) : (
+            <>{added.label || 'This key'} does not vote for any registered masternode. Check that it is the voting key, not the owner key.</>
+          )}
+        </p>
+      )}
+    </section>
   );
 }
 
 function NodeLabel({ pro, value }: { pro: string; value: string }) {
   const k = useKeyring();
   const [v, setV] = useState(value);
+  useEffect(() => setV(value), [value]);
+  const save = () => v.trim() !== value && void k.setNodeLabel(pro, v).catch(() => setV(value));
   return (
     <input
-      className="vote-label-input"
-      aria-label={`Label for ${shortHash(pro)}`}
+      className="kr-label-input"
+      aria-label={`Name for masternode ${pro.slice(0, 8)}`}
       value={v}
       maxLength={32}
-      placeholder="label"
+      placeholder="Add a name"
       onChange={(e) => setV(e.target.value)}
-      onBlur={() => v !== value && void k.setNodeLabel(pro, v).catch(() => {})}
+      onBlur={save}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+        if (e.key === 'Escape') setV(value);
+      }}
+      disabled={k.demo}
     />
+  );
+}
+
+function MnCard({ m, label }: { m: OwnedMasternode; label: string }) {
+  return (
+    <li className="kr-mn" data-testid="mn-row" data-protx={m.proTxHash}>
+      <div className="kr-mn-top">
+        <NodeLabel pro={m.proTxHash} value={label} />
+        <span className="chip kr-type">{m.type === 'evo' ? 'Evonode ×4' : 'Regular'}</span>
+        {m.valid ? <span className="chip chip-funded">Valid</span> : <span className="chip chip-bad">PoSe-banned: cannot vote</span>}
+      </div>
+      <dl className="kr-mn-facts">
+        <div>
+          <dt>proTxHash</dt>
+          <dd>
+            <HashCopy value={m.proTxHash} label="proTxHash" />
+          </dd>
+        </div>
+        <div>
+          <dt>Payout</dt>
+          <dd>{m.payoutAddress ? <HashCopy value={m.payoutAddress} label="payout address" n={6} /> : <span className="muted">not read yet</span>}</dd>
+        </div>
+      </dl>
+      <p className="kr-mn-proof small muted">
+        {m.provenance.key === 'sml' ? 'Key checked against the masternode list DAPI evonodes agree on' : 'Key from the bridge’s list only'}
+        {m.provenance.collateral === 'protx' ? '; collateral proved from its registration.' : '; collateral from the bridge, not proved yet.'}
+      </p>
+    </li>
+  );
+}
+
+function LookupProgress() {
+  const k = useKeyring();
+  const loading = k.mns.phase === 'loading';
+  const now = useNow(1000, loading);
+  if (!loading) return null;
+  const secs = Math.max(0, Math.round((now - (k.mns.startedAt ?? now)) / 1000));
+  return (
+    <p className="kr-progress small" role="status" data-testid="mn-progress">
+      <span className="spinner" aria-hidden="true" /> {STEP_NAME[k.mns.step ?? 'bridge'][0]!.toUpperCase() + STEP_NAME[k.mns.step ?? 'bridge'].slice(1)}… <span className="muted">{secs} s</span>
+      {secs >= 15 && <span className="muted"> Slower than usual; it gives up and says so within a minute.</span>}
+    </p>
   );
 }
 
 function Masternodes() {
   const k = useKeyring();
   const ring = k.keyring!;
-  const labels = new Map(ring.content.labels.map((l) => [l.proTxHash, l.label]));
+  const labels = new Map(ring.content.labels.map((l) => [l.proTxHash.toLowerCase(), l.label]));
+  const [confirmRemove, setConfirmRemove] = useState<number | null>(null);
+  const loading = k.mns.phase === 'loading';
+  const total = k.mns.owned.length;
   return (
-    <section aria-labelledby="mns-title">
-      <h2 id="mns-title">
-        Masternodes {k.mns.loading && <span className="spinner" aria-hidden="true" />}
-        <button type="button" className="btn btn-s btn-quiet" onClick={k.refreshMasternodes}>
+    <section className="kr-card kr-mns" aria-labelledby="mns-title" aria-busy={loading}>
+      <header className="kr-card-head">
+        <h2 id="mns-title">Your masternodes</h2>
+        {k.mns.phase === 'ready' && <span className="small muted">{total} found</span>}
+        <button type="button" className="btn btn-s btn-quiet kr-refresh" onClick={k.refreshMasternodes} disabled={loading || !ring.content.keys.length}>
           Refresh
         </button>
-      </h2>
-      {k.mns.error && <p className="error small">{k.mns.error}</p>}
-      {!!k.mns.missing.length && <p className="small muted">{k.mns.missing.length} masternode(s) for your keys are in the masternode list but not in the bridge's list yet; they can vote once the bridge catches up.</p>}
-      {!!k.mns.mismatch.length && <p className="error small">The bridge named a wrong collateral for {k.mns.mismatch.length} masternode(s); they are hidden.</p>}
-      {k.mns.smlNodes > 0 && <p className="small muted">Matched against the masternode list {k.mns.smlNodes} DAPI nodes agreed on; collateral outpoints proved from each ProRegTx.</p>}
-      <div className="vote-table-wrap">
-        <table className="vote-table" data-testid="mn-table">
-          <thead>
-            <tr>
-              <th>Label</th>
-              <th>proTxHash</th>
-              <th>Type</th>
-              <th>Status</th>
-              <th>Payout (registered)</th>
-              <th>Key</th>
-            </tr>
-          </thead>
-          <tbody>
-            {k.mns.owned.map((m) => (
-              <tr key={m.proTxHash} data-testid="mn-row">
-                <td>
-                  <NodeLabel pro={m.proTxHash} value={labels.get(m.proTxHash) ?? ''} />
-                </td>
-                <td className="mono-ish" title={m.proTxHash}>
-                  {shortHash(m.proTxHash, 8)}
-                  {m.provenance.key === 'bridge' && <span className="chip" title="Only the bridge says this key votes for this masternode (no DAPI masternode list available)">bridge</span>}
-                </td>
-                <td>{m.type === 'evo' ? 'Evonode (4 votes)' : 'Regular'}</td>
-                <td>{m.valid ? 'Valid' : <span className="chip chip-bad">PoSe-banned: cannot vote</span>}</td>
-                <td className="mono-ish small">{m.payoutAddress ?? '—'}</td>
-                <td className="small">{ring.content.keys[m.keyIndex]?.label || `key ${m.keyIndex + 1}`}</td>
-              </tr>
-            ))}
-            {!k.mns.owned.length && !k.mns.loading && (
-              <tr>
-                <td colSpan={6} className="muted">
-                  {ring.content.keys.length ? 'No registered masternode uses these voting keys.' : 'Add a voting key above.'}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
-
-function Keys() {
-  const k = useKeyring();
-  const ring = k.keyring!;
-  const count = (i: number) => k.mns.owned.filter((m) => m.keyIndex === i).length;
-  return (
-    <section aria-labelledby="keys-title">
-      <h2 id="keys-title">Voting keys</h2>
-      <ul className="vote-keys" data-testid="key-list">
-        {ring.content.keys.map((key, i) => (
-          <li key={i}>
-            <span className="mono-ish">{votingAddressOf(key.privateKey, key.compressed, k.coreNetwork)}</span> {key.label && <b>{key.label}</b>}{' '}
-            <span className="muted small">{count(i)} masternode(s)</span>{' '}
-            <button type="button" className="btn btn-s btn-danger" onClick={() => void k.removeKey(i).catch(() => {})} disabled={!!k.busy}>
-              Remove
-            </button>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-function Unlockers() {
-  const k = useKeyring();
-  const ring = k.keyring!;
-  if (k.memoryOnly) {
-    return (
-      <section className="form" aria-labelledby="store-title">
-        <h2 id="store-title">Keep these keys</h2>
-        <p>Save them encrypted on Platform so they come back when you sign in again with your recovery phrase.</p>
-        <div className="form-actions">
-          <button type="button" className="btn" onClick={() => void k.saveToPlatform().catch(() => {})} disabled={!!k.busy}>
-            Save encrypted on Platform
+      </header>
+      <LookupProgress />
+      {k.mns.phase === 'error' && (
+        <div className="kr-alert" role="alert" data-testid="mn-error">
+          <p>
+            <b>Your masternodes could not be looked up.</b> {k.mns.error}
+          </p>
+          <button type="button" className="btn btn-s" onClick={k.refreshMasternodes} data-testid="mn-retry">
+            Retry
           </button>
         </div>
+      )}
+      {k.mns.warning && k.mns.phase === 'ready' && (
+        <div className="vwarn small" data-testid="mn-warning">
+          <p>{k.mns.warning}</p>
+          <button type="button" className="btn btn-s" onClick={k.refreshMasternodes}>
+            Retry
+          </button>
+        </div>
+      )}
+      {!!k.mns.missing.length && <p className="vwarn small">{k.mns.missing.length} masternode(s) for your keys are in the masternode list but not in the bridge’s list yet; they can vote once the bridge catches up.</p>}
+      {!!k.mns.mismatch.length && <p className="kr-alert small">The bridge named a wrong collateral for {k.mns.mismatch.length} masternode(s); they are hidden.</p>}
+      {!ring.content.keys.length ? (
+        <div className="vempty-line" data-testid="mn-empty">
+          <p>No voting keys yet. Add one and its masternodes show up here.</p>
+        </div>
+      ) : (
+        <div className="kr-keys" data-testid="key-list">
+          {ring.content.keys.map((key, i) => {
+            const address = votingAddressOf(key.privateKey, key.compressed, k.coreNetwork);
+            const mine = k.mns.owned.filter((m) => m.keyIndex === i);
+            const known = k.mns.phase === 'ready' || (loading && mine.length > 0);
+            return (
+              <section key={address} className="kr-key" aria-label={`Voting key ${key.label || i + 1}`} data-testid="key-group">
+                <header className="kr-key-head">
+                  <div className="kr-key-id">
+                    <span className="kr-key-name">{key.label || `Voting key ${i + 1}`}</span>
+                    <span className="kr-key-addr">
+                      <span className="mono-ish" title={address}>
+                        {shortAddress(address)}
+                      </span>
+                      <span className="visually-hidden">{address}</span>
+                      <CopyButton text={address} label="Copy voting address" />
+                    </span>
+                  </div>
+                  <span className="small muted kr-key-count" data-testid="key-count">
+                    {known ? `controls ${mine.length} masternode${mine.length === 1 ? '' : 's'}` : k.mns.phase === 'error' ? 'not looked up' : 'looking up…'}
+                  </span>
+                  {!k.demo &&
+                    (confirmRemove === i ? (
+                      <span className="kr-key-remove">
+                        <button type="button" className="btn btn-s btn-danger" onClick={() => void k.removeKey(i).catch(() => {}).finally(() => setConfirmRemove(null))} disabled={!!k.busy}>
+                          Remove key
+                        </button>
+                        <button type="button" className="btn btn-s btn-quiet" onClick={() => setConfirmRemove(null)}>
+                          Keep
+                        </button>
+                      </span>
+                    ) : (
+                      <button type="button" className="btn btn-s btn-quiet kr-key-remove" onClick={() => setConfirmRemove(i)} aria-label={`Remove ${key.label || `voting key ${i + 1}`}`}>
+                        Remove
+                      </button>
+                    ))}
+                </header>
+                {mine.length > 0 ? (
+                  <ul className="kr-mn-list">
+                    {mine.map((m) => (
+                      <MnCard key={m.proTxHash} m={m} label={labels.get(m.proTxHash.toLowerCase()) ?? ''} />
+                    ))}
+                  </ul>
+                ) : loading ? (
+                  <ul className="kr-mn-list" aria-hidden="true">
+                    <li className="kr-mn kr-skel" />
+                  </ul>
+                ) : k.mns.phase === 'ready' ? (
+                  <p className="vempty-line small muted" data-testid="key-empty">
+                    No registered masternode votes with this key. Check that it is the voting key (not the owner key) of a {k.coreNetwork} masternode.
+                  </p>
+                ) : null}
+              </section>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function UnlockMethods() {
+  const k = useKeyring();
+  const ring = k.keyring!;
+  if (k.demo) return null;
+  if (k.memoryOnly) {
+    return (
+      <section className="kr-card" aria-labelledby="store-title">
+        <h2 id="store-title">Keep these keys</h2>
+        <p className="small">Memory-only keys are gone when you sign out. Save them encrypted on Platform to get them back with your recovery phrase.</p>
+        <button type="button" className="btn" onClick={() => void k.saveToPlatform().catch(() => {})} disabled={!!k.busy}>
+          Save encrypted on Platform
+        </button>
       </section>
     );
   }
+  const passkeys = ring.content.unlockers.filter((u) => u.type !== UnlockerType.SEED);
+  const seeds = ring.content.unlockers.filter((u) => u.type === UnlockerType.SEED);
+  const openedBy = ring.openedBy ? bytesToHex(ring.openedBy) : null;
+  const row = (u: (typeof ring.content.unlockers)[number], name: string) => {
+    const id = bytesToHex(u.recipientKey);
+    return (
+      <li key={id} className="kr-unlock">
+        <span className="kr-unlock-name">
+          {name}
+          {openedBy === id && <span className="chip kr-now">opened it now</span>}
+        </span>
+        <span className="small muted">added {new Date(u.addedAt * 1000).toLocaleDateString()}</span>
+        {ring.content.unlockers.length > 1 && (
+          <button type="button" className="btn btn-s btn-quiet" onClick={() => void k.removeUnlockerKey(u.recipientKey).catch(() => {})} disabled={!!k.busy} aria-label={`Remove ${name}`}>
+            Remove
+          </button>
+        )}
+      </li>
+    );
+  };
   return (
-    <section className="form" aria-labelledby="unlockers-title">
-      <h2 id="unlockers-title">Who can open this keyring</h2>
+    <section className="kr-card" aria-labelledby="unlockers-title">
+      <h2 id="unlockers-title">Unlock methods</h2>
       {k.needsConfirm && (
-        <div className="notice-box" data-testid="confirm-unlockers">
+        <div className="vwarn small" data-testid="confirm-unlockers">
           <p>
-            This keyring could not be verified as yours{ring.authenticated === null ? ' (only your recovery phrase can verify it)' : ''}. Anyone in this list can open it and every key you add. Remove what you do not recognise, then confirm.
+            This keyring could not be verified as yours{ring.authenticated === null ? ' (only your recovery phrase can verify it)' : ''}. Anyone listed here can open it and every key you add. Remove what you do not recognise, then confirm.
           </p>
-          <button type="button" className="btn" onClick={k.confirmUnlockers} disabled={!!k.busy}>
+          <button type="button" className="btn btn-s" onClick={k.confirmUnlockers} disabled={!!k.busy}>
             These are mine
           </button>
         </div>
       )}
-      <ul className="vote-keys" data-testid="unlockers">
-        {ring.content.unlockers.map((u) => (
-          <li key={bytesToHex(u.recipientKey)}>
-            {u.type === UnlockerType.SEED ? 'Recovery phrase' : 'Passkey'} <span className="mono-ish small muted">{bytesToHex(u.recipientKey).slice(0, 16)}</span>{' '}
-            {ring.openedBy && bytesToHex(ring.openedBy) === bytesToHex(u.recipientKey) && <span className="chip">opened it now</span>}{' '}
-            <span className="small muted">added {new Date(u.addedAt * 1000).toLocaleDateString()}</span>{' '}
-            {ring.content.unlockers.length > 1 && (
-              <button type="button" className="btn btn-s btn-quiet" onClick={() => void k.removeUnlockerKey(u.recipientKey).catch(() => {})} disabled={!!k.busy}>
-                Remove
-              </button>
-            )}
-          </li>
-        ))}
+      <ul className="kr-unlocks" data-testid="unlockers">
+        {seeds.map((u) => row(u, 'Recovery phrase'))}
+        {passkeys.map((u, i) => row(u, passkeys.length > 1 ? `Passkey ${i + 1}` : 'Passkey'))}
       </ul>
-      <div className="form-actions">
-        <button type="button" className="btn" onClick={() => void k.addPasskeyUnlocker().catch(() => {})} disabled={!!k.busy}>
-          Add a passkey that can open it
-        </button>
-        <label>
-          Lock after{' '}
-          <select value={ring.content.idleLockMinutes} onChange={(e) => void k.setIdleMinutes(Number(e.target.value)).catch(() => {})} disabled={!!k.busy}>
-            {IDLE_CHOICES.map((m) => (
-              <option key={m} value={m}>
-                {m} min
-              </option>
-            ))}
-          </select>{' '}
-          idle
-        </label>
-      </div>
-      <p className="small muted">
-        What Platform can see: that you have a keyring, its size class (up to 32 keys, or up to 96) and when it changes. Not how many keys or masternodes you have. To check which masternodes your keys control, this browser asks DAPI evonodes for their registration transactions: those nodes see your IP with those masternodes.
-      </p>
+      <button type="button" className="btn btn-s" onClick={() => void k.addPasskeyUnlocker().catch(() => {})} disabled={!!k.busy}>
+        Add a passkey
+      </button>
+      <label className="kr-setting">
+        <span>Lock after being idle for</span>
+        <select value={ring.content.idleLockMinutes} onChange={(e) => void k.setIdleMinutes(Number(e.target.value)).catch(() => {})} disabled={!!k.busy}>
+          {IDLE_CHOICES.map((m) => (
+            <option key={m} value={m}>
+              {m < 60 ? `${m} min` : `${m / 60} h`}
+            </option>
+          ))}
+        </select>
+      </label>
     </section>
+  );
+}
+
+function Privacy() {
+  return (
+    <details className="kr-card kr-privacy">
+      <summary>What’s visible to others</summary>
+      <ul className="small">
+        <li>Platform sees that you have a keyring, its size class and when it changes; not your keys, nor how many masternodes you have.</li>
+        <li>DAPI evonodes you ask about your masternodes see your IP with those masternodes.</li>
+        <li>The relay sees which votes came from your IP, and when. Once broadcast, a vote is public like any masternode vote.</li>
+      </ul>
+    </details>
   );
 }
 
 export function MasternodesPage() {
   const k = useKeyring();
-  const { registry } = useApp();
   return (
-    <section className="list-section vote-page" aria-labelledby="mn-page-title">
-      <h1 id="mn-page-title">My masternodes</h1>
-      <KeyringStatusLine />
+    <section className="kr-page" aria-labelledby="mn-page-title">
+      <Header />
       {k.busy && (
-        <p className="muted" role="status">
+        <p className="kr-busy small" role="status">
           <span className="spinner" aria-hidden="true" /> {k.busy}…
         </p>
       )}
       {k.error && (
-        <p className="error" role="alert" data-testid="keyring-error">
+        <p className="kr-alert" role="alert" data-testid="keyring-error">
           {k.error}
         </p>
       )}
-      {!registry.relays.length && k.status === 'open' && <p className="notice-box small">No relay is configured, so votes cannot be sent. Add one in Settings.</p>}
+      {k.status === 'signed-out' && (
+        <section className="kr-card kr-gate">
+          <h2>Sign in to add your masternodes</h2>
+          <p>Your voting keys are kept in an encrypted keyring that comes back whenever you sign in again.</p>
+          <button type="button" className="btn btn-primary" onClick={openSignIn}>
+            Sign in
+          </button>
+        </section>
+      )}
+      {k.status === 'checking' && (
+        <p className="kr-progress" role="status">
+          <span className="spinner" aria-hidden="true" /> Looking for your keyring on Platform…
+        </p>
+      )}
       {(k.status === 'locked' || k.status === 'error') && <Unlock />}
       {k.status === 'absent' && <Create />}
       {k.status === 'open' && k.keyring && (
-        <>
-          <div className="form-actions">
-            <Link className="btn btn-primary" to="/votes">
-              Vote on active proposals
-            </Link>
-            <button type="button" className="btn" onClick={k.lock} data-testid="keyring-lock">
-              Lock now
-            </button>
+        <div className="kr-grid">
+          <div className="kr-main">
+            <Masternodes />
+            <VotesList />
           </div>
-          <AddKey />
-          {!!k.keyring.content.keys.length && <Keys />}
-          <Masternodes />
-          <Unlockers />
-          <WatchedList />
-        </>
+          <aside className="kr-side" aria-label="Keyring settings">
+            <AddKey />
+            <UnlockMethods />
+            <Privacy />
+          </aside>
+        </div>
       )}
     </section>
   );

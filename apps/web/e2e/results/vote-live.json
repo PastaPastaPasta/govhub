@@ -1,12 +1,36 @@
 {
   "network": "testnet",
-  "at": "2026-10-24T20:23:59.774Z",
-  "proposal": "ab31c1fffb2eef4587f4ba85a92ddf98b3256aaf96542fe5221a0532d620708d",
-  "masternode": "masternode-5",
-  "votingAddress": "yd5tNnzyjwYXXisbuv4ScDMzBLuDtr49gQ",
-  "keyringExistedBefore": true,
-  "masternodesBefore": 1,
-  "masternodesAfter": 1,
-  "restoreSeconds": 2,
-  "voteConfirmedInBridge": true
+  "at": "2026-10-24T21:41:31.983Z",
+  "proposal": "7531d5e06fea29dcde36b80767b4bd204aa7552a7fe5a1622f66732ab43e9354",
+  "masternode": "masternode-27",
+  "votingAddress": "yUi9YLkmErtbsrkbyCBFkwN4ic31GbCtB3",
+  "relays": [
+    "https://gov-relay-testnet.dashhq.org"
+  ],
+  "addKeySeconds": 71,
+  "found": {
+    "proTxHash": "c87218fb9d031f4926c22430c69b4edf1f0fb80c331c1a79e3b1b3873407c0ac",
+    "type": "regular",
+    "valid": true,
+    "payout": "yVXDAM73Tg6A44Bm3qduXsMCYxzuqBCT48",
+    "proof": "Key checked against the masternode list DAPI evonodes agree on; collateral proved from its registration."
+  },
+  "relayHealth": [
+    "gov-relay-testnet.dashhq.org\nreachable"
+  ],
+  "currentBefore": "Not voted",
+  "acceptedByRelaySeconds": 0,
+  "broadcastSeconds": 7,
+  "seenByNetworkSeconds": 53,
+  "voteConfirmedInBridge": true,
+  "firstVote": "Abstain",
+  "countedSeconds": 53,
+  "proof": [
+    "✓\nThe signature is valid It recovers to the voting address yUi9YLkmErtbsrkbyCBFkwN4ic31GbCtB3.",
+    "✓\nIt is this masternode’s voting key the masternode list 2 DAPI evonodes agree on gives yUi9YLkmErtbsrkbyCBFkwN4ic31GbCtB3 for c87218fb9d03…",
+    "✓\nThe collateral belongs to it The registration transaction c87218fb9d03… names the collateral 4ee3ff507472…:62.",
+    "✓\nThe network has it as the current vote The bridge’s vote set as of block 1578750 has exactly this vote."
+  ],
+  "heldLine": "Core allows one vote change per hour per masternode; gov-relay-testnet.dashhq.org sends this at 5:43 PM.",
+  "heldVoteCancelled": true
 }

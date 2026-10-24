@@ -59,12 +59,15 @@ function earliestTime(now: number, cur: CurrentVote | undefined): { time: number
   return { time: Math.max(now, cur.time + 1) };
 }
 
-/** Immediate votes: nTime = now (or the first moment Core's 1-hour rule allows). Same-outcome re-votes are skipped. */
-export function planImmediate(intents: readonly Intent[], current: ReadonlyMap<string, CurrentVote>, now: number): PlanResult {
+/**
+ * Immediate votes: nTime = now (or the first moment Core's 1-hour rule allows). Same-outcome re-votes are skipped unless `resend`
+ * (the user confirmed that re-sending only moves the timestamp).
+ */
+export function planImmediate(intents: readonly Intent[], current: ReadonlyMap<string, CurrentVote>, now: number, o: { resend?: boolean } = {}): PlanResult {
   const out: PlanResult = { ok: [], skipped: [] };
   for (const i of intents) {
     const cur = current.get(currentKey(i.mn, i.govHash));
-    if (cur && cur.outcome === i.outcome && cur.time <= now + VOTE_MAX_FUTURE_S) {
+    if (!o.resend && cur && cur.outcome === i.outcome && cur.time <= now + VOTE_MAX_FUTURE_S) {
       out.skipped.push({ intent: i, reason: `already voted ${OUTCOME_NAME[i.outcome]}` });
       continue;
     }

@@ -1,11 +1,13 @@
 // Opt-in live TESTNET run of the masternode keyring and voting in headless Chromium (GOVHUB_LIVE_VOTE=1 npm run e2e:vote):
-//   sign in with a phrase -> save a keyring on Platform -> add a testnet masternode voting key -> its masternode appears ->
-//   sign out -> sign in again -> the keyring is restored (key and masternode back) -> vote on a proposal through the relay ->
-//   the vote shows up in the bridge.
-// Inputs (env): GOVHUB_VOTE_PROPOSAL (gov hash), GOVHUB_VOTE_RELAY (default http://127.0.0.1:18791, an ssh tunnel to the relay),
-// GOVHUB_VOTE_MN (testnet.yml masternode name, default masternode-5). The phrase is the e2e identity's
-// (~/.local/share/govhub-phase2/e2e-phrase.json); the voting key comes from ~/workspace/dash-network-configs/testnet.yml. Neither
-// is printed; traces are off for live runs (playwright.config.ts). Results without secrets: e2e/results/vote-live.json.
+//   1. sign in with a recovery phrase (the keyring opens, or is created on Platform)
+//   2. add the masternode-27 voting key (removed first if a previous run left it) -> exactly its 1 masternode, with details
+//   3. vote on an active testnet proposal, immediately -> the tracker reaches "seen by the network" (the bridge's verified vote set)
+//   4. vote again at once: Core's one-change-per-hour rule makes the relay hold it -> cancel it
+// Inputs (env): GOVHUB_VOTE_PROPOSAL (gov hash; default: a testnet proposal masternode-27 had not voted on), GOVHUB_VOTE_MN
+// (testnet.yml masternode name, default masternode-27), GOVHUB_VOTE_RELAY (default: the Testnet profile's relay). The phrase is
+// the e2e identity's (~/.local/share/govhub-phase2/e2e-phrase.json); the voting key comes from
+// ~/workspace/dash-network-configs/testnet.yml. Neither is printed; traces are off for live runs (playwright.config.ts).
+// Results without secrets: e2e/results/vote-live.json.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -15,18 +17,15 @@ import { testnetMnKeys } from '../scripts/testnet-mn-keys.ts';
 import { cspViolations, watchPage } from './helpers.ts';
 
 test.skip(!process.env.GOVHUB_LIVE_VOTE, 'set GOVHUB_LIVE_VOTE=1 to run the live testnet keyring and voting flow (spends tCredits)');
-test.setTimeout(15 * 60_000);
+test.setTimeout(20 * 60_000);
 
-const GOV = process.env.GOVHUB_VOTE_PROPOSAL ?? '';
-const RELAY = process.env.GOVHUB_VOTE_RELAY ?? 'http://127.0.0.1:18791';
-const MN = process.env.GOVHUB_VOTE_MN ?? 'masternode-5';
-/** 1 yes, 2 no, 3 abstain: pick one that differs from the masternode's current vote on a re-run */
-const OUTCOME = process.env.GOVHUB_VOTE_OUTCOME ?? '1';
+const GOV = process.env.GOVHUB_VOTE_PROPOSAL ?? '7531d5e06fea29dcde36b80767b4bd204aa7552a7fe5a1622f66732ab43e9354';
+const MN = process.env.GOVHUB_VOTE_MN ?? 'masternode-27';
+/** masternode-27's registration (public): what step 2 must find */
+const EXPECT = { proTxHash: 'c87218fb9d031f4926c22430c69b4edf1f0fb80c331c1a79e3b1b3873407c0ac', payout: 'yVXDAM73Tg6A44Bm3qduXsMCYxzuqBCT48' };
 const PHRASE = JSON.parse(readFileSync(join(homedir(), '.local/share/govhub-phase2/e2e-phrase.json'), 'utf8')).phrase as string;
-
-// The Testnet profile (Core and Platform testnet, the testnet bridge) with the relay reached through an ssh tunnel until its public
-// hostname exists.
-const REGISTRY = { ...profileRegistry('testnet'), relays: [{ name: 'testnet relay', url: RELAY }] };
+const base = profileRegistry('testnet');
+const REGISTRY = process.env.GOVHUB_VOTE_RELAY ? { ...base, relays: [{ name: 'relay', url: process.env.GOVHUB_VOTE_RELAY }] } : base;
 
 async function signInWithPhrase(page: Page) {
   await page.getByTestId('session-button').click();
@@ -36,84 +35,110 @@ async function signInWithPhrase(page: Page) {
   await sheet.getByRole('button', { name: 'Sign in', exact: true }).last().click();
   await expect(page.getByTestId('session-button')).not.toHaveText('Sign in', { timeout: 120_000 });
 }
-async function signOut(page: Page) {
-  await page.getByTestId('session-button').click();
-  await page.locator('dialog[open]').getByRole('button', { name: 'Sign out' }).click();
-  await expect(page.getByTestId('session-button')).toHaveText('Sign in');
-}
+const since = (t0: number) => Math.round((Date.now() - t0) / 1000);
 
-test('@live-vote keyring saved on Platform, restored after signing in again, then a vote through the relay', async ({ page }) => {
+test('@live-vote keyring: add masternode-27, vote now until the network has it, hold one for the hour rule and cancel it', async ({ page }) => {
   expect(GOV).toMatch(/^[0-9a-f]{64}$/);
   const key = testnetMnKeys().find((k) => k.name === MN);
   expect(key).toBeTruthy();
   const errors = await watchPage(page);
-  const results: Record<string, unknown> = { network: 'testnet', at: new Date().toISOString(), proposal: GOV, masternode: MN, votingAddress: key!.address };
+  const results: Record<string, unknown> = { network: 'testnet', at: new Date().toISOString(), proposal: GOV, masternode: MN, votingAddress: key!.address, relays: REGISTRY.relays.map((r) => r.url) };
   page.on('console', (m) => m.type() === 'error' && console.log(`console.error: ${m.text().replace(/[1-9A-HJ-NP-Za-km-z]{50,}/g, '[b58]').slice(0, 300)}`));
   await page.addInitScript((r) => localStorage.setItem('govhub.registry.v2', JSON.stringify(r)), REGISTRY);
 
-  // ---- 1. sign in, keyring ----
-  console.log(`step 1: sign in, keyring`);
+  // ---- 1. seed sign-in, keyring ----
+  console.log('step 1: sign in with the phrase');
   await page.goto('/masternodes');
   await signInWithPhrase(page);
   const status = page.getByTestId('keyring-status');
   const create = page.getByTestId('create-keyring');
   await expect(status.or(create)).toBeVisible({ timeout: 120_000 });
-  results.keyringExistedBefore = await status.isVisible();
   if (await create.isVisible()) {
     await create.click();
-    await expect(status).toContainText('Saved on Platform', { timeout: 180_000 });
+    await expect(status).toContainText('Unlocked', { timeout: 180_000 });
   }
+  await expect(status).toContainText('opens with your recovery phrase');
 
-  // ---- 2. add the voting key (skipped if a previous run left it in the keyring) ----
-  console.log(`step 2: add the voting key (skipped if a previous run left it in the keyring)`);
-  const keyList = page.getByTestId('key-list');
-  const already = (await keyList.count()) > 0 && (await keyList.innerText()).includes(key!.address);
-  if (!already) {
-    await page.getByTestId('voting-key-input').fill(key!.wif);
-    await page.getByTestId('voting-key-label').fill('e2e key');
-    await page.getByTestId('voting-key-add').click();
-    await expect(keyList).toContainText(key!.address, { timeout: 180_000 });
-    await expect(page.getByRole('status')).toHaveCount(0, { timeout: 180_000 });
+  // ---- 2. add the masternode-27 key: exactly its masternode ----
+  console.log('step 2: add the voting key');
+  const group = page.getByTestId('key-group').filter({ hasText: key!.address });
+  if (await group.count()) {
+    await group.getByRole('button', { name: /^Remove / }).click();
+    await group.getByRole('button', { name: 'Remove key' }).click();
+    await expect(group).toHaveCount(0, { timeout: 180_000 });
   }
-  await expect(page.getByTestId('mn-row').first()).toBeVisible({ timeout: 120_000 });
-  results.masternodesBefore = await page.getByTestId('mn-row').count();
-  await expect(page.getByTestId('keyring-error')).toHaveCount(0);
+  const t2 = Date.now();
+  await page.getByTestId('voting-key-input').fill(key!.wif);
+  await page.getByTestId('voting-key-label').fill(MN);
+  await page.getByTestId('voting-key-add').click();
+  await expect(page.getByTestId('addkey-result')).toHaveText(`✓ ${MN} controls 1 masternode.`, { timeout: 180_000 });
+  results.addKeySeconds = since(t2);
+  await expect(page.getByTestId('mn-progress')).toHaveCount(0, { timeout: 90_000 }); // the lookup never spins forever
+  await expect(group.getByTestId('key-count')).toHaveText('controls 1 masternode');
+  const card = group.getByTestId('mn-row');
+  await expect(card).toHaveCount(1);
+  await expect(card).toHaveAttribute('data-protx', EXPECT.proTxHash);
+  await expect(card).toContainText('Regular');
+  await expect(card).toContainText('Valid');
+  await expect(card.locator(`[title="${EXPECT.payout}"]`)).toHaveCount(1);
+  results.found = { proTxHash: EXPECT.proTxHash, type: 'regular', valid: true, payout: EXPECT.payout, proof: (await card.locator('.kr-mn-proof').innerText()).trim() };
+  await expect(page.getByTestId('mn-error')).toHaveCount(0);
+  results.relayHealth = await page.getByTestId('relay-row').allInnerTexts();
 
-  // ---- 3. sign out: everything is gone from the page ----
-  console.log(`step 3: sign out: everything is gone from the page`);
-  await signOut(page);
-  await expect(page.getByTestId('key-list')).toHaveCount(0);
-  await expect(page.getByTestId('mn-row')).toHaveCount(0);
-
-  // ---- 4. sign in again: restored from Platform ----
-  console.log(`step 4: sign in again: restored from Platform`);
-  const t0 = Date.now();
-  await signInWithPhrase(page);
-  await expect(page.getByTestId('keyring-status')).toContainText('Saved on Platform', { timeout: 120_000 });
-  await expect(page.getByTestId('key-list')).toContainText(key!.address);
-  await expect(page.getByTestId('mn-row').first()).toBeVisible({ timeout: 120_000 });
-  results.masternodesAfter = await page.getByTestId('mn-row').count();
-  results.restoreSeconds = Math.round((Date.now() - t0) / 1000);
-  expect(results.masternodesAfter).toBe(results.masternodesBefore);
-
-  // ---- 5. vote on the proposal (immediately) ----
-  console.log(`step 5: vote on the proposal (immediately)`);
+  // ---- 3. vote now on an active proposal: until the network has it ----
+  console.log('step 3: vote now');
   await page.goto(`/p/h/${GOV}`);
-  // a full page load is a new tab state: signing in again restores the keyring once more
-  await signInWithPhrase(page);
+  await signInWithPhrase(page); // a full page load is a new tab state: the keyring opens again with the phrase
   const panel = page.getByTestId('mn-vote-panel');
-  await expect(panel.getByTestId('vote-mn-row').first()).toBeVisible({ timeout: 180_000 });
-  await panel.getByTestId('vote-choice').selectOption(OUTCOME);
+  const row = panel.getByTestId('vote-mn-row').filter({ hasText: 'c87218…07c0ac' });
+  await expect(row).toHaveCount(1, { timeout: 180_000 });
+  await expect(row.getByTestId('current-vote')).not.toContainText('…', { timeout: 60_000 });
+  const before = (await row.getByTestId('current-vote').locator('.vout').innerText()).trim();
+  results.currentBefore = before;
+  const first = before === 'Abstain' ? 'No' : 'Abstain';
+  const second = first === 'Abstain' ? 'Yes' : 'Abstain';
+  if ((await panel.getByTestId('vote-mn-row').count()) > 1) await panel.getByRole('checkbox', { name: 'All masternodes' }).uncheck();
+  await row.getByRole('checkbox').check();
+  await panel.getByTestId('vote-choice').getByRole('radio', { name: first }).click();
+  await expect(panel.getByTestId('vote-send')).toHaveText(`Vote ${first} with 1 masternode`);
+  const t3 = Date.now();
   await panel.getByTestId('vote-send').click();
-  await expect(panel.getByTestId('vote-result')).toContainText('signed and handed to a relay', { timeout: 120_000 });
+  const tracker = panel.getByTestId('vote-tracker').first();
+  await expect(tracker).toBeVisible({ timeout: 60_000 });
+  await expect(tracker.locator('[data-step="relay"]')).toHaveAttribute('data-state', 'done', { timeout: 120_000 });
+  results.acceptedByRelaySeconds = since(t3);
+  await expect(tracker).toHaveAttribute('data-status', /broadcast|confirmed/, { timeout: 180_000 });
+  results.broadcastSeconds = since(t3);
+  await expect(tracker).toHaveAttribute('data-status', 'confirmed', { timeout: 8 * 60_000 });
+  results.seenByNetworkSeconds = since(t3);
+  await expect(panel.getByTestId('vote-success')).toBeVisible();
+  results.voteConfirmedInBridge = true;
+  results.firstVote = first;
+  await expect(tracker).toHaveAttribute('data-counted', 'yes', { timeout: 3 * 60_000 }).then(
+    () => (results.countedSeconds = since(t3)),
+    () => (results.countedSeconds = null),
+  );
+  await panel.getByTestId('vote-verify').click();
+  await expect(panel.getByTestId('vote-proof').locator('li')).toHaveCount(4, { timeout: 120_000 });
+  results.proof = await panel.getByTestId('vote-proof').locator('li').allInnerTexts();
+  await expect(row.getByTestId('current-vote').locator('.vout')).toHaveText(first, { timeout: 60_000 });
 
-  // ---- 6. the watchdog sees it in the bridge ----
-  console.log(`step 6: the watchdog sees it in the bridge`);
+  // ---- 4. a vote the relay holds (Core's one-change-per-hour rule) -> cancel ----
+  console.log('step 4: a held vote, then cancel');
+  await panel.getByRole('button', { name: 'Dismiss' }).click();
+  await panel.getByTestId('vote-choice').getByRole('radio', { name: second }).click();
+  await panel.getByTestId('vote-send').click();
+  const held = panel.getByTestId('vote-tracker').filter({ has: page.locator(`.vout-${second === 'Yes' ? 1 : 3}`) }).first();
+  await expect(held).toHaveAttribute('data-status', 'held', { timeout: 120_000 });
+  await expect(held.getByTestId('vote-tracker-line')).toContainText('Core allows one vote change per hour per masternode');
+  results.heldLine = (await held.getByTestId('vote-tracker-line').innerText()).trim();
+  await held.getByTestId('vote-cancel').click();
+  await expect(held).toHaveCount(0, { timeout: 120_000 });
   await page.goto('/masternodes');
   await signInWithPhrase(page);
-  const row = page.getByTestId('watched-row').first(); // newest release first
-  await expect(row).toHaveAttribute('data-status', 'confirmed', { timeout: 6 * 60_000 });
-  results.voteConfirmedInBridge = true;
+  await expect(page.getByTestId('watched-row').filter({ hasText: 'Cancelled' }).first()).toBeVisible({ timeout: 60_000 });
+  results.heldVoteCancelled = true;
+
   mkdirSync('e2e/results', { recursive: true });
   writeFileSync('e2e/results/vote-live.json', JSON.stringify(results, null, 2) + '\n');
   console.log(JSON.stringify(results));

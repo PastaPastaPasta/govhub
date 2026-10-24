@@ -11,6 +11,12 @@ const VIEWPORTS = {
   mobile: { width: 390, height: 844 },
 } as const;
 
+async function signInAlice(page: Page) {
+  await page.getByTestId('session-button').click();
+  await page.getByRole('button', { name: /^Alice$/ }).click();
+  await expect(page.getByTestId('session-button')).not.toHaveText('Sign in');
+}
+
 async function shoot(page: Page, name: string, fullPage = true) {
   await page.evaluate(() => document.fonts.ready);
   await page.screenshot({ path: `screenshots/${name}.png`, fullPage, animations: 'disabled' });
@@ -35,6 +41,37 @@ for (const scheme of ['light', 'dark'] as const) {
         await shoot(page, `proposal-${scheme}-${vp}`);
       });
 
+      test(`@screenshots keyring page`, async ({ page }) => {
+        await gotoFixtures(page, '/masternodes?votesim=manual');
+        await signInAlice(page);
+        await expect(page.getByTestId('key-group')).toHaveCount(2);
+        await expect(page.getByTestId('mn-row')).toHaveCount(3);
+        await shoot(page, `keyring-${scheme}-${vp}`);
+      });
+
+      test(`@screenshots vote panel`, async ({ page }) => {
+        await gotoFixtures(page, '/p/OrchardPay?votesim=manual');
+        await signInAlice(page);
+        const panel = page.getByTestId('mn-vote-panel');
+        await expect(panel.getByTestId('vote-mn-row')).toHaveCount(3);
+        await panel.getByTestId('vote-choice').getByRole('radio', { name: 'No' }).click();
+        await panel.scrollIntoViewIfNeeded();
+        await page.evaluate(() => document.fonts.ready);
+        await panel.screenshot({ path: `screenshots/vote-panel-${scheme}-${vp}.png`, animations: 'disabled' });
+        // signed: the tracker, while the relay holds the votes
+        await panel.getByTestId('vote-send').click();
+        await expect(panel.getByTestId('vote-tracker').first()).toHaveAttribute('data-status', 'held');
+        await panel.getByTestId('vote-tracks').screenshot({ path: `screenshots/vote-tracker-${scheme}-${vp}.png`, animations: 'disabled' });
+        // on the network and counted: the success card
+        for (let i = 0; i < 2; i++) await page.evaluate(() => (window as unknown as { __voteSim: { advance(): void } }).__voteSim.advance());
+        const win = panel.getByTestId('vote-success').first();
+        await expect(win.getByTestId('tally-no')).toBeVisible({ timeout: 20_000 });
+        await page.waitForTimeout(1500); // let the check draw and the tally tick before the still
+        await win.getByTestId('vote-verify').click();
+        await expect(win.getByTestId('vote-proof')).toBeVisible();
+        await panel.screenshot({ path: `screenshots/vote-success-${scheme}-${vp}.png` });
+      });
+
       test(`@screenshots settings`, async ({ page }) => {
         await gotoFixtures(page, '/settings');
         await shoot(page, `settings-${scheme}-${vp}`, vp === 'desktop');
@@ -45,6 +82,28 @@ for (const scheme of ['light', 'dark'] as const) {
 
 test.describe('extra', () => {
   test.use({ colorScheme: 'light', viewport: VIEWPORTS.desktop });
+  test('@screenshots relay unreachable, with Retry now', async ({ page }) => {
+    await gotoFixtures(page, '/p/OrchardPay?votesim=down');
+    await signInAlice(page);
+    const panel = page.getByTestId('mn-vote-panel');
+    await panel.getByRole('checkbox', { name: 'All masternodes' }).uncheck();
+    await panel.getByTestId('vote-mn-row').first().getByRole('checkbox').check();
+    await panel.getByTestId('vote-choice').getByRole('radio', { name: 'No' }).click();
+    await panel.getByTestId('vote-send').click();
+    await expect(panel.getByTestId('vote-retry')).toBeVisible();
+    await panel.getByTestId('vote-tracks').screenshot({ path: 'screenshots/vote-relay-down-light-desktop.png', animations: 'disabled' });
+  });
+  test('@screenshots held for the one-hour rule', async ({ page }) => {
+    await gotoFixtures(page, '/p/OrchardPay?votesim=hour');
+    await signInAlice(page);
+    const panel = page.getByTestId('mn-vote-panel');
+    await panel.getByRole('checkbox', { name: 'All masternodes' }).uncheck();
+    await panel.getByTestId('vote-mn-row').first().getByRole('checkbox').check();
+    await panel.getByTestId('vote-choice').getByRole('radio', { name: 'Abstain' }).click();
+    await panel.getByTestId('vote-send').click();
+    await expect(panel.getByTestId('vote-tracker').first()).toHaveAttribute('data-status', 'held');
+    await panel.screenshot({ path: 'screenshots/vote-hour-rule-light-desktop.png', animations: 'disabled' });
+  });
   test('@screenshots provenance popover', async ({ page }) => {
     await gotoFixtures(page, '/p/OrchardPay');
     await expect(page.getByTestId('collateral-check').locator('[data-verdict]')).toHaveAttribute('data-verdict', 'ok');
@@ -113,3 +172,4 @@ test.describe('extra', () => {
     await shoot(page, 'chooser-light-desktop', false);
   });
 });
+

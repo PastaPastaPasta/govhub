@@ -135,17 +135,20 @@ describe('watched votes', () => {
     rebroadcasts: 0,
     ...over,
   });
-  it('a newer vote supersedes an older open one for the same masternode and proposal', () => {
+  it('a newer vote drops an older one that never left this browser; one a relay took waits for the bridge', () => {
     const a = base();
     const b = { ...base(), ...signPlanned({ mn, govHash: gov, outcome: 2, time: NOW + 10, releaseAt: NOW + 10, notes: [] }, priv, true, 'testnet') };
     const m = mergeWatched([a], [b]);
-    expect(m.find((x) => x.voteHash === a.voteHash)!.status).toBe('superseded');
+    expect(m.find((x) => x.voteHash === a.voteHash)!.status).toBe('held');
     expect(m.find((x) => x.voteHash === b.voteHash)!.status).toBe('held');
+    const queued = { ...a, refs: [], status: 'queued' as const };
+    const d = mergeWatched([queued], [b]).find((x) => x.voteHash === a.voteHash)!;
+    expect(d).toMatchObject({ status: 'dropped', replacedBy: b.voteHash });
   });
   it('bridge verdicts, rebroadcast timing and relay choice', () => {
     const v = base();
-    expect(bridgeVerdict(v, { outcome: 1, time: NOW })).toBe('confirmed');
-    expect(bridgeVerdict(v, { outcome: 2, time: NOW + 5 })).toBe('superseded');
+    expect(bridgeVerdict(v, { outcome: 1, time: NOW })).toEqual({ status: 'confirmed' });
+    expect(bridgeVerdict(v, { outcome: 2, time: NOW + 5 })).toEqual({ status: 'replaced', replacedBy: '' });
     expect(bridgeVerdict(v, undefined)).toBeNull();
     expect(needsRebroadcast(v, NOW + 599)).toBe(false);
     expect(needsRebroadcast(v, NOW + 600)).toBe(true);
