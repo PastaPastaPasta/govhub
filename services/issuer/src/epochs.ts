@@ -2,7 +2,7 @@
 // issuerReport. Every step works from the dashd tip; the issuerKey check reads Platform with proofs.
 import { epochStart, equalBytes, issuingEpochAt, keyDeadline, sha256, toHex, type EpochParams } from '@govhub/badge';
 import type { IdentityKeyFile } from './config.ts';
-import type { CoreView } from './core.ts';
+import type { CoreView, MnLists } from './core.ts';
 import type { TokenStore } from './db.ts';
 import { destroyKey, keyEpochs, loadKey } from './keys.ts';
 import { errText, log } from './log.ts';
@@ -15,7 +15,9 @@ export interface EpochManagerDeps {
   issuerId: string;
   keyDir: string;
   maxStagedKeys: number;
-  core: CoreView;
+  core: Pick<CoreView, 'tipHeight'>;
+  /** refreshed every tick: the current MN list and the S(E-1) snapshot of the issuing epoch */
+  lists: MnLists;
   store: TokenStore;
   /** null until Platform is reachable */
   platform: () => IssuerPlatform | null;
@@ -58,6 +60,12 @@ export class EpochManager {
     }
     const epoch = issuingEpochAt(d.params, height);
     const margin = d.params.boundaryMarginBlocks;
+    d.store.markStarted(height);
+    try {
+      await d.lists.refresh(epochStart(d.params, epoch - 1), margin);
+    } catch (e) {
+      log.warn('masternode list refresh failed', { error: errText(e) });
+    }
 
     // Keys of epochs whose issuance window closed (plus the reorg margin) are destroyed.
     for (const e of keyEpochs(d.keyDir)) {
@@ -128,6 +136,8 @@ export class EpochManager {
     for (const epoch of d.store.unreported()) {
       const existing = await platform.issuerReport(d.issuerId, epoch);
       if (existing) {
+        // A report this server did not write (another instance, or a compromised key) is final on Platform: raise the alarm.
+        if (existing.tokensIssued !== d.store.issued(epoch)) log.error('the published issuerReport differs from this server’s count', { epoch, published: existing.tokensIssued, counted: d.store.issued(epoch) });
         d.store.markReported(epoch, 'existing');
         continue;
       }

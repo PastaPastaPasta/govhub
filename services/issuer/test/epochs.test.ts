@@ -8,6 +8,7 @@ import { openTokenStore } from '../src/db.ts';
 import { EpochManager } from '../src/epochs.ts';
 import { keyFileName, keygen, manifestSpki } from '../src/keys.ts';
 import type { IssuerPlatform } from '../src/platform.ts';
+import { MnLists } from '../src/core.ts';
 import { E, FakeCore, P, rnd } from './helpers.ts';
 
 const ISSUER = 'H62hSf5TpKbUSMov85GMhPQahZDbqsTipeoBsYPgveUH';
@@ -30,7 +31,8 @@ async function setup(epochs: number[], o: { lateDoc?: boolean; maxStaged?: numbe
   };
   const core = new FakeCore();
   const store = openTokenStore(':memory:');
-  const m = new EpochManager({ params: P, issuerId: ISSUER, keyDir: dir, maxStagedKeys: o.maxStaged ?? 1, core, store, platform: () => platform, reportKey: { identityId: ISSUER, keyId: 2, privateKeyHex: '11'.repeat(32) } });
+  store.markStarted(0);
+  const m = new EpochManager({ params: P, issuerId: ISSUER, keyDir: dir, maxStagedKeys: o.maxStaged ?? 1, core, lists: new MnLists(core), store, platform: () => platform, reportKey: { identityId: ISSUER, keyId: 2, privateKeyHex: '11'.repeat(32) } });
   return { dir, docs, core, store, m, reports };
 }
 
@@ -79,8 +81,8 @@ describe('epoch manager', () => {
   it('at the roll-over: destroys the old key, deletes its token rows, reports the count, switches keys', async () => {
     const t = await setup([E, E + 1]);
     await t.m.tick();
-    t.store.reserve({ epoch: E, proTxHash: 'a', collateral: 'a', blindedHash: rnd(32) }, () => rnd(256));
-    t.store.reserve({ epoch: E, proTxHash: 'b', collateral: 'b', blindedHash: rnd(32) }, () => rnd(256));
+    t.store.reserve({ epoch: E, windowFrom: 0, proTxHash: 'a', collateral: 'a', blindedHash: rnd(32) }, () => rnd(256));
+    t.store.reserve({ epoch: E, windowFrom: 0, proTxHash: 'b', collateral: 'b', blindedHash: rnd(32) }, () => rnd(256));
     // inside the reorg margin after S(E): nothing destroyed yet
     t.core.tip = epochStart(P, E) + P.boundaryMarginBlocks - 1;
     await t.m.tick();
@@ -90,7 +92,7 @@ describe('epoch manager', () => {
     await t.m.tick();
     expect(existsSync(join(t.dir, keyFileName(E)))).toBe(false);
     expect(t.store.issued(E)).toBe(2);
-    expect(t.store.reserve({ epoch: E, proTxHash: 'c', collateral: 'c', blindedHash: rnd(32) }, () => rnd(256))).toEqual({ kind: 'closed' });
+    expect(t.store.reserve({ epoch: E, windowFrom: 0, proTxHash: 'c', collateral: 'c', blindedHash: rnd(32) }, () => rnd(256))).toEqual({ kind: 'closed' });
     expect(t.reports).toContainEqual({ epoch: E, tokensIssued: 2 });
     expect(t.m.activeKey(E + 1)?.epoch).toBe(E + 1);
   });

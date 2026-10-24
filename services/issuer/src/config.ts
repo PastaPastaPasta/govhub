@@ -24,7 +24,7 @@ export interface IssuerConfig {
   http: { host: string; port: number };
   /** HIGH key of the issuer identity, used only to publish issuerReport documents. Empty: reports are not published. */
   reportKeyFile: string;
-  /** Global cap on token requests per second (no per-IP state is kept). */
+  /** Global cap on token requests per second, a CPU backstop (no per-IP state is kept; per-MN limits apply after authentication). */
   maxTokenRequestsPerSec: number;
   /** Seconds between chain polls (epoch roll-over, key loading, record deletion, reports). */
   tickSec: number;
@@ -89,7 +89,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): IssuerConfig {
     dbPath: str(env, 'DB_PATH', './data/issuer.sqlite'),
     http: { host: str(env, 'HTTP_HOST', '127.0.0.1'), port: int(env, 'HTTP_PORT', 8789) },
     reportKeyFile: str(env, 'ISSUER_REPORT_KEY_FILE', ''),
-    maxTokenRequestsPerSec: int(env, 'ISSUER_MAX_TOKEN_RPS', 20, 1),
+    maxTokenRequestsPerSec: int(env, 'ISSUER_MAX_TOKEN_RPS', 200, 1),
     tickSec: int(env, 'ISSUER_TICK_S', 30, 1),
   };
 }

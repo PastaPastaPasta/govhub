@@ -14,7 +14,7 @@ export interface ServerDeps {
   service: TokenService;
   epochs: Pick<EpochManager, 'status'>;
   challengeTtlSec: number;
-  /** global token-request budget per second */
+  /** global token-request budget per second: a CPU backstop only (authentication needs no RPC; per-MN limits apply after it) */
   maxTokenRps: number;
   /** aggregate counters, logged by the caller */
   counters: Map<string, number>;
@@ -87,7 +87,7 @@ export function createApp(d: ServerDeps): Hono {
     } catch (e) {
       if (e instanceof IssueError) {
         bump(d.counters, e.code);
-        return c.json({ error: e.code, message: e.message }, e.status as 400);
+        return c.json({ error: e.code, message: e.message, ...(e.issuingEpoch !== undefined ? { issuingEpoch: e.issuingEpoch } : {}) }, e.status as 400);
       }
       bump(d.counters, 'internal');
       return c.json({ error: 'unavailable', message: 'internal error' }, 503);

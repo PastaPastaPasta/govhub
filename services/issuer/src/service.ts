@@ -4,14 +4,16 @@
 //   2. request fields: network, issuer, epoch = the one being issued (S(E-1) <= tip < S(E)), keyId = this epoch's key, a valid
 //      unexpired challenge, SHA256(blindedMsg) bound, blinded message of modulus length and 1 < m < n
 //   3. authentication: the recovered key's hash160 equals keyIDVoting of the proTxHash in the CURRENT list. Every failure here is
-//      the same "unauthorized" answer, so the endpoint does not tell a stranger anything about an MN.
-//   4. eligibility (only the key holder sees these answers): valid now; in the list and valid at S(E-1) with the same collateral
+//      the same "unauthorized" answer, so the endpoint does not tell a stranger anything about an MN. The lists are cached by the
+//      housekeeping timer (MnLists): nothing before authentication reaches dashd.
+//   4. eligibility (only the key holder sees these answers): at most a few requests per MN per minute; the tip, read fresh, still
+//      in E-1's window; valid now; in the list and valid at S(E-1) with the same collateral
 //   5. atomic dedup on (proTxHash, epoch) and (collateral, epoch); a retry with the same SHA256(blindedMsg) gets the same signature
 //   6. OpenSSL raw RSA signature, verified before it is returned
 import { base64ToBytes, buildTokenRequest, equalBytes, idToBytes, issuanceWindow, issuingEpochAt, parseTokenRequest, sha256, toHex, type BadgeNetwork, type EpochParams, type TokenRequest } from '@govhub/badge';
 import { recoverMessageSigner } from '@govhub/verify';
 import type { Challenges } from './challenge.ts';
-import type { CoreView } from './core.ts';
+import type { CoreView, MnLists } from './core.ts';
 import type { TokenStore } from './db.ts';
 import { SignerError, type BlindSigner } from './signer.ts';
 
@@ -43,11 +45,14 @@ const STATUS: Record<IssueErrorCode, number> = {
 export class IssueError extends Error {
   readonly code: IssueErrorCode;
   readonly status: number;
-  constructor(code: IssueErrorCode, message: string) {
+  /** wrong-epoch: the epoch the issuer is issuing for (a client whose epoch is ahead knows the issuer lags and retries) */
+  readonly issuingEpoch?: number;
+  constructor(code: IssueErrorCode, message: string, issuingEpoch?: number) {
     super(message);
     this.code = code;
     this.status = STATUS[code];
     this.name = 'IssueError';
+    if (issuingEpoch !== undefined) this.issuingEpoch = issuingEpoch;
   }
 }
 
@@ -62,12 +67,16 @@ export interface TokenServiceDeps {
   network: BadgeNetwork;
   params: EpochParams;
   issuerId: string;
-  core: CoreView;
+  /** a fresh tip height (one cheap RPC, only for authenticated requests) */
+  core: Pick<CoreView, 'tipHeight'>;
+  lists: Pick<MnLists, 'now' | 'snapshot'>;
   store: TokenStore;
   challenges: Challenges;
   /** null when no key is ready (missing file, issuerKey not on Platform, too many staged keys) */
   activeKey(epoch: number): ActiveKey | null;
   nowSec(): number;
+  /** requests per MN per minute (after authentication); default 6 */
+  perMnPerMinute?: number;
 }
 
 export interface TokenInput {
@@ -88,6 +97,8 @@ function b64(v: unknown, what: string, max: number): Uint8Array {
 export class TokenService {
   readonly #d: TokenServiceDeps;
   readonly #issuerBytes: Uint8Array;
+  /** proTxHash -> request times (ms) in the last minute; memory only */
+  readonly #perMn = new Map<string, number[]>();
 
   constructor(deps: TokenServiceDeps) {
     this.#d = deps;
@@ -112,12 +123,13 @@ export class TokenService {
     } catch (e) {
       throw new IssueError('bad-request', `request: ${(e as Error).message}`);
     }
-    // 2. request fields
+    // 2. request fields (cached tip: no RPC before authentication)
     if (req.net !== d.network) throw new IssueError('wrong-network', `this issuer serves ${d.network}`);
     if (!equalBytes(req.issuerId, this.#issuerBytes)) throw new IssueError('wrong-issuer', 'the request names another issuer');
-    const tip = await this.#tip();
-    const epoch = issuingEpochAt(d.params, tip);
-    if (req.epoch !== epoch) throw new IssueError('wrong-epoch', `tokens are issued for epoch ${epoch} now (height ${tip})`);
+    const now = d.lists.now;
+    if (!now) throw new IssueError('unavailable', 'the masternode list is not loaded yet');
+    const epoch = issuingEpochAt(d.params, now.height);
+    if (req.epoch !== epoch) throw new IssueError('wrong-epoch', `tokens are issued for epoch ${epoch} now (height ${now.height})`, epoch);
     const key = d.activeKey(epoch);
     if (!key) throw new IssueError('unavailable', `no signing key is ready for epoch ${epoch}`);
     if (!equalBytes(req.keyId, key.keyId)) throw new IssueError('wrong-key', `the request names another key than the issuerKey of epoch ${epoch}`);
@@ -127,24 +139,30 @@ export class TokenService {
     // 3. authentication (the voting key in the current list). One answer for every failure.
     const proTxHash = toHex(req.proTxHash);
     const recovered = recoverMessageSigner(sig, buildTokenRequest(req), d.network, { strict: true });
-    const now = recovered ? await this.#mn(proTxHash, 'tip') : null;
-    if (!recovered || !now || !equalBytes(now.votingKeyId, recovered.keyId)) throw new IssueError('unauthorized', 'the signature is not from this masternode’s voting key');
+    const mnNow = recovered ? now.list.get(proTxHash) : undefined;
+    if (!recovered || !mnNow || !equalBytes(mnNow.votingKeyId, recovered.keyId)) throw new IssueError('unauthorized', 'the signature is not from this masternode’s voting key');
     // 4. eligibility
-    if (!now.valid) throw new IssueError('not-eligible', 'the masternode is not valid (PoSe-banned) now');
+    this.#limit(proTxHash);
+    const tip = await this.#tip();
+    if (issuingEpochAt(d.params, tip) !== epoch) throw new IssueError('wrong-epoch', `issuance for epoch ${epoch} has closed (height ${tip})`, issuingEpochAt(d.params, tip));
+    if (!mnNow.valid) throw new IssueError('not-eligible', 'the masternode is not valid (PoSe-banned) now');
     const snapHeight = issuanceWindow(d.params, epoch).from;
-    const snap = await this.#mn(proTxHash, snapHeight);
+    const snapList = d.lists.snapshot(snapHeight);
+    if (!snapList) throw new IssueError('unavailable', `the masternode list at the snapshot height ${snapHeight} is not loaded yet`);
+    const snap = snapList.get(proTxHash);
     if (!snap) throw new IssueError('not-eligible', `the masternode was not registered at the snapshot height ${snapHeight}`);
     if (!snap.valid) throw new IssueError('not-eligible', `the masternode was not valid at the snapshot height ${snapHeight}`);
-    if (snap.collateral !== now.collateral) throw new IssueError('not-eligible', 'the collateral changed since the snapshot height');
+    if (snap.collateral !== mnNow.collateral) throw new IssueError('not-eligible', 'the collateral changed since the snapshot height');
     // 5 + 6. dedup, sign, verify
     let out;
     try {
-      out = d.store.reserve({ epoch, proTxHash, collateral: now.collateral, blindedHash: req.blindedMsgSha256 }, () => key.signer.sign(blindedMsg));
+      out = d.store.reserve({ epoch, windowFrom: snapHeight, proTxHash, collateral: mnNow.collateral, blindedHash: req.blindedMsgSha256 }, () => key.signer.sign(blindedMsg));
     } catch (e) {
       if (e instanceof SignerError && (e.code === 'bad-length' || e.code === 'out-of-range')) throw new IssueError('bad-request', e.message);
       throw new IssueError('unavailable', 'signing failed');
     }
-    if (out.kind === 'closed') throw new IssueError('wrong-epoch', `issuance for epoch ${epoch} has closed`);
+    if (out.kind === 'closed') throw new IssueError('wrong-epoch', `issuance for epoch ${epoch} has closed`, epoch + 1);
+    if (out.kind === 'store-too-new') throw new IssueError('unavailable', `this issuer's token store started inside epoch ${epoch}'s window; it issues again from the next epoch`);
     if (out.kind === 'conflict')
       throw new IssueError('already-issued', out.reason === 'mn' ? 'this masternode already obtained a token from this issuer for this epoch' : 'this collateral already obtained a token from this issuer for this epoch');
     return { blindSig: out.blindSig, epoch, retry: out.retry };
@@ -157,11 +175,15 @@ export class TokenService {
       throw new IssueError('unavailable', 'Core is not reachable');
     }
   }
-  async #mn(proTxHash: string, h: number | 'tip') {
-    try {
-      return await this.#d.core.mnAt(proTxHash, h);
-    } catch {
-      throw new IssueError('unavailable', 'Core is not reachable');
-    }
+
+  /** A few requests per MN per minute, counted only after authentication (memory only, nothing about the requester). */
+  #limit(proTxHash: string): void {
+    const now = Date.now();
+    const max = this.#d.perMnPerMinute ?? 6;
+    const recent = (this.#perMn.get(proTxHash) ?? []).filter((t) => now - t < 60_000);
+    if (recent.length >= max) throw new IssueError('unavailable', 'too many requests for this masternode; wait a minute');
+    recent.push(now);
+    this.#perMn.set(proTxHash, recent);
+    if (this.#perMn.size > 10_000) for (const [k, v] of this.#perMn) if (!v.some((t) => now - t < 60_000)) this.#perMn.delete(k);
   }
 }

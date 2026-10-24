@@ -73,12 +73,35 @@ export class FakeCore implements CoreView {
     if (this.down) throw new Error('down');
     return this.tip;
   }
-  async mnAt(h: string, height: number | 'tip') {
+  async mnList(height: number | 'tip') {
     this.calls++;
     if (this.down) throw new Error('down');
-    const m = this.mns.get(h);
-    if (!m) return null;
-    return height === 'tip' ? m.now : m.snap;
+    const out = new Map<string, MnState>();
+    for (const [k, m] of this.mns) {
+      const st = height === 'tip' ? m.now : m.snap;
+      if (st) out.set(k, st);
+    }
+    return out;
+  }
+  /** What MnLists would hold after a refresh, read live (tests change MNs after creating the world). */
+  liveLists() {
+    const now = () => {
+      const list = new Map<string, MnState>();
+      for (const [k, m] of this.mns) if (m.now) list.set(k, m.now);
+      return list;
+    };
+    const self = this;
+    return {
+      get now() {
+        return self.down ? null : { height: self.tip, list: now() };
+      },
+      snapshot: (h: number) => {
+        if (h !== epochStart(P, E - 1)) return null;
+        const list = new Map<string, MnState>();
+        for (const [k, m] of self.mns) if (m.snap) list.set(k, m.snap);
+        return list;
+      },
+    };
   }
 }
 
@@ -103,6 +126,7 @@ export async function world(o: { keyReady?: boolean } = {}): Promise<World> {
   const issuerId = bytesToId(rnd(32));
   const core = new FakeCore();
   const store = openTokenStore(':memory:');
+  store.markStarted(0);
   const challenges = new Challenges(rnd(32), `${NET}|${issuerId}`, 600);
   const signer = new BlindSigner(cachedKey.priv);
   const key = await importIssuerKey(cachedKey.spki);
@@ -112,6 +136,7 @@ export async function world(o: { keyReady?: boolean } = {}): Promise<World> {
     params: P,
     issuerId,
     core,
+    lists: core.liveLists(),
     store,
     challenges,
     activeKey: (e) => (o.keyReady === false || e !== E ? null : { epoch: E, keyId: key.keyId, signer }),

@@ -1,5 +1,5 @@
-// The issuer's view of Core, from its own dashd over JSON-RPC (PLAN §8.4 rules 2-3): the tip height and a masternode's state at a
-// height (`protx info <proTxHash> <blockHash>`). Read-only RPCs only: getblockcount, getblockhash, protx info.
+// The issuer's view of Core, from its own dashd over JSON-RPC (PLAN §8.4 rules 2-3): the tip height and the masternode list at a
+// height (`protx list registered true [height]`). Read-only RPCs only: getblockcount, protx list.
 import { decodeAddress, type Network } from '@govhub/verify';
 import { log } from './log.ts';
 
@@ -14,8 +14,8 @@ export interface MnState {
 
 export interface CoreView {
   tipHeight(): Promise<number>;
-  /** The MN's state at `height` ('tip' = now), or null when it is not in the list at that height. */
-  mnAt(proTxHashHex: string, height: number | 'tip'): Promise<MnState | null>;
+  /** Every registered MN at `height` ('tip' = now), keyed by display-order proTxHash. */
+  mnList(height: number | 'tip'): Promise<Map<string, MnState>>;
 }
 
 export class CoreRpcError extends Error {
@@ -54,35 +54,60 @@ export function createRpc(o: RpcOptions) {
   };
 }
 
-interface ProTxInfo {
+interface ProTxEntry {
+  proTxHash: string;
   collateralHash: string;
   collateralIndex: number;
   state: { PoSeBanHeight: number; votingAddress: string };
 }
 
-/** RPC_INVALID_PARAMETER (-8) / RPC_INVALID_ADDRESS_OR_KEY (-5): "not found" for protx info. */
-const NOT_FOUND = new Set([-8, -5]);
-
 export function createCoreView(call: ReturnType<typeof createRpc>, network: Network): CoreView {
   return {
     tipHeight: () => call<number>('getblockcount'),
-    async mnAt(proTxHashHex, height) {
-      if (!/^[0-9a-f]{64}$/.test(proTxHashHex)) return null;
-      const params: unknown[] = [proTxHashHex];
-      if (height !== 'tip') params.push(await call<string>('getblockhash', [height]));
-      let info: ProTxInfo;
-      try {
-        info = await call<ProTxInfo>('protx', ['info', ...params]);
-      } catch (e) {
-        if (e instanceof CoreRpcError && NOT_FOUND.has(e.code)) return null;
-        throw e;
+    async mnList(height) {
+      const entries = await call<ProTxEntry[]>('protx', height === 'tip' ? ['list', 'registered', true] : ['list', 'registered', true, height]);
+      const out = new Map<string, MnState>();
+      for (const e of entries) {
+        const dest = decodeAddress(e.state.votingAddress, network);
+        if (!dest || dest.type !== 'p2pkh') {
+          log.warn('protx list returned an unexpected voting address');
+          continue;
+        }
+        out.set(e.proTxHash, { collateral: `${e.collateralHash}:${e.collateralIndex}`, votingKeyId: dest.hash160, valid: e.state.PoSeBanHeight === -1 });
       }
-      const dest = decodeAddress(info.state.votingAddress, network);
-      if (!dest || dest.type !== 'p2pkh') {
-        log.warn('protx info returned an unexpected voting address');
-        return null;
-      }
-      return { collateral: `${info.collateralHash}:${info.collateralIndex}`, votingKeyId: dest.hash160, valid: info.state.PoSeBanHeight === -1 };
+      return out;
     },
   };
+}
+
+/**
+ * The current list and the S(E-1) snapshot, refreshed on the housekeeping timer, so checking a request needs no RPC call (a stranger
+ * cannot make the issuer hit dashd). The snapshot of an epoch is fetched once the snapshot height is `settle` blocks deep.
+ */
+export class MnLists {
+  readonly #core: CoreView;
+  #now: { height: number; list: Map<string, MnState> } | null = null;
+  readonly #snaps = new Map<number, Map<string, MnState>>();
+
+  constructor(core: CoreView) {
+    this.#core = core;
+  }
+
+  async refresh(snapshotHeight: number, settle: number): Promise<void> {
+    const height = await this.#core.tipHeight();
+    const list = await this.#core.mnList('tip');
+    this.#now = { height, list };
+    if (!this.#snaps.has(snapshotHeight) && height >= snapshotHeight + settle) {
+      this.#snaps.set(snapshotHeight, await this.#core.mnList(snapshotHeight));
+      for (const k of this.#snaps.keys()) if (k < snapshotHeight) this.#snaps.delete(k);
+    }
+  }
+
+  get now(): { height: number; list: Map<string, MnState> } | null {
+    return this.#now;
+  }
+
+  snapshot(height: number): Map<string, MnState> | null {
+    return this.#snaps.get(height) ?? null;
+  }
 }

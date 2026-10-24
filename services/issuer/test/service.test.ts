@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { buildTokenRequestFor, bytesToBase64, bytesToId, epochStart, fromHex, idToBytes, toHex } from '@govhub/badge';
 import { signMessage } from '@govhub/verify';
 import { Challenges } from '../src/challenge.ts';
+import { MnLists } from '../src/core.ts';
 import { IssueError } from '../src/service.ts';
 import { clientRequest, E, fakeMn, finishBadge, P, rnd, TIP, votingKey, world, type World } from './helpers.ts';
 
@@ -103,14 +104,52 @@ describe('token issuance', () => {
     expect(w.store.issued(E)).toBe(0);
   });
 
-  it('the snapshot height asked of Core is S(E-1)', async () => {
+  it('MnLists: the current list every refresh, the S(E-1) snapshot once it is settled, no RPC per request', async () => {
+    const w = await world();
+    w.core.add(fakeMn());
+    const seen: Array<number | 'tip'> = [];
+    const orig = w.core.mnList.bind(w.core);
+    w.core.mnList = async (height) => (seen.push(height), orig(height));
+    const lists = new MnLists(w.core);
+    const snapH = epochStart(P, E - 1);
+    w.core.tip = snapH + 1; // not settled (margin 3)
+    await lists.refresh(snapH, P.boundaryMarginBlocks);
+    expect(seen).toEqual(['tip']);
+    expect(lists.snapshot(snapH)).toBeNull();
+    w.core.tip = snapH + 3;
+    await lists.refresh(snapH, P.boundaryMarginBlocks);
+    await lists.refresh(snapH, P.boundaryMarginBlocks);
+    expect(seen).toEqual(['tip', 'tip', snapH, 'tip']);
+    expect(lists.snapshot(snapH)?.size).toBe(1);
+    expect(lists.now?.height).toBe(snapH + 3);
+  });
+
+  it('per-MN rate limit after authentication; strangers do not consume it', async () => {
     const w = await world();
     const mn = w.core.add(fakeMn());
-    const seen: Array<number | 'tip'> = [];
-    const orig = w.core.mnAt.bind(w.core);
-    w.core.mnAt = async (h, height) => (seen.push(height), orig(h, height));
+    for (let i = 0; i < 10; i++) await expectError(issue(w, (await clientRequest(w, mn, { signWith: votingKey().priv })).body), 'unauthorized');
     await issue(w, (await clientRequest(w, mn)).body);
-    expect(seen).toEqual(['tip', epochStart(P, E - 1)]);
+    for (let i = 0; i < 5; i++) await expectError(issue(w, (await clientRequest(w, mn)).body), 'already-issued');
+    await expectError(issue(w, (await clientRequest(w, mn)).body), 'unavailable');
+  });
+
+  it('wrong-epoch tells the client which epoch the issuer is on', async () => {
+    const w = await world();
+    const mn = w.core.add(fakeMn());
+    const e = await expectError(issue(w, (await clientRequest(w, mn, { epoch: E + 1 })).body), 'wrong-epoch');
+    expect(e.issuingEpoch).toBe(E);
+  });
+
+  it('the tip is re-read after authentication: a token is never issued once S(E) is reached', async () => {
+    const w = await world();
+    const mn = w.core.add(fakeMn());
+    const r = await clientRequest(w, mn);
+    const lists = w.core.liveLists();
+    const stale = { get now() { return { height: epochStart(P, E) - 1, list: lists.now!.list }; }, snapshot: lists.snapshot };
+    const { TokenService } = await import('../src/service.ts');
+    const svc = new TokenService({ network: 'testnet', params: P, issuerId: w.issuerId, core: { tipHeight: async () => epochStart(P, E) }, lists: stale, store: w.store, challenges: w.challenges, activeKey: () => ({ epoch: E, keyId: w.key.keyId, signer: w.signer }), nowSec: () => w.now.sec });
+    const err = await expectError(svc.issue(r.body as never), 'wrong-epoch');
+    expect(err.issuingEpoch).toBe(E + 1);
   });
 
   it('request fields: network, issuer, epoch, key', async () => {

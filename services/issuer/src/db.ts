@@ -11,7 +11,9 @@ import { dirname } from 'node:path';
 export type ReserveOutcome =
   | { kind: 'signed'; blindSig: Uint8Array; retry: boolean }
   | { kind: 'conflict'; reason: 'mn' | 'collateral' }
-  | { kind: 'closed' };
+  | { kind: 'closed' }
+  /** the store was created (or reset) after this epoch's window opened: tokens issued before are unknown to it */
+  | { kind: 'store-too-new' };
 
 export interface TokenStore {
   /**
@@ -19,7 +21,9 @@ export interface TokenStore {
    * (signed again, not counted); with another blindedHash, or another proTxHash holding the collateral, a conflict; otherwise
    * sign, insert and count. `sign` runs inside the transaction: if it throws, nothing is stored.
    */
-  reserve(o: { epoch: number; proTxHash: string; collateral: string; blindedHash: Uint8Array }, sign: () => Uint8Array): ReserveOutcome;
+  reserve(o: { epoch: number; windowFrom: number; proTxHash: string; collateral: string; blindedHash: Uint8Array }, sign: () => Uint8Array): ReserveOutcome;
+  /** Records the core height the store first ran at (kept across restarts; a lost database starts again). */
+  markStarted(height: number): void;
   /** Marks the epoch as served by this server (it had the key), so a zero count is still reported. */
   openEpoch(epoch: number): void;
   /** Deletes the token rows of every epoch <= `epoch` and marks them closed. */
@@ -46,6 +50,7 @@ export function openTokenStore(path: string): TokenStore {
       PRIMARY KEY (epoch, pro_tx_hash),
       UNIQUE (epoch, collateral)
     ) WITHOUT ROWID;
+    CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS epochs (
       epoch INTEGER PRIMARY KEY,
       issued INTEGER NOT NULL DEFAULT 0,
@@ -67,10 +72,15 @@ export function openTokenStore(path: string): TokenStore {
     closeAll: db.prepare<[number]>('UPDATE epochs SET closed = 1 WHERE epoch <= ?'),
     unreported: db.prepare<[], { epoch: number }>('SELECT epoch FROM epochs WHERE closed = 1 AND served = 1 AND report_id IS NULL ORDER BY epoch'),
     reported: db.prepare<[string, number]>('UPDATE epochs SET report_id = ? WHERE epoch = ?'),
+    started: db.prepare<[number]>("INSERT OR IGNORE INTO meta (key, value) VALUES ('started_height', ?)"),
+    startedAt: db.prepare<[], { value: number }>("SELECT value FROM meta WHERE key = 'started_height'"),
   };
   const same = (a: Uint8Array, b: Uint8Array) => a.length === b.length && Buffer.compare(Buffer.from(a), Buffer.from(b)) === 0;
 
-  const reserve = db.transaction((o: { epoch: number; proTxHash: string; collateral: string; blindedHash: Uint8Array }, sign: () => Uint8Array): ReserveOutcome => {
+  const reserve = db.transaction((o: { epoch: number; windowFrom: number; proTxHash: string; collateral: string; blindedHash: Uint8Array }, sign: () => Uint8Array): ReserveOutcome => {
+    // A store that did not exist for the whole window cannot dedup it (a lost or reset database): refuse until the next epoch.
+    const started = q.startedAt.get()?.value;
+    if (started === undefined || started > o.windowFrom) return { kind: 'store-too-new' };
     const closed = q.maxClosed.get()?.m;
     if (closed !== null && closed !== undefined && o.epoch <= closed) return { kind: 'closed' };
     q.open.run(o.epoch);
@@ -86,13 +96,18 @@ export function openTokenStore(path: string): TokenStore {
   return {
     reserve: (o, sign) => reserve.immediate(o, sign),
     openEpoch: (epoch) => void q.open.run(epoch),
-    closeThrough: (epoch) =>
-      db.transaction(() => {
-        const n = q.del.run(epoch).changes;
+    markStarted: (height) => void q.started.run(height),
+    closeThrough: (epoch) => {
+      const n = db.transaction(() => {
+        const deleted = q.del.run(epoch).changes;
         q.mark.run(epoch);
         q.closeAll.run(epoch);
-        return n;
-      })(),
+        return deleted;
+      })();
+      // secure_delete overwrites the pages in the database file; the WAL still holds the old frames until a checkpoint
+      if (n) db.pragma('wal_checkpoint(TRUNCATE)');
+      return n;
+    },
     issued: (epoch) => q.epoch.get(epoch)?.issued ?? 0,
     unreported: () => q.unreported.all().map((r) => r.epoch),
     markReported: (epoch, docId) => void q.reported.run(docId, epoch),

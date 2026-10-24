@@ -3,7 +3,7 @@ import { serve } from '@hono/node-server';
 import { EPOCH_PARAMS } from '@govhub/badge';
 import { Challenges } from './challenge.ts';
 import { loadConfig, readIdentityKeyFile, readSecretFile } from './config.ts';
-import { createCoreView, createRpc } from './core.ts';
+import { createCoreView, createRpc, MnLists } from './core.ts';
 import { openTokenStore } from './db.ts';
 import { EpochManager } from './epochs.ts';
 import { errText, log } from './log.ts';
@@ -16,6 +16,7 @@ export async function runService(): Promise<void> {
   const params = EPOCH_PARAMS[cfg.network];
   const core = createCoreView(createRpc({ url: cfg.core.rpcUrl, user: cfg.core.rpcUser, password: cfg.core.rpcPassword, timeoutMs: cfg.core.rpcTimeoutMs }), cfg.network);
   const store = openTokenStore(cfg.dbPath);
+  const lists = new MnLists(core);
   // An empty placeholder file (deploy/scripts/init.sh) means: do not publish issuerReport documents.
   const reportKey = cfg.reportKeyFile && readSecretFile(cfg.reportKeyFile, 'ISSUER_REPORT_KEY_FILE') ? readIdentityKeyFile(cfg.reportKeyFile) : null;
   if (!reportKey) log.warn('no ISSUER_REPORT_KEY_FILE: issuerReport documents are not published');
@@ -29,10 +30,10 @@ export async function runService(): Promise<void> {
     }
   };
   await connect();
-  const epochs = new EpochManager({ params, issuerId: cfg.issuerId, keyDir: cfg.keyDir, maxStagedKeys: cfg.maxStagedKeys, core, store, platform: () => platform, reportKey });
+  const epochs = new EpochManager({ params, issuerId: cfg.issuerId, keyDir: cfg.keyDir, maxStagedKeys: cfg.maxStagedKeys, core, lists, store, platform: () => platform, reportKey });
   const challenges = new Challenges(cfg.hmacSecret, `${cfg.network}|${cfg.issuerId}`, cfg.challengeTtlSec);
   if (!cfg.hmacSecret) log.warn('ISSUER_HMAC_SECRET_FILE not set: challenges are invalidated by a restart');
-  const service = new TokenService({ network: cfg.network, params, issuerId: cfg.issuerId, core, store, challenges, activeKey: (e) => epochs.activeKey(e), nowSec: () => Math.floor(Date.now() / 1000) });
+  const service = new TokenService({ network: cfg.network, params, issuerId: cfg.issuerId, core, lists, store, challenges, activeKey: (e) => epochs.activeKey(e), nowSec: () => Math.floor(Date.now() / 1000) });
   const counters = new Map<string, number>();
   const app = createApp({ network: cfg.network, params, issuerId: cfg.issuerId, contractId: cfg.contractId, service, epochs, challengeTtlSec: cfg.challengeTtlSec, maxTokenRps: cfg.maxTokenRequestsPerSec, counters });
 
