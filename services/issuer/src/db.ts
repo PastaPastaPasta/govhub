@@ -41,6 +41,8 @@ export function openTokenStore(path: string): TokenStore {
   db.pragma('journal_mode = WAL');
   db.pragma('synchronous = FULL');
   db.pragma('secure_delete = ON');
+  // A database from before the started_height guard ran from before its windows opened (it has the epochs table but no meta).
+  const legacy = !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'epochs'").get() && !db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta'").get();
   db.exec(`
     CREATE TABLE IF NOT EXISTS tokens (
       epoch INTEGER NOT NULL,
@@ -75,6 +77,7 @@ export function openTokenStore(path: string): TokenStore {
     started: db.prepare<[number]>("INSERT OR IGNORE INTO meta (key, value) VALUES ('started_height', ?)"),
     startedAt: db.prepare<[], { value: number }>("SELECT value FROM meta WHERE key = 'started_height'"),
   };
+  if (legacy) q.started.run(0);
   const same = (a: Uint8Array, b: Uint8Array) => a.length === b.length && Buffer.compare(Buffer.from(a), Buffer.from(b)) === 0;
 
   const reserve = db.transaction((o: { epoch: number; windowFrom: number; proTxHash: string; collateral: string; blindedHash: Uint8Array }, sign: () => Uint8Array): ReserveOutcome => {

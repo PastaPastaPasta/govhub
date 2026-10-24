@@ -265,10 +265,13 @@ if (cmd === 'post') {
   const from = epochStart(P, epoch) + P.boundaryMarginBlocks;
   if (h < from) throw new Error(`badges for epoch ${epoch} may be posted from core height ${from}; now ${h} (${from - h} blocks to go)`);
   const reader = newReader();
-  if (st.jobA.state === 'token') {
-    st.jobA = await step(deps('A', reader), { ...st.jobA, postAt: h }, h);
+  // the client posts only once the issuer's report shows enough tokens; the issuer publishes it when the window closes
+  for (let i = 0; st.jobA.state === 'token' && i < 60; i++) {
+    const now = await coreHeight();
+    st.jobA = await step(deps('A', reader), { ...st.jobA, postAt: Math.min(st.jobA.postAt ?? now, now) }, now);
     save();
-    await mark(`A posts the badge: ${st.jobA.state}${st.jobA.note ? ` (${st.jobA.note})` : ''}`);
+    await mark(`A posting step: ${st.jobA.state}${st.jobA.note ? ` (${st.jobA.note})` : ''}`);
+    if (st.jobA.state === 'token') await new Promise((r) => setTimeout(r, 60_000));
   }
   // tamper 1: B posts an exact copy of A's badge under its own identity (copy to another identity)
   if (!st.results.copyPosted) {

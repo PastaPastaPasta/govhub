@@ -5,6 +5,23 @@ import { rnd } from './helpers.ts';
 const sig = () => rnd(256);
 
 describe('token store', () => {
+  it('a database from before the start guard keeps issuing (it has epochs but no meta table)', async () => {
+    const { mkdtempSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const Database = (await import('better-sqlite3')).default;
+    const path = join(mkdtempSync(join(tmpdir(), 'issuer-db-')), 'old.sqlite');
+    const old = new Database(path);
+    old.exec('CREATE TABLE epochs (epoch INTEGER PRIMARY KEY, issued INTEGER NOT NULL DEFAULT 0, closed INTEGER NOT NULL DEFAULT 0, served INTEGER NOT NULL DEFAULT 0, report_id TEXT)');
+    old.close();
+    const s = openTokenStore(path);
+    s.markStarted(999);
+    expect(s.reserve({ epoch: 5, windowFrom: 10, proTxHash: 'aa', collateral: 'c1', blindedHash: rnd(32) }, sig).kind).toBe('signed');
+    const fresh = openTokenStore(join(mkdtempSync(join(tmpdir(), 'issuer-db-')), 'new.sqlite'));
+    fresh.markStarted(999);
+    expect(fresh.reserve({ epoch: 5, windowFrom: 10, proTxHash: 'aa', collateral: 'c1', blindedHash: rnd(32) }, sig).kind).toBe('store-too-new');
+  });
+
   it('refuses an epoch whose window opened before the store existed (a lost or reset database)', () => {
     const s = openTokenStore(':memory:');
     expect(s.reserve({ epoch: 5, windowFrom: 10, proTxHash: 'aa', collateral: 'c1', blindedHash: rnd(32) }, sig)).toEqual({ kind: 'store-too-new' });
