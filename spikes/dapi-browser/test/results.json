@@ -1,0 +1,3751 @@
+{
+  "origin": "http://localhost:59482",
+  "startedAt": "2026-10-24T02:15:50.422Z",
+  "flows": {
+    "nodeList": {
+      "ms": 110,
+      "count": 205
+    },
+    "healthSweep": {
+      "total": 205,
+      "failed": 0,
+      "p50": 531,
+      "p90": 745,
+      "p99": 1227,
+      "max": 4413,
+      "results": [
+        {
+          "node": "162.212.35.100:443",
+          "ok": true,
+          "ms": 236,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "77.42.74.68:443",
+          "ok": true,
+          "ms": 542,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "45.76.141.74:443",
+          "ok": true,
+          "ms": 395,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.7/"
+        },
+        {
+          "node": "132.243.197.210:443",
+          "ok": true,
+          "ms": 512,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "37.27.83.17:443",
+          "ok": true,
+          "ms": 541,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "109.199.120.79:443",
+          "ok": true,
+          "ms": 449,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "88.216.191.113:443",
+          "ok": true,
+          "ms": 869,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "37.60.254.201:443",
+          "ok": true,
+          "ms": 478,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "143.198.145.184:443",
+          "ok": true,
+          "ms": 550,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "95.216.146.18:443",
+          "ok": true,
+          "ms": 540,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "37.60.234.205:443",
+          "ok": true,
+          "ms": 563,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "172.236.244.81:443",
+          "ok": true,
+          "ms": 212,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "37.60.244.253:443",
+          "ok": true,
+          "ms": 630,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "84.247.180.190:443",
+          "ok": true,
+          "ms": 529,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "51.68.3.29:443",
+          "ok": true,
+          "ms": 430,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "167.86.94.138:443",
+          "ok": true,
+          "ms": 458,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "95.179.139.125:443",
+          "ok": true,
+          "ms": 443,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.7/"
+        },
+        {
+          "node": "161.97.142.210:443",
+          "ok": true,
+          "ms": 450,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "75.119.156.254:443",
+          "ok": true,
+          "ms": 540,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "75.119.137.66:443",
+          "ok": true,
+          "ms": 532,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "89.125.209.152:443",
+          "ok": true,
+          "ms": 570,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "158.220.101.28:443",
+          "ok": true,
+          "ms": 524,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "161.97.176.38:443",
+          "ok": true,
+          "ms": 550,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "194.163.166.76:443",
+          "ok": true,
+          "ms": 527,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "157.173.122.25:443",
+          "ok": true,
+          "ms": 536,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "62.171.176.79:443",
+          "ok": true,
+          "ms": 441,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "104.207.75.34:443",
+          "ok": true,
+          "ms": 528,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "49.13.28.255:443",
+          "ok": true,
+          "ms": 485,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "89.35.131.39:443",
+          "ok": true,
+          "ms": 545,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "114.132.172.215:443",
+          "ok": true,
+          "ms": 1198,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "5.189.164.253:443",
+          "ok": true,
+          "ms": 528,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "43.133.171.101:443",
+          "ok": true,
+          "ms": 600,
+          "height": 2560396,
+          "synced": false,
+          "agent": "/Dash Core:24.0.0/"
+        },
+        {
+          "node": "37.60.255.160:443",
+          "ok": true,
+          "ms": 540,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "38.242.200.227:443",
+          "ok": true,
+          "ms": 469,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "89.125.209.69:443",
+          "ok": true,
+          "ms": 566,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "109.199.108.234:443",
+          "ok": true,
+          "ms": 509,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "103.214.68.30:443",
+          "ok": true,
+          "ms": 595,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "62.171.171.253:443",
+          "ok": true,
+          "ms": 557,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "161.97.120.156:443",
+          "ok": true,
+          "ms": 563,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "161.97.102.156:443",
+          "ok": true,
+          "ms": 523,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "31.220.84.93:443",
+          "ok": true,
+          "ms": 532,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "93.115.172.36:443",
+          "ok": true,
+          "ms": 550,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "109.123.244.131:443",
+          "ok": true,
+          "ms": 530,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "142.44.136.69:443",
+          "ok": true,
+          "ms": 172,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "192.248.175.198:443",
+          "ok": true,
+          "ms": 391,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.7/"
+        },
+        {
+          "node": "62.171.145.24:443",
+          "ok": true,
+          "ms": 519,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "173.212.196.214:443",
+          "ok": true,
+          "ms": 482,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "75.119.152.219:443",
+          "ok": true,
+          "ms": 446,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "5.189.151.7:443",
+          "ok": true,
+          "ms": 525,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "132.243.197.38:443",
+          "ok": true,
+          "ms": 1290,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "185.215.164.186:443",
+          "ok": true,
+          "ms": 518,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "54.69.95.118:443",
+          "ok": true,
+          "ms": 216,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "161.97.74.173:443",
+          "ok": true,
+          "ms": 543,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "37.60.243.59:443",
+          "ok": true,
+          "ms": 534,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "156.67.29.45:443",
+          "ok": true,
+          "ms": 583,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "188.245.90.255:443",
+          "ok": true,
+          "ms": 491,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "95.111.233.139:443",
+          "ok": true,
+          "ms": 548,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "89.125.209.27:443",
+          "ok": true,
+          "ms": 735,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "132.243.197.250:443",
+          "ok": true,
+          "ms": 490,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "104.207.75.31:443",
+          "ok": true,
+          "ms": 513,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "45.135.180.70:443",
+          "ok": true,
+          "ms": 575,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "89.125.209.234:443",
+          "ok": true,
+          "ms": 745,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "62.171.189.0:443",
+          "ok": true,
+          "ms": 593,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "89.125.50.14:443",
+          "ok": true,
+          "ms": 453,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.7/"
+        },
+        {
+          "node": "88.216.191.115:443",
+          "ok": true,
+          "ms": 868,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "178.18.254.136:443",
+          "ok": true,
+          "ms": 531,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "95.179.241.182:443",
+          "ok": true,
+          "ms": 426,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.7/"
+        },
+        {
+          "node": "161.97.117.125:443",
+          "ok": true,
+          "ms": 533,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "167.86.93.21:443",
+          "ok": true,
+          "ms": 476,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "159.69.204.162:443",
+          "ok": true,
+          "ms": 490,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "213.199.54.34:443",
+          "ok": true,
+          "ms": 513,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "62.171.168.4:443",
+          "ok": true,
+          "ms": 512,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "132.243.197.16:443",
+          "ok": true,
+          "ms": 905,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "132.243.197.251:443",
+          "ok": true,
+          "ms": 485,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "52.36.102.91:443",
+          "ok": true,
+          "ms": 218,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "89.125.209.178:443",
+          "ok": true,
+          "ms": 572,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "5.39.27.224:443",
+          "ok": true,
+          "ms": 436,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "5.78.73.117:443",
+          "ok": true,
+          "ms": 407,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "37.60.235.39:443",
+          "ok": true,
+          "ms": 524,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "206.245.167.74:443",
+          "ok": true,
+          "ms": 808,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "46.62.250.247:443",
+          "ok": true,
+          "ms": 542,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "161.97.163.75:443",
+          "ok": true,
+          "ms": 537,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "155.133.26.122:443",
+          "ok": true,
+          "ms": 516,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "173.212.232.90:443",
+          "ok": true,
+          "ms": 516,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "155.138.159.73:443",
+          "ok": true,
+          "ms": 130,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "207.180.233.246:443",
+          "ok": true,
+          "ms": 558,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "139.84.170.10:443",
+          "ok": true,
+          "ms": 1227,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "161.97.66.31:443",
+          "ok": true,
+          "ms": 532,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "84.247.180.201:443",
+          "ok": true,
+          "ms": 530,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "84.32.22.20:443",
+          "ok": true,
+          "ms": 865,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "185.166.217.154:443",
+          "ok": true,
+          "ms": 553,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "139.84.232.129:443",
+          "ok": true,
+          "ms": 1097,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "93.115.172.39:443",
+          "ok": true,
+          "ms": 551,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "38.242.206.103:443",
+          "ok": true,
+          "ms": 553,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "216.238.75.46:443",
+          "ok": true,
+          "ms": 225,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "84.32.22.141:443",
+          "ok": true,
+          "ms": 863,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "70.34.206.123:443",
+          "ok": true,
+          "ms": 485,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "185.209.230.13:443",
+          "ok": true,
+          "ms": 491,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "81.14.228.87:443",
+          "ok": true,
+          "ms": 536,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.2/"
+        },
+        {
+          "node": "62.171.144.192:443",
+          "ok": true,
+          "ms": 520,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "134.255.182.186:443",
+          "ok": true,
+          "ms": 654,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "130.185.118.3:443",
+          "ok": true,
+          "ms": 528,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "72.60.38.160:443",
+          "ok": true,
+          "ms": 685,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "103.214.68.131:443",
+          "ok": true,
+          "ms": 626,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "161.97.85.182:443",
+          "ok": true,
+          "ms": 525,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "161.97.153.122:443",
+          "ok": true,
+          "ms": 504,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "62.171.168.44:443",
+          "ok": true,
+          "ms": 548,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "37.60.234.168:443",
+          "ok": true,
+          "ms": 565,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "15.235.102.215:443",
+          "ok": true,
+          "ms": 116,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "62.171.136.245:443",
+          "ok": true,
+          "ms": 534,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "139.180.143.115:443",
+          "ok": true,
+          "ms": 845,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "144.126.141.62:443",
+          "ok": true,
+          "ms": 4413,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "213.199.54.35:443",
+          "ok": true,
+          "ms": 613,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "88.216.191.114:443",
+          "ok": true,
+          "ms": 863,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "161.97.173.67:443",
+          "ok": true,
+          "ms": 523,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "89.125.209.133:443",
+          "ok": true,
+          "ms": 583,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "144.91.99.105:443",
+          "ok": true,
+          "ms": 538,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "38.242.197.189:443",
+          "ok": true,
+          "ms": 507,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "167.233.98.163:443",
+          "ok": true,
+          "ms": 488,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.3/"
+        },
+        {
+          "node": "157.90.238.161:443",
+          "ok": true,
+          "ms": 484,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "161.97.159.172:443",
+          "ok": true,
+          "ms": 459,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "93.115.172.37:443",
+          "ok": true,
+          "ms": 539,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "213.199.53.161:443",
+          "ok": true,
+          "ms": 887,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "185.239.208.110:443",
+          "ok": true,
+          "ms": 530,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "34.210.238.67:443",
+          "ok": true,
+          "ms": 218,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "44.240.99.214:443",
+          "ok": true,
+          "ms": 220,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "52.33.9.172:443",
+          "ok": true,
+          "ms": 222,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "37.60.235.205:443",
+          "ok": true,
+          "ms": 549,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "161.97.91.217:443",
+          "ok": true,
+          "ms": 461,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "139.84.236.208:443",
+          "ok": true,
+          "ms": 1072,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "209.74.66.176:443",
+          "ok": true,
+          "ms": 496,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "185.239.209.6:443",
+          "ok": true,
+          "ms": 448,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "192.248.178.237:443",
+          "ok": true,
+          "ms": 431,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.7/"
+        },
+        {
+          "node": "75.119.138.9:443",
+          "ok": true,
+          "ms": 533,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "95.111.242.220:443",
+          "ok": true,
+          "ms": 528,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "5.75.133.148:443",
+          "ok": true,
+          "ms": 480,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "45.135.180.130:443",
+          "ok": true,
+          "ms": 550,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "51.158.169.237:443",
+          "ok": true,
+          "ms": 473,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "89.125.209.120:443",
+          "ok": true,
+          "ms": 573,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "172.238.7.25:443",
+          "ok": true,
+          "ms": 664,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "2.59.156.192:443",
+          "ok": true,
+          "ms": 532,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "66.29.147.83:443",
+          "ok": true,
+          "ms": 375,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.0/"
+        },
+        {
+          "node": "5.199.166.140:443",
+          "ok": true,
+          "ms": 870,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "5.199.166.218:443",
+          "ok": true,
+          "ms": 864,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "132.243.197.249:443",
+          "ok": true,
+          "ms": 540,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "167.235.102.194:443",
+          "ok": true,
+          "ms": 501,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "75.119.153.10:443",
+          "ok": true,
+          "ms": 572,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "62.171.145.234:443",
+          "ok": true,
+          "ms": 546,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "37.60.235.24:443",
+          "ok": true,
+          "ms": 544,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "104.207.75.3:443",
+          "ok": true,
+          "ms": 528,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "5.199.166.45:443",
+          "ok": true,
+          "ms": 931,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "62.171.150.24:443",
+          "ok": true,
+          "ms": 554,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "157.173.122.26:443",
+          "ok": true,
+          "ms": 508,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "72.62.58.108:443",
+          "ok": true,
+          "ms": 684,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "109.199.105.14:443",
+          "ok": true,
+          "ms": 524,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "207.244.247.40:443",
+          "ok": true,
+          "ms": 87,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "161.97.88.199:443",
+          "ok": true,
+          "ms": 602,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "136.244.99.17:443",
+          "ok": true,
+          "ms": 460,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "86.107.168.78:443",
+          "ok": true,
+          "ms": 223,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "62.171.178.71:443",
+          "ok": true,
+          "ms": 583,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "57.128.212.163:443",
+          "ok": true,
+          "ms": 744,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "31.220.91.43:443",
+          "ok": true,
+          "ms": 538,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "95.111.232.18:443",
+          "ok": true,
+          "ms": 617,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "161.97.85.159:443",
+          "ok": true,
+          "ms": 550,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "89.125.50.206:443",
+          "ok": true,
+          "ms": 446,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.7/"
+        },
+        {
+          "node": "51.79.109.182:443",
+          "ok": true,
+          "ms": 113,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "173.199.71.83:443",
+          "ok": true,
+          "ms": 415,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "157.173.122.21:443",
+          "ok": true,
+          "ms": 527,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "109.199.97.144:443",
+          "ok": true,
+          "ms": 531,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "77.221.148.204:443",
+          "ok": true,
+          "ms": 496,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "168.119.102.10:443",
+          "ok": true,
+          "ms": 493,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "158.247.247.241:443",
+          "ok": true,
+          "ms": 734,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "134.255.182.185:443",
+          "ok": true,
+          "ms": 518,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "91.198.108.36:443",
+          "ok": true,
+          "ms": 681,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "185.215.166.126:443",
+          "ok": true,
+          "ms": 560,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "45.32.70.131:443",
+          "ok": true,
+          "ms": 209,
+          "height": 2560396,
+          "synced": false,
+          "agent": "/Dash Core:24.0.0/"
+        },
+        {
+          "node": "104.156.154.179:443",
+          "ok": true,
+          "ms": 209,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "31.220.91.60:443",
+          "ok": true,
+          "ms": 533,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "104.207.75.23:443",
+          "ok": true,
+          "ms": 491,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "5.161.103.48:443",
+          "ok": true,
+          "ms": 316,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "93.115.172.38:443",
+          "ok": true,
+          "ms": 549,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "135.181.110.216:443",
+          "ok": true,
+          "ms": 539,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "173.212.245.118:443",
+          "ok": true,
+          "ms": 524,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "91.198.108.38:443",
+          "ok": true,
+          "ms": 679,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "43.167.244.109:443",
+          "ok": true,
+          "ms": 601,
+          "height": 2560396,
+          "synced": false,
+          "agent": "/Dash Core:24.0.0/"
+        },
+        {
+          "node": "65.109.84.202:443",
+          "ok": true,
+          "ms": 544,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "37.60.246.228:443",
+          "ok": true,
+          "ms": 640,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "173.212.251.130:443",
+          "ok": true,
+          "ms": 553,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "15.235.102.216:443",
+          "ok": true,
+          "ms": 118,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "78.141.225.100:443",
+          "ok": true,
+          "ms": 390,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "161.97.165.115:443",
+          "ok": true,
+          "ms": 783,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "77.20.160.6:443",
+          "ok": true,
+          "ms": 491,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.2/"
+        },
+        {
+          "node": "108.61.165.170:443",
+          "ok": true,
+          "ms": 430,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "80.240.19.200:443",
+          "ok": true,
+          "ms": 432,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "38.242.218.26:443",
+          "ok": true,
+          "ms": 537,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "23.88.63.58:443",
+          "ok": true,
+          "ms": 494,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "161.97.75.36:443",
+          "ok": true,
+          "ms": 543,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "84.247.187.76:443",
+          "ok": true,
+          "ms": 484,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "45.94.58.58:443",
+          "ok": true,
+          "ms": 533,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "185.202.236.58:443",
+          "ok": true,
+          "ms": 519,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "104.207.73.175:443",
+          "ok": true,
+          "ms": 471,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "139.84.137.143:443",
+          "ok": true,
+          "ms": 1219,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "161.97.106.14:443",
+          "ok": true,
+          "ms": 535,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "195.26.254.228:443",
+          "ok": true,
+          "ms": 92,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        },
+        {
+          "node": "37.60.254.213:443",
+          "ok": true,
+          "ms": 535,
+          "height": 2560396,
+          "synced": true,
+          "agent": "/Dash Core:23.1.8/"
+        }
+      ]
+    },
+    "perNode": [
+      {
+        "node": "162.212.35.100:443",
+        "unary": {
+          "node": "162.212.35.100:443",
+          "status": {
+            "ok": true,
+            "ms": 63,
+            "agent": "/Dash Core:23.1.8/",
+            "status": "READY",
+            "blocks": 2560396,
+            "synced": true,
+            "best": "00000000000000184ae7b72661dafe7b7ad7e2e21230df6b461cff2e85be6a69"
+          },
+          "height": {
+            "ok": true,
+            "ms": 112,
+            "height": 2560396
+          },
+          "blockRecent": {
+            "ok": true,
+            "ms": 126,
+            "bytes": 4564,
+            "txs": 14,
+            "merkleOk": true,
+            "prev": "000000000000000c33ea229476bb4614625edafcc2cf63cf53a82c3a696c70f3"
+          },
+          "blockCollateral": {
+            "ok": true,
+            "ms": 134,
+            "bytes": 19371,
+            "txs": 39,
+            "merkleOk": true,
+            "collateralTxid": "3451d292d461d1255007392a43d0da7b47eed938ff9a1234fb06ae19157fa365"
+          },
+          "txCollateral": {
+            "ok": true,
+            "ms": 114,
+            "txid": "3451d292d461d1255007392a43d0da7b47eed938ff9a1234fb06ae19157fa365",
+            "rawBytes": 234,
+            "txidMatches": true,
+            "height": 2559683,
+            "confirmations": 714,
+            "isInstantLocked": false,
+            "isChainLocked": true,
+            "blockHash": "000000000000002411139f9e5be8c3cd0ebecdfbe1815888f8e299afc871cab0",
+            "outputs": [
+              {
+                "value": "99999766",
+                "type": "p2pkh"
+              },
+              {
+                "value": "100000000",
+                "type": "op_return",
+                "opReturn": "cbc458f8a65a1f607f3acfa825b39f2f9b2748bdd0893bd5c0b911881eaf2fe9"
+              }
+            ]
+          },
+          "txRecent": {
+            "ok": true,
+            "ms": 59,
+            "txid": "e0f8265c947181fa8322821446627ec1b1547d0e20900b5cae0ff787da24fd94",
+            "rawBytes": 1096,
+            "txidMatches": true,
+            "height": 2560394,
+            "confirmations": 3,
+            "isInstantLocked": true,
+            "isChainLocked": true,
+            "blockHash": "000000000000000b0cb7c8ec5d1db5822208bfce7a84068fca13a9639d8f9fd9",
+            "outputs": [
+              {
+                "value": "100001",
+                "type": "p2pkh"
+              },
+              {
+                "value": "100001",
+                "type": "p2pkh"
+              },
+              {
+                "value": "100001",
+                "type": "p2pkh"
+              },
+              {
+                "value": "100001",
+                "type": "p2pkh"
+              },
+              {
+                "value": "100001",
+                "type": "p2pkh"
+              },
+              {
+                "value": "100001",
+                "type": "p2pkh"
+              }
+            ]
+          },
+          "txUnknown": {
+            "ok": false,
+            "ms": 60,
+            "error": {
+              "name": "GrpcError",
+              "code": 5,
+              "message": "Transaction not found",
+              "network": false
+            }
+          }
+        },
+        "headers": {
+          "node": "162.212.35.100:443",
+          "events": {
+            "headers": [
+              {
+                "t": 119,
+                "n": 4
+              }
+            ],
+            "chainlocks": [
+              {
+                "t": 118,
+                "height": 2560396,
+                "blockHash": "00000000000000184ae7b72661dafe7b7ad7e2e21230df6b461cff2e85be6a69"
+              }
+            ]
+          },
+          "headerCount": 4,
+          "closed": "cancelled",
+          "totalMs": 710,
+          "ok": true,
+          "linked": [
+            "e60c6dfa",
+            "696c70f3",
+            "9d8f9fd9",
+            "7f345595"
+          ]
+        },
+        "tx": {
+          "node": "162.212.35.100:443",
+          "bloom": {
+            "vDataBytes": 200,
+            "nHashFuncs": 50,
+            "rawtxs": 0,
+            "txs": 0,
+            "merkle": 4,
+            "islocks": 0,
+            "matchedInMerkle": 0,
+            "firstMs": {
+              "merkleblock": 125
+            },
+            "closed": "cancelled"
+          },
+          "bloomControl": {
+            "ms": 161,
+            "gotCollateral": true,
+            "txs": 1,
+            "merkleBlocks": 1,
+            "merkleRootOk": true,
+            "merkleContainsTx": true,
+            "endedBy": "end"
+          },
+          "matchAll": {
+            "rawtxs": 6,
+            "txs": 54,
+            "merkle": 4,
+            "islocks": 1,
+            "islocksForSeenTx": 1,
+            "firstMs": {
+              "rawtxs": 120,
+              "merkleblock": 121,
+              "islocks": 59377
+            },
+            "totalMs": 60956,
+            "rawTxToIsLockMs": [
+              2915
+            ],
+            "merkleBlocks": [
+              {
+                "total": 16,
+                "matched": 16,
+                "rootOk": true,
+                "allMatchedDelivered": true
+              },
+              {
+                "total": 14,
+                "matched": 14,
+                "rootOk": true,
+                "allMatchedDelivered": true
+              },
+              {
+                "total": 2,
+                "matched": 2,
+                "rootOk": true,
+                "allMatchedDelivered": true
+              },
+              {
+                "total": 10,
+                "matched": 10,
+                "rootOk": true,
+                "allMatchedDelivered": true
+              }
+            ],
+            "mempoolProbes": [
+              {
+                "txid": "d128297e6515",
+                "atMs": 56463,
+                "height": 0,
+                "confirmations": 0,
+                "isInstantLocked": false,
+                "isChainLocked": false,
+                "afterIsLock": "pending",
+                "getTxAtIsLock+0": {
+                  "isInstantLocked": true,
+                  "confirmations": 0
+                },
+                "getTxAtIsLock+1500": {
+                  "isInstantLocked": true,
+                  "confirmations": 0
+                }
+              }
+            ],
+            "lastIsLock": {
+              "txid": "d128297e6515e5396c01d34d4f2c5e2833626e6748da63c6e6abe692c39903bc",
+              "inputs": 7,
+              "version": 1,
+              "sigBytes": 96
+            },
+            "closed": "cancelled"
+          }
+        },
+        "sml": {
+          "node": "162.212.35.100:443",
+          "ok": true,
+          "bytes": 1361181,
+          "firstMessageMs": 469,
+          "parseMs": 10,
+          "mnCount": 3014,
+          "validMnCount": 2254,
+          "evonodeCount": 362,
+          "quorumCount": 88,
+          "platformEndpoints": 356,
+          "tipBlockHash": "00000000000000184ae7b72661dafe7b7ad7e2e21230df6b461cff2e85be6a69",
+          "baseBlockHash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "closed": "cancelled"
+        }
+      },
+      {
+        "node": "77.42.74.68:443",
+        "unary": {
+          "node": "77.42.74.68:443",
+          "status": {
+            "ok": true,
+            "ms": 140,
+            "agent": "/Dash Core:23.1.8/",
+            "status": "READY",
+            "blocks": 2560396,
+            "synced": true,
+            "best": "00000000000000184ae7b72661dafe7b7ad7e2e21230df6b461cff2e85be6a69"
+          },
+          "height": {
+            "ok": true,
+            "ms": 274,
+            "height": 2560396
+          },
+          "blockRecent": {
+            "ok": true,
+            "ms": 303,
+            "bytes": 4564,
+            "txs": 14,
+            "merkleOk": true,
+            "prev": "000000000000000c33ea229476bb4614625edafcc2cf63cf53a82c3a696c70f3"
+          },
+          "blockCollateral": {
+            "ok": true,
+            "ms": 309,
+            "bytes": 19371,
+            "txs": 39,
+            "merkleOk": true,
+            "collateralTxid": "3451d292d461d1255007392a43d0da7b47eed938ff9a1234fb06ae19157fa365"
+          },
+          "txCollateral": {
+            "ok": true,
+            "ms": 273,
+            "txid": "3451d292d461d1255007392a43d0da7b47eed938ff9a1234fb06ae19157fa365",
+            "rawBytes": 234,
+            "txidMatches": true,
+            "height": 2559683,
+            "confirmations": 714,
+            "isInstantLocked": false,
+            "isChainLocked": true,
+            "blockHash": "000000000000002411139f9e5be8c3cd0ebecdfbe1815888f8e299afc871cab0",
+            "outputs": [
+              {
+                "value": "99999766",
+                "type": "p2pkh"
+              },
+              {
+                "value": "100000000",
+                "type": "op_return",
+                "opReturn": "cbc458f8a65a1f607f3acfa825b39f2f9b2748bdd0893bd5c0b911881eaf2fe9"
+              }
+            ]
+          },
+          "txRecent": {
+            "ok": true,
+            "ms": 138,
+            "txid": "e0f8265c947181fa8322821446627ec1b1547d0e20900b5cae0ff787da24fd94",
+            "rawBytes": 1096,
+            "txidMatches": true,
+            "height": 2560394,
+            "confirmations": 3,
+            "isInstantLocked": true,
+            "isChainLocked": true,
+            "blockHash": "000000000000000b0cb7c8ec5d1db5822208bfce7a84068fca13a9639d8f9fd9",
+            "outputs": [
+              {
+                "value": "100001",
+                "type": "p2pkh"
+              },
+              {
+                "value": "100001",
+                "type": "p2pkh"
+              },
+              {
+                "value": "100001",
+                "type": "p2pkh"
+              },
+              {
+                "value": "100001",
+                "type": "p2pkh"
+              },
+              {
+                "value": "100001",
+                "type": "p2pkh"
+              },
+              {
+                "value": "100001",
+                "type": "p2pkh"
+              }
+            ]
+          },
+          "txUnknown": {
+            "ok": false,
+            "ms": 142,
+            "error": {
+              "name": "GrpcError",
+              "code": 5,
+              "message": "Transaction not found",
+              "network": false
+            }
+          }
+        },
+        "headers": {
+          "node": "77.42.74.68:443",
+          "events": {
+            "headers": [
+              {
+                "t": 289,
+                "n": 4
+              }
+            ],
+            "chainlocks": [
+              {
+                "t": 275,
+                "height": 2560396,
+                "blockHash": "00000000000000184ae7b72661dafe7b7ad7e2e21230df6b461cff2e85be6a69"
+              }
+            ]
+          },
+          "headerCount": 4,
+          "closed": "cancelled",
+          "totalMs": 808,
+          "ok": true,
+          "linked": [
+            "e60c6dfa",
+            "696c70f3",
+            "9d8f9fd9",
+            "7f345595"
+          ]
+        },
+        "tx": {
+          "node": "77.42.74.68:443",
+          "bloom": {
+            "vDataBytes": 200,
+            "nHashFuncs": 50,
+            "rawtxs": 0,
+            "txs": 0,
+            "merkle": 4,
+            "islocks": 0,
+            "matchedInMerkle": 0,
+            "firstMs": {
+              "merkleblock": 337
+            },
+            "closed": "cancelled"
+          },
+          "bloomControl": {
+            "ms": 339,
+            "gotCollateral": true,
+            "txs": 1,
+            "merkleBlocks": 1,
+            "merkleRootOk": true,
+            "merkleContainsTx": true,
+            "endedBy": "end"
+          },
+          "matchAll": {
+            "rawtxs": 6,
+            "txs": 54,
+            "merkle": 4,
+            "islocks": 1,
+            "islocksForSeenTx": 1,
+            "firstMs": {
+              "rawtxs": 164,
+              "merkleblock": 300,
+              "islocks": 58123
+            },
+            "totalMs": 59865,
+            "rawTxToIsLockMs": [
+              2853
+            ],
+            "merkleBlocks": [
+              {
+                "total": 16,
+                "matched": 16,
+                "rootOk": true,
+                "allMatchedDelivered": true
+              },
+              {
+                "total": 14,
+                "matched": 14,
+                "rootOk": true,
+                "allMatchedDelivered": true
+              },
+              {
+                "total": 2,
+                "matched": 2,
+                "rootOk": true,
+                "allMatchedDelivered": true
+              },
+              {
+                "total": 10,
+                "matched": 10,
+                "rootOk": true,
+                "allMatchedDelivered": true
+              }
+            ],
+            "mempoolProbes": [
+              {
+                "txid": "d128297e6515",
+                "atMs": 55270,
+                "height": 0,
+                "confirmations": 0,
+                "isInstantLocked": false,
+                "isChainLocked": false,
+                "afterIsLock": "pending",
+                "getTxAtIsLock+0": {
+                  "isInstantLocked": true,
+                  "confirmations": 0
+                },
+                "getTxAtIsLock+1500": {
+                  "isInstantLocked": true,
+                  "confirmations": 0
+                }
+              }
+            ],
+            "lastIsLock": {
+              "txid": "d128297e6515e5396c01d34d4f2c5e2833626e6748da63c6e6abe692c39903bc",
+              "inputs": 7,
+              "version": 1,
+              "sigBytes": 96
+            },
+            "closed": "cancelled"
+          }
+        },
+        "sml": {
+          "node": "77.42.74.68:443",
+          "ok": true,
+          "bytes": 1361181,
+          "firstMessageMs": 1089,
+          "parseMs": 9,
+          "mnCount": 3014,
+          "validMnCount": 2254,
+          "evonodeCount": 362,
+          "quorumCount": 88,
+          "platformEndpoints": 356,
+          "tipBlockHash": "00000000000000184ae7b72661dafe7b7ad7e2e21230df6b461cff2e85be6a69",
+          "baseBlockHash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "closed": "cancelled"
+        }
+      },
+      {
+        "node": "45.76.141.74:443",
+        "unary": {
+          "node": "45.76.141.74:443",
+          "status": {
+            "ok": true,
+            "ms": 100,
+            "agent": "/Dash Core:23.1.7/",
+            "status": "READY",
+            "blocks": 2560396,
+            "synced": true,
+            "best": "00000000000000184ae7b72661dafe7b7ad7e2e21230df6b461cff2e85be6a69"
+          },
+          "height": {
+            "ok": true,
+            "ms": 201,
+            "height": 2560396
+          },
+          "blockRecent": {
+            "ok": true,
+            "ms": 199,
+            "bytes": 4564,
+            "txs": 14,
+            "merkleOk": true,
+            "prev": "000000000000000c33ea229476bb4614625edafcc2cf63cf53a82c3a696c70f3"
+          },
+          "blockCollateral": {
+            "ok": true,
+            "ms": 139,
+            "bytes": 19371,
+            "txs": 39,
+            "merkleOk": true,
+            "collateralTxid": "3451d292d461d1255007392a43d0da7b47eed938ff9a1234fb06ae19157fa365"
+          },
+          "txCollateral": {
+            "ok": true,
+            "ms": 195,
+            "txid": "3451d292d461d1255007392a43d0da7b47eed938ff9a1234fb06ae19157fa365",
+            "rawBytes": 234,
+            "txidMatches": true,
+            "height": 2559683,
+            "confirmations": 714,
+            "isInstantLocked": false,
+            "isChainLocked": true,
+            "blockHash": "000000000000002411139f9e5be8c3cd0ebecdfbe1815888f8e299afc871cab0",
+            "outputs": [
+              {
+                "value": "99999766",
+                "type": "p2pkh"
+              },
+              {
+                "value": "100000000",
+                "type": "op_return",
+                "opReturn": "cbc458f8a65a1f607f3acfa825b39f2f9b2748bdd0893bd5c0b911881eaf2fe9"
+              }
+            ]
+          },
+          "txRecent": {
+            "ok": true,
+            "ms": 99,
+            "txid": "e0f8265c947181fa8322821446627ec1b1547d0e20900b5cae0ff787da24fd94",
+            "rawBytes": 1096,
+            "txidMatches": true,
+            "height": 2560394,
+            "confirmations": 3,
+            "isInstantLocked": true,
+            "isChainLocked": true,
+            "blockHash": "000000000000000b0cb7c8ec5d1db5822208bfce7a84068fca13a9639d8f9fd9",
+            "outputs": [
+              {
+                "value": "100001",
+                "type": "p2pkh"
+              },
+              {
+                "value": "100001",
+                "type": "p2pkh"
+              },
+              {
+                "value": "100001",
+                "type": "p2pkh"
+              },
+              {
+                "value": "100001",
+                "type": "p2pkh"
+              },
+              {
+                "value": "100001",
+                "type": "p2pkh"
+              },
+              {
+                "value": "100001",
+                "type": "p2pkh"
+              }
+            ]
+          },
+          "txUnknown": {
+            "ok": false,
+            "ms": 99,
+            "error": {
+              "name": "GrpcError",
+              "code": 5,
+              "message": "Transaction not found",
+              "network": false
+            }
+          }
+        },
+        "headers": {
+          "node": "45.76.141.74:443",
+          "events": {
+            "headers": [
+              {
+                "t": 200,
+                "n": 4
+              }
+            ],
+            "chainlocks": [
+              {
+                "t": 199,
+                "height": 2560396,
+                "blockHash": "00000000000000184ae7b72661dafe7b7ad7e2e21230df6b461cff2e85be6a69"
+              }
+            ]
+          },
+          "headerCount": 4,
+          "closed": "cancelled",
+          "totalMs": 704,
+          "ok": true,
+          "linked": [
+            "e60c6dfa",
+            "696c70f3",
+            "9d8f9fd9",
+            "7f345595"
+          ]
+        },
+        "tx": {
+          "node": "45.76.141.74:443",
+          "bloom": {
+            "vDataBytes": 200,
+            "nHashFuncs": 50,
+            "rawtxs": 0,
+            "txs": 0,
+            "merkle": 4,
+            "islocks": 0,
+            "matchedInMerkle": 0,
+            "firstMs": {
+              "merkleblock": 210
+            },
+            "closed": "cancelled"
+          },
+          "bloomControl": {
+            "ms": 303,
+            "gotCollateral": true,
+            "txs": 1,
+            "merkleBlocks": 1,
+            "merkleRootOk": true,
+            "merkleContainsTx": true,
+            "endedBy": "end"
+          },
+          "matchAll": {
+            "rawtxs": 6,
+            "txs": 54,
+            "merkle": 4,
+            "islocks": 1,
+            "islocksForSeenTx": 1,
+            "firstMs": {
+              "rawtxs": 134,
+              "merkleblock": 134,
+              "islocks": 58684
+            },
+            "totalMs": 60332,
+            "rawTxToIsLockMs": [
+              2777
+            ],
+            "merkleBlocks": [
+              {
+                "total": 16,
+                "matched": 16,
+                "rootOk": true,
+                "allMatchedDelivered": true
+              },
+              {
+                "total": 14,
+                "matched": 14,
+                "rootOk": true,
+                "allMatchedDelivered": true
+              },
+              {
+                "total": 2,
+                "matched": 2,
+                "rootOk": true,
+                "allMatchedDelivered": true
+              },
+              {
+                "total": 10,
+                "matched": 10,
+                "rootOk": true,
+                "allMatchedDelivered": true
+              }
+            ],
+            "mempoolProbes": [
+              {
+                "txid": "d128297e6515",
+                "atMs": 55908,
+                "height": 0,
+                "confirmations": 0,
+                "isInstantLocked": false,
+                "isChainLocked": false,
+                "afterIsLock": "pending",
+                "getTxAtIsLock+0": {
+                  "isInstantLocked": true,
+                  "confirmations": 0
+                },
+                "getTxAtIsLock+1500": {
+                  "isInstantLocked": true,
+                  "confirmations": 0
+                }
+              }
+            ],
+            "lastIsLock": {
+              "txid": "d128297e6515e5396c01d34d4f2c5e2833626e6748da63c6e6abe692c39903bc",
+              "inputs": 7,
+              "version": 1,
+              "sigBytes": 96
+            },
+            "closed": "cancelled"
+          }
+        },
+        "sml": {
+          "node": "45.76.141.74:443",
+          "ok": true,
+          "bytes": 1361181,
+          "firstMessageMs": 709,
+          "parseMs": 8,
+          "mnCount": 3014,
+          "validMnCount": 2254,
+          "evonodeCount": 362,
+          "quorumCount": 88,
+          "platformEndpoints": 356,
+          "tipBlockHash": "00000000000000184ae7b72661dafe7b7ad7e2e21230df6b461cff2e85be6a69",
+          "baseBlockHash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "closed": "cancelled"
+        }
+      }
+    ],
+    "latency": {
+      "node": "162.212.35.100:443",
+      "sequentialMs": [
+        57,
+        58,
+        60,
+        59,
+        58
+      ],
+      "afterIdle8sMs": 59
+    },
+    "bls": {
+      "height": 2560396,
+      "cold": {
+        "ok": true,
+        "rank": 0,
+        "quorumHash": "000000000000000fb96487bbac2780c3c9bb97d8efaed50e8b8989983f0ffcc8",
+        "ms": 25
+      },
+      "warm": {
+        "ok": true,
+        "rank": 0,
+        "quorumHash": "000000000000000fb96487bbac2780c3c9bb97d8efaed50e8b8989983f0ffcc8",
+        "ms": 9
+      },
+      "tamperedRejected": true
+    },
+    "race": {
+      "clean": {
+        "winner": "162.212.35.100:443",
+        "ms": 59,
+        "failures": 0
+      },
+      "withBadNodesFirst": {
+        "winner": "162.212.35.100:443",
+        "ms": 58,
+        "failures": [
+          {
+            "node": "127.0.0.1:1",
+            "error": "network error: Failed to fetch"
+          },
+          {
+            "node": "invalid.invalid:443",
+            "error": "network error: Failed to fetch"
+          }
+        ]
+      }
+    },
+    "merge": {
+      "deliveredTxs": 29,
+      "deliveredIsLocks": [
+        {
+          "txid": "fb9de8003799",
+          "firstNode": "45.76.141.74:443",
+          "t": 9847
+        },
+        {
+          "txid": "7777311e2b06",
+          "firstNode": "77.42.74.68:443",
+          "t": 10769
+        }
+      ],
+      "deliveredExactlyOnce": true,
+      "stats": {
+        "opened": [
+          "127.0.0.1:1",
+          "162.212.35.100:443",
+          "77.42.74.68:443",
+          "45.76.141.74:443"
+        ],
+        "failed": [
+          {
+            "node": "127.0.0.1:1",
+            "reason": "error",
+            "error": "GrpcError: network error: Failed to fetch"
+          }
+        ],
+        "firstBy": {
+          "162.212.35.100:443": 16,
+          "45.76.141.74:443": 14,
+          "77.42.74.68:443": 1
+        },
+        "dupes": 62,
+        "items": 31,
+        "live": 3
+      },
+      "isLockInterNodeSpreadMs": [
+        129,
+        108
+      ],
+      "txInterNodeSpreadMs": [
+        81,
+        81,
+        81,
+        81,
+        81,
+        81,
+        81,
+        81,
+        81,
+        80,
+        80,
+        80,
+        86,
+        162,
+        163,
+        163,
+        163,
+        163,
+        163,
+        163
+      ],
+      "closed": "closed"
+    }
+  },
+  "network": {
+    "dapiRequests": 270,
+    "abortedByClient": 18,
+    "failedByReason": {
+      "net::ERR_UNSAFE_PORT": 2,
+      "net::ERR_NAME_NOT_RESOLVED": 1
+    },
+    "failedHosts": {
+      "net::ERR_UNSAFE_PORT": [
+        "127.0.0.1:1",
+        "127.0.0.1:1"
+      ],
+      "net::ERR_NAME_NOT_RESOLVED": [
+        "invalid.invalid"
+      ]
+    },
+    "inflightAtEnd": 0
+  },
+  "browser": "156.0.8078.4",
+  "checks": [
+    {
+      "name": "node list fetched cross-origin (CORS)",
+      "ok": true,
+      "detail": {
+        "ms": 110,
+        "count": 205,
+        "nodes": [
+          "52.33.9.172:443",
+          "195.26.254.228:443",
+          "62.171.176.79:443",
+          "80.240.19.200:443",
+          "161.97.176.38:443",
+          "144.91.99.105:443",
+          "134.255.182.185:443",
+          "70.34.206.123:443",
+          "44.240.99.214:443",
+          "104.207.73.175:443",
+          "65.109.84.202:443",
+          "156.67.29.45:443",
+          "161.97.163.75:443",
+          "51.79.109.182:443",
+          "84.247.187.76:443",
+          "45.135.180.70:443",
+          "37.27.83.17:443",
+          "89.125.209.234:443",
+          "62.171.145.234:443",
+          "207.180.233.246:443",
+          "5.189.151.7:443",
+          "81.14.228.87:443",
+          "216.238.75.46:443",
+          "5.161.103.48:443",
+          "45.32.70.131:443",
+          "31.220.91.60:443",
+          "157.90.238.161:443",
+          "161.97.66.31:443",
+          "89.125.209.178:443",
+          "142.44.136.69:443",
+          "161.97.117.125:443",
+          "185.202.236.58:443",
+          "161.97.85.159:443",
+          "31.220.84.93:443",
+          "161.97.102.156:443",
+          "167.86.94.138:443",
+          "161.97.153.122:443",
+          "103.214.68.30:443",
+          "75.119.138.9:443",
+          "114.132.172.215:443",
+          "88.216.191.115:443",
+          "157.173.122.26:443",
+          "139.84.170.10:443",
+          "57.128.212.163:443",
+          "43.133.171.101:443",
+          "84.32.22.20:443",
+          "2.59.156.192:443",
+          "109.123.244.131:443",
+          "167.233.98.163:443",
+          "93.115.172.39:443",
+          "188.245.90.255:443",
+          "15.235.102.216:443",
+          "5.78.73.117:443",
+          "194.163.166.76:443",
+          "37.60.235.24:443",
+          "158.247.247.241:443",
+          "168.119.102.10:443",
+          "37.60.243.59:443",
+          "72.62.58.108:443",
+          "62.171.150.24:443",
+          "93.115.172.36:443",
+          "161.97.91.217:443",
+          "89.125.50.14:443",
+          "132.243.197.250:443",
+          "37.60.246.228:443",
+          "132.243.197.16:443",
+          "109.199.120.79:443",
+          "93.115.172.38:443",
+          "51.158.169.237:443",
+          "109.199.105.14:443",
+          "62.171.168.44:443",
+          "31.220.91.43:443",
+          "206.245.167.74:443",
+          "93.115.172.37:443",
+          "88.216.191.113:443",
+          "132.243.197.249:443",
+          "77.42.74.68:443",
+          "161.97.159.172:443",
+          "62.171.168.4:443",
+          "62.171.144.192:443",
+          "132.243.197.210:443",
+          "75.119.156.254:443",
+          "66.29.147.83:443",
+          "5.199.166.45:443",
+          "185.215.166.126:443",
+          "104.207.75.3:443",
+          "88.216.191.114:443",
+          "38.242.206.103:443",
+          "167.86.93.21:443",
+          "84.32.22.141:443",
+          "161.97.173.67:443",
+          "37.60.234.168:443",
+          "132.243.197.38:443",
+          "89.125.209.69:443",
+          "135.181.110.216:443",
+          "178.18.254.136:443",
+          "109.199.97.144:443",
+          "173.212.196.214:443",
+          "23.88.63.58:443",
+          "173.212.251.130:443",
+          "161.97.106.14:443",
+          "139.84.232.129:443",
+          "108.61.165.170:443",
+          "38.242.200.227:443",
+          "162.212.35.100:443",
+          "75.119.137.66:443",
+          "173.212.232.90:443",
+          "34.210.238.67:443",
+          "62.171.145.24:443",
+          "139.84.137.143:443",
+          "43.167.244.109:443",
+          "167.235.102.194:443",
+          "77.221.148.204:443",
+          "62.171.171.253:443",
+          "78.141.225.100:443",
+          "95.111.232.18:443",
+          "52.36.102.91:443",
+          "161.97.85.182:443",
+          "54.69.95.118:443",
+          "5.199.166.218:443",
+          "130.185.118.3:443",
+          "173.199.71.83:443",
+          "89.125.50.206:443",
+          "209.74.66.176:443",
+          "15.235.102.215:443",
+          "37.60.254.201:443",
+          "37.60.235.39:443",
+          "172.236.244.81:443",
+          "155.138.159.73:443",
+          "213.199.54.35:443",
+          "5.199.166.140:443",
+          "185.239.209.6:443",
+          "104.156.154.179:443",
+          "91.198.108.36:443",
+          "134.255.182.186:443",
+          "89.125.209.133:443",
+          "158.220.101.28:443",
+          "95.111.233.139:443",
+          "49.13.28.255:443",
+          "84.247.180.190:443",
+          "192.248.175.198:443",
+          "161.97.75.36:443",
+          "77.20.160.6:443",
+          "45.76.141.74:443",
+          "37.60.244.253:443",
+          "37.60.235.205:443",
+          "89.35.131.39:443",
+          "173.212.245.118:443",
+          "213.199.54.34:443",
+          "161.97.120.156:443",
+          "45.135.180.130:443",
+          "157.173.122.25:443",
+          "86.107.168.78:443",
+          "89.125.209.120:443",
+          "62.171.136.245:443",
+          "95.111.242.220:443",
+          "132.243.197.251:443",
+          "62.171.189.0:443",
+          "45.94.58.58:443",
+          "5.39.27.224:443",
+          "37.60.255.160:443",
+          "37.60.234.205:443",
+          "46.62.250.247:443",
+          "144.126.141.62:443",
+          "161.97.88.199:443",
+          "104.207.75.23:443",
+          "89.125.209.27:443",
+          "213.199.53.161:443",
+          "139.84.236.208:443",
+          "185.166.217.154:443",
+          "161.97.74.173:443",
+          "75.119.152.219:443",
+          "104.207.75.31:443",
+          "207.244.247.40:443",
+          "37.60.254.213:443",
+          "136.244.99.17:443",
+          "159.69.204.162:443",
+          "103.214.68.131:443",
+          "89.125.209.152:443",
+          "161.97.165.115:443",
+          "95.179.139.125:443",
+          "5.189.164.253:443",
+          "38.242.218.26:443",
+          "172.238.7.25:443",
+          "5.75.133.148:443",
+          "104.207.75.34:443",
+          "84.247.180.201:443",
+          "161.97.142.210:443",
+          "157.173.122.21:443",
+          "72.60.38.160:443",
+          "139.180.143.115:443",
+          "185.215.164.186:443",
+          "155.133.26.122:443",
+          "75.119.153.10:443",
+          "62.171.178.71:443",
+          "38.242.197.189:443",
+          "95.179.241.182:443",
+          "192.248.178.237:443",
+          "185.239.208.110:443",
+          "109.199.108.234:443",
+          "51.68.3.29:443",
+          "143.198.145.184:443",
+          "185.209.230.13:443",
+          "91.198.108.38:443",
+          "95.216.146.18:443"
+        ]
+      }
+    },
+    {
+      "name": "health sweep: >=90% of random nodes answer",
+      "ok": true,
+      "detail": {
+        "failed": 0,
+        "total": 205
+      }
+    },
+    {
+      "name": ">= 3 healthy nodes for full flows",
+      "ok": true,
+      "detail": 202
+    },
+    {
+      "name": "[162.212.35.100:443] getBlockchainStatus + getBestBlockHeight",
+      "ok": true,
+      "detail": [
+        {
+          "ok": true,
+          "ms": 63,
+          "agent": "/Dash Core:23.1.8/",
+          "status": "READY",
+          "blocks": 2560396,
+          "synced": true,
+          "best": "00000000000000184ae7b72661dafe7b7ad7e2e21230df6b461cff2e85be6a69"
+        },
+        {
+          "ok": true,
+          "ms": 112,
+          "height": 2560396
+        }
+      ]
+    },
+    {
+      "name": "[162.212.35.100:443] getBlock(height) parses, merkle root ok",
+      "ok": true,
+      "detail": [
+        {
+          "ok": true,
+          "ms": 126,
+          "bytes": 4564,
+          "txs": 14,
+          "merkleOk": true,
+          "prev": "000000000000000c33ea229476bb4614625edafcc2cf63cf53a82c3a696c70f3"
+        },
+        {
+          "ok": true,
+          "ms": 134,
+          "bytes": 19371,
+          "txs": 39,
+          "merkleOk": true,
+          "collateralTxid": "3451d292d461d1255007392a43d0da7b47eed938ff9a1234fb06ae19157fa365"
+        }
+      ]
+    },
+    {
+      "name": "[162.212.35.100:443] collateral found by scanning block 2559683",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "ms": 134,
+        "bytes": 19371,
+        "txs": 39,
+        "merkleOk": true,
+        "collateralTxid": "3451d292d461d1255007392a43d0da7b47eed938ff9a1234fb06ae19157fa365"
+      }
+    },
+    {
+      "name": "[162.212.35.100:443] getTransaction(collateral): raw, height, confs, IS/CL flags, OP_RETURN",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "ms": 114,
+        "txid": "3451d292d461d1255007392a43d0da7b47eed938ff9a1234fb06ae19157fa365",
+        "rawBytes": 234,
+        "txidMatches": true,
+        "height": 2559683,
+        "confirmations": 714,
+        "isInstantLocked": false,
+        "isChainLocked": true,
+        "blockHash": "000000000000002411139f9e5be8c3cd0ebecdfbe1815888f8e299afc871cab0",
+        "outputs": [
+          {
+            "value": "99999766",
+            "type": "p2pkh"
+          },
+          {
+            "value": "100000000",
+            "type": "op_return",
+            "opReturn": "cbc458f8a65a1f607f3acfa825b39f2f9b2748bdd0893bd5c0b911881eaf2fe9"
+          }
+        ]
+      }
+    },
+    {
+      "name": "[162.212.35.100:443] getTransaction(recent)",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "ms": 59,
+        "txid": "e0f8265c947181fa8322821446627ec1b1547d0e20900b5cae0ff787da24fd94",
+        "rawBytes": 1096,
+        "txidMatches": true,
+        "height": 2560394,
+        "confirmations": 3,
+        "isInstantLocked": true,
+        "isChainLocked": true,
+        "blockHash": "000000000000000b0cb7c8ec5d1db5822208bfce7a84068fca13a9639d8f9fd9",
+        "outputs": [
+          {
+            "value": "100001",
+            "type": "p2pkh"
+          },
+          {
+            "value": "100001",
+            "type": "p2pkh"
+          },
+          {
+            "value": "100001",
+            "type": "p2pkh"
+          },
+          {
+            "value": "100001",
+            "type": "p2pkh"
+          },
+          {
+            "value": "100001",
+            "type": "p2pkh"
+          },
+          {
+            "value": "100001",
+            "type": "p2pkh"
+          }
+        ]
+      }
+    },
+    {
+      "name": "[162.212.35.100:443] getTransaction(unknown) -> NOT_FOUND",
+      "ok": true,
+      "detail": {
+        "ok": false,
+        "ms": 60,
+        "error": {
+          "name": "GrpcError",
+          "code": 5,
+          "message": "Transaction not found",
+          "network": false
+        }
+      }
+    },
+    {
+      "name": "[162.212.35.100:443] headers stream: headers + chainlock, clean cancel",
+      "ok": true,
+      "detail": {
+        "node": "162.212.35.100:443",
+        "events": {
+          "headers": [
+            {
+              "t": 119,
+              "n": 4
+            }
+          ],
+          "chainlocks": [
+            {
+              "t": 118,
+              "height": 2560396,
+              "blockHash": "00000000000000184ae7b72661dafe7b7ad7e2e21230df6b461cff2e85be6a69"
+            }
+          ]
+        },
+        "headerCount": 4,
+        "closed": "cancelled",
+        "totalMs": 710,
+        "ok": true,
+        "linked": [
+          "e60c6dfa",
+          "696c70f3",
+          "9d8f9fd9",
+          "7f345595"
+        ]
+      }
+    },
+    {
+      "name": "[162.212.35.100:443] bloom positive control: real P2PKH hash160 filter returns the collateral tx + valid merkleblock",
+      "ok": true,
+      "detail": {
+        "ms": 161,
+        "gotCollateral": true,
+        "txs": 1,
+        "merkleBlocks": 1,
+        "merkleRootOk": true,
+        "merkleContainsTx": true,
+        "endedBy": "end"
+      }
+    },
+    {
+      "name": "[162.212.35.100:443] bloom (>=200B) stream: opened, ~0 matches, clean cancel",
+      "ok": true,
+      "detail": {
+        "vDataBytes": 200,
+        "nHashFuncs": 50,
+        "rawtxs": 0,
+        "txs": 0,
+        "merkle": 4,
+        "islocks": 0,
+        "matchedInMerkle": 0,
+        "firstMs": {
+          "merkleblock": 125
+        },
+        "closed": "cancelled"
+      }
+    },
+    {
+      "name": "[162.212.35.100:443] match-all stream: raw txs + merkle blocks (root ok), clean cancel",
+      "ok": true,
+      "detail": {
+        "rawtxs": 6,
+        "txs": 54,
+        "merkle": 4,
+        "islocks": 1,
+        "islocksForSeenTx": 1,
+        "firstMs": {
+          "rawtxs": 120,
+          "merkleblock": 121,
+          "islocks": 59377
+        },
+        "totalMs": 60956,
+        "rawTxToIsLockMs": [
+          2915
+        ],
+        "merkleBlocks": [
+          {
+            "total": 16,
+            "matched": 16,
+            "rootOk": true,
+            "allMatchedDelivered": true
+          },
+          {
+            "total": 14,
+            "matched": 14,
+            "rootOk": true,
+            "allMatchedDelivered": true
+          },
+          {
+            "total": 2,
+            "matched": 2,
+            "rootOk": true,
+            "allMatchedDelivered": true
+          },
+          {
+            "total": 10,
+            "matched": 10,
+            "rootOk": true,
+            "allMatchedDelivered": true
+          }
+        ],
+        "mempoolProbes": [
+          {
+            "txid": "d128297e6515",
+            "atMs": 56463,
+            "height": 0,
+            "confirmations": 0,
+            "isInstantLocked": false,
+            "isChainLocked": false,
+            "afterIsLock": "pending",
+            "getTxAtIsLock+0": {
+              "isInstantLocked": true,
+              "confirmations": 0
+            },
+            "getTxAtIsLock+1500": {
+              "isInstantLocked": true,
+              "confirmations": 0
+            }
+          }
+        ],
+        "lastIsLock": {
+          "txid": "d128297e6515e5396c01d34d4f2c5e2833626e6748da63c6e6abe692c39903bc",
+          "inputs": 7,
+          "version": 1,
+          "sigBytes": 96
+        },
+        "closed": "cancelled"
+      }
+    },
+    {
+      "name": "[162.212.35.100:443] SML: first full diff parsed",
+      "ok": true,
+      "detail": {
+        "node": "162.212.35.100:443",
+        "ok": true,
+        "bytes": 1361181,
+        "firstMessageMs": 469,
+        "parseMs": 10,
+        "mnCount": 3014,
+        "validMnCount": 2254,
+        "evonodeCount": 362,
+        "quorumCount": 88,
+        "platformEndpoints": 356,
+        "tipBlockHash": "00000000000000184ae7b72661dafe7b7ad7e2e21230df6b461cff2e85be6a69",
+        "baseBlockHash": "0000000000000000000000000000000000000000000000000000000000000000",
+        "closed": "cancelled"
+      }
+    },
+    {
+      "name": "[77.42.74.68:443] getBlockchainStatus + getBestBlockHeight",
+      "ok": true,
+      "detail": [
+        {
+          "ok": true,
+          "ms": 140,
+          "agent": "/Dash Core:23.1.8/",
+          "status": "READY",
+          "blocks": 2560396,
+          "synced": true,
+          "best": "00000000000000184ae7b72661dafe7b7ad7e2e21230df6b461cff2e85be6a69"
+        },
+        {
+          "ok": true,
+          "ms": 274,
+          "height": 2560396
+        }
+      ]
+    },
+    {
+      "name": "[77.42.74.68:443] getBlock(height) parses, merkle root ok",
+      "ok": true,
+      "detail": [
+        {
+          "ok": true,
+          "ms": 303,
+          "bytes": 4564,
+          "txs": 14,
+          "merkleOk": true,
+          "prev": "000000000000000c33ea229476bb4614625edafcc2cf63cf53a82c3a696c70f3"
+        },
+        {
+          "ok": true,
+          "ms": 309,
+          "bytes": 19371,
+          "txs": 39,
+          "merkleOk": true,
+          "collateralTxid": "3451d292d461d1255007392a43d0da7b47eed938ff9a1234fb06ae19157fa365"
+        }
+      ]
+    },
+    {
+      "name": "[77.42.74.68:443] collateral found by scanning block 2559683",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "ms": 309,
+        "bytes": 19371,
+        "txs": 39,
+        "merkleOk": true,
+        "collateralTxid": "3451d292d461d1255007392a43d0da7b47eed938ff9a1234fb06ae19157fa365"
+      }
+    },
+    {
+      "name": "[77.42.74.68:443] getTransaction(collateral): raw, height, confs, IS/CL flags, OP_RETURN",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "ms": 273,
+        "txid": "3451d292d461d1255007392a43d0da7b47eed938ff9a1234fb06ae19157fa365",
+        "rawBytes": 234,
+        "txidMatches": true,
+        "height": 2559683,
+        "confirmations": 714,
+        "isInstantLocked": false,
+        "isChainLocked": true,
+        "blockHash": "000000000000002411139f9e5be8c3cd0ebecdfbe1815888f8e299afc871cab0",
+        "outputs": [
+          {
+            "value": "99999766",
+            "type": "p2pkh"
+          },
+          {
+            "value": "100000000",
+            "type": "op_return",
+            "opReturn": "cbc458f8a65a1f607f3acfa825b39f2f9b2748bdd0893bd5c0b911881eaf2fe9"
+          }
+        ]
+      }
+    },
+    {
+      "name": "[77.42.74.68:443] getTransaction(recent)",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "ms": 138,
+        "txid": "e0f8265c947181fa8322821446627ec1b1547d0e20900b5cae0ff787da24fd94",
+        "rawBytes": 1096,
+        "txidMatches": true,
+        "height": 2560394,
+        "confirmations": 3,
+        "isInstantLocked": true,
+        "isChainLocked": true,
+        "blockHash": "000000000000000b0cb7c8ec5d1db5822208bfce7a84068fca13a9639d8f9fd9",
+        "outputs": [
+          {
+            "value": "100001",
+            "type": "p2pkh"
+          },
+          {
+            "value": "100001",
+            "type": "p2pkh"
+          },
+          {
+            "value": "100001",
+            "type": "p2pkh"
+          },
+          {
+            "value": "100001",
+            "type": "p2pkh"
+          },
+          {
+            "value": "100001",
+            "type": "p2pkh"
+          },
+          {
+            "value": "100001",
+            "type": "p2pkh"
+          }
+        ]
+      }
+    },
+    {
+      "name": "[77.42.74.68:443] getTransaction(unknown) -> NOT_FOUND",
+      "ok": true,
+      "detail": {
+        "ok": false,
+        "ms": 142,
+        "error": {
+          "name": "GrpcError",
+          "code": 5,
+          "message": "Transaction not found",
+          "network": false
+        }
+      }
+    },
+    {
+      "name": "[77.42.74.68:443] headers stream: headers + chainlock, clean cancel",
+      "ok": true,
+      "detail": {
+        "node": "77.42.74.68:443",
+        "events": {
+          "headers": [
+            {
+              "t": 289,
+              "n": 4
+            }
+          ],
+          "chainlocks": [
+            {
+              "t": 275,
+              "height": 2560396,
+              "blockHash": "00000000000000184ae7b72661dafe7b7ad7e2e21230df6b461cff2e85be6a69"
+            }
+          ]
+        },
+        "headerCount": 4,
+        "closed": "cancelled",
+        "totalMs": 808,
+        "ok": true,
+        "linked": [
+          "e60c6dfa",
+          "696c70f3",
+          "9d8f9fd9",
+          "7f345595"
+        ]
+      }
+    },
+    {
+      "name": "[77.42.74.68:443] bloom positive control: real P2PKH hash160 filter returns the collateral tx + valid merkleblock",
+      "ok": true,
+      "detail": {
+        "ms": 339,
+        "gotCollateral": true,
+        "txs": 1,
+        "merkleBlocks": 1,
+        "merkleRootOk": true,
+        "merkleContainsTx": true,
+        "endedBy": "end"
+      }
+    },
+    {
+      "name": "[77.42.74.68:443] bloom (>=200B) stream: opened, ~0 matches, clean cancel",
+      "ok": true,
+      "detail": {
+        "vDataBytes": 200,
+        "nHashFuncs": 50,
+        "rawtxs": 0,
+        "txs": 0,
+        "merkle": 4,
+        "islocks": 0,
+        "matchedInMerkle": 0,
+        "firstMs": {
+          "merkleblock": 337
+        },
+        "closed": "cancelled"
+      }
+    },
+    {
+      "name": "[77.42.74.68:443] match-all stream: raw txs + merkle blocks (root ok), clean cancel",
+      "ok": true,
+      "detail": {
+        "rawtxs": 6,
+        "txs": 54,
+        "merkle": 4,
+        "islocks": 1,
+        "islocksForSeenTx": 1,
+        "firstMs": {
+          "rawtxs": 164,
+          "merkleblock": 300,
+          "islocks": 58123
+        },
+        "totalMs": 59865,
+        "rawTxToIsLockMs": [
+          2853
+        ],
+        "merkleBlocks": [
+          {
+            "total": 16,
+            "matched": 16,
+            "rootOk": true,
+            "allMatchedDelivered": true
+          },
+          {
+            "total": 14,
+            "matched": 14,
+            "rootOk": true,
+            "allMatchedDelivered": true
+          },
+          {
+            "total": 2,
+            "matched": 2,
+            "rootOk": true,
+            "allMatchedDelivered": true
+          },
+          {
+            "total": 10,
+            "matched": 10,
+            "rootOk": true,
+            "allMatchedDelivered": true
+          }
+        ],
+        "mempoolProbes": [
+          {
+            "txid": "d128297e6515",
+            "atMs": 55270,
+            "height": 0,
+            "confirmations": 0,
+            "isInstantLocked": false,
+            "isChainLocked": false,
+            "afterIsLock": "pending",
+            "getTxAtIsLock+0": {
+              "isInstantLocked": true,
+              "confirmations": 0
+            },
+            "getTxAtIsLock+1500": {
+              "isInstantLocked": true,
+              "confirmations": 0
+            }
+          }
+        ],
+        "lastIsLock": {
+          "txid": "d128297e6515e5396c01d34d4f2c5e2833626e6748da63c6e6abe692c39903bc",
+          "inputs": 7,
+          "version": 1,
+          "sigBytes": 96
+        },
+        "closed": "cancelled"
+      }
+    },
+    {
+      "name": "[77.42.74.68:443] SML: first full diff parsed",
+      "ok": true,
+      "detail": {
+        "node": "77.42.74.68:443",
+        "ok": true,
+        "bytes": 1361181,
+        "firstMessageMs": 1089,
+        "parseMs": 9,
+        "mnCount": 3014,
+        "validMnCount": 2254,
+        "evonodeCount": 362,
+        "quorumCount": 88,
+        "platformEndpoints": 356,
+        "tipBlockHash": "00000000000000184ae7b72661dafe7b7ad7e2e21230df6b461cff2e85be6a69",
+        "baseBlockHash": "0000000000000000000000000000000000000000000000000000000000000000",
+        "closed": "cancelled"
+      }
+    },
+    {
+      "name": "[45.76.141.74:443] getBlockchainStatus + getBestBlockHeight",
+      "ok": true,
+      "detail": [
+        {
+          "ok": true,
+          "ms": 100,
+          "agent": "/Dash Core:23.1.7/",
+          "status": "READY",
+          "blocks": 2560396,
+          "synced": true,
+          "best": "00000000000000184ae7b72661dafe7b7ad7e2e21230df6b461cff2e85be6a69"
+        },
+        {
+          "ok": true,
+          "ms": 201,
+          "height": 2560396
+        }
+      ]
+    },
+    {
+      "name": "[45.76.141.74:443] getBlock(height) parses, merkle root ok",
+      "ok": true,
+      "detail": [
+        {
+          "ok": true,
+          "ms": 199,
+          "bytes": 4564,
+          "txs": 14,
+          "merkleOk": true,
+          "prev": "000000000000000c33ea229476bb4614625edafcc2cf63cf53a82c3a696c70f3"
+        },
+        {
+          "ok": true,
+          "ms": 139,
+          "bytes": 19371,
+          "txs": 39,
+          "merkleOk": true,
+          "collateralTxid": "3451d292d461d1255007392a43d0da7b47eed938ff9a1234fb06ae19157fa365"
+        }
+      ]
+    },
+    {
+      "name": "[45.76.141.74:443] collateral found by scanning block 2559683",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "ms": 139,
+        "bytes": 19371,
+        "txs": 39,
+        "merkleOk": true,
+        "collateralTxid": "3451d292d461d1255007392a43d0da7b47eed938ff9a1234fb06ae19157fa365"
+      }
+    },
+    {
+      "name": "[45.76.141.74:443] getTransaction(collateral): raw, height, confs, IS/CL flags, OP_RETURN",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "ms": 195,
+        "txid": "3451d292d461d1255007392a43d0da7b47eed938ff9a1234fb06ae19157fa365",
+        "rawBytes": 234,
+        "txidMatches": true,
+        "height": 2559683,
+        "confirmations": 714,
+        "isInstantLocked": false,
+        "isChainLocked": true,
+        "blockHash": "000000000000002411139f9e5be8c3cd0ebecdfbe1815888f8e299afc871cab0",
+        "outputs": [
+          {
+            "value": "99999766",
+            "type": "p2pkh"
+          },
+          {
+            "value": "100000000",
+            "type": "op_return",
+            "opReturn": "cbc458f8a65a1f607f3acfa825b39f2f9b2748bdd0893bd5c0b911881eaf2fe9"
+          }
+        ]
+      }
+    },
+    {
+      "name": "[45.76.141.74:443] getTransaction(recent)",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "ms": 99,
+        "txid": "e0f8265c947181fa8322821446627ec1b1547d0e20900b5cae0ff787da24fd94",
+        "rawBytes": 1096,
+        "txidMatches": true,
+        "height": 2560394,
+        "confirmations": 3,
+        "isInstantLocked": true,
+        "isChainLocked": true,
+        "blockHash": "000000000000000b0cb7c8ec5d1db5822208bfce7a84068fca13a9639d8f9fd9",
+        "outputs": [
+          {
+            "value": "100001",
+            "type": "p2pkh"
+          },
+          {
+            "value": "100001",
+            "type": "p2pkh"
+          },
+          {
+            "value": "100001",
+            "type": "p2pkh"
+          },
+          {
+            "value": "100001",
+            "type": "p2pkh"
+          },
+          {
+            "value": "100001",
+            "type": "p2pkh"
+          },
+          {
+            "value": "100001",
+            "type": "p2pkh"
+          }
+        ]
+      }
+    },
+    {
+      "name": "[45.76.141.74:443] getTransaction(unknown) -> NOT_FOUND",
+      "ok": true,
+      "detail": {
+        "ok": false,
+        "ms": 99,
+        "error": {
+          "name": "GrpcError",
+          "code": 5,
+          "message": "Transaction not found",
+          "network": false
+        }
+      }
+    },
+    {
+      "name": "[45.76.141.74:443] headers stream: headers + chainlock, clean cancel",
+      "ok": true,
+      "detail": {
+        "node": "45.76.141.74:443",
+        "events": {
+          "headers": [
+            {
+              "t": 200,
+              "n": 4
+            }
+          ],
+          "chainlocks": [
+            {
+              "t": 199,
+              "height": 2560396,
+              "blockHash": "00000000000000184ae7b72661dafe7b7ad7e2e21230df6b461cff2e85be6a69"
+            }
+          ]
+        },
+        "headerCount": 4,
+        "closed": "cancelled",
+        "totalMs": 704,
+        "ok": true,
+        "linked": [
+          "e60c6dfa",
+          "696c70f3",
+          "9d8f9fd9",
+          "7f345595"
+        ]
+      }
+    },
+    {
+      "name": "[45.76.141.74:443] bloom positive control: real P2PKH hash160 filter returns the collateral tx + valid merkleblock",
+      "ok": true,
+      "detail": {
+        "ms": 303,
+        "gotCollateral": true,
+        "txs": 1,
+        "merkleBlocks": 1,
+        "merkleRootOk": true,
+        "merkleContainsTx": true,
+        "endedBy": "end"
+      }
+    },
+    {
+      "name": "[45.76.141.74:443] bloom (>=200B) stream: opened, ~0 matches, clean cancel",
+      "ok": true,
+      "detail": {
+        "vDataBytes": 200,
+        "nHashFuncs": 50,
+        "rawtxs": 0,
+        "txs": 0,
+        "merkle": 4,
+        "islocks": 0,
+        "matchedInMerkle": 0,
+        "firstMs": {
+          "merkleblock": 210
+        },
+        "closed": "cancelled"
+      }
+    },
+    {
+      "name": "[45.76.141.74:443] match-all stream: raw txs + merkle blocks (root ok), clean cancel",
+      "ok": true,
+      "detail": {
+        "rawtxs": 6,
+        "txs": 54,
+        "merkle": 4,
+        "islocks": 1,
+        "islocksForSeenTx": 1,
+        "firstMs": {
+          "rawtxs": 134,
+          "merkleblock": 134,
+          "islocks": 58684
+        },
+        "totalMs": 60332,
+        "rawTxToIsLockMs": [
+          2777
+        ],
+        "merkleBlocks": [
+          {
+            "total": 16,
+            "matched": 16,
+            "rootOk": true,
+            "allMatchedDelivered": true
+          },
+          {
+            "total": 14,
+            "matched": 14,
+            "rootOk": true,
+            "allMatchedDelivered": true
+          },
+          {
+            "total": 2,
+            "matched": 2,
+            "rootOk": true,
+            "allMatchedDelivered": true
+          },
+          {
+            "total": 10,
+            "matched": 10,
+            "rootOk": true,
+            "allMatchedDelivered": true
+          }
+        ],
+        "mempoolProbes": [
+          {
+            "txid": "d128297e6515",
+            "atMs": 55908,
+            "height": 0,
+            "confirmations": 0,
+            "isInstantLocked": false,
+            "isChainLocked": false,
+            "afterIsLock": "pending",
+            "getTxAtIsLock+0": {
+              "isInstantLocked": true,
+              "confirmations": 0
+            },
+            "getTxAtIsLock+1500": {
+              "isInstantLocked": true,
+              "confirmations": 0
+            }
+          }
+        ],
+        "lastIsLock": {
+          "txid": "d128297e6515e5396c01d34d4f2c5e2833626e6748da63c6e6abe692c39903bc",
+          "inputs": 7,
+          "version": 1,
+          "sigBytes": 96
+        },
+        "closed": "cancelled"
+      }
+    },
+    {
+      "name": "[45.76.141.74:443] SML: first full diff parsed",
+      "ok": true,
+      "detail": {
+        "node": "45.76.141.74:443",
+        "ok": true,
+        "bytes": 1361181,
+        "firstMessageMs": 709,
+        "parseMs": 8,
+        "mnCount": 3014,
+        "validMnCount": 2254,
+        "evonodeCount": 362,
+        "quorumCount": 88,
+        "platformEndpoints": 356,
+        "tipBlockHash": "00000000000000184ae7b72661dafe7b7ad7e2e21230df6b461cff2e85be6a69",
+        "baseBlockHash": "0000000000000000000000000000000000000000000000000000000000000000",
+        "closed": "cancelled"
+      }
+    },
+    {
+      "name": "ChainLock BLS signature verifies in browser against SML quorum key; tampered rejected",
+      "ok": true,
+      "detail": {
+        "height": 2560396,
+        "cold": {
+          "ok": true,
+          "rank": 0,
+          "quorumHash": "000000000000000fb96487bbac2780c3c9bb97d8efaed50e8b8989983f0ffcc8",
+          "ms": 25
+        },
+        "warm": {
+          "ok": true,
+          "rank": 0,
+          "quorumHash": "000000000000000fb96487bbac2780c3c9bb97d8efaed50e8b8989983f0ffcc8",
+          "ms": 9
+        },
+        "tamperedRejected": true
+      }
+    },
+    {
+      "name": "race(): winner despite dead nodes first",
+      "ok": true,
+      "detail": {
+        "clean": {
+          "winner": "162.212.35.100:443",
+          "ms": 59,
+          "failures": 0
+        },
+        "withBadNodesFirst": {
+          "winner": "162.212.35.100:443",
+          "ms": 58,
+          "failures": [
+            {
+              "node": "127.0.0.1:1",
+              "error": "network error: Failed to fetch"
+            },
+            {
+              "node": "invalid.invalid:443",
+              "error": "network error: Failed to fetch"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "mergeStreams(): items delivered exactly once across 3 nodes, dead node replaced, clean cancel",
+      "ok": true,
+      "detail": {
+        "deliveredTxs": 29,
+        "deliveredIsLocks": [
+          {
+            "txid": "fb9de8003799",
+            "firstNode": "45.76.141.74:443",
+            "t": 9847
+          },
+          {
+            "txid": "7777311e2b06",
+            "firstNode": "77.42.74.68:443",
+            "t": 10769
+          }
+        ],
+        "deliveredExactlyOnce": true,
+        "stats": {
+          "opened": [
+            "127.0.0.1:1",
+            "162.212.35.100:443",
+            "77.42.74.68:443",
+            "45.76.141.74:443"
+          ],
+          "failed": [
+            {
+              "node": "127.0.0.1:1",
+              "reason": "error",
+              "error": "GrpcError: network error: Failed to fetch"
+            }
+          ],
+          "firstBy": {
+            "162.212.35.100:443": 16,
+            "45.76.141.74:443": 14,
+            "77.42.74.68:443": 1
+          },
+          "dupes": 62,
+          "items": 31,
+          "live": 3
+        },
+        "isLockInterNodeSpreadMs": [
+          129,
+          108
+        ],
+        "txInterNodeSpreadMs": [
+          81,
+          81,
+          81,
+          81,
+          81,
+          81,
+          81,
+          81,
+          81,
+          80,
+          80,
+          80,
+          86,
+          162,
+          163,
+          163,
+          163,
+          163,
+          163,
+          163
+        ],
+        "closed": "closed"
+      }
+    },
+    {
+      "name": "InstantSend lock messages received and parsed in the browser (match-all streams + merged streams)",
+      "ok": true,
+      "detail": {
+        "totalIsLocks": 5
+      }
+    },
+    {
+      "name": "no DAPI request left in flight after all streams cancelled",
+      "ok": true,
+      "detail": []
+    }
+  ]
+}

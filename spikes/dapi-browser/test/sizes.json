@@ -1,0 +1,72 @@
+[
+  {
+    "label": "govhub client: everything except BLS (src/index.js)",
+    "rawKB": 21.5,
+    "gzipKB": 9,
+    "brotliKB": 7.9,
+    "note": "hand-rolled grpc-web + pb + parsers + SML + bloom + race"
+  },
+  {
+    "label": "  ...of which: grpc-web+pb+DapiCore only",
+    "rawKB": 7.2,
+    "gzipKB": 3,
+    "brotliKB": 2.7,
+    "note": "grpc-web framing + minimal protobuf + the 10 Core RPCs"
+  },
+  {
+    "label": "ChainLock BLS verify module alone (src/chainlock.js)",
+    "rawKB": 73.8,
+    "gzipKB": 26.9,
+    "brotliKB": 23.7,
+    "note": "noble bls12-381 (pairing + hash-to-curve) + sha256"
+  },
+  {
+    "label": "govhub client + BLS",
+    "rawKB": 89.7,
+    "gzipKB": 33.2,
+    "brotliKB": 29,
+    "note": "full set"
+  },
+  {
+    "label": "@dashevo/dapi-grpc/browser.js (grpc-web generated, Core+Platform)",
+    "rawKB": 2545.1,
+    "gzipKB": 166.7,
+    "brotliKB": 128.8,
+    "note": "protobufjs + google-protobuf + improbable grpc-web"
+  },
+  {
+    "label": "@dashevo/dashcore-lib (browser)",
+    "rawKB": 4019.4,
+    "gzipKB": 1247.9,
+    "brotliKB": 575.6,
+    "note": "tx/block parsing + BloomFilter; excludes @dashevo/bls wasm"
+  },
+  {
+    "label": "@dashevo/dapi-client (browser)",
+    "rawKB": 21033.1,
+    "gzipKB": 7049.4,
+    "brotliKB": 4939.4,
+    "note": "needs wasm-dpp, dash-spv, node polyfills"
+  },
+  {
+    "label": "@dashevo/bls blsjs.js (emscripten glue)",
+    "rawKB": 433.1,
+    "gzipKB": 182.5,
+    "brotliKB": 151.8,
+    "note": "what dashcore-lib uses for ChainLock verify"
+  },
+  {
+    "label": "@dashevo/bls blsjstmp.wasm",
+    "rawKB": 290.2,
+    "gzipKB": 123.9,
+    "brotliKB": 98.1,
+    "note": "loaded in addition to the glue"
+  },
+  {
+    "label": "@dashevo/evo-sdk 5.0.0-rc.8 dist/evo-sdk.module.js",
+    "rawKB": 12407.5,
+    "gzipKB": 8885,
+    "brotliKB": 8829.5,
+    "note": "single-file ESM incl. wasm; NO Core API (see README)"
+  }
+]

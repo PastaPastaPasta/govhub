@@ -1,0 +1,18 @@
+import { DapiCore } from '../src/core.js';
+import { fetchNodes, sample } from '../src/nodes.js';
+import { parseChainLock } from '../src/dash.js';
+import { parseMasternodeListDiff } from '../src/sml.js';
+import { verifyChainLock } from '../src/chainlock.js';
+const nodes = await fetchNodes();
+const c = new DapiCore(sample(nodes, 1)[0], { timeoutMs: 120000 });
+const H = await c.getBestBlockHeight();
+let cl; const hs = c.subscribeToBlockHeadersWithChainLocks({ fromHeight: H - 1 }, (ev) => { if (ev.type === 'chainlock' && !cl) cl = parseChainLock(ev.chainLock); });
+const buf = await new Promise((res) => { const h = c.subscribeToMasternodeList((b) => { res(b); h.cancel(); }); });
+const sml = parseMasternodeListDiff(buf);
+for (let i = 0; i < 100 && !cl; i++) await new Promise((r) => setTimeout(r, 200));
+hs.cancel();
+console.log('cl height', cl.height, 'sml tip', sml.blockHash);
+const t = performance.now();
+console.log(verifyChainLock(cl, sml), Math.round(performance.now() - t), 'ms');
+cl.blockHashInternal = Uint8Array.from(cl.blockHashInternal).reverse();
+console.log('reversed-hash variant', verifyChainLock(cl, sml));
