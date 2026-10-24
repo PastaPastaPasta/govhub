@@ -1,0 +1,76 @@
+{
+  "issuerKey": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": false,
+    "transferable": 0,
+    "creationRestrictionMode": 0,
+    "signatureSecurityLevelRequirement": 1,
+    "indices": [
+      {"name": "byOwnerEpoch", "unique": true, "properties": [{"$ownerId": "asc"}, {"epoch": "asc"}]}
+    ],
+    "properties": {
+      "epoch": {"type": "integer", "minimum": 0, "maximum": 4294967295, "position": 0},
+      "spki": {"type": "array", "byteArray": true, "minItems": 90, "maxItems": 600, "position": 1},
+      "keyId": {"type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": 2},
+      "variant": {"type": "string", "const": "RSABSSA-SHA384-PSS-Randomized", "position": 3}
+    },
+    "required": ["$createdAtCoreBlockHeight", "epoch", "spki", "keyId", "variant"],
+    "additionalProperties": false
+  },
+  "issuerRevocation": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": false,
+    "transferable": 0,
+    "creationRestrictionMode": 0,
+    "signatureSecurityLevelRequirement": 1,
+    "indices": [
+      {"name": "byOwnerEpoch", "unique": true, "properties": [{"$ownerId": "asc"}, {"epoch": "asc"}]}
+    ],
+    "properties": {
+      "epoch": {"type": "integer", "minimum": 0, "maximum": 4294967295, "position": 0},
+      "keyId": {"type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": 1},
+      "effectiveCoreHeight": {"type": "integer", "minimum": 0, "maximum": 4294967295, "position": 2}
+    },
+    "required": ["$createdAtCoreBlockHeight", "epoch", "keyId", "effectiveCoreHeight"],
+    "additionalProperties": false
+  },
+  "issuerReport": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": false,
+    "transferable": 0,
+    "creationRestrictionMode": 0,
+    "signatureSecurityLevelRequirement": 2,
+    "indices": [
+      {"name": "byOwnerEpoch", "unique": true, "properties": [{"$ownerId": "asc"}, {"epoch": "asc"}]}
+    ],
+    "properties": {
+      "epoch": {"type": "integer", "minimum": 0, "maximum": 4294967295, "position": 0},
+      "tokensIssued": {"type": "integer", "minimum": 0, "maximum": 4294967295, "position": 1}
+    },
+    "required": ["$createdAtCoreBlockHeight", "epoch", "tokensIssued"],
+    "additionalProperties": false
+  },
+  "mnBadge": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": false,
+    "transferable": 0,
+    "creationRestrictionMode": 0,
+    "signatureSecurityLevelRequirement": 2,
+    "indices": [
+      {"name": "byIssuerEpochOwner", "unique": true, "properties": [{"issuerId": "asc"}, {"epoch": "asc"}, {"$ownerId": "asc"}]}
+    ],
+    "properties": {
+      "issuerId": {"type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "contentMediaType": "application/x.dash.dpp.identifier", "position": 0},
+      "epoch": {"type": "integer", "minimum": 0, "maximum": 4294967295, "position": 1},
+      "keyId": {"type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": 2},
+      "msgPrefix": {"type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": 3},
+      "sig": {"type": "array", "byteArray": true, "minItems": 256, "maxItems": 384, "position": 4}
+    },
+    "required": ["$createdAtCoreBlockHeight", "issuerId", "epoch", "keyId", "msgPrefix", "sig"],
+    "additionalProperties": false
+  }
+}

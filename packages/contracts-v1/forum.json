@@ -1,0 +1,192 @@
+{
+  "profile": {
+    "type": "object",
+    "documentsMutable": true,
+    "canBeDeleted": true,
+    "transferable": 0,
+    "creationRestrictionMode": 0,
+    "signatureSecurityLevelRequirement": 2,
+    "indices": [
+      {"name": "byOwner", "unique": true, "properties": [{"$ownerId": "asc"}]}
+    ],
+    "properties": {
+      "displayName": {"type": "string", "minLength": 1, "maxLength": 64, "position": 0},
+      "about": {"type": "string", "minLength": 1, "maxLength": 500, "position": 1},
+      "avatarUrl": {"type": "string", "minLength": 1, "maxLength": 512, "position": 2}
+    },
+    "required": ["displayName"],
+    "additionalProperties": false
+  },
+  "comment": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": true,
+    "transferable": 0,
+    "creationRestrictionMode": 0,
+    "signatureSecurityLevelRequirement": 2,
+    "indices": [
+      {"name": "byProposal", "properties": [{"govHash": "asc"}, {"$createdAt": "asc"}]},
+      {"name": "byAuthor", "properties": [{"$ownerId": "asc"}, {"$createdAt": "asc"}]}
+    ],
+    "properties": {
+      "govHash": {"type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": 0},
+      "parentId": {"type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "contentMediaType": "application/x.dash.dpp.identifier", "position": 1},
+      "body": {"type": "string", "minLength": 1, "maxLength": 5000, "position": 2},
+      "fmt": {"type": "integer", "minimum": 0, "maximum": 255, "position": 3}
+    },
+    "required": ["$createdAt", "govHash", "body", "fmt"],
+    "additionalProperties": false
+  },
+  "reaction": {
+    "type": "object",
+    "documentsMutable": true,
+    "canBeDeleted": true,
+    "transferable": 0,
+    "creationRestrictionMode": 0,
+    "signatureSecurityLevelRequirement": 2,
+    "indices": [
+      {"name": "byOwnerTarget", "unique": true, "properties": [{"$ownerId": "asc"}, {"target": "asc"}]},
+      {"name": "byTarget", "properties": [{"target": "asc"}, {"$createdAt": "asc"}]}
+    ],
+    "properties": {
+      "target": {"type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": 0},
+      "kind": {"type": "integer", "minimum": 1, "maximum": 255, "position": 1},
+      "value": {"type": "integer", "enum": [-1, 1], "position": 2}
+    },
+    "required": ["$createdAt", "$updatedAt", "target", "kind", "value"],
+    "additionalProperties": false
+  },
+  "claim": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": true,
+    "transferable": 0,
+    "creationRestrictionMode": 0,
+    "signatureSecurityLevelRequirement": 2,
+    "indices": [
+      {"name": "byProposal", "properties": [{"govHash": "asc"}, {"$createdAt": "asc"}]}
+    ],
+    "properties": {
+      "govHash": {"type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": 0},
+      "method": {"type": "integer", "minimum": 1, "maximum": 255, "position": 1},
+      "sig": {"type": "array", "byteArray": true, "minItems": 65, "maxItems": 65, "position": 2}
+    },
+    "required": ["$createdAt", "govHash", "method", "sig"],
+    "additionalProperties": false
+  },
+  "proposalPost": {
+    "type": "object",
+    "documentsMutable": true,
+    "canBeDeleted": true,
+    "transferable": 0,
+    "creationRestrictionMode": 0,
+    "signatureSecurityLevelRequirement": 2,
+    "indices": [
+      {"name": "byProposalOwner", "unique": true, "properties": [{"govHash": "asc"}, {"$ownerId": "asc"}]}
+    ],
+    "properties": {
+      "govHash": {"type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": 0},
+      "title": {"type": "string", "minLength": 1, "maxLength": 200, "position": 1},
+      "b0": {"type": "array", "byteArray": true, "minItems": 1, "maxItems": 5120, "position": 2},
+      "b1": {"type": "array", "byteArray": true, "minItems": 1, "maxItems": 5120, "position": 3},
+      "b2": {"type": "array", "byteArray": true, "minItems": 1, "maxItems": 5120, "position": 4},
+      "links": {"type": "string", "minLength": 1, "maxLength": 1000, "position": 5}
+    },
+    "required": ["govHash", "title", "b0"],
+    "additionalProperties": false
+  },
+  "proposalDraft": {
+    "type": "object",
+    "documentsMutable": true,
+    "canBeDeleted": true,
+    "transferable": 0,
+    "creationRestrictionMode": 0,
+    "signatureSecurityLevelRequirement": 2,
+    "indices": [
+      {"name": "byOwnerProposal", "unique": true, "properties": [{"$ownerId": "asc"}, {"govHash": "asc"}]},
+      {"name": "byStageUpdated", "properties": [{"stage": "asc"}, {"$updatedAt": "asc"}]}
+    ],
+    "properties": {
+      "time": {"type": "integer", "minimum": 0, "maximum": 9007199254740991, "position": 0},
+      "revision": {"type": "integer", "minimum": 0, "maximum": 4294967295, "position": 1},
+      "dataHex": {"type": "string", "minLength": 2, "maxLength": 1024, "position": 2},
+      "govHash": {"type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": 3},
+      "collateralTxid": {"type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": 4},
+      "stage": {"type": "integer", "minimum": 0, "maximum": 255, "position": 5}
+    },
+    "required": ["$createdAt", "$updatedAt", "time", "revision", "dataHex", "govHash", "stage"],
+    "additionalProperties": false
+  },
+  "block": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": true,
+    "transferable": 0,
+    "creationRestrictionMode": 0,
+    "signatureSecurityLevelRequirement": 2,
+    "indices": [
+      {"name": "byOwnerTarget", "unique": true, "properties": [{"$ownerId": "asc"}, {"target": "asc"}]}
+    ],
+    "properties": {
+      "target": {"type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "contentMediaType": "application/x.dash.dpp.identifier", "position": 0},
+      "kind": {"type": "integer", "minimum": 1, "maximum": 255, "position": 1},
+      "reason": {"type": "string", "minLength": 1, "maxLength": 280, "position": 2}
+    },
+    "required": ["target", "kind"],
+    "additionalProperties": false
+  },
+  "blockSubs": {
+    "type": "object",
+    "documentsMutable": true,
+    "canBeDeleted": true,
+    "transferable": 0,
+    "creationRestrictionMode": 0,
+    "signatureSecurityLevelRequirement": 2,
+    "indices": [
+      {"name": "byOwner", "unique": true, "properties": [{"$ownerId": "asc"}]}
+    ],
+    "properties": {
+      "lists": {"type": "array", "byteArray": true, "minItems": 32, "maxItems": 5120, "position": 0},
+      "defaultOff": {"type": "boolean", "position": 1}
+    },
+    "required": ["defaultOff"],
+    "additionalProperties": false
+  },
+  "settings": {
+    "type": "object",
+    "documentsMutable": true,
+    "canBeDeleted": true,
+    "transferable": 0,
+    "creationRestrictionMode": 0,
+    "signatureSecurityLevelRequirement": 2,
+    "indices": [
+      {"name": "byOwner", "unique": true, "properties": [{"$ownerId": "asc"}]}
+    ],
+    "properties": {
+      "endpoints": {"type": "array", "byteArray": true, "minItems": 1, "maxItems": 5120, "position": 0}
+    },
+    "required": ["endpoints"],
+    "additionalProperties": false
+  },
+  "vault": {
+    "type": "object",
+    "documentsMutable": true,
+    "canBeDeleted": true,
+    "transferable": 0,
+    "creationRestrictionMode": 0,
+    "signatureSecurityLevelRequirement": 2,
+    "indices": [
+      {"name": "byCredential", "unique": true, "properties": [{"$ownerId": "asc"}, {"credentialId": "asc"}]}
+    ],
+    "properties": {
+      "credentialId": {"type": "array", "byteArray": true, "minItems": 16, "maxItems": 255, "position": 0},
+      "recipientKey": {"type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": 1},
+      "version": {"type": "integer", "minimum": 1, "maximum": 255, "position": 2},
+      "authKeyId": {"type": "integer", "minimum": 0, "maximum": 4294967295, "position": 3},
+      "enc": {"type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": 4},
+      "sealed": {"type": "array", "byteArray": true, "minItems": 32, "maxItems": 256, "position": 5}
+    },
+    "required": ["$createdAt", "$updatedAt", "credentialId", "recipientKey", "version", "authKeyId", "enc", "sealed"],
+    "additionalProperties": false
+  }
+}
