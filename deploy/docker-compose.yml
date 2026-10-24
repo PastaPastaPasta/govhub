@@ -124,6 +124,57 @@ services:
       - "${BRIDGE_BIND:-127.0.0.1}:${BRIDGE_PORT:-8787}:8787"
 
   # ---------------------------------------------------------------------------------------------
+  # MN badge issuer (profile `issuer`, docs/PLAN.md §8.4; services/issuer/README.md). Blind-signs one
+  # badge token per masternode per epoch for requests signed with the MN's voting key. Reads Core over
+  # RPC (protx info) on `default`, is published on `edge` under ITS OWN hostname (never the portal's or
+  # the bridge's origin). Holds only the per-epoch private key(s) in secrets/issuer-keys; keys of closed
+  # epochs are destroyed by the service. No IPs or per-request records are logged or stored.
+  # Dockerfile: services/issuer/Dockerfile, built from the repository root.
+  # ---------------------------------------------------------------------------------------------
+  issuer:
+    build:
+      context: ..
+      dockerfile: services/issuer/Dockerfile
+    image: govhub-issuer:${ISSUER_TAG:-local}
+    profiles: ["issuer"]
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      dashd:
+        condition: service_healthy
+    environment:
+      NETWORK: mainnet
+      CORE_RPC_URL: http://dashd:9998
+      CORE_RPC_USER: ${CORE_RPC_USER:-govhub}
+      CORE_RPC_PASSWORD_FILE: /run/secrets/core_rpc_password
+      ISSUER_HMAC_SECRET_FILE: /run/secrets/issuer_hmac_secret
+      ISSUER_REPORT_KEY_FILE: /run/secrets/issuer_report_key
+      ISSUER_KEY_DIR: /keys
+      DB_PATH: /data/issuer.sqlite
+      HTTP_HOST: 0.0.0.0
+      HTTP_PORT: "8789"
+      ISSUER_IDENTITY_ID: ${ISSUER_IDENTITY_ID:-}
+      BADGE_CONTRACT_ID: ${BADGE_CONTRACT_ID:-}
+      ISSUER_MAX_STAGED_KEYS: ${ISSUER_MAX_STAGED_KEYS:-1}
+      ISSUER_CHALLENGE_TTL_S: ${ISSUER_CHALLENGE_TTL_S:-}
+      ISSUER_MAX_TOKEN_RPS: ${ISSUER_MAX_TOKEN_RPS:-}
+      ISSUER_LOG_LEVEL: ${ISSUER_LOG_LEVEL:-}
+    secrets:
+      - core_rpc_password
+      - issuer_hmac_secret
+      - issuer_report_key
+    volumes:
+      # Token store: per-MN rows only for the open issuance window (deleted after it), per-epoch counts.
+      - issuer-data:/data
+      # Private keys, epoch-<E>.pem (0600, uid 1000). Writable: the service destroys keys of closed epochs.
+      - ${SECRETS_DIR:-./secrets}/issuer-keys:/keys
+    networks:
+      - default
+      - edge
+    ports:
+      - "${ISSUER_BIND:-127.0.0.1}:${ISSUER_PORT:-8789}:8789"
+
+  # ---------------------------------------------------------------------------------------------
   # Optional TLS reverse proxy with CORS for the read-only API. Enable with COMPOSE_PROFILES=proxy.
   # Set DOMAIN in .env (default `localhost`, which gets Caddy's internal CA: fine for testing).
   # ---------------------------------------------------------------------------------------------
@@ -154,6 +205,7 @@ services:
   # hostnames and ingress live in Cloudflare (scripts/cloudflare-tunnel.sh sets them), e.g.
   #   gov-bridge.<zone>    -> http://bridge:8787
   #   gov-relay.<zone>     -> http://relay:8788        (COMPOSE_PROFILES=tunnel,relay)
+  #   gov-issuer.<zone>    -> http://issuer:8789       (COMPOSE_PROFILES=tunnel,issuer; its own origin)
   #   gov-accounts.<zone>  -> http://accounts:<port>   (when accounts lands)
   # The token is a secret file, never an environment value in .env.
   # ---------------------------------------------------------------------------------------------
@@ -236,8 +288,6 @@ services:
   #   * state on a named volume; HTTP published on loopback by default; HEALTHCHECK in the image
   #   * if it must be reachable from a browser, add a path (or a host) to caddy/Caddyfile
   #
-  # issuer:    blind-signs MN badge tokens. Needs SML access (dashd RPC or a DAPI stream) and the
-  #            offline-generated RSA key as a secret. Serve it from a SEPARATE origin.
   # accounts:  central-login envelopes (encrypted blobs only).
   # ---------------------------------------------------------------------------------------------
 
@@ -253,11 +303,19 @@ secrets:
   # init.sh creates an empty placeholder.
   cloudflare_tunnel_token:
     file: ${SECRETS_DIR:-./secrets}/cloudflare_tunnel_token
+  # Issuer (profile `issuer`): 32+ random bytes as hex for the stateless challenges (init.sh creates it),
+  # and the issuer identity's HIGH key as JSON {"identityId","keyId","privateKeyHex"} for issuerReport
+  # documents (EMPTY placeholder = reports are not published). The CRITICAL key never goes on the server.
+  issuer_hmac_secret:
+    file: ${SECRETS_DIR:-./secrets}/issuer_hmac_secret
+  issuer_report_key:
+    file: ${SECRETS_DIR:-./secrets}/issuer_report_key.json
 
 volumes:
   dashd-data:
   bridge-data:
   relay-data:
+  issuer-data:
   caddy-data:
   caddy-config:
 

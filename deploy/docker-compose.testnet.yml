@@ -16,3 +16,6 @@ services:
   relay:
     environment:
       CORE_NETWORK: testnet
+  issuer:
+    environment:
+      NETWORK: testnet

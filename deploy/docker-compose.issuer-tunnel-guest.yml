@@ -1,0 +1,16 @@
+# Publish THIS stack's issuer through ANOTHER stack's cloudflared on the same host, like docker-compose.tunnel-guest.yml
+# does for the bridge (README section 11.3). Layer it after the tunnel-guest file:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.testnet.yml:docker-compose.tunnel-guest.yml:docker-compose.issuer-tunnel-guest.yml
+#   COMPOSE_PROFILES=issuer
+# The issuer joins the stack's `tunnel` network under a unique alias (default `<project>-issuer`, e.g. `govhub-testnet-issuer`),
+# so the tunnel route is `http://<ISSUER_TUNNEL_ALIAS>:8789` and can never resolve to another stack's issuer. Give it its own
+# public hostname: the issuer must not share an origin with the portal, the bridge or the relay.
+services:
+  issuer:
+    networks:
+      tunnel:
+        aliases:
+          - ${ISSUER_TUNNEL_ALIAS:-${COMPOSE_PROJECT_NAME:-govhub}-issuer}
+
+networks:
+  tunnel: {}
