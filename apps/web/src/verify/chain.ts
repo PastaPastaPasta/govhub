@@ -66,7 +66,15 @@ export function summarize(a: AnchoredChain): AnchorSummary {
 }
 
 /** GetMnType(type).voting_weight (evo/dmn_types.h:26-44): regular 1, evonode 4, anything else 0. */
-const weight = (type: number) => (type === 0 ? 1 : type === 1 ? 4 : 0);
+function weight(type: number): number {
+  if (type === 0) return 1;
+  return type === 1 ? 4 : 0;
+}
+
+/** Valid weighted count with every entry's type as the list states it. */
+export function claimedWeight(masternodes: ReadonlyArray<{ isValid: boolean; nType: number }>): number {
+  return masternodes.reduce((n, m) => n + (m.isValid ? weight(m.nType) : 0), 0);
+}
 
 /**
  * Valid weighted count of the proven list (CDeterministicMNList::GetCounts, evo/deterministicmns.h:269-293). Entry types from
@@ -83,7 +91,7 @@ export async function threshold(dapi: Dapi, a: AnchoredChain, network: CoreNetwo
   }
   const base = { height: sml.proof.height, legacy: { valid: legacy.length, proven: 0 } };
   if (sml.masternodes.length !== sml.mnCount) {
-    const v = sml.masternodes.reduce((n, m) => n + (m.isValid ? weight(m.nType) : 0), 0);
+    const v = claimedWeight(sml.masternodes);
     return { ...base, status: 'reported', validWeighted: v, value: fundingThreshold(v, network), reason: `${sml.mnCount - sml.masternodes.length} list entries could not be read` };
   }
   try {
@@ -95,7 +103,7 @@ export async function threshold(dapi: Dapi, a: AnchoredChain, network: CoreNetwo
     return { ...base, status: 'verified', validWeighted: w, value: fundingThreshold(w, network), legacy: { valid: legacy.length, proven: legacy.length } };
   } catch (e) {
     // fall back to the list's claimed types for the unproven entries, and say so
-    const claimed = sml.masternodes.reduce((n, m) => n + (m.isValid ? weight(m.nType) : 0), 0);
+    const claimed = claimedWeight(sml.masternodes);
     return { ...base, status: 'reported', validWeighted: claimed, value: fundingThreshold(claimed, network), reason: `the type of ${legacy.length} older entries could not be proven (${(e as Error).message}); their weight is as the list states it` };
   }
 }

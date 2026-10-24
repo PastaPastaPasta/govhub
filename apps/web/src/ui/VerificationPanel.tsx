@@ -207,11 +207,9 @@ function verdictText(level: VoteLevel, verified: number, total: number, matched:
     case 'verified':
       return `Tally verified: ${sigs} and the recount matches the ${matched}`;
     case 'keys-reported':
-      return fixtures
-        ? `Recount matches the ${matched}: ${sigs}. Voting keys come from the fixture bridge (${origin === 'recorded' ? 'recorded mainnet votes and masternodes' : 'synthetic voters'})`
-        : smlUnconfirmed > 0
-          ? `Recount matches the ${matched}: ${sigs}, but ${formatInt(smlUnconfirmed)} voters are not confirmed by the proven masternode list and their registrations (a masternode may have left or changed its key since the tally, or the bridge reports it wrongly)`
-          : `Recount matches the ${matched}: ${sigs}, but the voting keys are only as the bridge reports them. Check them against the proven masternode list for a verified result`;
+      if (fixtures) return `Recount matches the ${matched}: ${sigs}. Voting keys come from the fixture bridge (${origin === 'recorded' ? 'recorded mainnet votes and masternodes' : 'synthetic voters'})`;
+      if (smlUnconfirmed > 0) return `Recount matches the ${matched}: ${sigs}, but ${formatInt(smlUnconfirmed)} voters are not confirmed by the proven masternode list and their registrations (a masternode may have left or changed its key since the tally, or the bridge reports it wrongly)`;
+      return `Recount matches the ${matched}: ${sigs}, but the voting keys are only as the bridge reports them. Check them against the proven masternode list for a verified result`;
     case 'different-height':
       return `Recount differs from the published tallies, which are older than the votes (${sigs}). Expected between tally updates`;
     case 'mismatch':

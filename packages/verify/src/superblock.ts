@@ -33,6 +33,9 @@ export const GOV_CHAIN_PARAMS: Record<'mainnet' | 'testnet', GovChainParams> = {
   },
 };
 
+/** The first multiple of `cycle` at or above `height`. */
+const alignUp = (height: number, cycle: number): number => height + ((cycle - (height % cycle)) % cycle);
+
 const paramsOf = (n: Network): GovChainParams => {
   const p = GOV_CHAIN_PARAMS[n as 'mainnet' | 'testnet'];
   if (!p) throw new Error(`no governance chain parameters for ${n}`);
@@ -58,7 +61,7 @@ export interface SuperblockSchedule {
 /** CSuperblock::GetNearestSuperblocksHeights (superblock.cpp:126-143) plus the maturity window (signing.cpp:41-43). */
 export function superblockSchedule(height: number, network: Network): SuperblockSchedule {
   const p = paramsOf(network);
-  const first = p.superblockStartBlock + ((p.superblockCycle - (p.superblockStartBlock % p.superblockCycle)) % p.superblockCycle);
+  const first = alignUp(p.superblockStartBlock, p.superblockCycle);
   const last = height < first ? 0 : height - (height % p.superblockCycle);
   const next = height < first ? first : last + p.superblockCycle;
   return { last, next, votingDeadline: next - p.maturityWindow, inMaturityWindow: height % p.superblockCycle >= p.superblockCycle - p.maturityWindow };
@@ -68,7 +71,7 @@ export function superblockSchedule(height: number, network: Network): Superblock
 export function superblocksBetween(from: number, to: number, network: Network): number[] {
   const p = paramsOf(network);
   const out: number[] = [];
-  for (let h = Math.max(from, p.superblockStartBlock) + ((p.superblockCycle - (Math.max(from, p.superblockStartBlock) % p.superblockCycle)) % p.superblockCycle); h <= to; h += p.superblockCycle) out.push(h);
+  for (let h = alignUp(Math.max(from, p.superblockStartBlock), p.superblockCycle); h <= to; h += p.superblockCycle) out.push(h);
   return out;
 }
 

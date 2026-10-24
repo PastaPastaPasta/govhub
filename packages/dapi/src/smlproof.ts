@@ -3,8 +3,8 @@
 // them into the block's merkle root through the diff's partial merkle tree. Pure: no I/O.
 //
 // Dash Core source: /Users/pasta/workspace/dash at f35a24cfca12. Citations are file:line in that tree.
-import { Reader, bytesEqual, concat, hashBytes, hashHex, hex, sha256d, unhex } from './bytes.ts';
-import { type Tx, parseTx } from './dash.ts';
+import { Reader, bytesEqual, compareBytes, concat, hashBytes, hashHex, sha256d, unhex } from './bytes.ts';
+import { type Tx, merkleRoot, parseTx, readPartialMerkleTree } from './dash.ts';
 
 // ---- serialization helpers ----------------------------------------------------------------------------------------------
 
@@ -37,7 +37,7 @@ export function base58check(s: string): Uint8Array {
 }
 
 /** keyIDVoting from a P2PKH address (the version byte is not checked here: the caller's network decides what is valid). */
-export function p2pkhKeyId(address: string): Uint8Array {
+function p2pkhKeyId(address: string): Uint8Array {
   const b = base58check(address);
   if (b.length !== 21) throw new Error('voting address is not a 20-byte key id');
   return b.subarray(1);
@@ -135,7 +135,7 @@ const num = (o: Json, k: string): number => {
 const hash32 = (o: Json, k: string) => hashBytes(str(o, k));
 
 /** ProTxVersion (evo/types.h:15-19). */
-export const PROTX_VERSION = { LegacyBLS: 1, BasicBLS: 2, ExtAddr: 3 } as const;
+const PROTX_VERSION = { LegacyBLS: 1, BasicBLS: 2, ExtAddr: 3 } as const;
 
 /**
  * CSimplifiedMNListEntry as Core hashes it (CalcHash = SerializeHash with SER_GETHASH: evo/simplifiedmns.cpp:45-50), i.e. the
@@ -192,33 +192,12 @@ export function smlEntryBytes(e: Json): Uint8Array {
   return concat(...parts);
 }
 
-/** Bitcoin merkle root over internal-order leaves (ComputeMerkleRoot, consensus/merkle.cpp); `mutated` per CVE-2012-2459. */
-export function merkleRoot(leaves: readonly Uint8Array[]): { root: Uint8Array; mutated: boolean } {
-  if (!leaves.length) return { root: new Uint8Array(32), mutated: false };
-  let level = leaves.slice(), mutated = false;
-  while (level.length > 1) {
-    const next: Uint8Array[] = [];
-    for (let i = 0; i < level.length; i += 2) {
-      const a = level[i]!, b = level[i + 1] ?? a;
-      if (i + 1 < level.length && bytesEqual(a, b)) mutated = true;
-      next.push(sha256d(concat(a, b)));
-    }
-    level = next;
-  }
-  return { root: level[0]!, mutated };
-}
-
-/** merkleRootMNList: entries sorted by proRegTxHash (uint256 Compare = memcmp of the internal bytes... see note), leaf = CalcHash. */
+/** merkleRootMNList: entries sorted by proRegTxHash, leaf = CalcHash. */
 export function mnListMerkleRoot(entries: readonly Json[]): { root: Uint8Array; mutated: boolean } {
   // CSimplifiedMNList sorts with uint256::Compare (simplifiedmns.cpp:78-80), a memcmp over the internal byte order.
   const keyed = entries.map((e) => ({ k: hash32(e, 'proRegTxHash'), h: sha256d(smlEntryBytes(e)) }));
-  keyed.sort((a, b) => cmp(a.k, b.k));
+  keyed.sort((a, b) => compareBytes(a.k, b.k));
   return merkleRoot(keyed.map((x) => x.h));
-}
-
-function cmp(a: Uint8Array, b: Uint8Array): number {
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i]! - b[i]!;
-  return 0;
 }
 
 // ---- quorum commitments -----------------------------------------------------------------------------------------------------
@@ -263,7 +242,7 @@ export function commitmentBytes(q: Json): Uint8Array {
  * active commitments at its block (evo/smldiff.cpp:31-67).
  */
 export function quorumsMerkleRoot(quorums: readonly Json[]): Uint8Array {
-  const hashes = quorums.map((q) => sha256d(commitmentBytes(q))).sort(cmp);
+  const hashes = quorums.map((q) => sha256d(commitmentBytes(q))).sort(compareBytes);
   return merkleRoot(hashes).root;
 }
 
@@ -299,57 +278,6 @@ export function parseCbTx(tx: Tx): CbTx {
   return out;
 }
 
-// ---- partial merkle tree (CPartialMerkleTree, merkleblock.h/.cpp) -------------------------------------------------------------
-
-export interface PartialMerkle {
-  /** Internal-order root the tree hashes to. */
-  root: Uint8Array;
-  /** Matched leaves (display-order txids), in tree order. */
-  matched: string[];
-  /** Position of each matched leaf. */
-  positions: number[];
-  total: number;
-}
-
-/**
- * Parse and evaluate a serialized CPartialMerkleTree (nTransactions u32 | vHash | vBits bytes) with Core's checks
- * (merkleblock.cpp:100-170: no unconsumed hashes or bits, no duplicate siblings, sane counts).
- */
-export function readPartialMerkleTree(r: Reader): PartialMerkle {
-  const total = r.u32();
-  if (total === 0 || total > (2_000_000 / 60) * 2) throw new Error('merkle: bad tx count');
-  const nHashes = r.varint();
-  if (nHashes > total) throw new Error('merkle: more hashes than txs');
-  const hashes: Uint8Array[] = [];
-  for (let n = 0; n < nHashes; n++) hashes.push(r.bytes(32));
-  const flags = r.bytes(r.varint());
-  let height = 0;
-  while (((total + (1 << height) - 1) >> height) > 1) height++;
-  let bit = 0, hi = 0;
-  const matched: string[] = [], positions: number[] = [];
-  const width = (h: number) => (total + (1 << h) - 1) >> h;
-  const walk = (h: number, pos: number): Uint8Array => {
-    if ((bit >> 3) >= flags.length) throw new Error('merkle: ran out of flag bits');
-    const parentOfMatch = (flags[bit >> 3]! >> (bit & 7)) & 1; bit++;
-    if (h === 0 || !parentOfMatch) {
-      if (hi >= hashes.length) throw new Error('merkle: ran out of hashes');
-      const hash = hashes[hi++]!;
-      if (h === 0 && parentOfMatch) { matched.push(hashHex(hash)); positions.push(pos); }
-      return hash;
-    }
-    const left = walk(h - 1, pos * 2);
-    let right = left;
-    if (pos * 2 + 1 < width(h - 1)) {
-      right = walk(h - 1, pos * 2 + 1);
-      if (bytesEqual(left, right)) throw new Error('merkle: duplicate sibling hashes (CVE-2012-2459)');
-    }
-    return sha256d(concat(left, right));
-  };
-  const root = walk(height, 0);
-  if (hi !== hashes.length || Math.ceil(bit / 8) !== flags.length) throw new Error('merkle: unconsumed hashes or flag bits');
-  return { root, matched, positions, total };
-}
-
 // ---- the whole proof --------------------------------------------------------------------------------------------------------
 
 export interface SmlProof {
@@ -380,7 +308,9 @@ export function proveSml(d: Json): SmlProof {
   }
   const cbTx = parseTx(unhex(str(d, 'cbTx')));
   const cb = parseCbTx(cbTx);
-  const pmt = readFullPartialTree(unhex(str(d, 'cbTxMerkleTree')));
+  const treeReader = new Reader(unhex(str(d, 'cbTxMerkleTree')));
+  const pmt = readPartialMerkleTree(treeReader);
+  if (treeReader.left) throw new Error('merkle: trailing bytes');
   if (pmt.matched.length !== 1 || pmt.positions[0] !== 0 || pmt.matched[0] !== cbTx.txid) throw new Error('sml: the merkle tree does not prove the coinbase');
 
   const mnList = d.mnList;
@@ -410,12 +340,3 @@ export function proveSml(d: Json): SmlProof {
     mnListRoot: hashHex(mn.root), quorumsRoot, entries: mnList.length, quorums: quorums.length,
   };
 }
-
-function readFullPartialTree(b: Uint8Array): PartialMerkle {
-  const r = new Reader(b);
-  const t = readPartialMerkleTree(r);
-  if (r.left) throw new Error('merkle: trailing bytes');
-  return t;
-}
-
-export const _test = { legacyService, extNetInfo, netInfoEntry, ipv6, hex };

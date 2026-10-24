@@ -7,7 +7,7 @@
 // keys from the proven SML -> ChainLock signature -> the locked block is in the chain. Nothing node-supplied is used before it is
 // tied to the checkpoint.
 import { bytesEqual, hashHex } from './bytes.ts';
-import { CHAINLOCK_PARAMS, type Network } from './chainlock.ts';
+import { CHAINLOCK_PARAMS } from './chainlock.ts';
 import type { Dapi } from './client.ts';
 import { type Cbor, decodeCbor } from './cbor.ts';
 import { type ChainLock, parseChainLock, parseHeader } from './dash.ts';

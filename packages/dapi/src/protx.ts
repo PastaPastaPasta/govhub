@@ -5,7 +5,7 @@
 // masternode. The SML proves proRegTxHash, and a transaction's bytes are proven by hashing to its txid, so fetching the ProRegTx
 // by that hash from any node proves both facts. This matters because the SML hash does not cover the type of version-1 entries
 // (evo/simplifiedmns.h:89-99 serializes nType only from version 2) and never covers the collateral.
-import { Reader } from './bytes.ts';
+import { Reader, hashHex } from './bytes.ts';
 import type { Dapi } from './client.ts';
 import { parseTx } from './dash.ts';
 import { VerificationError } from './errors.ts';
@@ -38,7 +38,7 @@ export function parseProRegTx(raw: Uint8Array, proTxHash: string): ProRegInfo {
   r.u16(); // nMode
   const hash = r.bytes(32), index = r.u32();
   const isNull = hash.every((b) => b === 0);
-  const txid = isNull ? proTxHash : Array.from(hash).reverse().map((b) => b.toString(16).padStart(2, '0')).join('');
+  const txid = isNull ? proTxHash : hashHex(hash);
   return { type, collateral: { txid, index } };
 }
 

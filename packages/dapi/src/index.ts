@@ -21,9 +21,10 @@ export { LLMQ_TYPE, parseSml, parseSmlDecoded, quorumsOfType } from './sml.ts';
 export type { Sml, SmlEvonode, SmlMasternode, SmlQuorum } from './sml.ts';
 export { decodeCbor } from './cbor.ts';
 export {
-  classifyScript, coinbaseHeight, parseBlock, parseChainLock, parseHeader, parseInstantLock, parseMerkleBlock, parseTx, readTx,
+  classifyScript, coinbaseHeight, merkleRoot, parseBlock, parseChainLock, parseHeader, parseInstantLock, parseMerkleBlock, parseTx,
+  readPartialMerkleTree, readTx,
 } from './dash.ts';
-export type { Block, BlockHeader, ChainLock, InstantLock, MerkleBlock, ScriptClass, Tx, TxIn, TxOut } from './dash.ts';
+export type { Block, BlockHeader, ChainLock, InstantLock, MerkleBlock, PartialMerkle, ScriptClass, Tx, TxIn, TxOut } from './dash.ts';
 export {
   CHAINLOCK_PARAMS, SIGN_HEIGHT_OFFSET, chainLockCandidateSets, chainLockRequestId, chainLockSignHash, quorumScore, selectQuorum,
 } from './chainlock.ts';
@@ -33,7 +34,7 @@ export { CHECKPOINTS, DGW_WINDOW, HeaderChain } from './headerchain.ts';
 export type { Checkpoint, HeaderRun, StoredChain } from './headerchain.ts';
 export { POW_PARAMS, checkProofOfWork, compactToTarget, darkGravityWave, medianTimePast, nextWorkRequired, targetToCompact } from './pow.ts';
 export type { HeaderTiming, PowParams } from './pow.ts';
-export { LLMQ_SIZE, base58check, commitmentBytes, merkleRoot, mnListMerkleRoot, parseCbTx, proveSml, quorumsMerkleRoot, readPartialMerkleTree, smlEntryBytes } from './smlproof.ts';
-export type { CbTx, PartialMerkle, SmlProof } from './smlproof.ts';
+export { LLMQ_SIZE, base58check, commitmentBytes, mnListMerkleRoot, parseCbTx, proveSml, quorumsMerkleRoot, smlEntryBytes } from './smlproof.ts';
+export type { CbTx, SmlProof } from './smlproof.ts';
 export { parseProRegTx } from './protx.ts';
 export type { ProRegCache, ProRegInfo } from './protx.ts';

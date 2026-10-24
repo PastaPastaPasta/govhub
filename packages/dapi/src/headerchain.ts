@@ -63,7 +63,10 @@ export interface StoredChain {
 
 const view = (b: Uint8Array) => new DataView(b.buffer, b.byteOffset, b.byteLength);
 const prevHashOf = (headers: Uint8Array, i: number) => headers.subarray(i * 80 + 4, i * 80 + 36);
-const timingOf = (headers: Uint8Array, i: number): HeaderTiming => ({ time: view(headers).getUint32(i * 80 + 68, true), bits: view(headers).getUint32(i * 80 + 72, true) });
+const timingOf = (headers: Uint8Array, i: number): HeaderTiming => {
+  const dv = view(headers);
+  return { time: dv.getUint32(i * 80 + 68, true), bits: dv.getUint32(i * 80 + 72, true) };
+};
 const fail = (height: number, msg: string): never => { throw new VerificationError('header-chain', `block ${height}: ${msg}`, height); };
 
 function checkRun(run: HeaderRun): number {
@@ -125,7 +128,7 @@ export class HeaderChain {
     const timings: HeaderTiming[] = [];
     for (let i = at - DGW_WINDOW + 1; i <= at; i++) timings.push(timingOf(run.headers, i));
     const chain = new HeaderChain(network, cp, run.from, Uint8Array.from(prevHashOf(run.headers, 0)), run.hashes.slice(0, (at + 1) * 32), timings);
-    chain.#keepRaw(run, 0, at + 1);
+    chain.#keepRaw(run, at + 1);
     if (at + 1 < n) chain.extendUp({ from: cp.height + 1, headers: run.headers.subarray((at + 1) * 80), hashes: run.hashes.subarray((at + 1) * 32) }, o);
     return chain;
   }
@@ -160,7 +163,7 @@ export class HeaderChain {
     next.set(run.hashes, this.#hashes.length);
     this.#hashes = next;
     this.#timings = timings;
-    this.#keepRaw(run, 0, n);
+    this.#keepRaw(run, n);
   }
 
   /** Headers ..lo-1, authenticated by linking up into the verified run (no work check needed below a verified block). */
@@ -174,7 +177,7 @@ export class HeaderChain {
     this.#hashes = next;
     this.#prevOfLo = Uint8Array.from(prevHashOf(run.headers, 0));
     this.#lo = run.from;
-    this.#keepRaw(run, 0, n);
+    this.#keepRaw(run, n);
   }
 
   /**
@@ -196,7 +199,8 @@ export class HeaderChain {
     return { version: 1, network: this.network, checkpoint: this.checkpoint, lo, prevOfLo: Uint8Array.from(prevOfLo), hashes: Uint8Array.from(hashes), timings, chainLock };
   }
 
-  #keepRaw(run: HeaderRun, a: number, b: number): void {
-    for (let i = a; i < b; i++) this.#raw.set(run.from + i, run.headers.subarray(i * 80, i * 80 + 80));
+  /** Remember the raw headers of the first `count` heights of the run. */
+  #keepRaw(run: HeaderRun, count: number): void {
+    for (let i = 0; i < count; i++) this.#raw.set(run.from + i, run.headers.subarray(i * 80, i * 80 + 80));
   }
 }

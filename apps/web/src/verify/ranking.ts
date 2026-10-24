@@ -39,7 +39,7 @@ export interface RankingResult {
 }
 
 /** How far Core's own superblock-time estimate (made at the start of the maturity window) can plausibly be from ours. */
-export const TIME_MARGIN_S = 12 * 3600;
+const TIME_MARGIN_S = 12 * 3600;
 
 export function rankRecounts(rs: readonly RecountedProposal[], threshold: ThresholdFact, budget: { height: number; limit: string }, superblockTime: number): RankingResult {
   const sel = selectBudget(rs.map((r) => ({ govHash: r.govHash, absYes: r.absYes, amount: r.amount, startEpoch: r.startEpoch, endEpoch: r.endEpoch })), Number(budget.limit), threshold.value, superblockTime);
