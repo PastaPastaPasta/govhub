@@ -1,9 +1,9 @@
 [
   {
     "label": "createDapi: initial load = entry + statically imported chunks (pool, failover, budget, grpc-web, protobuf, sha256, broadcast)",
-    "rawKB": 24.5,
-    "gzipKB": 9.9,
-    "brotliKB": 8.7
+    "rawKB": 24.7,
+    "gzipKB": 10,
+    "brotliKB": 8.8
   },
   {
     "label": "  lazy chunk (loaded on first use): ",
@@ -13,7 +13,7 @@
   },
   {
     "label": "  lazy chunk (loaded on first use): verified",
-    "rawKB": 6.4,
+    "rawKB": 6.5,
     "gzipKB": 2.6,
     "brotliKB": 2.4
   },
@@ -21,13 +21,13 @@
     "label": "  lazy chunk (loaded on first use): agreed-sml",
     "rawKB": 2.2,
     "gzipKB": 1.2,
-    "brotliKB": 1.2
+    "brotliKB": 1.1
   },
   {
-    "label": "  lazy chunk (loaded on first use): anchor, smlproof, headerchain, pow",
-    "rawKB": 22.1,
-    "gzipKB": 8.7,
-    "brotliKB": 7.9
+    "label": "  lazy chunk (loaded on first use): anchor, smlproof, proofanchor, headerchain",
+    "rawKB": 32.6,
+    "gzipKB": 11.7,
+    "brotliKB": 10.5
   },
   {
     "label": "  lazy chunk (loaded on first use): chainlock",
@@ -43,21 +43,21 @@
   },
   {
     "label": "  lazy chunk (loaded on first use): protx",
-    "rawKB": 1.1,
-    "gzipKB": 0.7,
+    "rawKB": 1,
+    "gzipKB": 0.6,
     "brotliKB": 0.6
   },
   {
     "label": "  lazy chunk (loaded on first use): watch, bloom, race",
     "rawKB": 5.2,
-    "gzipKB": 2.5,
+    "gzipKB": 2.6,
     "brotliKB": 2.3
   },
   {
     "label": "createDapi + every lazy chunk",
-    "rawKB": 65.7,
-    "gzipKB": 24.6,
-    "brotliKB": 21.7
+    "rawKB": 76.5,
+    "gzipKB": 27.8,
+    "brotliKB": 24.4
   },
   {
     "label": "DapiCore only (grpc-web + protobuf + 10 RPCs)",
@@ -67,15 +67,15 @@
   },
   {
     "label": "parsers (tx, block, header, merkleblock, CLSIG, ISDLOCK) + bloom + SML + CBOR",
-    "rawKB": 15.7,
-    "gzipKB": 6.6,
-    "brotliKB": 5.8
+    "rawKB": 15.9,
+    "gzipKB": 6.7,
+    "brotliKB": 5.9
   },
   {
     "label": "full barrel: every export of @govhub/dapi, no BLS/X11",
-    "rawKB": 69.1,
-    "gzipKB": 25.7,
-    "brotliKB": 22.8
+    "rawKB": 82.1,
+    "gzipKB": 29.8,
+    "brotliKB": 26.1
   },
   {
     "label": "@govhub/dapi/bls (noble bls12-381 + ChainLock rules)",
@@ -97,14 +97,26 @@
   },
   {
     "label": "anchoring (headers, PoW/DGW, SML proof, ChainLock rules; lazy chunk content)",
-    "rawKB": 34.3,
-    "gzipKB": 13.3,
-    "brotliKB": 11.9
+    "rawKB": 46.2,
+    "gzipKB": 16.8,
+    "brotliKB": 14.9
   },
   {
-    "label": "everything: barrel + bls + x11",
-    "rawKB": 277.3,
-    "gzipKB": 109.4,
-    "brotliKB": 89.5
+    "label": "@govhub/dapi/coreproof (dash-core-proof DIP 175 verifier compiled to WebAssembly, inline base64 + loader)",
+    "rawKB": 350.1,
+    "gzipKB": 138.1,
+    "brotliKB": 110.2
+  },
+  {
+    "label": "  ...the core-proof .wasm alone (a separate asset would cost this)",
+    "rawKB": 261,
+    "gzipKB": 104.9,
+    "brotliKB": 78.3
+  },
+  {
+    "label": "everything: barrel + bls + x11 + coreproof",
+    "rawKB": 639.8,
+    "gzipKB": 251.2,
+    "brotliKB": 197.7
   }
 ]
