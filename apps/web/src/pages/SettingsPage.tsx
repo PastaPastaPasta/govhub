@@ -20,6 +20,7 @@ import {
   type Registry,
 } from '../config/registry.ts';
 import { cacheClear } from '../data/cache.ts';
+import { BadgeSettings } from '../badge/BadgeSettings.tsx';
 
 const lines = (s: string) => s.split(/[\s,]+/).map((x) => x.trim()).filter(Boolean);
 
@@ -415,6 +416,7 @@ export function SettingsPage() {
 
       <BlockListSettings />
 
+      <BadgeSettings />
       <section className="form" aria-labelledby="share-title">
         <h2 id="share-title">Export, import and share</h2>
         <div className="form-actions">

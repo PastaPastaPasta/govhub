@@ -79,7 +79,8 @@ export class EpochManager {
     else if (this.#active?.epoch !== epoch) problem = await this.#load(epoch);
     if (problem) {
       if (this.#active?.epoch !== epoch) this.#active = null;
-      log.error('issuance unavailable', { epoch, problem });
+      // once per change, not every tick
+      if (problem !== this.#status.problem) log.error('issuance unavailable', { epoch, problem });
     }
     this.#status = { height, issuingEpoch: epoch, keyId: this.#active ? toHex(this.#active.keyId) : null, ready: !problem && !!this.#active, problem };
 
