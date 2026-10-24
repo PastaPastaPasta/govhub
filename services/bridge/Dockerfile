@@ -6,7 +6,7 @@
 # Native modules: better-sqlite3 (prebuilt binary, or compiled with the toolchain below) and zeromq (ships prebuilds).
 
 # ---- build: install production dependencies of the bridge workspace only ----
-FROM node:22-slim AS build
+FROM node:22.23-slim AS build
 RUN apt-get update \
  && apt-get install -y --no-install-recommends python3 make g++ ca-certificates \
  && rm -rf /var/lib/apt/lists/*
@@ -27,7 +27,7 @@ COPY services/bridge/openapi.json services/bridge/
 RUN cd services/bridge && node -e "require('better-sqlite3'); require('zeromq'); console.log('native modules ok')"
 
 # ---- runtime ----
-FROM node:22-slim
+FROM node:22.23-slim
 ENV NODE_ENV=production \
     NODE_OPTIONS=--disable-warning=ExperimentalWarning \
     HTTP_HOST=0.0.0.0 \

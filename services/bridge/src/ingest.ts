@@ -81,15 +81,16 @@ export class Ingestor {
         // during initial block download Core publishes every connected block: leave height tracking to the RPC poll then
         if (!this.chainSynced) return;
         const hash = parseHashBody(m.body);
-        try {
-          const h = await this.rpc.getBlockHeader(hash);
-          if (h.height >= this.height) {
-            this.height = h.height;
-            this.tipHash = hash;
-          }
-        } catch (e) {
-          log.warn('hashblock: header lookup failed', { hash, error: String(e) });
-        }
+        // not awaited: an RPC round trip must not stall the ZMQ receive loop
+        void this.rpc.getBlockHeader(hash).then(
+          (h) => {
+            if (h.height >= this.height) {
+              this.height = h.height;
+              this.tipHash = hash;
+            }
+          },
+          (e) => log.warn('hashblock: header lookup failed', { hash, error: String(e) }),
+        );
         return;
       }
       case 'hashchainlock':
@@ -138,9 +139,10 @@ export class Ingestor {
       .prepare(
         `INSERT INTO gov_objects(hash, type, parent_hash, revision, time, collateral_hash, data_hex, mn_outpoint, sig_hex, raw_hex, source,
            first_seen_height, first_seen_time, hash_ok, data_valid, data_errors, in_core, last_seen_in_core)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(o.hash, o.type, o.parentHash, o.revision, o.time, o.collateralHash, o.dataHex.toLowerCase(), outpoint, sig, raw, source, height, at, hashOk, dataValid, dataErrors, at);
+      // a governance.dat copy may hold objects Core has dropped since: only ZMQ/RPC prove Core holds it now
+      .run(o.hash, o.type, o.parentHash, o.revision, o.time, o.collateralHash, o.dataHex.toLowerCase(), outpoint, sig, raw, source, height, at, hashOk, dataValid, dataErrors, source === 'govdat' ? 0 : 1, source === 'govdat' ? null : at);
     this.stats.objectsNew++;
     if (!hashOk && raw !== null) recordEvent(this.db, 'object-hash-mismatch', { hash: o.hash, source });
     log.info('governance object archived', { hash: o.hash, type: o.type, source, hashOk: !!hashOk, dataValid });
@@ -158,6 +160,15 @@ export class Ingestor {
       .run(v.hash, bytesToHex(v.raw), v.parentHash, v.outpoint.txid, v.outpoint.n, v.outcome, v.signal, v.time, bytesToHex(v.sig), source, height, at, status);
     if (r.changes === 0) {
       this.stats.votesDuplicate++;
+      // The vote hash does not cover the signature: a copy with a different signature is the same vote. If the stored copy's
+      // signature failed, keep the old copy in `events` (history) and check this one instead.
+      const ex = this.db.prepare('SELECT sig_hex, sig_status, source FROM votes WHERE hash = ?').get(v.hash) as { sig_hex: string; sig_status: VoteStatus; source: string };
+      if (ex.sig_hex !== bytesToHex(v.sig) && (ex.sig_status === 'invalid' || ex.sig_status === 'malformed')) {
+        recordEvent(this.db, 'vote-copy-replaced', { hash: v.hash, old: ex, newSource: source });
+        this.db
+          .prepare('UPDATE votes SET raw_hex = ?, sig_hex = ?, source = ?, sig_status = ?, signer_keyid = NULL, pro_tx_hash = NULL, checked_height = NULL WHERE hash = ?')
+          .run(bytesToHex(v.raw), bytesToHex(v.sig), source, status, v.hash);
+      }
       return false;
     }
     this.stats.votesNew++;
@@ -171,25 +182,36 @@ export class Ingestor {
     this.verifyScheduled = true;
     setTimeout(() => {
       this.verifyScheduled = false;
-      try {
-        const n = this.verifyPendingVotes();
-        if (n > 0) log.debug('votes verified', { n });
-      } catch (e) {
-        log.error('vote verification failed', { error: String((e as Error)?.stack ?? e) });
-      }
+      this.verifyAllPending().then(
+        (n) => n > 0 && log.debug('votes verified', { n }),
+        (e) => log.error('vote verification failed', { error: String((e as Error)?.stack ?? e) }),
+      );
     }, 250);
+  }
+
+  /** verifyPendingVotes in batches, yielding to the event loop between them (a re-sync brings tens of thousands of votes). */
+  async verifyAllPending(batch = 500): Promise<number> {
+    let total = 0;
+    for (;;) {
+      const n = this.verifyPendingVotes(batch);
+      total += n;
+      if (n < batch) return total;
+      await new Promise<void>((r) => setImmediate(r));
+    }
   }
 
   /**
    * Checks pending ECDSA vote signatures against the voting key of the masternode that owns the vote's collateral outpoint:
-   * first in the MN list in force when the vote was first seen (the list Core used to accept it), then in the latest list.
-   * Returns the number of votes decided. Votes stay 'pending' while no MN snapshot exists.
+   * in the MN list in force when the vote was first seen (the list Core used to accept it), then in the latest list.
+   * A vote is decided only once a list read AFTER it arrived exists (so a key change in the block before the vote is never
+   * judged against a stale list); 'invalid' / 'unknown-mn' are re-checked whenever the list changes (recheckAfterListChange).
+   * Returns the number of votes decided.
    */
   verifyPendingVotes(limit = 10_000): number {
-    const rows = this.db.prepare("SELECT * FROM votes WHERE sig_status = 'pending' LIMIT ?").all(limit) as VoteRow[];
-    if (rows.length === 0) return 0;
     const latest = latestSnapshot(this.db);
     if (!latest) return 0;
+    const rows = this.db.prepare("SELECT * FROM votes WHERE sig_status = 'pending' AND first_seen_time <= ? LIMIT ?").all(latest.takenAt, limit) as VoteRow[];
+    if (rows.length === 0) return 0;
     const upd = this.db.prepare('UPDATE votes SET sig_status = ?, signer_keyid = ?, pro_tx_hash = ?, checked_height = ? WHERE hash = ?');
     let decided = 0;
     const invalid: string[] = [];
@@ -213,7 +235,8 @@ export class Ingestor {
     const signer = recoverVoteSigner(hexToBytes(v.sig_hex), fields, this.network);
     const signerHex = signer ? bytesToHex(signer.keyId) : null;
     const key = `${v.collateral_txid}-${v.collateral_n}`;
-    const candidates = [snapshotAt(this.db, v.first_seen_height), snapshotAt(this.db, latestHeight)];
+    // first_seen_height 0 = the bridge did not know the height yet (start-up): only the latest list applies
+    const candidates = [v.first_seen_height > 0 ? snapshotAt(this.db, v.first_seen_height) : null, snapshotAt(this.db, latestHeight)];
     let found: { proTxHash: string; height: number } | null = null;
     for (const snap of candidates) {
       if (!snap) continue;
@@ -226,10 +249,9 @@ export class Ingestor {
     return { status: 'invalid', signer: signerHex, proTxHash: found.proTxHash, checkedHeight: found.height };
   }
 
-  /** Re-checks 'unknown-mn' votes (e.g. after a snapshot that includes a newly registered MN). */
-  recheckUnknownMnVotes(): number {
-    const r = this.db.prepare("UPDATE votes SET sig_status = 'pending' WHERE sig_status = 'unknown-mn'").run();
-    return r.changes ? this.verifyPendingVotes() : 0;
+  /** After the MN list changed: votes that failed against older lists (new MN, changed voting key) are checked again. */
+  recheckAfterListChange(): number {
+    return this.db.prepare("UPDATE votes SET sig_status = 'pending' WHERE sig_status IN ('unknown-mn', 'invalid')").run().changes;
   }
 
   // ------------------------------------------------------------------ collateral
@@ -275,8 +297,10 @@ export class Ingestor {
     if (this.snapshotInFlight) return this.snapshotInFlight;
     this.snapshotInFlight = (async () => {
       try {
+        const before = latestSnapshot(this.db)?.listHash;
         const list = await snapshotMnList(this.db, this.rpc, this.network, height);
         this.lastSnapshotHeight = height;
+        if (before !== undefined && before !== list.listHash) this.recheckAfterListChange();
         this.scheduleVerify();
         return list;
       } catch (e) {
@@ -365,6 +389,13 @@ export class Ingestor {
       });
       if (!best || paid > best.paid) best = { hash: c.hash, paid, payments };
     }
+    // Core only accepts a superblock that contains EVERY payment of its trigger: anything less means the winning trigger is
+    // not archived. Record nothing (retried later) rather than a wrong `paid`.
+    if (!best || best.payments.some((p) => !p.paid)) {
+      if (this.missingTriggerWarned !== sbHeight) log.warn('superblock not recorded: no archived trigger matches its coinbase', { height: sbHeight, candidates: candidates.length });
+      this.missingTriggerWarned = sbHeight;
+      return;
+    }
     const budget = dashToDuffs(await this.rpc.getSuperblockBudget(sbHeight));
     this.db.prepare('INSERT OR IGNORE INTO superblocks(height, block_hash, block_time, budget_duffs, paid_duffs, trigger_hash, payments, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(sbHeight, hash, block.time, budget, best!.paid, best!.hash, JSON.stringify(best!.payments), nowS());
   }
@@ -372,7 +403,7 @@ export class Ingestor {
   // ------------------------------------------------------------------ governance.dat backfill
 
   /** Imports objects and SIGNED votes from a copy of governance.dat. Returns counts. Never modifies the file. */
-  importGovernanceDat(file: Uint8Array, expectNetwork: string): { objects: number; votes: number; newVotes: number; orphanVotes: number } {
+  async importGovernanceDat(file: Uint8Array, expectNetwork: string): Promise<{ objects: number; votes: number; newVotes: number; orphanVotes: number }> {
     const g = parseGovernanceDat(file);
     if (g.network !== expectNetwork) throw new Error(`governance.dat is for ${g.network}, bridge Core network is ${expectNetwork}`);
     let votes = 0;
@@ -387,7 +418,7 @@ export class Ingestor {
       }
       for (const v of g.orphanVotes) if (this.archiveVote(v, 'govdat', this.height)) newVotes++;
     })();
-    this.verifyPendingVotes(1_000_000);
+    await this.verifyAllPending();
     return { objects: g.objects.length, votes, newVotes, orphanVotes: g.orphanVotes.length };
   }
 }

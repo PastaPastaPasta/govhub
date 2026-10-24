@@ -8,6 +8,7 @@ import { latestSnapshot, snapshotAt } from '../mnlist.ts';
 import { proposalView } from '../proposal.ts';
 import { FUDGE_WINDOW_S, type ComputedTally } from '../tally.ts';
 import { dashCentralBudget, dashCentralProposal } from './dashcentral.ts';
+import { log } from '../log.ts';
 
 const HASH_RE = /^[0-9a-f]{64}$/;
 const nowS = () => Math.floor(Date.now() / 1000);
@@ -113,7 +114,10 @@ const byOutpoint = (x: { collateral_txid: string; collateral_n: number }, y: { c
 export function createApi(b: Bridge): Hono {
   const app = new Hono();
   app.use('*', cors({ origin: '*', allowMethods: ['GET', 'HEAD', 'OPTIONS'], maxAge: 86400 }));
-  app.onError((e, c) => c.json({ error: String(e.message ?? e) }, 500));
+  app.onError((e, c) => {
+    log.error('api error', { path: c.req.path, error: String(e?.stack ?? e) });
+    return c.json({ error: 'internal error' }, 500);
+  });
   app.notFound((c) => c.json({ error: 'not found' }, 404));
 
   // Always 200 while the process serves HTTP (health checks); `core.reachable` says whether Core answers.
@@ -212,12 +216,15 @@ export function createApi(b: Bridge): Hono {
       const maxH = b.lastRun?.height ?? (b.db.prepare('SELECT MAX(as_of_height) h FROM tallies').get() as { h: number | null }).h ?? -1;
       if (h > maxH) return c.json({ error: `height ${h} is above the latest tally height ${maxH}` }, 404);
       const row = b.db.prepare('SELECT * FROM tallies WHERE gov_hash = ? AND as_of_height <= ? ORDER BY as_of_height DESC, id DESC LIMIT 1').get(hash, h) as TallyRow | undefined;
-      if (!row || row.counted_votes === null) return c.json({ error: 'no recorded vote set for this proposal at or below that height' }, 404);
-      const hashes = JSON.parse(row.counted_votes) as string[];
+      const set = row ? (b.db.prepare('SELECT vote_hashes FROM vote_sets WHERE gov_hash = ? AND vote_set_hash = ?').get(hash, row.vote_set_hash) as { vote_hashes: string } | undefined) : undefined;
+      const json = set?.vote_hashes ?? row?.counted_votes ?? null;
+      if (!row || json === null) return c.json({ error: 'no recorded vote set for this proposal at or below that height' }, 404);
+      const hashes = JSON.parse(json) as string[];
       const get = b.db.prepare('SELECT * FROM votes WHERE hash = ?');
       const list = b.ingest.lists.load(row.list_hash);
-      const votes = hashes
-        .map((vh) => get.get(vh) as VoteRow)
+      const rows = hashes.map((vh) => get.get(vh) as VoteRow | undefined);
+      if (rows.some((r) => !r)) return c.json({ error: 'archive inconsistency: a vote of that set is missing' }, 500);
+      const votes = (rows as VoteRow[])
         .sort(byOutpoint)
         .map((v) => {
           const e = list?.byOutpoint.get(`${v.collateral_txid}-${v.collateral_n}`);

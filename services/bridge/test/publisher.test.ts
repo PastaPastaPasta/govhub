@@ -52,12 +52,23 @@ class FakePlatform {
   async refreshNonce(): Promise<void> {}
 }
 
+function agreeing(b: Awaited<ReturnType<typeof fixtureBridge>>): Map<string, CoreComparison> {
+  return new Map(
+    b.lastRun!.tallies.map((t) => {
+      const n = { yes: t.weighted.yes, no: t.weighted.no, abstain: t.weighted.abstain, absoluteYes: t.absoluteYes };
+      return [t.govHash, { govHash: t.govHash, match: true, core: n, bridge: n, missingSigned: [], extra: [] }];
+    }),
+  );
+}
+
 async function setup(env: Record<string, string> = {}) {
   const b = await fixtureBridge();
   const cfg = loadConfig({ GOV_CONTRACT_ID: 'x', BRIDGE_IDENTITY_KEY_FILE: '/dev/null', MIN_COLLATERAL_CONFS: '6', ...env });
   const fake = new FakePlatform();
   const pub = new Publisher(b.db, fake as unknown as PlatformClient, cfg);
-  const matchAll = new Map<string, CoreComparison>();
+  // the fixture MN list is a subset, so align Core's threshold with it; every tally "agreed with Core"
+  b.lastRun!.coreThreshold = b.lastRun!.threshold;
+  const matchAll = agreeing(b);
   return { b, fake, pub, cfg, matchAll, cycles: () => b.cycles(b.lastRun!) };
 }
 
@@ -88,13 +99,38 @@ describe('publisher', () => {
     expect((await pub.publish(b.lastRun!, matchAll, cycles(), { force: true })).replaced).toBe(0);
   });
 
-  it('holds a tally that disagrees with Core unless PUBLISH_ON_MISMATCH=1', async () => {
-    const { b, fake, pub, cycles } = await setup();
-    const t = b.lastRun!.tallies[0]!;
-    const cmp = new Map<string, CoreComparison>([[t.govHash, { govHash: t.govHash, match: false, core: { yes: 1, no: 0, abstain: 0, absoluteYes: 1 }, bridge: { yes: 0, no: 0, abstain: 0, absoluteYes: 0 }, missingSigned: ['x'], extra: [] }]]);
+  it('fails closed: holds a tally that disagrees with Core, has no Core comparison, or whose threshold differs', async () => {
+    const { b, fake, pub, matchAll, cycles } = await setup();
+    const [t0, t1] = b.lastRun!.tallies;
+    const cmp = new Map(matchAll);
+    cmp.set(t0!.govHash, { govHash: t0!.govHash, match: false, core: { yes: 1, no: 0, abstain: 0, absoluteYes: 1 }, bridge: { yes: 0, no: 0, abstain: 0, absoluteYes: 0 }, missingSigned: ['x'], extra: [] });
+    cmp.delete(t1!.govHash);
     const s = await pub.publish(b.lastRun!, cmp, cycles());
-    expect(s.held).toBe(1);
-    expect(fake.docs.has(`tally:${t.govHash}`)).toBe(false);
+    expect(s.held).toBe(2);
+    expect(fake.docs.has(`tally:${t0!.govHash}`)).toBe(false);
+    expect(fake.docs.has(`tally:${t1!.govHash}`)).toBe(false);
+    b.lastRun!.coreThreshold = b.lastRun!.threshold + 1;
+    expect((await pub.publish(b.lastRun!, matchAll, cycles())).held).toBe(b.lastRun!.tallies.length);
+  });
+
+  it('PUBLISH_ON_MISMATCH=1 publishes anyway', async () => {
+    const { b, fake, pub, cycles } = await setup({ PUBLISH_ON_MISMATCH: '1' });
+    const s = await pub.publish(b.lastRun!, new Map(), cycles());
+    expect(s.held).toBe(0);
+    expect(fake.docs.has(`tally:${b.lastRun!.tallies[0]!.govHash}`)).toBe(true);
+  });
+
+  it('retires the tally of a proposal that left the active set (rank 0, not in the next budget), once', async () => {
+    const { b, fake, pub, matchAll, cycles } = await setup({ TALLY_PUBLISH_INTERVAL_S: '0' });
+    await pub.publish(b.lastRun!, matchAll, cycles());
+    const gone = b.lastRun!.tallies.shift()!;
+    await pub.publish(b.lastRun!, matchAll, cycles());
+    const d = fake.docs.get(`tally:${gone.govHash}`)!;
+    expect(d.revision).toBe(2);
+    expect([d.data.rank, d.data.inNextBudget]).toEqual([0n, false]);
+    const before = fake.writes.length;
+    await pub.publish(b.lastRun!, matchAll, cycles());
+    expect(fake.writes.length).toBe(before);
   });
 
   it('is restart-safe: adopts documents already on Platform instead of creating duplicates', async () => {

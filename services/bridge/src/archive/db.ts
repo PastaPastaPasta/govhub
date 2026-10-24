@@ -136,10 +136,19 @@ CREATE TABLE IF NOT EXISTS tallies (
   core_absolute INTEGER,
   core_match INTEGER,
   mismatch TEXT,
-  -- JSON array of the vote hashes behind vote_set_hash (lets the API serve the exact set of a past tally)
+  -- legacy (0.1.0 dev archives): the set is in vote_sets now
   counted_votes TEXT
 );
 CREATE INDEX IF NOT EXISTS tallies_gov ON tallies(gov_hash, id);
+
+-- The exact vote set behind each distinct voteSetHash (vote hashes, JSON array), stored once.
+CREATE TABLE IF NOT EXISTS vote_sets (
+  gov_hash TEXT NOT NULL,
+  vote_set_hash TEXT NOT NULL,
+  vote_hashes TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (gov_hash, vote_set_hash)
+);
 
 -- Platform documents this bridge published (one row per contract/type/key) and every write attempt.
 CREATE TABLE IF NOT EXISTS platform_docs (

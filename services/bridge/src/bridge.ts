@@ -128,7 +128,7 @@ export class Bridge {
       log.info('reconciled with gobject list', { ...r, governanceSynced: this.core.governanceSynced });
       this.lastReconcileAt = nowS();
     }
-    this.ingest.verifyPendingVotes(1_000_000);
+    await this.ingest.verifyAllPending();
     const { info, nextBudgetDuffs } = await this.ingest.snapshotBudget();
     this.govInfo = info;
     this.nextBudgetDuffs = nextBudgetDuffs;
@@ -212,6 +212,11 @@ export class Bridge {
 
   async publishOnce(opts: { force?: boolean } = {}): Promise<PublishSummary | null> {
     if (!this.publisher) return null;
+    // A reindexing / re-syncing Core reports stale superblock heights and partial governance data: publish nothing then.
+    if (!this.core.blockchainSynced || !this.core.governanceSynced) {
+      log.warn('not publishing: Core is not synced', { blockchainSynced: this.core.blockchainSynced, governanceSynced: this.core.governanceSynced });
+      return null;
+    }
     const run = this.lastRun ?? (await this.refresh());
     if (!run) throw new Error('no MN snapshot yet: cannot publish');
     const s = await this.publisher.publish(run, this.lastComparisons, this.cycles(run), opts);

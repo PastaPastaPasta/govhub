@@ -91,7 +91,7 @@ async function main(): Promise<number> {
       await bridge.ingest.refreshHeight();
       await bridge.ingest.ensureSnapshot(bridge.ingest.height);
       if (govdat) {
-        const r = bridge.ingest.importGovernanceDat(readFileSync(govdat), cfg.coreNetwork);
+        const r = await bridge.ingest.importGovernanceDat(readFileSync(govdat), cfg.coreNetwork);
         log.info('governance.dat imported', r);
       }
       const run = await bridge.refresh({ reconcile: true, compare: true });

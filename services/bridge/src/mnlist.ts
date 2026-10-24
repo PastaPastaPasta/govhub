@@ -111,19 +111,19 @@ export interface SnapshotRef {
   height: number;
   blockHash: string;
   listHash: string;
+  /** unix s when the bridge read this list from Core */
+  takenAt: number;
 }
 
-/** The snapshot in force at `height` (latest at or below it), else the earliest one after it. */
+const toRef = (row: any): SnapshotRef | null => (row ? { height: row.height, blockHash: row.block_hash, listHash: row.list_hash, takenAt: row.taken_at } : null);
+
+/** The snapshot in force at `height`: the latest one at or below it (null if none). */
 export function snapshotAt(db: DB, height: number): SnapshotRef | null {
-  const row =
-    (db.prepare('SELECT height, block_hash, list_hash FROM mn_snapshots WHERE height <= ? ORDER BY height DESC LIMIT 1').get(height) as any) ??
-    (db.prepare('SELECT height, block_hash, list_hash FROM mn_snapshots ORDER BY height ASC LIMIT 1').get() as any);
-  return row ? { height: row.height, blockHash: row.block_hash, listHash: row.list_hash } : null;
+  return toRef(db.prepare('SELECT * FROM mn_snapshots WHERE height <= ? ORDER BY height DESC LIMIT 1').get(height));
 }
 
 export function latestSnapshot(db: DB): SnapshotRef | null {
-  const row = db.prepare('SELECT height, block_hash, list_hash FROM mn_snapshots ORDER BY height DESC LIMIT 1').get() as any;
-  return row ? { height: row.height, blockHash: row.block_hash, listHash: row.list_hash } : null;
+  return toRef(db.prepare('SELECT * FROM mn_snapshots ORDER BY height DESC LIMIT 1').get());
 }
 
 const rowToEntry = (r: MnEntryRow): MnEntry => ({

@@ -80,6 +80,31 @@ export function tallyProps(t: ComputedTally): Record<string, unknown> {
   };
 }
 
+/**
+ * The last published tally of a proposal that is no longer active, with rank 0 and inNextBudget false. Null when it already
+ * says so, or when the stored content is unknown (an adopted document).
+ */
+export function retiredTallyProps(r: PlatformDocRow): Record<string, unknown> | null {
+  const m = new Map(JSON.parse(r.content_json) as Array<[string, unknown]>);
+  if (!m.has('govHash') || !m.has('voteSetHash')) return null;
+  if (String(m.get('rank')) === '0' && m.get('inNextBudget') === false) return null;
+  const big = (k: string) => BigInt(String(m.get(k)));
+  return {
+    govHash: displayHashBytes(String(m.get('govHash'))),
+    asOfHeight: big('asOfHeight'),
+    yesWeighted: big('yesWeighted'),
+    noWeighted: big('noWeighted'),
+    abstainWeighted: big('abstainWeighted'),
+    yesCount: big('yesCount'),
+    noCount: big('noCount'),
+    abstainCount: big('abstainCount'),
+    voteSetHash: displayHashBytes(String(m.get('voteSetHash'))),
+    rank: 0n,
+    inNextBudget: false,
+    margin: big('margin'),
+  };
+}
+
 export interface CycleValues {
   superblockHeight: number;
   budget: number;
@@ -152,7 +177,7 @@ export class Publisher {
   }
 
   /**
-   * Create-or-replace one document. `minIntervalSec` throttles replaces (0 = immutable type: never replaced).
+   * Create-or-replace one document. `immutable` documents are never replaced; `minIntervalSec` throttles replaces.
    * Returns what happened.
    */
   async upsert(type: DocType, key: string, props: Record<string, unknown>, opts: { immutable?: boolean; minIntervalSec: number; createdAt?: boolean }): Promise<'created' | 'replaced' | 'unchanged' | 'adopted' | 'throttled'> {
@@ -263,11 +288,15 @@ export class Publisher {
     // 2. tallies, only for proposals that are on Platform and only when they agree with Core (unless configured otherwise)
     const tallyInterval = opts.force ? 0 : this.cfg.publish.tallyIntervalSec;
     const tallies = run.tallies.filter((t) => this.record('proposal', t.govHash));
+    // Fail closed: a tally goes out only if Core was asked and agreed, and the threshold (margin, inNextBudget) agrees too.
+    const thresholdOk = run.threshold === run.coreThreshold;
+    if (!thresholdOk && !this.cfg.publish.publishOnMismatch) log.error('tallies held back: funding threshold differs from Core', { bridge: run.threshold, core: run.coreThreshold });
     await pool(tallies, limit, async (t) => {
       const cmp = comparisons.get(t.govHash);
-      if (cmp && !cmp.match && !this.cfg.publish.publishOnMismatch) {
+      if ((!cmp || !cmp.match || !thresholdOk) && !this.cfg.publish.publishOnMismatch) {
         s.held++;
-        log.error('tally held back: bridge tally disagrees with Core', { hash: t.govHash, core: cmp.core, bridge: cmp.bridge, missingSigned: cmp.missingSigned.length, extra: cmp.extra.length });
+        if (cmp && !cmp.match) log.error('tally held back: bridge tally disagrees with Core', { hash: t.govHash, core: cmp.core, bridge: cmp.bridge, missingSigned: cmp.missingSigned.length, extra: cmp.extra.length });
+        else if (!cmp) log.warn('tally held back: no Core comparison', { hash: t.govHash });
         return;
       }
       try {
@@ -279,6 +308,22 @@ export class Publisher {
         log.error('tally publish failed', { hash: t.govHash, error: errText(e) });
       }
     });
+
+    // 2b. proposals that left the active set keep their last tally document; retire it once (rank 0, not in the next budget)
+    // so Platform does not show a stale "will be funded"
+    const active = new Set(run.tallies.map((t) => t.govHash));
+    const stale = (this.db.prepare("SELECT * FROM platform_docs WHERE contract_id = ? AND doc_type = 'tally'").all(this.platform.contractId) as PlatformDocRow[]).filter((r) => !active.has(r.doc_key));
+    for (const r of stale) {
+      const props = retiredTallyProps(r);
+      if (!props) continue;
+      try {
+        const res = await this.upsert('tally', r.doc_key, props, { minIntervalSec: tallyInterval });
+        if (res === 'replaced') s.replaced++;
+      } catch (e) {
+        s.failed++;
+        log.error('retiring tally failed', { hash: r.doc_key, error: errText(e) });
+      }
+    }
 
     // 3. cycles (sequential: few)
     const cycleInterval = opts.force ? 0 : this.cfg.publish.cycleIntervalSec;

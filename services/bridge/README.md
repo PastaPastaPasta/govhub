@@ -92,7 +92,7 @@ one socket; deploy/dashd/dash.conf has the exact lines).
 | `votes` | every signed vote: SER_NETWORK bytes (signature included), parsed fields, first-seen height/time, signature status, recovered signer key id |
 | `mn_lists`, `mn_list_entries`, `mn_snapshots` | `protx list registered true <height>` reduced to proTxHash, collateral outpoint, type/weight, voting address + key id, PoSe ban; content-addressed, with the list in force per height |
 | `budget_snapshots`, `superblocks` | `getgovernanceinfo` + `getsuperblockbudget`; per past superblock what its coinbase actually paid against the winning trigger |
-| `tallies` | every distinct tally, its Core comparison and the exact vote set behind its `voteSetHash` |
+| `tallies`, `vote_sets` | every distinct tally with its Core comparison; each distinct counted vote set once, keyed by `voteSetHash` |
 | `platform_docs`, `publish_log` | what was published (id, revision, content) and every write attempt |
 | `events`, `bad_messages` | ZMQ gaps, mismatches, invalid signatures; unparseable ZMQ bodies verbatim |
 
@@ -103,7 +103,10 @@ one socket; deploy/dashd/dash.conf has the exact lines).
   >= 1 DASH, only P2PKH/unspendable outputs, txid bound to the bytes). Publishing additionally needs >= 6 confirmations.
 - votes: 65-byte signatures are recovered with the network's scheme (`voteSchemeFor`: mainnet/regtest/devnet message
   signing, testnet binary hash) and compared with `keyIDVoting` of the masternode owning the vote's collateral outpoint, in
-  the MN list in force when the vote was first seen (then in the latest list). 96-byte operator (BLS) votes, used for
+  the MN list in force when the vote was first seen (then in the latest list). A vote is judged only once a list read
+  *after* it arrived exists, and `invalid` / `unknown-mn` votes are re-checked whenever the list changes (a key change in
+  the block before a vote must not leave the vote rejected). A later copy of a vote with a valid signature replaces a stored
+  copy whose signature failed (the old copy is kept in `events`). 96-byte operator (BLS) votes, used for
   trigger/valid/delete signals, are archived as `bls-unverified`.
 
 **Tally** (`src/tally.ts`), mirroring Core:
@@ -121,7 +124,10 @@ one socket; deploy/dashd/dash.conf has the exact lines).
 
 Every tally is compared with Core's `gobject get` FundingResult **and** with `gobject getcurrentvotes` (whose keys are vote
 hashes): `match` requires equal weighted counts and the identical vote set. Mismatches are logged at error level, stored
-(`tallies.mismatch`, `events`), shown in `/v1/status` and `/v1/tallies`, and the tally is not published.
+(`tallies.mismatch`, `events`), shown in `/v1/status` and `/v1/tallies`, and the tally is not published. Publishing
+**fails closed**: a tally is held when Core disagrees, when the comparison could not be made (RPC error), or when the
+bridge's funding threshold differs from `getgovernanceinfo` (margin/inNextBudget would be wrong); nothing is published
+while Core reports itself unsynced (`mnsync`). `PUBLISH_ON_MISMATCH=1` overrides the tally holds.
 
 **voteSetHash** = govhub-voteset-v1, defined in `@govhub/verify` (`voteSetHash`, packages/verify/README.md section 7):
 SHA-256 of `"govhub-voteset-v1\n"` followed by one line `<txid>-<n>|<outcome>|<time>\n` per counted masternode, sorted by
@@ -150,7 +156,8 @@ accepted: object.cpp:476-478) and on disk in `governance.dat`. So:
 
 `proposal` (immutable): once hash, data and collateral verify and the collateral has `MIN_COLLATERAL_CONFS`. `tally`
 (one per proposal): created on first sight, then replaced when anything but `asOfHeight` changes, at most once per
-`TALLY_PUBLISH_INTERVAL_S`. `cycle` (per superblock height): the next superblock (live, replaced as it fills, `estTime`
+`TALLY_PUBLISH_INTERVAL_S`; when its proposal leaves the active set the last tally is retired once (`rank` 0,
+`inNextBudget` false) so Platform does not keep showing "will be funded". `cycle` (per superblock height): the next superblock (live, replaced as it fills, `estTime`
 ignored for change detection) and the last one with `paid` = trigger payments found in its coinbase. Hashes are stored in
 RPC/display byte order (contracts-v1 README). Restart-safe: without a local record the document is looked up on its
 unique index (G1/G5b/G6b, base64 `where` values, PV13 query rules) and adopted; a failed create re-queries before
@@ -244,5 +251,9 @@ socket (needs local TCP binding), config rules and that `openapi.json` covers ev
    equals Core's (all 28 mainnet proposals do).
 9. A dev bridge that does not run continuously loses every vote cast while it is down (until the next re-sync); production
    must run the listener permanently. No vote was cast on mainnet between the dev runs here (the tallies never changed).
+   Related edge: if a masternode's voting key goes A → B → A, Core has already dropped the A-signed votes for good, while the
+   bridge would count them again; the Core comparison catches it and the tally is held.
 10. Core publishes `hashblock` for every block during initial sync; the bridge ignores it until the chain is synced and
     polls `getblockcount` instead, so it does not hammer RPC (or take an MN snapshot) per IBD block.
+11. Two bridge processes on one archive (`publish --once` next to `run`) are not locked against each other; unique indexes
+    prevent duplicate documents, but one of them may lose a replace race and resync its revision. Run one writer.

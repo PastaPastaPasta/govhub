@@ -261,7 +261,8 @@ export function storeTally(db: DB, t: ComputedTally, cmp: CoreComparison | null)
     cmp?.core.absoluteYes ?? null,
     cmp ? (cmp.match ? 1 : 0) : null,
     cmp && !cmp.match ? JSON.stringify({ core: cmp.core, bridge: cmp.bridge, missingSigned: cmp.missingSigned.length, extra: cmp.extra.length, missingSample: cmp.missingSigned.slice(0, 20), extraSample: cmp.extra.slice(0, 20) }) : null,
-    JSON.stringify(t.counted.map((v) => v.hash).sort()),
+    null,
   );
+  db.prepare('INSERT OR IGNORE INTO vote_sets(gov_hash, vote_set_hash, vote_hashes, created_at) VALUES (?, ?, ?, ?)').run(t.govHash, t.voteSetHash, JSON.stringify(t.counted.map((v) => v.hash).sort()), Math.floor(Date.now() / 1000));
   return true;
 }
