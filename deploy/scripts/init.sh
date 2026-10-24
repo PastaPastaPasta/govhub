@@ -124,6 +124,10 @@ chmod "$secret_mode" "$rpc_pw_file" "$identity_file" "$tunnel_file"
 env_file="$DEPLOY_DIR/.env"
 if [ -e "$env_file" ]; then
   say "kept: $env_file (not modified; set COMPOSE_FILE yourself for $NETWORK)"
+  kept_tag="$(sed -n 's/^BRIDGE_TAG=//p' "$env_file" | tail -n 1)"
+  if [ "${kept_tag:-local}" != "$IMAGE_TAG" ]; then
+    warn "$env_file has BRIDGE_TAG=${kept_tag:-<unset, so local>}, not $IMAGE_TAG: another stack on this host with the same tag shares (and rebuilds) one bridge image"
+  fi
 else
   tmp="$(mktemp "$DEPLOY_DIR/.env.XXXXXX")"
   while IFS= read -r line || [ -n "$line" ]; do

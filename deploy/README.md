@@ -610,7 +610,8 @@ bridge is published on loopback, and dashd needs only outbound P2P unless you ad
 The project's own bridges: `gov-bridge.dashhq.org` (Core mainnet) and, as a second stack in the same
 container, `gov-bridge-testnet.dashhq.org` (Core testnet, below). It is a Proxmox unprivileged LXC
 (Ubuntu 24.04, 6 cores, 16 GB RAM, 2 GB swap, 250 GB on ZFS, starts on boot), set up as in section 12.
-With both stacks running it used 2.8 GB of RAM and 57 GB of disk (2026-10-24).
+With both stacks running it used 2.8 GB of RAM and 57 GB of its ZFS dataset (2026-10-24; `df`, so after
+compression: the datadirs are 55 GB mainnet and 5.6 GB testnet in apparent size).
 
 | | |
 |---|---|
@@ -709,7 +710,7 @@ app, and votes from testnet masternodes. Created with `scripts/init.sh --network
 |---|---|
 | Checkout | `/opt/govhub-testnet` (stack in `/opt/govhub-testnet/deploy`, project `govhub-testnet`, subnet `172.29.74.0/24`, API on `127.0.0.1:8788`, image `govhub-bridge:testnet`) |
 | Core | `dashpay/dashd:24.0.0-rc.4` (testnet activated V24 at 1,578,000), `DASHD_DBCACHE_MB=1024`, `DASHD_MAXCONNECTIONS=40` |
-| Publishing | `PUBLISH=1`, `PLATFORM_NETWORK=testnet`, `GOV_CONTRACT_ID=5gMnJLDpcoMaQCQNqmHtBiSqCxRCmroXFAffPNdJ2NJC`, identity `24tL6v5jMR1H9dtUoTgbedePsMJtYPk4Q4bo6h8jTdK9` (HIGH key only on the server; made by `spikes/sdk5/scripts/testnet-bridge-setup.ts`). The `forum`, `badge` and `mod` contracts are shared with the other stack: they are keyed by `govHash`, which is unique across Core networks |
+| Publishing | `PUBLISH=1`, `PLATFORM_NETWORK=testnet`, `GOV_CONTRACT_ID=5gMnJLDpcoMaQCQNqmHtBiSqCxRCmroXFAffPNdJ2NJC`, identity `24tL6v5jMR1H9dtUoTgbedePsMJtYPk4Q4bo6h8jTdK9` (HIGH key only on the server; made by `spikes/sdk5/scripts/testnet-bridge-setup.ts`). The `forum`, `badge` and `mod` contracts are shared with the other stack. Forum documents are keyed by `govHash`, which commits to the proposal's collateral txid, a transaction that exists on one chain only, so mainnet and testnet proposals do not share hashes |
 | Public | `COMPOSE_FILE=...:docker-compose.tunnel-guest.yml`; the mainnet stack's cloudflared reaches it as `http://govhub-testnet-bridge:8787` (section 11.3): `gov-bridge-testnet.dashhq.org` |
 | Backups | `/opt/govhub-testnet-backups`, daily from the same cron file |
 

@@ -48,6 +48,9 @@ const retry = async <T>(label: string, fn: () => Promise<T>, tries = 12): Promis
     }
   }
 };
+// Broadcast a stored raw tx again on resume: "already known / in the chain" means an earlier run's broadcast landed.
+const broadcastStored = (label: string, rawtx: string) =>
+  retry(label, () => broadcastTx(rawtx).catch((e) => { if (/already|known|in block ?chain/i.test(errText(e))) return 'already'; throw e; }));
 
 // ---- 1. fund the lock key from the QA wallet, then the asset lock ----
 if (st.state === 'planned') {
@@ -59,21 +62,24 @@ if (st.state === 'planned') {
   const send = lockDuffs + 500; // buildAssetLockTx keeps 500 duffs as the lock tx fee
   if (total < send + 100_000) throw new Error('QA wallet has insufficient funds');
   const split = buildSplitTx(qaHex, utxos, [{ address: st.lockAddress, duffs: send }]);
-  st.fundingTxid = split.txid; st.state = 'funding'; save();
-  await retry('funding broadcast', () => broadcastTx(split.rawtx));
+  // the raw tx is saved before broadcasting, so a resumed run re-sends exactly this tx (never a second funding)
+  st.fundingTxid = split.txid; st.fundingRawtx = split.rawtx; st.state = 'funding'; save();
   console.log(`funding tx ${split.txid}: ${send / 1e8} tDASH -> lock key`);
 }
 if (st.state === 'funding') {
+  await broadcastStored('funding broadcast', st.fundingRawtx);
   const utxo = await retry('funding output', async () => {
     const u = (await fetchUtxos(st.lockAddress)).find((x: any) => x.txid === st.fundingTxid);
     if (!u) throw new Error('funding output not visible yet');
     return u;
   });
   const lock = buildAssetLockTx(st.lockHex, utxo);
-  st.lockTxid = lock.txid; st.creditDuffs = lock.creditDuffs; save();
-  await retry('lock broadcast', () => broadcastTx(lock.rawtx));
-  st.state = 'locked'; save();
+  st.lockTxid = lock.txid; st.lockRawtx = lock.rawtx; st.creditDuffs = lock.creditDuffs; st.state = 'locking'; save();
   console.log(`asset lock ${lock.txid}: ${lock.creditDuffs} duffs`);
+}
+if (st.state === 'locking') {
+  await broadcastStored('lock broadcast', st.lockRawtx);
+  st.state = 'locked'; save();
 }
 
 // ---- 2. identity ----
@@ -125,18 +131,24 @@ if (st.state === 'identity') {
   const before = await stableBalance();
   const nonce = BigInt((await sdk.identities.nonce(st.identityId)) ?? 0n) + 1n;
   const dc = new w.DataContract({ ownerId: st.identityId, identityNonce: nonce, schemas, fullValidation: true, platformVersion: sdk.version() });
-  st.govContractId = dc.id.toString(); save(); // derived from owner + nonce, known before publishing
-  try {
-    const published = await sdk.contracts.publish({ dataContract: dc, identityKey: identity.getPublicKeyById(1), signer });
-    if (published.id.toString() !== st.govContractId) throw new Error(`published id ${published.id} != derived ${st.govContractId}`);
-  } catch (e) { console.log(`contract publish threw (checking chain): ${redact(errText(e))}`); }
+  // The id depends on the nonce, so a rerun after a publish that landed would derive a NEW id and register a second
+  // contract. Reuse the saved id when that contract exists.
+  const existing = st.govContractId ? await sdk.contracts.fetch(st.govContractId).catch(() => null) : null;
+  if (existing) console.log(`gov contract ${st.govContractId} already registered by an earlier run; not publishing again`);
+  else {
+    st.govContractId = dc.id.toString(); save(); // derived from owner + nonce, known before publishing
+    try {
+      const published = await sdk.contracts.publish({ dataContract: dc, identityKey: identity.getPublicKeyById(1), signer });
+      if (published.id.toString() !== st.govContractId) throw new Error(`published id ${published.id} != derived ${st.govContractId}`);
+    } catch (e) { console.log(`contract publish threw (checking chain): ${redact(errText(e))}`); }
+  }
   let back: any;
   for (let i = 0; i < 20 && !back; i++) { back = await sdk.contracts.fetch(st.govContractId).catch(() => null); if (!back) await sleep(3000); }
   if (!back) throw new Error(`gov contract ${st.govContractId} not found after publish`);
   const same = JSON.stringify(back.toJSON(sdk.version()).documentSchemas) === JSON.stringify(dc.toJSON(sdk.version()).documentSchemas);
   if (!same) throw new Error('registered schemas differ from gov.json');
   let after = before;
-  for (let i = 0; i < 30 && after === before; i++) { await sleep(2000); after = await stableBalance(); }
+  for (let i = 0; i < 30 && after === before && !existing; i++) { await sleep(2000); after = await stableBalance(); }
   st.contractFeeCredits = String(before - after); st.balanceAfterContract = String(after);
   st.state = 'done'; save();
   console.log(`gov contract ${st.govContractId}: registration ${st.contractFeeCredits} credits (${dash(before - after)} DASH); schemas match gov.json`);
