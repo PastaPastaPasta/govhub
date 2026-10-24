@@ -1,0 +1,13 @@
+{
+  "name": "@govhub/contracts-v1",
+  "version": "0.0.0",
+  "private": true,
+  "description": "govhub v1 data contracts (PV13): gov, forum, badge, mod.",
+  "type": "module",
+  "exports": {
+    "./gov.json": "./gov.json",
+    "./forum.json": "./forum.json",
+    "./badge.json": "./badge.json",
+    "./mod.json": "./mod.json"
+  }
+}
