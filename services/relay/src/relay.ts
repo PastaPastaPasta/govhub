@@ -291,7 +291,7 @@ export class Relay {
       lastError: row.last_error,
       nextAttemptAt: row.status === 'held' ? Math.max(row.next_attempt_at, row.release_at) : null,
       holdReason: reason,
-      sameAsCurrent: row.same_as_current === null || row.same_as_current === undefined ? null : row.same_as_current === 1,
+      sameAsCurrent: (row.same_as_current ?? null) === null ? null : row.same_as_current === 1,
     };
   }
 

@@ -6,16 +6,11 @@ import { useKeyring } from '../../voting/KeyringContext.tsx';
 import { isOpen, type WatchedVote } from '../../voting/pending.ts';
 import { relayHost } from '../../voting/relay.ts';
 import { describeVote, leadRelay } from '../../voting/status.ts';
-import { Badge, fmtTime, mnName, OutcomeChip, useNow } from './common.tsx';
+import { Badge, fmtTime, mnName, OutcomeChip, useLabels, useNow } from './common.tsx';
 import { VoteSuccess } from './VoteSuccess.tsx';
 
-function useLabelsLocal(): Map<string, string> {
-  const k = useKeyring();
-  return new Map(k.keyring?.content.labels.map((l) => [l.proTxHash.toLowerCase(), l.label]) ?? []);
-}
-
 /** Relay reachability, with Retry now when votes wait for one. */
-export function RelayStrip() {
+function RelayStrip() {
   const k = useKeyring();
   const waiting = k.watched.filter((w) => w.status === 'queued' && !w.restored).length;
   if (!k.relays.length) return <p className="vwarn small">No relay is configured, so votes cannot be sent. Add one in Settings.</p>;
@@ -90,7 +85,7 @@ function VoteRow({ v, name, now }: { v: WatchedVote; name: string; now: number }
 export function VotesList({ title = 'Votes', showWins = true }: { title?: string; showWins?: boolean }) {
   const k = useKeyring();
   const { gov } = useApp();
-  const labels = useLabelsLocal();
+  const labels = useLabels();
   const anyOpen = k.watched.some(isOpen);
   const now = Math.floor(useNow(15_000, anyOpen) / 1000);
   const names = new Map((gov.active.data ?? []).map((s) => [s.value.govHash, s.value.name]));

@@ -1,6 +1,7 @@
 // Small shared pieces of the keyring and voting UI: copy button, status badge, outcome chip, a ticking clock, time formats.
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { formatDateTime, shortHash } from '../../lib/format.ts';
+import { useKeyring } from '../../voting/KeyringContext.tsx';
 import type { OwnedMasternode } from '../../voting/masternodes.ts';
 import type { WatchedVote } from '../../voting/pending.ts';
 import type { Tone } from '../../voting/status.ts';
@@ -32,6 +33,12 @@ export function fmtElapsed(s: number): string {
   const m = Math.floor((v % 3600) / 60);
   const sec = String(v % 60).padStart(2, '0');
   return h ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`;
+}
+
+/** Node labels of the open keyring, by lowercase proTxHash. */
+export function useLabels(): ReadonlyMap<string, string> {
+  const labels = useKeyring().keyring?.content.labels;
+  return useMemo(() => new Map(labels?.map((l) => [l.proTxHash.toLowerCase(), l.label]) ?? []), [labels]);
 }
 
 export function mnName(m: Pick<OwnedMasternode, 'proTxHash'> | Pick<WatchedVote, 'proTxHash' | 'collateralTxid' | 'collateralIndex'>, labels: ReadonlyMap<string, string>): string {

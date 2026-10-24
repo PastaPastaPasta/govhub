@@ -855,11 +855,12 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         }
         const planWith = (cur: Map<string, CurrentVote>, list: Intent[]): PlanResult => (window ? planDeferred(list, cur, now, window) : planImmediate(list, cur, now, { resend: !!opts.resend }));
         const current = new Map(currentIn);
-        for (const w of watchedRef.current.filter((x) => x.status === 'broadcast')) {
+        /** A vote of ours that went out (or may have) is the masternode's current vote when it is newer than what the bridge shows. */
+        const countAsCurrent = (w: WatchedVote) => {
           const ck = currentKey(w, w.govHash);
-          const c = current.get(ck);
-          if (!c || c.time < w.time) current.set(ck, { outcome: w.outcome, time: w.time });
-        }
+          if ((current.get(ck)?.time ?? -Infinity) < w.time) current.set(ck, { outcome: w.outcome, time: w.time });
+        };
+        watchedRef.current.filter((x) => x.status === 'broadcast').forEach(countAsCurrent);
         // a queued vote being sent right now (watchdog) may land at a relay: wait, so it is cancelled like any held vote
         await Promise.all([...inflightRef.current.values()].map((p) => p.catch(() => {})));
         let plan = planWith(current, intents);
@@ -881,9 +882,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
             else {
               // went out, or cannot be cancelled safely: it counts as the current vote, and the new one is timed after it
               replan = true;
-              const ck = currentKey(w, w.govHash);
-              const c = current.get(ck);
-              if (!c || c.time < w.time) current.set(ck, { outcome: w.outcome, time: w.time });
+              countAsCurrent(w);
             }
           }
         } finally {

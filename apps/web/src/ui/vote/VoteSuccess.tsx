@@ -57,8 +57,8 @@ export function VoteSuccess({ vote, name, proposalName }: { vote: WatchedVote; n
     const a = document.activeElement;
     if (!a || a === document.body || a.closest('[data-testid="vote-composer"]')) ref.current?.focus({ preventScroll: true });
   }, []);
-  const word = OUTCOME_NAME[vote.outcome].toUpperCase();
   const outcomeName = OUTCOME_NAME[vote.outcome];
+  const word = outcomeName.toUpperCase();
   const signed = useMemo(
     () =>
       JSON.stringify({ collateralTxid: vote.collateralTxid, collateralIndex: vote.collateralIndex, govHash: vote.govHash, signal: 'funding', outcome: outcomeName, time: vote.time, sig: vote.sig }, null, 2) +

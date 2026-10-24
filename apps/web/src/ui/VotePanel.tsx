@@ -2,7 +2,7 @@
 // selected masternodes, sign in the browser, send through the relays now or each masternode at its own random time before the
 // deadline, then follow every vote until the network counts it. Also offline signing (the exact text for `signmessage`).
 import { bytesEqual, decodeAddress, governanceVoteHash, recoverVoteSigner, type Network } from '@govhub/verify';
-import { useEffect, useMemo, useState, type KeyboardEvent } from 'react';
+import { useEffect, useState, type KeyboardEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useApp } from '../app/context.tsx';
 import { errorText } from '../auth/runtime.ts';
@@ -17,13 +17,10 @@ import { isOpen, type WatchedVote } from '../voting/pending.ts';
 import { currentKey, deferredWindow, mnId, offlineSigningRequest, OUTCOME_NAME, type CurrentVote, type Intent, type Outcome } from '../voting/plan.ts';
 import { relayHost } from '../voting/relay.ts';
 import { deferredUnavailable, describeVote, voteButtonText } from '../voting/status.ts';
-import { Badge, fmtTime, mnName, OUTCOME_LABEL, OutcomeChip } from './vote/common.tsx';
+import { Badge, fmtTime, mnName, OUTCOME_LABEL, OutcomeChip, useLabels } from './vote/common.tsx';
 import { VoteSuccess } from './vote/VoteSuccess.tsx';
 import { VoteTracker } from './vote/VoteTracker.tsx';
-import { VotesList } from './vote/VotesList.tsx';
 import '../voting/voting.css';
-
-export { VotesList as WatchedList };
 
 /** The voting deadline of the next superblock (maturity window start), from the cycle in the snapshot. */
 export function useDeadline(): number | null {
@@ -53,12 +50,6 @@ export function useCurrentVotes(govHashes: string[], nonce = 0): { votes: Map<st
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, k.status, k.currentVotes, nonce]);
   return { votes, loading, error };
-}
-
-/** Node labels of the open keyring, by proTxHash. */
-export function useLabels(): Map<string, string> {
-  const k = useKeyring();
-  return useMemo(() => new Map(k.keyring?.content.labels.map((l) => [l.proTxHash.toLowerCase(), l.label]) ?? []), [k.keyring, k.keyring?.content.labels]);
 }
 
 const OUTCOMES: Outcome[] = [1, 2, 3];

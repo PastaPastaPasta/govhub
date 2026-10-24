@@ -24,7 +24,7 @@ const RELAY_CODES: Record<string, string> = {
   'future-limit': 'Core refuses votes timed more than an hour ahead',
   'not-visible': 'it was not visible on the network yet, so the relay sends it again',
 };
-export const relayCodeText = (code: string | null | undefined): string => (code ? (RELAY_CODES[code] ?? code) : 'unknown reason');
+const relayCodeText = (code: string | null | undefined): string => (code ? (RELAY_CODES[code] ?? code) : 'unknown reason');
 
 /** The relay that knows most about the vote: the one furthest along. */
 export function leadRelay(v: WatchedVote): { relay: string; info: RelayInfo; status?: string } | null {

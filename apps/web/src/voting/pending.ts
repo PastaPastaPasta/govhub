@@ -71,17 +71,17 @@ export interface WatchedVote extends SignedVoteRecord {
 }
 
 /** A queued vote is first retried after 5 s, then doubling up to 5 min (while the page is open; "Retry now" skips the wait). */
-export const SEND_RETRY_BASE_S = 5;
-export const SEND_RETRY_CAP_S = 300;
+const SEND_RETRY_BASE_S = 5;
+const SEND_RETRY_CAP_S = 300;
 export const sendRetryDelay = (attempts: number): number => Math.min(SEND_RETRY_CAP_S, SEND_RETRY_BASE_S * 2 ** Math.max(0, attempts - 1));
 
 /** A vote not visible in the bridge this long after its release is re-sent (to another relay when there is one). */
-export const REBROADCAST_AFTER_S = 10 * 60;
-export const MAX_REBROADCASTS = 3;
+const REBROADCAST_AFTER_S = 10 * 60;
+const MAX_REBROADCASTS = 3;
 /** Finished records are dropped this long after their release. */
-export const KEEP_FINISHED_S = 7 * 24 * 3600;
+const KEEP_FINISHED_S = 7 * 24 * 3600;
 /** After it is seen, a vote is watched this long for the recount (the "counted" step). */
-export const COUNT_WATCH_S = 3600;
+const COUNT_WATCH_S = 3600;
 
 const keyV1 = (network: string, identityId: string | null) => `govhub.votes.v1.${network}.${identityId ?? 'anonymous'}`;
 const keyV2 = (network: string, identityId: string | null) => `govhub.votes.v2.${network}.${identityId ?? 'anonymous'}`;

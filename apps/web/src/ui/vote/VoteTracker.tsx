@@ -1,13 +1,13 @@
 // The live progress of one signed vote: signed in your browser -> accepted by relay -> broadcast -> seen by the network -> counted.
 // The provider's watchdog polls the relay and the bridge (with backoff); this only renders, with a ticking elapsed time.
 import { useKeyring } from '../../voting/KeyringContext.tsx';
-import type { WatchedVote } from '../../voting/pending.ts';
+import { isOpen, type WatchedVote } from '../../voting/pending.ts';
 import { describeVote, trackerSteps } from '../../voting/status.ts';
 import { Badge, fmtElapsed, fmtTime, OutcomeChip, useNow } from './common.tsx';
 
 export function VoteTracker({ vote, name }: { vote: WatchedVote; name: string }) {
   const k = useKeyring();
-  const moving = vote.status === 'queued' || vote.status === 'held' || vote.status === 'broadcast' || (vote.status === 'confirmed' && !vote.countedAt);
+  const moving = isOpen(vote) || (vote.status === 'confirmed' && !vote.countedAt);
   const nowMs = useNow(1000, moving);
   const now = Math.floor(nowMs / 1000);
   const steps = trackerSteps(vote, now, fmtTime);

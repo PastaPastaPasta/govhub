@@ -6,7 +6,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../auth/context.tsx';
 import { shortAddress } from '../lib/format.ts';
 import { openSignIn } from '../ui/SignIn.tsx';
-import { CopyButton, HashCopy, useNow } from '../ui/vote/common.tsx';
+import { CopyButton, HashCopy, useLabels, useNow } from '../ui/vote/common.tsx';
 import { VotesList } from '../ui/vote/VotesList.tsx';
 import { useKeyring } from '../voting/KeyringContext.tsx';
 import { STEP_NAME } from '../voting/lookup.ts';
@@ -242,9 +242,10 @@ function LookupProgress() {
   const now = useNow(1000, loading);
   if (!loading) return null;
   const secs = Math.max(0, Math.round((now - (k.mns.startedAt ?? now)) / 1000));
+  const step = STEP_NAME[k.mns.step ?? 'bridge'];
   return (
     <p className="kr-progress small" role="status" data-testid="mn-progress">
-      <span className="spinner" aria-hidden="true" /> {STEP_NAME[k.mns.step ?? 'bridge'][0]!.toUpperCase() + STEP_NAME[k.mns.step ?? 'bridge'].slice(1)}… <span className="muted" aria-hidden="true">{secs} s</span>
+      <span className="spinner" aria-hidden="true" /> {step[0]!.toUpperCase() + step.slice(1)}… <span className="muted" aria-hidden="true">{secs} s</span>
       {secs >= 15 && <span className="muted"> Slower than usual; it gives up and says so within a minute.</span>}
     </p>
   );
@@ -253,7 +254,7 @@ function LookupProgress() {
 function Masternodes() {
   const k = useKeyring();
   const ring = k.keyring!;
-  const labels = new Map(ring.content.labels.map((l) => [l.proTxHash.toLowerCase(), l.label]));
+  const labels = useLabels();
   const [confirmRemove, setConfirmRemove] = useState<number | null>(null);
   const loading = k.mns.phase === 'loading';
   const total = k.mns.owned.length;
