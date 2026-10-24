@@ -175,7 +175,7 @@
       },
       "VoteStatusView": {
         "type": "object",
-        "required": ["id", "voteHash", "status", "releaseAt", "broadcastAt", "confirmedAt", "attempts", "lastError"],
+        "required": ["id", "voteHash", "status", "releaseAt", "broadcastAt", "confirmedAt", "attempts", "lastError", "nextAttemptAt", "holdReason", "sameAsCurrent"],
         "properties": {
           "id": { "$ref": "#/components/schemas/VoteId" },
           "voteHash": { "$ref": "#/components/schemas/Hash" },
@@ -184,9 +184,19 @@
           "broadcastAt": { "type": ["integer", "null"], "description": "when Core last accepted the vote from this relay" },
           "confirmedAt": { "type": ["integer", "null"], "description": "when the vote was seen in `gobject getcurrentvotes`" },
           "attempts": { "type": "integer", "description": "voteraw calls that were answered (not counting `too-often` waits)" },
+          "nextAttemptAt": { "type": ["integer", "null"], "description": "held votes: the earliest time (unix s) the relay sends it; null in every other state" },
+          "holdReason": {
+            "type": ["string", "null"],
+            "enum": ["release-time", "one-change-per-hour", "core-time-limit", "retrying", null],
+            "description": "held votes: why it waits. `release-time`: the client-chosen release; `one-change-per-hour`: Core accepts one change per masternode, proposal and signal per hour; `core-time-limit`: Core refuses votes timed more than 1 h ahead; `retrying`: after an error (see `lastError`). null in every other state"
+          },
+          "sameAsCurrent": {
+            "type": ["boolean", "null"],
+            "description": "at submission, the masternode's current funding vote in Core had the same outcome: broadcasting this one only moves the timestamp (flagged, not dropped). null: Core could not be asked"
+          },
           "lastError": {
             "type": ["string", "null"],
-            "description": "a short code, never a raw Core message. While held (or `sending`): `too-often`, `unknown-proposal`, `core-error`, `not-visible` (re-broadcast pending). When failed: `obsolete`, `mn-gone`, `mn-banned`, `mn-not-valid`, `bad-signature`, `unknown-proposal`, `core-error`, `unconfirmed`"
+            "description": "a short code, never a raw Core message. While held (or `sending`): `too-often` (Core said voting too often), `hour-rule` (this relay broadcast a vote of the masternode on the proposal less than 1 h + 30 s ago), `future-limit` (the signed time is more than 1 h ahead of Core's clock), `unknown-proposal`, `core-error`, `not-visible` (re-broadcast pending). When failed: `obsolete`, `mn-gone`, `mn-banned`, `mn-not-valid`, `bad-signature`, `unknown-proposal`, `core-error`, `unconfirmed`"
           }
         }
       },

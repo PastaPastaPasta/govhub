@@ -21,7 +21,7 @@ describe.each(SCHEMES)('votes API (%s)', (network) => {
     expect(r.body.id).not.toBe(r.body.voteHash);
 
     const id = r.body.id as string;
-    expect((await w.get(`/v1/votes/${id}`)).body).toEqual({ id, voteHash: r.body.voteHash, status: 'held', releaseAt: T0, broadcastAt: null, confirmedAt: null, attempts: 0, lastError: null });
+    expect((await w.get(`/v1/votes/${id}`)).body).toEqual({ id, voteHash: r.body.voteHash, status: 'held', releaseAt: T0, broadcastAt: null, confirmedAt: null, attempts: 0, lastError: null, nextAttemptAt: T0, holdReason: 'release-time', sameAsCurrent: false });
 
     await w.broadcaster.tickBroadcast();
     expect(w.core.count('voteraw')).toBe(1);

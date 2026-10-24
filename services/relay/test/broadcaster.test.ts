@@ -195,7 +195,9 @@ describe('Core rules', () => {
     const b = await w.submit(mn, { govHash: gov, outcome: 'no', time: T0 + 10 });
     await w.broadcaster.tickBroadcast();
     expect(w.core.count('voteraw')).toBe(1); // not even tried: Core would have said "voting too often"
-    expect(w.row(b.id)).toMatchObject({ status: 'held', next_attempt_at: T0 + 3630, last_error: null, attempts: 0 });
+    expect(w.row(b.id)).toMatchObject({ status: 'held', next_attempt_at: T0 + 3630, last_error: 'hour-rule', attempts: 0 });
+    // the client is told why, and until when, in plain terms
+    expect((await w.get(`/v1/votes/${b.id}`)).body).toMatchObject({ status: 'held', holdReason: 'one-change-per-hour', nextAttemptAt: T0 + 3630 });
 
     w.clock.t = T0 + 3629;
     await w.broadcaster.tickBroadcast();
