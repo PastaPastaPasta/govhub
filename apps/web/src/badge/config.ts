@@ -26,7 +26,10 @@ export interface BadgeNetworkConfig {
    * stands out. Testnet's value suits a demo with a handful of test masternodes.
    */
   minAnonymitySet: number;
-  /** An issuerReport above this is implausible (more tokens than masternodes) and flags the issuer (review M1). */
+  /**
+   * An issuerReport above this is implausible (more tokens than masternodes, with a margin) and flags the issuer (review M1, N4).
+   * Pinned: the client has no proved masternode count at S(E-1) yet.
+   */
   maxPlausibleTokens: number;
 }
 
@@ -40,9 +43,11 @@ export const BADGE_NETWORKS: Readonly<Record<CoreNetwork, BadgeNetworkConfig>> =
     contractId: '2aYj4Dkix7xXBUTZFCDBjpcqqLi9Tg5oUwBgHUJBNGCU',
     defaultIssuers: [{ name: 'govhub', identityId: 'H62hSf5TpKbUSMov85GMhPQahZDbqsTipeoBsYPgveUH', url: 'https://gov-issuer-testnet.dashhq.org', enabled: true }],
     minAnonymitySet: 3,
-    maxPlausibleTokens: 2_000,
+    // testnet has about 150 masternodes (2026-10)
+    maxPlausibleTokens: 500,
   },
-  mainnet: { contractId: '', defaultIssuers: [], minAnonymitySet: 10, maxPlausibleTokens: 10_000 },
+  // mainnet has about 2,400 masternodes (2026-10); the bound needs updating if that grows a lot
+  mainnet: { contractId: '', defaultIssuers: [], minAnonymitySet: 10, maxPlausibleTokens: 4_000 },
 };
 
 const KEY = (net: CoreNetwork) => `govhub.badge.trust.v1.${net}`;
@@ -69,9 +74,10 @@ export function parseTrustList(v: unknown): { issuers: TrustedIssuer[]; errors: 
   const issuers: TrustedIssuer[] = [];
   for (const [i, x] of (Array.isArray(v) ? v : []).entries()) {
     const o = (x ?? {}) as Record<string, unknown>;
-    const name = typeof o.name === 'string' ? o.name.trim().slice(0, 40) : '';
+    // printable ASCII only, so a look-alike of a default issuer's name cannot pass the name checks (N16)
+    const name = typeof o.name === 'string' && /^[\x20-\x7e]+$/.test(o.name.trim()) ? o.name.trim().slice(0, 40) : '';
     const url = httpsUrl(o.url);
-    if (!name) errors.push(`issuer ${i + 1}: a name is required`);
+    if (!name) errors.push(`issuer ${i + 1}: a name in plain letters, digits and punctuation is required`);
     else if (!isIdentifier(o.identityId)) errors.push(`${name}: identityId must be a base58 identity id`);
     else if (!url) errors.push(`${name}: url must be an https URL without credentials, query or fragment`);
     else if (issuers.some((s) => s.identityId === o.identityId)) errors.push(`${name}: this identity is already on the list`);

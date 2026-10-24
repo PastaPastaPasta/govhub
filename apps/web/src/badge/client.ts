@@ -206,10 +206,14 @@ export async function step(d: ClientDeps, job: BadgeJob, height: number): Promis
     }
   }
   if (j.state === 'token') {
-    if (height > displayWindow(p, j.epoch).to) return { ...j, state: 'expired', note: 'The badge was never posted and its display window is over.' };
+    if (height > displayWindow(p, j.epoch).to) return wipe({ ...j, state: 'expired', note: 'The badge was never posted and its display window is over.' });
     const postAt = j.postAt ?? pickPostHeight(p, j.epoch, height);
     if (height < postAt) return { ...j, postAt };
+    if (!d.trusted(j.issuer.identityId)) return { ...j, postAt, note: `${j.issuer.name} is not on your trust list (or is turned off): the badge is not posted.` };
     try {
+      // a key revoked since the token was issued voids the badge for readers: do not post it (N12)
+      const { key } = await d.issuerKey({ ...j.issuer, enabled: true }, j.epoch);
+      if (!key || (key.revokedFrom !== null && key.revokedFrom <= height)) return wipe({ ...j, state: 'expired', note: `${j.issuer.name}'s key for epoch ${j.epoch} is no longer valid: the badge is not posted.` });
       // Too few tokens this epoch and the badge would stand out (review R1); no report yet: wait for it.
       const tokens = await d.reportedTokens(j.issuer, j.epoch);
       if (tokens === null) return { ...j, postAt, note: `Waiting for ${j.issuer.name}'s token count for epoch ${j.epoch} before posting.` };
@@ -232,8 +236,9 @@ export async function step(d: ClientDeps, job: BadgeJob, height: number): Promis
 function wipe(j: BadgeJob): BadgeJob {
   const { preparedMsg: _p, blindedMsg: _b, inv: _i, ...rest } = j;
   if (rest.keepKey && rest.signer.kind === 'wif') return rest;
-  const done = rest.state === 'posted' || rest.state === 'expired' || rest.state === 'failed';
-  return { ...rest, signer: { kind: 'external' }, ...(done ? { proTxHash: '' } : {}) };
+  // once the token is in hand (or the job is over) nothing needs the masternode any more (N10)
+  const { sig: _s, ...noSig } = rest;
+  return { ...(rest.state === 'token' ? rest : noSig), signer: { kind: 'external' }, proTxHash: '' };
 }
 
 export const isActive = (j: BadgeJob): boolean => ACTIVE.includes(j.state);

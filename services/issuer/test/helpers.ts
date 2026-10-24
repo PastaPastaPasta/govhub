@@ -65,6 +65,10 @@ export class FakeCore implements CoreView {
   mns = new Map<string, FakeMn>();
   calls = 0;
   down = false;
+  isSynced = true;
+  async synced() {
+    return this.isSynced;
+  }
   add(m: FakeMn) {
     this.mns.set(m.proTxHash, m);
     return m;

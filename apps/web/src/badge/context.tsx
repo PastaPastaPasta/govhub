@@ -1,9 +1,9 @@
 // Badge state shared by every page: the trust list, the reader (badges next to authors, the "MN owners" filter), and the badge
 // client (requestBadge for the keyring or the key-paste form, and the scheduler that finishes requests and posts badges).
 //
-// The scheduler (review H1, M3): one per identity across tabs (Web Locks), every change merged into the latest stored jobs under a
-// store lock, and within one visit EITHER one token request OR badge posts (visit.ts), so the issuer's view of a request and the
-// public view of this identity's writes never share a visit.
+// The scheduler (review H1/N1, M3): one per identity across tabs (Web Locks), every change merged into the latest stored jobs under
+// a store lock, and token requests kept COOLDOWN_MS away from any Platform write from this browser and from each other (visit.ts),
+// so the issuer's view of a request and the public view of this identity's writes do not line up.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { clientIssuanceWindow, clientPostingWindow, displayWindow, EPOCH_PARAMS, resumeDelayMs } from '@govhub/badge';
 import { signMessageWif } from '@govhub/verify';
@@ -15,7 +15,7 @@ import { createJob, isActive, renewal, step, type BadgeJob, type ClientDeps, typ
 import { badgeQuery, badgesOfAuthors } from './queries.ts';
 import { createBadgeReader, type BadgeReader } from './reader.ts';
 import { deriveStoreKey, encryptedJobStore, jobStorageKey, memoryJobStore, type JobStore } from './store.ts';
-import { mayPost, mayRequest, noteRequestSent, onVisitChange, visitState } from './visit.ts';
+import { mayPost, mayRequest, noteRequestSent, onVisitChange, requestCooldownLeft } from './visit.ts';
 import { badgeWorker } from './workerClient.ts';
 
 export interface BadgeCtx {
@@ -80,8 +80,20 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
 
   const [jobs, setJobs] = useState<BadgeJob[]>([]);
   const [coreHeight, setCoreHeight] = useState<number | null>(null);
-  const [visit, setVisit] = useState(visitState);
-  useEffect(() => onVisitChange(() => setVisit(visitState())), []);
+  // the note shows in every tab while a request's cooldown runs
+  const [cooldown, setCooldown] = useState(() => requestCooldownLeft());
+  useEffect(() => {
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const update = () => {
+      clearTimeout(t);
+      const left = requestCooldownLeft();
+      setCooldown(left);
+      if (left > 0) t = setTimeout(update, Math.min(left, 60_000));
+    };
+    update();
+    const off = onVisitChange(update);
+    return () => (off(), clearTimeout(t));
+  }, []);
   const signers = useRef(new Map<string, VotingSigner>());
   const jobsRef = useRef<BadgeJob[]>([]);
   /** the current effect run's merge-and-save (null while no identity is loaded) */
@@ -176,10 +188,13 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
         notBefore.set(j.id, Date.now() + (okTicks === 0 ? resumeDelayMs(Math.min(600_000, leftMs / 2)) : 0));
       }
       const ready = due.filter((j) => Date.now() >= notBefore.get(j.id)!);
-      const requests = ready.filter((j) => j.state === 'scheduled').sort((a, b) => clientIssuanceWindow(p, a.epoch).to - clientIssuanceWindow(p, b.epoch).to);
+      // only requests that can actually go out now (trusted issuer, a signer): one that would wait must not hold up posts (N2)
+      const requests = ready
+        .filter((j) => j.state === 'scheduled' && deps.trusted(j.issuer.identityId) && (j.signer.kind === 'wif' || signers.current.has(j.proTxHash)))
+        .sort((a, b) => clientIssuanceWindow(p, a.epoch).to - clientIssuanceWindow(p, b.epoch).to);
       const posts = ready.filter((j) => j.state === 'token');
-      // H1: a visit does one token request (the one whose window closes first) OR posts, never both; a request never follows a
-      // public write of this identity in the same visit. Whatever is not allowed waits for a later visit.
+      // H1/N1: one token request (the one whose window closes first) only when no write and no other request happened in this
+      // browser for the cooldown; posts only once the cooldown after the last request is over. The rest waits.
       if (requests.length && mayRequest()) await run(requests[0]!);
       else if (posts.length && mayPost()) for (const j of posts) await run(j);
       if (!live) return TICK_MS;
@@ -197,7 +212,9 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
       if (!live) return TICK_MS;
       const keepFrom = Math.floor(height / (p.superblockCycle * p.epochCycles)) - 2;
       await commit((latest) => {
-        const merged = latest.map((j) => updates.get(j.id) ?? j).concat(added.filter((a) => !latest.some((j) => j.id === a.id)));
+        // a renewal made from an older snapshot must not duplicate a job added meanwhile for the same issuer and epoch (N11)
+        const fresh = added.filter((a) => !latest.some((j) => j.id === a.id || (j.issuer.identityId === a.issuer.identityId && j.epoch === a.epoch && j.state !== 'failed' && j.state !== 'expired')));
+        const merged = latest.map((j) => updates.get(j.id) ?? j).concat(fresh);
         return merged.filter((j) => isActive(j) || j.epoch >= keepFrom);
       });
       okTicks++;
@@ -205,11 +222,13 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
     };
 
     (async () => {
-      const s = authSession ? encryptedJobStore(ownerId, await deriveStoreKey(authSession.auth.privateKey, ownerId)) : memoryJobStore();
+      // one store per (identity, signing key): the store key comes from the key, so another key of the same identity has its own
+      const s = authSession ? encryptedJobStore(`${ownerId}.${authSession.auth.keyId}`, ownerId, await deriveStoreKey(authSession.auth.privateKey, ownerId)) : memoryJobStore();
+      const loaded = await s.load(); // throws when stored data does not decrypt: then nothing is ever saved over it (N5)
       if (!live) return;
       store = s;
       commitRef.current = commit;
-      show(await s.load());
+      show(loaded);
       // one scheduler per identity in this browser: the other tabs wait for the lock
       await withLock(
         `${lockBase}-scheduler`,
@@ -229,7 +248,7 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
     })().catch(() => undefined);
     // another tab saved: show its jobs
     const onStorage = (e: StorageEvent) => {
-      if (e.key === jobStorageKey(ownerId)) void store?.load().then(show);
+      if (authSession && e.key === jobStorageKey(`${ownerId}.${authSession.auth.keyId}`)) void store?.load().then(show, () => undefined);
     };
     globalThis.addEventListener?.('storage', onStorage);
     return () => {
@@ -273,10 +292,10 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
   return (
     <Ctx.Provider value={value}>
       {children}
-      {visit.requestSent && (
+      {cooldown > 0 && (
         <p className="badge-visit-note" role="status" data-testid="badge-visit-note">
-          A masternode badge request went to an issuer during this visit. Posting, commenting or reacting from this identity now could let the issuer link the two; it is
-          safer to do that on another visit.
+          A masternode badge request went to an issuer from this browser in the last half hour. Posting, commenting or reacting from your identity now could let the issuer
+          link the two; wait {Math.ceil(cooldown / 60_000)} min.
         </p>
       )}
     </Ctx.Provider>

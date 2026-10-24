@@ -22,9 +22,9 @@ export interface IssuerConfig {
   challengeTtlSec: number;
   dbPath: string;
   http: { host: string; port: number };
-  /** HIGH key of the issuer identity, used only to publish issuerReport documents. Empty: reports are not published. */
+  /** HIGH key of the issuer identity, used only to publish issuerReport documents. Required by `issuer run`. */
   reportKeyFile: string;
-  /** Global cap on token requests per second, a CPU backstop (no per-IP state is kept; per-MN limits apply after authentication). */
+  /** Requests per second allowed into signature recovery, a CPU backstop (junk failing the cheap checks does not count; no per-IP state). */
   maxTokenRequestsPerSec: number;
   /** Seconds between chain polls (epoch roll-over, key loading, record deletion, reports). */
   tickSec: number;

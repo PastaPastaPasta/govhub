@@ -22,18 +22,23 @@ async function setup(epochs: number[], o: { lateDoc?: boolean; maxStaged?: numbe
     docs.set(m.epoch, { ownerId: rnd(32), epoch: m.epoch, spki, keyId: await sha256(spki), variant: VARIANT, createdAtCoreBlockHeight: o.lateDoc ? keyDeadline(P, m.epoch) : 1 });
   }
   const reports: Array<{ epoch: number; tokensIssued: number }> = [];
+  const core = new FakeCore();
+  const ctl: { platformHeight: number | null } = { platformHeight: null };
   const platform: IssuerPlatform = {
     issuerKey: async (_i, e) => docs.get(e) ?? null,
     issuerReport: async () => null,
-    coreHeight: async () => 0,
+    coreHeight: async () => ctl.platformHeight ?? core.tip,
     publishIssuerKey: async () => 'x',
     publishIssuerReport: async (_k, r) => (reports.push(r), `report-${r.epoch}`),
   };
-  const core = new FakeCore();
   const store = openTokenStore(':memory:');
   store.markStarted(0);
   const m = new EpochManager({ params: P, issuerId: ISSUER, keyDir: dir, maxStagedKeys: o.maxStaged ?? 1, core, lists: new MnLists(core), store, platform: () => platform, reportKey: { identityId: ISSUER, keyId: 2, privateKeyHex: '11'.repeat(32) } });
-  return { dir, docs, core, store, m, reports };
+  return {
+    dir, docs, core, store, m, reports,
+    get platformHeight() { return ctl.platformHeight; },
+    set platformHeight(v: number | null) { ctl.platformHeight = v; },
+  };
 }
 
 describe('epoch manager', () => {
@@ -95,6 +100,26 @@ describe('epoch manager', () => {
     expect(t.store.reserve({ epoch: E, windowFrom: 0, proTxHash: 'c', collateral: 'c', blindedHash: rnd(32) }, () => rnd(256))).toEqual({ kind: 'closed' });
     expect(t.reports).toContainEqual({ epoch: E, tokensIssued: 2 });
     expect(t.m.activeKey(E + 1)?.epoch).toBe(E + 1);
+  });
+
+  it('a syncing dashd: nothing is issued and no start height is recorded', async () => {
+    const t = await setup([E]);
+    t.core.isSynced = false;
+    await t.m.tick();
+    expect(t.m.status).toMatchObject({ ready: false, problem: 'dashd is not synced' });
+  });
+
+  it('the report waits for Platform\'s core height to reach S(E)', async () => {
+    const t = await setup([E, E + 1]);
+    await t.m.tick();
+    t.store.reserve({ epoch: E, windowFrom: 0, proTxHash: 'a', collateral: 'a', blindedHash: rnd(32) }, () => rnd(256));
+    t.core.tip = epochStart(P, E) + P.boundaryMarginBlocks;
+    t.platformHeight = epochStart(P, E) - 1;
+    await t.m.tick();
+    expect(t.reports).toEqual([]);
+    t.platformHeight = epochStart(P, E) + 1;
+    await t.m.tick();
+    expect(t.reports).toEqual([{ epoch: E, tokensIssued: 1 }]);
   });
 
   it('a stray key file for an old epoch is destroyed even if never used', async () => {

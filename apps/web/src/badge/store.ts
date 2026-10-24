@@ -14,7 +14,7 @@ export interface JobStore {
 
 const enc = new TextEncoder();
 const BUCKET = 16 * 1024;
-export const jobStorageKey = (identityId: string) => `govhub.badge.jobs.v1.${identityId}`;
+export const jobStorageKey = (slot: string) => `govhub.badge.jobs.v1.${slot}`;
 
 const b64 = (b: Uint8Array) => {
   let s = '';
@@ -43,26 +43,26 @@ function unpad(b: Uint8Array): string {
   return new TextDecoder().decode(b.subarray(4, 4 + n));
 }
 
-export function encryptedJobStore(identityId: string, key: CryptoKey, storage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> = localStorage): JobStore {
+/**
+ * `slot` names the storage entry (identity and signing key id: the encryption key comes from the signing key, and one identity can
+ * sign in with several keys). A stored entry that does not decrypt makes load() throw, and the caller never saves over it.
+ */
+export function encryptedJobStore(slot: string, identityId: string, key: CryptoKey, storage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> = localStorage): JobStore {
   const aad = enc.encode(identityId);
   return {
     async load() {
-      const raw = storage.getItem(jobStorageKey(identityId));
+      const raw = storage.getItem(jobStorageKey(slot));
       if (!raw) return [];
-      try {
-        const { iv, ct } = JSON.parse(raw) as { iv: string; ct: string };
-        const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(iv), additionalData: aad }, key, unb64(ct));
-        const jobs = JSON.parse(unpad(new Uint8Array(pt))) as BadgeJob[];
-        return Array.isArray(jobs) ? jobs.filter((j) => j && j.v === 1 && j.ownerId === identityId) : [];
-      } catch {
-        return []; // another key (a different sign-in of the same identity cannot happen: the key is the identity's) or corruption
-      }
+      const { iv, ct } = JSON.parse(raw) as { iv: string; ct: string };
+      const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(iv), additionalData: aad }, key, unb64(ct));
+      const jobs = JSON.parse(unpad(new Uint8Array(pt))) as BadgeJob[];
+      return Array.isArray(jobs) ? jobs.filter((j) => j && j.v === 1 && j.ownerId === identityId) : [];
     },
     async save(jobs) {
-      if (!jobs.length) return storage.removeItem(jobStorageKey(identityId));
+      if (!jobs.length) return storage.removeItem(jobStorageKey(slot));
       const iv = crypto.getRandomValues(new Uint8Array(12));
       const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: aad }, key, pad(JSON.stringify(jobs))));
-      storage.setItem(jobStorageKey(identityId), JSON.stringify({ iv: b64(iv), ct: b64(ct) }));
+      storage.setItem(jobStorageKey(slot), JSON.stringify({ iv: b64(iv), ct: b64(ct) }));
     },
   };
 }

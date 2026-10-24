@@ -63,6 +63,7 @@ Notes:
 
 - Every failure in step 6 is the same `403 unauthorized`: an unknown proTxHash, a wrong key and a bad signature look
   identical, so a stranger learns nothing about any MN. Only the holder of the voting key sees the answers from step 7 on.
+- The issuer issues nothing, and records no start height, while dashd is in initial block download.
 - Nothing before authentication touches dashd: the timer (`ISSUER_TICK_S`) caches the current list and the `S(E-1)`
   snapshot with `protx list registered true [height]` (`MnLists`, `src/core.ts`; the snapshot once it is
   `boundaryMarginBlocks` deep). Only an authenticated request costs one `getblockcount`, so a stranger cannot load dashd.
@@ -119,8 +120,10 @@ Errors are `{error, message}`:
 | `already-issued` | 409 | this MN (or its collateral) already has a token for this epoch |
 | `unavailable` | 503 | no key ready, lists not loaded, Core or signing failed, the per-MN limit, or the global limit (with `Retry-After: 5`) |
 
-Limits: a per-MN limit (6 per minute) after authentication, and a global `ISSUER_MAX_TOKEN_RPS` (default 200) as a CPU
-backstop only. Rejecting a stranger's request costs a parse, an HMAC and a signature recovery, with no RPC. No per-IP
+Limits: a per-MN limit (6 per minute) after authentication, and a global `ISSUER_MAX_TOKEN_RPS` (default 200) on
+requests that pass the cheap checks (shape, epoch, key, challenge HMAC, blinded-message hash) and so reach signature
+recovery; junk does not consume it. Add a per-IP rate limit at the edge (Cloudflare) against floods of valid-looking
+requests; the issuer itself keeps no IP state. Rejecting a stranger's request costs a parse, an HMAC and a signature recovery, with no RPC. No per-IP
 state is kept.
 Every response carries `Access-Control-Allow-Origin: *` (no credentials), `Cache-Control: no-store`,
 `Referrer-Policy: no-referrer` and `X-Content-Type-Options: nosniff`.
@@ -177,7 +180,10 @@ to the server, and only for `issuerReport` documents. Key files are JSON
 - After the window closes the issuer publishes `issuerReport {epoch, tokensIssued}` with the HIGH key, once per epoch
   it served. Readers accept it only if it was created in `[S(E), S(E)+W]` and is plausible, and compare it with the
   number of valid badges. If a report for the epoch already exists with another count (another instance, or a stolen
-  report key), the issuer logs an error: the document is immutable.
+  report key), the issuer logs an error: the document is immutable. It publishes only once Platform's core height has
+  reached `S(E)`. A stolen HIGH key can publish reports for future epochs now: readers reject them as out of window,
+  but the unique index then blocks the real report, so those epochs can never be audited; recovery needs a new issuer
+  identity.
 - Logs are JSON lines on stderr. They never contain IPs, proTxHashes, request strings, blinded messages or
   signatures, and token events are not logged one by one. Only hourly aggregate counters are logged (`issued`,
   `retry`, and a counter per error code).
@@ -202,8 +208,8 @@ Environment variables plus secret files. An empty value means the default. Secre
 | `ISSUER_CHALLENGE_TTL_S` | `600` | minimum 30 |
 | `DB_PATH` | `./data/issuer.sqlite` | the image sets `/data/issuer.sqlite` |
 | `HTTP_HOST` / `HTTP_PORT` | `127.0.0.1` / `8789` | the image sets `0.0.0.0` |
-| `ISSUER_REPORT_KEY_FILE` | | the identity's HIGH key file for `issuerReport`. Unset or an empty file: no reports are published. Must belong to `ISSUER_IDENTITY_ID` |
-| `ISSUER_MAX_TOKEN_RPS` | `200` | global CPU backstop (per-MN limits apply after authentication) |
+| `ISSUER_REPORT_KEY_FILE` | | **required**: the identity's HIGH key file for `issuerReport` (readers flag an issuer without reports, clients post no badge without one). Must belong to `ISSUER_IDENTITY_ID` |
+| `ISSUER_MAX_TOKEN_RPS` | `200` | requests per second allowed into signature recovery (per-MN limits apply after authentication) |
 | `ISSUER_TICK_S` | `30` | seconds between epoch housekeeping runs (min 1) |
 | `ISSUER_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 
@@ -214,7 +220,7 @@ repository root as context, joins `default` (dashd RPC) and `edge`, and publishe
 uses the secrets `core_rpc_password`, `issuer_hmac_secret` and `issuer_report_key`, and the volumes
 `issuer-data:/data` and `${SECRETS_DIR}/issuer-keys:/keys` (mode 0700, uid 1000, writable so the service can
 destroy old keys). `deploy/scripts/init.sh` creates the HMAC secret, an empty `issuer_report_key.json` placeholder
-(no reports until you fill it) and the key directory. `deploy/docker-compose.issuer-tunnel-guest.yml` puts the issuer
+(the service refuses to start until you fill it) and the key directory. `deploy/docker-compose.issuer-tunnel-guest.yml` puts the issuer
 on another stack's tunnel. How to publish it, and the testnet deployment, are in `deploy/README.md` (sections 11.4
 and 13.2).
 

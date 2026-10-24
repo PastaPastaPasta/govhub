@@ -353,6 +353,17 @@ describe('badge reader', () => {
     expect(await strict.live()).toBe(false);
   });
 
+  it('an unflagged audit is not frozen: badges posted after the report are counted after the TTL', async () => {
+    const p = new FakePlatform();
+    await p.addKey(E);
+    await issued(p, bytesToId(rnd(32)));
+    p.reports.set(E, 1);
+    const r = new BadgeReader({ net: 'testnet', contractId, issuers: [issuer], query: (q) => p.query(q), ttlMs: 0 });
+    expect((await r.audit(issuer, E, p.core)).flagged).toBe(false);
+    await issued(p, bytesToId(rnd(32)));
+    expect(await r.audit(issuer, E, p.core)).toMatchObject({ badges: 2, flagged: true });
+  });
+
   it('a report counts only if created in [S(E), S(E)+W] and plausible; none after S(E)+W flags the issuer', async () => {
     const p = new FakePlatform();
     await p.addKey(E);
@@ -374,23 +385,20 @@ describe('badge reader', () => {
 });
 
 describe('trust list and storage', () => {
-  it('visit separation: one request per visit, none after an identity write, a cooldown across tabs, no posts after a request', async () => {
-    const { mayPost, mayRequest, noteIdentityWrite, noteRequestSent, resetVisit, COOLDOWN_MS } = await import('./visit.ts');
+  it('activity separation is browser-wide and time-based: requests need a quiet half hour, posts wait for the request cooldown', async () => {
+    const { mayPost, mayRequest, noteIdentityWrite, noteRequestSent, requestCooldownLeft, COOLDOWN_MS } = await import('./visit.ts');
     const mem = new Map<string, string>();
     const st = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v) };
-    resetVisit();
-    expect(mayRequest(st)).toBe(true);
-    expect(mayPost()).toBe(true);
-    noteRequestSent(st);
-    expect(mayRequest(st)).toBe(false);
-    expect(mayPost()).toBe(false);
-    resetVisit(); // a new visit, but within the cooldown
-    expect(mayRequest(st)).toBe(false);
-    expect(mayRequest(st, Date.now() + COOLDOWN_MS + 1)).toBe(true);
-    noteIdentityWrite();
-    expect(mayRequest(st, Date.now() + COOLDOWN_MS + 1)).toBe(false);
-    expect(mayPost()).toBe(true);
-    resetVisit();
+    const t0 = 1_800_000_000_000;
+    expect(mayRequest(st, t0)).toBe(true);
+    noteRequestSent(st, t0);
+    expect(mayRequest(st, t0 + 1000)).toBe(false); // another tab, another identity: same browser
+    expect(mayPost(st, t0 + 1000)).toBe(false);
+    expect(requestCooldownLeft(st, t0 + 1000)).toBe(COOLDOWN_MS - 1000);
+    expect(mayPost(st, t0 + COOLDOWN_MS)).toBe(true);
+    noteIdentityWrite(st, t0 + COOLDOWN_MS);
+    expect(mayRequest(st, t0 + COOLDOWN_MS + 1)).toBe(false); // a reload does not reset it
+    expect(mayRequest(st, t0 + 2 * COOLDOWN_MS)).toBe(true);
   });
 
   it('validates issuers', () => {
@@ -415,7 +423,7 @@ describe('trust list and storage', () => {
     const storage = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v), removeItem: (k: string) => void mem.delete(k) };
     const id = bytesToId(rnd(32));
     const secret = rnd(32);
-    const s = encryptedJobStore(id, await deriveStoreKey(secret, id), storage);
+    const s = encryptedJobStore(`${id}.2`, id, await deriveStoreKey(secret, id), storage);
     const job = { v: 1, id: 'j', ownerId: id, inv: 'SECRET-INV', signer: { kind: 'wif', wif: 'cSECRETWIF' } } as unknown as BadgeJob;
     await s.save([job]);
     const raw = [...mem.values()][0]!;
@@ -424,8 +432,10 @@ describe('trust list and storage', () => {
     await s.save([job, { ...job, id: 'k' }]);
     expect(JSON.parse([...mem.values()][0]!).ct.length).toBe(one); // same 16 KiB bucket
     expect(await s.load()).toHaveLength(2);
-    const other = encryptedJobStore(id, await deriveStoreKey(rnd(32), id), storage);
-    expect(await other.load()).toEqual([]);
+    // the same slot with another key (another sign-in key of the identity) fails closed: load throws, nothing is overwritten
+    const other = encryptedJobStore(`${id}.2`, id, await deriveStoreKey(rnd(32), id), storage);
+    await expect(other.load()).rejects.toThrow();
+    expect(await s.load()).toHaveLength(2);
     await expect(deriveStoreKey(new Uint8Array(32), id)).rejects.toThrow();
   });
 

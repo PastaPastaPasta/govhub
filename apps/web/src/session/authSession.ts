@@ -3,7 +3,6 @@
 // stays in the auth session's memory. close() ends the auth session (wipes the key and the seed).
 import { assertLive, KeyType, type PlatformPort, type Session as AuthSession } from '@govhub/auth';
 import type { Session } from './session.ts';
-import { noteIdentityWrite } from '../badge/visit.ts';
 
 const HOW = { seed: 'recovery phrase', key: 'pasted key', passkey: 'passkey' } as const;
 const LEVEL = ['MASTER', 'CRITICAL', 'HIGH', 'MEDIUM'];
@@ -23,7 +22,6 @@ export function appSessionFromAuth(auth: AuthSession, platform: () => Promise<Pl
     },
     async signAndBroadcastDocument(op) {
       assertLive(auth);
-      noteIdentityWrite(); // badge visit separation: no token request in a visit with public writes of this identity
       const port = await platform();
       return port.writeDocument({
         ownerId: auth.identityId,

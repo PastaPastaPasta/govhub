@@ -5,15 +5,32 @@ import type { Dapi } from '@govhub/dapi';
 import { QUORUM_SERVICE, type Registry } from '../config/registry.ts';
 import { createWebDapi } from '../data/dapi.ts';
 import { getSdk } from '../data/platform.ts';
+import { noteIdentityWrite } from '../badge/visit.ts';
 
 let port: { key: string; value: Promise<PlatformPort> } | null = null;
+
+/**
+ * Every state transition of a signed-in identity is public and timestamped: the MN badge keeps its token requests away from them
+ * (badge/visit.ts), so each one is recorded before it is sent.
+ */
+function markWrites(p: PlatformPort): PlatformPort {
+  const mark = <A extends unknown[], R>(f: (...a: A) => Promise<R>) => (...a: A) => (noteIdentityWrite(), f(...a));
+  return {
+    ...p,
+    createIdentity: mark(p.createIdentity),
+    topUpIdentity: mark(p.topUpIdentity),
+    addKeys: mark(p.addKeys),
+    writeDocument: mark(p.writeDocument),
+    vault: { ...p.vault, put: mark(p.vault.put), remove: mark(p.vault.remove) },
+  };
+}
 
 export function getPlatformPort(r: Registry): Promise<PlatformPort> {
   const key = JSON.stringify([r.platformNetwork, r.platform]);
   if (port?.key === key) return port.value;
   const value = (async () => {
     const [evo, sdk, { createEvoPlatform }] = await Promise.all([import('@dashevo/evo-sdk'), getSdk(r), import('@govhub/auth/evo')]);
-    return createEvoPlatform(evo, sdk, r.platformNetwork);
+    return markWrites(createEvoPlatform(evo, sdk, r.platformNetwork));
   })();
   port = { key, value };
   value.catch(() => {

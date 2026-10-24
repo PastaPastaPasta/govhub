@@ -78,6 +78,8 @@ export function openTokenStore(path: string): TokenStore {
     startedAt: db.prepare<[], { value: number }>("SELECT value FROM meta WHERE key = 'started_height'"),
   };
   if (legacy) q.started.run(0);
+  // frames of rows deleted before a crash may still be in the WAL (N17)
+  db.pragma('wal_checkpoint(TRUNCATE)');
   const same = (a: Uint8Array, b: Uint8Array) => a.length === b.length && Buffer.compare(Buffer.from(a), Buffer.from(b)) === 0;
 
   const reserve = db.transaction((o: { epoch: number; windowFrom: number; proTxHash: string; collateral: string; blindedHash: Uint8Array }, sign: () => Uint8Array): ReserveOutcome => {

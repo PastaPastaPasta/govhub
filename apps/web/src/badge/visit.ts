@@ -1,44 +1,51 @@
-// Visit separation (review H1). The issuer sees when a masternode's token request arrives and from where; everyone sees when an
-// identity writes to Platform. If both happen in the same visit (page load), the times line up and link the masternode to the
-// identity. So within one visit the app does EITHER issuer-facing work (one token request) OR identity writes (posting a badge),
-// never both, and a token request waits for a visit in which this identity has not written anything. Across tabs and identities
-// in one browser, token requests are at least COOLDOWN_MS apart, so two identities' masternodes are not linked by one visit either.
-const COOLDOWN_KEY = 'govhub.badge.lastRequestMs';
+// Activity separation (review H1, N1). The issuer sees when a masternode's token request arrives and from where; everyone sees when
+// an identity changes Platform state. If the two happen close together, the times line up and link the masternode to the identity.
+// So, across every tab and identity in this browser (localStorage, not per page load):
+//   - a token request goes out only if nothing was written to Platform from this browser for COOLDOWN_MS, and no other request
+//     went out for COOLDOWN_MS (two identities' masternodes are not linked by one session either);
+//   - the scheduler posts a badge (an identity write) only COOLDOWN_MS after the last request.
+// A user's own write right after a request cannot be prevented; every tab shows a note during the cooldown.
+const REQUEST_KEY = 'govhub.badge.lastRequestMs';
+const WRITE_KEY = 'govhub.badge.lastWriteMs';
 export const COOLDOWN_MS = 30 * 60_000;
 
-const state = { requestSent: false, identityWrote: false };
+type Store = Pick<Storage, 'getItem' | 'setItem'> | undefined;
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
+const read = (s: Store, k: string) => Number(s?.getItem(k) ?? 0) || 0;
 
-/** Called by the document writer for every Platform write of the signed-in identity. */
-export function noteIdentityWrite(): void {
-  if (state.identityWrote) return;
-  state.identityWrote = true;
+/** Called for every Platform state transition of a signed-in identity (documents, identity create/top-up/update). */
+export function noteIdentityWrite(storage: Store = globalThis.localStorage, now = Date.now()): void {
+  storage?.setItem(WRITE_KEY, String(now));
   emit();
 }
 
-export function noteRequestSent(storage: Pick<Storage, 'setItem'> | undefined = globalThis.localStorage): void {
-  state.requestSent = true;
-  storage?.setItem(COOLDOWN_KEY, String(Date.now()));
+/** Called before anything is sent to an issuer (challenge included). */
+export function noteRequestSent(storage: Store = globalThis.localStorage, now = Date.now()): void {
+  storage?.setItem(REQUEST_KEY, String(now));
   emit();
 }
 
-export function mayRequest(storage: Pick<Storage, 'getItem'> | undefined = globalThis.localStorage, now = Date.now()): boolean {
-  const last = Number(storage?.getItem(COOLDOWN_KEY) ?? 0);
-  return !state.requestSent && !state.identityWrote && !(now - last < COOLDOWN_MS);
+export function mayRequest(storage: Store = globalThis.localStorage, now = Date.now()): boolean {
+  return now - read(storage, REQUEST_KEY) >= COOLDOWN_MS && now - read(storage, WRITE_KEY) >= COOLDOWN_MS;
 }
 
-export const mayPost = (): boolean => !state.requestSent;
+export function mayPost(storage: Store = globalThis.localStorage, now = Date.now()): boolean {
+  return now - read(storage, REQUEST_KEY) >= COOLDOWN_MS;
+}
 
-export const visitState = (): Readonly<typeof state> => ({ ...state });
+/** Milliseconds left of the cooldown after the last request (0 when none is running): the note shows while this is > 0. */
+export function requestCooldownLeft(storage: Store = globalThis.localStorage, now = Date.now()): number {
+  return Math.max(0, read(storage, REQUEST_KEY) + COOLDOWN_MS - now);
+}
 
+/** Changes in this tab, and in other tabs (storage events). */
 export function onVisitChange(l: () => void): () => void {
   listeners.add(l);
-  return () => listeners.delete(l);
-}
-
-/** Tests only. */
-export function resetVisit(): void {
-  state.requestSent = false;
-  state.identityWrote = false;
+  const onStorage = (e: StorageEvent) => (e.key === REQUEST_KEY || e.key === WRITE_KEY) && l();
+  globalThis.addEventListener?.('storage', onStorage);
+  return () => {
+    listeners.delete(l);
+    globalThis.removeEventListener?.('storage', onStorage);
+  };
 }

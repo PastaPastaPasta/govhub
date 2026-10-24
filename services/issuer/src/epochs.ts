@@ -15,7 +15,7 @@ export interface EpochManagerDeps {
   issuerId: string;
   keyDir: string;
   maxStagedKeys: number;
-  core: Pick<CoreView, 'tipHeight'>;
+  core: Pick<CoreView, 'tipHeight' | 'synced'>;
   /** refreshed every tick: the current MN list and the S(E-1) snapshot of the issuing epoch */
   lists: MnLists;
   store: TokenStore;
@@ -60,6 +60,11 @@ export class EpochManager {
     }
     const epoch = issuingEpochAt(d.params, height);
     const margin = d.params.boundaryMarginBlocks;
+    // A syncing node's tip is not the network's: no start height, no lists, no issuing until it has caught up (N8).
+    if (!(await d.core.synced().catch(() => false))) {
+      this.#status = { height, issuingEpoch: epoch, keyId: null, ready: false, problem: 'dashd is not synced' };
+      return;
+    }
     d.store.markStarted(height);
     try {
       await d.lists.refresh(epochStart(d.params, epoch - 1), margin);
@@ -141,6 +146,11 @@ export class EpochManager {
         d.store.markReported(epoch, 'existing');
         continue;
       }
+      // Readers accept a report created in [S(E), S(E)+W] of PLATFORM's core height, which can lag the dashd tip (N7).
+      const ph = await platform.coreHeight();
+      const from = epochStart(d.params, epoch);
+      if (ph < from) continue;
+      if (ph > from + d.params.graceBlocks) log.error('issuerReport is late: readers will flag this epoch', { epoch, platformCoreHeight: ph });
       const tokensIssued = d.store.issued(epoch);
       const id = await platform.publishIssuerReport(d.reportKey, { epoch, tokensIssued });
       d.store.markReported(epoch, id);

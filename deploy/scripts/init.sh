@@ -136,7 +136,7 @@ if [ -e "$report_file" ]; then
   say "kept: $report_file"
 else
   (umask 077 && : > "$report_file")
-  say "created: $report_file (EMPTY placeholder; the issuer's HIGH key for issuerReport, see services/issuer/README.md)"
+  say "created: $report_file (EMPTY placeholder; the issuer needs its HIGH key here before it starts, see services/issuer/README.md)"
 fi
 
 issuer_keys="$SECRETS_DIR/issuer-keys"

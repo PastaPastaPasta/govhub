@@ -42,6 +42,9 @@ const STATUS: Record<IssueErrorCode, number> = {
   unavailable: 503,
 };
 
+/** Blocks the cached list may trail the fresh tip before it is refused (the timer refreshes it every ISSUER_TICK_S). */
+const MAX_LIST_LAG = 5;
+
 export class IssueError extends Error {
   readonly code: IssueErrorCode;
   readonly status: number;
@@ -77,6 +80,11 @@ export interface TokenServiceDeps {
   nowSec(): number;
   /** requests per MN per minute (after authentication); default 6 */
   perMnPerMinute?: number;
+  /**
+   * Requests per second allowed past the cheap checks (shape, epoch, key, challenge HMAC, blinded-message hash), i.e. into signature
+   * recovery; default 200. Junk that fails the cheap checks does not consume it (N6).
+   */
+  maxRecoveriesPerSec?: number;
 }
 
 export interface TokenInput {
@@ -99,6 +107,8 @@ export class TokenService {
   readonly #issuerBytes: Uint8Array;
   /** proTxHash -> request times (ms) in the last minute; memory only */
   readonly #perMn = new Map<string, number[]>();
+  #second = 0;
+  #inSecond = 0;
 
   constructor(deps: TokenServiceDeps) {
     this.#d = deps;
@@ -137,6 +147,7 @@ export class TokenService {
     if (!equalBytes(req.blindedMsgSha256, await sha256(blindedMsg))) throw new IssueError('bad-request', 'the request does not bind this blinded message');
     if (blindedMsg.length !== key.signer.modulusBytes) throw new IssueError('bad-request', `blindedMsg must be ${key.signer.modulusBytes} bytes`);
     // 3. authentication (the voting key in the current list). One answer for every failure.
+    this.#budget();
     const proTxHash = toHex(req.proTxHash);
     const recovered = recoverMessageSigner(sig, buildTokenRequest(req), d.network, { strict: true });
     const mnNow = recovered ? now.list.get(proTxHash) : undefined;
@@ -144,6 +155,8 @@ export class TokenService {
     // 4. eligibility
     this.#limit(proTxHash);
     const tip = await this.#tip();
+    // a list that stopped refreshing (protx list failing while getblockcount works) is not used (N9)
+    if (tip - now.height > MAX_LIST_LAG) throw new IssueError('unavailable', 'the masternode list is out of date');
     if (issuingEpochAt(d.params, tip) !== epoch) throw new IssueError('wrong-epoch', `issuance for epoch ${epoch} has closed (height ${tip})`, issuingEpochAt(d.params, tip));
     if (!mnNow.valid) throw new IssueError('not-eligible', 'the masternode is not valid (PoSe-banned) now');
     const snapHeight = issuanceWindow(d.params, epoch).from;
@@ -174,6 +187,16 @@ export class TokenService {
     } catch {
       throw new IssueError('unavailable', 'Core is not reachable');
     }
+  }
+
+  /** The global budget for signature recoveries (a CPU backstop). */
+  #budget(): void {
+    const s = Math.floor(Date.now() / 1000);
+    if (s !== this.#second) {
+      this.#second = s;
+      this.#inSecond = 0;
+    }
+    if (++this.#inSecond > (this.#d.maxRecoveriesPerSec ?? 200)) throw new IssueError('unavailable', 'busy, retry later');
   }
 
   /** A few requests per MN per minute, counted only after authentication (memory only, nothing about the requester). */

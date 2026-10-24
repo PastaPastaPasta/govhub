@@ -305,7 +305,8 @@ secrets:
     file: ${SECRETS_DIR:-./secrets}/cloudflare_tunnel_token
   # Issuer (profile `issuer`): 32+ random bytes as hex for the stateless challenges (init.sh creates it),
   # and the issuer identity's HIGH key as JSON {"identityId","keyId","privateKeyHex"} for issuerReport
-  # documents (EMPTY placeholder = reports are not published). The CRITICAL key never goes on the server.
+  # documents (init.sh creates an EMPTY placeholder; `issuer run` refuses to start until it is filled: readers flag an issuer
+  # without reports). The CRITICAL key never goes on the server.
   issuer_hmac_secret:
     file: ${SECRETS_DIR:-./secrets}/issuer_hmac_secret
   issuer_report_key:

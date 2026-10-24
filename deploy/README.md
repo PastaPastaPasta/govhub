@@ -604,7 +604,7 @@ Before the first start you need an issuer identity, a `badge` contract and the o
 2. Secrets in `secrets/` (`init.sh` creates the first two):
    - `issuer_hmac_secret`: random hex for the stateless challenges. Keep it, or open challenges die on a restart.
    - `issuer_report_key.json`: the issuer identity's **HIGH** key as `{"identityId","keyId","privateKeyHex"}`, for
-     `issuerReport` documents. `init.sh` creates it **empty**, and an empty file means no reports are published.
+     `issuerReport` documents. `init.sh` creates it **empty**; the issuer refuses to start until it holds the HIGH key.
    - `issuer-keys/epoch-<E>.pem`: the private keys for the epochs the server may hold, mode 0600, owner uid 1000.
      The directory must stay writable, because the service destroys the key of each closed epoch.
 3. `docker compose up -d --build issuer`, then check:

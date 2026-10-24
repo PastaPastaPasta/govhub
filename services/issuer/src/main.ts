@@ -17,9 +17,9 @@ export async function runService(): Promise<void> {
   const core = createCoreView(createRpc({ url: cfg.core.rpcUrl, user: cfg.core.rpcUser, password: cfg.core.rpcPassword, timeoutMs: cfg.core.rpcTimeoutMs }), cfg.network);
   const store = openTokenStore(cfg.dbPath);
   const lists = new MnLists(core);
-  // An empty placeholder file (deploy/scripts/init.sh) means: do not publish issuerReport documents.
-  const reportKey = cfg.reportKeyFile && readSecretFile(cfg.reportKeyFile, 'ISSUER_REPORT_KEY_FILE') ? readIdentityKeyFile(cfg.reportKeyFile) : null;
-  if (!reportKey) log.warn('no ISSUER_REPORT_KEY_FILE: issuerReport documents are not published');
+  // Readers flag an issuer without a valid issuerReport and clients post no badge without one, so the report key is required (N7).
+  if (!cfg.reportKeyFile || !readSecretFile(cfg.reportKeyFile, 'ISSUER_REPORT_KEY_FILE')) throw new Error('ISSUER_REPORT_KEY_FILE (the issuer identity\'s HIGH key) is required: without issuerReport documents readers flag the issuer');
+  const reportKey = readIdentityKeyFile(cfg.reportKeyFile);
   if (reportKey && reportKey.identityId !== cfg.issuerId) throw new Error('ISSUER_REPORT_KEY_FILE belongs to another identity');
   let platform: IssuerPlatform | null = null;
   const connect = async () => {
@@ -33,9 +33,9 @@ export async function runService(): Promise<void> {
   const epochs = new EpochManager({ params, issuerId: cfg.issuerId, keyDir: cfg.keyDir, maxStagedKeys: cfg.maxStagedKeys, core, lists, store, platform: () => platform, reportKey });
   const challenges = new Challenges(cfg.hmacSecret, `${cfg.network}|${cfg.issuerId}`, cfg.challengeTtlSec);
   if (!cfg.hmacSecret) log.warn('ISSUER_HMAC_SECRET_FILE not set: challenges are invalidated by a restart');
-  const service = new TokenService({ network: cfg.network, params, issuerId: cfg.issuerId, core, lists, store, challenges, activeKey: (e) => epochs.activeKey(e), nowSec: () => Math.floor(Date.now() / 1000) });
+  const service = new TokenService({ network: cfg.network, params, issuerId: cfg.issuerId, core, lists, store, challenges, activeKey: (e) => epochs.activeKey(e), nowSec: () => Math.floor(Date.now() / 1000), maxRecoveriesPerSec: cfg.maxTokenRequestsPerSec });
   const counters = new Map<string, number>();
-  const app = createApp({ network: cfg.network, params, issuerId: cfg.issuerId, contractId: cfg.contractId, service, epochs, challengeTtlSec: cfg.challengeTtlSec, maxTokenRps: cfg.maxTokenRequestsPerSec, counters });
+  const app = createApp({ network: cfg.network, params, issuerId: cfg.issuerId, contractId: cfg.contractId, service, epochs, challengeTtlSec: cfg.challengeTtlSec, counters });
 
   let running = false;
   const tick = async () => {

@@ -38,7 +38,7 @@ export interface BadgeView {
 
 export interface ReaderOptions {
   maxAuditPages?: number;
-  /** reports above this are implausible (default 10,000) */
+  /** reports above this are implausible (default 5,000) */
   maxPlausibleTokens?: number;
   /** cache lifetime of accepted keys and unfinished audits (default 10 min) */
   ttlMs?: number;
@@ -64,8 +64,9 @@ export class BadgeReader {
     this.#contractId = o.contractId;
     this.#query = o.query;
     this.#issuers = o.issuers.filter((i) => i.enabled);
-    this.#maxAuditPages = o.maxAuditPages ?? 20;
-    this.#maxPlausible = o.maxPlausibleTokens ?? 10_000;
+    this.#maxPlausible = o.maxPlausibleTokens ?? 5_000;
+    // the audit must be able to count up to the plausible bound (N4)
+    this.#maxAuditPages = o.maxAuditPages ?? Math.ceil(this.#maxPlausible / 100);
     this.#ttl = o.ttlMs ?? TTL_MS;
   }
 
@@ -203,7 +204,8 @@ export class BadgeReader {
             : tokensIssued === null && reportDue
               ? 'no valid issuerReport for this epoch'
               : null;
-      entry.final = complete && (tokensIssued !== null || reportDue);
+      // only a flag is final: badge counts only grow and a report is immutable; anything else is re-read after the TTL (N3)
+      entry.final = flagReason !== null;
       return { ...base, badges: count, complete, tokensIssued, flagged: flagReason !== null, flagReason, keyProblem: null };
     })();
     entry.p.catch(() => this.#audits.get(k) === entry && this.#audits.delete(k));

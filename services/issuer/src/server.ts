@@ -14,8 +14,6 @@ export interface ServerDeps {
   service: TokenService;
   epochs: Pick<EpochManager, 'status'>;
   challengeTtlSec: number;
-  /** global token-request budget per second: a CPU backstop only (authentication needs no RPC; per-MN limits apply after it) */
-  maxTokenRps: number;
   /** aggregate counters, logged by the caller */
   counters: Map<string, number>;
 }
@@ -24,8 +22,6 @@ const bump = (m: Map<string, number>, k: string) => m.set(k, (m.get(k) ?? 0) + 1
 
 export function createApp(d: ServerDeps): Hono {
   const app = new Hono();
-  let windowStart = 0;
-  let inWindow = 0;
 
   app.use('*', async (c, next) => {
     await next();
@@ -63,15 +59,6 @@ export function createApp(d: ServerDeps): Hono {
   app.post('/v1/challenge', (c) => c.json(d.service.challenge()));
 
   app.post('/v1/token', async (c) => {
-    const now = Date.now();
-    if (now - windowStart >= 1000) {
-      windowStart = now;
-      inWindow = 0;
-    }
-    if (++inWindow > d.maxTokenRps) {
-      bump(d.counters, 'rate-limited');
-      return c.json({ error: 'unavailable', message: 'busy, retry later' }, 503, { 'Retry-After': '5' });
-    }
     let body: Record<string, unknown>;
     try {
       body = (await c.req.json()) as Record<string, unknown>;
@@ -87,7 +74,7 @@ export function createApp(d: ServerDeps): Hono {
     } catch (e) {
       if (e instanceof IssueError) {
         bump(d.counters, e.code);
-        return c.json({ error: e.code, message: e.message, ...(e.issuingEpoch !== undefined ? { issuingEpoch: e.issuingEpoch } : {}) }, e.status as 400);
+        return c.json({ error: e.code, message: e.message, ...(e.issuingEpoch !== undefined ? { issuingEpoch: e.issuingEpoch } : {}) }, e.status as 400, e.status === 503 ? { 'Retry-After': '5' } : {});
       }
       bump(d.counters, 'internal');
       return c.json({ error: 'unavailable', message: 'internal error' }, 503);

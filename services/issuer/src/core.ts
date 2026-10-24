@@ -1,5 +1,5 @@
 // The issuer's view of Core, from its own dashd over JSON-RPC (PLAN §8.4 rules 2-3): the tip height and the masternode list at a
-// height (`protx list registered true [height]`). Read-only RPCs only: getblockcount, protx list.
+// height (`protx list registered true [height]`). Read-only RPCs only: getblockcount, getblockchaininfo, protx list.
 import { decodeAddress, type Network } from '@govhub/verify';
 import { log } from './log.ts';
 
@@ -14,6 +14,8 @@ export interface MnState {
 
 export interface CoreView {
   tipHeight(): Promise<number>;
+  /** Out of initial block download (a syncing node's tip and lists are not the network's). */
+  synced(): Promise<boolean>;
   /** Every registered MN at `height` ('tip' = now), keyed by display-order proTxHash. */
   mnList(height: number | 'tip'): Promise<Map<string, MnState>>;
 }
@@ -64,6 +66,10 @@ interface ProTxEntry {
 export function createCoreView(call: ReturnType<typeof createRpc>, network: Network): CoreView {
   return {
     tipHeight: () => call<number>('getblockcount'),
+    async synced() {
+      const i = await call<{ initialblockdownload: boolean; blocks: number; headers: number }>('getblockchaininfo');
+      return !i.initialblockdownload && i.headers - i.blocks <= 2;
+    },
     async mnList(height) {
       const entries = await call<ProTxEntry[]>('protx', height === 'tip' ? ['list', 'registered', true] : ['list', 'registered', true, height]);
       const out = new Map<string, MnState>();

@@ -24,7 +24,7 @@ export function BadgeLeaks({ net, open = false }: { net: BadgeNetwork; open?: bo
         <li>
           <b>What the issuer learns:</b> which masternode asked, when, and from which IP address and browser. It does not learn which identity got the badge: the signature is blind.
           Your badge hides among the masternodes that asked the same issuer in the same epoch, not among all masternodes, and that crowd can be small: the app does not post a
-          badge when fewer than {minSet} tokens were issued for its epoch. A badge that appears for the first time, or stops, can still be matched to a masternode that started or
+          badge when the issuer reports fewer than {minSet} tokens for its epoch (that number is the issuer’s own report). A badge that appears for the first time, or stops, can still be matched to a masternode that started or
           stopped asking at the same time when few others did.
         </li>
         <li>
@@ -33,9 +33,9 @@ export function BadgeLeaks({ net, open = false }: { net: BadgeNetwork; open?: bo
         </li>
         <li>
           <b>Timing:</b> your request goes out at a random time during the epoch before the badge’s epoch, and the badge is posted at a random time in the first {days(p.graceBlocks)} of
-          its epoch. If the app is closed at that time, it runs on your next visit after a random delay. A visit never does both: one that sends a request posts nothing from your
-          identity, and a request waits for a visit in which your identity has not written anything (after a request, the app reminds you not to post until your next visit). A new
-          badge therefore appears up to one epoch ({days(epochLength(p))}) after you ask, or two if you ask late in a window.
+          its epoch. If the app is closed at that time, it runs on your next visit after a random delay. Requests are kept at least half an hour away from anything this browser
+          writes to Platform, and badges are posted at least half an hour after the last request; after a request every tab asks you to wait before posting. A new badge
+          therefore appears up to one epoch ({days(epochLength(p))}) after you ask, or two if you ask late in a window.
         </li>
         <li>
           <b>Your IP address:</b> the issuer sees the IP address your request comes from, and the network nodes this app talks to (and any operator running both) see the same address

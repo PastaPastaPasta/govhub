@@ -133,6 +133,19 @@ describe('token issuance', () => {
     await expectError(issue(w, (await clientRequest(w, mn)).body), 'unavailable');
   });
 
+  it('the global budget counts only requests past the cheap checks; a stale list is refused', async () => {
+    const w = await world();
+    const mn = w.core.add(fakeMn());
+    const { TokenService } = await import('../src/service.ts');
+    const svc = new TokenService({ network: 'testnet', params: P, issuerId: w.issuerId, core: w.core, lists: w.core.liveLists(), store: w.store, challenges: w.challenges, activeKey: () => ({ epoch: E, keyId: w.key.keyId, signer: w.signer }), nowSec: () => w.now.sec, maxRecoveriesPerSec: 1 });
+    for (let i = 0; i < 5; i++) await expectError(svc.issue({ ...(await clientRequest(w, mn)).body, request: 'junk' } as never), 'bad-request');
+    await svc.issue((await clientRequest(w, mn)).body as never); // junk did not use the budget
+    const lists = w.core.liveLists();
+    const stale = new TokenService({ network: 'testnet', params: P, issuerId: w.issuerId, core: { tipHeight: async () => w.core.tip + 6 }, lists: { get now() { return lists.now; }, snapshot: lists.snapshot }, store: w.store, challenges: w.challenges, activeKey: () => ({ epoch: E, keyId: w.key.keyId, signer: w.signer }), nowSec: () => w.now.sec });
+    const other = w.core.add(fakeMn());
+    expect((await expectError(stale.issue((await clientRequest(w, other)).body as never), 'unavailable')).message).toMatch(/out of date/);
+  });
+
   it('wrong-epoch tells the client which epoch the issuer is on', async () => {
     const w = await world();
     const mn = w.core.add(fakeMn());

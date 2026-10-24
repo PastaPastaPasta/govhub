@@ -4,10 +4,10 @@ import { base64ToBytes } from '@govhub/badge';
 import { createApp } from '../src/server.ts';
 import { clientRequest, E, fakeMn, finishBadge, P, world } from './helpers.ts';
 
-async function app(rps = 20) {
+async function app() {
   const w = await world();
   const counters = new Map<string, number>();
-  const a = createApp({ network: 'testnet', params: P, issuerId: w.issuerId, contractId: '2aYj4Dkix7xXBUTZFCDBjpcqqLi9Tg5oUwBgHUJBNGCU', service: w.service, epochs: { status: { height: 1, issuingEpoch: E, keyId: 'ab', ready: true, problem: null } }, challengeTtlSec: 600, maxTokenRps: rps, counters });
+  const a = createApp({ network: 'testnet', params: P, issuerId: w.issuerId, contractId: '2aYj4Dkix7xXBUTZFCDBjpcqqLi9Tg5oUwBgHUJBNGCU', service: w.service, epochs: { status: { height: 1, issuingEpoch: E, keyId: 'ab', ready: true, problem: null } }, challengeTtlSec: 600, counters });
   return { w, a, counters };
 }
 const post = (path: string, body: unknown) => new Request(`http://x${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: typeof body === 'string' ? body : JSON.stringify(body) });
@@ -46,11 +46,4 @@ describe('issuer HTTP API', () => {
     expect((await a.fetch(post('/v1/token', { request: 'x'.repeat(5000) }))).status).toBe(413);
   });
 
-  it('global rate limit', async () => {
-    const { a } = await app(2);
-    const codes = [];
-    for (let i = 0; i < 4; i++) codes.push((await a.fetch(post('/v1/token', {}))).status);
-    expect(codes.slice(0, 2)).toEqual([400, 400]);
-    expect(codes.slice(2)).toEqual([503, 503]);
-  });
 });
