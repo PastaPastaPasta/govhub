@@ -1,0 +1,24 @@
+# Build context for services/*/Dockerfile (context = repository root). Keep it small and free of secrets.
+**/node_modules
+.git
+.github
+.claude
+spikes
+docs
+deploy
+**/dist
+**/coverage
+**/test-results
+**/playwright-report
+**/.vite
+**/*.log
+**/*.sqlite
+**/*.sqlite-*
+**/.env
+**/.env.*
+**/secrets
+**/*.key
+**/*.wif
+apps/web/screenshots
+apps/web/e2e
+**/test/fixtures

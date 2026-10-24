@@ -57,8 +57,7 @@ scripts/smoke-regtest.sh
 
 It starts dashd and the bridge under a throwaway project name, mines blocks, creates a proposal
 with `gobject prepare`, submits it, waits until the bridge's `/v1/status` reports it, and removes
-all containers, volumes and temporary secrets. Exit code 0 means it passed. Until
-`services/bridge/Dockerfile` exists it runs in `--stub` mode and checks only the Core side.
+all containers, volumes and temporary secrets. Exit code 0 means it passed.
 
 **Image tags** (pin them; `.env` can override with `DASHD_TAG`):
 
@@ -80,7 +79,6 @@ wallet disabled (the bridge needs none); `DASHD_EXTRA_ARGS=-disablewallet=0` tur
 | `docker-compose.testnet.yml` | override: v24 image, testnet Core, testnet Platform |
 | `docker-compose.regtest.yml` | override: isolated chain, `PUBLISH=0`, no identity secret |
 | `docker-compose.p2p.yml` | override: publish dashd's P2P port (set `DASHD_P2P_PORT`) |
-| `docker-compose.bridge-stub.yml` | **placeholder** bridge; delete once the real Dockerfile is in the tree |
 | `.env.example` | every variable, commented, no secrets |
 | `dashd/dash.conf`, `dashd/entrypoint.sh` | Core config template and the wrapper that adds network, RPC credentials and `dbcache` |
 | `caddy/Caddyfile` | TLS reverse proxy; GET/HEAD/OPTIONS only, CORS handled here |

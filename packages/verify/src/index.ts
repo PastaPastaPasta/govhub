@@ -8,3 +8,4 @@ export * from './proposal.ts';
 export * from './tally.ts';
 export * from './tx.ts';
 export * from './vote.ts';
+export * from './voteset.ts';

@@ -37,11 +37,6 @@ case "$NETWORK" in
   regtest) COMPOSE_FILES="docker-compose.yml:docker-compose.regtest.yml"; PROJECT=govhub-regtest; SUBNET=172.29.75.0/24; HOST_PORT=8789 ;;
   *) die "--network must be mainnet, testnet or regtest" ;;
 esac
-# Until the real bridge image can be built, layer the placeholder so `docker compose up` works.
-if [ ! -f "$DEPLOY_DIR/../services/bridge/Dockerfile" ]; then
-  COMPOSE_FILES="$COMPOSE_FILES:docker-compose.bridge-stub.yml"
-  warn "services/bridge/Dockerfile not found: using the PLACEHOLDER bridge (docker-compose.bridge-stub.yml)"
-fi
 
 # ---- prerequisites ---------------------------------------------------------------------------
 command -v docker > /dev/null 2>&1 || die "docker is not installed or not on PATH"
