@@ -1,8 +1,23 @@
 // Byte helpers shared by every module. No I/O.
 import { sha256 } from '@noble/hashes/sha2.js';
-import { bytesToHex, concatBytes, hexToBytes } from '@noble/hashes/utils.js';
 
-export { bytesToHex as hex, hexToBytes as unhex, concatBytes as concat };
+// Own hex/concat helpers: @noble/hashes/utils would add ~3 KB minified for what is a few lines here.
+export const hex = (b: Uint8Array): string => { let s = ''; for (const x of b) s += (x < 16 ? '0' : '') + x.toString(16); return s; };
+
+/** Strict hex decode: an even number of [0-9a-fA-F] only. */
+export function unhex(s: string): Uint8Array {
+  if (s.length % 2 || !/^[0-9a-fA-F]*$/.test(s)) throw new Error('invalid hex');
+  const o = new Uint8Array(s.length / 2);
+  for (let i = 0; i < o.length; i++) o[i] = parseInt(s.slice(i * 2, i * 2 + 2), 16);
+  return o;
+}
+
+export function concat(...parts: Uint8Array[]): Uint8Array {
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+  let o = 0;
+  for (const p of parts) { out.set(p, o); o += p.length; }
+  return out;
+}
 
 export const sha256d = (b: Uint8Array): Uint8Array => sha256(sha256(b));
 
@@ -10,11 +25,11 @@ export const sha256d = (b: Uint8Array): Uint8Array => sha256(sha256(b));
 export const reversed = (b: Uint8Array): Uint8Array => Uint8Array.from(b).reverse();
 
 /** Display-order (RPC) hex of an internal-order 32-byte hash. */
-export const hashHex = (b: Uint8Array): string => bytesToHex(reversed(b));
+export const hashHex = (b: Uint8Array): string => hex(reversed(b));
 
 /** Internal-order bytes of a display-order hash hex. Throws unless it is exactly 32 bytes. */
 export function hashBytes(display: string): Uint8Array {
-  const b = hexToBytes(display);
+  const b = unhex(display);
   if (b.length !== 32) throw new Error('expected a 32-byte hash');
   return b.reverse();
 }

@@ -2,9 +2,9 @@
 // BLS ChainLock verification is in '@govhub/dapi/bls' and X11 header hashing in '@govhub/dapi/x11' (separate entry points).
 export { Dapi, createDapi } from './client.ts';
 export type {
-  AgreedSml, CallOptions, DapiOptions, DepositEvent, GetVerifiedTransactionOptions, IsLockEvent, Tristate, VerifiedTransaction,
+  AgreedSml, CallOptions, DapiOptions, DepositEvent, GetVerifiedTransactionOptions, IsLockEvent, SmlOptions, Tristate, VerifiedTransaction,
   Verifiers, WatchHandlers, WatchOptions, Watcher,
-} from './client.ts';
+} from './types.ts';
 export { AllNodesFailedError, GrpcError, VerificationError } from './errors.ts';
 export { DapiCore } from './core.ts';
 export type { BlockchainStatus, HeadersEvent, StreamStart, TransactionClaims, TxStreamEvent } from './core.ts';
