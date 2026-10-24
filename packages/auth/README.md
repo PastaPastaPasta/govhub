@@ -37,6 +37,38 @@ already-loaded SDK so the 8.7 MB chunk is never pulled in by this package) and `
 3. The DIP-13 top-up path's last index is unhardened in key-wallet (`AddressPoolType::Absent`); the registration path here keeps
    the hardened `.../1'/identity'` the phase-0 mainnet run used. Both are cross-checked against key-wallet in the tests.
 4. `Document.toJSON` needs a platform version argument in rc.8; byte fields come back base64.
+5. **Nonce cache refresh (rc.8 source, tag v5.0.0-rc.8).** `sdk.wasm.refreshIdentityNonce(identifier)` (wasm-sdk `src/sdk.rs`
+   118-121 -> rs-sdk `Sdk::refresh_identity_nonce`, `src/sdk.rs` 754-755 -> `NonceCache::refresh`, `src/internal_cache/mod.rs`
+   224-245) marks the identity nonce AND every identity-contract nonce of that identity stale (timestamp 0), so the next facade
+   write fetches both again. `settings: { identityNonceStaleTimeS: 0 }` is weaker: `get_or_fetch_nonce` (same file, 284-288)
+   treats an entry as stale only when `last_fetch_timestamp < now - 0`, i.e. fetched in an earlier second, so a retry within the
+   same second reuses the cached nonce. Both keep `max(cached, platform)` (335), so neither can lower a nonce, and neither helps
+   when the re-fetch itself hits a lagging node. Live (`scripts/live-writer.ts u6 cache`, `scripts/results/live-writer-cache.json`):
+   after a write that bypassed the cache, a facade create without a refresh signed the spent nonce ("nonce already present at
+   tip"); with `identityNonceStaleTimeS: 0` (cache fetched seconds earlier) and after `refreshIdentityNonce` it succeeded. An
+   earlier run without the 10 s pause failed even with `identityNonceStaleTimeS: 0`: the re-fetch came from a lagging node. The document writer
+   does not depend on the cache at all: it reads `identities.contractNonceWithProof` (a direct proved fetch,
+   `getIdentityContractNonceWithProofInfo`) and passes `identityContractNonce` itself; `addKeys` (SDK-built IdentityUpdate) calls
+   `refreshIdentityNonce` after a spent-nonce refusal.
+6. Right after `connect()`, `sdk.version()` can still report the SDK's starting protocol (13) on testnet (PV14); it ratchets up
+   after the first response. The writer takes the protocol from the proved nonce read's `metadata.protocolVersion`, because the
+   create id rule differs (PV13 sha256d(contract || owner || type || entropy); PV14 also the nonce).
+
+## Document writer (`evo.ts` `writeDocument`)
+
+Each write is a batch transition built and signed once per nonce (`DocumentCreate/Replace/DeleteTransition` +
+`BatchTransition.fromBatchedTransitions`, nonce = proved identity-contract nonce + 1), broadcast with
+`stateTransitions.broadcastAndWait`, and settled by proved state when the outcome is not a clean success:
+
+| Outcome | Action |
+|---|---|
+| `nonce too far in future`, 40101, ambiguous (timeout, transport, `ExecutionNotProved`, `tx already exists in cache`) | re-send the SAME signed transition |
+| `nonce already present in past / at tip`, `nonce too far in past` | sign again with a fresh proved nonce; a create only once a proved nonce read shows the nonce used and a later proved read shows its own id absent (no second document) |
+| any other consensus refusal | create / delete: final on the first send; after an earlier send, done only if proved reads (with backoff) show the write |
+
+Done means: create, a proved read finds the id it signed; replace, `$revision === revision + 1` with exactly our fields; delete,
+the document was found by a proved pre-read at height H0 (a document already gone fails fast) and a proved read shows it absent at
+a height > H0. Live check: `npx vite-node scripts/live-writer.ts [u3|u6|owner]` (results in `scripts/results/live-writer.json`).
 
 ## Live testnet results (`scripts/results/live-testnet.json`, `apps/web/e2e/results/auth-live.json`)
 
