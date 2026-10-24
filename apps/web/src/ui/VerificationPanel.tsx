@@ -207,13 +207,14 @@ const VERDICT_STYLE: Record<VoteLevel, { className: string; glyph: 'verified' | 
   'no-tally': { className: 'verdict-pending', glyph: 'reported' },
 };
 
-function verdictText(level: VoteLevel, verified: number, total: number, matched: string | undefined, origin: VotesDone['origin'], fixtures: boolean, smlUnconfirmed: number): string {
+function verdictText(level: VoteLevel, verified: number, total: number, matched: string | undefined, origin: VotesDone['origin'], fixtures: boolean, smlUnconfirmed: number, weak: string | null): string {
   const sigs = `${formatInt(verified)} of ${formatInt(total)} signatures check out`;
   switch (level) {
     case 'verified':
       return `Tally verified: ${sigs} and the recount matches the ${matched}`;
     case 'keys-reported':
       if (fixtures) return `Recount matches the ${matched}: ${sigs}. Voting keys come from the fixture bridge (${origin === 'recorded' ? 'recorded mainnet votes and masternodes' : 'synthetic voters'})`;
+      if (weak && smlUnconfirmed === 0) return `Recount matches the ${matched}: ${sigs}, keys checked against the masternode list, but not secure: ${weak}`;
       if (smlUnconfirmed > 0) return `Recount matches the ${matched}: ${sigs}, but ${formatInt(smlUnconfirmed)} voters are not confirmed by the proven masternode list and their registrations (a masternode may have left or changed its key since the tally, or the bridge reports it wrongly)`;
       return `Recount matches the ${matched}: ${sigs}, but the voting keys are only as the bridge reports them. Check them against the proven masternode list for a verified result`;
     case 'different-height':
@@ -312,7 +313,7 @@ function VotesResult({ done, fixtures }: { done: VotesDone; fixtures: boolean })
     <div className="votes-result" data-votes={vv.level}>
       <p className={`verdict ${style.className}`}>
         <ProvGlyph kind={style.glyph} />
-        {verdictText(vv.level, lead.result.verified, lead.result.total, vv.matched?.name, done.origin, fixtures, lead.result.smlUnconfirmed)}
+        {verdictText(vv.level, lead.result.verified, lead.result.total, vv.matched?.name, done.origin, fixtures, lead.result.smlUnconfirmed, done.sml?.weak ?? null)}
       </p>
       {done.runs.map((run, i) => (
         <RunResult key={i} run={run} bridge={done.bridge} sml={done.sml} />
