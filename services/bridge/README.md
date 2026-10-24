@@ -167,7 +167,8 @@ PV13 `sha256d(contractId‖ownerId‖type‖entropy)`, PV14 derived by the SDK.
 
 ## HTTP API
 
-`openapi.json` (OpenAPI 3.1). CORS `*`, GET/HEAD/OPTIONS only. Proposal, tally and cycle objects use the gov document
+`openapi.json` (OpenAPI 3.1). CORS `*`, GET/HEAD/OPTIONS only (any other method gets 405, so the API is safe to expose
+without a proxy, e.g. through a Cloudflare Tunnel). Proposal, tally and cycle objects use the gov document
 field names; amounts are duffs. `GET /v1/status`, `/v1/proposals?state=active|past|all`, `/v1/proposals/{hash}` (raw
 object hex, parsed fields, raw collateral tx), `/v1/proposals/{hash}/votes[?height=|?all=1]` (raw vote bytes, base64
 signature, MN proTxHash and weight), `/v1/tallies`, `/v1/mnlist[/{height}]`, `/v1/cycle`, and DashCentral-compatible
@@ -233,6 +234,10 @@ socket (needs local TCP binding), config rules and that `openapi.json` covers ev
   rank, margin and inNextBudget are correct. The next publish pass replaces them (content changed); a forced re-publish
   needs Core: `PUBLISH=1 TALLY_PUBLISH_INTERVAL_S=0 BRIDGE_RUN_SECONDS=300 scripts/dev-ct164.sh run`, then
   `scripts/readback.ts`. It was not run because SSH to CT 164 started failing (agent refused the key) after the change.
+- **Re-published (2026-10-24, reference deployment, deploy/README.md section 13):** a fresh archive on the R730 stack
+  (governance resync: 4,958 signed votes, 0 gaps; `bridge verify` clean, 28/28 tallies equal to Core) ran one
+  `bridge publish --once --force`: 28 tallies and 2 cycles replaced with govhub-voteset-v1 `voteSetHash`, 28 proposals
+  adopted, 0 failures, **90,970,860 credits = 0.00091 tDASH**. `scripts/readback.ts`: 58/58 match.
 
 ## FINDINGS
 
