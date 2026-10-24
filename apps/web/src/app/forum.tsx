@@ -97,13 +97,15 @@ export function ForumProvider({ children }: { children: ReactNode }) {
   const write = useCallback(
     async (op: DocumentOp) => {
       if (!session) throw new Error('sign in first');
+      // Fixture mode shows sample data only: a real identity would sign real documents that never appear here.
+      if (forum.store && 'auth' in session) throw new Error('Fixture mode shows sample data only. Switch to live data (Settings) and sign in again to post with your identity.');
       try {
         return await session.signAndBroadcastDocument(op);
       } finally {
         refreshBalance();
       }
     },
-    [session, refreshBalance],
+    [session, refreshBalance, forum],
   );
 
   // A different identity or network has different lists: fail closed until they are read again.

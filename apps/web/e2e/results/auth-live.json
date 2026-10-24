@@ -1,0 +1,25 @@
+{
+  "network": "testnet",
+  "at": "2026-10-24T08:03:20.761Z",
+  "depositTxid": "d474fe940055e9696e304eba823477b4bb4cd8875a923e74d57439e43e9fdb40",
+  "createSeconds": 9,
+  "identityId": "GL2qkqRQskPwyG7K7A1Ss25aUaEHDrrTi7iGgskMuVcb",
+  "balanceAfterCreate": 393332000,
+  "balanceAfterPasskey": 337385000,
+  "topUpDepositTxid": "bcf3386cd18c4c436b4cf94d7ce5a9a4dff1f8ec7c5d4c93d347988e35906804",
+  "topUpSeconds": 11,
+  "balanceAfterTopUp": 429143000,
+  "voucherTxid": "f9fb605d638837a2307d9e12adc1a72730e1fb28eb4e7d511f1a0aae51783907",
+  "voucherBurnVout": 1,
+  "voucherSeconds": 185,
+  "voucherIdentityId": "F1xTBzupNLFu4fgD2Vd4uiVgaxYY1JZ9xkyLftQpkmJV",
+  "voucherIdentityBalance": 193585000,
+  "finalBalancesCredits": {
+    "GL2qkqRQskPwyG7K7A1Ss25aUaEHDrrTi7iGgskMuVcb": "429142580",
+    "F1xTBzupNLFu4fgD2Vd4uiVgaxYY1JZ9xkyLftQpkmJV": "193584520"
+  },
+  "tDashSentFromQaWallet": 0.009,
+  "l1FeesDuffs": 692,
+  "spentCreditsIncludingAssetLockTxFees": "277272900",
+  "totalSeconds": 214
+}

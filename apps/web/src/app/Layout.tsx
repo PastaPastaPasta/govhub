@@ -1,10 +1,23 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { resolveConfigParam, type Registry } from '../config/registry.ts';
 import { formatInt } from '../lib/format.ts';
 import { ProvLegend } from '../ui/Provenance.tsx';
+import { useAuth } from '../auth/context.tsx';
 import { SessionControl } from '../ui/SignIn.tsx';
 import { useApp, type Theme } from './context.tsx';
+
+// The sign-in sheet (BIP39 wordlist, BIP32, HPKE, tx building) loads when it is first opened.
+const AuthSheet = lazy(() => import('../auth/AuthSheet.tsx').then((m) => ({ default: m.AuthSheet })));
+
+function LazyAuthSheet() {
+  const { sheet } = useAuth();
+  return sheet ? (
+    <Suspense fallback={null}>
+      <AuthSheet />
+    </Suspense>
+  ) : null;
+}
 
 const THEMES: Array<{ id: Theme; label: string }> = [
   { id: 'system', label: 'System' },
@@ -81,6 +94,8 @@ function ConfigSummary({ r }: { r: Registry }) {
     ['Bridges', r.bridges.map((b) => `${b.name} (${b.httpBase}${b.enabled ? '' : ', off'})`).join(', ') || 'none'],
     ['Relays', r.relays.map((x) => x.url).join(', ') || 'none'],
     ['Price feed', r.priceFeed?.url ?? 'none'],
+    ['Accounts service', r.accounts?.url ?? 'none'],
+    ['Faucet', r.faucet?.url ?? 'none'],
     ['Forum contracts', `forum ${r.forum.contractId}, mod ${r.forum.modContractId}`],
     ['Default block list', `${r.forum.moderationName} (${r.forum.moderationIdentityId})`],
     ['Claim portals', r.forum.claimPortals.join(', ') || 'none'],
@@ -167,6 +182,7 @@ export function Layout() {
           <SessionControl />
         </div>
       </header>
+      <LazyAuthSheet />
       <ConfigOffer />
       <ModeBanner />
       <main id="main" className="main">

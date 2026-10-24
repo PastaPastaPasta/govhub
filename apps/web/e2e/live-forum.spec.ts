@@ -1,6 +1,7 @@
-// Opt-in live testnet run of the social features (npm run e2e:live, which builds with VITE_GOVHUB_DEV_SIGNIN=1):
-// a real browser signs with the dev key-paste session as phase-0 spike identities and writes to the testnet forum and
-// mod contracts. On a real proposal of the testnet gov contract (OrchardPay): comment, reply, react, flip, a
+// Opt-in live testnet run of the social features (npm run e2e:live): a real browser signs in through @govhub/auth, the comment
+// author with a recovery phrase (the seed identity of packages/auth/scripts/live-testnet.ts, phrase in
+// ~/.local/share/govhub-phase2/live-state.json), the moderator and the claimant with the key-paste path (phase-0 spike identities
+// whose keys are not seed-derived), and writes to the testnet forum and mod contracts. On a real proposal of the testnet gov contract (OrchardPay): comment, reply, react, flip, a
 // moderator block on the default list and its removal, a user block and unblock, clearing the reaction and
 // retracting both comments. Then a payment-address claim and an owner description on the synthetic proposal from
 // scripts/testnet-claim-fixture.ts (the only proposal whose payout key we hold). Document ids and credits spent are
@@ -19,14 +20,27 @@ const MOD = 'CWJ5PyMMKwchk5H3FjX9enVQToWZUFA1xQaRn8zNZVjY';
 const CLAIM_KEY_FILE = `${process.env.HOME}/.local/share/govhub-phase0/testnet/claim-test.json`;
 const WRITE = { timeout: 120_000 };
 
-/** Sessions live in tab memory: a reload signs out, and switching identity signs out first. */
-async function signIn(page: Page, who: { identityId: string; highKeyHex: string }) {
+type Who = { identityId: string } & ({ phrase: string } | { highKeyHex: string });
+
+/** The seed identity made by packages/auth/scripts/live-testnet.ts (create step). */
+function seedIdentity(): { identityId: string; phrase: string } {
+  const st = JSON.parse(readFileSync(`${process.env.HOME}/.local/share/govhub-phase2/live-state.json`, 'utf8')) as { phraseA: string; results: { create: { identityId: string } } };
+  return { identityId: st.results.create.identityId, phrase: st.phraseA };
+}
+
+/** Sessions live in tab memory: a reload signs out, and switching identity signs out first. Real sign-in paths only. */
+async function signIn(page: Page, who: Who) {
   if ((await page.getByTestId('session-button').innerText()).trim() !== 'Sign in') await signOut(page);
   await page.getByTestId('session-button').click();
-  const dialog = page.locator('dialog[open]');
-  await dialog.getByLabel('Identity id').fill(who.identityId);
-  await dialog.getByLabel(/Private key/).fill(who.highKeyHex);
-  await dialog.getByRole('button', { name: 'Sign in' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Sign in to govhub' });
+  if ('phrase' in who) {
+    await sheet.getByRole('button', { name: /I have a recovery phrase/ }).click();
+    await page.getByTestId('phrase-input').fill(who.phrase);
+  } else {
+    await sheet.getByRole('button', { name: /Paste a key/ }).click();
+    await page.getByTestId('key-input').fill(who.highKeyHex);
+  }
+  await page.locator('dialog.sheet').getByRole('button', { name: 'Sign in', exact: true }).click();
   await expect(page.getByTestId('session-button')).toContainText(who.identityId.slice(0, 4), { timeout: 120_000 });
 }
 async function signOut(page: Page) {
@@ -43,9 +57,10 @@ test('@live forum on testnet: comment, reply, react, flip, block, unblock, retra
   const claimKey = JSON.parse(readFileSync(CLAIM_KEY_FILE, 'utf8')) as { wif: string; address: string; govHash: string; docId: string };
   const errors = await watchPage(page);
   const { sdk, stableBalance } = await connect();
+  const author = seedIdentity();
   const u6 = spikeIdentity('u6');
   const mod = spikeIdentity('owner');
-  const before = { u6: await stableBalance(u6.identityId), moderator: await stableBalance(mod.identityId) };
+  const before = { author: await stableBalance(author.identityId), u6: await stableBalance(u6.identityId), moderator: await stableBalance(mod.identityId) };
   const docs: Record<string, string> = {};
   /** A proven query from Node, retried until it returns something (nodes lag right after a write). */
   const q = async (contract: string, documentTypeName: string, where: unknown[], orderBy?: unknown[]) => {
@@ -57,11 +72,11 @@ test('@live forum on testnet: comment, reply, react, flip, block, unblock, retra
     }
   };
 
-  // ---- comment and reply as u6 on a real proposal ------------------------------------------------------------------
+  // ---- comment and reply as the seed identity on a real proposal ------------------------------------------------------------------
   await page.goto('/p/OrchardPay?fixtures=0');
   const d = page.getByTestId('discussion');
   await expect(d.locator('#discussion-title .count')).toBeVisible({ timeout: 180_000 });
-  await signIn(page, u6);
+  await signIn(page, author);
   const stamp = new Date().toISOString();
   const text = `govhub live e2e ${stamp}: comment`;
   await d.getByRole('textbox', { name: 'Post comment' }).fill(`${text} with **markdown**`);
@@ -118,11 +133,11 @@ test('@live forum on testnet: comment, reply, react, flip, block, unblock, retra
   await own(comment(page, replyText)).getByRole('button', { name: 'Remove from the default list' }).click();
   await expect(comment(page, replyText).locator('.hidden-note')).toHaveCount(0, WRITE);
 
-  // ---- user block: hide everything by u6 for the moderator identity's own list, then unblock ----------------------
+  // ---- user block: hide everything by the author for the moderator identity's own list, then unblock ----------------------
   await own(comment(page, text)).getByText('Hide…').click();
   await own(comment(page, text)).getByRole('button', { name: 'Hide everything by this author' }).click();
   await expect(comment(page, text).locator(':scope > article .hidden-note')).toContainText('author on your blocks', WRITE);
-  const userBlocks = await q(FORUM, 'block', [['$ownerId', '==', mod.identityId], ['target', 'in', [u6.identityId]]], [['$ownerId', 'asc'], ['target', 'asc']]);
+  const userBlocks = await q(FORUM, 'block', [['$ownerId', '==', mod.identityId], ['target', 'in', [author.identityId]]], [['$ownerId', 'asc'], ['target', 'asc']]);
   docs.userBlock = String(userBlocks[0]?.$id);
   await own(comment(page, text)).getByText('Hide…').click();
   await own(comment(page, text)).getByRole('button', { name: /Unblock/ }).click();
@@ -132,8 +147,8 @@ test('@live forum on testnet: comment, reply, react, flip, block, unblock, retra
   await own(comment(page, text)).locator('.vote-down').click();
   await expect(score).toHaveText('0', WRITE);
 
-  // ---- retract both comments as u6 --------------------------------------------------------------------------------
-  await signIn(page, u6);
+  // ---- retract both comments as the author --------------------------------------------------------------------------------
+  await signIn(page, author);
   for (const t of [replyText, text]) {
     await own(comment(page, t)).getByRole('button', { name: 'Retract' }).click();
     await own(comment(page, t)).getByRole('button', { name: /Confirm: delete/ }).click();
@@ -179,16 +194,18 @@ test('@live forum on testnet: comment, reply, react, flip, block, unblock, retra
   docs.proposalPost = String(posts[0]?.$id);
 
   // ---- credits ------------------------------------------------------------------------------------------------------
-  const after = { u6: await stableBalance(u6.identityId), moderator: await stableBalance(mod.identityId) };
-  const spent = { u6: before.u6 - after.u6, moderator: before.moderator - after.moderator };
+  const after = { author: await stableBalance(author.identityId), u6: await stableBalance(u6.identityId), moderator: await stableBalance(mod.identityId) };
+  const spent = { author: before.author - after.author, u6: before.u6 - after.u6, moderator: before.moderator - after.moderator };
+  const total = spent.author + spent.u6 + spent.moderator;
   const results = {
     ranAt: stamp,
     proposal: 'OrchardPay (8410614191c3f2df69a224a1c34ebc745288700515fdece6ad3764bfc1c987fe) in testnet gov 3ueAfbVe8LvCxYWk7bKvXxc5uHe7E1TDJHzN3k3ZDehZ',
     claimProposal: { name: 'govhub-claim-test', govHash: claimKey.govHash, docId: claimKey.docId, paymentAddress: claimKey.address },
-    identities: { u6: u6.identityId, moderator: mod.identityId },
+    identities: { author: author.identityId, claimant: u6.identityId, moderator: mod.identityId },
+    signIn: { author: 'recovery phrase (@govhub/auth seed path)', claimant: 'pasted HIGH key (@govhub/auth key path)', moderator: 'pasted HIGH key (@govhub/auth key path)' },
     docs,
-    credits: { u6: spent.u6.toString(), moderator: spent.moderator.toString(), total: (spent.u6 + spent.moderator).toString() },
-    tDash: { u6: Number(spent.u6) / 1e11, moderator: Number(spent.moderator) / 1e11, total: Number(spent.u6 + spent.moderator) / 1e11 },
+    credits: { author: spent.author.toString(), claimant: spent.u6.toString(), moderator: spent.moderator.toString(), total: total.toString() },
+    tDash: { author: Number(spent.author) / 1e11, claimant: Number(spent.u6) / 1e11, moderator: Number(spent.moderator) / 1e11, total: Number(total) / 1e11 },
     notes: 'comment, reply, reaction, both blocks were deleted again (deletes refund storage); claim and proposalPost stay as test fixtures',
   };
   writeFileSync(new URL('./live-results.json', import.meta.url), JSON.stringify(results, null, 2) + '\n');

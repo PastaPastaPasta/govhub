@@ -2,7 +2,8 @@
 // the built index.html) and stops it when the run ends; nothing is left running.
 import { defineConfig, devices } from '@playwright/test';
 
-const PORT = 4317;
+// GOVHUB_E2E_PORT lets parallel checkouts (agent worktrees) run their suites side by side.
+const PORT = Number(process.env.GOVHUB_E2E_PORT ?? 4317);
 
 export default defineConfig({
   testDir: './e2e',
@@ -14,7 +15,8 @@ export default defineConfig({
   use: {
     baseURL: `http://localhost:${PORT}`,
     headless: true,
-    trace: 'retain-on-failure',
+    // Live runs type real phrases and keys: no traces there (a failed run would keep them in test-results/).
+    trace: process.env.GOVHUB_LIVE || process.env.GOVHUB_LIVE_AUTH ? 'off' : 'retain-on-failure',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], headless: true } }],
   webServer: {

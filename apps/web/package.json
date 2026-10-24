@@ -2,7 +2,7 @@
   "name": "@govhub/web",
   "version": "0.0.0",
   "private": true,
-  "description": "govhub web app: Dash governance portal reading and writing Platform directly, with proofs.",
+  "description": "govhub web app: Dash governance portal reading and writing Platform directly, with proofs; seed, key and passkey sign-in and DAPI funding.",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,13 +11,15 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "e2e": "playwright test",
-    "e2e:live": "GOVHUB_LIVE=1 VITE_GOVHUB_DEV_SIGNIN=1 playwright test --grep @live",
+    "e2e:live": "GOVHUB_LIVE=1 playwright test --grep \"@live \"",
     "screenshots": "SCREENSHOTS=1 playwright test --grep @screenshots",
-    "record:dapi": "node scripts/record-dapi.mjs"
+    "record:dapi": "node scripts/record-dapi.mjs",
+    "e2e:auth": "GOVHUB_LIVE_AUTH=1 playwright test --grep @live-auth"
   },
   "dependencies": {
     "@dashevo/evo-sdk": "5.0.0-rc.8",
     "@fontsource-variable/archivo": "^5.2.6",
+    "@govhub/auth": "*",
     "@govhub/contracts-v1": "*",
     "@govhub/dapi": "*",
     "@govhub/forum": "*",
@@ -25,6 +27,7 @@
     "@noble/curves": "^2.0.0",
     "@noble/hashes": "^2.0.0",
     "@scure/base": "^2.0.0",
+    "qr": "^0.7.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.9.0"

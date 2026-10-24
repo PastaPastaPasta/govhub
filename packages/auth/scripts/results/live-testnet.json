@@ -1,0 +1,80 @@
+{
+  "at": "2026-10-24T06:40:12.671Z",
+  "network": "testnet",
+  "platformVersion": 14,
+  "qaWalletSinceFunderTracking": {
+    "paidDuffs": "1000000",
+    "feesDuffs": "918"
+  },
+  "create": {
+    "identityId": "FUfinhTAJRUff12BbJLZa7ZUqjJne8Xqyh9aiJdeKiXh",
+    "proofKind": "instant",
+    "isLockAfterMs": 1102,
+    "lockTxid": "622aa37cc3ae6209f14c0c2adb6786c018191c2e86b16b217401239cffec121f",
+    "burnVout": 0,
+    "creditIndex": 0,
+    "lockedDash": "0.01999794",
+    "balanceDash": "0.01893190",
+    "createFeeCredits": "106603800",
+    "createFeeDash": "0.00106604",
+    "seconds": 10
+  },
+  "voucher": {
+    "identityId": "N3kw2XPJiZyiSjyQN8eNTodoqDCr9krV72NDAn2ADVF",
+    "proofKind": "chain",
+    "voucherTxid": "ea5b59c7cc4cb7aebe3de4325fa7fc33ec5f35e8c793a37e7669754bd538dc91",
+    "burnVout": 1,
+    "creditIndex": 0,
+    "lockedDash": "0.00300000",
+    "balanceDash": "0.00193600",
+    "createFeeDash": "0.00106400",
+    "seconds": 132
+  },
+  "topup": {
+    "identityId": "FUfinhTAJRUff12BbJLZa7ZUqjJne8Xqyh9aiJdeKiXh",
+    "index": 1,
+    "proofKind": "instant",
+    "lockedDash": "0.00099794",
+    "balanceBeforeDash": "0.01857672",
+    "balanceAfterDash": "0.01949289",
+    "topUpFeeCredits": "8176800",
+    "seconds": 12
+  },
+  "signin": {
+    "discovered": [
+      {
+        "identityIndex": 0,
+        "identityId": "FUfinhTAJRUff12BbJLZa7ZUqjJne8Xqyh9aiJdeKiXh"
+      }
+    ],
+    "seedSessionKeyId": 2,
+    "seedSessionLevel": 2,
+    "keySessionIdentity": "FUfinhTAJRUff12BbJLZa7ZUqjJne8Xqyh9aiJdeKiXh",
+    "keySessionKeyId": 2
+  },
+  "vault": {
+    "identityId": "FUfinhTAJRUff12BbJLZa7ZUqjJne8Xqyh9aiJdeKiXh",
+    "opened": true,
+    "sameKey": true,
+    "writeCostCredits": "32179060",
+    "writeCostDash": "0.00032179"
+  },
+  "addkeys": {
+    "identityId": "FUfinhTAJRUff12BbJLZa7ZUqjJne8Xqyh9aiJdeKiXh",
+    "added": [
+      3,
+      4,
+      5
+    ],
+    "keys": [
+      "0:p0/l0",
+      "1:p0/l1",
+      "2:p0/l2",
+      "3:p3/l1",
+      "4:p1/l3/bound",
+      "5:p2/l3/bound"
+    ],
+    "costCredits": "73962220",
+    "costDash": "0.00073962"
+  }
+}
