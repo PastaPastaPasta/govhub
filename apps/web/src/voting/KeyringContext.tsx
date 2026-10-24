@@ -32,7 +32,7 @@ import { useApp } from '../app/context.tsx';
 import { useAuth } from '../auth/context.tsx';
 import { errorText, getPlatformPort, rpId } from '../auth/runtime.ts';
 import { enabledBridges } from '../config/registry.ts';
-import { HttpBridge, type Bridge } from '../data/bridge.ts';
+import { BridgeError, HttpBridge, type Bridge } from '../data/bridge.ts';
 import { createWebDapi, dapiConfig } from '../data/dapi.ts';
 import { getSdk } from '../data/platform.ts';
 import type { SmlEntry } from '../verify/votes.ts';
@@ -608,8 +608,9 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
           let vs;
           try {
             vs = await bridge.votes(h);
-          } catch {
-            return; // no live tally yet (new proposal): no current votes
+          } catch (e) {
+            if (e instanceof BridgeError && e.status === 404) return; // no live tally yet (new proposal): no current votes
+            throw e; // unreachable bridge: voting waits (Core's 1-hour rule needs the current votes)
           }
           for (const v of vs.votes) {
             const key = keyOf.get(mnId(v));

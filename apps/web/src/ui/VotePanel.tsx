@@ -25,32 +25,34 @@ export function useDeadline(): number | null {
   return c ? votingDeadlineTime(c, params) : null;
 }
 
-export function useCurrentVotes(govHashes: string[], nonce = 0): { votes: Map<string, CurrentVote>; loading: boolean } {
+export function useCurrentVotes(govHashes: string[], nonce = 0): { votes: Map<string, CurrentVote>; loading: boolean; error: string | null } {
   const k = useKeyring();
   const [votes, setVotes] = useState(new Map<string, CurrentVote>());
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const key = govHashes.join(',');
   useEffect(() => {
     if (!govHashes.length || k.status !== 'open') return;
     let live = true;
     setLoading(true);
+    setError(null);
     k.currentVotes(govHashes).then(
       (v) => live && (setVotes(v), setLoading(false)),
-      () => live && setLoading(false),
+      (e) => live && (setError(errorText(e)), setLoading(false)),
     );
     return () => {
       live = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, k.status, k.currentVotes, nonce]);
-  return { votes, loading };
+  return { votes, loading, error };
 }
 
 export function VoteComposer({ proposals, compact = false }: { proposals: Proposal[]; compact?: boolean }) {
   const k = useKeyring();
   const deadline = useDeadline();
   const [nonce, setNonce] = useState(0);
-  const { votes: current, loading } = useCurrentVotes(
+  const { votes: current, loading, error: currentError } = useCurrentVotes(
     proposals.map((p) => p.govHash),
     nonce + k.watched.length,
   );
@@ -200,10 +202,11 @@ export function VoteComposer({ proposals, compact = false }: { proposals: Propos
         )}
       </fieldset>
       <div className="form-actions">
-        <button type="button" className="btn btn-primary" disabled={!intents.length || !!k.busy || !k.relays.length || loading} onClick={go} data-testid="vote-send">
+        <button type="button" className="btn btn-primary" disabled={!intents.length || !!k.busy || !k.relays.length || loading || !!currentError} onClick={go} data-testid="vote-send">
           {k.busy?.startsWith('Signing') ? `${k.busy}…` : `Sign and ${mode === 'now' ? 'send' : 'schedule'} ${intents.length} vote${intents.length === 1 ? '' : 's'}`}
         </button>
         {!k.relays.length && <span className="error small">No relay configured (Settings).</span>}
+        {currentError && <span className="error small">Your current votes could not be read from the bridge ({currentError}); voting waits until they can.</span>}
       </div>
       {result && (
         <div className="small" role="status" data-testid="vote-result">

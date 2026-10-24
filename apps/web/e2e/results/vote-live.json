@@ -1,12 +1,12 @@
 {
   "network": "testnet",
-  "at": "2026-10-24T19:25:39.246Z",
+  "at": "2026-10-24T20:23:59.774Z",
   "proposal": "ab31c1fffb2eef4587f4ba85a92ddf98b3256aaf96542fe5221a0532d620708d",
   "masternode": "masternode-5",
   "votingAddress": "yd5tNnzyjwYXXisbuv4ScDMzBLuDtr49gQ",
   "keyringExistedBefore": true,
   "masternodesBefore": 1,
   "masternodesAfter": 1,
-  "restoreSeconds": 1,
+  "restoreSeconds": 2,
   "voteConfirmedInBridge": true
 }
