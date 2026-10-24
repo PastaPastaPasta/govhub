@@ -38,6 +38,27 @@ What the relay does to keep that exposure small:
 The id returned by `POST /v1/votes` (16 random bytes), not the vote hash, is the handle for status and cancel. A signed vote
 is public once broadcast, so a vote hash is not a secret; cancelling needs the voting key regardless.
 
+### Abuse resistance
+
+Signed votes are public on the Dash P2P network, so anyone can submit a masternode's *old* votes to the relay: that needs no
+key. What stops it from using up a masternode's limits or the queue:
+
+- `stale-vote`: a vote older than `MAX_PAST_S` (24 h) is refused outright.
+- A vote Core already has (`already-current`) or has superseded (`newer-vote-in-core`) is refused before it is stored and
+  without touching the per-masternode hourly limit or the held caps. Those limits count only votes that are really queued.
+  If Core cannot answer, the vote is accepted: the broadcaster and the confirmer sort it out.
+- `MAX_HELD_TOTAL` bounds the queue as a whole (503 `relay-full`).
+- When `voteraw` answers that Core already has the vote (an empty "Error voting : ", or "Already known valid vote") the relay
+  does not treat it as an error: the vote becomes `broadcast` and the confirmer decides `confirmed` / `superseded`. (Core
+  answers with the same empty message for a vote on an expired or deleted proposal; such a vote is never `confirmed`, it is
+  re-broadcast up to 3 times and ends `failed` / `unconfirmed`.)
+- Each replayed vote that passes the signature check costs one `getcurrentvotes` call; only the per-IP limiter bounds that.
+- Due votes are picked by `next_attempt_at`, then `release_at`, in batches of 50, so a masternode whose votes keep failing
+  (and are pushed into the future by their backoff) cannot starve the others.
+- The per-IP limiter uses the client address from `CLIENT_IP_HEADER` only from trusted peers (`TRUSTED_PROXY_CIDRS`), takes the
+  rightmost `x-forwarded-for` entry, and buckets IPv6 by /64, so neither a forged header nor a rotating IPv6 address within
+  one prefix gets a fresh bucket.
+
 ## Running
 
 ```sh
@@ -57,7 +78,8 @@ docker run --rm -p 8788:8788 -v relay-data:/data \
 ```
 
 The image runs as uid 1000, keeps state in `/data` and has a `HEALTHCHECK` on `GET /v1/status`. Behind cloudflared (the only
-peer) set `CLIENT_IP_HEADER=cf-connecting-ip`, otherwise every client shares the tunnel's address. dashd needs `txindex=1`
+peer) set `CLIENT_IP_HEADER=cf-connecting-ip`, otherwise every client shares the tunnel's address. If the port is reachable by
+anything else, also set `TRUSTED_PROXY_CIDRS` to the proxy's address, or anyone can pick their own bucket with a forged header. dashd needs `txindex=1`
 (proposal submission reads the collateral with `getrawtransaction`) and RPC access to `protx`, `gobject`, `voteraw`,
 `getrawtransaction`, `getblockcount`.
 
@@ -78,10 +100,13 @@ Environment variables; an empty value means the default.
 | `HTTP_PORT` | `8788` | |
 | `RELEASE_MARGIN_S` | `60` | default release is `max(now, time - RELEASE_MARGIN_S)` |
 | `MAX_HOLD_S` | `3456000` (40 days) | how far ahead a vote's signed `time` and its release may lie |
+| `MAX_PAST_S` | `86400` | a vote whose signed `time` is older than this is refused, 400 `stale-vote` (signed votes are public, so old ones can be replayed by anyone) |
 | `MAX_HELD_PER_MN` | `64` | held votes per masternode; more is 429 `too-many-held` |
+| `MAX_HELD_TOTAL` | `100000` | held (and in-flight) votes over all masternodes; more is 503 `relay-full` |
 | `RATE_IP_PER_MIN` | `30` | token bucket per client IP for every POST (burst = this value); 429 `rate-limited` with `Retry-After` |
-| `RATE_MN_PER_HOUR` | `24` | accepted submissions per masternode outpoint in any rolling hour (in memory: a restart resets it) |
-| `CLIENT_IP_HEADER` | | header carrying the client IP (e.g. `cf-connecting-ip`); empty = the socket address |
+| `RATE_MN_PER_HOUR` | `24` | votes actually queued per masternode outpoint in any rolling hour (duplicates and votes Core already has do not count; in memory: a restart resets it) |
+| `CLIENT_IP_HEADER` | | header carrying the client IP; empty = the socket address. `cf-connecting-ip`: the single value. `x-forwarded-for`: the RIGHTMOST entry (the one the trusted proxy appended; entries to its left are client-supplied). IPv6 clients share a bucket per /64, IPv4 and IPv4-mapped per address |
+| `TRUSTED_PROXY_CIDRS` | | comma-separated IPv4 addresses / CIDRs and exact IPv6 addresses allowed to supply `CLIENT_IP_HEADER`; a request from any other socket peer is bucketed by its socket address and the header is ignored. Empty = trust the header from any peer, which is right when only cloudflared / caddy can reach the port (the compose setup) |
 | `PROPOSAL_SUBMIT` | `1` | `0` answers 501 on `/v1/proposals/submit` |
 | `MIN_COLLATERAL_CONFS` | `6` | confirmations a proposal collateral needs before `gobject submit` |
 | `RETENTION_DAYS` | `7` | finished votes (confirmed, failed, cancelled, superseded) are deleted this long after they finished |
@@ -107,9 +132,14 @@ time, sig, releaseAt?}`, where `time` is the signed nTime and `sig` the base64 o
 `signVote` (`@govhub/verify`). Validation order, each with its own `code`: `wrong-network`, `bad-request` (types, unknown
 keys), `bad-vote` (`relayVoteError`: funding only, outcome yes/no/abstain, time positive and at most `MAX_HOLD_S` ahead),
 `bad-release`, `unknown-mn` (404) / `mn-banned` (409), `bad-signature`, `unknown-proposal` (404) / `not-a-proposal`.
-Then: an already stored vote hash returns 200 (idempotent); a held vote of the same masternode on the same proposal is
-superseded by one with a greater `time` (409 `later-vote-held` otherwise); then the masternode limits (`rate-limited`,
-`too-many-held`). A release time must satisfy `time - 3540 <= releaseAt <= time + 86400` and `releaseAt <= now + MAX_HOLD_S`.
+`bad-vote` is followed by `stale-vote` (400: `time` older than `MAX_PAST_S`).
+Then: an already stored vote hash returns 200 (idempotent); then Core is asked with `gobject getcurrentvotes <govHash> <txid> <n>`
+(a failing call is ignored): 409 `already-current` if the vote hash is among the masternode's current votes, 409
+`newer-vote-in-core` if a funding vote of that masternode is dated at or after this one. Neither is queued and neither costs
+a slot. Then a held vote of the same masternode on the same proposal is superseded by one with a greater `time` (409
+`later-vote-held` otherwise; a vote of that key that is `sending` counts for this check but is never superseded, and if it
+goes back to held the broadcaster drops it as `superseded` because a newer vote exists); then the limits, which only a vote that is really inserted counts against: per masternode per
+hour (`rate-limited`), held per masternode (`too-many-held`) and held in total (503 `relay-full`). A release time must satisfy `time - 3540 <= releaseAt <= time + 86400` and `releaseAt <= now + MAX_HOLD_S`.
 
 ### Cancel message
 
@@ -146,20 +176,27 @@ From Dash Core `governance/object.cpp` `ProcessVote`, `governance/vote.cpp` `IsV
 ## Vote status lifecycle
 
 ```
-            submit                 release_at reached            seen in getcurrentvotes
- (new) ───────────────► held ─────────────────────────► broadcast ─────────────────────────► confirmed
-                         │  ▲                                │
-          cancel (signed)│  │ not visible after              │ the MN has a later funding vote
-                         ▼  └ CONFIRM_TIMEOUT_S (max 3×)     ▼
-                     cancelled                           superseded        not visible after 3 re-broadcasts: failed (unconfirmed)
-        a later vote for the same key replaces a held one: superseded      Core refuses for good: failed (see lastError)
+          submit        release_at reached      voteraw answered        seen in getcurrentvotes
+ (new) ───────────► held ─────────────────► sending ─────────────► broadcast ──────────────────► confirmed
+                     │  ▲                     │                       │  │
+      cancel (signed)│  │ retry / too often   │ Core refuses for      │  │ the MN has a later funding vote
+                     ▼  └─────────────────────┘ good: failed          │  ▼
+                 cancelled                                            │  superseded
+        a later vote for the same key replaces a held one: superseded │
+                                  not visible after CONFIRM_TIMEOUT_S: back to held (max 3x), then failed (unconfirmed)
 ```
 
 - `held`: waiting for `releaseAt`, or for a retry. `lastError` explains a wait: `too-often`, `unknown-proposal` (Core does
   not know the proposal yet; retried 60 s doubling to 1 h, `failed` 6 h after the release), `core-error` (transport, HTTP 5xx or
   any other Core error; retried 30 s doubling to 30 min, `failed` after 50 attempts), `not-visible` (re-broadcast pending).
-- `broadcast`: `voteraw` answered "Voted successfully". The confirmer checks `gobject getcurrentvotes <govHash> <txid> <n>` every 30 s.
-- `confirmed`, `superseded`, `cancelled`, `failed` are final. `failed` carries `lastError`: `obsolete`, `mn-gone`, `mn-banned`,
+- `sending`: `voteraw` is in flight (seconds). The broadcaster sets it with a conditional `held -> sending` UPDATE just before
+  the call, so a cancel can no longer race with it: cancelling a `sending` vote is 409 `not-held` with `status: "sending"`.
+  When Core answers, the row moves on with `WHERE status = 'sending'` updates: `broadcast`, back to `held` (retry, `lastError`
+  as below) or `failed`. A row left in `sending` by a crash goes back to `held`, due immediately, at start-up (if Core did get
+  the vote, it answers "already known" and the vote becomes `broadcast`). Clients must accept `sending` as a transient status.
+- `broadcast`: `voteraw` answered "Voted successfully", or Core said it already has the vote (empty "Error voting : " /
+  "Already known valid vote"; the confirmer then decides `confirmed`, `superseded` or a re-broadcast). The confirmer checks `gobject getcurrentvotes <govHash> <txid> <n>` every 30 s.
+- `confirmed`, `superseded`, `cancelled`, `failed` are final (a final state is never overwritten). `failed` carries `lastError`: `obsolete`, `mn-gone`, `mn-banned`,
   `mn-not-valid` (Core: "Failure to find masternode"), `bad-signature` (Core: "Failure to verify vote"), `unknown-proposal`,
   `core-error`, `unconfirmed`. `lastError` is always a short code, never a raw Core message.
 

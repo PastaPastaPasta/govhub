@@ -35,7 +35,10 @@ describe('voteraw outcomes', () => {
     const mn = w.mn();
     const gov = w.proposal();
     w.core.votes.set(key(mn, gov), { hash: 'aa'.repeat(32), time: T0 + 500, outcome: 2, signal: 1, txid: mn.txid, n: mn.n, lastUpdate: T0 - 99999 });
+    // the submit-time check would refuse this (newer-vote-in-core); with getcurrentvotes failing the relay accepts and voteraw decides
+    w.core.currentVotesError = new CoreRpcError('gobject', -32603, 'boom');
     const { id } = await w.submit(mn, { govHash: gov });
+    w.core.currentVotesError = null;
     await w.broadcaster.tickBroadcast();
     expect(w.row(id)).toMatchObject({ status: 'failed', last_error: 'obsolete', finished_at: T0 });
     w.clock.advance(7200);

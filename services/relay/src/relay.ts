@@ -158,6 +158,8 @@ export class Relay {
     const voteErr = relayVoteError(v, now, this.cfg.maxHoldS);
     if (voteErr) throw new RelayError(400, 'bad-vote', voteErr);
     const time = Number(v.time);
+    // Signed votes are public on P2P: refuse old ones so replaying a masternode's history cannot use up its limits.
+    if (time < now - this.cfg.maxPastS) throw new RelayError(400, 'stale-vote', `the vote's time is more than ${this.cfg.maxPastS} s in the past`);
 
     // release time: default is just before the signed time; an explicit one must keep Core's 1 h future limit and our hold bound
     let releaseAt = Math.max(now, time - this.cfg.releaseMarginS);
@@ -178,24 +180,33 @@ export class Relay {
 
     await this.checkProposal(v.govHashDisplay);
 
-    // --- everything below is synchronous: no await between the checks and the insert ---
     const voteHash = governanceVoteHash(v);
+    const known = this.store.getByVoteHash(voteHash);
+    if (known) return { httpStatus: 200, receipt: receipt(known) };
+
+    // Does Core already have this vote, or a newer one from this masternode? Then queueing it is pointless (and must not cost a slot).
+    await this.checkAgainstCore(v.govHashDisplay, v.collateralTxid, v.collateralIndex, voteHash, time);
+
+    // --- everything below is synchronous: no await between the checks and the insert ---
     const existing = this.store.getByVoteHash(voteHash);
     if (existing) return { httpStatus: 200, receipt: receipt(existing) };
 
     const key = { txid: v.collateralTxid, n: v.collateralIndex, govHash: v.govHashDisplay, signal: v.signal };
-    const held = this.store.heldForKey(key);
-    if (held && time <= held.time) throw new RelayError(409, 'later-vote-held', 'a vote with a later or equal time for this proposal is already held');
+    // held or in flight (`sending`: cannot be superseded, but still counts as "already there")
+    const active = this.store.activeForKey(key);
+    if (active[0] && time <= active[0].time) throw new RelayError(409, 'later-vote-held', 'a vote with a later or equal time for this proposal is already held');
+    const held = active.filter((r) => r.status === 'held');
 
     const mnKey = `${v.collateralTxid}-${v.collateralIndex}`;
     if (this.mnLimiter.exceeded(mnKey)) throw new RelayError(429, 'rate-limited', 'too many votes from this masternode in the last hour', {}, this.mnLimiter.retryAfter(mnKey));
-    if (!held && this.store.countHeldForMn(v.collateralTxid, v.collateralIndex) >= this.cfg.maxHeldPerMn) {
+    if (!held.length && this.store.countHeldForMn(v.collateralTxid, v.collateralIndex) >= this.cfg.maxHeldPerMn) {
       throw new RelayError(429, 'too-many-held', `this masternode already has ${this.cfg.maxHeldPerMn} held votes`, {}, 60);
     }
+    if (!held.length && this.store.countHeld() >= this.cfg.maxHeldTotal) throw new RelayError(503, 'relay-full', 'the relay holds as many votes as it accepts, try another relay or later', {}, 60);
 
     const id = randomBytes(16).toString('hex');
     this.store.db.transaction(() => {
-      if (held) this.store.supersedeHeld(held.id, now);
+      for (const h of held) this.store.supersedeHeld(h.id, now);
       this.store.insert({
         id,
         vote_hash: voteHash,
@@ -210,7 +221,7 @@ export class Relay {
         received_hour: now - (now % 3600),
       });
     })();
-    this.mnLimiter.record(mnKey);
+    this.mnLimiter.record(mnKey); // only votes that were really inserted count
     return { httpStatus: 202, receipt: { id, voteHash, status: 'held', releaseAt } };
   }
 
@@ -234,6 +245,7 @@ export class Relay {
     if (this.store.cancelHeld(row.id, this.clock())) return { id: row.id, status: 'cancelled' };
     const now = this.store.get(row.id)!;
     if (now.status === 'cancelled') return { id: row.id, status: 'cancelled' };
+    // `sending` = voteraw is in flight right now: too late to take it back
     throw new RelayError(409, 'not-held', `the vote is ${now.status}, only held votes can be cancelled`, { status: now.status });
   }
 
@@ -354,6 +366,30 @@ export class Relay {
     } catch (e) {
       log.warn('masternode list unavailable', { rpc: rpcMessage(e) !== null });
       throw coreDown();
+    }
+  }
+
+  /**
+   * `gobject getcurrentvotes <gov> <txid> <n>` (vout as a string): 409 `already-current` if Core's current votes of this masternode
+   * contain this vote hash, 409 `newer-vote-in-core` if one of its funding votes is dated at or after ours. A failing RPC never
+   * blocks a submission (the broadcaster and the confirmer sort it out later).
+   */
+  private async checkAgainstCore(govHash: string, txid: string, n: number, voteHash: string, time: number): Promise<void> {
+    let current: unknown;
+    try {
+      current = await this.core.call('gobject', ['getcurrentvotes', govHash, txid, String(n)]);
+    } catch {
+      return;
+    }
+    if (typeof current !== 'object' || current === null || Array.isArray(current)) return;
+    if (Object.prototype.hasOwnProperty.call(current, voteHash)) {
+      throw new RelayError(409, 'already-current', 'Core already has this vote as the masternode\'s current vote');
+    }
+    // values look like "<txid>-<n>:<time>:<outcome>:<signal>:<weight>"
+    for (const val of Object.values(current)) {
+      if (typeof val !== 'string') continue;
+      const [, t, , signal] = val.split(':');
+      if (signal === 'funding' && Number(t) >= time) throw new RelayError(409, 'newer-vote-in-core', 'Core already has a vote of this masternode with the same or a later time');
     }
   }
 

@@ -20,7 +20,7 @@
     "/v1/votes": {
       "post": {
         "summary": "Submit a signed funding vote",
-        "description": "Checks, in this order: network (`wrong-network`), field types and unknown keys (`bad-request`), Core's relay rules via `relayVoteError` (`bad-vote`: funding only, outcome yes/no/abstain, time positive and at most MAX_HOLD_S ahead), the release time (`bad-release`), the masternode (`unknown-mn`, `mn-banned`), the signature (`bad-signature`: the recovered key must be the masternode's current voting key; Core's non-strict recovery rules, i.e. any header byte and high-S), the proposal (`unknown-proposal`, `not-a-proposal`). A vote whose hash is already stored (in any state) returns 200 with the stored record. A held vote of the same masternode on the same proposal is superseded by one with a greater `time` and refused otherwise (`later-vote-held`). Then the rate limits: per masternode per rolling hour (`rate-limited`) and held votes per masternode (`too-many-held`). The per-IP token bucket (`rate-limited`, Retry-After) applies to every POST before the body is read.\n\nThe vote is released at `releaseAt` (default: max(now, time - RELEASE_MARGIN_S)); an explicit `releaseAt` must satisfy time - 3540 <= releaseAt <= time + 86400 and releaseAt <= now + MAX_HOLD_S, and a value in the past means now.",
+        "description": "Checks, in this order: network (`wrong-network`), field types and unknown keys (`bad-request`), Core's relay rules via `relayVoteError` (`bad-vote`: funding only, outcome yes/no/abstain, time positive and at most MAX_HOLD_S ahead), the release time (`bad-release`; a signed `time` older than MAX_PAST_S, default 24 h, is `stale-vote`), the masternode (`unknown-mn`, `mn-banned`), the signature (`bad-signature`: the recovered key must be the masternode's current voting key; Core's non-strict recovery rules, i.e. any header byte and high-S), the proposal (`unknown-proposal`, `not-a-proposal`). A vote whose hash is already stored (in any state) returns 200 with the stored record. Then Core is asked (`gobject getcurrentvotes`; a failing call is ignored): 409 `already-current` if Core already has this vote hash as the masternode's current vote, 409 `newer-vote-in-core` if it has a funding vote of this masternode dated at or after this one; neither is queued or counted against any limit. A held vote of the same masternode on the same proposal is superseded by one with a greater `time` and refused otherwise (`later-vote-held`). Then the limits, which only votes that are really queued count against: per masternode per rolling hour (`rate-limited`), held votes per masternode (`too-many-held`) and held votes in total (503 `relay-full`, MAX_HELD_TOTAL). The per-IP token bucket (`rate-limited`, Retry-After) applies to every POST before the body is read.\n\nThe vote is released at `releaseAt` (default: max(now, time - RELEASE_MARGIN_S)); an explicit `releaseAt` must satisfy time - 3540 <= releaseAt <= time + 86400 and releaseAt <= now + MAX_HOLD_S, and a value in the past means now.",
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/VoteRequest" } } } },
         "responses": {
           "200": { "description": "this exact vote (same vote hash) is already stored; its current record", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/VoteReceipt" } } } },
@@ -37,7 +37,7 @@
     "/v1/votes/cancel": {
       "post": {
         "summary": "Cancel a held vote",
-        "description": "`sig` is the masternode's CURRENT voting key signing (Dash `signmessage`, DarkCoin message magic, the same scheme on every network) the text `govhub-relay-cancel-v1\\n<network>\\n<vote hash, lowercase display hex>` (relayCancelMessage in @govhub/verify). A held vote becomes `cancelled`; cancelling a cancelled vote is a no-op 200. Any other state is 409 `not-held` with the vote's `status`.",
+        "description": "`sig` is the masternode's CURRENT voting key signing (Dash `signmessage`, DarkCoin message magic, the same scheme on every network) the text `govhub-relay-cancel-v1\\n<network>\\n<vote hash, lowercase display hex>` (relayCancelMessage in @govhub/verify). A held vote becomes `cancelled`; cancelling a cancelled vote is a no-op 200. Any other state is 409 `not-held` with the vote's `status`; `sending` (voteraw in flight) is one of them.",
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CancelRequest" } } } },
         "responses": {
           "200": { "description": "cancelled", "content": { "application/json": { "schema": { "type": "object", "required": ["id", "status"], "additionalProperties": false, "properties": { "id": { "$ref": "#/components/schemas/VoteId" }, "status": { "type": "string", "enum": ["cancelled"] } } } } } },
@@ -104,6 +104,7 @@
               "bad-request",
               "wrong-network",
               "bad-vote",
+              "stale-vote",
               "bad-release",
               "unknown-mn",
               "mn-banned",
@@ -112,8 +113,11 @@
               "unknown-proposal",
               "not-a-proposal",
               "later-vote-held",
+              "already-current",
+              "newer-vote-in-core",
               "rate-limited",
               "too-many-held",
+              "relay-full",
               "unknown-id",
               "not-held",
               "too-large",
@@ -133,7 +137,7 @@
       },
       "Hash": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "lowercase hex in display (RPC) byte order; uppercase is accepted in requests" },
       "VoteId": { "type": "string", "pattern": "^[0-9a-f]{32}$", "description": "16 random bytes; the handle for status and cancel" },
-      "VoteStatus": { "type": "string", "enum": ["held", "broadcast", "confirmed", "failed", "cancelled", "superseded"] },
+      "VoteStatus": { "type": "string", "enum": ["held", "sending", "broadcast", "confirmed", "failed", "cancelled", "superseded"], "description": "`sending`: `voteraw` is in flight right now (a few seconds at most); the vote cannot be cancelled and ends as `broadcast`, back as `held` (retry) or `failed`. Clients must treat unknown statuses as non-final." },
       "VoteRequest": {
         "type": "object",
         "required": ["network", "collateralTxid", "collateralIndex", "govHash", "signal", "outcome", "time", "sig"],
@@ -182,7 +186,7 @@
           "attempts": { "type": "integer", "description": "voteraw calls that were answered (not counting `too-often` waits)" },
           "lastError": {
             "type": ["string", "null"],
-            "description": "a short code, never a raw Core message. While held: `too-often`, `unknown-proposal`, `core-error`, `not-visible` (re-broadcast pending). When failed: `obsolete`, `mn-gone`, `mn-banned`, `mn-not-valid`, `bad-signature`, `unknown-proposal`, `core-error`, `unconfirmed`"
+            "description": "a short code, never a raw Core message. While held (or `sending`): `too-often`, `unknown-proposal`, `core-error`, `not-visible` (re-broadcast pending). When failed: `obsolete`, `mn-gone`, `mn-banned`, `mn-not-valid`, `bad-signature`, `unknown-proposal`, `core-error`, `unconfirmed`"
           }
         }
       },

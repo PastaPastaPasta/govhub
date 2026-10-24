@@ -2,7 +2,7 @@
 // only as the hour it fell in. Release/signed times are client-chosen and needed to broadcast.
 import Database from 'better-sqlite3';
 
-export type VoteStatus = 'held' | 'broadcast' | 'confirmed' | 'failed' | 'cancelled' | 'superseded';
+export type VoteStatus = 'held' | 'sending' | 'broadcast' | 'confirmed' | 'failed' | 'cancelled' | 'superseded';
 export const FINAL_STATUSES = ['confirmed', 'failed', 'cancelled', 'superseded'] as const;
 
 export interface VoteRow {
@@ -97,17 +97,29 @@ export class Store {
       ),
       byId: db.prepare('SELECT * FROM votes WHERE id = ?'),
       byHash: db.prepare('SELECT * FROM votes WHERE vote_hash = ?'),
-      heldForKey: db.prepare(`SELECT * FROM votes WHERE collateral_txid = ? AND collateral_n = ? AND gov_hash = ? AND signal = ? AND status = 'held'`),
-      heldForMn: db.prepare(`SELECT COUNT(*) n FROM votes WHERE collateral_txid = ? AND collateral_n = ? AND status = 'held'`),
-      heldAll: db.prepare(`SELECT COUNT(*) n FROM votes WHERE status = 'held'`),
-      due: db.prepare(`SELECT * FROM votes WHERE status = 'held' AND release_at <= ? AND next_attempt_at <= ? ORDER BY release_at, id LIMIT ?`),
+      // held and in-flight votes of one (masternode, proposal, signal), newest signed time first
+      activeForKey: db.prepare(`SELECT * FROM votes WHERE collateral_txid = ? AND collateral_n = ? AND gov_hash = ? AND signal = ? AND status IN ('held', 'sending') ORDER BY time DESC, id`),
+      // held + sending: a vote in flight still occupies a slot
+      heldForMn: db.prepare(`SELECT COUNT(*) n FROM votes WHERE collateral_txid = ? AND collateral_n = ? AND status IN ('held', 'sending')`),
+      heldAll: db.prepare(`SELECT COUNT(*) n FROM votes WHERE status IN ('held', 'sending')`),
+      // next_attempt_at first: a vote that keeps failing moves into the future and cannot starve the others
+      due: db.prepare(`SELECT * FROM votes WHERE status = 'held' AND release_at <= ? AND next_attempt_at <= ? ORDER BY next_attempt_at, release_at, id LIMIT ?`),
+      newerLive: db.prepare(
+        `SELECT 1 FROM votes WHERE collateral_txid = ? AND collateral_n = ? AND gov_hash = ? AND signal = ? AND time > ? AND status IN ('held', 'sending', 'broadcast', 'confirmed') LIMIT 1`,
+      ),
       broadcast: db.prepare(`SELECT * FROM votes WHERE status = 'broadcast' ORDER BY broadcast_at, id`),
-      finish: db.prepare('UPDATE votes SET status = ?, finished_at = ?, last_error = ? WHERE id = ?'),
+      // never overwrites a final state (a cancel that won the race stays cancelled)
+      finish: db.prepare(`UPDATE votes SET status = ?, finished_at = ?, last_error = ? WHERE id = ? AND status IN ('held', 'sending', 'broadcast')`),
+      markSending: db.prepare(`UPDATE votes SET status = 'sending' WHERE id = ? AND status = 'held'`),
+      recoverSending: db.prepare(`UPDATE votes SET status = 'held', next_attempt_at = ? WHERE status = 'sending'`),
       cancelHeld: db.prepare(`UPDATE votes SET status = 'cancelled', finished_at = ?, last_error = NULL WHERE id = ? AND status = 'held'`),
       supersedeHeld: db.prepare(`UPDATE votes SET status = 'superseded', finished_at = ?, last_error = NULL WHERE id = ? AND status = 'held'`),
-      reschedule: db.prepare('UPDATE votes SET next_attempt_at = ?, last_error = ? WHERE id = ?'),
-      retry: db.prepare('UPDATE votes SET next_attempt_at = ?, last_error = ?, attempts = attempts + 1, fail_n = fail_n + 1 WHERE id = ?'),
-      sent: db.prepare(`UPDATE votes SET status = 'broadcast', broadcast_at = ?, attempts = attempts + 1, fail_n = 0, last_error = NULL WHERE id = ?`),
+      // sending -> held again (voteraw answered "wait" or failed transiently); also used on rows that are still held
+      reschedule: db.prepare(`UPDATE votes SET status = 'held', next_attempt_at = ?, last_error = ? WHERE id = ? AND status IN ('held', 'sending')`),
+      retry: db.prepare(
+        `UPDATE votes SET status = 'held', next_attempt_at = ?, last_error = ?, attempts = attempts + 1, fail_n = fail_n + 1 WHERE id = ? AND status IN ('held', 'sending')`,
+      ),
+      sent: db.prepare(`UPDATE votes SET status = 'broadcast', broadcast_at = ?, attempts = attempts + 1, fail_n = 0, last_error = NULL WHERE id = ? AND status = 'sending'`),
       confirm: db.prepare(`UPDATE votes SET status = 'confirmed', confirmed_at = ?, finished_at = ?, last_error = NULL WHERE id = ? AND status = 'broadcast'`),
       rebroadcast: db.prepare(`UPDATE votes SET status = 'held', next_attempt_at = ?, rebroadcasts = rebroadcasts + 1, last_error = 'not-visible' WHERE id = ? AND status = 'broadcast'`),
       lastBroadcast: db.prepare('SELECT at FROM last_broadcast WHERE collateral_txid = ? AND collateral_n = ? AND gov_hash = ? AND signal = ?'),
@@ -133,8 +145,12 @@ export class Store {
   getByVoteHash(hash: string): VoteRow | undefined {
     return this.q.byHash.get(hash) as VoteRow | undefined;
   }
-  heldForKey(k: VoteKey): VoteRow | undefined {
-    return this.q.heldForKey.get(k.txid, k.n, k.govHash, k.signal) as VoteRow | undefined;
+  activeForKey(k: VoteKey): VoteRow[] {
+    return this.q.activeForKey.all(k.txid, k.n, k.govHash, k.signal) as VoteRow[];
+  }
+  /** Is there a vote of the same key with a later signed time that is queued, in flight, broadcast or confirmed? Then this one is obsolete. */
+  hasNewerLive(k: VoteKey, time: number): boolean {
+    return this.q.newerLive.get(k.txid, k.n, k.govHash, k.signal, time) !== undefined;
   }
   countHeldForMn(txid: string, n: number): number {
     return (this.q.heldForMn.get(txid, n) as { n: number }).n;
@@ -157,10 +173,10 @@ export class Store {
     return this.q.supersedeHeld.run(now, id).changes > 0;
   }
   /** Terminal failure (or any other terminal state) with a short error code. */
-  finish(id: string, status: Exclude<VoteStatus, 'held' | 'broadcast'>, now: number, code: string | null): void {
+  finish(id: string, status: Exclude<VoteStatus, 'held' | 'sending' | 'broadcast'>, now: number, code: string | null): void {
     this.q.finish.run(status, now, code, id);
   }
-  /** Not a failure: try again at `at` (one-hour rule, future time, ...). */
+  /** Not a failure: (sending ->) held, try again at `at` (one-hour rule, future time, ...). */
   reschedule(id: string, at: number, code: string | null): void {
     this.q.reschedule.run(at, code, id);
   }
@@ -169,11 +185,18 @@ export class Store {
     this.q.retry.run(at, code, id);
     return (this.get(id) as VoteRow).fail_n;
   }
-  /** voteraw said "Voted successfully". */
+  /** held -> sending, atomically. False if the vote was not held any more (cancelled, superseded). Call right before voteraw. */
+  markSending(id: string): boolean {
+    return this.q.markSending.run(id).changes > 0;
+  }
+  /** Startup: rows left in `sending` by a crash go back to held, due now. Returns how many. */
+  recoverSending(now: number): number {
+    return this.q.recoverSending.run(now).changes;
+  }
+  /** voteraw said "Voted successfully" (or that Core already has the vote): sending -> broadcast. */
   markSent(row: VoteRow, now: number): void {
     this.db.transaction(() => {
-      this.q.sent.run(now, row.id);
-      this.q.upsertLast.run(row.collateral_txid, row.collateral_n, row.gov_hash, row.signal, now);
+      if (this.q.sent.run(now, row.id).changes > 0) this.q.upsertLast.run(row.collateral_txid, row.collateral_n, row.gov_hash, row.signal, now);
     })();
   }
   markConfirmed(id: string, now: number): void {

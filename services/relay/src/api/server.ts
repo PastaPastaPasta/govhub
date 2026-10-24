@@ -4,6 +4,7 @@ import { getConnInfo } from '@hono/node-server/conninfo';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { cors } from 'hono/cors';
+import { ipBucket, peerTrust, resolveClientIp } from '../clientip.ts';
 import { log } from '../log.ts';
 import { IpLimiter } from '../ratelimit.ts';
 import { RelayError, type Relay } from '../relay.ts';
@@ -17,15 +18,11 @@ function allowedMethods(path: string): string[] | null {
   return null;
 }
 
-function clientIp(c: Context, header: string): string {
-  if (header) {
-    const v = c.req.header(header);
-    if (v) return v.split(',')[0]!.trim();
-  }
+function socketPeer(c: Context): string | undefined {
   try {
-    return getConnInfo(c).remote.address ?? 'unknown';
+    return getConnInfo(c).remote.address ?? undefined;
   } catch {
-    return 'unknown'; // no socket (tests): everyone shares one bucket
+    return undefined; // no socket (tests): everyone shares one bucket
   }
 }
 
@@ -36,6 +33,7 @@ function errorBody(e: RelayError): Record<string, unknown> {
 export function createApp(relay: Relay): Hono {
   const app = new Hono();
   const ipLimiter = new IpLimiter(relay.cfg.rateIpPerMin, relay.clock);
+  const trusted = peerTrust(relay.cfg.trustedProxyCidrs);
 
   const fail = (c: Context, e: RelayError) => {
     if (e.retryAfter !== undefined) c.header('Retry-After', String(e.retryAfter));
@@ -64,7 +62,8 @@ export function createApp(relay: Relay): Hono {
 
   // POST guard: IP rate limit, then body size. Runs before any body is read.
   const ipGuard: MiddlewareHandler = async (c, next) => {
-    const wait = ipLimiter.take(clientIp(c, relay.cfg.clientIpHeader));
+    const ip = resolveClientIp({ header: relay.cfg.clientIpHeader, get: (n) => c.req.header(n), peer: socketPeer(c), trusted });
+    const wait = ipLimiter.take(ipBucket(ip));
     if (wait > 0) return fail(c, new RelayError(429, 'rate-limited', 'too many requests, slow down', {}, wait));
     return next();
   };

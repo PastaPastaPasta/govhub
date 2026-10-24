@@ -3,6 +3,7 @@
 // CORE_RPC_PASSWORD_FILE; CORE_RPC_PASSWORD exists for local development only. An empty value means the default.
 import { readFileSync } from 'node:fs';
 import type { Network } from '@govhub/verify';
+import { validateProxyList } from './clientip.ts';
 
 export type CoreNetwork = Extract<Network, 'mainnet' | 'testnet' | 'regtest' | 'devnet'>;
 
@@ -20,6 +21,12 @@ export interface RelayConfig {
   rateMnPerHour: number;
   /** Header carrying the client IP (e.g. `cf-connecting-ip` behind cloudflared). Empty = the socket address. */
   clientIpHeader: string;
+  /** Socket peers allowed to supply `clientIpHeader` (IPv4 CIDRs, exact IPv6). Empty = any peer. */
+  trustedProxyCidrs: string[];
+  /** A vote whose signed time is older than this is refused (`stale-vote`): stops replays of old public votes. */
+  maxPastS: number;
+  /** Held (and in-flight) votes over all masternodes; more is 503 `relay-full`. */
+  maxHeldTotal: number;
   proposalSubmit: boolean;
   minCollateralConfs: number;
   retentionDays: number;
@@ -64,6 +71,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RelayConfig {
     }
   }
 
+  const trustedProxyCidrs = str(env, 'TRUSTED_PROXY_CIDRS', '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  validateProxyList(trustedProxyCidrs);
+
   return {
     network,
     core: {
@@ -80,6 +93,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RelayConfig {
     rateIpPerMin: int(env, 'RATE_IP_PER_MIN', 30, 1),
     rateMnPerHour: int(env, 'RATE_MN_PER_HOUR', 24, 1),
     clientIpHeader: str(env, 'CLIENT_IP_HEADER', '').toLowerCase(),
+    trustedProxyCidrs,
+    maxPastS: int(env, 'MAX_PAST_S', 86_400, 1),
+    maxHeldTotal: int(env, 'MAX_HELD_TOTAL', 100_000, 1),
     proposalSubmit: bool(env, 'PROPOSAL_SUBMIT', true),
     minCollateralConfs: int(env, 'MIN_COLLATERAL_CONFS', 6, 1),
     retentionDays: int(env, 'RETENTION_DAYS', 7, 1),
@@ -101,6 +117,9 @@ export function describeConfig(c: RelayConfig): Record<string, unknown> {
     rateIpPerMin: c.rateIpPerMin,
     rateMnPerHour: c.rateMnPerHour,
     clientIpHeader: c.clientIpHeader || null,
+    trustedProxyCidrs: c.trustedProxyCidrs,
+    maxPastS: c.maxPastS,
+    maxHeldTotal: c.maxHeldTotal,
     proposalSubmit: c.proposalSubmit,
     minCollateralConfs: c.minCollateralConfs,
     retentionDays: c.retentionDays,

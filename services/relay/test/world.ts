@@ -44,6 +44,7 @@ interface FakeMn {
 
 interface FakeVote {
   hash: string;
+  gov?: string;
   time: number;
   outcome: number;
   signal: number;
@@ -69,6 +70,10 @@ export class FakeCore implements CoreClient {
   voterawErrors: unknown[] = [];
   /** voteraw answers "Voted successfully" but the vote is lost */
   blackhole = false;
+  /** every `gobject getcurrentvotes` fails with this (a JSON-RPC error or a transport error) */
+  currentVotesError: unknown = null;
+  /** awaited inside voteraw before it answers (lets a test act while a vote is `sending`) */
+  voterawGate: Promise<void> | null = null;
   submitError: unknown = null;
   submitResult: unknown = null;
   private readonly clock: FakeClock;
@@ -126,8 +131,9 @@ export class FakeCore implements CoreClient {
       if (!this.gobjects.has(String(params[1]))) throw rpcErr('gobject', -8, 'Unknown governance-hash');
       if (typeof params[3] !== 'string') throw rpcErr('gobject', -3, 'JSON value is not a string as expected'); // Core's vout is a STR
       const out: Record<string, string> = {};
+      if (this.currentVotesError) throw this.currentVotesError;
       for (const v of this.votes.values()) {
-        if (v.txid !== params[2] || String(v.n) !== params[3]) continue;
+        if ((v.gov !== undefined && v.gov !== params[1]) || v.txid !== params[2] || String(v.n) !== params[3]) continue;
         out[v.hash] = `${v.txid}-${v.n}:${v.time}:${VOTE_OUTCOME_NAMES[v.outcome]}:${VOTE_SIGNAL_NAMES[v.signal]}:1`;
       }
       return out;
@@ -139,7 +145,23 @@ export class FakeCore implements CoreClient {
     throw rpcErr('gobject', -8, 'Must be a valid command');
   }
 
-  private voteraw(p: unknown[]): string {
+  /** Puts a vote straight into Core's current votes (as if a peer relayed it), without voteraw's rules. */
+  addCurrentVote(m: { txid: string; n: number }, gov: string, outcome: 'yes' | 'no' | 'abstain', time: number): string {
+    const o = VOTE_OUTCOME_NAMES.indexOf(outcome);
+    const hash = governanceVoteHash({ collateralTxid: m.txid, collateralIndex: m.n, govHashDisplay: gov, signal: 1, outcome: o, time });
+    this.votes.set(`${m.txid}-${m.n}|${gov}|1`, { hash, gov, time, outcome: o, signal: 1, txid: m.txid, n: m.n, lastUpdate: this.clock.now() });
+    return hash;
+  }
+
+  private voteraw(p: unknown[]): string | Promise<string> {
+    if (this.voterawGate) {
+      const gate = this.voterawGate;
+      return gate.then(() => this.voterawNow(p));
+    }
+    return this.voterawNow(p);
+  }
+
+  private voterawNow(p: unknown[]): string {
     const [txid, n, gov, signalName, outcomeName, time, sig] = p as [string, number, string, string, string, number, string];
     const err = this.voterawErrors.shift();
     if (err) throw err;
@@ -153,13 +175,15 @@ export class FakeCore implements CoreClient {
     const outcome = VOTE_OUTCOME_NAMES.indexOf(outcomeName as 'yes');
     const key = `${txid}-${n}|${gov}|${signal}`;
     const cur = this.votes.get(key);
+    const hash = governanceVoteHash({ collateralTxid: txid, collateralIndex: n, govHashDisplay: gov, signal, outcome, time });
+    // governance.cpp ProcessVote: a vote hash Core already has returns false with an empty exception message
+    if (cur && cur.hash === hash) throw rpcErr('voteraw', -32603, 'Error voting : ');
     if (cur && time < cur.time) throw rpcErr('voteraw', -32603, 'Error voting : CGovernanceObject::ProcessVote -- Obsolete vote');
     if (cur && cur.lastUpdate > now - 3600) {
       throw rpcErr('voteraw', -32603, `Error voting : CGovernanceObject::ProcessVote -- Masternode voting too often, MN outpoint = ${txid}-${n}, governance object hash = ${gov}`);
     }
     if (!this.blackhole) {
-      const hash = governanceVoteHash({ collateralTxid: txid, collateralIndex: n, govHashDisplay: gov, signal, outcome, time });
-      this.votes.set(key, { hash, time, outcome, signal, txid, n, lastUpdate: now });
+      this.votes.set(key, { hash, gov, time, outcome, signal, txid, n, lastUpdate: now });
     }
     return 'Voted successfully';
   }

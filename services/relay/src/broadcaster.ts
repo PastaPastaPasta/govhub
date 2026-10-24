@@ -5,7 +5,9 @@
 // Core rules respected (Dash Core governance/object.cpp ProcessVote, vote.cpp IsValid, rpc/governance.cpp voteraw):
 //  - a vote timed more than 1 h ahead of Core's clock is refused  -> wait until time - 1 h + 60 s;
 //  - one accepted change per (masternode, object, signal) per hour, measured on Core's receive time -> keep >= 1 h + 30 s apart;
-//  - a vote older than the masternode's current one is "Obsolete" -> terminal.
+//  - a vote older than the masternode's current one is "Obsolete" -> terminal;
+//  - a vote Core already has answers with an empty message ("Error voting : ") -> not an error, the confirmer decides.
+// A vote is `sending` while voteraw is in flight, so a cancel cannot race with it.
 // Logs never contain outpoints, vote hashes or Core's raw messages: only the relay id and a short error code.
 import { VOTE_MAX_FUTURE_S, VOTE_UPDATE_MIN_S, voteRawParams, type VoteFields } from '@govhub/verify';
 import type { RelayConfig } from './config.ts';
@@ -22,6 +24,11 @@ const UNKNOWN_PROPOSAL_GIVE_UP_S = 6 * 3600;
 const BROADCAST_EVERY_S = 5;
 const CONFIRM_EVERY_S = 30;
 const PURGE_EVERY_S = 3600;
+
+/** Core's answer to a vote it already has (governance.cpp ProcessVote: empty message; object.cpp ProcessVote: "Already known valid vote"). */
+export function isKnownVote(msg: string): boolean {
+  return msg.replace(/^\s*Error voting\s*:?/i, '').trim() === '' || /already known|already have|known valid vote/i.test(msg);
+}
 
 const backoff = (base: number, cap: number, n: number): number => Math.min(cap, base * 2 ** Math.min(n, 30));
 
@@ -55,6 +62,9 @@ export class Broadcaster {
     this.mns = d.mns;
     this.clock = d.clock;
     this.lastPurge = d.clock();
+    // a crash between "sending" and the answer leaves rows behind; retry them now (Core answers "known" if the vote did get through)
+    const recovered = this.store.recoverSending(d.clock());
+    if (recovered) log.warn('votes left in sending by a crash went back to held', { count: recovered });
   }
 
   start(): void {
@@ -97,9 +107,16 @@ export class Broadcaster {
   }
 
   private async attempt(id: string): Promise<void> {
-    let row = this.store.get(id);
+    const row = this.store.get(id);
     if (!row || row.status !== 'held') return;
     let now = this.clock();
+
+    // a newer vote for the same key was queued while this one was in flight (and this one went back to held): never send the older
+    const key = { txid: row.collateral_txid, n: row.collateral_n, govHash: row.gov_hash, signal: row.signal };
+    if (this.store.hasNewerLive(key, row.time)) {
+      this.store.finish(row.id, 'superseded', this.clock(), null);
+      return;
+    }
 
     let mn;
     try {
@@ -125,28 +142,40 @@ export class Broadcaster {
       }
     }
 
-    // cancelled while we were asking for the masternode list?
-    row = this.store.get(id);
-    if (!row || row.status !== 'held') return;
+    // Claim the vote: held -> sending in one conditional UPDATE, nothing awaited in between. A cancel that landed while we were
+    // asking for the masternode list wins here (no row changed); a cancel that arrives from now on sees `sending` and is refused.
+    if (!this.store.markSending(id)) return;
 
-    let result: unknown;
     try {
-      result = await this.core.call('voteraw', voteRawParams(fieldsOf(row), row.sig_b64));
-    } catch (e) {
+      let result: unknown;
+      try {
+        result = await this.core.call('voteraw', voteRawParams(fieldsOf(row), row.sig_b64));
+      } catch (e) {
+        now = this.clock();
+        this.onVoterawError(row, now, rpcMessage(e));
+        return;
+      }
       now = this.clock();
-      this.onVoterawError(row, now, rpcMessage(e));
-      return;
+      if (typeof result === 'string' && /Voted successfully/i.test(result)) {
+        this.store.markSent(row, now);
+        return;
+      }
+      this.coreError(row, now); // an answer we do not understand: treat like a Core error
+    } finally {
+      // whatever went wrong above, a row must not stay `sending` until the next restart
+      if (this.store.get(id)?.status === 'sending') this.coreError(row, this.clock());
     }
-    now = this.clock();
-    if (typeof result === 'string' && /Voted successfully/i.test(result)) {
-      this.store.markSent(row, now);
-      return;
-    }
-    this.coreError(row, now); // an answer we do not understand: treat like a Core error
   }
 
   private onVoterawError(row: VoteRow, now: number, msg: string | null): void {
     if (msg !== null) {
+      // Core already has this exact vote (relayed by someone else, or an earlier attempt of ours whose answer we lost): not an error.
+      // ProcessVote returns false for a known vote hash with an EMPTY exception message ("Error voting : "), and CGovernanceObject::
+      // ProcessVote says "Already known valid vote". Hand it to the confirmer, which decides confirmed / superseded / re-broadcast.
+      if (isKnownVote(msg)) {
+        this.store.markSent(row, now);
+        return;
+      }
       if (/voting too often/i.test(msg)) {
         // someone (this relay, another relay, the operator) changed this vote within the hour: wait it out, not a failure
         this.store.reschedule(row.id, now + TOO_OFTEN_WAIT_S, 'too-often');
