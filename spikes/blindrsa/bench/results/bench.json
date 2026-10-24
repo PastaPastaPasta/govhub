@@ -1,0 +1,239 @@
+{
+  "host": {
+    "cpu": "Apple M4 Pro",
+    "cores": 14,
+    "node": "v22.23.2",
+    "openssl": "3.5.7",
+    "platform": "darwin arm64"
+  },
+  "node2048": {
+    "issuer": {
+      "openssl_privateDecrypt_raw_ms": {
+        "median": 0.319,
+        "p95": 0.401,
+        "n": 200
+      },
+      "issuer_blindSign_with_verify_ms": {
+        "median": 0.34,
+        "p95": 0.442,
+        "n": 200
+      },
+      "bigint_noncrt_modexp_ms": {
+        "median": 8.394,
+        "p95": 9.324,
+        "n": 20
+      },
+      "library_blindSign_sjcl_ms": {
+        "median": 223.885,
+        "p95": 235.675,
+        "n": 20
+      }
+    },
+    "client": {
+      "prepare_ms": {
+        "median": 0.014,
+        "p95": 0.029,
+        "n": 100
+      },
+      "blind_ms": {
+        "median": 17.584,
+        "p95": 19.134,
+        "n": 100
+      },
+      "finalize_ms": {
+        "median": 4.069,
+        "p95": 4.43,
+        "n": 100
+      },
+      "verify_ms": {
+        "median": 0.093,
+        "p95": 0.157,
+        "n": 100
+      },
+      "verify100_sequential_total_ms": 3.74
+    }
+  },
+  "node3072": {
+    "issuer": {
+      "openssl_privateDecrypt_raw_ms": {
+        "median": 0.945,
+        "p95": 1.14,
+        "n": 200
+      },
+      "issuer_blindSign_with_verify_ms": {
+        "median": 0.969,
+        "p95": 1.108,
+        "n": 200
+      },
+      "bigint_noncrt_modexp_ms": {
+        "median": 27.323,
+        "p95": 30.059,
+        "n": 20
+      },
+      "library_blindSign_sjcl_ms": {
+        "median": 727.905,
+        "p95": 839.317,
+        "n": 20
+      }
+    },
+    "client": {
+      "prepare_ms": {
+        "median": 0.014,
+        "p95": 0.022,
+        "n": 100
+      },
+      "blind_ms": {
+        "median": 39.669,
+        "p95": 48.9,
+        "n": 100
+      },
+      "finalize_ms": {
+        "median": 9.11,
+        "p95": 11.179,
+        "n": 100
+      },
+      "verify_ms": {
+        "median": 0.117,
+        "p95": 0.155,
+        "n": 100
+      },
+      "verify100_sequential_total_ms": 5.23
+    }
+  },
+  "chromium": {
+    "version": "156.0.8078.4",
+    "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.8078.4 Safari/537.36"
+  },
+  "chromium2048": {
+    "importKey_ms": {
+      "median": 0.1,
+      "p95": 5.7,
+      "n": 10
+    },
+    "prepare_ms": {
+      "median": 0,
+      "p95": 0.1,
+      "n": 40
+    },
+    "blind_ms": {
+      "median": 15.9,
+      "p95": 18.4,
+      "n": 40
+    },
+    "finalize_ms": {
+      "median": 3.5,
+      "p95": 4,
+      "n": 40
+    },
+    "verifyBadge_ms": {
+      "median": 0,
+      "p95": 0.2,
+      "n": 40
+    },
+    "reader100": {
+      "firstVerifyColdMs": 0.1,
+      "sequentialTotalMs": 1.8,
+      "sequentialPerVerifyMs": 0.018,
+      "thousandSequentialTotalMs": 18.3,
+      "thousandPerVerifyMs": 0.0183,
+      "parallelPromiseAllTotalMs": 1.9,
+      "seqRounds": [
+        1.8,
+        2.2,
+        2,
+        1.8,
+        1.6,
+        1.8,
+        1.9
+      ],
+      "parRounds": [
+        2.1,
+        1.9,
+        1.9,
+        1.9,
+        1.9,
+        1.7,
+        1.7
+      ]
+    }
+  },
+  "chromium3072": {
+    "importKey_ms": {
+      "median": 0.1,
+      "p95": 0.2,
+      "n": 10
+    },
+    "prepare_ms": {
+      "median": 0,
+      "p95": 0.1,
+      "n": 40
+    },
+    "blind_ms": {
+      "median": 33.8,
+      "p95": 40.1,
+      "n": 40
+    },
+    "finalize_ms": {
+      "median": 7.5,
+      "p95": 9.2,
+      "n": 40
+    },
+    "verifyBadge_ms": {
+      "median": 0,
+      "p95": 0.1,
+      "n": 40
+    },
+    "reader100": {
+      "firstVerifyColdMs": 0,
+      "sequentialTotalMs": 2.9,
+      "sequentialPerVerifyMs": 0.029,
+      "thousandSequentialTotalMs": 29.1,
+      "thousandPerVerifyMs": 0.0291,
+      "parallelPromiseAllTotalMs": 3,
+      "seqRounds": [
+        3,
+        2.8,
+        2.8,
+        2.9,
+        2.9,
+        3,
+        3.1
+      ],
+      "parRounds": [
+        2.9,
+        3.5,
+        3.1,
+        3,
+        3.1,
+        2.9,
+        2.7
+      ]
+    }
+  },
+  "sizes": {
+    "2048": {
+      "spki_rsaEncryption_bytes": 294,
+      "spki_rsassaPss_params_bytes": 346,
+      "chromium_imports_rsaEncryption_spki": "ok",
+      "chromium_imports_pss_oid_spki": "DataError",
+      "mnBadge_payload_bytes": 356,
+      "node_imports_pss_oid_spki": "DataError: Invalid key type"
+    },
+    "3072": {
+      "spki_rsaEncryption_bytes": 422,
+      "spki_rsassaPss_params_bytes": 474,
+      "chromium_imports_rsaEncryption_spki": "ok",
+      "chromium_imports_pss_oid_spki": "DataError",
+      "mnBadge_payload_bytes": 484,
+      "node_imports_pss_oid_spki": "DataError: Invalid key type"
+    },
+    "4096": {
+      "spki_rsaEncryption_bytes": 550,
+      "spki_rsassaPss_params_bytes": 602,
+      "chromium_imports_rsaEncryption_spki": "ok",
+      "chromium_imports_pss_oid_spki": "DataError",
+      "mnBadge_payload_bytes": 612,
+      "node_imports_pss_oid_spki": "DataError: Invalid key type"
+    }
+  }
+}
