@@ -1568,6 +1568,11 @@ details summary {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.8125rem;
 }
+/* The string to sign wraps anywhere, never at its hyphen: "govhub-" + newline would read as part of it. */
+.claim-form pre,
+.sign-howto code {
+  word-break: break-all;
+}
 .owner-post {
   margin-block-start: 2rem;
   max-inline-size: 60rem;
