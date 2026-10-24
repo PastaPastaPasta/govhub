@@ -77,10 +77,46 @@ Environment variables plus mounted secret files. An empty value means the defaul
 | `RECONCILE_INTERVAL_S` | `600` | `gobject list` reconciliation period (min 10) |
 | `PORTAL_PROPOSAL_URL` | `https://gov.dashhq.org/p/{hash}` | DashCentral `dw_url`; `{hash}`, `{name}` substituted |
 | `BRIDGE_LOG_LEVEL` | `info` | JSON lines on stderr |
+| `QUORUM_PROOF` | `1` | `0` disables `/v1/quorum-proof` (404). See "Quorum proof relay" |
+| `QUORUM_PROOF_MAX_SPAN` | `100000` | refuse checkpoints more than this many blocks below the tip (proof cost grows linearly with the span) |
+| `QUORUM_PROOF_RATE_PER_MIN` / `QUORUM_PROOF_RATE_BURST` | `12` / `4` | per-client token bucket, charged on cache misses only |
+| `QUORUM_PROOF_WORKERS` / `QUORUM_PROOF_QUEUE` | `2` / `8` | concurrent Core calls / requests allowed to wait for one; more get 503 |
+| `QUORUM_PROOF_DEADLINE_MS` | `90000` | deadline of one `getquorumproofchain` call (no retries) |
+| `QUORUM_PROOF_COOLDOWN_MS` | `120000` | a worker whose call timed out (or died slowly) stays reserved this long: Core finishes a build even after its client is gone |
+| `QUORUM_PROOF_CACHE_TTL_MS` | `15000` | response cache (64 entries / 16 MB) |
+| `CLIENT_IP_HEADER` | | header carrying the client IP set by the proxy in front (`cf-connecting-ip` behind cloudflared; `x-forwarded-for` behind caddy, whose RIGHTMOST entry is used). Empty = the socket address. Only used for rate limits, never stored or logged |
+| `TRUSTED_PROXY_CIDRS` | | comma-separated IPv4 CIDRs / exact IPv6 addresses allowed to supply `CLIENT_IP_HEADER`; empty = any peer |
 
 Core must run with `txindex=1` (collateral lookups; without it Core accepts **no** proposals at all, see Findings),
 governance enabled, the four `zmqpub*` topics on one endpoint, and `zmqpub*hwm=200000` on **all** four topics (they share
 one socket; deploy/dashd/dash.conf has the exact lines).
+
+## Quorum proof relay
+
+`GET /v1/quorum-proof` and `POST /v1/quorum-proof` relay dashd's `getquorumproofchain` (Dash Core v24, DIP 175 "DASHNC02"
+quorum proof chains). A proof authenticates itself from a checkpoint the client already holds, so **the bridge is an
+untrusted relay**: a client verifies the bytes against its own checkpoint and must not trust the bridge, or the
+`X-Proof-*` headers, for anything. It needs Core v24 (v24.0.0-rc.4 or newer); a bridge on Core 23.x (mainnet runs 23.1.x
+until V24 activates) answers `501 unsupported`.
+
+| | |
+|---|---|
+| Request | `checkpoint` (64 hex, required), `height` (minimum target height, default 0 = latest ChainLock), `quorumHash` + `llmqType` (together; also return that quorum's record), `nodeCount` (0..15 EvoNode records). GET takes them as query parameters, POST as a JSON body (camelCase, <= 1 KB; the same body as the quorum-list-server `POST /proofs`, with the last three optional). Unknown parameters/fields are `400` |
+| Response `200` | `application/octet-stream`: the raw DASHNC02 chain, or the bootstrap when `quorumHash`/`nodeCount` asked for records. `Cache-Control: no-store`; `X-Proof-Target-Height`, `X-Proof-Format: chain\|bootstrap` (exposed to browsers through CORS) |
+| Errors | JSON `{"error": "<code>", "message": "..."}`: `400 bad-request`, `404 checkpoint-unknown`, `409 not-yet` (the requested minimum height is not ChainLocked yet: retry), `413 too-large`, `422 checkpoint-too-old` / `no-bridge`, `429 rate-limited` (+ `Retry-After`), `501 unsupported`, `502 core`, `503 busy` (+ `Retry-After`) |
+
+Load control, mirroring the quorum-list-server relay: responses are cached for 15 s (64 entries, 16 MB), a request with a
+minimum `height` is also answered from a cached proof of the same checkpoint and records whose target height is at or above
+it (whatever height that proof was requested with; an exact-key hit first, else the covering proof with the highest target), and identical
+concurrent requests share one Core call; at most 2 Core calls run at once with 8 waiting, beyond that `503`; cache
+misses (not hits, not joins of a running call) cost the client a token of its bucket (12 per minute, burst 4); the
+checkpoint's height is looked up first (`getblockheader`, cached) and checkpoints more than 100000 blocks below the tip
+get `422` instead of an expensive build. Proof cost grows linearly with the distance from the checkpoint, so cold proofs
+over long spans take seconds. Core credentials and Core's error bodies are never returned.
+
+The client address for the rate limit comes from `CLIENT_IP_HEADER` / `TRUSTED_PROXY_CIDRS` (same semantics as
+services/relay); without them every client shares the socket peer's bucket, so set `CLIENT_IP_HEADER` when the bridge sits
+behind a tunnel or proxy.
 
 ## What the bridge stores and checks
 

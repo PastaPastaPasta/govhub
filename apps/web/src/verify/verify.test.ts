@@ -149,7 +149,7 @@ describe('what is verified and what is node-reported (ChainLock, confirmations, 
       ...tx, confirmations: 760, chainLocked: final ? 'verified' : 'claimed',
       proof: {
         merkle: true, blockHash: 'verified', notes: [],
-        anchor: { tip: tx.height + 999, confirmations: 1000, chainLockHeight: final ? tx.height + 998 : tx.height - 1, weak: null },
+        anchor: { tip: tx.height + 999, confirmations: 1000, chainLockHeight: final ? tx.height + 998 : tx.height - 1, weak: null, trust: 'proof-of-work' },
         chainLock: final ? { height: tx.height + 998, blockHash: 'aa'.repeat(32), quorumHash: 'bb'.repeat(32), exact: true, verifiedConfirmations: 999 } : null,
       },
     });
@@ -161,7 +161,7 @@ describe('what is verified and what is node-reported (ChainLock, confirmations, 
     expect(stepOf(v, 'chainlock')).toMatchObject({ status: 'ok', basis: 'verified' });
     expect(stepOf(v, 'height').basis).toBe('verified');
     expect(v.steps.some((s) => s.id === 'crosscheck')).toBe(false); // no second node needed
-    expect(v.chain!.anchored).toEqual({ tip: tx.height + 999, confirmations: 1000, chainLockHeight: tx.height + 998, final: true, weak: null });
+    expect(v.chain!.anchored).toEqual({ tip: tx.height + 999, confirmations: 1000, chainLockHeight: tx.height + 998, final: true, weak: null, trust: 'proof-of-work' });
     // the same proof on a chain proof of work does not protect (testnet): every chain step stays "reported"
     const t = anchoredTx(true);
     const weak = verifyCollateral(p, { ...t, proof: { ...t.proof, anchor: { ...t.proof.anchor!, weak: 'testnet difficulty is too low' } } }, 'mainnet');
@@ -174,6 +174,29 @@ describe('what is verified and what is node-reported (ChainLock, confirmations, 
     expect(stepOf(w, 'confirmations').basis).toBe('verified');
     // nothing in any step mentions developer parameters
     expect([...v.steps, ...w.steps].map((s) => s.detail).join(' ')).not.toMatch(/maxHeaderSpan/);
+  });
+
+  it('testnet: a chain anchored on a quorum-proven ChainLock makes the chain facts "verified"; proof of work keeps them "reported"', async () => {
+    const p = byName('OrchardPay');
+    const tx = await recorded(p.collateralTxid);
+    const anchored = (trust: 'quorum-proof' | 'proof-of-work', weak: string | null): TxLookup => ({
+      ...tx, confirmations: 760, chainLocked: 'verified',
+      proof: {
+        merkle: true, blockHash: 'verified', notes: [],
+        anchor: { tip: tx.height + 999, confirmations: 1000, chainLockHeight: tx.height + 998, weak, trust },
+        chainLock: { height: tx.height + 998, blockHash: 'aa'.repeat(32), quorumHash: 'bb'.repeat(32), exact: true, verifiedConfirmations: 999 },
+      },
+    });
+    const proven = verifyCollateral(p, anchored('quorum-proof', null), 'testnet');
+    for (const id of ['block', 'confirmations', 'chainlock', 'height']) expect(stepOf(proven, id).basis, id).toBe('verified');
+    expect(proven.chain!.weak).toBeUndefined();
+    const status = collateralStatus(proven.chain!);
+    expect(status.prov.kind).toBe('verified');
+    expect(status.prov.detail).toContain('quorum checkpoint (no proof of work)');
+    expect(collateralHeightProv(proven.chain!, proven.chain!.height, { kind: 'fixture', source: 'x' }).kind).toBe('verified');
+    const pow = verifyCollateral(p, anchored('proof-of-work', 'testnet difficulty is too low'), 'testnet');
+    for (const id of ['block', 'confirmations', 'chainlock', 'height']) expect(stepOf(pow, id).basis, id).toBe('reported');
+    expect(collateralStatus(pow.chain!).prov.kind).toBe('reported');
   });
 
   it('testnet: the fallback ChainLock proof (chain not anchored) is never "verified"; every chain fact is "reported (not secure)"', async () => {

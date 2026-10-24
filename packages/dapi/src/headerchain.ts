@@ -18,6 +18,7 @@
 import { bytesEqual, hashBytes, hashHex } from './bytes.ts';
 import type { Network } from './chainlock.ts';
 import { VerificationError } from './errors.ts';
+import type { VerifiedChain } from './linkedchain.ts';
 import { type HeaderTiming, MAX_FUTURE_BLOCK_TIME, type PowParams, checkProofOfWork, compactToTarget, medianTimePast, nextWorkRequired } from './pow.ts';
 
 export interface Checkpoint {
@@ -85,14 +86,15 @@ export interface StoredChain {
 }
 
 const view = (b: Uint8Array) => new DataView(b.buffer, b.byteOffset, b.byteLength);
-const prevHashOf = (headers: Uint8Array, i: number) => headers.subarray(i * 80 + 4, i * 80 + 36);
+export const prevHashOf = (headers: Uint8Array, i: number): Uint8Array => headers.subarray(i * 80 + 4, i * 80 + 36);
 const timingOf = (headers: Uint8Array, i: number): HeaderTiming => {
   const dv = view(headers);
   return { time: dv.getUint32(i * 80 + 68, true), bits: dv.getUint32(i * 80 + 72, true) };
 };
 const fail = (height: number, msg: string): never => { throw new VerificationError('header-chain', `block ${height}: ${msg}`, height); };
 
-function checkRun(run: HeaderRun): number {
+/** Shape and internal linkage of a run; returns its header count. */
+export function checkRun(run: HeaderRun): number {
   const n = run.headers.length / 80;
   if (!Number.isInteger(n) || n < 1 || run.hashes.length !== n * 32) throw new VerificationError('header-chain', 'header run is malformed');
   for (let i = 1; i < n; i++) {
@@ -101,7 +103,7 @@ function checkRun(run: HeaderRun): number {
   return n;
 }
 
-export class HeaderChain {
+export class HeaderChain implements VerifiedChain {
   readonly network: Network;
   readonly checkpoint: Checkpoint;
   #lo: number;

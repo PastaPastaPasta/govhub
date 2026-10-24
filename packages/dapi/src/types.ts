@@ -5,7 +5,9 @@ import type { Network } from './chainlock.ts';
 import type { ChainLock, InstantLock, MerkleBlock, Tx } from './dash.ts';
 import type { NodePool } from './pool.ts';
 import type { MergeStats } from './race.ts';
-import type { Checkpoint, HeaderChain, StoredChain } from './headerchain.ts';
+import type { Checkpoint, StoredChain } from './headerchain.ts';
+import type { StoredLinkedChain, VerifiedChain } from './linkedchain.ts';
+import type { ProofSource, ProofState, VerifiedQuorumProof } from './quorumproof.ts';
 import type { Sml, SmlQuorum } from './sml.ts';
 import type { SmlProof } from './smlproof.ts';
 
@@ -16,6 +18,8 @@ export interface Verifiers {
   hashHeaders?: (headers: Uint8Array) => Uint8Array;
   /** `verifyChainLock` from '@govhub/dapi/bls'. */
   verifyChainLock?: (cl: ChainLock, quorums: readonly SmlQuorum[], o?: VerifyChainLockOptions) => ChainLockCheck;
+  /** `verifyQuorumProof` from '@govhub/dapi/coreproof' (DIP 175 proof chains, WebAssembly). Without it anchoring uses proof of work. */
+  verifyQuorumProof?: (proof: Uint8Array, trusted: ProofState, minimumHeight?: number) => VerifiedQuorumProof;
 }
 
 export interface DapiOptions {
@@ -92,7 +96,7 @@ export interface VerifiedTransaction {
     blockHash: 'verified' | 'claimed';
     chainLock: null | { height: number; blockHash: string; quorumHash: string; exact: boolean; verifiedConfirmations: number };
     /** The block is in the verified chain of `options.anchor`: `confirmations` = verified tip - height + 1 (a lower bound). */
-    anchor: null | { tip: number; confirmations: number; chainLockHeight: number; weak: string | null };
+    anchor: null | { tip: number; confirmations: number; chainLockHeight: number; weak: string | null; /** what the chain rests on */ trust: AnchorTrust['kind'] };
     /** Why the ChainLock was not verified, when it was not. */
     notes: string[];
   };
@@ -100,15 +104,24 @@ export interface VerifiedTransaction {
 }
 
 /** Where anchorChain keeps the verified header run between sessions (the web app uses IndexedDB). */
-export interface HeaderStore {
-  load(network: Network): Promise<StoredChain | null>;
-  save(chain: StoredChain): Promise<void>;
+export interface HeaderStore<T extends { network: Network } = StoredChain> {
+  load(network: Network): Promise<T | null>;
+  save(chain: T): Promise<void>;
 }
 
 export interface AnchorOptions extends CallOptions {
   /** Lowest height that must be in the verified chain (a collateral block, say). Default: just the checkpoint region. */
   from?: number;
+  /** The proof-of-work run (used when no quorum proof can be had). */
   store?: HeaderStore;
+  /**
+   * Untrusted sources of DIP 175 quorum proofs (a bridge's /v1/quorum-proof, the quorum list server's /proofs), tried in order. With
+   * one that works and `verifiers.verifyQuorumProof`, the chain is anchored on ChainLocks proven from the pinned quorum checkpoint and
+   * proof of work plays no part; otherwise anchoring falls back to proof of work and says why in `trust.fallback`.
+   */
+  proofSources?: readonly ProofSource[];
+  /** The ChainLock-anchored run and its last verified state (later proofs start there and are short). */
+  proofStore?: HeaderStore<StoredLinkedChain>;
   onProgress?: (message: string) => void;
   /** Reuse a result this young. Default 60 s. */
   maxAgeMs?: number;
@@ -116,6 +129,7 @@ export interface AnchorOptions extends CallOptions {
   maxStoredHeights?: number;
   /** Test seams. */
   checkpoint?: Checkpoint;
+  quorumCheckpoint?: ProofState;
   now?: () => number;
 }
 
@@ -126,14 +140,41 @@ export interface ProvenSml extends Sml {
   node: string;
 }
 
+/** What an anchored chain rests on. */
+export type AnchorTrust =
+  | {
+    /** ChainLocks: a DIP 175 proof chain from the pinned quorum checkpoint authenticates a ChainLocked block; no proof of work. */
+    kind: 'quorum-proof';
+    /** The pinned checkpoint: its ChainLock quorums (and those mined after it) are the trust root. */
+    checkpoint: { height: number; hash: string };
+    /** The state this run's proof started from: the checkpoint, or a later state this browser verified from it earlier. */
+    from: { height: number; hash: string };
+    /** Where the proof came from (untrusted: the proof authenticates itself). */
+    source: string;
+    /** ChainLock quorum handoffs in the proof, and its size. */
+    links: number;
+    proofBytes: number;
+  }
+  | {
+    /** Headers with proof of work and difficulty from the pinned header checkpoint (see headerchain.ts). */
+    kind: 'proof-of-work';
+    checkpoint: { height: number; hash: string };
+    /** Why the quorum proof path was not used (no source configured, every source failed, ...). */
+    fallback: string | null;
+  };
+
 export interface AnchoredChain {
   network: Network;
-  checkpoint: Checkpoint;
-  /** Verified block hashes from `chain.lo` to `tip`: work and difficulty above the checkpoint, hash links below it. */
-  chain: HeaderChain;
+  /** The pinned checkpoint the chain is verified from (the quorum checkpoint or the header checkpoint; see `trust`). */
+  checkpoint: { height: number; hash: string };
+  trust: AnchorTrust;
+  /** Verified block hashes from `chain.lo` to `tip`: hash links down from the ChainLock (quorum proof), or work and difficulty above the
+   *  header checkpoint and hash links below it (proof of work). */
+  chain: VerifiedChain;
   /** The highest verified header (a node could withhold newer blocks: heights are lower bounds of the real tip). */
   tip: number;
-  /** Set when proof of work cannot be relied on for this network (testnet): the facts are consistent, not secure. */
+  /** Set when proof of work cannot be relied on for this network (testnet) and the chain rests on it: the facts are consistent, not
+   *  secure. Never set on the quorum-proof path. */
   weak: string | null;
   /** BLS-valid ChainLock on a block of `chain`: everything at or below `height` is final. */
   chainLock: { height: number; blockHash: string; quorumHash: string; exact: boolean; /** the locked header's time */ time: number };

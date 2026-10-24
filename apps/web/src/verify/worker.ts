@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 // Verification worker: all hashing, signature recovery, DAPI fetches, the anchored chain (headers, masternode list, ChainLock)
 // and the vote recounts run here so the page stays responsive.
-import { AllNodesFailedError, createDapi, GrpcError, type AnchoredChain, type Dapi } from '@govhub/dapi';
+import { AllNodesFailedError, bridgeProofSource, createDapi, GrpcError, quorumListProofSource, type AnchoredChain, type Dapi, type ProofSource, type StoredLinkedChain } from '@govhub/dapi';
 import { installRecordedDapi, RECORDED_NODE } from '../data/dapiRecorded.ts';
 import { createWebDapi, lookupCollateral } from '../data/dapi.ts';
 import { BridgeError, type Bridge, type BridgeMnList, type BridgeVotes } from '../data/bridge.ts';
@@ -21,6 +21,8 @@ const post = (m: WorkerResponse) => self.postMessage(m);
 
 /** One client per DAPI setting: the anchored chain (and its proven SML) is reused by every check for a minute. */
 const clients = new Map<string, Dapi>();
+/** Each live client's quorum proof sources (anchoring tries them before falling back to proof of work). */
+const proofSources = new WeakMap<Dapi, ProofSource[]>();
 
 async function dapiFor(d: DapiDescriptor): Promise<Dapi> {
   const key = d.kind === 'recorded' ? 'recorded' : JSON.stringify(d.cfg);
@@ -31,6 +33,7 @@ async function dapiFor(d: DapiDescriptor): Promise<Dapi> {
       c = createDapi({ network: 'mainnet', nodes: [RECORDED_NODE] });
     } else {
       c = createWebDapi(d.cfg, loadVerifiers);
+      proofSources.set(c, (d.cfg.proofSources ?? []).map((s) => (s.kind === 'bridge' ? bridgeProofSource(s.url) : quorumListProofSource(s.url))));
     }
     clients.set(key, c);
   }
@@ -57,9 +60,18 @@ function isNotFound(e: unknown, recorded: boolean): boolean {
   return nf.size === e.errors.length && nf.size >= (recorded ? 1 : 2);
 }
 
-/** The chain this worker verified (cached in IndexedDB per network, extended on each use), reaching down to `from`. */
+/**
+ * The chain this worker verified (cached in IndexedDB per network, extended on each use), reaching down to `from`: anchored on a
+ * ChainLock proven from the pinned quorum checkpoint when a proof source answers, else by proof of work (`trust` says which).
+ */
 function anchor(dapi: Dapi, progress: (m: string) => void, from?: number): Promise<AnchoredChain> {
-  return dapi.anchorChain({ ...(from ? { from } : {}), store: headerStore('chain'), onProgress: progress });
+  return dapi.anchorChain({
+    ...(from ? { from } : {}),
+    store: headerStore('chain'),
+    proofSources: proofSources.get(dapi) ?? [],
+    proofStore: headerStore<StoredLinkedChain>('qchain'),
+    onProgress: progress,
+  });
 }
 
 /** The proven list as the vote check uses it (types count as proven only where the list's hash covers them). */

@@ -53,7 +53,10 @@ size('@govhub/dapi/x11 (sphlib X11 compiled to WebAssembly, inline base64 + load
 const wasmB64 = /X11_WASM_BASE64 = '([^']+)'/.exec(readFileSync(join(root, 'src/vendor/x11-wasm.ts'), 'utf8'))[1];
 size('  ...of which the .wasm binary alone (what a separate asset would cost)', Buffer.from(wasmB64, 'base64'));
 size('anchoring (headers, PoW/DGW, SML proof, ChainLock rules; lazy chunk content)', total(await bundle(`export * from './src/anchor.ts'`)));
-size('everything: barrel + bls + x11', total(await bundle(`export * from './src/index.ts'; export * from './src/bls.ts'; export * from './src/x11.ts'`)));
+size('@govhub/dapi/coreproof (dash-core-proof DIP 175 verifier compiled to WebAssembly, inline base64 + loader)', total(await bundle(`export * from './src/coreproof.ts'`)));
+const proofB64 = /CORE_PROOF_WASM_BASE64 = '([^']+)'/.exec(readFileSync(join(root, 'src/vendor/core-proof-wasm.ts'), 'utf8'))[1];
+size('  ...the core-proof .wasm alone (a separate asset would cost this)', Buffer.from(proofB64, 'base64'));
+size('everything: barrel + bls + x11 + coreproof', total(await bundle(`export * from './src/index.ts'; export * from './src/bls.ts'; export * from './src/x11.ts'; export * from './src/coreproof.ts'`)));
 
 console.table(rows);
 writeFileSync(join(root, 'test/sizes.json'), JSON.stringify(rows, null, 2));

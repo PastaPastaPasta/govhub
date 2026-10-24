@@ -1,8 +1,9 @@
 // @govhub/dapi: browser-first grpc-web client for DAPI Core on Dash evonodes.
-// BLS ChainLock verification is in '@govhub/dapi/bls' and X11 header hashing in '@govhub/dapi/x11' (separate entry points).
+// BLS ChainLock verification is in '@govhub/dapi/bls', X11 header hashing in '@govhub/dapi/x11' and the DIP 175 quorum proof verifier
+// (WebAssembly) in '@govhub/dapi/coreproof' (separate entry points).
 export { Dapi, createDapi } from './client.ts';
 export type {
-  AgreedSml, AnchorOptions, AnchoredChain, CallOptions, HeaderStore, ProvenSml, DapiOptions, DepositEvent, GetVerifiedTransactionOptions, IsLockEvent, SmlOptions, Tristate, VerifiedTransaction,
+  AgreedSml, AnchorOptions, AnchorTrust, AnchoredChain, CallOptions, HeaderStore, ProvenSml, DapiOptions, DepositEvent, GetVerifiedTransactionOptions, IsLockEvent, SmlOptions, Tristate, VerifiedTransaction,
   Verifiers, WatchHandlers, WatchOptions, Watcher,
 } from './types.ts';
 export { AllNodesFailedError, GrpcError, VerificationError } from './errors.ts';
@@ -32,6 +33,10 @@ export type { CandidateSets, ChainLockParams, Network } from './chainlock.ts';
 export { Reader, hex, hashBytes, hashHex, reversed, sha256d, unhex } from './bytes.ts';
 export { CHECKPOINTS, DGW_WINDOW, HeaderChain, POW_SECURE, WORK_FLOOR_FACTOR } from './headerchain.ts';
 export type { Checkpoint, HeaderRun, StoredChain } from './headerchain.ts';
+export { LinkedChain } from './linkedchain.ts';
+export type { StoredLinkedChain, VerifiedChain } from './linkedchain.ts';
+export { MAX_PROOF_BYTES, ProofSourceError, QUORUM_CHECKPOINTS, QuorumProofError, bridgeProofSource, quorumListProofSource } from './quorumproof.ts';
+export type { ProofRequest, ProofSource, ProofState, QuorumProofErrorKind, VerifiedQuorumProof } from './quorumproof.ts';
 export { POW_PARAMS, checkProofOfWork, compactToTarget, darkGravityWave, medianTimePast, nextWorkRequired, targetToCompact } from './pow.ts';
 export type { HeaderTiming, PowParams } from './pow.ts';
 export { LLMQ_SIZE, base58check, commitmentBytes, mnListMerkleRoot, parseCbTx, proveSml, quorumsMerkleRoot, smlEntryBytes } from './smlproof.ts';

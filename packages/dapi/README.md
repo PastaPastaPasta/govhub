@@ -12,7 +12,7 @@ It is the `packages/dapi` that docs/PLAN.md "Phase 0 results" promised, promoted
 
 ```
 npm install                          # from the repo root (npm workspaces)
-npm test -w @govhub/dapi             # offline: 214 vitest tests on recorded mainnet and testnet data
+npm test -w @govhub/dapi             # offline: 250 vitest tests on recorded mainnet and testnet data
 npm run typecheck -w @govhub/dapi
 npm run test:live -w @govhub/dapi    # opt-in: headless Chromium against live MAINNET nodes (read-only)
 npm run size -w @govhub/dapi         # bundle sizes -> test/sizes.json
@@ -130,7 +130,65 @@ What `getVerifiedTransaction` proves and what is only a node's word. Anything th
 
 Without `options.anchor`, the ChainLock proof rests on quorum public keys from the SML that **>= 2 of 3 random nodes return identically**: that
 stops one lying node but not an eclipse (an attacker who controls every node you reach can serve a consistent fake SML, ChainLock and chain).
-With an [anchored chain](#anchored-chain) it rests on the checkpoint and proof of work instead, and `proof.anchor` says so.
+With an anchored chain it rests on ChainLocks proven from the pinned quorum checkpoint ([quorum proof anchoring](#quorum-proof-anchoring-chainlocks-no-proof-of-work))
+or, when no proof can be had, on the header checkpoint and proof of work ([anchored chain](#anchored-chain)); `proof.anchor.trust` says which.
+
+### Quorum proof anchoring (ChainLocks, no proof of work)
+
+`anchorChain({ proofSources, proofStore })` with `verifiers.verifyQuorumProof` (`@govhub/dapi/coreproof`) anchors on ChainLocks, so it is as sound on
+testnet as on mainnet. The trust root is a pinned **quorum checkpoint** (`QUORUM_CHECKPOINTS`, `src/quorumproof.ts`): a block's height, hash and the
+masternode and quorum roots its coinbase commits to.
+
+1. **Proof.** A DIP 175 proof chain (`DASHNC02`, Dash Core v24 `getquorumproofchain`) from an untrusted source: a bridge's `GET /v1/quorum-proof`
+   (services/bridge) or the quorum list server's `POST /proofs`. Starting from a ChainLock quorum committed under the checkpoint's quorum root, each
+   link is a ChainLock BLS-signed by the current ChainLock quorum on a block that mined the next one, up to a ChainLock on a recent block T whose
+   coinbase commits to new roots. It is verified by `dash-core-proof`, the Core-parity Rust verifier of dashpay/platform PR #5521, compiled unmodified
+   to WebAssembly (`core-proof-wasm/`). The verifier returns T's state and its ChainLock (header and signature). T's header must be under an hour
+   old, or the next source is tried.
+2. **List.** The masternode list from DAPI must be from a block S with T - 8 <= S <= T. When the list is newer than T, the same source is asked again
+   for a proof with minimum height S, up to 4 times, 2.5 s apart.
+3. **Headers.** From T down to S, to the ChainLock quorums' base blocks (T - 602 on testnet, T - 1,188 on mainnet) and to any older block of
+   interest, by **hash linkage only**: each header's X11 hash is the next one's prevHash, ending at T's hash (`src/linkedchain.ts`). A ChainLock is
+   final, so no work, difficulty or time rule is needed.
+4. **SML** proven against S's coinbase, exactly as on the proof-of-work path.
+5. **Selection check.** T's signature is checked against the quorum Core's `SelectQuorumForSigning` picks from the proven list (`exact` as below).
+   The list is itself proven through T, so this is a consistency check, not a second root of trust: T rests on the proof alone. A quorum base
+   block missing from the linked run (it should never be) is looked up from a node and makes the result inexact.
+6. **Store.** The run, T's state, header and ChainLock signature are saved (`proofStore`, keyed per network and checkpoint). The next proof starts
+   from T: about 1.7 KB and 20 ms to verify instead of the full chain. When no source has a newer ChainLock yet, the saved one serves again while
+   it is under an hour old. Otherwise the pin is used. A proven ChainLock that conflicts with the saved run (another block at a height it covers) is
+   refused, and within a run a lower state is never saved over a higher one (two tabs saving at once can still leave the lower one: the next
+   proof is then a little longer). Within one client a result is reused for a minute.
+
+If no source yields a valid, fresh proof (none configured, a dashd older than v24 answers 501, HTTP 403, a forged proof), anchoring falls back to the
+proof-of-work path with its own labels, and `trust: { kind: 'proof-of-work', fallback }` records why. A source that cannot serve proofs at all is
+skipped for 10 minutes. On the proof path `weak` is always null and `trust` is
+`{ kind: 'quorum-proof', checkpoint, from, source, links, proofBytes }`.
+
+| Checkpoint | Height | Block | Provenance |
+|---|---|---|---|
+| mainnet | 2,550,000 | `000000000000000759db5eed...9c9683ce` | dashpay/platform PR #5523 (`rs-sdk-trusted-context-provider/checkpoints/mainnet.json`) |
+| testnet | 1,560,000 | `00000215d91d5f3cdfda9de3...ba07a35e` | PR #5523 (`checkpoints/testnet.json`) |
+
+Both were re-read on 2026-10-24 with `getblockhash` and `getblock <hash> 1` (`cbTx.merkleRootMNList`, `cbTx.merkleRootQuorums`) from two independent
+nodes per network (the govhub CT 185 dashd, 23.1.8 mainnet and 24.0.0-rc.4 testnet, and the CT 164 relay's Core build); all four matched. Move them
+forward with releases: an older checkpoint trusts more retired quorums.
+
+Trust assumptions of this path:
+
+- **The checkpoint.** No ChainLock quorum committed under its quorum root, or mined after it (or less than 4,096 blocks before it), ever signs
+  dishonestly, including quorums long since retired. That is the crate's trust model: the source picks the path, and, as in Core's own verifier,
+  nothing checks that each link's signer was the one selected for that height. Step 5 checks selection for T only.
+- **Freshness.** A source can withhold newer ChainLocks but cannot forge one. The local clock bounds how old T may be (an hour), as before.
+- **The WebAssembly build** is `core-proof-wasm/build.sh` from the vendored sources. It needs rustup's wasm32 target, Homebrew LLVM and binaryen, and
+  prints the module's sha256.
+- Leaf counts in a proof's Merkle paths are not fully bound by the root: for a leaf away from the right edge, a neighbouring count proves the same leaf at
+  the same index. It never changes what is verified (`test/coreproof.test.ts` flips every bit), but the encoding is not canonical there. Upstream note
+  for dash-core-proof and Core.
+
+Timings (2026-10-24, testnet, 30-31 KB proof from 1,560,000 with 37-39 links): public quorum list server 1.5 s on a relay cache miss (CT 185's v24 dashd
+7.7 s cold, 0.7 s warm), 62 ms on a hit; verifying 250 ms in Node and in the browser worker, WASM instantiation included. Delta from a stored state:
+1.7 KB, 40-70 ms fetch, 13-22 ms verify. Mainnet (9.6 KB, 10 links from 2,550,000): 80 ms verify. Whole anchor in headless Chromium: 1.1 s cold, 0.9 s warm.
 
 ### Anchored chain
 
@@ -180,7 +238,8 @@ Trust assumptions that remain: the pinned checkpoint (checked by `scripts/checkp
 `chainparams.cpp:345` mainnet / `:528` testnet, through 56,500 / 198,000 headers that pass every rule, and returned by 8 of 8 random nodes),
 no adversary with the work above since the pin, an honest local clock (it bounds staleness and the minimum height), and that withheld
 newest blocks are at most an hour's worth. **Testnet** runs the same checks, but its difficulty makes forging a chain a matter of
-seconds on a GPU, so `AnchoredChain.weak` is set there and the app labels testnet chain facts as not secure against a malicious node.
+seconds on a GPU, so on this path `AnchoredChain.weak` is set there and the app labels testnet chain facts as not secure against a malicious node.
+Quorum proof anchoring (above) does not depend on difficulty and clears that label.
 
 Why not the cheaper ChainLock-in-coinbase path: CbTx v3 carries `bestCLSignature` for an ancestor, but verifying it needs the quorum set active
 at that height. Those keys are in `merkleRootQuorums` of blocks near it, which would themselves need anchoring first, and DAPI has no historical
@@ -218,7 +277,7 @@ Unit tests sign synthetic locks with real BLS keys through every branch; the rea
 |---|---|---|---|
 | `createDapi`, **initial load** (pool, failover, budget, grpc-web, protobuf, sha256, tx parser, broadcast) | 24.5 | **9.9** | 8.7 |
 | lazy: verified reads + ChainLock rules | 6.4 | 2.6 | 2.4 |
-| lazy: anchoring (headers, PoW/DGW, SML proof) | 22.1 | 8.7 | 7.9 |
+| lazy: anchoring (headers, PoW/DGW, quorum-proof path, SML proof) | 32.6 | 11.7 | 10.5 |
 | lazy: SML agreement, SML/CBOR parsing | 6.0 | 2.8 | 2.7 |
 | lazy: ProRegTx proofs | 1.1 | 0.7 | 0.6 |
 | lazy: deposit watching, bloom, mergeStreams | 5.2 | 2.5 | 2.3 |
@@ -226,7 +285,9 @@ Unit tests sign synthetic locks with real BLS keys through every branch; the rea
 | `@govhub/dapi/bls` (noble bls12-381; separate entry) | 75.0 | **27.5** | 24.1 |
 | `@govhub/dapi/x11` (WebAssembly as inline base64 + loader; separate entry) | 140.1 | **58.9** | 47.4 |
 | ...the `.wasm` alone (a separate asset would cost this) | 103.8 | 45.1 | 33.3 |
-| everything: barrel + bls + x11 | 277.3 | 109.4 | 89.5 |
+| `@govhub/dapi/coreproof` (dash-core-proof in WebAssembly, inline base64 + loader; separate entry) | 350.1 | **138.1** | 110.2 |
+| ...the `.wasm` alone (261 KB: blst, sha2, rs-x11-hash, the verifier) | 261.0 | 104.9 | 78.3 |
+| everything: barrel + bls + x11 + coreproof | 639.8 | 251.2 | 197.7 |
 
 The initial chunk is unchanged by anchoring (9.9 KB gzipped). X11 moved from 40.5 KB of JavaScript to 58.9 KB of inline WebAssembly: +18 KB
 gzipped for ~40x the speed; serving the `.wasm` as its own asset would make it 45.1 KB (not done: inline works unchanged in Node, Vite workers and
@@ -250,13 +311,21 @@ offers `x11Many` for batches.
 
 ## Tests
 
+- **Quorum proofs, offline** (`coreproof.test.ts`, `proofanchor.test.ts`): real `getquorumproofchain` output from both networks
+  (`test/fixtures/quorum-proof-*.json`: from the pins, a delta from the first target, a testnet bootstrap envelope) verifies to the targets Core reported;
+  forged links (signature, header, height, mined commitment, a reused certificate, ancestor headers), infinity and null signatures, a real chain
+  re-anchored on a checkpoint its seed quorum is not under, other trusted states, a raised minimum height, truncated and extended bytes, and changed
+  bootstrap records are all rejected. Every bit of a real delta proof is flipped: none verifies to anything but the original state. `proofanchor.test.ts`
+  runs `anchorChain` end to end on a coherent testnet snapshot (`proof-anchor-testnet.json.gz`, written by `scripts/record-proof-fixtures.mjs`): proof
+  from the public quorum list server, list, headers. It covers a cold run, a resumed run that asks for a delta first, a deep block reached by linkage,
+  a forged proof and a 501 source passed over, a lying header node, a stale ChainLock refused, and the fallback to proof of work with its reason.
 - **Anchoring, offline** (`chainproof.test.ts`, `anchor.test.ts`): recorded **mainnet and testnet** snapshots (`test/fixtures/anchor-*.json.gz`, written by
   `scripts/record-anchor-fixtures.mjs`: ~1,600-1,940 consecutive headers, the full SML at the tip, the newest CLSIG, the newest superblock). DGW,
   proof of work and MTP hold for every recorded header (the testnet run includes minimum-difficulty blocks); tampered bits, work, times, links and
   pins fail at the right height; both SMLs (mainnet entry versions 1-2, testnet 1-3 with ExtNetInfo, CbTx v3 and v4) reproduce their coinbase's
   roots and any changed voting key, validity, version-2 type, operator key, dropped entry or quorum key breaks them; `anchorChain` against fake nodes
   that serve this data (cold, resumed from a store, extended downward, with a lying header node and a lying SML node, and refusing when all lie).
-- **Offline** (`npm test`, 214 tests, ~4 s): codecs (protobuf, grpc-web framing, CBOR against RFC 8949 vectors, BIP37 bloom against Bitcoin Core's `bloom_tests` vectors), parsers and
+- **Offline** (`npm test`, 250 tests, ~10 s): codecs (protobuf, grpc-web framing, CBOR against RFC 8949 vectors, BIP37 bloom against Bitcoin Core's `bloom_tests` vectors), parsers and
   X11 on **recorded mainnet data** (`test/fixtures/recorded.json`, written by `scripts/record-fixtures.mjs`: a block, a 41-header chain, a real CLSIG, a trimmed SML with its
   quorum base blocks, ISDLOCKs with their txs, a merkleblock; no secrets), grpc-web against a real local socket, and the whole client against `test/fake-dapi.ts`, a fake
   DAPI gateway installed over `fetch` that speaks real grpc-web and protobuf (lying nodes, dead nodes, slow nodes, 429/5xx, aborts, hedging, dedupe, replacement,
@@ -299,10 +368,12 @@ Additions to the spike's findings 1-13 (README of `spikes/dapi-browser`). Items 
 
 ```
 src/            index.ts (client + building blocks)   bls.ts   x11.ts (WebAssembly)   vendor/x11-wasm.ts (generated)   vendor/x11 (JS oracle)
-                client.ts (pool, failover, broadcast)  verified.ts  anchor.ts  protx.ts  agreed-sml.ts  watch.ts  (lazy modules)
-                headerchain.ts (checkpoint, verified run)  pow.ts (PoW, DGW, MTP)  smlproof.ts (SML/commitment/CbTx serialization)
+                coreproof.ts (DIP 175 verifier, WebAssembly)   vendor/core-proof-wasm.ts (generated)   quorumproof.ts (checkpoints, sources)
+                client.ts (pool, failover, broadcast)  verified.ts  anchor.ts  proofanchor.ts  protx.ts  agreed-sml.ts  watch.ts  (lazy modules)
+                headerchain.ts (checkpoint, verified run)  linkedchain.ts (ChainLock-anchored run)  pow.ts (PoW, DGW, MTP)  smlproof.ts (SML/commitment/CbTx serialization)
                 chainlock.ts (Core's rules)  dash.ts (parsers)  sml.ts  cbor.ts  bloom.ts  pb.ts  grpcweb.ts  core.ts  pool.ts  race.ts  nodes.ts
 x11-wasm/       sphlib C sources, x11.c, build.sh
+core-proof-wasm/ C-ABI wrapper crate, vendor/dash-core-proof (platform PR #5521, unmodified), build.sh
 test/           *.test.ts (vitest)   fake-dapi.ts   fixtures/   live/ (Playwright harness, results.json)   sizes.json   x11-bench.json
-scripts/        record-fixtures.mjs   record-anchor-fixtures.mjs   checkpoint.mjs   bench-x11.mjs   size.mjs   vendor-x11.mjs
+scripts/        record-fixtures.mjs   record-anchor-fixtures.mjs   record-proof-fixtures.mjs   checkpoint.mjs   bench-x11.mjs   size.mjs   vendor-x11.mjs
 ```

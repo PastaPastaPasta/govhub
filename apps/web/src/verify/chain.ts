@@ -1,7 +1,7 @@
 // Chain facts for the proposal page, from the anchored chain (@govhub/dapi anchorChain): the funding threshold from the proven
 // masternode list, the superblock schedule and budget limit from consensus rules at the verified height, and the payments the
 // proposal received, read from superblock coinbases of the verified chain. Runs in the verification worker.
-import type { AnchoredChain, Dapi, ProRegCache } from '@govhub/dapi';
+import type { AnchorTrust, AnchoredChain, Dapi, ProRegCache } from '@govhub/dapi';
 import {
   findPayment, fundingThreshold, GOV_CHAIN_PARAMS, superblockPaymentsLimit, superblockSchedule, superblocksBetween, type SuperblockSchedule,
 } from '@govhub/verify';
@@ -20,6 +20,8 @@ export interface AnchorSummary {
   lo: number;
   tip: number;
   checkpoint: number;
+  /** What the chain rests on: ChainLocks proven from the pinned quorum checkpoint, or proof of work (and why). */
+  trust: AnchorTrust;
   chainLock: { height: number; blockHash: string; quorumHash: string; exact: boolean; time: number };
   sml: { height: number; blockHash: string; entries: number; quorums: number };
   headers: { cached: number; fetched: number };
@@ -65,7 +67,7 @@ export interface ChainReport {
 
 export function summarize(a: AnchoredChain): AnchorSummary {
   return {
-    weak: a.weak, lo: a.chain.lo, tip: a.tip, checkpoint: a.checkpoint.height, chainLock: a.chainLock,
+    weak: a.weak, lo: a.chain.lo, tip: a.tip, checkpoint: a.checkpoint.height, trust: a.trust, chainLock: a.chainLock,
     sml: { height: a.sml.proof.height, blockHash: a.sml.proof.blockHash, entries: a.sml.proof.entries, quorums: a.sml.proof.quorums },
     headers: { cached: a.stats.cachedHeaders, fetched: a.stats.fetchedHeaders }, ms: a.stats.ms,
   };

@@ -1,0 +1,41 @@
+{
+  "ranAt": "2026-10-24T21:53:48.484Z",
+  "network": "testnet",
+  "cold": {
+    "collateralCheckMs": 4973,
+    "chainFactsMs": 6799,
+    "anchor": {
+      "cache": 2,
+      "proof": 1981,
+      "smlProof": 13,
+      "sml": 15,
+      "headers": 791,
+      "chainlock": 24,
+      "total": 2813
+    },
+    "headers": {
+      "cached": 0,
+      "fetched": 603
+    },
+    "trust": "Trust rootthe ChainLock quorums of the pinned checkpoint at block 1,560,000, plus BLS"
+  },
+  "warm": {
+    "collateralCheckMs": 6413,
+    "chainFactsMs": 66291,
+    "anchor": {
+      "cache": 1,
+      "proof": 457,
+      "smlProof": 13,
+      "sml": 243,
+      "headers": 4980,
+      "chainlock": 36,
+      "total": 5717
+    },
+    "headers": {
+      "cached": 603,
+      "fetched": 13986
+    },
+    "trust": "Trust rootthe ChainLock quorums of the pinned checkpoint at block 1,560,000, plus BLS"
+  },
+  "fundingOrderMs": 1355
+}

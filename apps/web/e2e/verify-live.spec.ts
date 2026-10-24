@@ -118,38 +118,62 @@ test('@live vote recount and funding order rest on the proven list and registrat
   expect(errors).toEqual([]);
 });
 
-// Testnet: the Testnet profile pointed at the testnet bridge's contract (the profile's own contract id is not set on main yet).
-const TESTNET_CONTRACT = '5gMnJLDpcoMaQCQNqmHtBiSqCxRCmroXFAffPNdJ2NJC';
-const TESTNET_BRIDGE_ID = '24tL6v5jMR1H9dtUoTgbedePsMJtYPk4Q4bo6h8jTdK9';
-
-test('@live testnet: the same chain facts are computed on testnet (LLMQ_50_60, cycle 24, v24 SML and CbTx) but labelled not secure', async ({ page }) => {
-  test.setTimeout(600_000);
-  const props = (await (await fetch('https://gov-bridge-testnet.dashhq.org/v1/proposals')).json()) as { proposals: Array<{ govHash: string; collateralHeight?: number }> };
-  const target = props.proposals[0]!;
-  await page.addInitScript(
-    ([contract, bridgeId]) => {
-      localStorage.setItem('govhub.registry.v2', JSON.stringify({
-        version: 2, profile: 'testnet',
-        overrides: { govContractId: contract, bridges: [{ name: 'gov-bridge-testnet.dashhq.org', httpBase: 'https://gov-bridge-testnet.dashhq.org', govContractId: contract, bridgeIdentityId: bridgeId, enabled: true }] },
-      }));
-    },
-    [TESTNET_CONTRACT, TESTNET_BRIDGE_ID],
-  );
+// Testnet: proof of work protects nothing there, so chain facts are only verified when they rest on ChainLocks proven from the pinned
+// quorum checkpoint (DIP 175 proofs from the testnet bridge or the public quorum list server). Records cold and warm timings.
+test('@live testnet: chain facts rest on quorum-proven ChainLocks and are verified, funding order included', async ({ page }) => {
+  test.setTimeout(900_000);
+  const props = (await (await fetch('https://gov-bridge-testnet.dashhq.org/v1/proposals')).json()) as { proposals: Array<{ govHash: string; collateralHeight?: number | null }> };
+  const [first, second] = props.proposals.filter((p) => p.collateralHeight);
+  await page.addInitScript(() => {
+    try {
+      if (!localStorage.getItem('govhub.registry.v2')) localStorage.setItem('govhub.registry.v2', JSON.stringify({ version: 2, profile: 'testnet', overrides: {} }));
+    } catch { /* about:blank has no storage */ }
+  });
   const errors = await watchPage(page);
-  const r = await openAndVerify(page, target.govHash);
+
+  const check = async (r: Awaited<ReturnType<typeof openAndVerify>>) => {
+    expect(r.state).toBe('verified');
+    await expect(r.chain).not.toContainText('not secure');
+    await expect(r.collateral).not.toContainText('not secure');
+    for (const id of ['height', 'confirmations', 'chainlock']) {
+      await expect(r.collateral.locator(`[data-step="${id}"]`), id).toHaveAttribute('data-status', 'ok');
+      await expect(r.collateral.locator(`[data-step="${id}"]`), id).toHaveAttribute('data-basis', 'verified');
+    }
+    for (const id of ['trust', 'chain', 'chainlock', 'mnlist', 'threshold', 'schedule', 'budget']) {
+      await expect(r.chain.locator(`[data-step="${id}"]`), id).toHaveAttribute('data-status', 'ok');
+      await expect(r.chain.locator(`[data-step="${id}"]`), id).toHaveAttribute('data-basis', 'verified');
+    }
+    await expect(r.chain.locator('[data-step="trust"]')).toContainText('the ChainLock quorums of the pinned checkpoint at block 1,560,000, plus BLS');
+    return {
+      collateralCheckMs: r.tCollateral, chainFactsMs: r.tChain,
+      anchor: JSON.parse((await r.chain.locator('[data-chain]').getAttribute('data-ms')) ?? '{}'),
+      headers: JSON.parse((await r.chain.locator('[data-chain]').getAttribute('data-headers')) ?? '{}'),
+      trust: ((await r.chain.locator('[data-step="trust"]').textContent()) ?? '').replace(/\s+/g, ' '),
+    };
+  };
+
+  // ---- cold: empty IndexedDB, a proof from the pinned checkpoint (~30 KB, ~40 ChainLock quorum handoffs)
+  const cold = await check(await openAndVerify(page, first!.govHash));
   await expect(page.getByTestId('profile-label')).toContainText('Testnet');
-  // every check passes, but testnet difficulty cannot stop a forged chain: nothing chain-derived may say "verified"
-  expect(r.state).toBe('weak');
-  await expect(r.chain.locator('[data-chain]')).toContainText('not secure');
-  for (const id of ['height', 'confirmations']) {
-    await expect(r.collateral.locator(`[data-step="${id}"]`), id).toHaveAttribute('data-status', 'ok');
-    await expect(r.collateral.locator(`[data-step="${id}"]`), id).toHaveAttribute('data-basis', 'reported');
-  }
-  for (const id of ['chain', 'chainlock', 'mnlist', 'threshold', 'schedule', 'budget']) {
-    await expect(r.chain.locator(`[data-step="${id}"]`), id).toHaveAttribute('data-status', 'ok');
-    await expect(r.chain.locator(`[data-step="${id}"]`), id).toHaveAttribute('data-basis', 'reported');
-  }
-  await expect(page.locator('.info-table [data-prov="verified"]', { hasText: '' }).filter({ has: page.locator('xpath=ancestor::div[contains(@class,"info-row")][.//dt[text()="Voting deadline"]]') })).toHaveCount(0);
-  await expect(r.chain.locator('[data-step="schedule"]')).toContainText('voting deadline block');
+  if (process.env.SCREENSHOTS) await page.screenshot({ path: 'screenshots/live-testnet-quorum-proof-light-desktop.png', fullPage: true });
+
+  // ---- warm: another proposal in the same browser; the next proof starts from the state this browser proved
+  await page.goto('about:blank');
+  const warm = await check(await openAndVerify(page, (second ?? first)!.govHash));
+
+  // ---- funding order: every listed proposal recounted against the proven list
+  const t0 = Date.now();
+  await page.getByRole('button', { name: 'Verify funding order' }).click();
+  const ranking = page.getByTestId('ranking-check');
+  await expect(ranking.locator('[data-ranking]')).toBeVisible({ timeout: 800_000 });
+  const tRanking = Date.now() - t0;
+  const level = await ranking.locator('[data-ranking]').getAttribute('data-ranking');
+  console.log(`live: testnet funding order ${level} (${tRanking} ms): ${(await ranking.innerText()).replace(/\s+/g, ' ').slice(0, 1500)}`);
+  await expect(ranking).not.toContainText('not secure');
+  expect(level).toBe('verified');
+
+  const results = { ranAt: new Date().toISOString(), network: 'testnet', cold, warm, fundingOrderMs: tRanking };
+  console.log(`live: testnet timings ${JSON.stringify(results)}`);
+  writeFileSync(new URL('./verify-live-testnet-results.json', import.meta.url), JSON.stringify(results, null, 2) + '\n');
   expect(errors).toEqual([]);
 });

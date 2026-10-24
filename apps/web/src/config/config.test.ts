@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { attestorsFor, defaultRegistry, exportRegistry, loadRegistry, parseRegistry, resolveConfigParam, saveRegistry, shareLink, textToB64url } from './registry.ts';
+import { attestorsFor, defaultRegistry, exportRegistry, loadRegistry, parseRegistry, profileRegistry, resolveConfigParam, saveRegistry, shareLink, textToB64url } from './registry.ts';
 import { resolveMode } from './mode.ts';
 
 class MemStorage {
@@ -60,6 +60,28 @@ describe('endpoint registry', () => {
     for (const e of ['forum.contractId must be', 'forum.modContractId must be', 'claim portal "https://no"']) expect(errs).toContain(e);
     expect(errs).not.toContain('moderationIdentityId');
     expect(attestorsFor(defaultRegistry())).toEqual(['9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv']);
+  });
+
+  it('quorum proof sources: the profile bridge, then the public quorum list server; defaults for older settings; validated', () => {
+    expect(profileRegistry('testnet').quorumProofs).toEqual([
+      { name: 'gov-bridge-testnet.dashhq.org', url: 'https://gov-bridge-testnet.dashhq.org', kind: 'bridge' },
+      { name: 'quorums.testnet.networks.dash.org', url: 'https://quorums.testnet.networks.dash.org/proofs', kind: 'quorum-list' },
+    ]);
+    expect(profileRegistry('dev').quorumProofs.map((q) => q.url)).toEqual(['https://gov-bridge.dashhq.org', 'https://quorums.mainnet.networks.dash.org/proofs']);
+    const { quorumProofs, ...older } = profileRegistry('testnet');
+    expect(quorumProofs.length).toBe(2);
+    const parsed = parseRegistry(older);
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.registry.quorumProofs).toEqual(profileRegistry('testnet').quorumProofs);
+    const custom = parseRegistry({ ...older, quorumProofs: [{ name: 'mine', url: 'https://proofs.example/proofs', kind: 'quorum-list' }] });
+    expect(custom.errors).toEqual([]);
+    expect(custom.registry.quorumProofs).toEqual([{ name: 'mine', url: 'https://proofs.example/proofs', kind: 'quorum-list' }]);
+    expect(parseRegistry({ ...older, quorumProofs: [{ name: 'x', url: 'http://evil.example', kind: 'bridge' }] }).errors.join()).toMatch(/https/);
+    expect(parseRegistry({ ...older, quorumProofs: [{ name: 'x', url: 'https://a.example', kind: 'other' }] }).errors.join()).toMatch(/kind/);
+    // another Core network than the profile's, proof sources left at the profile's: that network's public source instead
+    const dev = profileRegistry('dev');
+    const moved = parseRegistry({ ...dev, coreNetwork: 'testnet', dapi: { ...dev.dapi, quorumUrl: 'https://quorums.testnet.networks.dash.org/masternodes' } });
+    expect(moved.registry.quorumProofs).toEqual([{ name: 'quorums.testnet.networks.dash.org', url: 'https://quorums.testnet.networks.dash.org/proofs', kind: 'quorum-list' }]);
   });
 
   it('allows http only for localhost (local bridge development)', () => {
