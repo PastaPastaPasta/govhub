@@ -1,11 +1,16 @@
 # tunnel-gateway with the issuer (docker-compose.issuer-tunnel-guest.yml): the guest stack's ONLY service on the shared `tunnel`
 # network forwards to the bridge (8787), the relay (8788, answers 502 unless the relay profile runs) and the issuer (8789).
-# Plain HTTP; TLS ends at Cloudflare. Each service sets its own CORS headers and limits; the gateway only forwards. The issuer
-# keeps no client address, and nothing here logs one (Caddy's access log is off by default).
+# Plain HTTP; TLS ends at Cloudflare. Each service sets its own CORS headers and limits; the gateway only forwards.
+# No logs at all: there is no access log (no `log` directive), and the default logger, which writes handler and proxy errors
+# with the request (client address, headers) to stdout that Docker keeps, is discarded. Nothing that could link a badge request
+# to a client is written here.
 {
 	admin off
 	auto_https off
 	persist_config off
+	log default {
+		output discard
+	}
 }
 
 :8787 {

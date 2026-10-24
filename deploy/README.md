@@ -634,6 +634,18 @@ Before the first start you need an issuer identity, a `badge` contract and the o
 `${ISSUER_TUNNEL_ALIAS:-<project>-issuer}`, for example `govhub-testnet-issuer`, so the route is
 `http://govhub-testnet-issuer:8789`.
 
+**Logging policy (issuer).** Nothing that could link a badge request to a client may be kept (owner decision; the full
+table is in `services/issuer/README.md`, "What is stored and logged"):
+
+- the issuer's token store keeps only the dedup rows, deleted when the epoch's window closes, and no times or addresses;
+- the issuer's own stdout/stderr (kept by Docker's json-file driver) has no MN ids, outpoints, addresses or per-request
+  lines, only hourly counters;
+- the tunnel gateway runs `caddy/tunnel-gateway-issuer.Caddyfile` with no access log and the default logger discarded;
+- cloudflared runs at `--loglevel info` (connection events only; never debug, which logs every request);
+- Cloudflare's edge sees request metadata and is outside our control. Turn off Logpush, Web Analytics and other request
+  logging for the issuer hostname where the plan allows. Do not put a logging proxy (or Caddy's `log` directive) in front
+  of the issuer.
+
 **State.** The `issuer-data` volume holds the dedup rows of the open issuance window and the per-epoch counts that become
 `issuerReport`. It is small. If it is lost during a window, MNs can get a second token and the report undercounts,
 which readers treat as a fraud signal. The rows are deleted when the window closes, so back it up often while a

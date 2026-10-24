@@ -500,6 +500,30 @@ issues in the first draft. The protocol below includes all of the fixes.
   This is accepted: the badge means "controls a valid MN's voting key".
 - **Wait time:** a new MN waits 1–2 epochs (about 43 days on average) before it can show a badge.
 
+### 8.8 Privacy modes (owner decision, 2026-10-24)
+
+"We can accept some privacy concerns for linkage from the issuer. Give the options for longer delays for better privacy. Don't
+force it. If people accept us learning that's ok. Just we keep no logs for stuff that could be used to link." This changes
+§8.2 and §8.5 as follows (code: `packages/badge` `schedule.ts`/`epoch.ts`, `services/issuer`, `apps/web/src/badge`):
+
+- **Modes, chosen per user** (remembered per identity in the browser):
+  - **Standard** (default): a token for the *current* epoch E, then the badge is posted at once (it shows within minutes). The
+    issuer could link the masternode to the identity by timing; the UI says so. No forced waiting of any kind.
+  - **Private**: §8.5 as written: a token for E+1 at a random time during E, posted at a random time in [S(E+1), S(E+1)+W],
+    kept 30 minutes apart from the browser's other Platform writes, and not posted if the issuer reported fewer than k tokens
+    (testnet 3, mainnet 10) for the epoch before (E+1's own report comes too late, see below).
+  - **Extra private**: as Private, with the badge posted at a random time across the first half of E+1.
+- **Issuance window:** tokens for E are minted during E-1 **and** during E (`[S(E-1), S(E+1))`); the issuer accepts the
+  current or the next epoch. Dedup stays one token per (proTxHash, E) and per (collateral, E), whichever mode asked.
+- **Reader rules:** unchanged: a badge for E is valid if created at or after S(E) and shown during [S(E), S(E+1)+W]; one
+  issuerKey per (issuer, E), created before S(E-1).
+- **Audit:** E's issuerReport can only be final once E's issuance window has closed, so it is published, and counts, in
+  [S(E+1), S(E+1)+W]. Badges ≤ tokensIssued is checked then; an issuer flagged for E-1 is also hidden for E (its report for E
+  arrives only as E ends).
+- **No linkable logs:** the issuer stores only the dedup rows (epoch, proTxHash, collateral, H(blindedMsg)), deleted when the
+  epoch's window closes; no request times, IPs or user agents anywhere (DB, application logs, the tunnel gateway, cloudflared
+  at loglevel info). Cloudflare's edge is outside our control (`services/issuer/README.md`, "Logging policy").
+
 ---
 
 ## 9. Moderation
