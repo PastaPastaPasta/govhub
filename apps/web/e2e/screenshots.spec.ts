@@ -1,6 +1,7 @@
 // Screenshots of the key pages for review (SCREENSHOTS=1 npm run screenshots), fixture mode,
 // light and dark, desktop and mobile. Written to apps/web/screenshots/.
 import { expect, test, type Page } from '@playwright/test';
+import { TESTNET_GOV_CONTRACT_ID } from '../src/config/registry.ts';
 import { gotoFixtures } from './helpers.ts';
 
 test.skip(!process.env.SCREENSHOTS, 'set SCREENSHOTS=1 to refresh apps/web/screenshots');
@@ -81,6 +82,30 @@ test.describe('extra', () => {
     const panel = page.getByTestId('claim-panel');
     await panel.locator('summary').click();
     await panel.screenshot({ path: 'screenshots/claim-light-desktop.png', animations: 'disabled' });
+  });
+  test('@screenshots proposals that failed verification, revealed', async ({ page }) => {
+    await gotoFixtures(page);
+    await page.locator('.sentinel').scrollIntoViewIfNeeded();
+    await expect(page.getByTestId('toggle-failed')).toHaveText('Show 2 proposals that failed verification');
+    await page.getByTestId('toggle-failed').click();
+    const invalid = page.locator('article.card.card-invalid');
+    await expect(invalid).toHaveCount(2);
+    await invalid.first().scrollIntoViewIfNeeded();
+    await shoot(page, 'failed-shown-light-desktop', false);
+  });
+  test('@screenshots failed-verification banner on a hidden proposal', async ({ page }) => {
+    await gotoFixtures(page, '/p/govhub-fixture-tampered');
+    await expect(page.getByTestId('invalid-banner')).toBeVisible();
+    await shoot(page, 'invalid-banner-light-desktop', false);
+  });
+  test('@screenshots Testnet profile while its backend is being set up', async ({ page, context }) => {
+    test.skip(!!TESTNET_GOV_CONTRACT_ID, 'the testnet backend is set up');
+    await context.route(/^https?:\/\/(?!localhost[:/])/, (r) => r.abort());
+    await page.goto('/settings?fixtures=0');
+    await page.locator('.profile-switch label', { hasText: 'Testnet' }).click();
+    await page.goto('/');
+    await expect(page.getByTestId('backend-notice')).toBeVisible();
+    await shoot(page, 'testnet-setup-light-desktop', false);
   });
   test('@screenshots duplicate-name chooser', async ({ page }) => {
     await gotoFixtures(page, '/p/Dash-Mass-Organic-Content-Attraction');

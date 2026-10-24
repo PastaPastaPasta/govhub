@@ -4,10 +4,95 @@ import { COSTS, isIdentifier } from '@govhub/forum';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { errText, formatCredits } from '../lib/format.ts';
-import { defaultRegistry, exportRegistry, parseRegistry, QUORUM_SERVICE, resetRegistry, shareLink, type BridgeEndpoint, type Registry } from '../config/registry.ts';
+import {
+  customFields,
+  defaultRegistry,
+  exportRegistry,
+  parseRegistry,
+  PROFILE_ORDER,
+  PROFILES,
+  QUORUM_SERVICE,
+  profileRegistry,
+  resetRegistry,
+  shareLink,
+  type BridgeEndpoint,
+  type Overridable,
+  type Registry,
+} from '../config/registry.ts';
 import { cacheClear } from '../data/cache.ts';
 
 const lines = (s: string) => s.split(/[\s,]+/).map((x) => x.trim()).filter(Boolean);
+
+/** Marks a setting that differs from the profile's default. */
+function Custom({ on }: { on: boolean }) {
+  return on ? (
+    <span className="chip chip-custom" title="Differs from the profile's default">
+      custom
+    </span>
+  ) : null;
+}
+
+/** The network profile: one action switches Core network, Platform network, contracts, bridge and DAPI nodes together. */
+function ProfileSettings({ onSwitched }: { onSwitched(text: string): void }) {
+  const { registry, setRegistry, switchProfile } = useApp();
+  const custom = customFields(registry);
+  const p = PROFILES[registry.profile];
+  return (
+    <section className="form" aria-labelledby="profile-title">
+      <h2 id="profile-title">Network</h2>
+      <fieldset className="seg profile-switch">
+        <legend className="visually-hidden">Network profile</legend>
+        {PROFILE_ORDER.map((id) => {
+          const x = PROFILES[id];
+          const on = registry.profile === id;
+          return (
+            <label key={id} className={[on ? 'on' : '', x.deployed ? '' : 'disabled'].filter(Boolean).join(' ')} title={x.deployed ? x.title : `${x.title}: not yet deployed`}>
+              <input
+                type="radio"
+                name="profile"
+                value={id}
+                checked={on}
+                disabled={!x.deployed}
+                onChange={() => {
+                  switchProfile(id);
+                  onSwitched(`Switched to ${x.title}. Data reloads.`);
+                }}
+              />
+              {x.label}
+              {!x.deployed && <span className="sub">not yet deployed</span>}
+            </label>
+          );
+        })}
+      </fieldset>
+      <p className="small" data-testid="profile-description">
+        <b>{p.title}.</b> {p.description} Core {registry.coreNetwork}, Platform {registry.platformNetwork}
+        {registry.govContractId ? (
+          <>
+            , governance contract <span className="mono-ish break">{registry.govContractId}</span>
+          </>
+        ) : (
+          <>, no governance contract yet</>
+        )}
+        .
+      </p>
+      {custom.size > 0 && (
+        <p className="small">
+          <Custom on /> Overrides in Advanced: {[...custom].join(', ')}.{' '}
+          <button
+            type="button"
+            className="linkish"
+            onClick={() => {
+              setRegistry(profileRegistry(registry.profile));
+              onSwitched(`Overrides removed: back to the ${p.label} profile's settings.`);
+            }}
+          >
+            Use the profile's settings
+          </button>
+        </p>
+      )}
+    </section>
+  );
+}
 
 /** Block-list subscriptions (PLAN §9): kept in this browser, and in the user's `blockSubs` document when they publish. */
 function BlockListSettings() {
@@ -87,10 +172,14 @@ export function SettingsPage() {
   const [msg, setMsg] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const [portalsText, setPortalsText] = useState(registry.forum.claimPortals.join(' '));
+  const [advanced, setAdvanced] = useState(() => customFields(registry).size > 0);
   useEffect(() => {
     setDraft(registry);
     setPortalsText(registry.forum.claimPortals.join(' '));
+    if (customFields(registry).size > 0) setAdvanced(true);
   }, [registry]);
+  const custom = customFields(draft);
+  const isCustom = (...ks: Overridable[]) => ks.some((k) => custom.has(k));
 
   const set = <K extends keyof Registry>(k: K, v: Registry[K]) => setDraft((d) => ({ ...d, [k]: v }));
   const setBridge = (i: number, patch: Partial<BridgeEndpoint>) => set('bridges', draft.bridges.map((b, j) => (j === i ? { ...b, ...patch } : b)));
@@ -122,6 +211,8 @@ export function SettingsPage() {
       <h1 id="settings-title">Settings</h1>
       <p className="muted">Every backend govhub uses can be replaced. Settings stay in this browser.</p>
 
+      <ProfileSettings onSwitched={(text) => setMsg({ kind: 'ok', text })} />
+
       <form
         className="form"
         onSubmit={(e) => {
@@ -136,149 +227,165 @@ export function SettingsPage() {
           </label>
         </fieldset>
 
-        <fieldset>
-          <legend>Networks</legend>
-          <p className="muted small">During phase 1, proposals are mainnet Core objects published into a testnet Platform contract. In production both are mainnet.</p>
-          <div className="row2">
+        <details className="advanced" open={advanced} onToggle={(e) => setAdvanced((e.target as HTMLDetailsElement).open)}>
+          <summary>
+            Advanced: individual overrides <Custom on={custom.size > 0} />
+          </summary>
+          <p className="muted small">Each setting starts as the {PROFILES[draft.profile].label} profile's. A setting you change here is marked custom; switching profile replaces them all.</p>
+          <fieldset>
+            <legend>
+              Networks <Custom on={isCustom('coreNetwork', 'platformNetwork', 'govContractId')} />
+            </legend>
+            <p className="muted small">Core and Platform networks are separate overrides: a mismatched pair reads one network's data with the other's rules, so prefer a profile.</p>
+            <div className="row2">
+              <label>
+                Core network
+                <select
+                  value={draft.coreNetwork}
+                  onChange={(e) => {
+                    const n = e.target.value as Registry['coreNetwork'];
+                    setDraft((d) => ({ ...d, coreNetwork: n, dapi: { ...d.dapi, quorumUrl: QUORUM_SERVICE[n] } }));
+                  }}
+                >
+                  <option value="mainnet">mainnet</option>
+                  <option value="testnet">testnet</option>
+                </select>
+              </label>
+              <label>
+                Platform network
+                <select value={draft.platformNetwork} onChange={(e) => set('platformNetwork', e.target.value as Registry['platformNetwork'])}>
+                  <option value="mainnet">mainnet</option>
+                  <option value="testnet">testnet</option>
+                </select>
+              </label>
+            </div>
             <label>
-              Core network
-              <select
-                value={draft.coreNetwork}
-                onChange={(e) => {
-                  const n = e.target.value as Registry['coreNetwork'];
-                  setDraft((d) => ({ ...d, coreNetwork: n, dapi: { ...d.dapi, quorumUrl: QUORUM_SERVICE[n] } }));
-                }}
-              >
-                <option value="mainnet">mainnet</option>
-                <option value="testnet">testnet</option>
-              </select>
+              Governance contract id
+              <input value={draft.govContractId} onChange={(e) => set('govContractId', e.target.value.trim())} spellCheck={false} autoComplete="off" />
             </label>
-            <label>
-              Platform network
-              <select value={draft.platformNetwork} onChange={(e) => set('platformNetwork', e.target.value as Registry['platformNetwork'])}>
-                <option value="mainnet">mainnet</option>
-                <option value="testnet">testnet</option>
-              </select>
-            </label>
-          </div>
-          <label>
-            Governance contract id
-            <input value={draft.govContractId} onChange={(e) => set('govContractId', e.target.value.trim())} spellCheck={false} autoComplete="off" />
-          </label>
-        </fieldset>
+          </fieldset>
 
-        <fieldset>
-          <legend>DAPI nodes for Core data</legend>
-          <div className="radios">
-            <label className="check">
-              <input type="radio" name="dapi" checked={draft.dapi.source === 'quorum'} onChange={() => set('dapi', { ...draft.dapi, source: 'quorum' })} /> Quorum service list
-            </label>
-            <label className="check">
-              <input type="radio" name="dapi" checked={draft.dapi.source === 'manual'} onChange={() => set('dapi', { ...draft.dapi, source: 'manual' })} /> My own nodes
-            </label>
-          </div>
-          {draft.dapi.source === 'quorum' ? (
-            <label>
-              Quorum service URL
-              <input type="url" value={draft.dapi.quorumUrl} onChange={(e) => set('dapi', { ...draft.dapi, quorumUrl: e.target.value })} spellCheck={false} />
-            </label>
-          ) : (
-            <label>
-              Nodes (host:port, one per line)
-              <textarea rows={3} value={draft.dapi.nodes.join('\n')} onChange={(e) => set('dapi', { ...draft.dapi, nodes: lines(e.target.value) })} spellCheck={false} />
-            </label>
-          )}
-          <label>
-            Platform DAPI addresses (optional, https URLs; empty uses the SDK's defaults)
-            <textarea rows={2} value={draft.platform.addresses.join('\n')} onChange={(e) => set('platform', { ...draft.platform, addresses: lines(e.target.value) })} spellCheck={false} />
-          </label>
-        </fieldset>
-
-        <fieldset>
-          <legend>Bridges</legend>
-          <p className="muted small">A bridge runs Dash Core and serves live tallies, signed votes and the masternode list. Its numbers are shown as reported until your browser verifies them.</p>
-          {draft.bridges.length === 0 && <p className="muted">No bridge configured. Lists and tallies come from Platform only.</p>}
-          {draft.bridges.map((b, i) => (
-            <div key={i} className="bridge-row">
-              <label>
-                Name
-                <input value={b.name} onChange={(e) => setBridge(i, { name: e.target.value })} />
-              </label>
-              <label className="grow">
-                URL
-                <input type="url" value={b.httpBase} placeholder="https://bridge.example.org" onChange={(e) => setBridge(i, { httpBase: e.target.value.trim() })} spellCheck={false} />
-              </label>
-              <label>
-                Contract
-                <input value={b.govContractId} onChange={(e) => setBridge(i, { govContractId: e.target.value.trim() })} spellCheck={false} />
-              </label>
-              <label>
-                Identity
-                <input value={b.bridgeIdentityId} onChange={(e) => setBridge(i, { bridgeIdentityId: e.target.value.trim() })} spellCheck={false} />
+          <fieldset>
+            <legend>
+              DAPI nodes for Core data <Custom on={isCustom('dapi', 'platform')} />
+            </legend>
+            <div className="radios">
+              <label className="check">
+                <input type="radio" name="dapi" checked={draft.dapi.source === 'quorum'} onChange={() => set('dapi', { ...draft.dapi, source: 'quorum' })} /> Quorum service list
               </label>
               <label className="check">
-                <input type="checkbox" checked={b.enabled} onChange={(e) => setBridge(i, { enabled: e.target.checked })} /> On
+                <input type="radio" name="dapi" checked={draft.dapi.source === 'manual'} onChange={() => set('dapi', { ...draft.dapi, source: 'manual' })} /> My own nodes
               </label>
-              <button type="button" className="btn btn-quiet" onClick={() => set('bridges', draft.bridges.filter((_, j) => j !== i))}>
-                Remove
-              </button>
             </div>
-          ))}
-          <button
-            type="button"
-            className="btn"
-            onClick={() => set('bridges', [...draft.bridges, { name: `bridge ${draft.bridges.length + 1}`, httpBase: '', govContractId: draft.govContractId, bridgeIdentityId: '', enabled: true }])}
-          >
-            Add a bridge
-          </button>
-        </fieldset>
+            {draft.dapi.source === 'quorum' ? (
+              <label>
+                Quorum service URL
+                <input type="url" value={draft.dapi.quorumUrl} onChange={(e) => set('dapi', { ...draft.dapi, quorumUrl: e.target.value })} spellCheck={false} />
+              </label>
+            ) : (
+              <label>
+                Nodes (host:port, one per line)
+                <textarea rows={3} value={draft.dapi.nodes.join('\n')} onChange={(e) => set('dapi', { ...draft.dapi, nodes: lines(e.target.value) })} spellCheck={false} />
+              </label>
+            )}
+            <label>
+              Platform DAPI addresses (optional, https URLs; empty uses the SDK's defaults)
+              <textarea rows={2} value={draft.platform.addresses.join('\n')} onChange={(e) => set('platform', { ...draft.platform, addresses: lines(e.target.value) })} spellCheck={false} />
+            </label>
+          </fieldset>
 
-        <fieldset>
-          <legend>Relays and price feed</legend>
-          <label>
-            Relays (one URL per line; used for voting from phase 3)
-            <textarea rows={2} value={draft.relays.map((r) => r.url).join('\n')} onChange={(e) => set('relays', lines(e.target.value).map((url, i) => ({ name: `relay ${i + 1}`, url })))} spellCheck={false} />
-          </label>
-          <label>
-            Price feed URL (JSON with dash.usd; empty turns it off)
-            <input type="url" value={draft.priceFeed?.url ?? ''} onChange={(e) => set('priceFeed', e.target.value ? { name: draft.priceFeed?.name ?? 'price feed', url: e.target.value } : null)} spellCheck={false} />
-          </label>
-        </fieldset>
+          <fieldset>
+            <legend>
+              Bridges <Custom on={isCustom('bridges')} />
+            </legend>
+            <p className="muted small">A bridge runs Dash Core and serves live tallies, signed votes and the masternode list. Its numbers are shown as reported until your browser verifies them.</p>
+            {draft.bridges.length === 0 && <p className="muted">No bridge configured. Lists and tallies come from Platform only.</p>}
+            {draft.bridges.map((b, i) => (
+              <div key={i} className="bridge-row">
+                <label>
+                  Name
+                  <input value={b.name} onChange={(e) => setBridge(i, { name: e.target.value })} />
+                </label>
+                <label className="grow">
+                  URL
+                  <input type="url" value={b.httpBase} placeholder="https://bridge.example.org" onChange={(e) => setBridge(i, { httpBase: e.target.value.trim() })} spellCheck={false} />
+                </label>
+                <label>
+                  Contract
+                  <input value={b.govContractId} onChange={(e) => setBridge(i, { govContractId: e.target.value.trim() })} spellCheck={false} />
+                </label>
+                <label>
+                  Identity
+                  <input value={b.bridgeIdentityId} onChange={(e) => setBridge(i, { bridgeIdentityId: e.target.value.trim() })} spellCheck={false} />
+                </label>
+                <label className="check">
+                  <input type="checkbox" checked={b.enabled} onChange={(e) => setBridge(i, { enabled: e.target.checked })} /> On
+                </label>
+                <button type="button" className="btn btn-quiet" onClick={() => set('bridges', draft.bridges.filter((_, j) => j !== i))}>
+                  Remove
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              className="btn"
+              onClick={() => set('bridges', [...draft.bridges, { name: `bridge ${draft.bridges.length + 1}`, httpBase: '', govContractId: draft.govContractId, bridgeIdentityId: '', enabled: true }])}
+            >
+              Add a bridge
+            </button>
+          </fieldset>
 
-        <fieldset>
-          <legend>Forum and moderation</legend>
-          <div className="row2">
+          <fieldset>
+            <legend>
+              Relays and price feed <Custom on={isCustom('relays', 'priceFeed')} />
+            </legend>
             <label>
-              Forum contract
-              <input value={draft.forum.contractId} onChange={(e) => set('forum', { ...draft.forum, contractId: e.target.value.trim() })} spellCheck={false} />
+              Relays (one URL per line; used for voting from phase 3)
+              <textarea rows={2} value={draft.relays.map((r) => r.url).join('\n')} onChange={(e) => set('relays', lines(e.target.value).map((url, i) => ({ name: `relay ${i + 1}`, url })))} spellCheck={false} />
             </label>
             <label>
-              Moderation (mod) contract
-              <input value={draft.forum.modContractId} onChange={(e) => set('forum', { ...draft.forum, modContractId: e.target.value.trim() })} spellCheck={false} />
+              Price feed URL (JSON with dash.usd; empty turns it off)
+              <input type="url" value={draft.priceFeed?.url ?? ''} onChange={(e) => set('priceFeed', e.target.value ? { name: draft.priceFeed?.name ?? 'price feed', url: e.target.value } : null)} spellCheck={false} />
             </label>
-          </div>
-          <div className="row2">
+          </fieldset>
+
+          <fieldset>
+            <legend>
+              Forum and moderation <Custom on={isCustom('forum')} />
+            </legend>
+            <div className="row2">
+              <label>
+                Forum contract
+                <input value={draft.forum.contractId} onChange={(e) => set('forum', { ...draft.forum, contractId: e.target.value.trim() })} spellCheck={false} />
+              </label>
+              <label>
+                Moderation (mod) contract
+                <input value={draft.forum.modContractId} onChange={(e) => set('forum', { ...draft.forum, modContractId: e.target.value.trim() })} spellCheck={false} />
+              </label>
+            </div>
+            <div className="row2">
+              <label>
+                Default block list: owner identity
+                <input value={draft.forum.moderationIdentityId} onChange={(e) => set('forum', { ...draft.forum, moderationIdentityId: e.target.value.trim() })} spellCheck={false} />
+              </label>
+              <label>
+                Default block list: name
+                <input value={draft.forum.moderationName} onChange={(e) => set('forum', { ...draft.forum, moderationName: e.target.value })} />
+              </label>
+            </div>
             <label>
-              Default block list: owner identity
-              <input value={draft.forum.moderationIdentityId} onChange={(e) => set('forum', { ...draft.forum, moderationIdentityId: e.target.value.trim() })} spellCheck={false} />
+              Hosts accepted in URL-embedded ownership claims (https://host/p/&lt;identity&gt;/&lt;name&gt;)
+              <input
+                value={portalsText}
+                onChange={(e) => {
+                  setPortalsText(e.target.value);
+                  set('forum', { ...draft.forum, claimPortals: lines(e.target.value) });
+                }}
+                spellCheck={false}
+              />
             </label>
-            <label>
-              Default block list: name
-              <input value={draft.forum.moderationName} onChange={(e) => set('forum', { ...draft.forum, moderationName: e.target.value })} />
-            </label>
-          </div>
-          <label>
-            Hosts accepted in URL-embedded ownership claims (https://host/p/&lt;identity&gt;/&lt;name&gt;)
-            <input
-              value={portalsText}
-              onChange={(e) => {
-                setPortalsText(e.target.value);
-                set('forum', { ...draft.forum, claimPortals: lines(e.target.value) });
-              }}
-              spellCheck={false}
-            />
-          </label>
-        </fieldset>
+          </fieldset>
+        </details>
 
         <div className="form-actions">
           <button type="submit" className="btn btn-primary">

@@ -1,9 +1,10 @@
 // Fixture mode: the 28 real mainnet proposals from packages/verify (Core at height 2,560,391),
 // shaped exactly like `gov` documents, plus a cycle and tallies derived the way the bridge will
 // derive them. The clock is frozen at the snapshot time so every page renders deterministically.
-import { parseProposalData } from '@govhub/verify';
+// Two synthetic proposals that fail verification sit beside them, to show what the app hides.
+import { bytesToHex, governanceObjectHash, parseProposalData } from '@govhub/verify';
 import { DUFFS_PER_DASH } from '../lib/format.ts';
-import { GOV_PARAMS, absoluteYes, fundingThreshold, rankProposals, selectBudget } from '../lib/governance.ts';
+import { GOV_PARAMS, absoluteYes, fundingThreshold, rankProposals, selectBudget, type GovParams } from '../lib/governance.ts';
 import { BridgeError, type Bridge, type BridgeMnList, type BridgeStatus, type BridgeVotes } from './bridge.ts';
 import { fixtureMasternodes, fixtureMnCount, fixtureSignedVotes, fixtureVoteSetHash } from './fixtureVotes.ts';
 import { loadRecordedBridge, type RecordedBridge } from './recordedBridge.ts';
@@ -29,6 +30,8 @@ export interface FixtureSnapshot {
   height: number;
   proposals: Proposal[];
   tallies: Map<string, Tally>;
+  /** Synthetic proposals that fail verification (not Core objects): listed, but hidden by default. */
+  invalid: Proposal[];
   cycle: Cycle;
   /** Real signed votes and masternodes recorded from a mainnet bridge, for the proposals they cover. The rest use synthetic voters. */
   recorded: RecordedBridge;
@@ -109,7 +112,37 @@ export function buildSnapshot(raw: RawFixture, recorded: RecordedBridge): Fixtur
     validWeighted: VALID_WEIGHTED,
     paid: 0,
   };
-  return { now, height, proposals, tallies, cycle, recorded };
+  return { now, height, proposals, tallies, invalid: invalidProposals(now, height), cycle, recorded };
+}
+
+/**
+ * One proposal whose published URL differs from the hashed data (caught on the page, no network), and one whose collateral
+ * transaction does not exist (caught by the collateral check in the worker: the recorded DAPI node answers NOT_FOUND).
+ */
+function invalidProposals(now: number, height: number): Proposal[] {
+  const make = (name: string, collateralTxid: string, publishedUrl?: string): Proposal => {
+    const fields = { end_epoch: now + 30 * 86400, name, payment_address: 'XdWkmFKNosQvS1iPdof7SVme5Gd2GDsa62', payment_amount: 25, start_epoch: now - 5 * 86400, type: 1, url: `https://example.org/${name}` };
+    const dataHex = bytesToHex(new TextEncoder().encode(JSON.stringify(fields)));
+    const time = now - 6 * 86400;
+    const parentHash = '0'.repeat(64);
+    return {
+      govHash: governanceObjectHash({ parentHash, revision: 1, time, dataHex }).display,
+      parentHash,
+      revision: 1,
+      time,
+      dataHex,
+      name,
+      url: publishedUrl ?? fields.url,
+      paymentAddress: fields.payment_address,
+      paymentAmount: fields.payment_amount * DUFFS_PER_DASH,
+      startEpoch: fields.start_epoch,
+      endEpoch: fields.end_epoch,
+      collateralTxid,
+      collateralHeight: height - 2000,
+      createdAt: (time + 3600) * 1000,
+    };
+  };
+  return [make('govhub-fixture-tampered', 'aa'.repeat(32), 'https://phish.example/govhub-fixture-tampered'), make('govhub-fixture-no-collateral', 'ee'.repeat(32))];
 }
 
 /** A bridge that answers from the snapshot, including synthetic signed votes and MN list. */
@@ -146,6 +179,9 @@ export class FixtureBridge implements Bridge {
   }
   async cycle(): Promise<Cycle | null> {
     return (await this.snap).cycle;
+  }
+  async params(): Promise<GovParams | null> {
+    return GOV_PARAMS.mainnet;
   }
   async mnlist(height?: number): Promise<BridgeMnList> {
     const s = await this.snap;

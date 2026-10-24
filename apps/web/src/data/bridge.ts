@@ -2,6 +2,7 @@
 // a tally and the MN list. Everything a bridge returns is untrusted: responses are shape-checked here, and
 // the numbers are labelled "bridge-reported" until the verifier re-derives them.
 import { isHex64 } from '../lib/bytes.ts';
+import { parseGovParams, type GovParams } from '../lib/governance.ts';
 import type { Cycle, Proposal, Tally } from './types.ts';
 
 export interface BridgeStatus {
@@ -70,6 +71,8 @@ export interface Bridge {
   votes(govHash: string, opts?: { height?: number }): Promise<BridgeVotes>;
   tallies(): Promise<Tally[]>;
   cycle(): Promise<Cycle | null>;
+  /** Governance parameters of the bridge's Core network (`getgovernanceinfo` in `/v1/cycle`), null when not reported. */
+  params(): Promise<GovParams | null>;
   /** The snapshot in force at `height` (`/v1/mnlist/{height}`), or the live one. */
   mnlist(height?: number): Promise<BridgeMnList>;
 }
@@ -262,9 +265,25 @@ export class HttpBridge implements Bridge {
   async tallies(): Promise<Tally[]> {
     return list(await this.get('/v1/tallies'), 'tallies', parseTally);
   }
+  /** `/v1/cycle` carries both the cycle and the governance parameters: one request serves both for a few seconds. */
+  private cycleRes: { at: number; res: Promise<unknown> } | null = null;
+  private cycleResponse(): Promise<unknown> {
+    if (!this.cycleRes || Date.now() - this.cycleRes.at > 10_000) {
+      const res = this.get('/v1/cycle');
+      this.cycleRes = { at: Date.now(), res };
+      res.catch(() => {
+        if (this.cycleRes?.res === res) this.cycleRes = null;
+      });
+    }
+    return this.cycleRes.res;
+  }
   async cycle(): Promise<Cycle | null> {
-    const o = await this.get('/v1/cycle');
+    const o = await this.cycleResponse();
     return o === null ? null : parseCycle(obj(o, 'cycle response').cycle);
+  }
+  async params(): Promise<GovParams | null> {
+    const o = await this.cycleResponse();
+    return isObj(o) ? parseGovParams(o.governance) : null;
   }
   async mnlist(height?: number): Promise<BridgeMnList> {
     const o = await this.get(height === undefined ? '/v1/mnlist' : `/v1/mnlist/${encodeURIComponent(String(height))}`);

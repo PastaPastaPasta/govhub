@@ -272,6 +272,16 @@ a:hover {
   display: flex;
   gap: 0.5rem;
   align-items: center;
+  text-decoration: none;
+}
+.netinfo:hover .profile-title {
+  text-decoration: underline;
+}
+.netinfo .chip-profile {
+  display: none;
+}
+.chip-custom {
+  color: var(--warn);
 }
 
 .theme-switch {
@@ -647,6 +657,34 @@ a:hover {
 }
 .card-fail {
   border-inline-start-color: var(--fail-fill);
+}
+/* Failed local verification: only shown after "Show N proposals that failed verification". */
+.card-invalid {
+  border-style: dashed;
+  border-inline-start: 4px solid var(--fail-fill);
+  background: var(--sunk);
+}
+.invalid-note {
+  color: var(--fail);
+  overflow-wrap: anywhere;
+  margin-block-start: 0.375rem;
+}
+.invalid-note .chip-bad {
+  margin-block-start: 0;
+  margin-inline-end: 0.25rem;
+}
+.past tr.row-invalid {
+  background: var(--sunk);
+}
+.invalid-banner {
+  border-inline-start: 4px solid var(--fail-fill);
+  background: color-mix(in srgb, var(--fail-fill) 12%, var(--paper));
+  padding: 0.75rem 1rem;
+  margin-block: 0.75rem;
+  overflow-wrap: anywhere;
+}
+.invalid-banner b {
+  color: var(--fail);
 }
 .card-title {
   font-size: 1.0625rem;
@@ -1332,6 +1370,9 @@ li[data-status='now'] > .fund-dot {
   .netinfo .chip {
     font-size: 0.75rem;
   }
+  .netinfo .chip-profile {
+    display: inline-block;
+  }
   .theme-switch label {
     padding-inline: 0.375rem;
   }
@@ -1811,4 +1852,44 @@ li[data-status='now'] > .fund-dot {
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
   }
+}
+
+/* ---- network profiles (Settings) --------------------------------------------------------------- */
+.form fieldset.profile-switch {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0;
+  padding: 2px;
+  justify-self: start;
+  background: transparent;
+  border-radius: var(--radius-m);
+}
+.form .profile-switch label {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0;
+  font-size: 0.9375rem;
+  padding: 0.3125rem 0.875rem;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.form .profile-switch label.on {
+  color: var(--ink);
+}
+.form .profile-switch label.disabled {
+  color: var(--ink-3);
+  cursor: not-allowed;
+}
+.profile-switch .sub {
+  font-weight: 400;
+  color: var(--ink-3);
+  margin-inline-start: 0.25rem;
+}
+details.advanced > summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding-block: 0.5rem;
+}
+details.advanced[open] > summary {
+  margin-block-end: 0.5rem;
 }

@@ -50,6 +50,30 @@ export interface CollateralVerdict {
    * (txid matches the proposal's collateral, it burns to the recomputed gov hash, enough confirmations).
    */
   inputKeys?: string[];
+  /** The transaction could not be fetched for reasons that say nothing about the proposal (nodes unreachable, timeouts). */
+  inconclusive?: boolean;
+}
+
+/** A failed lookup: `notFound` when several distinct DAPI nodes answered NOT_FOUND (the collateral is not on this chain). */
+export type LookupError = { error: string; notFound?: boolean };
+
+/** Steps whose failure can be a fact about the proposal itself, when it does not rest on one node's word (`basis: 'reported'`). */
+const DEFINITE: readonly Step['id'][] = ['hash', 'fields', 'tx', 'collateral', 'confirmations'];
+
+/**
+ * Why a verdict means the proposal failed verification, or null when it passed or the check could not conclude. Only facts count:
+ * the published fields against the gov hash, a collateral missing on several nodes, or the real collateral (bytes that hash to its
+ * txid) not burning to the gov hash. Anything a single node could cause (altered bytes, a low confirmation count, a second node
+ * disagreeing, an unreachable network) never hides a proposal.
+ */
+export function verdictFailure(v: CollateralVerdict): string | null {
+  if (v.ok || v.inconclusive) return null;
+  if (v.steps.some((s) => s.id === 'crosscheck' && s.status === 'fail')) {
+    const content = v.steps.filter((s) => (s.id === 'hash' || s.id === 'fields') && s.status === 'fail');
+    return content.length ? content.map((s) => `${s.label}: ${s.detail}`).join('; ') : null;
+  }
+  const bad = v.steps.filter((s) => s.status === 'fail' && s.basis !== 'reported' && DEFINITE.includes(s.id));
+  return bad.length ? bad.map((s) => `${s.label}: ${s.detail}`).join('; ') : null;
 }
 
 type ProposalCore = Pick<Proposal, 'govHash' | 'parentHash' | 'revision' | 'time' | 'dataHex' | 'collateralTxid' | 'collateralHeight' | 'name' | 'url' | 'paymentAddress' | 'paymentAmount' | 'startEpoch' | 'endEpoch'>;
@@ -88,11 +112,11 @@ export function checkContent(p: ProposalCore): { steps: Step[]; govHashComputed?
 }
 
 /** Full verdict from the content checks plus the DAPI transaction lookup (or its error). */
-export function verifyCollateral(p: ProposalCore, lookup: TxLookup | { error: string }): CollateralVerdict {
+export function verifyCollateral(p: ProposalCore, lookup: TxLookup | LookupError): CollateralVerdict {
   const { steps, govHashComputed } = checkContent(p);
   if ('error' in lookup) {
-    steps.push({ id: 'tx', status: 'fail', label: 'Collateral transaction', detail: `not fetched: ${lookup.error}` });
-    return { ok: false, steps, ...(govHashComputed ? { govHashComputed } : {}) };
+    steps.push({ id: 'tx', status: 'fail', label: 'Collateral transaction', detail: lookup.notFound ? `not on the chain: every DAPI node asked answered NOT_FOUND (${lookup.error})` : `not fetched: ${lookup.error}` });
+    return { ok: false, steps, ...(govHashComputed ? { govHashComputed } : {}), ...(lookup.notFound ? {} : { inconclusive: true }) };
   }
   const { proof } = lookup;
   const num = (n: number) => n.toLocaleString('en-US');
@@ -130,7 +154,8 @@ export function verifyCollateral(p: ProposalCore, lookup: TxLookup | { error: st
     steps.push(
       r.valid
         ? { id: 'collateral', status: 'ok', label: 'OP_RETURN and outputs', detail: `output ${r.opReturnIndex} burns ${(Number(r.tx!.vout[r.opReturnIndex!]!.value) / DUFFS_PER_DASH).toFixed(8)} DASH to the gov hash; every output is P2PKH or OP_RETURN; txid matches` }
-        : { id: 'collateral', status: 'fail', label: 'OP_RETURN and outputs', detail: `${r.failure}: ${r.message ?? ''}` },
+        : // Bytes that do not hash to the txid (or do not parse) are a node's fault, not the proposal's.
+          { id: 'collateral', status: 'fail', label: 'OP_RETURN and outputs', detail: `${r.failure}: ${r.message ?? ''}`, ...(r.failure === 'txid-mismatch' || r.failure === 'tx-parse-error' ? { basis: 'reported' as const } : {}) },
     );
   } else {
     steps.push({ id: 'collateral', status: 'skip', label: 'OP_RETURN and outputs', detail: 'skipped: no hash to look for' });

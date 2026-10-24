@@ -8,7 +8,8 @@ export type BridgeDescriptor = { kind: 'http'; name: string; base: string } | { 
 export type DapiDescriptor = { kind: 'live'; cfg: DapiConfig } | { kind: 'recorded' };
 
 export type WorkerRequest =
-  | { id: number; kind: 'collateral'; proposal: Proposal; dapi: DapiDescriptor }
+  /** `light`: the node's word for the transaction plus a second node's, without the block proof (background checks of whole lists). */
+  | { id: number; kind: 'collateral'; proposal: Proposal; dapi: DapiDescriptor; light?: boolean }
   | {
       id: number;
       kind: 'votes';

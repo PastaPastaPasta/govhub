@@ -24,6 +24,7 @@ import { useForum } from '../app/forum.tsx';
 import type { Provenance } from '../data/types.ts';
 import { errText, formatAgoMs, formatCredits, formatInt } from '../lib/format.ts';
 import { Composer } from './Composer.tsx';
+import { HiddenToggle } from './HiddenToggle.tsx';
 import { AuthorName, Avatar } from './Identity.tsx';
 import { Markdown } from './Markdown.tsx';
 import { ProvMark } from './Provenance.tsx';
@@ -186,11 +187,7 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
               Everyone
             </label>
           </fieldset>
-          {hiddenCount > 0 && (
-            <button type="button" className="btn btn-quiet" aria-pressed={showHidden} onClick={() => setShowHidden((v) => !v)} data-testid="toggle-hidden">
-              {showHidden ? `Hide blocked (${hiddenCount})` : `Show hidden (${hiddenCount})`}
-            </button>
-          )}
+          <HiddenToggle count={hiddenCount} shown={showHidden} onToggle={() => setShowHidden((v) => !v)} show={`Show hidden (${hiddenCount})`} hide={`Hide blocked (${hiddenCount})`} />
         </div>
       </div>
       <p className="muted small filter-note">

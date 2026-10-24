@@ -79,7 +79,7 @@ export async function lookupCollateral(dapi: Dapi, txid: string, o: { verify: bo
       lookup = await claimedTransaction(dapi, txid, `block proof failed: ${(e as Error).message}`);
     }
   } else {
-    lookup = await claimedTransaction(dapi, txid, 'recorded answer, not proven');
+    lookup = await claimedTransaction(dapi, txid, 'node answer, block proof not requested');
   }
   // A merkle proof does not tie the block to the chain (no proof-of-work check); only a verified ChainLock does. Otherwise a second node weighs in.
   if (lookup.chainLocked !== 'verified') {

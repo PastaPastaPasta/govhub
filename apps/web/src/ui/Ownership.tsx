@@ -10,6 +10,7 @@ import { attestorsFor } from '../config/registry.ts';
 import type { Proposal, Provenance } from '../data/types.ts';
 import { errText, formatCredits, formatInt } from '../lib/format.ts';
 import type { CollateralVerdict } from '../verify/collateral.ts';
+import { HiddenToggle, plural } from './HiddenToggle.tsx';
 import { AuthorName, Avatar } from './Identity.tsx';
 import { Markdown } from './Markdown.tsx';
 import { openSignIn } from './SignIn.tsx';
@@ -24,7 +25,7 @@ export interface Ownership {
 
 /** Reads the claims and attestations for a proposal and runs the verifier. Method 3 waits for the collateral check. */
 export function useOwnership(p: Proposal, collateral: CollateralVerdict | null): Ownership {
-  const { registry } = useApp();
+  const { registry, source } = useApp();
   const { forum } = useForum();
   const [docs, setDocs] = useState<{ claims: Awaited<ReturnType<typeof forum.reader.claims>>; attestations: Awaited<ReturnType<typeof forum.reader.attestations>> } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -44,7 +45,7 @@ export function useOwnership(p: Proposal, collateral: CollateralVerdict | null):
   const verdict = useMemo(
     () =>
       verifyClaims({
-        network: registry.coreNetwork,
+        network: source.coreNetwork,
         govHash: p.govHash,
         parentHash: p.parentHash,
         revision: p.revision,
@@ -56,7 +57,7 @@ export function useOwnership(p: Proposal, collateral: CollateralVerdict | null):
         portals: registry.forum.claimPortals,
         collateralInputKeys: inputKeys,
       }),
-    [registry, p, docs, inputKeys],
+    [registry, source.coreNetwork, p, docs, inputKeys],
   );
   const reload = useCallback(() => setNonce((n) => n + 1), []);
   return { verdict, loading: docs === null, error, reload };
@@ -102,11 +103,33 @@ export function OwnerValue({ p, own }: { p: Proposal; own: Ownership }) {
   );
 }
 
+/** Claims that failed verification: hidden by default, like blocked comments, with the reason once shown. */
+export function RejectedClaims({ own }: { own: Ownership }) {
+  const [shown, setShown] = useState(false);
+  const rejected = own.verdict?.rejected ?? [];
+  if (rejected.length === 0) return null;
+  const n = plural(rejected.length, 'claim');
+  return (
+    <div className="rejected-claims small" data-testid="rejected-claims">
+      <HiddenToggle count={rejected.length} shown={shown} onToggle={() => setShown((v) => !v)} show={`Show ${n} that failed verification`} hide={`Hide ${n} that failed verification`} testId="toggle-rejected-claims" />
+      {shown && (
+        <ul className="invalid-note">
+          {rejected.map((r) => (
+            <li key={r.docId}>
+              <span className="chip chip-bad">Failed verification</span> <span className="mono-ish">{r.ownerId.slice(0, 8)}…</span> ({CLAIM_METHOD_LABEL[r.method as keyof typeof CLAIM_METHOD_LABEL] ?? `method ${r.method}`}): {r.reason}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 /** Claim flow for a signed-in identity that does not own the proposal yet. */
 export function ClaimPanel({ p, own, collateral }: { p: Proposal; own: Ownership; collateral: CollateralVerdict | null }) {
-  const { registry } = useApp();
+  const { registry, source } = useApp();
   const { forum, session, write, balance } = useForum();
-  const network = registry.coreNetwork;
+  const network = source.coreNetwork;
   const payP2pkh = decodeAddress(p.paymentAddress, network)?.type === 'p2pkh';
   const inputAddrs = useMemo(() => (collateral?.inputKeys ?? []).map((k) => p2pkhAddress(hexToBytes(k), network)), [collateral, network]);
   const [method, setMethod] = useState<2 | 3>(payP2pkh ? 2 : 3);
@@ -216,20 +239,6 @@ export function ClaimPanel({ p, own, collateral }: { p: Proposal; own: Ownership
             </fieldset>
           </form>
         )}
-        {own.verdict && own.verdict.rejected.length > 0 && (
-          <details className="small">
-            <summary>
-              {own.verdict.rejected.length} claim{own.verdict.rejected.length === 1 ? '' : 's'} that did not verify
-            </summary>
-            <ul>
-              {own.verdict.rejected.map((r) => (
-                <li key={r.docId}>
-                  <span className="mono-ish">{r.ownerId.slice(0, 8)}…</span> (method {r.method}): {r.reason}
-                </li>
-              ))}
-            </ul>
-          </details>
-        )}
       </div>
     </details>
   );
@@ -283,9 +292,27 @@ export function OwnerPost({ govHash, ownerId, post }: { govHash: string; ownerId
       </section>
     );
   }
+  // A description that does not decode failed verification: hidden behind the same kind of click, with the reason.
+  if (s.error && !isOwner && !reveal) {
+    return (
+      <section className="owner-post" data-testid="owner-post">
+        <p className="muted small" data-testid="owner-post-invalid">
+          The owner's description failed verification: {s.error}.{' '}
+          <button type="button" className="linkish" onClick={() => setReveal(true)}>
+            Show it
+          </button>
+        </p>
+      </section>
+    );
+  }
   return (
     <section aria-labelledby="post-title" className="owner-post" data-testid="owner-post">
-      {s.error && <p className="error small">{s.error}</p>}
+      {s.error && (
+        <p className="invalid-note small">
+          <span className="chip chip-bad">Failed verification</span> {s.post?.title ? `"${s.post.title}": ` : ''}
+          {s.error}
+        </p>
+      )}
       {s.post && s.body !== null && !editing && (
         <>
           <h2 id="post-title">{s.post.title}</h2>

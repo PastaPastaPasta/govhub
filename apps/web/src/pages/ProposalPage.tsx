@@ -1,12 +1,12 @@
 // /p/h/<govHash> (canonical) and /p/<name> (slug; duplicate names get a chooser).
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { parseProposalData, urlClaimIdentity } from '@govhub/verify';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { Discussion } from '../ui/Discussion.tsx';
 import { ErrorBoundary } from '../ui/ErrorBoundary.tsx';
-import { ClaimPanel, OwnerPost, OwnerValue, ownerProvenance, useOwnership, useOwnerPost } from '../ui/Ownership.tsx';
+import { ClaimPanel, OwnerPost, OwnerValue, ownerProvenance, RejectedClaims, useOwnership, useOwnerPost } from '../ui/Ownership.tsx';
 import { openSignIn } from '../ui/SignIn.tsx';
 import { useReactions } from '../ui/useReactions.ts';
 import { Votes } from '../ui/Votes.tsx';
@@ -156,11 +156,17 @@ function CommunityVote({ govHash }: { govHash: string }) {
 }
 
 function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
-  const { source, gov, params, mode } = useApp();
+  const { source, gov, params, mode, checks } = useApp();
   const p = sp.value;
   const now = source.now();
   const tallies = useAsync(() => source.tallies([p.govHash]), [source, p.govHash]);
   const collateral = useCollateralCheck(p);
+  // This page's full check counts for the lists too; a proposal hidden there is still shown here, under a banner.
+  useEffect(() => {
+    if (collateral.verdict) checks.record(p, collateral.verdict, { full: true });
+  }, [checks, p, collateral.verdict]);
+  useSyncExternalStore(checks.subscribe, checks.getVersion);
+  const check = checks.state(p);
   const [votes, setVotes] = useState<VotesDone | null>(null);
   const cycle = gov.cycle.data ?? null;
   const row = useMemo(() => deriveRow(sp, tallies.data ?? new Map(), gov.bridgeTallies, cycle, params, now), [sp, tallies.data, gov.bridgeTallies, cycle, params, now]);
@@ -203,9 +209,10 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
           <Link to={p.endEpoch > now ? '/' : '/past'}>{p.endEpoch > now ? 'Active proposals' : 'Past proposals'}</Link>
         </p>
         <h1>{p.name}</h1>
-        {!row.content.ok && (
-          <p className="error" role="alert">
-            The published fields do not match the proposal's hashed data ({row.content.problem}). The link is disabled; see Raw proposal data for what the hash commits to.
+        {check.status === 'failed' && (
+          <p className="invalid-banner" role="alert" data-testid="invalid-banner">
+            <b>This proposal failed verification:</b> {check.reason}.{' '}
+            {row.content.ok ? 'It is hidden from the proposal lists.' : 'It is hidden from the proposal lists and its link is disabled; see Raw proposal data for what the hash commits to.'}
           </p>
         )}
         <p className="proposal-sub">
@@ -288,6 +295,7 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
             )}
             <Item label="Owner" prov={ownerProvenance(own.verdict?.owner ?? null, mode === 'fixtures') ?? contentProv}>
               <OwnerValue p={p} own={own} />
+              <RejectedClaims own={own} />
             </Item>
             <Item label="Collateral" prov={contentProv}>
               <span className="mono-ish break">{p.collateralTxid}</span> <span className="muted">at block {formatInt(p.collateralHeight)}</span>
