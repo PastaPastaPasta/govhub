@@ -162,9 +162,11 @@ Rules that live above this package (in `apps/web/src/badge/reader.ts`):
 
 - Never a count, a history or a type; at most one badge per identity per issuer.
 - Badges are never summed across issuers. k issuers can give one MN k badges, shown per issuer.
-- Audit: the verified badges of (issuer, E) are counted against the issuer's own `issuerReport.tokensIssued`.
-  More badges than tokens flags the issuer and hides its badges for that epoch. The count stops after 20 pages of
-  100, so it is a lower bound on very large sets.
+- Audit (apps/web): the verified badges of (issuer, E) are counted against the issuer's own `issuerReport.tokensIssued`.
+  A report counts only if it was created in `[S(E), S(E)+W]` (a stolen report key cannot fix future counts in advance)
+  and is plausible (not more tokens than masternodes). More badges than tokens, an implausible report, or no valid
+  report once `S(E)+W` has passed flags the issuer and hides its badges for that epoch. The count stops after 20 pages
+  of 100 and is then marked incomplete.
 
 Verification is cheap: about 20 to 30 microseconds per badge in Chromium (spike results).
 

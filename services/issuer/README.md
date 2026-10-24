@@ -7,8 +7,9 @@ service, its keys, its API and how to run it.
 
 ```
  dashd (RPC only)                         Platform (evo-sdk, proved reads)
-   getblockcount, getblockhash,             issuerKey of the epoch (check before signing)
-   protx info <proTxHash> [<block>]         issuerReport (written once per closed epoch, HIGH key)
+   getblockcount,                           issuerKey of the epoch (check before signing)
+   protx list registered true [<height>]    issuerReport (written once per closed epoch, HIGH key)
+   (lists cached by the timer: MnLists)
         |                                        |
         v                                        v
    TokenService  <-- challenge, token --  HTTP API (hono) <-- browser Worker (blind, finalize)
@@ -50,17 +51,23 @@ runs `issuer healthcheck` (exit 0 if `GET /healthz` answers).
 |---|---|---|
 | 1 | shape: `request` is a string, `signature` is base64 of 65 bytes, `blindedMsg` is base64; the request parses in canonical form | `bad-request` |
 | 2 | `net` is this issuer's network; the issuer is this identity | `wrong-network`, `wrong-issuer` |
-| 3 | `epoch` is the epoch being issued at the dashd tip, `issuingEpochAt(tip)` | `wrong-epoch` |
+| 3 | `epoch` is the epoch being issued at the cached tip, `issuingEpochAt(tip)`; the answer carries `issuingEpoch` | `wrong-epoch` |
 | 4 | a key is ready for that epoch (see "Keys"); the request's `keyId` is that key | `unavailable`, `wrong-key` |
 | 5 | the challenge in `nonce` is authentic and not expired; `sha256(blindedMsg)` equals the bound hash; `blindedMsg` has modulus length | `bad-challenge`, `bad-request` |
-| 6 | **authentication**: the public key recovered from the `signmessage` signature has the hash160 that is `keyIDVoting` of the proTxHash in the **current** list | `unauthorized` |
-| 7 | **eligibility**: the MN is valid (not PoSe-banned) now; it was registered **and** valid at `S(E-1)`; its collateral outpoint is the same at both heights | `not-eligible` |
-| 8 | atomic dedup in SQLite, then sign and verify | `already-issued` |
+| 6 | **authentication**: the public key recovered from the `signmessage` signature has the hash160 that is `keyIDVoting` of the proTxHash in the **current** list (cached) | `unauthorized` |
+| 7 | at most 6 requests per MN per minute (memory only); the tip, read fresh from dashd, is still inside `E-1` | `unavailable`, `wrong-epoch` |
+| 8 | **eligibility**: the MN is valid (not PoSe-banned) now; it was registered **and** valid at `S(E-1)` (cached snapshot); its collateral outpoint is the same at both heights | `not-eligible` |
+| 9 | the token store has existed since the window opened; atomic dedup in SQLite, then sign and verify | `unavailable`, `already-issued` |
 
 Notes:
 
 - Every failure in step 6 is the same `403 unauthorized`: an unknown proTxHash, a wrong key and a bad signature look
-  identical, so a stranger learns nothing about any MN. Only the holder of the voting key sees the step 7 answers.
+  identical, so a stranger learns nothing about any MN. Only the holder of the voting key sees the answers from step 7 on.
+- Nothing before authentication touches dashd: the timer (`ISSUER_TICK_S`) caches the current list and the `S(E-1)`
+  snapshot with `protx list registered true [height]` (`MnLists`, `src/core.ts`; the snapshot once it is
+  `boundaryMarginBlocks` deep). Only an authenticated request costs one `getblockcount`, so a stranger cannot load dashd.
+- A token store created (or reset) after an epoch's window opened refuses that epoch: it cannot know the tokens issued
+  before, so it could neither dedup them nor report the right count. The first height is kept in the database.
 - Dedup: `PRIMARY KEY (epoch, proTxHash)` and `UNIQUE (epoch, collateral)`. A retry with the same
   `sha256(blindedMsg)` gets the same signature (RSA signing is deterministic) and is not counted again. A
   different blinded message is refused with `already-issued`. Two MNs that share one voting key each get their own
@@ -69,8 +76,9 @@ Notes:
   so the length check is explicit). The raw operation is `privateDecrypt` with `RSA_NO_PADDING`, which uses CRT. Before
   the result leaves the class, `publicEncrypt` with `RSA_NO_PADDING` must give back `m`: one faulty CRT signature
   would leak the key. Signing runs inside the SQLite transaction, so a failure stores nothing.
-- Core is read-only: `getblockcount`, `getblockhash`, `protx info`. If Core is unreachable the answer is
-  `503 unavailable`.
+- Core is read-only: `getblockcount`, `protx list`. If Core is unreachable or the lists are not loaded, the answer is
+  `503 unavailable`. The issuer currently uses the stack's RPC credential, which allows every RPC; before mainnet,
+  give it its own `rpcauth` user with `rpcwhitelist=<user>:getblockcount,protx` (not done yet).
 
 ### Challenges
 
@@ -109,9 +117,11 @@ Errors are `{error, message}`:
 | `wrong-epoch` | 409 | not the epoch being issued, or issuance for it has closed |
 | `wrong-key` | 409 | the request names another key than this epoch's `issuerKey` |
 | `already-issued` | 409 | this MN (or its collateral) already has a token for this epoch |
-| `unavailable` | 503 | no key ready, Core or signing failed, or the global rate limit (with `Retry-After: 5`) |
+| `unavailable` | 503 | no key ready, lists not loaded, Core or signing failed, the per-MN limit, or the global limit (with `Retry-After: 5`) |
 
-The rate limit is global, `ISSUER_MAX_TOKEN_RPS` token requests per second (default 20). No per-IP state is kept.
+Limits: a per-MN limit (6 per minute) after authentication, and a global `ISSUER_MAX_TOKEN_RPS` (default 200) as a CPU
+backstop only. Rejecting a stranger's request costs a parse, an HMAC and a signature recovery, with no RPC. No per-IP
+state is kept.
 Every response carries `Access-Control-Allow-Origin: *` (no credentials), `Cache-Control: no-store`,
 `Referrer-Policy: no-referrer` and `X-Content-Type-Options: nosniff`.
 
@@ -161,10 +171,13 @@ to the server, and only for `issuerReport` documents. Key files are JSON
 
 - Token rows: `(epoch, proTxHash, collateral, sha256(blindedMsg))`. No IP, no timestamp, no request string, no
   signature. SQLite runs with `secure_delete`, `synchronous = FULL` and WAL.
-- Once an epoch's issuance window has closed (plus the margin), its rows are deleted. Only the per-epoch count
-  stays, and the epoch is marked closed, so late requests for it get `wrong-epoch`.
+- Once an epoch's issuance window has closed (plus the margin), its rows are deleted and the WAL is checkpointed
+  (`TRUNCATE`), so the old frames do not linger. Only the per-epoch count stays, and the epoch is marked closed, so late
+  requests for it get `wrong-epoch`. Keep `/data` and the key directory out of host backups and snapshots.
 - After the window closes the issuer publishes `issuerReport {epoch, tokensIssued}` with the HIGH key, once per epoch
-  it served. Readers compare it with the number of valid badges.
+  it served. Readers accept it only if it was created in `[S(E), S(E)+W]` and is plausible, and compare it with the
+  number of valid badges. If a report for the epoch already exists with another count (another instance, or a stolen
+  report key), the issuer logs an error: the document is immutable.
 - Logs are JSON lines on stderr. They never contain IPs, proTxHashes, request strings, blinded messages or
   signatures, and token events are not logged one by one. Only hourly aggregate counters are logged (`issued`,
   `retry`, and a counter per error code).
@@ -190,7 +203,7 @@ Environment variables plus secret files. An empty value means the default. Secre
 | `DB_PATH` | `./data/issuer.sqlite` | the image sets `/data/issuer.sqlite` |
 | `HTTP_HOST` / `HTTP_PORT` | `127.0.0.1` / `8789` | the image sets `0.0.0.0` |
 | `ISSUER_REPORT_KEY_FILE` | | the identity's HIGH key file for `issuerReport`. Unset or an empty file: no reports are published. Must belong to `ISSUER_IDENTITY_ID` |
-| `ISSUER_MAX_TOKEN_RPS` | `20` | global limit |
+| `ISSUER_MAX_TOKEN_RPS` | `200` | global CPU backstop (per-MN limits apply after authentication) |
 | `ISSUER_TICK_S` | `30` | seconds between epoch housekeeping runs (min 1) |
 | `ISSUER_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 
@@ -216,12 +229,20 @@ The badge flow is in `apps/web/src/badge`:
   code the issuer serves. Calls use `credentials: 'omit'`, `referrerPolicy: 'no-referrer'`, `cache: 'no-store'` and
   `redirect: 'error'`.
 - The key and epoch come from the proved `issuerKey` and Platform's core height. The request is sent at a random
-  height in the issuance window, and the badge is posted at a random height in the posting window.
+  height in the issuance window (the next epoch's, if less than a quarter of the current one is left), and the badge is
+  posted at a random height in the posting window.
+- **Visit separation** (`visit.ts`): a page load does either one token request or identity writes, never both. A request
+  waits for a visit in which the identity has written nothing (every `Session.signAndBroadcastDocument` marks the visit),
+  and requests from one browser are at least 30 minutes apart across tabs and identities. After a request the app shows a
+  note asking the user not to post until the next visit. One scheduler per identity runs across tabs (Web Locks), and
+  every save merges into the latest stored jobs under a lock.
+- A badge is posted only when the issuer's report for the epoch shows at least the network's minimum number of tokens
+  (testnet 3, mainnet 10): a badge among two or three would stand out.
 - One request per issuer per epoch per identity. More would only tell the issuer which MNs belong together.
 - Pending jobs are kept in `localStorage`, encrypted with AES-256-GCM under
   `HKDF-SHA256(identity signing key, salt "govhub-badge-store-v1", info identityId)`, with the identity id as AAD,
-  padded to 16 KiB buckets. With `keepKey` (the default) the pasted voting key stays in the encrypted job to renew
-  each epoch.
+  padded to 16 KiB buckets. The pasted voting key is forgotten once the request is sent, unless the user opts in to
+  renewal (`keepKey`, off by default). Finished jobs forget the proTxHash.
 - Settings has the trust list and the audit status per issuer. The default list is pinned in the client and has
   our issuer only: `govhub`, `H62hSf5TpKbUSMov85GMhPQahZDbqsTipeoBsYPgveUH`, `https://gov-issuer-testnet.dashhq.org`.
 - The discussion filter "Proposal owner + MN owners" becomes the default once any trusted badge is live.
@@ -234,7 +255,9 @@ The badge means "controls the voting key of a valid masternode, according to iss
 |---|---|
 | Issuer soundness | An issuer can mint fake badges. `issuerReport` is self-reported, so the audit only catches an issuer whose public badges exceed its own claim |
 | Issuer knowledge | The issuer learns which MNs asked, when, and their IP and browser. A badge is anonymous only among the MNs that asked that issuer in that epoch |
-| Same operator | If one organization runs the issuer, portal, faucet and DAPI nodes, IP and browser correlation is the main de-anonymization risk. Use separate origins, Tor or OHTTP, and a second independent issuer |
+| Same IP | The issuer sees the request's IP address; the DAPI nodes the app uses see the same address when the identity reads or writes. An operator running both (on testnet, and likely on mainnet, the issuer's operator runs evonodes) links the MN to the identity whatever the timing. The Cloudflare tunnel also sees request bodies with client IPs. Use Tor or a VPN, and a second independent issuer |
+| Small crowds | A badge that appears for the first time (or stops) can be matched to an MN that started (or stopped) asking at the same time when few others did. The client posts nothing below the minimum token count; the issuer still chooses whom it serves |
+| Same visit | Visit separation keeps the scheduler's request and the identity's writes apart, but a user who writes from the identity right after a request (despite the note) links them for the issuer |
 | Public fingerprinting | Comments that state votes can be matched against public per-MN vote records. Keep voting and commenting separate |
 | Delegated voting keys | A host or pool that holds a voting key can mint a badge for it. Accepted |
 | Wait time | A new MN waits up to one epoch plus W (testnet ~27 hours, mainnet ~32 days) |
