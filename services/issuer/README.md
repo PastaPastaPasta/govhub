@@ -221,9 +221,9 @@ repository root as context, joins `default` (dashd RPC) and `edge`, and publishe
 uses the secrets `core_rpc_password`, `issuer_hmac_secret` and `issuer_report_key`, and the volumes
 `issuer-data:/data` and `${SECRETS_DIR}/issuer-keys:/keys` (mode 0700, uid 1000, writable so the service can
 destroy old keys). `deploy/scripts/init.sh` creates the HMAC secret, an empty `issuer_report_key.json` placeholder
-(the service refuses to start until you fill it) and the key directory. `deploy/docker-compose.issuer-tunnel-guest.yml` puts the issuer
-on another stack's tunnel. How to publish it, and the testnet deployment, are in `deploy/README.md` (sections 11.4
-and 13.2).
+(the service refuses to start until you fill it) and the key directory. `deploy/docker-compose.issuer-tunnel-guest.yml` publishes it
+through another stack's tunnel via the guest's gateway. How to publish it, and the testnet deployment, are in
+`deploy/README.md` (sections 11.5 and 13.2).
 
 ## Web client
 

@@ -52,6 +52,9 @@ jobs:
           - name: testnet + issuer + tunnel profiles
             compose_file: docker-compose.yml:docker-compose.testnet.yml
             profiles: issuer,tunnel
+          - name: testnet + issuer and relay as tunnel guests
+            compose_file: docker-compose.yml:docker-compose.testnet.yml:docker-compose.tunnel-guest.yml:docker-compose.relay-tunnel-guest.yml:docker-compose.issuer-tunnel-guest.yml
+            profiles: issuer,relay
           - name: testnet + p2p + proxy profile
             compose_file: docker-compose.yml:docker-compose.testnet.yml:docker-compose.p2p.yml
             profiles: proxy

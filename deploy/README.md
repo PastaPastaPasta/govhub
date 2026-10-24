@@ -18,7 +18,7 @@ replaceable (PLAN section 1.1), so a third-party bridge is a first-class deploym
 ```
 
 Slots for `relay` and `accounts` are marked in `docker-compose.yml`. They are not built yet. The
-MN badge `issuer` is built (profile `issuer`, sections 11.4 and 13.2).
+MN badge `issuer` is built (profile `issuer`, sections 11.5 and 13.2).
 
 ## Contents
 
@@ -86,7 +86,7 @@ wallet disabled (the bridge needs none); `DASHD_EXTRA_ARGS=-disablewallet=0` tur
 | `docker-compose.p2p.yml` | override: publish dashd's P2P port (set `DASHD_P2P_PORT`) |
 | `docker-compose.tunnel-guest.yml` | override: serve this stack's bridge through another stack's cloudflared, via a gateway on a `tunnel` network (section 11.3) |
 | `docker-compose.tunnel-host.yml` | override: this stack's cloudflared also joins another stack's `tunnel` network (section 11.3) |
-| `docker-compose.issuer-tunnel-guest.yml` | override: serve this stack's `issuer` (profile `issuer`) through another stack's cloudflared, under its own alias (section 11.5) |
+| `docker-compose.issuer-tunnel-guest.yml` | override (last, after `docker-compose.tunnel-guest.yml`): the gateway also forwards to this stack's `issuer` (profile `issuer`) under its own alias (section 11.5) |
 | `.env.example` | every variable, commented, no secrets |
 | `dashd/dash.conf`, `dashd/entrypoint.sh` | Core config template and the wrapper that adds network, RPC credentials and `dbcache` |
 | `caddy/Caddyfile` | TLS reverse proxy; GET/HEAD/OPTIONS only, CORS handled here |
@@ -626,11 +626,13 @@ Before the first start you need an issuer identity, a `badge` contract and the o
      --route gov-issuer.example.org=http://issuer:8789
    ```
 
-**Through another stack's cloudflared.** On a host with two stacks, one cloudflared serves both (the same pattern as
-the bridge's tunnel-guest overlay). `docker-compose.issuer-tunnel-guest.yml` joins the issuer to the
-stack's `tunnel` network under the alias `${ISSUER_TUNNEL_ALIAS:-<project>-issuer}`, for example
-`govhub-testnet-issuer`, so the route is `http://govhub-testnet-issuer:8789` and cannot resolve to another stack's
-issuer. Layer it in `COMPOSE_FILE` after the network files.
+**Through another stack's cloudflared.** On a host with two stacks, one cloudflared serves both, through the guest's
+`tunnel-gateway` like the relay (section 11.4): the issuer never joins the shared `tunnel` network. Layer
+`docker-compose.issuer-tunnel-guest.yml` last, after `docker-compose.tunnel-guest.yml` (and
+`docker-compose.relay-tunnel-guest.yml` if the relay is published too). The gateway then runs
+`caddy/tunnel-gateway-issuer.Caddyfile` (8787 bridge, 8788 relay, 8789 issuer) with the extra alias
+`${ISSUER_TUNNEL_ALIAS:-<project>-issuer}`, for example `govhub-testnet-issuer`, so the route is
+`http://govhub-testnet-issuer:8789`.
 
 **State.** The `issuer-data` volume holds the dedup rows of the open issuance window and the per-epoch counts that become
 `issuerReport`. It is small. If it is lost during a window, MNs can get a second token and the report undercounts,
@@ -825,8 +827,8 @@ own checkout, so it can follow the `mn-badge` branch without touching the rest o
 |---|---|
 | Checkout | `/opt/govhub-issuer` (stack in `/opt/govhub-issuer/deploy`), branch `mn-badge` until it is merged |
 | Project | `govhub-testnet`, the testnet stack's project, so the issuer reaches its `dashd` |
-| Compose | `COMPOSE_FILE=docker-compose.yml:docker-compose.testnet.yml:docker-compose.issuer-tunnel-guest.yml`, `COMPOSE_PROFILES=issuer` |
-| Start | `docker compose up -d --no-deps issuer` (only the issuer; the testnet bridge and dashd are not touched) |
+| Compose | `COMPOSE_FILE=docker-compose.yml:docker-compose.testnet.yml:docker-compose.tunnel-guest.yml:docker-compose.relay-tunnel-guest.yml:docker-compose.issuer-tunnel-guest.yml`, `COMPOSE_PROFILES=relay,issuer` (the testnet stack's `.env` plus the issuer settings) |
+| Start | `docker compose up -d --no-deps issuer tunnel-gateway` (the issuer, and the gateway with the issuer listener; dashd, the bridge and the relay are not touched) |
 | Secrets | `/opt/govhub-testnet/deploy/secrets`: it shares the testnet stack's RPC password; the HMAC secret, the HIGH key file and `issuer-keys/` are in the same directory |
 | Keys on the server | `ISSUER_MAX_STAGED_KEYS=7`: a week of daily keys without an operator. This is a testnet convenience; mainnet keeps 1 |
 | Port | `127.0.0.1:8789` (loopback) |

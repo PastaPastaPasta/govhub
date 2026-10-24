@@ -1,16 +1,24 @@
-# Publish THIS stack's issuer through ANOTHER stack's cloudflared on the same host, like docker-compose.tunnel-guest.yml
-# does for the bridge (README section 11.3). Layer it after the tunnel-guest file:
-#   COMPOSE_FILE=docker-compose.yml:docker-compose.testnet.yml:docker-compose.tunnel-guest.yml:docker-compose.issuer-tunnel-guest.yml
-#   COMPOSE_PROFILES=issuer
-# The issuer joins the stack's `tunnel` network under a unique alias (default `<project>-issuer`, e.g. `govhub-testnet-issuer`),
-# so the tunnel route is `http://<ISSUER_TUNNEL_ALIAS>:8789` and can never resolve to another stack's issuer. Give it its own
-# public hostname: the issuer must not share an origin with the portal, the bridge or the relay.
+# Publish THIS stack's issuer through ANOTHER stack's cloudflared on the same host, next to its bridge (and relay), like
+# docker-compose.relay-tunnel-guest.yml (README sections 11.3, 11.5). Layer it LAST, after docker-compose.tunnel-guest.yml (and
+# docker-compose.relay-tunnel-guest.yml when the relay is published too), with the issuer profile:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.testnet.yml:docker-compose.tunnel-guest.yml[:docker-compose.relay-tunnel-guest.yml]:docker-compose.issuer-tunnel-guest.yml
+#   COMPOSE_PROFILES=issuer[,relay]
+#
+# The issuer does NOT join the shared `tunnel` network (only the gateway may). The gateway gets a listener 8789 -> issuer:8789
+# over the guest's `edge` network and the alias ISSUER_TUNNEL_ALIAS (default `<project>-issuer`, e.g. `govhub-testnet-issuer`).
+# Tunnel route: `gov-issuer-testnet.<zone> -> http://govhub-testnet-issuer:8789`, its own hostname (its own browser origin).
 services:
-  issuer:
+  tunnel-gateway:
+    depends_on:
+      - bridge
+      - issuer
+    command: ["caddy", "run", "--adapter", "caddyfile", "--config", "/etc/caddy/Caddyfile"]
+    volumes:
+      - ./caddy/tunnel-gateway-issuer.Caddyfile:/etc/caddy/Caddyfile:ro
     networks:
+      edge: {}
       tunnel:
         aliases:
+          - ${TUNNEL_ALIAS:-${COMPOSE_PROJECT_NAME:-govhub}-bridge}
+          - ${RELAY_TUNNEL_ALIAS:-${COMPOSE_PROJECT_NAME:-govhub}-relay}
           - ${ISSUER_TUNNEL_ALIAS:-${COMPOSE_PROJECT_NAME:-govhub}-issuer}
-
-networks:
-  tunnel: {}
