@@ -17,7 +17,7 @@ export { mergeStreams, race } from './race.ts';
 export type { MergeStats, RaceResult } from './race.ts';
 export { BLOOM_UPDATE_ALL, BLOOM_UPDATE_NONE, BLOOM_UPDATE_P2PUBKEY_ONLY, BloomFilter, MIN_BLOOM_BYTES, matchAllFilter } from './bloom.ts';
 export type { BloomFilterData } from './bloom.ts';
-export { LLMQ_TYPE, parseSml, quorumsOfType } from './sml.ts';
+export { LLMQ_TYPE, parseSml, parseSmlDecoded, quorumsOfType } from './sml.ts';
 export type { Sml, SmlEvonode, SmlMasternode, SmlQuorum } from './sml.ts';
 export { decodeCbor } from './cbor.ts';
 export {

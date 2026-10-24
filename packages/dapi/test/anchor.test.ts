@@ -149,7 +149,7 @@ describe('getVerifiedTransaction with an anchored chain (mainnet)', () => {
     const v = await d.getVerifiedTransaction(fx.txid, { anchor });
     expect(fake.calls.filter((c) => c.endsWith('subscribeToBlockHeadersWithChainLocks')).length).toBe(before);
     expect(v.chainLocked).toBe('verified');
-    expect(v.proof.anchor).toEqual({ tip: f.top, confirmations: f.top - fx.height + 1 });
+    expect(v.proof.anchor).toEqual({ tip: f.top, confirmations: f.top - fx.height + 1, chainLockHeight: f.chainLock.height });
     expect(v.proof.chainLock).toMatchObject({ height: f.chainLock.height, verifiedConfirmations: f.chainLock.height - fx.height + 1 });
     // a block that is not the verified one at that height is a lie, not a fallback
     const wrong = { ...anchor, chain: Object.create(anchor.chain, { hashHexAt: { value: () => hex(hashBytes(f.hashAt(f.from))) } }) };

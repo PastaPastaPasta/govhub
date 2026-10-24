@@ -92,7 +92,7 @@ export interface VerifiedTransaction {
     blockHash: 'verified' | 'claimed';
     chainLock: null | { height: number; blockHash: string; quorumHash: string; exact: boolean; verifiedConfirmations: number };
     /** The block is in the verified chain of `options.anchor`: `confirmations` = verified tip - height + 1 (a lower bound). */
-    anchor: null | { tip: number; confirmations: number };
+    anchor: null | { tip: number; confirmations: number; chainLockHeight: number };
     /** Why the ChainLock was not verified, when it was not. */
     notes: string[];
   };

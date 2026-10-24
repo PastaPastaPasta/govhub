@@ -76,8 +76,9 @@ async function run(d: Dapi, st: State, o: AnchorOptions): Promise<AnchoredChain>
   // 2. the tip a node claims, the masternode list and the newest ChainLock, in parallel with the header download
   t = Date.now();
   const best = await tipHint(d, o);
+  const tSml = Date.now();
   const smlP = fetchSml(d, o);
-  smlP.catch(() => {});
+  smlP.then(() => { ms.smlFetch = Date.now() - tSml; }, () => {}); // download of the ~1.4 MB list, in parallel with the headers
   const want = Math.min(o.from ?? Infinity, cp.height - DGW_WINDOW);
   let fetched = 0;
   const fetchRun = async (from: number, to: number): Promise<HeaderRun> => {
@@ -107,10 +108,10 @@ async function run(d: Dapi, st: State, o: AnchorOptions): Promise<AnchoredChain>
   t = Date.now();
   progress('Proving the masternode list against the chain');
   const first = await smlP;
-  const sml = await proveAgainstChain(d, chain, first, hash, extendTo, o).catch(async (e) => {
+  const sml = await proveAgainstChain(d, chain, first, hash, extendTo, o, ms).catch(async (e) => {
     if (isAbort(e)) throw e;
     // one more node: the first may have sent a list from a block we cannot place, or a bad one
-    return proveAgainstChain(d, chain!, await fetchSml(d, o, [first.node]), hash, extendTo, o);
+    return proveAgainstChain(d, chain!, await fetchSml(d, o, [first.node]), hash, extendTo, o, ms);
   });
   lap('sml', t);
 
@@ -189,8 +190,8 @@ function streamHeaders(d: Dapi, node: string, from: number, count: number, signa
 }
 
 /**
- * Heights from..to as one run: chunks of CHUNK headers on up to PARALLEL nodes; a chunk that is slow (2.5x the median so far,
- * at least 4 s) is also asked from another node and the first complete answer wins; a chunk that fails or does not link inside
+ * Heights from..to as one run: chunks of CHUNK headers on up to PARALLEL nodes; a chunk that is slow (2x the median so far,
+ * at least 3 s) is also asked from another node, repeatedly (3 at once at most), and the first complete answer wins; a chunk that fails or does not link inside
  * itself is retried elsewhere. Linkage across chunks, work and difficulty are checked by the caller (HeaderChain).
  */
 export async function fetchHeaders(d: Dapi, from: number, to: number, hash: (h: Uint8Array) => Uint8Array, o: { signal?: AbortSignal } = {}): Promise<HeaderRun> {
@@ -214,10 +215,10 @@ export async function fetchHeaders(d: Dapi, from: number, to: number, hash: (h: 
       outer.signal.addEventListener('abort', stop, { once: true });
       try {
         const winner = await new Promise<{ raw: Uint8Array; hashes: Uint8Array; node: string }>((resolve, reject) => {
-          let pending = 0, done = false, hedge: ReturnType<typeof setTimeout> | undefined;
+          let pending = 0, done = false, hedge: ReturnType<typeof setInterval> | undefined;
           const ask = () => {
             const node = d.pool.pick(1, tried)[0];
-            if (!node) { if (pending === 0 && !done) reject(new Error('no node left for headers')); return; }
+            if (!node) { if (pending === 0 && !done) { clearInterval(hedge); reject(new Error('no node left for headers')); } return; }
             tried.add(node);
             pending++;
             try { d.pool.charge(node); } catch (e) { pending--; errors.push(e); ask(); return; }
@@ -227,16 +228,17 @@ export async function fetchHeaders(d: Dapi, from: number, to: number, hash: (h: 
                 if (!raw.subarray(i * 80 + 4, i * 80 + 36).every((b, j) => b === hs[(i - 1) * 32 + j])) throw new VerificationError('header-chain', `headers from ${node} do not link`);
               }
               d.pool.ok(node);
-              if (!done) { done = true; clearTimeout(hedge); resolve({ raw, hashes: hs, node }); }
+              if (!done) { done = true; clearInterval(hedge); resolve({ raw, hashes: hs, node }); }
             }).catch((e) => {
               if (!isAbort(e)) { errors.push(e); d.pool.fail(node, e); }
-              if (--pending === 0 && !done) { if (ctrl.signal.aborted) reject(abortReason(ctrl.signal)); else ask(); }
+              if (--pending === 0 && !done) { if (ctrl.signal.aborted) { clearInterval(hedge); reject(abortReason(ctrl.signal)); } else ask(); }
             });
           };
-          ask();
           const sorted = durations.slice().sort((a, b) => a - b);
           const median = sorted[sorted.length >> 1] ?? 3000;
-          hedge = setTimeout(() => { if (!done) ask(); }, Math.max(3000, median * 2));
+          // slow chunk: ask another node (again and again, at most 3 at once); the first complete answer wins
+          hedge = setInterval(() => { if (!done && pending < 3) ask(); }, Math.max(3000, median * 2));
+          ask();
         });
         headers.set(winner.raw, (c.from - from) * 80);
         hashes.set(winner.hashes, (c.from - from) * 32);
@@ -298,7 +300,10 @@ async function applyRun<T>(d: Dapi, r: HeaderRun, hash: (h: Uint8Array) => Uint8
 
 interface RawSml { node: string; decoded: { [k: string]: Cbor } }
 
-/** One node's full SML (first stream message), hedged to a second node after 6 s. */
+/**
+ * One node's full SML (first stream message, ~1.4 MB on mainnet). Another node is asked every 6 s while none has answered (at most
+ * 4 at once), and a round that takes over 45 s (nodes trickling the message) starts over with fresh nodes.
+ */
 async function fetchSml(d: Dapi, o: { signal?: AbortSignal }, avoid: string[] = []): Promise<RawSml> {
   await d.ready();
   const tried = new Set(avoid);
@@ -307,6 +312,7 @@ async function fetchSml(d: Dapi, o: { signal?: AbortSignal }, avoid: string[] = 
     const ctrl = new AbortController();
     const stop = () => ctrl.abort(abortReason(o.signal!));
     o.signal?.addEventListener('abort', stop, { once: true });
+    let hedge: ReturnType<typeof setInterval> | undefined, deadline: ReturnType<typeof setTimeout> | undefined;
     try {
       return await new Promise<RawSml>((resolve, reject) => {
         let pending = 0, done = false;
@@ -321,7 +327,7 @@ async function fetchSml(d: Dapi, o: { signal?: AbortSignal }, avoid: string[] = 
             const decoded = decodeCbor(b);
             if (!decoded || typeof decoded !== 'object' || Array.isArray(decoded) || decoded instanceof Uint8Array) throw new Error('sml: not a map');
             if (!done) { done = true; resolve({ node, decoded: decoded as RawSml['decoded'] }); }
-          }, { signal: ctrl.signal, idleTimeoutMs: 45_000, connectTimeoutMs: d.options.timeoutMs ?? 15000 });
+          }, { signal: ctrl.signal, idleTimeoutMs: 30_000, connectTimeoutMs: d.options.timeoutMs ?? 15000 });
           void h.closed.then((r) => {
             if (done) return;
             if (r.reason === 'error' && !isAbort(r.error)) { errors.push(r.error); d.pool.fail(node, r.error); }
@@ -329,12 +335,15 @@ async function fetchSml(d: Dapi, o: { signal?: AbortSignal }, avoid: string[] = 
           });
         };
         ask();
-        setTimeout(() => { if (!done) ask(); }, 6000);
+        hedge = setInterval(() => { if (!done && pending < 4) ask(); }, 6000);
+        deadline = setTimeout(() => { if (!done) reject(new GrpcError(4, 'masternode list download took over 45 s', { network: true })); }, 45_000);
       });
     } catch (e) {
       if (o.signal?.aborted) throw abortReason(o.signal);
       errors.push(e);
     } finally {
+      clearInterval(hedge);
+      clearTimeout(deadline);
       ctrl.abort();
       o.signal?.removeEventListener('abort', stop);
     }
@@ -343,8 +352,10 @@ async function fetchSml(d: Dapi, o: { signal?: AbortSignal }, avoid: string[] = 
 }
 
 /** proveSml + the block it names is in the chain and its header's merkle root is the one the coinbase proof hashes to. */
-async function proveAgainstChain(d: Dapi, chain: HeaderChain, raw: RawSml, hash: (h: Uint8Array) => Uint8Array, extendTo: (h: number) => Promise<void>, o: { signal?: AbortSignal }): Promise<ProvenSml> {
+async function proveAgainstChain(d: Dapi, chain: HeaderChain, raw: RawSml, hash: (h: Uint8Array) => Uint8Array, extendTo: (h: number) => Promise<void>, o: { signal?: AbortSignal }, ms: Record<string, number>): Promise<ProvenSml> {
+  const t = Date.now();
   const proof: SmlProof = proveSml(raw.decoded);
+  ms.smlProof = Date.now() - t; // re-serializing and hashing every entry and commitment
   await extendTo(proof.height);
   const want = chain.hashAt(proof.height);
   if (!want || hashHex(want) !== proof.blockHash) throw new VerificationError('sml', `the list's block ${proof.height} is not in the verified chain`);

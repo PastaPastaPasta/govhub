@@ -110,7 +110,7 @@ export async function getVerifiedTransaction(d: Dapi, txid: string, o: GetVerifi
   const a = o.anchor;
   if (base.merkle && base.hashChecked && a && a.chain.hashHexAt(base.height) === base.blockHash) {
     // the block is in the verified chain: inclusion, height and depth are proven without another header stream
-    anchored = { tip: a.tip, confirmations: a.tip - base.height + 1 };
+    anchored = { tip: a.tip, confirmations: a.tip - base.height + 1, chainLockHeight: a.chainLock.height };
     if (base.height <= a.chainLock.height) {
       chainLock = { height: a.chainLock.height, blockHash: a.chainLock.blockHash, quorumHash: a.chainLock.quorumHash, exact: a.chainLock.exact, verifiedConfirmations: a.chainLock.height - base.height + 1 };
     } else notes.push(`the block is newer than the newest verified ChainLock (${a.chainLock.height})`);
