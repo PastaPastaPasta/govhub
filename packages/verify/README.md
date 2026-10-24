@@ -28,6 +28,7 @@ DASH_CLI="dash-cli -datadir=... -regtest -rpcport=... -rpcuser=... -rpcpassword=
 | Votes | `voteFieldsError(v)`, `voteSignatureString(v)`, `voteSignatureHash(v)`, `voteSigningHash(v, network)`, `signVote({privKey, vote, network, compressed?})`, `recoverVoteSigner(sig, vote, network, {strict?})`, `verifyVoteSignature(sig, vote, keyId, network)` |
 | Messages | `dashMessageHash(msg)`, `signMessage(priv, msg)` (base64), `signMessageRaw`, `verifyMessage(addr, sig, msg, network)`, `recoverMessageSigner(sig, msg, network)` |
 | Tally | `tallyVotes(votes, weights, {now?}) -> {weighted, unweighted, absoluteYes, current, unknownMasternodes, rejected}`, `normalizeMnId` |
+| Vote set | `voteSetHash(entries)`, `voteSetPreimage(entries)`, `VOTE_SET_DOMAIN` (govhub-voteset-v1, section 7) |
 | Addresses | `decodeAddress`, `encodeAddress`, `p2pkhAddress`, `decodeWif`, `encodeWif`; `Network = 'mainnet' \| 'testnet' \| 'regtest'` |
 
 Conventions: **hashes cross the API in two forms**. `display` hex is what RPCs/explorers print (and what goes in
@@ -109,6 +110,33 @@ Per masternode the vote with the greater `time` wins; at **equal time the higher
 object.cpp:427-440). Weight is `GetMnType(type).voting_weight` (regular 1, evonode 4; `evo/dmn_types.h:26-44`, the "Invalid" type is 0).
 `absoluteYes = weighted yes - weighted no`, which is the number Core compares with the funding threshold.
 
+**PoSe-banned masternodes count.** CountMatchingVotes (object.cpp:880-893) looks every voter up with
+`tip_mn_list.GetMNByCollateral`, which returns banned masternodes too (evo/deterministicmns.cpp:104-107; only
+`GetValidMNByCollateral`, :109-116, filters bans), and `CGovernanceVote::IsValid` accepts their votes the same way (vote.cpp:231).
+So the weight map passed to `tallyVotes` must contain every *registered* masternode (`protx list registered`), banned or not.
+Validity only enters the funding threshold `max(nGovernanceMinQuorum, m_valid_weighted / 10)` (governance.cpp:1208-1209). Votes
+of masternodes that left the list, or whose voting key changed, are dropped by Core (`RemoveInvalidVotes`, governance.cpp:1150-1195,
+votedb.cpp:81-101). Checked live: the bridge's tallies built this way equal Core's `FundingResult` for all 28 mainnet proposals
+(2026-10-24, height 2,560,434), vote for vote.
+
+### 7. Vote set commitment: `voteSetHash` (govhub-voteset-v1)
+
+A tally document carries `voteSetHash` so a reader who re-verifies the signed votes can check that its recount used exactly the
+bridge's vote set.
+
+```
+lines = for every COUNTED masternode (its current funding vote per section 6, and present in the weight map),
+        sorted by the id string ascending (JS / ASCII order: "...-10" < "...-9"):
+          "<collateral txid, display hex lowercase>-<index>|<outcome 1|2|3 (0 if that is the current vote)>|<nTime>\n"
+hash  = SHA-256( "govhub-voteset-v1\n" || lines )      (UTF-8; 32 bytes, hex in natural byte order, no reversal)
+```
+
+Signal, proposal hash and signatures are not in the line: the set is per proposal, only funding votes are tallied, and each
+signature is verified on its own. `voteSetHash(entries)` normalises ids (`normalizeMnId`), rejects a masternode listed twice,
+and is order-independent. Typical use: `voteSetHash([...t.current].filter(([mn]) => weights.has(mn)).map(([mn, v]) => ({ mn, ...v })))`.
+Vectors: `test/voteset.test.ts` (pinned with coreutils `shasum`) and the bridge's recorded mainnet fixture
+(`services/bridge/test/fixtures`).
+
 ## Fixtures (`test/fixtures/`)
 
 | file | content | produced by |
@@ -163,5 +191,5 @@ Regtest needs `-txindex=1 -acceptnonstdtxn=1` (the multi-OP_RETURN variant is no
 
 ## Not covered
 
-SML parsing, BLS ChainLock verification and badge verification (also listed for this package in PLAN §11) are separate work. No test exists for a real mainnet vote signature because
-Core exposes votes without signatures over RPC; the P2P `govobjvote` message would be needed.
+SML parsing, BLS ChainLock verification and badge verification (also listed for this package in PLAN §11) are separate work. Real mainnet vote signatures are covered by the bridge's recorded fixtures (`services/bridge/test/fixtures`): Core exposes votes
+without signatures over RPC, so they were captured from ZMQ `rawgovernancevote` during a governance re-sync (5,133 votes, all verify).

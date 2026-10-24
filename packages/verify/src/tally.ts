@@ -78,9 +78,15 @@ function outcomeNumber(o: OutcomeInput): number {
  * the result independent of arrival order. Input order does not matter.
  *
  * Only pass FUNDING-signal votes on the proposal being tallied (there is no signal field here), already signature-verified
- * against the voting key (verifyVoteSignature). `weights` maps the same identifiers as `TallyVote.mn` to 1 (regular) or 4 (evonode) as of the tally height. Masternodes
- * absent from the map are reported in `unknownMasternodes` and not counted (a vote from a non-registered / PoSe-banned MN
- * has no weight in Core either).
+ * against the voting key (verifyVoteSignature). `weights` maps the same identifiers as `TallyVote.mn` to 1 (regular) or 4 (evonode) as of the tally height.
+ *
+ * The weight map must hold EVERY registered masternode of the tip list, PoSe-banned ones included, at its type's weight:
+ * Core's CountMatchingVotes (governance/object.cpp:880-893) looks voters up with `tip_mn_list.GetMNByCollateral`, which
+ * returns banned masternodes too (evo/deterministicmns.cpp:104-107; only GetValidMNByCollateral, :109-116, filters bans),
+ * and CGovernanceVote::IsValid accepts their votes the same way (governance/vote.cpp:231). Validity (not banned) matters only
+ * for the funding THRESHOLD, max(nGovernanceMinQuorum, m_valid_weighted / 10) (governance/governance.cpp:1208-1209).
+ * Masternodes absent from the map (no longer registered, or unknown) are reported in `unknownMasternodes` and not counted;
+ * Core drops their votes when they leave the list (CGovernanceManager::RemoveInvalidVotes, governance/governance.cpp:1150-1195).
  */
 export function tallyVotes(votes: Iterable<TallyVote>, weights: ReadonlyMap<string, number> | Readonly<Record<string, number>>, opts: TallyOptions = {}): TallyResult {
   const w = new Map<string, number>();
