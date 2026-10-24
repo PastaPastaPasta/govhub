@@ -78,7 +78,7 @@ Environment variables plus mounted secret files. An empty value means the defaul
 | `PORTAL_PROPOSAL_URL` | `https://gov.dashhq.org/p/{hash}` | DashCentral `dw_url`; `{hash}`, `{name}` substituted |
 | `BRIDGE_LOG_LEVEL` | `info` | JSON lines on stderr |
 | `QUORUM_PROOF` | `1` | `0` disables `/v1/quorum-proof` (404). See "Quorum proof relay" |
-| `QUORUM_PROOF_MAX_SPAN` | `250000` | refuse checkpoints more than this many blocks below the tip (proof cost grows linearly with the span) |
+| `QUORUM_PROOF_MAX_SPAN` | `100000` | refuse checkpoints more than this many blocks below the tip (proof cost grows linearly with the span) |
 | `QUORUM_PROOF_RATE_PER_MIN` / `QUORUM_PROOF_RATE_BURST` | `12` / `4` | per-client token bucket, charged on cache misses only |
 | `QUORUM_PROOF_WORKERS` / `QUORUM_PROOF_QUEUE` | `2` / `8` | concurrent Core calls / requests allowed to wait for one; more get 503 |
 | `QUORUM_PROOF_DEADLINE_MS` | `90000` | deadline of one `getquorumproofchain` call (no retries) |
@@ -105,10 +105,12 @@ until V24 activates) answers `501 unsupported`.
 | Response `200` | `application/octet-stream`: the raw DASHNC02 chain, or the bootstrap when `quorumHash`/`nodeCount` asked for records. `Cache-Control: no-store`; `X-Proof-Target-Height`, `X-Proof-Format: chain\|bootstrap` (exposed to browsers through CORS) |
 | Errors | JSON `{"error": "<code>", "message": "..."}`: `400 bad-request`, `404 checkpoint-unknown`, `409 not-yet` (the requested minimum height is not ChainLocked yet: retry), `413 too-large`, `422 checkpoint-too-old` / `no-bridge`, `429 rate-limited` (+ `Retry-After`), `501 unsupported`, `502 core`, `503 busy` (+ `Retry-After`) |
 
-Load control, mirroring the quorum-list-server relay: responses are cached for 15 s (64 entries, 16 MB) and identical
+Load control, mirroring the quorum-list-server relay: responses are cached for 15 s (64 entries, 16 MB), a request with a
+minimum `height` is also answered from a cached proof of the same checkpoint and records whose target height is at or above
+it (whatever height that proof was requested with; the highest target wins), and identical
 concurrent requests share one Core call; at most 2 Core calls run at once with 8 waiting, beyond that `503`; cache
 misses (not hits, not joins of a running call) cost the client a token of its bucket (12 per minute, burst 4); the
-checkpoint's height is looked up first (`getblockheader`, cached) and checkpoints more than 250000 blocks below the tip
+checkpoint's height is looked up first (`getblockheader`, cached) and checkpoints more than 100000 blocks below the tip
 get `422` instead of an expensive build. Proof cost grows linearly with the distance from the checkpoint, so cold proofs
 over long spans take seconds. Core credentials and Core's error bodies are never returned.
 

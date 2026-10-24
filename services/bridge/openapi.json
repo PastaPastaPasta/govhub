@@ -97,7 +97,7 @@
     "/v1/quorum-proof": {
       "get": {
         "summary": "Quorum proof chain from a checkpoint (Dash Core v24 getquorumproofchain, DIP 175)",
-        "description": "Relays the bridge's dashd `getquorumproofchain`. The proof is self-authenticating from the client's checkpoint, so the bridge is an untrusted relay. Responses are cached for 15 s (identical concurrent requests share one Core call), Core calls are limited to 2 at a time, cache misses are rate limited per client, and checkpoints more than QUORUM_PROOF_MAX_SPAN (default 250000) blocks below the tip are refused. Needs Core v24.0.0-rc.4 or newer; Core 23.x answers 501. CORS: any origin; X-Proof-* and Retry-After are exposed.",
+        "description": "Relays the bridge's dashd `getquorumproofchain`. The proof is self-authenticating from the client's checkpoint, so the bridge is an untrusted relay. Responses are cached for 15 s (identical concurrent requests share one Core call), Core calls are limited to 2 at a time, cache misses are rate limited per client, and checkpoints more than QUORUM_PROOF_MAX_SPAN (default 100000) blocks below the tip are refused. Needs Core v24.0.0-rc.4 or newer; Core 23.x answers 501. CORS: any origin; X-Proof-* and Retry-After are exposed.",
         "parameters": [
           {
             "name": "checkpoint",

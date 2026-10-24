@@ -1,11 +1,12 @@
 // GET/POST /v1/quorum-proof against a fake Core RPC: contract, validation, error mapping, cache, coalescing, limits.
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { openArchive } from '../src/archive/db.ts';
 import { createApi } from '../src/api/server.ts';
 import { Bridge } from '../src/bridge.ts';
 import { loadConfig } from '../src/config.ts';
 import { CoreRpcError } from '../src/core/rpc.ts';
+import { log } from '../src/log.ts';
 
 const CP = 'ab'.repeat(32);
 const QH = 'cd'.repeat(32);
@@ -51,6 +52,8 @@ function setup(env: Record<string, string> = {}) {
   return { b, app, core, clock, req, post };
 }
 
+// minimum heights above the default fake Core target (1234) are cache misses: lower ones are answered by an existing proof
+const ABOVE = 2000;
 const q = (o: Record<string, string | number>) => '/v1/quorum-proof?' + new URLSearchParams(Object.entries(o).map(([k, v]) => [k, String(v)])).toString();
 const json = async (r: Response) => (await r.json()) as { error: string; message: string };
 const bytes = async (r: Response) => Buffer.from(await r.arrayBuffer());
@@ -279,10 +282,18 @@ describe('error mapping', () => {
     t.core.proof = async () => {
       throw new CoreRpcError('getquorumproofchain', -1, 'some brand new proof failure: ' + 'x'.repeat(1000));
     };
+    const warn = vi.spyOn(log, 'warn').mockImplementation(() => {});
     r = await t.req(q({ checkpoint: CP }));
     expect(r.status).toBe(422);
     body = await json(r);
-    expect(body.message.length).toBeLessThanOrEqual(200);
+    expect(body.error).toBe('no-bridge');
+    // Core's wording stays in the log, the client gets a generic message
+    expect(body.message).toBe('Core could not build a proof');
+    expect(JSON.stringify(body)).not.toContain('brand new');
+    expect(warn).toHaveBeenCalledWith('quorum proof: unmatched Core error', expect.objectContaining({ code: -1, message: expect.stringContaining('some brand new proof failure') }));
+    const logged = warn.mock.calls.find((c) => c[0] === 'quorum proof: unmatched Core error')![1] as { message: string };
+    expect(logged.message.length).toBeLessThanOrEqual(200);
+    warn.mockRestore();
 
     t = setup();
     t.core.proof = async () => {
@@ -307,15 +318,15 @@ describe('error mapping', () => {
 
 describe('span guard', () => {
   it('refuses a checkpoint further below the tip than QUORUM_PROOF_MAX_SPAN with 422, before asking for a proof', async () => {
-    const t = setup(); // default max span 250000
-    t.core.header = async () => ({ height: 1000, confirmations: 250_002 }); // span = 250001
+    const t = setup(); // default max span 100000
+    t.core.header = async () => ({ height: 1000, confirmations: 100_002 }); // span = 100001
     const r = await t.req(q({ checkpoint: CP }));
     expect(r.status).toBe(422);
     const body = await json(r);
     expect(body.error).toBe('checkpoint-too-old');
     expect(t.core.count('getquorumproofchain')).toBe(0);
     // exactly at the limit is fine
-    t.core.header = async () => ({ height: 1000, confirmations: 250_001 });
+    t.core.header = async () => ({ height: 1000, confirmations: 100_001 });
     t.clock.t += 61_000; // the lookup cache has expired
     expect((await t.req(q({ checkpoint: CP }))).status).toBe(200);
   });
@@ -339,7 +350,7 @@ describe('cache and coalescing', () => {
     const b = await t.req(q({ checkpoint: CP.toUpperCase(), height: 0 })); // same request, normalized
     expect((await bytes(a)).equals(await bytes(b))).toBe(true);
     expect(t.core.count('getquorumproofchain')).toBe(1);
-    await t.req(q({ checkpoint: CP, height: 5 }));
+    await t.req(q({ checkpoint: CP, height: ABOVE }));
     expect(t.core.count('getquorumproofchain')).toBe(2);
     t.clock.t += 14_000;
     await t.req(q({ checkpoint: CP }));
@@ -347,6 +358,60 @@ describe('cache and coalescing', () => {
     t.clock.t += 2_000; // 16 s old: expired
     await t.req(q({ checkpoint: CP }));
     expect(t.core.count('getquorumproofchain')).toBe(3);
+  });
+
+  it('a minimum height at or below a cached proof\'s target is answered from it, whatever height it was fetched with', async () => {
+    const t = setup({ QUORUM_PROOF_RATE_BURST: '1' }); // one token: a second miss would be a 429
+    t.core.proof = async () => coreResult(2000);
+    const latest = await t.req(q({ checkpoint: CP }));
+    expect(latest.status).toBe(200);
+    expect(t.core.count('getquorumproofchain')).toBe(1);
+    for (const h of [1, 1500, 2000]) {
+      const r = await t.req(q({ checkpoint: CP, height: h }));
+      expect(r.status, `height ${h}`).toBe(200);
+      expect(r.headers.get('x-proof-target-height')).toBe('2000');
+      expect((await bytes(r)).equals(CHAIN)).toBe(true);
+    }
+    expect(t.core.count('getquorumproofchain')).toBe(1);
+    // above the cached target: a miss, and it costs the (spent) token
+    expect((await t.req(q({ checkpoint: CP, height: 2001 }))).status).toBe(429);
+    expect(t.core.count('getquorumproofchain')).toBe(1);
+    const u = setup();
+    u.core.proof = async () => coreResult(2000);
+    await u.req(q({ checkpoint: CP }));
+    u.core.proof = async () => coreResult(2500);
+    const above = await u.req(q({ checkpoint: CP, height: 2001 }));
+    expect(above.headers.get('x-proof-target-height')).toBe('2500');
+    expect(u.core.count('getquorumproofchain')).toBe(2);
+  });
+
+  it('a covering entry must match the checkpoint and records, be unexpired, and the highest target wins', async () => {
+    const t = setup({ QUORUM_PROOF_RATE_BURST: '100' });
+    t.core.proof = async (p) => coreResult(p[1] === 0 ? 3000 : 5000);
+    await t.req(q({ checkpoint: CP })); // target 3000
+    await t.req(q({ checkpoint: CP, height: 2999 })); // cached (3000)
+    expect(t.core.count('getquorumproofchain')).toBe(1);
+    await t.req(q({ checkpoint: CP, height: 3500 })); // miss: target 5000
+    expect(t.core.count('getquorumproofchain')).toBe(2);
+    const best = await t.req(q({ checkpoint: CP, height: 100 })); // both cover it: the 5000 one
+    expect(best.headers.get('x-proof-target-height')).toBe('5000');
+    expect(t.core.count('getquorumproofchain')).toBe(2);
+    // other records or another checkpoint do not match
+    await t.req(q({ checkpoint: CP, height: 100, nodeCount: 2 }));
+    await t.req(q({ checkpoint: CP, height: 100, quorumHash: QH, llmqType: 6 }));
+    await t.req(q({ checkpoint: 'ef'.repeat(32), height: 100 }));
+    expect(t.core.count('getquorumproofchain')).toBe(5);
+    // expired entries do not cover
+    t.clock.t += 16_000;
+    await t.req(q({ checkpoint: CP, height: 100 }));
+    expect(t.core.count('getquorumproofchain')).toBe(6);
+  });
+
+  it('height 0 (latest ChainLock) is not answered from a cached entry of another key', async () => {
+    const t = setup();
+    await t.req(q({ checkpoint: CP, height: 5 }));
+    await t.req(q({ checkpoint: CP }));
+    expect(t.core.count('getquorumproofchain')).toBe(2);
   });
 
   it('errors are not cached', async () => {
@@ -376,11 +441,11 @@ describe('cache and coalescing', () => {
 
   it('evicts the oldest entries beyond 64', async () => {
     const u = setup({ QUORUM_PROOF_RATE_BURST: '1000', QUORUM_PROOF_RATE_PER_MIN: '100000' });
-    for (let h = 1; h <= 65; h++) expect((await u.req(q({ checkpoint: CP, height: h }))).status).toBe(200);
+    for (let h = 1; h <= 65; h++) expect((await u.req(q({ checkpoint: CP, height: ABOVE + h }))).status).toBe(200);
     expect(u.core.count('getquorumproofchain')).toBe(65);
-    await u.req(q({ checkpoint: CP, height: 65 })); // newest: cached
+    await u.req(q({ checkpoint: CP, height: ABOVE + 65 })); // newest: cached
     expect(u.core.count('getquorumproofchain')).toBe(65);
-    await u.req(q({ checkpoint: CP, height: 1 })); // oldest: evicted
+    await u.req(q({ checkpoint: CP, height: ABOVE + 1 })); // oldest: evicted
     expect(u.core.count('getquorumproofchain')).toBe(66);
   });
 });
@@ -388,7 +453,7 @@ describe('cache and coalescing', () => {
 describe('rate limit and queue', () => {
   it('429 with Retry-After after the burst; cache hits are free; clients are separate; tokens refill', async () => {
     const t = setup({ QUORUM_PROOF_RATE_BURST: '2', QUORUM_PROOF_RATE_PER_MIN: '12' });
-    const as = (ip: string, h: number) => t.req(q({ checkpoint: CP, height: h }), { headers: { 'x-test-ip': ip } });
+    const as = (ip: string, h: number) => t.req(q({ checkpoint: CP, height: ABOVE + h }), { headers: { 'x-test-ip': ip } });
     expect((await as('203.0.113.7', 1)).status).toBe(200);
     expect((await as('203.0.113.7', 2)).status).toBe(200);
     expect((await as('203.0.113.7', 1)).status).toBe(200); // cache hit: no token
@@ -405,7 +470,7 @@ describe('rate limit and queue', () => {
 
   it('IPv6 clients share a bucket per /64', async () => {
     const t = setup({ QUORUM_PROOF_RATE_BURST: '1' });
-    const as = (ip: string, h: number) => t.req(q({ checkpoint: CP, height: h }), { headers: { 'x-test-ip': ip } });
+    const as = (ip: string, h: number) => t.req(q({ checkpoint: CP, height: ABOVE + h }), { headers: { 'x-test-ip': ip } });
     expect((await as('2001:db8:1:2::1', 1)).status).toBe(200);
     expect((await as('2001:db8:1:2:ffff::9', 2)).status).toBe(429);
     expect((await as('2001:db8:1:3::1', 2)).status).toBe(200);
@@ -413,7 +478,7 @@ describe('rate limit and queue', () => {
 
   it('without CLIENT_IP_HEADER the header is ignored (forged headers do not make new buckets)', async () => {
     const t = setup({ CLIENT_IP_HEADER: '', QUORUM_PROOF_RATE_BURST: '1' });
-    const as = (ip: string, h: number) => t.req(q({ checkpoint: CP, height: h }), { headers: { 'x-test-ip': ip, 'x-forwarded-for': ip } });
+    const as = (ip: string, h: number) => t.req(q({ checkpoint: CP, height: ABOVE + h }), { headers: { 'x-test-ip': ip, 'x-forwarded-for': ip } });
     expect((await as('203.0.113.1', 1)).status).toBe(200);
     expect((await as('203.0.113.2', 2)).status).toBe(429);
   });
@@ -497,8 +562,8 @@ describe('enable switch, methods, CORS, spec', () => {
     expect(err.status).toBe(400);
     expect(err.headers.get('access-control-allow-origin')).toBe('*');
     const limited = setup({ QUORUM_PROOF_RATE_BURST: '1' });
-    await limited.req(q({ checkpoint: CP, height: 1 }));
-    const r429 = await limited.req(q({ checkpoint: CP, height: 2 }), { headers: { Origin: 'https://x.example' } });
+    await limited.req(q({ checkpoint: CP, height: ABOVE + 1 }));
+    const r429 = await limited.req(q({ checkpoint: CP, height: ABOVE + 2 }), { headers: { Origin: 'https://x.example' } });
     expect(r429.status).toBe(429);
     expect((r429.headers.get('access-control-expose-headers') ?? '').toLowerCase()).toContain('retry-after');
   });

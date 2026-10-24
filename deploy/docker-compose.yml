@@ -107,6 +107,15 @@ services:
       PLATFORM_MAX_CONCURRENT_WRITES: ${PLATFORM_MAX_CONCURRENT_WRITES:-}
       PUBLISH_ON_MISMATCH: ${PUBLISH_ON_MISMATCH:-}
       PORTAL_PROPOSAL_URL: ${PORTAL_PROPOSAL_URL:-}
+      # /v1/quorum-proof (services/bridge/README.md): its per-client rate limit takes the client address from cloudflared's (or
+      # caddy's) header, in memory only; without it every client shares the proxy's bucket. Set BRIDGE_CLIENT_IP_HEADER=x-forwarded-for
+      # behind caddy, and BRIDGE_TRUSTED_PROXY_CIDRS if anything but the proxy can reach the API port.
+      CLIENT_IP_HEADER: ${BRIDGE_CLIENT_IP_HEADER:-cf-connecting-ip}
+      TRUSTED_PROXY_CIDRS: ${BRIDGE_TRUSTED_PROXY_CIDRS:-}
+      QUORUM_PROOF: ${QUORUM_PROOF:-}
+      QUORUM_PROOF_MAX_SPAN: ${QUORUM_PROOF_MAX_SPAN:-}
+      QUORUM_PROOF_RATE_PER_MIN: ${QUORUM_PROOF_RATE_PER_MIN:-}
+      QUORUM_PROOF_RATE_BURST: ${QUORUM_PROOF_RATE_BURST:-}
     secrets:
       - core_rpc_password
       - bridge_identity

@@ -178,6 +178,8 @@ export class TokenBuckets {
 
 interface CacheEntry extends ProofResult {
   at: number;
+  /** checkpoint + records part of the key (everything but the minimum height): entries sharing it answer each other's height floors */
+  group: string;
 }
 interface Waiter {
   resolve: () => void;
@@ -217,7 +219,7 @@ export class QuorumProofService {
   async get(req: ProofRequest, client: string): Promise<ProofResult> {
     if (this.now() < this.unsupportedUntil) throw unsupported();
     const key = cacheKey(req);
-    const hit = this.cached(key);
+    const hit = this.cached(key) ?? this.covering(req);
     if (hit) return hit;
     // an identical request is already running: share it, it costs nothing extra
     const running = this.inflight.get(key);
@@ -244,6 +246,26 @@ export class QuorumProofService {
     return e;
   }
 
+  /**
+   * `height` is a minimum, so an unexpired entry for the same checkpoint and records whose target is at or above it answers the
+   * request whatever height it was fetched with (typically 0 = latest ChainLock). Picks the highest target. Only for height > 0:
+   * height 0 asks for the latest ChainLock, which a cached older proof may not be.
+   */
+  private covering(req: ProofRequest): ProofResult | null {
+    if (req.height <= 0) return null;
+    const group = groupKey(req);
+    const now = this.now();
+    let best: CacheEntry | null = null;
+    for (const [k, e] of this.cache) {
+      if (now - e.at >= this.cfg.cacheTtlMs) {
+        this.evict(k);
+        continue;
+      }
+      if (e.group === group && e.targetHeight >= req.height && (!best || e.targetHeight > best.targetHeight)) best = e;
+    }
+    return best;
+  }
+
   private evict(key: string): void {
     const e = this.cache.get(key);
     if (!e) return;
@@ -251,7 +273,7 @@ export class QuorumProofService {
     this.cacheBytes -= e.bytes.length;
   }
 
-  private store(key: string, r: ProofResult): void {
+  private store(key: string, group: string, r: ProofResult): void {
     if (this.cfg.cacheTtlMs <= 0 || r.bytes.length > this.cfg.cacheBytes) return;
     const now = this.now();
     for (const [k, e] of this.cache) if (now - e.at >= this.cfg.cacheTtlMs) this.evict(k);
@@ -262,7 +284,7 @@ export class QuorumProofService {
       if (oldest.done) break;
       this.evict(oldest.value);
     }
-    this.cache.set(key, { ...r, at: now });
+    this.cache.set(key, { ...r, at: now, group });
     this.cacheBytes += r.bytes.length;
   }
 
@@ -300,7 +322,7 @@ export class QuorumProofService {
     try {
       await this.checkSpan(req.checkpoint);
       const result = await this.build(req);
-      this.store(key, result);
+      this.store(key, groupKey(req), result);
       return result;
     } catch (e) {
       const mapped = this.mapError(e, req);
@@ -373,7 +395,9 @@ export class QuorumProofService {
         if (/no bridge to snapshot/i.test(msg)) return new ProofError(422, 'no-bridge', 'no bridge to a snapshot within the search budget; use a newer checkpoint');
         if (/requested quorum is not in the target root/i.test(msg)) return new ProofError(422, 'no-bridge', 'the requested quorum is not in the target root');
         if (/chain changed during proof construction/i.test(msg)) return new ProofError(422, 'no-bridge', 'the chain changed during proof construction; retry');
-        return new ProofError(422, 'no-bridge', cut(msg) || 'Core could not build a proof');
+        // Core's wording is not part of the contract: keep the detail in the log, not in the answer
+        log.warn('quorum proof: unmatched Core error', { code: e.code, message: cut(msg) });
+        return new ProofError(422, 'no-bridge', 'Core could not build a proof');
       }
       log.warn('quorum proof: unexpected Core error', { code: e.code, message: cut(msg) });
       return new ProofError(502, 'core', `Core RPC error (code ${e.code})`);
@@ -388,6 +412,8 @@ const unsupported = () => new ProofError(501, 'unsupported', "this bridge's dash
 const checkpointUnknown = () => new ProofError(404, 'checkpoint-unknown', 'the checkpoint is not a block on the active chain of this bridge');
 
 export const cacheKey = (r: ProofRequest): string => `${r.checkpoint}|${r.height}|${r.quorumHash ?? ''}|${r.llmqType ?? ''}|${r.nodeCount}`;
+/** The cache key without the minimum height: requests that differ only in height can share a proof. */
+const groupKey = (r: ProofRequest): string => `${r.checkpoint}|${r.quorumHash ?? ''}|${r.llmqType ?? ''}|${r.nodeCount}`;
 
 // ---- HTTP ----
 

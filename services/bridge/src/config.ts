@@ -137,7 +137,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BridgeConfig {
     },
     quorumProof: {
       enabled: bool(env, 'QUORUM_PROOF', true),
-      maxSpan: int(env, 'QUORUM_PROOF_MAX_SPAN', 250_000, 1),
+      maxSpan: int(env, 'QUORUM_PROOF_MAX_SPAN', 100_000, 1),
       ratePerMin: int(env, 'QUORUM_PROOF_RATE_PER_MIN', 12, 1),
       rateBurst: int(env, 'QUORUM_PROOF_RATE_BURST', 4, 1),
       workers: int(env, 'QUORUM_PROOF_WORKERS', 2, 1),
