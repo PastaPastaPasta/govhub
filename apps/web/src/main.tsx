@@ -6,6 +6,8 @@ import './styles.css';
 import { AppProvider, useApp } from './app/context.tsx';
 import { ForumProvider } from './app/forum.tsx';
 import { AuthProvider } from './auth/context.tsx';
+import { BadgePage } from './badge/BadgePage.tsx';
+import { BadgeProvider } from './badge/context.tsx';
 import { Layout } from './app/Layout.tsx';
 import { preloadSdk } from './data/platform.ts';
 import { ActivePage } from './pages/ActivePage.tsx';
@@ -46,6 +48,7 @@ createRoot(document.getElementById('root')!).render(
         <ForumProvider>
           <AuthProvider>
             <KeyringProvider>
+            <BadgeProvider>
             <SdkWarmup />
             <Routes>
               <Route element={<Layout />}>
@@ -57,9 +60,11 @@ createRoot(document.getElementById('root')!).render(
                 <Route path="settings" element={<SettingsPage />} />
                 <Route path="masternodes" element={<MasternodesPage />} />
                 <Route path="votes" element={<MyVotesPage />} />
+                <Route path="badge" element={<BadgePage />} />
                 <Route path="*" element={<NotFoundPage />} />
               </Route>
             </Routes>
+            </BadgeProvider>
             </KeyringProvider>
           </AuthProvider>
         </ForumProvider>

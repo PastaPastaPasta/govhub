@@ -17,8 +17,8 @@ replaceable (PLAN section 1.1), so a third-party bridge is a first-class deploym
                                \-- or caddy (TLS on your own IP, the alternative)
 ```
 
-Slots for `relay`, `issuer` and `accounts` are marked in `docker-compose.yml`. They are not built
-yet.
+Slots for `relay` and `accounts` are marked in `docker-compose.yml`. They are not built yet. The
+MN badge `issuer` is built (profile `issuer`, sections 11.5 and 13.2).
 
 ## Contents
 
@@ -86,6 +86,7 @@ wallet disabled (the bridge needs none); `DASHD_EXTRA_ARGS=-disablewallet=0` tur
 | `docker-compose.p2p.yml` | override: publish dashd's P2P port (set `DASHD_P2P_PORT`) |
 | `docker-compose.tunnel-guest.yml` | override: serve this stack's bridge through another stack's cloudflared, via a gateway on a `tunnel` network (section 11.3) |
 | `docker-compose.tunnel-host.yml` | override: this stack's cloudflared also joins another stack's `tunnel` network (section 11.3) |
+| `docker-compose.issuer-tunnel-guest.yml` | override (last, after `docker-compose.tunnel-guest.yml`): the gateway also forwards to this stack's `issuer` (profile `issuer`) under its own alias (section 11.5) |
 | `.env.example` | every variable, commented, no secrets |
 | `dashd/dash.conf`, `dashd/entrypoint.sh` | Core config template and the wrapper that adds network, RPC credentials and `dbcache` |
 | `caddy/Caddyfile` | TLS reverse proxy; GET/HEAD/OPTIONS only, CORS handled here |
@@ -588,6 +589,59 @@ gateway a Caddyfile (`caddy/tunnel-gateway-relay.Caddyfile`) with a second liste
 http://govhub-testnet-relay:8788`. The relay answers browsers itself (CORS, 4 KiB POST bodies, per-IP and per-masternode
 limits, client address from `cf-connecting-ip`, which the gateway passes through).
 
+### 11.5 The MN badge issuer
+
+The `issuer` service (profile `issuer`, `services/issuer/README.md`) blind-signs MN badge tokens. It is
+not a read-only API like the bridge: `POST /v1/challenge` and `POST /v1/token` take requests from browsers, so
+publish it through the tunnel under **its own hostname** (its own browser origin), never the portal's or the
+bridge's. It sends its own CORS headers (`Access-Control-Allow-Origin: *`, no credentials), so no proxy is needed.
+
+Before the first start you need an issuer identity, a `badge` contract and the offline keys
+(`services/issuer/README.md`, "Keys"). Then:
+
+1. `.env` section 7: `ISSUER_IDENTITY_ID`, `BADGE_CONTRACT_ID`, and `COMPOSE_PROFILES=issuer` (for example
+   `tunnel,issuer`). Leave `ISSUER_MAX_STAGED_KEYS=1` on mainnet.
+2. Secrets in `secrets/` (`init.sh` creates the first two):
+   - `issuer_hmac_secret`: random hex for the stateless challenges. Keep it, or open challenges die on a restart.
+   - `issuer_report_key.json`: the issuer identity's **HIGH** key as `{"identityId","keyId","privateKeyHex"}`, for
+     `issuerReport` documents. `init.sh` creates it **empty**; the issuer refuses to start until it holds the HIGH key.
+   - `issuer-keys/epoch-<E>.pem`: the private keys for the epochs the server may hold, mode 0600, owner uid 1000.
+     The directory must stay writable, because the service destroys the key of each closed epoch.
+3. `docker compose up -d --build issuer`, then check:
+
+   ```sh
+   curl -s http://127.0.0.1:8789/v1/info | jq '{network, issuingEpoch, height, ready, keyId}'    # ready must be true
+   docker compose logs --no-log-prefix issuer | jq -c 'select(.level == "error" or .level == "warn")'
+   ```
+
+   `ready: false` means no key can sign right now. The reason is in the log: no key file, no `issuerKey` on
+   Platform, an `issuerKey` published too late, a key that does not match the published one, or more staged keys than
+   `ISSUER_MAX_STAGED_KEYS`.
+4. Add the route to the tunnel. `scripts/cloudflare-tunnel.sh` replaces the **whole** ingress list, so pass every
+   existing route again with `--reuse`:
+
+   ```sh
+   scripts/cloudflare-tunnel.sh --account <id> --zone example.org --reuse \
+     --route gov-bridge.example.org=http://bridge:8787 \
+     --route gov-issuer.example.org=http://issuer:8789
+   ```
+
+**Through another stack's cloudflared.** On a host with two stacks, one cloudflared serves both, through the guest's
+`tunnel-gateway` like the relay (section 11.4): the issuer never joins the shared `tunnel` network. Layer
+`docker-compose.issuer-tunnel-guest.yml` last, after `docker-compose.tunnel-guest.yml` (and
+`docker-compose.relay-tunnel-guest.yml` if the relay is published too). The gateway then runs
+`caddy/tunnel-gateway-issuer.Caddyfile` (8787 bridge, 8788 relay, 8789 issuer) with the extra alias
+`${ISSUER_TUNNEL_ALIAS:-<project>-issuer}`, for example `govhub-testnet-issuer`, so the route is
+`http://govhub-testnet-issuer:8789`.
+
+**State.** The `issuer-data` volume holds the dedup rows of the open issuance window and the per-epoch counts that become
+`issuerReport`. It is small. If it is lost during a window, MNs can get a second token and the report undercounts,
+which readers treat as a fraud signal. The rows are deleted when the window closes, so back it up often while a
+window is open. Private keys are not in it: they live in `secrets/issuer-keys`.
+
+**Update.** `git pull && docker compose build issuer && docker compose up -d issuer`. A restart is safe: the
+challenge secret, the keys and the store survive it.
+
 ## 12. Unprivileged LXC (Proxmox)
 
 The stack runs unchanged in an **unprivileged** Proxmox container with `features: nesting=1,keyctl=1`.
@@ -763,3 +817,44 @@ and sent with `voteraw` was accepted by Core and archived as valid (the vote fix
 credits, the `gov` contract 24,195,056,280 (0.242 tDASH), and the first publish passes (5 proposals, 5 tallies,
 2 cycles) about 0.0054 tDASH. `scripts/readback.ts` matched 12/12 documents with proofs. The superblock before the
 bring-up had no trigger (no testnet proposal reached the threshold), so it has no `cycle` document with `paid`.
+
+### 13.2 Testnet issuer (MN badge)
+
+The MN badge issuer for testnet runs on the R730 (CT 185), in the compose project of the testnet stack. It has its
+own checkout, so it can follow the `mn-badge` branch without touching the rest of that stack.
+
+| | |
+|---|---|
+| Checkout | `/opt/govhub-issuer` (stack in `/opt/govhub-issuer/deploy`), branch `mn-badge` until it is merged |
+| Project | `govhub-testnet`, the testnet stack's project, so the issuer reaches its `dashd` |
+| Compose | `COMPOSE_FILE=docker-compose.yml:docker-compose.testnet.yml:docker-compose.tunnel-guest.yml:docker-compose.relay-tunnel-guest.yml:docker-compose.issuer-tunnel-guest.yml`, `COMPOSE_PROFILES=relay,issuer` (the testnet stack's `.env` plus the issuer settings) |
+| Start | `docker compose up -d --no-deps issuer tunnel-gateway` (the issuer, and the gateway with the issuer listener; dashd, the bridge and the relay are not touched) |
+| Secrets | `/opt/govhub-testnet/deploy/secrets`: it shares the testnet stack's RPC password; the HMAC secret, the HIGH key file and `issuer-keys/` are in the same directory |
+| Keys on the server | `ISSUER_MAX_STAGED_KEYS=7`: a week of daily keys without an operator. This is a testnet convenience; mainnet keeps 1 |
+| Port | `127.0.0.1:8789` (loopback) |
+| Public | tunnel `govhub`, route to add in Cloudflare: `gov-issuer-testnet.dashhq.org -> http://govhub-testnet-issuer:8789`. Pass the existing routes again when you re-run `scripts/cloudflare-tunnel.sh --reuse` (it replaces the whole list) |
+
+Testnet ids:
+
+| | |
+|---|---|
+| Issuer identity | `H62hSf5TpKbUSMov85GMhPQahZDbqsTipeoBsYPgveUH`, funded with 0.5 tDASH from the QA wallet. Separate from the bridge and moderation identities. Its CRITICAL key stays offline, outside the repo |
+| `badge` contract | `2aYj4Dkix7xXBUTZFCDBjpcqqLi9Tg5oUwBgHUJBNGCU`, registered 2026-10-24 from the current `packages/contracts-v1/badge.json` (0.2214 tDASH) |
+| Superseded | `3SrZbofJnMgWNiHFzpHc5u7wSRgCFJykZwKq3haqyMfc` (phase 0): it allowed `spki` of 90..600 bytes |
+| `issuerKey` documents | epochs 2742 to 2755, published at core height about 1,578,675. The deadline for epoch 2742 was 1,578,816 (`S(2741)`) |
+
+Testnet epochs are 576 blocks, about a day (`packages/badge/README.md`, "Testnet timing"). With the keys above, tokens
+for epoch 2742 are issued from block 1,578,816 to 1,579,391, and the first badges show from block 1,579,392. The last
+published key is for epoch 2755, so publish more keys (`issuer keygen`, `issuer publish-keys`) at least 3 epochs before
+that runs out.
+
+Update (as root, from `/opt/govhub-issuer/deploy`):
+
+```sh
+cd /opt/govhub-issuer && git pull
+cd deploy && docker compose build issuer && docker compose up -d --no-deps issuer
+curl -s http://127.0.0.1:8789/v1/info | jq '{network, issuingEpoch, height, ready, keyId}'
+```
+
+To add keys: generate and publish them on an offline machine, then copy `epoch-<E>.pem` into
+`/opt/govhub-testnet/deploy/secrets/issuer-keys` (0600, uid 1000), no more than 7 epochs ahead of the one being issued.

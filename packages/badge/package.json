@@ -1,0 +1,25 @@
+{
+  "name": "@govhub/badge",
+  "version": "0.0.0",
+  "private": true,
+  "description": "MN owner badge (PLAN §8): RSABSSA-SHA384-PSS-Randomized blind/finalize/verify, badge message and token-request formats, superblock epochs, reader rules.",
+  "type": "module",
+  "sideEffects": false,
+  "engines": { "node": ">=22" },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cloudflare/blindrsa-ts": "0.4.6",
+    "@scure/base": "^2.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0"
+  }
+}

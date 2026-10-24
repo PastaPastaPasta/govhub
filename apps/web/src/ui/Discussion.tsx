@@ -30,11 +30,10 @@ import { Markdown } from './Markdown.tsx';
 import { ProvMark } from './Provenance.tsx';
 import { openSignIn } from './SignIn.tsx';
 import { useReactions } from './useReactions.ts';
+import { MnBadges } from '../badge/BadgeChip.tsx';
+import { useBadges } from '../badge/context.tsx';
 import { Votes } from './Votes.tsx';
 
-/** MN badges arrive in phase 4 (PLAN §8); until the first epoch is live nobody is badged. */
-const BADGES_LIVE = false;
-const noBadge = (_ownerId: string) => false;
 /** Replies deeper than this are not indented further (the thread line still shows). */
 const MAX_INDENT = 6;
 
@@ -77,11 +76,19 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
   const thread = useThread(govHash);
   const [params] = useSearchParams();
   const focus = params.get('comment');
-  const [filter, setFilter] = useState<CommentFilter>(defaultFilter(BADGES_LIVE));
+  const [chosenFilter, setFilter] = useState<CommentFilter | null>(null);
   const [showHidden, setShowHidden] = useState(false);
   const [revealed, setRevealed] = useState(new Set<string>());
   const now = source.now();
   const comments = useMemo(() => thread.data?.comments ?? [], [thread.data]);
+  // MN badges (PLAN §8.6) from the trusted issuers. Until any badge is live the default view is everyone (PLAN §12).
+  const authors = useMemo(() => comments.map((c) => c.ownerId), [comments]);
+  const badges = useBadges(authors);
+  const badged = useCallback((id: string) => badges.byOwner.has(id), [badges.byOwner]);
+  const BADGES_LIVE = badges.live;
+  // A deep link shows everyone until the reader picks a view: badges load after the thread, so a later switch to the badge
+  // filter would hide the linked comment.
+  const filter = chosenFilter ?? (focus ? 'all' : defaultFilter(BADGES_LIVE));
   const roots = useMemo(() => buildThreads(comments), [comments]);
   const targets = useMemo(() => comments.map((c) => ({ commentId: c.id })), [comments]);
   const reactions = useReactions(targets);
@@ -89,17 +96,17 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
 
   const reasonsOf = useCallback((c: Comment) => moderation.index.reasons(c), [moderation.index]);
   const hiddenCount = useMemo(() => comments.filter((c) => reasonsOf(c).length > 0).length, [comments, reasonsOf]);
-  const filteredCount = useMemo(() => comments.filter((c) => !reasonsOf(c).length && !passesFilter(c, filter, { owner, badged: noBadge })).length, [comments, reasonsOf, filter, owner]);
+  const filteredCount = useMemo(() => comments.filter((c) => !reasonsOf(c).length && !passesFilter(c, filter, { owner, badged })).length, [comments, reasonsOf, filter, owner, badged]);
   const [unfiltered, setUnfiltered] = useState(false);
   // The deep-linked comment always gets at least its placeholder.
-  const visible = useMemo(() => visibleSubtrees(roots, (c) => c.id === focus || shown(c, { reasonsOf, showHidden, revealed, filter, owner })), [roots, reasonsOf, showHidden, revealed, filter, owner, focus]);
+  const visible = useMemo(() => visibleSubtrees(roots, (c) => c.id === focus || shown(c, { reasonsOf, showHidden, revealed, filter, owner, badged })), [roots, reasonsOf, showHidden, revealed, filter, owner, badged, focus]);
 
   // A deep link widens the view if the filter hides its comment and scrolls to it. A comment a block list hides stays
   // behind its placeholder: a shared link must not bypass the lists (one click on the placeholder reveals it).
   useEffect(() => {
     const c = focus ? comments.find((x) => x.id === focus) : undefined;
     if (!c) return;
-    if (!passesFilter(c, filter, { owner, badged: noBadge })) setFilter('all');
+    if (!passesFilter(c, filter, { owner, badged })) setFilter('all');
     requestAnimationFrame(() => document.getElementById(`comment-${focus}`)?.scrollIntoView({ block: 'center' }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focus, comments.length]);
@@ -147,6 +154,8 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
     now,
     owner,
     filter,
+    badged,
+    badges: badges.byOwner,
     showHidden,
     revealed,
     focus,
@@ -178,7 +187,7 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
         <div className="discussion-tools">
           <fieldset className="seg" aria-label="Which comments to show">
             <legend className="visually-hidden">Comment view</legend>
-            <label className={filter === 'recommended' ? 'on' : ''} title="MN owners (badges arrive in phase 4) plus the proposal owner on their own proposal">
+            <label className={filter === 'recommended' ? 'on' : ''} title="Authors with an MN badge from an issuer you trust (Settings), plus the proposal owner on their own proposal">
               <input type="radio" name="comment-filter" checked={filter === 'recommended'} onChange={() => setFilter('recommended')} />
               Proposal owner + MN owners
             </label>
@@ -194,8 +203,8 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
         {filter === 'all'
           ? BADGES_LIVE
             ? 'Showing everyone.'
-            : 'Showing everyone. MN-owner badges arrive in phase 4; until then the recommended view would show only the proposal owner.'
-          : `Showing the proposal owner${BADGES_LIVE ? ' and MN-badge holders' : ' (no MN badges are issued yet)'}.`}{' '}
+            : 'Showing everyone. No MN badges from your trusted issuers are live yet, so the recommended view would show only the proposal owner.'
+          : `Showing the proposal owner${BADGES_LIVE ? ' and MN-badge holders' : ' (no MN badges from your trusted issuers are live yet)'}.`}{' '}
         {filter === 'recommended' && filteredCount > 0 && (
           <button type="button" className="linkish" onClick={() => setFilter('all')} data-testid="show-all">
             Show all {formatInt(filteredCount)} other {filteredCount === 1 ? 'comment' : 'comments'}
@@ -254,6 +263,9 @@ interface NodeCtx {
   now: number;
   owner: string | null;
   filter: CommentFilter;
+  badged(ownerId: string): boolean;
+  /** ownerId -> names of the trusted issuers vouching for it */
+  badges: Map<string, string[]>;
   showHidden: boolean;
   revealed: Set<string>;
   focus: string | null;
@@ -273,9 +285,9 @@ interface NodeCtx {
   visible: Map<string, boolean>;
 }
 
-function shown(c: Comment, ctx: Pick<NodeCtx, 'reasonsOf' | 'showHidden' | 'revealed' | 'filter' | 'owner'>): boolean {
+function shown(c: Comment, ctx: Pick<NodeCtx, 'reasonsOf' | 'showHidden' | 'revealed' | 'filter' | 'owner' | 'badged'>): boolean {
   const hidden = ctx.reasonsOf(c).length > 0 && !ctx.showHidden && !ctx.revealed.has(c.id);
-  return !hidden && passesFilter(c, ctx.filter, { owner: ctx.owner, badged: noBadge });
+  return !hidden && passesFilter(c, ctx.filter, { owner: ctx.owner, badged: ctx.badged });
 }
 
 function CommentNode({ node, ctx }: { node: ThreadNode; ctx: NodeCtx }) {
@@ -339,6 +351,7 @@ function CommentNode({ node, ctx }: { node: ThreadNode; ctx: NodeCtx }) {
           <Avatar id={c.ownerId} profile={profile} />
           <AuthorName id={c.ownerId} profile={profile} dpns={ctx.names.get(c.ownerId)} />
           {isOwner && <span className="chip chip-owner">proposal owner</span>}
+          <MnBadges issuers={ctx.badges.get(c.ownerId)} />
           <Link to={{ search: `?comment=${c.id}` }} className="comment-time" title={new Date(c.createdAt).toISOString()}>
             {formatAgoMs(c.createdAt, ctx.now)}
           </Link>

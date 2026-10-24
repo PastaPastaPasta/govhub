@@ -1,0 +1,316 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "govhub MN badge issuer",
+    "version": "0.1.0",
+    "description": "Blind-signs MN owner badge tokens (docs/PLAN.md \u00a78.4). RSABSSA-SHA384-PSS-Randomized (RFC 9474). The issuer never sees the badge message; clients derive the epoch and keyId from proved Platform data and the core height, never from this API. Cross-origin, no credentials, no cookies, no caching. Serve it from its own origin."
+  },
+  "paths": {
+    "/healthz": {
+      "get": {
+        "summary": "Liveness",
+        "responses": {
+          "200": {
+            "description": "up",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/info": {
+      "get": {
+        "summary": "Advisory status",
+        "responses": {
+          "200": {
+            "description": "status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "variant": {
+                      "const": "RSABSSA-SHA384-PSS-Randomized"
+                    },
+                    "network": {
+                      "type": "string",
+                      "enum": [
+                        "mainnet",
+                        "testnet",
+                        "devnet",
+                        "regtest"
+                      ]
+                    },
+                    "issuerId": {
+                      "type": "string",
+                      "description": "base58 identity id"
+                    },
+                    "contractId": {
+                      "type": "string"
+                    },
+                    "epochParams": {
+                      "type": "object",
+                      "properties": {
+                        "superblockCycle": {
+                          "type": "integer"
+                        },
+                        "epochCycles": {
+                          "type": "integer"
+                        },
+                        "graceBlocks": {
+                          "type": "integer"
+                        },
+                        "boundaryMarginBlocks": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "height": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "description": "the issuer's dashd tip"
+                    },
+                    "issuingEpoch": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "description": "tokens are minted for this epoch now"
+                    },
+                    "keyId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "hex SHA256(spki) of the key in use"
+                    },
+                    "ready": {
+                      "type": "boolean"
+                    },
+                    "window": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "from": {
+                          "type": "integer"
+                        },
+                        "to": {
+                          "type": "integer"
+                        }
+                      },
+                      "description": "client request window (heights) for issuingEpoch"
+                    },
+                    "challengeTtlSec": {
+                      "type": "integer"
+                    },
+                    "note": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/challenge": {
+      "post": {
+        "summary": "A stateless HMAC challenge, used as the <nonce> of a token request",
+        "responses": {
+          "200": {
+            "description": "challenge",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "nonce",
+                    "expiresAt"
+                  ],
+                  "properties": {
+                    "nonce": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{80}$",
+                      "description": "40 bytes hex"
+                    },
+                    "expiresAt": {
+                      "type": "integer",
+                      "description": "unix seconds"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/token": {
+      "post": {
+        "summary": "Blind-sign a badge token for one masternode",
+        "description": "`request` is the canonical string govhub-badge-req:v2|<net>|<issuerId>|<epoch>|<keyIdHex>|<proTxHash>|<nonce>|<sha256(blindedMsg)> and `signature` is Dash signmessage over it by the MN's VOTING key. One token per (proTxHash, epoch) and per (collateral, epoch) at this issuer; a retry with the same blindedMsg returns the same blindSig. Authentication failures all return 403 unauthorized. Global rate limit: 503 with Retry-After.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "request",
+                  "signature",
+                  "blindedMsg"
+                ],
+                "properties": {
+                  "request": {
+                    "type": "string",
+                    "maxLength": 512
+                  },
+                  "signature": {
+                    "type": "string",
+                    "description": "base64, 65 bytes (compact, recoverable)"
+                  },
+                  "blindedMsg": {
+                    "type": "string",
+                    "description": "base64, modulus length (256 or 384 bytes)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "signed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "blindSig",
+                    "epoch"
+                  ],
+                  "properties": {
+                    "blindSig": {
+                      "type": "string",
+                      "description": "base64, modulus length; verified by the issuer before it is returned"
+                    },
+                    "epoch": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "malformed body or request, wrong network or issuer, unbound blinded message",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "challenge invalid or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "unauthorized (not the MN's voting key) or not-eligible (banned, not registered or not valid at S(E-1), collateral changed)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "wrong-epoch, wrong-key, or already-issued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "body larger than 4 KiB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "no key ready, Core unreachable, or rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": [
+          "error",
+          "message"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "enum": [
+              "bad-request",
+              "wrong-network",
+              "wrong-issuer",
+              "wrong-epoch",
+              "wrong-key",
+              "bad-challenge",
+              "unauthorized",
+              "not-eligible",
+              "already-issued",
+              "unavailable",
+              "not-found"
+            ]
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

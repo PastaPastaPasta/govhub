@@ -23,3 +23,6 @@ services:
   relay:
     environment:
       CORE_NETWORK: regtest
+  issuer:
+    environment:
+      NETWORK: regtest

@@ -117,8 +117,35 @@ else
   say "created: $tunnel_file (EMPTY placeholder; only the \`tunnel\` profile uses it, see README)"
 fi
 
-chmod "$secret_mode" "$rpc_pw_file" "$identity_file" "$tunnel_file"
-[ -z "$secret_owner" ] || chown "$secret_owner" "$rpc_pw_file" "$identity_file" "$tunnel_file"
+hmac_file="$SECRETS_DIR/issuer_hmac_secret"
+if [ -s "$hmac_file" ]; then
+  say "kept: $hmac_file"
+else
+  if command -v openssl > /dev/null 2>&1; then
+    hm="$(openssl rand -hex 32)"
+  else
+    hm="$(LC_ALL=C od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
+  fi
+  [ "${#hm}" -eq 64 ] || die "could not generate the issuer challenge secret"
+  (umask 077 && printf '%s\n' "$hm" > "$hmac_file")
+  say "created: $hmac_file (issuer challenges; only the \`issuer\` profile uses it)"
+fi
+
+report_file="$SECRETS_DIR/issuer_report_key.json"
+if [ -e "$report_file" ]; then
+  say "kept: $report_file"
+else
+  (umask 077 && : > "$report_file")
+  say "created: $report_file (EMPTY placeholder; the issuer needs its HIGH key here before it starts, see services/issuer/README.md)"
+fi
+
+issuer_keys="$SECRETS_DIR/issuer-keys"
+mkdir -p "$issuer_keys"
+chmod 700 "$issuer_keys"
+
+chmod "$secret_mode" "$rpc_pw_file" "$identity_file" "$tunnel_file" "$hmac_file" "$report_file"
+[ -z "$secret_owner" ] || chown "$secret_owner" "$rpc_pw_file" "$identity_file" "$tunnel_file" "$hmac_file" "$report_file"
+[ -z "$secret_owner" ] || chown -R "$secret_owner" "$issuer_keys"
 
 # ---- .env ------------------------------------------------------------------------------------
 env_file="$DEPLOY_DIR/.env"

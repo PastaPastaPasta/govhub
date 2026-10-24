@@ -3,17 +3,44 @@
 import type { PlatformPort } from '@govhub/auth';
 import type { Dapi } from '@govhub/dapi';
 import { QUORUM_SERVICE, type Registry } from '../config/registry.ts';
-import { createWebDapi } from '../data/dapi.ts';
+import { createWebDapi, type DapiConfig } from '../data/dapi.ts';
 import { getSdk } from '../data/platform.ts';
+import { noteIdentityWrite } from '../badge/visit.ts';
 
 let port: { key: string; value: Promise<PlatformPort> } | null = null;
+
+/**
+ * Every state transition of a signed-in identity is public and timestamped: the MN badge keeps its token requests away from them
+ * (badge/visit.ts), so each one is recorded before it is sent.
+ */
+function markWrites(p: PlatformPort): PlatformPort {
+  // recorded when the write starts and again when it ends (retries can run long)
+  const mark =
+    <A extends unknown[], R>(f: (...a: A) => Promise<R>) =>
+    async (...a: A) => {
+      noteIdentityWrite();
+      try {
+        return await f(...a);
+      } finally {
+        noteIdentityWrite();
+      }
+    };
+  return {
+    ...p,
+    createIdentity: mark(p.createIdentity),
+    topUpIdentity: mark(p.topUpIdentity),
+    addKeys: mark(p.addKeys),
+    writeDocument: mark(p.writeDocument),
+    vault: { ...p.vault, put: mark(p.vault.put), remove: mark(p.vault.remove) },
+  };
+}
 
 export function getPlatformPort(r: Registry): Promise<PlatformPort> {
   const key = JSON.stringify([r.platformNetwork, r.platform]);
   if (port?.key === key) return port.value;
   const value = (async () => {
     const [evo, sdk, { createEvoPlatform }] = await Promise.all([import('@dashevo/evo-sdk'), getSdk(r), import('@govhub/auth/evo')]);
-    return createEvoPlatform(evo, sdk, r.platformNetwork);
+    return markWrites(createEvoPlatform(evo, sdk, r.platformNetwork));
   })();
   port = { key, value };
   value.catch(() => {
@@ -24,12 +51,15 @@ export function getPlatformPort(r: Registry): Promise<PlatformPort> {
 
 let dapi: { key: string; value: Dapi } | null = null;
 
-/** DAPI on the Platform network: the user's DAPI settings when the networks match, else that network's quorum service. */
+/** DAPI settings for the Platform network's Core chain: the user's when the networks match, else that network's quorum service. */
+export const platformDapiConfig = (r: Registry): DapiConfig =>
+  r.coreNetwork === r.platformNetwork
+    ? { source: r.dapi.source, quorumUrl: r.dapi.quorumUrl, nodes: r.dapi.nodes, network: r.platformNetwork }
+    : { source: 'quorum' as const, quorumUrl: QUORUM_SERVICE[r.platformNetwork], nodes: [], network: r.platformNetwork };
+
+/** DAPI on the Platform network. */
 export function getAuthDapi(r: Registry): Dapi {
-  const cfg =
-    r.coreNetwork === r.platformNetwork
-      ? { source: r.dapi.source, quorumUrl: r.dapi.quorumUrl, nodes: r.dapi.nodes, network: r.platformNetwork }
-      : { source: 'quorum' as const, quorumUrl: QUORUM_SERVICE[r.platformNetwork], nodes: [], network: r.platformNetwork };
+  const cfg = platformDapiConfig(r);
   const key = JSON.stringify(cfg);
   if (dapi?.key !== key) dapi = { key, value: createWebDapi(cfg) };
   return dapi.value;
