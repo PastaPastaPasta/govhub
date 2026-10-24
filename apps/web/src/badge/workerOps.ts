@@ -29,7 +29,7 @@ export async function handleBadgeCall(m: BadgeWorkerCall & { id?: number }): Pro
     }
     case 'challenge': {
       const r = await call(m.url, 'v1/challenge', {});
-      if (r.status !== 200 || typeof r.json.nonce !== 'string' || !/^[0-9a-f]{32,128}$/.test(r.json.nonce)) throw new Error(`issuer challenge failed (HTTP ${r.status})`);
+      if (r.status !== 200 || typeof r.json.nonce !== 'string' || !/^(?:[0-9a-f]{2}){16,64}$/.test(r.json.nonce)) throw new Error(`issuer challenge failed (HTTP ${r.status})`);
       return { id, kind: 'challenge', nonce: r.json.nonce };
     }
     case 'token': {
@@ -37,7 +37,13 @@ export async function handleBadgeCall(m: BadgeWorkerCall & { id?: number }): Pro
       const answer: IssuerAnswer =
         r.status === 200 && typeof r.json.blindSig === 'string'
           ? { ok: true, blindSig: r.json.blindSig }
-          : { ok: false, status: r.status, error: String(r.json.error ?? 'unknown'), message: String(r.json.message ?? `HTTP ${r.status}`).slice(0, 300) };
+          : {
+              ok: false,
+              status: r.status,
+              error: String(r.json.error ?? 'unknown'),
+              message: String(r.json.message ?? `HTTP ${r.status}`).slice(0, 300),
+              ...(Number.isInteger(r.json.issuingEpoch) ? { issuingEpoch: r.json.issuingEpoch as number } : {}),
+            };
       return { id, kind: 'token', answer };
     }
     case 'finalize': {

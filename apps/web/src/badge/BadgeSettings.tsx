@@ -33,7 +33,7 @@ function useAudits(): { audits: IssuerEpochAudit[]; error: string | null } {
 function auditText(a: IssuerEpochAudit): string {
   if (a.keyProblem) return `epoch ${a.epoch}: no valid key (${a.keyProblem})`;
   const rep = a.tokensIssued === null ? 'no issuerReport yet' : `${formatInt(a.tokensIssued)} tokens reported`;
-  return `epoch ${a.epoch}: ${formatInt(a.badges)}${a.complete ? '' : '+'} valid badges, ${rep}${a.flagged ? ': MORE BADGES THAN TOKENS, badges hidden' : ''}`;
+  return `epoch ${a.epoch}: ${formatInt(a.badges)}${a.complete ? '' : '+ (audit incomplete)'} valid badges, ${rep}${a.flagged ? `: FLAGGED, badges hidden (${a.flagReason})` : ''}`;
 }
 
 export function BadgeSettings() {
@@ -64,7 +64,7 @@ export function BadgeSettings() {
           <li key={t.identityId}>
             <label className="check">
               <input type="checkbox" checked={t.enabled} onChange={(e) => update(trust.map((x, j) => (j === i ? { ...x, enabled: e.target.checked } : x)), 'Saved in this browser.')} /> <b>{t.name}</b>{' '}
-              {isDefaultIssuer(net, t.identityId) && <span className="chip">default</span>}
+              {isDefaultIssuer(net, t.identityId) ? <span className="chip">default</span> : <span className="chip chip-over">added by you</span>}
             </label>
             <div className="small muted">
               <span className="mono-ish">{t.identityId}</span> · {t.url}

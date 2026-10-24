@@ -5,7 +5,7 @@ export type BadgeWorkerRequest =
   | { id: number; kind: 'token'; url: string; request: string; signature: string; blindedMsg: string }
   | { id: number; kind: 'finalize'; spki: string; preparedMsg: string; blindSig: string; inv: string };
 
-export type IssuerAnswer = { ok: true; blindSig: string } | { ok: false; status: number; error: string; message: string };
+export type IssuerAnswer = { ok: true; blindSig: string } | { ok: false; status: number; error: string; message: string; issuingEpoch?: number };
 
 export type BadgeWorkerResponse =
   | { id: number; kind: 'blind'; blindedMsg: string; inv: string }

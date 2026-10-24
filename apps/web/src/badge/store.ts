@@ -14,7 +14,7 @@ export interface JobStore {
 
 const enc = new TextEncoder();
 const BUCKET = 16 * 1024;
-const storageKey = (identityId: string) => `govhub.badge.jobs.v1.${identityId}`;
+export const jobStorageKey = (identityId: string) => `govhub.badge.jobs.v1.${identityId}`;
 
 const b64 = (b: Uint8Array) => {
   let s = '';
@@ -47,7 +47,7 @@ export function encryptedJobStore(identityId: string, key: CryptoKey, storage: P
   const aad = enc.encode(identityId);
   return {
     async load() {
-      const raw = storage.getItem(storageKey(identityId));
+      const raw = storage.getItem(jobStorageKey(identityId));
       if (!raw) return [];
       try {
         const { iv, ct } = JSON.parse(raw) as { iv: string; ct: string };
@@ -59,10 +59,10 @@ export function encryptedJobStore(identityId: string, key: CryptoKey, storage: P
       }
     },
     async save(jobs) {
-      if (!jobs.length) return storage.removeItem(storageKey(identityId));
+      if (!jobs.length) return storage.removeItem(jobStorageKey(identityId));
       const iv = crypto.getRandomValues(new Uint8Array(12));
       const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: aad }, key, pad(JSON.stringify(jobs))));
-      storage.setItem(storageKey(identityId), JSON.stringify({ iv: b64(iv), ct: b64(ct) }));
+      storage.setItem(jobStorageKey(identityId), JSON.stringify({ iv: b64(iv), ct: b64(ct) }));
     },
   };
 }

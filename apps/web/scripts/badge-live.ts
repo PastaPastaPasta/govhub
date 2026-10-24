@@ -54,7 +54,7 @@ interface Ident {
 interface State {
   ids: Record<'A' | 'B', Ident>;
   /** chosen MNs: yml entry name and proTxHash (keys are read from the yml at run time, never stored here) */
-  mns?: { main: { name: string; proTxHash: string }; shared: Array<{ name: string; proTxHash: string }>; sharedNote: string };
+  mns?: { main: { name: string; proTxHash: string }; shared: Array<{ name: string; proTxHash: string }>; sharedNote: string; extra?: Array<{ name: string; proTxHash: string }> };
   epoch?: number;
   jobA?: BadgeJob;
   results: Record<string, unknown>;
@@ -131,6 +131,9 @@ function deps(who: 'A' | 'B', reader: BadgeReader): ClientDeps {
       return r.id;
     },
     hasBadge: async (iid, e) => (await query(badgesOfAuthors(iid, e, [ownerId]))).docs.length > 0,
+    trusted: (id) => id === ISSUER.identityId,
+    reportedTokens: (i, e) => reader.reportedTokens(i, e),
+    minAnonymitySet: BADGE_NETWORKS.testnet.minAnonymitySet,
   };
 }
 const newReader = () => new BadgeReader({ net: NET, contractId: CONTRACT, issuers: [ISSUER], query });
@@ -180,11 +183,32 @@ if (cmd === 'setup') {
   const main = singles[0]!;
   st.mns = {
     main: { name: byAddr.get(main.votingAddress)!, proTxHash: main.proTxHash },
+    // two more MNs, so the epoch reaches the client's minimum anonymity set (3 tokens on testnet) and A's badge is posted
+    extra: singles.slice(1, 3).map((m) => ({ name: byAddr.get(m.votingAddress)!, proTxHash: m.proTxHash })),
     shared: (shared ?? []).slice(0, 2).map((m) => ({ name: byAddr.get(m.votingAddress)!, proTxHash: m.proTxHash })),
     sharedNote: shared ? `${shared.length} valid MNs share one voting key` : 'no two valid MNs in testnet.yml share a voting key',
   };
   save();
   log(`MNs: ${valid.length} valid with known voting keys; main ${st.mns.main.name}; ${st.mns.sharedNote}`);
+}
+
+if (cmd === 'request' || cmd === 'pick') {
+  if (!st.ids.A.identityId || !st.mns) throw new Error('run setup first');
+  if (!st.mns.extra) {
+    const keys = ymlKeys();
+    const { p2pkhAddress, decodeWif, hash160 } = await import('@govhub/verify');
+    const { secp256k1 } = await import('@noble/curves/secp256k1.js');
+    const byAddr = new Map<string, string>();
+    for (const [name, wif] of keys) byAddr.set(p2pkhAddress(hash160(secp256k1.getPublicKey(decodeWif(wif, NET).privKey, true)), NET), name);
+    const sml = await createDapi({ network: NET }).getSml();
+    const taken = new Set([st.mns.main.proTxHash, ...st.mns.shared.map((m) => m.proTxHash)]);
+    st.mns.extra = sml.masternodes
+      .filter((m) => m.isValid && byAddr.has(m.votingAddress) && !taken.has(m.proTxHash))
+      .slice(0, 2)
+      .map((m) => ({ name: byAddr.get(m.votingAddress)!, proTxHash: m.proTxHash }));
+    save();
+    log(`extra MNs: ${st.mns.extra.map((m) => m.name).join(', ')}`);
+  }
 }
 
 if (cmd === 'request') {
@@ -219,6 +243,15 @@ if (cmd === 'request') {
       await mark(`shared-voting-key MN ${m.name}: ${j.state}${j.note ? ` (${j.note})` : ''}`);
     }
     st.results.sharedVotingKey = { note: st.mns.sharedNote, results: shared };
+    // 4. two more MNs (B), so the epoch has at least the 3 tokens a badge needs before it is posted
+    const extra: unknown[] = [];
+    for (const m of st.mns.extra ?? []) {
+      let j = await createJob(deps('B', reader), [], keys.get(m.name)!, m.proTxHash, h, { issuer: ISSUER, keepKey: false, immediate: true });
+      j = await step(deps('B', reader), j, h);
+      extra.push({ mn: m.name, state: j.state, note: j.note ?? null });
+      await mark(`extra MN ${m.name}: ${j.state}${j.note ? ` (${j.note})` : ''}`);
+    }
+    st.results.extraTokens = extra;
     save();
   } finally {
     close();

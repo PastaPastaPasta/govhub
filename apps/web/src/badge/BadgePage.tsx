@@ -35,7 +35,7 @@ function JobRow({ job, now, onRemove }: { job: BadgeJob; now: number | null; onR
         <b>Epoch {job.epoch}</b> with {job.issuer.name}: <span className={job.state === 'failed' ? 'error' : ''}>{STATE[job.state]}</span>
       </div>
       <div className="small muted">
-        MN <span className="mono-ish">{job.proTxHash.slice(0, 12)}…</span>
+        {job.proTxHash ? <>MN <span className="mono-ish">{job.proTxHash.slice(0, 12)}…</span></> : 'masternode forgotten'}
         {job.state === 'scheduled' && <> · request at {eta(job.requestAt, now)} (window closes at block {formatInt(clientIssuanceWindow(p, job.epoch).to)})</>}
         {job.state === 'token' && <> · posting at {eta(job.postAt ?? postingWindow(p, job.epoch).from, now)}</>}
         {job.state === 'posted' && <> · shown until block {formatInt(epochStart(p, job.epoch + 1) + p.graceBlocks)}</>}
@@ -61,7 +61,7 @@ export function BadgePage() {
   const [issuerId, setIssuerId] = useState(enabled[0]?.identityId ?? '');
   const [proTxHash, setProTxHash] = useState('');
   const [wif, setWif] = useState('');
-  const [keepKey, setKeepKey] = useState(true);
+  const [keepKey, setKeepKey] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
 
@@ -121,8 +121,8 @@ export function BadgePage() {
               <input type="password" value={wif} onChange={(e) => setWif(e.target.value)} spellCheck={false} autoComplete="off" data-testid="badge-wif" />
             </label>
             <label className="check">
-              <input type="checkbox" checked={keepKey} onChange={(e) => setKeepKey(e.target.checked)} /> Keep the voting key in this browser (encrypted with your identity key) to renew the
-              badge every epoch
+              <input type="checkbox" checked={keepKey} onChange={(e) => setKeepKey(e.target.checked)} /> Renew every epoch: keep the voting key in this browser, encrypted with your
+              identity key. Anyone who gets your identity key then also gets the voting key. Off: the key is forgotten once the request is sent.
             </label>
           </fieldset>
           <label>

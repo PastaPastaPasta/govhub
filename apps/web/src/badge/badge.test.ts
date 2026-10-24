@@ -44,11 +44,14 @@ class FakePlatform {
   keys = new Map<number, Record<string, unknown>>();
   badges: Record<string, unknown>[] = [];
   reports = new Map<number, number>();
+  reportHeight: number | null = null;
+  revocation: Record<string, unknown> | null = null;
   async query(q: DocQuery) {
     const w = Object.fromEntries(q.where.map(([k, , v]) => [k, v]));
     let docs: Record<string, unknown>[] = [];
+    if (q.documentTypeName === 'issuerRevocation') docs = this.revocation && w.epoch === this.revocation.epoch ? [this.revocation] : [];
     if (q.documentTypeName === 'issuerKey') docs = w.$ownerId === issuer.identityId && this.keys.has(w.epoch as number) ? [this.keys.get(w.epoch as number)!] : [];
-    if (q.documentTypeName === 'issuerReport' && this.reports.has(w.epoch as number)) docs = [{ $ownerId: issuer.identityId, $createdAtCoreBlockHeight: 1, epoch: w.epoch, tokensIssued: this.reports.get(w.epoch as number) }];
+    if (q.documentTypeName === 'issuerReport' && this.reports.has(w.epoch as number)) docs = [{ $ownerId: issuer.identityId, $createdAtCoreBlockHeight: this.reportHeight ?? epochStart(P, w.epoch as number) + 4, epoch: w.epoch, tokensIssued: this.reports.get(w.epoch as number) }];
     if (q.documentTypeName === 'mnBadge') {
       const inList = (w.$ownerId as string[] | undefined) ?? null;
       docs = this.badges.filter((b) => b.issuerId === w.issuerId && b.epoch === w.epoch && (!inList || inList.includes(b.$ownerId as string)));
@@ -105,6 +108,9 @@ function setup(o: Parameters<typeof fakeWorker>[0] = {}) {
       return 'doc1';
     },
     hasBadge: async (iid, e) => platform.badges.some((b) => b.$ownerId === ownerId && b.issuerId === iid && b.epoch === e),
+    trusted: (id) => id === issuer.identityId,
+    reportedTokens: (i, e) => reader.reportedTokens(i, e),
+    minAnonymitySet: 3,
   };
   return { platform, reader, deps, ownerId, posted };
 }
@@ -149,13 +155,15 @@ describe('badge client', () => {
     expect(toHex(req.proTxHash)).toBe(pt);
     expect(bytesToId(req.issuerId)).toBe(issuer.identityId);
     expect(toHex(recoverMessageSigner(signature, request, 'testnet', { strict: true })!.keyId)).toBe(toHex(v.keyId));
-    // secrets dropped after finalize; the key kept for renewal by default
+    // secrets dropped after finalize; the voting key is not kept unless asked
     expect(got.inv).toBeUndefined();
     expect(got.blindedMsg).toBeUndefined();
-    expect(got.signer.kind).toBe('wif');
+    expect(got.signer.kind).toBe('external');
     expect(got.postAt! >= epochStart(P, E) + P.boundaryMarginBlocks && got.postAt! <= epochStart(P, E) + P.graceBlocks).toBe(true);
-    // post at postAt
+    // post at postAt, once the issuer reported enough tokens
     t.platform.core = got.postAt!;
+    expect((await step(t.deps, got, got.postAt!)).note).toMatch(/Waiting for test's token count/);
+    t.platform.reports.set(E, 3);
     expect((await step(t.deps, got, got.postAt! - 1)).state).toBe('token');
     const posted = await step(t.deps, got, got.postAt!);
     expect(posted.state).toBe('posted');
@@ -167,6 +175,45 @@ describe('badge client', () => {
     expect(await reader2.live()).toBe(true);
   });
 
+  it('a badge among too few tokens is not posted, and the MN link is forgotten', async () => {
+    const t = setup();
+    await t.platform.addKey(E);
+    const h = epochStart(P, E - 1) + 50;
+    const tok = await step(t.deps, await createJob(t.deps, [], votingKey().wif, proTx(), h, { issuer, immediate: true }), h);
+    t.platform.reports.set(E, 2);
+    const out = await step(t.deps, tok, tok.postAt!);
+    expect(out.state).toBe('expired');
+    expect(out.note).toMatch(/would stand out/);
+    expect(out.proTxHash).toBe('');
+    expect(t.posted).toHaveLength(0);
+  });
+
+  it('with little of the window left, the request is for the next epoch; a revoked key or an untrusted issuer is refused or waits', async () => {
+    const t = setup();
+    await t.platform.addKey(E);
+    await t.platform.addKey(E + 1);
+    const late = clientIssuanceWindow(P, E).to - 20; // less than a quarter of 576 blocks left
+    expect((await createJob(t.deps, [], votingKey().wif, proTx(), late, { issuer })).epoch).toBe(E + 1);
+    expect((await createJob(t.deps, [], votingKey().wif, proTx(), epochStart(P, E - 1) + 50, { issuer })).epoch).toBe(E);
+    const j = await createJob(t.deps, [], votingKey().wif, proTx(), epochStart(P, E - 1) + 50, { issuer, immediate: true });
+    const untrusted = await step({ ...t.deps, trusted: () => false }, j, j.requestAt);
+    expect(untrusted.state).toBe('scheduled');
+    expect(untrusted.note).toMatch(/not on your trust list/);
+    const t2 = setup();
+    await t2.platform.addKey(E);
+    t2.platform.revocation = { $ownerId: issuer.identityId, $createdAtCoreBlockHeight: 1, epoch: E, keyId: t2.platform.keys.get(E)!.keyId, effectiveCoreHeight: 5 };
+    await expect(createJob(t2.deps, [], votingKey().wif, proTx(), epochStart(P, E - 1) + 50, { issuer })).rejects.toThrow(/revoked/);
+  });
+
+  it('a lagging issuer (still on an earlier epoch) does not expire the job', async () => {
+    const t = setup({ answer: () => ({ ok: false, status: 409, error: 'wrong-epoch', message: 'x', issuingEpoch: E - 1 }) });
+    await t.platform.addKey(E);
+    const h = epochStart(P, E - 1) + 50;
+    const out = await step(t.deps, await createJob(t.deps, [], votingKey().wif, proTx(), h, { issuer, immediate: true }), h);
+    expect(out.state).toBe('scheduled');
+    expect(out.note).toMatch(/still on epoch/);
+  });
+
   it('one request per issuer and epoch; the voting key is dropped when not kept', async () => {
     const t = setup();
     await t.platform.addKey(E);
@@ -176,6 +223,8 @@ describe('badge client', () => {
     const done = await step(t.deps, job, h);
     expect(done.state).toBe('token');
     expect(done.signer.kind).toBe('external');
+    expect(job.keepKey).toBe(false);
+    expect((await createJob(t.deps, [], votingKey().wif, proTx(), h, { issuer })).keepKey).toBe(false); // default: not kept
   });
 
   it('refuses without a valid proved issuerKey, a bad proTxHash, or a WIF of another network', async () => {
@@ -231,7 +280,8 @@ describe('badge client', () => {
     await t.platform.addKey(E);
     await t.platform.addKey(E + 1);
     const h = epochStart(P, E - 1) + 50;
-    const job = await step(t.deps, await createJob(t.deps, [], votingKey().wif, proTx(), h, { issuer, immediate: true }), h);
+    const job = await step(t.deps, await createJob(t.deps, [], votingKey().wif, proTx(), h, { issuer, immediate: true, keepKey: true }), h);
+    expect(job.signer.kind).toBe('wif');
     expect(await renewal(t.deps, [job], job, h, issuer)).toBeNull(); // E+1's window is not open yet
     const r = await renewal(t.deps, [job], job, epochStart(P, E) + 10, issuer);
     expect(r?.epoch).toBe(E + 1);
@@ -302,9 +352,47 @@ describe('badge reader', () => {
     expect((await strict.badgesFor(owners)).byOwner.size).toBe(0);
     expect(await strict.live()).toBe(false);
   });
+
+  it('a report counts only if created in [S(E), S(E)+W] and plausible; none after S(E)+W flags the issuer', async () => {
+    const p = new FakePlatform();
+    await p.addKey(E);
+    const o = bytesToId(rnd(32));
+    await issued(p, o);
+    const fresh = () => new BadgeReader({ net: 'testnet', contractId, issuers: [issuer], query: (q) => p.query(q), maxPlausibleTokens: 2000 });
+    p.reports.set(E, 5);
+    p.reportHeight = epochStart(P, E) - 1; // published before the epoch: a pre-set count
+    expect(await fresh().reportedTokens(issuer, E)).toBeNull();
+    expect((await fresh().audit(issuer, E, p.core)).flagged).toBe(false); // not due yet
+    p.core = epochStart(P, E) + P.graceBlocks + 1;
+    expect(await fresh().audit(issuer, E, p.core)).toMatchObject({ flagged: true, flagReason: 'no valid issuerReport for this epoch' });
+    p.reportHeight = null;
+    p.reports.set(E, 4294967295);
+    expect((await fresh().audit(issuer, E, p.core)).flagReason).toMatch(/more than there are masternodes/);
+    p.reports.set(E, 1);
+    expect((await fresh().audit(issuer, E, p.core)).flagged).toBe(false);
+  });
 });
 
 describe('trust list and storage', () => {
+  it('visit separation: one request per visit, none after an identity write, a cooldown across tabs, no posts after a request', async () => {
+    const { mayPost, mayRequest, noteIdentityWrite, noteRequestSent, resetVisit, COOLDOWN_MS } = await import('./visit.ts');
+    const mem = new Map<string, string>();
+    const st = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v) };
+    resetVisit();
+    expect(mayRequest(st)).toBe(true);
+    expect(mayPost()).toBe(true);
+    noteRequestSent(st);
+    expect(mayRequest(st)).toBe(false);
+    expect(mayPost()).toBe(false);
+    resetVisit(); // a new visit, but within the cooldown
+    expect(mayRequest(st)).toBe(false);
+    expect(mayRequest(st, Date.now() + COOLDOWN_MS + 1)).toBe(true);
+    noteIdentityWrite();
+    expect(mayRequest(st, Date.now() + COOLDOWN_MS + 1)).toBe(false);
+    expect(mayPost()).toBe(true);
+    resetVisit();
+  });
+
   it('validates issuers', () => {
     const { issuers, errors } = parseTrustList([
       issuer,
@@ -313,9 +401,13 @@ describe('trust list and storage', () => {
       { name: 'http', identityId: bytesToId(rnd(32)), url: 'http://evil.example' },
       { name: 'creds', identityId: bytesToId(rnd(32)), url: 'https://u:p@a.b' },
       { name: '', identityId: bytesToId(rnd(32)), url: 'https://a.b' },
+      { name: 'TEST', identityId: bytesToId(rnd(32)), url: 'https://a.b' },
+      { name: 'govhub', identityId: bytesToId(rnd(32)), url: 'https://a.b' },
     ]);
     expect(issuers).toHaveLength(1);
-    expect(errors).toHaveLength(5);
+    expect(errors).toHaveLength(7);
+    expect(errors.join(' ')).toMatch(/already has this name|another issuer on the list has this name/);
+    expect(errors.join(' ')).toMatch(/belongs to a default issuer/);
   });
 
   it('jobs are encrypted at rest, padded, bound to the identity, and unreadable with another key', async () => {

@@ -27,6 +27,7 @@ import {
   requestableEpoch,
   toHex,
   BLOCK_SECONDS,
+  epochLength,
 } from '@govhub/badge';
 import type { TrustedIssuer } from './config.ts';
 import type { badgeWorker } from './workerClient.ts';
@@ -83,6 +84,12 @@ export interface ClientDeps {
   postBadge(data: Record<string, Uint8Array | number>): Promise<string>;
   /** whether the identity already has a badge document for (issuer, epoch) */
   hasBadge(issuerId: string, epoch: number): Promise<boolean>;
+  /** the issuer is (still) on the trust list and enabled */
+  trusted(issuerId: string): boolean;
+  /** tokensIssued from the issuer's valid issuerReport for the epoch, or null while there is none */
+  reportedTokens(issuer: Pick<TrustedIssuer, 'identityId'>, epoch: number): Promise<number | null>;
+  /** a badge is posted only when at least this many tokens were issued for its epoch */
+  minAnonymitySet: number;
 }
 
 export class BadgeRequestError extends Error {}
@@ -102,8 +109,11 @@ export async function createJob(d: ClientDeps, jobs: readonly BadgeJob[], voting
   if (!/^[0-9a-f]{64}$/.test(proTxHash)) throw new BadgeRequestError('The proTxHash must be 64 hex characters.');
   if (typeof voting === 'string' && !voting.trim()) throw new BadgeRequestError('Paste the MN voting key (WIF).');
   const p = EPOCH_PARAMS[d.net];
-  const epoch = requestableEpoch(p, coreHeight);
+  let epoch = requestableEpoch(p, coreHeight);
   if (epoch === null) throw new BadgeRequestError('No issuance window is open.');
+  // With little of the window left the request would go out in this same visit: ask for the next epoch instead (review H1).
+  const w = clientIssuanceWindow(p, epoch);
+  if (!o.immediate && w.to - Math.max(coreHeight, w.from) < epochLength(p) / 4) epoch++;
   if (jobs.some((j) => j.issuer.identityId === o.issuer.identityId && j.epoch === epoch && j.state !== 'expired' && j.state !== 'failed'))
     throw new BadgeRequestError(`You already have a badge request with ${o.issuer.name} for epoch ${epoch}. One badge per issuer is all an identity can show; asking with more MNs would only tell the issuer they belong together.`);
   const wif = typeof voting === 'string' ? voting.trim() : null;
@@ -116,6 +126,7 @@ export async function createJob(d: ClientDeps, jobs: readonly BadgeJob[], voting
   }
   const { key, problem } = await d.issuerKey(o.issuer, epoch);
   if (!key) throw new BadgeRequestError(`${o.issuer.name} has no valid key for epoch ${epoch} on Platform (${problem}).`);
+  if (key.revokedFrom !== null) throw new BadgeRequestError(`${o.issuer.name} revoked its key for epoch ${epoch}.`);
   const prepared = prepareBadge(key.key, idToBytes(d.ownerId));
   const blinded = await d.worker({ kind: 'blind', spki: bytesToBase64(key.key.spki), preparedMsg: bytesToBase64(prepared.preparedMsg) });
   const requestAt = o.immediate ? coreHeight : (pickRequestHeight(p, epoch, coreHeight) ?? coreHeight);
@@ -136,7 +147,7 @@ export async function createJob(d: ClientDeps, jobs: readonly BadgeJob[], voting
     msgPrefix: bytesToBase64(prepared.msgPrefix),
     requestAt,
     signer: wif ? { kind: 'wif', wif } : { kind: 'external' },
-    keepKey: o.keepKey ?? true,
+    keepKey: o.keepKey ?? false,
     state: 'scheduled',
     attempts: 0,
   };
@@ -160,6 +171,7 @@ export async function step(d: ClientDeps, job: BadgeJob, height: number): Promis
   if (j.state === 'scheduled') {
     if (height >= clientIssuanceWindow(p, j.epoch).to) return wipe({ ...j, state: 'expired', note: 'The request window closed before the request could be sent (the app was not open, or the issuer was unreachable).' });
     if (height < j.requestAt) return j;
+    if (!d.trusted(j.issuer.identityId)) return { ...j, note: `${j.issuer.name} is not on your trust list (or is turned off): the request waits.` };
     const signer: VotingSigner | undefined = j.signer.kind === 'wif' ? ((w) => async (m: string) => d.signWithWif(w, m))(j.signer.wif) : d.externalSigner(j.proTxHash);
     if (!signer) return { ...j, note: 'Waiting for the voting key: unlock the MN keyring.' };
     j.attempts++;
@@ -172,7 +184,11 @@ export async function step(d: ClientDeps, job: BadgeJob, height: number): Promis
       const signature = await signer(request);
       const { answer } = await d.worker({ kind: 'token', url: j.issuer.url, request, signature, blindedMsg: j.blindedMsg! });
       if (!answer.ok) {
-        if (answer.error === 'wrong-epoch') return wipe({ ...j, state: 'expired', note: `The issuer is no longer issuing for epoch ${j.epoch}.` });
+        if (answer.error === 'wrong-epoch') {
+          // an issuer whose node lags is still on an earlier epoch: try again later
+          if (answer.issuingEpoch !== undefined && answer.issuingEpoch < j.epoch) return { ...j, note: `The issuer is still on epoch ${answer.issuingEpoch}; trying again.` };
+          return wipe({ ...j, state: 'expired', note: `The issuer is no longer issuing for epoch ${j.epoch}.` });
+        }
         const final = FINAL[answer.error];
         if (final) return wipe({ ...j, state: 'failed', note: final.endsWith('.') ? final : `${final}: ${answer.message}` });
         return { ...j, note: `The issuer is not available (${answer.message}); trying again.` };
@@ -183,7 +199,7 @@ export async function step(d: ClientDeps, job: BadgeJob, height: number): Promis
       } catch {
         return wipe({ ...j, state: 'failed', issuerFlagged: true, note: `${j.issuer.name} answered with a signature that does not verify. The request is void; consider removing this issuer from your trust list.` });
       }
-      const done = wipe({ ...j, state: 'token', sig, note: undefined }, !j.keepKey);
+      const done = wipe({ ...j, state: 'token', sig, note: undefined });
       return { ...done, postAt: pickPostHeight(p, j.epoch, height) };
     } catch (e) {
       return { ...j, note: `Could not reach the issuer (${(e as Error).message}); trying again.` };
@@ -194,9 +210,14 @@ export async function step(d: ClientDeps, job: BadgeJob, height: number): Promis
     const postAt = j.postAt ?? pickPostHeight(p, j.epoch, height);
     if (height < postAt) return { ...j, postAt };
     try {
-      if (await d.hasBadge(j.issuer.identityId, j.epoch)) return { ...j, state: 'posted', note: 'Already posted.' };
+      // Too few tokens this epoch and the badge would stand out (review R1); no report yet: wait for it.
+      const tokens = await d.reportedTokens(j.issuer, j.epoch);
+      if (tokens === null) return { ...j, postAt, note: `Waiting for ${j.issuer.name}'s token count for epoch ${j.epoch} before posting.` };
+      if (tokens < d.minAnonymitySet)
+        return wipe({ ...j, state: 'expired', note: `Only ${tokens} token${tokens === 1 ? ' was' : 's were'} issued for epoch ${j.epoch}: a badge among so few would stand out, so it is not posted. The next epoch's badge will be, if more masternodes take part.` });
+      if (await d.hasBadge(j.issuer.identityId, j.epoch)) return wipe({ ...j, state: 'posted', note: 'Already posted.' });
       const id = await d.postBadge(mnBadgeData({ issuerId: idToBytes(j.issuer.identityId), epoch: j.epoch, keyId: fromHex(j.keyId), msgPrefix: base64ToBytes(j.msgPrefix), sig: base64ToBytes(j.sig!) }));
-      return { ...j, state: 'posted', badgeId: id, note: undefined };
+      return wipe({ ...j, state: 'posted', badgeId: id, note: undefined });
     } catch (e) {
       return { ...j, postAt, note: `Posting the badge failed (${(e as Error).message}); trying again.` };
     }
@@ -204,10 +225,15 @@ export async function step(d: ClientDeps, job: BadgeJob, height: number): Promis
   return j;
 }
 
-/** Drops the secrets a job no longer needs: the blinding state always, the voting key unless `keepKey`. */
-function wipe(j: BadgeJob, dropKey = true): BadgeJob {
+/**
+ * Drops what a job no longer needs: the blinding state always; the voting key, and with it the identity-to-masternode link
+ * (proTxHash), once the job is done, unless the key is kept for renewal (review L8).
+ */
+function wipe(j: BadgeJob): BadgeJob {
   const { preparedMsg: _p, blindedMsg: _b, inv: _i, ...rest } = j;
-  return dropKey && rest.signer.kind === 'wif' ? { ...rest, signer: { kind: 'external' } } : rest;
+  if (rest.keepKey && rest.signer.kind === 'wif') return rest;
+  const done = rest.state === 'posted' || rest.state === 'expired' || rest.state === 'failed';
+  return { ...rest, signer: { kind: 'external' }, ...(done ? { proTxHash: '' } : {}) };
 }
 
 export const isActive = (j: BadgeJob): boolean => ACTIVE.includes(j.state);
@@ -220,7 +246,7 @@ export const etaSeconds = (height: number, now: number): number => Math.max(0, (
  * Returns null when nothing is due.
  */
 export async function renewal(d: ClientDeps, jobs: readonly BadgeJob[], prev: BadgeJob, height: number, issuer: TrustedIssuer): Promise<BadgeJob | null> {
-  if (!prev.keepKey || prev.signer.kind !== 'wif' || (prev.state !== 'token' && prev.state !== 'posted')) return null;
+  if (!prev.keepKey || prev.signer.kind !== 'wif' || !prev.proTxHash) return null;
   const p = EPOCH_PARAMS[prev.net];
   const next = prev.epoch + 1;
   const w = clientIssuanceWindow(p, next);

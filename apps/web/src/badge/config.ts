@@ -21,6 +21,13 @@ export interface BadgeNetworkConfig {
   /** the v1 `badge` contract (packages/contracts-v1/badge.json); empty = badges are not deployed on this network */
   contractId: string;
   defaultIssuers: readonly TrustedIssuer[];
+  /**
+   * A badge is posted only if the issuer reported at least this many tokens for the epoch (review R1): a badge among two or three
+   * stands out. Testnet's value suits a demo with a handful of test masternodes.
+   */
+  minAnonymitySet: number;
+  /** An issuerReport above this is implausible (more tokens than masternodes) and flags the issuer (review M1). */
+  maxPlausibleTokens: number;
 }
 
 /**
@@ -32,11 +39,16 @@ export const BADGE_NETWORKS: Readonly<Record<CoreNetwork, BadgeNetworkConfig>> =
   testnet: {
     contractId: '2aYj4Dkix7xXBUTZFCDBjpcqqLi9Tg5oUwBgHUJBNGCU',
     defaultIssuers: [{ name: 'govhub', identityId: 'H62hSf5TpKbUSMov85GMhPQahZDbqsTipeoBsYPgveUH', url: 'https://gov-issuer-testnet.dashhq.org', enabled: true }],
+    minAnonymitySet: 3,
+    maxPlausibleTokens: 2_000,
   },
-  mainnet: { contractId: '', defaultIssuers: [] },
+  mainnet: { contractId: '', defaultIssuers: [], minAnonymitySet: 10, maxPlausibleTokens: 10_000 },
 };
 
 const KEY = (net: CoreNetwork) => `govhub.badge.trust.v1.${net}`;
+const ALL_DEFAULTS = Object.values(BADGE_NETWORKS).flatMap((n) => n.defaultIssuers);
+const DEFAULT_NAMES = new Set(ALL_DEFAULTS.map((i) => i.name.toLowerCase()));
+const DEFAULT_IDS = new Set(ALL_DEFAULTS.map((i) => i.identityId));
 
 function httpsUrl(s: unknown): string | null {
   if (typeof s !== 'string') return null;
@@ -63,6 +75,8 @@ export function parseTrustList(v: unknown): { issuers: TrustedIssuer[]; errors: 
     else if (!isIdentifier(o.identityId)) errors.push(`${name}: identityId must be a base58 identity id`);
     else if (!url) errors.push(`${name}: url must be an https URL without credentials, query or fragment`);
     else if (issuers.some((s) => s.identityId === o.identityId)) errors.push(`${name}: this identity is already on the list`);
+    else if (issuers.some((s) => s.name.toLowerCase() === name.toLowerCase())) errors.push(`${name}: another issuer on the list has this name`);
+    else if (DEFAULT_NAMES.has(name.toLowerCase()) && !DEFAULT_IDS.has(o.identityId as string)) errors.push(`${name}: this name belongs to a default issuer`);
     else issuers.push({ name, identityId: o.identityId as string, url, enabled: o.enabled !== false });
   }
   return { issuers, errors };

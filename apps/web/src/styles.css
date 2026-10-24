@@ -1956,3 +1956,18 @@ details.advanced[open] > summary {
   gap: 0.25rem;
   justify-items: start;
 }
+.badge-visit-note {
+  position: fixed;
+  inset-inline: 1rem;
+  inset-block-end: 1rem;
+  margin: 0 auto;
+  max-width: 40rem;
+  padding: 0.625rem 0.875rem;
+  border: 1px solid var(--line-strong);
+  border-inline-start: 3px solid var(--warn);
+  border-radius: var(--radius-s);
+  background: var(--surface);
+  box-shadow: 0 2px 12px rgb(0 0 0 / 0.12);
+  font-size: 0.875rem;
+  z-index: 20;
+}

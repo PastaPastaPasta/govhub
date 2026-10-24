@@ -1,7 +1,11 @@
 // Badge state shared by every page: the trust list, the reader (badges next to authors, the "MN owners" filter), and the badge
 // client (requestBadge for the keyring or the key-paste form, and the scheduler that finishes requests and posts badges).
+//
+// The scheduler (review H1, M3): one per identity across tabs (Web Locks), every change merged into the latest stored jobs under a
+// store lock, and within one visit EITHER one token request OR badge posts (visit.ts), so the issuer's view of a request and the
+// public view of this identity's writes never share a visit.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { clientIssuanceWindow, clientPostingWindow, EPOCH_PARAMS, resumeDelayMs } from '@govhub/badge';
+import { clientIssuanceWindow, clientPostingWindow, displayWindow, EPOCH_PARAMS, resumeDelayMs } from '@govhub/badge';
 import { signMessageWif } from '@govhub/verify';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
@@ -10,7 +14,8 @@ import { BADGE_NETWORKS, loadTrustList, resetTrustList, saveTrustList, type Trus
 import { createJob, isActive, renewal, step, type BadgeJob, type ClientDeps, type VotingSigner } from './client.ts';
 import { badgeQuery, badgesOfAuthors } from './queries.ts';
 import { createBadgeReader, type BadgeReader } from './reader.ts';
-import { deriveStoreKey, encryptedJobStore, memoryJobStore, type JobStore } from './store.ts';
+import { deriveStoreKey, encryptedJobStore, jobStorageKey, memoryJobStore, type JobStore } from './store.ts';
+import { mayPost, mayRequest, noteRequestSent, onVisitChange, visitState } from './visit.ts';
 import { badgeWorker } from './workerClient.ts';
 
 export interface BadgeCtx {
@@ -25,9 +30,9 @@ export interface BadgeCtx {
   /** Platform's core height at the last scheduler tick */
   coreHeight: number | null;
   /**
-   * Starts a badge request for the signed-in identity: `voting` is the MN voting key as WIF (kept encrypted with the job), or a
+   * Starts a badge request for the signed-in identity: `voting` is the MN voting key as WIF (stored encrypted with the job), or a
    * signer (the keyring), which must be registered with registerVotingSigner when the request runs. Resolves once the request is
-   * scheduled; it is sent later, at a random height in the issuance window.
+   * scheduled; it is sent later, at a random height in the issuance window, in a visit without public writes of this identity.
    */
   requestBadge(voting: string | VotingSigner, proTxHash: string, opts?: { issuer?: TrustedIssuer; keepKey?: boolean }): Promise<BadgeJob>;
   /** The keyring registers a signer for an MN while it is unlocked; call the returned function to unregister. */
@@ -50,24 +55,37 @@ export function useBadgeClient(): Pick<BadgeCtx, 'requestBadge' | 'registerVotin
 }
 
 const TICK_MS = 60_000;
+type Mutate = (jobs: BadgeJob[]) => BadgeJob[];
+
+/** Runs `fn` under a Web Lock when the browser has them (all current ones), else directly. */
+function withLock<T>(name: string, fn: () => Promise<T>, opts: { signal?: AbortSignal } = {}): Promise<T> {
+  const locks = (globalThis.navigator as Navigator | undefined)?.locks;
+  return locks ? (locks.request(name, opts, fn) as Promise<T>) : fn();
+}
 
 export function BadgeProvider({ children }: { children: ReactNode }) {
   const { registry, mode } = useApp();
   const { session } = useForum();
   const net = registry.platformNetwork;
-  const contractId = BADGE_NETWORKS[net].contractId;
+  const cfg = BADGE_NETWORKS[net];
+  const contractId = cfg.contractId;
   const [trust, setTrustState] = useState<TrustedIssuer[]>(() => loadTrustList(net));
   useEffect(() => setTrustState(loadTrustList(net)), [net]);
   const setTrust = useCallback((list: TrustedIssuer[]) => (saveTrustList(net, list), setTrustState(list)), [net]);
   const resetTrust = useCallback(() => setTrustState(resetTrustList(net)), [net]);
+  const trustRef = useRef(trust);
+  trustRef.current = trust;
 
   const reader = useMemo(() => (mode === 'live' && contractId ? createBadgeReader(registry, contractId, trust) : null), [mode, contractId, registry, trust]);
 
   const [jobs, setJobs] = useState<BadgeJob[]>([]);
   const [coreHeight, setCoreHeight] = useState<number | null>(null);
+  const [visit, setVisit] = useState(visitState);
+  useEffect(() => onVisitChange(() => setVisit(visitState())), []);
   const signers = useRef(new Map<string, VotingSigner>());
-  const storeRef = useRef<JobStore | null>(null);
   const jobsRef = useRef<BadgeJob[]>([]);
+  /** the current effect run's merge-and-save (null while no identity is loaded) */
+  const commitRef = useRef<((m: Mutate) => Promise<BadgeJob[]>) | null>(null);
   const authSession = session && 'auth' in session ? (session as AppAuthSession) : null;
 
   const deps = useMemo<ClientDeps | null>(() => {
@@ -77,7 +95,11 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
       contractId,
       ownerId: session.identityId,
       issuerKey: (i, e) => reader.key(i, e),
-      worker: badgeWorker,
+      // anything that reaches an issuer marks this visit (visit.ts)
+      worker: ((call) => {
+        if (call.kind === 'challenge' || call.kind === 'token') noteRequestSent();
+        return badgeWorker(call as never);
+      }) as ClientDeps['worker'],
       signWithWif: (wif, m) => signMessageWif(wif, m, net),
       externalSigner: (p) => signers.current.get(p),
       async postBadge(data) {
@@ -88,98 +110,150 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
       async hasBadge(issuerId, epoch) {
         return (await badgeQuery(registry, contractId, badgesOfAuthors(issuerId, epoch, [session.identityId]))).docs.length > 0;
       },
+      trusted: (id) => trustRef.current.some((t) => t.identityId === id && t.enabled),
+      reportedTokens: (i, e) => reader.reportedTokens(i, e),
+      minAnonymitySet: cfg.minAnonymitySet,
     };
-  }, [reader, session, net, contractId, registry]);
+  }, [reader, session, net, contractId, registry, cfg.minAnonymitySet]);
 
-  const commit = useCallback(async (next: BadgeJob[]) => {
-    jobsRef.current = next;
-    setJobs(next);
-    await storeRef.current?.save(next);
-  }, []);
-
-  // Load this identity's jobs (decrypting with a key derived from its signing key), then run the scheduler.
+  // Load this identity's jobs (decrypting with a key derived from its signing key) and run the scheduler.
   useEffect(() => {
     let live = true;
+    const ac = new AbortController();
     jobsRef.current = [];
     setJobs([]);
-    storeRef.current = null;
+    commitRef.current = null;
     if (!deps || !session) return;
-    const notBefore = new Map<string, number>();
-    let ticks = 0;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    (async () => {
-      storeRef.current = authSession ? encryptedJobStore(session.identityId, await deriveStoreKey(authSession.auth.privateKey, session.identityId)) : memoryJobStore();
-      const loaded = await storeRef.current.load();
+    const ownerId = session.identityId;
+    const lockBase = `govhub-badge-${net}-${ownerId}`;
+    let store: JobStore | null = null;
+    const show = (j: BadgeJob[]) => {
       if (!live) return;
-      jobsRef.current = loaded;
-      setJobs(loaded);
-      const tick = async () => {
-        if (!live) return;
-        try {
-          const height = await reader!.coreHeight();
-          setCoreHeight(height);
-          const p = EPOCH_PARAMS[net];
-          // Work on a snapshot; merge into the latest list at the end (a request or removal may happen while a step awaits).
-          const snapshot = [...jobsRef.current];
-          const updates = new Map<string, BadgeJob>();
-          const added: BadgeJob[] = [];
-          for (const j of snapshot) {
-            if (!isActive(j)) continue;
-            const dueAt = j.state === 'scheduled' ? j.requestAt : (j.postAt ?? clientPostingWindow(p, j.epoch).from);
-            if (height < dueAt) continue;
-            // A due action found right after the app opened waits a random 30 s - 10 min, so it is not tied to the page load.
-            if (!notBefore.has(j.id)) {
-              const end = j.state === 'scheduled' ? clientIssuanceWindow(p, j.epoch).to : clientPostingWindow(p, j.epoch).to;
-              const leftMs = Math.max(0, end - height) * 150_000;
-              notBefore.set(j.id, Date.now() + (ticks === 0 ? resumeDelayMs(Math.min(600_000, leftMs / 2)) : 0));
-            }
-            if (Date.now() < notBefore.get(j.id)!) continue;
-            const after = await step(deps, j, height);
-            if (JSON.stringify(after) !== JSON.stringify(j)) updates.set(j.id, after);
-          }
-          const current = () => snapshot.map((j) => updates.get(j.id) ?? j).concat(added);
-          for (const j of current()) {
-            const issuer = trust.find((t) => t.identityId === j.issuer.identityId && t.enabled);
-            if (!issuer) continue;
-            const r = await renewal(deps, current(), j, height, issuer);
-            if (r) {
-              // the voting key moves to the renewal job: one stored copy
-              updates.set(j.id, { ...j, signer: { kind: 'external' } });
-              added.push(r);
-            }
-          }
-          // keep finished jobs of the last few epochs for the status list, drop older ones
-          const keepFrom = Math.floor(height / (p.superblockCycle * p.epochCycles)) - 2;
-          const latest = jobsRef.current;
-          const merged = latest.map((j) => updates.get(j.id) ?? j).concat(added.filter((a) => !latest.some((j) => j.id === a.id)));
-          const pruned = merged.filter((j) => isActive(j) || j.epoch >= keepFrom);
-          if (updates.size || added.length || pruned.length !== latest.length) await commit(pruned);
-        } catch {
-          /* Platform not reachable: next tick */
-        } finally {
-          ticks++;
-          if (live) timer = setTimeout(tick, notBefore.size ? 15_000 : TICK_MS);
-        }
+      jobsRef.current = j;
+      setJobs(j);
+    };
+    const commit = (mutate: Mutate) =>
+      withLock(`${lockBase}-store`, async () => {
+        if (!live || !store) throw new Error('signed out');
+        const next = mutate(await store.load());
+        await store.save(next);
+        show(next);
+        return next;
+      });
+    const sleep = (ms: number) =>
+      new Promise<void>((r) => {
+        const t = setTimeout(r, ms);
+        ac.signal.addEventListener('abort', () => (clearTimeout(t), r()), { once: true });
+      });
+
+    const notBefore = new Map<string, number>();
+    let okTicks = 0;
+    const tick = async (): Promise<number> => {
+      const height = await reader!.coreHeight();
+      if (!live || !store) return TICK_MS;
+      setCoreHeight(height);
+      const p = EPOCH_PARAMS[net];
+      const snapshot = await store.load(); // other tabs may have added jobs
+      if (!live) return TICK_MS;
+      const updates = new Map<string, BadgeJob>();
+      const added: BadgeJob[] = [];
+      const run = async (j: BadgeJob) => {
+        const after = await step(deps, j, height);
+        if (JSON.stringify(after) !== JSON.stringify(j)) updates.set(j.id, after);
       };
-      void tick();
+      // windows that closed: no network involved
+      for (const j of snapshot.filter(isActive)) {
+        const closed = j.state === 'scheduled' ? height >= clientIssuanceWindow(p, j.epoch).to : height > displayWindow(p, j.epoch).to;
+        if (closed) await run(j);
+      }
+      const due = snapshot.filter((j) => isActive(j) && !updates.has(j.id) && height >= (j.state === 'scheduled' ? j.requestAt : (j.postAt ?? clientPostingWindow(p, j.epoch).from)));
+      // A due action found on the first tick of a visit waits a random 30 s - 10 min, so it is not tied to the page load (L1: the
+      // first SUCCESSFUL tick).
+      for (const j of due) {
+        if (notBefore.has(j.id)) continue;
+        const end = j.state === 'scheduled' ? clientIssuanceWindow(p, j.epoch).to : clientPostingWindow(p, j.epoch).to;
+        const leftMs = Math.max(0, end - height) * 150_000;
+        notBefore.set(j.id, Date.now() + (okTicks === 0 ? resumeDelayMs(Math.min(600_000, leftMs / 2)) : 0));
+      }
+      const ready = due.filter((j) => Date.now() >= notBefore.get(j.id)!);
+      const requests = ready.filter((j) => j.state === 'scheduled').sort((a, b) => clientIssuanceWindow(p, a.epoch).to - clientIssuanceWindow(p, b.epoch).to);
+      const posts = ready.filter((j) => j.state === 'token');
+      // H1: a visit does one token request (the one whose window closes first) OR posts, never both; a request never follows a
+      // public write of this identity in the same visit. Whatever is not allowed waits for a later visit.
+      if (requests.length && mayRequest()) await run(requests[0]!);
+      else if (posts.length && mayPost()) for (const j of posts) await run(j);
+      if (!live) return TICK_MS;
+      // renewals: create the next epoch's job (no network to the issuer; blinding only)
+      const current = () => snapshot.map((j) => updates.get(j.id) ?? j).concat(added);
+      for (const j of current()) {
+        const issuer = trustRef.current.find((t) => t.identityId === j.issuer.identityId && t.enabled);
+        if (!issuer) continue;
+        const r = await renewal(deps, current(), j, height, issuer);
+        if (r) {
+          updates.set(j.id, { ...j, signer: { kind: 'external' }, proTxHash: '' }); // the key and the MN move to the renewal job
+          added.push(r);
+        }
+      }
+      if (!live) return TICK_MS;
+      const keepFrom = Math.floor(height / (p.superblockCycle * p.epochCycles)) - 2;
+      await commit((latest) => {
+        const merged = latest.map((j) => updates.get(j.id) ?? j).concat(added.filter((a) => !latest.some((j) => j.id === a.id)));
+        return merged.filter((j) => isActive(j) || j.epoch >= keepFrom);
+      });
+      okTicks++;
+      return due.some((j) => !updates.has(j.id)) ? 15_000 : TICK_MS;
+    };
+
+    (async () => {
+      const s = authSession ? encryptedJobStore(ownerId, await deriveStoreKey(authSession.auth.privateKey, ownerId)) : memoryJobStore();
+      if (!live) return;
+      store = s;
+      commitRef.current = commit;
+      show(await s.load());
+      // one scheduler per identity in this browser: the other tabs wait for the lock
+      await withLock(
+        `${lockBase}-scheduler`,
+        async () => {
+          while (live) {
+            let wait = TICK_MS;
+            try {
+              wait = await tick();
+            } catch {
+              /* Platform not reachable or signed out: next tick */
+            }
+            await sleep(wait);
+          }
+        },
+        { signal: ac.signal },
+      );
     })().catch(() => undefined);
+    // another tab saved: show its jobs
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === jobStorageKey(ownerId)) void store?.load().then(show);
+    };
+    globalThis.addEventListener?.('storage', onStorage);
     return () => {
       live = false;
-      clearTimeout(timer);
+      ac.abort();
+      globalThis.removeEventListener?.('storage', onStorage);
     };
-  }, [deps, session, authSession, reader, net, trust, commit]);
+  }, [deps, session, authSession, reader, net]);
 
   const requestBadge = useCallback<BadgeCtx['requestBadge']>(
     async (voting, proTxHash, opts = {}) => {
-      if (!deps || !reader) throw new Error(mode === 'live' ? 'Sign in to request a badge.' : 'Badges need live data (Settings).');
+      const commit = commitRef.current;
+      if (!deps || !reader || !commit) throw new Error(mode === 'live' ? 'Sign in to request a badge.' : 'Badges need live data (Settings).');
       const issuer = opts.issuer ?? trust.find((t) => t.enabled);
       if (!issuer) throw new Error('Your trust list has no enabled issuer.');
       const height = await reader.coreHeight();
       const job = await createJob(deps, jobsRef.current, voting, proTxHash, height, { issuer, ...(opts.keepKey !== undefined ? { keepKey: opts.keepKey } : {}) });
-      await commit([...jobsRef.current, job]);
+      await commit((latest) => {
+        if (latest.some((j) => j.issuer.identityId === job.issuer.identityId && j.epoch === job.epoch && (j.state === 'scheduled' || j.state === 'token' || j.state === 'posted'))) throw new Error('Another tab already requested this badge.');
+        return [...latest, job];
+      });
       return job;
     },
-    [deps, reader, trust, mode, commit],
+    [deps, reader, trust, mode],
   );
 
   const registerVotingSigner = useCallback((proTxHash: string, signer: VotingSigner) => {
@@ -190,13 +264,23 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const removeJob = useCallback((id: string) => void commit(jobsRef.current.filter((j) => j.id !== id)), [commit]);
+  const removeJob = useCallback((id: string) => void commitRef.current?.((latest) => latest.filter((j) => j.id !== id)).catch(() => undefined), []);
 
   const value = useMemo<BadgeCtx>(
     () => ({ contractId, trust, setTrust, resetTrust, reader, jobs, coreHeight, requestBadge, registerVotingSigner, removeJob }),
     [contractId, trust, setTrust, resetTrust, reader, jobs, coreHeight, requestBadge, registerVotingSigner, removeJob],
   );
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+  return (
+    <Ctx.Provider value={value}>
+      {children}
+      {visit.requestSent && (
+        <p className="badge-visit-note" role="status" data-testid="badge-visit-note">
+          A masternode badge request went to an issuer during this visit. Posting, commenting or reacting from this identity now could let the issuer link the two; it is
+          safer to do that on another visit.
+        </p>
+      )}
+    </Ctx.Provider>
+  );
 }
 
 /** Verified badges of `authors` from the trusted issuers, and whether any badge is live (the "MN owners" filter means something). */

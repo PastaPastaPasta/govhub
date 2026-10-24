@@ -3,10 +3,12 @@
 // fetched and verified one by one. An identity shows at most one badge per issuer, never a count, never summed across issuers.
 //
 // Audit: an issuer whose verified badge count for an epoch exceeds its own issuerReport (tokensIssued) is flagged and its badges
-// for that epoch are not shown. Reports appear when the epoch's issuance window has closed, i.e. from S(E) on.
+// for that epoch are not shown. A report counts only if it was created in [S(E), S(E)+W] (so a stolen report key cannot fix
+// future counts in advance, and a report written after counting the badges does not count) and is plausible (not more tokens
+// than masternodes). Once S(E)+W has passed without a valid report the issuer is flagged as unaudited.
 import type { DocQuery } from '@govhub/contracts-v1/queryLint';
 import type { AcceptedIssuerKey, BadgeNetwork, ReaderConfig } from '@govhub/badge';
-import type { TrustedIssuer } from './config.ts';
+import { BADGE_NETWORKS, type TrustedIssuer } from './config.ts';
 import { allBadges, badgeQuery, badgesOfAuthors, issuerKeyQuery, reportQuery, revocationQuery, type BadgeQueryResult } from './queries.ts';
 import type { Registry } from '../config/registry.ts';
 
@@ -19,9 +21,11 @@ export interface IssuerEpochAudit {
   /** verified badges counted (capped at `maxAuditPages` x 100) */
   badges: number;
   complete: boolean;
-  /** the issuer's own count, null until it publishes the report */
+  /** the issuer's own count from a valid report, null while there is none */
   tokensIssued: number | null;
   flagged: boolean;
+  /** why it is flagged */
+  flagReason: string | null;
   /** why the issuer has nothing valid for this epoch, when that is the case */
   keyProblem: string | null;
 }
@@ -34,7 +38,13 @@ export interface BadgeView {
 
 export interface ReaderOptions {
   maxAuditPages?: number;
+  /** reports above this are implausible (default 10,000) */
+  maxPlausibleTokens?: number;
+  /** cache lifetime of accepted keys and unfinished audits (default 10 min) */
+  ttlMs?: number;
 }
+
+const TTL_MS = 10 * 60_000;
 
 /** Caches accepted keys and audits per (issuer, epoch) for the life of the reader (one per network/contract/trust list). */
 export class BadgeReader {
@@ -43,9 +53,11 @@ export class BadgeReader {
   readonly #query: Query;
   readonly #issuers: TrustedIssuer[];
   readonly #maxAuditPages: number;
+  readonly #maxPlausible: number;
+  readonly #ttl: number;
   #badge: Promise<Badge> | null = null;
-  readonly #keys = new Map<string, Promise<{ key: AcceptedIssuerKey | null; problem: string | null }>>();
-  readonly #audits = new Map<string, Promise<IssuerEpochAudit>>();
+  readonly #keys = new Map<string, { at: number; p: Promise<{ key: AcceptedIssuerKey | null; problem: string | null }> }>();
+  readonly #audits = new Map<string, { at: number; final: boolean; p: Promise<IssuerEpochAudit> }>();
 
   constructor(o: { net: BadgeNetwork; contractId: string; query: Query; issuers: TrustedIssuer[] } & ReaderOptions) {
     this.#net = o.net;
@@ -53,6 +65,8 @@ export class BadgeReader {
     this.#query = o.query;
     this.#issuers = o.issuers.filter((i) => i.enabled);
     this.#maxAuditPages = o.maxAuditPages ?? 20;
+    this.#maxPlausible = o.maxPlausibleTokens ?? 10_000;
+    this.#ttl = o.ttlMs ?? TTL_MS;
   }
 
   #lib(): Promise<Badge> {
@@ -67,7 +81,8 @@ export class BadgeReader {
   /** The proved, accepted key of (issuer, epoch), or why there is none. */
   key(issuer: TrustedIssuer, epoch: number): Promise<{ key: AcceptedIssuerKey | null; problem: string | null }> {
     const k = `${issuer.identityId}:${epoch}`;
-    let p = this.#keys.get(k);
+    const hit = this.#keys.get(k);
+    let p = hit && Date.now() - hit.at < this.#ttl ? hit.p : undefined;
     if (!p) {
       p = (async () => {
         const b = await this.#lib();
@@ -83,9 +98,10 @@ export class BadgeReader {
         const v = await b.acceptIssuerKey(await this.#cfg(), { issuerId: b.idToBytes(issuer.identityId), epoch }, doc, rev);
         return v.ok ? { key: v.value, problem: null } : { key: null, problem: v.reason };
       })();
-      // only an accepted key is kept: a failed read or a missing/invalid key is looked up again next time
-      p.then((r) => r.key || this.#keys.delete(k), () => this.#keys.delete(k));
-      this.#keys.set(k, p);
+      // only an accepted key is kept, and only for the TTL (a revocation can come later); anything else is read again next time
+      const entry = { at: Date.now(), p };
+      p.then((r) => r.key || this.#keys.get(k) !== entry || this.#keys.delete(k), () => this.#keys.get(k) === entry && this.#keys.delete(k));
+      this.#keys.set(k, entry);
     }
     return p;
   }
@@ -129,50 +145,70 @@ export class BadgeReader {
     return { byOwner, coreHeight: now };
   }
 
+  /** tokensIssued of the issuer's report for the epoch if the report is valid (created in [S(E), S(E)+W], plausible), else null. */
+  async reportedTokens(issuer: Pick<TrustedIssuer, 'identityId'>, epoch: number): Promise<number | null> {
+    const b = await this.#lib();
+    const p = b.EPOCH_PARAMS[this.#net];
+    const rep = await this.#query(reportQuery(issuer.identityId, epoch));
+    if (!rep.docs[0]) return null;
+    try {
+      const r = b.parseIssuerReportDoc(rep.docs[0]);
+      const w = b.postingWindow(p, epoch);
+      if (r.epoch !== epoch || r.createdAtCoreBlockHeight < w.from || r.createdAtCoreBlockHeight > w.to) return null;
+      return r.tokensIssued;
+    } catch {
+      return null;
+    }
+  }
+
   /** Counts the issuer's verified badges for the epoch against its issuerReport. */
   audit(issuer: TrustedIssuer, epoch: number, coreHeight: number): Promise<IssuerEpochAudit> {
     const k = `${issuer.identityId}:${epoch}`;
-    let p = this.#audits.get(k);
-    if (!p) {
-      p = (async () => {
-        const b = await this.#lib();
-        const base = { issuer, epoch };
-        const { key, problem } = await this.key(issuer, epoch);
-        if (!key) return { ...base, badges: 0, complete: true, tokensIssued: null, flagged: false, keyProblem: problem };
-        const cfg = await this.#cfg();
-        let count = 0;
-        let after: string | undefined;
-        let pages = 0;
-        let complete = false;
-        while (pages < this.#maxAuditPages) {
-          const res = await this.#query(allBadges(issuer.identityId, epoch, after));
-          pages++;
-          for (const d of res.docs) {
-            try {
-              if ((await b.verifyMnBadge(cfg, key, b.parseMnBadgeDoc(d), coreHeight)).ok) count++;
-            } catch {
-              /* malformed: not counted */
-            }
+    const hit = this.#audits.get(k);
+    if (hit && (hit.final || Date.now() - hit.at < this.#ttl)) return hit.p;
+    const entry = { at: Date.now(), final: false, p: null as unknown as Promise<IssuerEpochAudit> };
+    entry.p = (async (): Promise<IssuerEpochAudit> => {
+      const b = await this.#lib();
+      const base = { issuer, epoch };
+      const { key, problem } = await this.key(issuer, epoch);
+      if (!key) return { ...base, badges: 0, complete: true, tokensIssued: null, flagged: false, flagReason: null, keyProblem: problem };
+      const cfg = await this.#cfg();
+      let count = 0;
+      let after: string | undefined;
+      let pages = 0;
+      let complete = false;
+      while (pages < this.#maxAuditPages) {
+        const res = await this.#query(allBadges(issuer.identityId, epoch, after));
+        pages++;
+        for (const d of res.docs) {
+          try {
+            if ((await b.verifyMnBadge(cfg, key, b.parseMnBadgeDoc(d), coreHeight)).ok) count++;
+          } catch {
+            /* malformed: not counted */
           }
-          if (res.docs.length < 100) {
-            complete = true;
-            break;
-          }
-          after = String(res.docs[res.docs.length - 1]!.$id);
         }
-        const rep = await this.#query(reportQuery(issuer.identityId, epoch));
-        let tokensIssued: number | null = null;
-        try {
-          tokensIssued = rep.docs[0] ? b.parseIssuerReportDoc(rep.docs[0]).tokensIssued : null;
-        } catch {
-          tokensIssued = null;
+        if (res.docs.length < 100) {
+          complete = true;
+          break;
         }
-        return { ...base, badges: count, complete, tokensIssued, flagged: tokensIssued !== null && count > tokensIssued, keyProblem: null };
-      })();
-      p.catch(() => this.#audits.delete(k));
-      this.#audits.set(k, p);
-    }
-    return p;
+        after = String(res.docs[res.docs.length - 1]!.$id);
+      }
+      const tokensIssued = await this.reportedTokens(issuer, epoch);
+      const reportDue = coreHeight > b.postingWindow(b.EPOCH_PARAMS[this.#net], epoch).to;
+      const flagReason =
+        tokensIssued !== null && tokensIssued > this.#maxPlausible
+          ? `reported ${tokensIssued} tokens, more than there are masternodes`
+          : tokensIssued !== null && count > tokensIssued
+            ? `${count} valid badges but only ${tokensIssued} tokens reported`
+            : tokensIssued === null && reportDue
+              ? 'no valid issuerReport for this epoch'
+              : null;
+      entry.final = complete && (tokensIssued !== null || reportDue);
+      return { ...base, badges: count, complete, tokensIssued, flagged: flagReason !== null, flagReason, keyProblem: null };
+    })();
+    entry.p.catch(() => this.#audits.get(k) === entry && this.#audits.delete(k));
+    this.#audits.set(k, entry);
+    return entry.p;
   }
 
   /** Whether any trusted issuer has at least one valid, unflagged badge displayed now (the "MN owners" filter is meaningful). */
@@ -190,5 +226,5 @@ export class BadgeReader {
 }
 
 export function createBadgeReader(r: Registry, contractId: string, issuers: TrustedIssuer[]): BadgeReader {
-  return new BadgeReader({ net: r.platformNetwork, contractId, issuers, query: (q) => badgeQuery(r, contractId, q) });
+  return new BadgeReader({ net: r.platformNetwork, contractId, issuers, query: (q) => badgeQuery(r, contractId, q), maxPlausibleTokens: BADGE_NETWORKS[r.platformNetwork].maxPlausibleTokens });
 }
