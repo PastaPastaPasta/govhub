@@ -81,6 +81,7 @@ wallet disabled (the bridge needs none); `DASHD_EXTRA_ARGS=-disablewallet=0` tur
 |---|---|
 | `docker-compose.yml` | base stack, **mainnet**: `dashd`, `bridge`, `cloudflared` (profile `tunnel`), `caddy` (profile `proxy`) |
 | `docker-compose.testnet.yml` | override: v24 image, testnet Core, testnet Platform |
+| `docker-compose.relay-tunnel-guest.yml` | override: publish this stack's relay through another stack's cloudflared (section 11.4) |
 | `docker-compose.regtest.yml` | override: isolated chain, `PUBLISH=0`, no identity secret |
 | `docker-compose.p2p.yml` | override: publish dashd's P2P port (set `DASHD_P2P_PORT`) |
 | `docker-compose.tunnel-guest.yml` | override: serve this stack's bridge through another stack's cloudflared, via a gateway on a `tunnel` network (section 11.3) |
@@ -571,6 +572,19 @@ docker run --rm $N busybox wget -q -O- http://bridge:8787/v1/status | grep -o '"
 While cloudflared is attached, the guest's `docker compose down` cannot remove `<project>_tunnel` (the
 containers stop anyway). To run the host without the guest, take `docker-compose.tunnel-host.yml` out of its
 `COMPOSE_FILE`; with it in, `up` fails while the network is missing.
+
+### 11.4 The relay
+
+The relay (services/relay) is a profile of this compose file: `COMPOSE_PROFILES=relay` (with `tunnel`:
+`tunnel,relay`). It shares this stack's dashd and RPC secret, keeps held votes on the `relay-data` volume, publishes
+its port on loopback (`RELAY_PORT`, default 8790) and takes the client address from `cf-connecting-ip` (in memory
+only, for rate limits; nothing about clients is stored). Route: `gov-relay.<zone> -> http://relay:8788`.
+
+A second stack's relay (say testnet next to mainnet) is published through the host stack's tunnel like its bridge
+(section 11.3): layer `docker-compose.relay-tunnel-guest.yml` on the guest, which puts the relay on the shared `tunnel`
+network under the unique alias `<project>-relay`, and add the route `gov-relay-testnet.<zone> ->
+http://govhub-testnet-relay:8788`. The relay answers browsers itself (CORS, 4 KiB POST bodies, per-IP and
+per-masternode limits); nothing else of the guest stack is on that network.
 
 ## 12. Unprivileged LXC (Proxmox)
 

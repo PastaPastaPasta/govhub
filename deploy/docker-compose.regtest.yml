@@ -20,3 +20,6 @@ services:
     # No identity secret: PUBLISH=0 never reads it.
     secrets: !override
       - core_rpc_password
+  relay:
+    environment:
+      CORE_NETWORK: regtest

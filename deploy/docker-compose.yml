@@ -153,7 +153,7 @@ services:
   # Outbound-only: no inbound port is opened anywhere. The tunnel is remotely managed, so its public
   # hostnames and ingress live in Cloudflare (scripts/cloudflare-tunnel.sh sets them), e.g.
   #   gov-bridge.<zone>    -> http://bridge:8787
-  #   gov-relay.<zone>     -> http://relay:<port>      (when the relay lands)
+  #   gov-relay.<zone>     -> http://relay:8788        (COMPOSE_PROFILES=tunnel,relay)
   #   gov-accounts.<zone>  -> http://accounts:<port>   (when accounts lands)
   # The token is a secret file, never an environment value in .env.
   # ---------------------------------------------------------------------------------------------
@@ -177,14 +177,62 @@ services:
       - cloudflare_tunnel_token
 
   # ---------------------------------------------------------------------------------------------
+  # govhub relay (profile `relay`): holds fully signed masternode votes until their release time and
+  # broadcasts them with `voteraw`; relays `gobject submit` once a proposal's collateral is confirmed.
+  # Holds no keys and no accounts; no IP addresses at rest (services/relay/README.md). Shares this
+  # stack's dashd (RPC on the compose network only). Enable with COMPOSE_PROFILES=relay (with `tunnel`
+  # to publish it: route `gov-relay.<zone> -> http://relay:8788`).
+  # Dockerfile: services/relay/Dockerfile, built from the repository root.
+  # ---------------------------------------------------------------------------------------------
+  relay:
+    profiles: ["relay"]
+    build:
+      context: ..
+      dockerfile: services/relay/Dockerfile
+    image: govhub-relay:${RELAY_TAG:-local}
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      dashd:
+        condition: service_healthy
+    environment:
+      # --- wiring (fixed by this compose file) ---
+      CORE_NETWORK: mainnet
+      CORE_RPC_URL: http://dashd:9998
+      CORE_RPC_USER: ${CORE_RPC_USER:-govhub}
+      CORE_RPC_PASSWORD_FILE: /run/secrets/core_rpc_password
+      DB_PATH: /data/relay.sqlite
+      HTTP_HOST: 0.0.0.0
+      HTTP_PORT: "8788"
+      # cloudflared (or caddy) is the only peer: take the client address from its header, in memory only.
+      CLIENT_IP_HEADER: ${RELAY_CLIENT_IP_HEADER:-cf-connecting-ip}
+      # --- optional tunables. Empty means "use the relay's built-in default" (services/relay/README.md). ---
+      RELAY_LOG_LEVEL: ${RELAY_LOG_LEVEL:-}
+      RELEASE_MARGIN_S: ${RELAY_RELEASE_MARGIN_S:-}
+      MAX_HOLD_S: ${RELAY_MAX_HOLD_S:-}
+      MAX_HELD_PER_MN: ${RELAY_MAX_HELD_PER_MN:-}
+      RATE_IP_PER_MIN: ${RELAY_RATE_IP_PER_MIN:-}
+      RATE_MN_PER_HOUR: ${RELAY_RATE_MN_PER_HOUR:-}
+      PROPOSAL_SUBMIT: ${RELAY_PROPOSAL_SUBMIT:-}
+      RETENTION_DAYS: ${RELAY_RETENTION_DAYS:-}
+    secrets:
+      - core_rpc_password
+    volumes:
+      # Held votes. Losing it drops votes that were not released yet (clients keep a copy and re-send).
+      - relay-data:/data
+    networks:
+      - default
+      - edge
+    ports:
+      - "${RELAY_BIND:-127.0.0.1}:${RELAY_PORT:-8790}:8788"
+
+  # ---------------------------------------------------------------------------------------------
   # SLOTS for services that are not built yet. Keep the pattern when they land:
   #   * one service per component, built from ../services/<name>/Dockerfile with context `..`
   #   * configuration only through env vars and docker secrets (never baked into the image)
   #   * state on a named volume; HTTP published on loopback by default; HEALTHCHECK in the image
   #   * if it must be reachable from a browser, add a path (or a host) to caddy/Caddyfile
   #
-  # relay:     voteraw at release time, gobject submit, held Platform votes.
-  #            May share this stack's dashd (CORE_RPC_URL=http://dashd:9998, same secret).
   # issuer:    blind-signs MN badge tokens. Needs SML access (dashd RPC or a DAPI stream) and the
   #            offline-generated RSA key as a secret. Serve it from a SEPARATE origin.
   # accounts:  central-login envelopes (encrypted blobs only).
@@ -206,6 +254,7 @@ secrets:
 volumes:
   dashd-data:
   bridge-data:
+  relay-data:
   caddy-data:
   caddy-config:
 

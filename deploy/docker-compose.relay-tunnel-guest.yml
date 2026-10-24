@@ -1,0 +1,20 @@
+# Publish THIS stack's relay through ANOTHER stack's cloudflared on the same host, next to
+# docker-compose.tunnel-guest.yml (README section 11.3), e.g. the testnet relay through the mainnet tunnel:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.testnet.yml:docker-compose.tunnel-guest.yml:docker-compose.relay-tunnel-guest.yml
+#   COMPOSE_PROFILES=relay
+#
+# The relay joins the shared `tunnel` network under a unique alias (RELAY_TUNNEL_ALIAS, default `<project>-relay`, e.g.
+# `govhub-testnet-relay`), so the host stack's cloudflared reaches exactly this relay and never another stack's `relay`
+# service (the duplicate-name trap the bridge gateway avoids). Tunnel route: `gov-relay-testnet.<zone> -> http://govhub-testnet-relay:8788`.
+# The relay serves the browser API itself (CORS, POST bodies capped at 4 KiB); dashd is still on neither `edge` nor `tunnel`.
+services:
+  relay:
+    networks:
+      default: {}
+      edge: {}
+      tunnel:
+        aliases:
+          - ${RELAY_TUNNEL_ALIAS:-${COMPOSE_PROJECT_NAME:-govhub}-relay}
+
+networks:
+  tunnel: {}
