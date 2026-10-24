@@ -29,12 +29,13 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# Per-network project name, subnet and host port, so a mainnet and a testnet stack can live on one
-# host without sharing volumes, networks or ports.
+# Per-network project name, subnet, host port and bridge image tag, so a mainnet and a testnet stack can live
+# on one host without sharing volumes, networks, ports or the locally built bridge image (with one tag, building
+# in the testnet checkout would retag the image the mainnet stack recreates its bridge from).
 case "$NETWORK" in
-  mainnet) COMPOSE_FILES="docker-compose.yml"; PROJECT=govhub; SUBNET=172.29.73.0/24; HOST_PORT=8787 ;;
-  testnet) COMPOSE_FILES="docker-compose.yml:docker-compose.testnet.yml"; PROJECT=govhub-testnet; SUBNET=172.29.74.0/24; HOST_PORT=8788 ;;
-  regtest) COMPOSE_FILES="docker-compose.yml:docker-compose.regtest.yml"; PROJECT=govhub-regtest; SUBNET=172.29.75.0/24; HOST_PORT=8789 ;;
+  mainnet) COMPOSE_FILES="docker-compose.yml"; PROJECT=govhub; SUBNET=172.29.73.0/24; HOST_PORT=8787; IMAGE_TAG=local ;;
+  testnet) COMPOSE_FILES="docker-compose.yml:docker-compose.testnet.yml"; PROJECT=govhub-testnet; SUBNET=172.29.74.0/24; HOST_PORT=8788; IMAGE_TAG=testnet ;;
+  regtest) COMPOSE_FILES="docker-compose.yml:docker-compose.regtest.yml"; PROJECT=govhub-regtest; SUBNET=172.29.75.0/24; HOST_PORT=8789; IMAGE_TAG=regtest ;;
   *) die "--network must be mainnet, testnet or regtest" ;;
 esac
 
@@ -123,6 +124,10 @@ chmod "$secret_mode" "$rpc_pw_file" "$identity_file" "$tunnel_file"
 env_file="$DEPLOY_DIR/.env"
 if [ -e "$env_file" ]; then
   say "kept: $env_file (not modified; set COMPOSE_FILE yourself for $NETWORK)"
+  kept_tag="$(sed -n 's/^BRIDGE_TAG=//p' "$env_file" | tail -n 1)"
+  if [ "${kept_tag:-local}" != "$IMAGE_TAG" ]; then
+    warn "$env_file has BRIDGE_TAG=${kept_tag:-<unset, so local>}, not $IMAGE_TAG: another stack on this host with the same tag shares (and rebuilds) one bridge image"
+  fi
 else
   tmp="$(mktemp "$DEPLOY_DIR/.env.XXXXXX")"
   while IFS= read -r line || [ -n "$line" ]; do
@@ -131,6 +136,7 @@ else
       COMPOSE_PROJECT_NAME=*) printf 'COMPOSE_PROJECT_NAME=%s\n' "$PROJECT" ;;
       GOVHUB_SUBNET=*) printf 'GOVHUB_SUBNET=%s\n' "$SUBNET" ;;
       BRIDGE_PORT=*) printf 'BRIDGE_PORT=%s\n' "$HOST_PORT" ;;
+      BRIDGE_TAG=*) printf 'BRIDGE_TAG=%s\n' "$IMAGE_TAG" ;;
       SECRETS_DIR=*) printf 'SECRETS_DIR=%s\n' "$SECRETS_DIR" ;;
       *) printf '%s\n' "$line" ;;
     esac

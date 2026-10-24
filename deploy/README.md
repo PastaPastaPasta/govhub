@@ -32,7 +32,7 @@ yet.
 8. [Security](#8-security)
 9. [Bridge contract (what the bridge image must do)](#9-bridge-contract)
 10. [Troubleshooting](#10-troubleshooting)
-11. [Publishing the API: Cloudflare Tunnel or Caddy](#11-publishing-the-api-cloudflare-tunnel-or-caddy)
+11. [Publishing the API: Cloudflare Tunnel or Caddy](#11-publishing-the-api-cloudflare-tunnel-or-caddy) (11.3: one tunnel for two stacks)
 12. [Unprivileged LXC (Proxmox)](#12-unprivileged-lxc-proxmox)
 13. [Reference deployment (R730)](#13-reference-deployment-r730)
 
@@ -83,6 +83,8 @@ wallet disabled (the bridge needs none); `DASHD_EXTRA_ARGS=-disablewallet=0` tur
 | `docker-compose.testnet.yml` | override: v24 image, testnet Core, testnet Platform |
 | `docker-compose.regtest.yml` | override: isolated chain, `PUBLISH=0`, no identity secret |
 | `docker-compose.p2p.yml` | override: publish dashd's P2P port (set `DASHD_P2P_PORT`) |
+| `docker-compose.tunnel-guest.yml` | override: serve this stack's bridge through another stack's cloudflared, via a gateway on a `tunnel` network (section 11.3) |
+| `docker-compose.tunnel-host.yml` | override: this stack's cloudflared also joins another stack's `tunnel` network (section 11.3) |
 | `.env.example` | every variable, commented, no secrets |
 | `dashd/dash.conf`, `dashd/entrypoint.sh` | Core config template and the wrapper that adds network, RPC credentials and `dbcache` |
 | `caddy/Caddyfile` | TLS reverse proxy; GET/HEAD/OPTIONS only, CORS handled here |
@@ -100,23 +102,26 @@ testnet  COMPOSE_FILE=docker-compose.yml:docker-compose.testnet.yml
 regtest  COMPOSE_FILE=docker-compose.yml:docker-compose.regtest.yml
 + P2P    append :docker-compose.p2p.yml          (and set DASHD_P2P_PORT=9999 / 19999)
 + tunnel COMPOSE_PROFILES=tunnel                 (Cloudflare Tunnel; scripts/cloudflare-tunnel.sh writes the token)
++ one tunnel, two stacks: append :docker-compose.tunnel-host.yml on the tunnel stack and
+         :docker-compose.tunnel-guest.yml on the other (section 11.3)
 + TLS    COMPOSE_PROFILES=proxy                  (and set DOMAIN; the alternative to the tunnel)
 ```
 
 Two stacks on one host (say mainnet and testnet) need **different `COMPOSE_PROJECT_NAME`,
-`GOVHUB_SUBNET` and `BRIDGE_PORT`** in their `.env` files, or the second `up` replaces the first
-and shares its volumes (a testnet bridge would write into the mainnet archive). `init.sh --network`
-sets all three per network (`govhub`, `govhub-testnet`, `govhub-regtest`), so run it once per
-network, each in its own checkout directory. Volume names are `<project>_dashd-data` and
+`GOVHUB_SUBNET`, `BRIDGE_PORT` and `BRIDGE_TAG`** in their `.env` files, or the second `up` replaces
+the first and shares its volumes (a testnet bridge would write into the mainnet archive), or a build
+in one checkout retags the bridge image the other recreates from. `init.sh --network` sets all four
+per network (`govhub`, `govhub-testnet`, `govhub-regtest`; tags `local`, `testnet`, `regtest`), so
+run it once per network, each in its own checkout directory. Volume names are `<project>_dashd-data` and
 `<project>_bridge-data`; the commands below say `govhub_...`, so substitute your project name.
 
 ## 3. Hardware, disk and sync time
 
 | | mainnet | testnet |
 |---|---|---|
-| Disk, Core datadir with `txindex=1` | **~59 GB measured**; provision **150 GB** SSD | smaller (*estimate* 15-30 GB, not measured) |
+| Disk, Core datadir with `txindex=1` | **~59 GB measured**; provision **150 GB** SSD | **5.6 GB measured** at 1,578,672 (blocks 4.6, evodb 0.6, txindex 0.4 GB); provision 20 GB |
 | Disk, bridge SQLite archive | tens of MB per month (*estimate*, not measured) | less |
-| RAM | 4 GB works, 8 GB is comfortable (`dbcache` 1024 MiB plus Core's overhead) | 4 GB |
+| RAM | 4 GB works, 8 GB is comfortable (`dbcache` 1024 MiB plus Core's overhead) | 4 GB (dashd used 0.8 GB, the bridge 0.2 GB) |
 | CPU | 2 cores minimum; 4+ makes the initial sync much faster | 2 |
 | Disk type | **SSD/NVMe.** An HDD makes the initial sync and the txindex build many times slower | same |
 | Network | ~60 GB download for a fresh sync, then a few GB/month | smaller |
@@ -513,6 +518,48 @@ Use Caddy when the host has a public address and you do not want Cloudflare in t
 a certificate from Let's Encrypt, filters methods and owns the CORS headers (`caddy/Caddyfile`). Do not
 serve one hostname through both.
 
+### 11.3 One tunnel for two stacks on one host
+
+A second stack on the same host (say testnet next to mainnet) can be published through the first stack's
+cloudflared and tunnel, with one extra public hostname and no second connector.
+
+Do **not** attach cloudflared to the other stack's `edge` network. Compose names both bridges `bridge`, and a
+container on two networks resolves a name that exists on both to only one of them, chosen by network order
+(on Docker 29, `govhub-testnet_edge` sorts before `govhub_edge`, so `http://bridge:8787` silently went to the
+testnet bridge in a test). Instead:
+
+- the **guest** stack (no cloudflared) layers `docker-compose.tunnel-guest.yml`. It adds `tunnel-gateway`, a
+  Caddy reverse proxy (read-only filesystem, uid 1000) on the guest's `edge` network and on a new
+  `<project>_tunnel` network, under the alias `TUNNEL_ALIAS` (default `<project>-bridge`). It forwards everything
+  to the guest's bridge, which still answers GET/HEAD/OPTIONS only and sets CORS itself.
+- the **host** stack (with `COMPOSE_PROFILES=tunnel`) layers `docker-compose.tunnel-host.yml`. cloudflared then
+  also joins that network as an external network (`TUNNEL_GUEST_NETWORK`, default `govhub-testnet_tunnel`).
+
+Nothing named `bridge` is on the `tunnel` network, so the host's own routes do not change, and dashd is on
+neither network (CI checks both). Bring it up guest first, because the host side needs the network to exist:
+
+```sh
+# guest (testnet checkout), .env: COMPOSE_FILE=docker-compose.yml:docker-compose.testnet.yml:docker-compose.tunnel-guest.yml
+docker compose up -d
+# host (mainnet checkout), .env: COMPOSE_FILE=docker-compose.yml:docker-compose.tunnel-host.yml
+#                               TUNNEL_GUEST_NETWORK=govhub-testnet_tunnel
+docker compose up -d --no-deps cloudflared        # only cloudflared is recreated
+```
+
+Then add the hostname to the tunnel, in the Cloudflare dashboard or with `scripts/cloudflare-tunnel.sh --reuse`
+and **every** route: `gov-bridge-testnet.example.org -> http://govhub-testnet-bridge:8787`. Check from
+cloudflared's network namespace (its image has no shell or wget):
+
+```sh
+N="--network container:govhub-cloudflared-1"
+docker run --rm $N busybox wget -q -O- http://govhub-testnet-bridge:8787/v1/status | grep -o 'Dash Core:[0-9.]*'   # 24.x
+docker run --rm $N busybox wget -q -O- http://bridge:8787/v1/status | grep -o 'Dash Core:[0-9.]*'                  # still the host's
+```
+
+While cloudflared is attached, the guest's `docker compose down` cannot remove `<project>_tunnel` (the
+containers stop anyway). To run the host without the guest, take `docker-compose.tunnel-host.yml` out of its
+`COMPOSE_FILE`; with it in, `up` fails while the network is missing.
+
 ## 12. Unprivileged LXC (Proxmox)
 
 The stack runs unchanged in an **unprivileged** Proxmox container with `features: nesting=1,keyctl=1`.
@@ -543,6 +590,11 @@ chown -R 101000:101000 "$TO"
 zfs destroy "$SRC@$SNAP"
 ```
 
+If the source runs without `txindex` (no `indexes/` directory), copy the rest anyway: dashd builds the
+txindex from `blocks/` in the background on its first start (testnet: 1.58 M blocks in 3 minutes). Run
+the governance resync (section 7) only after `getindexinfo` reports `txindex.synced: true`, because
+Core rejects every proposal whose collateral it cannot look up and does not ask for it again.
+
 Leave out `dash.conf`, wallets, `debug.log`, `.lock`, `*.pid` and `peers.dat`. `governance.dat` is
 optional, since the governance resync (section 7) rebuilds it anyway. Use a source of the same Core
 version or older (section 4). For the reference deployment, 50 GB copied in about 2.5 minutes, and
@@ -555,8 +607,11 @@ bridge is published on loopback, and dashd needs only outbound P2P unless you ad
 
 ## 13. Reference deployment (R730)
 
-The project's own bridge, `gov-bridge.dashhq.org`. It is a Proxmox unprivileged LXC (Ubuntu 24.04,
-6 cores, 16 GB RAM, 2 GB swap, 250 GB on ZFS, starts on boot), set up as in section 12.
+The project's own bridges: `gov-bridge.dashhq.org` (Core mainnet) and, as a second stack in the same
+container, `gov-bridge-testnet.dashhq.org` (Core testnet, below). It is a Proxmox unprivileged LXC
+(Ubuntu 24.04, 6 cores, 16 GB RAM, 2 GB swap, 250 GB on ZFS, starts on boot), set up as in section 12.
+With both stacks running it used 2.8 GB of RAM and 57 GB of its ZFS dataset (2026-10-24; `df`, so after
+compression: the datadirs are 55 GB mainnet and 5.6 GB testnet in apparent size).
 
 | | |
 |---|---|
@@ -564,7 +619,7 @@ The project's own bridge, `gov-bridge.dashhq.org`. It is a Proxmox unprivileged 
 | Networks | Core **mainnet**, Platform **testnet** (the current dev wiring): `PLATFORM_NETWORK=testnet` |
 | Publishing | `PUBLISH=1`, `GOV_CONTRACT_ID=3ueAfbVe8LvCxYWk7bKvXxc5uHe7E1TDJHzN3k3ZDehZ`, identity `9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv` (HIGH key only on the server) |
 | Tuning | `DASHD_DBCACHE_MB=2048`, `DASHD_MAXCONNECTIONS=40` |
-| Public | `COMPOSE_PROFILES=tunnel`, tunnel `govhub`: `gov-bridge.dashhq.org -> http://bridge:8787` |
+| Public | `COMPOSE_PROFILES=tunnel`, tunnel `govhub`: `gov-bridge.dashhq.org -> http://bridge:8787`; with `docker-compose.tunnel-host.yml` in `COMPOSE_FILE` cloudflared also serves the testnet stack (section 11.3) |
 | Backups | `/opt/govhub-backups`, daily from cron (below) |
 
 All commands below run as root in the container, from `/opt/govhub/deploy`.
@@ -645,3 +700,38 @@ publish pass (`bridge publish --once --force`) replaced the 28 tallies and 2 cyc
 voteSetHash of every tally now follows govhub-voteset-v1. It adopted the 28 existing proposal
 documents, had 0 failures, and cost 90,970,860 credits (0.00091 tDASH). `scripts/readback.ts` then
 matched 58/58 documents with proofs.
+
+### 13.1 Testnet stack
+
+A second, independent stack for Core **testnet** published into Platform **testnet**: testnet governance in the
+app, and votes from testnet masternodes. Created with `scripts/init.sh --network testnet` in its own checkout.
+
+| | |
+|---|---|
+| Checkout | `/opt/govhub-testnet` (stack in `/opt/govhub-testnet/deploy`, project `govhub-testnet`, subnet `172.29.74.0/24`, API on `127.0.0.1:8788`, image `govhub-bridge:testnet`) |
+| Core | `dashpay/dashd:24.0.0-rc.4` (testnet activated V24 at 1,578,000), `DASHD_DBCACHE_MB=1024`, `DASHD_MAXCONNECTIONS=40` |
+| Publishing | `PUBLISH=1`, `PLATFORM_NETWORK=testnet`, `GOV_CONTRACT_ID=5gMnJLDpcoMaQCQNqmHtBiSqCxRCmroXFAffPNdJ2NJC`, identity `24tL6v5jMR1H9dtUoTgbedePsMJtYPk4Q4bo6h8jTdK9` (HIGH key only on the server; made by `spikes/sdk5/scripts/testnet-bridge-setup.ts`). The `forum`, `badge` and `mod` contracts are shared with the other stack. Forum documents are keyed by `govHash`, which commits to the proposal's collateral txid, a transaction that exists on one chain only, so mainnet and testnet proposals do not share hashes |
+| Public | `COMPOSE_FILE=...:docker-compose.tunnel-guest.yml`; the mainnet stack's cloudflared reaches it as `http://govhub-testnet-bridge:8787` (section 11.3): `gov-bridge-testnet.dashhq.org` |
+| Backups | `/opt/govhub-testnet-backups`, daily from the same cron file |
+
+Commands are those of the mainnet stack, run from `/opt/govhub-testnet/deploy` (port 8788, project and volume
+names `govhub-testnet...`). Update the testnet checkout first and bring its gateway up before recreating the
+mainnet cloudflared. The second line in `/etc/cron.d/govhub-backup` uses its own directory, so neither job's
+retention touches the other's copies:
+
+```
+45 3 * * * root bash -o pipefail -c '/opt/govhub-testnet/deploy/scripts/backup.sh /opt/govhub-testnet-backups 30 2>&1 | logger -t govhub-backup-testnet'
+```
+
+**Bring-up record (2026-10-24).** dashd 24.0.0-rc.4 was seeded (section 12) from a ZFS snapshot of a testnet
+v24.0.0-rc.4 node on the same host that runs without txindex and with governance disabled: `blocks`,
+`chainstate`, `evodb` and `llmq` (5.6 GB) copied in 17 s. It loaded the chain at 1,578,589, was at the tip
+within seconds, and built the txindex from height 0 in 3 min 7 s. A governance resync with the bridge
+listening then delivered 5 proposals and all 33 signed votes on ZMQ in about 40 s with 0 gaps. Every vote
+verified with the testnet scheme (binary vote hash) against the masternode's `keyIDVoting`, and `bridge verify`
+was clean: 5/5 tallies equal to Core, threshold 22 = 22. An ABSTAIN signed with `@govhub/verify`'s `signVote`
+and sent with `voteraw` was accepted by Core and archived as valid (the vote fixtures in
+`packages/verify/test/fixtures/testnet-votes.json` come from this archive). Identity creation cost 122,425,400
+credits, the `gov` contract 24,195,056,280 (0.242 tDASH), and the first publish passes (5 proposals, 5 tallies,
+2 cycles) about 0.0054 tDASH. `scripts/readback.ts` matched 12/12 documents with proofs. The superblock before the
+bring-up had no trigger (no testnet proposal reached the threshold), so it has no `cycle` document with `paid`.

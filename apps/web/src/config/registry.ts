@@ -9,11 +9,12 @@ import type { CoreNetwork } from '../data/types.ts';
 
 /**
  * The testnet `gov` contract (Core testnet proposals published on testnet Platform), owned by the testnet bridge identity.
- * FILL IN once it is deployed. While empty, the Testnet profile shows "Testnet backend is being set up" and reads nothing.
+ * Registered 2026-10-24 by the R730 testnet stack (deploy/README.md section 13.1). While empty, the Testnet profile shows
+ * "Testnet backend is being set up" and reads nothing.
  */
-export const TESTNET_GOV_CONTRACT_ID = '';
+export const TESTNET_GOV_CONTRACT_ID = '5gMnJLDpcoMaQCQNqmHtBiSqCxRCmroXFAffPNdJ2NJC';
 /** The testnet bridge's identity (the owner of TESTNET_GOV_CONTRACT_ID): its claim attestations count. Optional; empty = none. */
-export const TESTNET_BRIDGE_IDENTITY_ID = '';
+export const TESTNET_BRIDGE_IDENTITY_ID = '24tL6v5jMR1H9dtUoTgbedePsMJtYPk4Q4bo6h8jTdK9';
 
 export interface BridgeEndpoint {
   name: string;

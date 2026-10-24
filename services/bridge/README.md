@@ -203,7 +203,9 @@ one command: `backfill`, `run` (bounded by `BRIDGE_RUN_SECONDS`), `exec <cmd>`. 
 (RPC password, key file made by `scripts/dev-keyfile.ts`). `scripts/dev-ct164-resync.sh` is the one-time governance re-sync
 (above). `scripts/readback.ts` reads every published document back from Platform **with proofs** and checks it against the
 archive (gov hash recomputed from the document, collateral re-checked, tallies matched to Core-matched archive rows).
-`scripts/record-fixtures.ts` regenerates `test/fixtures` from the archive and Core.
+`scripts/record-fixtures.ts` regenerates `test/fixtures` from the archive and Core. `scripts/record-testnet-votes.ts` records a
+testnet archive's signed votes, with Core's voting addresses, as `packages/verify/test/fixtures/testnet-votes.json` (the vectors for the
+testnet vote scheme; deploy/README.md section 13.1).
 
 ## Tests
 

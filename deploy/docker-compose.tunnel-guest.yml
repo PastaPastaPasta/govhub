@@ -1,0 +1,51 @@
+# Serve THIS stack's bridge through ANOTHER stack's cloudflared on the same host (README section 11.3), e.g. a testnet
+# stack published by the mainnet stack's tunnel. Layer it on this stack's files:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.testnet.yml:docker-compose.tunnel-guest.yml
+# and layer docker-compose.tunnel-host.yml on the stack that runs cloudflared.
+#
+# Why a gateway instead of letting cloudflared join this stack's `edge` network: compose names every bridge service
+# `bridge` on its networks, and a container on two networks resolves a duplicate name to ONE of them (Docker picks by
+# network order, `govhub-testnet_edge` sorts before `govhub_edge`). The host stack's `http://bridge:8787` route would
+# then silently reach this bridge. So cloudflared joins only the `tunnel` network below, where the one service is this
+# gateway under a unique alias (TUNNEL_ALIAS, default `<project>-bridge`, e.g. `govhub-testnet-bridge`). The tunnel
+# route for this stack is `http://<TUNNEL_ALIAS>:8787`. dashd is on neither `edge` nor `tunnel`.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+services:
+  tunnel-gateway:
+    image: caddy:${CADDY_TAG:-2-alpine}
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      - bridge
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    environment:
+      # Caddy writes its autosaved config and state under these; /tmp is the only writable path.
+      XDG_CONFIG_HOME: /tmp
+      XDG_DATA_HOME: /tmp
+    # Plain HTTP on 8787 (a port-only --from disables automatic HTTPS). The bridge answers GET/HEAD/OPTIONS only and
+    # sets the CORS headers itself (README section 8), so the gateway only forwards.
+    command: ["caddy", "reverse-proxy", "--from", ":8787", "--to", "bridge:8787"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8787/v1/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      edge: {}
+      tunnel:
+        aliases:
+          - ${TUNNEL_ALIAS:-${COMPOSE_PROJECT_NAME:-govhub}-bridge}
+
+networks:
+  # Shared with the host stack's cloudflared, which joins it as an external network (`<project>_tunnel`, e.g.
+  # govhub-testnet_tunnel). `docker compose down` here cannot remove it while cloudflared is attached.
+  tunnel: {}
