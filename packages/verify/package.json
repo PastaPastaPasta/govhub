@@ -1,0 +1,25 @@
+{
+  "name": "@govhub/verify",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Pure, network-free verification primitives for govhub: governance object hash, collateral check, vote signing/recovery, message signing, tally.",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@noble/curves": "^2.0.0",
+    "@noble/hashes": "^2.0.0",
+    "@scure/base": "^2.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0"
+  }
+}
