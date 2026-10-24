@@ -65,11 +65,12 @@ all containers, volumes and temporary secrets. Exit code 0 means it passed. Unti
 | Network | `dashpay/dashd` tag | Why |
 |---|---|---|
 | mainnet | `23.1.8` | mainnet needs >= v23.1 |
-| testnet | `24.0.0-rc.4` | testnet activated V24 on 2026-10-23; v24 refuses governance without `txindex`, which we set anyway |
+| testnet | `24.0.0-rc.4` | testnet activated V24 on 2026-10-23 |
 | regtest | `24.0.0-rc.4` | CI and smoke tests exercise the v24 code path |
 
-Both tags are multi-arch (amd64 and arm64). A Core upgrade is a decision (section 7), so there is
-no `latest`.
+Both tags are multi-arch (amd64 and arm64; checked with `docker manifest inspect`). A Core
+upgrade is a decision (section 7), so there is no `latest`. Off regtest the node runs with the
+wallet disabled (the bridge needs none); `DASHD_EXTRA_ARGS=-disablewallet=0` turns it back on.
 
 ## 2. Files
 
@@ -97,8 +98,12 @@ regtest  COMPOSE_FILE=docker-compose.yml:docker-compose.regtest.yml
 + TLS    COMPOSE_PROFILES=proxy                  (and set DOMAIN)
 ```
 
-Do not run mainnet and testnet from the same checkout and project name: they would share volumes.
-Use `docker compose -p govhub-testnet ...` or a second directory.
+Two stacks on one host (say mainnet and testnet) need **different `COMPOSE_PROJECT_NAME`,
+`GOVHUB_SUBNET` and `BRIDGE_PORT`** in their `.env` files, or the second `up` replaces the first
+and shares its volumes (a testnet bridge would write into the mainnet archive). `init.sh --network`
+sets all three per network (`govhub`, `govhub-testnet`, `govhub-regtest`), so run it once per
+network, each in its own checkout directory. Volume names are `<project>_dashd-data` and
+`<project>_bridge-data`; the commands below say `govhub_...`, so substitute your project name.
 
 ## 3. Hardware, disk and sync time
 
@@ -250,12 +255,19 @@ online backup is safe on a live database:
 ```sh
 mkdir -p backups
 docker run --rm --user root -v govhub_bridge-data:/data -v "$PWD/backups:/backup" \
-  --entrypoint sqlite3 keinos/sqlite3 /data/bridge.sqlite ".backup /backup/bridge-$(date +%F).sqlite"
+  --entrypoint sqlite3 \
+  keinos/sqlite3@sha256:9064091a943982e2a90f095219d0d6adec03472f9042529563e3e66c9632af66 \
+  /data/bridge.sqlite ".backup /backup/bridge-$(date +%F).sqlite"
 ```
 
-(Replace `govhub_bridge-data` with `<project>_bridge-data`. This procedure was checked against a
-WAL-mode database. Verify the copy with `sqlite3 backups/bridge-YYYY-MM-DD.sqlite "PRAGMA integrity_check"`.)
-Ship the file off the machine.
+Replace `govhub_bridge-data` with `<project>_bridge-data`. The volume must be mounted read-write
+even though the command only reads: SQLite's WAL mode needs the `-shm` file, and `.backup` is the
+online-backup API, safe against a live writer. I ran this against a WAL-mode database and the copy
+passed `PRAGMA integrity_check` and had the expected rows. The image is a third-party SQLite CLI
+(`keinos/sqlite3`, pinned by digest above; it runs as root here only to read the volume): use your
+own SQLite image if you prefer. A `bridge backup <file>` command in the bridge image would make this
+unnecessary, and section 9 asks for one. Verify each copy with
+`sqlite3 backups/bridge-YYYY-MM-DD.sqlite "PRAGMA integrity_check"` and ship it off the machine.
 
 Restore: stop the bridge, copy the backup to `/data/bridge.sqlite` in the volume (owned by the
 bridge's runtime user, and delete any stale `-wal`/`-shm` files next to it), start the bridge. The
@@ -317,8 +329,11 @@ the bridge runs from day one.
 
 - **RPC (9998) and ZMQ (29998) are never published.** There is no `ports:` entry for them in any
   compose file, dashd's `rpcallowip` is limited to the compose subnet (`GOVHUB_SUBNET`), and CI
-  fails if a rendered config publishes either port. ZMQ has no authentication at all, and RPC
-  grants wallet-level control of Core. Do not "temporarily" publish them to debug.
+  fails if a rendered config publishes either port. They are reachable from containers on the
+  compose network. On a Linux host, anyone with a shell there can also reach the container's IP
+  directly (RPC is password-protected; ZMQ has no authentication but carries public data), so do
+  not give untrusted users host accounts. The wallet is disabled outside regtest. Do not
+  "temporarily" publish these ports to debug.
 - **Published ports.** Bridge: loopback by default (`BRIDGE_BIND=127.0.0.1`). Caddy: 80/443. dashd
   P2P only with `docker-compose.p2p.yml`. Docker bypasses `ufw`/`firewalld` rules for published
   ports (it writes its own iptables chains), so the bind address is your real control. If you set
@@ -347,10 +362,19 @@ the bridge runs from day one.
 bridge image; the smoke test and CI rely on it.
 
 **Image.** `services/bridge/Dockerfile`, built with the repository root as context
-(`context: ..`). Runs as an unprivileged user. It creates `/data` owned by that user, so the named
-volume mounted there is writable. A `HEALTHCHECK` on `GET /v1/status`. Add a root `.dockerignore`
-(or `services/bridge/Dockerfile.dockerignore`) so the build context does not include
-`node_modules` and the spikes.
+(`context: ..`). It runs as **uid 1000** (the `node` user in the official Node images): the
+secret files are bind-mounted with the host's ownership, and `init.sh` chooses their mode on that
+assumption, as it does for dashd. It creates `/data` owned by that user, so the named volume
+mounted there is writable. A `HEALTHCHECK` on `GET /v1/status`. Add a root `.dockerignore` (or
+`services/bridge/Dockerfile.dockerignore`) so the build context does not include `node_modules`
+and the spikes.
+
+**Start-up and resilience.** Compose's `depends_on: service_healthy` only orders `docker compose
+up`. After a daemon restart or reboot, Docker starts both containers by restart policy, so the
+bridge **must retry Core RPC and reconnect ZMQ until dashd is ready** (RPC returns error -28 while
+Core warms up) and must not exit on those errors. ZMQ subscribers must raise their receive
+high-water mark well above libzmq's default of 1000 (match dashd's 200000): a governance resync
+delivers tens of thousands of votes in a burst.
 
 **Environment** (compose sets all of them; an empty value means "use the built-in default"):
 
@@ -366,14 +390,19 @@ volume mounted there is writable. A `HEALTHCHECK` on `GET /v1/status`. Add a roo
 | `HTTP_HOST` / `HTTP_PORT` | `0.0.0.0` / `8787` | HTTP listener (inside the container) |
 | `PUBLISH` | `.env`; `0` on regtest | **`0` = archive and serve only: must not require `GOV_CONTRACT_ID` or the identity file, must not touch Platform** |
 | `GOV_CONTRACT_ID` | `.env` | required only when `PUBLISH=1` |
-| `BRIDGE_IDENTITY_KEY_FILE` | `/run/secrets/bridge_identity` | JSON key file ([section 5.2](#52-the-bridge-identity-and-its-key-file)); read only when `PUBLISH=1`; the file exists but may be empty |
+| `BRIDGE_IDENTITY_KEY_FILE` | `/run/secrets/bridge_identity` | JSON key file ([section 5.2](#52-the-bridge-identity-and-its-key-file)); read **only** when `PUBLISH=1`. The file may be empty (archive-only deployments) or **absent** (regtest mounts no identity), so do not check for it at start-up when `PUBLISH=0` |
 | `RECONCILE_INTERVAL_S` | `10` on regtest, else `.env` | `gobject list` reconcile period |
 | `BRIDGE_LOG_LEVEL`, `CORE_RPC_TIMEOUT_MS`, `CORE_RPC_RETRIES`, `TALLY_PUBLISH_INTERVAL_S`, `CYCLE_PUBLISH_INTERVAL_S`, `MIN_COLLATERAL_CONFS`, `PLATFORM_MAX_CONCURRENT_WRITES`, `PUBLISH_ON_MISMATCH`, `PORTAL_PROPOSAL_URL` | `.env` | optional tunables |
 
-**HTTP.** `GET /v1/status` returns JSON. For the smoke test, after a proposal has been submitted to
-Core it must contain the proposal's governance hash (display hex) **or** a numeric field named
-`proposals` with a value >= 1 anywhere in the document. Everything the proxy forwards is read-only
-(GET/HEAD); the bridge needs no write endpoints.
+**HTTP.** `GET /v1/status` returns JSON, and returns HTTP 200 even while Core is syncing or
+unreachable (put the state in the body; the image health check and the proxy both use the path).
+For the smoke test, after a proposal has been submitted to Core it must contain the proposal's
+governance hash (display hex) **or** a numeric field named `proposals` with a value >= 1 anywhere
+in the document. Everything the proxy forwards is read-only (GET/HEAD); the bridge needs no write
+endpoints.
+
+**Backup (requested).** A `bridge backup <file>` subcommand that uses SQLite's online-backup API,
+so operators do not need a third-party SQLite image (section 6).
 
 **Behavior.** With `PUBLISH=0` on regtest the bridge archives a proposal that was created with
 `gobject prepare` and submitted with `gobject submit` (collateral confirmations do not gate
@@ -385,7 +414,8 @@ archiving, only publishing).
 |---|---|
 | `dashd` unhealthy for a long time after a restart | Core is replaying or loading the block index; mainnet can take many minutes. `docker compose logs dashd`. The health check has a 15 minute grace (`DASHD_HEALTH_START_PERIOD`) |
 | `cannot read RPC password file` | The secret is not readable by uid 1000 on Linux. Re-run `scripts/init.sh` (it picks 0644 inside the 0700 directory for other uids) |
-| dashd exits: "txindex" or "governance" | An edited `dash.conf` removed `txindex=1` or `disablegovernance=0`. v24 refuses governance without txindex |
+| dashd exits: "txindex" or "governance" | An edited `dash.conf` removed `txindex=1` or set `disablegovernance=1`. Core refuses to run governance without txindex |
+| `docker compose up` fails with "dependency failed to start: dashd is unhealthy" | Core needed longer than the health check allows (`DASHD_HEALTH_START_PERIOD` plus about 2.5 minutes), for example while replaying after an unclean stop. dashd keeps running; wait for `getblockcount` to answer, then `docker compose up -d` again |
 | `Pool overlaps with other one on this address space` | `GOVHUB_SUBNET` collides with an existing Docker network; pick another range in `.env` |
 | `docker compose config` fails with `!override` | Compose is older than 2.24 |
 | bridge `PUBLISH=1` exits at start | `GOV_CONTRACT_ID` or `secrets/bridge_identity.json` is missing or invalid (section 5) |

@@ -29,12 +29,19 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# Per-network project name, subnet and host port, so a mainnet and a testnet stack can live on one
+# host without sharing volumes, networks or ports.
 case "$NETWORK" in
-  mainnet) COMPOSE_FILES="docker-compose.yml" ;;
-  testnet) COMPOSE_FILES="docker-compose.yml:docker-compose.testnet.yml" ;;
-  regtest) COMPOSE_FILES="docker-compose.yml:docker-compose.regtest.yml" ;;
+  mainnet) COMPOSE_FILES="docker-compose.yml"; PROJECT=govhub; SUBNET=172.29.73.0/24; HOST_PORT=8787 ;;
+  testnet) COMPOSE_FILES="docker-compose.yml:docker-compose.testnet.yml"; PROJECT=govhub-testnet; SUBNET=172.29.74.0/24; HOST_PORT=8788 ;;
+  regtest) COMPOSE_FILES="docker-compose.yml:docker-compose.regtest.yml"; PROJECT=govhub-regtest; SUBNET=172.29.75.0/24; HOST_PORT=8789 ;;
   *) die "--network must be mainnet, testnet or regtest" ;;
 esac
+# Until the real bridge image can be built, layer the placeholder so `docker compose up` works.
+if [ ! -f "$DEPLOY_DIR/../services/bridge/Dockerfile" ]; then
+  COMPOSE_FILES="$COMPOSE_FILES:docker-compose.bridge-stub.yml"
+  warn "services/bridge/Dockerfile not found: using the PLACEHOLDER bridge (docker-compose.bridge-stub.yml)"
+fi
 
 # ---- prerequisites ---------------------------------------------------------------------------
 command -v docker > /dev/null 2>&1 || die "docker is not installed or not on PATH"
@@ -76,6 +83,8 @@ fi
 
 mkdir -p "$SECRETS_DIR"
 chmod 700 "$SECRETS_DIR"
+# Absolute, because compose resolves a relative SECRETS_DIR against deploy/, not the caller's cwd.
+SECRETS_DIR="$(cd "$SECRETS_DIR" && pwd)"
 
 rpc_pw_file="$SECRETS_DIR/core_rpc_password"
 if [ -s "$rpc_pw_file" ]; then
@@ -111,6 +120,9 @@ else
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in
       COMPOSE_FILE=*) printf 'COMPOSE_FILE=%s\n' "$COMPOSE_FILES" ;;
+      COMPOSE_PROJECT_NAME=*) printf 'COMPOSE_PROJECT_NAME=%s\n' "$PROJECT" ;;
+      GOVHUB_SUBNET=*) printf 'GOVHUB_SUBNET=%s\n' "$SUBNET" ;;
+      BRIDGE_PORT=*) printf 'BRIDGE_PORT=%s\n' "$HOST_PORT" ;;
       SECRETS_DIR=*) printf 'SECRETS_DIR=%s\n' "$SECRETS_DIR" ;;
       *) printf '%s\n' "$line" ;;
     esac
@@ -126,6 +138,6 @@ Next steps (from $DEPLOY_DIR):
   1. Review .env. PUBLISH=0 archives and serves without touching Platform.
   2. docker compose up -d --build
   3. docker compose logs -f dashd        # initial sync takes hours to a day or more on mainnet
-  4. curl http://127.0.0.1:8787/v1/status
+  4. curl http://127.0.0.1:${HOST_PORT}/v1/status
 Publishing to Platform needs a funded identity and your own gov contract: README.md.
 EOF

@@ -34,8 +34,6 @@
 			header_down -Access-Control-Allow-Headers
 			header_down -Access-Control-Expose-Headers
 			header_down -Access-Control-Max-Age
-			health_uri /v1/status
-			health_interval 30s
 		}
 	}
 

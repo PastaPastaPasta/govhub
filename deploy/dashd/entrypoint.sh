@@ -69,8 +69,13 @@ cp "$TEMPLATE" "$CONF"
   [ -n "${DASHD_P2P_PORT:-}" ] && echo "port=$DASHD_P2P_PORT"
   [ -n "${DASHD_EXTERNALIP:-}" ] && echo "externalip=$DASHD_EXTERNALIP"
   if [ "$NETWORK" = regtest ]; then
-    # An isolated chain: no inbound listener needed, nothing to connect to.
+    # An isolated chain: no inbound listener needed, nothing to connect to. The wallet stays on
+    # because the smoke test mines and creates proposals with it.
     echo 'listen=0'
+  else
+    # The bridge needs no wallet. Leaving it off means no key material on this node and less RPC
+    # surface. Override with DASHD_EXTRA_ARGS=-disablewallet=0 if you really need one.
+    echo 'disablewallet=1'
   fi
 } >> "$CONF"
 

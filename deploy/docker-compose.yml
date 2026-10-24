@@ -93,7 +93,7 @@ services:
       # --- chosen by the operator in .env ---
       # PUBLISH=0 archives and serves the API without writing to Platform: no contract and no
       # identity needed. Start there so the archive begins accumulating history on day one.
-      PUBLISH: ${PUBLISH:-1}
+      PUBLISH: ${PUBLISH:-0}
       GOV_CONTRACT_ID: ${GOV_CONTRACT_ID:-}
       # --- optional tunables. Empty means "use the bridge's built-in default". ---
       BRIDGE_LOG_LEVEL: ${BRIDGE_LOG_LEVEL:-}

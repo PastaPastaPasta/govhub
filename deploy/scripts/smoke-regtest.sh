@@ -16,6 +16,7 @@
 #   SMOKE_TIMEOUT_S     seconds to wait for the bridge to report the proposal (default 120)
 #   DASHD_TAG           dashd image tag (default: the regtest override's)
 #   SMOKE_BRIDGE_PORT   host port for the bridge (default: a free port)
+#   SMOKE_SUBNET        compose subnet (default: 172.29.<100-199>.0/24, derived from the PID)
 #
 # What the bridge must provide (see README, "Bridge contract"): honor PUBLISH=0; GET /v1/status
 # returns JSON that contains the proposal's governance hash (display hex) OR a numeric field named
@@ -90,6 +91,7 @@ done
 # ---- throwaway project, secrets and port ------------------------------------------------------
 PROJECT="govhub-smoke-$$"
 SECRETS_TMP="$(mktemp -d)"
+trap 'rm -rf "$SECRETS_TMP"' EXIT   # replaced by cleanup() once the stack exists
 chmod 700 "$SECRETS_TMP"
 openssl_hex() { if command -v openssl > /dev/null 2>&1; then openssl rand -hex 32; else LC_ALL=C od -An -N32 -tx1 /dev/urandom | tr -d ' \n'; fi; }
 (umask 077 && openssl_hex > "$SECRETS_TMP/core_rpc_password")
@@ -106,10 +108,18 @@ free_port() {
 BRIDGE_PORT_HOST="${SMOKE_BRIDGE_PORT:-$(free_port)}"
 
 COMPOSE_FILE_VALUE="docker-compose.yml:docker-compose.regtest.yml"
-[ "$STUB" -eq 1 ] && COMPOSE_FILE_VALUE="$COMPOSE_FILE_VALUE:docker-compose.bridge-stub.yml"
+if [ "$STUB" -eq 1 ]; then
+  COMPOSE_FILE_VALUE="$COMPOSE_FILE_VALUE:docker-compose.bridge-stub.yml"
+fi
+
+# A per-run bridge image tag: building must never re-tag the image a real stack on this host uses.
+BRIDGE_IMAGE_TAG="smoke-$$"
+# A per-run subnet (172.29.100-199.0/24) so two runs on one host do not collide.
+SMOKE_SUBNET_VALUE="${SMOKE_SUBNET:-172.29.$((100 + $$ % 100)).0/24}"
 
 # Everything compose reads comes from here, so a developer's own .env cannot leak in:
-# --env-file replaces the default .env.
+# --env-file replaces the default .env. (Exported shell variables would still win over it;
+# dc() unsets every variable .env.example knows.)
 ENV_FILE="$SECRETS_TMP/smoke.env"
 cat > "$ENV_FILE" << EOF
 COMPOSE_FILE=$COMPOSE_FILE_VALUE
@@ -118,19 +128,26 @@ COMPOSE_PROFILES=
 SECRETS_DIR=$SECRETS_TMP
 BRIDGE_BIND=127.0.0.1
 BRIDGE_PORT=$BRIDGE_PORT_HOST
-GOVHUB_SUBNET=${SMOKE_SUBNET:-172.29.199.0/24}
+BRIDGE_TAG=$BRIDGE_IMAGE_TAG
+GOVHUB_SUBNET=$SMOKE_SUBNET_VALUE
 DASHD_DBCACHE_MB=128
 DASHD_HEALTH_START_PERIOD=2m
 ${DASHD_TAG:+DASHD_TAG=$DASHD_TAG}
 EOF
 
-dc() { (cd "$DEPLOY_DIR" && docker compose -p "$PROJECT" --env-file "$ENV_FILE" "$@"); }
+# Variables the compose files read, from .env.example (active and commented-out lines).
+UNSET_ARGS=()
+while IFS= read -r var; do
+  UNSET_ARGS+=(-u "$var")
+done < <(grep -hoE '^#? ?[A-Z][A-Z0-9_]+=' "$DEPLOY_DIR/.env.example" | tr -d '# =' | sort -u)
+
+dc() { (cd "$DEPLOY_DIR" && env "${UNSET_ARGS[@]}" docker compose -p "$PROJECT" --env-file "$ENV_FILE" "$@"); }
 cli() { dc exec -T dashd dash-cli -conf=/tmp/dash.conf "$@"; }
 wcli() { cli -rpcwallet=w "$@"; }
 
 cleanup() {
   local rc=$?
-  trap - EXIT INT TERM
+  trap - EXIT
   if [ "$KEEP" -eq 1 ] && [ "$rc" -eq 0 ]; then
     log "--keep: stack left running as project $PROJECT (secrets in $SECRETS_TMP)"
     log "tear down: cd $DEPLOY_DIR && docker compose -p $PROJECT --env-file $ENV_FILE down -v --remove-orphans"
@@ -142,11 +159,16 @@ cleanup() {
   fi
   log "tearing down"
   dc down -v --remove-orphans > /dev/null 2>&1 || true
+  # Only the per-run bridge image; dashd/busybox/caddy images are shared and stay.
+  docker image rm "govhub-bridge:$BRIDGE_IMAGE_TAG" > /dev/null 2>&1 || true
   rm -rf "$SECRETS_TMP"
   if [ "$rc" -eq 0 ]; then log "PASS"; else log "FAIL"; fi
   exit "$rc"
 }
-trap cleanup EXIT INT TERM
+# INT/TERM must exit non-zero: a bare trap on them would see the interrupted command's status.
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap cleanup EXIT
 
 # ---- 1. start the stack -----------------------------------------------------------------------
 log "project $PROJECT, compose files: $COMPOSE_FILE_VALUE"
