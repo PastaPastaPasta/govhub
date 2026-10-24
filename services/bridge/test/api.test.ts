@@ -25,6 +25,7 @@ describe('GET /v1/status', () => {
     expect(r.body.core.reachable).toBe(false);
     expect(r.body.archive.votesByStatus.valid).toBeGreaterThan(500);
     expect(r.headers.get('access-control-allow-origin')).toBe('*');
+    expect(r.headers.get('x-content-type-options')).toBe('nosniff');
   });
 
   it('is read-only: other methods get 405, CORS preflight still answers', async () => {

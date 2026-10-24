@@ -88,7 +88,7 @@ export function attestorsFor(r: Registry): string[] {
  * The project's reference bridge (deploy/README.md, "Reference deployment"): mainnet Core, publishing into the testnet
  * `gov` contract, matching the phase-1 network defaults below.
  */
-export const DEFAULT_BRIDGE_URL = 'https://gov-bridge.dashhq.org';
+const DEFAULT_BRIDGE_URL = 'https://gov-bridge.dashhq.org';
 
 /** VITE_GOVHUB_BRIDGE_URL replaces the default bridge for a build; empty or `none` builds with no bridge. */
 function envBridges(): BridgeEndpoint[] {
