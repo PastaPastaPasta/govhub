@@ -440,7 +440,7 @@ archiving, only publishing).
 | Core RPC calls from the host fail | By design: `docker compose exec dashd dash-cli -conf=/tmp/dash.conf <cmd>` |
 | cloudflared: `"cloudflared tunnel run" requires the ID or name of the tunnel` | The token file is empty: run `scripts/cloudflare-tunnel.sh` (section 11) |
 | cloudflared: `Provided Tunnel token is not valid` | The token file holds something else, or the token was rotated: re-run `scripts/cloudflare-tunnel.sh` |
-| `cloudflare-tunnel.sh`: `Authentication error` / `Not authorized` on `cfd_tunnel` | The API token lacks Account > Cloudflare Tunnel > Edit. DNS calls need Zone > DNS > Edit |
+| `cloudflare-tunnel.sh`: `Authentication error` / `Not authorized` on `cfd_tunnel` | The API token lacks Account > Cloudflare Tunnel > Edit. The zone lookup needs Zone > Zone > Read, DNS calls need Zone > DNS > Edit |
 | Public hostname answers 502/1033 | cloudflared is not running or not connected: `docker compose logs cloudflared`, and check `COMPOSE_PROFILES=tunnel` |
 | `docker info` shows storage driver `vfs` in an LXC | The host's ZFS is older than 2.2 (no overlayfs on ZFS): upgrade the host, or give `/var/lib/docker` an ext4/xfs mount point (section 12) |
 
@@ -453,8 +453,8 @@ opened, the host needs no public IP and holds no TLS certificate, and the bridge
 loopback. The tunnel is *remotely managed*: its public hostnames and ingress rules live in
 Cloudflare, and the container only needs the tunnel token.
 
-1. Create a Cloudflare API token with **Account > Cloudflare Tunnel > Edit** (on the account) and
-   **Zone > DNS > Edit** (on the zone of your hostnames).
+1. Create a Cloudflare API token with **Account > Cloudflare Tunnel > Edit** (on the account), plus
+   **Zone > Zone > Read** and **Zone > DNS > Edit** (on the zone of your hostnames).
 2. From `deploy/`, on the server or on any machine (then copy the token file over):
 
    ```sh
@@ -469,7 +469,8 @@ Cloudflare, and the container only needs the tunnel token.
    `CF_API_TOKEN_FILE=<file>` works instead of the variable. If the tunnel already exists the script
    stops unless you pass `--reuse`, so a second stack cannot take over the first one's tunnel by
    accident. It also refuses to repoint a CNAME that points somewhere other than a tunnel unless you
-   pass `--force-dns`. If you ran it on another machine, copy the token file into `secrets/` and
+   pass `--force-dns`. Every hostname is checked before anything changes, so a refused route leaves
+   the tunnel, its ingress and DNS as they were. If you ran it on another machine, copy the token file into `secrets/` and
    re-run `scripts/init.sh` as root, which chowns it to uid 1000 so cloudflared can read it.
 3. In `.env`: `COMPOSE_PROFILES=tunnel`, then `docker compose up -d`. `docker compose logs
    cloudflared` should show four `Registered tunnel connection` lines.
@@ -596,10 +597,11 @@ last publish pass with the identity's credits before and after.
 
 **Backups of the SQLite archive.** The archive is the one thing here that cannot be rebuilt
 (section 6). `/etc/cron.d/govhub-backup` takes an online backup daily at 03:30, keeps 30 days and logs
-to syslog (`journalctl -t govhub-backup`):
+to syslog (`journalctl -t govhub-backup`). `pipefail` keeps the script's exit status, so cron and any
+monitoring see a failed backup:
 
 ```
-30 3 * * * root /opt/govhub/deploy/scripts/backup.sh /opt/govhub-backups 30 2>&1 | logger -t govhub-backup
+30 3 * * * root bash -o pipefail -c '/opt/govhub/deploy/scripts/backup.sh /opt/govhub-backups 30 2>&1 | logger -t govhub-backup'
 ```
 
 Check a copy with `sqlite3 /opt/govhub-backups/bridge-<date>.sqlite 'PRAGMA integrity_check'`. These

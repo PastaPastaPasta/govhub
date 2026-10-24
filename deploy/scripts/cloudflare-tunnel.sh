@@ -22,7 +22,10 @@
 #
 # The API token (CF_API_TOKEN, or a file named by CF_API_TOKEN_FILE) needs:
 #   Account > Cloudflare Tunnel > Edit     (create the tunnel, set its ingress, read its token)
+#   Zone    > Zone > Read                  (look up the zone id), on the zone
 #   Zone    > DNS > Edit                   (the CNAMEs), on the zone
+# All DNS conflicts are checked before anything is changed, so a refused route leaves the tunnel,
+# its ingress and DNS as they were.
 # Needs curl and jq.
 set -euo pipefail
 
@@ -79,6 +82,7 @@ cf() {
     case "$path" in
       */cfd_tunnel*) echo "hint: the API token needs Account > Cloudflare Tunnel > Edit on account $ACCOUNT" >&2 ;;
       */dns_records*) echo "hint: the API token needs Zone > DNS > Edit on $ZONE" >&2 ;;
+      /zones\?*) echo "hint: the API token needs Zone > Zone > Read on $ZONE" >&2 ;;
     esac
     exit 1
   fi
@@ -86,7 +90,25 @@ cf() {
 }
 
 zone_id="$(cf GET "/zones?name=$ZONE" | jq -r '.[0].id // empty')"
-[ -n "$zone_id" ] || die "zone $ZONE not visible to this token"
+[ -n "$zone_id" ] || die "zone $ZONE not visible to this token (it needs Zone > Zone > Read on it)"
+
+# Check every hostname first: CNAME to a tunnel (update), nothing (create), anything else (stop).
+DNS_IDS=()
+for route in "${ROUTES[@]}"; do
+  host="${route%%=*}"
+  existing="$(cf GET "/zones/$zone_id/dns_records?name=$host" | jq -c '.[0] // empty')"
+  if [ -z "$existing" ]; then
+    DNS_IDS+=("")
+  elif [ "$(jq -r .type <<< "$existing")" = CNAME ]; then
+    case "$(jq -r .content <<< "$existing")" in
+      *.cfargotunnel.com) ;;
+      *) [ "$FORCE_DNS" -eq 1 ] || die "$host is a CNAME to $(jq -r .content <<< "$existing"), not a tunnel; pass --force-dns to repoint it" ;;
+    esac
+    DNS_IDS+=("$(jq -r .id <<< "$existing")")
+  else
+    die "$host already has a $(jq -r .type <<< "$existing") record; remove it first"
+  fi
+done
 
 existing_tunnel="$(cf GET "/accounts/$ACCOUNT/cfd_tunnel?name=$NAME&is_deleted=false" | jq -c '.[0] // empty')"
 if [ -n "$existing_tunnel" ]; then
@@ -106,22 +128,15 @@ cf PUT "/accounts/$ACCOUNT/cfd_tunnel/$tunnel_id/configurations" "$(jq -nc --arg
 echo "ingress: $(jq -c '[.[] | (.hostname // "*") + " -> " + .service]' <<< "$ingress")"
 
 target="$tunnel_id.cfargotunnel.com"
-for route in "${ROUTES[@]}"; do
-  host="${route%%=*}"
+for i in "${!ROUTES[@]}"; do
+  host="${ROUTES[$i]%%=*}"
   rec="$(jq -nc --arg n "$host" --arg c "$target" '{type: "CNAME", name: $n, content: $c, proxied: true, ttl: 1, comment: "govhub cloudflared tunnel"}')"
-  existing="$(cf GET "/zones/$zone_id/dns_records?name=$host" | jq -c '.[0] // empty')"
-  if [ -z "$existing" ]; then
+  if [ -z "${DNS_IDS[$i]}" ]; then
     cf POST "/zones/$zone_id/dns_records" "$rec" > /dev/null
     echo "dns: created $host CNAME $target (proxied)"
-  elif [ "$(jq -r .type <<< "$existing")" = CNAME ]; then
-    case "$(jq -r .content <<< "$existing")" in
-      *.cfargotunnel.com) ;;
-      *) [ "$FORCE_DNS" -eq 1 ] || die "$host is a CNAME to $(jq -r .content <<< "$existing"), not a tunnel; pass --force-dns to repoint it" ;;
-    esac
-    cf PUT "/zones/$zone_id/dns_records/$(jq -r .id <<< "$existing")" "$rec" > /dev/null
-    echo "dns: updated $host CNAME $target (proxied)"
   else
-    die "$host already has a $(jq -r .type <<< "$existing") record; remove it first"
+    cf PUT "/zones/$zone_id/dns_records/${DNS_IDS[$i]}" "$rec" > /dev/null
+    echo "dns: updated $host CNAME $target (proxied)"
   fi
 done
 
