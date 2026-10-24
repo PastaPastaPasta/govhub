@@ -2,7 +2,7 @@
 // Kept in this browser (localStorage, per network and identity) and, when the keyring is saved on Platform, in its encrypted
 // PENDING document so another device can keep watching. The records hold public data only (a signed vote becomes public when it
 // is broadcast), but before release they link masternodes together, so they never leave the device unencrypted.
-import type { PendingVote } from '@govhub/auth';
+import { MAX_REFS_PER_VOTE, type PendingVote } from '@govhub/auth';
 import { base64 } from '@scure/base';
 import type { BridgeVote } from '../data/bridge.ts';
 import { mnId, type Outcome, type SignedVoteRecord } from './plan.ts';
@@ -91,7 +91,7 @@ export function toPending(v: WatchedVote): PendingVote {
     time: v.time,
     sig: base64.decode(v.sig),
     releaseAt: v.releaseAt,
-    refs: v.refs.slice(0, 2),
+    refs: v.refs.slice(0, MAX_REFS_PER_VOTE),
   };
 }
 

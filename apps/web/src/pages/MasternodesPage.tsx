@@ -7,9 +7,9 @@ import { useApp } from '../app/context.tsx';
 import { useAuth } from '../auth/context.tsx';
 import { shortHash } from '../lib/format.ts';
 import { openSignIn } from '../ui/SignIn.tsx';
+import { WatchedList } from '../ui/VotePanel.tsx';
 import { useKeyring } from '../voting/KeyringContext.tsx';
 import { votingAddressOf } from '../voting/masternodes.ts';
-import { WatchedList } from '../ui/VotePanel.tsx';
 import '../voting/voting.css';
 
 const IDLE_CHOICES = [5, 15, 30, 60, 240];
@@ -36,7 +36,7 @@ function KeyringStatusLine() {
       <p className="notice-box" data-testid="keyring-status">
         {k.memoryOnly ? (
           <span>
-            <b>Memory only.</b> These keys are not saved anywhere and are wiped when you sign out, close the tab or after {ring.content.idleLockMinutes} idle minutes.
+            <b>Memory only.</b> Neither the keys nor the votes you sign are saved anywhere; they are wiped when you sign out, close the tab or after {ring.content.idleLockMinutes} idle minutes.
           </span>
         ) : (
           <span>
@@ -106,9 +106,10 @@ function Create() {
           <b>Save encrypted on Platform</b>: the keys are encrypted in this browser to your recovery phrase (and any passkeys you add) and stored in a document only you can open. Sign in again on any device and they are back.
         </li>
         <li>
-          <b>Memory only</b>: nothing is stored; the keys are gone when you sign out or close the tab.
+          <b>Memory only</b>: nothing is stored, not even the votes you sign; the keys are gone when you sign out or close the tab.
         </li>
       </ul>
+      <p className="small muted">Saving writes an encrypted document with your identity's credits: about 0.0016 DASH the first time, and a little for each change.</p>
       {!canSave && <p className="notice-box small">Saving needs your recovery phrase in this session (sign in with it, or with a passkey that keeps it). A pasted key cannot open a saved keyring.</p>}
       <div className="form-actions">
         <button type="button" className="btn btn-primary" onClick={() => void k.createKeyring(false).catch(() => {})} disabled={!canSave || !!k.busy} data-testid="create-keyring">
@@ -271,10 +272,21 @@ function Unlockers() {
   return (
     <section className="form" aria-labelledby="unlockers-title">
       <h2 id="unlockers-title">Who can open this keyring</h2>
+      {k.needsConfirm && (
+        <div className="notice-box" data-testid="confirm-unlockers">
+          <p>
+            This keyring could not be verified as yours{ring.authenticated === null ? ' (only your recovery phrase can verify it)' : ''}. Anyone in this list can open it and every key you add. Remove what you do not recognise, then confirm.
+          </p>
+          <button type="button" className="btn" onClick={k.confirmUnlockers}>
+            These are mine
+          </button>
+        </div>
+      )}
       <ul className="vote-keys" data-testid="unlockers">
         {ring.content.unlockers.map((u) => (
           <li key={bytesToHex(u.recipientKey)}>
             {u.type === UnlockerType.SEED ? 'Recovery phrase' : 'Passkey'} <span className="mono-ish small muted">{bytesToHex(u.recipientKey).slice(0, 16)}</span>{' '}
+            {ring.openedBy && bytesToHex(ring.openedBy) === bytesToHex(u.recipientKey) && <span className="chip">opened it now</span>}{' '}
             <span className="small muted">added {new Date(u.addedAt * 1000).toLocaleDateString()}</span>{' '}
             {ring.content.unlockers.length > 1 && (
               <button type="button" className="btn btn-s btn-quiet" onClick={() => void k.removeUnlockerKey(u.recipientKey).catch(() => {})} disabled={!!k.busy}>
@@ -301,7 +313,7 @@ function Unlockers() {
         </label>
       </div>
       <p className="small muted">
-        What Platform can see: that you have a keyring, its size class (up to 32 keys, or up to 96) and when it changes. Not how many keys or masternodes you have.
+        What Platform can see: that you have a keyring, its size class (up to 32 keys, or up to 96) and when it changes. Not how many keys or masternodes you have. To check which masternodes your keys control, this browser asks DAPI evonodes for their registration transactions: those nodes see your IP with those masternodes.
       </p>
     </section>
   );

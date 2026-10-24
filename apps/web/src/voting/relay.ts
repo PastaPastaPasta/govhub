@@ -3,7 +3,7 @@
 import { relayCancelMessage, signMessage, type Network } from '@govhub/verify';
 import { OUTCOME_NAME, type SignedVoteRecord } from './plan.ts';
 
-export type RelayVoteStatus = 'held' | 'broadcast' | 'confirmed' | 'failed' | 'cancelled' | 'superseded';
+export type RelayVoteStatus = 'held' | 'sending' | 'broadcast' | 'confirmed' | 'failed' | 'cancelled' | 'superseded';
 
 export interface RelayVoteState {
   id: string;
@@ -26,7 +26,7 @@ export class RelayError extends Error {
   }
 }
 
-const STATUSES = new Set<RelayVoteStatus>(['held', 'broadcast', 'confirmed', 'failed', 'cancelled', 'superseded']);
+const STATUSES = new Set<RelayVoteStatus>(['held', 'sending', 'broadcast', 'confirmed', 'failed', 'cancelled', 'superseded']);
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const numOrNull = (v: unknown): number | null => (typeof v === 'number' && Number.isSafeInteger(v) ? v : null);
 
@@ -120,13 +120,6 @@ export class RelayClient {
     const { json } = await this.req('/v1/votes/cancel', { id, sig: signatureBase64 });
     const s = isObj(json) ? json.status : undefined;
     return typeof s === 'string' && STATUSES.has(s as RelayVoteStatus) ? (s as RelayVoteStatus) : 'cancelled';
-  }
-
-  async serverStatus(): Promise<{ network: string; held: number; reachable: boolean }> {
-    const { json } = await this.req('/v1/status');
-    const o = isObj(json) ? json : {};
-    const core = isObj(o.core) ? o.core : {};
-    return { network: String(o.network ?? ''), held: Number(o.held ?? 0), reachable: core.reachable === true };
   }
 }
 

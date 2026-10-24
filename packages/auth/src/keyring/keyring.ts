@@ -111,8 +111,6 @@ export interface OpenedKeyring {
   close(): void;
 }
 
-const sameKey = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.every((x, i) => x === b[i]);
-
 function opened(o: Omit<OpenedKeyring, 'close'>): OpenedKeyring {
   return { ...o, close: () => wipeKeysContent(o.content) };
 }
@@ -167,7 +165,7 @@ export async function loadKeyring(ctx: KeyringContext, ownerId: string, key: Unl
         // a pending document this key cannot open (written before an unlocker change, or planted) is ignored and overwritten
       }
     }
-    const authenticated = seedCheck ? content.unlockers.some((u) => u.type === UnlockerType.SEED && sameKey(u.recipientKey, seedCheck.pair.publicKey)) : null;
+    const authenticated = seedCheck ? content.unlockers.some((u) => u.type === UnlockerType.SEED && bytesEqual(u.recipientKey, seedCheck.pair.publicKey)) : null;
     return opened({ ownerId, content, pending, keysDoc, pendingDoc, authenticated, openedWith: key.type, openedBy: key.pair.publicKey.slice() });
   } catch (e) {
     wipeKeysContent(content);
@@ -177,14 +175,14 @@ export async function loadKeyring(ctx: KeyringContext, ownerId: string, key: Unl
 
 /** Adds an unlocker derived in this tab (seed or passkey ceremony). No-op if present. */
 export function addUnlocker(k: OpenedKeyring, key: UnlockKey, now = Math.floor(Date.now() / 1000)): boolean {
-  if (k.content.unlockers.some((u) => sameKey(u.recipientKey, key.pair.publicKey))) return false;
+  if (k.content.unlockers.some((u) => bytesEqual(u.recipientKey, key.pair.publicKey))) return false;
   if (k.content.unlockers.length >= MAX_UNLOCKERS) throw new KeyringError(`A keyring can have at most ${MAX_UNLOCKERS} ways to unlock it. Remove one first.`);
   k.content.unlockers.push({ type: key.type, recipientKey: key.pair.publicKey.slice(), addedAt: now });
   return true;
 }
 
 export function removeUnlocker(k: OpenedKeyring, recipientKey: Uint8Array): void {
-  const left = k.content.unlockers.filter((u) => !sameKey(u.recipientKey, recipientKey));
+  const left = k.content.unlockers.filter((u) => !bytesEqual(u.recipientKey, recipientKey));
   if (!left.length) throw new KeyringError('The keyring needs at least one way to unlock it.');
   k.content.unlockers = left;
 }

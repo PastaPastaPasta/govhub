@@ -1,7 +1,7 @@
 // Masternode voting UI (PLAN §5.1-5.2): choose yes / no / abstain per proposal for all or selected masternodes of the keyring,
 // sign in the browser with the network's scheme, send through the relays (now, or each masternode at its own random time before
 // the deadline), and watch every vote until the bridge shows it. Also offline signing (the exact text for `signmessage`).
-import { decodeAddress, recoverVoteSigner, bytesToHex, type Network } from '@govhub/verify';
+import { bytesEqual, decodeAddress, governanceVoteHash, recoverVoteSigner, type Network } from '@govhub/verify';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useApp } from '../app/context.tsx';
@@ -14,7 +14,6 @@ import { votingDeadlineTime } from '../lib/governance.ts';
 import { useKeyring } from '../voting/KeyringContext.tsx';
 import { isOpen } from '../voting/pending.ts';
 import { currentKey, deferredWindow, mnId, OUTCOME_NAME, offlineSigningRequest, type CurrentVote, type Intent, type Outcome, type PlanResult } from '../voting/plan.ts';
-import { governanceVoteHash } from '@govhub/verify';
 import '../voting/voting.css';
 
 const OUTCOME_LABEL: Record<number, string> = { 0: '—', 1: 'Yes', 2: 'No', 3: 'Abstain' };
@@ -301,7 +300,7 @@ export function OfflineSign({ proposal }: { proposal: Proposal }) {
     const fields = { collateralTxid: m.collateralTxid, collateralIndex: m.collateralIndex, govHashDisplay: proposal.govHash, signal: 1, outcome, time };
     const signer = recoverVoteSigner(sig, fields, network);
     const d = decodeAddress(address.trim(), network)!;
-    if (!signer || bytesToHex(signer.keyId) !== bytesToHex(d.hash160)) return setErr('That signature is not by this voting address over this text.');
+    if (!signer || !bytesEqual(signer.keyId, d.hash160)) return setErr('That signature is not by this voting address over this text.');
     await k.submitSigned({ proTxHash: m.proTxHash, collateralTxid: m.collateralTxid, collateralIndex: m.collateralIndex, govHash: proposal.govHash, outcome, time, releaseAt: time, sig, voteHash: governanceVoteHash(fields) }).catch(() => {});
   };
   return (

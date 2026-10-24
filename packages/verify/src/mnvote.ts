@@ -7,7 +7,7 @@
 // governance/object.h:90 + object.cpp:443-456 (GOVERNANCE_UPDATE_MIN, "voting too often"), rpc/governance.cpp:861-938 (voteraw),
 // evo/providertx.h:162-183 (CProRegTx serialization), evo/types.h:15-20 (ProTxVersion).
 import { encodeAddress, p2pkhAddress, type Network } from './address.ts';
-import { bytesEqual, bytesToHex, concatBytes, i32le, i64le, Reader, sha256d, u32le, uint256FromDisplay, uint256ToDisplay, hexToBytes } from './bytes.ts';
+import { bytesEqual, concatBytes, hexToBytes, i32le, i64le, Reader, sha256d, u32le, uint256FromDisplay, uint256ToDisplay } from './bytes.ts';
 import { recoverMessageSigner, type RecoverOptions } from './message.ts';
 import { parseTransaction } from './tx.ts';
 import { VOTE_OUTCOME, VOTE_OUTCOME_NAMES, VOTE_SIGNAL, VOTE_SIGNAL_NAMES, voteFieldsError, type VoteFields } from './vote.ts';
@@ -155,6 +155,3 @@ export function payoutScriptAddress(script: Uint8Array, network: Network): strin
   }
   return null;
 }
-
-/** Hex of a 20-byte key id (for maps keyed by keyIDVoting). */
-export const keyIdHex = (keyId: Uint8Array): string => bytesToHex(keyId);

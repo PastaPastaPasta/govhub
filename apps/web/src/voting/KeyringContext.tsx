@@ -6,11 +6,15 @@
 // After the idle timeout the keys are wiped and the keyring has to be unlocked again (passkey or phrase).
 import {
   addUnlocker,
+  DEFAULT_IDLE_LOCK_MINUTES,
   emptyKeyring,
+  hexToBytes,
   identifierBytes,
+  isValidPrivateKey,
   KeyringLockedError,
   loadKeyring,
   passkeyUnlockKey,
+  PENDING_CAPS,
   prfInput,
   removeUnlocker,
   savePending,
@@ -18,27 +22,24 @@ import {
   seedUnlockKey,
   seedUnlockKeyFromEntropy,
   SeedWallet,
-  UnlockerType,
   type KeyringContext as StoreCtx,
   type OpenedKeyring,
   type UnlockKey,
 } from '@govhub/auth';
-import { hexToBytes, isValidPrivateKey } from '@govhub/auth';
 import { getPasskeyPrf } from '@govhub/auth/webauthn';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useApp } from '../app/context.tsx';
 import { useAuth } from '../auth/context.tsx';
-import { errorText, rpId } from '../auth/runtime.ts';
+import { errorText, getPlatformPort, rpId } from '../auth/runtime.ts';
 import { enabledBridges } from '../config/registry.ts';
 import { HttpBridge, type Bridge, type BridgeVote } from '../data/bridge.ts';
 import { createWebDapi, dapiConfig } from '../data/dapi.ts';
 import { getSdk } from '../data/platform.ts';
-import { getPlatformPort } from '../auth/runtime.ts';
 import type { SmlEntry } from '../verify/votes.ts';
 import { matchMasternodes, proveCollaterals, votingKeyId, type OwnedMasternode } from './masternodes.ts';
-import { bridgeVerdict, fromPending, isOpen, loadWatched, mergeWatched, needsRebroadcast, pickRebroadcastRelay, pruneWatched, saveWatched, toPending, type WatchedVote } from './pending.ts';
+import { bridgeVerdict, fromPending, isOpen, type WatchStatus, loadWatched, mergeWatched, needsRebroadcast, pickRebroadcastRelay, pruneWatched, saveWatched, toPending, type WatchedVote } from './pending.ts';
 import { currentKey, deferredWindow, mnId, planDeferred, planImmediate, signPlanned, submitDelays, type CurrentVote, type Intent, type PlanResult } from './plan.ts';
-import { cancelSignature, normalizeRelayUrl, RelayClient } from './relay.ts';
+import { cancelSignature, normalizeRelayUrl, RelayClient, RelayError } from './relay.ts';
 import { KEYRING_STASH_EVENT, takeStash } from './stash.ts';
 import { decodeWif, governanceVoteHash } from '@govhub/verify';
 
@@ -88,6 +89,9 @@ interface Ctx {
   addPasskeyUnlocker(): Promise<void>;
   removeUnlockerKey(recipientKey: Uint8Array): Promise<void>;
   saveToPlatform(): Promise<void>;
+  /** the opened keyring could be planted or replayed: saving waits until the user confirms its unlockers */
+  needsConfirm: boolean;
+  confirmUnlockers(): void;
   refreshMasternodes(): void;
   /** voting */
   currentVotes(govHashes: string[]): Promise<Map<string, CurrentVote>>;
@@ -106,9 +110,11 @@ export function useKeyring(): Ctx {
 }
 
 const nowS = () => Math.floor(Date.now() / 1000);
+/** Highest keyring generation this browser has opened or written (public: a counter), to notice a replayed older document. */
+const generationKey = (platformNetwork: string, ownerId: string) => `govhub.keyring.generation.${platformNetwork}.${ownerId}`;
 const EMPTY_MNS: MnState = { loading: false, owned: [], missing: [], mismatch: [], smlNodes: 0 };
 
-export function parseVotingKey(input: string, network: 'mainnet' | 'testnet'): { privateKey: Uint8Array; compressed: boolean } {
+function parseVotingKey(input: string, network: 'mainnet' | 'testnet'): { privateKey: Uint8Array; compressed: boolean } {
   const t = input.trim();
   if (/^(?:0x)?[0-9a-fA-F]{64}$/.test(t)) {
     const privateKey = hexToBytes(t.replace(/^0x/, ''));
@@ -138,8 +144,12 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
   const [mns, setMns] = useState<MnState>(EMPTY_MNS);
   const [mnNonce, setMnNonce] = useState(0);
   const [watched, setWatched] = useState<WatchedVote[]>([]);
+  /** The keyring could be planted or replayed (not authenticated by this seed, or older than one seen here): saving waits for the user. */
+  const [needsConfirm, setNeedsConfirm] = useState(false);
   const kr = useRef<OpenedKeyring | null>(null);
   kr.current = keyring;
+  const watchedRef = useRef<WatchedVote[]>([]);
+  watchedRef.current = watched;
   const identityId = session?.identityId ?? null;
   const touch = () => setVersion((v) => v + 1);
 
@@ -160,7 +170,13 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       setMemoryOnly(memory);
       setStatus('open');
       setError(null);
-      if (k.authenticated === false) setError('This keyring does not list your recovery phrase as an unlocker. Someone who held a key of this identity may have replaced it: check the unlockers below and remove any you do not recognise before adding keys.');
+      const gkey = generationKey(registry.platformNetwork, k.ownerId);
+      const seen = Number(localStorage.getItem(gkey) ?? 0);
+      const rolledBack = !memory && k.content.generation < seen;
+      if (!memory && !rolledBack) localStorage.setItem(gkey, String(k.content.generation));
+      setNeedsConfirm(!memory && (k.authenticated !== true || rolledBack));
+      if (rolledBack) setError(`This keyring is older than one this browser opened before (version ${k.content.generation}, seen ${seen}): someone who held a key of this identity may have put back an old copy. Check the unlockers below before saving anything.`);
+      else if (k.authenticated === false) setError('This keyring does not list your recovery phrase as an unlocker. Someone who held a key of this identity may have replaced it: check the unlockers below and remove any you do not recognise before adding keys.');
       // restore pending votes kept on Platform into the local watch list
       if (k.pending.votes.length && identityId) {
         const restored = k.pending.votes.map((p) => {
@@ -170,12 +186,12 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         setWatched((w) => {
           const known = new Set(w.map((x) => x.voteHash));
           const merged = mergeWatched(w, restored.filter((r) => !known.has(r.voteHash)));
-          saveWatched(localStorage, coreNetwork, identityId, merged);
+          if (!memory) saveWatched(localStorage, coreNetwork, identityId, merged);
           return merged;
         });
       }
     },
-    [identityId, coreNetwork],
+    [identityId, coreNetwork, registry.platformNetwork],
   );
 
   const tryOpen = useCallback(
@@ -234,7 +250,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
   useEffect(() => () => kr.current?.close(), []);
 
   // ---- idle lock ----
-  const idleMinutes = keyring?.content.idleLockMinutes ?? 15;
+  const idleMinutes = keyring?.content.idleLockMinutes ?? DEFAULT_IDLE_LOCK_MINUTES;
   useEffect(() => {
     if (status !== 'open') return;
     let last = Date.now();
@@ -267,12 +283,14 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const persist = useCallback(async () => {
-    const k = kr.current;
+  const persist = useCallback(async (target?: OpenedKeyring) => {
+    const k = target ?? kr.current;
     if (!k || memoryOnly || !session) return;
+    if (needsConfirm) throw new Error('Check the list of unlockers below and confirm it before saving: this keyring could not be verified as yours.');
     await saveKeys(await storeCtx(), session, k);
+    localStorage.setItem(generationKey(registry.platformNetwork, k.ownerId), String(k.content.generation));
     auth.refreshBalance();
-  }, [memoryOnly, session, storeCtx, auth]);
+  }, [memoryOnly, needsConfirm, session, storeCtx, auth, registry.platformNetwork]);
 
   // a passkey added (Passkeys.tsx) while the keyring is open becomes an unlocker
   useEffect(() => {
@@ -369,13 +387,16 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
           privateKey.fill(0);
           throw new Error('That voting key is in the keyring already.');
         }
-        k.content.keys.push({ privateKey, compressed, label });
+        // saved from a draft, so the list (rendered from k.content.keys) shows the key only once the save succeeded
+        const draft: OpenedKeyring = { ...k, content: { ...k.content, keys: [...k.content.keys, { privateKey, compressed, label }] } };
         try {
-          await persist();
+          await persist(draft);
         } catch (e) {
-          k.content.keys.pop()?.privateKey.fill(0);
+          privateKey.fill(0);
           throw e;
         }
+        k.content = draft.content;
+        k.keysDoc = draft.keysDoc;
         touch();
         setMnNonce((n) => n + 1);
       }),
@@ -461,19 +482,32 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         if (!seed) throw new Error('Saving needs your recovery phrase in this session. A pasted key cannot open a saved keyring.');
         // merge into an existing keyring rather than replacing it blindly
         const ctx = await storeCtx();
-        const existing = await loadKeyring(ctx, k.ownerId, seed, seed).catch((e) => (e instanceof KeyringLockedError ? null : Promise.reject(e)));
-        if (existing) {
-          for (const key of k.content.keys) if (!existing.content.keys.some((x) => votingKeyId(x.privateKey, x.compressed) === votingKeyId(key.privateKey, key.compressed))) existing.content.keys.push({ ...key, privateKey: key.privateKey.slice() });
-          await saveKeys(ctx, session, existing);
+        try {
+          const existing = await loadKeyring(ctx, k.ownerId, seed, seed).catch((e) => {
+            if (e instanceof KeyringLockedError) throw new Error('You already have a saved keyring that your recovery phrase cannot open (its phrase unlocker was removed). Unlock it with a passkey and add these keys there.');
+            throw e;
+          });
+          if (existing) {
+            if (existing.authenticated !== true) {
+              existing.close();
+              throw new Error('Your saved keyring could not be verified as yours. Open it first and check its unlockers.');
+            }
+            for (const key of k.content.keys) if (!existing.content.keys.some((x) => votingKeyId(x.privateKey, x.compressed) === votingKeyId(key.privateKey, key.compressed))) existing.content.keys.push({ ...key, privateKey: key.privateKey.slice() });
+            try {
+              await saveKeys(ctx, session, existing);
+            } catch (e) {
+              existing.close();
+              throw e;
+            }
+            opened(existing, false);
+          } else {
+            addUnlocker(k, seed);
+            await saveKeys(ctx, session, k);
+            setMemoryOnly(false);
+            touch();
+          }
+        } finally {
           seed.wipe();
-          opened(existing, false);
-        } else {
-          addUnlocker(k, seed);
-          seed.wipe();
-          k.keysDoc = (await ctx.store.get(k.ownerId, 0)) ?? null;
-          await saveKeys(ctx, session, k);
-          setMemoryOnly(false);
-          touch();
         }
         auth.refreshBalance();
       }),
@@ -541,18 +575,19 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
     (f: (w: WatchedVote[]) => WatchedVote[]) => {
       setWatched((w) => {
         const next = pruneWatched(f(w), nowS());
-        if (identityId) saveWatched(localStorage, coreNetwork, identityId, next);
+        // memory-only keyrings keep nothing on the device, not even signed votes
+        if (identityId && !memoryOnly) saveWatched(localStorage, coreNetwork, identityId, next);
         return next;
       });
     },
-    [identityId, coreNetwork],
+    [identityId, coreNetwork, memoryOnly],
   );
 
   const backupPending = useCallback(
     async (list: WatchedVote[]) => {
       const k = kr.current;
       if (!k || memoryOnly || !session) return;
-      k.pending = { votes: list.filter(isOpen).slice(0, 60).map(toPending) };
+      k.pending = { keyringId: k.content.keyringId.slice(), votes: list.filter(isOpen).slice(0, PENDING_CAPS[2].votes).map(toPending) };
       await savePending(await storeCtx(), session, k);
       auth.refreshBalance();
     },
@@ -567,12 +602,54 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
     [coreNetwork],
   );
 
+  /**
+   * Cancels a held vote on EVERY relay that holds it (signed cancel). Returns 'cancelled' only when no relay will broadcast it any more;
+   * 'sent' when some relay already broadcast it (or is broadcasting it).
+   */
+  const cancelEverywhere = useCallback(
+    async (v: WatchedVote): Promise<'cancelled' | 'sent'> => {
+      const k = kr.current;
+      const owner = mns.owned.find((m) => mnId(m) === mnId(v));
+      const key = k && owner ? k.content.keys[owner.keyIndex] : undefined;
+      if (!key) throw new Error('Unlock the keyring holding this masternode’s voting key to cancel.');
+      const sig = cancelSignature(key.privateKey, key.compressed, coreNetwork, v.voteHash);
+      let sent = false;
+      for (const r of v.refs) {
+        try {
+          await new RelayClient(r.relay).cancel(r.id, sig);
+        } catch (e) {
+          // 409 not-held: that relay broadcast it (or is doing so); 404: it never held it
+          if (e instanceof RelayError && e.status === 404) continue;
+          if (e instanceof RelayError && e.status === 409) sent = true;
+          else throw e;
+        }
+      }
+      return sent ? 'sent' : 'cancelled';
+    },
+    [mns.owned, coreNetwork],
+  );
+
   const cast = useCallback(
-    (intents: Intent[], opts: CastOptions, deadline: number | null, current: Map<string, CurrentVote>) =>
+    (intents: Intent[], opts: CastOptions, deadline: number | null, currentIn: Map<string, CurrentVote>) =>
       run(opts.mode === 'now' ? 'Signing and sending the votes' : 'Signing and scheduling the votes', async () => {
         const k = kr.current;
         if (!k) throw new Error('Unlock the keyring first.');
         if (!relays.length) throw new Error('No relay is configured (Settings, Relays).');
+        // A vote of ours that is still held for the same masternode and proposal would be broadcast later and win (a later nTime):
+        // cancel it first. One that already went out counts as the current vote (Core's 1-hour rule and "later wins" apply to it).
+        const current = new Map(currentIn);
+        const targets = new Set(intents.map((i) => currentKey(i.mn, i.govHash)));
+        const cancelled: string[] = [];
+        for (const w of watchedRef.current.filter((x) => isOpen(x) && targets.has(currentKey(x, x.govHash)))) {
+          const r = w.status === 'held' ? await cancelEverywhere(w) : 'sent';
+          if (r === 'cancelled') cancelled.push(w.voteHash);
+          else {
+            const ck = currentKey(w, w.govHash);
+            const c = current.get(ck);
+            if (!c || c.time < w.time) current.set(ck, { outcome: w.outcome, time: w.time });
+          }
+        }
+        if (cancelled.length) updateWatched((list) => list.map((x) => (cancelled.includes(x.voteHash) ? { ...x, status: 'cancelled' } : x)));
         const now = nowS();
         let plan: PlanResult;
         if (opts.mode === 'now') plan = planImmediate(intents, current, now);
@@ -608,11 +685,11 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
           }
           updateWatched((w) => mergeWatched(w, [sent[sent.length - 1]!]));
         }
-        if (opts.mode === 'deferred' && opts.backupOnPlatform) await backupPending(mergeWatched(watched, sent)).catch((e) => failures.push(`backup on Platform failed: ${errorText(e)}`));
+        if (opts.mode === 'deferred' && opts.backupOnPlatform) await backupPending(mergeWatched(watchedRef.current, sent)).catch((e) => failures.push(`backup on Platform failed: ${errorText(e)}`));
         if (failures.length) setError(`Some votes were not accepted by a relay yet (they are kept and retried): ${failures.join('; ')}`);
         return plan;
       }),
-    [run, relays, coreNetwork, mns.owned, send, updateWatched, backupPending, watched],
+    [run, relays, coreNetwork, mns.owned, send, updateWatched, backupPending, cancelEverywhere],
   );
 
   const submitSigned = useCallback(
@@ -628,28 +705,24 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
   const cancel = useCallback(
     (voteHash: string) =>
       run('Cancelling the held vote', async () => {
-        const k = kr.current;
-        const v = watched.find((x) => x.voteHash === voteHash);
+        const v = watchedRef.current.find((x) => x.voteHash === voteHash);
         if (!v) return;
-        const owner = mns.owned.find((m) => mnId(m) === mnId(v));
-        const key = k && owner ? k.content.keys[owner.keyIndex] : undefined;
-        if (!key) throw new Error('Unlock the keyring holding this masternode’s voting key to cancel.');
-        const sig = cancelSignature(key.privateKey, key.compressed, coreNetwork, voteHash);
-        const results = await Promise.allSettled(v.refs.map((r) => new RelayClient(r.relay).cancel(r.id, sig)));
-        const ok = results.some((r) => r.status === 'fulfilled' && r.value === 'cancelled');
-        updateWatched((list) => list.map((x) => (x.voteHash === voteHash ? { ...x, status: ok ? 'cancelled' : x.status } : x)));
-        if (!ok) throw new Error('No relay could cancel it: it may have been broadcast already.');
-        await backupPending(watched.filter((x) => x.voteHash !== voteHash)).catch(() => {});
+        const r = await cancelEverywhere(v);
+        updateWatched((list) => list.map((x) => (x.voteHash === voteHash ? { ...x, status: r === 'cancelled' ? 'cancelled' : 'broadcast' } : x)));
+        if (r !== 'cancelled') throw new Error('Too late: a relay has already broadcast this vote. Vote again to change it (Core allows one change per hour).');
+        await backupPending(watchedRef.current.filter((x) => x.voteHash !== voteHash)).catch(() => {});
       }),
-    [run, watched, mns.owned, coreNetwork, updateWatched, backupPending],
+    [run, cancelEverywhere, updateWatched, backupPending],
   );
 
-  // ---- watchdog: relay status, bridge confirmation, re-broadcast ----
+  // ---- watchdog: relay status, bridge confirmation, re-broadcast (every 30 s; never re-run by its own updates) ----
+  const relaysKey = relays.join(' ');
   useEffect(() => {
     if (!identityId || mode !== 'live') return;
     let stop = false;
+    const configured = new Set(relays);
     const tick = async () => {
-      const open = watched.filter(isOpen);
+      const open = watchedRef.current.filter(isOpen);
       if (!open.length || stop) return;
       const byGov = new Map<string, Map<string, BridgeVote>>();
       if (bridge) {
@@ -664,30 +737,41 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       const now = nowS();
       const updates: WatchedVote[] = [];
       for (const v of open) {
-        let n: WatchedVote = v;
+        let status: WatchStatus = v.status;
+        let relayStatus = v.relayStatus ?? {};
+        let refs = v.refs;
+        let rebroadcasts = v.rebroadcasts;
         const verdict = bridgeVerdict(v, byGov.get(v.govHash)?.get(mnId(v)));
-        if (verdict) n = { ...n, status: verdict };
+        if (verdict) status = verdict;
         else {
-          for (const r of v.refs) {
+          // only relays the user configured are contacted (a ref from elsewhere is never followed)
+          for (const r of v.refs.filter((x) => configured.has(x.relay))) {
             try {
               const st = await new RelayClient(r.relay).status(r.id);
-              if (st) n = { ...n, relayStatus: { ...n.relayStatus, [r.relay]: st.status }, ...(st.status === 'broadcast' || st.status === 'confirmed' ? { status: 'broadcast' as const } : {}), ...(st.status === 'cancelled' ? { status: 'cancelled' as const } : {}) };
+              if (st && st.status !== relayStatus[r.relay]) relayStatus = { ...relayStatus, [r.relay]: st.status };
             } catch {
               /* relay down: the re-broadcast below covers it */
             }
           }
-          if (n.status !== 'cancelled' && needsRebroadcast(n, now)) {
-            const relay = pickRebroadcastRelay(n, relays);
+          const all = Object.values(relayStatus);
+          if (all.some((x) => x === 'broadcast' || x === 'confirmed' || x === 'sending')) status = 'broadcast';
+          else if (all.length && all.every((x) => x === 'cancelled')) status = 'cancelled';
+          else if (all.length && all.every((x) => x === 'failed' || x === 'superseded' || x === 'cancelled')) status = all.includes('superseded') ? 'superseded' : 'failed';
+          if (isOpen({ ...v, status }) && needsRebroadcast(v, now)) {
+            const relay = pickRebroadcastRelay(v, relays);
+            rebroadcasts += 1;
             if (relay) {
               try {
-                n = { ...(await send(n, relay)), rebroadcasts: n.rebroadcasts + 1 };
+                const n = await send(v, relay);
+                refs = n.refs;
+                relayStatus = { ...relayStatus, ...n.relayStatus };
               } catch {
-                n = { ...n, rebroadcasts: n.rebroadcasts + 1 };
+                /* tried; counted */
               }
             }
           }
         }
-        if (n !== v) updates.push(n);
+        if (status !== v.status || relayStatus !== (v.relayStatus ?? {}) || refs !== v.refs || rebroadcasts !== v.rebroadcasts) updates.push({ ...v, status, relayStatus, refs, rebroadcasts });
       }
       if (updates.length && !stop) updateWatched((w) => w.map((x) => updates.find((u) => u.voteHash === x.voteHash) ?? x));
     };
@@ -697,7 +781,8 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       stop = true;
       clearInterval(t);
     };
-  }, [identityId, mode, watched, bridge, relays, send, updateWatched]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [identityId, mode, bridge, relaysKey, send, updateWatched]);
 
   const value = useMemo<Ctx>(
     () => ({
@@ -722,6 +807,11 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       addPasskeyUnlocker,
       removeUnlockerKey,
       saveToPlatform,
+      needsConfirm,
+      confirmUnlockers: () => {
+        setNeedsConfirm(false);
+        setError(null);
+      },
       refreshMasternodes: () => setMnNonce((n) => n + 1),
       currentVotes,
       cast,
@@ -729,9 +819,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       submitSigned,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [status, error, session, memoryOnly, keyring, version, busy, mns, watched, coreNetwork, relays, unlockWithPasskey, unlockWithPhrase, createKeyring, lock, addKey, removeKey, setNodeLabel, setIdleMinutes, addPasskeyUnlocker, removeUnlockerKey, saveToPlatform, currentVotes, cast, cancel, submitSigned],
+    [status, error, session, memoryOnly, needsConfirm, keyring, version, busy, mns, watched, coreNetwork, relays, unlockWithPasskey, unlockWithPhrase, createKeyring, lock, addKey, removeKey, setNodeLabel, setIdleMinutes, addPasskeyUnlocker, removeUnlockerKey, saveToPlatform, currentVotes, cast, cancel, submitSigned],
   );
   return <C.Provider value={value}>{children}</C.Provider>;
 }
-
-export { UnlockerType };

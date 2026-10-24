@@ -10,6 +10,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
+import { profileRegistry } from '../src/config/registry.ts';
 import { testnetMnKeys } from '../scripts/testnet-mn-keys.ts';
 import { cspViolations, watchPage } from './helpers.ts';
 
@@ -21,32 +22,22 @@ const RELAY = process.env.GOVHUB_VOTE_RELAY ?? 'http://127.0.0.1:18791';
 const MN = process.env.GOVHUB_VOTE_MN ?? 'masternode-5';
 const PHRASE = JSON.parse(readFileSync(join(homedir(), '.local/share/govhub-phase2/e2e-phrase.json'), 'utf8')).phrase as string;
 
-const REGISTRY = {
-  version: 1,
-  coreNetwork: 'testnet',
-  platformNetwork: 'testnet',
-  dapi: { source: 'quorum', quorumUrl: 'https://quorums.testnet.networks.dash.org/masternodes', nodes: [] },
-  platform: { trusted: true, addresses: [] },
-  govContractId: '5gMnJLDpcoMaQCQNqmHtBiSqCxRCmroXFAffPNdJ2NJC',
-  bridges: [{ name: 'gov-bridge-testnet.dashhq.org', httpBase: 'https://gov-bridge-testnet.dashhq.org', govContractId: '5gMnJLDpcoMaQCQNqmHtBiSqCxRCmroXFAffPNdJ2NJC', bridgeIdentityId: '24tL6v5jMR1H9dtUoTgbedePsMJtYPk4Q4bo6h8jTdK9', enabled: true }],
-  relays: [{ name: 'testnet relay (tunnel)', url: RELAY }],
-  priceFeed: null,
-  accounts: null,
-  faucet: null,
-  forum: { contractId: 'HfLWUEWnp4YCQ9Mzp9DexG58WPKvHm7SahMVSuzKSQRw', modContractId: 'CWJ5PyMMKwchk5H3FjX9enVQToWZUFA1xQaRn8zNZVjY', moderationIdentityId: '9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv', moderationName: 'govhub moderation', claimPortals: ['gov.dashhq.org'] },
-};
+// The Testnet profile (Core and Platform testnet, the testnet bridge) with the relay reached through an ssh tunnel until its public
+// hostname exists.
+const REGISTRY = { ...profileRegistry('testnet'), relays: [{ name: 'testnet relay', url: RELAY }] };
 
 async function signInWithPhrase(page: Page) {
-  await page.getByRole('button', { name: 'Sign in' }).first().click();
-  await page.getByRole('button', { name: /I have a recovery phrase/ }).click();
-  await page.getByTestId('phrase-input').fill(PHRASE);
-  await page.getByRole('button', { name: 'Sign in' }).last().click();
+  await page.getByTestId('session-button').click();
+  const sheet = page.locator('dialog[open]');
+  await sheet.getByRole('button', { name: /I have a recovery phrase/ }).click();
+  await sheet.getByTestId('phrase-input').fill(PHRASE);
+  await sheet.getByRole('button', { name: 'Sign in', exact: true }).last().click();
   await expect(page.getByTestId('session-button')).not.toHaveText('Sign in', { timeout: 120_000 });
 }
 async function signOut(page: Page) {
   await page.getByTestId('session-button').click();
   await page.locator('dialog[open]').getByRole('button', { name: 'Sign out' }).click();
-  await expect(page.getByRole('button', { name: 'Sign in' }).first()).toBeVisible();
+  await expect(page.getByTestId('session-button')).toHaveText('Sign in');
 }
 
 test('@live-vote keyring saved on Platform, restored after signing in again, then a vote through the relay', async ({ page }) => {
@@ -56,9 +47,10 @@ test('@live-vote keyring saved on Platform, restored after signing in again, the
   const errors = await watchPage(page);
   const results: Record<string, unknown> = { network: 'testnet', at: new Date().toISOString(), proposal: GOV, masternode: MN, votingAddress: key!.address };
   page.on('console', (m) => m.type() === 'error' && console.log(`console.error: ${m.text().replace(/[1-9A-HJ-NP-Za-km-z]{50,}/g, '[b58]').slice(0, 300)}`));
-  await page.addInitScript((r) => localStorage.setItem('govhub.registry.v1', JSON.stringify(r)), REGISTRY);
+  await page.addInitScript((r) => localStorage.setItem('govhub.registry.v2', JSON.stringify(r)), REGISTRY);
 
   // ---- 1. sign in, keyring ----
+  console.log(`step 1: sign in, keyring`);
   await page.goto('/masternodes');
   await signInWithPhrase(page);
   const status = page.getByTestId('keyring-status');
@@ -71,6 +63,7 @@ test('@live-vote keyring saved on Platform, restored after signing in again, the
   }
 
   // ---- 2. add the voting key (skipped if a previous run left it in the keyring) ----
+  console.log(`step 2: add the voting key (skipped if a previous run left it in the keyring)`);
   const keyList = page.getByTestId('key-list');
   const already = (await keyList.count()) > 0 && (await keyList.innerText()).includes(key!.address);
   if (!already) {
@@ -78,17 +71,20 @@ test('@live-vote keyring saved on Platform, restored after signing in again, the
     await page.getByTestId('voting-key-label').fill('e2e key');
     await page.getByTestId('voting-key-add').click();
     await expect(keyList).toContainText(key!.address, { timeout: 180_000 });
+    await expect(page.getByRole('status')).toHaveCount(0, { timeout: 180_000 });
   }
   await expect(page.getByTestId('mn-row').first()).toBeVisible({ timeout: 120_000 });
   results.masternodesBefore = await page.getByTestId('mn-row').count();
   await expect(page.getByTestId('keyring-error')).toHaveCount(0);
 
   // ---- 3. sign out: everything is gone from the page ----
+  console.log(`step 3: sign out: everything is gone from the page`);
   await signOut(page);
   await expect(page.getByTestId('key-list')).toHaveCount(0);
   await expect(page.getByTestId('mn-row')).toHaveCount(0);
 
   // ---- 4. sign in again: restored from Platform ----
+  console.log(`step 4: sign in again: restored from Platform`);
   const t0 = Date.now();
   await signInWithPhrase(page);
   await expect(page.getByTestId('keyring-status')).toContainText('Saved on Platform', { timeout: 120_000 });
@@ -99,6 +95,7 @@ test('@live-vote keyring saved on Platform, restored after signing in again, the
   expect(results.masternodesAfter).toBe(results.masternodesBefore);
 
   // ---- 5. vote on the proposal (immediately) ----
+  console.log(`step 5: vote on the proposal (immediately)`);
   await page.goto(`/p/h/${GOV}`);
   // a full page load is a new tab state: signing in again restores the keyring once more
   await signInWithPhrase(page);
@@ -109,6 +106,7 @@ test('@live-vote keyring saved on Platform, restored after signing in again, the
   await expect(panel.getByTestId('vote-result')).toContainText('signed and handed to a relay', { timeout: 120_000 });
 
   // ---- 6. the watchdog sees it in the bridge ----
+  console.log(`step 6: the watchdog sees it in the bridge`);
   await page.goto('/masternodes');
   await signInWithPhrase(page);
   const row = page.getByTestId('watched-row').first();

@@ -1,7 +1,7 @@
 // TESTNET tooling: tops up a phase-0 identity (state.json name, default `owner`) from the EvoVote QA wallet with a chain-lock
 // asset-lock proof. Used before the forum contract update (a DataContractUpdate adding a type costs ~0.46 DASH on testnet).
 //
-//   npx vite-node scripts/testnet-topup.ts [owner|u3|u6] [duffs]
+//   npx vite-node scripts/testnet-topup.ts [owner|u3|u6|<identity id>] [duffs]
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -20,7 +20,7 @@ const who = process.argv[2] ?? 'owner';
 const duffs = BigInt(process.argv[3] ?? '60000000');
 const log = (m: string) => console.log(`[${new Date().toISOString().slice(11, 19)}] ${m}`);
 const state = JSON.parse(readFileSync(join(homedir(), '.local/share/govhub-phase0/testnet/state.json'), 'utf8')) as { items: Array<{ name: string; identityId: string }> };
-const identityId = state.items.find((i) => i.name === who)!.identityId;
+const identityId = state.items.find((i) => i.name === who)?.identityId ?? who;
 
 const evo = await import('@dashevo/evo-sdk');
 await evo.ensureInitialized?.();
