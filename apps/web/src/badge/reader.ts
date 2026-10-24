@@ -207,7 +207,7 @@ export class BadgeReader {
         after = String(res.docs[res.docs.length - 1]!.$id);
       }
       const tokensIssued = await this.reportedTokens(issuer, epoch);
-      const bound = await this.#bound();
+      const bound = tokensIssued === null ? { value: this.#maxPlausible, source: 'pinned bound' } : await this.#bound();
       const reportDue = coreHeight > b.postingWindow(b.EPOCH_PARAMS[this.#net], epoch).to;
       let flagReason: string | null = null;
       if (tokensIssued !== null && tokensIssued > bound.value) flagReason = `reported ${tokensIssued} tokens, more than there are masternodes (${bound.source})`;
@@ -258,6 +258,11 @@ export function createBadgeReader(r: Registry, contractId: string, issuers: Trus
     query: (q) => badgeQuery(r, contractId, q),
     maxPlausibleTokens: BADGE_NETWORKS[r.platformNetwork].maxPlausibleTokens,
     // the proven list of the Platform network's Core chain, from the badge worker (same anchored chain and cache as verification)
-    provenMasternodes: async () => (await badgeWorker({ kind: 'provenMasternodes', dapi: platformDapiConfig(r) })).count,
+    // a weak chain (testnet: proof of work is not secure) is not proof: the pinned bound applies; 30 s at most
+    provenMasternodes: async () => {
+      const timeout = new Promise<null>((ok) => setTimeout(() => ok(null), 30_000));
+      const r2 = await Promise.race([badgeWorker({ kind: 'provenMasternodes', dapi: platformDapiConfig(r) }), timeout]);
+      return r2 && !r2.weak ? r2.count : null;
+    },
   });
 }

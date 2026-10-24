@@ -13,10 +13,13 @@ type Store = Pick<Storage, 'getItem' | 'setItem'> | undefined;
 /** `localStorage` itself throws (SecurityError) when site data is blocked: resolve it inside a try. */
 function local(): Store {
   try {
-    return globalThis.localStorage;
+    const s = globalThis.localStorage;
+    if (s) return s;
   } catch {
-    return { getItem: () => { throw new Error('storage blocked'); }, setItem: () => undefined };
+    /* blocked: fall through */
   }
+  // blocked (throws) or disabled (null): reads fail closed
+  return { getItem: () => { throw new Error('storage blocked'); }, setItem: () => undefined };
 }
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());

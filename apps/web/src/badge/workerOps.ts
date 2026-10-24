@@ -19,6 +19,8 @@ async function call(base: string, path: string, body: unknown): Promise<{ status
   return { status: res.status, json };
 }
 
+const dapis = new Map<string, import('@govhub/dapi').Dapi>();
+
 export async function handleBadgeCall(m: BadgeWorkerCall & { id?: number }): Promise<BadgeWorkerResponse> {
   const id = m.id ?? 0;
   switch (m.kind) {
@@ -49,7 +51,11 @@ export async function handleBadgeCall(m: BadgeWorkerCall & { id?: number }): Pro
     case 'provenMasternodes': {
       // the same anchored chain and header cache the verification worker uses (verify/stores.ts)
       const [{ createWebDapi }, { headerStore }, { loadVerifiers }] = await Promise.all([import('../data/dapi.ts'), import('../verify/stores.ts'), import('../verify/verifiers.ts')]);
-      const a = await createWebDapi(m.dapi, loadVerifiers).anchorChain({ store: headerStore('chain') });
+      // one client per DAPI setting, so its in-memory anchor cache and in-flight run are shared between calls
+      const key = JSON.stringify(m.dapi);
+      let d = dapis.get(key);
+      if (!d) dapis.set(key, (d = createWebDapi(m.dapi, loadVerifiers)));
+      const a = await d.anchorChain({ store: headerStore('chain') });
       return { id, kind: 'provenMasternodes', count: a.sml.mnCount, height: a.sml.proof.height, weak: a.weak };
     }
     case 'finalize': {

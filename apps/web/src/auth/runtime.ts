@@ -51,13 +51,13 @@ export function getPlatformPort(r: Registry): Promise<PlatformPort> {
 
 let dapi: { key: string; value: Dapi } | null = null;
 
-/** DAPI on the Platform network: the user's DAPI settings when the networks match, else that network's quorum service. */
-/** DAPI settings for the Platform network's Core chain. */
+/** DAPI settings for the Platform network's Core chain: the user's when the networks match, else that network's quorum service. */
 export const platformDapiConfig = (r: Registry): DapiConfig =>
   r.coreNetwork === r.platformNetwork
     ? { source: r.dapi.source, quorumUrl: r.dapi.quorumUrl, nodes: r.dapi.nodes, network: r.platformNetwork }
     : { source: 'quorum' as const, quorumUrl: QUORUM_SERVICE[r.platformNetwork], nodes: [], network: r.platformNetwork };
 
+/** DAPI on the Platform network. */
 export function getAuthDapi(r: Registry): Dapi {
   const cfg = platformDapiConfig(r);
   const key = JSON.stringify(cfg);
