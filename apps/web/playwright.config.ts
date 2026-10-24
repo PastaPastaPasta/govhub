@@ -15,7 +15,8 @@ export default defineConfig({
   use: {
     baseURL: `http://localhost:${PORT}`,
     headless: true,
-    trace: 'retain-on-failure',
+    // Live runs type real phrases and keys: no traces there (a failed run would keep them in test-results/).
+    trace: process.env.GOVHUB_LIVE || process.env.GOVHUB_LIVE_AUTH ? 'off' : 'retain-on-failure',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], headless: true } }],
   webServer: {

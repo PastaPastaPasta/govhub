@@ -22,14 +22,16 @@ const KTYPE = ['ecdsa_secp256k1', 'bls12_381', 'ecdsa_hash160', 'bip13_script_ha
 const errText = (e: unknown): string => (e && typeof e === 'object' && 'message' in e ? String((e as { message: unknown }).message) : String(e));
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** Retries a write that a lagging node refused (40101 not found / nonce), as the phase-0 scripts had to. */
-async function lagRetry<T>(fn: () => Promise<T>, tries = 4): Promise<T> {
+/** Errors a lagging node raises before executing: a just-written document not found yet (40101), a stale nonce. */
+const LAGGING = /40101|document not found|nonce/i;
+
+/** Retries a write that a lagging node refused, as the phase-0 scripts had to. `fn` gets the attempt number (0 first). */
+async function lagRetry<T>(fn: (attempt: number) => Promise<T>, tries = 4): Promise<T> {
   for (let i = 0; ; i++) {
     try {
-      return await fn();
+      return await fn(i);
     } catch (e) {
-      const m = errText(e);
-      if (i >= tries || !/40101|not found|nonce/i.test(m)) throw e;
+      if (i >= tries || !LAGGING.test(errText(e))) throw e;
       await sleep(3000);
     }
   }
@@ -80,9 +82,6 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network): P
   };
   const fetchIdentity = async (id: string) => (await sdk.identities.fetchWithProof(id)).data;
 
-  const docId = async (contractId: string, ownerId: string, type: string, entropy: Uint8Array): Promise<Uint8Array> =>
-    sdk.version() <= 13 ? sha256d(concatBytes(identifierBytes(contractId), identifierBytes(ownerId), new TextEncoder().encode(type), entropy)) : new Uint8Array(32);
-
   const toEntry = (d: Record<string, unknown>): VaultEntryDoc => {
     const b = (k: string): Uint8Array => {
       const v = d[k];
@@ -117,19 +116,35 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network): P
   // retried, re-sending the same document. A PV14 create is never retried (a retry after a write that landed would make a second
   // document); a PV13 create retried after it landed answers "already exists", which is success.
   const toSdk = (data: Record<string, DocValue>) => Object.fromEntries(Object.entries(data).map(([k, v]) => [k, typeof v === 'number' ? BigInt(v) : v]));
-  async function writeDocument({ ownerId, key, op }: { ownerId: string; key: SigningKey; op: DocumentWrite }): Promise<DocumentWritten> {
+  async function writeDocument({ ownerId, key: callerKey, op }: { ownerId: string; key: SigningKey; op: DocumentWrite }): Promise<DocumentWritten> {
+    // A private copy for the duration of the write: signing out mid-write wipes the session's key, not this one (wiped below).
+    if (callerKey.privateKey.every((b) => b === 0)) throw new Error('This session has ended. Sign in again.');
+    const key: SigningKey = { ...callerKey, privateKey: callerKey.privateKey.slice() };
+    try {
+      return await write(ownerId, key, op);
+    } finally {
+      key.privateKey.fill(0);
+    }
+  }
+  async function write(ownerId: string, key: SigningKey, op: DocumentWrite): Promise<DocumentWritten> {
     const identity = await fetchIdentity(ownerId);
     const idKey = identity?.getPublicKeyById(key.id);
     if (!identity || !idKey) throw new Error('signing key not found on the identity');
     const owner = identifierBytes(ownerId);
     const contract = identifierBytes(op.contractId);
-    let run: () => Promise<DocumentWritten>;
+    let run: (attempt: number) => Promise<DocumentWritten>;
     let retry = true;
     if (op.action === 'delete') {
-      run = () => withKeys([key], null, async (signer) => {
-        await sdk.documents.delete({ document: { id: op.id, ownerId, dataContractId: op.contractId, documentTypeName: op.type }, identityKey: idKey, signer });
-        return { id: op.id };
-      });
+      run = (attempt) =>
+        withKeys([key], null, async (signer) => {
+          try {
+            await sdk.documents.delete({ document: { id: op.id, ownerId, dataContractId: op.contractId, documentTypeName: op.type }, identityKey: idKey, signer });
+          } catch (e) {
+            // A retried delete whose first attempt landed finds nothing to delete: that is the result we wanted.
+            if (!(attempt > 0 && /40101|document not found/i.test(errText(e)))) throw e;
+          }
+          return { id: op.id };
+        });
     } else if (op.action === 'replace') {
       const document = w.Document.fromObject(
         { $formatVersion: '0', $id: identifierBytes(op.id), $ownerId: owner, $dataContractId: contract, $type: op.type, $revision: BigInt(op.revision + 1), ...toSdk(op.data) } as never,
@@ -152,18 +167,20 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network): P
         retry = false;
         run = create;
       } else {
-        run = async () => {
+        // Only a RETRY that finds its own id already stored is success (the first attempt landed); a first attempt refused as a
+        // duplicate is a real refusal (e.g. a unique index already holds a document).
+        run = async (attempt) => {
           try {
             return await create();
           } catch (e) {
-            if (/already exists|duplicate/i.test(errText(e))) return { id: toBase58(id), revision: 1 };
+            if (attempt > 0 && /already (exists|present)|duplicate/i.test(errText(e)) && (await sdk.documents.get(op.contractId, op.type, toBase58(id)).catch(() => undefined))) return { id: toBase58(id), revision: 1 };
             throw e;
           }
         };
       }
     }
     try {
-      return await (retry ? lagRetry(run, 3) : run());
+      return await (retry ? lagRetry(run, 3) : run(0));
     } catch (e) {
       throw new Error(errText(e)); // WASM errors are not Error instances
     }

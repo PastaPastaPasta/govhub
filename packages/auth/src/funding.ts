@@ -263,7 +263,7 @@ async function broadcastLock(dapi: Dapi, lock: { raw: string; txid: string }, is
       log(`lock broadcast refused (${attempt + 1}): ${redact(errText(e))}`);
       // An IS-lock for it (seen by the lock watcher meanwhile) or any node knowing it means it is out there.
       if (isLocked() || (await lockStatus(dapi, lock.txid, signal)) !== 'unknown') return true;
-      if (attempt >= 2) return false;
+      if (attempt >= 2) return isLocked();
       await sleep(4000 * (attempt + 1), signal);
     }
   }
@@ -466,8 +466,8 @@ async function fund(o: FundingOptions, fk: { privateKey: Uint8Array; publicKey: 
       if (status === 'unknown') {
         const sent = await broadcastLock(dapi, lock, () => !!rec.isLock, signal, log);
         if (!sent) {
-          // Every node refused the inputs and none knows the lock: a deposit was double-spent or replaced. Forget this lock (never
-          // rebuild its bytes), replay the address from the start, at most twice.
+          // Every node refused the inputs and none knows the lock: a deposit was double-spent or replaced. Forget this lock and replay
+          // the address from the start (the same deposits would rebuild the same bytes, which are then checked again), at most twice.
           (rec.rejectedLocks ??= []).push(lock.txid);
           if (rec.rejectedLocks.length >= 3) {
             update('the network refused the payment three times');

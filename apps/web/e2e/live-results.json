@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-10-24T06:37:57.892Z",
+  "ranAt": "2026-10-24T07:21:10.258Z",
   "proposal": "OrchardPay (8410614191c3f2df69a224a1c34ebc745288700515fdece6ad3764bfc1c987fe) in testnet gov 3ueAfbVe8LvCxYWk7bKvXxc5uHe7E1TDJHzN3k3ZDehZ",
   "claimProposal": {
     "name": "govhub-claim-test",
@@ -8,27 +8,35 @@
     "paymentAddress": "XksdQkaiYkWe6njfuEHaarJPeQ9Vmoxyaf"
   },
   "identities": {
-    "u6": "4TEp8FeD7iMD9nKMGBK492ZnbESdwFPPXtvjRA6Zrxhv",
+    "author": "FUfinhTAJRUff12BbJLZa7ZUqjJne8Xqyh9aiJdeKiXh",
+    "claimant": "4TEp8FeD7iMD9nKMGBK492ZnbESdwFPPXtvjRA6Zrxhv",
     "moderator": "9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv"
   },
+  "signIn": {
+    "author": "recovery phrase (@govhub/auth seed path)",
+    "claimant": "pasted HIGH key (@govhub/auth key path)",
+    "moderator": "pasted HIGH key (@govhub/auth key path)"
+  },
   "docs": {
-    "comment": "FfV6uewQFcsptmty5K2soiewub8cDHuqDrw6EDPv6ESj",
-    "reply": "6gVKwpAE5yiKWzM87eoERttwCmKQNGwzCPA9dA3kEM9A",
-    "reaction": "ApC7t9cpsX1WekJEeK5WCZ1Z9ftSS4dkA44y5AcLKT7u",
-    "modBlock": "7i4FKxoAU7dPXg5Q6wASnjdjSVMbQc42m2onkQFJ6jHS",
-    "userBlock": "3WXk9MPpnUcM8XLtSQbENrN3eR3DsPpALcrRd9EYNSqR",
+    "comment": "4mYXNKH1Ttf7wL8PLVaZsCfENQQtN6qQDYy2FzjBAkna",
+    "reply": "CLXzMfuXQhXeRTbLnhAGn2RKXwgpAq6rht4KsnWL7QQ7",
+    "reaction": "3FjNnGTTGkzUj1nG1EE45mPthLfMyct7fdVVDKQkinZd",
+    "modBlock": "BjBXE5dory456SAPv69kzh2mgq3SJjdXt6Vq7Ea26Qty",
+    "userBlock": "9knPAU6amq4cN2G6ELLmCGC8KCR42Jg1Xb5zvbCiXnaX",
     "claim": "8xFkBzyzXRpepLCvi72XvAwT5uS5GLupdTg2wRSStxBp",
     "proposalPost": "FBVVVzo5rbmzBLc8pjFqPeLjjubfeTsAPwvxBHPSTR3W"
   },
   "credits": {
-    "u6": "131876461",
-    "moderator": "46007046",
-    "total": "177883507"
+    "author": "56150381",
+    "claimant": "4799800",
+    "moderator": "46101286",
+    "total": "107051467"
   },
   "tDash": {
-    "u6": 0.00131876461,
-    "moderator": 0.00046007046,
-    "total": 0.00177883507
+    "author": 0.00056150381,
+    "claimant": 0.000047998,
+    "moderator": 0.00046101286,
+    "total": 0.00107051467
   },
   "notes": "comment, reply, reaction, both blocks were deleted again (deletes refund storage); claim and proposalPost stay as test fixtures"
 }

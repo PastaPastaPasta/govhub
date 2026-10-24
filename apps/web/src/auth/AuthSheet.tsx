@@ -85,7 +85,8 @@ function SampleIdentities() {
   return (
     <div className="notice-box">
       <p>
-        <b>Fixture mode:</b> sign in to a sample identity. Writes go into this tab's sample data and cost pretend credits from a 0.003 DASH starter.
+        <b>Fixture mode:</b> sign in to a sample identity. Writes go into this tab's sample data and cost pretend credits from a 0.003 DASH starter. A
+        real identity can sign in below, but it cannot post while the fixture snapshot is shown.
       </p>
       <div className="signin-picks">
         <button type="button" className="btn" onClick={() => pick(FIXTURE_IDS.alice, 'fixture identity')}>
@@ -382,14 +383,15 @@ function PhraseSignIn() {
     const wallet = SeedWallet.fromPhrase(phrase, network);
     let handedOver = false;
     try {
-      // An unfinished identity setup for this phrase continues first: its deposit may already be on the chain.
-      // Hidden (discarded) records too: a payment made while no tab watched is only found by replaying their address.
-      const resume = store.list().find(
-        (r) => r.network === network && r.kind === 'create' && r.state !== 'done' && r.address === addressOf(wallet.derive(registrationFundingPath(network, r.identityIndex)).publicKey, network),
-      );
-      if (resume) return setState({ phrase, found: [], resume });
+      // An unfinished identity setup of this phrase (hidden ones included: a payment made while no tab watched is only found by
+      // replaying their address). One that already holds money continues first; an unpaid one only when the phrase has no identity.
+      const resume = store
+        .list()
+        .find((r) => r.network === network && r.kind === 'create' && r.state !== 'done' && r.address === addressOf(wallet.derive(registrationFundingPath(network, r.identityIndex)).publicKey, network));
+      if (resume && (resume.deposits.length || resume.lock)) return setState({ phrase, found: [], resume });
       const port = await platform();
       const found = await discoverIdentities(wallet, port);
+      if (!found.length && resume) return setState({ phrase, found: [], resume });
       if (found.length === 1) {
         signIn(await signInWithSeed(wallet, found[0]!, port));
         handedOver = true;

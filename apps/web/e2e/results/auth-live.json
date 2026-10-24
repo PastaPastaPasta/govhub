@@ -1,25 +1,25 @@
 {
   "network": "testnet",
-  "at": "2026-10-24T06:40:22.290Z",
-  "depositTxid": "fe33fd95e99526638cd62df7f9de82db40512e3cea7f8935c33a406f2c728d77",
-  "createSeconds": 12,
-  "identityId": "3bDLxsuqcdeXy1ppSSo9EysFCQGGL4NyZoUwao2ae26U",
-  "balanceAfterCreate": 393145000,
-  "balanceAfterPasskey": 337843000,
-  "topUpDepositTxid": "1659fcc1a086ef739b8851a4e6ef7db13c13127bf80a2ab0549cce3518b2bd67",
-  "topUpSeconds": 8,
-  "balanceAfterTopUp": 429602000,
-  "voucherTxid": "7a71e9caeed87f28f3186015d3814960081d4f1fae53c0d6a685de2984ee4dcc",
+  "at": "2026-10-24T07:17:22.314Z",
+  "depositTxid": "a5a9f209eb303cb89b9d2adb73d35d253fff6436a220ff119da4bf1bf2158e62",
+  "createSeconds": 9,
+  "identityId": "4aAxvBQR8zb38KVsKPHovhSnGdo5STr5DerPQq574FVn",
+  "balanceAfterCreate": 393421000,
+  "balanceAfterPasskey": 338002000,
+  "topUpDepositTxid": "0294cebc214858ee92b16715c268ab4b45c608b969a10a83640ae586aa857e2b",
+  "topUpSeconds": 12,
+  "balanceAfterTopUp": 429628000,
+  "voucherTxid": "07df807ce8d12350a38b24baed80b0af8533d4d45eb4e8e766cb47fdffe8a21a",
   "voucherBurnVout": 1,
-  "voucherSeconds": 187,
-  "voucherIdentityId": "F74T1JdpwMH1Q4ymBgd3uKTpBWb2ZZ3tNxcaN1r1D798",
-  "voucherIdentityBalance": 193162000,
+  "voucherSeconds": 184,
+  "voucherIdentityId": "4nFZWHwga9X25pKzsmwoeqzUMRDsiFjKzRpNfD3VFagv",
+  "voucherIdentityBalance": 193313000,
   "finalBalancesCredits": {
-    "3bDLxsuqcdeXy1ppSSo9EysFCQGGL4NyZoUwao2ae26U": "429602620",
-    "F74T1JdpwMH1Q4ymBgd3uKTpBWb2ZZ3tNxcaN1r1D798": "193162820"
+    "4aAxvBQR8zb38KVsKPHovhSnGdo5STr5DerPQq574FVn": "429628160",
+    "4nFZWHwga9X25pKzsmwoeqzUMRDsiFjKzRpNfD3VFagv": "193313360"
   },
   "tDashSentFromQaWallet": 0.009,
   "l1FeesDuffs": 692,
-  "spentCreditsIncludingAssetLockTxFees": "277234560",
-  "totalSeconds": 214
+  "spentCreditsIncludingAssetLockTxFees": "277058480",
+  "totalSeconds": 213
 }
