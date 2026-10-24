@@ -47,6 +47,11 @@ jobs:
             compose_file: docker-compose.yml:docker-compose.testnet.yml:docker-compose.p2p.yml
             profiles: proxy
             p2p_port: "19999"
+          - name: testnet + tunnel guest
+            compose_file: docker-compose.yml:docker-compose.testnet.yml:docker-compose.tunnel-guest.yml
+          - name: mainnet + tunnel profile + tunnel host
+            compose_file: docker-compose.yml:docker-compose.tunnel-host.yml
+            profiles: tunnel
     steps:
       - uses: actions/checkout@v4
 
@@ -69,6 +74,19 @@ jobs:
             echo "::error::RPC or ZMQ port is published to the host"
             exit 1
           fi
+
+      - name: dashd only on `default`; public-facing services never on `default`; no `bridge` on `tunnel`
+        working-directory: deploy
+        run: |
+          set -euo pipefail
+          # `tunnel` is shared with another stack's cloudflared (README 11.3): a service named `bridge` there would
+          # shadow that stack's own `http://bridge:8787` route.
+          docker compose config --format json | jq -e '
+            .services as $s
+            | ($s.dashd.networks | keys) == ["default"]
+            and ([$s.cloudflared, $s.caddy, $s["tunnel-gateway"]] | map(select(. != null) | .networks | has("default") | not) | all)
+            and (($s.bridge.networks | has("tunnel")) | not)' > /dev/null \
+            || { echo "::error::network isolation violated"; docker compose config --format json | jq '.services | map_values(.networks)'; exit 1; }
 
   scripts:
     name: shellcheck and Caddyfile

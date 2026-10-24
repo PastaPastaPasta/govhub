@@ -1,0 +1,20 @@
+# Let this stack's cloudflared also reach a second stack's bridge on the same host (README section 11.3). Layer it on
+# the stack that runs the tunnel (COMPOSE_PROFILES=tunnel):
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.tunnel-host.yml
+# The other stack layers docker-compose.tunnel-guest.yml, which creates the network named here and puts only its
+# gateway on it. Its tunnel route is then `http://<that stack's TUNNEL_ALIAS>:8787`, e.g.
+#   gov-bridge-testnet.example.org -> http://govhub-testnet-bridge:8787
+# This stack's own routes (`http://bridge:8787`) are unaffected: no service called `bridge` is on that network.
+#
+# The guest stack must be up first (the network is external here): this file makes `up` fail while it is missing.
+# Remove the file from COMPOSE_FILE to run this stack without the guest.
+services:
+  cloudflared:
+    networks:
+      edge: {}
+      tunnel-guest: {}
+
+networks:
+  tunnel-guest:
+    name: ${TUNNEL_GUEST_NETWORK:-govhub-testnet_tunnel}
+    external: true
