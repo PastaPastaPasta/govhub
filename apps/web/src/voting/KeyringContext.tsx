@@ -112,6 +112,19 @@ export function useKeyring(): Ctx {
 const nowS = () => Math.floor(Date.now() / 1000);
 /** Spacing of immediate votes after the first ten: stays under a relay's default 30 requests per minute per IP. */
 const IMMEDIATE_PACE_MS = 2500;
+/**
+ * Deferred batches: random delays (so a relay does not see the batch as one burst) that still respect the same pacing: after the
+ * first ten requests, at least IMMEDIATE_PACE_MS apart. Returned in submission order's terms (index i = vote i).
+ */
+export function pacedRandomDelays(n: number): number[] {
+  const raw = submitDelays(n, Math.max(30_000, (n - 10) * IMMEDIATE_PACE_MS * 2));
+  const order = raw.map((_, i) => i).sort((a, b) => raw[a]! - raw[b]!);
+  const out = raw.slice();
+  order.forEach((idx, k) => {
+    if (k >= 10) out[idx] = Math.max(out[idx]!, out[order[k - 1]!]! + IMMEDIATE_PACE_MS);
+  });
+  return out;
+}
 /** Highest keyring generation this browser has opened or written (public: a counter), to notice a replayed older document. */
 const generationKey = (platformNetwork: string, ownerId: string) => `govhub.keyring.generation.${platformNetwork}.${ownerId}`;
 const EMPTY_MNS: MnState = { loading: false, owned: [], missing: [], mismatch: [], smlNodes: 0 };
@@ -161,6 +174,9 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
     setWatchedState(next);
   }, []);
   const identityId = session?.identityId ?? null;
+  /** The identity signed in NOW: async work started for another identity (a cast, a re-send) must not write into this one's votes. */
+  const identityRef = useRef(identityId);
+  identityRef.current = identityId;
   const touch = () => setVersion((v) => v + 1);
 
   const storeCtx = useCallback(async (): Promise<StoreCtx> => {
@@ -594,6 +610,8 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
 
   const updateWatched = useCallback(
     (f: (w: WatchedVote[]) => WatchedVote[]) => {
+      // a callback created for an identity that is no longer signed in writes nothing (its list was replaced on sign-out)
+      if (identityRef.current !== identityId) return;
       // computed from (and written to) the ref synchronously, so the watchdog's "unchanged" check always sees the latest records
       const next = pruneWatched(f(watchedRef.current), nowS());
       watchedRef.current = next;
@@ -608,7 +626,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
   const backupPending = useCallback(
     async (list: WatchedVote[], create: boolean) => {
       const k = kr.current;
-      if (!k || memoryOnly || !session || (!create && !k.pendingDoc)) return;
+      if (!k || memoryOnly || !session || identityRef.current !== session.identityId || k.ownerId !== session.identityId || (!create && !k.pendingDoc)) return;
       if (needsConfirm) throw new Error('Confirm the keyring’s unlockers before backing up votes.');
       k.pending = { keyringId: k.content.keyringId.slice(), votes: list.filter(isOpen).slice(0, PENDING_CAPS[2].votes).map(toPending) };
       await savePending(await storeCtx(), session, k);
@@ -702,7 +720,10 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         let replan = false;
         castingRef.current = true;
         try {
+          let n = 0;
           for (const w of watchedRef.current.filter((x) => x.status === 'held' && keep.has(currentKey(x, x.govHash)))) {
+            // paced like submissions, so replacing many held votes stays under a relay's per-IP limit
+            if (n++ >= 10) await new Promise((r) => setTimeout(r, IMMEDIATE_PACE_MS));
             if ((await cancelEverywhere(w)) === 'cancelled') cancelled.push(w.voteHash);
             else {
               // went out, or cannot be cancelled safely: it counts as the current vote, and the new one is timed after it
@@ -723,12 +744,14 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
           return { ...signPlanned(p, key.privateKey, key.compressed, coreNetwork), refs: [], status: 'held', rebroadcasts: 0 };
         });
         // deferred: random delays (unlinkability); immediate: the first few at once, then paced under a relay's per-IP limit
-        const delays = opts.mode === 'deferred' ? submitDelays(signed.length, Math.min(30_000, 2000 * signed.length)) : signed.map((_, i) => Math.max(0, i - 9) * IMMEDIATE_PACE_MS);
+        const delays = opts.mode === 'deferred' ? pacedRandomDelays(signed.length) : signed.map((_, i) => Math.max(0, i - 9) * IMMEDIATE_PACE_MS);
         const order = signed.map((_, i) => i).sort((a, b) => delays[a]! - delays[b]!);
         const sent: WatchedVote[] = [];
         let waited = 0;
         const failures: string[] = [];
+        const castFor = identityRef.current;
         for (const i of order) {
+          if (identityRef.current !== castFor) throw new Error('Signed out while sending: the remaining votes were not sent.');
           const d = delays[i]! - waited;
           if (d > 0) await new Promise((r) => setTimeout(r, d));
           waited += Math.max(0, d);
@@ -798,6 +821,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         running = false;
       }
     };
+    const tickFor = identityId;
     const tickOnce = async () => {
       const open = watchedRef.current.filter(isOpen);
       if (!open.length || stop) return;
@@ -820,6 +844,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         let relayStatus = v.relayStatus ?? {};
         let refs = v.refs;
         let rebroadcasts = v.rebroadcasts;
+        let retryAt = v.retryAt;
         const verdict = bridgeVerdict(v, byGov.get(v.govHash)?.get(mnId(v)));
         if (verdict) status = verdict;
         else {
@@ -837,7 +862,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
           else if (all.length && all.every((x) => x === 'cancelled')) status = 'cancelled';
           else if (all.length && all.every((x) => x === 'failed' || x === 'superseded' || x === 'cancelled')) status = all.includes('superseded') ? 'superseded' : 'failed';
           const unchanged = !castingRef.current && watchedRef.current.find((x) => x.voteHash === v.voteHash) === v;
-          if (unchanged && isOpen({ ...v, status }) && needsRebroadcast(v, now)) {
+          if (unchanged && isOpen({ ...v, status }) && needsRebroadcast(v, now) && (v.retryAt ?? 0) <= now) {
             const relay = pickRebroadcastRelay(v, relays);
             if (relay) {
               rebroadcasts += 1;
@@ -854,20 +879,26 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
                 relayStatus = { ...relayStatus, ...n.relayStatus };
                 // the new relay's id is recorded at once, whatever happens to this tick's other updates, so it can be cancelled
                 const ref = n.refs.find((r) => r.relay === relay);
-                if (ref && !stop) {
+                if (ref && identityRef.current === tickFor) {
+                  const before = watchedRef.current.find((x) => x.voteHash === v.voteHash);
                   updateWatched((w) => w.map((x) => (x.voteHash === v.voteHash && !x.refs.some((r) => r.relay === relay) ? { ...x, refs: [...x.refs, ref] } : x)));
-                  // that write replaced the record; this tick's own update below still applies to it
-                  const now2 = watchedRef.current.find((x) => x.voteHash === v.voteHash);
-                  if (from.get(v.voteHash) === v && now2) from.set(v.voteHash, now2);
+                  // that write replaced the record; this tick's own update still applies, unless something else changed it first
+                  const after = watchedRef.current.find((x) => x.voteHash === v.voteHash);
+                  if (before === v && after) from.set(v.voteHash, after);
                 }
               } catch (e) {
-                // a rate-limited relay (429) did not see the vote: that attempt does not count, the next tick retries
-                if (e instanceof RelayError && e.status === 429) rebroadcasts -= 1;
+                // a briefly rate-limited relay (429 rate-limited) did not see the vote: that attempt does not count, but the next try
+                // waits for Retry-After; anything else (too-many-held, refusals, transport) counts
+                if (e instanceof RelayError && e.status === 429 && e.code === 'rate-limited') {
+                  rebroadcasts -= 1;
+                  retryAt = nowS() + Math.min(Math.max(e.retryAfterS ?? 60, 30), 3600);
+                }
               }
             }
           }
         }
-        if (status !== v.status || relayStatus !== (v.relayStatus ?? {}) || refs !== v.refs || rebroadcasts !== v.rebroadcasts) updates.push({ ...v, status, relayStatus, refs, rebroadcasts });
+        if (status !== v.status || relayStatus !== (v.relayStatus ?? {}) || refs !== v.refs || rebroadcasts !== v.rebroadcasts || retryAt !== v.retryAt)
+          updates.push({ ...v, status, relayStatus, refs, rebroadcasts, ...(retryAt !== undefined ? { retryAt } : {}) });
       }
       if (updates.length && !stop) updateWatched((w) => w.map((x) => (from.get(x.voteHash) === x ? (updates.find((u) => u.voteHash === x.voteHash) ?? x) : x)));
     };

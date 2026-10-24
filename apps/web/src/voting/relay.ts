@@ -22,6 +22,8 @@ export class RelayError extends Error {
     readonly code?: string,
     /** For 409 answers: the vote's state at that relay (`not-held`: sending, broadcast, confirmed, failed, cancelled, superseded). */
     readonly voteStatus?: string,
+    /** Retry-After of a 429, in seconds */
+    readonly retryAfterS?: number,
   ) {
     super(message);
     this.name = 'RelayError';
@@ -83,7 +85,7 @@ export class RelayClient {
     }
     if (!res.ok) {
       const o = isObj(json) ? json : {};
-      throw new RelayError(typeof o.error === 'string' ? o.error.slice(0, 200) : `relay answered HTTP ${res.status}`, res.status, typeof o.code === 'string' ? o.code : undefined, typeof o.status === 'string' ? o.status : undefined);
+      throw new RelayError(typeof o.error === 'string' ? o.error.slice(0, 200) : `relay answered HTTP ${res.status}`, res.status, typeof o.code === 'string' ? o.code : undefined, typeof o.status === 'string' ? o.status : undefined, Number(res.headers.get('retry-after')) || undefined);
     }
     return { status: res.status, json };
   }

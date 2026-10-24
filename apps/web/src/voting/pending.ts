@@ -21,6 +21,8 @@ export interface WatchedVote extends SignedVoteRecord {
    * holds it sends it (the user may have cancelled or replaced it since the backup was written).
    */
   restored?: boolean;
+  /** unix s: a relay asked us to wait (429 Retry-After) before the next re-send */
+  retryAt?: number;
 }
 
 /** A vote not visible in the bridge this long after its release is re-sent (to another relay when there is one). */
