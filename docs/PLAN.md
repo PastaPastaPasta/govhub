@@ -80,6 +80,9 @@ The full report is in [`PHASE0.md`](PHASE0.md).
 - **Query rule (PV13):** Drive breaks ties between candidate indexes by index name. Every query must
   carry an `orderBy` ending on the intended index's last property. `where` values for byte arrays
   are base64 strings.
+- **PV13 mainnet write check passed** (§8 of `spikes/sdk5`). On PV13, unsupported query shapes return
+  `[]` silently, and `desc` is ignored unless a range is added on the last property. The CI query
+  lint enforces both.
 
 **Badges**
 - **Readers take the issuer and epoch from the proved `issuerKey` document, never from the badge.**

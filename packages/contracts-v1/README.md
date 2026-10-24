@@ -68,13 +68,15 @@ enforced by the shapes listed in this file:
 1. **Equality prefix + at most one range or `in` on the NEXT index property, nothing after it.**
    The PV13 gapped-index bug returns wrong results for a `where` that skips a property inside an index
    (`[a, b, c]` queried by `a` and `c`). PV14 testnet rejects such a query with
-   "where clause on non indexed property" (probe `X1`), but PV13 mainnet has not been exercised yet
-   (the local dashmate 4.1.1 check is a separate phase-0 item), so gaps are forbidden. **Ambiguity trap:**
+   "where clause on non indexed property" (probe `X1`). **PV13 mainnet (phase 0 write check) accepts the
+   same shapes and silently returns `[]`** even when matching documents exist (X1, X2, X2c, X3), so gaps
+   are forbidden and the CI query lint is the only guard. **Ambiguity trap:**
    PV13 picks the candidate index with the smallest "difference", ties broken by index *name* (a
    BTreeMap walked with a strict `<`). `reaction`: `target == X` alone scores 1 on both `byOwnerTarget`
    `[$ownerId, target]` (a gapped match!) and `byTarget` `[target, $createdAt]`, and `byOwnerTarget` sorts
    first. **Whenever the `where` does not cover every property of the index you mean, add an `orderBy`
    that ends at that index's last property** (F6 does: `[target, $createdAt]`). All shapes below satisfy this.
+   Confirmed on PV13 mainnet: F6 without its `orderBy` returns `[]` for a target that has reactions.
 2. **`in` only on the LAST property of the index you use** (`Index::matches` allows the `in` field only on the
    last or second-to-last property; the second-to-last path is not used by anything here). `in` on the
    first property of the PLAN-order `mnBadge` index `[$ownerId, issuerId, epoch]` fails (`X2d`, probed on the
@@ -89,7 +91,11 @@ enforced by the shapes listed in this file:
 6. **Value encodings in `where`** (found in the spike): `byteArray` values must be **base64 strings**
    (a `Uint8Array` throws "invalid type: byte array"); identifier values are **base58 strings**;
    integers are JS numbers. Documents read back render byte arrays as base64 and identifiers as base58.
-7. There is no count, sum or "all documents of a type" query. Counts (reactions per proposal) are
+7. **Descending order needs a range on PV13.** On mainnet PV13, `desc` is silently ignored when the
+   `where` has only equality clauses, and results come back ascending. PV14 testnet honours it. Add a
+   no-op range on the last ordered property (`$createdAt > 0`, `epoch >= 0`). Verified on mainnet
+   (`spikes/sdk5/results/mainnet-order-probe.json`). F2c, F3 and B1b carry that range.
+8. There is no count, sum or "all documents of a type" query. Counts (reactions per proposal) are
    computed client-side by paging; PV14 ranked counts replace that in v2.
 
 Every shape is numbered; the ID is the probe in `spikes/sdk5/scripts/testnet-queries.ts`, which ran
@@ -185,9 +191,9 @@ assembled client-side from the proposal's flat list (there is deliberately no `p
 | ID | Purpose | where | orderBy |
 |---|---|---|---|
 | F2 | comments of a proposal, oldest first | `govHash == <b64>` | `[[govHash, asc],[$createdAt, asc]]` |
-| F2c | newest first | same | `[[govHash, desc],[$createdAt, desc]]` |
+| F2c | newest first | `govHash == <b64>`, `$createdAt > 0` (rule 7) | `[[govHash, desc],[$createdAt, desc]]` |
 | F2d | comments since T (equality + range) | `govHash == <b64>`, `$createdAt > <ms>` | `[[govHash, asc],[$createdAt, asc]]` |
-| F3 | comments by an author | `$ownerId == <b58>` | `[[$ownerId, asc],[$createdAt, desc]]` |
+| F3 | comments by an author, newest first | `$ownerId == <b58>`, `$createdAt > 0` (rule 7) | `[[$ownerId, asc],[$createdAt, desc]]` |
 | F3p1/p2 | paging | as F2/F3 + `startAfter: <last id>` | as above |
 
 ### `reaction` (mutable, deletable)
@@ -297,7 +303,7 @@ Index: `byOwnerEpoch` unique `[$ownerId, epoch]` (one key per issuer per epoch).
 | ID | Purpose | where | orderBy |
 |---|---|---|---|
 | B1 | the key of issuer I for epoch E | `$ownerId == <I>`, `epoch == E` | - |
-| B1b | all keys of an issuer, newest first | `$ownerId == <I>` | `[[$ownerId, asc],[epoch, desc]]` |
+| B1b | all keys of an issuer, newest first | `$ownerId == <I>`, `epoch >= 0` (rule 7) | `[[$ownerId, asc],[epoch, desc]]` |
 | B1c | keys from epoch E on | `$ownerId == <I>`, `epoch >= E` | `[[$ownerId, asc],[epoch, asc]]` |
 
 ### `issuerRevocation` (CRITICAL signature)

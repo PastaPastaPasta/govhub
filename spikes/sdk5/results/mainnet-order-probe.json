@@ -1,0 +1,127 @@
+{
+  "at": "2026-10-24T03:13:01.288Z",
+  "network": "mainnet (protocol 13)",
+  "createdAt": {
+    "C1": "1792811334759",
+    "C2": "1792811343896",
+    "C3": "1792811349568",
+    "R1": "1792811354686",
+    "R3": "1792811366632",
+    "R4": "1792811371944",
+    "B1": "undefined",
+    "B2": "undefined",
+    "B3": "undefined"
+  },
+  "probes": [
+    {
+      "name": "comment G1: [govHash asc, $createdAt asc]",
+      "withProof": "C1,C2  (createdAt order: 34759<>43896)",
+      "noProof": "C1,C2  (createdAt order: 34759<>43896)"
+    },
+    {
+      "name": "comment G1: [govHash desc, $createdAt desc]  (F2c)",
+      "withProof": "C1,C2  (createdAt order: 34759<>43896)",
+      "noProof": "C1,C2  (createdAt order: 34759<>43896)"
+    },
+    {
+      "name": "comment G1: [govHash asc, $createdAt desc]",
+      "withProof": "C1,C2  (createdAt order: 34759<>43896)",
+      "noProof": "C1,C2  (createdAt order: 34759<>43896)"
+    },
+    {
+      "name": "comment G1: [$createdAt desc] only",
+      "withProof": "C1,C2  (createdAt order: 34759<>43896)",
+      "noProof": "C1,C2  (createdAt order: 34759<>43896)"
+    },
+    {
+      "name": "comment G1: [govHash desc] only",
+      "withProof": "C1,C2  (createdAt order: 34759<>43896)",
+      "noProof": "C1,C2  (createdAt order: 34759<>43896)"
+    },
+    {
+      "name": "comment M: [$ownerId asc, $createdAt desc]  (F3)",
+      "withProof": "C1,C3  (createdAt order: 34759<>49568)",
+      "noProof": "C1,C3  (createdAt order: 34759<>49568)"
+    },
+    {
+      "name": "comment M: [$ownerId desc, $createdAt desc]",
+      "withProof": "C1,C3  (createdAt order: 34759<>49568)",
+      "noProof": "C1,C3  (createdAt order: 34759<>49568)"
+    },
+    {
+      "name": "comment M: [$createdAt desc] only",
+      "withProof": "C1,C3  (createdAt order: 34759<>49568)",
+      "noProof": "C1,C3  (createdAt order: 34759<>49568)"
+    },
+    {
+      "name": "comment M: [$ownerId asc, $createdAt asc]",
+      "withProof": "C1,C3  (createdAt order: 34759<>49568)",
+      "noProof": "C1,C3  (createdAt order: 34759<>49568)"
+    },
+    {
+      "name": "reaction T1: [target desc, $createdAt desc]",
+      "withProof": "R1,R3  (createdAt order: 54686<>66632)",
+      "noProof": "R1,R3  (createdAt order: 54686<>66632)"
+    },
+    {
+      "name": "reaction T1: [target asc, $createdAt asc]",
+      "withProof": "R1,R3  (createdAt order: 54686<>66632)",
+      "noProof": "R1,R3  (createdAt order: 54686<>66632)"
+    },
+    {
+      "name": "comment M, range $createdAt > 0: [$ownerId asc, $createdAt desc]",
+      "withProof": "C3,C1  (createdAt order: 49568<>34759)",
+      "noProof": "C3,C1  (createdAt order: 49568<>34759)"
+    },
+    {
+      "name": "comment M, range $createdAt > 0: [$createdAt desc]",
+      "withProof": "C3,C1  (createdAt order: 49568<>34759)",
+      "noProof": "C3,C1  (createdAt order: 49568<>34759)"
+    },
+    {
+      "name": "comment G1 + $createdAt > 0: [govHash asc, $createdAt desc]",
+      "withProof": "C2,C1  (createdAt order: 43896<>34759)",
+      "noProof": "C2,C1  (createdAt order: 43896<>34759)"
+    },
+    {
+      "name": "comment G1 + $createdAt > 0: [$createdAt desc]",
+      "withProof": "C2,C1  (createdAt order: 43896<>34759)",
+      "noProof": "C2,C1  (createdAt order: 43896<>34759)"
+    },
+    {
+      "name": "comment G1 + $createdAt > 0: [govHash asc, $createdAt asc]",
+      "withProof": "C1,C2  (createdAt order: 34759<>43896)",
+      "noProof": "C1,C2  (createdAt order: 34759<>43896)"
+    },
+    {
+      "name": "reaction T1 + $createdAt > 0: [target asc, $createdAt desc]",
+      "withProof": "R3,R1  (createdAt order: 66632<>54686)",
+      "noProof": "R3,R1  (createdAt order: 66632<>54686)"
+    },
+    {
+      "name": "reaction T1 + $createdAt > 0: [target asc, $createdAt asc]",
+      "withProof": "R1,R3  (createdAt order: 54686<>66632)",
+      "noProof": "R1,R3  (createdAt order: 54686<>66632)"
+    },
+    {
+      "name": "mnBadge issuer, epoch >= 0: [epoch desc]",
+      "withProof": "B3,B1,B2  (createdAt order: fined<>fined<>fined)",
+      "noProof": "B3,B1,B2  (createdAt order: fined<>fined<>fined)"
+    },
+    {
+      "name": "mnBadge issuer, epoch >= 0: [epoch asc]",
+      "withProof": "B1,B2,B3  (createdAt order: fined<>fined<>fined)",
+      "noProof": "B1,B2,B3  (createdAt order: fined<>fined<>fined)"
+    },
+    {
+      "name": "mnBadge issuer, epoch 300, $ownerId in [M,S]: [$ownerId asc]",
+      "withProof": "B1,B2  (createdAt order: fined<>fined)",
+      "noProof": "B1,B2  (createdAt order: fined<>fined)"
+    },
+    {
+      "name": "mnBadge issuer, epoch 300, $ownerId in [M,S]: [$ownerId desc]",
+      "withProof": "B2,B1  (createdAt order: fined<>fined)",
+      "noProof": "B2,B1  (createdAt order: fined<>fined)"
+    }
+  ]
+}

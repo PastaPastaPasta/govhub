@@ -280,3 +280,87 @@ selects the right row, not ordering; `desc` ordering on `comment` by proposal (F
 
 `scripts/validate-contracts.ts`, `validate-documents.ts` (offline) - `read-network.ts`, `bundle-size.mjs` - `chain.ts` (Insight/dashcore-lib/faucet helpers),
 `testnet-identity.ts`, `testnet-topup.ts`, `testnet-keys-add.ts`, `testnet-costs.ts`, `testnet-badge-r2.ts`, `testnet-queries.ts`, `estimate-costs.ts` - `lib.ts`.
+
+## 8. Mainnet PV13 write check (2026-10-23)
+
+First real writes on mainnet (protocol 13, `EvoSDK.mainnetTrusted()`, evo-sdk 5.0.0-rc.8, `sdk.version()` 13 throughout).
+Scripts: `mainnet-lib.ts`, `mainnet-derive-check.ts`, `mainnet-build-check.ts` (offline), `mainnet-identity.ts`, `mainnet-docid-probe.ts`,
+`mainnet-check.ts`, `mainnet-order-probe.ts`. Results: `results/mainnet-identities.json`, `mainnet-write-check.json`, `mainnet-order-probe.json`.
+Keys are derived from the BIP39 mnemonic in `~/.local/share/govhub-phase0/` on demand; nothing secret is in the repo or the results
+(state without keys: `~/.local/share/govhub-phase0/mainnet/state.json`).
+
+| Item | Value |
+|---|---|
+| Deposit | 0.3 DASH, txid `68136ac0b157d33bc5c53a7eec6bd1b688b86f2555fb890d5cc113b582e03a07:0` (an asset-unlock tx, type 9; mined at 2,560,412; used after 1 confirmation) to `XrrdbDqut3RJYGzBC1pbEJcff1DULADXsd` (`m/9'/5'/5'/1'/0'`) |
+| Funding | two chained asset locks, both with **IS-lock proofs** (watchers on 3 evonodes subscribed before broadcast; IS-lock 1.5 s after broadcast for tx A, 10.3 s for the chained tx B). The burn output was vout 0 in both (change in tx A is vout 1; indexes are computed from the built tx, not assumed) |
+| Identity `main` (contract owner) | `5h2Bj6ETFQ6BxgtCLTeMna5RvGX8eHj3oFh5abNSy82j`, lock 0.28998 DASH (tx `14cc1f94...8795`), keys at `m/9'/5'/5'/0'/0'/0'/{0,1,2}'` = MASTER, CRITICAL, HIGH (ECDSA_SECP256K1) |
+| Identity `second` (second author) | `AGU4wJ9ZiBkP7HJV6YHEmFBkfAQBXu7JYt9Gp4wpwBbd`, lock 0.01 DASH (tx `2eb01c20...d737`), keys at `m/9'/5'/5'/0'/0'/1'/{0,1,2}'`. Added so that `mnBadge $ownerId in [...]` and per-owner reaction queries can return rows from two owners |
+| Contract `pv13check` | `6MEp2FpVkHwCMeHoqft5PFFdMe81eeAiwGd2q2nbPVmJ` (owner `main`, CRITICAL key; `comment`, `reaction`, `mnBadge` copied from `packages/contracts-v1`; 3 types, 5 indexes; read-back identical) |
+| Spent (burned) | **0.21787138 DASH**: L1 fees 0.00002000 + 2 identity creates 0.00212055 + registration 0.21119265 + 13 document ops net 0.00453818 (incl. 0.00001275 for a rejected duplicate) |
+| Remaining | `main` 0.07460644 + `second` 0.00752217 = **0.08212861 DASH**, all on the identities (funding address is empty, nothing was sent elsewhere). Locked 0.29998 DASH of the 0.3 deposit |
+
+The registration fee formula was checked against the PV13 schedule first (`rs-platform-version` `FEE_DATA_CONTRACT_REGISTRATION_VERSION2`:
+0.1 base + 0.02 per type + 0.01 per index, same as the testnet formula): 0.1 + 3 x 0.02 + 5 x 0.01 = 0.21 DASH. Measured 0.21119265 (+0.00119265 storage).
+
+### 8.1 Costs vs testnet (PV14, section 5)
+
+Settled balances, same method as section 5 (stable read, next op's "before" = previous settled "after").
+
+| Operation | mainnet PV13 (credits) | DASH | testnet PV14 comparable (credits) | delta |
+|---|---:|---:|---:|---:|
+| identity create, 3 keys (`main`) | 106,102,240 | 0.00106102 | 106,495,300 (u3) | -0.4% |
+| identity create, 3 keys (`second`) | 105,952,600 | 0.00105952 | 106,495,300 (u3) | -0.5% |
+| register 3 types / 5 indexes | 21,119,265,450 | 0.21119265 | formula 0.21 + 0.0006-0.0030 storage (mod / forum) | in line |
+| comment create C1 (25 chars, first in contract) | 56,504,420 | 0.00056504 | 42,925,560 (50 chars, reply) | +31.6% |
+| comment create C2 (second identity, reply, `parentId` set) | 61,008,880 | 0.00061009 | 42,925,560 | +42.1% |
+| comment create C3 (other `govHash`) | 48,767,440 | 0.00048767 | 42,925,560 | +13.6% |
+| reaction create R1 (first) | 59,350,800 | 0.00059351 | 50,109,000 | +18.4% |
+| reaction create R2 / R3 / R4 | 49,823,200 / 49,547,600 / 50,093,860 | 0.00049823 / 0.00049548 / 0.00050094 | 50,109,000 / 50,242,940 | -1.1% to -0.3% |
+| reaction replace (flip) | 2,828,180 | 0.00002828 | 3,207,060 | -11.8% |
+| reaction delete | -43,159,305 | -0.00043159 | -43,185,272 | -0.1% |
+| mnBadge create B1 (first, sig 256 B) | 45,240,580 | 0.00045241 | 30,124,180 (sig 256 B) | +50.2% |
+| mnBadge create B2 (second owner, sig 256 B) | 31,273,060 | 0.00031273 | 30,124,180 | +3.8% |
+| mnBadge create B3 (sig 384 B) | 41,263,680 | 0.00041264 | 58,261,980 (sig 384 B) | -29.2% |
+| rejected duplicate unique `mnBadge` | 1,275,320 | 0.00001275 | n/a | - |
+
+Reading: identity, reaction, flip and delete costs match testnet within noise (about +/-1% on creates once the index trees exist, -12% on the flip).
+Document creates in a fresh contract differ by whether they open new index trees (the first comment, first reaction and first badge are the
+expensive ones, as in testnet round 1), so the +14% to +50% rows are first-use effects, not a PV13/PV14 schedule difference: the comparable testnet
+rows are single measurements with different payloads. **Planning with the testnet numbers (section 5, PHASE0.md) is safe for PV13.**
+A failed broadcast is not free: the duplicate `mnBadge` (unique index violation, code 40105 at broadcast) charged 0.00001275 DASH.
+
+### 8.2 Query behaviour on PV13 (`results/mainnet-write-check.json`: 38 query probes + 4 byteArray-encoding probes; `mainnet-order-probe.json`: 22 ordering probes; all with proofs)
+
+Data: 3 comments (C1 `main`/G1, C2 `second`/G1 reply to C1, C3 `main`/G2), reactions (R1 `main`/T1 flipped +1 to -1, R2 `main`/T2 then deleted,
+R3 `second`/T1, R4 `main`/T3), 3 `mnBadge` (B1 `main` epoch 300, B2 `second` epoch 300, B3 `main` epoch 301; the issuer id is `main`'s id, bytes are dummy).
+Of 25 asserted probes, 22 pass; the 3 failures are PV13 behaviours documented below. 13 more probes are observational.
+
+**Passing (all documented shapes except F2c and F3, which need the desc fix below):** F2, F2d, F3a, F3p1/F3p2 (paging via `startAfter`), F5 (shows the flip: value -1),
+F5b (`in` with a deleted target: only the live ones, in target-byte order), F6, B4 (`issuerId == A && epoch == E && $ownerId in [...]`, including a non-holder in
+the list), B4b, B4c, B4d, plus a deleted reaction is really gone (F6 on T2 returns nothing) and the unique index `[issuerId, epoch, $ownerId]` rejects a duplicate.
+
+Required answers:
+- **(a) `reaction target == X` WITH the documented orderBy `[[target,asc],[$createdAt,asc]]` picks `byTarget` and is correct**: it returns R1 and R3 (both owners), in `$createdAt` order.
+- **(b) the same query WITHOUT orderBy returns an EMPTY result, silently** (also for a target that has one reaction, T3). That is the PV13 gapped-index bug: `byOwnerTarget [$ownerId, target]` wins the tie on name and a `target`-only
+  lookup in it finds nothing. No error. `orderBy [[target, asc]]` alone also returns empty (it is ambiguous between the two indexes); `orderBy [[$createdAt, asc]]` alone works (only `byTarget` ends there). So the rule in
+  `packages/contracts-v1/README.md` is confirmed and must stay a CI lint: end the orderBy on the intended index's last property.
+- **(c) `mnBadge issuerId == A && epoch == E && $ownerId in [...]` works** with `orderBy [[$ownerId, asc]]` (returns holders in owner-byte order; `desc` also honoured with `in`). With epoch 301 only `main` is returned.
+- **(d) byteArray `where` values as base64 strings work.** Other encodings: `Uint8Array` throws client-side ("invalid type: byte array"), a **hex string silently returns empty**, an array of numbers is a node error ("Internal error ... structure error").
+
+Other PV13 findings (these refine the contracts README):
+1. **`desc` is ignored on equality-only queries on PV13 mainnet.** F2c (`govHash == X`, `[[govHash,desc],[$createdAt,desc]]`) and F3 (`$ownerId == X`, `[[$ownerId,asc],[$createdAt,desc]]`) return ascending, with and without proofs, whatever the first clause says. The same query
+   with a range on the last index property (`$createdAt > 0`) is honoured, and so is `desc` on a range property or with `in`: F2c-fix, F3-fix, F6-desc-fix and `mnBadge epoch >= 0` with `[[epoch,desc]]` all return newest/highest first. (Testnet PV14 honoured desc on equality-only
+   queries, F3 in section 5.4.) **Newest-first lists must carry `$createdAt > 0` (or `epoch >= 0`) on PV13**; this also applies to B1b ("all keys of an issuer, newest first": use `epoch >= 0`). Equality-only `asc` lists are fine.
+2. **PV13 accepts shapes that PV14 rejects and answers with an empty result instead of an error**: X1 (`issuerId == I && $ownerId == A`, skips `epoch`), X1 variant (skips `issuerId`), X2 (`$ownerId == A`), X2c (`$ownerId in [...]` with no prefix) and X3 (`$createdAt > 0`, no index starts with it) all returned `[]` although
+   two of the badges belonged to `main`. A client that uses one of them sees "no badge" / "no comments", not a failure. The lint is the only guard.
+3. PV13 handles the shapes the README calls "unused" correctly here: X2b (`epoch in [300, 301]`, second-to-last) and X4 (`govHash in [...] + $createdAt range`) returned all matching rows, and `issuerId == I` alone (prefix of 1) returned all three badges. They stay unused until verified on more data.
+4. Equality-only queries without orderBy on a single-candidate index (`comment govHash == X`, `$ownerId == X`) are correct.
+
+### 8.3 SDK / tooling surprises
+
+- **evo-sdk rc.8 at PV13 rejects a zero `$id`** on `documents.create` ("document id 111... does not match the id derived from the supplied entropy"); the testnet scripts (PV14) pass a zero id and get it derived from the nonce. At PV13 the id is `sha256d(contractId || ownerId || typeName || entropy)` (checked against the SDK's own derivation in `mainnet-docid-probe.ts`).
+  `Document.generateId()` cannot be used at PV13: it throws "'identityContractNonce' is required: from protocol version 14 the id of a new document commits to the identity contract nonce". A client that supports both versions has to branch on `sdk.version()`.
+- PV13 rejected the duplicate unique document only at broadcast (code 40105) and charged for it.
+- `insight.dash.org` answers 403 to Node's default `fetch` user-agent (curl works); send a `curl/...` user-agent.
+- IS-lock proofs worked from a plain Node DAPI grpc-web client (`spikes/dapi-browser/src`); a chained second asset lock needed 10 s for its IS-lock, the first 1.5 s. The identity create itself took 3.8-4.1 s.
+- Asset-lock burn vout was 0 in both transactions; the identity id was derived from the real outpoint.

@@ -1,0 +1,59 @@
+{
+  "at": "2026-10-24T03:04:34.103Z",
+  "network": "mainnet (protocol 13)",
+  "deposit": {
+    "txid": "68136ac0b157d33bc5c53a7eec6bd1b688b86f2555fb890d5cc113b582e03a07",
+    "vout": 0,
+    "amountDash": 0.3,
+    "confirmationsAtUse": 1,
+    "txType": 9,
+    "minedHeight": 2560412,
+    "address": "XrrdbDqut3RJYGzBC1pbEJcff1DULADXsd",
+    "derivationPath": "m/9'/5'/5'/1'/0'"
+  },
+  "keyLayout": [
+    "0:authentication/master (ECDSA_SECP256K1)",
+    "1:authentication/critical (ECDSA_SECP256K1)",
+    "2:authentication/high (ECDSA_SECP256K1)"
+  ],
+  "l1FeeDuffsTotal": 2000,
+  "identities": [
+    {
+      "name": "main",
+      "identityId": "5h2Bj6ETFQ6BxgtCLTeMna5RvGX8eHj3oFh5abNSy82j",
+      "keyPaths": [
+        "m/9'/5'/5'/0'/0'/0'/0'",
+        "m/9'/5'/5'/0'/0'/0'/1'",
+        "m/9'/5'/5'/0'/0'/0'/2'"
+      ],
+      "assetLockTxid": "14cc1f94cbe333bfa42ce91044a5d72b78a6a88e598579bc416c223e86a28795",
+      "burnOutputIndex": 0,
+      "changeOutputIndex": 1,
+      "proofKind": "instant",
+      "islockAfterBroadcastMs": 1471,
+      "lockedDash": "0.28998000",
+      "balanceAfterCreateDash": "0.28891897",
+      "createFeeCredits": "106102240",
+      "createFeeDash": "0.00106102",
+      "createMs": 4088
+    },
+    {
+      "name": "second",
+      "identityId": "AGU4wJ9ZiBkP7HJV6YHEmFBkfAQBXu7JYt9Gp4wpwBbd",
+      "keyPaths": [
+        "m/9'/5'/5'/0'/0'/1'/0'",
+        "m/9'/5'/5'/0'/0'/1'/1'",
+        "m/9'/5'/5'/0'/0'/1'/2'"
+      ],
+      "assetLockTxid": "2eb01c20d75ebb434259ae938eecd33186c35330e8e416f2d8922b251160d737",
+      "burnOutputIndex": 0,
+      "proofKind": "instant",
+      "islockAfterBroadcastMs": 10260,
+      "lockedDash": "0.01000000",
+      "balanceAfterCreateDash": "0.00894047",
+      "createFeeCredits": "105952600",
+      "createFeeDash": "0.00105952",
+      "createMs": 3778
+    }
+  ]
+}

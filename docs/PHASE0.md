@@ -7,7 +7,7 @@ PV14, so its fees approximate PV13 rather than match it exactly. Mainnet was use
 
 | Assumption | Result | Evidence |
 |---|---|---|
-| evo-sdk 5.x works on mainnet PV13 | **GO** (reads). The write check is still open | `spikes/sdk5`: 5.0.0-rc.8 stays at version 13 and runs DPNS, identity and contest reads with proofs |
+| evo-sdk 5.x works on mainnet PV13 | **GO** (reads and writes) | `spikes/sdk5` §8: identities created with IS-lock proofs, a contract registered, and documents created, replaced and deleted on mainnet. 22/25 query probes pass; the 3 failures are PV13 behaviours now covered by the query rules |
 | One SDK covers PV13 and PV14 | **GO** | Version goes 13 → 14 on testnet; no PV13 regressions seen |
 | v1 contracts are valid on PV13 and PV14 | **GO** | wasm-dpp 4.1.1 at PV13 and rc.8 at PV13/PV14 all pass; registered on testnet; every documented query shape runs |
 | Governance hash and collateral checks match Core | **GO** | `packages/verify`: regtest `gobject prepare/check/submit` plus 28 live mainnet proposals |
@@ -58,9 +58,27 @@ PV14, so its fees approximate PV13 rather than match it exactly. Mainnet was use
 - testnet funding: faucet.dashhq.org returned 429 `requiresHardCaptcha` (a retry window of about
   23 min). The spike was funded with 1.5 tDASH from the existing EvoVote QA wallet instead.
 
+## Mainnet PV13 write check (2026-10-24)
+- **Spend:** received 0.3 DASH and burned 0.218. 0.082 is left on two identities
+  (`5h2Bj6ETFQ6BxgtCLTeMna5RvGX8eHj3oFh5abNSy82j` and `AGU4wJ9ZiBkP7HJV6YHEmFBkfAQBXu7JYt9Gp4wpwBbd`).
+- **Contract:** the throwaway `pv13check` is `6MEp2FpVkHwCMeHoqft5PFFdMe81eeAiwGd2q2nbPVmJ`
+  (`reaction`, `comment`, `mnBadge`). Registering it cost 0.211 DASH, which matches the PV13 fee formula.
+- **Costs:** mainnet costs agree with testnet within about 1% for identities and reactions.
+  Comments and the first badge cost 14–50% more, which looks like first-use index-tree effects in
+  single samples. Testnet numbers are safe for planning.
+- **PV13 query behaviour:**
+  - (1) A query that misses the index's `orderBy`, or has a gapped or unsupported shape, silently
+    returns `[]`. It does not raise an error.
+  - (2) `desc` is ignored on equality-only queries unless a range on the last property is added.
+  - Both are now rules 1 and 7 in `packages/contracts-v1/README.md`. The CI query lint must enforce
+    them.
+- **SDK at PV13:** rc.8 rejects a zero `$id`. Compute the id as
+  `sha256d(contractId‖ownerId‖type‖entropy)`, because `Document.generateId()` throws at PV13.
+- **Insight:** `insight.dash.org` returns 403 to Node's default fetch user agent. The app's own Core
+  access is over DAPI, so this only affects tooling.
+
 ## Still open
-1. The PV13 **mainnet write** check: needs ~0.3 DASH at the phase 0 address (see the budget table).
-2. One real testnet `voteraw` with the binary-hash scheme. It needs a testnet MN voting key.
-3. Android seed restore. Needs a device, so this is for the user.
-4. A faucet route for 0.003 vouchers at the portal's amount. This lives in dash-faucet-cf, alongside
+1. One real testnet `voteraw` with the binary-hash scheme. It needs a testnet MN voting key.
+2. Android seed restore. Needs a device, so this is for the user.
+3. A faucet route for 0.003 vouchers at the portal's amount. This lives in dash-faucet-cf, alongside
    its separate vout fix.

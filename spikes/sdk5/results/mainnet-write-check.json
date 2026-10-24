@@ -1,0 +1,1356 @@
+{
+  "at": "2026-10-24T03:13:42.964Z",
+  "network": "mainnet (protocol 13)",
+  "contract": {
+    "name": "pv13check",
+    "id": "6MEp2FpVkHwCMeHoqft5PFFdMe81eeAiwGd2q2nbPVmJ",
+    "owner": "5h2Bj6ETFQ6BxgtCLTeMna5RvGX8eHj3oFh5abNSy82j",
+    "types": [
+      "comment",
+      "reaction",
+      "mnBadge"
+    ],
+    "registration": {
+      "id": "6MEp2FpVkHwCMeHoqft5PFFdMe81eeAiwGd2q2nbPVmJ",
+      "nonce": "1",
+      "credits": "21119265450",
+      "dash": "0.21119265",
+      "formulaCredits": "21000000000",
+      "overheadCredits": "119265450",
+      "readBackIdentical": true,
+      "ms": 4270,
+      "types": 3,
+      "indexes": 5,
+      "platformVersionUsed": 13
+    }
+  },
+  "identities": {
+    "main": "5h2Bj6ETFQ6BxgtCLTeMna5RvGX8eHj3oFh5abNSy82j",
+    "second": "AGU4wJ9ZiBkP7HJV6YHEmFBkfAQBXu7JYt9Gp4wpwBbd"
+  },
+  "documents": {
+    "C1": {
+      "type": "comment",
+      "owner": "main",
+      "id": "9C1hPXCqp7ytHbMFTBjiHNXDygknv3BEKd9za9gdbCdj",
+      "deleted": false,
+      "createdAt": "1792811334759"
+    },
+    "C2": {
+      "type": "comment",
+      "owner": "second",
+      "id": "56B733zvCxiBBNnPL2xtBVJ3C4S8fDemhGr9DwbdxoiD",
+      "deleted": false,
+      "createdAt": "1792811343896"
+    },
+    "C3": {
+      "type": "comment",
+      "owner": "main",
+      "id": "sqvqUU7gKDHz9WUuTTvCM3f91DMNVijxNrhpWepQiuC",
+      "deleted": false,
+      "createdAt": "1792811349568"
+    },
+    "R1": {
+      "type": "reaction",
+      "owner": "main",
+      "id": "AkZTzKhX4QurzWq26si6F1mLJUsRGjrAitzGEhEEXsEt",
+      "deleted": false,
+      "createdAt": "1792811354686"
+    },
+    "R2": {
+      "type": "reaction",
+      "owner": "main",
+      "id": "9vhA3j4HXzmnttjeX4tosopHanJBDgGHbhKDQtc5ofCS",
+      "deleted": true
+    },
+    "R3": {
+      "type": "reaction",
+      "owner": "second",
+      "id": "AyFiZKu7gu36EbjfyjCeXXFLcUm6GaMnoHGhEKhTfqbT",
+      "deleted": false,
+      "createdAt": "1792811366632"
+    },
+    "R4": {
+      "type": "reaction",
+      "owner": "main",
+      "id": "DzUaLiHVheijxPXZeK5VQGB6cs5jEZ5iVQfwxPxtespX",
+      "deleted": false,
+      "createdAt": "1792811371944"
+    },
+    "B1": {
+      "type": "mnBadge",
+      "owner": "main",
+      "id": "5A8dzibWmwoMaWAZnsEMakuih5NRkf2F11kpjJ1H69Hh",
+      "deleted": false,
+      "createdAt": "undefined"
+    },
+    "B2": {
+      "type": "mnBadge",
+      "owner": "second",
+      "id": "2HSPyDwjpYcehrc5SN3gqr6ZmLdyp647xKXThwF7ZuYV",
+      "deleted": false,
+      "createdAt": "undefined"
+    },
+    "B3": {
+      "type": "mnBadge",
+      "owner": "main",
+      "id": "DPp8nQtJAjeKBHSVF1RrQ1YRmVUVhvjPFVLbe6rvWLd4",
+      "deleted": false,
+      "createdAt": "undefined"
+    }
+  },
+  "fixtures": {
+    "G1": "a25be2be23f7367169beb21bada2ab6e8c6a21d41d87e53da70be2d075d9069d",
+    "G2": "8be3128ba015b57b3b562e7cf263b6c6984b17708cb676fcc539b3e65f69de08",
+    "T1": "f15bade192cb5cd1432ffff976f86187876aaeb86e692b318159818d7e4ff48b",
+    "T2": "e62418d3aa24d2c936563c8178dfcc331fdeab7933378b0837ec206872d7e3d1",
+    "T3": "44378fdfd4d41277a5aaf3696716fab92e30e72d3932517d743844c50ec8defa",
+    "epoch": 300,
+    "issuerId": "5h2Bj6ETFQ6BxgtCLTeMna5RvGX8eHj3oFh5abNSy82j"
+  },
+  "uniqueIndexProbe": {
+    "name": "duplicate mnBadge (issuer, epoch, owner)",
+    "outcome": "rejected: state transition broadcast error: Document ApR3wEMxnYWAZCwVb4uuBgfndPCWt2nHgMh7SxHCTamh has duplicate unique properties [\"issuerId\", \"epoch\", \"$ownerId\"] with other documents [code 40105]",
+    "balanceDeltaCredits": "1275320"
+  },
+  "failures": [],
+  "costs": {
+    "rows": [
+      {
+        "op": "pv13check.comment create C1 (main, G1)",
+        "credits": "56504420",
+        "dash": "0.00056504",
+        "ms": 3927,
+        "testnetComparable": "testnet forum.comment create B (50 chars, reply)",
+        "testnetCredits": "42925560",
+        "testnetDash": "0.00042925",
+        "deltaCredits": "13578860",
+        "deltaPct": 31.6
+      },
+      {
+        "op": "pv13check.comment create C2 (second, reply to C1)",
+        "credits": "61008880",
+        "dash": "0.00061008",
+        "ms": 4103,
+        "testnetComparable": "testnet forum.comment create B (50 chars, reply)",
+        "testnetCredits": "42925560",
+        "testnetDash": "0.00042925",
+        "deltaCredits": "18083320",
+        "deltaPct": 42.1
+      },
+      {
+        "op": "pv13check.comment create C3 (main, G2)",
+        "credits": "48767440",
+        "dash": "0.00048767",
+        "ms": 3254,
+        "testnetComparable": "testnet forum.comment create B (50 chars, reply)",
+        "testnetCredits": "42925560",
+        "testnetDash": "0.00042925",
+        "deltaCredits": "5841880",
+        "deltaPct": 13.6
+      },
+      {
+        "op": "pv13check.reaction create R1 (main -> T1 +1)",
+        "credits": "59350800",
+        "dash": "0.00059350",
+        "ms": 3729,
+        "testnetComparable": "testnet forum.reaction create A",
+        "testnetCredits": "50109000",
+        "testnetDash": "0.00050109",
+        "deltaCredits": "9241800",
+        "deltaPct": 18.4
+      },
+      {
+        "op": "pv13check.reaction create R2 (main -> T2 +1)",
+        "credits": "49823200",
+        "dash": "0.00049823",
+        "ms": 4063,
+        "testnetComparable": "testnet forum.reaction create B",
+        "testnetCredits": "50242940",
+        "testnetDash": "0.00050242",
+        "deltaCredits": "-419740",
+        "deltaPct": -0.8
+      },
+      {
+        "op": "pv13check.reaction create R3 (second -> T1 +1)",
+        "credits": "49547600",
+        "dash": "0.00049547",
+        "ms": 3782,
+        "testnetComparable": "testnet forum.reaction create A",
+        "testnetCredits": "50109000",
+        "testnetDash": "0.00050109",
+        "deltaCredits": "-561400",
+        "deltaPct": -1.1
+      },
+      {
+        "op": "pv13check.reaction create R4 (main -> T3 -1)",
+        "credits": "50093860",
+        "dash": "0.00050093",
+        "ms": 3259,
+        "testnetComparable": "testnet forum.reaction create B",
+        "testnetCredits": "50242940",
+        "testnetDash": "0.00050242",
+        "deltaCredits": "-149080",
+        "deltaPct": -0.3
+      },
+      {
+        "op": "pv13check.reaction replace R1 (flip to -1)",
+        "credits": "2828180",
+        "dash": "0.00002828",
+        "ms": 3232,
+        "testnetComparable": "testnet forum.reaction replace (flip)",
+        "testnetCredits": "3207060",
+        "testnetDash": "0.00003207",
+        "deltaCredits": "-378880",
+        "deltaPct": -11.8
+      },
+      {
+        "op": "pv13check.reaction delete R2 (unreact)",
+        "credits": "-43159305",
+        "dash": "-0.00043159",
+        "ms": 3718,
+        "testnetComparable": "testnet forum.reaction delete B",
+        "testnetCredits": "-43185272",
+        "testnetDash": "-0.00043185",
+        "deltaCredits": "25967",
+        "deltaPct": -0.1
+      },
+      {
+        "op": "pv13check.mnBadge create B1 (epoch 300)",
+        "credits": "45240580",
+        "dash": "0.00045240",
+        "ms": 3993,
+        "testnetComparable": "testnet badge.mnBadge create A (sig 256 B)",
+        "testnetCredits": "30124180",
+        "testnetDash": "0.00030124",
+        "deltaCredits": "15116400",
+        "deltaPct": 50.2
+      },
+      {
+        "op": "pv13check.mnBadge create B2 (epoch 300)",
+        "credits": "31273060",
+        "dash": "0.00031273",
+        "ms": 3697,
+        "testnetComparable": "testnet badge.mnBadge create A (sig 256 B)",
+        "testnetCredits": "30124180",
+        "testnetDash": "0.00030124",
+        "deltaCredits": "1148880",
+        "deltaPct": 3.8
+      },
+      {
+        "op": "pv13check.mnBadge create B3 (epoch 301, sig 384 B)",
+        "credits": "41263680",
+        "dash": "0.00041263",
+        "ms": 5859,
+        "testnetComparable": "testnet badge.mnBadge create B (sig 384 B)",
+        "testnetCredits": "58261980",
+        "testnetDash": "0.00058261",
+        "deltaCredits": "-16998300",
+        "deltaPct": -29.2
+      },
+      {
+        "op": "pv13check.mnBadge duplicate-create probe",
+        "credits": "1275320",
+        "dash": "0.00001275",
+        "ms": 0
+      }
+    ],
+    "identityCreate3KeysMainnet": [
+      {
+        "name": "main",
+        "credits": "106102240",
+        "dash": "0.00106102"
+      },
+      {
+        "name": "second",
+        "credits": "105952600",
+        "dash": "0.00105952"
+      }
+    ],
+    "identityCreate3KeysTestnet": "106,495,300 credits (0.00106495 DASH, testnet u3)",
+    "contractRegistration": {
+      "id": "6MEp2FpVkHwCMeHoqft5PFFdMe81eeAiwGd2q2nbPVmJ",
+      "nonce": "1",
+      "credits": "21119265450",
+      "dash": "0.21119265",
+      "formulaCredits": "21000000000",
+      "overheadCredits": "119265450",
+      "readBackIdentical": true,
+      "ms": 4270,
+      "types": 3,
+      "indexes": 5,
+      "platformVersionUsed": 13,
+      "testnetFormulaNote": "testnet 3-type/5-index equivalent = 0.1 + 3*0.02 + 5*0.01 = 0.21 DASH + storage"
+    }
+  },
+  "budget": {
+    "limitDash": "0.30000000",
+    "l1FeeDuffs": 2000,
+    "burnedCredits": "21787138005",
+    "burnedDash": "0.21787138",
+    "lockedDash": "0.29998000",
+    "balancesAfterCredits": {
+      "main": "7460644135",
+      "second": "752217860"
+    },
+    "balancesAfterDash": {
+      "main": "0.07460644",
+      "second": "0.00752217"
+    }
+  },
+  "queries": [
+    {
+      "id": "F2",
+      "type": "comment",
+      "where": "[[\"govHash\",\"==\",\"olviviP3NnFpvrIbraKrboxqIdQdh+U9pwvi0HXZBp0=\"]]",
+      "orderBy": "[[\"govHash\",\"asc\"],[\"$createdAt\",\"asc\"]]",
+      "kind": "assert",
+      "ok": true,
+      "verdict": "[C1,C2] in expected order",
+      "attempts": 1,
+      "outcomes": [
+        {
+          "keys": [
+            "C1",
+            "C2"
+          ],
+          "ms": 137,
+          "height": "457638"
+        }
+      ]
+    },
+    {
+      "id": "F2c",
+      "type": "comment",
+      "where": "[[\"govHash\",\"==\",\"olviviP3NnFpvrIbraKrboxqIdQdh+U9pwvi0HXZBp0=\"]]",
+      "orderBy": "[[\"govHash\",\"desc\"],[\"$createdAt\",\"desc\"]]",
+      "kind": "assert",
+      "ok": false,
+      "verdict": "got [C1,C2] expected [C2,C1] (ordered)",
+      "attempts": 4,
+      "outcomes": [
+        {
+          "keys": [
+            "C1",
+            "C2"
+          ],
+          "ms": 146,
+          "height": "457638"
+        },
+        {
+          "keys": [
+            "C1",
+            "C2"
+          ],
+          "ms": 119,
+          "height": "457638"
+        },
+        {
+          "keys": [
+            "C1",
+            "C2"
+          ],
+          "ms": 351,
+          "height": "457638"
+        },
+        {
+          "keys": [
+            "C1",
+            "C2"
+          ],
+          "ms": 319,
+          "height": "457638"
+        }
+      ]
+    },
+    {
+      "id": "F2d",
+      "type": "comment",
+      "where": "[[\"govHash\",\"==\",\"olviviP3NnFpvrIbraKrboxqIdQdh+U9pwvi0HXZBp0=\"],[\"$createdAt\",\">\",1792811334759]]",
+      "orderBy": "[[\"govHash\",\"asc\"],[\"$createdAt\",\"asc\"]]",
+      "kind": "assert",
+      "ok": true,
+      "verdict": "[C2] in expected order",
+      "attempts": 1,
+      "outcomes": [
+        {
+          "keys": [
+            "C2"
+          ],
+          "ms": 458,
+          "height": "457638"
+        }
+      ],
+      "note": "since C1.$createdAt=1792811334759"
+    },
+    {
+      "id": "F3",
+      "type": "comment",
+      "where": "[[\"$ownerId\",\"==\",\"5h2Bj6ETFQ6BxgtCLTeMna5RvGX8eHj3oFh5abNSy82j\"]]",
+      "orderBy": "[[\"$ownerId\",\"asc\"],[\"$createdAt\",\"desc\"]]",
+      "kind": "assert",
+      "ok": false,
+      "verdict": "got [C1,C3] expected [C3,C1] (ordered)",
+      "attempts": 4,
+      "outcomes": [
+        {
+          "keys": [
+            "C1",
+            "C3"
+          ],
+          "ms": 392,
+          "height": "457638"
+        },
+        {
+          "keys": [
+            "C1",
+            "C3"
+          ],
+          "ms": 338,
+          "height": "457638"
+        },
+        {
+          "keys": [
+            "C1",
+            "C3"
+          ],
+          "ms": 403,
+          "height": "457638"
+        },
+        {
+          "keys": [
+            "C1",
+            "C3"
+          ],
+          "ms": 320,
+          "height": "457638"
+        }
+      ]
+    },
+    {
+      "id": "F3a",
+      "type": "comment",
+      "where": "[[\"$ownerId\",\"==\",\"5h2Bj6ETFQ6BxgtCLTeMna5RvGX8eHj3oFh5abNSy82j\"]]",
+      "orderBy": "[[\"$ownerId\",\"asc\"],[\"$createdAt\",\"asc\"]]",
+      "kind": "assert",
+      "ok": true,
+      "verdict": "[C1,C3] in expected order",
+      "attempts": 1,
+      "outcomes": [
+        {
+          "keys": [
+            "C1",
+            "C3"
+          ],
+          "ms": 404,
+          "height": "457638"
+        }
+      ]
+    },
+    {
+      "id": "F3p1",
+      "type": "comment",
+      "where": "[[\"$ownerId\",\"==\",\"5h2Bj6ETFQ6BxgtCLTeMna5RvGX8eHj3oFh5abNSy82j\"]]",
+      "orderBy": "[[\"$ownerId\",\"asc\"],[\"$createdAt\",\"asc\"]]",
+      "limit": 1,
+      "kind": "assert",
+      "ok": true,
+      "verdict": "[C1] in expected order",
+      "attempts": 1,
+      "outcomes": [
+        {
+          "keys": [
+            "C1"
+          ],
+          "ms": 426,
+          "height": "457638"
+        }
+      ],
+      "note": "paging page 1"
+    },
+    {
+      "id": "F3p2",
+      "type": "comment",
+      "where": "[[\"$ownerId\",\"==\",\"5h2Bj6ETFQ6BxgtCLTeMna5RvGX8eHj3oFh5abNSy82j\"]]",
+      "orderBy": "[[\"$ownerId\",\"asc\"],[\"$createdAt\",\"asc\"]]",
+      "limit": 1,
+      "startAfter": "last id of page 1",
+      "kind": "assert",
+      "ok": true,
+      "verdict": "[C3] in expected order",
+      "attempts": 1,
+      "outcomes": [
+        {
+          "keys": [
+            "C3"
+          ],
+          "ms": 334,
+          "height": "457638"
+        }
+      ],
+      "note": "paging page 2 via startAfter"
+    },
+    {
+      "id": "F2-noOB",
+      "type": "comment",
+      "where": "[[\"govHash\",\"==\",\"olviviP3NnFpvrIbraKrboxqIdQdh+U9pwvi0HXZBp0=\"]]",
+      "kind": "observe",
+      "ok": true,
+      "classification": "correct",
+      "verdict": "[C1,C2] ; [C1,C2] ; [C1,C2]",
+      "attempts": 3,
+      "outcomes": [
+        {
+          "keys": [
+            "C1",
+            "C2"
+          ],
+          "ms": 424,
+          "height": "457638"
+        },
+        {
+          "keys": [
+            "C1",
+            "C2"
+          ],
+          "ms": 111,
+          "height": "457638"
+        },
+        {
+          "keys": [
+            "C1",
+            "C2"
+          ],
+          "ms": 413,
+          "height": "457638"
+        }
+      ],
+      "note": "no orderBy (only byProposal can match)"
+    },
+    {
+      "id": "F3-noOB",
+      "type": "comment",
+      "where": "[[\"$ownerId\",\"==\",\"5h2Bj6ETFQ6BxgtCLTeMna5RvGX8eHj3oFh5abNSy82j\"]]",
+      "kind": "observe",
+      "ok": true,
+      "classification": "correct",
+      "verdict": "[C1,C3] ; [C1,C3] ; [C1,C3]",
+      "attempts": 3,
+      "outcomes": [
+        {
+          "keys": [
+            "C1",
+            "C3"
+          ],
+          "ms": 366,
+          "height": "457638"
+        },
+        {
+          "keys": [
+            "C1",
+            "C3"
+          ],
+          "ms": 342,
+          "height": "457638"
+        },
+        {
+          "keys": [
+            "C1",
+            "C3"
+          ],
+          "ms": 353,
+          "height": "457638"
+        }
+      ],
+      "note": "no orderBy (only byAuthor can match)"
+    },
+    {
+      "id": "X3",
+      "type": "comment",
+      "where": "[[\"$createdAt\",\">\",0]]",
+      "orderBy": "[[\"$createdAt\",\"asc\"]]",
+      "kind": "expect-reject",
+      "ok": false,
+      "verdict": "NOT rejected, returned []",
+      "attempts": 4,
+      "outcomes": [
+        {
+          "keys": [],
+          "ms": 316,
+          "height": "457638"
+        },
+        {
+          "keys": [],
+          "ms": 430,
+          "height": "457638"
+        },
+        {
+          "keys": [],
+          "ms": 404,
+          "height": "457638"
+        },
+        {
+          "keys": [],
+          "ms": 331,
+          "height": "457638"
+        }
+      ],
+      "note": "no index starts with $createdAt"
+    },
+    {
+      "id": "X4",
+      "type": "comment",
+      "where": "[[\"govHash\",\"in\",[\"olviviP3NnFpvrIbraKrboxqIdQdh+U9pwvi0HXZBp0=\",\"i+MSi6AVtXs7Vi588mO2xphLF3CMtnb8xTmz5l9p3gg=\"]],[\"$createdAt\",\">\",0]]",
+      "orderBy": "[[\"govHash\",\"asc\"],[\"$createdAt\",\"asc\"]]",
+      "kind": "observe",
+      "ok": true,
+      "classification": "correct",
+      "verdict": "[C3,C1,C2] ; [C3,C1,C2] ; [C3,C1,C2]",
+      "attempts": 3,
+      "outcomes": [
+        {
+          "keys": [
+            "C3",
+            "C1",
+            "C2"
+          ],
+          "ms": 385,
+          "height": "457638"
+        },
+        {
+          "keys": [
+            "C3",
+            "C1",
+            "C2"
+          ],
+          "ms": 317,
+          "height": "457638"
+        },
+        {
+          "keys": [
+            "C3",
+            "C1",
+            "C2"
+          ],
+          "ms": 421,
+          "height": "457638"
+        }
+      ],
+      "note": "in (second-to-last) + range on last: documented as unused"
+    },
+    {
+      "id": "F5",
+      "type": "reaction",
+      "where": "[[\"$ownerId\",\"==\",\"5h2Bj6ETFQ6BxgtCLTeMna5RvGX8eHj3oFh5abNSy82j\"],[\"target\",\"==\",\"8Vut4ZLLXNFDL//5dvhhh4dqrrhuaSsxgVmBjX5P9Is=\"]]",
+      "kind": "assert",
+      "ok": true,
+      "verdict": "[R1] R1.value=-1",
+      "attempts": 1,
+      "outcomes": [
+        {
+          "keys": [
+            "R1"
+          ],
+          "ms": 368,
+          "height": "457638"
+        }
+      ],
+      "note": "covers byOwnerTarget fully; value must show the flip"
+    },
+    {
+      "id": "F5-second",
+      "type": "reaction",
+      "where": "[[\"$ownerId\",\"==\",\"AGU4wJ9ZiBkP7HJV6YHEmFBkfAQBXu7JYt9Gp4wpwBbd\"],[\"target\",\"==\",\"8Vut4ZLLXNFDL//5dvhhh4dqrrhuaSsxgVmBjX5P9Is=\"]]",
+      "kind": "assert",
+      "ok": true,
+      "verdict": "[R3] R3.value=1",
+      "attempts": 1,
+      "outcomes": [
+        {
+          "keys": [
+            "R3"
+          ],
+          "ms": 341,
+          "height": "457638"
+        }
+      ]
+    },
+    {
+      "id": "F5b",
+      "type": "reaction",
+      "where": "[[\"$ownerId\",\"==\",\"5h2Bj6ETFQ6BxgtCLTeMna5RvGX8eHj3oFh5abNSy82j\"],[\"target\",\"in\",[\"8Vut4ZLLXNFDL//5dvhhh4dqrrhuaSsxgVmBjX5P9Is=\",\"5iQY06ok0sk2VjyBeN/MMx/eq3kzN4sIN+wgaHLX49E=\",\"RDeP39TUEnelqvNpZxb6uS4w5y05MlF9dDhExQ7I3vo=\"]]]",
+      "orderBy": "[[\"$ownerId\",\"asc\"],[\"target\",\"asc\"]]",
+      "kind": "assert",
+      "ok": true,
+      "verdict": "[R4,R1] in expected order",
+      "attempts": 1,
+      "outcomes": [
+        {
+          "keys": [
+            "R4",
+            "R1"
+          ],
+          "ms": 408,
+          "height": "457638"
+        }
+      ],
+      "note": "T2 was deleted, so only R1 and R4"
+    },
+    {
+      "id": "F6",
+      "type": "reaction",
+      "where": "[[\"target\",\"==\",\"8Vut4ZLLXNFDL//5dvhhh4dqrrhuaSsxgVmBjX5P9Is=\"]]",
+      "orderBy": "[[\"target\",\"asc\"],[\"$createdAt\",\"asc\"]]",
+      "kind": "assert",
+      "ok": true,
+      "verdict": "[R1,R3] in expected order",
+      "attempts": 1,
+      "outcomes": [
+        {
+          "keys": [
+            "R1",
+            "R3"
+          ],
+          "ms": 115,
+          "height": "457638"
+        }
+      ],
+      "note": "(a) documented shape: must plan byTarget and return both owners"
+    },
+    {
+      "id": "F6-T3",
+      "type": "reaction",
+      "where": "[[\"target\",\"==\",\"RDeP39TUEnelqvNpZxb6uS4w5y05MlF9dDhExQ7I3vo=\"]]",
+      "orderBy": "[[\"target\",\"asc\"],[\"$createdAt\",\"asc\"]]",
+      "kind": "assert",
+      "ok": true,
+      "verdict": "[R4]",
+      "attempts": 1,
+      "outcomes": [
+        {
+          "keys": [
+            "R4"
+          ],
+          "ms": 152,
+          "height": "457638"
+        }
+      ]
+    },
+    {
+      "id": "F6-T2-deleted",
+      "type": "reaction",
+      "where": "[[\"target\",\"==\",\"5iQY06ok0sk2VjyBeN/MMx/eq3kzN4sIN+wgaHLX49E=\"]]",
+      "orderBy": "[[\"target\",\"asc\"],[\"$createdAt\",\"asc\"]]",
+      "kind": "assert",
+      "ok": true,
+      "verdict": "[]",
+      "attempts": 1,
+      "outcomes": [
+        {
+          "keys": [],
+          "ms": 142,
+          "height": "457638"
+        }
+      ],
+      "note": "deleted reaction must be gone"
+    },
+    {
+      "id": "F6-noOB",
+      "type": "reaction",
+      "where": "[[\"target\",\"==\",\"8Vut4ZLLXNFDL//5dvhhh4dqrrhuaSsxgVmBjX5P9Is=\"]]",
+      "kind": "observe",
+      "ok": true,
+      "classification": "empty",
+      "verdict": "[] ; [] ; []",
+      "attempts": 3,
+      "outcomes": [
+        {
+          "keys": [],
+          "ms": 163,
+          "height": "457638"
+        },
+        {
+          "keys": [],
+          "ms": 177,
+          "height": "457638"
+        },
+        {
+          "keys": [],
+          "ms": 115,
+          "height": "457638"
+        }
+      ],
+      "note": "(b) same query WITHOUT orderBy: gapped byOwnerTarget [$ownerId,target] ties byTarget by name"
+    },
+    {
+      "id": "F6-noOB-T3",
+      "type": "reaction",
+      "where": "[[\"target\",\"==\",\"RDeP39TUEnelqvNpZxb6uS4w5y05MlF9dDhExQ7I3vo=\"]]",
+      "kind": "observe",
+      "ok": true,
+      "classification": "empty",
+      "verdict": "[] ; [] ; []",
+      "attempts": 3,
+      "outcomes": [
+        {
+          "keys": [],
+          "ms": 151,
+          "height": "457638"
+        },
+        {
+          "keys": [],
+          "ms": 362,
+          "height": "457638"
+        },
+        {
+          "keys": [],
+          "ms": 341,
+          "height": "457638"
+        }
+      ],
+      "note": "(b) without orderBy, other target"
+    },
+    {
+      "id": "F6-OB-createdAtOnly",
+      "type": "reaction",
+      "where": "[[\"target\",\"==\",\"8Vut4ZLLXNFDL//5dvhhh4dqrrhuaSsxgVmBjX5P9Is=\"]]",
+      "orderBy": "[[\"$createdAt\",\"asc\"]]",
+      "kind": "observe",
+      "ok": true,
+      "classification": "correct",
+      "verdict": "[R1,R3] ; [R1,R3] ; [R1,R3]",
+      "attempts": 3,
+      "outcomes": [
+        {
+          "keys": [
+            "R1",
+            "R3"
+          ],
+          "ms": 435,
+          "height": "457638"
+        },
+        {
+          "keys": [
+            "R1",
+            "R3"
+          ],
+          "ms": 325,
+          "height": "457638"
+        },
+        {
+          "keys": [
+            "R1",
+            "R3"
+          ],
+          "ms": 358,
+          "height": "457638"
+        }
+      ],
+      "note": "X5: orderBy may omit the equality prefix"
+    },
+    {
+      "id": "F6-OB-targetOnly",
+      "type": "reaction",
+      "where": "[[\"target\",\"==\",\"8Vut4ZLLXNFDL//5dvhhh4dqrrhuaSsxgVmBjX5P9Is=\"]]",
+      "orderBy": "[[\"target\",\"asc\"]]",
+      "kind": "observe",
+      "ok": true,
+      "classification": "empty",
+      "verdict": "[] ; [] ; []",
+      "attempts": 3,
+      "outcomes": [
+        {
+          "keys": [],
+          "ms": 396,
+          "height": "457638"
+        },
+        {
+          "keys": [],
+          "ms": 341,
+          "height": "457638"
+        },
+        {
+          "keys": [],
+          "ms": 414,
+          "height": "457638"
+        }
+      ],
+      "note": "orderBy on target only (ambiguous: first property of byTarget, second of byOwnerTarget)"
+    },
+    {
+      "id": "F5-owner-only",
+      "type": "reaction",
+      "where": "[[\"$ownerId\",\"==\",\"5h2Bj6ETFQ6BxgtCLTeMna5RvGX8eHj3oFh5abNSy82j\"]]",
+      "kind": "assert",
+      "ok": true,
+      "verdict": "[R4,R1]",
+      "attempts": 1,
+      "outcomes": [
+        {
+          "keys": [
+            "R4",
+            "R1"
+          ],
+          "ms": 325,
+          "height": "457638"
+        }
+      ],
+      "note": "valid byOwnerTarget prefix (not a documented shape; sanity)"
+    },
+    {
+      "id": "B4",
+      "type": "mnBadge",
+      "where": "[[\"issuerId\",\"==\",\"5h2Bj6ETFQ6BxgtCLTeMna5RvGX8eHj3oFh5abNSy82j\"],[\"epoch\",\"==\",300],[\"$ownerId\",\"in\",[\"5h2Bj6ETFQ6BxgtCLTeMna5RvGX8eHj3oFh5abNSy82j\",\"AGU4wJ9ZiBkP7HJV6YHEmFBkfAQBXu7JYt9Gp4wpwBbd\",\"BNQB3x9mP5w5cTCThSQpdfas3v2uHZWYEGJ8Zoxns2Ev\"]]]",
+      "orderBy": "[[\"$ownerId\",\"asc\"]]",
+      "kind": "assert",
+      "ok": true,
+      "verdict": "[B1,B2] in expected order",
+      "attempts": 1,
+      "outcomes": [
+        {
+          "keys": [
+            "B1",
+            "B2"
+          ],
+          "ms": 421,
+          "height": "457638"
+        }
+      ],
+      "note": "(c) equality prefix + in on LAST property; one non-holder in the list"
+    },
+    {
+      "id": "B4-inonly-holders",
+      "type": "mnBadge",
+      "where": "[[\"issuerId\",\"==\",\"5h2Bj6ETFQ6BxgtCLTeMna5RvGX8eHj3oFh5abNSy82j\"],[\"epoch\",\"==\",301],[\"$ownerId\",\"in\",[\"5h2Bj6ETFQ6BxgtCLTeMna5RvGX8eHj3oFh5abNSy82j\",\"AGU4wJ9ZiBkP7HJV6YHEmFBkfAQBXu7JYt9Gp4wpwBbd\"]]]",
+      "orderBy": "[[\"$ownerId\",\"asc\"]]",
+      "kind": "assert",
+      "ok": true,
+      "verdict": "[B3]",
+      "attempts": 1,
+      "outcomes": [
+        {
+          "keys": [
+            "B3"
+          ],
+          "ms": 359,
+          "height": "457638"
+        }
+      ],
+      "note": "(c) epoch 301: only main holds a badge"
+    },
+    {
+      "id": "B4b",
+      "type": "mnBadge",
+      "where": "[[\"issuerId\",\"==\",\"5h2Bj6ETFQ6BxgtCLTeMna5RvGX8eHj3oFh5abNSy82j\"],[\"epoch\",\"==\",300],[\"$ownerId\",\"==\",\"AGU4wJ9ZiBkP7HJV6YHEmFBkfAQBXu7JYt9Gp4wpwBbd\"]]",
+      "kind": "assert",
+      "ok": true,
+      "verdict": "[B2]",
+      "attempts": 1,
+      "outcomes": [
+        {
+          "keys": [
+            "B2"
+          ],
+          "ms": 128,
+          "height": "457638"
+        }
+      ]
+    },
+    {
+      "id": "B4c",
+      "type": "mnBadge",
+      "where": "[[\"issuerId\",\"==\",\"5h2Bj6ETFQ6BxgtCLTeMna5RvGX8eHj3oFh5abNSy82j\"],[\"epoch\",\"==\",300]]",
+      "orderBy": "[[\"$ownerId\",\"asc\"]]",
+      "kind": "assert",
+      "ok": true,
+      "verdict": "[B1,B2] in expected order",
+      "attempts": 1,
+      "outcomes": [
+        {
+          "keys": [
+            "B1",
+            "B2"
+          ],
+          "ms": 144,
+          "height": "457638"
+        }
+      ]
+    },
+    {
+      "id": "B4d",
+      "type": "mnBadge",
+      "where": "[[\"issuerId\",\"==\",\"5h2Bj6ETFQ6BxgtCLTeMna5RvGX8eHj3oFh5abNSy82j\"],[\"epoch\",\">=\",300]]",
+      "orderBy": "[[\"epoch\",\"asc\"]]",
+      "kind": "assert",
+      "ok": true,
+      "verdict": "[B1,B2,B3]",
+      "attempts": 1,
+      "outcomes": [
+        {
+          "keys": [
+            "B1",
+            "B2",
+            "B3"
+          ],
+          "ms": 121,
+          "height": "457638"
+        }
+      ],
+      "note": "equality + range on epoch; B1/B2 share epoch 300 and precede B3"
+    },
+    {
+      "id": "X1",
+      "type": "mnBadge",
+      "where": "[[\"issuerId\",\"==\",\"5h2Bj6ETFQ6BxgtCLTeMna5RvGX8eHj3oFh5abNSy82j\"],[\"$ownerId\",\"==\",\"5h2Bj6ETFQ6BxgtCLTeMna5RvGX8eHj3oFh5abNSy82j\"]]",
+      "kind": "observe",
+      "ok": true,
+      "classification": "empty",
+      "verdict": "[] ; [] ; []",
+      "attempts": 3,
+      "outcomes": [
+        {
+          "keys": [],
+          "ms": 153,
+          "height": "457638"
+        },
+        {
+          "keys": [],
+          "ms": 130,
+          "height": "457638"
+        },
+        {
+          "keys": [],
+          "ms": 124,
+          "height": "457638"
+        }
+      ],
+      "note": "GAP: skips epoch in [issuerId, epoch, $ownerId] (the PV13 gapped-index bug shape; must NOT be used)"
+    },
+    {
+      "id": "X1-noprefix-epoch",
+      "type": "mnBadge",
+      "where": "[[\"epoch\",\"==\",300],[\"$ownerId\",\"==\",\"5h2Bj6ETFQ6BxgtCLTeMna5RvGX8eHj3oFh5abNSy82j\"]]",
+      "kind": "observe",
+      "ok": true,
+      "classification": "empty",
+      "verdict": "[] ; [] ; []",
+      "attempts": 3,
+      "outcomes": [
+        {
+          "keys": [],
+          "ms": 154,
+          "height": "457638"
+        },
+        {
+          "keys": [],
+          "ms": 330,
+          "height": "457638"
+        },
+        {
+          "keys": [],
+          "ms": 390,
+          "height": "457638"
+        }
+      ],
+      "note": "GAP: skips issuerId (first property)"
+    },
+    {
+      "id": "X2",
+      "type": "mnBadge",
+      "where": "[[\"$ownerId\",\"==\",\"5h2Bj6ETFQ6BxgtCLTeMna5RvGX8eHj3oFh5abNSy82j\"]]",
+      "kind": "observe",
+      "ok": true,
+      "classification": "empty",
+      "verdict": "[] ; [] ; []",
+      "attempts": 3,
+      "outcomes": [
+        {
+          "keys": [],
+          "ms": 338,
+          "height": "457638"
+        },
+        {
+          "keys": [],
+          "ms": 334,
+          "height": "457638"
+        },
+        {
+          "keys": [],
+          "ms": 383,
+          "height": "457638"
+        }
+      ],
+      "note": "NOT A PREFIX: $ownerId is the last index property"
+    },
+    {
+      "id": "X2c",
+      "type": "mnBadge",
+      "where": "[[\"$ownerId\",\"in\",[\"5h2Bj6ETFQ6BxgtCLTeMna5RvGX8eHj3oFh5abNSy82j\",\"AGU4wJ9ZiBkP7HJV6YHEmFBkfAQBXu7JYt9Gp4wpwBbd\"]]]",
+      "orderBy": "[[\"$ownerId\",\"asc\"]]",
+      "kind": "observe",
+      "ok": true,
+      "classification": "empty",
+      "verdict": "[] ; [] ; []",
+      "attempts": 3,
+      "outcomes": [
+        {
+          "keys": [],
+          "ms": 311,
+          "height": "457638"
+        },
+        {
+          "keys": [],
+          "ms": 337,
+          "height": "457638"
+        },
+        {
+          "keys": [],
+          "ms": 418,
+          "height": "457638"
+        }
+      ],
+      "note": "in on $ownerId without the issuerId/epoch prefix"
+    },
+    {
+      "id": "X2b",
+      "type": "mnBadge",
+      "where": "[[\"issuerId\",\"==\",\"5h2Bj6ETFQ6BxgtCLTeMna5RvGX8eHj3oFh5abNSy82j\"],[\"epoch\",\"in\",[300,301]]]",
+      "orderBy": "[[\"epoch\",\"asc\"]]",
+      "kind": "observe",
+      "ok": true,
+      "classification": "correct",
+      "verdict": "[B1,B2,B3] ; [B1,B2,B3] ; [B1,B2,B3]",
+      "attempts": 3,
+      "outcomes": [
+        {
+          "keys": [
+            "B1",
+            "B2",
+            "B3"
+          ],
+          "ms": 346,
+          "height": "457638"
+        },
+        {
+          "keys": [
+            "B1",
+            "B2",
+            "B3"
+          ],
+          "ms": 411,
+          "height": "457638"
+        },
+        {
+          "keys": [
+            "B1",
+            "B2",
+            "B3"
+          ],
+          "ms": 323,
+          "height": "457638"
+        }
+      ],
+      "note": "in on the second-to-last property: documented as unused"
+    },
+    {
+      "id": "X2e",
+      "type": "mnBadge",
+      "where": "[[\"issuerId\",\"==\",\"5h2Bj6ETFQ6BxgtCLTeMna5RvGX8eHj3oFh5abNSy82j\"]]",
+      "kind": "observe",
+      "ok": true,
+      "classification": "correct",
+      "verdict": "[B1,B2,B3] ; [B1,B2,B3] ; [B1,B2,B3]",
+      "attempts": 3,
+      "outcomes": [
+        {
+          "keys": [
+            "B1",
+            "B2",
+            "B3"
+          ],
+          "ms": 427,
+          "height": "457638"
+        },
+        {
+          "keys": [
+            "B1",
+            "B2",
+            "B3"
+          ],
+          "ms": 415,
+          "height": "457638"
+        },
+        {
+          "keys": [
+            "B1",
+            "B2",
+            "B3"
+          ],
+          "ms": 342,
+          "height": "457638"
+        }
+      ],
+      "note": "issuer only (prefix of length 1, difference 2 = MAX_INDEX_DIFFERENCE), no orderBy"
+    },
+    {
+      "id": "F2c-fix",
+      "type": "comment",
+      "where": "[[\"govHash\",\"==\",\"olviviP3NnFpvrIbraKrboxqIdQdh+U9pwvi0HXZBp0=\"],[\"$createdAt\",\">\",0]]",
+      "orderBy": "[[\"govHash\",\"asc\"],[\"$createdAt\",\"desc\"]]",
+      "kind": "assert",
+      "ok": true,
+      "verdict": "[C2,C1] in expected order",
+      "attempts": 1,
+      "outcomes": [
+        {
+          "keys": [
+            "C2",
+            "C1"
+          ],
+          "ms": 143,
+          "height": "457639"
+        }
+      ],
+      "note": "desc workaround: + range $createdAt > 0"
+    },
+    {
+      "id": "F3-fix",
+      "type": "comment",
+      "where": "[[\"$ownerId\",\"==\",\"5h2Bj6ETFQ6BxgtCLTeMna5RvGX8eHj3oFh5abNSy82j\"],[\"$createdAt\",\">\",0]]",
+      "orderBy": "[[\"$ownerId\",\"asc\"],[\"$createdAt\",\"desc\"]]",
+      "kind": "assert",
+      "ok": true,
+      "verdict": "[C3,C1] in expected order",
+      "attempts": 1,
+      "outcomes": [
+        {
+          "keys": [
+            "C3",
+            "C1"
+          ],
+          "ms": 168,
+          "height": "457639"
+        }
+      ],
+      "note": "desc workaround: + range $createdAt > 0"
+    },
+    {
+      "id": "F6-desc-fix",
+      "type": "reaction",
+      "where": "[[\"target\",\"==\",\"8Vut4ZLLXNFDL//5dvhhh4dqrrhuaSsxgVmBjX5P9Is=\"],[\"$createdAt\",\">\",0]]",
+      "orderBy": "[[\"target\",\"asc\"],[\"$createdAt\",\"desc\"]]",
+      "kind": "assert",
+      "ok": true,
+      "verdict": "[R3,R1] in expected order",
+      "attempts": 1,
+      "outcomes": [
+        {
+          "keys": [
+            "R3",
+            "R1"
+          ],
+          "ms": 143,
+          "height": "457639"
+        }
+      ],
+      "note": "newest first via range workaround"
+    },
+    {
+      "id": "B4d-desc",
+      "type": "mnBadge",
+      "where": "[[\"issuerId\",\"==\",\"5h2Bj6ETFQ6BxgtCLTeMna5RvGX8eHj3oFh5abNSy82j\"],[\"epoch\",\">=\",0]]",
+      "orderBy": "[[\"epoch\",\"desc\"]]",
+      "kind": "assert",
+      "ok": true,
+      "verdict": "[B3,B1,B2] epoch desc honoured",
+      "attempts": 4,
+      "outcomes": [
+        {
+          "keys": [
+            "B3",
+            "B1",
+            "B2"
+          ],
+          "ms": 134,
+          "height": "457639"
+        },
+        {
+          "keys": [
+            "B3",
+            "B1",
+            "B2"
+          ],
+          "ms": 154,
+          "height": "457639"
+        },
+        {
+          "keys": [
+            "B3",
+            "B1",
+            "B2"
+          ],
+          "ms": 386,
+          "height": "457639"
+        },
+        {
+          "keys": [
+            "B3",
+            "B1",
+            "B2"
+          ],
+          "ms": 445,
+          "height": "457639"
+        }
+      ],
+      "note": "desc on the range property: B3 (epoch 301) must come first"
+    },
+    {
+      "id": "B4-desc",
+      "type": "mnBadge",
+      "where": "[[\"issuerId\",\"==\",\"5h2Bj6ETFQ6BxgtCLTeMna5RvGX8eHj3oFh5abNSy82j\"],[\"epoch\",\"==\",300],[\"$ownerId\",\"in\",[\"5h2Bj6ETFQ6BxgtCLTeMna5RvGX8eHj3oFh5abNSy82j\",\"AGU4wJ9ZiBkP7HJV6YHEmFBkfAQBXu7JYt9Gp4wpwBbd\"]]]",
+      "orderBy": "[[\"$ownerId\",\"desc\"]]",
+      "kind": "assert",
+      "ok": true,
+      "verdict": "[B2,B1] in expected order",
+      "attempts": 1,
+      "outcomes": [
+        {
+          "keys": [
+            "B2",
+            "B1"
+          ],
+          "ms": 406,
+          "height": "457639"
+        }
+      ],
+      "note": "in + desc"
+    }
+  ],
+  "byteArrayEncodings": [
+    {
+      "encoding": "base64-string",
+      "result": "[R4]",
+      "expected": "[R4]"
+    },
+    {
+      "encoding": "Uint8Array",
+      "result": "error: Invalid documents query: fromObject: serde deserialization error: invalid type: byte array, expected any valid JSON value",
+      "expected": "[R4]"
+    },
+    {
+      "encoding": "hex-string",
+      "result": "[]",
+      "expected": "[R4]"
+    },
+    {
+      "encoding": "array-of-numbers",
+      "result": "error: transport error: grpc error: code: 'Internal error', message: \"query: storage: protocol: value error: structure error: not an array of bytes\"",
+      "expected": "[R4]"
+    }
+  ],
+  "summary": {
+    "asserted": 25,
+    "assertedOk": 22,
+    "observed": 13
+  }
+}

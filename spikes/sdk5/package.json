@@ -16,7 +16,11 @@
     "testnet:costs": "vite-node scripts/testnet-costs.ts",
     "testnet:badge-r2": "vite-node scripts/testnet-badge-r2.ts",
     "testnet:queries": "vite-node scripts/testnet-queries.ts",
-    "testnet:keys-add": "vite-node scripts/testnet-keys-add.ts"
+    "testnet:keys-add": "vite-node scripts/testnet-keys-add.ts",
+    "mainnet:derive-check": "vite-node scripts/mainnet-derive-check.ts",
+    "mainnet:identity": "vite-node scripts/mainnet-identity.ts",
+    "mainnet:check": "vite-node scripts/mainnet-check.ts",
+    "mainnet:order-probe": "vite-node scripts/mainnet-order-probe.ts"
   },
   "dependencies": {
     "@dashevo/dashcore-lib": "^0.22.0",
