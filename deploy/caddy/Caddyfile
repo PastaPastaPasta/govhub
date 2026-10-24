@@ -1,0 +1,43 @@
+# TLS reverse proxy for the bridge's read-only API (compose profile `proxy`).
+#
+#   DOMAIN             public host name (DNS must point here; ports 80 and 443 must be reachable).
+#                      `localhost` uses Caddy's internal CA, which is fine for testing.
+#   CORS_ALLOW_ORIGIN  value of Access-Control-Allow-Origin. `*` is right for a public read-only API
+#                      that browsers on any origin (the govhub frontend, other portals) may read.
+#
+# Only GET, HEAD and OPTIONS reach the bridge. Dashd's RPC and ZMQ are never proxied.
+{$DOMAIN:localhost} {
+	encode zstd gzip
+
+	# The proxy owns CORS, so a bridge that also sets CORS headers cannot produce duplicates.
+	header {
+		Access-Control-Allow-Origin "{$CORS_ALLOW_ORIGIN:*}"
+		Access-Control-Allow-Methods "GET, HEAD, OPTIONS"
+		Access-Control-Allow-Headers "Content-Type, If-None-Match"
+		Access-Control-Expose-Headers "ETag, Content-Length"
+		Access-Control-Max-Age "86400"
+		Vary "Origin"
+		X-Content-Type-Options "nosniff"
+		-Server
+	}
+
+	@preflight method OPTIONS
+	handle @preflight {
+		respond 204
+	}
+
+	@readonly method GET HEAD
+	handle @readonly {
+		reverse_proxy bridge:8787 {
+			header_down -Access-Control-Allow-Origin
+			header_down -Access-Control-Allow-Methods
+			header_down -Access-Control-Allow-Headers
+			header_down -Access-Control-Expose-Headers
+			header_down -Access-Control-Max-Age
+		}
+	}
+
+	handle {
+		respond "read-only API" 405
+	}
+}

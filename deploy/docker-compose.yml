@@ -1,0 +1,179 @@
+# govhub backend stack: dashd + bridge (+ optional caddy).
+#
+# This base file is MAINNET. Pick another network by layering an override file, normally through
+# COMPOSE_FILE in .env (scripts/init.sh --network <net> writes it for you):
+#
+#   mainnet : docker-compose.yml
+#   testnet : docker-compose.yml:docker-compose.testnet.yml
+#   regtest : docker-compose.yml:docker-compose.regtest.yml        (CI and smoke tests)
+#   + P2P   : ...:docker-compose.p2p.yml                           (publish the P2P port)
+#   + proxy : COMPOSE_PROFILES=proxy                               (caddy, TLS on a domain)
+#
+# Needs Docker Compose >= 2.24 (the regtest override uses `!override`).
+# Operator guide: README.md. Every variable: .env.example.
+
+name: govhub
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+services:
+  # ---------------------------------------------------------------------------------------------
+  # Dash Core. RPC (9998) and ZMQ (29998) are reachable on the compose network only: nothing under
+  # `ports:` for them, ever. rpcallowip is limited to GOVHUB_SUBNET.
+  # ---------------------------------------------------------------------------------------------
+  dashd:
+    # Mainnet needs >= v23.1. Testnet activated V24 on 2026-10-23, so the testnet override
+    # defaults to the v24 release candidate. Override the tag with DASHD_TAG in .env.
+    image: dashpay/dashd:${DASHD_TAG:-23.1.8}
+    restart: unless-stopped
+    logging: *default-logging
+    # Give dashd time to flush chainstate; an unclean stop can force a long replay on mainnet.
+    stop_grace_period: 3m
+    entrypoint: ["/bin/sh", "/opt/govhub/dashd-entrypoint.sh"]
+    environment:
+      DASH_NETWORK: mainnet
+      CORE_RPC_USER: ${CORE_RPC_USER:-govhub}
+      RPC_ALLOW_CIDR: ${GOVHUB_SUBNET:-172.29.73.0/24}
+      DASHD_DBCACHE_MB: ${DASHD_DBCACHE_MB:-1024}
+      DASHD_MAXCONNECTIONS: ${DASHD_MAXCONNECTIONS:-}
+      DASHD_P2P_PORT: ${DASHD_P2P_PORT:-}
+      DASHD_EXTERNALIP: ${DASHD_EXTERNALIP:-}
+      DASHD_EXTRA_ARGS: ${DASHD_EXTRA_ARGS:-}
+    secrets:
+      - core_rpc_password
+    volumes:
+      # /home/dash is the image's declared VOLUME; the datadir is /home/dash/.dashcore.
+      - dashd-data:/home/dash
+      - ./dashd/dash.conf:/etc/govhub/dash.conf:ro
+      - ./dashd/entrypoint.sh:/opt/govhub/dashd-entrypoint.sh:ro
+    # Informational only (does not publish): the bridge reaches these by service name.
+    expose:
+      - "9998"   # JSON-RPC
+      - "29998"  # ZMQ PUB
+    healthcheck:
+      # Passes once RPC is out of warm-up (loading the block index, replaying) -- not when synced.
+      test: ["CMD", "dash-cli", "-conf=/tmp/dash.conf", "getblockcount"]
+      interval: 30s
+      timeout: 20s
+      retries: 5
+      # A mainnet restart after an unclean stop can replay blocks for a long time.
+      start_period: ${DASHD_HEALTH_START_PERIOD:-15m}
+
+  # ---------------------------------------------------------------------------------------------
+  # govhub bridge: archives governance objects and signed votes from ZMQ, publishes proposal, tally
+  # and cycle documents to your gov contract, serves the read-only HTTP API.
+  # Dockerfile: services/bridge/Dockerfile, built from the repository root.
+  # ---------------------------------------------------------------------------------------------
+  bridge:
+    build:
+      context: ..
+      dockerfile: services/bridge/Dockerfile
+    image: govhub-bridge:${BRIDGE_TAG:-local}
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      dashd:
+        condition: service_healthy
+    environment:
+      # --- wiring (fixed by this compose file) ---
+      CORE_NETWORK: mainnet
+      PLATFORM_NETWORK: ${PLATFORM_NETWORK:-mainnet}
+      CORE_RPC_URL: http://dashd:9998
+      CORE_RPC_USER: ${CORE_RPC_USER:-govhub}
+      CORE_RPC_PASSWORD_FILE: /run/secrets/core_rpc_password
+      CORE_ZMQ_URL: tcp://dashd:29998
+      DB_PATH: /data/bridge.sqlite
+      HTTP_HOST: 0.0.0.0
+      HTTP_PORT: "8787"
+      BRIDGE_IDENTITY_KEY_FILE: /run/secrets/bridge_identity
+      # --- chosen by the operator in .env ---
+      # PUBLISH=0 archives and serves the API without writing to Platform: no contract and no
+      # identity needed. Start there so the archive begins accumulating history on day one.
+      PUBLISH: ${PUBLISH:-0}
+      GOV_CONTRACT_ID: ${GOV_CONTRACT_ID:-}
+      # --- optional tunables. Empty means "use the bridge's built-in default". ---
+      BRIDGE_LOG_LEVEL: ${BRIDGE_LOG_LEVEL:-}
+      CORE_RPC_TIMEOUT_MS: ${CORE_RPC_TIMEOUT_MS:-}
+      CORE_RPC_RETRIES: ${CORE_RPC_RETRIES:-}
+      RECONCILE_INTERVAL_S: ${RECONCILE_INTERVAL_S:-}
+      TALLY_PUBLISH_INTERVAL_S: ${TALLY_PUBLISH_INTERVAL_S:-}
+      CYCLE_PUBLISH_INTERVAL_S: ${CYCLE_PUBLISH_INTERVAL_S:-}
+      MIN_COLLATERAL_CONFS: ${MIN_COLLATERAL_CONFS:-}
+      PLATFORM_MAX_CONCURRENT_WRITES: ${PLATFORM_MAX_CONCURRENT_WRITES:-}
+      PUBLISH_ON_MISMATCH: ${PUBLISH_ON_MISMATCH:-}
+      PORTAL_PROPOSAL_URL: ${PORTAL_PROPOSAL_URL:-}
+    secrets:
+      - core_rpc_password
+      - bridge_identity
+    volumes:
+      # SQLite archive. This is history Core no longer has: back it up (README, "Backups").
+      # The image must create /data owned by its runtime user so the named volume is writable.
+      - bridge-data:/data
+    ports:
+      # Loopback by default. Set BRIDGE_BIND=0.0.0.0 to serve the API directly, or leave it and
+      # use the caddy profile for TLS.
+      - "${BRIDGE_BIND:-127.0.0.1}:${BRIDGE_PORT:-8787}:8787"
+
+  # ---------------------------------------------------------------------------------------------
+  # Optional TLS reverse proxy with CORS for the read-only API. Enable with COMPOSE_PROFILES=proxy.
+  # Set DOMAIN in .env (default `localhost`, which gets Caddy's internal CA: fine for testing).
+  # ---------------------------------------------------------------------------------------------
+  caddy:
+    image: caddy:${CADDY_TAG:-2-alpine}
+    profiles: ["proxy"]
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      - bridge
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+      CORS_ALLOW_ORIGIN: ${CORS_ALLOW_ORIGIN:-*}
+    ports:
+      - "${CADDY_HTTP_PORT:-80}:80"
+      - "${CADDY_HTTPS_PORT:-443}:443"
+      - "${CADDY_HTTPS_PORT:-443}:443/udp"  # HTTP/3
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data    # certificates: keep, or you will hit ACME rate limits
+      - caddy-config:/config
+
+  # ---------------------------------------------------------------------------------------------
+  # SLOTS for services that are not built yet. Keep the pattern when they land:
+  #   * one service per component, built from ../services/<name>/Dockerfile with context `..`
+  #   * configuration only through env vars and docker secrets (never baked into the image)
+  #   * state on a named volume; HTTP published on loopback by default; HEALTHCHECK in the image
+  #   * if it must be reachable from a browser, add a path (or a host) to caddy/Caddyfile
+  #
+  # relay:     voteraw at release time, gobject submit, held Platform votes.
+  #            May share this stack's dashd (CORE_RPC_URL=http://dashd:9998, same secret).
+  # issuer:    blind-signs MN badge tokens. Needs SML access (dashd RPC or a DAPI stream) and the
+  #            offline-generated RSA key as a secret. Serve it from a SEPARATE origin.
+  # accounts:  central-login envelopes (encrypted blobs only).
+  # ---------------------------------------------------------------------------------------------
+
+secrets:
+  # Plain files, created by scripts/init.sh in ./secrets (git-ignored, mode 0700 dir).
+  core_rpc_password:
+    file: ${SECRETS_DIR:-./secrets}/core_rpc_password
+  # JSON: {"identityId": "...", "keyId": N, "privateKeyHex": "..."} (or "wif"). The bridge reads
+  # it only when PUBLISH=1. init.sh creates an empty placeholder so archive-only mode can start.
+  bridge_identity:
+    file: ${SECRETS_DIR:-./secrets}/bridge_identity.json
+
+volumes:
+  dashd-data:
+  bridge-data:
+  caddy-data:
+  caddy-config:
+
+networks:
+  default:
+    # A fixed subnet so dashd's rpcallowip can name it. Change GOVHUB_SUBNET if it overlaps a
+    # network you already use.
+    ipam:
+      config:
+        - subnet: ${GOVHUB_SUBNET:-172.29.73.0/24}

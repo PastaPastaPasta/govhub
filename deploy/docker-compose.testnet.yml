@@ -1,0 +1,15 @@
+# Testnet override. Layer it on the base file:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.testnet.yml
+#
+# Testnet activated Dash Core V24 on 2026-10-23 (height 1,578,000), so this needs v24.0.0-rc.x.
+# Testnet votes are signed over the binary vote hash, not with message signing; the bridge
+# handles both schemes.
+services:
+  dashd:
+    image: dashpay/dashd:${DASHD_TAG:-24.0.0-rc.4}
+    environment:
+      DASH_NETWORK: testnet
+  bridge:
+    environment:
+      CORE_NETWORK: testnet
+      PLATFORM_NETWORK: ${PLATFORM_NETWORK:-testnet}

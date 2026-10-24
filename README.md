@@ -13,6 +13,17 @@ Status: **phase 0 (spikes)**. Nothing here is production-ready.
   and findings.
 - Shared code: [`packages/`](packages/).
 
+## Running your own backend
+
+[`deploy/`](deploy/) is the self-hosting kit: a Dash Core node plus the bridge, started with
+`docker compose up`, for mainnet, testnet or an isolated regtest chain, with optional TLS and CORS.
+See [`deploy/README.md`](deploy/README.md) for hardware, sync, backups (the bridge's archive is
+history Core discards), upgrades and security. Quick start:
+
+```sh
+cd deploy && scripts/init.sh --network testnet && docker compose up -d --build
+```
+
 The frontend uses our backends by default. Every backend can be replaced by the user: bridge,
 relay, badge issuer, accounts, faucet, and DAPI node source.
 
