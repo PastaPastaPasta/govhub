@@ -3,7 +3,7 @@
 // posted.
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { EPOCH_PARAMS, epochStart, type PrivacyMode } from '@govhub/badge';
+import { EPOCH_PARAMS, epochStart, PRIVACY_MODES, type EpochParams, type PrivacyMode } from '@govhub/badge';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { errText, formatInt } from '../lib/format.ts';
@@ -36,6 +36,14 @@ export const MODES: Record<PrivacyMode, { label: string; summary: string }> = {
     summary: 'Like Private, but the badge goes out at a random time across the first half of the next epoch, which makes timing even harder to match.',
   },
 };
+
+function requestedText(job: BadgeJob, p: EpochParams, coreHeight: number | null): string {
+  if (job.mode !== 'standard') {
+    return `Scheduled: the request for epoch ${job.epoch} goes out at a random time, around ${eta(job.requestAt, coreHeight)}. Keep this app open now and then until the badge is posted.`;
+  }
+  if (job.requestAt > (coreHeight ?? 0)) return `Requested: epoch ${job.epoch} starts at block ${formatInt(epochStart(p, job.epoch))}; the badge is posted then.`;
+  return 'Requesting now: your badge is posted in a minute or two.';
+}
 
 const STATE: Record<BadgeJob['state'], string> = {
   scheduled: 'scheduled',
@@ -92,15 +100,7 @@ export function BadgePage() {
       const issuer = enabled.find((t) => t.identityId === issuerId);
       const job = await requestBadge(wif, proTxHash, { ...(issuer ? { issuer } : {}), keepKey, mode: privacy });
       setWif('');
-      setMsg({
-        kind: 'ok',
-        text:
-          job.mode === 'standard'
-            ? job.requestAt > (coreHeight ?? 0)
-              ? `Requested: epoch ${job.epoch} starts at block ${formatInt(epochStart(p, job.epoch))}; the badge is posted then.`
-              : 'Requesting now: your badge is posted in a minute or two.'
-            : `Scheduled: the request for epoch ${job.epoch} goes out at a random time, around ${eta(job.requestAt, coreHeight)}. Keep this app open now and then until the badge is posted.`,
-      });
+      setMsg({ kind: 'ok', text: requestedText(job, p, coreHeight) });
     } catch (e) {
       setMsg({ kind: 'error', text: errText(e) });
     } finally {
@@ -129,7 +129,7 @@ export function BadgePage() {
         <div className="form">
           <fieldset className="badge-modes">
             <legend>Privacy</legend>
-            {(Object.keys(MODES) as PrivacyMode[]).map((m) => (
+            {PRIVACY_MODES.map((m) => (
               <label key={m} className="check">
                 <input type="radio" name="badge-mode" checked={privacy === m} onChange={() => setPrivacy(m)} data-testid={`badge-mode-${m}`} /> <b>{MODES[m].label}</b>
                 {m === 'standard' && ' (default)'}. {MODES[m].summary}

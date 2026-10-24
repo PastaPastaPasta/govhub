@@ -21,8 +21,8 @@ export function pickHeight(range: HeightRange, now: number): number | null {
 /** When a private-mode client sends its request for `epoch` (null: too late for this epoch). */
 export const pickRequestHeight = (p: EpochParams, epoch: number, now: number): number | null => pickHeight(privateRequestWindow(p, epoch), now);
 
-/** The client's posting range for `epoch` in a private mode: from S(E) + margin to the end of the mode's window (inclusive). */
-export function clientPostingWindow(p: EpochParams, epoch: number, mode: Exclude<PrivacyMode, 'standard'> = 'private'): HeightRange {
+/** The client's posting range for `epoch`: from S(E) + margin to the end of the mode's window (inclusive); Standard uses the private one. */
+export function clientPostingWindow(p: EpochParams, epoch: number, mode: PrivacyMode = 'private'): HeightRange {
   const w = mode === 'extra' ? extraPostingWindow(p, epoch) : postingWindow(p, epoch);
   return { from: w.from + p.boundaryMarginBlocks, to: w.to + 1 };
 }
@@ -54,4 +54,3 @@ export function requestableEpoch(p: EpochParams, now: number, mode: PrivacyMode 
   for (const x of [e + 1, e + 2]) if (privateRequestWindow(p, x).to > now) return x;
   return null;
 }
-

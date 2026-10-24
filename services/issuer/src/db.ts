@@ -92,7 +92,6 @@ export function openTokenStore(path: string): TokenStore {
   };
   if (legacy) q.started.run(0);
 
-
   const reserve = db.transaction((o: ReserveInput, sign: () => Uint8Array): ReserveOutcome => {
     // A store that did not exist for the whole window cannot dedup it (a lost or reset database): refuse until the next epoch.
     const started = q.startedAt.get()?.value;
@@ -114,14 +113,12 @@ export function openTokenStore(path: string): TokenStore {
     openEpoch: (epoch) => void q.open.run(epoch),
     markStarted: (height) => void q.started.run(height),
     closeThrough: (epoch) => {
-      const n = db.transaction(() => {
+      return db.transaction(() => {
         const deleted = q.del.run(epoch).changes;
         q.mark.run(epoch);
         q.closeAll.run(epoch);
         return deleted;
       })();
-
-      return n;
     },
     issued: (epoch) => q.epoch.get(epoch)?.issued ?? 0,
     unreported: () => q.unreported.all().map((r) => r.epoch),

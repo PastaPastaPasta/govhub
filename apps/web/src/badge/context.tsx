@@ -209,7 +209,7 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
         const closed = j.state === 'scheduled' ? height >= requestWindow(p, j.epoch, j.mode).to : height > displayWindow(p, j.epoch).to;
         if (closed) await run(j);
       }
-      const due = snapshot.filter((j) => isActive(j) && !updates.has(j.id) && height >= (j.state === 'scheduled' ? j.requestAt : (j.postAt ?? clientPostingWindow(p, j.epoch, j.mode === 'extra' ? 'extra' : 'private').from)));
+      const due = snapshot.filter((j) => isActive(j) && !updates.has(j.id) && height >= (j.state === 'scheduled' ? j.requestAt : (j.postAt ?? clientPostingWindow(p, j.epoch, j.mode).from)));
       // Standard mode: no waiting of any kind (the user accepted that the issuer could link the two by timing): request, then post
       // (only a Private request's cooldown in this browser holds them, so they cannot undo its separation)
       // checked under the activity lock, so it cannot interleave with another tab's Private request (the lock is brief per job)
@@ -230,7 +230,7 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
       // first SUCCESSFUL tick).
       for (const j of privateDue) {
         if (notBefore.has(j.id)) continue;
-        const end = j.state === 'scheduled' ? requestWindow(p, j.epoch, j.mode).to : clientPostingWindow(p, j.epoch, j.mode === 'extra' ? 'extra' : 'private').to;
+        const end = j.state === 'scheduled' ? requestWindow(p, j.epoch, j.mode).to : clientPostingWindow(p, j.epoch, j.mode).to;
         const leftMs = Math.max(0, end - height) * 150_000;
         notBefore.set(j.id, Date.now() + (okTicks === 0 ? resumeDelayMs(Math.min(600_000, leftMs / 2)) : 0));
       }

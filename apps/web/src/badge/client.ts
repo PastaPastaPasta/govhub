@@ -5,7 +5,6 @@
 //             from this browser's other Platform writes; not posted if the issuer's count for the previous epoch is too small
 //   extra     as private, with the badge spread over the first half of the epoch
 //
-//
 //   scheduled --(core height >= requestAt, in the issuance window of E)--> token --(height >= postAt)--> posted
 //        \--> expired (window closed) / failed (refused, or the issuer's answer did not verify: the issuer is flagged)
 //
@@ -136,8 +135,10 @@ export async function createJob(d: ClientDeps, jobs: readonly BadgeJob[], voting
   let epoch = requestableEpoch(p, coreHeight, mode);
   if (epoch === null) throw new BadgeRequestError('No issuance window is open.');
   // Private modes: with little of the window left the request would go out in this same visit, so ask for the next epoch (H1).
-  const w = privateRequestWindow(p, epoch);
-  if (mode !== 'standard' && !o.immediate && w.to - Math.max(coreHeight, w.from) < epochLength(p) / 4) epoch++;
+  if (mode !== 'standard' && !o.immediate) {
+    const w = privateRequestWindow(p, epoch);
+    if (w.to - Math.max(coreHeight, w.from) < epochLength(p) / 4) epoch++;
+  }
   if (jobs.some((j) => j.issuer.identityId === o.issuer.identityId && j.epoch === epoch && j.state !== 'expired' && j.state !== 'failed'))
     throw new BadgeRequestError(`You already have a badge request with ${o.issuer.name} for epoch ${epoch}. One badge per issuer is all an identity can show; asking with more MNs would only tell the issuer they belong together.`);
   const wif = typeof voting === 'string' ? voting.trim() : null;

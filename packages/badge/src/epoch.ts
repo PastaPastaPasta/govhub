@@ -5,8 +5,8 @@
 //   L  = epoch length in blocks = superblockCycle * epochCycles
 //   S(E) = E * L                    (a superblock height: superblocks are the multiples of superblockCycle)
 //   epoch(h) = floor(h / L)
-//   tokens for E are minted while S(E-1) <= h < S(E+1): during E-1 (the private modes ask early) and during E itself
-//   (Standard mode asks for the current epoch and posts at once)                                  (the issuance window)
+//   tokens for E are minted while S(E-1) <= h < S(E+1) (the issuance window): during E-1 (the private modes ask early) and
+//   during E itself (Standard mode asks for the current epoch and posts at once)
 //   a badge for E is never created before S(E); it is shown while S(E) <= h <= S(E+1) + W, and its own height must be in
 //   that range too
 //   the issuerKey for E must have been created before S(E-1)
