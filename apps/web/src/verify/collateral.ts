@@ -4,7 +4,7 @@
 import type { VerifiedTransaction } from '@govhub/dapi';
 import { checkCollateralTx, GOVERNANCE_FEE_CONFIRMATIONS, governanceObjectHash, inputKeyIds, parseProposalData } from '@govhub/verify';
 import { DUFFS_PER_DASH } from '../lib/format.ts';
-import type { Proposal } from '../data/types.ts';
+import type { CoreNetwork, Proposal } from '../data/types.ts';
 
 /**
  * The collateral transaction as @govhub/dapi returns it: `chainLocked`, `proof.merkle` and `proof.chainLock` say what was proven;
@@ -40,6 +40,11 @@ export interface ChainFacts {
   lockDepth: number | null;
   /** The node's claim. */
   confirmations: number;
+  /**
+   * Why none of this is secure, when proof of work does not protect the chain it was checked against (testnet); null/absent otherwise.
+   * Set for the anchored chain and for the fallback per-transaction proof alike.
+   */
+  weak?: string | null;
   /** The block is in the chain this browser verified (headers from the checkpoint); `confirmations` below is then counted from its tip. */
   anchored?: { tip: number; confirmations: number; chainLockHeight: number; final: boolean; /** proof of work does not protect it (testnet) */ weak: string | null };
 }
@@ -118,7 +123,7 @@ export function checkContent(p: ProposalCore): { steps: Step[]; govHashComputed?
 }
 
 /** Full verdict from the content checks plus the DAPI transaction lookup (or its error). */
-export function verifyCollateral(p: ProposalCore, lookup: TxLookup | LookupError): CollateralVerdict {
+export function verifyCollateral(p: ProposalCore, lookup: TxLookup | LookupError, network: CoreNetwork): CollateralVerdict {
   const { steps, govHashComputed } = checkContent(p);
   if ('error' in lookup) {
     steps.push({ id: 'tx', status: 'fail', label: 'Collateral transaction', detail: lookup.notFound ? `not on the chain: every DAPI node asked answered NOT_FOUND (${lookup.error})` : `not fetched: ${lookup.error}` });
@@ -213,12 +218,14 @@ export function verifyCollateral(p: ProposalCore, lookup: TxLookup | LookupError
       detail: same ? `block ${num(lookup.height)}${proven ? ' (the coinbase of the verified block commits to it)' : ''}` : `chain says ${num(lookup.height)}, published ${num(p.collateralHeight)}`,
     });
   }
-  // A chain anchored where proof of work protects nothing (testnet) is consistent, not secure: its facts stay "reported".
-  if (anc?.weak) {
+  // Where proof of work protects nothing (testnet) the chain facts are consistent, not secure: they stay "reported". That includes the
+  // fallback per-transaction ChainLock proof used when the chain could not be anchored, which is never "verified" off mainnet.
+  const weak = anc?.weak ?? (network === 'mainnet' ? null : `${network} difficulty is too low for proof of work to stop a malicious node from forging the chain`);
+  if (weak) {
     for (const st of steps) {
       if (st.basis === 'verified' && (['block', 'confirmations', 'chainlock', 'height'] as const).includes(st.id as 'block')) {
         st.basis = 'reported';
-        st.more = `${st.more ? `${st.more}; ` : ''}not secure: ${anc.weak}`;
+        st.more = `${st.more ? `${st.more}; ` : ''}not secure: ${weak}`;
       }
     }
   }
@@ -228,6 +235,7 @@ export function verifyCollateral(p: ProposalCore, lookup: TxLookup | LookupError
     height: lookup.height, merkle: proof.merkle, chainLocked: lookup.chainLocked, confirmations: lookup.confirmations,
     provenConfirmations: provenConf !== null && provenConf >= GOVERNANCE_FEE_CONFIRMATIONS ? provenConf : null,
     lockDepth: locked && cl ? cl.verifiedConfirmations : null,
+    ...(weak ? { weak } : {}),
     ...(anc ? { anchored: { tip: anc.tip, confirmations: anc.confirmations, chainLockHeight: anc.chainLockHeight, final: locked, weak: anc.weak } } : {}),
   };
   return { ok, steps, chain, ...(govHashComputed ? { govHashComputed } : {}), ...(ok && inputKeys ? { inputKeys } : {}) };

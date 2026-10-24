@@ -28,17 +28,17 @@ const uniq = () => `test-${scopes++}`;
 
 describe('collateral verdicts that hide a proposal', () => {
   it('a collateral every node says does not exist: failed', () => {
-    const v = verifyCollateral(noCollateral, { error: 'Transaction not found', notFound: true });
+    const v = verifyCollateral(noCollateral, { error: 'Transaction not found', notFound: true }, 'mainnet');
     expect(v.inconclusive).toBeUndefined();
     expect(verdictFailure(v)).toMatch(/not on the chain/);
   });
   it('unreachable nodes: inconclusive, never a reason to hide', () => {
-    const v = verifyCollateral(real, { error: 'all 4 node attempts failed: fetch failed' });
+    const v = verifyCollateral(real, { error: 'all 4 node attempts failed: fetch failed' }, 'mainnet');
     expect(v.inconclusive).toBe(true);
     expect(verdictFailure(v)).toBeNull();
   });
   it('published fields that do not match the hashed data: failed', () => {
-    expect(verdictFailure(verifyCollateral(tampered, { error: 'x', notFound: true }))).toMatch(/Displayed fields: differ from the hashed data: url/);
+    expect(verdictFailure(verifyCollateral(tampered, { error: 'x', notFound: true }, 'mainnet'))).toMatch(/Displayed fields: differ from the hashed data: url/);
   });
   it('a disagreeing second node alone is about the nodes, not the proposal', () => {
     const v: CollateralVerdict = { ok: false, steps: [{ id: 'crosscheck', status: 'fail', label: 'Second node', detail: 'disagrees' }] };
@@ -65,7 +65,7 @@ describe('ProposalChecks', () => {
 
   it('pending until the worker answers, then ok or failed; results are cached per govHash', async () => {
     const cache = new MemCache();
-    const c = new ProposalChecks({ scope: 'dev', cache, run: async (p) => (p === noCollateral ? verifyCollateral(p, { error: 'not found', notFound: true }) : okVerdict) });
+    const c = new ProposalChecks({ scope: 'dev', cache, run: async (p) => (p === noCollateral ? verifyCollateral(p, { error: 'not found', notFound: true }, 'mainnet') : okVerdict) });
     expect(c.state(real)).toEqual({ status: 'pending' });
     c.ensure([real, noCollateral]);
     expect(c.state(real)).toEqual({ status: 'pending' });
@@ -89,7 +89,7 @@ describe('ProposalChecks', () => {
     const cache = new MemCache();
     let now = 1_000_000_000_000;
     const scope = uniq();
-    const first = new ProposalChecks({ scope, cache, now: () => now, run: async () => verifyCollateral(noCollateral, { error: 'nf', notFound: true }) });
+    const first = new ProposalChecks({ scope, cache, now: () => now, run: async () => verifyCollateral(noCollateral, { error: 'nf', notFound: true }, 'mainnet') });
     first.ensure([noCollateral]);
     for (let i = 0; i < 5; i++) await tick();
     now += 2 * 86_400_000;
@@ -132,7 +132,7 @@ describe('ProposalChecks', () => {
     expect(c.state(real).status).toBe('inconclusive');
     expect(cache.m.size).toBe(0);
     c.record(real, okVerdict);
-    c.record(real, verifyCollateral(real, { error: 'timeout' }));
+    c.record(real, verifyCollateral(real, { error: 'timeout' }, 'mainnet'));
     expect(c.state(real).status).toBe('ok');
   });
 
@@ -149,7 +149,7 @@ describe('ProposalChecks', () => {
 
   it('a full check outranks a later light result; a disposed instance does nothing', async () => {
     const c = new ProposalChecks({ scope: uniq(), run: async () => okVerdict });
-    c.record(noCollateral, verifyCollateral(noCollateral, { error: 'nf', notFound: true }), { full: true });
+    c.record(noCollateral, verifyCollateral(noCollateral, { error: 'nf', notFound: true }, 'mainnet'), { full: true });
     c.record(noCollateral, okVerdict);
     expect(c.state(noCollateral).status).toBe('failed');
     let runs = 0;
@@ -163,7 +163,7 @@ describe('ProposalChecks', () => {
 
   it('instances of one scope share results (a rebuilt source does not flash hidden proposals back as pending)', () => {
     const scope = uniq();
-    new ProposalChecks({ scope, run: async () => okVerdict }).record(noCollateral, verifyCollateral(noCollateral, { error: 'nf', notFound: true }));
+    new ProposalChecks({ scope, run: async () => okVerdict }).record(noCollateral, verifyCollateral(noCollateral, { error: 'nf', notFound: true }, 'mainnet'));
     expect(new ProposalChecks({ scope, run: async () => okVerdict }).state(noCollateral).status).toBe('failed');
     expect(new ProposalChecks({ scope: uniq(), run: async () => okVerdict }).state(noCollateral).status).toBe('pending');
   });
@@ -180,7 +180,7 @@ describe('hide rules in the lists and the budget header', () => {
   it('failed proposals are hidden; pending and inconclusive stay listed', () => {
     const c = new ProposalChecks({ scope: uniq(), run: async () => okVerdict });
     const second = snap.proposals[1]!;
-    c.record(second, verifyCollateral(second, { error: 'timeout' }));
+    c.record(second, verifyCollateral(second, { error: 'timeout' }, 'mainnet'));
     const { shown, failed } = partitionByCheck([real, second, tampered], (p) => c.state(p));
     expect(shown.map((x) => [x.item.name, x.check.status])).toEqual([
       [real.name, 'pending'],
