@@ -187,13 +187,21 @@ function list<T>(o: unknown, key: string, each: (x: unknown) => T): T[] {
   return arr.map(each);
 }
 
-export function parseVotes(raw: unknown, govHash: string): BridgeVotes {
+/**
+ * `VoteSet`. The set must be for the proposal asked about and, for `?height=H`, must belong to a tally at or below H: both are
+ * checked here because a mismatching answer would otherwise be recounted against the wrong tally. The spec makes `tallyHeight`
+ * optional (absent in `?all=1`); both modes this client uses return it, and it is required.
+ */
+export function parseVotes(raw: unknown, req: { govHash: string; height?: number }): BridgeVotes {
   const o = obj(raw, 'vote set');
-  const asOfHeight = optInt(o, 'asOfHeight');
+  const govHash = hex64(o, 'govHash');
+  if (govHash !== req.govHash.toLowerCase()) throw new BridgeError('the vote set is for a different proposal');
+  const tallyHeight = int(o, 'tallyHeight');
+  if (req.height !== undefined && tallyHeight > req.height) throw new BridgeError(`the vote set belongs to a tally at block ${tallyHeight}, above the requested block ${req.height}`);
   return {
-    govHash: o.govHash === undefined ? govHash : hex64(o, 'govHash'),
-    asOfHeight,
-    tallyHeight: o.tallyHeight === undefined ? asOfHeight : int(o, 'tallyHeight'),
+    govHash,
+    asOfHeight: o.asOfHeight === null || o.asOfHeight === undefined ? tallyHeight : int(o, 'asOfHeight'),
+    tallyHeight,
     mnListHash: optStr(o, 'mnListHash') ?? null,
     voteSetHash: optHex64(o, 'voteSetHash'),
     votes: list(o, 'votes', parseVote),
@@ -249,7 +257,7 @@ export class HttpBridge implements Bridge {
     const q = opts.height === undefined ? '' : `?height=${encodeURIComponent(String(opts.height))}`;
     const o = await this.get(`/v1/proposals/${encodeURIComponent(govHash)}/votes${q}`);
     if (o === null) throw new BridgeError(opts.height === undefined ? 'the bridge has no vote set for this proposal' : `the bridge has no vote set at or below block ${opts.height}`, 404);
-    return parseVotes(o, govHash);
+    return parseVotes(o, { govHash, ...(opts.height === undefined ? {} : { height: opts.height }) });
   }
   async tallies(): Promise<Tally[]> {
     return list(await this.get('/v1/tallies'), 'tallies', parseTally);

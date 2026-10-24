@@ -95,11 +95,14 @@ function contentProvenance(p: Proposal, sourced: Provenance, verdict: Collateral
 /** What is known about the collateral's place in the chain, and whether this browser proved it or a node said so. */
 function chainStatus(c: ChainFacts): { text: string; prov: Provenance } {
   const source = 'collateral check in this browser';
-  const conf = formatInt(c.provenConfirmations ?? c.confirmations);
-  if (c.chainLocked === 'verified') {
-    return { text: `ChainLocked, BLS-verified; at least ${conf} confirmations`, prov: { kind: 'verified', source, detail: 'block proven by its merkle root; a BLS-valid ChainLock covers it through an X11-checked header chain' } };
+  if (c.chainLocked === 'verified' && c.lockDepth !== null) {
+    return {
+      text: `ChainLocked, BLS-verified (${formatInt(c.lockDepth)} blocks of verified headers up to the lock); a node claims ${formatInt(c.confirmations)} confirmations`,
+      prov: { kind: 'verified', source, detail: 'block proven by its merkle root; a BLS-valid ChainLock covers it through an X11-checked header chain' },
+    };
   }
-  const proven = c.merkle ? 'block inclusion proven by its merkle root' : 'block inclusion not proven';
+  const proven = c.merkle ? 'the block a node names is internally consistent (merkle root, coinbase height) but is not tied to the chain' : 'block inclusion not proven';
+  const conf = formatInt(c.confirmations);
   return {
     text: c.chainLocked === 'claimed' ? `ChainLocked as a node reports; ${conf} confirmations (node-reported)` : `Not ChainLocked yet; ${conf} confirmations (node-reported)`,
     prov: { kind: 'reported', source, detail: `${proven}; the ChainLock was not verified here` },

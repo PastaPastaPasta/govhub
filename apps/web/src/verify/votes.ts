@@ -68,6 +68,8 @@ export interface VoteCheckResult {
   /** Where the voting keys were confirmed: only the bridge, or also the DAPI masternode list. */
   keysFrom: 'bridge' | 'sml';
   smlChecked: number;
+  /** Counted votes whose masternode is missing from, or differs in, the DAPI list (left or re-keyed since, or a lying bridge). */
+  smlUnconfirmed: number;
   /** Counted MNs whose outpoint -> proTxHash binding is checkable without a ProRegTx fetch. */
   internalCollateral: number;
   targets: TargetResult[];
@@ -136,6 +138,7 @@ export function verifyVotes(input: VoteCheckInput): VoteCheckResult {
 
   const good: TallyVote[] = [];
   let smlChecked = 0;
+  let smlUnconfirmed = 0;
   let otherSignal = 0;
   let internalCollateral = 0;
   for (const v of input.votes) {
@@ -159,15 +162,17 @@ export function verifyVotes(input: VoteCheckInput): VoteCheckResult {
       continue;
     }
     if (input.sml) {
+      // The SML is the CURRENT list, the votes are counted at the tally's (older) height: a masternode that left or changed its voting key
+      // since is indistinguishable from a bridge that lies about it. The vote is still counted with the bridge's key (the recount then
+      // matches an honest tally) but the keys are not "confirmed", so the result cannot reach "verified".
       const e = input.sml.get(mn.proTxHash.toLowerCase());
       smlChecked++;
       if (!e) {
+        smlUnconfirmed++;
         note(outpoint, 'sml-mismatch', `proTxHash ${mn.proTxHash.slice(0, 12)}… not in the DAPI masternode list`);
-        continue;
-      }
-      if (e.votingAddress !== mn.votingAddress || (e.nType === 1) !== (mn.type === 'evo')) {
+      } else if (e.votingAddress !== mn.votingAddress || (e.nType === 1) !== (mn.type === 'evo')) {
+        smlUnconfirmed++;
         note(outpoint, 'sml-mismatch', 'voting address or type differs from the DAPI masternode list');
-        continue;
       }
     }
     good.push({ mn: outpoint, outcome: v.outcome, time: v.time });
@@ -187,8 +192,9 @@ export function verifyVotes(input: VoteCheckInput): VoteCheckResult {
     weighted: t.weighted,
     unweighted: t.unweighted,
     voteSetHash: hash,
-    keysFrom: input.sml ? 'sml' : 'bridge',
+    keysFrom: input.sml && smlUnconfirmed === 0 ? 'sml' : 'bridge',
     smlChecked,
+    smlUnconfirmed,
     internalCollateral,
     targets: input.targets.map((target) => {
       const compare = compareWith(target.tally, t.weighted, t.unweighted, hash);

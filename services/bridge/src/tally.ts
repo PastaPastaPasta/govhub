@@ -70,6 +70,8 @@ export function tallyProposal(db: DB, govHash: string, list: LoadedMnList, asOfH
     const row = byKey.get(`${mn}|${time}|${outcome}`);
     if (e && row) counted.push({ ...row, weight: e.weight, proTxHash: e.proTxHash });
   }
+  // the published set and the hash must describe the same masternodes
+  if (counted.length !== t.counted.length) throw new Error(`tally ${govHash}: ${t.counted.length} counted masternodes but ${counted.length} archived votes for them`);
   return {
     govHash,
     asOfHeight,

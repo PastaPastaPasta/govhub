@@ -1,6 +1,6 @@
 // Core data over DAPI, through @govhub/dapi: node pool with failover (nodes from the user's quorum-service URL or a
 // static list), the collateral transaction with its proof, and the agreed masternode list.
-import { createDapi, type Dapi, type DapiOptions, type VerifiedTransaction } from '@govhub/dapi';
+import { AllNodesFailedError, createDapi, VerificationError, type Dapi, type DapiOptions, type VerifiedTransaction } from '@govhub/dapi';
 import type { Registry } from '../config/registry.ts';
 import type { CoreNetwork } from './types.ts';
 import type { TxLookup } from '../verify/collateral.ts';
@@ -29,6 +29,9 @@ export function createWebDapi(cfg: DapiConfig, verifiers?: DapiOptions['verifier
 }
 
 const isAbort = (e: unknown): boolean => (e as { name?: string } | null)?.name === 'AbortError';
+
+/** A node's answer contradicted itself (wrong bytes, tx not in its block, bad coinbase height...): evidence of a lying node, not of a flaky one. */
+const isLie = (e: unknown): boolean => e instanceof VerificationError || (e instanceof AllNodesFailedError && e.errors.some((x) => x.error instanceof VerificationError));
 
 /** The node's word for a transaction, with nothing proven (what the recorded fixture replay can offer, and the fallback when the proof fails). */
 async function claimedTransaction(dapi: Dapi, txid: string, note: string): Promise<TxLookup> {
@@ -60,8 +63,9 @@ async function secondOpinion(dapi: Dapi, txid: string, first: TxLookup): Promise
 /**
  * The collateral transaction. With `verify` (live mode), `getVerifiedTransaction`: the block is fetched whole and its merkle root
  * recomputed, the height read from the coinbase, and, when the X11 and BLS verifiers are configured, the ChainLock is checked
- * (header chain + quorum signature). Whatever the helper could not prove stays a node claim, labelled so in the result. If the proof
- * machinery fails outright, the node's claim is used and the reason is recorded in `proof.notes`.
+ * (header chain + quorum signature). Whatever the helper could not prove stays a node claim, labelled so in the result. If the
+ * proof machinery fails for transport reasons (nodes unreachable, timeouts), the node's claim is used and the reason is recorded in
+ * `proof.notes`; if a node's answer was inconsistent, the lookup fails instead of quietly asking the next (possibly same) node.
  */
 export async function lookupCollateral(dapi: Dapi, txid: string, o: { verify: boolean; onProgress?: (message: string) => void }): Promise<TxLookup> {
   let lookup: TxLookup;
@@ -70,14 +74,15 @@ export async function lookupCollateral(dapi: Dapi, txid: string, o: { verify: bo
       const v: VerifiedTransaction = await dapi.getVerifiedTransaction(txid);
       lookup = { raw: v.raw, height: v.height, confirmations: v.confirmations, chainLocked: v.chainLocked, instantLocked: v.instantLocked, proof: v.proof, node: v.node };
     } catch (e) {
-      if (isAbort(e)) throw e;
+      if (isAbort(e) || isLie(e)) throw e;
       o.onProgress?.('The block proof did not complete; asking a node for its claim');
       lookup = await claimedTransaction(dapi, txid, `block proof failed: ${(e as Error).message}`);
     }
   } else {
     lookup = await claimedTransaction(dapi, txid, 'recorded answer, not proven');
   }
-  if (!lookup.proof.merkle) {
+  // A merkle proof does not tie the block to the chain (no proof-of-work check); only a verified ChainLock does. Otherwise a second node weighs in.
+  if (lookup.chainLocked !== 'verified') {
     o.onProgress?.('Asking a second node for the same transaction');
     lookup.second = await secondOpinion(dapi, txid, lookup);
   }

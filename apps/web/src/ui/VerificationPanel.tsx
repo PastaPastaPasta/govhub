@@ -41,7 +41,7 @@ const VERDICT_STYLE: Record<VoteLevel, { className: string; glyph: 'verified' | 
   'no-tally': { className: 'verdict-pending', glyph: 'reported' },
 };
 
-function verdictText(level: VoteLevel, verified: number, total: number, matched: string | undefined, origin: VotesDone['origin'], fixtures: boolean): string {
+function verdictText(level: VoteLevel, verified: number, total: number, matched: string | undefined, origin: VotesDone['origin'], fixtures: boolean, smlUnconfirmed: number): string {
   const sigs = `${formatInt(verified)} of ${formatInt(total)} signatures check out`;
   switch (level) {
     case 'verified':
@@ -49,7 +49,9 @@ function verdictText(level: VoteLevel, verified: number, total: number, matched:
     case 'keys-reported':
       return fixtures
         ? `Recount matches the ${matched}: ${sigs}. Voting keys come from the fixture bridge (${origin === 'recorded' ? 'recorded mainnet votes and masternodes' : 'synthetic voters'})`
-        : `Recount matches the ${matched}: ${sigs}, but the voting keys are only as the bridge reports them. Confirm them with the DAPI masternode list for a verified result`;
+        : smlUnconfirmed > 0
+          ? `Recount matches the ${matched}: ${sigs}, but ${formatInt(smlUnconfirmed)} voting keys are not confirmed by the current DAPI masternode list (a masternode may have left or changed its key since the tally, or the bridge reports it wrongly)`
+          : `Recount matches the ${matched}: ${sigs}, but the voting keys are only as the bridge reports them. Confirm them with the DAPI masternode list for a verified result`;
     case 'different-height':
       return `Recount differs from the published tallies, which are older than the votes (${sigs}). Expected between tally updates`;
     case 'mismatch':
@@ -139,12 +141,15 @@ function VotesResult({ done, fixtures }: { done: VotesDone; fixtures: boolean })
   const vv = voteVerdict(done.runs);
   const style = VERDICT_STYLE[vv.level];
   // The run that decided the headline: the one holding the matching tally, else the first.
-  const lead = done.runs.find((run) => run.result.targets.some((t) => t === vv.matched)) ?? done.runs[0]!;
+  const lead =
+    done.runs.find((run) => run.result.targets.some((t) => t === vv.matched)) ??
+    done.runs.find((run) => run.result.targets.some((t) => !t.matches && t.asOfHeight === run.votesAsOf)) ??
+    done.runs[0]!;
   return (
     <div className="votes-result" data-votes={vv.level}>
       <p className={`verdict ${style.className}`}>
         <ProvGlyph kind={style.glyph} />
-        {verdictText(vv.level, lead.result.verified, lead.result.total, vv.matched?.name, done.origin, fixtures)}
+        {verdictText(vv.level, lead.result.verified, lead.result.total, vv.matched?.name, done.origin, fixtures, lead.result.smlUnconfirmed)}
       </p>
       {done.runs.map((run, i) => (
         <RunResult key={i} run={run} bridge={done.bridge} sml={done.sml} />

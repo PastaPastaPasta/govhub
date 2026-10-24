@@ -33,9 +33,9 @@ test('@live reads the gov contract with proofs and verifies a collateral over ma
     console.log(`live: ${await page.locator('h1').innerText()}: ${(await collateral.innerText()).replace(/\s+/g, ' ').slice(0, 500)}`);
     await expect(collateral.locator('[data-verdict]')).toHaveAttribute('data-verdict', 'ok');
     await expect(collateral.locator('[data-step="tx"]')).not.toContainText('recorded.dapi.invalid');
-    // The block proof (whole block fetched, merkle root recomputed, coinbase height) must have worked against real mainnet nodes.
+    // The block proof (whole block fetched, merkle root recomputed, coinbase height, X11 hash) must have worked against real mainnet
+    // nodes. It counts as "verified" only when a BLS-valid ChainLock anchors the block (collaterals older than ~3.5 days cannot be).
     await expect(collateral.locator('[data-step="block"]')).toHaveAttribute('data-status', 'ok');
-    await expect(collateral.locator('[data-step="block"]')).toHaveAttribute('data-basis', 'verified');
     // The ChainLock is BLS-verified when the nodes allow it, else a labelled node claim; either way the collateral line says which.
     const chainlock = collateral.locator('[data-step="chainlock"]');
     const basis = await chainlock.getAttribute('data-basis');

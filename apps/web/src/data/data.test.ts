@@ -98,17 +98,22 @@ describe('bridge client against services/bridge/openapi.json (untrusted input)',
     const mn = sample(schemas.MnList!, { masternodes: [entry] });
     expect(parseMnList(mn).masternodes).toHaveLength(1);
     expect(parseCycle(sample(schemas.Cycle!)).paid).toBe(1);
-    const votes = parseVotes(sample(schemas.VoteSet!, { votes: [sample(schemas.Vote!)], govHash: H }), H);
+    // tallyHeight is optional in the spec (absent for ?all=1) but the client needs it, so it is added here
+    const votes = parseVotes({ ...(sample(schemas.VoteSet!, { votes: [sample(schemas.Vote!)], govHash: H }) as object), tallyHeight: 9 }, { govHash: H });
     expect(votes.votes).toHaveLength(1);
-    expect(votes.asOfHeight).toBe(0); // optional / nullable in the spec
+    expect(votes.asOfHeight).toBe(9); // optional / nullable in the spec: defaults to the tally's height
   });
 
   it('uses the spec\'s field names and enums', () => {
     expect(Object.keys(schemas.VoteSet!.properties!)).toEqual(expect.arrayContaining(['asOfHeight', 'tallyHeight', 'mnListHash', 'voteSetHash', 'votes']));
     expect(parseMasternode({ proTxHash: H, collateralTxid: H, collateralIndex: 0, votingAddress: 'X', type: 'evo', valid: false }).type).toBe('evo');
-    const vs = parseVotes({ govHash: H, asOfHeight: 7, tallyHeight: 5, mnListHash: 'beef', voteSetHash: H, votes: [] }, H);
+    const vs = parseVotes({ govHash: H, asOfHeight: 7, tallyHeight: 5, mnListHash: 'beef', voteSetHash: H, votes: [] }, { govHash: H, height: 7 });
     expect([vs.asOfHeight, vs.tallyHeight, vs.mnListHash, vs.voteSetHash]).toEqual([7, 5, 'beef', H]);
-    expect(parseVotes({ asOfHeight: null, voteSetHash: null, votes: [] }, H)).toMatchObject({ asOfHeight: 0, tallyHeight: 0, voteSetHash: null });
+    expect(parseVotes({ govHash: H, asOfHeight: null, tallyHeight: 3, voteSetHash: null, votes: [] }, { govHash: H })).toMatchObject({ asOfHeight: 3, tallyHeight: 3, voteSetHash: null });
+    // a set for another proposal, a missing tally height, or a tally above the requested height is refused
+    expect(() => parseVotes({ govHash: 'cd'.repeat(32), tallyHeight: 3, votes: [] }, { govHash: H })).toThrow(/different proposal/);
+    expect(() => parseVotes({ govHash: H, asOfHeight: 3, votes: [] }, { govHash: H })).toThrow(BridgeError);
+    expect(() => parseVotes({ govHash: H, asOfHeight: 7, tallyHeight: 9, votes: [] }, { govHash: H, height: 7 })).toThrow(/above the requested/);
     expect(parseTally({ govHash: H, asOfHeight: 1, yesWeighted: 1, noWeighted: 0, abstainWeighted: 0, yesCount: 1, noCount: 0, abstainCount: 0, voteSetHash: H, rank: 2, inNextBudget: false, margin: -5, passing: false }).margin).toBe(-5);
   });
 

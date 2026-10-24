@@ -1,4 +1,4 @@
-import { createDapi, type Dapi, type VerifiedTransaction } from '@govhub/dapi';
+import { AllNodesFailedError, createDapi, VerificationError, type Dapi, type VerifiedTransaction } from '@govhub/dapi';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { installRecordedDapi, RECORDED_NODE } from '../data/dapiRecorded.ts';
 import { lookupCollateral } from '../data/dapi.ts';
@@ -114,11 +114,23 @@ describe('what is verified and what is node-reported (ChainLock, confirmations, 
     const p = byName('OrchardPay');
     const tx = await recorded(p.collateralTxid);
     const v = verifyCollateral(p, { ...tx, proof: { merkle: true, blockHash: 'claimed', chainLock: null, notes: ['no BLS verifier: ChainLock signature not checked'] } });
-    expect(stepOf(v, 'block').basis).toBe('verified');
-    expect(stepOf(v, 'height').basis).toBe('verified');
-    expect(stepOf(v, 'chainlock')).toMatchObject({ basis: 'reported' });
+    // a merkle proof alone does not tie the block to the chain (no proof-of-work): it stays "reported", and a second node weighs in
+    expect(stepOf(v, 'block')).toMatchObject({ status: 'ok', basis: 'reported' });
+    expect(stepOf(v, 'block').detail).toContain('nothing ties that block to the chain');
+    expect(stepOf(v, 'crosscheck').status).toBe('warn');
+    expect(stepOf(v, 'height').basis).toBe('reported');
+    expect(stepOf(v, 'chainlock')).toMatchObject({ status: 'ok', basis: 'reported' });
     expect(stepOf(v, 'chainlock').detail).toContain('no BLS verifier');
     expect(stepOf(v, 'confirmations').basis).toBe('reported');
+    expect(v.chain).toMatchObject({ merkle: true, chainLocked: 'claimed', lockDepth: null });
+  });
+
+  it('a ChainLock proof that FAILED (as opposed to not attempted) is a warning, not a quiet "ok"', async () => {
+    const p = byName('OrchardPay');
+    const tx = await recorded(p.collateralTxid);
+    const v = verifyCollateral(p, { ...tx, proof: { merkle: true, blockHash: 'verified', chainLock: null, notes: ['chainlock proof failed: header chain breaks at +3'] } });
+    expect(stepOf(v, 'chainlock')).toMatchObject({ status: 'warn', basis: 'reported' });
+    expect(stepOf(v, 'chainlock').detail).toContain('FAILED');
   });
 
   it('a verified ChainLock that is too shallow does not vouch for the 6 confirmations', async () => {
@@ -126,7 +138,7 @@ describe('what is verified and what is node-reported (ChainLock, confirmations, 
     const v = verifyCollateral(p, proven(await recorded(p.collateralTxid), { verifiedConfirmations: 2 }));
     expect(stepOf(v, 'chainlock').basis).toBe('verified');
     expect(stepOf(v, 'confirmations')).toMatchObject({ status: 'ok', basis: 'reported' });
-    expect(v.chain!.provenConfirmations).toBeNull();
+    expect(v.chain).toMatchObject({ provenConfirmations: null, lockDepth: 2 });
   });
 
   it('lookupCollateral keeps the helper\'s proof, and falls back to the node\'s claim (saying why) when the proof fails', async () => {
@@ -148,6 +160,9 @@ describe('what is verified and what is node-reported (ChainLock, confirmations, 
     expect(fell.proof).toMatchObject({ merkle: false, chainLock: null });
     expect(fell.proof.notes[0]).toContain('merkle root does not match');
     expect(verifyCollateral(byName('OrchardPay'), fell).steps.find((s) => s.id === 'chainlock')!.detail).toContain('merkle root does not match');
+    // a node that contradicted itself is a lie, not a flaky node: the lookup fails instead of asking the next node for its claim
+    const lie = new AllNodesFailedError([{ node: 'a:443', error: new VerificationError('merkle', 'transaction is not in the claimed block') }]);
+    await expect(lookupCollateral(dapi(() => Promise.reject(lie)), 'ab'.repeat(32), { verify: true })).rejects.toBe(lie);
     // an aborted lookup is not downgraded to a claim
     const abort = Object.assign(new Error('aborted'), { name: 'AbortError' });
     await expect(lookupCollateral(dapi(() => Promise.reject(abort)), 'ab'.repeat(32), { verify: true })).rejects.toBe(abort);
@@ -228,6 +243,13 @@ describe('vote verification against the fixture bridge (synthetic voters)', () =
     expect(verdict.level).toBe('mismatch');
   });
 
+  it('a recount is only credited to the tally it was made for', () => {
+    const r = check();
+    const newer = { ...tally, asOfHeight: tally.asOfHeight + 5 };
+    const prov = tallyProvenance({ name: PLATFORM_TARGET, prov: { kind: 'proof', source: 'Platform' }, tally: newer }, [run(r, tally.asOfHeight)]);
+    expect(prov.kind).toBe('proof');
+  });
+
   it('votes replayed as votes for another proposal do not verify', () => {
     const other = byName('OrchardPay');
     const r = check({ govHash: other.govHash, targets: [{ name: PLATFORM_TARGET, tally: snap.tallies.get(other.govHash)! }] });
@@ -267,6 +289,18 @@ describe('vote verification against the fixture bridge (synthetic voters)', () =
     expect(r.problems['sml-mismatch']).toBe(1);
     expect(r.smlChecked).toBe(votes.length);
     expect(voteVerdict([run(r, 0)]).level).toBe('no-tally');
+  });
+
+  it('a masternode the (current) DAPI list no longer has keeps its vote in the recount but blocks "verified"', () => {
+    // The SML is today's list, the tally is older: a masternode that left or re-keyed since must not turn an honest tally into a mismatch.
+    const sml = new Map(mns.map((m) => [m.proTxHash, { votingAddress: m.votingAddress, isValid: true, nType: 0 }]));
+    sml.delete(mns[1]!.proTxHash);
+    const r = check({ sml });
+    expect(r.smlUnconfirmed).toBe(1);
+    expect(r.verified).toBe(votes.length);
+    expect(r.targets[0]!.matches).toBe(true);
+    expect(r.keysFrom).toBe('bridge');
+    expect(voteVerdict([run(r, tally.asOfHeight)]).level).toBe('keys-reported');
   });
 });
 

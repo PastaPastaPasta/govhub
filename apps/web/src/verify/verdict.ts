@@ -29,7 +29,8 @@ export function voteVerdict(runs: readonly VoteRun[]): VoteVerdict {
 
 /** Provenance of a shown tally after the recounts; unchanged unless a recount says something about it. */
 export function tallyProvenance(shown: { name: string; prov: Provenance; tally: Tally }, runs: readonly VoteRun[] | undefined): Provenance {
-  const hit = (runs ?? []).flatMap((run) => run.result.targets.map((t) => ({ run, t }))).find(({ t }) => t.name === shown.name);
+  // Only a recount of THIS tally counts: a reloaded live tally (newer block) must not inherit the verdict on its predecessor.
+  const hit = (runs ?? []).flatMap((run) => run.result.targets.map((t) => ({ run, t }))).find(({ t }) => t.name === shown.name && t.asOfHeight === shown.tally.asOfHeight);
   if (!hit) return shown.prov;
   const { run, t: target } = hit;
   const r = run.result;

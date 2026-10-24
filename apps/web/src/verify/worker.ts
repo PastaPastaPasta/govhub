@@ -78,16 +78,18 @@ async function handle(req: WorkerRequest): Promise<void> {
     try {
       votes = await bridge.votes(req.govHash, g.height === null ? {} : { height: g.height });
     } catch (e) {
-      // A bridge that no longer holds the set for that height (or predates ?height=) still serves its live set; the verdict then says "different height".
-      if (g.height === null || !(e instanceof BridgeError)) throw e;
+      // A bridge that no longer holds the set for that height (404) still serves its live set; the verdict then says "different height".
+      // Anything else (unreachable, HTTP 500, malformed JSON) is a failure, not a reason to compare something else.
+      if (g.height === null || !(e instanceof BridgeError) || e.status !== 404) throw e;
       votes = await bridge.votes(req.govHash);
     }
     origin = votes.origin ?? origin;
     progress(`Fetching the masternode list at block ${votes.tallyHeight.toLocaleString('en-US')}`);
-    const mnlist = await bridge.mnlist(votes.tallyHeight || undefined);
+    const mnlist = await bridge.mnlist(votes.tallyHeight);
     progress(`Checking ${votes.votes.length} signatures`);
     const result = verifyVotes({ govHash: req.govHash, votes: votes.votes, masternodes: mnlist.masternodes, network: req.network, now: req.now, targets: g.targets, sml: sml?.entries ?? null });
-    runs.push({ result, votesAsOf: votes.asOfHeight, mnlistHeight: mnlist.height, listMatches: votes.mnListHash && mnlist.listHash ? votes.mnListHash === mnlist.listHash : null });
+    // votesAsOf is the height of the tally whose set was actually served (<= the requested height), not the height echoed back.
+    runs.push({ result, votesAsOf: votes.tallyHeight, mnlistHeight: mnlist.height, listMatches: votes.mnListHash && mnlist.listHash ? votes.mnListHash === mnlist.listHash : null });
   }
   post({ id: req.id, kind: 'votes', bridge: bridge.name, runs, ...(origin ? { origin } : {}), sml: sml ? { nodes: sml.nodes, height: sml.height, validWeighted: sml.validWeighted } : null });
 }
