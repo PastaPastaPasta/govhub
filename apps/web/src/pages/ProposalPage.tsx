@@ -6,7 +6,9 @@ import { useApp } from '../app/context.tsx';
 import type { Proposal, Provenance, Sourced } from '../data/types.ts';
 import { formatDash, formatDate, formatDateTime, formatInt, formatRelative, formatSigned, shortHash, urlHost } from '../lib/format.ts';
 import { votingDeadlineTime } from '../lib/governance.ts';
-import { deriveRow } from '../lib/view.ts';
+import { deriveRow, weakest } from '../lib/view.ts';
+import { BRIDGE_TARGET, PLATFORM_TARGET, tallyProvenance } from '../verify/verdict.ts';
+import type { VoteTarget } from '../verify/votes.ts';
 import { useAsync } from '../ui/hooks.ts';
 import { PassingBar } from '../ui/PassingBar.tsx';
 import { paymentText } from '../ui/ProposalCard.tsx';
@@ -108,16 +110,19 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
       ? { kind: 'verified', source: 'collateral check in this browser', detail: `hash recomputed from dataHex; collateral ${shortHash(p.collateralTxid, 6)} checked over DAPI` }
       : { kind: 'mismatch', source: 'collateral check in this browser', detail: v.steps.filter((s) => s.status === 'fail').map((s) => s.label).join(', ') }
     : sp.prov;
-  const vr = votes?.result;
-  const tallyProv: Provenance | null =
-    vr && vr.matches !== null && row.tally
-      ? vr.matches
-        ? { kind: 'verified', source: `recount of ${formatInt(vr.verified)} signed votes`, detail: 'every field and the voteSetHash match the Platform tally' }
-        : { kind: 'mismatch', source: `recount of ${formatInt(vr.verified)} signed votes`, detail: vr.compare.filter((c) => !c.ok).map((c) => c.field).join(', ') }
-      : (row.tally?.prov ?? null);
+  const shownName = row.tally && row.tally === row.bridgeTally ? BRIDGE_TARGET : PLATFORM_TARGET;
+  const tallyProv: Provenance | null = row.tally ? tallyProvenance({ name: shownName, prov: row.tally.prov, tally: row.tally.value }, votes?.result, votes?.votesAsOf ?? 0) : null;
+  const targets = useMemo<VoteTarget[]>(
+    () => [
+      ...(row.platformTally ? [{ name: PLATFORM_TARGET, tally: row.platformTally.value }] : []),
+      ...(row.bridgeTally ? [{ name: BRIDGE_TARGET, tally: row.bridgeTally.value }] : []),
+    ],
+    [row.platformTally, row.bridgeTally],
+  );
 
   const t = row.tally?.value;
-  const host = urlHost(p.url);
+  // Only link a URL that is the hash-committed one (the synchronous check passed).
+  const host = row.content.ok ? urlHost(p.url) : null;
   const sched = row.schedule;
 
   return (
@@ -127,6 +132,11 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
           <Link to={p.endEpoch > now ? '/' : '/past'}>{p.endEpoch > now ? 'Active proposals' : 'Past proposals'}</Link>
         </p>
         <h1>{p.name}</h1>
+        {!row.content.ok && (
+          <p className="error" role="alert">
+            The published fields do not match the proposal's hashed data ({row.content.problem}). The link is disabled; see Raw proposal data for what the hash commits to.
+          </p>
+        )}
         <p className="proposal-sub">
           {paymentText(p.paymentAmount, sched)}
           {host && (
@@ -178,6 +188,10 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
                 <>
                   <b>{formatInt(t.yesWeighted)}</b> yes, <b>{formatInt(t.noWeighted)}</b> no, <b>{formatInt(t.abstainWeighted)}</b> abstain
                 </>
+              ) : tallies.error ? (
+                <span className="error">Tally could not be read: {tallies.error}</span>
+              ) : tallies.loading ? (
+                'Loading…'
               ) : (
                 'No tally published yet'
               )}
@@ -185,7 +199,7 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
             <Item label="Votes, masternodes" prov={tallyProv}>
               {t ? `${formatInt(t.yesCount)} yes, ${formatInt(t.noCount)} no, ${formatInt(t.abstainCount)} abstain` : '–'}
             </Item>
-            <Item label="Net yes" prov={row.threshold?.prov}>
+            <Item label="Net yes" prov={tallyProv && row.threshold ? weakest(tallyProv, row.threshold.prov) : null}>
               {row.absYes !== null && row.threshold ? (
                 <>
                   {formatSigned(row.absYes)} of {formatInt(row.threshold.value)} needed
@@ -194,7 +208,7 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
                 '–'
               )}
             </Item>
-            <Item label="Funded" prov={row.tally?.prov}>
+            <Item label="Funded" prov={tallyProv}>
               {t ? (t.inNextBudget ? 'Yes, in the next superblock' : row.state?.passing ? 'Passing, but not in the next superblock (budget full or outside its payment window)' : 'No') : '–'}
               {t && t.rank > 0 && <span className="muted"> (rank {t.rank})</span>}
             </Item>
@@ -223,7 +237,7 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
           </dl>
         </section>
 
-        <VerificationPanel proposal={p} collateral={collateral} expectedTally={row.platformTally} onVotes={setVotes} />
+        <VerificationPanel proposal={p} collateral={collateral} targets={targets} onVotes={setVotes} />
       </div>
 
       <section aria-labelledby="raw-title" className="raw">

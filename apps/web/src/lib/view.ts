@@ -1,5 +1,6 @@
 // View model: joins a proposal with its tallies and the cycle into what a card / page shows.
-import type { Cycle, Proposal, Provenance, Sourced, Tally } from '../data/types.ts';
+import type { Cycle, Proposal, Provenance, ProvenanceKind, Sourced, Tally } from '../data/types.ts';
+import { checkContent } from '../verify/collateral.ts';
 import { absoluteYes, fundingThreshold, passState, paymentSchedule, type GovParams, type PassState, type PaymentSchedule } from './governance.ts';
 
 export interface Row {
@@ -12,6 +13,23 @@ export interface Row {
   threshold: Sourced<number> | null;
   state: PassState | null;
   schedule: PaymentSchedule | null;
+  /**
+   * Synchronous content check (no network): the gov hash recomputes and the displayed fields equal the
+   * hashed data. When false, a lying source changed what the card shows; links must not be followed.
+   */
+  content: { ok: boolean; problem?: string };
+}
+
+const STRENGTH: Record<ProvenanceKind, number> = { mismatch: 0, fixture: 1, reported: 2, proof: 3, verified: 4 };
+
+/** The weaker of two provenances: a value computed from both is only as trustworthy as the worse one. */
+export function weakest(a: Provenance, b: Provenance): Provenance {
+  return STRENGTH[b.kind] < STRENGTH[a.kind] ? b : a;
+}
+
+function contentCheck(p: Proposal): Row['content'] {
+  const bad = checkContent(p).steps.filter((s) => s.status !== 'ok');
+  return bad.length ? { ok: false, problem: bad.map((s) => `${s.label}: ${s.detail}`).join('; ') } : { ok: true };
 }
 
 export function pickTally(platform: Sourced<Tally> | null | undefined, bridge: Sourced<Tally> | null | undefined): Sourced<Tally> | null {
@@ -47,14 +65,14 @@ export function deriveRow(
     threshold,
     state: absYes !== null && threshold ? passState(absYes, threshold.value, tally!.value.inNextBudget) : null,
     schedule: cycle ? paymentSchedule(p.value, cycle.value, params, nowS) : null,
+    content: contentCheck(p.value),
   };
 }
 
-/** DashCentral order: rank from the tally (1 = best), unranked last, then absolute yes. */
+/** Core's funding order (absYes desc, then hash desc), computed here so Platform and bridge ranks never mix; no tally last. */
 export function byRank(a: Row, b: Row): number {
-  const ra = a.tally?.value.rank || Number.MAX_SAFE_INTEGER;
-  const rb = b.tally?.value.rank || Number.MAX_SAFE_INTEGER;
-  return ra - rb || (b.absYes ?? -Infinity) - (a.absYes ?? -Infinity) || a.p.value.name.localeCompare(b.p.value.name);
+  if (a.absYes === null || b.absYes === null) return a.absYes === null ? (b.absYes === null ? a.p.value.name.localeCompare(b.p.value.name) : 1) : -1;
+  return b.absYes - a.absYes || (a.p.value.govHash < b.p.value.govHash ? 1 : a.p.value.govHash > b.p.value.govHash ? -1 : 0);
 }
 
 /** Canonical link: /p/<name> unless the name is ambiguous among `names`, then /p/h/<govHash>. */

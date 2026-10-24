@@ -47,9 +47,10 @@ test.describe('fixture mode', () => {
     // Vote verification against the fixture bridge.
     await page.getByRole('button', { name: 'Verify votes' }).click();
     const votes = page.getByTestId('votes-check');
-    await expect(votes.locator('[data-votes]')).toHaveAttribute('data-votes', 'match', { timeout: 30_000 });
-    await expect(votes).toContainText('Tally verified: 229 of 229 signatures check out');
-    await expect(votes.locator('table.compare tr.bad')).toHaveCount(0);
+    await expect(votes.locator('[data-votes]')).toHaveAttribute('data-votes', 'keys-reported', { timeout: 30_000 });
+    await expect(votes).toContainText('Recount matches the Platform tally: 229 of 229 signatures check out');
+    await expect(votes).toContainText('fixture bridge (synthetic voters)');
+    await expect(votes.locator('table.compare td.bad')).toHaveCount(0);
 
     expect(errors).toEqual([]);
     expect(await cspViolations(page)).toEqual([]);
@@ -130,7 +131,8 @@ test.describe('settings', () => {
     const b64 = Buffer.from(JSON.stringify(cfg)).toString('base64url');
     await page.goto(`/settings?config=${b64}`);
     const offer = page.getByRole('alertdialog');
-    await expect(offer).toContainText('1 manual nodes');
+    await expect(offer).toContainText('1.2.3.4:443');
+    await expect(offer).toContainText('3ueAfbVe8LvCxYWk7bKvXxc5uHe7E1TDJHzN3k3ZDehZ');
     await offer.getByRole('button', { name: 'Use these settings' }).click();
     await expect(offer).toHaveCount(0);
     await expect(page.getByLabel('Nodes (host:port, one per line)')).toHaveValue('1.2.3.4:443');

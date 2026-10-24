@@ -22,6 +22,11 @@ export function ProposalCard({ row, href }: { row: Row; href: string }) {
         <h3 className="card-title">
           <Link to={href}>{p.name}</Link>
         </h3>
+        {!row.content.ok && (
+          <p className="chip chip-bad" title={row.content.problem}>
+            Published fields do not match the hashed data
+          </p>
+        )}
         <p className="card-owner">
           Owner not claimed yet. Pays <span className="mono-ish">{shortAddress(p.paymentAddress)}</span>
         </p>

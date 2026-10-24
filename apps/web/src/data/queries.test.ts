@@ -92,6 +92,12 @@ describe('shapes PV13 silently answers with [] are rejected', () => {
   it('range followed by another constraint', () => {
     bad(FORUM, { documentTypeName: 'comment', where: [['govHash', '>', B64], ['$createdAt', '>', 0]], orderBy: [['govHash', 'asc'], ['$createdAt', 'asc']] }, 'R1');
   });
+  it('orderBy continuing past the range property', () => {
+    bad(GOV_SCHEMAS, { documentTypeName: 'proposal', where: [['name', '>', 'a']], orderBy: [['name', 'asc'], ['$createdAt', 'asc']] }, 'nothing after it');
+  });
+  it('startAfter must be a document id', () => {
+    bad(GOV_SCHEMAS, { ...activeProposals(1), startAfter: 'not an id!' }, 'startAfter');
+  });
   it('range without orderBy', () => {
     bad(GOV_SCHEMAS, { documentTypeName: 'proposal', where: [['endEpoch', '>', 1]] }, 'R3');
   });

@@ -19,16 +19,17 @@ test('@live reads the gov contract with proofs and verifies a collateral over ma
   const n = await cards.count();
   console.log(`live: ${n} active proposals on Platform`);
   if (process.env.SCREENSHOTS) await page.screenshot({ path: 'screenshots/live-active-light-desktop.png', fullPage: true });
-  if (n > 0) {
-    // Values read from Platform carry the proof mark.
-    await expect(cards.first().locator('[data-prov="proof"], [data-prov="reported"]').first()).toBeVisible();
-    await cards.first().locator('h3 a').click();
+  // Real proposals (content check passes) must verify against mainnet over DAPI; phase-0 spike
+  // documents on testnet carry a "do not match" chip and are skipped.
+  const real = cards.filter({ hasNot: page.locator('.chip-bad') });
+  if ((await real.count()) > 0) {
+    await expect(real.first().locator('[data-prov="proof"], [data-prov="reported"]').first()).toBeVisible();
+    await real.first().locator('h3 a').click();
     const collateral = page.getByTestId('collateral-check');
-    // Real proposals verify; phase-0 spike documents (testnet collateral) fail the lookup. Either way the check ran.
     await expect(collateral.locator('[data-verdict]')).toBeVisible({ timeout: 90_000 });
-    const verdict = await collateral.locator('[data-verdict]').getAttribute('data-verdict');
-    console.log(`live: ${await page.locator('h1').innerText()} collateral verdict ${verdict}: ${(await collateral.innerText()).replace(/\s+/g, ' ').slice(0, 400)}`);
-    await expect(collateral.locator('[data-step="hash"]')).toBeVisible();
+    console.log(`live: ${await page.locator('h1').innerText()}: ${(await collateral.innerText()).replace(/\s+/g, ' ').slice(0, 500)}`);
+    await expect(collateral.locator('[data-verdict]')).toHaveAttribute('data-verdict', 'ok');
+    await expect(collateral.locator('[data-step="tx"]')).not.toContainText('recorded.dapi.invalid');
     if (process.env.SCREENSHOTS) await page.screenshot({ path: 'screenshots/live-proposal-light-desktop.png', fullPage: true });
   }
 

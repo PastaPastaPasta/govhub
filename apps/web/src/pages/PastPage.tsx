@@ -16,26 +16,30 @@ export function PastPage() {
   const [tallies, setTallies] = useState(new Map<string, Sourced<Tally>>());
   const [next, setNext] = useState<string | undefined>(undefined);
   const [state, setState] = useState<{ loading: boolean; error?: string; done: boolean }>({ loading: true, done: false });
-  const busy = useRef(false);
+  const gen = useRef(0);
+  const inFlight = useRef<number | null>(null);
 
   const load = useCallback(
     async (cursor?: string) => {
-      if (busy.current) return;
-      busy.current = true;
+      // A first page (no cursor) starts a new generation; results of older generations are dropped.
+      const g = cursor ? gen.current : ++gen.current;
+      if (cursor && inFlight.current === g) return;
+      inFlight.current = g;
       setState((s) => ({ ...s, loading: true }));
       try {
         const page = await source.pastPage(cursor);
+        if (g !== gen.current) return;
         setItems((prev) => (cursor ? [...prev, ...page.items] : page.items));
         setNext(page.next);
         setState({ loading: false, done: !page.next });
         if (page.items.length) {
           const t = await source.tallies(page.items.map((i) => i.value.govHash));
-          setTallies((prev) => new Map([...prev, ...t]));
+          if (g === gen.current) setTallies((prev) => new Map([...prev, ...t]));
         }
       } catch (e) {
-        setState({ loading: false, done: true, error: e instanceof Error ? e.message : String(e) });
+        if (g === gen.current) setState({ loading: false, done: true, error: e instanceof Error ? e.message : String(e) });
       } finally {
-        busy.current = false;
+        if (inFlight.current === g) inFlight.current = null;
       }
     },
     [source],

@@ -3,12 +3,14 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useApp } from '../app/context.tsx';
-import type { Proposal, Sourced, Tally } from '../data/types.ts';
+import type { Proposal } from '../data/types.ts';
 import { formatInt, shortHash } from '../lib/format.ts';
 import type { CollateralVerdict, Step } from '../verify/collateral.ts';
 import { runVerification } from '../verify/client.ts';
 import type { WorkerResponse } from '../verify/protocol.ts';
 import { ProvGlyph } from './Provenance.tsx';
+import { voteVerdict, type VoteLevel } from '../verify/verdict.ts';
+import type { VoteTarget } from '../verify/votes.ts';
 
 type VotesDone = Extract<WorkerResponse, { kind: 'votes' }>;
 
@@ -49,20 +51,54 @@ export function useCollateralCheck(p: Proposal | undefined) {
   return { verdict, progress, error };
 }
 
+const VERDICT_CLASS: Record<VoteLevel, string> = {
+  verified: 'verdict-ok',
+  'keys-reported': 'verdict-partial',
+  'different-height': 'verdict-partial',
+  mismatch: 'verdict-fail',
+  'no-tally': 'verdict-pending',
+};
+const VERDICT_GLYPH: Record<VoteLevel, 'verified' | 'mismatch' | 'reported'> = {
+  verified: 'verified',
+  'keys-reported': 'reported',
+  'different-height': 'reported',
+  mismatch: 'mismatch',
+  'no-tally': 'reported',
+};
+
+function verdictText(level: VoteLevel, verified: number, total: number, matched: string | undefined, fixtures: boolean): string {
+  const sigs = `${formatInt(verified)} of ${formatInt(total)} signatures check out`;
+  switch (level) {
+    case 'verified':
+      return `Tally verified: ${sigs} and the recount matches the ${matched}`;
+    case 'keys-reported':
+      return fixtures
+        ? `Recount matches the ${matched}: ${sigs}. Voting keys come from the fixture bridge (synthetic voters)`
+        : `Recount matches the ${matched}: ${sigs}, but the voting keys are only as the bridge reports them. Confirm them with the DAPI masternode list for a verified result`;
+    case 'different-height':
+      return `Recount differs from the published tallies, which are older than the votes (${sigs}). Expected between tally updates`;
+    case 'mismatch':
+      return `Tally mismatch: the recount from ${formatInt(verified)} valid votes differs from a tally at the same height`;
+    default:
+      return `${sigs}; there is no published tally to compare with`;
+  }
+}
+
 export function VerificationPanel({
   proposal,
   collateral,
-  expectedTally,
+  targets,
   onVotes,
 }: {
   proposal: Proposal;
   collateral: ReturnType<typeof useCollateralCheck>;
-  expectedTally: Sourced<Tally> | null;
+  /** Published tallies to compare the recount with. */
+  targets: VoteTarget[];
   onVotes(r: VotesDone | null): void;
 }) {
   const { source, registry, mode } = useApp();
   const bridge = source.bridgeDescriptor();
-  const [sml, setSml] = useState(false);
+  const [sml, setSml] = useState(true);
   const [votes, setVotes] = useState<{ running: boolean; progress?: string; result?: VotesDone; error?: string }>({ running: false });
   const { verdict, progress, error } = collateral;
 
@@ -74,7 +110,7 @@ export function VerificationPanel({
       {
         kind: 'votes',
         govHash: proposal.govHash,
-        expected: expectedTally?.value ?? null,
+        targets,
         bridge,
         dapi: source.dapiDescriptor(),
         network: registry.coreNetwork,
@@ -92,6 +128,7 @@ export function VerificationPanel({
   };
 
   const r = votes.result?.result;
+  const vv = r && votes.result ? voteVerdict(r, votes.result.votesAsOf) : null;
   const problems = r ? Object.entries(r.problems).filter(([, n]) => n > 0) : [];
 
   return (
@@ -134,7 +171,7 @@ export function VerificationPanel({
               </button>
               {mode === 'live' && (
                 <label className="check">
-                  <input type="checkbox" checked={sml} onChange={(e) => setSml(e.target.checked)} /> Also cross-check voting keys with the DAPI masternode list (about 1.4 MB)
+                  <input type="checkbox" checked={sml} onChange={(e) => setSml(e.target.checked)} /> Confirm voting keys with the DAPI masternode list from two nodes (about 3 MB; needed for a verified result)
                 </label>
               )}
             </div>
@@ -147,19 +184,17 @@ export function VerificationPanel({
         )}
         {votes.error && <p className="error">Vote verification failed: {votes.error}</p>}
         {r && votes.result && (
-          <div className="votes-result" data-votes={r.matches === null ? 'no-tally' : r.matches ? 'match' : 'mismatch'}>
-            <p className={`verdict ${r.matches === false ? 'verdict-fail' : r.matches ? 'verdict-ok' : 'verdict-pending'}`}>
-              <ProvGlyph kind={r.matches === false ? 'mismatch' : r.matches ? 'verified' : 'reported'} />
-              {r.matches === null
-                ? `${formatInt(r.verified)} of ${formatInt(r.total)} votes verified; there is no Platform tally to compare with`
-                : r.matches
-                  ? `Tally verified: ${formatInt(r.verified)} of ${formatInt(r.total)} signatures check out and the recount matches the Platform tally`
-                  : `Tally mismatch: the recount from ${formatInt(r.verified)} valid votes differs from the Platform tally`}
+          <div className="votes-result" data-votes={vv!.level}>
+            <p className={`verdict ${VERDICT_CLASS[vv!.level]}`}>
+              <ProvGlyph kind={VERDICT_GLYPH[vv!.level]} />
+              {verdictText(vv!.level, r.verified, r.total, vv!.matched?.name, mode === 'fixtures')}
             </p>
             <p className="muted small">
               {formatInt(r.total)} votes from {votes.result.bridge} (as of block {formatInt(votes.result.votesAsOf)}), masternode list at block {formatInt(votes.result.mnlistHeight)}
-              {votes.result.sml && `, voting keys cross-checked against the DAPI list from ${votes.result.sml.node} (${formatInt(r.smlChecked)} checked)`}
-              {r.rejectedTime > 0 && `, ${r.rejectedTime} dropped for a time Core would reject`}. Superseded votes are counted once, latest wins.
+              {votes.result.sml && `, voting keys confirmed against the DAPI masternode list from ${votes.result.sml.nodes.join(' and ')} (${formatInt(r.smlChecked)} checked; ${formatInt(votes.result.sml.validWeighted)} weighted valid MNs)`}
+              {r.rejectedTime > 0 && `, ${r.rejectedTime} dropped for a time Core would reject`}
+              {r.otherSignal > 0 && `, ${r.otherSignal} votes on other signals skipped`}. Superseded votes are counted once, latest wins.
+              {r.keysFrom === 'sml' && r.internalCollateral < r.verified && ` Which collateral belongs to which masternode is as the bridge reports it for ${formatInt(r.verified - r.internalCollateral)} votes (ProRegTx check not done yet).`}
             </p>
             {problems.length > 0 && (
               <ul className="problems">
@@ -170,32 +205,37 @@ export function VerificationPanel({
                 ))}
               </ul>
             )}
-            {r.compare.length > 0 && (
+            {r.targets.length > 0 && (
               <table className="compare">
                 <thead>
                   <tr>
                     <th scope="col">Field</th>
                     <th scope="col" className="r">
-                      Platform tally
-                    </th>
-                    <th scope="col" className="r">
                       Recounted
                     </th>
-                    <th scope="col">
-                      <span className="visually-hidden">Result</span>
-                    </th>
+                    {r.targets.map((t) => (
+                      <th scope="col" className="r" key={t.name}>
+                        {t.name}
+                        <br />
+                        <span className="muted">block {formatInt(t.asOfHeight)}</span>
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {r.compare.map((c) => (
-                    <tr key={c.field} className={c.ok ? '' : 'bad'}>
+                  {r.targets[0]!.compare.map((c, i) => (
+                    <tr key={c.field}>
                       <th scope="row">{c.field}</th>
-                      <td className="r">{typeof c.expected === 'number' ? formatInt(c.expected) : shortHash(c.expected || '(none)', 6)}</td>
                       <td className="r">{typeof c.computed === 'number' ? formatInt(c.computed) : shortHash(c.computed, 6)}</td>
-                      <td>
-                        <ProvGlyph kind={c.ok ? 'verified' : 'mismatch'} />
-                        <span className="visually-hidden">{c.ok ? 'matches' : 'differs'}</span>
-                      </td>
+                      {r.targets.map((t) => {
+                        const tc = t.compare[i]!;
+                        return (
+                          <td key={t.name} className={`r${tc.ok ? '' : ' bad'}`}>
+                            {typeof tc.expected === 'number' ? formatInt(tc.expected) : shortHash(tc.expected || '(none)', 6)} <ProvGlyph kind={tc.ok ? 'verified' : 'mismatch'} />
+                            <span className="visually-hidden">{tc.ok ? 'matches' : 'differs'}</span>
+                          </td>
+                        );
+                      })}
                     </tr>
                   ))}
                 </tbody>

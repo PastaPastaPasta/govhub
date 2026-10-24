@@ -69,7 +69,9 @@ function useGovSnapshot(source: DataSource, nonce: number): GovSnapshot {
       .then(
         guard(async (ps) => {
           setActive({ data: ps, loading: false });
-          if (ps.length) setTallies(await source.tallies(ps.map((p) => p.value.govHash)));
+          if (!ps.length) return;
+          const t = await source.tallies(ps.map((p) => p.value.govHash));
+          if (live) setTallies(t);
         }),
         guard((e) => setActive({ error: errText(e), loading: false })),
       )

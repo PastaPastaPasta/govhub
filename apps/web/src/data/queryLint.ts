@@ -119,6 +119,8 @@ export function lintQuery(schemas: ContractSchemas, q: DocQuery): LintResult {
   // R5
   if (q.limit !== undefined && (!Number.isInteger(q.limit) || q.limit < 1 || q.limit > MAX_LIMIT)) errors.push(`limit must be 1..${MAX_LIMIT} (R5)`);
 
+  if (q.startAfter !== undefined && !B58.test(q.startAfter)) errors.push('startAfter must be a base58 document id (R5)');
+
   // R6
   const defOf = (f: string) => type.properties[f] ?? systemProp(f);
   for (const [f, op, v] of q.where) {
@@ -195,6 +197,7 @@ export function lintQuery(schemas: ContractSchemas, q: DocQuery): LintResult {
     const end = pos[pos.length - 1]!;
     if (start > chosen.prefix) errors.push(`orderBy skips index properties after the equality prefix (R3)`);
     if (chosen.rangePos >= 0 && (chosen.rangePos < start || chosen.rangePos > end)) errors.push(`orderBy must include the range/in property ${props[chosen.rangePos]} (R3)`);
+    else if (chosen.rangePos >= 0 && end !== chosen.rangePos) errors.push(`orderBy must end on the range/in property ${props[chosen.rangePos]}, nothing after it (R1/R3)`);
   } else if (chosen.rangePos >= 0) {
     errors.push(`range/in on ${props[chosen.rangePos]} needs an orderBy on it (R3)`);
   }

@@ -17,7 +17,8 @@ export const CSP = [
   "style-src 'self'",
   "img-src 'self' data:",
   "font-src 'self'",
-  "connect-src 'self' https:",
+  // https: because DAPI nodes, bridges and feeds are user-configurable; localhost for a local bridge.
+  "connect-src 'self' https: http://localhost:* http://127.0.0.1:*",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'none'",

@@ -102,12 +102,14 @@ export function liveSource(registry: Registry): DataSource {
 
   /** Proven read with an IndexedDB copy: `onStale` gets the cached value (and its age) first. */
   async function cached<T>(key: string, onStale: ((v: T, note: string) => void) | undefined, run: () => Promise<{ value: T; height: number | null }>): Promise<{ value: T; height: number | null }> {
+    let fresh = false;
     if (onStale) {
       void cacheGet<T>(cacheKey(key)).then((c) => {
-        if (c) onStale(c.value, `cached ${Math.max(1, Math.round((Date.now() - c.savedAt) / 60000))} min ago at Platform height ${c.height ?? '?'}`);
+        if (c && !fresh) onStale(c.value, `cached ${Math.max(1, Math.round((Date.now() - c.savedAt) / 60000))} min ago at Platform height ${c.height ?? '?'}`);
       });
     }
     const r = await run();
+    fresh = true;
     void cachePut(cacheKey(key), r.value, r.height);
     return r;
   }
@@ -153,6 +155,7 @@ export function liveSource(registry: Registry): DataSource {
 
     async active(onStale) {
       const now = Math.floor(Date.now() / 1000);
+      let platformError: unknown = null;
       const { value: fromPlatform, height } = await cached<Proposal[]>(
         'active',
         onStale && ((v, note) => onStale(v.map((p) => ({ value: p, prov: proof(null, note) })))),
@@ -169,12 +172,16 @@ export function liveSource(registry: Registry): DataSource {
           }
           return { value: all, height: h };
         },
-      );
+      ).catch((e: unknown) => {
+        platformError = e;
+        return { value: [] as Proposal[], height: null };
+      });
       const out: Sourced<Proposal>[] = fromPlatform.map((p) => ({ value: p, prov: proof(height) }));
       // Proposals the bridge knows but has not published yet: shown, clearly marked as reported.
       const seen = new Set(fromPlatform.map((p) => p.govHash));
       const b = await firstBridge((x) => x.proposals());
-      for (const p of b?.value ?? []) if (p.endEpoch > now && !seen.has(p.govHash)) out.push({ value: p, prov: reported(b!.bridge, 'not yet published on Platform') });
+      for (const p of b?.value ?? []) if (p.endEpoch > now && !seen.has(p.govHash)) out.push({ value: p, prov: reported(b!.bridge, platformError ? 'Platform could not be read' : 'not yet published on Platform') });
+      if (platformError && !b) throw platformError;
       return out;
     },
 

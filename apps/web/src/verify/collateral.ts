@@ -13,11 +13,13 @@ export interface TxLookup {
   isInstantLocked: boolean;
   /** DAPI node that answered. */
   node: string;
+  /** A second node's answer for the same txid, when one was reachable. */
+  second?: { node: string; height: number; sameBytes: boolean } | null;
 }
 
 export type StepStatus = 'ok' | 'fail' | 'warn' | 'skip';
 export interface Step {
-  id: 'hash' | 'fields' | 'tx' | 'collateral' | 'confirmations' | 'chainlock' | 'height';
+  id: 'hash' | 'fields' | 'tx' | 'crosscheck' | 'collateral' | 'confirmations' | 'chainlock' | 'height';
   status: StepStatus;
   label: string;
   detail: string;
@@ -72,6 +74,14 @@ export function verifyCollateral(p: ProposalCore, lookup: TxLookup | { error: st
     return { ok: false, steps, ...(govHashComputed ? { govHashComputed } : {}) };
   }
   steps.push({ id: 'tx', status: 'ok', label: 'Collateral transaction', detail: `${lookup.raw.length} bytes from DAPI node ${lookup.node}` });
+  const sec = lookup.second;
+  steps.push(
+    !sec
+      ? { id: 'crosscheck', status: 'warn', label: 'Second node', detail: 'no second DAPI node answered; block and confirmations rest on one node' }
+      : sec.sameBytes && sec.height === lookup.height
+        ? { id: 'crosscheck', status: 'ok', label: 'Second node', detail: `${sec.node} returns the same transaction in the same block` }
+        : { id: 'crosscheck', status: 'fail', label: 'Second node', detail: `${sec.node} disagrees: ${sec.sameBytes ? `block ${sec.height} vs ${lookup.height}` : 'different transaction bytes'}` },
+  );
 
   if (govHashComputed) {
     const raw = governanceObjectHash({ parentHash: p.parentHash, revision: p.revision, time: p.time, dataHex: p.dataHex }).raw;
@@ -98,6 +108,6 @@ export function verifyCollateral(p: ProposalCore, lookup: TxLookup | { error: st
     steps.push({ id: 'height', status: same ? 'ok' : 'warn', label: 'Collateral height', detail: same ? `block ${lookup.height.toLocaleString('en-US')}` : `chain says ${lookup.height.toLocaleString('en-US')}, published ${p.collateralHeight.toLocaleString('en-US')}` });
   }
   const critical: Step['id'][] = ['hash', 'fields', 'tx', 'collateral', 'confirmations'];
-  const ok = steps.filter((s) => critical.includes(s.id)).every((s) => s.status === 'ok');
+  const ok = steps.filter((s) => critical.includes(s.id)).every((s) => s.status === 'ok') && !steps.some((s) => s.status === 'fail');
   return { ok, steps, ...(govHashComputed ? { govHashComputed } : {}) };
 }

@@ -47,10 +47,9 @@ function ConfigOffer() {
     <div className="banner banner-config" role="alertdialog" aria-labelledby="cfg-title">
       <p id="cfg-title">
         <b>This link carries endpoint settings.</b>{' '}
-        {offer.errors.length
-          ? `They can't be used: ${offer.errors.join('; ')}.`
-          : `Bridges: ${offer.registry.bridges.map((b) => b.name).join(', ') || 'none'}. DAPI: ${offer.registry.dapi.source === 'manual' ? `${offer.registry.dapi.nodes.length} manual nodes` : 'quorum service'}. Platform contract ${offer.registry.govContractId.slice(0, 8)}….`}
+        {offer.errors.length ? `They can't be used: ${offer.errors.join('; ')}.` : 'Check every host before using them: a bridge or DAPI node you do not trust can report false numbers.'}
       </p>
+      {!offer.errors.length && <ConfigSummary r={offer.registry} />}
       <div className="banner-actions">
         {!offer.errors.length && (
           <button
@@ -69,6 +68,28 @@ function ConfigOffer() {
         </button>
       </div>
     </div>
+  );
+}
+
+function ConfigSummary({ r }: { r: Registry }) {
+  const rows: Array<[string, string]> = [
+    ['Networks', `Core ${r.coreNetwork}, Platform ${r.platformNetwork}`],
+    ['Governance contract', r.govContractId],
+    ['DAPI nodes', r.dapi.source === 'manual' ? r.dapi.nodes.join(', ') : `from ${r.dapi.quorumUrl}`],
+    ['Platform', `${r.platform.trusted ? 'trusted quorum keys' : 'untrusted mode'}${r.platform.addresses.length ? `, nodes ${r.platform.addresses.join(', ')}` : ', SDK default nodes'}`],
+    ['Bridges', r.bridges.map((b) => `${b.name} (${b.httpBase}${b.enabled ? '' : ', off'})`).join(', ') || 'none'],
+    ['Relays', r.relays.map((x) => x.url).join(', ') || 'none'],
+    ['Price feed', r.priceFeed?.url ?? 'none'],
+  ];
+  return (
+    <dl className="config-summary">
+      {rows.map(([k, v]) => (
+        <div key={k}>
+          <dt>{k}</dt>
+          <dd className="break">{v}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 

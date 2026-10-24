@@ -40,8 +40,16 @@ export async function fetchBestHeight(nodes: string[]): Promise<{ height: number
   return { height: first.value as number, node: first.node };
 }
 
-/** The full SML from the first message of subscribeToMasternodeList (~1.4 MB on mainnet). */
-export async function fetchSml(nodes: string[]): Promise<{ entries: Map<string, SmlEntry>; validWeighted: number; node: string; blockHash: string }> {
+interface SmlSnapshot {
+  entries: Map<string, SmlEntry>;
+  validWeighted: number;
+  node: string;
+  blockHash: string;
+  merkleRoot: string;
+}
+
+/** The full SML from one node: the first message of subscribeToMasternodeList (~1.4 MB on mainnet). */
+async function fetchSmlOnce(nodes: string[]): Promise<SmlSnapshot> {
   const r = await race(
     nodes,
     (node: string, signal: AbortSignal) =>
@@ -64,5 +72,22 @@ export async function fetchSml(nodes: string[]): Promise<{ entries: Map<string, 
     entries.set(m.proRegTxHash.toLowerCase(), { votingAddress: m.votingAddress, isValid: m.isValid, nType: m.nType });
     if (m.isValid) validWeighted += m.nType === 1 ? 4 : 1;
   }
-  return { entries, validWeighted, node: r.node, blockHash: parsed.blockHash as string };
+  return { entries, validWeighted, node: r.node, blockHash: parsed.blockHash as string, merkleRoot: parsed.merkleRootMNList as string };
+}
+
+/**
+ * The SML as two different nodes agree on it (same merkleRootMNList), PLAN §2. Tries up to three
+ * nodes, since two honest nodes can be a block apart.
+ */
+export async function fetchSml(nodes: string[]): Promise<SmlSnapshot & { agreeing: string[] }> {
+  const got: SmlSnapshot[] = [];
+  const used = new Set<string>();
+  for (let i = 0; i < 3; i++) {
+    const s = await fetchSmlOnce(nodes.filter((n) => !used.has(n)));
+    used.add(s.node);
+    const twin = got.find((g) => g.merkleRoot === s.merkleRoot);
+    if (twin) return { ...s, agreeing: [twin.node, s.node] };
+    got.push(s);
+  }
+  throw new Error('DAPI nodes disagree on the masternode list (no two of three share a merkleRootMNList)');
 }

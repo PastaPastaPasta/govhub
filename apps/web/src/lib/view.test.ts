@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Proposal, Sourced, Tally } from '../data/types.ts';
 import { paymentText } from '../ui/ProposalCard.tsx';
 import { GOV_PARAMS } from './governance.ts';
-import { byRank, countNames, deriveRow, pickTally, proposalHref } from './view.ts';
+import { byRank, countNames, deriveRow, pickTally, proposalHref, weakest } from './view.ts';
 
 const prov = { kind: 'proof', source: 'test' } as const;
 const tally = (govHash: string, over: Partial<Tally> = {}): Sourced<Tally> => ({
@@ -36,9 +36,24 @@ describe('view model', () => {
     expect(none.schedule).toBeNull();
   });
 
-  it('sorts by rank, unranked last', () => {
-    const row = (h: string, rank: number) => deriveRow(proposal(h, h), new Map([[h, tally(h, { rank })]]), new Map(), null, GOV_PARAMS.mainnet, 0);
-    expect([row('a', 0), row('b', 2), row('c', 1)].sort(byRank).map((r) => r.p.value.name)).toEqual(['c', 'b', 'a']);
+  it("sorts in Core's funding order (net yes, then hash desc), no tally last", () => {
+    const row = (h: string, yes?: number) => deriveRow(proposal(h, h), yes === undefined ? new Map() : new Map([[h, tally(h, { yesWeighted: yes, rank: 99 })]]), new Map(), null, GOV_PARAMS.mainnet, 0);
+    expect([row('a'), row('b', 100), row('c', 300), row('d', 100)].sort(byRank).map((r) => r.p.value.name)).toEqual(['c', 'd', 'b', 'a']);
+  });
+
+  it('flags published fields that differ from the hashed data', async () => {
+    const { loadFixtures } = await import('../data/fixtures.ts');
+    const real = (await loadFixtures()).proposals[0]!;
+    const ok = deriveRow({ value: real, prov }, new Map(), new Map(), null, GOV_PARAMS.mainnet, 0);
+    expect(ok.content.ok).toBe(true);
+    const lie = deriveRow({ value: { ...real, url: 'https://phish.example' }, prov }, new Map(), new Map(), null, GOV_PARAMS.mainnet, 0);
+    expect(lie.content.ok).toBe(false);
+    expect(lie.content.problem).toContain('url');
+  });
+
+  it('weakest provenance wins', () => {
+    expect(weakest({ kind: 'proof', source: 'a' }, { kind: 'reported', source: 'b' }).source).toBe('b');
+    expect(weakest({ kind: 'mismatch', source: 'a' }, { kind: 'verified', source: 'b' }).source).toBe('a');
   });
 
   it('links by name unless the name is ambiguous', () => {

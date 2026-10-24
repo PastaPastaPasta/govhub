@@ -30,7 +30,7 @@ for (const scheme of ['light', 'dark'] as const) {
         await gotoFixtures(page, '/p/OrchardPay');
         await expect(page.getByTestId('collateral-check').locator('[data-verdict]')).toHaveAttribute('data-verdict', 'ok');
         await page.getByRole('button', { name: 'Verify votes' }).click();
-        await expect(page.getByTestId('votes-check').locator('[data-votes]')).toHaveAttribute('data-votes', 'match', { timeout: 30_000 });
+        await expect(page.getByTestId('votes-check').locator('[data-votes]')).toHaveAttribute('data-votes', 'keys-reported', { timeout: 30_000 });
         await shoot(page, `proposal-${scheme}-${vp}`);
       });
 
