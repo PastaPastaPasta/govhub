@@ -11,6 +11,8 @@ import type { AcceptedIssuerKey, BadgeNetwork, ReaderConfig } from '@govhub/badg
 import { BADGE_NETWORKS, type TrustedIssuer } from './config.ts';
 import { allBadges, badgeQuery, badgesOfAuthors, issuerKeyQuery, reportQuery, revocationQuery, type BadgeQueryResult } from './queries.ts';
 import type { Registry } from '../config/registry.ts';
+import { platformDapiConfig } from '../auth/runtime.ts';
+import { badgeWorker } from './workerClient.ts';
 
 type Badge = typeof import('@govhub/badge');
 export type Query = (q: DocQuery) => Promise<BadgeQueryResult>;
@@ -38,8 +40,13 @@ export interface BadgeView {
 
 export interface ReaderOptions {
   maxAuditPages?: number;
-  /** reports above this are implausible (default 5,000) */
+  /** reports above this are implausible when the proven list is not available (default 5,000) */
   maxPlausibleTokens?: number;
+  /**
+   * The masternode count of the PROVEN list (anchored chain, SML checked against the CbTx), or null when it cannot be proven now.
+   * It bounds a plausible issuerReport; the pinned maxPlausibleTokens is the fallback.
+   */
+  provenMasternodes?: () => Promise<number | null>;
   /** cache lifetime of accepted keys and unfinished audits (default 10 min) */
   ttlMs?: number;
 }
@@ -54,6 +61,8 @@ export class BadgeReader {
   readonly #issuers: TrustedIssuer[];
   readonly #maxAuditPages: number;
   readonly #maxPlausible: number;
+  readonly #proven: (() => Promise<number | null>) | undefined;
+  #provenCount: Promise<number | null> | null = null;
   readonly #ttl: number;
   #badge: Promise<Badge> | null = null;
   readonly #keys = new Map<string, { at: number; p: Promise<{ key: AcceptedIssuerKey | null; problem: string | null }> }>();
@@ -65,7 +74,8 @@ export class BadgeReader {
     this.#query = o.query;
     this.#issuers = o.issuers.filter((i) => i.enabled);
     this.#maxPlausible = o.maxPlausibleTokens ?? 5_000;
-    // the audit must be able to count up to the plausible bound (N4)
+    this.#proven = o.provenMasternodes;
+    // the audit must be able to count past the plausible bound (N4); the bound is never above the pinned one
     this.#maxAuditPages = o.maxAuditPages ?? Math.ceil((this.#maxPlausible + 1) / 100);
     this.#ttl = o.ttlMs ?? TTL_MS;
   }
@@ -195,10 +205,11 @@ export class BadgeReader {
         after = String(res.docs[res.docs.length - 1]!.$id);
       }
       const tokensIssued = await this.reportedTokens(issuer, epoch);
+      const bound = await this.#bound();
       const reportDue = coreHeight > b.postingWindow(b.EPOCH_PARAMS[this.#net], epoch).to;
       const flagReason =
-        tokensIssued !== null && tokensIssued > this.#maxPlausible
-          ? `reported ${tokensIssued} tokens, more than there are masternodes`
+        tokensIssued !== null && tokensIssued > bound.value
+          ? `reported ${tokensIssued} tokens, more than there are masternodes (${bound.source})`
           : tokensIssued !== null && count > tokensIssued
             ? `${count} valid badges but only ${tokensIssued} tokens reported`
             : tokensIssued === null && reportDue
@@ -213,6 +224,19 @@ export class BadgeReader {
     entry.p.catch(() => this.#audits.get(k) === entry && this.#audits.delete(k));
     this.#audits.set(k, entry);
     return entry.p;
+  }
+
+  /**
+   * The largest plausible token count: the proven masternode count plus 5% for registrations during the epoch, capped by the pinned
+   * bound; the pinned bound alone when the list cannot be proven.
+   */
+  async #bound(): Promise<{ value: number; source: string }> {
+    if (this.#proven && !this.#provenCount) {
+      this.#provenCount = this.#proven().catch(() => null);
+      void this.#provenCount.then((c) => c === null && (this.#provenCount = null)); // try again next time
+    }
+    const n = this.#provenCount ? await this.#provenCount : null;
+    return n === null ? { value: this.#maxPlausible, source: 'pinned bound' } : { value: Math.min(this.#maxPlausible, Math.ceil(n * 1.05) + 5), source: `proven list of ${n}` };
   }
 
   /** Whether any trusted issuer has at least one valid, unflagged badge displayed now (the "MN owners" filter is meaningful). */
@@ -230,5 +254,13 @@ export class BadgeReader {
 }
 
 export function createBadgeReader(r: Registry, contractId: string, issuers: TrustedIssuer[]): BadgeReader {
-  return new BadgeReader({ net: r.platformNetwork, contractId, issuers, query: (q) => badgeQuery(r, contractId, q), maxPlausibleTokens: BADGE_NETWORKS[r.platformNetwork].maxPlausibleTokens });
+  return new BadgeReader({
+    net: r.platformNetwork,
+    contractId,
+    issuers,
+    query: (q) => badgeQuery(r, contractId, q),
+    maxPlausibleTokens: BADGE_NETWORKS[r.platformNetwork].maxPlausibleTokens,
+    // the proven list of the Platform network's Core chain, from the badge worker (same anchored chain and cache as verification)
+    provenMasternodes: async () => (await badgeWorker({ kind: 'provenMasternodes', dapi: platformDapiConfig(r) })).count,
+  });
 }

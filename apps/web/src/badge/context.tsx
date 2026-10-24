@@ -194,11 +194,15 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
       const requests = ready
         .filter((j) => j.state === 'scheduled' && deps.trusted(j.issuer.identityId) && (j.signer.kind === 'wif' || signers.current.has(j.proTxHash)))
         .sort((a, b) => clientIssuanceWindow(p, a.epoch).to - clientIssuanceWindow(p, b.epoch).to);
-      const posts = ready.filter((j) => j.state === 'token');
+      // only posts that can go out: a post for an untrusted issuer would mark a write every tick and starve requests (round 4)
+      const posts = ready.filter((j) => j.state === 'token' && deps.trusted(j.issuer.identityId));
       // H1/N1: posts first (finite: one per issuer and epoch), and only once the cooldown after the last request is over; otherwise
       // one token request (the one whose window closes first), only when nothing was written and nothing requested in this browser
       // for the cooldown. The check and the mark happen under a browser-wide lock, so two tabs cannot both pass it (round 3 L1).
-      await withLock('govhub-badge-activity', async () => {
+      await withLock(
+        'govhub-badge-activity',
+        async () => {
+        if (!live) return;
         if (posts.length && mayPost()) {
           noteIdentityWrite(); // before the post path's reads: the write is on its way
           for (const j of posts) await run(j);
@@ -206,15 +210,21 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
           noteRequestSent();
           await run(requests[0]!);
         }
-      });
+        },
+        { signal: ac.signal },
+      );
       if (!live) return TICK_MS;
       // renewals: create the next epoch's job (no network to the issuer; blinding only)
       const current = () => snapshot.map((j) => updates.get(j.id) ?? j).concat(added);
+      const sourceOf = new Map<string, string>(); // renewal job id -> the job whose kept key it takes
       for (const j of current()) {
         const issuer = trustRef.current.find((t) => t.identityId === j.issuer.identityId && t.enabled);
         if (!issuer) continue;
         const r = await renewal(deps, current(), j, height, issuer);
-        if (r) added.push(r);
+        if (r) {
+          added.push(r);
+          sourceOf.set(r.id, j.id);
+        }
       }
       if (!live) return TICK_MS;
       const keepFrom = Math.floor(height / (p.superblockCycle * p.epochCycles)) - 2;
@@ -222,15 +232,18 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
         // a renewal made from an older snapshot must not duplicate a job added meanwhile for the same issuer and epoch (N11)
         const fresh = added.filter((a) => !latest.some((j) => j.id === a.id || (j.issuer.identityId === a.issuer.identityId && j.epoch === a.epoch && j.state !== 'failed' && j.state !== 'expired')));
         // the kept voting key moves to a renewal job only if that job is kept (round 3 L4)
-        const handedOver = new Set(fresh.map((a) => `${a.issuer.identityId}:${a.epoch - 1}`));
+        const handedOver = new Set(fresh.map((a) => sourceOf.get(a.id)));
         const merged = latest
           .map((j) => updates.get(j.id) ?? j)
-          .map((j) => (handedOver.has(`${j.issuer.identityId}:${j.epoch}`) && j.signer.kind === 'wif' ? { ...j, signer: { kind: 'external' as const }, proTxHash: '' } : j))
+          .map((j) => (handedOver.has(j.id) && j.signer.kind === 'wif' ? { ...j, signer: { kind: 'external' as const }, proTxHash: '' } : j))
           .concat(fresh);
         return merged.filter((j) => isActive(j) || j.epoch >= keepFrom);
       });
       okTicks++;
-      return due.some((j) => !updates.has(j.id)) ? 15_000 : TICK_MS;
+      // sooner only for a job about to become ready (its resume delay); jobs in backoff wait for the normal tick
+      const soon = due.filter((j) => !updates.has(j.id)).map((j) => Math.max(notBefore.get(j.id) ?? 0, j.retryAt ?? 0) - Date.now());
+      const next = Math.min(TICK_MS, ...soon.filter((ms) => ms > 0));
+      return Math.max(5_000, next);
     };
 
     (async () => {

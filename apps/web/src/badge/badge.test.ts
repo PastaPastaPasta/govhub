@@ -84,6 +84,8 @@ function fakeWorker(o: { answer?: (req: string, sig: string) => IssuerAnswer; se
         const sig = await finalize(key, base64ToBytes(req.preparedMsg), base64ToBytes(req.blindSig), base64ToBytes(req.inv));
         return { id: 0, kind: 'finalize', sig: bytesToBase64(sig) };
       }
+      case 'provenMasternodes':
+        return { id: 0, kind: 'provenMasternodes', count: 150, height: 1, weak: null };
     }
   };
 }
@@ -162,7 +164,9 @@ describe('badge client', () => {
     expect(got.postAt! >= epochStart(P, E) + P.boundaryMarginBlocks && got.postAt! <= epochStart(P, E) + P.graceBlocks).toBe(true);
     // post at postAt, once the issuer reported enough tokens
     t.platform.core = got.postAt!;
-    expect((await step(t.deps, got, got.postAt!)).note).toMatch(/Waiting for test's token count/);
+    const waiting = await step(t.deps, got, got.postAt!);
+    expect(waiting.note).toMatch(/Waiting for test's token count/);
+    expect(waiting.retryAt! - Date.now()).toBeGreaterThan(3_500_000); // backs off, so it does not mark a write every tick
     t.platform.reports.set(E, 3);
     expect((await step(t.deps, got, got.postAt! - 1)).state).toBe('token');
     const posted = await step(t.deps, got, got.postAt!);
@@ -363,6 +367,17 @@ describe('badge reader', () => {
     expect((await r.audit(issuer, E, p.core)).flagged).toBe(false);
     await issued(p, bytesToId(rnd(32)));
     expect(await r.audit(issuer, E, p.core)).toMatchObject({ badges: 2, flagged: true });
+  });
+
+  it('the plausible bound comes from the proven masternode list when it can be proven, the pinned value otherwise', async () => {
+    const p = new FakePlatform();
+    await p.addKey(E);
+    await issued(p, bytesToId(rnd(32)));
+    p.reports.set(E, 200);
+    const proven = new BadgeReader({ net: 'testnet', contractId, issuers: [issuer], query: (q) => p.query(q), maxPlausibleTokens: 500, provenMasternodes: async () => 150 });
+    expect(await proven.audit(issuer, E, p.core)).toMatchObject({ flagged: true, flagReason: 'reported 200 tokens, more than there are masternodes (proven list of 150)' });
+    const unproven = new BadgeReader({ net: 'testnet', contractId, issuers: [issuer], query: (q) => p.query(q), maxPlausibleTokens: 500, provenMasternodes: async () => null });
+    expect((await unproven.audit(issuer, E, p.core)).flagged).toBe(false);
   });
 
   it('a report counts only if created in [S(E), S(E)+W] and plausible; none after S(E)+W flags the issuer', async () => {

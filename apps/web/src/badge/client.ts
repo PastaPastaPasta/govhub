@@ -217,14 +217,14 @@ export async function step(d: ClientDeps, job: BadgeJob, height: number): Promis
     if (height > displayWindow(p, j.epoch).to) return wipe({ ...j, state: 'expired', note: 'The badge was never posted and its display window is over.' });
     const postAt = j.postAt ?? pickPostHeight(p, j.epoch, height);
     if (height < postAt) return { ...j, postAt };
-    if (!d.trusted(j.issuer.identityId)) return { ...j, postAt, note: `${j.issuer.name} is not on your trust list (or is turned off): the badge is not posted.` };
+    if (!d.trusted(j.issuer.identityId)) return { ...backoff(j, `${j.issuer.name} is not on your trust list (or is turned off): the badge is not posted.`), postAt };
     try {
       // a key revoked since the token was issued voids the badge for readers: do not post it (N12)
       const { key } = await d.issuerKey({ ...j.issuer, enabled: true }, j.epoch);
       if (!key || key.revokedFrom !== null) return wipe({ ...j, state: 'expired', note: `${j.issuer.name}'s key for epoch ${j.epoch} is no longer valid: the badge is not posted.` });
       // Too few tokens this epoch and the badge would stand out (review R1); no report yet: wait for it.
       const tokens = await d.reportedTokens(j.issuer, j.epoch);
-      if (tokens === null) return { ...j, postAt, note: `Waiting for ${j.issuer.name}'s token count for epoch ${j.epoch} before posting.` };
+      if (tokens === null) return { ...backoff(j, `Waiting for ${j.issuer.name}'s token count for epoch ${j.epoch} before posting.`), postAt };
       if (tokens < d.minAnonymitySet)
         return wipe({ ...j, state: 'expired', note: `Only ${tokens} token${tokens === 1 ? ' was' : 's were'} issued for epoch ${j.epoch}: a badge among so few would stand out, so it is not posted. The next epoch's badge will be, if more masternodes take part.` });
       if (await d.hasBadge(j.issuer.identityId, j.epoch)) return wipe({ ...j, state: 'posted', note: 'Already posted.' });
@@ -259,7 +259,7 @@ export const etaSeconds = (height: number, now: number): number => Math.max(0, (
  * Returns null when nothing is due.
  */
 export async function renewal(d: ClientDeps, jobs: readonly BadgeJob[], prev: BadgeJob, height: number, issuer: TrustedIssuer): Promise<BadgeJob | null> {
-  if (!prev.keepKey || prev.signer.kind !== 'wif' || !prev.proTxHash) return null;
+  if (!prev.keepKey || prev.signer.kind !== 'wif' || !prev.proTxHash || (prev.state !== 'token' && prev.state !== 'posted')) return null;
   const p = EPOCH_PARAMS[prev.net];
   const next = prev.epoch + 1;
   const w = clientIssuanceWindow(p, next);

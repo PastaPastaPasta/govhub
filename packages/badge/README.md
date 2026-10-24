@@ -164,9 +164,15 @@ Rules that live above this package (in `apps/web/src/badge/reader.ts`):
 - Badges are never summed across issuers. k issuers can give one MN k badges, shown per issuer.
 - Audit (apps/web): the verified badges of (issuer, E) are counted against the issuer's own `issuerReport.tokensIssued`.
   A report counts only if it was created in `[S(E), S(E)+W]` (a stolen report key cannot fix future counts in advance)
-  and is plausible (not more tokens than masternodes). More badges than tokens, an implausible report, or no valid
-  report once `S(E)+W` has passed flags the issuer and hides its badges for that epoch. The count stops after 20 pages
-  of 100 and is then marked incomplete.
+  and is plausible: at most the masternode count of the **proven** list (`@govhub/dapi` anchored chain, SML checked
+  against the CbTx `merkleRootMNList`) plus 5%, capped by a pinned bound (testnet 500, mainnet 4,000) that is also the
+  fallback when the list cannot be proven. More badges than tokens, an implausible report, no valid report once `S(E)+W`
+  has passed, or more badges than the audit can count (it counts one past the bound) flags the issuer and hides its
+  badges for that epoch. Anyone can post invalid `mnBadge` documents, so thousands of them could push an honest issuer's
+  epoch past the count limit (a costly griefing path, accepted).
+- The clock for every rule is Platform's proved `coreChainLockedHeight` (from the proof metadata of the badge queries),
+  not a node-reported height. MN validity at `S(E-1)` is the issuer's check against its own dashd; readers cannot check
+  it (they never learn which MN stands behind a badge).
 
 Verification is cheap: about 20 to 30 microseconds per badge in Chromium (spike results).
 

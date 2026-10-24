@@ -28,7 +28,8 @@ export interface BadgeNetworkConfig {
   minAnonymitySet: number;
   /**
    * An issuerReport above this is implausible (more tokens than masternodes, with a margin) and flags the issuer (review M1, N4).
-   * Pinned: the client has no proved masternode count at S(E-1) yet.
+   * The reader uses the proven masternode count (anchored chain, SML checked against the CbTx) when it can; this pinned value is
+   * the cap and the fallback.
    */
   maxPlausibleTokens: number;
 }
