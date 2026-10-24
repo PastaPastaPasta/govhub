@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { COSTS, isIdentifier } from '@govhub/forum';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
-import { formatCredits } from '../lib/format.ts';
+import { errText, formatCredits } from '../lib/format.ts';
 import { defaultRegistry, exportRegistry, parseRegistry, QUORUM_SERVICE, resetRegistry, shareLink, type BridgeEndpoint, type Registry } from '../config/registry.ts';
 import { cacheClear } from '../data/cache.ts';
 
@@ -31,7 +31,7 @@ function BlockListSettings() {
       await setSubs({ defaultOff, lists: [...new Set(ids)], ...(moderation.subs.doc ? { doc: moderation.subs.doc } : {}) }, publish);
       setMsg({ kind: 'ok', text: publish ? 'Saved to your blockSubs document on Platform.' : 'Saved in this browser.' });
     } catch (e) {
-      setMsg({ kind: 'error', text: e instanceof Error ? e.message : String(e) });
+      setMsg({ kind: 'error', text: errText(e) });
     } finally {
       setBusy(false);
     }

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { idToHex, mapLimit, REACTION_KIND, score, targetB64, type Reaction, type Score } from '@govhub/forum';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
+import { errText } from '../lib/format.ts';
 
 export type Target = { govHash: string } | { commentId: string };
 const keyOf = (t: Target) => ('govHash' in t ? t.govHash : t.commentId);
@@ -23,7 +24,7 @@ export function useReactions(targets: readonly Target[]) {
     setError(null);
     mapLimit(targets, 4, async (t) => [keyOf(t), await forum.reader.reactions(targetB64(t))] as const).then(
       (pairs) => live && setByKey(new Map(pairs)),
-      (e: unknown) => live && setError(e instanceof Error ? e.message : String(e)),
+      (e: unknown) => live && setError(errText(e)),
     );
     return () => {
       live = false;

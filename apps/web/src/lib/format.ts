@@ -81,6 +81,9 @@ export function formatCredits(credits: number | bigint, approx = false, locale =
 /** "3 hours ago" for a Platform millisecond timestamp. */
 export const formatAgoMs = (ms: number, nowS: number): string => (Math.abs(ms / 1000 - nowS) < 90 ? 'just now' : formatRelative(Math.floor(ms / 1000), nowS));
 
+/** A thrown value as text fit to show the user. */
+export const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+
 /** Hostname of a proposal URL for display, or null when it is not an http(s) URL. */
 export function urlHost(url: string): string | null {
   try {

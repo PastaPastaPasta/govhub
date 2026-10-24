@@ -1,11 +1,10 @@
 // Write operations as plain data. A signer (apps/web `Session.signAndBroadcastDocument`) turns a DocumentOp into a
 // signed state transition; nothing here touches the network or keys. Builders validate what consensus would
 // reject (and what consensus would accept but the UI must not: comment bodies over 5,000 UTF-8 bytes).
-import { COMMENT_MAX_BYTES, BLOCK_KIND, CLAIM_METHOD, COMMENT_FMT, REACTION_KIND, type ForumContracts, type ProposalPost, type Reaction } from './types.ts';
+import { BLOCK_KIND, CLAIM_METHOD, COMMENT_FMT, COMMENT_MAX_BYTES, REACTION_KIND, type ContractKey, type ForumContracts, type ProposalPost, type Reaction } from './types.ts';
 import { hexToBytes, idToBytes, isHash64, isIdentifier } from './encoding.ts';
 import { packLists } from './convert.ts';
 import { SCHEMAS } from './queries.ts';
-import type { ContractKey } from './types.ts';
 
 /**
  * A document field value. Byte arrays and identifiers are Uint8Array (the signer hands them to the SDK as bytes),

@@ -8,13 +8,12 @@ import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { attestorsFor } from '../config/registry.ts';
 import type { Proposal, Provenance } from '../data/types.ts';
-import { formatCredits, formatInt } from '../lib/format.ts';
+import { errText, formatCredits, formatInt } from '../lib/format.ts';
 import type { CollateralVerdict } from '../verify/collateral.ts';
 import { AuthorName, Avatar } from './Identity.tsx';
 import { Markdown } from './Markdown.tsx';
 import { openSignIn } from './SignIn.tsx';
-
-const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+import { useAction } from './useAction.ts';
 
 export interface Ownership {
   verdict: ClaimVerdict | null;
@@ -322,8 +321,7 @@ function PostEditor({ govHash, existing, initialBody, onDone }: { govHash: strin
   const [title, setTitle] = useState(existing?.title ?? '');
   const [body, setBody] = useState(initialBody);
   const [packed, setPacked] = useState<{ chunks: Uint8Array[] } | { error: string; bytes?: number } | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { busy, error, run } = useAction();
   useEffect(() => {
     let live = true;
     const t = setTimeout(() => {
@@ -341,19 +339,14 @@ function PostEditor({ govHash, existing, initialBody, onDone }: { govHash: strin
   const compressed = packed && 'chunks' in packed ? packed.chunks.reduce((n, c) => n + c.length, 0) : packed && 'bytes' in packed ? (packed.bytes ?? 0) : 0;
   const previous = existing ? existing.chunks.reduce((n, c) => n + c.length, 0) : undefined;
   const cost = postCost(compressed, previous);
-  const save = async (e: FormEvent) => {
+  const save = (e: FormEvent) => {
     e.preventDefault();
     if (!packed || !('chunks' in packed) || !session) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const r = await write(forum.ops.proposalPost(govHash, title, packed.chunks, existing ?? undefined));
-      onDone({ post: { id: r.id, ownerId: session.identityId, revision: r.revision ?? 1, govHash, title: title.trim(), chunks: packed.chunks }, body });
-    } catch (err) {
-      setError(errText(err));
-    } finally {
-      setBusy(false);
-    }
+    const { chunks } = packed;
+    return run(async () => {
+      const r = await write(forum.ops.proposalPost(govHash, title, chunks, existing ?? undefined));
+      onDone({ post: { id: r.id, ownerId: session.identityId, revision: r.revision ?? 1, govHash, title: title.trim(), chunks }, body });
+    });
   };
   return (
     <form className="form post-editor" onSubmit={save}>

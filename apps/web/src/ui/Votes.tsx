@@ -1,9 +1,9 @@
 // Up/down buttons for a reaction target. The score is counted in this browser from the proven reactions. Each
 // button says what clicking it costs: a first reaction stores a document (~0.0005 DASH), flipping replaces it
 // (~0.00003), clicking your current vote again deletes it (a refund).
-import { useState } from 'react';
 import { COSTS, type Score } from '@govhub/forum';
 import { formatCredits, formatSigned } from '../lib/format.ts';
+import { useAction } from './useAction.ts';
 
 export function costOfVote(value: 1 | -1, mine: Score['mine']): { credits: number; what: string } {
   if (!mine) return { credits: COSTS.reactionCreate, what: 'a first vote' };
@@ -18,20 +18,9 @@ const hint = (value: 1 | -1, s: Score, signedIn: boolean) => {
 };
 
 export function Votes({ score, onVote, signedIn, label }: { score: Score; onVote(value: 1 | -1): Promise<void>; signedIn: boolean; label: string }) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { busy, error, run } = useAction();
   const mine = score.mine?.value;
-  const click = async (v: 1 | -1) => {
-    setBusy(true);
-    setError(null);
-    try {
-      await onVote(v);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  };
+  const click = (v: 1 | -1) => run(() => onVote(v));
   return (
     <span className="votes" role="group" aria-label={label} data-score={score.net}>
       <button type="button" className={`vote vote-up ${mine === 1 ? 'on' : ''}`} aria-pressed={mine === 1} disabled={busy} onClick={() => click(1)} title={hint(1, score, signedIn)}>

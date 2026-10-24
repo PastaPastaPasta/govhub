@@ -5,6 +5,7 @@ import { commentCost, COMMENT_MAX_BYTES } from '@govhub/forum';
 import { useForum } from '../app/forum.tsx';
 import { formatCredits, formatInt } from '../lib/format.ts';
 import { Markdown } from './Markdown.tsx';
+import { useAction } from './useAction.ts';
 
 const enc = new TextEncoder();
 
@@ -12,25 +13,18 @@ export function Composer({ onSubmit, onCancel, label, autoFocus = false }: { onS
   const { balance } = useForum();
   const [body, setBody] = useState('');
   const [preview, setPreview] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { busy, error, run } = useAction();
   const bytes = enc.encode(body).length;
   const cost = commentCost(bytes);
   const over = bytes > COMMENT_MAX_BYTES;
   const poor = balance !== null && balance < BigInt(cost);
-  const submit = async (e: FormEvent) => {
+  const submit = (e: FormEvent) => {
     e.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
+    return run(async () => {
       await onSubmit(body);
       setBody('');
       setPreview(false);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
+    });
   };
   return (
     <form className="composer" onSubmit={submit}>

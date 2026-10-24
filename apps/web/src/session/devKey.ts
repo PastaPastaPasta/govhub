@@ -52,7 +52,7 @@ export async function devKeySession(registry: Registry, identityId: string, secr
     (k) => k.getPublicKeyHash().toLowerCase() === keyHash && k.purposeNumber === AUTHENTICATION && DOCUMENT_LEVELS.has(k.securityLevelNumber) && k.disabledAt === undefined,
   );
   if (!found) throw new Error('that key is not an enabled HIGH or CRITICAL authentication key of this identity');
-  const key = found;
+  const key = found; // narrowed for the hoisted prepare() below
   let signer: InstanceType<typeof evo.IdentitySigner> | null = new evo.IdentitySigner();
   signer.addKeyFromWif(wif);
   const live = () => {
@@ -86,7 +86,9 @@ export async function devKeySession(registry: Registry, identityId: string, secr
     // Create. PV13 checks $id against sha256d(contract, owner, type, entropy) and has no generateId; PV14 derives the
     // id from the identity contract nonce when $id is zero (spikes/sdk5 README §8).
     const entropy = crypto.getRandomValues(new Uint8Array(32));
-    const id = sdk.version() <= 13 ? idToBytes(pv13DocumentId(op.contractId, identityId, op.type, entropy)) : new Uint8Array(32);
+    const pv13 = sdk.version() <= 13;
+    const pv13Id = pv13DocumentId(op.contractId, identityId, op.type, entropy);
+    const id = pv13 ? idToBytes(pv13Id) : new Uint8Array(32);
     const document = evo.Document.fromObject(
       { $formatVersion: '0', $id: id, $ownerId: owner, $dataContractId: contract, $type: op.type, $revision: 1n, $entropy: entropy, ...toSdk(op.data) } as never,
       evo.PlatformVersion.latest(),
@@ -95,20 +97,16 @@ export async function devKeySession(registry: Registry, identityId: string, secr
       const created = await sdk.documents.create({ document, identityKey: key, signer: live() });
       return { id: created.id.toString(), revision: 1 };
     };
-    if (sdk.version() > 13) return Object.assign(run, { noRetry: true });
+    if (!pv13) return Object.assign(run, { noRetry: true });
     // PV13: a retry re-sends the same id. If the first attempt did land, "already exists" means success.
-    const pv13Id = pv13DocumentId(op.contractId, identityId, op.type, entropy);
-    return Object.assign(
-      async () => {
-        try {
-          return await run();
-        } catch (e) {
-          if (/already exists|duplicate/i.test(errText(e))) return { id: pv13Id, revision: 1 };
-          throw e;
-        }
-      },
-      { noRetry: false },
-    );
+    return async () => {
+      try {
+        return await run();
+      } catch (e) {
+        if (/already exists|duplicate/i.test(errText(e))) return { id: pv13Id, revision: 1 };
+        throw e;
+      }
+    };
   }
 
   return {

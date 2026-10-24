@@ -12,13 +12,13 @@
 //   - The message binds the Core network, so a testnet signature cannot claim a mainnet proposal with the same hash.
 //   - Method 3 needs the collateral transaction's bytes to have been verified by the caller (txid and OP_RETURN);
 //     without them method 3 is unavailable rather than assumed.
+import { base58 } from '@scure/base';
 import { decodeAddress, type Network } from './address.ts';
 import { bytesToHex, hash160 } from './bytes.ts';
 import { governanceObjectHash } from './govhash.ts';
 import { recoverMessageSigner, verifyMessage } from './message.ts';
 import { parseProposalData } from './proposal.ts';
 import { parseTransaction } from './tx.ts';
-import { base58 } from '@scure/base';
 
 export const CLAIM_METHODS = { url: 1, paymentAddress: 2, collateralInput: 3, attestation: 4 } as const;
 export type ClaimMethodId = (typeof CLAIM_METHODS)[keyof typeof CLAIM_METHODS];

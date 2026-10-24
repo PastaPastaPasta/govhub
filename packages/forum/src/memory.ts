@@ -70,7 +70,7 @@ export class MemoryStore implements DocReader {
 
   /** Inserts a document as stored (for seeding fixtures); returns its id. */
   seed(contract: ContractKey, type: string, ownerId: string, data: DocData, meta: { createdAt?: number; id?: string; revision?: number } = {}): string {
-    const id = meta.id ?? pv13DocumentId(this.opts.contracts[contract], ownerId, type, Uint8Array.of(...new TextEncoder().encode(`seed-${++this.seq}`)));
+    const id = meta.id ?? pv13DocumentId(this.opts.contracts[contract], ownerId, type, new TextEncoder().encode(`seed-${++this.seq}`));
     const t = meta.createdAt ?? this.now();
     this.docs[contract].push({ ...this.encode(contract, type, data), $id: id, $ownerId: ownerId, $type: type, $revision: meta.revision ?? 1, $createdAt: t, $updatedAt: t });
     return id;

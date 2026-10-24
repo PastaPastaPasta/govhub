@@ -22,7 +22,7 @@ import {
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import type { Provenance } from '../data/types.ts';
-import { formatAgoMs, formatCredits, formatInt } from '../lib/format.ts';
+import { errText, formatAgoMs, formatCredits, formatInt } from '../lib/format.ts';
 import { Composer } from './Composer.tsx';
 import { AuthorName, Avatar } from './Identity.tsx';
 import { Markdown } from './Markdown.tsx';
@@ -36,8 +36,6 @@ const BADGES_LIVE = false;
 const noBadge = (_ownerId: string) => false;
 /** Replies deeper than this are not indented further (the thread line still shows). */
 const MAX_INDENT = 6;
-
-const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 interface ThreadData {
   comments: Comment[];
@@ -98,8 +96,8 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
   // A deep link widens the view if the filter hides its comment and scrolls to it. A comment a block list hides stays
   // behind its placeholder: a shared link must not bypass the lists (one click on the placeholder reveals it).
   useEffect(() => {
-    if (!focus || !comments.some((c) => c.id === focus)) return;
-    const c = comments.find((x) => x.id === focus)!;
+    const c = focus ? comments.find((x) => x.id === focus) : undefined;
+    if (!c) return;
     if (!passesFilter(c, filter, { owner, badged: noBadge })) setFilter('all');
     requestAnimationFrame(() => document.getElementById(`comment-${focus}`)?.scrollIntoView({ block: 'center' }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -125,21 +123,23 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
     [write, forum, thread],
   );
 
+  const reloadModerationTwice = useCallback(() => {
+    reloadModeration();
+    setTimeout(reloadModeration, 4000); // a node behind the write may not have the block yet
+  }, [reloadModeration]);
   const block = useCallback(
     async (list: 'forum' | 'mod', target: string, kind: 1 | 2) => {
       await write(forum.ops.block(list, target, kind, list === 'mod' ? 'moderation' : undefined));
-      reloadModeration();
-      setTimeout(reloadModeration, 4000); // a node behind the write may not have the block yet
+      reloadModerationTwice();
     },
-    [write, forum, reloadModeration],
+    [write, forum, reloadModerationTwice],
   );
   const unblock = useCallback(
     async (list: 'forum' | 'mod', b: Block) => {
       await write(forum.ops.unblock(list, b.id));
-      reloadModeration();
-      setTimeout(reloadModeration, 4000);
+      reloadModerationTwice();
     },
-    [write, forum, reloadModeration],
+    [write, forum, reloadModerationTwice],
   );
 
   const ctx: NodeCtx = {

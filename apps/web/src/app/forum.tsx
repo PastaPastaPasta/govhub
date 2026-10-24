@@ -5,7 +5,7 @@ import { buildHideIndex, EMPTY_HIDE_INDEX, isIdentifier, type BlockList, type Do
 import { createForum, fixtureForum, type ForumSource } from '../data/forum.ts';
 import { seedFixtureForum } from '../data/fixtureForum.ts';
 import { loadFixtures } from '../data/fixtures.ts';
-import { shortHash } from '../lib/format.ts';
+import { errText, shortHash } from '../lib/format.ts';
 import type { Session } from '../session/session.ts';
 import { useApp } from './context.tsx';
 
@@ -130,7 +130,7 @@ export function ForumProvider({ children }: { children: ReactNode }) {
       const lists = settled.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
       const failed = settled.filter((r) => r.status === 'rejected').length;
       if (live) setModeration({ index: buildHideIndex(lists), lists, subs, loading: false, ready: true, ...(failed ? { error: `${failed} block list(s) could not be read` } : {}) });
-    })().catch((e: unknown) => live && setModeration((m) => ({ ...m, loading: false, ready: true, error: e instanceof Error ? e.message : String(e) })));
+    })().catch((e: unknown) => live && setModeration((m) => ({ ...m, loading: false, ready: true, error: errText(e) })));
     return () => {
       live = false;
     };

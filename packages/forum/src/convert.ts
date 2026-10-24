@@ -16,7 +16,8 @@ export function num(d: RawDoc, k: string): number {
   const n = typeof v === 'number' ? v : typeof v === 'bigint' || (typeof v === 'string' && /^-?\d+$/.test(v)) ? Number(v) : NaN;
   return Number.isSafeInteger(n) ? n : fail(k);
 }
-const optNum = (d: RawDoc, k: string): number | undefined => (d[k] === undefined || d[k] === null ? undefined : num(d, k));
+const absent = (d: RawDoc, k: string): boolean => d[k] === undefined || d[k] === null;
+const optNum = (d: RawDoc, k: string): number | undefined => (absent(d, k) ? undefined : num(d, k));
 const id = (d: RawDoc, k: string): string => {
   const v = d[k];
   if (isIdentifier(v)) return v;
@@ -24,7 +25,7 @@ const id = (d: RawDoc, k: string): string => {
   if (v instanceof Uint8Array && v.length === 32) return bytesToId(v);
   return fail(k);
 };
-const optId = (d: RawDoc, k: string): string | undefined => (d[k] === undefined || d[k] === null ? undefined : id(d, k));
+const optId = (d: RawDoc, k: string): string | undefined => (absent(d, k) ? undefined : id(d, k));
 const bytes = (d: RawDoc, k: string): Uint8Array => {
   const v = d[k];
   if (v instanceof Uint8Array) return v;
@@ -91,7 +92,7 @@ export function toAttestation(d: RawDoc): ClaimAttestation {
 
 export function toPost(d: RawDoc): ProposalPost {
   const chunks = [bytes(d, 'b0')];
-  for (const k of ['b1', 'b2']) if (d[k] !== undefined && d[k] !== null) chunks.push(bytes(d, k));
+  for (const k of ['b1', 'b2']) if (!absent(d, k)) chunks.push(bytes(d, k));
   const links = optStr(d, 'links');
   return { id: id(d, '$id'), ownerId: id(d, '$ownerId'), revision: revision(d), govHash: hash32(d, 'govHash'), title: str(d, 'title'), chunks, ...(links ? { links } : {}) };
 }
@@ -122,11 +123,11 @@ export function packLists(ids: readonly string[]): Uint8Array {
 }
 
 export function toBlockSubs(d: RawDoc): BlockSubs {
-  const lists = d.lists === undefined || d.lists === null ? [] : unpackLists(bytes(d, 'lists'));
+  const lists = absent(d, 'lists') ? [] : unpackLists(bytes(d, 'lists'));
   return { id: id(d, '$id'), revision: revision(d), lists, defaultOff: d.defaultOff === true };
 }
 
-/** Converts what converts, drops (and counts) the rest. */
+/** Converts what converts, silently drops the rest. */
 export function convertAll<T>(docs: readonly RawDoc[], fn: (d: RawDoc) => T): T[] {
   const out: T[] = [];
   for (const d of docs) {

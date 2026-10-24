@@ -1,5 +1,6 @@
 // Domain types for forum, mod and gov.claimAttestation documents. Hashes are lowercase hex in stored (display) order,
 // identifiers base58, times milliseconds of Platform block time (Drive overwrites $createdAt on creation).
+import { CLAIM_METHODS, type ClaimMethodId } from '@govhub/verify';
 
 /** Contract ids the data layer reads and writes. */
 export interface ForumContracts {
@@ -12,9 +13,9 @@ export type ContractKey = keyof ForumContracts;
 export const COMMENT_FMT = { plain: 0, markdown: 1 } as const;
 export const REACTION_KIND = { comment: 1, proposal: 2 } as const;
 export const BLOCK_KIND = { identity: 1, document: 2 } as const;
-/** `claim.method` / `claimAttestation.method` / the claim verifier's ranks (PLAN §6.3; lower = stronger). */
-export const CLAIM_METHOD = { url: 1, paymentAddress: 2, collateralInput: 3, attestation: 4 } as const;
-export type ClaimMethod = (typeof CLAIM_METHOD)[keyof typeof CLAIM_METHOD];
+/** `claim.method` / `claimAttestation.method` / the claim verifier's ranks (PLAN §6.3; lower = stronger): one table, owned by @govhub/verify. */
+export const CLAIM_METHOD = CLAIM_METHODS;
+export type ClaimMethod = ClaimMethodId;
 
 /** Policy cap for `comment.body` in UTF-8 bytes (the field cap is 5,120 B; maxLength counts characters). */
 export const COMMENT_MAX_BYTES = 5000;

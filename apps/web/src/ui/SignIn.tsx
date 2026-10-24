@@ -5,16 +5,15 @@ import { COSTS, type Profile } from '@govhub/forum';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { FIXTURE_IDS } from '../data/fixtureForum.ts';
-import { formatCredits, shortHash } from '../lib/format.ts';
+import { errText, formatCredits, shortHash } from '../lib/format.ts';
 import { DEV_SIGNIN_ENABLED, devKeySession } from '../session/devKey.ts';
 import { fixtureSession } from '../session/fixture.ts';
 import { Avatar } from './Identity.tsx';
+import { useAction } from './useAction.ts';
 
 const OPEN_EVENT = 'govhub:signin';
 /** Opens the sign-in dialog from anywhere ("Sign in to comment"). */
 export const openSignIn = () => window.dispatchEvent(new Event(OPEN_EVENT));
-
-const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 export function SessionControl() {
   const { session } = useForum();
@@ -49,8 +48,7 @@ function SignInPanel({ onDone }: { onDone(): void }) {
   const { forum, signIn } = useForum();
   const [id, setId] = useState('');
   const [secret, setSecret] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { busy, error, run } = useAction();
 
   if (mode === 'fixtures' && forum.store) {
     const store = forum.store;
@@ -96,19 +94,13 @@ function SignInPanel({ onDone }: { onDone(): void }) {
     );
   }
 
-  const submit = async (e: FormEvent) => {
+  const submit = (e: FormEvent) => {
     e.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
+    return run(async () => {
       signIn(await devKeySession(registry, id.trim(), secret));
       setSecret('');
       onDone();
-    } catch (err) {
-      setError(errText(err));
-    } finally {
-      setBusy(false);
-    }
+    });
   };
   return (
     <form className="form signin-form" onSubmit={submit}>
