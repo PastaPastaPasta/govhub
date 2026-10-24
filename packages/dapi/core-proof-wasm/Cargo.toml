@@ -20,4 +20,6 @@ codegen-units = 1
 panic = "abort"
 strip = true
 
+# The vendored crate is a member only so its upstream tests run here; the module build is unaffected (dev-dependencies are not linked).
 [workspace]
+members = [".", "vendor/dash-core-proof"]
