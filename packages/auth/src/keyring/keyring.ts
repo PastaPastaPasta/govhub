@@ -11,7 +11,7 @@
 //     ones they do not recognise before anything new is saved.
 // New unlockers are only ever added from a key derived in this tab (the seed, or a PRF output from a passkey ceremony here), never
 // from a recipient key read from the chain.
-import { identifierBytes, wipe } from '../bytes.ts';
+import { bytesEqual, identifierBytes, randomBytes, wipe } from '../bytes.ts';
 import { KeyType } from '../keys.ts';
 import type { SigningKey } from '../platform.ts';
 import { assertLive, type Session } from '../signin.ts';
@@ -23,6 +23,7 @@ import {
   DEFAULT_IDLE_LOCK_MINUTES,
   encodeKeys,
   encodePending,
+  KEYRING_ID_LENGTH,
   KeyringKind,
   MAX_UNLOCKERS,
   UnlockerType,
@@ -104,8 +105,9 @@ export interface OpenedKeyring {
   pendingDoc: KeyringDoc | null;
   /** true: lists this session's seed unlocker; false: the session has the seed and it is NOT listed (planted?); null: cannot tell. */
   authenticated: boolean | null;
-  /** Which unlocker opened it. */
+  /** Which unlocker opened it, and its public key (so the UI can mark "this passkey" / "this phrase"). */
   openedWith: UnlockerType;
+  openedBy: Uint8Array | null;
   close(): void;
 }
 
@@ -116,7 +118,17 @@ function opened(o: Omit<OpenedKeyring, 'close'>): OpenedKeyring {
 }
 
 export function emptyKeyring(ownerId: string, unlockers: Unlocker[]): OpenedKeyring {
-  return opened({ ownerId, content: { unlockers, keys: [], labels: [], idleLockMinutes: DEFAULT_IDLE_LOCK_MINUTES }, pending: { votes: [] }, keysDoc: null, pendingDoc: null, authenticated: true, openedWith: unlockers[0]?.type ?? UnlockerType.SEED });
+  const keyringId = randomBytes(KEYRING_ID_LENGTH);
+  return opened({
+    ownerId,
+    content: { keyringId, generation: 0, unlockers, keys: [], labels: [], idleLockMinutes: DEFAULT_IDLE_LOCK_MINUTES },
+    pending: { keyringId: keyringId.slice(), votes: [] },
+    keysDoc: null,
+    pendingDoc: null,
+    authenticated: true,
+    openedWith: unlockers[0]?.type ?? UnlockerType.SEED,
+    openedBy: unlockers[0]?.recipientKey ?? null,
+  });
 }
 
 /**
@@ -137,13 +149,17 @@ export async function loadKeyring(ctx: KeyringContext, ownerId: string, key: Unl
     pt.fill(0);
   }
   try {
-    let pending: PendingContent = { votes: [] };
+    let pending: PendingContent = { keyringId: content.keyringId.slice(), votes: [] };
     const pendingDoc = await ctx.store.get(ownerId, KeyringKind.PENDING);
     if (pendingDoc && pendingDoc.ownerId === ownerId) {
+      // Opened with the seed when the session has it: a passkey's recipient key is public, so anyone holding a HIGH key could seal
+      // a PENDING document to it. It must also carry this keyring's id, which only someone who could open KEYS knows.
+      const pkey = seedCheck ?? key;
       try {
-        const ppt = openKeyring({ contractId, ownerId: owner, kind: KeyringKind.PENDING, sealed: pendingDoc.sealed, recipientPrivateKey: key.pair.privateKey });
+        const ppt = openKeyring({ contractId, ownerId: owner, kind: KeyringKind.PENDING, sealed: pendingDoc.sealed, recipientPrivateKey: pkey.pair.privateKey });
         try {
-          pending = decodePending(ppt, pendingDoc.sealed.bucket);
+          const p = decodePending(ppt, pendingDoc.sealed.bucket);
+          if (bytesEqual(p.keyringId, content.keyringId)) pending = p;
         } finally {
           ppt.fill(0);
         }
@@ -152,7 +168,7 @@ export async function loadKeyring(ctx: KeyringContext, ownerId: string, key: Unl
       }
     }
     const authenticated = seedCheck ? content.unlockers.some((u) => u.type === UnlockerType.SEED && sameKey(u.recipientKey, seedCheck.pair.publicKey)) : null;
-    return opened({ ownerId, content, pending, keysDoc, pendingDoc, authenticated, openedWith: key.type });
+    return opened({ ownerId, content, pending, keysDoc, pendingDoc, authenticated, openedWith: key.type, openedBy: key.pair.publicKey.slice() });
   } catch (e) {
     wipeKeysContent(content);
     throw e;
@@ -177,11 +193,22 @@ export function removeUnlocker(k: OpenedKeyring, recipientKey: Uint8Array): void
 export async function saveKeys(ctx: KeyringContext, s: Session, k: OpenedKeyring): Promise<void> {
   assertLive(s);
   if (s.identityId !== k.ownerId) throw new KeyringError('This keyring belongs to another identity.');
-  const { bucket, plaintext } = encodeKeys(k.content);
+  k.content.generation += 1;
+  let encoded: ReturnType<typeof encodeKeys>;
+  try {
+    encoded = encodeKeys(k.content);
+  } catch (e) {
+    k.content.generation -= 1;
+    throw e;
+  }
+  const { bucket, plaintext } = encoded;
   try {
     const sealed = sealKeyring({ contractId: identifierBytes(ctx.contractId), ownerId: identifierBytes(k.ownerId), kind: KeyringKind.KEYS, bucket, plaintext, recipients: k.content.unlockers.map((u) => u.recipientKey) });
     const r = await ctx.store.put({ ownerId: k.ownerId, key: signingKeyOf(s), kind: KeyringKind.KEYS, sealed, existing: k.keysDoc });
     k.keysDoc = { id: r.id, ownerId: k.ownerId, revision: r.revision, kind: KeyringKind.KEYS, sealed };
+  } catch (e) {
+    k.content.generation -= 1;
+    throw e;
   } finally {
     plaintext.fill(0);
   }
@@ -191,6 +218,7 @@ export async function saveKeys(ctx: KeyringContext, s: Session, k: OpenedKeyring
 export async function savePending(ctx: KeyringContext, s: Session, k: OpenedKeyring): Promise<void> {
   assertLive(s);
   if (s.identityId !== k.ownerId) throw new KeyringError('This keyring belongs to another identity.');
+  k.pending.keyringId = k.content.keyringId.slice();
   const { bucket, plaintext } = encodePending(k.pending);
   const sealed = sealKeyring({ contractId: identifierBytes(ctx.contractId), ownerId: identifierBytes(k.ownerId), kind: KeyringKind.PENDING, bucket, plaintext, recipients: k.content.unlockers.map((u) => u.recipientKey) });
   const r = await ctx.store.put({ ownerId: k.ownerId, key: signingKeyOf(s), kind: KeyringKind.PENDING, sealed, existing: k.pendingDoc });

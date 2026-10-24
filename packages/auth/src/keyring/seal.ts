@@ -5,7 +5,8 @@
 //   body       = nonce(24) || XChaCha20-Poly1305(K, nonce, AAD, padded plaintext)        split into 4,096-byte fields c0 (c1, c2)
 //   AAD        = UTF8("govhub/keyring/v1") || 0x00 || contractId || ownerId || u8 kind || u8 version || u8 bucket || SHA-256(wraps)
 //   wraps      = 8 slots x 80 bytes, in random order; each used slot is RFC 9180 HPKE base-mode SealBase(pkR, info, "", K) =
-//                enc(32) || ChaCha20-Poly1305 ciphertext of K (48); unused slots are 80 random bytes. A reader tries every slot.
+//                enc(32) || ChaCha20-Poly1305 ciphertext of K (48); an unused slot is the X25519 public key of a throwaway secret
+//                plus 48 random bytes, so it cannot be told from a used one. A reader tries every slot.
 //   info       = UTF8("govhub/keyring/v1/wrap") || 0x00 || contractId || ownerId || u8 kind
 //
 // Unlockers (pkR):
@@ -20,6 +21,7 @@
 // The chain sees: that the identity has a keyring (and a pending-votes document), the bucket (1 or 2), and when it changes. Not the
 // number of keys, masternodes, unlockers or pending votes, nor anything else inside.
 import { xchacha20poly1305 } from '@noble/ciphers/chacha.js';
+import { x25519 } from '@noble/curves/ed25519.js';
 import { hkdf } from '@noble/hashes/hkdf.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { concatBytes, randomBytes } from '../bytes.ts';
@@ -92,7 +94,14 @@ export function sealKeyring(o: { contractId: Uint8Array; ownerId: Uint8Array; ki
       const j = randomIndex(i + 1);
       [order[i], order[j]] = [order[j]!, order[i]!];
     }
-    const wraps = randomBytes(WRAPS_LENGTH);
+    // Fillers must look like real slots: a real one starts with an X25519 public key (top bit clear, on the curve), so a filler
+    // starts with the public key of a throwaway secret, followed by 48 random bytes.
+    const wraps = new Uint8Array(WRAPS_LENGTH);
+    for (let i = 0; i < SLOT_COUNT; i++) {
+      const secret = randomBytes(32);
+      wraps.set(concatBytes(x25519.getPublicKey(secret), randomBytes(SLOT_LENGTH - 32)), i * SLOT_LENGTH);
+      secret.fill(0);
+    }
     o.recipients.forEach((pk, i) => {
       if (!is32(pk)) throw new KeyringFormatError('an unlocker key is 32 bytes');
       const { enc, ciphertext } = sealBase(pk, info, new Uint8Array(0), K);

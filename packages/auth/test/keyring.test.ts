@@ -40,7 +40,10 @@ const key = (i: number) => {
   return k;
 };
 const unlocker = (t: UnlockerType = UnlockerType.PASSKEY) => ({ type: t, recipientKey: randomBytes(32), addedAt: 1_800_000_000 });
+const RID = randomBytes(16);
 const content = (nKeys: number, nLabels: number, nUnlockers = 8): KeysContent => ({
+  keyringId: RID,
+  generation: 7,
   unlockers: Array.from({ length: nUnlockers }, () => unlocker()),
   keys: Array.from({ length: nKeys }, (_, i) => ({ privateKey: key(i), compressed: i % 2 === 0, label: longLabel })),
   labels: Array.from({ length: nLabels }, () => ({ proTxHash: bytesToHex(randomBytes(32)), label: longLabel })),
@@ -72,7 +75,7 @@ describe('keyring format', () => {
       expect(back.unlockers).toEqual(c.unlockers);
     }
     for (const b of [1, 2] as const) {
-      const p: PendingContent = { votes: Array.from({ length: PENDING_CAPS[b].votes }, (_, i) => vote(i, ['https://r1.example/' + 'x'.repeat(100), 'https://r2.example/' + 'y'.repeat(100)])) };
+      const p: PendingContent = { keyringId: RID, votes: Array.from({ length: PENDING_CAPS[b].votes }, (_, i) => vote(i, ['https://r1.example/' + 'x'.repeat(100), 'https://r2.example/' + 'y'.repeat(100)])) };
       const { bucket, plaintext } = encodePending(p);
       expect(bucket).toBe(b);
       expect(decodePending(plaintext, b)).toEqual(p);
@@ -86,7 +89,7 @@ describe('keyring format', () => {
     expect(() => encodeKeys(content(1, KEYS_CAPS[2].labels + 1))).toThrow(KeyringFormatError);
     expect(() => encodeKeys(content(1, 1, 0))).toThrow(/unlockers/);
     expect(() => encodeKeys(content(1, 1, 9))).toThrow(/unlockers/);
-    expect(() => encodePending({ votes: Array.from({ length: PENDING_CAPS[2].votes + 1 }, (_, i) => vote(i)) })).toThrow(KeyringFormatError);
+    expect(() => encodePending({ keyringId: RID, votes: Array.from({ length: PENDING_CAPS[2].votes + 1 }, (_, i) => vote(i)) })).toThrow(KeyringFormatError);
   });
   it('refuses duplicates, bad padding, a wrong bucket and another kind', () => {
     const c = content(2, 1, 1);
@@ -97,7 +100,7 @@ describe('keyring format', () => {
     bad[bad.length - 1] = 1;
     expect(() => decodeKeys(bad, 1)).toThrow(/padding/);
     expect(() => decodeKeys(plaintext, 2)).toThrow();
-    const p = encodePending({ votes: [vote(1)] }).plaintext;
+    const p = encodePending({ keyringId: RID, votes: [vote(1)] }).plaintext;
     expect(() => decodeKeys(p, 1)).toThrow(/kind/);
   });
   it('normalizes labels to 32 UTF-8 bytes on a character boundary', () => {
@@ -266,6 +269,37 @@ describe('keyring on Platform (in-memory store)', () => {
     await expect(saveKeys(ctx, s, k)).rejects.toThrow(/another identity/);
     s.end();
     await expect(saveKeys(ctx, s, emptyKeyring(ownerId, [unlocker()]))).rejects.toThrow(/ended/);
+  });
+});
+
+describe('review fixes', () => {
+  it('filler wrap slots start with a real X25519 public key (top bit clear), like used ones', () => {
+    const { bucket, plaintext } = encodeKeys(content(1, 0, 1));
+    const s = sealKeyring({ contractId: contract, ownerId: owner, kind: KeyringKind.KEYS, bucket, plaintext, recipients: [recipientFromPrf(randomBytes(32)).publicKey] });
+    for (let i = 0; i < SLOT_COUNT; i++) expect(s.wraps[i * SLOT_LENGTH + 31]! & 0x80).toBe(0);
+  });
+  it('a PENDING document that does not carry the keyring id is ignored; generation increments per write', async () => {
+    const store = new MemStore();
+    const ctx = { store, contractId };
+    const s = seedSession();
+    const prf = randomBytes(32);
+    const k = emptyKeyring(ownerId, []);
+    addUnlocker(k, seedUnlockKey(s)!);
+    addUnlocker(k, passkeyUnlockKey(prf));
+    await saveKeys(ctx, s, k);
+    await saveKeys(ctx, s, k);
+    expect(k.content.generation).toBe(2);
+    // planted: sealed to the (public) passkey key with another keyring id and an attacker relay
+    const planted = emptyKeyring(ownerId, [{ type: UnlockerType.PASSKEY, recipientKey: passkeyUnlockKey(prf).pair.publicKey, addedAt: 1 }]);
+    planted.pending.votes.push({ ...vote(1, ['https://attacker.example']) });
+    await savePending(ctx, keySession(), planted);
+    const r = (await loadKeyring(ctx, ownerId, passkeyUnlockKey(prf)))!;
+    expect(r.pending.votes).toEqual([]);
+    expect(r.content.generation).toBe(2);
+    expect(bytesToHex(r.openedBy!)).toBe(bytesToHex(passkeyUnlockKey(prf).pair.publicKey));
+  });
+  it('refuses a pending vote with an impossible outcome', () => {
+    expect(() => encodePending({ keyringId: RID, votes: [{ ...vote(1), outcome: 9 }] })).toThrow(/outcome/);
   });
 });
 

@@ -15,14 +15,16 @@
 //
 // Byte layout (big-endian integers), padded with zeros to the bucket's plaintext length:
 //   u8 version (1) | u8 kind | u16 contentLength | content | 0x00...
-//   KEYS content:    u8 nUnlockers { u8 type (1 seed, 2 passkey) | 32 recipientKey | u32 addedAt }
+//   KEYS content:    16 keyringId (random, fixed for the keyring's life) | u32 generation (+1 on every write)
+//                    u8 nUnlockers { u8 type (1 seed, 2 passkey) | 32 recipientKey | u32 addedAt }
 //                    u8 nKeys      { 32 privateKey | u8 flags (bit 0 = compressed) | u8 labelLen | label }
 //                    u16 nLabels   { 32 proTxHash (display order bytes) | u8 labelLen | label }
 //                    u16 idleLockMinutes
-//   PENDING content: u8 nRelays    { u8 urlLen | url (UTF-8, <= 120 B) }
+//   PENDING content: 16 keyringId (must equal the KEYS document's: a PENDING document sealed by someone else is ignored)
+//                    u8 nRelays    { u8 urlLen | url (UTF-8, <= 120 B) }
 //                    u16 nVotes    { 32 collateralTxid (display) | u32 index | 32 govHash (display) | u8 outcome | i64 time | 65 sig |
 //                                    i64 releaseAt | u8 nRefs (0..2) { u8 relayIndex | 16 relayVoteId } }
-import { bytesToHex, hexToBytes } from '../bytes.ts';
+import { bytesEqual, bytesToHex, hexToBytes } from '../bytes.ts';
 import { isValidPrivateKey } from '../keys.ts';
 
 export const KEYRING_FORMAT_VERSION = 1;
@@ -84,7 +86,13 @@ export interface NodeLabel {
   label: string;
 }
 
+export const KEYRING_ID_LENGTH = 16;
+
 export interface KeysContent {
+  /** Random id, fixed for the keyring's life; PENDING documents must carry the same one. */
+  keyringId: Uint8Array;
+  /** Incremented on every write; a client remembers the highest it saw and warns about a replayed older document. */
+  generation: number;
   unlockers: Unlocker[];
   keys: VotingKeyEntry[];
   labels: NodeLabel[];
@@ -111,6 +119,7 @@ export interface PendingVote {
 }
 
 export interface PendingContent {
+  keyringId: Uint8Array;
   votes: PendingVote[];
 }
 
@@ -252,6 +261,9 @@ export function encodeKeys(c: KeysContent): { bucket: 1 | 2; plaintext: Uint8Arr
   const w = new Writer(plaintextLength(bucket));
   try {
     header(w, KeyringKind.KEYS);
+    need(c.keyringId.length === KEYRING_ID_LENGTH, 'keyring id must be 16 bytes');
+    w.bytes(c.keyringId);
+    w.u32(c.generation);
     w.u8(c.unlockers.length);
     const seen = new Set<string>();
     for (const u of c.unlockers) {
@@ -265,12 +277,9 @@ export function encodeKeys(c: KeysContent): { bucket: 1 | 2; plaintext: Uint8Arr
       w.u32(u.addedAt);
     }
     w.u8(c.keys.length);
-    const keys = new Set<string>();
+    c.keys.forEach((k, i) => need(!c.keys.slice(0, i).some((o) => bytesEqual(o.privateKey, k.privateKey)), 'a voting key appears twice'));
     for (const k of c.keys) {
       need(isValidPrivateKey(k.privateKey), 'invalid voting key');
-      const id = k.privateKey.join(',');
-      need(!keys.has(id), 'a voting key appears twice');
-      keys.add(id);
       w.bytes(k.privateKey);
       w.u8(k.compressed ? 1 : 0);
       w.str(normalizeLabel(k.label), MAX_LABEL_BYTES);
@@ -308,8 +317,10 @@ const done = (r: Reader) => need(r.pos === r.end, 'trailing bytes in keyring con
 /** Decodes KEYS content (strict: no duplicates, canonical caps for the bucket, zero padding). Private keys are fresh copies. */
 export function decodeKeys(pt: Uint8Array, bucket: number): KeysContent {
   const r = open(pt, bucket, KeyringKind.KEYS);
-  const out: KeysContent = { unlockers: [], keys: [], labels: [], idleLockMinutes: DEFAULT_IDLE_LOCK_MINUTES };
+  const out: KeysContent = { keyringId: new Uint8Array(KEYRING_ID_LENGTH), generation: 0, unlockers: [], keys: [], labels: [], idleLockMinutes: DEFAULT_IDLE_LOCK_MINUTES };
   try {
+    out.keyringId = r.bytes(KEYRING_ID_LENGTH);
+    out.generation = r.u32();
     const nu = r.u8();
     for (let i = 0; i < nu; i++) {
       const type = r.u8();
@@ -350,12 +361,15 @@ export function encodePending(c: PendingContent): { bucket: 1 | 2; plaintext: Ui
   const relays = relayTable(c);
   const w = new Writer(plaintextLength(bucket));
   header(w, KeyringKind.PENDING);
+  need(c.keyringId.length === KEYRING_ID_LENGTH, 'keyring id must be 16 bytes');
+  w.bytes(c.keyringId);
   w.u8(relays.length);
   for (const u of relays) w.str(u, MAX_RELAY_URL_BYTES);
   w.u16(c.votes.length);
   for (const v of c.votes) {
     need(HEX64.test(v.collateralTxid) && HEX64.test(v.govHash), 'pending vote: hashes must be 64 lowercase hex chars');
     need(v.sig.length === 65, 'pending vote: signature must be 65 bytes');
+    need(v.outcome >= 1 && v.outcome <= 3, 'pending vote: outcome must be yes, no or abstain');
     need(v.refs.length <= MAX_REFS_PER_VOTE, `pending vote: at most ${MAX_REFS_PER_VOTE} relays`);
     need(isTime(v.time) && isTime(v.releaseAt), 'pending vote: bad time');
     w.bytes(hexToBytes(v.collateralTxid));
@@ -377,6 +391,7 @@ export function encodePending(c: PendingContent): { bucket: 1 | 2; plaintext: Ui
 
 export function decodePending(pt: Uint8Array, bucket: number): PendingContent {
   const r = open(pt, bucket, KeyringKind.PENDING);
+  const keyringId = r.bytes(KEYRING_ID_LENGTH);
   const relays: string[] = [];
   const nr = r.u8();
   need(nr <= MAX_RELAYS, 'too many relays');
@@ -394,6 +409,8 @@ export function decodePending(pt: Uint8Array, bucket: number): PendingContent {
       releaseAt: r.i64(),
       refs: [],
     };
+    need(v.outcome >= 1 && v.outcome <= 3, 'pending vote: outcome must be yes, no or abstain');
+    need(HEX64.test(v.collateralTxid) && HEX64.test(v.govHash), 'pending vote: bad hash');
     const n = r.u8();
     need(n <= MAX_REFS_PER_VOTE, 'too many relay refs');
     for (let j = 0; j < n; j++) {
@@ -404,7 +421,7 @@ export function decodePending(pt: Uint8Array, bucket: number): PendingContent {
     votes.push(v);
   }
   done(r);
-  const c = { votes };
+  const c = { keyringId, votes };
   need(pendingBucket(c) === bucket, 'pending bucket does not match its content');
   return c;
 }
