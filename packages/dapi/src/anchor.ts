@@ -1,11 +1,13 @@
-// Chain anchoring (loaded on first use): a header chain this client verified itself, from a pinned checkpoint (and down to any
-// older block of interest) up to the tip, a masternode list proven against the coinbase of a block in that chain, and a BLS-valid
-// ChainLock from a quorum that list proves. Results are cached per network through a pluggable HeaderStore (the web app uses
-// IndexedDB) so later checks only fetch the headers they do not have.
+// Chain anchoring (loaded on first use): a header chain this client verified itself, up to a ChainLocked block and down to any
+// older block of interest, a masternode list proven against the coinbase of a block in that chain, and a BLS-valid ChainLock from a
+// quorum that list proves. Results are cached per network through pluggable stores (the web app uses IndexedDB) so later checks
+// only fetch the headers they do not have.
 //
-// Order matters for soundness: headers (work + difficulty from the checkpoint) -> SML proven into a block of that chain -> quorum
-// keys from the proven SML -> ChainLock signature -> the locked block is in the chain. Nothing node-supplied is used before it is
-// tied to the checkpoint.
+// Two paths. With a quorum proof source and the WebAssembly verifier, proofanchor.ts anchors on a ChainLock proven from the pinned
+// quorum checkpoint (DIP 175): no proof of work, sound on every network. Otherwise, or when no source yields a valid fresh proof, the
+// proof-of-work path below: headers (work + difficulty from the header checkpoint) -> SML proven into a block of that chain ->
+// quorum keys from the proven SML -> ChainLock signature -> the locked block is in the chain. On either path nothing node-supplied is
+// used before it is tied to the checkpoint, and `trust` says which one ran.
 import { bytesEqual, hashHex } from './bytes.ts';
 import { CHAINLOCK_PARAMS } from './chainlock.ts';
 import type { Dapi } from './client.ts';
@@ -18,20 +20,22 @@ import { MAX_FUTURE_BLOCK_TIME, POW_PARAMS } from './pow.ts';
 import { type Sml, type SmlQuorum, parseSmlDecoded } from './sml.ts';
 import { type SmlProof, proveSml } from './smlproof.ts';
 import type { AnchorOptions, AnchoredChain, ProvenSml, Verifiers } from './types.ts';
+import type { VerifiedChain } from './linkedchain.ts';
+import { type ProofAnchorState, anchorByProof } from './proofanchor.ts';
 
 /** Headers per stream request. Nodes stream ~1-2k headers/s each, with a heavy tail, so ranges are split and run in parallel. */
 const CHUNK = 2000;
 const PARALLEL = 16;
 /** Stored heights cap (~13 MB of hashes): the low end is dropped first. Also the deepest block an anchor reaches down to. */
-const MAX_STORED = 400_000;
+export const MAX_STORED = 400_000;
 /** The newest ChainLocked block must be younger than this, or the nodes may be withholding newer blocks (stale facts). */
-const FRESH_S = 3600;
+export const FRESH_S = 3600;
 /** The minimum-height rule assumes blocks come no slower than this (150 s target; DGW keeps the real average near 158 s). */
 const SLOWEST_SPACING_S = 225;
 /** No honest chain grows faster than one block per this many seconds: caps node-claimed heights (a huge claim is a DoS). */
 const FASTEST_SPACING_S = 30;
 
-interface State { stored?: StoredChain; last?: AnchoredChain; inflight?: Promise<AnchoredChain> }
+interface State extends ProofAnchorState { stored?: StoredChain; last?: AnchoredChain; inflight?: Promise<AnchoredChain> }
 const states = new WeakMap<Dapi, State>();
 
 const now = () => Math.floor(Date.now() / 1000);
@@ -52,7 +56,7 @@ function hashMany(v: Verifiers): (headers: Uint8Array) => Uint8Array {
  * that already covers `from` is returned as is.
  */
 export function anchorChain(d: Dapi, o: AnchorOptions = {}): Promise<AnchoredChain> {
-  const st = states.get(d) ?? {};
+  const st: State = states.get(d) ?? { down: new Map() };
   states.set(d, st);
   const fresh = st.last && Date.now() - st.last.at < (o.maxAgeMs ?? 60_000) && (o.from === undefined || o.from >= st.last.chain.lo);
   if (fresh) return Promise.resolve(st.last!);
@@ -67,19 +71,37 @@ async function run(d: Dapi, st: State, o: AnchorOptions): Promise<AnchoredChain>
   const smlCtrl = new AbortController();
   const unlink = link(o.signal, smlCtrl);
   try {
-    return await runInner(d, st, o, smlCtrl.signal);
+    const v = await d.crypto();
+    const hash = hashMany(v);
+    // one masternode list download, shared by whichever path completes
+    let smlP: Promise<RawSml> | undefined;
+    const sml = () => {
+      if (!smlP) { smlP = fetchSml(d, { signal: smlCtrl.signal }); smlP.catch(() => {}); }
+      return smlP;
+    };
+    let fallback: string;
+    if (!o.proofSources?.length) fallback = 'no quorum proof source is configured';
+    else if (!v.verifyQuorumProof) fallback = 'the quorum proof verifier is not loaded';
+    else {
+      try {
+        return await anchorByProof(d, st, o, v, hash, sml(), smlCtrl.signal);
+      } catch (e) {
+        if (o.signal?.aborted) throw e;
+        fallback = (e as Error).message;
+        o.onProgress?.('No usable ChainLock proof; verifying the chain by proof of work instead');
+      }
+    }
+    return await runInner(d, st, o, v, hash, sml, fallback);
   } finally {
     smlCtrl.abort();
     unlink();
   }
 }
 
-async function runInner(d: Dapi, st: State, o: AnchorOptions, smlSignal: AbortSignal): Promise<AnchoredChain> {
+async function runInner(d: Dapi, st: State, o: AnchorOptions, v: Verifiers, hash: (h: Uint8Array) => Uint8Array, sml0: () => Promise<RawSml>, fallback: string): Promise<AnchoredChain> {
   const t0 = Date.now(), ms: Record<string, number> = {};
   const lap = (k: string, t: number) => { ms[k] = (ms[k] ?? 0) + Date.now() - t; };
-  const v = await d.crypto();
   if (!v.verifyChainLock) throw new Error('anchoring needs verifiers.verifyChainLock from @govhub/dapi/bls');
-  const hash = hashMany(v);
   const cp: Checkpoint = o.checkpoint ?? CHECKPOINTS[d.network];
   const pow = POW_PARAMS[d.network], clock = o.now ?? now;
   const progress = o.onProgress ?? (() => {});
@@ -98,7 +120,7 @@ async function runInner(d: Dapi, st: State, o: AnchorOptions, smlSignal: AbortSi
   const tip = Math.min((await tipHint(d, o)).height, maxTip);
   const best = { height: tip };
   const tSml = Date.now();
-  const smlP = fetchSml(d, { signal: smlSignal });
+  const smlP = sml0();
   smlP.then(() => { ms.smlFetch = Date.now() - tSml; }, () => {}); // download of the ~1.4 MB list, in parallel with the headers
   const maxStored = o.maxStoredHeights ?? MAX_STORED;
   if (o.from !== undefined && o.from < tip - maxStored) throw new Error(`block ${o.from} is more than ${maxStored.toLocaleString('en-US')} blocks deep: too old to verify here`);
@@ -136,7 +158,7 @@ async function runInner(d: Dapi, st: State, o: AnchorOptions, smlSignal: AbortSi
   const sml = await proveAgainstChain(d, chain, first, hash, extendTo, o, ms).catch(async (e) => {
     if (isAbort(e)) throw e;
     // one more node: the first may have sent a list from a block we cannot place, or a bad one
-    return proveAgainstChain(d, chain!, await fetchSml(d, { signal: smlSignal }, [first.node]), hash, extendTo, o, ms);
+    return proveAgainstChain(d, chain!, await fetchSml(d, o, [first.node]), hash, extendTo, o, ms);
   });
   lap('sml', t);
 
@@ -171,7 +193,8 @@ async function runInner(d: Dapi, st: State, o: AnchorOptions, smlSignal: AbortSi
     await o.store?.save(stored).catch(() => {});
   }
   const out: AnchoredChain = {
-    network: d.network, checkpoint: cp, chain, tip: chain.hi,
+    network: d.network, checkpoint: { height: cp.height, hash: cp.hash }, trust: { kind: 'proof-of-work', checkpoint: { height: cp.height, hash: cp.hash }, fallback },
+    chain, tip: chain.hi,
     weak: POW_SECURE[d.network] ? null : `${d.network} difficulty is too low for proof of work to stop a malicious node from forging the chain`,
     chainLock: { height: cl.height, blockHash: cl.blockHash, quorumHash: check.quorumHash, exact: check.exact, time: clTime },
     sml, at: Date.now(),
@@ -312,7 +335,7 @@ export async function fetchHeaders(d: Dapi, from: number, to: number, hash: (h: 
  * Apply a header run to the chain; when a header fails a rule, the node that sent it (and the one before, for a broken link)
  * is put on cooldown and those parts are fetched again from others, at most twice.
  */
-async function applyRun<T>(d: Dapi, r: HeaderRun, hash: (h: Uint8Array) => Uint8Array, apply: (r: HeaderRun) => T, o: { signal?: AbortSignal }): Promise<T> {
+export async function applyRun<T>(d: Dapi, r: HeaderRun, hash: (h: Uint8Array) => Uint8Array, apply: (r: HeaderRun) => T, o: { signal?: AbortSignal }): Promise<T> {
   for (let attempt = 0; ; attempt++) {
     try {
       return apply(r);
@@ -336,13 +359,13 @@ async function applyRun<T>(d: Dapi, r: HeaderRun, hash: (h: Uint8Array) => Uint8
 
 // ---- masternode list ------------------------------------------------------------------------------------------------------
 
-interface RawSml { node: string; decoded: { [k: string]: Cbor } }
+export interface RawSml { node: string; decoded: { [k: string]: Cbor } }
 
 /**
  * One node's full SML (first stream message, ~1.4 MB on mainnet). Another node is asked every 6 s while none has answered (at most
  * 4 at once), and a round that takes over 45 s (nodes trickling the message) starts over with fresh nodes.
  */
-async function fetchSml(d: Dapi, o: { signal?: AbortSignal }, avoid: string[] = []): Promise<RawSml> {
+export async function fetchSml(d: Dapi, o: { signal?: AbortSignal }, avoid: string[] = []): Promise<RawSml> {
   await d.ready();
   const tried = new Set(avoid);
   const errors: unknown[] = [];
@@ -390,10 +413,13 @@ async function fetchSml(d: Dapi, o: { signal?: AbortSignal }, avoid: string[] = 
 }
 
 /** proveSml + the block it names is in the chain and its header's merkle root is the one the coinbase proof hashes to. */
-async function proveAgainstChain(d: Dapi, chain: HeaderChain, raw: RawSml, hash: (h: Uint8Array) => Uint8Array, extendTo: (h: number) => Promise<void>, o: { signal?: AbortSignal }, ms: Record<string, number>): Promise<ProvenSml> {
+export async function proveAgainstChain(
+  d: Dapi, chain: VerifiedChain, raw: RawSml, hash: (h: Uint8Array) => Uint8Array, extendTo: (h: number) => Promise<void>, o: { signal?: AbortSignal },
+  ms: Record<string, number>, computed?: SmlProof,
+): Promise<ProvenSml> {
   const t = Date.now();
-  const proof: SmlProof = proveSml(raw.decoded);
-  ms.smlProof = Date.now() - t; // re-serializing and hashing every entry and commitment
+  const proof: SmlProof = computed ?? proveSml(raw.decoded);
+  if (!computed) ms.smlProof = Date.now() - t; // re-serializing and hashing every entry and commitment
   await extendTo(proof.height);
   const want = chain.hashAt(proof.height);
   if (!want || hashHex(want) !== proof.blockHash) throw new VerificationError('sml', `the list's block ${proof.height} is not in the verified chain`);
@@ -410,7 +436,7 @@ async function proveAgainstChain(d: Dapi, chain: HeaderChain, raw: RawSml, hash:
 }
 
 /** Base heights of the signing-type quorums, from the verified chain (they are multiples of the DKG interval), else the block's coinbase. */
-async function quorumsWithHeights(d: Dapi, chain: HeaderChain, quorums: readonly SmlQuorum[], llmqType: number, dkg: number, o: { signal?: AbortSignal }): Promise<SmlQuorum[]> {
+export async function quorumsWithHeights(d: Dapi, chain: VerifiedChain, quorums: readonly SmlQuorum[], llmqType: number, dkg: number, o: { signal?: AbortSignal }): Promise<SmlQuorum[]> {
   return Promise.all(quorums.filter((q) => q.llmqType === llmqType).map(async (q) => {
     for (let h = chain.hi - (chain.hi % dkg); h >= chain.lo; h -= dkg) if (chain.hashHexAt(h) === q.quorumHash) return { ...q, baseHeight: h };
     return { ...q, baseHeight: await d.resolveBlockHeight(q.quorumHash, o) };
