@@ -11,3 +11,4 @@ export * from './tx.ts';
 export * from './vote.ts';
 export * from './voteset.ts';
 export * from './superblock.ts';
+export * from './mnvote.ts';

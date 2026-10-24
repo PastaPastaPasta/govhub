@@ -15,6 +15,8 @@ import type { CoreNetwork } from '../data/types.ts';
 export const TESTNET_GOV_CONTRACT_ID = '5gMnJLDpcoMaQCQNqmHtBiSqCxRCmroXFAffPNdJ2NJC';
 /** The testnet bridge's identity (the owner of TESTNET_GOV_CONTRACT_ID): its claim attestations count. Optional; empty = none. */
 export const TESTNET_BRIDGE_IDENTITY_ID = '24tL6v5jMR1H9dtUoTgbedePsMJtYPk4Q4bo6h8jTdK9';
+/** The testnet relay (services/relay; deploy/README.md 11.4): masternode votes on Core testnet go through it. */
+export const TESTNET_RELAY: NamedUrl = { name: 'gov-relay-testnet.dashhq.org', url: 'https://gov-relay-testnet.dashhq.org' };
 
 export interface BridgeEndpoint {
   name: string;
@@ -104,6 +106,8 @@ export interface NetworkProfile {
   govContractId: string;
   /** The profile's bridge, publishing into `govContractId`. */
   bridge: { url: string; identityId: string } | null;
+  /** Relays for masternode votes on this profile's Core network (votes never cross networks). */
+  relays: NamedUrl[];
   forum: ForumEndpoints | null;
   /** Not deployed: shown, but cannot be selected. */
   deployed: boolean;
@@ -119,6 +123,7 @@ export const PROFILES: Record<ProfileId, NetworkProfile> = {
     platformNetwork: 'testnet',
     govContractId: TESTNET_GOV_CONTRACT_ID,
     bridge: { url: 'https://gov-bridge-testnet.dashhq.org', identityId: TESTNET_BRIDGE_IDENTITY_ID },
+    relays: [TESTNET_RELAY],
     forum: TESTNET_FORUM,
     deployed: true,
   },
@@ -131,6 +136,7 @@ export const PROFILES: Record<ProfileId, NetworkProfile> = {
     platformNetwork: 'testnet',
     govContractId: DEV_GOV_CONTRACT_ID,
     bridge: { url: 'https://gov-bridge.dashhq.org', identityId: DEV_BRIDGE_IDENTITY_ID },
+    relays: [],
     forum: TESTNET_FORUM,
     deployed: true,
   },
@@ -143,6 +149,7 @@ export const PROFILES: Record<ProfileId, NetworkProfile> = {
     platformNetwork: 'mainnet',
     govContractId: '',
     bridge: null,
+    relays: [],
     forum: null,
     deployed: false,
   },
@@ -195,7 +202,7 @@ export function profileRegistry(id: ProfileId): Registry {
     platform: { trusted: true, addresses: [] },
     govContractId: p.govContractId,
     bridges: profileBridges(p),
-    relays: [],
+    relays: p.relays.map((r) => ({ ...r })),
     priceFeed: { ...PRICE_FEED },
     accounts: null,
     faucet: { ...DEFAULT_FAUCET },

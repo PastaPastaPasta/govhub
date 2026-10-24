@@ -11,6 +11,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./evo": "./src/evo.ts",
+    "./keyring-evo": "./src/keyring/evo-store.ts",
     "./webauthn": "./src/vault/webauthn.ts"
   },
   "scripts": {

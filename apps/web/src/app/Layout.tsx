@@ -202,6 +202,7 @@ export function Layout() {
               Active{count !== undefined && <span className="count">{formatInt(count)}</span>}
             </NavLink>
             <NavLink to="/past">Past</NavLink>
+            <NavLink to="/masternodes">Masternodes</NavLink>
             <NavLink to="/settings">Settings</NavLink>
           </nav>
           <ProfileLabel />

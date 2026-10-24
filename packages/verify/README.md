@@ -31,6 +31,7 @@ DASH_CLI="dash-cli -datadir=... -regtest -rpcport=... -rpcuser=... -rpcpassword=
 | Vote set | `countVotes(votes, weights, {now?}) -> tallyVotes result + {counted, voteSetHash}` (the one counting rule, used by the bridge and the web app), `voteSetHash(entries)`, `voteSetPreimage(entries)`, `VOTE_SET_DOMAIN` (govhub-voteset-v1, section 7) |
 | Superblocks | `superblockSchedule(height, network) -> {last, next, votingDeadline, inMaturityWindow}`, `superblocksBetween`, `isSuperblockHeight`, `superblockPaymentsLimit(height, network)` (duffs, bigint), `superblockShareOfBlock`, `fundingThreshold(validWeighted, network)`, `payeeScript`, `findPayment(outputs, address, amount, network)`, `GOV_CHAIN_PARAMS` |
 | Addresses | `decodeAddress`, `encodeAddress`, `p2pkhAddress`, `decodeWif`, `encodeWif`; `Network = 'mainnet' \| 'testnet' \| 'regtest'` |
+| MN voting (phase 3) | `governanceVoteHash(v)` (Core's vote id), `voteRawParams(v, sigB64)`, `relayVoteError(v, now, maxHoldS)`, `VOTE_MAX_FUTURE_S`, `VOTE_UPDATE_MIN_S`, `relayCancelMessage(network, voteHash)`, `verifyRelayCancel(...)`, `parseProRegTx(raw)`, `payoutScriptAddress(script, network)` (section 9) |
 
 Conventions: **hashes cross the API in two forms**. `display` hex is what RPCs/explorers print (and what goes in
 vote strings); `raw` is the internal byte order (reverse of display) that is hashed, serialized and committed in the
@@ -157,6 +158,26 @@ Pure functions of chain parameters and a height (feed them a verified height):
   address and amount apart. The recorded mainnet superblock 2,558,864 pays 6 proposals, 5,393 DASH in total, what the bridge recorded as paid.
 * **Threshold**: `max(nGovernanceMinQuorum, m_valid_weighted / 10)` (governance.cpp:1208-1209).
 
+### 9. Masternode voting helpers (`mnvote.ts`)
+
+* **Vote hash** (`governanceVoteHash`) = `CGovernanceVote::UpdateHash`, vote.cpp:145-156: SHA256d of `outpoint.hash (32 raw) | n u32 | 0x00 |
+  ffffffff | parentHash (32 raw) | SIGNAL i32 | OUTCOME i32 | time i64` (signal before outcome, the reverse of the signature hash), shown
+  in display order. It is the key of `gobject getcurrentvotes` and the bridge's `votes.hash`; checked against 300 recorded mainnet votes.
+* **Core rules a relay enforces** (`relayVoteError`, constants): funding signal only, outcome yes/no/abstain (`voteraw` refuses NONE),
+  `time <= now + maxHold`; at broadcast, `time <= now + VOTE_MAX_FUTURE_S` (3,600, vote.cpp:213) and one accepted change per hour per
+  (masternode, object, signal) on the receiving node's clock (`VOTE_UPDATE_MIN_S`, object.cpp:443-456, GOVERNANCE_UPDATE_MIN).
+* **Relay cancel** (govhub-relay-cancel-v1): the voting key signs, with Dash `signmessage` (message magic, section 4) on **every**
+  network (so Core and hardware wallets can sign it, unlike a testnet vote),
+  ```
+  "govhub-relay-cancel-v1\n<network>\n<vote hash, display hex lowercase>"
+  ```
+  The first line keeps it apart from any vote string; the network line stops cross-network replay. `verifyRelayCancel` checks it.
+* **ProRegTx** (`parseProRegTx`, evo/providertx.h:162-183): the proTxHash is recomputed from the bytes and the collateral outpoint read
+  from the payload (a null hash means "output n of the ProRegTx itself"). A masternode's collateral never changes, so comparing the
+  proTxHash with a verified SML entry proves the outpoint a vote must name (the SML does not carry it). For ProTx v1/v2 the registered
+  payout script and voting key are read too; a ProUpRegTx can change both later (one of the 4 testnet vectors has a changed payout).
+  v3 (extended addresses) has a variable-length NetInfo and payout list and is parsed only up to the outpoint (no real v3 vector yet).
+
 ## Fixtures (`test/fixtures/`)
 
 | file | content | produced by |
@@ -167,6 +188,7 @@ Pure functions of chain parameters and a height (feed them a verified height):
 | `messages.regtest.json` | 4 regtest keys x 7 messages: Core `signmessagewithprivkey` signatures + `verifymessage` | same |
 | `plaintx.regtest.json` | an ordinary wallet tx (negative collateral case) | same |
 | `superblock-mainnet.json`, `superblock-testnet.json` | the coinbase of the newest superblock (mainnet 2,558,864; testnet 1,578,672) | `packages/dapi/scripts/record-anchor-fixtures.mjs` |
+| `protx.testnet.json` | 4 raw testnet ProRegTxs (regular and evo; external collateral and collateral inside the ProRegTx; ProTx v1 and v2: testnet has no v3 ProRegTx yet) with `protx list registered` facts | testnet dashd 24.0.0-rc.4 `getrawtransaction` (2026-10-24) |
 | `mainnet-proposals.json` | all 28 proposals in mainnet Core (height 2,560,391) with the raw collateral txs | `scripts/fetch-mainnet-vectors.mjs` (public JSON-RPC, read-only) |
 
 The generator talks only to `dash-cli`, never to this package, so fixtures are "what Core says". Regtest keys are worthless.

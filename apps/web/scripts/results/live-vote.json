@@ -1,0 +1,114 @@
+{
+  "runs": [
+    {
+      "at": "2026-10-24T18:52:01.618Z",
+      "govHash": "ab31c1fffb2eef4587f4ba85a92ddf98b3256aaf96542fe5221a0532d620708d",
+      "relay": "http://127.0.0.1:18791",
+      "votes": [
+        {
+          "kind": "immediate",
+          "name": "masternode-2",
+          "proTxHash": "044b879c7014a715eb1bd98c79e6137f45011a0cfe3d21b24edee3c1650eabd9",
+          "collateralTxid": "4ee3ff5074723d995f4cb957a954587c6c637a42655ada8f4054037b28d1e7a8",
+          "collateralIndex": 24,
+          "outcome": 1,
+          "time": 1792867921,
+          "releaseAt": 1792867921,
+          "voteHash": "1af3180b935e432f02ab83271ddbb1894dd2776d7a7f772eee7882aba0912214",
+          "relayId": "02eb94ef1f1105baa6e8175ae733dd6e",
+          "statusAtSubmit": "held",
+          "check": {
+            "at": "2026-10-24T19:06:29.220Z",
+            "relay": {
+              "id": "02eb94ef1f1105baa6e8175ae733dd6e",
+              "voteHash": "1af3180b935e432f02ab83271ddbb1894dd2776d7a7f772eee7882aba0912214",
+              "status": "confirmed",
+              "releaseAt": 1792867921,
+              "broadcastAt": 1792867925,
+              "confirmedAt": 1792867930,
+              "lastError": null
+            },
+            "bridgeCurrent": {
+              "outcome": 1,
+              "time": 1792867921,
+              "ours": true
+            }
+          }
+        },
+        {
+          "kind": "deferred",
+          "name": "masternode-3",
+          "proTxHash": "f8ef5516cb8f36418e42dc9e078b26b0c4b1b9ad810019974686fb9a6dc88206",
+          "collateralTxid": "4ee3ff5074723d995f4cb957a954587c6c637a42655ada8f4054037b28d1e7a8",
+          "collateralIndex": 18,
+          "outcome": 3,
+          "time": 1792868551,
+          "releaseAt": 1792868551,
+          "voteHash": "ca31692f1a6888de0f95cf0cd927e7a84639afa5de6503db275ebbcb5126004a",
+          "relayId": "bad8743155572a8f402edc80b7ec12aa",
+          "statusAtSubmit": "held",
+          "check": {
+            "at": "2026-10-24T19:06:29.231Z",
+            "relay": {
+              "id": "bad8743155572a8f402edc80b7ec12aa",
+              "voteHash": "ca31692f1a6888de0f95cf0cd927e7a84639afa5de6503db275ebbcb5126004a",
+              "status": "confirmed",
+              "releaseAt": 1792868551,
+              "broadcastAt": 1792868551,
+              "confirmedAt": 1792868561,
+              "lastError": null
+            },
+            "bridgeCurrent": {
+              "outcome": 3,
+              "time": 1792868551,
+              "ours": true
+            }
+          }
+        },
+        {
+          "kind": "cancelled",
+          "name": "masternode-4",
+          "proTxHash": "63dc5ee3b0ae326b1d590c1253aceb6b50982721e6d8b20e862433a2a6438c60",
+          "collateralTxid": "4ee3ff5074723d995f4cb957a954587c6c637a42655ada8f4054037b28d1e7a8",
+          "collateralIndex": 107,
+          "outcome": 2,
+          "time": 1792868869,
+          "releaseAt": 1792868869,
+          "voteHash": "9833ed1a940a28b73c939ea7b212ea8299c0a1b0b932ebf539be1d1672d6d751",
+          "relayId": "07d0d39c013d60f977e1035579489805",
+          "statusAtSubmit": "held",
+          "check": {
+            "at": "2026-10-24T19:06:29.237Z",
+            "relay": {
+              "id": "07d0d39c013d60f977e1035579489805",
+              "voteHash": "9833ed1a940a28b73c939ea7b212ea8299c0a1b0b932ebf539be1d1672d6d751",
+              "status": "cancelled",
+              "releaseAt": 1792868869,
+              "broadcastAt": null,
+              "confirmedAt": null,
+              "lastError": null
+            },
+            "bridgeCurrent": null
+          }
+        }
+      ],
+      "cancel": {
+        "wrongKey": "refused (the signature is not the masternode voting key cancelling this vote)",
+        "rightKey": "cancelled"
+      }
+    }
+  ],
+  "directVoteraw": {
+    "at": "2026-10-24T18:51:08Z",
+    "by": "apps/web/scripts/sign-test-vote.ts (src/voting/plan.ts signPlanned, testnet binary-hash scheme) + dash-cli voteraw on the testnet dashd (24.0.0-rc.4)",
+    "masternode": "masternode-1",
+    "proTxHash": "bc77a5a2cec455c79fb92fb683dbd87a2a92b663c9a46d0c50d11889b4aeb121",
+    "collateral": "4ee3ff5074723d995f4cb957a954587c6c637a42655ada8f4054037b28d1e7a8-95",
+    "govHash": "ab31c1fffb2eef4587f4ba85a92ddf98b3256aaf96542fe5221a0532d620708d",
+    "outcome": "abstain",
+    "time": 1792867868,
+    "voteHash": "91bfc0b53993965c42b5a2b99f5887e3306d6fc059723b35c24448654ed0a357",
+    "coreAnswer": "Voted successfully",
+    "getcurrentvotes": "91bfc0b53993965c42b5a2b99f5887e3306d6fc059723b35c24448654ed0a357: 4ee3ff5074723d995f4cb957a954587c6c637a42655ada8f4054037b28d1e7a8-95:1792867868:abstain:funding:1"
+  }
+}

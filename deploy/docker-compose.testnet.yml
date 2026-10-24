@@ -13,3 +13,6 @@ services:
     environment:
       CORE_NETWORK: testnet
       PLATFORM_NETWORK: ${PLATFORM_NETWORK:-testnet}
+  relay:
+    environment:
+      CORE_NETWORK: testnet

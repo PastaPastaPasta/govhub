@@ -1,0 +1,232 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "govhub relay API",
+    "version": "0.1.0",
+    "description": "A queue in front of a dashd. Accepts fully signed masternode governance FUNDING votes and broadcasts them with `voteraw`, immediately or at a client-chosen release time (deferred / randomized voting), and submits proposals whose collateral is already confirmed. The relay holds no accounts, keeps no IP addresses at rest and only a coarse receive hour per vote. Its operator can see the IP and timing of every request: public unlinkability only. Votes are signed by the client with the masternode VOTING key (`signVote` in @govhub/verify); the relay never sees a key. The id returned by POST /v1/votes, not the vote hash, is the handle for status and cancel. CORS is open (origin *, GET/POST/OPTIONS, header content-type). Every response carries `X-Content-Type-Options: nosniff`. Every POST body is limited to 4096 bytes (413). Errors are `{error, code}` with a stable `code`.",
+    "license": { "name": "MIT" }
+  },
+  "servers": [{ "url": "http://127.0.0.1:8788" }],
+  "paths": {
+    "/v1/status": {
+      "get": {
+        "summary": "Relay and Core status",
+        "description": "Always 200 while the process serves HTTP (container health check). `core.reachable` says whether dashd answers; the answer is cached for 5 s.",
+        "responses": {
+          "200": { "description": "status", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Status" } } } }
+        }
+      }
+    },
+    "/v1/votes": {
+      "post": {
+        "summary": "Submit a signed funding vote",
+        "description": "Checks, in this order: network (`wrong-network`), field types and unknown keys (`bad-request`), Core's relay rules via `relayVoteError` (`bad-vote`: funding only, outcome yes/no/abstain, time positive and at most MAX_HOLD_S ahead), the release time (`bad-release`; a signed `time` older than MAX_PAST_S, default 24 h, is `stale-vote`), the masternode (`unknown-mn`, `mn-banned`), the signature (`bad-signature`: the recovered key must be the masternode's current voting key; Core's non-strict recovery rules, i.e. any header byte and high-S), the proposal (`unknown-proposal`, `not-a-proposal`). A vote whose hash is already stored (in any state) returns 200 with the stored record. Then Core is asked (`gobject getcurrentvotes`; a failing call is ignored): 409 `already-current` if Core already has this vote hash as the masternode's current vote, 409 `newer-vote-in-core` if it has a funding vote of this masternode dated at or after this one; neither is queued or counted against any limit. A held vote of the same masternode on the same proposal is superseded by one with a greater `time` and refused otherwise (`later-vote-held`). Then the limits, which only votes that are really queued count against: per masternode per rolling hour (`rate-limited`), held votes per masternode (`too-many-held`) and held votes in total (503 `relay-full`, MAX_HELD_TOTAL). The per-IP token bucket (`rate-limited`, Retry-After) applies to every POST before the body is read.\n\nThe vote is released at `releaseAt` (default: max(now, time - RELEASE_MARGIN_S)); an explicit `releaseAt` must satisfy time - 3540 <= releaseAt <= time + 86400 and releaseAt <= now + MAX_HOLD_S, and a value in the past means now.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/VoteRequest" } } } },
+        "responses": {
+          "200": { "description": "this exact vote (same vote hash) is already stored; its current record", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/VoteReceipt" } } } },
+          "202": { "description": "accepted and held until `releaseAt`", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/VoteReceipt" } } } },
+          "400": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "409": { "$ref": "#/components/responses/Error" },
+          "413": { "$ref": "#/components/responses/Error" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/votes/cancel": {
+      "post": {
+        "summary": "Cancel a held vote",
+        "description": "`sig` is the masternode's CURRENT voting key signing (Dash `signmessage`, DarkCoin message magic, the same scheme on every network) the text `govhub-relay-cancel-v1\\n<network>\\n<vote hash, lowercase display hex>` (relayCancelMessage in @govhub/verify). A held vote becomes `cancelled`; cancelling a cancelled vote is a no-op 200. Any other state is 409 `not-held` with the vote's `status`; `sending` (voteraw in flight) is one of them.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CancelRequest" } } } },
+        "responses": {
+          "200": { "description": "cancelled", "content": { "application/json": { "schema": { "type": "object", "required": ["id", "status"], "additionalProperties": false, "properties": { "id": { "$ref": "#/components/schemas/VoteId" }, "status": { "type": "string", "enum": ["cancelled"] } } } } } },
+          "400": { "$ref": "#/components/responses/Error" },
+          "403": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "409": { "description": "`not-held`: the vote already left the held state", "content": { "application/json": { "schema": { "allOf": [{ "$ref": "#/components/schemas/Error" }, { "type": "object", "properties": { "status": { "$ref": "#/components/schemas/VoteStatus" } } }] } } } },
+          "413": { "$ref": "#/components/responses/Error" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/votes/{id}": {
+      "get": {
+        "summary": "Status of a submitted vote",
+        "description": "Votes in a final state are deleted RETENTION_DAYS after they finished; the id is then unknown.",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "$ref": "#/components/schemas/VoteId" } }],
+        "responses": {
+          "200": { "description": "vote status", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/VoteStatusView" } } } },
+          "400": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/proposals/submit": {
+      "post": {
+        "summary": "Submit a proposal to Core (`gobject submit`)",
+        "description": "501 `disabled` when the relay runs with PROPOSAL_SUBMIT=0. Everything is verified again before Core is asked: the proposal data (`validateProposalData`, `bad-proposal`), the gov hash, and the collateral transaction fetched from Core (`checkCollateralTx` against that hash and the named txid, `bad-collateral`). A collateral with fewer than MIN_COLLATERAL_CONFS confirmations is 425 `collateral-unconfirmed` with the current `confirmations`. Core's refusal is 409 `core-rejected` carrying Core's message (proposal data is public).",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProposalRequest" } } } },
+        "responses": {
+          "200": { "description": "submitted", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProposalReceipt" } } } },
+          "400": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "409": { "$ref": "#/components/responses/Error" },
+          "413": { "$ref": "#/components/responses/Error" },
+          "425": { "description": "the collateral transaction is not deep enough yet", "content": { "application/json": { "schema": { "allOf": [{ "$ref": "#/components/schemas/Error" }, { "type": "object", "required": ["confirmations"], "properties": { "confirmations": { "type": "integer", "minimum": 0 } } }] } } } },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "501": { "$ref": "#/components/responses/Error" },
+          "503": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    }
+  },
+  "components": {
+    "responses": {
+      "Error": { "description": "error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "RateLimited": {
+        "description": "rate limited (`rate-limited` or `too-many-held`)",
+        "headers": { "Retry-After": { "description": "seconds", "schema": { "type": "integer", "minimum": 1 } } },
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": ["error", "code"],
+        "properties": {
+          "error": { "type": "string" },
+          "code": {
+            "type": "string",
+            "description": "stable machine-readable reason",
+            "enum": [
+              "bad-request",
+              "wrong-network",
+              "bad-vote",
+              "stale-vote",
+              "bad-release",
+              "unknown-mn",
+              "mn-banned",
+              "mn-no-voting-key",
+              "bad-signature",
+              "unknown-proposal",
+              "not-a-proposal",
+              "later-vote-held",
+              "already-current",
+              "newer-vote-in-core",
+              "rate-limited",
+              "too-many-held",
+              "relay-full",
+              "unknown-id",
+              "not-held",
+              "too-large",
+              "not-found",
+              "method-not-allowed",
+              "core-unavailable",
+              "internal",
+              "disabled",
+              "bad-proposal",
+              "unknown-collateral",
+              "bad-collateral",
+              "collateral-unconfirmed",
+              "core-rejected"
+            ]
+          }
+        }
+      },
+      "Hash": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "lowercase hex in display (RPC) byte order; uppercase is accepted in requests" },
+      "VoteId": { "type": "string", "pattern": "^[0-9a-f]{32}$", "description": "16 random bytes; the handle for status and cancel" },
+      "VoteStatus": { "type": "string", "enum": ["held", "sending", "broadcast", "confirmed", "failed", "cancelled", "superseded"], "description": "`sending`: `voteraw` is in flight right now (a few seconds at most); the vote cannot be cancelled and ends as `broadcast`, back as `held` (retry) or `failed`. Clients must treat unknown statuses as non-final." },
+      "VoteRequest": {
+        "type": "object",
+        "required": ["network", "collateralTxid", "collateralIndex", "govHash", "signal", "outcome", "time", "sig"],
+        "additionalProperties": false,
+        "properties": {
+          "network": { "type": "string", "enum": ["mainnet", "testnet", "regtest", "devnet"], "description": "must equal the relay's CORE_NETWORK; it also selects the vote signature scheme (testnet: hash scheme, everything else: message scheme)" },
+          "collateralTxid": { "$ref": "#/components/schemas/Hash" },
+          "collateralIndex": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+          "govHash": { "$ref": "#/components/schemas/Hash" },
+          "signal": { "type": "string", "enum": ["funding"], "description": "other signal names are refused with `bad-vote`" },
+          "outcome": { "type": "string", "enum": ["yes", "no", "abstain"], "description": "`none` is refused with `bad-vote`" },
+          "time": { "type": "integer", "description": "the signed nTime, unix seconds; at most MAX_HOLD_S (default 40 days) ahead of the relay's clock" },
+          "sig": { "type": "string", "pattern": "^[A-Za-z0-9+/]{87}=$", "description": "base64 of the 65-byte compact signature (the `voteraw` vote-sig argument)" },
+          "releaseAt": { "type": "integer", "description": "unix seconds. Default max(now, time - RELEASE_MARGIN_S). Must satisfy time - 3540 <= releaseAt <= time + 86400 and releaseAt <= now + MAX_HOLD_S" }
+        }
+      },
+      "VoteReceipt": {
+        "type": "object",
+        "required": ["id", "voteHash", "status", "releaseAt"],
+        "properties": {
+          "id": { "$ref": "#/components/schemas/VoteId" },
+          "voteHash": { "$ref": "#/components/schemas/Hash" },
+          "status": { "$ref": "#/components/schemas/VoteStatus" },
+          "releaseAt": { "type": "integer", "description": "effective release time, unix seconds (never earlier than the submission)" }
+        }
+      },
+      "CancelRequest": {
+        "type": "object",
+        "required": ["id", "sig"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "$ref": "#/components/schemas/VoteId" },
+          "sig": { "type": "string", "pattern": "^[A-Za-z0-9+/]{87}=$", "description": "base64 of the 65-byte `signmessage` signature over the cancel message" }
+        }
+      },
+      "VoteStatusView": {
+        "type": "object",
+        "required": ["id", "voteHash", "status", "releaseAt", "broadcastAt", "confirmedAt", "attempts", "lastError"],
+        "properties": {
+          "id": { "$ref": "#/components/schemas/VoteId" },
+          "voteHash": { "$ref": "#/components/schemas/Hash" },
+          "status": { "$ref": "#/components/schemas/VoteStatus" },
+          "releaseAt": { "type": "integer" },
+          "broadcastAt": { "type": ["integer", "null"], "description": "when Core last accepted the vote from this relay" },
+          "confirmedAt": { "type": ["integer", "null"], "description": "when the vote was seen in `gobject getcurrentvotes`" },
+          "attempts": { "type": "integer", "description": "voteraw calls that were answered (not counting `too-often` waits)" },
+          "lastError": {
+            "type": ["string", "null"],
+            "description": "a short code, never a raw Core message. While held (or `sending`): `too-often`, `unknown-proposal`, `core-error`, `not-visible` (re-broadcast pending). When failed: `obsolete`, `mn-gone`, `mn-banned`, `mn-not-valid`, `bad-signature`, `unknown-proposal`, `core-error`, `unconfirmed`"
+          }
+        }
+      },
+      "Status": {
+        "type": "object",
+        "required": ["service", "version", "network", "core", "held", "proposalSubmit"],
+        "properties": {
+          "service": { "type": "string", "enum": ["govhub-relay"] },
+          "version": { "type": "string" },
+          "network": { "type": "string", "enum": ["mainnet", "testnet", "regtest", "devnet"] },
+          "core": {
+            "type": "object",
+            "required": ["reachable", "height"],
+            "properties": { "reachable": { "type": "boolean" }, "height": { "type": ["integer", "null"] } }
+          },
+          "held": { "type": "integer", "description": "votes currently held" },
+          "proposalSubmit": { "type": "boolean" }
+        }
+      },
+      "ProposalRequest": {
+        "type": "object",
+        "required": ["network", "parentHash", "revision", "time", "dataHex", "collateralTxid"],
+        "additionalProperties": false,
+        "properties": {
+          "network": { "type": "string", "enum": ["mainnet", "testnet", "regtest", "devnet"] },
+          "parentHash": { "type": "string", "description": "`0` (or 64 zeros): proposals only", "pattern": "^(0|0{64})$" },
+          "revision": { "type": "integer", "enum": [1] },
+          "time": { "type": "integer", "minimum": 1, "description": "the `time` of the governance object (part of its hash)" },
+          "dataHex": { "type": "string", "pattern": "^([0-9a-fA-F]{2})+$", "description": "proposal JSON as hex, at most 512 bytes" },
+          "collateralTxid": { "$ref": "#/components/schemas/Hash" }
+        }
+      },
+      "ProposalReceipt": {
+        "type": "object",
+        "required": ["govHash", "result"],
+        "properties": {
+          "govHash": { "$ref": "#/components/schemas/Hash", "description": "computed by the relay with governanceObjectHash" },
+          "result": { "description": "what `gobject submit` returned (the hash)" }
+        }
+      }
+    }
+  }
+}

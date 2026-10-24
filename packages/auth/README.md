@@ -7,10 +7,13 @@ Identity, login and funding for govhub (docs/PLAN.md r3.2 section 4). Headless T
 npm test -w @govhub/auth          # offline: derivation, HPKE (RFC 9180), tx, sign-in, vault
 npm run typecheck -w @govhub/auth
 npx vite-node scripts/live-testnet.ts [create] [voucher] [topup] [signin] [vault] [addkeys]   # TESTNET, spends tDASH
+npx vite-node scripts/testnet-forum-keyring.ts [--update] [--keyring]                         # TESTNET: forum.keyring update + live keyring
+npx vite-node scripts/testnet-proposal.ts collateral|status                                   # TESTNET: a cheap test proposal (QA wallet)
 ```
 
 Entry points: `@govhub/auth` (everything headless), `@govhub/auth/evo` (the evo-sdk 5 `PlatformPort` adapter; the caller passes the
-already-loaded SDK so the 8.7 MB chunk is never pulled in by this package) and `@govhub/auth/webauthn` (browser only).
+already-loaded SDK so the 8.7 MB chunk is never pulled in by this package), `@govhub/auth/keyring-evo` (the keyring's Platform store,
+same rule) and `@govhub/auth/webauthn` (browser only).
 
 ## What it does
 
@@ -22,7 +25,31 @@ already-loaded SDK so the 8.7 MB chunk is never pulled in by this package) and `
 | Funding | `funding.ts`, `tx.ts` | One-time key at the funding path; `watchAddressForDeposit` subscribes **before** the address is shown; type-8 asset lock spending the deposit (1 duff/byte); a second watcher on the lock's txid and inputs opens **before** the broadcast and its IS-lock bytes are persisted on arrival; instant proof, else a chain proof at Platform's `coreChainLockedHeight`; `identities.create` / `topUp`; a proved read confirms. Progress (`FundingRecord`) holds public data only, so a reload resumes once the same seed (or, for seedless top-ups, the same pasted key) is unlocked again. |
 | Vouchers | `voucher.ts` | `dashpay://invite?assetlocktx=<txid>&pk=<WIF>&islock=null` (dash-faucet-cf). The identity gets the user's own seed keys; the voucher key only signs the proof. |
 | Passkey vault | `vault/*` | `forum.vault` documents. RFC 9180 HPKE base mode (X25519, HKDF-SHA256, ChaCha20-Poly1305) to the key a WebAuthn PRF output derives; AAD binds contract, owner, credential, recipient key and key id. Bundles: the seed (entropy + identity index), one HIGH/CRITICAL key, or up to 7 MN voting keys, all padded to 240 B (256 B sealed). Every opened bundle is checked against the owner's keys on chain before a session exists (planted entries). |
+| MN keyring | `keyring/*` | `forum.keyring` documents: masternode voting keys, node labels and held votes, encrypted in the browser to the seed and the user's passkeys (section below). Restored by signing in again with the phrase or a passkey; a pasted key cannot open it. |
 | Central login | `central.ts` | Interface only (accounts service, OPAQUE + passkey envelopes); a later phase. |
+
+## Masternode keyring (`keyring/`, phase 3)
+
+"Add my masternodes" once, sign in again later and they are back; the operator never sees a key. `format.ts` (plaintext layout,
+buckets), `seal.ts` (encryption), `keyring.ts` (load / open / save, unlockers), `evo-store.ts` (Platform store).
+
+| | |
+|---|---|
+| Content key | `K` = 32 random bytes, **new on every write**. Body = `nonce(24) \|\| XChaCha20-Poly1305(K, nonce, AAD, padded plaintext)`, split into 4,096-byte fields `c0` (`c1`, `c2`) |
+| AAD | `"govhub/keyring/v1" \|\| 0x00 \|\| contractId \|\| ownerId \|\| kind \|\| version \|\| bucket \|\| SHA-256(wraps)` |
+| Wraps | 8 slots x 80 B in random order; a used slot is RFC 9180 HPKE `SealBase(pkR, info, "", K)` = enc(32) + ciphertext(48); a filler is the X25519 public key of a throwaway secret + 48 random bytes, so the two cannot be told apart (a random 32-byte prefix would not be a curve point half the time). `info = "govhub/keyring/v1/wrap" \|\| 0x00 \|\| contractId \|\| ownerId \|\| kind`. Readers try every slot |
+| Seed unlocker | `pkR` = HPKE `DeriveKeyPair(HKDF-SHA256(ikm = BIP39 entropy, salt = "govhub/keyring/v1/seed", info = network \|\| 0x00 \|\| ownerId))`. Never published (it exists only inside the ciphertext) |
+| Passkey unlocker | the passkey vault's PRF key (`recipientFromPrf`, same PRF input), i.e. the same X25519 key as the passkey's `forum.vault` entry; the HPKE info differs. One ceremony opens both |
+| Sizes | plaintext starts with `keyringId` (16) and `generation` (u32). bucket 1: 4,096 B (<= 32 keys, 24 node labels, 8 unlockers, labels <= 32 UTF-8 bytes); bucket 2: 12,288 B (<= 96 keys, 80 labels). Pending votes: 16 / 60. The bucket is chosen from counts only, so the chain learns "bucket 1 or 2", never a count. Beyond bucket 2 the encoder refuses |
+| Leaks | that the identity has a keyring and a pending-votes document, the bucket, and when either changes (a pending update hints "this identity scheduled votes around now", not which or how many) |
+| Planted keyrings | anyone holding a HIGH key of the identity can replace the keyring with one sealed to the user's (public) passkey key that lists their own unlocker. A seed session checks that the content lists ITS seed unlocker (`authenticated`); a passkey-only session cannot, so the app lists every unlocker (marking the one that opened it) and refuses to save until the user confirms them. New unlockers are only ever derived in the tab (seed, or a PRF from a ceremony there), never taken from the chain |
+| Replays | KEYS carries a `generation` (+1 per write); the app remembers the highest it opened per identity and treats an older one as suspect (same confirmation). PENDING is opened with the seed when the session has it and must carry the KEYS document's random `keyringId`, so a PENDING document sealed by someone else (to the public passkey key) is ignored |
+| Wiping | `OpenedKeyring.close()` zeroes every key; encode buffers and `K` are zeroed after use. JS strings (a typed WIF or phrase) cannot be wiped |
+
+Live (testnet, `scripts/testnet-forum-keyring.ts`, results in `scripts/results/testnet-forum-keyring.json`): the contract update,
+then create / replace / shrink and a pending document, read back with proofs and opened. Fees: create 0.0016 DASH, pending create
+0.0015, a same-bucket replace is cheap; a 0.003 starter identity can afford the keyring but not also the pending backup, so the web
+app makes the backup opt-in.
 
 ## Findings
 

@@ -188,5 +188,27 @@
     },
     "required": ["$createdAt", "$updatedAt", "credentialId", "recipientKey", "version", "authKeyId", "enc", "sealed"],
     "additionalProperties": false
+  },
+  "keyring": {
+    "type": "object",
+    "documentsMutable": true,
+    "canBeDeleted": true,
+    "transferable": 0,
+    "creationRestrictionMode": 0,
+    "signatureSecurityLevelRequirement": 2,
+    "indices": [
+      {"name": "byOwnerKind", "unique": true, "properties": [{"$ownerId": "asc"}, {"kind": "asc"}]}
+    ],
+    "properties": {
+      "kind": {"type": "integer", "minimum": 0, "maximum": 255, "position": 0},
+      "version": {"type": "integer", "minimum": 1, "maximum": 255, "position": 1},
+      "bucket": {"type": "integer", "minimum": 1, "maximum": 255, "position": 2},
+      "wraps": {"type": "array", "byteArray": true, "minItems": 80, "maxItems": 1280, "position": 3},
+      "c0": {"type": "array", "byteArray": true, "minItems": 32, "maxItems": 5120, "position": 4},
+      "c1": {"type": "array", "byteArray": true, "minItems": 32, "maxItems": 5120, "position": 5},
+      "c2": {"type": "array", "byteArray": true, "minItems": 32, "maxItems": 5120, "position": 6}
+    },
+    "required": ["kind", "version", "bucket", "wraps", "c0"],
+    "additionalProperties": false
   }
 }

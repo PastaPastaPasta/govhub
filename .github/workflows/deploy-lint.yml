@@ -43,6 +43,12 @@ jobs:
           - name: mainnet + tunnel profile
             compose_file: docker-compose.yml
             profiles: tunnel
+          - name: mainnet + tunnel and relay profiles
+            compose_file: docker-compose.yml
+            profiles: tunnel,relay
+          - name: testnet + relay profile, relay as a tunnel guest
+            compose_file: docker-compose.yml:docker-compose.testnet.yml:docker-compose.tunnel-guest.yml:docker-compose.relay-tunnel-guest.yml
+            profiles: relay
           - name: testnet + p2p + proxy profile
             compose_file: docker-compose.yml:docker-compose.testnet.yml:docker-compose.p2p.yml
             profiles: proxy
