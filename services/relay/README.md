@@ -127,7 +127,7 @@ has `X-Content-Type-Options: nosniff`, every POST body is limited to 4096 bytes 
 |---|---|
 | `POST /v1/votes` | submit a signed funding vote → 202 `{id, voteHash, status: "held", releaseAt}` (200 with the stored record if this exact vote is already known) |
 | `POST /v1/votes/cancel` | `{id, sig}` → 200 `{id, status: "cancelled"}`; 409 `not-held` once it left the held state |
-| `GET /v1/votes/:id` | `{id, voteHash, status, releaseAt, broadcastAt, confirmedAt, attempts, lastError}` |
+| `GET /v1/votes/:id` | `{id, voteHash, status, releaseAt, broadcastAt, confirmedAt, attempts, lastError, nextAttemptAt, holdReason, sameAsCurrent}` |
 | `GET /v1/status` | `{service, version, network, core: {reachable, height}, held, proposalSubmit}`, 200 whenever the process serves |
 | `POST /v1/proposals/submit` | `{network, parentHash: "0", revision: 1, time, dataHex, collateralTxid}` → `{govHash, result}` |
 
@@ -190,9 +190,15 @@ From Dash Core `governance/object.cpp` `ProcessVote`, `governance/vote.cpp` `IsV
                                   not visible after CONFIRM_TIMEOUT_S: back to held (max 3x), then failed (unconfirmed)
 ```
 
-- `held`: waiting for `releaseAt`, or for a retry. `lastError` explains a wait: `too-often`, `unknown-proposal` (Core does
+- `held`: waiting for `releaseAt`, or for a retry. `holdReason` says why in one word (`release-time`, `one-change-per-hour`,
+  `core-time-limit`, `retrying`) and `nextAttemptAt` until when. `lastError` explains a wait: `too-often` (Core's answer),
+  `hour-rule` (this relay's own record of the last broadcast, the same rule checked before asking Core), `future-limit`,
+  `unknown-proposal` (Core does
   not know the proposal yet; retried 60 s doubling to 1 h, `failed` 6 h after the release), `core-error` (transport, HTTP 5xx or
   any other Core error; retried 30 s doubling to 30 min, `failed` after 50 attempts), `not-visible` (re-broadcast pending).
+- `sameAsCurrent`: when the vote was submitted, the masternode's current funding vote in Core had the same outcome. Such a
+  vote is flagged, not dropped: it only moves the timestamp (and restarts Core's one-hour clock), but the client may mean it and
+  the current vote can change before the release. Clients should warn before sending one.
 - `sending`: `voteraw` is in flight (seconds). The broadcaster sets it with a conditional `held -> sending` UPDATE just before
   the call, so a cancel can no longer race with it: cancelling a `sending` vote is 409 `not-held` with `status: "sending"`.
   When Core answers, the row moves on with `WHERE status = 'sending'` updates: `broadcast`, back to `held` (retry, `lastError`

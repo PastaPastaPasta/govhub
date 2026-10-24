@@ -30,6 +30,13 @@ export function isKnownVote(msg: string): boolean {
   return msg.replace(/^\s*Error voting\s*:?/i, '').trim() === '' || /already known|already have|known valid vote/i.test(msg);
 }
 
+/**
+ * `last_error` codes of a vote that is held on purpose (not a failure): Core's "voting too often" answer, our own record of the last
+ * broadcast for this masternode and proposal (the same one-change-per-hour rule, checked before asking Core), and Core's
+ * one-hour future limit on nTime. GET /v1/votes/:id turns them into `holdReason`.
+ */
+export const HOLD_CODE = { tooOften: 'too-often', hourRule: 'hour-rule', futureLimit: 'future-limit' } as const;
+
 const backoff = (base: number, cap: number, n: number): number => Math.min(cap, base * 2 ** Math.min(n, 30));
 
 export interface BroadcasterDeps {
@@ -130,14 +137,14 @@ export class Broadcaster {
 
     // Core refuses a vote timed more than an hour ahead of its clock.
     if (row.time > now + VOTE_MAX_FUTURE_S - 30) {
-      this.store.reschedule(row.id, row.time - VOTE_MAX_FUTURE_S + 60, null);
+      this.store.reschedule(row.id, row.time - VOTE_MAX_FUTURE_S + 60, HOLD_CODE.futureLimit);
       return;
     }
     // One change per hour on Core's clock. A re-broadcast of an unseen vote is exempt: if Core did accept it, it answers "too often".
     if (row.rebroadcasts === 0) {
       const last = this.store.lastBroadcastAt({ txid: row.collateral_txid, n: row.collateral_n, govHash: row.gov_hash, signal: row.signal });
       if (last !== null && now - last < TOO_OFTEN_WAIT_S) {
-        this.store.reschedule(row.id, last + TOO_OFTEN_WAIT_S, null);
+        this.store.reschedule(row.id, last + TOO_OFTEN_WAIT_S, HOLD_CODE.hourRule);
         return;
       }
     }
@@ -178,7 +185,7 @@ export class Broadcaster {
       }
       if (/voting too often/i.test(msg)) {
         // someone (this relay, another relay, the operator) changed this vote within the hour: wait it out, not a failure
-        this.store.reschedule(row.id, now + TOO_OFTEN_WAIT_S, 'too-often');
+        this.store.reschedule(row.id, now + TOO_OFTEN_WAIT_S, HOLD_CODE.tooOften);
         return;
       }
       if (/Obsolete vote|same timestamp/i.test(msg)) return this.fail(row, now, 'obsolete');

@@ -4,6 +4,8 @@
 // the recovery phrase and the user's passkeys and stored in `forum.keyring`; the operator only ever sees ciphertext. A seed sign-in
 // opens it at once, a passkey sign-in with the same ceremony; a pasted-key session cannot open it (memory-only keys still work).
 // After the idle timeout the keys are wiped and the keyring has to be unlocked again (passkey or phrase).
+//
+// Fixture mode opens a memory-only demo keyring on sign-in and talks to the pretend relays and bridge of voting/sim.ts.
 import {
   addUnlocker,
   DEFAULT_IDLE_LOCK_MINUTES,
@@ -29,31 +31,49 @@ import {
 import { getPasskeyPrf } from '@govhub/auth/webauthn';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useApp } from '../app/context.tsx';
+import { useForum } from '../app/forum.tsx';
 import { useAuth } from '../auth/context.tsx';
 import { errorText, getPlatformPort, rpId } from '../auth/runtime.ts';
 import { enabledBridges } from '../config/registry.ts';
-import { BridgeError, HttpBridge, type Bridge } from '../data/bridge.ts';
+import { BridgeError, HttpBridge, type Bridge, type BridgeVotes } from '../data/bridge.ts';
 import { createWebDapi, dapiConfig } from '../data/dapi.ts';
+import { fixtureMnKey } from '../data/fixtureVotes.ts';
 import { getSdk } from '../data/platform.ts';
-import type { SmlEntry } from '../verify/votes.ts';
-import { matchMasternodes, proveCollaterals, votingKeyId, type OwnedMasternode } from './masternodes.ts';
-import { bridgeVerdict, fromPending, isOpen, type WatchStatus, loadWatched, mergeWatched, needsRebroadcast, pickRebroadcastRelay, pruneWatched, saveWatched, toPending, type WatchedVote } from './pending.ts';
+import { lookupMasternodes, type LookupResult, type LookupStep } from './lookup.ts';
+import { proveCollaterals, votingKeyId, type OwnedMasternode } from './masternodes.ts';
+import {
+  bridgeVerdict,
+  fromPending,
+  isOpen,
+  isTracked,
+  loadWatched,
+  mergeWatched,
+  needsRebroadcast,
+  pickRebroadcastRelay,
+  pruneWatched,
+  saveWatched,
+  sendDue,
+  sendRetryDelay,
+  toPending,
+  type WatchedVote,
+} from './pending.ts';
 import { currentKey, deferredWindow, mnId, planDeferred, planImmediate, signPlanned, submitDelays, voteFields, type CurrentVote, type Intent, type PlanResult } from './plan.ts';
-import { cancelSignature, normalizeRelayUrl, RelayClient, RelayError } from './relay.ts';
+import { cancelSignature, normalizeRelayUrl, RelayClient, RelayError, type RelayHealth, type RelayVoteState } from './relay.ts';
+import { DEMO_KEYS, SIM_RELAYS, simScenario, VoteSim, type RelayPort } from './sim.ts';
+import { applyRelayState, classifySubmitError } from './status.ts';
 import { KEYRING_STASH_EVENT, takeStash } from './stash.ts';
-import { bytesEqual, decodeWif, governanceVoteHash, recoverVoteSigner, verifyVoteSignature, VOTE_MAX_FUTURE_S } from '@govhub/verify';
+import { bytesEqual, countVotes, decodeWif, governanceVoteHash, normalizeMnId, p2pkhAddress, recoverVoteSigner, verifyVoteSignature, VOTE_MAX_FUTURE_S, type OutcomeCounts } from '@govhub/verify';
 
-export type KeyringStatus = 'signed-out' | 'fixtures' | 'checking' | 'absent' | 'locked' | 'open' | 'error';
+export type KeyringStatus = 'signed-out' | 'checking' | 'absent' | 'locked' | 'open' | 'error';
 
-export interface MnState {
-  loading: boolean;
+export interface MnState extends LookupResult {
+  phase: 'idle' | 'loading' | 'ready' | 'error';
+  step?: LookupStep;
   error?: string;
-  owned: OwnedMasternode[];
-  /** listed for our key in the SML but not (yet) in the bridge's list: cannot vote */
-  missing: string[];
-  /** the bridge named another collateral than the ProRegTx: dropped */
-  mismatch: string[];
-  smlNodes: number;
+  /** unix ms the current lookup started */
+  startedAt?: number;
+  /** the voting key ids this result is for */
+  forKeys: string;
 }
 
 export interface CastOptions {
@@ -62,11 +82,20 @@ export interface CastOptions {
   latest?: number;
   /** backup of held votes in the encrypted PENDING document (deferred only) */
   backupOnPlatform?: boolean;
+  /** the user confirmed re-sending votes equal to the current ones (it only moves the timestamp) */
+  resend?: boolean;
+}
+
+/** "Check it yourself": one vote re-verified here, step by step. */
+export interface VoteProof {
+  checks: Array<{ label: string; ok: boolean | null; detail: string }>;
 }
 
 interface Ctx {
   status: KeyringStatus;
   error: string | null;
+  /** fixture mode: a demo keyring with synthetic masternodes, pretend relays */
+  demo: boolean;
   /** the session can open a Platform keyring (seed or passkey); a pasted key cannot */
   canUsePlatform: boolean;
   memoryOnly: boolean;
@@ -76,13 +105,18 @@ interface Ctx {
   watched: WatchedVote[];
   coreNetwork: 'mainnet' | 'testnet';
   relays: string[];
+  relayHealth: Record<string, RelayHealth>;
+  /** votes that reached the network while this page was open, newest last (the success card) */
+  celebrations: string[];
+  dismissCelebration(voteHash: string): void;
+  bridgeBase: string | null;
   /** unlock / create */
   unlockWithPasskey(): Promise<void>;
   unlockWithPhrase(phrase: string): Promise<void>;
   createKeyring(memoryOnly: boolean): Promise<void>;
   lock(): void;
-  /** keys and labels */
-  addKey(input: string, label: string): Promise<void>;
+  /** keys and labels; addKey resolves with the new key's id */
+  addKey(input: string, label: string): Promise<string>;
   removeKey(index: number): Promise<void>;
   setNodeLabel(proTxHash: string, label: string): Promise<void>;
   setIdleMinutes(m: number): Promise<void>;
@@ -97,8 +131,11 @@ interface Ctx {
   currentVotes(govHashes: string[]): Promise<Map<string, CurrentVote>>;
   cast(intents: Intent[], opts: CastOptions, deadline: number | null, current: Map<string, CurrentVote>): Promise<PlanResult>;
   cancel(voteHash: string): Promise<void>;
+  /** sends queued votes now and re-checks the relays (no backoff wait) */
+  retryNow(): void;
   /** offline: submit a signature made elsewhere for a planned vote */
   submitSigned(v: Omit<WatchedVote, 'refs' | 'status' | 'rebroadcasts'>): Promise<void>;
+  verifyVote(voteHash: string): Promise<VoteProof>;
 }
 
 const C = createContext<Ctx | null>(null);
@@ -112,6 +149,11 @@ export function useKeyring(): Ctx {
 const nowS = () => Math.floor(Date.now() / 1000);
 /** Spacing of immediate votes after the first ten: stays under a relay's default 30 requests per minute per IP. */
 const IMMEDIATE_PACE_MS = 2500;
+/** A relay health check is reused this long. */
+const HEALTH_TTL_MS = 60_000;
+/** Watchdog: fast while something is about to change, slower otherwise; each quiet tick stretches the wait (up to x4). */
+const TICK_FAST_MS = 4000;
+const TICK_SLOW_MS = 20_000;
 /**
  * Deferred batches: random delays (so a relay does not see the batch as one burst) that still respect the same pacing: after the
  * first ten requests, at least IMMEDIATE_PACE_MS apart. Returned in submission order's terms (index i = vote i).
@@ -128,7 +170,7 @@ export function pacedRandomDelays(n: number): number[] {
 }
 /** Highest keyring generation this browser has opened or written (public: a counter), to notice a replayed older document. */
 const generationKey = (platformNetwork: string, ownerId: string) => `govhub.keyring.generation.${platformNetwork}.${ownerId}`;
-const EMPTY_MNS: MnState = { loading: false, owned: [], missing: [], mismatch: [], smlNodes: 0 };
+const EMPTY_MNS: MnState = { phase: 'idle', owned: [], missing: [], mismatch: [], smlNodes: 0, forKeys: '' };
 
 function parseVotingKey(input: string, network: 'mainnet' | 'testnet'): { privateKey: Uint8Array; compressed: boolean } {
   const t = input.trim();
@@ -145,12 +187,26 @@ function parseVotingKey(input: string, network: 'mainnet' | 'testnet'): { privat
   }
 }
 
+/** Weighted counts after replacing `prev` (or nothing) with `outcome` for a masternode of `weight`, run backwards for "before". */
+function tallyBefore(after: OutcomeCounts, outcome: number, weight: number, prev: number | undefined): OutcomeCounts {
+  const k = (o: number) => (o === 1 ? 'yes' : o === 2 ? 'no' : o === 3 ? 'abstain' : null);
+  const b = { ...after };
+  const now = k(outcome);
+  if (now) b[now] = Math.max(0, b[now] - weight);
+  const was = prev !== undefined ? k(prev) : null;
+  if (was) b[was] += weight;
+  return b;
+}
+
 export function KeyringProvider({ children }: { children: ReactNode }) {
   const { registry, mode } = useApp();
   const auth = useAuth();
   const session = auth.session;
-  const coreNetwork = registry.coreNetwork;
-  const relays = useMemo(() => registry.relays.map((r) => normalizeRelayUrl(r.url)).filter(Boolean), [registry.relays]);
+  const demo = mode === 'fixtures';
+  const sim = useMemo(() => (demo ? new VoteSim(simScenario(location.search)) : null), [demo]);
+  const coreNetwork = demo ? 'mainnet' : registry.coreNetwork;
+  const relays = useMemo(() => (demo ? SIM_RELAYS : registry.relays.map((r) => normalizeRelayUrl(r.url)).filter(Boolean)), [registry.relays, demo]);
+  const relayFor = useCallback((url: string): RelayPort => (sim ? sim.relay(url) : new RelayClient(url)), [sim]);
   const [status, setStatus] = useState<KeyringStatus>('signed-out');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -160,25 +216,40 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
   const [mns, setMns] = useState<MnState>(EMPTY_MNS);
   const [mnNonce, setMnNonce] = useState(0);
   const [watched, setWatchedState] = useState<WatchedVote[]>([]);
+  const [relayHealth, setRelayHealth] = useState<Record<string, RelayHealth>>({});
+  const healthRef = useRef<Record<string, RelayHealth>>({});
+  const [celebrations, setCelebrations] = useState<string[]>([]);
   /** The keyring could be planted or replayed (not authenticated by this seed, or older than one seen here): saving waits for the user. */
   const [needsConfirm, setNeedsConfirm] = useState(false);
   const kr = useRef<OpenedKeyring | null>(null);
   kr.current = keyring;
+  const mnsRef = useRef(mns);
+  mnsRef.current = mns;
   const watchedRef = useRef<WatchedVote[]>([]);
-  /** a cast or cancel is changing votes: the watchdog does not re-broadcast meanwhile */
+  /** a cast or cancel is changing votes: the watchdog does not re-send meanwhile */
   const castingRef = useRef(false);
   /** watchdog re-sends in flight, by vote hash: a cancel waits for them, so it also reaches the relay just sent to */
   const inflightRef = useRef(new Map<string, Promise<unknown>>());
+  /** wakes the watchdog now (after a cast, Retry now) */
+  const kickRef = useRef<() => void>(() => {});
   /** The ref is the single source of truth for watched votes (async code reads it); the state only re-renders. */
   const setWatched = useCallback((next: WatchedVote[]) => {
     watchedRef.current = next;
     setWatchedState(next);
   }, []);
-  const identityId = session?.identityId ?? null;
+  // fixture mode signs in to sample identities (app sessions without @govhub/auth behind them): the demo keyring follows those
+  const appSession = useForum().session;
+  const identityId = (demo ? appSession?.identityId : session?.identityId) ?? null;
   /** The identity signed in NOW: async work started for another identity (a cast, a re-send) must not write into this one's votes. */
   const identityRef = useRef(identityId);
   identityRef.current = identityId;
   const touch = () => setVersion((v) => v + 1);
+
+  useEffect(() => {
+    if (!sim) return;
+    (globalThis as { __voteSim?: unknown }).__voteSim = sim.controls();
+    return () => void delete (globalThis as { __voteSim?: unknown }).__voteSim;
+  }, [sim]);
 
   const storeCtx = useCallback(async (): Promise<StoreCtx> => {
     const [evo, sdk, port, { createEvoKeyringStore }] = await Promise.all([import('@dashevo/evo-sdk'), getSdk(registry), getPlatformPort(registry), import('@govhub/auth/keyring-evo')]);
@@ -197,6 +268,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       setMemoryOnly(memory);
       setStatus('open');
       setError(null);
+      if (demo) return setNeedsConfirm(false);
       const gkey = generationKey(registry.platformNetwork, k.ownerId);
       const seen = Number(localStorage.getItem(gkey) ?? 0);
       const rolledBack = !memory && k.content.generation < seen;
@@ -217,7 +289,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         setWatched(merged);
       }
     },
-    [identityId, coreNetwork, registry.platformNetwork, setWatched],
+    [identityId, coreNetwork, registry.platformNetwork, setWatched, demo],
   );
 
   const tryOpen = useCallback(
@@ -231,19 +303,27 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
     [identityId, storeCtx, opened],
   );
 
-  // ---- session changes: open with the seed, or with the passkey ceremony that signed in ----
+  // ---- session changes: open with the seed, or with the passkey ceremony that signed in (fixtures: the demo keyring) ----
   useEffect(() => {
     close();
     setMns(EMPTY_MNS);
     setError(null);
     setMemoryOnly(false);
-    if (!identityId || !session) {
-      setStatus(mode === 'fixtures' ? 'fixtures' : 'signed-out');
+    setCelebrations([]);
+    if (!identityId || (!demo && !session)) {
+      setStatus('signed-out');
       setWatched([]);
       return;
     }
+    if (demo || !session) {
+      setWatched([]);
+      const k = emptyKeyring(identityId, []);
+      for (const d of DEMO_KEYS) k.content.keys.push({ privateKey: fixtureMnKey(d.index).slice(), compressed: true, label: d.label });
+      opened(k, true);
+      setMnNonce((n) => n + 1); // same demo keys for every sample identity: the lookup must still run again
+      return;
+    }
     setWatched(loadWatched(localStorage, coreNetwork, identityId));
-    if (mode === 'fixtures') return setStatus('fixtures');
     let live = true;
     const seed = seedUnlockKey(session);
     const stash = takeStash(identityId);
@@ -278,7 +358,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
   // ---- idle lock ----
   const idleMinutes = keyring?.content.idleLockMinutes ?? DEFAULT_IDLE_LOCK_MINUTES;
   useEffect(() => {
-    if (status !== 'open') return;
+    if (status !== 'open' || demo) return;
     let last = Date.now();
     const bump = () => (last = Date.now());
     const evs = ['pointerdown', 'keydown', 'scroll'] as const;
@@ -294,7 +374,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       clearInterval(t);
       evs.forEach((e) => removeEventListener(e, bump));
     };
-  }, [status, idleMinutes, memoryOnly, close]);
+  }, [status, idleMinutes, memoryOnly, close, demo]);
 
   const run = useCallback(async <T,>(what: string, fn: () => Promise<T>): Promise<T> => {
     setBusy(what);
@@ -435,6 +515,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         throw new Error('That voting key is in the keyring already.');
       }
       await edit('Adding the voting key', (d) => d.content.keys.push({ privateKey, compressed, label }), { onFail: () => privateKey.fill(0), after: () => setMnNonce((n) => n + 1) });
+      return id;
     },
     [edit, coreNetwork],
   );
@@ -515,6 +596,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       run('Saving the keyring on Platform', async () => {
         const k = kr.current;
         if (!k || !session) throw new Error('Nothing to save.');
+        if (demo) throw new Error('The demo keyring of fixture mode cannot be saved.');
         const seed = seedUnlockKey(session);
         if (!seed) throw new Error('Saving needs your recovery phrase in this session. A pasted key cannot open a saved keyring.');
         // merge into an existing keyring rather than replacing it blindly
@@ -549,52 +631,44 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         }
         auth.refreshBalance();
       }),
-    [run, session, storeCtx, opened, auth, registry.platformNetwork],
+    [run, session, storeCtx, opened, auth, registry.platformNetwork, demo],
   );
 
-  // ---- masternodes for the keys ----
-  const bridge = useMemo<Bridge | null>(() => {
-    const b = enabledBridges(registry)[0];
-    return b ? new HttpBridge(b.name, b.httpBase) : null;
-  }, [registry]);
+  // ---- masternodes for the keys: ONE lookup, read by this page and every vote panel ----
+  const bridgeEndpoint = enabledBridges(registry)[0] ?? null;
+  const bridge = useMemo<Bridge | null>(() => (sim ? sim.bridge : bridgeEndpoint ? new HttpBridge(bridgeEndpoint.name, bridgeEndpoint.httpBase) : null), [sim, bridgeEndpoint?.name, bridgeEndpoint?.httpBase]);
   const dapi = useMemo(() => (mode === 'live' ? createWebDapi(dapiConfig(registry)) : null), [registry, mode]);
   const keysSig = keyring ? keyring.content.keys.map((k) => votingKeyId(k.privateKey, k.compressed)).join(',') : '';
   useEffect(() => {
     if (!keyring || !keysSig) return setMns(EMPTY_MNS);
-    if (!bridge) return setMns({ ...EMPTY_MNS, error: 'No bridge is configured (Settings): the masternode list and collateral outpoints come from a bridge.' });
-    let live = true;
-    setMns((m) => ({ ...m, loading: true, error: undefined }));
-    (async () => {
-      const keys = keyring.content.keys.map((k, index) => ({ index, keyId: votingKeyId(k.privateKey, k.compressed) }));
-      const list = await bridge.mnlist();
-      let sml: Map<string, SmlEntry> | null = null;
-      let smlNodes = 0;
-      let smlError: string | undefined;
-      if (dapi) {
-        try {
-          const a = await dapi.getSml();
-          sml = new Map(a.masternodes.map((m) => [m.proTxHash, { votingAddress: m.votingAddress, isValid: m.isValid, nType: m.nType, typeProven: m.nVersion >= 2 }]));
-          smlNodes = a.agreedBy.length;
-        } catch (e) {
-          smlError = `The masternode list could not be checked against DAPI (${errorText(e)}); showing the bridge's list.`;
-        }
-      }
-      const m = matchMasternodes(keys, list.masternodes, sml, coreNetwork);
-      const proved = dapi ? await proveCollaterals(m.owned, async (txid) => (await dapi.call((core, signal) => core.getTransaction(txid, { signal }))).value.raw, coreNetwork) : { mns: m.owned, mismatch: [] };
-      if (live) setMns({ loading: false, owned: proved.mns, missing: m.missing, mismatch: proved.mismatch, smlNodes, ...(smlError ? { error: smlError } : {}) });
-    })().catch((e) => live && setMns({ ...EMPTY_MNS, error: errorText(e) }));
-    return () => {
-      live = false;
-    };
+    if (!bridge) return setMns({ ...EMPTY_MNS, phase: 'error', error: 'No bridge is configured (Settings): the masternode list and collateral outpoints come from a bridge.', forKeys: keysSig });
+    const ctrl = new AbortController();
+    // while a lookup runs, keep what an earlier one found for the same keys (a refresh) or for the keys before one was added
+    setMns((m) => ({ ...(m.forKeys && (keysSig === m.forKeys || keysSig.startsWith(`${m.forKeys},`)) ? m : EMPTY_MNS), phase: 'loading', step: 'bridge', error: undefined, startedAt: Date.now(), forKeys: keysSig }));
+    const keys = keyring.content.keys.map((k, index) => ({ index, keyId: votingKeyId(k.privateKey, k.compressed) }));
+    lookupMasternodes(
+      keys,
+      {
+        mnlist: () => bridge.mnlist(),
+        sml: dapi ? (signal) => dapi.getSml({ signal }) : null,
+        rawTx: dapi ? async (txid, signal) => (await dapi.call((core, s) => core.getTransaction(txid, { signal: s }), { signal })).value.raw : null,
+        network: coreNetwork,
+      },
+      { signal: ctrl.signal, onStep: (step) => !ctrl.signal.aborted && setMns((m) => ({ ...m, step })) },
+    ).then(
+      (r) => !ctrl.signal.aborted && setMns({ ...r, phase: 'ready', forKeys: keysSig }),
+      (e) => !ctrl.signal.aborted && setMns((m) => ({ ...m, phase: 'error', error: errorText(e) })),
+    );
+    return () => ctrl.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [keysSig, bridge, dapi, coreNetwork, mnNonce, status]);
+  }, [keysSig, bridge, dapi, coreNetwork, mnNonce]);
 
   // ---- current votes (bridge's verified live vote set) ----
   /**
    * The current funding votes of OUR masternodes, from the bridge's live vote set, each re-verified here like the recount does
    * (verifyVoteSignature against the masternode's voting key, which for our masternodes is our own key; votes more than 1 h ahead
    * dropped like Core). A bridge vote for one of our masternodes that our key did not sign is ignored, so a lying bridge cannot make
-   * a vote look confirmed or superseded. (The VerificationPanel's recount checks the whole set against the proven list.)
+   * a vote look confirmed or replaced. (The VerificationPanel's recount checks the whole set against the proven list.)
    */
   const currentVotes = useCallback(
     async (govHashes: string[]): Promise<Map<string, CurrentVote>> => {
@@ -652,19 +726,69 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       const k = kr.current;
       if (!k || memoryOnly || !session || identityRef.current !== session.identityId || k.ownerId !== session.identityId || (!create && !k.pendingDoc)) return;
       if (needsConfirm) throw new Error('Confirm the keyring’s unlockers before backing up votes.');
-      k.pending = { keyringId: k.content.keyringId.slice(), votes: list.filter(isOpen).slice(0, PENDING_CAPS[2].votes).map(toPending) };
+      k.pending = { keyringId: k.content.keyringId.slice(), votes: list.filter((v) => v.status === 'held' || v.status === 'broadcast').slice(0, PENDING_CAPS[2].votes).map(toPending) };
       await savePending(await storeCtx(), session, k);
       auth.refreshBalance();
     },
     [memoryOnly, needsConfirm, session, storeCtx, auth],
   );
 
-  const send = useCallback(
-    async (v: WatchedVote, relay: string): Promise<WatchedVote> => {
-      const st = await new RelayClient(relay).submit(v, coreNetwork);
-      return { ...v, refs: [...v.refs.filter((r) => r.relay !== relay), { relay, id: st.id }], relayStatus: { ...v.relayStatus, [relay]: st.status } };
+  // ---- relays: health, failover ----
+  const checkHealth = useCallback(
+    async (url: string, force = false): Promise<RelayHealth> => {
+      const cached = healthRef.current[url];
+      if (!force && cached && Date.now() - cached.checkedAt < HEALTH_TTL_MS) return cached;
+      const h = await relayFor(url).health(coreNetwork);
+      healthRef.current = { ...healthRef.current, [url]: h };
+      setRelayHealth(healthRef.current);
+      return h;
     },
-    [coreNetwork],
+    [relayFor, coreNetwork],
+  );
+  const noteHealth = useCallback((url: string, ok: boolean, err?: string) => {
+    const prev = healthRef.current[url];
+    if (prev?.ok === ok && !err) return;
+    healthRef.current = { ...healthRef.current, [url]: { ...prev, ok, ...(err ? { error: err } : { error: undefined }), checkedAt: Date.now() } };
+    setRelayHealth(healthRef.current);
+  }, []);
+  /** Relays in the order to try: healthy ones (random order), then unchecked, then those that failed their last check. */
+  const relayOrder = useCallback((): string[] => {
+    const rank = (u: string) => (healthRef.current[u] === undefined ? 1 : healthRef.current[u]!.ok ? 0 : 2);
+    return [...relays].sort(() => Math.random() - 0.5).sort((a, b) => rank(a) - rank(b));
+  }, [relays]);
+
+  /**
+   * One submission attempt for a vote not yet accepted by any relay: every configured relay in turn until one takes it. Returns the
+   * updated record: held (or further) with the relay's id, a final state for a refusal, or still queued with the next retry time.
+   */
+  const trySend = useCallback(
+    async (v: WatchedVote): Promise<WatchedVote> => {
+      let last: string | null = null;
+      let afterS = 0;
+      const maybeAt = new Set(v.maybeAt ?? []);
+      const withMaybe = (x: WatchedVote): WatchedVote => (maybeAt.size ? { ...x, maybeAt: [...maybeAt] } : x);
+      for (const relay of relayOrder()) {
+        try {
+          const st = await relayFor(relay).submit(v, coreNetwork);
+          noteHealth(relay, true);
+          maybeAt.delete(relay);
+          const { lastSendError: _e, nextSendAt: _n, ...rest } = v;
+          return withMaybe(applyRelayState({ ...rest, status: 'held' }, relay, st));
+        } catch (e) {
+          const c = classifySubmitError(e, relay);
+          if (c.kind === 'sent') return withMaybe({ ...v, status: 'broadcast', lastSendError: undefined });
+          if (c.kind === 'final') return withMaybe({ ...v, status: c.status, ...(c.status === 'failed' ? { failReason: c.text } : { replacedBy: '', failReason: c.text }) });
+          if (c.kind === 'retry' && c.maybeReceived) maybeAt.add(relay);
+          if (!(e instanceof RelayError && e.status !== undefined)) noteHealth(relay, false, c.text);
+          last = c.text;
+          afterS = Math.max(afterS, c.afterS ?? 0);
+          if (!c.tryOther) break;
+        }
+      }
+      const attempts = (v.sendAttempts ?? 0) + 1;
+      return withMaybe({ ...v, status: 'queued', sendAttempts: attempts, lastSendError: last ?? 'no relay is configured (Settings, Relays)', nextSendAt: nowS() + Math.max(afterS, sendRetryDelay(attempts)) });
+    },
+    [relayOrder, relayFor, coreNetwork, noteHealth],
   );
 
   /**
@@ -684,12 +808,14 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       // No relay id: the submission's answer was lost, so a relay may hold it without us knowing which. It cannot be cancelled
       // safely (re-submitting to find it could store and release it); the caller treats it as possibly sent.
       if (!v.refs.length) return 'unknown';
+      // a relay whose answer timed out may hold it too, under an id we never learned
+      const unsure = (v.maybeAt ?? []).some((r) => !v.refs.some((x) => x.relay === r));
       let sent = false;
       let firstError: unknown = null;
       // every relay is tried even when one fails, so one unreachable relay never leaves the others holding the vote
       for (const r of v.refs) {
         try {
-          await new RelayClient(r.relay).cancel(r.id, sig);
+          await relayFor(r.relay).cancel(r.id, sig);
         } catch (e) {
           if (e instanceof RelayError && e.status === 404) continue; // it never held it
           // 409 not-held: only sending / broadcast / confirmed mean the vote went (or is going) out; failed, superseded and
@@ -702,9 +828,9 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         }
       }
       if (firstError) throw firstError;
-      return sent ? 'sent' : 'cancelled';
+      return sent ? 'sent' : unsure ? 'unknown' : 'cancelled';
     },
-    [mns.owned, coreNetwork],
+    [mns.owned, coreNetwork, relayFor],
   );
 
   const cast = useCallback(
@@ -716,6 +842,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         // A vote of ours that is still held for the same masternode and proposal would be broadcast later and win (a later nTime):
         // cancel it, but only once a new vote can actually be made for that masternode (planned first). One that already went
         // out counts as the current vote (Core's 1-hour rule and "later wins" apply to it), and those masternodes are re-planned.
+        // A vote still queued in this browser never left: the new one simply takes its place (mergeWatched drops it).
         const now = nowS();
         let window: { earliest: number; latest: number } | null = null;
         if (opts.mode === 'deferred') {
@@ -726,13 +853,16 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
           if (latest <= w.earliest) throw new Error('The release window ends too soon.');
           window = { earliest: w.earliest, latest };
         }
-        const planWith = (cur: Map<string, CurrentVote>, list: Intent[]): PlanResult => (window ? planDeferred(list, cur, now, window) : planImmediate(list, cur, now));
+        const planWith = (cur: Map<string, CurrentVote>, list: Intent[]): PlanResult => (window ? planDeferred(list, cur, now, window) : planImmediate(list, cur, now, { resend: !!opts.resend }));
         const current = new Map(currentIn);
-        for (const w of watchedRef.current.filter((x) => isOpen(x) && x.status !== 'held')) {
+        /** A vote of ours that went out (or may have) is the masternode's current vote when it is newer than what the bridge shows. */
+        const countAsCurrent = (w: WatchedVote) => {
           const ck = currentKey(w, w.govHash);
-          const c = current.get(ck);
-          if (!c || c.time < w.time) current.set(ck, { outcome: w.outcome, time: w.time });
-        }
+          if ((current.get(ck)?.time ?? -Infinity) < w.time) current.set(ck, { outcome: w.outcome, time: w.time });
+        };
+        watchedRef.current.filter((x) => x.status === 'broadcast').forEach(countAsCurrent);
+        // a queued vote being sent right now (watchdog) may land at a relay: wait, so it is cancelled like any held vote
+        await Promise.all([...inflightRef.current.values()].map((p) => p.catch(() => {})));
         let plan = planWith(current, intents);
         // masternodes that get a new vote, plus those whose new choice equals the current vote (skipped as "already voted"):
         // a held vote of ours for either would otherwise go out later and win
@@ -752,69 +882,74 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
             else {
               // went out, or cannot be cancelled safely: it counts as the current vote, and the new one is timed after it
               replan = true;
-              const ck = currentKey(w, w.govHash);
-              const c = current.get(ck);
-              if (!c || c.time < w.time) current.set(ck, { outcome: w.outcome, time: w.time });
+              countAsCurrent(w);
             }
           }
         } finally {
           if (cancelled.length) updateWatched((list) => list.map((x) => (cancelled.includes(x.voteHash) ? { ...x, status: 'cancelled' } : x)));
         }
         if (replan) plan = planWith(current, intents);
+        const owned = mnsRef.current.owned;
         const signed: WatchedVote[] = plan.ok.map((p) => {
-          const owner = mns.owned.find((m) => mnId(m) === mnId(p.mn));
+          const owner = owned.find((m) => mnId(m) === mnId(p.mn));
           const key = owner ? k.content.keys[owner.keyIndex] : undefined;
           if (!key) throw new Error(`No key for masternode ${p.mn.proTxHash.slice(0, 12)}…`);
-          return { ...signPlanned(p, key.privateKey, key.compressed, coreNetwork), refs: [], status: 'held', rebroadcasts: 0 };
+          const prev = currentIn.get(currentKey(p.mn, p.govHash)) ?? null;
+          return { ...signPlanned(p, key.privateKey, key.compressed, coreNetwork), refs: [], status: 'queued', rebroadcasts: 0, signedAt: now, weight: owner?.type === 'evo' ? 4 : 1, prev, ...(opts.mode === 'now' && p.time > now ? { hourRule: true } : {}), ...(memoryOnly ? { ephemeral: true } : {}) };
         });
+        // every signed vote is kept (queued) before the first request, so a failed or interrupted send never loses one
+        updateWatched((w) => mergeWatched(w, signed));
         // deferred: random delays (unlinkability); immediate: the first few at once, then paced under a relay's per-IP limit
         const delays = opts.mode === 'deferred' ? pacedRandomDelays(signed.length) : signed.map((_, i) => Math.max(0, i - 9) * IMMEDIATE_PACE_MS);
         const order = signed.map((_, i) => i).sort((a, b) => delays[a]! - delays[b]!);
-        const sent: WatchedVote[] = [];
         let waited = 0;
-        const failures: string[] = [];
         const castFor = identityRef.current;
         for (const i of order) {
           const d = delays[i]! - waited;
           if (d > 0) await new Promise((r) => setTimeout(r, d));
           waited += Math.max(0, d);
-          if (identityRef.current !== castFor) throw new Error('Signed out while sending: the remaining votes were not sent.');
-          const relay = relays[Math.floor(Math.random() * relays.length)]!;
-          try {
-            sent.push(await send(signed[i]!, relay));
-          } catch (e) {
-            failures.push(`not accepted by a relay yet (kept and retried) ${signed[i]!.proTxHash.slice(0, 10)}…: ${errorText(e)}`);
-            sent.push(signed[i]!); // kept: the watchdog re-sends it
-          }
-          updateWatched((w) => mergeWatched(w, [sent[sent.length - 1]!]));
+          if (identityRef.current !== castFor) throw new Error('Signed out while sending: the remaining votes stay queued for that identity.');
+          const before = watchedRef.current.find((x) => x.voteHash === signed[i]!.voteHash);
+          if (!before || before.status !== 'queued') continue; // dropped or cancelled meanwhile
+          const after = await trySend(before);
+          updateWatched((w) => w.map((x) => (x.voteHash === after.voteHash && x.status === 'queued' ? after : x)));
         }
         // the backup is created only when the user asks for it, but an existing one is always kept current (cancelled votes leave it)
-        const backup = mergeWatched(watchedRef.current, sent).map((x) => (cancelled.includes(x.voteHash) ? { ...x, status: 'cancelled' as const } : x));
-        await backupPending(backup, opts.mode === 'deferred' && !!opts.backupOnPlatform).catch((e) => failures.push(`backup on Platform failed: ${errorText(e)}`));
-        if (failures.length) setError(failures.join('; '));
+        await backupPending(watchedRef.current, opts.mode === 'deferred' && !!opts.backupOnPlatform).catch((e) => setError(`Backup on Platform failed: ${errorText(e)}`));
         castingRef.current = false;
+        kickRef.current();
         return plan;
       }).finally(() => {
         castingRef.current = false;
       }),
-    [run, relays, coreNetwork, mns.owned, send, updateWatched, backupPending, cancelEverywhere],
+    [run, relays, coreNetwork, updateWatched, backupPending, cancelEverywhere, trySend, memoryOnly],
   );
 
   const submitSigned = useCallback(
     (v: Omit<WatchedVote, 'refs' | 'status' | 'rebroadcasts'>) =>
       run('Sending the signed vote', async () => {
         if (!relays.length) throw new Error('No relay is configured (Settings, Relays).');
-        const w = await send({ ...v, refs: [], status: 'held', rebroadcasts: 0 }, relays[0]!);
-        updateWatched((list) => mergeWatched(list, [w]));
+        const queued: WatchedVote = { ...v, refs: [], status: 'queued', rebroadcasts: 0, signedAt: nowS(), ...(memoryOnly ? { ephemeral: true } : {}) };
+        updateWatched((list) => mergeWatched(list, [queued]));
+        const after = await trySend(queued);
+        updateWatched((list) => list.map((x) => (x.voteHash === after.voteHash ? after : x)));
+        kickRef.current();
       }),
-    [run, relays, send, updateWatched],
+    [run, relays, trySend, updateWatched, memoryOnly],
   );
 
   const cancel = useCallback(
     (voteHash: string) =>
       run('Cancelling the held vote', async () => {
+        // a send of this vote may be on its way (watchdog): wait for its answer, then decide on the latest record
+        await inflightRef.current.get(voteHash)?.catch(() => {});
         const v = watchedRef.current.find((x) => x.voteHash === voteHash);
         if (!v) return;
+        // never left this browser: taking it out of the queue is the cancel
+        if (v.status === 'queued' && !v.maybeAt?.length) {
+          updateWatched((list) => list.map((x) => (x.voteHash === voteHash ? { ...x, status: 'cancelled' } : x)));
+          return;
+        }
         castingRef.current = true;
         const r = await cancelEverywhere(v).finally(() => (castingRef.current = false));
         if (r === 'unknown') {
@@ -829,142 +964,283 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
     [run, cancelEverywhere, updateWatched, backupPending],
   );
 
-  // ---- watchdog: relay status, bridge confirmation, re-broadcast (every 30 s; never re-run by its own updates) ----
+  const retryNow = useCallback(() => {
+    updateWatched((list) => list.map((x) => (x.status === 'queued' && !x.restored ? { ...x, nextSendAt: 0 } : x)));
+    for (const r of relays) void checkHealth(r, true);
+    kickRef.current();
+  }, [updateWatched, relays, checkHealth]);
+
+  const dismissCelebration = useCallback((h: string) => setCelebrations((c) => c.filter((x) => x !== h)), []);
+
+  // ---- watchdog: send queued votes, relay status, bridge confirmation, recount, re-broadcast ----
   const relaysKey = relays.join(' ');
   useEffect(() => {
-    if (!identityId || mode !== 'live') return;
+    if (!identityId) return;
     let stop = false;
     const configured = new Set(relays);
     let running = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let quiet = 0;
+    const tickFor = identityId;
+    const mnlists = new Map<number, Promise<Map<string, number>>>();
+    const weightsAt = (height: number): Promise<Map<string, number>> => {
+      let p = mnlists.get(height);
+      if (!p && bridge) {
+        p = bridge.mnlist(height).then((l) => new Map(l.masternodes.map((m) => [normalizeMnId(`${m.collateralTxid}-${m.collateralIndex}`), m.type === 'evo' ? 4 : 1])));
+        p.catch(() => mnlists.delete(height));
+        mnlists.set(height, p);
+      }
+      return p ?? Promise.reject(new Error('no bridge'));
+    };
+    const schedule = (ms: number) => {
+      clearTimeout(timer);
+      if (!stop) timer = setTimeout(() => void tick(), ms);
+    };
     const tick = async () => {
-      if (running) return; // a slow tick (relays timing out) is never overlapped
+      if (running || stop) return;
       running = true;
+      let changed = false;
       try {
-        await tickOnce();
+        changed = await tickOnce();
+      } catch {
+        /* the next tick tries again */
       } finally {
         running = false;
       }
+      const now = nowS();
+      const list = watchedRef.current.filter((v) => isTracked(v, now));
+      if (!list.length) return schedule(TICK_SLOW_MS);
+      quiet = changed ? 0 : Math.min(quiet + 1, 3);
+      const urgent = list.some(
+        (v) => v.status === 'broadcast' || v.status === 'confirmed' || (v.status === 'queued' && (v.nextSendAt ?? 0) - now < 10) || (v.status === 'held' && Math.max(v.releaseAt, ...Object.values(v.relayInfo ?? {}).map((i) => i.nextAttemptAt ?? 0)) - now < 90),
+      );
+      // while a cast is sending, its own votes are not the watchdog's to send: no 1-second ticks for them
+      const nextSend = castingRef.current ? Infinity : Math.min(...list.filter((v) => sendDue({ ...v, nextSendAt: 0 }, now)).map((v) => (v.nextSendAt ?? now) - now));
+      const base = urgent || castingRef.current ? TICK_FAST_MS * (1 + quiet * 0.5) : TICK_SLOW_MS;
+      schedule(Math.max(1000, Math.min(base, Number.isFinite(nextSend) ? nextSend * 1000 + 200 : base)));
     };
-    const tickFor = identityId;
-    const tickOnce = async () => {
-      const open = watchedRef.current.filter(isOpen);
-      if (!open.length || stop) return;
-      // Only bridge votes signed by the same voting key as ours count. The key comes from our own stored signature, so this works
-      // while the keyring is locked too (no private key needed).
+    kickRef.current = () => {
+      quiet = 0;
+      schedule(50);
+    };
+    /** Applies updates to the records this tick started from (a cancel or a new cast in the meantime wins). */
+    const apply = (from: Map<string, WatchedVote>, updates: WatchedVote[]) => {
+      if (!updates.length) return;
+      if (identityRef.current !== tickFor) {
+        // signed out meanwhile: that identity's saved list was reloaded (fresh objects), so match by vote hash and unchanged status
+        updateWatched((w) => w.map((x) => {
+          const u = updates.find((y) => y.voteHash === x.voteHash);
+          return u && x.status === from.get(x.voteHash)?.status ? u : x;
+        }));
+      } else updateWatchedRef.current((w) => w.map((x) => (from.get(x.voteHash) === x ? (updates.find((u) => u.voteHash === x.voteHash) ?? x) : x)));
+    };
+    const tickOnce = async (): Promise<boolean> => {
+      let now = nowS();
+      let changed = false;
+      // 1. queued votes that are due: submit (one at a time; paced by the relays' answers)
+      if (!castingRef.current) {
+        for (const v of watchedRef.current.filter((x) => sendDue(x, now))) {
+          if (stop || castingRef.current || identityRef.current !== tickFor) break;
+          const p = trySend(v);
+          inflightRef.current.set(v.voteHash, p);
+          let after: WatchedVote;
+          try {
+            after = await p;
+          } finally {
+            inflightRef.current.delete(v.voteHash);
+          }
+          const nowRec = watchedRef.current.find((x) => x.voteHash === v.voteHash);
+          if (nowRec && nowRec !== v && (nowRec.status === 'cancelled' || nowRec.status === 'dropped') && after.refs.length) {
+            // withdrawn while the relay was taking it: remember where it is, and take it back there
+            updateWatchedRef.current((w) => w.map((x) => (x.voteHash === v.voteHash ? { ...x, refs: after.refs, relayStatus: after.relayStatus, relayInfo: after.relayInfo } : x)));
+            void cancelEverywhere({ ...after, status: 'held' }).catch(() => {});
+            continue;
+          }
+          apply(new Map([[v.voteHash, v]]), [after]);
+          changed ||= after.status !== v.status;
+        }
+      }
+      const open = watchedRef.current.filter((v) => isTracked(v, nowS()) && v.status !== 'queued');
+      if (!open.length || stop) return changed;
+      // 2. the bridge: only votes signed by the same voting key as ours count. The key comes from our own stored signature, so this
+      // works while the keyring is locked too (no private key needed).
       const current = new Map<string, CurrentVote>();
+      const sets = new Map<string, BridgeVotes>();
       if (bridge) {
         const signerOf = new Map<string, Uint8Array>();
         for (const v of open) {
           const r = recoverVoteSigner(v.sig, voteFields({ mn: v, govHash: v.govHash, outcome: v.outcome, time: v.time }), coreNetwork);
           if (r) signerOf.set(currentKey(v, v.govHash), r.keyId);
         }
-        const nowT = nowS();
+        now = nowS();
         for (const h of new Set(open.map((v) => v.govHash))) {
           let vs;
           try {
             vs = await bridge.votes(h);
           } catch {
-            continue; // no tally yet
+            continue; // no tally yet, or unreachable
           }
+          sets.set(h, vs);
           for (const b of vs.votes) {
             const ck = currentKey(b, h);
             const keyId = signerOf.get(ck);
-            if (!keyId || b.signal !== 1 || b.time > nowT + VOTE_MAX_FUTURE_S || (current.get(ck)?.time ?? -1) >= b.time) continue;
+            if (!keyId || b.signal !== 1 || b.time > now + VOTE_MAX_FUTURE_S || (current.get(ck)?.time ?? -1) >= b.time) continue;
             const fields = { collateralTxid: b.collateralTxid, collateralIndex: b.collateralIndex, govHashDisplay: h, signal: b.signal, outcome: b.outcome, time: b.time };
             if (verifyVoteSignature(b.sig, fields, keyId, coreNetwork)) current.set(ck, { outcome: b.outcome, time: b.time });
           }
         }
       }
-      const now = nowS();
       const updates: WatchedVote[] = [];
-      // an update is applied only to the record this tick started from (a cancel or a new cast in the meantime wins)
+      const newlySeen: string[] = [];
       const from = new Map(open.map((v) => [v.voteHash, v]));
       for (const v of open) {
-        let status: WatchStatus = v.status;
-        let relayStatus = v.relayStatus ?? {};
-        let refs = v.refs;
-        let rebroadcasts = v.rebroadcasts;
-        let retryAt = v.retryAt;
-        const verdict = bridgeVerdict(v, current.get(currentKey(v, v.govHash)));
-        if (verdict) status = verdict;
-        else {
-          // only relays the user configured are contacted (a ref from elsewhere is never followed)
-          for (const r of v.refs.filter((x) => configured.has(x.relay))) {
+        let next = v;
+        const verdict = bridgeVerdict(v, current.get(currentKey(v, v.govHash)), watchedRef.current);
+        if (verdict?.status === 'confirmed' && v.status !== 'confirmed') {
+          next = { ...next, status: 'confirmed', seenAt: now };
+          if (now - (v.signedAt ?? v.time) < 86400) newlySeen.push(v.voteHash);
+        } else if (verdict?.status === 'replaced') next = { ...next, status: 'replaced', replacedBy: verdict.replacedBy };
+        // 3. counted: the recount of the tally's vote set has our vote as the masternode's current one, and recounts to the set's hash
+        if (next.status === 'confirmed' && !next.countedAt) {
+          const vs = sets.get(v.govHash);
+          if (vs) {
             try {
-              const st = await new RelayClient(r.relay).status(r.id);
-              if (st && st.status !== relayStatus[r.relay]) relayStatus = { ...relayStatus, [r.relay]: st.status };
-            } catch {
-              /* relay down: the re-broadcast below covers it */
-            }
-          }
-          const all = Object.values(relayStatus);
-          if (all.some((x) => x === 'broadcast' || x === 'confirmed' || x === 'sending')) status = 'broadcast';
-          else if (all.length && all.every((x) => x === 'cancelled')) status = 'cancelled';
-          else if (all.length && all.every((x) => x === 'failed' || x === 'superseded' || x === 'cancelled')) status = all.includes('superseded') ? 'superseded' : 'failed';
-          const unchanged = !castingRef.current && watchedRef.current.find((x) => x.voteHash === v.voteHash) === v;
-          if (unchanged && isOpen({ ...v, status }) && needsRebroadcast(v, now) && (v.retryAt ?? 0) <= now) {
-            const relay = pickRebroadcastRelay(v, relays);
-            if (relay) {
-              rebroadcasts += 1;
-              try {
-                const p = send(v, relay);
-                inflightRef.current.set(v.voteHash, p);
-                let n: WatchedVote;
-                try {
-                  n = await p;
-                } finally {
-                  inflightRef.current.delete(v.voteHash);
-                }
-                refs = n.refs;
-                relayStatus = { ...relayStatus, ...n.relayStatus };
-                // the new relay's id is recorded at once, whatever happens to this tick's other updates, so it can be cancelled
-                const ref = n.refs.find((r) => r.relay === relay);
-                // same identity: the latest updater (current memory-only setting); another identity: this tick's own updater, which
-                // writes into its identity's saved list
-                if (ref && identityRef.current !== tickFor) updateWatched((w) => w.map((x) => (x.voteHash === v.voteHash && !x.refs.some((r) => r.relay === relay) ? { ...x, refs: [...x.refs, ref] } : x)));
-                else if (ref) {
-                  const before = watchedRef.current.find((x) => x.voteHash === v.voteHash);
-                  updateWatchedRef.current((w) => w.map((x) => (x.voteHash === v.voteHash && !x.refs.some((r) => r.relay === relay) ? { ...x, refs: [...x.refs, ref] } : x)));
-                  // that write replaced the record; this tick's own update still applies, unless something else changed it first
-                  const after = watchedRef.current.find((x) => x.voteHash === v.voteHash);
-                  if (before === v && after) from.set(v.voteHash, after);
-                }
-              } catch (e) {
-                // a briefly rate-limited relay (429 rate-limited) did not see the vote: that attempt does not count, but the next try
-                // waits for Retry-After; anything else (too-many-held, refusals, transport) counts
-                if (e instanceof RelayError && e.status === 429 && e.code === 'rate-limited') {
-                  rebroadcasts -= 1;
-                  retryAt = nowS() + Math.min(Math.max(e.retryAfterS ?? 60, 30), 3600);
-                }
+              const weights = await weightsAt(vs.tallyHeight);
+              const t = countVotes(
+                vs.votes.filter((b) => b.signal === 1).map((b) => ({ mn: normalizeMnId(`${b.collateralTxid}-${b.collateralIndex}`), outcome: b.outcome, time: b.time })),
+                weights,
+                { now },
+              );
+              const me = normalizeMnId(`${v.collateralTxid}-${v.collateralIndex}`);
+              const mine = t.current.get(me);
+              // counted = in the weight map of the tally's list (an unknown masternode's vote counts for nothing) and the recount is the bridge's set
+              if (mine && weights.has(me) && Number(mine.time) === v.time && mine.outcome === v.outcome && vs.voteSetHash && vs.voteSetHash === t.voteSetHash) {
+                next = { ...next, countedAt: now, tally: { before: tallyBefore(t.weighted, v.outcome, weights.get(me)!, v.prev?.outcome), after: t.weighted } };
               }
+            } catch {
+              /* list not readable now: next tick */
             }
           }
         }
-        if (status !== v.status || relayStatus !== (v.relayStatus ?? {}) || refs !== v.refs || rebroadcasts !== v.rebroadcasts || retryAt !== v.retryAt)
-          updates.push({ ...v, status, relayStatus, refs, rebroadcasts, ...(retryAt !== undefined ? { retryAt } : {}) });
+        // 4. relays (only those the user configured; a ref from elsewhere is never followed)
+        if (next.status === 'held' || next.status === 'broadcast') {
+          for (const r of next.refs.filter((x) => configured.has(x.relay))) {
+            try {
+              const st = await relayFor(r.relay).status(r.id);
+              if (st) next = applyRelayState(next, r.relay, st);
+              noteHealth(r.relay, true);
+            } catch (e) {
+              if (!(e instanceof RelayError && e.status !== undefined)) noteHealth(r.relay, false, errorText(e));
+            }
+          }
+        }
+        // 5. re-broadcast through another relay when the vote does not show up long after its release
+        const unchanged = !castingRef.current && watchedRef.current.find((x) => x.voteHash === v.voteHash) === v;
+        if (unchanged && isOpen(next) && needsRebroadcast(next, now) && (next.retryAt ?? 0) <= now) {
+          const relay = pickRebroadcastRelay(next, relays);
+          if (relay) {
+            next = { ...next, rebroadcasts: next.rebroadcasts + 1 };
+            try {
+              const p = relayFor(relay).submit(next, coreNetwork);
+              inflightRef.current.set(v.voteHash, p);
+              let st: RelayVoteState;
+              try {
+                st = await p;
+              } finally {
+                inflightRef.current.delete(v.voteHash);
+              }
+              next = applyRelayState(next, relay, st);
+              // the new relay's id is recorded at once, whatever happens to this tick's other updates, so it can be cancelled
+              const ref = next.refs.find((r) => r.relay === relay)!;
+              const before = watchedRef.current.find((x) => x.voteHash === v.voteHash);
+              updateWatchedRef.current((w) => w.map((x) => (x.voteHash === v.voteHash && !x.refs.some((r) => r.relay === relay) ? { ...x, refs: [...x.refs, ref] } : x)));
+              const after = watchedRef.current.find((x) => x.voteHash === v.voteHash);
+              if (before === v && after) from.set(v.voteHash, after);
+            } catch (e) {
+              // a briefly rate-limited relay (429 rate-limited) did not see the vote: that attempt does not count, but the next try
+              // waits for Retry-After; anything else (too-many-held, refusals, transport) counts
+              if (e instanceof RelayError && e.status === 429 && e.code === 'rate-limited') next = { ...next, rebroadcasts: next.rebroadcasts - 1, retryAt: nowS() + Math.min(Math.max(e.retryAfterS ?? 60, 30), 3600) };
+            }
+          }
+        }
+        if (JSON.stringify(next) !== JSON.stringify(v)) updates.push(next);
       }
-      if (updates.length && identityRef.current !== tickFor) {
-        // signed out meanwhile: that identity's saved list was reloaded (fresh objects), so match by vote hash and unchanged status
-        updateWatched((w) => w.map((x) => {
-          const u = updates.find((y) => y.voteHash === x.voteHash);
-          return u && x.status === from.get(x.voteHash)?.status ? { ...x, status: u.status, relayStatus: u.relayStatus, rebroadcasts: u.rebroadcasts, ...(u.retryAt !== undefined ? { retryAt: u.retryAt } : {}) } : x;
-        }));
-      } else if (updates.length) updateWatchedRef.current((w) => w.map((x) => (from.get(x.voteHash) === x ? (updates.find((u) => u.voteHash === x.voteHash) ?? x) : x)));
+      apply(from, updates);
+      if (newlySeen.length && identityRef.current === tickFor) setCelebrations((c) => [...c.filter((x) => !newlySeen.includes(x)), ...newlySeen]);
+      return changed || updates.length > 0;
     };
     void tick();
-    const t = setInterval(() => void tick(), 30_000);
     return () => {
       stop = true;
-      clearInterval(t);
+      clearTimeout(timer);
+      kickRef.current = () => {};
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [identityId, mode, bridge, relaysKey, send, updateWatched]);
+  }, [identityId, mode, bridge, relaysKey, updateWatched]);
+
+  // relay health: checked once the keyring opens, and again while votes wait for a relay
+  useEffect(() => {
+    if (status !== 'open') return;
+    for (const r of relays) void checkHealth(r);
+  }, [status, relaysKey, checkHealth]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ---- "Check it yourself": one vote re-verified from scratch ----
+  const verifyVote = useCallback(
+    async (voteHash: string): Promise<VoteProof> => {
+      const v = watchedRef.current.find((x) => x.voteHash === voteHash);
+      if (!v) throw new Error('That vote is no longer in this browser.');
+      const fields = voteFields({ mn: v, govHash: v.govHash, outcome: v.outcome, time: v.time });
+      const checks: VoteProof['checks'] = [];
+      const signer = recoverVoteSigner(v.sig, fields, coreNetwork);
+      const signerAddr = signer ? p2pkhAddress(signer.keyId, coreNetwork) : null;
+      checks.push({ label: 'The signature is valid', ok: !!signer, detail: signerAddr ? `It recovers to the voting address ${signerAddr}.` : 'It does not recover to any key.' });
+      const owned: OwnedMasternode | undefined = mnsRef.current.owned.find((m) => mnId(m) === mnId(v));
+      const pro = (owned?.proTxHash ?? v.proTxHash).toLowerCase();
+      // the voting address of this masternode in the list several evonodes agree on (fixtures: the bridge's list)
+      let listAddr: string | null = null;
+      let listName = 'the bridge’s masternode list';
+      try {
+        if (dapi) {
+          const sml = await dapi.getSml();
+          listAddr = sml.masternodes.find((m) => m.proTxHash.toLowerCase() === pro)?.votingAddress ?? null;
+          listName = `the masternode list ${sml.agreedBy.length} DAPI evonodes agree on`;
+        } else if (bridge) {
+          listAddr = (await bridge.mnlist()).masternodes.find((m) => m.proTxHash.toLowerCase() === pro)?.votingAddress ?? null;
+        }
+        checks.push({ label: 'It is this masternode’s voting key', ok: !!listAddr && listAddr === signerAddr, detail: listAddr ? `${listName} gives ${listAddr} for ${pro.slice(0, 12)}…` : `${pro.slice(0, 12)}… is not in ${listName}.` });
+      } catch (e) {
+        checks.push({ label: 'It is this masternode’s voting key', ok: null, detail: `The masternode list could not be read (${errorText(e)}).` });
+      }
+      if (dapi && owned) {
+        try {
+          const p = await proveCollaterals([owned], async (txid) => (await dapi.call((core, s) => core.getTransaction(txid, { signal: s }))).value.raw, coreNetwork);
+          const ok = p.mns[0]?.provenance.collateral === 'protx';
+          checks.push({ label: 'The collateral belongs to it', ok, detail: ok ? `The registration transaction ${pro.slice(0, 12)}… names the collateral ${v.collateralTxid.slice(0, 12)}…:${v.collateralIndex}.` : 'The registration transaction could not be read or names another collateral.' });
+        } catch (e) {
+          checks.push({ label: 'The collateral belongs to it', ok: null, detail: errorText(e) });
+        }
+      }
+      if (bridge) {
+        try {
+          const vs = await bridge.votes(v.govHash);
+          const b = vs.votes.find((x) => mnId(x) === mnId(v));
+          const exact = !!b && b.time === v.time && b.outcome === v.outcome && b.sig === v.sig;
+          checks.push({ label: 'The network has it as the current vote', ok: exact, detail: exact ? `The bridge’s vote set as of block ${vs.asOfHeight} has exactly this vote.` : b ? 'The bridge’s vote set has a different vote for this masternode.' : 'The bridge’s vote set has no vote for this masternode yet.' });
+        } catch (e) {
+          checks.push({ label: 'The network has it as the current vote', ok: null, detail: errorText(e) });
+        }
+      }
+      return { checks };
+    },
+    [coreNetwork, dapi, bridge],
+  );
 
   const value = useMemo<Ctx>(
     () => ({
       status,
       error,
-      canUsePlatform: !!session && (!!session.wallet || session.source === 'passkey'),
+      demo,
+      canUsePlatform: !demo && !!session && (!!session.wallet || session.source === 'passkey'),
       memoryOnly,
       keyring,
       busy,
@@ -972,6 +1248,10 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       watched,
       coreNetwork,
       relays,
+      relayHealth,
+      celebrations,
+      dismissCelebration,
+      bridgeBase: demo ? null : (bridgeEndpoint?.httpBase ?? null),
       unlockWithPasskey,
       unlockWithPhrase,
       createKeyring,
@@ -989,10 +1269,12 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       currentVotes,
       cast,
       cancel,
+      retryNow,
       submitSigned,
+      verifyVote,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [status, error, session, memoryOnly, needsConfirm, confirmUnlockers, keyring, version, busy, mns, watched, coreNetwork, relays, unlockWithPasskey, unlockWithPhrase, createKeyring, lock, addKey, removeKey, setNodeLabel, setIdleMinutes, addPasskeyUnlocker, removeUnlockerKey, saveToPlatform, currentVotes, cast, cancel, submitSigned],
+    [status, error, demo, session, memoryOnly, needsConfirm, confirmUnlockers, keyring, version, busy, mns, watched, coreNetwork, relays, relayHealth, celebrations, dismissCelebration, bridgeEndpoint?.httpBase, unlockWithPasskey, unlockWithPhrase, createKeyring, lock, addKey, removeKey, setNodeLabel, setIdleMinutes, addPasskeyUnlocker, removeUnlockerKey, saveToPlatform, currentVotes, cast, cancel, retryNow, submitSigned, verifyVote],
   );
   return <C.Provider value={value}>{children}</C.Provider>;
 }

@@ -16,6 +16,7 @@ import {
   type VoteFields,
 } from '@govhub/verify';
 import type { RelayConfig } from './config.ts';
+import { HOLD_CODE } from './broadcaster.ts';
 import { rpcMessage, type CoreClient, type GobjectGetResult, type RawTxVerbose } from './core/rpc.ts';
 import { Store, type VoteRow } from './db.ts';
 import { log, type Clock } from './log.ts';
@@ -52,6 +53,9 @@ export interface VoteReceipt {
   releaseAt: number;
 }
 
+/** Why a `held` vote is still held: its release time, Core's one-change-per-hour rule, Core's 1 h future limit, or retries after errors. */
+export type HoldReason = 'release-time' | 'one-change-per-hour' | 'core-time-limit' | 'retrying';
+
 export interface VoteStatusView {
   id: string;
   voteHash: string;
@@ -61,6 +65,25 @@ export interface VoteStatusView {
   confirmedAt: number | null;
   attempts: number;
   lastError: string | null;
+  /** held votes: when the relay tries next (unix s) and why it waits; null otherwise */
+  nextAttemptAt: number | null;
+  holdReason: HoldReason | null;
+  /**
+   * When the vote was submitted, the masternode's current funding vote in Core had the same outcome: sending it only moves the
+   * timestamp (and restarts Core's one-hour clock). Flagged, not dropped: the client may mean it, and the current vote can change
+   * before the release. null: Core could not be asked.
+   */
+  sameAsCurrent: boolean | null;
+}
+
+export function holdReason(row: Pick<VoteRow, 'status' | 'last_error' | 'release_at' | 'next_attempt_at' | 'time'>, now: number): HoldReason | null {
+  if (row.status !== 'held') return null;
+  if (row.last_error === HOLD_CODE.tooOften || row.last_error === HOLD_CODE.hourRule) return 'one-change-per-hour';
+  if (row.last_error === HOLD_CODE.futureLimit) return 'core-time-limit';
+  if (row.last_error) return 'retrying';
+  // rows rescheduled before the hold codes existed carry no code: the future-limit wait has a fixed target, anything else is the hour rule
+  if (row.next_attempt_at > row.release_at && row.next_attempt_at > now) return row.next_attempt_at === row.time - VOTE_MAX_FUTURE_S + 60 ? 'core-time-limit' : 'one-change-per-hour';
+  return 'release-time';
 }
 
 const HEX64 = /^[0-9a-fA-F]{64}$/;
@@ -185,7 +208,7 @@ export class Relay {
     if (known) return { httpStatus: 200, receipt: receipt(known) };
 
     // Does Core already have this vote, or a newer one from this masternode? Then queueing it is pointless (and must not cost a slot).
-    await this.checkAgainstCore(v.govHashDisplay, v.collateralTxid, v.collateralIndex, voteHash, time);
+    const sameAsCurrent = await this.checkAgainstCore(v.govHashDisplay, v.collateralTxid, v.collateralIndex, voteHash, time, v.outcome);
 
     // --- everything below is synchronous: no await between the checks and the insert ---
     const existing = this.store.getByVoteHash(voteHash);
@@ -219,6 +242,7 @@ export class Relay {
         sig_b64: sig,
         release_at: releaseAt,
         received_hour: now - (now % 3600),
+        same_as_current: sameAsCurrent === null ? null : sameAsCurrent ? 1 : 0,
       });
     })();
     this.mnLimiter.record(mnKey); // only votes that were really inserted count
@@ -255,6 +279,7 @@ export class Relay {
     if (!ID_RE.test(id)) throw badRequest('id must be 32 lowercase hex characters');
     const row = this.store.get(id);
     if (!row) throw new RelayError(404, 'unknown-id', 'unknown vote id');
+    const reason = holdReason(row, this.clock());
     return {
       id: row.id,
       voteHash: row.vote_hash,
@@ -264,6 +289,9 @@ export class Relay {
       confirmedAt: row.confirmed_at,
       attempts: row.attempts,
       lastError: row.last_error,
+      nextAttemptAt: row.status === 'held' ? Math.max(row.next_attempt_at, row.release_at) : null,
+      holdReason: reason,
+      sameAsCurrent: (row.same_as_current ?? null) === null ? null : row.same_as_current === 1,
     };
   }
 
@@ -372,25 +400,30 @@ export class Relay {
   /**
    * `gobject getcurrentvotes <gov> <txid> <n>` (vout as a string): 409 `already-current` if Core's current votes of this masternode
    * contain this vote hash, 409 `newer-vote-in-core` if one of its funding votes is dated at or after ours. A failing RPC never
-   * blocks a submission (the broadcaster and the confirmer sort it out later).
+   * blocks a submission (the broadcaster and the confirmer sort it out later). Returns whether the current funding vote has the
+   * same outcome as this one (null: unknown).
    */
-  private async checkAgainstCore(govHash: string, txid: string, n: number, voteHash: string, time: number): Promise<void> {
+  private async checkAgainstCore(govHash: string, txid: string, n: number, voteHash: string, time: number, outcome: number): Promise<boolean | null> {
     let current: unknown;
     try {
       current = await this.core.call('gobject', ['getcurrentvotes', govHash, txid, String(n)]);
     } catch {
-      return;
+      return null;
     }
-    if (typeof current !== 'object' || current === null || Array.isArray(current)) return;
+    if (typeof current !== 'object' || current === null || Array.isArray(current)) return null;
     if (Object.prototype.hasOwnProperty.call(current, voteHash)) {
       throw new RelayError(409, 'already-current', 'Core already has this vote as the masternode\'s current vote');
     }
     // values look like "<txid>-<n>:<time>:<outcome>:<signal>:<weight>"
+    let latest: { time: number; outcome: string } | null = null;
     for (const val of Object.values(current)) {
       if (typeof val !== 'string') continue;
-      const [, t, , signal] = val.split(':');
-      if (signal === 'funding' && Number(t) >= time) throw new RelayError(409, 'newer-vote-in-core', 'Core already has a vote of this masternode with the same or a later time');
+      const [, t, o, signal] = val.split(':');
+      if (signal !== 'funding') continue;
+      if (Number(t) >= time) throw new RelayError(409, 'newer-vote-in-core', 'Core already has a vote of this masternode with the same or a later time');
+      if (!latest || Number(t) > latest.time) latest = { time: Number(t), outcome: o ?? '' };
     }
+    return latest !== null && latest.outcome === VOTE_OUTCOME_NAMES[outcome];
   }
 
   /** `gobject get` must succeed with ObjectType 1 (proposal). Definite answers are cached for VERDICT_TTL_S. */

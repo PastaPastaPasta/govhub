@@ -4,6 +4,8 @@ import { relayCancelMessage, signMessage, type Network } from '@govhub/verify';
 import { OUTCOME_NAME, type SignedVoteRecord } from './plan.ts';
 
 export type RelayVoteStatus = 'held' | 'sending' | 'broadcast' | 'confirmed' | 'failed' | 'cancelled' | 'superseded';
+/** Why a relay still holds a vote (relays from before this field leave it null). */
+export type HoldReason = 'release-time' | 'one-change-per-hour' | 'core-time-limit' | 'retrying';
 
 export interface RelayVoteState {
   id: string;
@@ -13,6 +15,20 @@ export interface RelayVoteState {
   broadcastAt: number | null;
   confirmedAt: number | null;
   lastError: string | null;
+  nextAttemptAt: number | null;
+  holdReason: HoldReason | null;
+  sameAsCurrent: boolean | null;
+}
+
+/** GET /v1/status: is the relay up, and can it reach Core. */
+export interface RelayHealth {
+  ok: boolean;
+  network?: string;
+  coreReachable?: boolean;
+  held?: number;
+  error?: string;
+  /** unix ms */
+  checkedAt: number;
 }
 
 export class RelayError extends Error {
@@ -31,6 +47,7 @@ export class RelayError extends Error {
 }
 
 const STATUSES = new Set<RelayVoteStatus>(['held', 'sending', 'broadcast', 'confirmed', 'failed', 'cancelled', 'superseded']);
+const HOLD_REASONS = new Set<HoldReason>(['release-time', 'one-change-per-hour', 'core-time-limit', 'retrying']);
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const numOrNull = (v: unknown): number | null => (typeof v === 'number' && Number.isSafeInteger(v) ? v : null);
 
@@ -48,8 +65,14 @@ export function parseRelayState(raw: unknown): RelayVoteState {
     broadcastAt: numOrNull(raw.broadcastAt),
     confirmedAt: numOrNull(raw.confirmedAt),
     lastError: typeof raw.lastError === 'string' ? raw.lastError.slice(0, 80) : null,
+    nextAttemptAt: numOrNull(raw.nextAttemptAt),
+    holdReason: typeof raw.holdReason === 'string' && HOLD_REASONS.has(raw.holdReason as HoldReason) ? (raw.holdReason as HoldReason) : null,
+    sameAsCurrent: typeof raw.sameAsCurrent === 'boolean' ? raw.sameAsCurrent : null,
   };
 }
+
+/** The relay's host, for display ("gov-relay-testnet.dashhq.org"). */
+export const relayHost = (url: string): string => url.replace(/^[a-z]+:\/\//i, '').replace(/\/.*$/, '');
 
 export const normalizeRelayUrl = (u: string): string => u.trim().replace(/\/+$/, '');
 
@@ -62,7 +85,7 @@ export class RelayClient {
     this.base = normalizeRelayUrl(base);
   }
 
-  private async req(path: string, body?: unknown): Promise<{ status: number; json: unknown }> {
+  private async req(path: string, body?: unknown, timeoutMs = this.timeoutMs): Promise<{ status: number; json: unknown }> {
     let res: Response;
     try {
       res = await fetch(`${this.base}${path}`, {
@@ -70,7 +93,7 @@ export class RelayClient {
         credentials: 'omit',
         referrerPolicy: 'no-referrer',
         cache: 'no-store',
-        signal: AbortSignal.timeout(this.timeoutMs),
+        signal: AbortSignal.timeout(timeoutMs),
         headers: body === undefined ? { accept: 'application/json' } : { accept: 'application/json', 'content-type': 'application/json' },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
@@ -90,6 +113,21 @@ export class RelayClient {
     return { status: res.status, json };
   }
 
+  /** GET /v1/status, with a short timeout: a health check must not keep a retry waiting. */
+  async health(network: Network, timeoutMs = 8000): Promise<RelayHealth> {
+    const checkedAt = Date.now();
+    try {
+      const { json } = await this.req('/v1/status', undefined, timeoutMs);
+      const o = isObj(json) ? json : {};
+      const core = isObj(o.core) ? o.core : {};
+      const net = typeof o.network === 'string' ? o.network : undefined;
+      if (net && net !== network) return { ok: false, network: net, error: `this relay serves ${net}, not ${network}`, checkedAt };
+      return { ok: core.reachable !== false, ...(net ? { network: net } : {}), coreReachable: core.reachable !== false, ...(typeof o.held === 'number' ? { held: o.held } : {}), ...(core.reachable === false ? { error: 'the relay cannot reach Dash Core right now' } : {}), checkedAt };
+    } catch (e) {
+      return { ok: false, error: (e as Error).message, checkedAt };
+    }
+  }
+
   /** POST /v1/votes. The relay checks the signature against the masternode's voting key before it accepts. */
   async submit(v: SignedVoteRecord, network: Network): Promise<RelayVoteState> {
     const { json } = await this.req('/v1/votes', {
@@ -105,7 +143,7 @@ export class RelayClient {
     });
     const o = isObj(json) ? json : {};
     // 202 {id, voteHash, status, releaseAt} or 200 (already known) with the full record
-    const st = parseRelayState({ broadcastAt: null, confirmedAt: null, ...o });
+    const st = parseRelayState(o);
     if (st.voteHash !== v.voteHash) throw new RelayError('the relay answered for a different vote');
     return st;
   }

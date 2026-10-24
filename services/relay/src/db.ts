@@ -29,9 +29,16 @@ export interface VoteRow {
   fail_n: number;
   /** how many times the confirmer sent a not-yet-visible vote back to the broadcaster */
   rebroadcasts: number;
+  /**
+   * 1: when it was submitted, Core's current funding vote of this masternode had the same outcome (a re-send that only moves the
+   * timestamp); 0: a different or no current vote; null: Core could not be asked.
+   */
+  same_as_current: number | null;
 }
 
-export type NewVote = Omit<VoteRow, 'status' | 'attempts' | 'broadcast_at' | 'confirmed_at' | 'last_error' | 'finished_at' | 'fail_n' | 'rebroadcasts' | 'next_attempt_at'>;
+export type NewVote = Omit<VoteRow, 'status' | 'attempts' | 'broadcast_at' | 'confirmed_at' | 'last_error' | 'finished_at' | 'fail_n' | 'rebroadcasts' | 'next_attempt_at' | 'same_as_current'> & {
+  same_as_current?: number | null;
+};
 
 export interface VoteKey {
   txid: string;
@@ -61,7 +68,8 @@ CREATE TABLE IF NOT EXISTS votes (
   received_hour INTEGER NOT NULL,
   finished_at INTEGER,
   fail_n INTEGER NOT NULL DEFAULT 0,
-  rebroadcasts INTEGER NOT NULL DEFAULT 0
+  rebroadcasts INTEGER NOT NULL DEFAULT 0,
+  same_as_current INTEGER
 );
 CREATE INDEX IF NOT EXISTS votes_due ON votes (status, next_attempt_at);
 CREATE INDEX IF NOT EXISTS votes_key ON votes (collateral_txid, collateral_n, gov_hash, signal);
@@ -81,6 +89,9 @@ export function openDb(path: string): Database.Database {
   db.pragma('synchronous = NORMAL');
   db.pragma('busy_timeout = 5000');
   db.exec(SCHEMA);
+  // columns added after the first release: databases created before them get them here
+  const cols = new Set((db.prepare('PRAGMA table_info(votes)').all() as Array<{ name: string }>).map((c) => c.name));
+  if (!cols.has('same_as_current')) db.exec('ALTER TABLE votes ADD COLUMN same_as_current INTEGER');
   return db;
 }
 
@@ -92,8 +103,8 @@ export class Store {
     this.db = db;
     this.q = {
       insert: db.prepare(
-        `INSERT INTO votes (id, vote_hash, collateral_txid, collateral_n, gov_hash, signal, outcome, time, sig_b64, release_at, status, next_attempt_at, received_hour)
-         VALUES (@id, @vote_hash, @collateral_txid, @collateral_n, @gov_hash, @signal, @outcome, @time, @sig_b64, @release_at, 'held', @release_at, @received_hour)`,
+        `INSERT INTO votes (id, vote_hash, collateral_txid, collateral_n, gov_hash, signal, outcome, time, sig_b64, release_at, status, next_attempt_at, received_hour, same_as_current)
+         VALUES (@id, @vote_hash, @collateral_txid, @collateral_n, @gov_hash, @signal, @outcome, @time, @sig_b64, @release_at, 'held', @release_at, @received_hour, @same_as_current)`,
       ),
       byId: db.prepare('SELECT * FROM votes WHERE id = ?'),
       byHash: db.prepare('SELECT * FROM votes WHERE vote_hash = ?'),
@@ -137,7 +148,7 @@ export class Store {
   }
 
   insert(v: NewVote): void {
-    this.q.insert.run(v);
+    this.q.insert.run({ same_as_current: null, ...v });
   }
   get(id: string): VoteRow | undefined {
     return this.q.byId.get(id) as VoteRow | undefined;

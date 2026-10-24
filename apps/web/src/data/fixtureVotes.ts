@@ -16,6 +16,8 @@ export interface VoteCounts {
 
 const label = (kind: string, i: number) => sha256(utf8ToBytes(`govhub-fixture-${kind}:${i}`));
 const mnPriv = (i: number) => label('mn', i);
+/** The voting key of synthetic masternode i (fixture mode's demo keyring signs with it; never a real key). */
+export const fixtureMnKey = mnPriv;
 const mnCollateral = (i: number) => bytesToHex(label('collateral', i));
 
 interface PlannedVote {
