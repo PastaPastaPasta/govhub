@@ -26,6 +26,12 @@ export function collateralStatus(c: ChainFacts): { text: string; prov: Provenanc
     };
   }
   if (c.chainLocked === 'verified' && c.lockDepth !== null) {
+    if (c.weak) {
+      return {
+        text: `ChainLocked; at least ${formatInt(c.lockDepth)} confirmations`,
+        prov: { kind: 'reported', source, detail: `a ChainLock covers the block through headers, but the chain could not be verified here; not secure: ${c.weak}` },
+      };
+    }
     return {
       text: `final (ChainLocked); at least ${formatInt(c.lockDepth)} confirmations`,
       prov: { kind: 'verified', source, detail: 'a BLS-valid ChainLock covers the block through verified headers' },
@@ -42,6 +48,7 @@ export function collateralStatus(c: ChainFacts): { text: string; prov: Provenanc
 export function collateralHeightProv(c: ChainFacts | undefined, published: number, fallback: Provenance): Provenance {
   if (!c || c.height !== published) return fallback;
   if (c.anchored?.weak) return { kind: 'reported', source: SOURCE, detail: `the block's coinbase commits to this height and the block is in the checked chain; not secure: ${c.anchored.weak}` };
+  if (c.chainLocked === 'verified' && c.weak) return { kind: 'reported', source: SOURCE, detail: `the block's coinbase commits to this height; not secure: ${c.weak}` };
   if (c.anchored || c.chainLocked === 'verified') return verified("the block's coinbase commits to this height and the block is in the verified chain");
   return fallback;
 }

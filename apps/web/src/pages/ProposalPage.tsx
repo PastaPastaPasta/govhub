@@ -12,7 +12,7 @@ import { useReactions } from '../ui/useReactions.ts';
 import { Votes } from '../ui/Votes.tsx';
 import type { Proposal, Provenance, Sourced } from '../data/types.ts';
 import { formatDash, formatDate, formatDateTime, formatInt, formatRelative, formatSigned, shortHash, urlHost } from '../lib/format.ts';
-import { votingDeadlineTime } from '../lib/governance.ts';
+import { perSuperblock, votingDeadlineTime } from '../lib/governance.ts';
 import { deriveRow, weakest } from '../lib/view.ts';
 import { BRIDGE_TARGET, PLATFORM_TARGET, tallyProvenance } from '../verify/verdict.ts';
 import type { VoteTarget } from '../verify/votes.ts';
@@ -206,7 +206,7 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
           </p>
         )}
         <p className="proposal-sub">
-          {paymentText(p.paymentAmount, sched)}
+          {paymentText(p.paymentAmount, sched, params)}
           {host && (
             <>
               {' '}
@@ -226,7 +226,7 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
           <h2 id="info-title">Details</h2>
           <dl className="info-table">
             <Item label="Payment" prov={contentProv}>
-              {formatDash(p.paymentAmount)} per superblock
+              {formatDash(p.paymentAmount)} {perSuperblock(params)}
             </Item>
             {paid ? (
               <>

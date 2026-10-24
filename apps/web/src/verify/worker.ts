@@ -117,7 +117,7 @@ async function handle(req: WorkerRequest): Promise<void> {
     } catch (e) {
       lookup = { error: (e as Error).message, ...(isNotFound(e, req.dapi.kind === 'recorded') ? { notFound: true } : {}) };
     }
-    const verdict = verifyCollateral(req.proposal, lookup);
+    const verdict = verifyCollateral(req.proposal, lookup, req.dapi.kind === 'live' ? req.dapi.cfg.network : 'mainnet'); // recorded data is mainnet
     if (anchorError) verdict.anchorError = anchorError;
     post({ id: req.id, kind: 'collateral', verdict });
     return;

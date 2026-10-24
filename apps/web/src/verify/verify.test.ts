@@ -7,6 +7,7 @@ import type { Proposal, Tally } from '../data/types.ts';
 import { BridgeError, type BridgeMasternode, type BridgeVote } from '../data/bridge.ts';
 import { BRIDGE_TARGET, PLATFORM_TARGET, tallyProvenance, voteVerdict } from './verdict.ts';
 import { checkContent, verifyCollateral, type TxLookup } from './collateral.ts';
+import { collateralHeightProv, collateralStatus } from './facts.ts';
 import { verifyVotes, type VoteRun } from './votes.ts';
 
 let snap: FixtureSnapshot;
@@ -23,7 +24,7 @@ const run = (result: ReturnType<typeof verifyVotes>, votesAsOf: number): VoteRun
 describe('collateral verification over recorded mainnet DAPI responses', () => {
   it('all 28 fixture proposals verify through the real DapiCore decoder', async () => {
     for (const p of snap.proposals) {
-      const v = verifyCollateral(p, await recorded(p.collateralTxid));
+      const v = verifyCollateral(p, await recorded(p.collateralTxid), 'mainnet');
       expect(v.ok, `${p.name}: ${JSON.stringify(v.steps.filter((s) => s.status !== 'ok'))}`).toBe(true);
       expect(v.govHashComputed).toBe(p.govHash);
     }
@@ -31,7 +32,7 @@ describe('collateral verification over recorded mainnet DAPI responses', () => {
 
   it('a changed displayed name is caught even though the hash still matches', async () => {
     const p = { ...byName('OrchardPay'), name: 'OrchardPay-v2' };
-    const v = verifyCollateral(p, await recorded(p.collateralTxid));
+    const v = verifyCollateral(p, await recorded(p.collateralTxid), 'mainnet');
     expect(v.ok).toBe(false);
     expect(v.steps.find((s) => s.id === 'hash')!.status).toBe('ok');
     expect(v.steps.find((s) => s.id === 'fields')!.status).toBe('fail');
@@ -40,7 +41,7 @@ describe('collateral verification over recorded mainnet DAPI responses', () => {
   it('tampered dataHex fails the hash and the OP_RETURN check', async () => {
     const orig = byName('OrchardPay');
     const p = { ...orig, dataHex: orig.dataHex.replace('4f7263686172645061', '4f7263686172645062') };
-    const v = verifyCollateral(p, await recorded(p.collateralTxid));
+    const v = verifyCollateral(p, await recorded(p.collateralTxid), 'mainnet');
     expect(v.ok).toBe(false);
     expect(v.steps.find((s) => s.id === 'hash')!.status).toBe('fail');
     expect(v.steps.find((s) => s.id === 'collateral')!.status).toBe('fail');
@@ -49,7 +50,7 @@ describe('collateral verification over recorded mainnet DAPI responses', () => {
   it('collateral of another proposal fails (txid binding and OP_RETURN)', async () => {
     const a = byName('OrchardPay');
     const b = byName('dash-intents');
-    const v = verifyCollateral({ ...a, collateralTxid: b.collateralTxid }, await recorded(b.collateralTxid));
+    const v = verifyCollateral({ ...a, collateralTxid: b.collateralTxid }, await recorded(b.collateralTxid), 'mainnet');
     expect(v.ok).toBe(false);
     expect(v.steps.find((s) => s.id === 'collateral')!.detail).toContain('no-matching-op-return');
   });
@@ -57,7 +58,7 @@ describe('collateral verification over recorded mainnet DAPI responses', () => {
   it('fewer than 6 confirmations fails; missing ChainLock only warns', async () => {
     const p = byName('OrchardPay');
     const tx = await recorded(p.collateralTxid);
-    const v = verifyCollateral(p, { ...tx, confirmations: 5, chainLocked: 'no' });
+    const v = verifyCollateral(p, { ...tx, confirmations: 5, chainLocked: 'no' }, 'mainnet');
     expect(v.ok).toBe(false);
     expect(v.steps.find((s) => s.id === 'confirmations')!.status).toBe('fail');
     expect(v.steps.find((s) => s.id === 'chainlock')!.status).toBe('warn');
@@ -65,7 +66,7 @@ describe('collateral verification over recorded mainnet DAPI responses', () => {
 
   it('unknown txid: the recorded node answers NOT_FOUND like a real one', async () => {
     await expect(recorded('00'.repeat(32))).rejects.toThrow(/node attempts failed/);
-    const v = verifyCollateral(byName('OrchardPay'), { error: 'Transaction not found' });
+    const v = verifyCollateral(byName('OrchardPay'), { error: 'Transaction not found' }, 'mainnet');
     expect(v.ok).toBe(false);
     expect(v.steps.find((s) => s.id === 'tx')!.status).toBe('fail');
   });
@@ -87,7 +88,7 @@ describe('what is verified and what is node-reported (ChainLock, confirmations, 
 
   it('claims only (the recorded replay): ChainLock and confirmations are "reported", the second-node check stands in for the block proof', async () => {
     const p = byName('OrchardPay');
-    const v = verifyCollateral(p, await recorded(p.collateralTxid));
+    const v = verifyCollateral(p, await recorded(p.collateralTxid), 'mainnet');
     expect(v.ok).toBe(true);
     for (const id of ['confirmations', 'chainlock']) expect(stepOf(v, id)).toMatchObject({ status: 'ok', basis: 'reported' });
     expect(stepOf(v, 'chainlock').detail).toContain('a node reports');
@@ -98,7 +99,7 @@ describe('what is verified and what is node-reported (ChainLock, confirmations, 
 
   it('proven: block inclusion, height, ChainLock and a confirmation floor are "verified"', async () => {
     const p = byName('OrchardPay');
-    const v = verifyCollateral(p, proven(await recorded(p.collateralTxid)));
+    const v = verifyCollateral(p, proven(await recorded(p.collateralTxid)), 'mainnet');
     expect(v.ok).toBe(true);
     expect(stepOf(v, 'block')).toMatchObject({ status: 'ok', basis: 'verified' });
     expect(v.steps.some((s) => s.id === 'crosscheck')).toBe(false);
@@ -113,7 +114,7 @@ describe('what is verified and what is node-reported (ChainLock, confirmations, 
   it('a block proof without a ChainLock proof keeps confirmations and the lock as node claims', async () => {
     const p = byName('OrchardPay');
     const tx = await recorded(p.collateralTxid);
-    const v = verifyCollateral(p, { ...tx, proof: { merkle: true, blockHash: 'claimed', chainLock: null, anchor: null, notes: ['no BLS verifier: ChainLock signature not checked'] } });
+    const v = verifyCollateral(p, { ...tx, proof: { merkle: true, blockHash: 'claimed', chainLock: null, anchor: null, notes: ['no BLS verifier: ChainLock signature not checked'] } }, 'mainnet');
     // a merkle proof alone does not tie the block to the chain (no proof-of-work): it stays "reported", and a second node weighs in
     expect(stepOf(v, 'block')).toMatchObject({ status: 'ok', basis: 'reported' });
     expect(stepOf(v, 'block').detail).toContain('nothing ties that block to the chain');
@@ -128,14 +129,14 @@ describe('what is verified and what is node-reported (ChainLock, confirmations, 
   it('a ChainLock proof that FAILED (as opposed to not attempted) is a warning, not a quiet "ok"', async () => {
     const p = byName('OrchardPay');
     const tx = await recorded(p.collateralTxid);
-    const v = verifyCollateral(p, { ...tx, proof: { merkle: true, blockHash: 'verified', chainLock: null, anchor: null, notes: ['chainlock proof failed: header chain breaks at +3'] } });
+    const v = verifyCollateral(p, { ...tx, proof: { merkle: true, blockHash: 'verified', chainLock: null, anchor: null, notes: ['chainlock proof failed: header chain breaks at +3'] } }, 'mainnet');
     expect(stepOf(v, 'chainlock')).toMatchObject({ status: 'warn', basis: 'reported' });
     expect(stepOf(v, 'chainlock').detail).toContain('FAILED');
   });
 
   it('a verified ChainLock that is too shallow does not vouch for the 6 confirmations', async () => {
     const p = byName('OrchardPay');
-    const v = verifyCollateral(p, proven(await recorded(p.collateralTxid), { verifiedConfirmations: 2 }));
+    const v = verifyCollateral(p, proven(await recorded(p.collateralTxid), { verifiedConfirmations: 2 }), 'mainnet');
     expect(stepOf(v, 'chainlock').basis).toBe('verified');
     expect(stepOf(v, 'confirmations')).toMatchObject({ status: 'ok', basis: 'reported' });
     expect(v.chain).toMatchObject({ provenConfirmations: null, lockDepth: 2 });
@@ -152,7 +153,7 @@ describe('what is verified and what is node-reported (ChainLock, confirmations, 
         chainLock: final ? { height: tx.height + 998, blockHash: 'aa'.repeat(32), quorumHash: 'bb'.repeat(32), exact: true, verifiedConfirmations: 999 } : null,
       },
     });
-    const v = verifyCollateral(p, anchoredTx(true));
+    const v = verifyCollateral(p, anchoredTx(true), 'mainnet');
     expect(v.ok).toBe(true);
     expect(stepOf(v, 'block')).toMatchObject({ basis: 'verified' });
     expect(stepOf(v, 'block').detail).toContain('chain verified in this browser');
@@ -163,16 +164,37 @@ describe('what is verified and what is node-reported (ChainLock, confirmations, 
     expect(v.chain!.anchored).toEqual({ tip: tx.height + 999, confirmations: 1000, chainLockHeight: tx.height + 998, final: true, weak: null });
     // the same proof on a chain proof of work does not protect (testnet): every chain step stays "reported"
     const t = anchoredTx(true);
-    const weak = verifyCollateral(p, { ...t, proof: { ...t.proof, anchor: { ...t.proof.anchor!, weak: 'testnet difficulty is too low' } } });
+    const weak = verifyCollateral(p, { ...t, proof: { ...t.proof, anchor: { ...t.proof.anchor!, weak: 'testnet difficulty is too low' } } }, 'mainnet');
     for (const id of ['block', 'confirmations', 'chainlock', 'height']) expect(stepOf(weak, id).basis, id).toBe('reported');
     expect(stepOf(weak, 'chainlock').more).toContain('not secure');
     // a block above the newest ChainLock: inclusion and depth are still proven, finality is not
-    const w = verifyCollateral(p, anchoredTx(false));
+    const w = verifyCollateral(p, anchoredTx(false), 'mainnet');
     expect(stepOf(w, 'chainlock')).toMatchObject({ status: 'warn', basis: 'verified' });
     expect(stepOf(w, 'chainlock').detail).toContain('not final yet');
     expect(stepOf(w, 'confirmations').basis).toBe('verified');
     // nothing in any step mentions developer parameters
     expect([...v.steps, ...w.steps].map((s) => s.detail).join(' ')).not.toMatch(/maxHeaderSpan/);
+  });
+
+  it('testnet: the fallback ChainLock proof (chain not anchored) is never "verified"; every chain fact is "reported (not secure)"', async () => {
+    const p = byName('OrchardPay');
+    const fallback = proven(await recorded(p.collateralTxid)); // per-transaction proof, no anchor
+    expect(fallback.proof.anchor).toBeNull();
+    const test = verifyCollateral(p, fallback, 'testnet');
+    for (const id of ['block', 'confirmations', 'chainlock', 'height']) {
+      expect(stepOf(test, id).basis, id).toBe('reported');
+      expect(stepOf(test, id).more, id).toContain('not secure');
+    }
+    expect(test.chain!.weak).toContain('testnet');
+    const status = collateralStatus(test.chain!);
+    expect(status.prov.kind).toBe('reported');
+    expect(status.prov.detail).toContain('not secure');
+    expect(collateralHeightProv(test.chain!, test.chain!.height, { kind: 'fixture', source: 'x' }).kind).toBe('reported');
+    // the same proof on mainnet keeps its mark
+    const main = verifyCollateral(p, fallback, 'mainnet');
+    expect(stepOf(main, 'chainlock').basis).toBe('verified');
+    expect(main.chain!.weak).toBeUndefined();
+    expect(collateralStatus(main.chain!).prov.kind).toBe('verified');
   });
 
   it('lookupCollateral keeps the helper\'s proof, and falls back to the node\'s claim (saying why) when the proof fails', async () => {
@@ -193,7 +215,7 @@ describe('what is verified and what is node-reported (ChainLock, confirmations, 
     expect(fell.chainLocked).toBe('claimed');
     expect(fell.proof).toMatchObject({ merkle: false, chainLock: null });
     expect(fell.proof.notes[0]).toContain('merkle root does not match');
-    expect(verifyCollateral(byName('OrchardPay'), fell).steps.find((s) => s.id === 'chainlock')!.more).toContain('merkle root does not match');
+    expect(verifyCollateral(byName('OrchardPay'), fell, 'mainnet').steps.find((s) => s.id === 'chainlock')!.more).toContain('merkle root does not match');
     // a node that contradicted itself is a lie, not a flaky node: the lookup fails instead of asking the next node for its claim
     const lie = new AllNodesFailedError([{ node: 'a:443', error: new VerificationError('merkle', 'transaction is not in the claimed block') }]);
     await expect(lookupCollateral(dapi(() => Promise.reject(lie)), 'ab'.repeat(32), { verify: true })).rejects.toBe(lie);
@@ -422,9 +444,9 @@ describe('collateral second-node cross-check', () => {
   it('a disagreeing second node fails the verdict; a missing one only warns', async () => {
     const p = byName('OrchardPay');
     const tx = await recorded(p.collateralTxid);
-    expect(verifyCollateral(p, { ...tx, second: { node: 'b:443', height: tx.height, sameBytes: true } }).ok).toBe(true);
-    expect(verifyCollateral(p, { ...tx, second: null }).steps.find((s) => s.id === 'crosscheck')!.status).toBe('warn');
-    const bad = verifyCollateral(p, { ...tx, second: { node: 'b:443', height: tx.height + 1, sameBytes: true } });
+    expect(verifyCollateral(p, { ...tx, second: { node: 'b:443', height: tx.height, sameBytes: true } }, 'mainnet').ok).toBe(true);
+    expect(verifyCollateral(p, { ...tx, second: null }, 'mainnet').steps.find((s) => s.id === 'crosscheck')!.status).toBe('warn');
+    const bad = verifyCollateral(p, { ...tx, second: { node: 'b:443', height: tx.height + 1, sameBytes: true } }, 'mainnet');
     expect(bad.ok).toBe(false);
     expect(bad.steps.find((s) => s.id === 'crosscheck')!.status).toBe('fail');
   });

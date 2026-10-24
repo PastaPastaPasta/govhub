@@ -39,6 +39,25 @@ export function parseGovParams(info: unknown): GovParams | null {
   return { superblockCycle, maturityWindow, minQuorum, blockSeconds: BLOCK_SECONDS };
 }
 
+/**
+ * Roughly how often a superblock comes, from the network's cycle and block spacing: "hourly" on testnet (24 blocks), "monthly" on
+ * mainnet (16616 blocks), otherwise "every ~N hours/days". Used to label amounts: a proposal pays once per superblock, not per month.
+ */
+export function superblockCadence(params: Pick<GovParams, 'superblockCycle' | 'blockSeconds'>): string {
+  const hours = (params.superblockCycle * params.blockSeconds) / 3600;
+  const near = (unit: number) => Math.abs(hours - unit) <= unit * 0.25;
+  if (hours >= 0.75 && hours < 1.5) return 'hourly';
+  if (near(24)) return 'daily';
+  if (near(24 * 7)) return 'weekly';
+  if (near(24 * 30.4)) return 'monthly';
+  const every = (n: number, unit: string) => `every ~${n} ${unit}${n === 1 ? '' : 's'}`;
+  if (hours < 0.75) return every(Math.max(1, Math.round(hours * 60)), 'minute');
+  return hours < 48 ? every(Math.round(hours), 'hour') : every(Math.round(hours / 24), 'day');
+}
+
+/** The unit an amount is paid per, e.g. "per superblock (~monthly)"; the same words on cards and in the proposal table. */
+export const perSuperblock = (params: Pick<GovParams, 'superblockCycle' | 'blockSeconds'>): string => `per superblock (~${superblockCadence(params)})`;
+
 /** GOVERNANCE_FUDGE_WINDOW (signing.cpp:23). */
 export const FUDGE_WINDOW_S = 2 * 3600;
 

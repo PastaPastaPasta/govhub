@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Proposal, Sourced, Tally } from '../data/types.ts';
 import { paymentText } from '../ui/ProposalCard.tsx';
-import { GOV_PARAMS, parseGovParams } from './governance.ts';
+import { GOV_PARAMS, parseGovParams, perSuperblock, superblockCadence } from './governance.ts';
 import { byRank, countNames, deriveRow, pickTally, proposalHref, weakest } from './view.ts';
 
 const prov = { kind: 'proof', source: 'test' } as const;
@@ -64,11 +64,27 @@ describe('view model', () => {
     expect(proposalHref(c, names)).toBe('/p/other');
   });
 
-  it('payment text follows DashCentral wording', () => {
-    expect(paymentText(200e8, { total: 5, remaining: 2, oneTime: false })).toBe('200 DASH per month (2 of 5 remaining)');
-    expect(paymentText(200e8, { total: 5, remaining: 0, oneTime: false })).toBe('200 DASH per month (ended)');
-    expect(paymentText(1e8, { total: 1, remaining: 1, oneTime: true })).toBe('1 DASH one-time');
-    expect(paymentText(1e8, null)).toBe('1 DASH per payment');
+  it('payment text says per superblock, with the cadence of the network\'s cycle', () => {
+    const main = GOV_PARAMS.mainnet;
+    const test = GOV_PARAMS.testnet;
+    expect(paymentText(200e8, { total: 5, remaining: 2, oneTime: false }, main)).toBe('200 DASH per superblock (~monthly), 2 of 5 remaining');
+    expect(paymentText(200e8, { total: 5, remaining: 0, oneTime: false }, main)).toBe('200 DASH per superblock (~monthly), ended');
+    expect(paymentText(200e8, { total: 5, remaining: 2, oneTime: false }, test)).toBe('200 DASH per superblock (~hourly), 2 of 5 remaining');
+    expect(paymentText(1e8, { total: 1, remaining: 1, oneTime: true }, test)).toBe('1 DASH one-time');
+    expect(paymentText(1e8, null, test)).toBe('1 DASH per payment');
+  });
+
+  it('cadence is derived from the superblock cycle and block spacing', () => {
+    expect(superblockCadence(GOV_PARAMS.mainnet)).toBe('monthly');
+    expect(superblockCadence(GOV_PARAMS.testnet)).toBe('hourly');
+    expect(perSuperblock(GOV_PARAMS.testnet)).toBe('per superblock (~hourly)');
+    const spacing = GOV_PARAMS.mainnet.blockSeconds;
+    expect(superblockCadence({ superblockCycle: Math.round(86400 / spacing), blockSeconds: spacing })).toBe('daily');
+    expect(superblockCadence({ superblockCycle: Math.round(7 * 86400 / spacing), blockSeconds: spacing })).toBe('weekly');
+    expect(superblockCadence({ superblockCycle: Math.round(4 * 3600 / spacing), blockSeconds: spacing })).toBe('every ~4 hours');
+    expect(superblockCadence({ superblockCycle: Math.round(3 * 86400 / spacing), blockSeconds: spacing })).toBe('every ~3 days');
+    expect(superblockCadence({ superblockCycle: Math.round(1.4 * 3600 / spacing), blockSeconds: spacing })).toBe('hourly');
+    expect(superblockCadence({ superblockCycle: Math.round(1800 / spacing), blockSeconds: spacing })).toBe('every ~29 minutes');
   });
 });
 

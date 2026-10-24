@@ -75,17 +75,18 @@ jobs:
             exit 1
           fi
 
-      - name: dashd only on `default`; public-facing services never on `default`; no `bridge` on `tunnel`
+      - name: dashd only on `default`; public-facing services never on `default`; only `tunnel-gateway` on `tunnel`
         working-directory: deploy
         run: |
           set -euo pipefail
-          # `tunnel` is shared with another stack's cloudflared (README 11.3): a service named `bridge` there would
-          # shadow that stack's own `http://bridge:8787` route.
+          # `tunnel` is shared with another stack's cloudflared (README 11.3): any guest service there other than the gateway
+          # (a service named `bridge`, say) would shadow that stack's own `http://bridge:8787` route, or expose something unintended.
           docker compose config --format json | jq -e '
             .services as $s
+            | .networks as $n
             | ($s.dashd.networks | keys) == ["default"]
             and ([$s.cloudflared, $s.caddy, $s["tunnel-gateway"]] | map(select(. != null) | .networks | has("default") | not) | all)
-            and (($s.bridge.networks | has("tunnel")) | not)' > /dev/null \
+            and (if $n.tunnel then ([$s | to_entries[] | select((.value.networks // {}) | has("tunnel")) | .key] == ["tunnel-gateway"]) else true end)' > /dev/null \
             || { echo "::error::network isolation violated"; docker compose config --format json | jq '.services | map_values(.networks)'; exit 1; }
 
   scripts:
