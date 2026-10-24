@@ -5,9 +5,8 @@
 // these votes, so "Verify votes" runs the real verifier end to end. Nothing here is real data.
 import { secp256k1 } from '@noble/curves/secp256k1.js';
 import { sha256 } from '@noble/hashes/sha2.js';
-import { bytesToHex, hash160, p2pkhAddress, signVote, tallyVotes, utf8ToBytes, VOTE_OUTCOME, VOTE_SIGNAL } from '@govhub/verify';
+import { bytesToHex, countVotes, hash160, p2pkhAddress, signVote, utf8ToBytes, VOTE_OUTCOME, VOTE_SIGNAL } from '@govhub/verify';
 import type { BridgeMasternode, BridgeVote } from './bridge.ts';
-import { voteSetHash } from '../verify/voteset.ts';
 
 export interface VoteCounts {
   yes: number;
@@ -43,7 +42,7 @@ export const fixtureMnCount = (counts: VoteCounts) => counts.yes + counts.no + c
 export function fixtureVoteSetHash(counts: VoteCounts, proposalTime: number): string {
   const votes = plan(counts, proposalTime).map((v) => ({ mn: `${mnCollateral(v.mn)}-0`, outcome: v.outcome, time: v.time }));
   const weights = new Map(votes.map((v) => [v.mn, 1]));
-  return voteSetHash(tallyVotes(votes, weights).current, (id) => weights.has(id));
+  return countVotes(votes, weights).voteSetHash;
 }
 
 /** Signs the synthetic votes (mainnet message scheme). ~1 ms per vote: run it in the worker. */

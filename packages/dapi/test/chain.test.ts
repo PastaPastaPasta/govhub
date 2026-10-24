@@ -135,6 +135,20 @@ describe('SML parsing', () => {
     const bumped = (blockHeight: number) => parseSml(encodeCbor({ ...ok, mnList: [], cbTx: hex(withHeight(blockHeight)) })).digest;
     expect(bumped(100)).not.toBe(bumped(101));
   });
+  it('keeps every masternode with its voting address, type and validity, and the digest covers them (agreement across nodes means agreement on voting keys)', () => {
+    const ok = { blockHash: '00'.repeat(32), baseBlockHash: '00'.repeat(32), merkleRootMNList: '11'.repeat(32), merkleRootQuorums: '22'.repeat(32), newQuorums: [] };
+    const mn = (p: string, votingAddress: string, nType = 0, isValid = true) => ({ nType, isValid, proRegTxHash: p.repeat(32), votingAddress });
+    const list = [mn('aa', 'Xvoting1'), mn('BB', 'Xvoting2', 1, false), { nType: 0, isValid: true, proRegTxHash: 'cc'.repeat(32) }];
+    const s = parseSml(encodeCbor({ ...ok, mnList: list }));
+    expect(s.masternodes).toEqual([
+      { proTxHash: 'aa'.repeat(32), votingAddress: 'Xvoting1', nType: 0, isValid: true },
+      { proTxHash: 'bb'.repeat(32), votingAddress: 'Xvoting2', nType: 1, isValid: false }, // a banned masternode is listed, flagged invalid
+    ]);
+    const digest = (l: Array<ReturnType<typeof mn>>) => parseSml(encodeCbor({ ...ok, mnList: l })).digest;
+    expect(digest([mn('aa', 'Xvoting1'), mn('BB', 'Xvoting2', 1, false)])).toBe(digest([mn('BB', 'Xvoting2', 1, false), mn('aa', 'Xvoting1')]));
+    expect(digest([mn('aa', 'Xvoting1')])).not.toBe(digest([mn('aa', 'Xvoting9')]));
+    expect(digest([mn('aa', 'Xvoting1')])).not.toBe(digest([mn('aa', 'Xvoting1', 0, false)]));
+  });
   it('rejects malformed diffs', () => {
     const ok = { blockHash: '00'.repeat(32), baseBlockHash: '00'.repeat(32), merkleRootMNList: '11'.repeat(32), merkleRootQuorums: '22'.repeat(32), mnList: [], newQuorums: [] };
     expect(parseSml(encodeCbor(ok)).quorums).toEqual([]);

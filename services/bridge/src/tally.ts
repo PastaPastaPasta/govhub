@@ -10,7 +10,7 @@
 //  - candidate order: absolute yes desc, ties by proposal hash desc          governance/governance.cpp:1221-1226
 //  - budget fill: skip what does not fit, window [start-2h, end+2h] around an estimated SB time now + Δh * 2.62 min
 //                                                                            governance/signing.cpp:23, :58-104
-import { tallyVotes, voteSetHash, VOTE_SIGNAL } from '@govhub/verify';
+import { countVotes, VOTE_SIGNAL } from '@govhub/verify';
 import type { DB, GovObjectRow, VoteRow } from './archive/db.ts';
 import { nowS } from './log.ts';
 import type { LoadedMnList } from './mnlist.ts';
@@ -56,7 +56,8 @@ export function tallyProposal(db: DB, govHash: string, list: LoadedMnList, asOfH
   }
   const weights = new Map<string, number>();
   for (const e of list.list.entries) weights.set(`${e.collateralTxid}-${e.collateralN}`, e.weight);
-  const t = tallyVotes(
+  // THE counting rule lives in @govhub/verify (countVotes): clients recount with the same function.
+  const t = countVotes(
     eligible.map((v) => ({ mn: voteMn(v), outcome: v.outcome, time: v.time })),
     weights,
     { now },
@@ -64,13 +65,13 @@ export function tallyProposal(db: DB, govHash: string, list: LoadedMnList, asOfH
   const byKey = new Map<string, VoteRow>();
   for (const v of eligible) byKey.set(`${voteMn(v)}|${v.time}|${v.outcome}`, v);
   const counted: ComputedTally['counted'] = [];
-  // "counted" = the current vote of every masternode in the weight map (govhub-voteset-v1, packages/verify/src/voteset.ts)
-  for (const [mn, cur] of t.current) {
+  for (const { mn, outcome, time } of t.counted) {
     const e = list.byOutpoint.get(mn);
-    if (!e) continue;
-    const row = byKey.get(`${mn}|${cur.time}|${cur.outcome}`);
-    if (row) counted.push({ ...row, weight: e.weight, proTxHash: e.proTxHash });
+    const row = byKey.get(`${mn}|${time}|${outcome}`);
+    if (e && row) counted.push({ ...row, weight: e.weight, proTxHash: e.proTxHash });
   }
+  // the published set and the hash must describe the same masternodes
+  if (counted.length !== t.counted.length) throw new Error(`tally ${govHash}: ${t.counted.length} counted masternodes but ${counted.length} archived votes for them`);
   return {
     govHash,
     asOfHeight,
@@ -79,7 +80,7 @@ export function tallyProposal(db: DB, govHash: string, list: LoadedMnList, asOfH
     unweighted: t.unweighted,
     absoluteYes: t.absoluteYes,
     counted,
-    voteSetHash: voteSetHash(counted.map((v) => ({ mn: voteMn(v), outcome: v.outcome, time: v.time }))),
+    voteSetHash: t.voteSetHash,
     staleKey,
   };
 }

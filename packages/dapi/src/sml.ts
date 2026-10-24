@@ -23,6 +23,18 @@ export interface SmlQuorum {
 
 export interface SmlEvonode { proTxHash: string; endpoint: string }
 
+/** One registered masternode as the SML lists it (banned ones included, `isValid` false). Governance votes are checked against `votingAddress`. */
+export interface SmlMasternode {
+  /** Display-order hash of the ProRegTx. */
+  proTxHash: string;
+  /** Base58 P2PKH address of the voting key (keyIDVoting). */
+  votingAddress: string;
+  /** 0 regular, 1 evonode. */
+  nType: number;
+  /** Not PoSe-banned. */
+  isValid: boolean;
+}
+
 export interface Sml {
   /** Display-order hash of the block the list is valid at (the node's tip when the stream was opened). */
   blockHash: string;
@@ -37,7 +49,9 @@ export interface Sml {
   quorums: SmlQuorum[];
   /** Valid evonodes that advertise a `platform_https` endpoint. */
   evonodes: SmlEvonode[];
-  /** sha256 over every field govhub relies on (tip, roots, quorum keys, evonode endpoints): equal digests = identical content. */
+  /** Every masternode with a well-formed entry (proTxHash, voting address, type, validity). */
+  masternodes: SmlMasternode[];
+  /** sha256 over every field govhub relies on (tip, roots, quorum keys, evonode endpoints, masternode voting addresses/types/validity): equal digests = identical content. */
   digest: string;
 }
 
@@ -60,11 +74,15 @@ export function parseSml(bytes: Uint8Array): Sml {
 
   const mnList = arr(d, 'mnList');
   const evonodes: SmlEvonode[] = [];
+  const masternodes: SmlMasternode[] = [];
   let validMnCount = 0, evonodeCount = 0;
   for (const m of mnList) {
     if (!isObj(m)) throw new Error('sml: bad masternode entry');
     const valid = m.isValid === true;
     if (valid) validMnCount++;
+    if (typeof m.proRegTxHash === 'string' && /^[0-9a-f]{64}$/i.test(m.proRegTxHash) && typeof m.votingAddress === 'string' && typeof m.nType === 'number') {
+      masternodes.push({ proTxHash: m.proRegTxHash.toLowerCase(), votingAddress: m.votingAddress, nType: m.nType, isValid: valid });
+    }
     if (m.nType !== 1) continue;
     evonodeCount++;
     const a = isObj(m.addresses) ? m.addresses : undefined;
@@ -89,10 +107,11 @@ export function parseSml(bytes: Uint8Array): Sml {
     blockHash, height, merkleRootMNList, merkleRootQuorums, mnList.length, validMnCount,
     ...quorums.map((q) => `${q.llmqType}:${q.quorumHash}:${q.quorumIndex}:${q.quorumPublicKey}:${q.quorumVvecHash}`).sort(),
     ...evonodes.map((e) => `${e.proTxHash}@${e.endpoint}`).sort(),
+    ...masternodes.map((m) => `mn:${m.proTxHash}:${m.votingAddress}:${m.nType}:${m.isValid ? 1 : 0}`).sort(),
   ].join('\n');
   return {
     blockHash, height, baseBlockHash, merkleRootMNList, merkleRootQuorums, mnCount: mnList.length, validMnCount, evonodeCount,
-    quorums, evonodes, digest: hex(sha256d(new TextEncoder().encode(canon))),
+    quorums, evonodes, masternodes, digest: hex(sha256d(new TextEncoder().encode(canon))),
   };
 }
 

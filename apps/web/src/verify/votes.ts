@@ -6,12 +6,11 @@
 // and validity per proTxHash, but the SML has no collateral outpoint, so the outpoint -> proTxHash
 // mapping stays bridge-reported unless the collateral is inside the ProRegTx itself
 // (collateralTxid == proTxHash). `keysFrom` tells the UI how far the result can be trusted.
-import { decodeAddress, normalizeMnId, tallyVotes, verifyVoteSignature, EVONODE_WEIGHT, REGULAR_MN_WEIGHT, VOTE_SIGNAL, type Network, type TallyVote } from '@govhub/verify';
+import { countVotes, decodeAddress, normalizeMnId, verifyVoteSignature, EVONODE_WEIGHT, REGULAR_MN_WEIGHT, VOTE_SIGNAL, type Network, type TallyVote } from '@govhub/verify';
 import type { BridgeMasternode, BridgeVote } from '../data/bridge.ts';
 import type { Tally } from '../data/types.ts';
-import { voteSetHash } from './voteset.ts';
 
-/** SML entry as streamed by DAPI subscribeToMasternodeList (only what we cross-check). */
+/** A masternode as the DAPI-agreed SML lists it (@govhub/dapi `SmlMasternode`; only what we cross-check). */
 export interface SmlEntry {
   votingAddress: string;
   isValid: boolean;
@@ -69,9 +68,22 @@ export interface VoteCheckResult {
   /** Where the voting keys were confirmed: only the bridge, or also the DAPI masternode list. */
   keysFrom: 'bridge' | 'sml';
   smlChecked: number;
+  /** Counted votes whose masternode is missing from, or differs in, the DAPI list (left or re-keyed since, or a lying bridge). */
+  smlUnconfirmed: number;
   /** Counted MNs whose outpoint -> proTxHash binding is checkable without a ProRegTx fetch. */
   internalCollateral: number;
   targets: TargetResult[];
+}
+
+/** One recount: a vote set (at one height) checked and counted, with what it concluded about the tallies published for that height. */
+export interface VoteRun {
+  result: VoteCheckResult;
+  /** Height the vote set is as of, as the bridge answered. Equals the requested `?height=` when the bridge could serve that tally's set. */
+  votesAsOf: number;
+  /** Height of the masternode-list snapshot the weights and keys came from. */
+  mnlistHeight: number;
+  /** The snapshot is the list the bridge says it built the tally from (null: not stated). A difference explains a mismatch. */
+  listMatches: boolean | null;
 }
 
 const weightOf = (t: BridgeMasternode['type']) => (t === 'evo' ? EVONODE_WEIGHT : REGULAR_MN_WEIGHT);
@@ -119,9 +131,14 @@ export function verifyVotes(input: VoteCheckInput): VoteCheckResult {
     byOutpoint.set(op, { ...mn, keyId: dec && dec.type === 'p2pkh' ? dec.hash160 : null, duplicate });
   }
 
-  const good: TallyVote[] = [];
+  // The weight map is the whole MN list, PoSe-banned masternodes included (Core's CountMatchingVotes uses GetMNByCollateral, not
+  // GetValidMNByCollateral: object.cpp:888, vote.cpp:231). Ambiguous entries get no weight, so their votes are never counted.
   const weights = new Map<string, number>();
+  for (const [op, mn] of byOutpoint) if (!mn.duplicate) weights.set(op, weightOf(mn.type));
+
+  const good: TallyVote[] = [];
   let smlChecked = 0;
+  let smlUnconfirmed = 0;
   let otherSignal = 0;
   let internalCollateral = 0;
   for (const v of input.votes) {
@@ -145,26 +162,26 @@ export function verifyVotes(input: VoteCheckInput): VoteCheckResult {
       continue;
     }
     if (input.sml) {
+      // The SML is the CURRENT list, the votes are counted at the tally's (older) height: a masternode that left or changed its voting key
+      // since is indistinguishable from a bridge that lies about it. The vote is still counted with the bridge's key (the recount then
+      // matches an honest tally) but the keys are not "confirmed", so the result cannot reach "verified".
       const e = input.sml.get(mn.proTxHash.toLowerCase());
       smlChecked++;
       if (!e) {
+        smlUnconfirmed++;
         note(outpoint, 'sml-mismatch', `proTxHash ${mn.proTxHash.slice(0, 12)}… not in the DAPI masternode list`);
-        continue;
-      }
-      if (e.votingAddress !== mn.votingAddress || (e.nType === 1) !== (mn.type === 'evo')) {
+      } else if (e.votingAddress !== mn.votingAddress || (e.nType === 1) !== (mn.type === 'evo')) {
+        smlUnconfirmed++;
         note(outpoint, 'sml-mismatch', 'voting address or type differs from the DAPI masternode list');
-        continue;
       }
     }
     good.push({ mn: outpoint, outcome: v.outcome, time: v.time });
-    // Core counts every MN in the tip list, PoSe-banned ones included: CountMatchingVotes and
-    // CGovernanceVote::IsValid use GetMNByCollateral, not GetValidMNByCollateral (object.cpp:888, vote.cpp:231).
-    weights.set(outpoint, weightOf(mn.type));
     if (mn.collateralTxid.toLowerCase() === mn.proTxHash.toLowerCase()) internalCollateral++;
   }
 
-  const t = tallyVotes(good, weights, { now: input.now });
-  const hash = voteSetHash(t.current, (id) => weights.has(id));
+  // The same counting function the bridge publishes its tally with (@govhub/verify countVotes).
+  const t = countVotes(good, weights, { now: input.now });
+  const hash = t.voteSetHash;
   return {
     total: input.votes.length,
     verified: good.length,
@@ -175,8 +192,9 @@ export function verifyVotes(input: VoteCheckInput): VoteCheckResult {
     weighted: t.weighted,
     unweighted: t.unweighted,
     voteSetHash: hash,
-    keysFrom: input.sml ? 'sml' : 'bridge',
+    keysFrom: input.sml && smlUnconfirmed === 0 ? 'sml' : 'bridge',
     smlChecked,
+    smlUnconfirmed,
     internalCollateral,
     targets: input.targets.map((target) => {
       const compare = compareWith(target.tally, t.weighted, t.unweighted, hash);

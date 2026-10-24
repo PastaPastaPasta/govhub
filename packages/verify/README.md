@@ -28,7 +28,7 @@ DASH_CLI="dash-cli -datadir=... -regtest -rpcport=... -rpcuser=... -rpcpassword=
 | Votes | `voteFieldsError(v)`, `voteSignatureString(v)`, `voteSignatureHash(v)`, `voteSigningHash(v, network)`, `signVote({privKey, vote, network, compressed?})`, `recoverVoteSigner(sig, vote, network, {strict?})`, `verifyVoteSignature(sig, vote, keyId, network)` |
 | Messages | `dashMessageHash(msg)`, `signMessage(priv, msg)` (base64), `signMessageRaw`, `verifyMessage(addr, sig, msg, network)`, `recoverMessageSigner(sig, msg, network)` |
 | Tally | `tallyVotes(votes, weights, {now?}) -> {weighted, unweighted, absoluteYes, current, unknownMasternodes, rejected}`, `normalizeMnId` |
-| Vote set | `voteSetHash(entries)`, `voteSetPreimage(entries)`, `VOTE_SET_DOMAIN` (govhub-voteset-v1, section 7) |
+| Vote set | `countVotes(votes, weights, {now?}) -> tallyVotes result + {counted, voteSetHash}` (the one counting rule, used by the bridge and the web app), `voteSetHash(entries)`, `voteSetPreimage(entries)`, `VOTE_SET_DOMAIN` (govhub-voteset-v1, section 7) |
 | Addresses | `decodeAddress`, `encodeAddress`, `p2pkhAddress`, `decodeWif`, `encodeWif`; `Network = 'mainnet' \| 'testnet' \| 'regtest'` |
 
 Conventions: **hashes cross the API in two forms**. `display` hex is what RPCs/explorers print (and what goes in
@@ -133,7 +133,9 @@ hash  = SHA-256( "govhub-voteset-v1\n" || lines )      (UTF-8; 32 bytes, hex in 
 
 Signal, proposal hash and signatures are not in the line: the set is per proposal, only funding votes are tallied, and each
 signature is verified on its own. `voteSetHash(entries)` normalises ids (`normalizeMnId`), rejects a masternode listed twice,
-and is order-independent. Typical use: `voteSetHash([...t.current].filter(([mn]) => weights.has(mn)).map(([mn, v]) => ({ mn, ...v })))`.
+and is order-independent. Use `countVotes(votes, weights, {now})` rather than composing `tallyVotes` and `voteSetHash` by hand: it is the single
+definition of "counted" (current vote per masternode by Core's rules, masternodes in the weight map only, PoSe-banned ones included) that the bridge
+publishes and a client recounts.
 Vectors: `test/voteset.test.ts` (pinned with coreutils `shasum`) and the bridge's recorded mainnet fixture
 (`services/bridge/test/fixtures`).
 

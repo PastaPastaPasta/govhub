@@ -1,8 +1,8 @@
-// Turns a vote recount into what the UI may claim. "Verified" needs both a matching tally AND
+// Turns vote recounts into what the UI may claim. "Verified" needs both a matching tally AND
 // voting keys confirmed by the DAPI masternode list; a match on bridge-supplied keys only proves
 // the bridge is self-consistent.
 import type { Provenance, Tally } from '../data/types.ts';
-import type { TargetResult, VoteCheckResult } from './votes.ts';
+import type { TargetResult, VoteRun } from './votes.ts';
 
 export const PLATFORM_TARGET = 'Platform tally';
 export const BRIDGE_TARGET = 'Bridge live tally';
@@ -14,27 +14,33 @@ export interface VoteVerdict {
   matched?: TargetResult;
 }
 
-export function voteVerdict(r: VoteCheckResult, votesAsOf: number): VoteVerdict {
-  const matched = r.targets.find((t) => t.matches);
-  if (matched) return { level: r.keysFrom === 'sml' ? 'verified' : 'keys-reported', matched };
-  if (r.targets.length === 0) return { level: 'no-tally' };
-  // Votes newer than the tally snapshot are expected to differ: that is not evidence of a lie.
-  if (r.targets.every((t) => t.asOfHeight !== votesAsOf)) return { level: 'different-height' };
-  return { level: 'mismatch' };
+/** A recount of a vote set that is not the one behind the tally says nothing about that tally: votes move on between updates. */
+const comparable = (run: VoteRun, t: TargetResult): boolean => t.asOfHeight === run.votesAsOf;
+
+export function voteVerdict(runs: readonly VoteRun[]): VoteVerdict {
+  const pairs = runs.flatMap((run) => run.result.targets.map((t) => ({ run, t })));
+  if (pairs.length === 0) return { level: 'no-tally' };
+  // A tally that a recount of its own vote set contradicts is a failure, even if another tally matched.
+  if (pairs.some(({ run, t }) => comparable(run, t) && !t.matches)) return { level: 'mismatch' };
+  const hit = pairs.find(({ t }) => t.matches);
+  if (hit) return { level: hit.run.result.keysFrom === 'sml' ? 'verified' : 'keys-reported', matched: hit.t };
+  return { level: 'different-height' };
 }
 
-/** Provenance of a shown tally after a recount; unchanged unless the recount says something about it. */
-export function tallyProvenance(shown: { name: string; prov: Provenance; tally: Tally }, r: VoteCheckResult | undefined, votesAsOf: number): Provenance {
-  const target = r?.targets.find((t) => t.name === shown.name);
-  if (!r || !target) return shown.prov;
+/** Provenance of a shown tally after the recounts; unchanged unless a recount says something about it. */
+export function tallyProvenance(shown: { name: string; prov: Provenance; tally: Tally }, runs: readonly VoteRun[] | undefined): Provenance {
+  // Only a recount of THIS tally counts: a reloaded live tally (newer block) must not inherit the verdict on its predecessor.
+  const hit = (runs ?? []).flatMap((run) => run.result.targets.map((t) => ({ run, t }))).find(({ t }) => t.name === shown.name && t.asOfHeight === shown.tally.asOfHeight);
+  if (!hit) return shown.prov;
+  const { run, t: target } = hit;
+  const r = run.result;
   const src = `recount of ${r.verified} signed votes`;
+  const more = (s: string) => ({ ...shown.prov, detail: `${shown.prov.detail ? `${shown.prov.detail}; ` : ''}${s}` });
   if (target.matches) {
     return r.keysFrom === 'sml'
-      ? { kind: 'verified', source: src, detail: 'every field and the voteSetHash match; voting keys confirmed by two DAPI nodes' }
-      : { ...shown.prov, detail: `${shown.prov.detail ? `${shown.prov.detail}; ` : ''}recount matches, but the voting keys are as the bridge reports them` };
+      ? { kind: 'verified', source: src, detail: 'every field and the voteSetHash match; voting keys confirmed by the masternode list that DAPI nodes agree on' }
+      : more('recount matches, but the voting keys are as the bridge reports them');
   }
-  if (target.asOfHeight !== votesAsOf) {
-    return { ...shown.prov, detail: `${shown.prov.detail ? `${shown.prov.detail}; ` : ''}votes are as of block ${votesAsOf}, this tally as of block ${target.asOfHeight}` };
-  }
+  if (!comparable(run, target)) return more(`votes are as of block ${run.votesAsOf}, this tally as of block ${target.asOfHeight}`);
   return { kind: 'mismatch', source: src, detail: target.compare.filter((c) => !c.ok).map((c) => c.field).join(', ') };
 }

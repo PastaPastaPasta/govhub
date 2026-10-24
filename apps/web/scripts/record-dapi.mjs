@@ -2,14 +2,21 @@
 // mainnet fixture, plus getBestBlockHeight) so fixture mode and the e2e tests replay byte-exact
 // node answers through the real DapiCore decoder. Read-only. Usage: node scripts/record-dapi.mjs
 import { readFile, writeFile } from 'node:fs/promises';
-import { encode } from '../../../spikes/dapi-browser/src/pb.js';
-import { frame } from '../../../spikes/dapi-browser/src/grpcweb.js';
-import { fetchNodes, sample } from '../../../spikes/dapi-browser/src/nodes.js';
+import { fetchNodes, frame, sample } from '@govhub/dapi';
 
 const root = new URL('../../../', import.meta.url);
 const fixture = JSON.parse(await readFile(new URL('packages/verify/test/fixtures/mainnet-proposals.json', root), 'utf8'));
 const SERVICE = 'org.dash.platform.dapi.v0.Core';
 const nodes = sample(await fetchNodes(), 6);
+
+/** Protobuf for a message whose fields are all strings: tag (field << 3 | 2), length, bytes. Enough for getTransaction(txid). */
+function encode(fields) {
+  const parts = fields.map(([n, v]) => {
+    const body = Buffer.from(v, 'utf8');
+    return Buffer.concat([Buffer.from([(n << 3) | 2, body.length]), body]);
+  });
+  return new Uint8Array(Buffer.concat(parts));
+}
 
 async function call(method, fields) {
   for (const node of nodes) {

@@ -14,7 +14,7 @@ export const PROV_LABEL: Record<ProvenanceKind, string> = {
 export const PROV_HELP: Record<ProvenanceKind, string> = {
   proof: 'Read from Dash Platform. evo-sdk checked the GroveDB proof against the quorum signature.',
   reported: 'Supplied by a bridge, DAPI node or feed. Nothing has checked it yet.',
-  verified: 'Recomputed in your browser from Core data fetched over DAPI.',
+  verified: 'Recomputed in your browser from Core data fetched over DAPI: hashes and signatures checked, chain facts proven with merkle proofs and BLS-signed ChainLocks where the detail says so.',
   mismatch: 'Your browser checked this and it did not match.',
   fixture: 'Recorded mainnet data used for development. Not live.',
 };

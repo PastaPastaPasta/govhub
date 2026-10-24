@@ -4,8 +4,9 @@
 import { parseProposalData } from '@govhub/verify';
 import { DUFFS_PER_DASH } from '../lib/format.ts';
 import { GOV_PARAMS, absoluteYes, fundingThreshold, rankProposals, selectBudget } from '../lib/governance.ts';
-import type { Bridge, BridgeMnList, BridgeStatus, BridgeVotes } from './bridge.ts';
+import { BridgeError, type Bridge, type BridgeMnList, type BridgeStatus, type BridgeVotes } from './bridge.ts';
 import { fixtureMasternodes, fixtureMnCount, fixtureSignedVotes, fixtureVoteSetHash } from './fixtureVotes.ts';
+import { loadRecordedBridge, type RecordedBridge } from './recordedBridge.ts';
 import type { Cycle, Proposal, Tally } from './types.ts';
 
 interface RawFixture {
@@ -29,16 +30,18 @@ export interface FixtureSnapshot {
   proposals: Proposal[];
   tallies: Map<string, Tally>;
   cycle: Cycle;
+  /** Real signed votes and masternodes recorded from a mainnet bridge, for the proposals they cover. The rest use synthetic voters. */
+  recorded: RecordedBridge;
 }
 
 let snapshot: Promise<FixtureSnapshot> | null = null;
 
 export function loadFixtures(): Promise<FixtureSnapshot> {
-  snapshot ??= import('../../../../packages/verify/test/fixtures/mainnet-proposals.json').then((m) => buildSnapshot(m.default as unknown as RawFixture));
+  snapshot ??= Promise.all([import('../../../../packages/verify/test/fixtures/mainnet-proposals.json'), loadRecordedBridge()]).then(([m, rec]) => buildSnapshot(m.default as unknown as RawFixture, rec));
   return snapshot;
 }
 
-export function buildSnapshot(raw: RawFixture): FixtureSnapshot {
+export function buildSnapshot(raw: RawFixture, recorded: RecordedBridge): FixtureSnapshot {
   const params = GOV_PARAMS.mainnet;
   const now = raw.fetchedAt;
   const height = raw.blockHeight;
@@ -76,17 +79,19 @@ export function buildSnapshot(raw: RawFixture): FixtureSnapshot {
   const tallies = new Map<string, Tally>();
   for (const p of proposals) {
     const r = byHash.get(p.govHash)!;
-    // Synthetic voters are all regular MNs (weight 1), so MN counts equal weighted counts.
+    // Where real votes were recorded, the MN counts and voteSetHash are theirs (evonodes weigh 4, so counts differ from weighted).
+    // Elsewhere the voters are synthetic regular MNs (weight 1), so MN counts equal weighted counts.
+    const rec = recorded.proposals.get(p.govHash);
     const t: Tally = {
       govHash: p.govHash,
-      asOfHeight: height,
+      asOfHeight: rec ? recorded.height : height,
       yesWeighted: r.yes,
       noWeighted: r.no,
       abstainWeighted: r.abstain,
-      yesCount: r.yes,
-      noCount: r.no,
-      abstainCount: r.abstain,
-      voteSetHash: fixtureVoteSetHash({ yes: r.yes, no: r.no, abstain: r.abstain }, p.time),
+      yesCount: rec?.tally.yesCount ?? r.yes,
+      noCount: rec?.tally.noCount ?? r.no,
+      abstainCount: rec?.tally.abstainCount ?? r.abstain,
+      voteSetHash: rec?.tally.voteSetHash ?? fixtureVoteSetHash({ yes: r.yes, no: r.no, abstain: r.abstain }, p.time),
       rank: rankOf.get(p.govHash)!,
       inNextBudget: sel.funded.has(p.govHash),
       margin: 0,
@@ -104,7 +109,7 @@ export function buildSnapshot(raw: RawFixture): FixtureSnapshot {
     validWeighted: VALID_WEIGHTED,
     paid: 0,
   };
-  return { now, height, proposals, tallies, cycle };
+  return { now, height, proposals, tallies, cycle, recorded };
 }
 
 /** A bridge that answers from the snapshot, including synthetic signed votes and MN list. */
@@ -122,12 +127,19 @@ export class FixtureBridge implements Bridge {
   async proposal(govHash: string): Promise<Proposal | null> {
     return (await this.snap).proposals.find((p) => p.govHash === govHash) ?? null;
   }
-  async votes(govHash: string): Promise<BridgeVotes> {
+  async votes(govHash: string, opts: { height?: number } = {}): Promise<BridgeVotes> {
     const s = await this.snap;
     const p = s.proposals.find((x) => x.govHash === govHash);
     const t = s.tallies.get(govHash);
-    if (!p || !t) return { govHash, asOfHeight: s.height, votes: [] };
-    return { govHash, asOfHeight: s.height, votes: fixtureSignedVotes(govHash, { yes: t.yesCount, no: t.noCount, abstain: t.abstainCount }, p.time) };
+    const none = { govHash, asOfHeight: s.height, tallyHeight: s.height, mnListHash: null, voteSetHash: null, votes: [] };
+    if (!p || !t) return none;
+    // Like the real API: the set behind the tally in force at `height`; nothing recorded below the tally's own height.
+    if (opts.height !== undefined && opts.height < t.asOfHeight) throw new BridgeError(`the bridge has no vote set at or below block ${opts.height}`, 404);
+    const asOfHeight = opts.height ?? t.asOfHeight;
+    const rec = s.recorded.proposals.get(govHash);
+    if (rec) return { govHash, asOfHeight, tallyHeight: t.asOfHeight, mnListHash: s.recorded.listHash, voteSetHash: t.voteSetHash, votes: rec.votes, origin: 'recorded' };
+    const counts = { yes: t.yesCount, no: t.noCount, abstain: t.abstainCount };
+    return { govHash, asOfHeight, tallyHeight: t.asOfHeight, mnListHash: null, voteSetHash: t.voteSetHash, votes: fixtureSignedVotes(govHash, counts, p.time), origin: 'synthetic' };
   }
   async tallies(): Promise<Tally[]> {
     return [...(await this.snap).tallies.values()];
@@ -135,9 +147,11 @@ export class FixtureBridge implements Bridge {
   async cycle(): Promise<Cycle | null> {
     return (await this.snap).cycle;
   }
-  async mnlist(): Promise<BridgeMnList> {
+  async mnlist(height?: number): Promise<BridgeMnList> {
     const s = await this.snap;
-    const max = Math.max(0, ...[...s.tallies.values()].map((t) => fixtureMnCount({ yes: t.yesCount, no: t.noCount, abstain: t.abstainCount })));
-    return { height: s.height, masternodes: fixtureMasternodes(max) };
+    // The recorded snapshot serves the recorded proposals' height; every other height gets the synthetic voters' list.
+    if (height !== undefined && height >= s.recorded.height) return { height: s.recorded.height, listHash: s.recorded.listHash, masternodes: s.recorded.masternodes };
+    const max = Math.max(0, ...[...s.tallies.values()].filter((t) => !s.recorded.proposals.has(t.govHash)).map((t) => fixtureMnCount({ yes: t.yesCount, no: t.noCount, abstain: t.abstainCount })));
+    return { height: s.height, listHash: 'fixture-synthetic', masternodes: fixtureMasternodes(max) };
   }
 }

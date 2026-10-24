@@ -2,7 +2,7 @@
 import type { DapiConfig } from '../data/dapi.ts';
 import type { Proposal } from '../data/types.ts';
 import type { CollateralVerdict } from './collateral.ts';
-import type { VoteCheckResult, VoteTarget } from './votes.ts';
+import type { VoteRun, VoteTarget } from './votes.ts';
 
 export type BridgeDescriptor = { kind: 'http'; name: string; base: string } | { kind: 'fixture' };
 export type DapiDescriptor = { kind: 'live'; cfg: DapiConfig } | { kind: 'recorded' };
@@ -24,7 +24,16 @@ export type WorkerRequest =
 export type WorkerResponse =
   | { id: number; kind: 'progress'; message: string }
   | { id: number; kind: 'collateral'; verdict: CollateralVerdict }
-  | { id: number; kind: 'votes'; result: VoteCheckResult; bridge: string; mnlistHeight: number; votesAsOf: number; sml: { nodes: string[]; validWeighted: number } | null }
+  | {
+      id: number;
+      kind: 'votes';
+      bridge: string;
+      /** One recount per distinct tally height (the Platform tally's set is fetched with ?height=, the live one without). */
+      runs: VoteRun[];
+      /** Fixture bridges say whether their votes are recorded mainnet data or synthetic. */
+      origin?: 'recorded' | 'synthetic';
+      sml: { nodes: string[]; height: number | null; validWeighted: number } | null;
+    }
   | { id: number; kind: 'error'; message: string };
 
 export type VotesDone = Extract<WorkerResponse, { kind: 'votes' }>;

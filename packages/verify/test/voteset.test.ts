@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { tallyVotes, voteSetHash, voteSetPreimage, VOTE_SET_DOMAIN } from '../src/index.ts';
+import { countVotes, tallyVotes, voteSetHash, voteSetPreimage, VOTE_SET_DOMAIN } from '../src/index.ts';
 
 const A = 'ab'.repeat(32);
 const Z = '00'.repeat(32);
@@ -42,5 +42,39 @@ describe('voteSetHash (govhub-voteset-v1)', () => {
     );
     const counted = [...t.current].filter(([mn]) => weights.has(mn)).map(([mn, v]) => ({ mn, ...v }));
     expect(voteSetPreimage(counted)).toBe(`govhub-voteset-v1\n${Z}-2|3|5\n${A}-1|2|20\n`);
+  });
+});
+
+describe('countVotes: the one counting rule (tally + voteSetHash over the counted masternodes)', () => {
+  const weights = new Map([[`${A}-1`, 1], [`${Z}-2`, 4], [`${'cd'.repeat(32)}-0`, 1]]);
+  const votes = [
+    { mn: `${A}-1`, outcome: 'yes' as const, time: 10 },
+    { mn: `${A}-1`, outcome: 'no' as const, time: 20 }, // newer wins
+    { mn: `${Z}-2`, outcome: 'abstain' as const, time: 5 }, // evonode, weight 4
+    { mn: `${'ef'.repeat(32)}-0`, outcome: 'yes' as const, time: 5 }, // not in the weight map: neither counted nor hashed
+  ];
+
+  it('equals tallyVotes plus the hand-built hash of the counted set', () => {
+    const c = countVotes(votes, weights);
+    expect(c.weighted).toEqual({ yes: 0, no: 1, abstain: 4 });
+    expect(c.unknownMasternodes).toEqual([`${'ef'.repeat(32)}-0`]);
+    expect(c.counted).toEqual([{ mn: `${A}-1`, outcome: 2, time: 20n }, { mn: `${Z}-2`, outcome: 3, time: 5n }]);
+    const t = tallyVotes(votes, weights);
+    expect(c.voteSetHash).toBe(voteSetHash([...t.current].filter(([mn]) => weights.has(mn)).map(([mn, v]) => ({ mn, ...v }))));
+    expect(c.voteSetHash).toBe(voteSetHash([{ mn: `${A}-1`, outcome: 2, time: 20 }, { mn: `${Z}-2`, outcome: 3, time: 5 }]));
+  });
+
+  it('keeps a voter whose weight is 0 in the set, normalises ids, and is independent of vote order', () => {
+    const w = new Map([[`${A.toUpperCase()}-01`, 0]]);
+    const c = countVotes([{ mn: `${A}-1`, outcome: 'yes', time: 1 }], w);
+    expect(c.counted).toEqual([{ mn: `${A}-1`, outcome: 1, time: 1n }]);
+    expect(countVotes([...votes].reverse(), weights).voteSetHash).toBe(countVotes(votes, weights).voteSetHash);
+  });
+
+  it('applies the future-time rule before hashing', () => {
+    const c = countVotes([{ mn: `${A}-1`, outcome: 'yes', time: 5000 }], weights, { now: 1000 });
+    expect(c.rejected).toHaveLength(1);
+    expect(c.counted).toEqual([]);
+    expect(c.voteSetHash).toBe(voteSetHash([]));
   });
 });

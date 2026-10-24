@@ -1,34 +1,50 @@
 // "Content matches on-chain collateral" (PLAN §2): recompute the gov hash from the published
 // fields, check the collateral transaction fetched over DAPI, and check that the denormalised
 // fields shown in the UI are the ones committed in dataHex.
+import type { VerifiedTransaction } from '@govhub/dapi';
 import { checkCollateralTx, GOVERNANCE_FEE_CONFIRMATIONS, governanceObjectHash, parseProposalData } from '@govhub/verify';
 import { DUFFS_PER_DASH } from '../lib/format.ts';
 import type { Proposal } from '../data/types.ts';
 
-export interface TxLookup {
-  raw: Uint8Array;
-  height: number;
-  confirmations: number;
-  isChainLocked: boolean;
-  isInstantLocked: boolean;
-  /** DAPI node that answered. */
-  node: string;
-  /** A second node's answer for the same txid, when one was reachable. */
+/**
+ * The collateral transaction as @govhub/dapi returns it: `chainLocked`, `proof.merkle` and `proof.chainLock` say what was proven;
+ * everything else (confirmations, the IS-lock flag, and the ChainLock flag when `chainLocked` is 'claimed') is a node's word.
+ */
+export type TxLookup = Pick<VerifiedTransaction, 'raw' | 'height' | 'confirmations' | 'chainLocked' | 'instantLocked' | 'proof' | 'node'> & {
+  /** A second node's answer for the same txid, asked only when the block inclusion is not proven. */
   second?: { node: string; height: number; sameBytes: boolean } | null;
-}
+};
 
 export type StepStatus = 'ok' | 'fail' | 'warn' | 'skip';
+/** Whether a passing step was proven in this browser or rests on what a node says. */
+export type StepBasis = 'verified' | 'reported';
 export interface Step {
-  id: 'hash' | 'fields' | 'tx' | 'crosscheck' | 'collateral' | 'confirmations' | 'chainlock' | 'height';
+  id: 'hash' | 'fields' | 'tx' | 'block' | 'crosscheck' | 'collateral' | 'confirmations' | 'chainlock' | 'height';
   status: StepStatus;
   label: string;
   detail: string;
+  basis?: StepBasis;
+}
+
+/** What the chain lookup established, for the provenance of the collateral line. */
+export interface ChainFacts {
+  height: number;
+  /** The tx was proven into a block by its merkle root. */
+  merkle: boolean;
+  chainLocked: TxLookup['chainLocked'];
+  /** Confirmations proven by the ChainLock (a lower bound), when that proves the 6 Core needs; else null. */
+  provenConfirmations: number | null;
+  /** Blocks from the collateral's block up to the verified ChainLock, whatever their number. */
+  lockDepth: number | null;
+  /** The node's claim. */
+  confirmations: number;
 }
 
 export interface CollateralVerdict {
   ok: boolean;
   steps: Step[];
   govHashComputed?: string;
+  chain?: ChainFacts;
 }
 
 type ProposalCore = Pick<Proposal, 'govHash' | 'parentHash' | 'revision' | 'time' | 'dataHex' | 'collateralTxid' | 'collateralHeight' | 'name' | 'url' | 'paymentAddress' | 'paymentAmount' | 'startEpoch' | 'endEpoch'>;
@@ -73,15 +89,33 @@ export function verifyCollateral(p: ProposalCore, lookup: TxLookup | { error: st
     steps.push({ id: 'tx', status: 'fail', label: 'Collateral transaction', detail: `not fetched: ${lookup.error}` });
     return { ok: false, steps, ...(govHashComputed ? { govHashComputed } : {}) };
   }
+  const { proof } = lookup;
+  const num = (n: number) => n.toLocaleString('en-US');
   steps.push({ id: 'tx', status: 'ok', label: 'Collateral transaction', detail: `${lookup.raw.length} bytes from DAPI node ${lookup.node}` });
-  const sec = lookup.second;
-  steps.push(
-    !sec
-      ? { id: 'crosscheck', status: 'warn', label: 'Second node', detail: 'no second DAPI node answered; block and confirmations rest on one node' }
-      : sec.sameBytes && sec.height === lookup.height
-        ? { id: 'crosscheck', status: 'ok', label: 'Second node', detail: `${sec.node} returns the same transaction in the same block` }
-        : { id: 'crosscheck', status: 'fail', label: 'Second node', detail: `${sec.node} disagrees: ${sec.sameBytes ? `block ${sec.height} vs ${lookup.height}` : 'different transaction bytes'}` },
-  );
+  // A merkle proof only shows the transaction is in the block a node named; nothing checks proof-of-work, so a node could invent a
+  // block. Only a BLS-valid ChainLock covering that block ties it to the chain ("anchored"); until then the block and the second
+  // node's opinion are what we have.
+  const anchored = lookup.chainLocked === 'verified' && proof.chainLock !== null;
+  if (proof.merkle) {
+    const checks = `the whole block was fetched, its merkle root recomputed from every txid and the coinbase height matches${proof.blockHash === 'verified' ? '; the header hashes (X11) to the block hash' : ''}`;
+    steps.push({
+      id: 'block',
+      status: 'ok',
+      basis: anchored ? 'verified' : 'reported',
+      label: 'Block inclusion',
+      detail: anchored ? `in block ${num(lookup.height)}: ${checks}` : `in block ${num(lookup.height)} as a node names it: ${checks}. Without a verified ChainLock nothing ties that block to the chain`,
+    });
+  }
+  if (!anchored) {
+    const sec = lookup.second;
+    steps.push(
+      !sec
+        ? { id: 'crosscheck', status: 'warn', basis: 'reported', label: 'Second node', detail: 'no second DAPI node answered; the block and confirmations rest on one node' }
+        : sec.sameBytes && sec.height === lookup.height
+          ? { id: 'crosscheck', status: 'ok', basis: 'reported', label: 'Second node', detail: `${sec.node} returns the same transaction in the same block` }
+          : { id: 'crosscheck', status: 'fail', label: 'Second node', detail: `${sec.node} disagrees: ${sec.sameBytes ? `block ${sec.height} vs ${lookup.height}` : 'different transaction bytes'}` },
+    );
+  }
 
   if (govHashComputed) {
     const raw = governanceObjectHash({ parentHash: p.parentHash, revision: p.revision, time: p.time, dataHex: p.dataHex }).raw;
@@ -95,19 +129,43 @@ export function verifyCollateral(p: ProposalCore, lookup: TxLookup | { error: st
     steps.push({ id: 'collateral', status: 'skip', label: 'OP_RETURN and outputs', detail: 'skipped: no hash to look for' });
   }
 
-  const confOk = lookup.confirmations >= GOVERNANCE_FEE_CONFIRMATIONS;
-  steps.push({ id: 'confirmations', status: confOk ? 'ok' : 'fail', label: 'Confirmations', detail: `${lookup.confirmations.toLocaleString('en-US')} (Core needs ${GOVERNANCE_FEE_CONFIRMATIONS}), node-reported` });
-  steps.push({
-    id: 'chainlock',
-    status: lookup.isChainLocked ? 'ok' : 'warn',
-    label: 'ChainLock',
-    detail: lookup.isChainLocked ? 'block is ChainLocked (node-reported; BLS check not run here)' : 'node reports no ChainLock yet',
-  });
+  // A ChainLock proof gives a floor for the confirmations; without it the number is the node's claim.
+  const cl = proof.chainLock;
+  const proven = anchored && cl && cl.verifiedConfirmations >= GOVERNANCE_FEE_CONFIRMATIONS ? cl.verifiedConfirmations : null;
+  if (proven !== null) {
+    steps.push({ id: 'confirmations', status: 'ok', basis: 'verified', label: 'Confirmations', detail: `at least ${num(proven)} (Core needs ${GOVERNANCE_FEE_CONFIRMATIONS}), proven by the ChainLock; the node claims ${num(lookup.confirmations)}` });
+  } else {
+    const confOk = lookup.confirmations >= GOVERNANCE_FEE_CONFIRMATIONS;
+    steps.push({ id: 'confirmations', status: confOk ? 'ok' : 'fail', basis: 'reported', label: 'Confirmations', detail: `${num(lookup.confirmations)} (Core needs ${GOVERNANCE_FEE_CONFIRMATIONS}), node-reported` });
+  }
+  const why = proof.notes.length ? ` (${proof.notes.join('; ')})` : '';
+  // "proof failed" (as opposed to "block too old" or "no verifier") means the machinery ran and something did not check out.
+  const proofFailed = proof.notes.some((n) => /chainlock proof failed/i.test(n));
+  steps.push(
+    anchored && cl
+      ? {
+          id: 'chainlock',
+          status: 'ok',
+          basis: 'verified',
+          label: 'ChainLock',
+          detail: `BLS-valid ChainLock on block ${num(cl.height)} covers the block through a header chain of ${num(cl.verifiedConfirmations)} X11-checked headers; ${cl.exact ? 'signed by the quorum Core selects' : 'signed by a quorum from the masternode list (Core\'s exact choice could not be reproduced)'}`,
+        }
+      : lookup.chainLocked === 'claimed'
+        ? { id: 'chainlock', status: proofFailed ? 'warn' : 'ok', basis: 'reported', label: 'ChainLock', detail: `block is ChainLocked (node-reported; ${proofFailed ? 'the signature proof FAILED' : 'the signature was not verified'}${why})` }
+        : { id: 'chainlock', status: 'warn', basis: 'reported', label: 'ChainLock', detail: `node reports no ChainLock yet${why}` },
+  );
   if (p.collateralHeight) {
     const same = lookup.height === p.collateralHeight;
-    steps.push({ id: 'height', status: same ? 'ok' : 'warn', label: 'Collateral height', detail: same ? `block ${lookup.height.toLocaleString('en-US')}` : `chain says ${lookup.height.toLocaleString('en-US')}, published ${p.collateralHeight.toLocaleString('en-US')}` });
+    steps.push({
+      id: 'height',
+      status: same ? 'ok' : 'warn',
+      basis: anchored ? 'verified' : 'reported',
+      label: 'Collateral height',
+      detail: same ? `block ${num(lookup.height)}${anchored ? ' (committed in the block\'s coinbase, which a ChainLock covers)' : ''}` : `chain says ${num(lookup.height)}, published ${num(p.collateralHeight)}`,
+    });
   }
   const critical: Step['id'][] = ['hash', 'fields', 'tx', 'collateral', 'confirmations'];
   const ok = steps.filter((s) => critical.includes(s.id)).every((s) => s.status === 'ok') && !steps.some((s) => s.status === 'fail');
-  return { ok, steps, ...(govHashComputed ? { govHashComputed } : {}) };
+  const chain: ChainFacts = { height: lookup.height, merkle: proof.merkle, chainLocked: lookup.chainLocked, provenConfirmations: proven, lockDepth: anchored && cl ? cl.verifiedConfirmations : null, confirmations: lookup.confirmations };
+  return { ok, steps, chain, ...(govHashComputed ? { govHashComputed } : {}) };
 }

@@ -14,7 +14,7 @@ import { PassingBar } from '../ui/PassingBar.tsx';
 import { paymentText } from '../ui/ProposalCard.tsx';
 import { ProvMark } from '../ui/Provenance.tsx';
 import { VerificationPanel } from '../ui/VerificationPanel.tsx';
-import type { CollateralVerdict } from '../verify/collateral.ts';
+import type { ChainFacts, CollateralVerdict } from '../verify/collateral.ts';
 import type { VotesDone } from '../verify/protocol.ts';
 
 export function ProposalByHash() {
@@ -92,6 +92,23 @@ function contentProvenance(p: Proposal, sourced: Provenance, verdict: Collateral
   return { kind: 'mismatch', source, detail: verdict.steps.filter((s) => s.status === 'fail').map((s) => s.label).join(', ') };
 }
 
+/** What is known about the collateral's place in the chain, and whether this browser proved it or a node said so. */
+function chainStatus(c: ChainFacts): { text: string; prov: Provenance } {
+  const source = 'collateral check in this browser';
+  if (c.chainLocked === 'verified' && c.lockDepth !== null) {
+    return {
+      text: `ChainLocked, BLS-verified (${formatInt(c.lockDepth)} blocks of verified headers up to the lock); a node claims ${formatInt(c.confirmations)} confirmations`,
+      prov: { kind: 'verified', source, detail: 'block proven by its merkle root; a BLS-valid ChainLock covers it through an X11-checked header chain' },
+    };
+  }
+  const proven = c.merkle ? 'the block a node names is internally consistent (merkle root, coinbase height) but is not tied to the chain' : 'block inclusion not proven';
+  const conf = formatInt(c.confirmations);
+  return {
+    text: c.chainLocked === 'claimed' ? `ChainLocked as a node reports; ${conf} confirmations (node-reported)` : `Not ChainLocked yet; ${conf} confirmations (node-reported)`,
+    prov: { kind: 'reported', source, detail: `${proven}; the ChainLock was not verified here` },
+  };
+}
+
 function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
   const { source, gov, params } = useApp();
   const p = sp.value;
@@ -113,7 +130,7 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
   const contentProv = contentProvenance(p, sp.prov, collateral.verdict);
   // The shown tally is one of the two published ones; a recount of the votes can upgrade or downgrade its provenance.
   const shownName = row.tally === row.bridgeTally ? BRIDGE_TARGET : PLATFORM_TARGET;
-  const tallyProv = row.tally ? tallyProvenance({ name: shownName, prov: row.tally.prov, tally: row.tally.value }, votes?.result, votes?.votesAsOf ?? 0) : null;
+  const tallyProv = row.tally ? tallyProvenance({ name: shownName, prov: row.tally.prov, tally: row.tally.value }, votes?.runs) : null;
   const targets = useMemo<VoteTarget[]>(
     () => [
       ...(row.platformTally ? [{ name: PLATFORM_TARGET, tally: row.platformTally.value }] : []),
@@ -223,6 +240,11 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
             <Item label="Collateral" prov={contentProv}>
               <span className="mono-ish break">{p.collateralTxid}</span> <span className="muted">at block {formatInt(p.collateralHeight)}</span>
             </Item>
+            {collateral.verdict?.chain && (
+              <Item label="Collateral status" prov={chainStatus(collateral.verdict.chain).prov}>
+                {chainStatus(collateral.verdict.chain).text}
+              </Item>
+            )}
             <Item label="Submitted" prov={contentProv}>
               {formatDateTime(p.time)}
             </Item>

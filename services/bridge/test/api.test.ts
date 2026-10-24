@@ -1,7 +1,7 @@
 // HTTP API on recorded mainnet data, including a full client-side recount of a proposal from the API alone.
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { recoverVoteSigner, bytesToHex, tallyVotes, voteSetHash } from '@govhub/verify';
+import { recoverVoteSigner, bytesToHex, countVotes } from '@govhub/verify';
 import { createApi } from '../src/api/server.ts';
 import { paymentCounts } from '../src/api/dashcentral.ts';
 import { votesFixture } from './helpers.ts';
@@ -63,11 +63,10 @@ describe('votes: a client recount from the API alone matches the tally and its v
       return signer && bytesToHex(signer.keyId) === byOutpoint.get(`${v.collateralTxid}-${v.collateralIndex}`)?.keyIdVoting;
     });
     expect(verified.length).toBe(votes.count);
-    const t = tallyVotes(verified.map((v: any) => ({ mn: `${v.collateralTxid}-${v.collateralIndex}`, outcome: v.outcome, time: v.time })), weights);
+    const t = countVotes(verified.map((v: any) => ({ mn: `${v.collateralTxid}-${v.collateralIndex}`, outcome: v.outcome, time: v.time })), weights);
     expect(t.weighted).toEqual({ yes: big.tally.core.yes, no: big.tally.core.no, abstain: big.tally.core.abstain });
-    const vsh = voteSetHash([...t.current].filter(([k]) => weights.has(k)).map(([k, v]) => ({ mn: k, ...v })));
-    expect(vsh).toBe(votes.voteSetHash);
-    expect(vsh).toBe(big.tally.voteSetHash);
+    expect(t.voteSetHash).toBe(votes.voteSetHash);
+    expect(t.voteSetHash).toBe(big.tally.voteSetHash);
   });
 
   it('?height= serves the set behind the tally in force at that height; ?all=1 flags counted votes', async () => {

@@ -5,7 +5,7 @@ import type { DataMode } from '../config/mode.ts';
 import { shortHash, formatInt } from '../lib/format.ts';
 import { HttpBridge, type Bridge } from './bridge.ts';
 import { cacheGet, cachePut } from './cache.ts';
-import { dapiConfig, fetchBestHeight, resolveNodes } from './dapi.ts';
+import { createWebDapi, dapiConfig } from './dapi.ts';
 import { loadFixtures } from './fixtures.ts';
 import { docToCycle, docToProposal, docToTally, queryDocs } from './platform.ts';
 import { activeProposals, latestCycles, pastProposals, proposalByHash, proposalsByName, talliesFor, PAGE } from './queries.ts';
@@ -78,7 +78,8 @@ export function fixtureSource(registry: Registry): DataSource {
       const out = new Map<string, Sourced<Tally>>();
       for (const h of hashes) {
         const t = s.tallies.get(h);
-        if (t) out.set(h, wrap(t, 'vote counts from gobject list; voters synthetic'));
+        if (!t) continue;
+        out.set(h, wrap(t, s.recorded.proposals.has(h) ? `tally recorded from a mainnet bridge (block ${formatInt(t.asOfHeight)}); signed votes recorded` : 'vote counts from gobject list; voters synthetic'));
       }
       return out;
     },
@@ -142,15 +143,8 @@ export function liveSource(registry: Registry): DataSource {
   }
 
   const reported = (b: Bridge, detail?: string): Provenance => ({ kind: 'reported', source: b.name, ...(detail ? { detail } : {}) });
-  let dapiNodes: Promise<string[]> | null = null;
-  /** DAPI nodes, resolved once; a failed resolution is not remembered. */
-  function nodes(): Promise<string[]> {
-    dapiNodes ??= resolveNodes(dapiConfig(registry), 6).catch((e: unknown) => {
-      dapiNodes = null;
-      throw e;
-    });
-    return dapiNodes;
-  }
+  // The page only asks DAPI for the best height. Verification (X11, BLS) runs in the worker's own client.
+  let dapi: ReturnType<typeof createWebDapi> | null = null;
 
   return {
     mode: 'live',
@@ -246,8 +240,9 @@ export function liveSource(registry: Registry): DataSource {
 
     async height() {
       try {
-        const h = await fetchBestHeight(await nodes());
-        return { value: h.height, prov: { kind: 'reported', source: `DAPI ${registry.coreNetwork}`, detail: `best height from ${h.node}, cross-checked with a second node when reachable` } };
+        dapi ??= createWebDapi(dapiConfig(registry));
+        const h = await dapi.getBestBlockHeight();
+        return { value: h.height, prov: { kind: 'reported', source: `DAPI ${registry.coreNetwork}`, detail: `best height from ${h.node}, a node that reports itself synced` } };
       } catch {
         const b = await firstBridge((x) => x.status());
         return b ? { value: b.value.height, prov: reported(b.bridge) } : null;

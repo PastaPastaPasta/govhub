@@ -9,18 +9,22 @@ import { runVerification } from '../verify/client.ts';
 import type { Step } from '../verify/collateral.ts';
 import type { VotesDone } from '../verify/protocol.ts';
 import { voteVerdict, type VoteLevel } from '../verify/verdict.ts';
-import type { VoteTarget } from '../verify/votes.ts';
+import type { VoteRun, VoteTarget } from '../verify/votes.ts';
 import type { CollateralCheck } from './hooks.ts';
 import { ProvGlyph } from './Provenance.tsx';
 
-const STEP_GLYPH: Record<Step['status'], 'verified' | 'mismatch' | 'reported' | 'fixture'> = { ok: 'verified', fail: 'mismatch', warn: 'reported', skip: 'fixture' };
+/** A step that passed because a node said so is drawn as "reported", not "verified". */
+function stepGlyph(s: Step): 'verified' | 'mismatch' | 'reported' | 'fixture' {
+  if (s.status === 'ok') return s.basis === 'reported' ? 'reported' : 'verified';
+  return { fail: 'mismatch', warn: 'reported', skip: 'fixture' }[s.status] as 'mismatch' | 'reported' | 'fixture';
+}
 
 function Steps({ steps }: { steps: Step[] }) {
   return (
     <ol className="steps">
       {steps.map((s) => (
-        <li key={s.id} className={`step step-${s.status}`} data-step={s.id} data-status={s.status}>
-          <ProvGlyph kind={STEP_GLYPH[s.status]} />
+        <li key={s.id} className={`step step-${s.status}`} data-step={s.id} data-status={s.status} data-basis={s.basis ?? 'verified'}>
+          <ProvGlyph kind={stepGlyph(s)} />
           <span className="step-label">{s.label}</span>
           <span className="step-detail">{s.detail}</span>
         </li>
@@ -37,15 +41,17 @@ const VERDICT_STYLE: Record<VoteLevel, { className: string; glyph: 'verified' | 
   'no-tally': { className: 'verdict-pending', glyph: 'reported' },
 };
 
-function verdictText(level: VoteLevel, verified: number, total: number, matched: string | undefined, fixtures: boolean): string {
+function verdictText(level: VoteLevel, verified: number, total: number, matched: string | undefined, origin: VotesDone['origin'], fixtures: boolean, smlUnconfirmed: number): string {
   const sigs = `${formatInt(verified)} of ${formatInt(total)} signatures check out`;
   switch (level) {
     case 'verified':
       return `Tally verified: ${sigs} and the recount matches the ${matched}`;
     case 'keys-reported':
       return fixtures
-        ? `Recount matches the ${matched}: ${sigs}. Voting keys come from the fixture bridge (synthetic voters)`
-        : `Recount matches the ${matched}: ${sigs}, but the voting keys are only as the bridge reports them. Confirm them with the DAPI masternode list for a verified result`;
+        ? `Recount matches the ${matched}: ${sigs}. Voting keys come from the fixture bridge (${origin === 'recorded' ? 'recorded mainnet votes and masternodes' : 'synthetic voters'})`
+        : smlUnconfirmed > 0
+          ? `Recount matches the ${matched}: ${sigs}, but ${formatInt(smlUnconfirmed)} voting keys are not confirmed by the current DAPI masternode list (a masternode may have left or changed its key since the tally, or the bridge reports it wrongly)`
+          : `Recount matches the ${matched}: ${sigs}, but the voting keys are only as the bridge reports them. Confirm them with the DAPI masternode list for a verified result`;
     case 'different-height':
       return `Recount differs from the published tallies, which are older than the votes (${sigs}). Expected between tally updates`;
     case 'mismatch':
@@ -55,24 +61,19 @@ function verdictText(level: VoteLevel, verified: number, total: number, matched:
   }
 }
 
-/** The recount, what it concluded about each published tally, and what it could not check. */
-function VotesResult({ done, fixtures }: { done: VotesDone; fixtures: boolean }) {
-  const r = done.result;
-  const vv = voteVerdict(r, done.votesAsOf);
-  const style = VERDICT_STYLE[vv.level];
+/** One recount: what it read, what it dropped, and the field-by-field comparison with the tallies of its height. */
+function RunResult({ run, bridge, sml }: { run: VoteRun; bridge: string; sml: VotesDone['sml'] }) {
+  const r = run.result;
   const problems = Object.entries(r.problems).filter(([, n]) => n > 0);
   return (
-    <div className="votes-result" data-votes={vv.level}>
-      <p className={`verdict ${style.className}`}>
-        <ProvGlyph kind={style.glyph} />
-        {verdictText(vv.level, r.verified, r.total, vv.matched?.name, fixtures)}
-      </p>
+    <div className="vote-run" data-run-height={run.votesAsOf}>
       <p className="muted small">
-        {formatInt(r.total)} votes from {done.bridge} (as of block {formatInt(done.votesAsOf)}), masternode list at block {formatInt(done.mnlistHeight)}
-        {done.sml && `, voting keys confirmed against the DAPI masternode list from ${done.sml.nodes.join(' and ')} (${formatInt(r.smlChecked)} checked; ${formatInt(done.sml.validWeighted)} weighted valid MNs)`}
+        {formatInt(r.total)} votes from {bridge} (as of block {formatInt(run.votesAsOf)}), masternode list at block {formatInt(run.mnlistHeight)}
+        {sml && `, voting keys confirmed against the masternode list that DAPI nodes ${sml.nodes.join(' and ')} agree on (${formatInt(r.smlChecked)} checked; ${formatInt(sml.validWeighted)} weighted valid MNs)`}
         {r.rejectedTime > 0 && `, ${r.rejectedTime} dropped for a time Core would reject`}
         {r.otherSignal > 0 && `, ${r.otherSignal} votes on other signals skipped`}. Superseded votes are counted once, latest wins.
         {r.keysFrom === 'sml' && r.internalCollateral < r.verified && ` Which collateral belongs to which masternode is as the bridge reports it for ${formatInt(r.verified - r.internalCollateral)} votes (ProRegTx check not done yet).`}
+        {run.listMatches === false && ' The masternode list served for this height is not the one the bridge built its tally from; a mismatch may come from that.'}
       </p>
       {problems.length > 0 && (
         <ul className="problems">
@@ -131,6 +132,28 @@ function VotesResult({ done, fixtures }: { done: VotesDone; fixtures: boolean })
           </ul>
         </details>
       )}
+    </div>
+  );
+}
+
+/** The recounts, what they concluded about each published tally, and what they could not check. */
+function VotesResult({ done, fixtures }: { done: VotesDone; fixtures: boolean }) {
+  const vv = voteVerdict(done.runs);
+  const style = VERDICT_STYLE[vv.level];
+  // The run that decided the headline: the one holding the matching tally, else the first.
+  const lead =
+    done.runs.find((run) => run.result.targets.some((t) => t === vv.matched)) ??
+    done.runs.find((run) => run.result.targets.some((t) => !t.matches && t.asOfHeight === run.votesAsOf)) ??
+    done.runs[0]!;
+  return (
+    <div className="votes-result" data-votes={vv.level}>
+      <p className={`verdict ${style.className}`}>
+        <ProvGlyph kind={style.glyph} />
+        {verdictText(vv.level, lead.result.verified, lead.result.total, vv.matched?.name, done.origin, fixtures, lead.result.smlUnconfirmed)}
+      </p>
+      {done.runs.map((run, i) => (
+        <RunResult key={i} run={run} bridge={done.bridge} sml={done.sml} />
+      ))}
     </div>
   );
 }
@@ -210,7 +233,7 @@ export function VerificationPanel({
         ) : (
           <>
             <p className="muted small">
-              Downloads every signed vote from {bridge.kind === 'fixture' ? 'the fixture bridge' : bridge.name}, checks each signature against the masternode voting key, recounts the weighted tally and compares it with the Platform tally document.
+              Downloads every signed vote from {bridge.kind === 'fixture' ? 'the fixture bridge' : bridge.name}, checks each signature against the masternode voting key, recounts the weighted tally and compares it with the Platform tally document. The vote set is requested at the block that tally is as of, so the two are comparable exactly.
             </p>
             <div className="verify-actions">
               <button type="button" className="btn btn-primary" onClick={verifyVotes} disabled={votes.running}>
@@ -218,7 +241,7 @@ export function VerificationPanel({
               </button>
               {mode === 'live' && (
                 <label className="check">
-                  <input type="checkbox" checked={sml} onChange={(e) => setSml(e.target.checked)} /> Confirm voting keys with the DAPI masternode list from two nodes (about 3 MB; needed for a verified result)
+                  <input type="checkbox" checked={sml} onChange={(e) => setSml(e.target.checked)} /> Confirm voting keys with the DAPI masternode list that at least two of three nodes agree on (about 1.4 MB each; needed for a verified result)
                 </label>
               )}
             </div>
