@@ -53,6 +53,10 @@ export interface FundingRecord {
   isLockAfterMs?: number;
   proofKind?: 'instant' | 'chain';
   balanceBefore?: string;
+  /** Lock txids the network refused (never rebuilt into the same bytes again) and how many rebuilds happened (at most 2). */
+  rejectedLocks?: string[];
+  /** Hidden from the pending list by the user ("I never sent anything"); kept so a later resume still replays from watchFromHeight. */
+  discarded?: boolean;
   state: FundingState;
   createdAt: number;
   updatedAt: number;
@@ -225,8 +229,52 @@ export function classifyRegistrationError(e: unknown): RegistrationOutcome {
   return 'other';
 }
 
-/** The network rejected the lock's inputs: a deposit was double-spent, replaced or never existed. */
+/** The network rejected the lock's inputs: a deposit was double-spent, replaced or not seen yet by that node. */
 const inputsRejected = (e: unknown) => /missing-?inputs|bad-txns-inputs-missingorspent|txn-mempool-conflict|inputs.*(spent|missing)/i.test(errText(e));
+
+/** Whether nodes know the lock: its mined height, 0 while in the mempool, 'unknown' when not found (or the lookup failed). */
+async function lockStatus(dapi: Dapi, txid: string, signal?: AbortSignal): Promise<number | 'unknown'> {
+  try {
+    const { value } = await dapi.call((core, s) => core.getTransaction(txid, { signal: s }), { signal });
+    return value.height > 0 ? value.height : 0;
+  } catch (e) {
+    if (signal?.aborted) throw e;
+    return 'unknown';
+  }
+}
+
+/**
+ * Broadcasts the lock. "Inputs missing or spent" is only believed after the lock's own txid is still unknown and three attempts a few
+ * seconds apart (other nodes, which may simply not have seen the deposit yet) agree. Returns false only then; other errors throw.
+ */
+async function broadcastLock(dapi: Dapi, lock: { raw: string; txid: string }, signal: AbortSignal | undefined, log: (m: string) => void): Promise<boolean> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      // Re-sending the same bytes is harmless; nodes answering "already known" count as success.
+      await dapi.broadcastTransaction(hexToBytes(lock.raw), { signal });
+      return true;
+    } catch (e) {
+      if (!inputsRejected(e)) throw e;
+      log(`lock broadcast refused (${attempt + 1}): ${redact(errText(e))}`);
+      if ((await lockStatus(dapi, lock.txid, signal)) !== 'unknown') return true;
+      if (attempt >= 2) return false;
+      await sleep(4000 * (attempt + 1), signal);
+    }
+  }
+}
+
+/**
+ * The deposits a lock spends: the largest counted outputs, at most MAX_ASSET_LOCK_INPUTS, skipping any worth less than the fee of
+ * spending it, as long as they lock at least `minLock` after fees and add up to `minTotal`. Null while they do not (keep waiting).
+ * So a stranger's flood of tiny payments cannot block a funding.
+ */
+export function pickInputs<T extends { value: string }>(counted: readonly T[], minLock: bigint, minTotal: bigint): T[] | null {
+  const perInput = estimateAssetLockFee(2) - estimateAssetLockFee(1);
+  const usable = counted.filter((d) => BigInt(d.value) > perInput).sort((a, b) => (BigInt(b.value) > BigInt(a.value) ? 1 : BigInt(b.value) < BigInt(a.value) ? -1 : 0));
+  const pick = usable.slice(0, MAX_ASSET_LOCK_INPUTS);
+  const total = pick.reduce((a, d) => a + BigInt(d.value), 0n);
+  return pick.length && total >= minTotal && total - estimateAssetLockFee(pick.length) >= minLock ? pick : null;
+}
 
 /** Runs `fn` holding an exclusive Web Lock named for the record, when the platform has Web Locks (browsers; not Node 22). */
 async function withRecordLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
@@ -300,10 +348,12 @@ async function fund(o: FundingOptions, fk: { privateKey: Uint8Array; publicKey: 
   const watchers: Watcher[] = [];
   try {
     // ---- 1-2: deposits. The watcher stays open until the end: payments after the lock are reported as late. ----------------
+    rec.discarded = undefined;
     rec.watchFromHeight ??= Math.max(0, (await tipHeight(dapi, signal)) - 3);
     save();
     const lockedTxids = new Set<string>();
     let wake: () => void = () => {};
+    const same = (a: { txid: string; vout: number }) => (b: { txid: string; vout: number }) => a.txid === b.txid && a.vout === b.vout;
     const confirm = (txid: string) => {
       let changed = false;
       for (const d of rec.deposits) if (d.txid === txid && !d.confirmed) changed = d.confirmed = true;
@@ -323,14 +373,14 @@ async function fund(o: FundingOptions, fk: { privateKey: Uint8Array; publicKey: 
               const c = classifyScript(out.script);
               return c.type === 'p2pkh' && bytesEqual(c.hash, h160) ? [{ txid: tx.txid, vout, value: out.value.toString() }] : [];
             });
-            if (!outs.length) return;
+            const fresh = outs.filter((d) => !rec.deposits.some(same(d)) && !(rec.lateDeposits ?? []).some(same(d)));
+            if (!fresh.length) return;
             if (rec.lock) {
-              const late = (rec.lateDeposits ??= []);
-              for (const d of outs) if (!late.some((x) => x.txid === d.txid && x.vout === d.vout) && !rec.deposits.some((x) => x.txid === d.txid && x.vout === d.vout)) late.push(d);
+              (rec.lateDeposits ??= []).push(...fresh);
               update(`a payment arrived after the lock was made (${tx.txid.slice(0, 12)}…); it stays at the deposit address`);
               return;
             }
-            for (const d of outs) if (!rec.deposits.some((x) => x.txid === d.txid && x.vout === d.vout)) rec.deposits.push({ ...d, confirmed: lockedTxids.has(d.txid) });
+            for (const d of fresh) rec.deposits.push({ ...d, confirmed: lockedTxids.has(d.txid) });
             update(`payment ${tx.txid.slice(0, 12)}… seen; waiting for InstantSend or a block`);
             wake();
           },
@@ -352,86 +402,88 @@ async function fund(o: FundingOptions, fk: { privateKey: Uint8Array; publicKey: 
     }
     update(); // the address may be shown now: the subscription is live
 
-    {
-      // ---- wait until the counted deposits make a lock above Platform's floor ----
-      if (rec.state === 'awaiting-deposit') {
-        for (;;) {
-          const c = counted();
-          if (c.length > MAX_ASSET_LOCK_INPUTS) throw new FundingError(`More than ${MAX_ASSET_LOCK_INPUTS} separate payments arrived; an asset lock cannot spend them all. Contact support with the deposit address.`);
-          if (c.length && sum(c) - estimateAssetLockFee(c.length) >= minLock && sum(c) >= BigInt(minDuffs)) break;
-          await Promise.race([new Promise<void>((r) => (wake = r)), aborted(signal)]);
-        }
-        // A wallet may split a payment across txs that arrive together: give the streams a moment before locking.
-        await sleep(1500, signal);
-        rec.state = 'locking';
-        update();
-      }
+    // ---- wait until the counted deposits make a lock above Platform's floor ----
+    if (rec.state === 'awaiting-deposit') {
+      const stop = aborted(signal);
+      stop.catch(() => {});
+      while (!pickInputs(counted(), minLock, BigInt(minDuffs))) await Promise.race([new Promise<void>((r) => (wake = r)), stop]);
+      // A wallet may split a payment across txs that arrive together: give the streams a moment before locking.
+      await sleep(1500, signal);
+      rec.state = 'locking';
+      update();
+    }
 
-      // ---- 3: asset lock ----
-      if (!rec.lock) {
-        const c = counted();
-        const utxos: Utxo[] = c.map((d) => ({ txid: d.txid, vout: d.vout, value: BigInt(d.value) }));
-        const built = buildAssetLock({ utxos, fundingKey: fk.privateKey, creditPubKeyHash: h160, minLockDuffs: minLock });
-        rec.deposits = c; // only the counted deposits are spent; unconfirmed ones would make the lock unrelayable
-        rec.lock = { raw: bytesToHex(built.raw), txid: built.txid, creditIndex: built.creditIndex, burnVout: built.burnVout, lockDuffs: built.lockDuffs.toString(), feeDuffs: built.feeDuffs.toString() };
-        if (kind === 'create') rec.identityId = identityIdFromOutpoint(built.txid, built.creditIndex);
-        update('asset lock built');
-      }
-      const lock = rec.lock;
-      if (rec.state === 'locking' || rec.state === 'locked') {
-        // A lock already mined (a resume) is not re-sent, and its IS-lock is gone for good (never replayed): straight to the chain proof.
-        const mined = rec.state === 'locked' && !rec.isLock ? await minedHeight(dapi, lock.txid, signal).catch(() => 0) : 0;
-        // Otherwise watch the lock's txid and inputs on several nodes BEFORE broadcasting: its IS-lock arrives within seconds, once.
-        if (!rec.isLock && !mined) {
-          const f = new BloomFilter(2 + rec.deposits.length).insert(h160).insert(reversed(hexToBytes(lock.txid)));
-          for (const d of rec.deposits) f.insert(outpointBytes(d.txid, d.vout));
-          const lw = await dapi.watchTransactions(
-            f.toJSON(),
-            {
-              onTx: () => {},
-              onIsLock: ({ lock: l, bytes }) => {
-                if (l.txid !== lock.txid || rec.isLock) return;
-                rec.isLock = bytesToHex(bytes);
-                if (rec.broadcastAt) rec.isLockAfterMs = Date.now() - rec.broadcastAt;
-                update('IS-lock received');
-              },
-              onError: (e, ctx) => log(`lock watch ${ctx.phase}: ${redact(errText(e))}`),
+    // ---- 3: asset lock ----
+    if (!rec.lock) {
+      const inputs = pickInputs(counted(), minLock, BigInt(minDuffs));
+      if (!inputs) throw new FundingError('the payments no longer cover the minimum; wait for more or contact support');
+      const utxos: Utxo[] = inputs.map((d) => ({ txid: d.txid, vout: d.vout, value: BigInt(d.value) }));
+      const built = buildAssetLock({ utxos, fundingKey: fk.privateKey, creditPubKeyHash: h160, minLockDuffs: minLock });
+      if (rec.rejectedLocks?.includes(built.txid)) throw new FundingError('The network keeps refusing this payment. Wait a few minutes and try again, or contact support with the deposit address.');
+      // Everything not spent by this lock (unconfirmed payments, dust, outputs over the input cap) is reported as late: it stays at the address.
+      const left = rec.deposits.filter((d) => !inputs.some(same(d))).map(({ txid, vout, value }) => ({ txid, vout, value }));
+      if (left.length) (rec.lateDeposits ??= []).push(...left);
+      rec.deposits = inputs;
+      rec.lock = { raw: bytesToHex(built.raw), txid: built.txid, creditIndex: built.creditIndex, burnVout: built.burnVout, lockDuffs: built.lockDuffs.toString(), feeDuffs: built.feeDuffs.toString() };
+      if (kind === 'create') rec.identityId = identityIdFromOutpoint(built.txid, built.creditIndex);
+      update('asset lock built');
+    }
+    const lock = rec.lock;
+    if (rec.state === 'locking' || rec.state === 'locked') {
+      // Whatever the saved state, a lock the network already knows (mined or in the mempool) is never re-sent: re-sending a mined lock
+      // fails with "inputs missing or spent" (its only output is an OP_RETURN, which Core cannot find in the UTXO set). A mined lock's
+      // IS-lock is gone for good (never replayed): straight to the chain proof.
+      const status = rec.isLock ? 'known' : await lockStatus(dapi, lock.txid, signal);
+      const mined = typeof status === 'number' && status > 0;
+      if (!rec.isLock && !mined) {
+        // Watch the lock's txid and inputs on several nodes BEFORE broadcasting: its IS-lock arrives within seconds, once.
+        const f = new BloomFilter(2 + rec.deposits.length).insert(h160).insert(reversed(hexToBytes(lock.txid)));
+        for (const d of rec.deposits) f.insert(outpointBytes(d.txid, d.vout));
+        const lw = await dapi.watchTransactions(
+          f.toJSON(),
+          {
+            onTx: () => {},
+            onIsLock: ({ lock: l, bytes }) => {
+              if (l.txid !== lock.txid || rec.isLock) return;
+              rec.isLock = bytesToHex(bytes);
+              if (rec.broadcastAt) rec.isLockAfterMs = Date.now() - rec.broadcastAt;
+              update('IS-lock received');
             },
-            { fromHeight: Math.max(0, (await tipHeight(dapi, signal)) - 2), signal },
-            (tx) => (tx.txid === lock.txid ? [0] : []),
-          );
-          watchers.push(lw);
-        }
-        if (!mined) {
-          try {
-            // Re-sending the same bytes is harmless; nodes answering "already known" count as success.
-            await dapi.broadcastTransaction(hexToBytes(lock.raw), { signal });
-          } catch (e) {
-            if (!inputsRejected(e) || rec.isLock) throw e;
-            // A deposit was double-spent or replaced: forget this lock and the deposits, replay the address from the start.
-            log(`lock rejected: ${redact(errText(e))}`);
-            rec.lock = undefined;
-            rec.identityId = kind === 'create' ? undefined : rec.identityId;
-            rec.deposits = [];
-            rec.broadcastAt = undefined;
-            rec.state = 'awaiting-deposit';
-            update('the network rejected the payment the lock spends; waiting for a valid payment');
-            for (const w of watchers.splice(0)) w.cancel();
-            return await fund(o, fk, key);
-          }
-          rec.broadcastAt ??= Date.now();
-        }
-        rec.state = 'locked';
-        update('asset lock broadcast');
-        const deadline = mined ? 0 : Date.now() + (o.isLockWaitMs ?? 60_000);
-        while (!rec.isLock && Date.now() < deadline) await sleep(250, signal);
-        rec.state = 'registering';
-        update(rec.isLock ? undefined : 'no IS-lock seen; using a chain-lock proof');
+            onError: (e, ctx) => log(`lock watch ${ctx.phase}: ${redact(errText(e))}`),
+          },
+          { fromHeight: Math.max(0, (await tipHeight(dapi, signal)) - 2), signal },
+          (tx) => (tx.txid === lock.txid ? [0] : []),
+        );
+        watchers.push(lw);
       }
+      if (status === 'unknown') {
+        const sent = await broadcastLock(dapi, lock, signal, log);
+        if (!sent) {
+          // Every node refused the inputs and none knows the lock: a deposit was double-spent or replaced. Forget this lock (never
+          // rebuild its bytes), replay the address from the start, at most twice.
+          if ((rec.rejectedLocks?.length ?? 0) >= 2) throw new FundingError('The network refused the payment twice. Contact support with the deposit address.');
+          (rec.rejectedLocks ??= []).push(lock.txid);
+          rec.lock = undefined;
+          if (kind === 'create') rec.identityId = undefined;
+          rec.deposits = [];
+          rec.lateDeposits = undefined; // replayed and counted again
+          rec.broadcastAt = undefined;
+          rec.state = 'awaiting-deposit';
+          update('the network rejected the payment the lock spends; waiting for a valid payment');
+          for (const w of watchers.splice(0)) w.cancel();
+          return await fund(o, fk, key);
+        }
+        rec.broadcastAt ??= Date.now();
+      }
+      rec.state = 'locked';
+      update('asset lock broadcast');
+      const deadline = mined || rec.isLock ? 0 : Date.now() + (o.isLockWaitMs ?? 60_000);
+      while (!rec.isLock && Date.now() < deadline) await sleep(250, signal);
+      rec.state = 'registering';
+      update(rec.isLock ? undefined : 'no IS-lock seen; using a chain-lock proof');
     }
 
     // ---- 4-5: register on Platform ----
-    const lock = rec.lock!;
     const identityId = rec.identityId!;
     if (kind === 'topup') {
       rec.balanceBefore ??= ((await platform.balance(identityId)) ?? 0n).toString();
@@ -529,14 +581,18 @@ export function sessionTopUpKey(sessionKey: Uint8Array, identityId: string, n: n
 export const pendingFundings = (store: FundingStore, network: Network): FundingRecord[] =>
   store
     .list()
-    .filter((r) => r.network === network && r.state !== 'done')
+    .filter((r) => r.network === network && r.state !== 'done' && !r.discarded)
     .sort((a, b) => b.updatedAt - a.updatedAt);
 
-/** A record may be discarded only while nothing was paid to it (no deposit seen, no lock built). Returns whether it was. */
+/**
+ * Hides a record nothing was seen paid to (no deposit, no lock) from the pending list. The record stays: a payment made while no tab
+ * was watching is invisible until the address is replayed, so continuing later with the same phrase still replays from its original
+ * height. Returns whether it was hidden.
+ */
 export function discardFunding(store: FundingStore, key: string): boolean {
   const r = store.load(key);
   if (!r || r.state !== 'awaiting-deposit' || r.deposits.length || r.lock || r.lateDeposits?.length) return false;
-  store.remove(key);
+  store.save({ ...r, discarded: true });
   return true;
 }
 

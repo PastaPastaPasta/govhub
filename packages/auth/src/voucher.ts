@@ -82,7 +82,13 @@ export async function redeemVoucher(o: RedeemOptions): Promise<{ identityId: str
       } catch (e) {
         const outcome = classifyRegistrationError(e);
         if (outcome === 'key-conflict') throw new VoucherError('These keys already belong to another identity. Sign in with this recovery phrase instead.');
-        if (outcome === 'used' || (await existing())) return;
+        // 'used' only says the outpoint is consumed: success only if the identity it made is this seed's (existing() throws otherwise).
+        // A just-made identity can lag a block behind on the node read, so a 'used' answer is re-checked a few times.
+        for (let i = 0; i < (outcome === 'used' ? 5 : 1); i++) {
+          if (i) await new Promise((r) => setTimeout(r, 2000));
+          if (await existing()) return;
+        }
+        if (outcome === 'used') throw new VoucherError('This voucher has already been used.');
         throw e;
       }
     };

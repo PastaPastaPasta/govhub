@@ -94,6 +94,8 @@ function Choose() {
                     type="button"
                     className="btn btn-quiet"
                     onClick={() => {
+                      // A payment made while no tab was watching is not visible here yet; the record is only hidden, never deleted.
+                      if (!confirm(`Hide this setup? Only do this if you never sent DASH to ${r.address}. Continuing with the same phrase later still finds any payment.`)) return;
                       discardFunding(store, r.key);
                       rerender((n) => n + 1);
                     }}

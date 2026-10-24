@@ -5,7 +5,7 @@ import { parseTx, type Dapi, type WatchHandlers } from '@govhub/dapi';
 import { describe, expect, it } from 'vitest';
 import { bytesToHex, hash160, hexToBytes } from '../src/bytes.ts';
 import {
-  classifyRegistrationError, discardFunding, fundingRecordKey, nextTopUpIndex, pendingFundings, runFunding, sessionTopUpKey, type FundingRecord, type FundingStore, type FundingView,
+  classifyRegistrationError, discardFunding, fundingRecordKey, nextTopUpIndex, pendingFundings, pickInputs, runFunding, sessionTopUpKey, type FundingRecord, type FundingStore, type FundingView,
 } from '../src/funding.ts';
 import { addressOf, publicKeyOf, wifOf } from '../src/keys.ts';
 import { MIN_CREATE_LOCK_DUFFS } from '../src/layout.ts';
@@ -26,8 +26,9 @@ interface Script {
   events: string[];
   deliverIsLock: boolean;
   mined: number;
-  /** Error thrown by the next broadcast, once. */
+  /** Error thrown by the next `rejectCount` broadcasts (default 1). */
   rejectNextBroadcast?: string;
+  rejectCount?: number;
 }
 
 /** A DAPI whose deposit watcher reports payments (IS-locked unless told otherwise) and which IS-locks whatever is broadcast. */
@@ -35,13 +36,17 @@ function fakeDapi(s: Script) {
   const deposits: WatchHandlers[] = [];
   const locks: WatchHandlers[] = [];
   let broadcast: Uint8Array | null = null;
+  const known = new Set<string>();
   const isLock = (h: WatchHandlers, txid: string) => void h.onIsLock({ lock: { txid } as never, bytes: hexToBytes('01' + 'ab'.repeat(100)), known: true, node: 'n' });
   return {
     network: 'testnet',
     call: async (fn: (core: unknown) => Promise<unknown>) => ({
       value: await fn({
         getBestBlockHeight: async () => 1000,
-        getTransaction: async () => ({ raw: broadcast, height: s.mined, confirmations: 1 }),
+        getTransaction: async (txid: string) => {
+          if (!known.has(txid)) throw Object.assign(new Error('not found'), { code: 5 });
+          return { raw: broadcast, height: s.mined, confirmations: 1 };
+        },
       }),
       node: 'n',
     }),
@@ -59,11 +64,13 @@ function fakeDapi(s: Script) {
       s.events.push('broadcast');
       if (s.rejectNextBroadcast) {
         const m = s.rejectNextBroadcast;
-        s.rejectNextBroadcast = undefined;
+        s.rejectCount = (s.rejectCount ?? 1) - 1;
+        if (s.rejectCount <= 0) s.rejectNextBroadcast = undefined;
         throw new Error(m);
       }
       broadcast = raw;
       const txid = parseTx(raw).txid;
+      known.add(txid);
       if (s.deliverIsLock) setTimeout(() => isLock(locks.at(-1)!, txid), 5);
       return { txid, node: 'n' };
     },
@@ -184,7 +191,21 @@ describe('runFunding (create)', () => {
     expect(views.at(-1)!.lateDuffs).toBe(70_000n);
   });
 
-  it('falls back to a chain-lock proof when Platform refuses the IS-lock, and resumes without rebuilding the lock', async () => {
+  it('falls back to a chain-lock proof when Platform refuses the IS-lock', async () => {
+    const s: Script = { events: [], deliverIsLock: true, mined: 0 };
+    const dapi = fakeDapi(s);
+    const store = memStore();
+    const platform = fakePlatform({ refuseInstant: true, onRefuse: () => (s.mined = 1500) });
+    const r = await runFunding({
+      wallet: SeedWallet.fromPhrase(PHRASE, 'testnet'), dapi: dapi as unknown as Dapi, platform, store, kind: 'create', identityIndex: 0, isLockWaitMs: 2000, pollMs: 10,
+      onUpdate: (v) => v.state === 'awaiting-deposit' && !v.receivedDuffs && !v.pendingDuffs && dapi.pay(payTo(v.address, 1_000_000n)),
+    });
+    expect(platform.calls).toEqual(['instant', 'chain']);
+    expect((platform.created.get(r.identityId) as { coreChainLockedHeight: number }).coreChainLockedHeight).toBe(2000);
+    expect(s.events.filter((e) => e === 'broadcast')).toHaveLength(1);
+  });
+
+  it('never re-sends a lock the network already knows, whatever state was saved (resume in "locking")', async () => {
     const s: Script = { events: [], deliverIsLock: false, mined: 0 };
     const dapi = fakeDapi(s);
     const store = memStore();
@@ -197,16 +218,17 @@ describe('runFunding (create)', () => {
         if (v.state === 'locked') ac.abort();
       },
     }).catch(() => {});
-    const first = store.m.get(keyFor(PHRASE))!;
-    expect(first.state).toBe('locked');
-    s.deliverIsLock = true;
-    const platform = fakePlatform({ refuseInstant: true, onRefuse: () => (s.mined = 1500) });
-    const r = await runFunding({ wallet, dapi: dapi as unknown as Dapi, platform, store, kind: 'create', identityIndex: 0, isLockWaitMs: 2000, pollMs: 10 });
+    // the tab closed after the broadcast but before 'locked' was saved; meanwhile the lock was mined
     const rec = store.m.get(keyFor(PHRASE))!;
-    expect(rec.lock!.txid).toBe(first.lock!.txid);
-    expect(platform.calls).toEqual(['instant', 'chain']);
-    expect((platform.created.get(r.identityId) as { coreChainLockedHeight: number }).coreChainLockedHeight).toBe(2000);
-    expect(s.events.filter((e) => e === 'broadcast')).toHaveLength(2);
+    store.save({ ...rec, state: 'locking' });
+    s.mined = 1500;
+    s.rejectNextBroadcast = 'bad-txns-inputs-missingorspent';
+    s.rejectCount = 99;
+    const platform = fakePlatform();
+    await runFunding({ wallet, dapi: dapi as unknown as Dapi, platform, store, kind: 'create', identityIndex: 0, isLockWaitMs: 100, pollMs: 10 });
+    expect(platform.calls).toEqual(['chain']);
+    expect(s.events.filter((e) => e === 'broadcast')).toHaveLength(1);
+    expect(store.m.get(keyFor(PHRASE))!.lock!.txid).toBe(rec.lock!.txid);
   });
 
   it('does not re-send or wait for an IS-lock when the lock is already mined', async () => {
@@ -229,8 +251,8 @@ describe('runFunding (create)', () => {
     expect(s.events.filter((e) => e === 'broadcast')).toHaveLength(1);
   });
 
-  it('rebuilds the lock when the network rejects its inputs', async () => {
-    const s: Script = { events: [], deliverIsLock: true, mined: 0, rejectNextBroadcast: 'bad-txns-inputs-missingorspent' };
+  it('rebuilds the lock only when every attempt is refused and no node knows it', async () => {
+    const s: Script = { events: [], deliverIsLock: true, mined: 0, rejectNextBroadcast: 'bad-txns-inputs-missingorspent', rejectCount: 3 };
     const dapi = fakeDapi(s);
     const store = memStore();
     let paid = 0;
@@ -244,8 +266,11 @@ describe('runFunding (create)', () => {
       },
     });
     expect(paid).toBe(2);
-    expect(s.events.filter((e) => e === 'broadcast')).toHaveLength(2);
-    expect(store.m.get(keyFor(PHRASE))!.state).toBe('done');
+    expect(s.events.filter((e) => e === 'broadcast')).toHaveLength(4); // three refusals of the first lock, then the rebuilt one
+    const rec = store.m.get(keyFor(PHRASE))!;
+    expect(rec.state).toBe('done');
+    expect(rec.rejectedLocks).toHaveLength(1);
+    expect(rec.rejectedLocks![0]).not.toBe(rec.lock!.txid);
   });
 
   it('M5: a key conflict is its own error, and a transient error is never taken for "already used"', async () => {
@@ -361,5 +386,16 @@ describe('H2: ended sessions', () => {
     await expect(
       runFunding({ wallet: null, session: s, dapi: fakeDapi({ events: [], deliverIsLock: false, mined: 0 }) as unknown as Dapi, platform: fakePlatform(), store: memStore(), kind: 'topup', identityIndex: 0, topUp: { identityId: id, index: 0 } }),
     ).rejects.toThrow(/ended/);
+  });
+});
+
+describe('pickInputs', () => {
+  it('a flood of dust cannot block a funding: largest outputs first, at most 100, dust skipped', () => {
+    const dust = Array.from({ length: 150 }, (_, i) => ({ txid: String(i), value: '100' }));
+    const real = { txid: 'real', value: '500000' };
+    expect(pickInputs([...dust, real], BigInt(MIN_CREATE_LOCK_DUFFS), 201_000n)).toEqual([real]);
+    expect(pickInputs(dust, 1n, 1n)).toBeNull();
+    const many = Array.from({ length: 150 }, (_, i) => ({ txid: String(i), value: '5000' }));
+    expect(pickInputs(many, BigInt(MIN_CREATE_LOCK_DUFFS), 201_000n)).toHaveLength(100);
   });
 });
