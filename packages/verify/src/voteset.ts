@@ -14,7 +14,7 @@
 // votes are tallied, and every signature is verified separately against the voting key.
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex, utf8ToBytes } from './bytes.ts';
-import { normalizeMnId } from './tally.ts';
+import { normalizeMnId, tallyVotes, type TallyOptions, type TallyResult, type TallyVote } from './tally.ts';
 
 export const VOTE_SET_DOMAIN = 'govhub-voteset-v1\n';
 
@@ -44,4 +44,25 @@ export function voteSetPreimage(entries: Iterable<VoteSetEntry>): string {
 /** SHA-256 of voteSetPreimage, lowercase hex. */
 export function voteSetHash(entries: Iterable<VoteSetEntry>): string {
   return bytesToHex(sha256(utf8ToBytes(voteSetPreimage(entries))));
+}
+
+export interface CountedVotes extends TallyResult {
+  /** The COUNTED set: the current vote of every masternode that is in the weight map (normalised ids). This is what `voteSetHash` commits to. */
+  counted: Array<{ mn: string; outcome: number; time: bigint }>;
+  /** voteSetHash of `counted`. */
+  voteSetHash: string;
+}
+
+/**
+ * THE counting rule, shared by the bridge (which publishes a tally) and by every client that recounts it:
+ * `tallyVotes` (current vote per masternode by Core's rules; weights 1 / 4; masternodes absent from `weights` are not counted) plus
+ * the voteSetHash over exactly the counted masternodes. PoSe-banned masternodes belong in `weights`: their votes count, only the
+ * funding threshold ignores them (see `tallyVotes`). Callers must pass only signature-verified FUNDING votes whose signer is the
+ * masternode's current voting key.
+ */
+export function countVotes(votes: Iterable<TallyVote>, weights: ReadonlyMap<string, number> | Readonly<Record<string, number>>, opts: TallyOptions = {}): CountedVotes {
+  const t = tallyVotes(votes, weights, opts);
+  const unknown = new Set(t.unknownMasternodes);
+  const counted = [...t.current].filter(([mn]) => !unknown.has(mn)).map(([mn, v]) => ({ mn, outcome: v.outcome, time: v.time }));
+  return { ...t, counted, voteSetHash: voteSetHash(counted) };
 }
