@@ -25,6 +25,19 @@ describe('GET /v1/status', () => {
     expect(r.body.core.reachable).toBe(false);
     expect(r.body.archive.votesByStatus.valid).toBeGreaterThan(500);
     expect(r.headers.get('access-control-allow-origin')).toBe('*');
+    expect(r.headers.get('x-content-type-options')).toBe('nosniff');
+  });
+
+  it('is read-only: other methods get 405, CORS preflight still answers', async () => {
+    for (const method of ['POST', 'PUT', 'DELETE', 'PATCH']) {
+      const r = await app.request('/v1/status', { method, headers: { Origin: 'https://gov.dashhq.org' } });
+      expect(r.status).toBe(405);
+      expect(r.headers.get('allow')).toBe('GET, HEAD, OPTIONS');
+      expect(r.headers.get('access-control-allow-origin')).toBe('*');
+    }
+    const pre = await app.request('/v1/status', { method: 'OPTIONS', headers: { Origin: 'https://gov.dashhq.org', 'Access-Control-Request-Method': 'GET' } });
+    expect(pre.status).toBe(204);
+    expect(pre.headers.get('access-control-allow-methods')).toContain('GET');
   });
 });
 

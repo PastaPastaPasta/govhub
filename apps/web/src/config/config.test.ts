@@ -23,6 +23,14 @@ describe('endpoint registry', () => {
     expect(parseRegistry(d).errors).toEqual([]);
   });
 
+  it('defaults include the reference bridge, publishing into the testnet gov contract', () => {
+    const d = defaultRegistry();
+    expect(d.bridges).toEqual([
+      { name: 'gov-bridge.dashhq.org', httpBase: 'https://gov-bridge.dashhq.org', govContractId: d.govContractId, bridgeIdentityId: '9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv', enabled: true },
+    ]);
+    expect(attestorsFor(d)).toEqual(['9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv']);
+  });
+
   it('round-trips through export/import and storage', () => {
     const s = new MemStorage();
     const r = { ...defaultRegistry(), bridges: [{ name: 'mine', httpBase: 'https://bridge.example.org/', govContractId: '3ueAfbVe8LvCxYWk7bKvXxc5uHe7E1TDJHzN3k3ZDehZ', bridgeIdentityId: '', enabled: true }] };

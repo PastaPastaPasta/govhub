@@ -104,9 +104,19 @@ export function cycleJson(b: Bridge) {
 const byOutpoint = (x: { collateral_txid: string; collateral_n: number }, y: { collateral_txid: string; collateral_n: number }) =>
   x.collateral_txid < y.collateral_txid ? -1 : x.collateral_txid > y.collateral_txid ? 1 : x.collateral_n - y.collateral_n;
 
+const READ_METHODS = ['GET', 'HEAD', 'OPTIONS'];
+
 export function createApi(b: Bridge): Hono {
   const app = new Hono();
-  app.use('*', cors({ origin: '*', allowMethods: ['GET', 'HEAD', 'OPTIONS'], maxAge: 86400 }));
+  app.use('*', cors({ origin: '*', allowMethods: READ_METHODS, maxAge: 86400 }));
+  // Read-only API. The bridge may be published without a proxy in front (Cloudflare Tunnel), so it refuses
+  // every other method itself instead of relying on Caddy's method filter, and sets the header Caddy would add.
+  app.use('*', async (c, next) => {
+    c.header('X-Content-Type-Options', 'nosniff');
+    if (READ_METHODS.includes(c.req.method)) return next();
+    c.header('Allow', READ_METHODS.join(', '));
+    return c.json({ error: 'read-only API' }, 405);
+  });
   app.onError((e, c) => {
     log.error('api error', { path: c.req.path, error: String(e?.stack ?? e) });
     return c.json({ error: 'internal error' }, 500);

@@ -1,4 +1,4 @@
-# govhub backend stack: dashd + bridge (+ optional caddy).
+# govhub backend stack: dashd + bridge (+ optional cloudflared tunnel or caddy proxy).
 #
 # This base file is MAINNET. Pick another network by layering an override file, normally through
 # COMPOSE_FILE in .env (scripts/init.sh --network <net> writes it for you):
@@ -7,6 +7,7 @@
 #   testnet : docker-compose.yml:docker-compose.testnet.yml
 #   regtest : docker-compose.yml:docker-compose.regtest.yml        (CI and smoke tests)
 #   + P2P   : ...:docker-compose.p2p.yml                           (publish the P2P port)
+#   + tunnel: COMPOSE_PROFILES=tunnel                              (cloudflared, no open ports)
 #   + proxy : COMPOSE_PROFILES=proxy                               (caddy, TLS on a domain)
 #
 # Needs Docker Compose >= 2.24 (the regtest override uses `!override`).
@@ -113,6 +114,10 @@ services:
       # SQLite archive. This is history Core no longer has: back it up (README, "Backups").
       # The image must create /data owned by its runtime user so the named volume is writable.
       - bridge-data:/data
+    # `default` reaches dashd; `edge` is where the public-facing proxies (cloudflared, caddy) live.
+    networks:
+      - default
+      - edge
     ports:
       # Loopback by default. Set BRIDGE_BIND=0.0.0.0 to serve the API directly, or leave it and
       # use the caddy profile for TLS.
@@ -132,6 +137,8 @@ services:
     environment:
       DOMAIN: ${DOMAIN:-localhost}
       CORS_ALLOW_ORIGIN: ${CORS_ALLOW_ORIGIN:-*}
+    networks:
+      - edge
     ports:
       - "${CADDY_HTTP_PORT:-80}:80"
       - "${CADDY_HTTPS_PORT:-443}:443"
@@ -140,6 +147,34 @@ services:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data    # certificates: keep, or you will hit ACME rate limits
       - caddy-config:/config
+
+  # ---------------------------------------------------------------------------------------------
+  # Cloudflare Tunnel (default way to publish; README section 11). Enable with COMPOSE_PROFILES=tunnel.
+  # Outbound-only: no inbound port is opened anywhere. The tunnel is remotely managed, so its public
+  # hostnames and ingress live in Cloudflare (scripts/cloudflare-tunnel.sh sets them), e.g.
+  #   gov-bridge.<zone>    -> http://bridge:8787
+  #   gov-relay.<zone>     -> http://relay:<port>      (when the relay lands)
+  #   gov-accounts.<zone>  -> http://accounts:<port>   (when accounts lands)
+  # The token is a secret file, never an environment value in .env.
+  # ---------------------------------------------------------------------------------------------
+  cloudflared:
+    image: cloudflare/cloudflared:${CLOUDFLARED_TAG:-2026.10.3}
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    logging: *default-logging
+    # uid 1000 like dashd and the bridge, so one ownership rule covers every file under secrets/.
+    user: "1000:1000"
+    depends_on:
+      - bridge
+    command: ["tunnel", "--metrics", "127.0.0.1:20241", "run"]
+    # edge only: cloudflared reaches the bridge, never dashd's RPC or ZMQ, whatever ingress Cloudflare
+    # is told to serve.
+    networks:
+      - edge
+    environment:
+      TUNNEL_TOKEN_FILE: /run/secrets/cloudflare_tunnel_token
+    secrets:
+      - cloudflare_tunnel_token
 
   # ---------------------------------------------------------------------------------------------
   # SLOTS for services that are not built yet. Keep the pattern when they land:
@@ -163,6 +198,10 @@ secrets:
   # it only when PUBLISH=1. init.sh creates an empty placeholder so archive-only mode can start.
   bridge_identity:
     file: ${SECRETS_DIR:-./secrets}/bridge_identity.json
+  # Cloudflare Tunnel token, written by scripts/cloudflare-tunnel.sh. Used only by profile `tunnel`;
+  # init.sh creates an empty placeholder.
+  cloudflare_tunnel_token:
+    file: ${SECRETS_DIR:-./secrets}/cloudflare_tunnel_token
 
 volumes:
   dashd-data:
@@ -177,3 +216,6 @@ networks:
     ipam:
       config:
         - subnet: ${GOVHUB_SUBNET:-172.29.73.0/24}
+  # Public-facing side: bridge + cloudflared/caddy. Docker picks the subnet; it is outside
+  # GOVHUB_SUBNET, so dashd's rpcallowip does not cover it and dashd is not attached to it.
+  edge: {}

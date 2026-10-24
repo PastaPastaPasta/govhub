@@ -13,7 +13,8 @@ replaceable (PLAN section 1.1), so a third-party bridge is a first-class deploym
      bridge --- SQLite archive (named volume)   <- history Core no longer has
         |   \--- Dash Platform (your gov contract, your identity)   [PUBLISH=1]
         |
-   HTTP :8787 (read-only API) --- optional caddy (TLS + CORS)
+   HTTP :8787 (read-only API) --- cloudflared (Cloudflare Tunnel, default: no open ports)
+                               \-- or caddy (TLS on your own IP, the alternative)
 ```
 
 Slots for `relay`, `issuer` and `accounts` are marked in `docker-compose.yml`. They are not built
@@ -31,6 +32,9 @@ yet.
 8. [Security](#8-security)
 9. [Bridge contract (what the bridge image must do)](#9-bridge-contract)
 10. [Troubleshooting](#10-troubleshooting)
+11. [Publishing the API: Cloudflare Tunnel or Caddy](#11-publishing-the-api-cloudflare-tunnel-or-caddy)
+12. [Unprivileged LXC (Proxmox)](#12-unprivileged-lxc-proxmox)
+13. [Reference deployment (R730)](#13-reference-deployment-r730)
 
 ## 1. Quick start
 
@@ -75,7 +79,7 @@ wallet disabled (the bridge needs none); `DASHD_EXTRA_ARGS=-disablewallet=0` tur
 
 | File | Purpose |
 |---|---|
-| `docker-compose.yml` | base stack, **mainnet**: `dashd`, `bridge`, `caddy` (profile `proxy`) |
+| `docker-compose.yml` | base stack, **mainnet**: `dashd`, `bridge`, `cloudflared` (profile `tunnel`), `caddy` (profile `proxy`) |
 | `docker-compose.testnet.yml` | override: v24 image, testnet Core, testnet Platform |
 | `docker-compose.regtest.yml` | override: isolated chain, `PUBLISH=0`, no identity secret |
 | `docker-compose.p2p.yml` | override: publish dashd's P2P port (set `DASHD_P2P_PORT`) |
@@ -83,6 +87,8 @@ wallet disabled (the bridge needs none); `DASHD_EXTRA_ARGS=-disablewallet=0` tur
 | `dashd/dash.conf`, `dashd/entrypoint.sh` | Core config template and the wrapper that adds network, RPC credentials and `dbcache` |
 | `caddy/Caddyfile` | TLS reverse proxy; GET/HEAD/OPTIONS only, CORS handled here |
 | `scripts/init.sh` | prerequisite check, secrets directory (mode 0700), `.env` |
+| `scripts/cloudflare-tunnel.sh` | creates the Cloudflare Tunnel, its ingress and DNS, and writes the token file (section 11) |
+| `scripts/backup.sh` | online backup of the bridge archive with retention (sections 6 and 13) |
 | `scripts/smoke-regtest.sh` | end-to-end regtest test |
 
 Choosing a network means choosing which files are layered. `COMPOSE_FILE` in `.env` does it, and
@@ -93,7 +99,8 @@ mainnet  COMPOSE_FILE=docker-compose.yml
 testnet  COMPOSE_FILE=docker-compose.yml:docker-compose.testnet.yml
 regtest  COMPOSE_FILE=docker-compose.yml:docker-compose.regtest.yml
 + P2P    append :docker-compose.p2p.yml          (and set DASHD_P2P_PORT=9999 / 19999)
-+ TLS    COMPOSE_PROFILES=proxy                  (and set DOMAIN)
++ tunnel COMPOSE_PROFILES=tunnel                 (Cloudflare Tunnel; scripts/cloudflare-tunnel.sh writes the token)
++ TLS    COMPOSE_PROFILES=proxy                  (and set DOMAIN; the alternative to the tunnel)
 ```
 
 Two stacks on one host (say mainnet and testnet) need **different `COMPOSE_PROJECT_NAME`,
@@ -165,6 +172,9 @@ node of the same or an older Core version. Fastest, but you trust the source's c
 indexes completely, and you cannot go back to an older version afterwards. Never do this with
 data from strangers. If you use a public snapshot, take `blocks/` only and use method A.
 
+On a Proxmox unprivileged LXC you can copy straight from another container's ZFS snapshot on the
+host, without stopping that node: section 12 has the commands and the uid mapping.
+
 To keep the chain on a bigger disk, replace the named volume with a bind mount in a
 `docker-compose.override.yml` (compose loads it automatically unless `COMPOSE_FILE` is set; add it
 to `COMPOSE_FILE` in that case). The directory must be owned by uid 1000:
@@ -226,8 +236,9 @@ republish.
 
    `"wif": "<WIF>"` is accepted instead of `privateKeyHex`. `keyId` is the id of the HIGH key
    inside the identity. The file is mounted read-only into the bridge container and never baked
-   into an image. Permissions: `scripts/init.sh` re-applies them (0600, or 0644 inside the 0700
-   directory when your host user is not uid 1000, so the container user can read it).
+   into an image. Permissions: `scripts/init.sh` re-applies them: 0600, and chowned to uid 1000
+   when it runs as root (an LXC or a VM). As any other user that is not uid 1000 it uses 0644
+   inside the 0700 directory, so the container user can read the file.
 5. In `.env`: `PUBLISH=1`, `GOV_CONTRACT_ID=<id>`, then `docker compose up -d bridge`.
 
 Use this identity for nothing else, and never reuse its key as a user key.
@@ -258,13 +269,17 @@ docker run --rm --user root -v govhub_bridge-data:/data -v "$PWD/backups:/backup
   /data/bridge.sqlite ".backup /backup/bridge-$(date +%F).sqlite"
 ```
 
+The bridge image can also do it itself, with no third-party image: `scripts/backup.sh [DIR] [KEEP_DAYS]`
+runs `bridge backup` in the container, copies the file out, checks it with `PRAGMA integrity_check`
+(when `sqlite3` is installed), deletes copies older than KEEP_DAYS and exits non-zero on any failure.
+Section 13 has a cron job for it.
+
 Replace `govhub_bridge-data` with `<project>_bridge-data`. The volume must be mounted read-write
 even though the command only reads: SQLite's WAL mode needs the `-shm` file, and `.backup` is the
 online-backup API, safe against a live writer. I ran this against a WAL-mode database and the copy
 passed `PRAGMA integrity_check` and had the expected rows. The image is a third-party SQLite CLI
 (`keinos/sqlite3`, pinned by digest above; it runs as root here only to read the volume): use your
-own SQLite image if you prefer. A `bridge backup <file>` command in the bridge image would make this
-unnecessary, and section 9 asks for one. Verify each copy with
+own SQLite image if you prefer, or `bridge backup` (below). Verify each copy with
 `sqlite3 backups/bridge-YYYY-MM-DD.sqlite "PRAGMA integrity_check"` and ship it off the machine.
 
 Restore: stop the bridge, copy the backup to `/data/bridge.sqlite` in the volume (owned by the
@@ -328,12 +343,14 @@ the bridge runs from day one.
 - **RPC (9998) and ZMQ (29998) are never published.** There is no `ports:` entry for them in any
   compose file, dashd's `rpcallowip` is limited to the compose subnet (`GOVHUB_SUBNET`), and CI
   fails if a rendered config publishes either port. They are reachable from containers on the
-  compose network. On a Linux host, anyone with a shell there can also reach the container's IP
+  compose network. The public-facing services (`cloudflared`, `caddy`) are on a separate `edge`
+  network with only the bridge, outside `rpcallowip`, so no tunnel ingress or proxy rule can expose
+  dashd. On a Linux host, anyone with a shell there can also reach the container's IP
   directly (RPC is password-protected; ZMQ has no authentication but carries public data), so do
   not give untrusted users host accounts. The wallet is disabled outside regtest. Do not
   "temporarily" publish these ports to debug.
-- **Published ports.** Bridge: loopback by default (`BRIDGE_BIND=127.0.0.1`). Caddy: 80/443. dashd
-  P2P only with `docker-compose.p2p.yml`. Docker bypasses `ufw`/`firewalld` rules for published
+- **Published ports.** Bridge: loopback by default (`BRIDGE_BIND=127.0.0.1`). cloudflared: none
+  (it dials out to Cloudflare). Caddy: 80/443. dashd P2P only with `docker-compose.p2p.yml`. Docker bypasses `ufw`/`firewalld` rules for published
   ports (it writes its own iptables chains), so the bind address is your real control. If you set
   `BRIDGE_BIND=0.0.0.0`, you serve plain HTTP to the internet; use the proxy profile instead.
 - **Firewall.** Allow inbound 80/443 (proxy) and, if you publish it, the P2P port (9999 mainnet,
@@ -345,7 +362,9 @@ the bridge runs from day one.
   identity, hold only the HIGH key on the server, keep MASTER/CRITICAL offline, and keep the balance
   low. If the server is compromised: rotate the key (with MASTER), and register a new contract if
   you cannot trust the old one.
-- **The API is read-only.** Caddy rejects anything but GET/HEAD/OPTIONS and owns the CORS headers
+- **The API is read-only.** The bridge itself answers anything but GET/HEAD/OPTIONS with 405 and
+  sends `Access-Control-Allow-Origin: *`, so it is safe to expose through the tunnel with no proxy
+  in front. With the proxy profile, Caddy also rejects other methods and owns the CORS headers
   (`CORS_ALLOW_ORIGIN`, default `*`). The bridge's data is signed or verifiable by the client, so the
   proxy is not a trust boundary, but an open writable endpoint would be one.
 - **Updates.** Pin image tags and review upgrades. Docker Hub tags can move: for strict
@@ -399,8 +418,8 @@ governance hash (display hex) **or** a numeric field named `proposals` with a va
 in the document. Everything the proxy forwards is read-only (GET/HEAD); the bridge needs no write
 endpoints.
 
-**Backup (requested).** A `bridge backup <file>` subcommand that uses SQLite's online-backup API,
-so operators do not need a third-party SQLite image (section 6).
+**Backup.** `bridge backup <file>` uses SQLite's online-backup API, so operators do not need a
+third-party SQLite image (section 6).
 
 **Behavior.** With `PUBLISH=0` on regtest the bridge archives a proposal that was created with
 `gobject prepare` and submitted with `gobject submit` (collateral confirmations do not gate
@@ -419,3 +438,210 @@ archiving, only publishing).
 | bridge `PUBLISH=1` exits at start | `GOV_CONTRACT_ID` or `secrets/bridge_identity.json` is missing or invalid (section 5) |
 | No votes in the archive after a long gap | Run the governance resync (section 7) |
 | Core RPC calls from the host fail | By design: `docker compose exec dashd dash-cli -conf=/tmp/dash.conf <cmd>` |
+| cloudflared: `"cloudflared tunnel run" requires the ID or name of the tunnel` | The token file is empty: run `scripts/cloudflare-tunnel.sh` (section 11) |
+| cloudflared: `Provided Tunnel token is not valid` | The token file holds something else, or the token was rotated: re-run `scripts/cloudflare-tunnel.sh` |
+| `cloudflare-tunnel.sh`: `Authentication error` / `Not authorized` on `cfd_tunnel` | The API token lacks Account > Cloudflare Tunnel > Edit. The zone lookup needs Zone > Zone > Read, DNS calls need Zone > DNS > Edit |
+| Public hostname answers 502/1033 | cloudflared is not running or not connected: `docker compose logs cloudflared`, and check `COMPOSE_PROFILES=tunnel` |
+| `docker info` shows storage driver `vfs` in an LXC | The host's ZFS is older than 2.2 (no overlayfs on ZFS): upgrade the host, or give `/var/lib/docker` an ext4/xfs mount point (section 12) |
+
+## 11. Publishing the API: Cloudflare Tunnel or Caddy
+
+### 11.1 Cloudflare Tunnel (default)
+
+`cloudflared` runs in the stack (profile `tunnel`) and dials **out** to Cloudflare. No inbound port is
+opened, the host needs no public IP and holds no TLS certificate, and the bridge's own port stays on
+loopback. The tunnel is *remotely managed*: its public hostnames and ingress rules live in
+Cloudflare, and the container only needs the tunnel token.
+
+1. Create a Cloudflare API token with **Account > Cloudflare Tunnel > Edit** (on the account), plus
+   **Zone > Zone > Read** and **Zone > DNS > Edit** (on the zone of your hostnames).
+2. From `deploy/`, on the server or on any machine (then copy the token file over):
+
+   ```sh
+   CF_API_TOKEN=... scripts/cloudflare-tunnel.sh --account <account id> --zone example.org \
+     --route gov-bridge.example.org=http://bridge:8787
+   ```
+
+   It creates the tunnel `govhub` (`--name` changes it) or reuses an existing one of that name,
+   **replaces** its ingress with exactly the routes given plus a 404 catch-all, creates or updates a
+   proxied `CNAME <host> -> <tunnel-id>.cfargotunnel.com` per route, and writes the token to
+   `secrets/cloudflare_tunnel_token` (0600; `--token-out` for another path). It prints no secret.
+   `CF_API_TOKEN_FILE=<file>` works instead of the variable. If the tunnel already exists the script
+   stops unless you pass `--reuse`, so a second stack cannot take over the first one's tunnel by
+   accident. It also refuses to repoint a CNAME that points somewhere other than a tunnel unless you
+   pass `--force-dns`. Every hostname is checked before anything changes, so a refused route leaves
+   the tunnel, its ingress and DNS as they were. If you ran it on another machine, copy the token file into `secrets/` and
+   re-run `scripts/init.sh` as root, which chowns it to uid 1000 so cloudflared can read it.
+3. In `.env`: `COMPOSE_PROFILES=tunnel`, then `docker compose up -d`. `docker compose logs
+   cloudflared` should show four `Registered tunnel connection` lines.
+4. Check from outside:
+
+   ```sh
+   curl -s https://gov-bridge.example.org/v1/status | jq .proposals
+   curl -si -H 'Origin: https://portal.example' https://gov-bridge.example.org/v1/status | grep -i access-control-allow-origin
+   curl -si -X POST https://gov-bridge.example.org/v1/status | head -1      # 405: the API is read-only
+   ```
+
+Routes are compose service names, because cloudflared is on the compose network. When the relay and
+accounts services land, re-run the script with every route (it replaces the whole ingress list):
+
+```sh
+scripts/cloudflare-tunnel.sh --account <id> --zone example.org --reuse \
+  --route gov-bridge.example.org=http://bridge:8787 \
+  --route gov-relay.example.org=http://relay:<port> \
+  --route gov-accounts.example.org=http://accounts:<port>
+```
+
+Give every service its own hostname (its own browser origin); the issuer in particular must never
+share an origin with the others.
+
+Through the tunnel the bridge answers directly. It sets `Access-Control-Allow-Origin: *`, allows
+GET/HEAD/OPTIONS and returns 405 for everything else (section 8). Cloudflare adds TLS and its edge
+protection, and does not cache JSON by default. For a second layer, a WAF custom rule on the hostname
+can block `not http.request.method in {"GET" "HEAD" "OPTIONS"}` (that needs a token with zone WAF
+permissions).
+
+The tunnel token lets anyone run a connector for your hostnames: keep it like the identity key, in
+`secrets/` only. To rotate it, refresh the token in the Cloudflare dashboard (or API), re-run the
+script with `--reuse` and **every** `--route` (it replaces the whole ingress list) so it writes the
+new token, and run `docker compose up -d cloudflared`.
+
+### 11.2 Caddy (alternative)
+
+Use Caddy when the host has a public address and you do not want Cloudflare in the path:
+`COMPOSE_PROFILES=proxy`, `DOMAIN=<host>`, DNS pointing at the host, ports 80 and 443 open. Caddy gets
+a certificate from Let's Encrypt, filters methods and owns the CORS headers (`caddy/Caddyfile`). Do not
+serve one hostname through both.
+
+## 12. Unprivileged LXC (Proxmox)
+
+The stack runs unchanged in an **unprivileged** Proxmox container with `features: nesting=1,keyctl=1`.
+Install Docker Engine and the compose plugin from Docker's apt repository. On Proxmox VE 8.4 (kernel
+6.8, ZFS 2.2.8) with an Ubuntu 24.04 container on a ZFS subvolume, nothing else was needed:
+`docker run hello-world` works and the storage driver is `overlayfs`. ZFS older than 2.2 cannot host
+overlayfs, so Docker falls back to `vfs` (slow, and every layer is a full copy). In that case upgrade
+the host, or give `/var/lib/docker` a mount point on ext4 or xfs.
+
+**uid mapping.** With the default map, uid 1000 inside the container (dashd's `dash`, the bridge's
+`node`, cloudflared as configured here) is uid **101000** on the host. Run `scripts/init.sh` as root
+inside the container; it chowns the secret files to 1000:1000 and keeps them 0600.
+
+**Seeding dashd from another container on the same host** (section 4, method B), without stopping
+the source node: a ZFS snapshot is crash-consistent, and dashd replays the few blocks since its last
+flush on start.
+
+```sh
+# on the Proxmox host. SRC = the source container's dataset, CT = the new container's id.
+SRC=rpool/data/subvol-<src>-disk-0
+SNAP=govhub-seed-$(date +%Y%m%d)
+zfs snapshot "$SRC@$SNAP"
+FROM=/$SRC/.zfs/snapshot/$SNAP/<path to the mainnet datadir>
+TO=/rpool/data/subvol-<CT>-disk-0/var/lib/docker/volumes/govhub_dashd-data/_data/.dashcore
+#   (create the volume first, inside the container: docker compose up --no-deps --no-start dashd)
+for d in blocks chainstate indexes evodb llmq; do rsync -a --info=progress2 "$FROM/$d" "$TO/"; done
+chown -R 101000:101000 "$TO"
+zfs destroy "$SRC@$SNAP"
+```
+
+Leave out `dash.conf`, wallets, `debug.log`, `.lock`, `*.pid` and `peers.dat`. `governance.dat` is
+optional, since the governance resync (section 7) rebuilds it anyway. Use a source of the same Core
+version or older (section 4). For the reference deployment, 50 GB copied in about 2.5 minutes, and
+dashd was at the tip with `getindexinfo` reporting `txindex.synced: true` under a minute after the
+start, with no reindex.
+
+**Firewall.** The container firewall can stay on (`firewall=1`). The tunnel is outbound only, the
+bridge is published on loopback, and dashd needs only outbound P2P unless you add
+`docker-compose.p2p.yml`.
+
+## 13. Reference deployment (R730)
+
+The project's own bridge, `gov-bridge.dashhq.org`. It is a Proxmox unprivileged LXC (Ubuntu 24.04,
+6 cores, 16 GB RAM, 2 GB swap, 250 GB on ZFS, starts on boot), set up as in section 12.
+
+| | |
+|---|---|
+| Checkout | `/opt/govhub` (stack in `/opt/govhub/deploy`, project `govhub`) |
+| Networks | Core **mainnet**, Platform **testnet** (the current dev wiring): `PLATFORM_NETWORK=testnet` |
+| Publishing | `PUBLISH=1`, `GOV_CONTRACT_ID=3ueAfbVe8LvCxYWk7bKvXxc5uHe7E1TDJHzN3k3ZDehZ`, identity `9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv` (HIGH key only on the server) |
+| Tuning | `DASHD_DBCACHE_MB=2048`, `DASHD_MAXCONNECTIONS=40` |
+| Public | `COMPOSE_PROFILES=tunnel`, tunnel `govhub`: `gov-bridge.dashhq.org -> http://bridge:8787` |
+| Backups | `/opt/govhub-backups`, daily from cron (below) |
+
+All commands below run as root in the container, from `/opt/govhub/deploy`.
+
+**Update.**
+
+```sh
+cd /opt/govhub && git pull
+cd deploy && docker compose build && docker compose up -d
+docker compose ps && curl -s http://127.0.0.1:8787/v1/status | jq '{proposals, height, core: .core.reachable, mism: .tallies.coreMismatches, publish: .publish.last}'
+```
+
+`build` rebuilds only the bridge (the other images are pulled). `up -d` recreates only what changed.
+A bridge restart misses ZMQ messages for a few seconds. The next reconcile recovers everything
+except votes superseded in that window. Take a backup first when the update touches the bridge
+(schema migrations are forward-only). Core upgrades are a separate decision (section 7).
+
+**Logs.**
+
+```sh
+docker compose logs -f --tail 100 bridge          # JSON lines
+docker compose logs --no-log-prefix bridge | jq -c 'select(.level == "error" or .level == "warn")'
+docker compose logs -f --tail 50 dashd
+docker compose logs --tail 50 cloudflared
+```
+
+Logs rotate at 20 MB x 5 per service (json-file). `/v1/status` shows the state at a glance: Core
+reachability and sync, the ZMQ counters and gaps, archive counts, tally mismatches with Core, and the
+last publish pass with the identity's credits before and after.
+
+**Backups of the SQLite archive.** The archive is the one thing here that cannot be rebuilt
+(section 6). `/etc/cron.d/govhub-backup` takes an online backup daily at 03:30, keeps 30 days and logs
+to syslog (`journalctl -t govhub-backup`). `pipefail` keeps the script's exit status, so cron and any
+monitoring see a failed backup:
+
+```
+30 3 * * * root bash -o pipefail -c '/opt/govhub/deploy/scripts/backup.sh /opt/govhub-backups 30 2>&1 | logger -t govhub-backup'
+```
+
+Check a copy with `sqlite3 /opt/govhub-backups/bridge-<date>.sqlite 'PRAGMA integrity_check'`. These
+copies sit on the same disk as the live archive, so ship them off the machine as well, and keep
+`secrets/` in an encrypted backup of its own. Restore: section 6.
+
+**Restarts.**
+
+```sh
+docker compose restart bridge                     # safe; a few seconds of missed ZMQ
+docker compose stop dashd && docker compose up -d # dashd gets up to 3 min to flush
+docker compose down && docker compose up -d       # whole stack; volumes are kept (never `down -v`)
+```
+
+Every service has `restart: unless-stopped` and the container starts on boot, so a host reboot brings
+the stack back by itself. After a long outage, run the governance resync (section 7) to recover the
+current votes.
+
+**Checks.**
+
+```sh
+docker compose exec -T bridge node bin/bridge.mjs verify 2>/dev/null | jq '{ok, votes: .votes.byStatus, tallies: .tallies.mismatches}'
+docker run --rm --network govhub_default -v govhub_bridge-data:/data \
+  -v /opt/govhub/services/bridge/scripts:/app/services/bridge/scripts:ro \
+  -e DB_PATH=/data/bridge.sqlite -e PLATFORM_NETWORK=testnet \
+  -e GOV_CONTRACT_ID=3ueAfbVe8LvCxYWk7bKvXxc5uHe7E1TDJHzN3k3ZDehZ \
+  -e BRIDGE_IDENTITY_ID=9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv \
+  --entrypoint node govhub-bridge:local scripts/readback.ts     # every published document, with proofs
+```
+
+Watch the identity balance (`publish.last.creditsAfter` in `/v1/status`; 10^11 credits = 1 DASH) and
+top it up before it runs out. An empty identity stops publishing, not archiving.
+
+**Bring-up record (2026-10-24).** dashd 23.1.8 was seeded from a snapshot of another mainnet node on
+the same host (section 12). It loaded the chain at 2,560,432, reached the tip (2,560,718) under a
+minute after the start, and reported txindex synced, with no reindex. The bridge archived 28
+proposals and 1 trigger over RPC. The governance resync (section 7) then delivered 4,958 signed votes
+on ZMQ in about a minute with 0 sequence gaps: 4,957 valid signatures plus 1 operator vote.
+`bridge verify` was clean, with 28/28 tallies equal to Core and threshold 332 = 332. One forced
+publish pass (`bridge publish --once --force`) replaced the 28 tallies and 2 cycles, so the
+voteSetHash of every tally now follows govhub-voteset-v1. It adopted the 28 existing proposal
+documents, had 0 failures, and cost 90,970,860 credits (0.00091 tDASH). `scripts/readback.ts` then
+matched 58/58 documents with proofs.
