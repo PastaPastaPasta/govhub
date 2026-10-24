@@ -12,6 +12,7 @@ const contract = toBase58(randomBytes(32));
 const key: SigningKey = { id: 2, purpose: 0, securityLevel: 2, type: 0, privateKey: Uint8Array.from({ length: 32 }, (_, i) => i + 1) };
 const err = (message: string, code = -1, name = 'Generic') => ({ message, code, name }); // WASM errors are plain objects
 const timeout = () => err('Failed to wait for state transition result: timeout reached', -1, 'TimeoutReached');
+const MASK = 0xff_ffff_ffffn;
 const nonceErr = (what: string) => err(`Identity x is trying to set an invalid identity nonce. The current identity nonce is 3, we are setting 4, error is ${what}`, 40204, 'StateTransitionBroadcastError');
 
 type Doc = { id: string; type: string; revision: bigint; properties: Record<string, unknown> };
@@ -46,9 +47,14 @@ function chain(o: {
 
   const apply = (tx: Tx) => {
     const s = clone(tip());
-    const top = s.nonce & 0xff_ffff_ffffn;
-    if (tx.nonce <= top) throw nonceErr(tx.nonce === top ? 'nonce already present at tip' : 'nonce already present in past');
-    if (tx.nonce > top + 24n) throw nonceErr('nonce too far in future');
+    // rs-dpp identity_nonce.rs: the low 40 bits are the top nonce, bit 40 + i flags nonce top - 1 - i as not used yet
+    const top = s.nonce & MASK;
+    let missing = s.nonce >> 40n;
+    const n = tx.nonce;
+    if (n > top + 24n) throw nonceErr('nonce too far in future');
+    if (n === top) throw nonceErr('nonce already present at tip');
+    if (n < top && top - n > 24n) throw nonceErr('nonce too far in past');
+    if (n < top && !(missing & (1n << (top - n - 1n)))) throw nonceErr('nonce already present in past');
     const d = s.docs.get(tx.id);
     if (tx.kind === 'create') {
       if (d) throw err('Document already present', 40100, 'StateTransitionBroadcastError');
@@ -58,7 +64,9 @@ function chain(o: {
       if (tx.revision !== d.revision + 1n) throw err('Invalid document revision', 40106, 'StateTransitionBroadcastError');
       s.docs.set(tx.id, { ...d, revision: tx.revision, properties: tx.properties! });
     } else s.docs.delete(tx.id);
-    s.nonce = tx.nonce; // sequential nonces in these tests: no missing bits
+    if (n < top) missing &= ~(1n << (top - n - 1n));
+    else missing = ((missing << (n - top)) | ((1n << (n - top - 1n)) - 1n)) & 0xff_ffffn;
+    s.nonce = (missing << 40n) | (n > top ? n : top);
     commit(s);
   };
 
@@ -129,8 +137,6 @@ function chain(o: {
     },
     PlatformVersion: { latest: () => 'latest' },
   };
-  let sends = 0;
-  let updates = 0;
   const identityAt = (s: State) => ({
     revision: s.revision,
     getPublicKeyById: (id: number) => (s.keys.has(id) ? { id, toObject: () => ({ id, purpose: 0, securityLevel: 2, type: 0, data: s.keys.get(id)! }) } : undefined),
@@ -145,8 +151,7 @@ function chain(o: {
         return { data: s.nonce, metadata: { height: s.height, protocolVersion: version } };
       },
       update: async ({ identity, addPublicKeys }: { identity: { revision: bigint }; addPublicKeys: Array<{ o: { keyId: number; data: Uint8Array } }> }) => {
-        log.updates++;
-        const script = o.update?.(updates++) ?? {};
+        const script = o.update?.(log.updates++) ?? {};
         if (script.before) throw script.before;
         const s = clone(tip());
         if (identity.revision !== s.revision) throw err('Invalid identity revision', 40203, 'StateTransitionBroadcastError');
@@ -168,19 +173,24 @@ function chain(o: {
     stateTransitions: {
       broadcastAndWait: async (st: { tx: Tx; signed: boolean }) => {
         expect(st.signed).toBe(true);
+        const script = o.send?.(log.sends.length, st.tx) ?? {};
         log.sends.push(st);
-        const script = o.send?.(sends++, st.tx) ?? {};
         if (script.before) throw script.before;
         apply(st.tx);
         if (script.after) throw script.after;
       },
     },
   };
-  const sleeps: number[] = [];
-  const port = createEvoPlatform(evo as never, sdk as never, 'testnet', { sleep: async (ms) => void sleeps.push(ms) });
+  const port = createEvoPlatform(evo as never, sdk as never, 'testnet', { sleep: async () => {} });
   /** A write by someone else (another tab): takes the next nonce. */
   const foreign = () => commit({ ...clone(tip()), nonce: tip().nonce + 1n });
-  return { port, log, sleeps, tip, reads, foreign };
+  /** Any other change on Platform (a new block). */
+  const mutate = (f: (s: State) => void) => {
+    const s = clone(tip());
+    f(s);
+    commit(s);
+  };
+  return { port, log, tip, reads, foreign, mutate };
 }
 
 const create = (data: Record<string, DocValue> = { body: 'x', fmt: 1 }): DocumentWrite => ({ action: 'create', contractId: contract, type: 'comment', data });
@@ -200,6 +210,8 @@ describe('nonce rules', () => {
     expect(classifySend(err('execution not proved', -1, 'ExecutionNotProved'))).toBe('ambiguous');
     expect(classifySend(err('transport error: unavailable', -1, 'DapiClientError'))).toBe('ambiguous');
     expect(classifySend(err('tx already exists in cache', -1, 'AlreadyExists'))).toBe('ambiguous');
+    expect(classifySend(err('bad argument', -1, 'InvalidArgument'))).toBe('refused');
+    expect(classifySend(err('serialization', -1, 'SerializationError'))).toBe('refused');
   });
 
   it('knows when a nonce can never be applied again (top, used in the window, more than 24 below)', () => {
@@ -262,7 +274,7 @@ describe('writeDocument: creates', () => {
     expect(c.reads.nonce).toBe(1);
   });
 
-  it('PV13 duplicate path: a re-signed create refused as "already present" is success once a lagging, failing read finally finds the id', async () => {
+  it('PV13 duplicate path: after a landed attempt, a re-send refused 40100 ("already present") is success once a failing, lagging read finally finds the id', async () => {
     // send 0 lands, the client sees a timeout; send 1 is refused 40100 (the document exists); the next reads fail, lag, then find it
     const c = chain({
       version: 13,
@@ -303,11 +315,30 @@ describe('writeDocument: spent nonces', () => {
     expect(c.tip().docs.size).toBe(1);
   });
 
-  it('replace and delete sign again with a fresh nonce after "nonce already present" (they cannot apply twice)', async () => {
+  it('replace and delete sign again with a fresh nonce after "nonce already present" / "too far in past" (they cannot apply twice)', async () => {
     const c = chain({ docs: [stored()], read: (k, n) => (k === 'nonce' && n === 0 ? 1 : 0) });
     c.foreign();
     expect(await write(c, { action: 'replace', contractId: contract, type: 'profile', id: docId, revision: 3, data: { displayName: 'a' } })).toEqual({ id: docId, revision: 4 });
     expect(c.log.signs).toBe(2);
+    const d = chain({ docs: [stored()], send: (n) => (n === 0 ? { before: nonceErr('nonce too far in past') } : undefined) });
+    expect(await write(d, { action: 'delete', contractId: contract, type: 'profile', id: docId })).toEqual({ id: docId });
+    expect(d.log.signs).toBe(2);
+    expect(d.tip().docs.has(docId)).toBe(false);
+  });
+
+  it('"already present" while the proved nonce still flags ours as unused (that read lags the refusing node): re-send, never re-sign a create', async () => {
+    const c = chain({ read: (k, n) => (k === 'nonce' && n === 0 ? 1 : 0), send: (n) => (n === 0 ? { before: nonceErr('nonce already present in past') } : undefined) });
+    c.mutate((s) => (s.nonce = 5n | (1n << 40n))); // top 5, nonce 4 not used yet; our first read is a block behind (3) -> we sign 4
+    const r = await write(c, create());
+    expect(c.log.signs).toBe(1);
+    expect((c.log.sends[1] as { tx: Tx }).tx.nonce).toBe(4n);
+    expect(c.tip().docs.has(r.id)).toBe(true);
+  });
+
+  it('a spent nonce on the last attempt does not sign a transition that would never be sent', async () => {
+    const c = chain({ docs: [stored()], send: () => ({ before: nonceErr('nonce already present at tip') }) });
+    await expect(write(c, { action: 'replace', contractId: contract, type: 'profile', id: docId, revision: 3, data: { displayName: 'a' } })).rejects.toThrow(/did not confirm/);
+    expect(c.log.signs).toBe(c.log.sends.length);
   });
 });
 
@@ -330,6 +361,11 @@ describe('writeDocument: replace', () => {
     expect(theirs.reads.doc).toBe(1); // definitely not ours: no more reads
   });
 
+  it('a replace of a document that is not on Platform ends with a message saying so, not "it may still appear"', async () => {
+    const c = chain({});
+    await expect(write(c, { action: 'replace', contractId: contract, type: 'profile', id: docId, revision: 3, data: { displayName: 'a' } })).rejects.toThrow(/not on Platform/);
+  });
+
   it('landed but the client saw ExecutionNotProved: settled by state, not re-applied', async () => {
     const c = chain({ docs: [stored()], send: (n) => (n === 0 ? { after: err('not proved', -1, 'ExecutionNotProved') } : undefined) });
     const r = await write(c, { action: 'replace', contractId: contract, type: 'profile', id: docId, revision: 3, data: { displayName: 'a' } });
@@ -346,7 +382,7 @@ describe('writeDocument: delete', () => {
     const c = chain({ docs: [stored()], send: (n) => (n === 0 ? { after: timeout() } : undefined), read: (k, n) => (k === 'doc' && n === 1 ? 1 : 0) });
     expect(await write(c, del)).toEqual({ id: docId });
     expect(c.tip().docs.has(docId)).toBe(false);
-    expect(c.log.signs).toBeLessThanOrEqual(2);
+    expect(c.log.signs).toBe(1);
   });
 
   it('a re-send refused 40101 after the first landed is done (absent at a height above the pre-read)', async () => {
@@ -354,9 +390,12 @@ describe('writeDocument: delete', () => {
     expect(await write(c, del)).toEqual({ id: docId });
   });
 
-  it('retries a pre-read that lags (absent), then deletes', async () => {
-    const c = chain({ docs: [stored()], read: (k, n) => (k === 'doc' && n === 0 ? { error: err('transport', -1, 'DapiClientError') } : undefined) });
+  it('retries a pre-read that lags (absent: the document is one block newer than that node) or fails, then deletes', async () => {
+    const c = chain({ read: (k, n) => (k !== 'doc' ? 0 : n === 0 ? 1 : n === 1 ? { error: err('transport', -1, 'DapiClientError') } : 0) });
+    c.mutate((s) => s.docs.set(docId, stored()));
     expect(await write(c, del)).toEqual({ id: docId });
+    expect(c.reads.doc).toBeGreaterThanOrEqual(3);
+    expect(c.tip().docs.has(docId)).toBe(false);
   });
 
   it('deleting a document that is already gone fails fast with a clear message and sends nothing', async () => {
@@ -375,10 +414,22 @@ describe('writeDocument: delete', () => {
 });
 
 describe('writeDocument: identity and key', () => {
-  it('reads the identity again when a lagging node does not show the signing key yet (right after addKeys)', async () => {
-    const c = chain({ read: (k, n) => (k === 'identity' && n === 0 ? { error: err('timeout', -1, 'TimeoutReached') } : undefined) });
+  it('reads the identity again when a lagging node does not show the signing key yet (right after addKeys), or the read fails', async () => {
+    const c = chain({ read: (k, n) => (k === 'identity' && n === 0 ? 1 : 0) });
+    const pub = c.tip().keys.get(2)!;
+    c.tip().keys.delete(2);
+    c.mutate((s) => s.keys.set(2, pub)); // the key arrives one block later; the first read is a block behind
     await write(c, create());
     expect(c.reads.identity).toBe(2);
+    const e = chain({ read: (k, n) => (k === 'identity' && n === 0 ? { error: err('timeout', -1, 'TimeoutReached') } : undefined) });
+    await write(e, create());
+    expect(e.reads.identity).toBe(2);
+  });
+
+  it('a local SDK error before anything is sent (InvalidArgument) fails at once', async () => {
+    const c = chain({ send: () => ({ before: err('invalid document', -1, 'InvalidArgument') }) });
+    await expect(write(c, create())).rejects.toThrow(/invalid document/);
+    expect(c.log.sends).toHaveLength(1);
   });
 
   it('refuses a wiped (all-zero) key and never touches the caller key', async () => {
@@ -401,16 +452,44 @@ describe('addKeys', () => {
     expect(c.tip().revision).toBe(2n);
   });
 
-  it('a lagging identity read (older revision, 40203) and a spent identity nonce are retried; the nonce is refreshed', async () => {
+  it('a spent identity nonce is retried after refreshIdentityNonce', async () => {
     const c = chain({ update: (n) => (n === 0 ? { before: nonceErr('nonce already present in past') } : undefined) });
     await c.port.addKeys({ identityId: owner, master, keys: [k3] });
     expect(c.log.refreshes).toBe(1);
     expect(c.log.updates).toBe(2);
   });
 
-  it('does not retry an unrelated "not found" refusal', async () => {
-    const c = chain({ update: () => ({ before: err('public key with id 9 not found in signer', 10000, 'StateTransitionBroadcastError') }) });
-    await expect(c.port.addKeys({ identityId: owner, master, keys: [k3] })).rejects.toThrow(/not found in signer/);
-    expect(c.log.updates).toBe(1);
+  it('a node with an older revision (40203) or without the identity yet (20000) is retried', async () => {
+    for (const code of [40203, 20000]) {
+      const c = chain({ update: (n) => (n === 0 ? { before: err('lagging', code, 'StateTransitionBroadcastError') } : undefined) });
+      await c.port.addKeys({ identityId: owner, master, keys: [k3] });
+      expect(c.log.updates).toBe(2);
+      expect(c.tip().keys.has(3)).toBe(true);
+    }
+  });
+
+  it('a duplicate-key refusal after an update that landed (the identity read before it lagged) is done', async () => {
+    const c = chain({ update: (n) => (n === 0 ? { after: timeout() } : undefined), read: (k, n) => (k === 'identity' && n === 1 ? 1 : 0) });
+    await c.port.addKeys({ identityId: owner, master, keys: [k3] }); // 2nd update: stale identity -> 40203 -> re-read shows the keys
+    expect(c.tip().revision).toBe(2n);
+    const d = chain({ update: (n) => (n === 0 ? { after: timeout() } : n === 1 ? { before: err('Duplicated public key id', 40207, 'StateTransitionBroadcastError') } : undefined), read: (k, n) => (k === 'identity' && n === 1 ? 1 : 0) });
+    await d.port.addKeys({ identityId: owner, master, keys: [k3] });
+    expect(d.log.updates).toBe(2);
+  });
+
+  it('keys already on the identity need no update', async () => {
+    const c = chain({});
+    c.mutate((s) => s.keys.set(3, publicKeyOf(k3.privateKey)));
+    await c.port.addKeys({ identityId: owner, master, keys: [k3] });
+    expect(c.log.updates).toBe(0);
+  });
+
+  it('does not retry an unrelated "not found" refusal or a local error', async () => {
+    for (const e of [err('public key with id 9 not found in signer', 10000, 'StateTransitionBroadcastError'), err('public key 9 not found in signer', -1, 'InvalidArgument')]) {
+      const c = chain({ update: () => ({ before: e }) });
+      await expect(c.port.addKeys({ identityId: owner, master, keys: [k3] })).rejects.toThrow(/not found in signer/);
+      expect(c.log.updates).toBe(1);
+      expect(c.reads.identity).toBe(2); // the read before the update and one settle read
+    }
   });
 });

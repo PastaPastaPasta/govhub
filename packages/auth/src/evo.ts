@@ -49,16 +49,19 @@ export function nonceConsumed(raw: bigint, n: bigint): boolean {
  *  - lag:       40101 document not found: a node that does not have the document yet; re-send the same transition.
  *  - ambiguous: timeouts, transport, ExecutionNotProved, "already exists in cache" and anything else without a consensus code: the
  *               transition may or may not have executed; settled by proved state, never taken as failure.
- *  - refused:   any other consensus error (a unique index, a stale revision, validation): this send was refused.
+ *  - refused:   any other consensus error (a unique index, a stale revision, validation), or a local error the SDK raises before
+ *               anything is sent (bad argument, serialization, config): this send was refused.
  */
 export type SendOutcome = 'future' | 'past' | 'lag' | 'ambiguous' | 'refused';
+const LOCAL_KINDS = new Set(['InvalidArgument', 'SerializationError', 'Config', 'NonceOverflow', 'NotImplemented', 'MissingDependency']);
 export function classifySend(e: unknown): SendOutcome {
   const m = errText(e);
   const code = errCode(e);
+  const name = (e as { name?: unknown } | null)?.name;
   if (/nonce too far in future/i.test(m)) return 'future';
   if (/nonce (already present (in past|at tip)|too far in past)/i.test(m)) return 'past';
   if (code === 40101 || /\b40101\b|document not found/i.test(m)) return 'lag';
-  if (code >= 10000 || (e as { name?: unknown } | null)?.name === 'StateTransitionBroadcastError') return 'refused';
+  if (code >= 10000 || name === 'StateTransitionBroadcastError' || LOCAL_KINDS.has(String(name))) return 'refused';
   return 'ambiguous';
 }
 
@@ -91,6 +94,8 @@ export interface EvoPlatformOptions {
 
 /** Broadcast attempts per write; proved reads per settle (backoff 1, 2, 4, 8 s); reads before a delete gives up (about 7 s). */
 const MAX_SENDS = 6;
+/** No new send starts after this long (the settle reads still run): a write never hangs the UI for many minutes. */
+const SEND_BUDGET_MS = 120_000;
 const READS = 5;
 const PRE_READS = 4;
 const sendBackoff = (i: number) => Math.min(2500 * (i + 1), 10_000);
@@ -214,12 +219,16 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
   interface Plan {
     /** The unsigned batch transition for this identity-contract nonce at protocol `pv` (a create learns its id here). */
     build(nonce: bigint, pv: number): Evo.StateTransition;
-    /** One proved read of the state this write wants ('no': it can no longer be ours, stop reading). */
+    /** One proved read of the state this write wants ('no': our transition can no longer apply; stop reading and sending). */
     check(): Promise<{ state: Check; height: bigint }>;
     /** Signing again with another nonce cannot apply the write twice (replace and delete; a create would make a second document). */
     idempotent: boolean;
     /** A refused first send is final without a read (create, delete); a replace is still checked (an earlier call may have landed). */
     readOnFirstRefusal: boolean;
+    /** Why a 'no' check ends the write. */
+    noMessage: string;
+    /** The error when nothing could be confirmed (default: the write may still appear). */
+    unconfirmed?: () => string | undefined;
     result(): DocumentWritten;
   }
 
@@ -244,12 +253,24 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
     const owner = identifierBytes(ownerId);
     const contract = identifierBytes(op.contractId);
     const latest = w.PlatformVersion.latest() as never;
-    const readDoc = async (id: string) => {
+    /** A proved read reduced to plain values (the WASM document is freed). */
+    const readDoc = async <T>(id: string, view: (d: Evo.Document) => T) => {
       const r = await sdk.documents.getWithProof(op.contractId, op.type, id);
-      return { doc: r.data, height: BigInt(r.metadata.height) };
+      const height = BigInt(r.metadata.height);
+      if (!r.data) return { found: false as const, height };
+      try {
+        return { found: true as const, height, value: view(r.data) };
+      } finally {
+        free(r.data);
+      }
     };
-    const batch = (t: { toDocumentTransition(): Evo.DocumentTransition }) =>
-      w.BatchTransition.fromBatchedTransitions([new w.BatchedTransition(t.toDocumentTransition() as never)], ownerId, 0).toStateTransition();
+    const batch = (t: { toDocumentTransition(): Evo.DocumentTransition; free(): void }) => {
+      try {
+        return w.BatchTransition.fromBatchedTransitions([new w.BatchedTransition(t.toDocumentTransition() as never)], ownerId, 0).toStateTransition();
+      } finally {
+        free(t);
+      }
+    };
 
     let plan: Plan;
     if (op.action === 'create') {
@@ -263,17 +284,20 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
           );
           const t = new w.DocumentCreateTransition({ document, identityContractNonce: nonce, platformVersion: pv });
           id = t.base.id.toString();
+          free(document);
           return batch(t);
         },
         async check() {
-          const r = await readDoc(id);
-          return { state: r.doc ? 'done' : 'pending', height: r.height };
+          const r = await readDoc(id, () => true);
+          return { state: r.found ? 'done' : 'pending', height: r.height };
         },
         idempotent: false,
         readOnFirstRefusal: false,
+        noMessage: '',
         result: () => ({ id, revision: 1 }),
       };
     } else if (op.action === 'replace') {
+      let absent = false;
       plan = {
         build(nonce) {
           // The transition carries the document's revision + 1.
@@ -281,34 +305,58 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
             { $formatVersion: '0', $id: identifierBytes(op.id), $ownerId: owner, $dataContractId: contract, $type: op.type, $revision: BigInt(op.revision), ...toSdk(op.data) } as never,
             latest,
           );
-          return batch(new w.DocumentReplaceTransition({ document, identityContractNonce: nonce }));
+          const t = new w.DocumentReplaceTransition({ document, identityContractNonce: nonce });
+          free(document);
+          return batch(t);
         },
         async check() {
-          const r = await readDoc(op.id);
+          const r = await readDoc(op.id, (d) => ({ rev: BigInt(d.revision ?? 0n), ours: sameData(d.properties, op.data) }));
+          // Absent may be a node that does not have the document yet: pending, but remembered for the final message.
+          absent = !r.found;
+          if (!r.found) return { state: 'pending', height: r.height };
           const want = BigInt(op.revision + 1);
-          const rev = r.doc ? BigInt(r.doc.revision ?? 0n) : -1n;
-          const state: Check = rev < want ? 'pending' : rev === want && sameData(r.doc!.properties, op.data) ? 'done' : 'no';
-          return { state, height: r.height };
+          const { rev, ours } = r.value;
+          if (rev < want) return { state: 'pending', height: r.height };
+          return { state: rev === want && ours ? 'done' : 'no', height: r.height };
         },
         idempotent: true,
         readOnFirstRefusal: true,
+        noMessage: 'This document was changed on Platform meanwhile; this change was not saved. Reload and try again.',
+        unconfirmed: () => (absent ? 'This document is not on Platform (deleted, or not visible yet); this change was not confirmed. Reload and try again.' : undefined),
         result: () => ({ id: op.id, revision: op.revision + 1 }),
       };
     } else {
       // The document must be there before the delete (a lagging node may not have it yet: read again while absent).
-      const pre = await readUntil(() => readDoc(op.id), (r) => !!r.doc, PRE_READS);
-      if (!pre.hit?.doc) throw new Error(pre.last ? 'Nothing to delete: this document is not on Platform (it may already be deleted).' : errText(pre.error));
-      const { doc, height: h0 } = pre.hit;
+      let doc: Evo.Document | undefined;
+      let h0 = 0n;
+      const pre = await readUntil(
+        async () => {
+          const r = await sdk.documents.getWithProof(op.contractId, op.type, op.id);
+          doc = r.data;
+          h0 = BigInt(r.metadata.height);
+          return !!doc;
+        },
+        (present) => present,
+        PRE_READS,
+      );
+      if (!pre.hit || !doc) throw new Error(pre.last === false ? 'Nothing to delete: this document is not on Platform (it may already be deleted).' : errText(pre.error));
+      const stored = doc;
       plan = {
-        build: (nonce) => batch(new w.DocumentDeleteTransition({ document: doc, identityContractNonce: nonce })),
+        build: (nonce) => batch(new w.DocumentDeleteTransition({ document: stored, identityContractNonce: nonce })),
         async check() {
-          const r = await readDoc(op.id);
-          return { state: !r.doc && r.height > h0 ? 'done' : 'pending', height: r.height };
+          const r = await readDoc(op.id, () => true);
+          return { state: !r.found && r.height > h0 ? 'done' : 'pending', height: r.height };
         },
         idempotent: true,
         readOnFirstRefusal: false,
+        noMessage: '',
         result: () => ({ id: op.id }),
       };
+      try {
+        return await send(ownerId, op.contractId, key, idKey, plan);
+      } finally {
+        free(stored);
+      }
     }
     return send(ownerId, op.contractId, key, idKey, plan);
   }
@@ -320,7 +368,9 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
       const r = await sdk.identities.contractNonceWithProof(ownerId, contractId);
       return { raw: BigInt(r.data ?? 0n), height: BigInt(r.metadata.height), pv: Math.max(Number(r.metadata.protocolVersion) || 0, sdk.version()) };
     };
-    let pv = 0;
+    const first = await readUntil(readNonce, () => true);
+    if (!first.hit) throw new Error(errText(first.error));
+    let pv = first.hit.pv;
     const sign = (nonce: bigint) => {
       const st = plan.build(nonce, pv);
       const p = pk(key.privateKey);
@@ -334,53 +384,59 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
     const tryCheck = () => plan.check().catch(() => ({ state: 'pending' as Check, height: -1n }));
     /** Proved reads until the write shows as done (or definitely not ours). */
     const settled = async () => (await readUntil(tryCheck, (c) => c.state !== 'pending')).hit?.state === 'done';
+    const deadline = Date.now() + SEND_BUDGET_MS;
 
-    const first = await readUntil(readNonce, () => true);
-    if (!first.hit) throw new Error(errText(first.error));
-    pv = first.hit.pv;
-    let nonce =(first.hit.raw & NONCE_VALUE) + 1n;
+    let nonce = (first.hit.raw & NONCE_VALUE) + 1n;
     let st = sign(nonce);
     let sent = false; // an earlier send of ours may have executed
     let last: unknown;
-    for (let i = 0; i < MAX_SENDS; i++) {
-      try {
-        await sdk.stateTransitions.broadcastAndWait(st);
-        return plan.result();
-      } catch (e) {
-        last = e;
-        const outcome = classifySend(e);
-        if (outcome === 'refused') {
-          if (!sent && !plan.readOnFirstRefusal) throw e;
-          if (await settled()) return plan.result();
-          throw e;
-        }
-        sent = true;
-        if ((await tryCheck()).state === 'done') return plan.result();
-        if (outcome === 'past') {
-          // This nonce is spent. Sign again with a fresh one, unless the spender may have been our own transition (a create): then
-          // only when a proved read shows the nonce used and, at a height at or above that read, our document absent.
-          const fresh = await readNonce().catch(() => null);
-          if (fresh) {
-            let resign = plan.idempotent;
-            if (!resign && nonceConsumed(fresh.raw, nonce)) {
-              const c = await tryCheck();
-              if (c.state === 'done') return plan.result();
-              resign = c.height >= fresh.height;
-            }
-            if (resign) {
-              const top = fresh.raw & NONCE_VALUE;
-              pv = fresh.pv;
-              nonce = (top > nonce ? top : nonce) + 1n;
-              st = sign(nonce);
-              continue;
+    try {
+      for (let i = 0; i < MAX_SENDS && (i === 0 || Date.now() < deadline); i++) {
+        try {
+          await sdk.stateTransitions.broadcastAndWait(st);
+          return plan.result();
+        } catch (e) {
+          last = e;
+          const outcome = classifySend(e);
+          if (outcome === 'refused') {
+            if (!sent && !plan.readOnFirstRefusal) throw e;
+            if (await settled()) return plan.result();
+            throw e;
+          }
+          sent = true;
+          const now = await tryCheck();
+          if (now.state === 'done') return plan.result();
+          if (now.state === 'no') throw new Error(plan.noMessage);
+          const lastTry = i === MAX_SENDS - 1;
+          if (outcome === 'past' && !lastTry) {
+            // This nonce is spent. Sign again with a fresh one, unless the spender may have been our own transition (a create): then
+            // only when a proved read shows the nonce used and, at a height at or above that read, our document absent.
+            const fresh = await readNonce().catch(() => null);
+            if (fresh) {
+              let resign = plan.idempotent;
+              if (!resign && nonceConsumed(fresh.raw, nonce)) {
+                const c = await tryCheck();
+                if (c.state === 'done') return plan.result();
+                resign = c.height >= fresh.height;
+              }
+              if (resign) {
+                const top = fresh.raw & NONCE_VALUE;
+                pv = fresh.pv;
+                nonce = (top > nonce ? top : nonce) + 1n;
+                free(st);
+                st = sign(nonce);
+                continue;
+              }
             }
           }
+          if (!lastTry) await sleep(sendBackoff(i));
         }
-        if (i < MAX_SENDS - 1) await sleep(sendBackoff(i));
       }
+      if (await settled()) return plan.result();
+      throw new Error(plan.unconfirmed?.() ?? `Platform did not confirm this write (${errText(last)}). It may still appear; reload before trying again.`);
+    } finally {
+      free(st);
     }
-    if (await settled()) return plan.result();
-    throw new Error(`Platform did not confirm this write after ${MAX_SENDS} attempts (${errText(last)}). It may still appear; reload before trying again.`);
   }
 
   return {
@@ -422,13 +478,16 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
     },
     async addKeys({ identityId, master, keys }) {
       // The SDK builds the IdentityUpdate (identity nonce from its cache). Retried on a lagging node (identity not there yet 20000,
-      // older revision 40203), nonce errors and ambiguous outcomes; done when a proved read shows every key at the revision one above
-      // a revision we sent from (so a retry after an update that landed is success, not a duplicate-key failure).
+      // older revision 40203), nonce errors and ambiguous outcomes. Done when a proved read shows every key with our public key data
+      // (they come from the user's own seed, so that is the end state), at a revision above the first one we sent from: a retry after an
+      // update that landed is success, not a duplicate-key failure, and keys already there before any send need no update.
       const wanted = keys.map((k) => ({ id: k.id, data: evoPub(k.privateKey) }));
-      const sentFrom = new Set<bigint>();
+      let sentFrom: bigint | undefined;
+      let ambiguous = false; // an earlier update may have executed
       const landed = (i: Evo.Identity | undefined) =>
-        !!i && sentFrom.has(BigInt(i.revision) - 1n) && wanted.every((k) => { const p = i.getPublicKeyById(k.id); return !!p && bytesEqual(keyInfo(p).data, k.data); });
-      const settled = async () => (await readUntil(() => fetchIdentity(identityId), landed)).hit !== undefined;
+        !!i && (sentFrom === undefined || BigInt(i.revision) > sentFrom) && wanted.every((k) => { const p = i.getPublicKeyById(k.id); return !!p && bytesEqual(keyInfo(p).data, k.data); });
+      // A duplicate-key refusal (40206, 40207) says the keys may be there already: read patiently then, as after an ambiguous outcome.
+      const settled = async (e?: unknown) => (await readUntil(() => fetchIdentity(identityId), landed, ambiguous || [40206, 40207].includes(errCode(e)) ? READS : 1)).hit !== undefined;
       const creation = () =>
         keys.map(
           (k) =>
@@ -453,7 +512,7 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
             continue;
           }
           if (landed(identity)) return;
-          sentFrom.add(BigInt(identity.revision));
+          sentFrom ??= BigInt(identity.revision);
           try {
             await sdk.identities.update({ identity, addPublicKeys: creation(), signer });
             return;
@@ -461,18 +520,19 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
             last = e;
             const outcome = classifyUpdate(e);
             if (outcome === 'refused') {
-              if (await settled()) return;
+              if (await settled(e)) return;
               throw new Error(errText(e));
             }
+            ambiguous = true;
             // A spent identity nonce: make the SDK fetch it again on the next update (see the README: refreshIdentityNonce).
             if (outcome === 'past') await sdk.wasm.refreshIdentityNonce(new w.Identifier(identityId)).catch(() => undefined);
           }
         }
-        if (sentFrom.size && (await settled())) return;
+        if (sentFrom !== undefined && (await settled())) return;
         throw new Error(errText(last));
       });
     },
-    writeDocument: (o) => writeDocument(o),
+    writeDocument,
     vault: {
       list: (contractId, ownerId) => queryVault(contractId, [['$ownerId', '==', ownerId]], [['$ownerId', 'asc'], ['credentialId', 'asc']]),
       async byCredential(contractId, ownerId, credentialId) {

@@ -45,8 +45,10 @@ already-loaded SDK so the 8.7 MB chunk is never pulled in by this package) and `
    same second reuses the cached nonce. Both keep `max(cached, platform)` (335), so neither can lower a nonce, and neither helps
    when the re-fetch itself hits a lagging node. Live (`scripts/live-writer.ts u6 cache`, `scripts/results/live-writer-cache.json`):
    after a write that bypassed the cache, a facade create without a refresh signed the spent nonce ("nonce already present at
-   tip"); with `identityNonceStaleTimeS: 0` (cache fetched seconds earlier) and after `refreshIdentityNonce` it succeeded. An
-   earlier run without the 10 s pause failed even with `identityNonceStaleTimeS: 0`: the re-fetch came from a lagging node. The document writer
+   tip"); with `identityNonceStaleTimeS: 0` (cache fetched seconds earlier) and after `refreshIdentityNonce` it succeeded. Of
+   two earlier runs without the 10 s pause after the bypassing write, one timed out on that create (transport, nothing stored)
+   and one was refused with `identityNonceStaleTimeS: 0` ("nonce already present at tip"); that the pause fixed it points to a
+   re-fetch from a lagging node, which this run does not prove. The document writer
    does not depend on the cache at all: it reads `identities.contractNonceWithProof` (a direct proved fetch,
    `getIdentityContractNonceWithProofInfo`) and passes `identityContractNonce` itself; `addKeys` (SDK-built IdentityUpdate) calls
    `refreshIdentityNonce` after a spent-nonce refusal.
@@ -64,7 +66,10 @@ Each write is a batch transition built and signed once per nonce (`DocumentCreat
 |---|---|
 | `nonce too far in future`, 40101, ambiguous (timeout, transport, `ExecutionNotProved`, `tx already exists in cache`) | re-send the SAME signed transition |
 | `nonce already present in past / at tip`, `nonce too far in past` | sign again with a fresh proved nonce; a create only once a proved nonce read shows the nonce used and a later proved read shows its own id absent (no second document) |
-| any other consensus refusal | create / delete: final on the first send; after an earlier send, done only if proved reads (with backoff) show the write |
+| any other consensus refusal, or a local SDK error before sending (`InvalidArgument`, `SerializationError`, ...) | create / delete: final on the first send; replace (an earlier call may have landed), or any write after an earlier send: done only if proved reads (with backoff) show the write |
+| a proved read shows a replace can no longer apply (another revision or other data) | fail with that message |
+
+No new send starts after 2 minutes; the settle reads still run, and the final error says whether the write may still appear.
 
 Done means: create, a proved read finds the id it signed; replace, `$revision === revision + 1` with exactly our fields; delete,
 the document was found by a proved pre-read at height H0 (a document already gone fails fast) and a proved read shows it absent at
