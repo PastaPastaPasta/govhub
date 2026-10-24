@@ -2,7 +2,7 @@
 //   node scripts/size.mjs
 import { build } from 'esbuild';
 import { gzipSync, brotliCompressSync } from 'node:zlib';
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, basename } from 'node:path';
 
@@ -49,7 +49,9 @@ size('full barrel: every export of @govhub/dapi, no BLS/X11', total(await bundle
 
 // 3. separate entry points
 size('@govhub/dapi/bls (noble bls12-381 + ChainLock rules)', total(await bundle(`export * from './src/bls.ts'`)));
-size('@govhub/dapi/x11 (vendored @dashevo/x11-hash-js)', total(await bundle(`export * from './src/x11.ts'`)));
+size('@govhub/dapi/x11 (sphlib X11 compiled to WebAssembly, inline base64 + loader)', total(await bundle(`export * from './src/x11.ts'`)));
+const wasmB64 = /X11_WASM_BASE64 = '([^']+)'/.exec(readFileSync(join(root, 'src/vendor/x11-wasm.ts'), 'utf8'))[1];
+size('  ...of which the .wasm binary alone (what a separate asset would cost)', Buffer.from(wasmB64, 'base64'));
 size('everything: barrel + bls + x11', total(await bundle(`export * from './src/index.ts'; export * from './src/bls.ts'; export * from './src/x11.ts'`)));
 
 console.table(rows);

@@ -18,10 +18,10 @@
     "brotliKB": 2.1
   },
   {
-    "label": "  lazy chunk (loaded on first use): agreed-sml, sml, cbor",
-    "rawKB": 5.5,
-    "gzipKB": 2.6,
-    "brotliKB": 2.3
+    "label": "  lazy chunk (loaded on first use): sml, agreed-sml, cbor",
+    "rawKB": 5.8,
+    "gzipKB": 2.7,
+    "brotliKB": 2.4
   },
   {
     "label": "  lazy chunk (loaded on first use): watch, bloom, race",
@@ -31,9 +31,9 @@
   },
   {
     "label": "createDapi + every lazy chunk",
-    "rawKB": 39.8,
-    "gzipKB": 15.8,
-    "brotliKB": 14
+    "rawKB": 40.2,
+    "gzipKB": 15.9,
+    "brotliKB": 14.1
   },
   {
     "label": "DapiCore only (grpc-web + protobuf + 10 RPCs)",
@@ -43,15 +43,15 @@
   },
   {
     "label": "parsers (tx, block, header, merkleblock, CLSIG, ISDLOCK) + bloom + SML + CBOR",
-    "rawKB": 15.3,
-    "gzipKB": 6.5,
-    "brotliKB": 5.7
+    "rawKB": 15.6,
+    "gzipKB": 6.6,
+    "brotliKB": 5.8
   },
   {
     "label": "full barrel: every export of @govhub/dapi, no BLS/X11",
-    "rawKB": 43.3,
-    "gzipKB": 17,
-    "brotliKB": 15.2
+    "rawKB": 43.7,
+    "gzipKB": 17.1,
+    "brotliKB": 15.3
   },
   {
     "label": "@govhub/dapi/bls (noble bls12-381 + ChainLock rules)",
@@ -60,15 +60,21 @@
     "brotliKB": 24.1
   },
   {
-    "label": "@govhub/dapi/x11 (vendored @dashevo/x11-hash-js)",
-    "rawKB": 95.2,
-    "gzipKB": 40.5,
-    "brotliKB": 29.9
+    "label": "@govhub/dapi/x11 (sphlib X11 compiled to WebAssembly, inline base64 + loader)",
+    "rawKB": 140.1,
+    "gzipKB": 58.9,
+    "brotliKB": 47.4
+  },
+  {
+    "label": "  ...of which the .wasm binary alone (what a separate asset would cost)",
+    "rawKB": 103.8,
+    "gzipKB": 45.1,
+    "brotliKB": 33.3
   },
   {
     "label": "everything: barrel + bls + x11",
-    "rawKB": 207,
-    "gzipKB": 82.1,
-    "brotliKB": 66
+    "rawKB": 251.8,
+    "gzipKB": 100.5,
+    "brotliKB": 84
   }
 ]

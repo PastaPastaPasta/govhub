@@ -1,0 +1,69 @@
+{
+  "date": "2026-10-24T18:26:29.783Z",
+  "node": "v22.23.2",
+  "cpu": "Apple M4 Pro",
+  "arch": "arm64",
+  "platform": "darwin",
+  "node_results": {
+    "wasmMany": {
+      "headers": 50000,
+      "ms": 426.4,
+      "headersPerSec": 117264,
+      "usPerHeader": 8.53,
+      "allRunsMs": [
+        478.9,
+        446.3,
+        426.4,
+        471.9,
+        462.8
+      ]
+    },
+    "wasmPerCall": {
+      "headers": 10000,
+      "ms": 91.8,
+      "headersPerSec": 108917,
+      "usPerHeader": 9.18
+    },
+    "jsOracle": {
+      "headers": 2000,
+      "ms": 627.9,
+      "headersPerSec": 3185,
+      "usPerHeader": 313.96
+    },
+    "coldFirstCallMs": 3.33,
+    "speedupManyVsJs": 36.8,
+    "matchesOracle": true
+  },
+  "chromium_wall_ms_including_all_reps": 4094,
+  "chromium_version": "156.0.8078.4",
+  "chromium_worker_results": {
+    "wasmMany": {
+      "headers": 50000,
+      "ms": 391,
+      "headersPerSec": 127877,
+      "usPerHeader": 7.82,
+      "allRunsMs": [
+        446.6,
+        447.5,
+        407.7,
+        391,
+        394.1
+      ]
+    },
+    "wasmPerCall": {
+      "headers": 10000,
+      "ms": 81.8,
+      "headersPerSec": 122249,
+      "usPerHeader": 8.18
+    },
+    "jsOracle": {
+      "headers": 2000,
+      "ms": 805.8,
+      "headersPerSec": 2482,
+      "usPerHeader": 402.9
+    },
+    "coldFirstCallMs": 4.8,
+    "speedupManyVsJs": 51.5,
+    "matchesOracle": true
+  }
+}
