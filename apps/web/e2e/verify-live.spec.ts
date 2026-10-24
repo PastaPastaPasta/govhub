@@ -117,3 +117,30 @@ test('@live vote recount and funding order rest on the proven list and registrat
   await expect(funded.locator('[data-prov]').first()).toHaveAttribute('data-prov', 'verified');
   expect(errors).toEqual([]);
 });
+
+// Testnet: the Testnet profile pointed at the testnet bridge's contract (the profile's own contract id is not set on main yet).
+const TESTNET_CONTRACT = '5gMnJLDpcoMaQCQNqmHtBiSqCxRCmroXFAffPNdJ2NJC';
+const TESTNET_BRIDGE_ID = '24tL6v5jMR1H9dtUoTgbedePsMJtYPk4Q4bo6h8jTdK9';
+
+test('@live testnet: the same chain facts verify on testnet (LLMQ_50_60 ChainLocks, cycle 24, v24 SML and CbTx)', async ({ page }) => {
+  test.setTimeout(600_000);
+  const props = (await (await fetch('https://gov-bridge-testnet.dashhq.org/v1/proposals')).json()) as { proposals: Array<{ govHash: string; collateralHeight?: number }> };
+  const target = props.proposals[0]!;
+  await page.addInitScript(
+    ([contract, bridgeId]) => {
+      localStorage.setItem('govhub.registry.v2', JSON.stringify({
+        version: 2, profile: 'testnet',
+        overrides: { govContractId: contract, bridges: [{ name: 'gov-bridge-testnet.dashhq.org', httpBase: 'https://gov-bridge-testnet.dashhq.org', govContractId: contract, bridgeIdentityId: bridgeId, enabled: true }] },
+      }));
+    },
+    [TESTNET_CONTRACT, TESTNET_BRIDGE_ID],
+  );
+  const errors = await watchPage(page);
+  const r = await openAndVerify(page, target.govHash);
+  await expect(page.getByTestId('profile-label')).toContainText('Testnet');
+  expect(r.state).toBe('verified');
+  for (const id of ['height', 'confirmations']) await expect(r.collateral.locator(`[data-step="${id}"]`), id).toHaveAttribute('data-basis', 'verified');
+  for (const id of ['chain', 'chainlock', 'mnlist', 'threshold', 'schedule', 'budget']) await expect(r.chain.locator(`[data-step="${id}"]`), id).toHaveAttribute('data-basis', 'verified');
+  await expect(r.chain.locator('[data-step="schedule"]')).toContainText('voting deadline block');
+  expect(errors).toEqual([]);
+});

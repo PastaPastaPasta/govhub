@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useApp } from '../app/context.tsx';
 import type { Cycle, Proposal } from '../data/types.ts';
-import { formatDash, formatInt, shortHash } from '../lib/format.ts';
+import { formatDash, formatInt, formatRelative, shortHash } from '../lib/format.ts';
 import type { ChainReport } from '../verify/chain.ts';
 import { runVerification } from '../verify/client.ts';
 import type { StepBasis, StepStatus } from '../verify/collateral.ts';
@@ -71,7 +71,6 @@ const n = formatInt;
 /** The chain facts as rows: each says exactly what was proven and what is an estimate. */
 function chainRows(r: ChainReport, cycle: Cycle | null, nowS: number): Row[] {
   const a = r.anchor, s = r.schedule, t = r.threshold, budget = budgetFact(r, cycle);
-  const days = (sec: number) => `${Math.max(0, Math.round((sec - nowS) / 86400))} days`;
   const rows: Row[] = [
     {
       id: 'chain', status: 'ok', label: 'Chain',
@@ -95,7 +94,7 @@ function chainRows(r: ChainReport, cycle: Cycle | null, nowS: number): Row[] {
     },
     {
       id: 'schedule', status: 'ok', label: 'Next superblock',
-      detail: `block ${n(s.next)}, about ${days(s.nextEstTime)} away (estimate); voting deadline block ${n(s.votingDeadline)}${s.inMaturityWindow ? ' (passed)' : ''}`,
+      detail: `block ${n(s.next)}, ${formatRelative(s.nextEstTime, nowS)} (estimate); voting deadline block ${n(s.votingDeadline)}${s.inMaturityWindow ? ' (passed)' : ''}`,
       more: `heights follow from the superblock cycle and maturity window at verified block ${n(s.tip)}; times assume 2.62 minutes per block, as Core's own estimate does`,
     },
     {
