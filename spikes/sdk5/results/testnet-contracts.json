@@ -1,0 +1,74 @@
+{
+  "at": "2026-10-24T02:22:18.876Z",
+  "network": "testnet (protocol 14)",
+  "owner": "9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv",
+  "contracts": {
+    "gov": {
+      "id": "3ueAfbVe8LvCxYWk7bKvXxc5uHe7E1TDJHzN3k3ZDehZ",
+      "nonce": "2",
+      "credits": "0",
+      "dash": "0.00000000",
+      "registrationFormulaCredits": "24000000000",
+      "registrationFormulaDash": "0.24000000",
+      "overheadCredits": "-24000000000",
+      "readBackIdentical": true,
+      "ms": 1963,
+      "types": 4,
+      "indexes": 6
+    },
+    "forum": {
+      "id": "HfLWUEWnp4YCQ9Mzp9DexG58WPKvHm7SahMVSuzKSQRw",
+      "nonce": "3",
+      "credits": "43299794600",
+      "dash": "0.43299794",
+      "registrationFormulaCredits": "43000000000",
+      "registrationFormulaDash": "0.43000000",
+      "overheadCredits": "299794600",
+      "readBackIdentical": true,
+      "ms": 2806,
+      "types": 10,
+      "indexes": 13
+    },
+    "mod": {
+      "id": "CWJ5PyMMKwchk5H3FjX9enVQToWZUFA1xQaRn8zNZVjY",
+      "nonce": "5",
+      "credits": "14058642190",
+      "dash": "0.14058642",
+      "registrationFormulaCredits": "14000000000",
+      "registrationFormulaDash": "0.14000000",
+      "overheadCredits": "58642190",
+      "readBackIdentical": true,
+      "ms": 2617,
+      "types": 1,
+      "indexes": 2
+    },
+    "badge_r1": {
+      "id": "38xNhUdbPSzFgpUA8JjLd6xcqqRo2e8K3BkqiVXqzRy3",
+      "nonce": "4",
+      "credits": "0",
+      "dash": "0.00000000",
+      "registrationFormulaCredits": "22000000000",
+      "registrationFormulaDash": "0.22000000",
+      "overheadCredits": "-22000000000",
+      "readBackIdentical": true,
+      "ms": 1451,
+      "types": 4,
+      "indexes": 4,
+      "superseded": "mnBadge index changed to [issuerId, epoch, $ownerId]; registration cost read was stale (lagging node)"
+    },
+    "badge": {
+      "id": "3SrZbofJnMgWNiHFzpHc5u7wSRgCFJykZwKq3haqyMfc",
+      "nonce": "7",
+      "credits": "22138244610",
+      "dash": "0.22138244",
+      "registrationFormulaCredits": "22000000000",
+      "registrationFormulaDash": "0.22000000",
+      "overheadCredits": "138244610",
+      "readBackIdentical": true,
+      "ms": 1462,
+      "types": 4,
+      "indexes": 4,
+      "schemaSha256": "8701204c81c05681ad8356fc4e29a24098c458d0112f8764e32410b63f63e708"
+    }
+  }
+}

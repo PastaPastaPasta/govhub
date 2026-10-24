@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-24T02:26:42.927Z",
+  "identity": "4eYvJ1QzRxFy82CRK3tP5QHmdRcgkG8xdbGBQMqSroif",
+  "added": [
+    "3:transfer/critical",
+    "4:encryption/medium bound contactRequest",
+    "5:decryption/medium bound contactRequest"
+  ],
+  "feeCredits": "73997220",
+  "feeDash": "0.00073997",
+  "keyCountAfter": 6,
+  "ms": 1792,
+  "note": "testnet is protocol 14; fee indicative of PV13"
+}

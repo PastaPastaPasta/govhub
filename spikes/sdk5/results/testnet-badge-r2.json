@@ -1,0 +1,71 @@
+{
+  "at": "2026-10-24T02:22:18.875Z",
+  "contract": {
+    "id": "3SrZbofJnMgWNiHFzpHc5u7wSRgCFJykZwKq3haqyMfc",
+    "nonce": "7",
+    "credits": "22138244610",
+    "dash": "0.22138244",
+    "registrationFormulaCredits": "22000000000",
+    "registrationFormulaDash": "0.22000000",
+    "overheadCredits": "138244610",
+    "readBackIdentical": true,
+    "ms": 1462,
+    "types": 4,
+    "indexes": 4,
+    "schemaSha256": "8701204c81c05681ad8356fc4e29a24098c458d0112f8764e32410b63f63e708"
+  },
+  "superseded": {
+    "id": "38xNhUdbPSzFgpUA8JjLd6xcqqRo2e8K3BkqiVXqzRy3",
+    "nonce": "4",
+    "credits": "0",
+    "dash": "0.00000000",
+    "registrationFormulaCredits": "22000000000",
+    "registrationFormulaDash": "0.22000000",
+    "overheadCredits": "-22000000000",
+    "readBackIdentical": true,
+    "ms": 1451,
+    "types": 4,
+    "indexes": 4,
+    "superseded": "mnBadge index changed to [issuerId, epoch, $ownerId]; registration cost read was stale (lagging node)"
+  },
+  "mnBadgeOps": [
+    {
+      "payer": "u3",
+      "epoch": "300",
+      "sigBytes": 256,
+      "credits": "54158260",
+      "dash": "0.00054158"
+    },
+    {
+      "payer": "u6",
+      "epoch": "300",
+      "sigBytes": 384,
+      "credits": "43759460",
+      "dash": "0.00043759"
+    },
+    {
+      "payer": "u3",
+      "epoch": "301",
+      "sigBytes": 256,
+      "credits": "37945840",
+      "dash": "0.00037945"
+    }
+  ],
+  "issuerOps": [
+    {
+      "type": "issuerKey",
+      "credits": "37609220",
+      "dash": "0.00037609"
+    },
+    {
+      "type": "issuerRevocation",
+      "credits": "28643720",
+      "dash": "0.00028643"
+    },
+    {
+      "type": "issuerReport",
+      "credits": "27812200",
+      "dash": "0.00027812"
+    }
+  ]
+}

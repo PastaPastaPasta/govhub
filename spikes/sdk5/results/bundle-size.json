@@ -1,0 +1,58 @@
+{
+  "4.1.1": {
+    "chunks": [
+      {
+        "file": "evo-sdk.module-B_seh9AP.js",
+        "raw": 9973321,
+        "gzip": 7168839,
+        "brotli": 7123175
+      },
+      {
+        "file": "main.js",
+        "raw": 1174,
+        "gzip": 693,
+        "brotli": 574
+      }
+    ],
+    "total": {
+      "raw": 9974495,
+      "gzip": 7169532,
+      "brotli": 7123749
+    },
+    "evoSdkModuleJs": 10021313,
+    "wasmFiles": [
+      {
+        "f": "wasm_sdk_bg.wasm",
+        "size": 20319523
+      }
+    ]
+  },
+  "5.0.0-rc.8": {
+    "chunks": [
+      {
+        "file": "evo-sdk.module-CQEPSqzy.js",
+        "raw": 12648109,
+        "gzip": 9095620,
+        "brotli": 9039240
+      },
+      {
+        "file": "main.js",
+        "raw": 1174,
+        "gzip": 694,
+        "brotli": 573
+      }
+    ],
+    "total": {
+      "raw": 12649283,
+      "gzip": 9096314,
+      "brotli": 9039813
+    },
+    "evoSdkModuleJs": 12705294,
+    "wasmFiles": [
+      {
+        "f": "wasm_sdk_bg.wasm",
+        "size": 26513399
+      }
+    ]
+  }
+}

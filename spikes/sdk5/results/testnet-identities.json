@@ -1,0 +1,59 @@
+{
+  "at": "2026-10-24T02:02:05.056Z",
+  "faucetRequests": 0,
+  "identities": [
+    {
+      "name": "u3",
+      "identityId": "4eYvJ1QzRxFy82CRK3tP5QHmdRcgkG8xdbGBQMqSroif",
+      "keys": 3,
+      "keyLayout": [
+        "0:authentication/master",
+        "1:authentication/critical",
+        "2:authentication/high"
+      ],
+      "lockedCredits": "1999500000",
+      "balanceAfterCreate": "1893004700",
+      "createFeeCredits": "106495300",
+      "createFeeDash": "0.00106495",
+      "createMs": 2016,
+      "assetLockTxid": "3bc531279dad11adfd8a8b5f7fba80ac6542e04de8aa0c74837258dede8ecb8d"
+    },
+    {
+      "name": "u6",
+      "identityId": "4TEp8FeD7iMD9nKMGBK492ZnbESdwFPPXtvjRA6Zrxhv",
+      "keys": 6,
+      "keyLayout": [
+        "0:authentication/master",
+        "1:authentication/critical",
+        "2:authentication/high",
+        "3:transfer/critical",
+        "4:encryption/medium(bound contactRequest)",
+        "5:decryption/medium(bound contactRequest)"
+      ],
+      "lockedCredits": "1999500000",
+      "balanceAfterCreate": "1817759140",
+      "createFeeCredits": "181740860",
+      "createFeeDash": "0.00181740",
+      "createMs": 1560,
+      "assetLockTxid": "0d64936eaedf4783348e568236081f28d7bba0dd409a5e272adb015e9b7e9445"
+    },
+    {
+      "name": "owner",
+      "identityId": "9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv",
+      "keys": 4,
+      "keyLayout": [
+        "0:authentication/master",
+        "1:authentication/critical",
+        "2:authentication/high",
+        "3:transfer/critical"
+      ],
+      "lockedCredits": "124999500000",
+      "balanceAfterCreate": "124877453480",
+      "createFeeCredits": "122046520",
+      "createFeeDash": "0.00122046",
+      "createMs": 1784,
+      "assetLockTxid": "d0a76bc07cb3d98abe277d937c9dbecede4f1868ece29427ece33dabf1181216"
+    }
+  ],
+  "note": "testnet is protocol 14; fees are indicative of PV13, not exact"
+}

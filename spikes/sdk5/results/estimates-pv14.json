@@ -1,0 +1,231 @@
+{
+  "at": "2026-10-24T02:23:19.332Z",
+  "pv13Estimator": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0",
+  "rows": [
+    {
+      "contract": "gov",
+      "type": "proposal",
+      "tag": "create (dataHex 520, url ~75)",
+      "documentBytes": 863,
+      "newValues": "84026240",
+      "knownValues": "65768960",
+      "refundSameEpochNew": "50587725"
+    },
+    {
+      "contract": "gov",
+      "type": "tally",
+      "tag": "create",
+      "documentBytes": 170,
+      "newValues": "26326000",
+      "knownValues": "26326000",
+      "refundSameEpochNew": "22435120"
+    },
+    {
+      "contract": "gov",
+      "type": "cycle",
+      "tag": "create",
+      "documentBytes": 113,
+      "newValues": "22777600",
+      "knownValues": "22777600",
+      "refundSameEpochNew": "19387534"
+    },
+    {
+      "contract": "gov",
+      "type": "claimAttestation",
+      "tag": "create (note 40)",
+      "documentBytes": 175,
+      "newValues": "30053980",
+      "knownValues": "23018360",
+      "refundSameEpochNew": "18659685"
+    },
+    {
+      "contract": "forum",
+      "type": "profile",
+      "tag": "create",
+      "documentBytes": 145,
+      "newValues": "25536000",
+      "knownValues": "25536000",
+      "refundSameEpochNew": "21760684"
+    },
+    {
+      "contract": "forum",
+      "type": "comment",
+      "tag": "create 50 chars",
+      "documentBytes": 193,
+      "newValues": "60336360",
+      "knownValues": "33028960",
+      "refundSameEpochNew": "26641655"
+    },
+    {
+      "contract": "forum",
+      "type": "comment",
+      "tag": "create 280 chars",
+      "documentBytes": 392,
+      "newValues": "66687960",
+      "knownValues": "39380560",
+      "refundSameEpochNew": "32061912"
+    },
+    {
+      "contract": "forum",
+      "type": "comment",
+      "tag": "create 1000 chars",
+      "documentBytes": 1112,
+      "newValues": "89439960",
+      "knownValues": "62132560",
+      "refundSameEpochNew": "51477612"
+    },
+    {
+      "contract": "forum",
+      "type": "comment",
+      "tag": "create 5000 chars",
+      "documentBytes": 5112,
+      "newValues": "215839960",
+      "knownValues": "188532560",
+      "refundSameEpochNew": "159342612"
+    },
+    {
+      "contract": "forum",
+      "type": "reaction",
+      "tag": "create",
+      "documentBytes": 119,
+      "newValues": "61583580",
+      "knownValues": "34101680",
+      "refundSameEpochNew": "56493294"
+    },
+    {
+      "contract": "forum",
+      "type": "claim",
+      "tag": "create",
+      "documentBytes": 174,
+      "newValues": "36888580",
+      "knownValues": "23234880",
+      "refundSameEpochNew": "18632759"
+    },
+    {
+      "contract": "forum",
+      "type": "proposalPost",
+      "tag": "create b0 1500 B",
+      "documentBytes": 1703,
+      "newValues": "84878920",
+      "knownValues": "75022800",
+      "refundSameEpochNew": "73697762"
+    },
+    {
+      "contract": "forum",
+      "type": "proposalPost",
+      "tag": "create MAX (3 x 5120 B)",
+      "documentBytes": 16674,
+      "newValues": "557994120",
+      "knownValues": "548138000",
+      "refundSameEpochNew": "477436497"
+    },
+    {
+      "contract": "forum",
+      "type": "proposalDraft",
+      "tag": "create",
+      "documentBytes": 653,
+      "newValues": "76641620",
+      "knownValues": "51038080",
+      "refundSameEpochNew": "69329229"
+    },
+    {
+      "contract": "forum",
+      "type": "block",
+      "tag": "create",
+      "documentBytes": 107,
+      "newValues": "31175000",
+      "knownValues": "23371040",
+      "refundSameEpochNew": "15153993"
+    },
+    {
+      "contract": "forum",
+      "type": "blockSubs",
+      "tag": "create 3 lists",
+      "documentBytes": 168,
+      "newValues": "26262800",
+      "knownValues": "26262800",
+      "refundSameEpochNew": "22381068"
+    },
+    {
+      "contract": "forum",
+      "type": "settings",
+      "tag": "create 600 B",
+      "documentBytes": 671,
+      "newValues": "42220800",
+      "knownValues": "42220800",
+      "refundSameEpochNew": "35998984"
+    },
+    {
+      "contract": "forum",
+      "type": "vault",
+      "tag": "create",
+      "documentBytes": 388,
+      "newValues": "49220220",
+      "knownValues": "40101240",
+      "refundSameEpochNew": "44034887"
+    },
+    {
+      "contract": "badge",
+      "type": "issuerKey",
+      "tag": "create RSA-2048 (294 B)",
+      "documentBytes": 434,
+      "newValues": "39981040",
+      "knownValues": "31973160",
+      "refundSameEpochNew": "0"
+    },
+    {
+      "contract": "badge",
+      "type": "issuerKey",
+      "tag": "create RSA-4096 (550 B)",
+      "documentBytes": 690,
+      "newValues": "48070640",
+      "knownValues": "40062760",
+      "refundSameEpochNew": "0"
+    },
+    {
+      "contract": "badge",
+      "type": "issuerRevocation",
+      "tag": "create",
+      "documentBytes": 112,
+      "newValues": "29742640",
+      "knownValues": "21734760",
+      "refundSameEpochNew": "0"
+    },
+    {
+      "contract": "badge",
+      "type": "issuerReport",
+      "tag": "create",
+      "documentBytes": 80,
+      "newValues": "28731440",
+      "knownValues": "20723560",
+      "refundSameEpochNew": "0"
+    },
+    {
+      "contract": "badge",
+      "type": "mnBadge",
+      "tag": "create sig 256 B",
+      "documentBytes": 430,
+      "newValues": "47927320",
+      "knownValues": "33799000",
+      "refundSameEpochNew": "0"
+    },
+    {
+      "contract": "badge",
+      "type": "mnBadge",
+      "tag": "create sig 384 B",
+      "documentBytes": 558,
+      "newValues": "51972120",
+      "knownValues": "37843800",
+      "refundSameEpochNew": "0"
+    },
+    {
+      "contract": "mod",
+      "type": "block",
+      "tag": "create",
+      "documentBytes": 110,
+      "newValues": "48751180",
+      "knownValues": "31907900",
+      "refundSameEpochNew": "22731709"
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "name": "govhub-sdk5-spike",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Phase 0 spike: v1 contract validation at PV13/PV14, evo-sdk 5.x reads on mainnet+testnet, testnet write costs and query shapes",
+  "scripts": {
+    "validate": "vite-node scripts/validate-contracts.ts",
+    "validate:docs": "vite-node scripts/validate-documents.ts",
+    "mainnet-read": "vite-node scripts/read-network.ts mainnet",
+    "testnet-read": "vite-node scripts/read-network.ts testnet",
+    "bundle-size": "node scripts/bundle-size.mjs",
+    "estimate": "vite-node scripts/estimate-costs.ts",
+    "testnet:identity": "vite-node scripts/testnet-identity.ts",
+    "testnet:topup": "vite-node scripts/testnet-topup.ts",
+    "testnet:costs": "vite-node scripts/testnet-costs.ts",
+    "testnet:badge-r2": "vite-node scripts/testnet-badge-r2.ts",
+    "testnet:queries": "vite-node scripts/testnet-queries.ts",
+    "testnet:keys-add": "vite-node scripts/testnet-keys-add.ts"
+  },
+  "dependencies": {
+    "@dashevo/dashcore-lib": "^0.22.0",
+    "@noble/hashes": "^2.4.0",
+    "evo4": "npm:@dashevo/evo-sdk@4.1.1",
+    "evo5": "npm:@dashevo/evo-sdk@5.0.0-rc.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "dpp4": "npm:@dashevo/wasm-dpp@4.1.1",
+    "dpp5": "npm:@dashevo/wasm-dpp@5.0.0-rc.8",
+    "typescript": "~5.9.2",
+    "vite": "^7.1.3",
+    "vite-node": "^3.2.4"
+  }
+}

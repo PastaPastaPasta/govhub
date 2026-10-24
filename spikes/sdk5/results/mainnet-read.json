@@ -1,0 +1,449 @@
+{
+  "network": "mainnet",
+  "sdk": "@dashevo/evo-sdk@5.0.0-rc.8",
+  "at": "2026-10-24T02:30:35.263Z",
+  "steps": {
+    "dpnsContract": {
+      "ok": true,
+      "ms": 505,
+      "metadata": {
+        "height": "457606",
+        "protocolVersion": 13,
+        "epoch": 86,
+        "coreChainLockedHeight": 2560400,
+        "timeMs": "1792808865781"
+      },
+      "proof": {
+        "grovedbProofBytes": 4391,
+        "quorumHash": "0000000000000007…",
+        "signatureBytes": 96,
+        "quorumType": 4
+      },
+      "documentTypes": [
+        "domain",
+        "preorder"
+      ],
+      "domainIndices": [
+        {
+          "name": "parentNameAndLabel",
+          "unique": true,
+          "contested": true,
+          "properties": [
+            {
+              "normalizedParentDomainName": "asc"
+            },
+            {
+              "normalizedLabel": "asc"
+            }
+          ]
+        },
+        {
+          "name": "identityId",
+          "contested": false,
+          "properties": [
+            {
+              "records.identity": "asc"
+            }
+          ]
+        }
+      ]
+    },
+    "system.status": {
+      "ok": true,
+      "ms": 450,
+      "result": {
+        "version": {
+          "software": {
+            "dapi": "4.1.1",
+            "drive": "4.1.1",
+            "tenderdash": "1.7.0"
+          },
+          "protocol": {
+            "tenderdash": {
+              "p2p": 10,
+              "block": 14
+            },
+            "drive": {
+              "latest": 13,
+              "current": 13
+            }
+          }
+        },
+        "chain": {
+          "isCatchingUp": false,
+          "latestBlockHash": "81176099c9632e175328aa3a8ed0f91299db39bf1f9f74242fe4189a0ea3b1dd",
+          "latestAppHash": "476f6dbdb6b0e2f7b6db27d81fc748de350fd8a2a15600fa6c6dbe2166d6d89a",
+          "latestBlockHeight": "457606",
+          "earliestBlockHash": "20fe00f10d59b9c5487ee18c1a298a04d9de58f414e04d61779e582f462bad7f",
+          "earliestAppHash": "36ba84b1da372a1e200b9af8830b7811e3ba23df00aad92e79540dee20a02c48",
+          "earliestBlockHeight": "1",
+          "maxPeerBlockHeight": "457606",
+          "coreChainLockedHeight": 2560400
+        }
+      }
+    },
+    "dpns.domainsQuery": {
+      "ok": true,
+      "ms": 433,
+      "result": {
+        "count": 5,
+        "metadata": {
+          "height": "457606",
+          "protocolVersion": 13,
+          "epoch": 86,
+          "coreChainLockedHeight": 2560400,
+          "timeMs": "1792808865781"
+        },
+        "proof": {
+          "grovedbProofBytes": 3676,
+          "quorumHash": "0000000000000007…",
+          "signatureBytes": 96,
+          "quorumType": 4
+        },
+        "docs": [
+          {
+            "id": "GsK79KWXF4Javz3TzBEVKokBUeuRrq6ZXvysyDU3edEi",
+            "ownerId": "3oMtyUvyRJ1FqStZauHpLUtqXHH6a318A3JKEg98CcTg",
+            "label": "a-i",
+            "normalizedLabel": "a-1",
+            "parent": "dash"
+          },
+          {
+            "id": "Hu8zQf3mAzwn2xpu4zSsaR46yqyrQFHsQuoxxGwJua11",
+            "ownerId": "BMJWm8wKmbApR7nQ6q7RG3HgD8maJ8t7B4yWBKRe7aZ6",
+            "label": "A-Song-Of-Ice-And-Fire",
+            "normalizedLabel": "a-s0ng-0f-1ce-and-f1re",
+            "parent": "dash"
+          },
+          {
+            "id": "BxHSefwx5crhs3dCzCMnko1fYSXinhPqkoh3W136c5NQ",
+            "ownerId": "8JN8EmYz1TZyjhYPLvfuChsU3hngXiq8zn98cpjnMAaL",
+            "label": "Al-Kindi",
+            "normalizedLabel": "a1-k1nd1",
+            "parent": "dash"
+          },
+          {
+            "id": "JBqryqxnmUmJRGNuXXDNTZgR4K5cVLtZ8zh7jYhhckyF",
+            "ownerId": "5sn74CqmrroerWjSs8EfwTaAqQHqetSs7VvCPgNPdWhe",
+            "label": "Aloha",
+            "normalizedLabel": "a10ha",
+            "parent": "dash"
+          },
+          {
+            "id": "3a1qDSX3B1ufFdvmVJ9uzKT1W2RPf8tZPbifaMRAN9LA",
+            "ownerId": "4daz4P7nZFCuymJRVDELL6aAh3RpauSeoAscBgZ6PeAU",
+            "label": "Aloha2",
+            "normalizedLabel": "a10ha2",
+            "parent": "dash"
+          }
+        ]
+      }
+    },
+    "dpns.getUsernameByName": {
+      "ok": true,
+      "ms": 376,
+      "result": {
+        "name": "a-i.dash",
+        "info": null,
+        "metadata": {
+          "height": "457606",
+          "protocolVersion": 13,
+          "epoch": 86,
+          "coreChainLockedHeight": 2560400,
+          "timeMs": "1792808865781"
+        },
+        "proof": {
+          "grovedbProofBytes": 1942,
+          "quorumHash": "0000000000000007…",
+          "signatureBytes": 96,
+          "quorumType": 4
+        }
+      }
+    },
+    "identities.fetchWithProof": {
+      "ok": true,
+      "ms": 168,
+      "result": {
+        "id": "3oMtyUvyRJ1FqStZauHpLUtqXHH6a318A3JKEg98CcTg",
+        "found": true,
+        "balance": "2710690340",
+        "keyCount": 6,
+        "metadata": {
+          "height": "457606",
+          "protocolVersion": 13,
+          "epoch": 86,
+          "coreChainLockedHeight": 2560400,
+          "timeMs": "1792808865781"
+        },
+        "proof": {
+          "grovedbProofBytes": 2945,
+          "quorumHash": "0000000000000007…",
+          "signatureBytes": 96,
+          "quorumType": 4
+        }
+      }
+    },
+    "dpns.resolveName": {
+      "ok": true,
+      "ms": 139,
+      "result": {
+        "name": "a-i.dash",
+        "identityId": "3oMtyUvyRJ1FqStZauHpLUtqXHH6a318A3JKEg98CcTg"
+      }
+    },
+    "dpns.reverse(username)": {
+      "ok": true,
+      "ms": 164,
+      "result": {
+        "identityId": "3oMtyUvyRJ1FqStZauHpLUtqXHH6a318A3JKEg98CcTg",
+        "username": "six.dash"
+      }
+    },
+    "dpns.getUsernameByName(plain)": {
+      "ok": true,
+      "ms": 153,
+      "result": {
+        "name": "six.dash",
+        "info": null,
+        "metadata": {
+          "height": "457606",
+          "protocolVersion": 13,
+          "epoch": 86,
+          "coreChainLockedHeight": 2560400,
+          "timeMs": "1792808865781"
+        }
+      }
+    },
+    "dpns.getUsernameByName(homographSafe)": {
+      "ok": true,
+      "ms": 139,
+      "result": {
+        "name": "s1x.dash",
+        "info": {
+          "username": "s1x.dash",
+          "identityId": [
+            41,
+            151,
+            183,
+            230,
+            215,
+            238,
+            195,
+            153,
+            122,
+            223,
+            191,
+            187,
+            130,
+            75,
+            42,
+            251,
+            182,
+            107,
+            182,
+            149,
+            249,
+            104,
+            118,
+            246,
+            237,
+            48,
+            26,
+            255,
+            240,
+            94,
+            2,
+            95
+          ],
+          "documentId": [
+            13,
+            69,
+            199,
+            41,
+            196,
+            64,
+            45,
+            34,
+            126,
+            179,
+            144,
+            11,
+            212,
+            23,
+            75,
+            170,
+            119,
+            40,
+            36,
+            102,
+            175,
+            104,
+            191,
+            203,
+            68,
+            120,
+            202,
+            214,
+            101,
+            254,
+            156,
+            23
+          ]
+        },
+        "metadata": {
+          "height": "457606",
+          "protocolVersion": 13,
+          "epoch": 86,
+          "coreChainLockedHeight": 2560400,
+          "timeMs": "1792808865781"
+        }
+      }
+    },
+    "voting.votePollsByEndDate(active)": {
+      "ok": true,
+      "ms": 179,
+      "result": {
+        "buckets": 20,
+        "polls": 20,
+        "first": [
+          {
+            "type": "domain",
+            "endsAtMs": "1792918712345",
+            "label": "d1manger"
+          },
+          {
+            "type": "domain",
+            "endsAtMs": "1792921608397",
+            "label": "nexus"
+          },
+          {
+            "type": "domain",
+            "endsAtMs": "1792921668791",
+            "label": "gh0st"
+          },
+          {
+            "type": "domain",
+            "endsAtMs": "1792921827255",
+            "label": "r1cksanchez"
+          },
+          {
+            "type": "domain",
+            "endsAtMs": "1792927995009",
+            "label": "tune0ftheday"
+          }
+        ],
+        "metadata": {
+          "height": "457606",
+          "protocolVersion": 13,
+          "epoch": 86,
+          "coreChainLockedHeight": 2560400,
+          "timeMs": "1792808865781"
+        },
+        "proof": {
+          "grovedbProofBytes": 5996,
+          "quorumHash": "0000000000000007…",
+          "signatureBytes": 96,
+          "quorumType": 4
+        }
+      }
+    },
+    "group.contestedResources(dash)": {
+      "ok": true,
+      "ms": 138,
+      "result": {
+        "sample": [
+          "0-0",
+          "000",
+          "001",
+          "011ver",
+          "01c0n"
+        ],
+        "metadata": {
+          "height": "457606",
+          "protocolVersion": 13,
+          "epoch": 86,
+          "coreChainLockedHeight": 2560400,
+          "timeMs": "1792808865781"
+        },
+        "proof": {
+          "grovedbProofBytes": 2075,
+          "quorumHash": "0000000000000007…",
+          "signatureBytes": 96,
+          "quorumType": 4
+        }
+      }
+    },
+    "voting.contestedResourceVoteState": {
+      "ok": true,
+      "ms": 168,
+      "result": {
+        "label": "d1manger",
+        "active": true,
+        "contenders": [
+          {
+            "identityId": "FT4zisiUsbFBdjJd4iPFDH1EdjbMtHkh2NpKmFoDE7Ss",
+            "voteTally": 44,
+            "hasDoc": true
+          }
+        ],
+        "abstain": 0,
+        "lock": 0,
+        "winner": null,
+        "metadata": {
+          "height": "457606",
+          "protocolVersion": 13,
+          "epoch": 86,
+          "coreChainLockedHeight": 2560400,
+          "timeMs": "1792808865781"
+        },
+        "proof": {
+          "grovedbProofBytes": 2647,
+          "quorumHash": "0000000000000007…",
+          "signatureBytes": 96,
+          "quorumType": 4
+        }
+      }
+    },
+    "group.contestedResourceVotersForIdentity": {
+      "ok": true,
+      "ms": 167,
+      "result": {
+        "votersReturned": 5,
+        "first": [
+          "03e0ac65173d68075ce818dbf01c7b46fc8e9b1d242a3a4bf732ae6ce6471a80",
+          "144d21600eb7f37203cebef3ac5c5d4faa6063d9178edf746f838a2440fbb428"
+        ],
+        "metadata": {
+          "height": "457606",
+          "protocolVersion": 13,
+          "epoch": 86,
+          "coreChainLockedHeight": 2560400,
+          "timeMs": "1792808865781"
+        }
+      }
+    },
+    "documentCreateCost-capable (Document.fromBytes ver)": {
+      "ok": true,
+      "ms": 0,
+      "result": {
+        "sdkVersion": 13,
+        "fnPresent": true
+      }
+    }
+  },
+  "problems": [],
+  "timings": {
+    "importMs": 78,
+    "wasmInitMs": 70,
+    "connectMs": 143,
+    "firstProvenQueryMs": 505,
+    "warmProvenQueryMs": 384
+  },
+  "latestSupportedVersion": 14,
+  "versionBeforeConnect": "throws: SDK is not connected. Call EvoSDK#connect() first.",
+  "versionAfterConnect": 13,
+  "versionAfterFirstQuery": 13,
+  "contestLabel": "d1manger",
+  "contestActive": true,
+  "versionFinal": 13
+}

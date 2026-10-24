@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-24T02:20:08.531Z",
+  "identity": "owner",
+  "identityId": "9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv",
+  "lockedCredits": "19999500000",
+  "balanceBefore": "8427193146",
+  "balanceAfter": "28418689486",
+  "feeCredits": "8003660",
+  "feeDash": "0.00008003",
+  "ms": 1583,
+  "assetLockTxid": "baf89d205f3f0cfedc8f9d8cca0261387c6d7399454f32f54fd75676ea266c16",
+  "note": "testnet is protocol 14; fee indicative of PV13"
+}

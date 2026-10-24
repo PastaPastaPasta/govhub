@@ -1,0 +1,660 @@
+{
+  "network": "testnet",
+  "sdk": "@dashevo/evo-sdk@5.0.0-rc.8",
+  "at": "2026-10-24T02:30:39.446Z",
+  "steps": {
+    "dpnsContract": {
+      "ok": true,
+      "ms": 246,
+      "metadata": {
+        "height": "641457",
+        "protocolVersion": 14,
+        "epoch": 19848,
+        "coreChainLockedHeight": 1578260,
+        "timeMs": "1792808984829"
+      },
+      "proof": {
+        "grovedbProofBytes": 4493,
+        "quorumHash": "0000006efa1ba784…",
+        "signatureBytes": 96,
+        "quorumType": 6
+      },
+      "documentTypes": [
+        "domain",
+        "preorder"
+      ],
+      "domainIndices": [
+        {
+          "name": "parentNameAndLabel",
+          "unique": true,
+          "contested": true,
+          "properties": [
+            {
+              "normalizedParentDomainName": "asc"
+            },
+            {
+              "normalizedLabel": "asc"
+            }
+          ]
+        },
+        {
+          "name": "identityId",
+          "contested": false,
+          "properties": [
+            {
+              "records.identity": "asc"
+            }
+          ]
+        }
+      ]
+    },
+    "system.status": {
+      "ok": true,
+      "ms": 178,
+      "result": {
+        "version": {
+          "software": {
+            "dapi": "5.0.0-rc.8",
+            "drive": "5.0.0-rc.8",
+            "tenderdash": "unreleased-v1.8-dev-be7e73cbb9a15917c1e8f9eccd9b63abdf8ee6b3"
+          },
+          "protocol": {
+            "tenderdash": {
+              "p2p": 10,
+              "block": 14
+            },
+            "drive": {
+              "latest": 14,
+              "current": 14
+            }
+          }
+        },
+        "chain": {
+          "isCatchingUp": false,
+          "latestBlockHash": "82e256ded5828a9fba6ec2c0079a2be60f2d973ddbef45fe7e0c49bd18f72be0",
+          "latestAppHash": "45433329f65cd6d74de479c72b07bcba988b7a726f70d398d822c01acf06231d",
+          "latestBlockHeight": "641457",
+          "earliestBlockHash": "08fa02c27ec0390ba301e4fc7e3d7eadb350c8193e3e62a093689706e3a20bfa",
+          "earliestAppHash": "bf0ccb9ca071ba01ae6e67a0c090f97803d26d56d675dcd5131781cbcac8ec8f",
+          "earliestBlockHeight": "1",
+          "maxPeerBlockHeight": "641457",
+          "coreChainLockedHeight": 1578260
+        }
+      }
+    },
+    "dpns.domainsQuery": {
+      "ok": true,
+      "ms": 507,
+      "result": {
+        "count": 5,
+        "metadata": {
+          "height": "641457",
+          "protocolVersion": 14,
+          "epoch": 19848,
+          "coreChainLockedHeight": 1578260,
+          "timeMs": "1792808984829"
+        },
+        "proof": {
+          "grovedbProofBytes": 3144,
+          "quorumHash": "0000006efa1ba784…",
+          "signatureBytes": 96,
+          "quorumType": 6
+        },
+        "docs": [
+          {
+            "id": "4ysQjGKGPGH9xt8onL3mQTi3pqhghzAodq43VdhsR7vp",
+            "ownerId": "43eotCGDsMXeHsYZYq7Q6bDmsuYKhNvrwmxNez2ghYMA",
+            "label": "a00",
+            "normalizedLabel": "a00",
+            "parent": "dash"
+          },
+          {
+            "id": "CnjU3iLu1WQTVMauhQr2UUSqkQzPi6hmgL4t2Kf2M5Kb",
+            "ownerId": "77EJ21fxocLLe8f5yPg5pnZDLscGxoafkFiXSe2q6szL",
+            "label": "a000",
+            "normalizedLabel": "a000",
+            "parent": "dash"
+          },
+          {
+            "id": "6HgSTXHyAyy24zya2ncn1z5BXZqW3duwVZz1SH5EBsfr",
+            "ownerId": "JBxLb52DKv2BHwdg7zf2tM84qKUfXqoEu1fQw3zKYQyY",
+            "label": "a01",
+            "normalizedLabel": "a01",
+            "parent": "dash"
+          },
+          {
+            "id": "5zSYuBpyWueLbjY9jZLdRfGWTouyjahFpeqspjLvWdCw",
+            "ownerId": "72EHBgAsCRwG9FYhD1i7ReQiA5wny7W36E5JdVa4UBkn",
+            "label": "alla",
+            "normalizedLabel": "a11a",
+            "parent": "dash"
+          },
+          {
+            "id": "7DJPVreTGvF4jm1HHVKUSzWuty9RmCkbYkWnibiRndC2",
+            "ownerId": "FKZZFDTfGdSWUmL2g7H9e46pMJMPQp9DHQcvjrsS6884",
+            "label": "alice",
+            "normalizedLabel": "a11ce",
+            "parent": "dash"
+          }
+        ]
+      }
+    },
+    "dpns.getUsernameByName": {
+      "ok": true,
+      "ms": 76,
+      "result": {
+        "name": "a00.dash",
+        "info": {
+          "username": "a00.dash",
+          "identityId": [
+            45,
+            64,
+            248,
+            239,
+            100,
+            108,
+            184,
+            34,
+            235,
+            50,
+            242,
+            42,
+            19,
+            102,
+            29,
+            209,
+            12,
+            60,
+            140,
+            163,
+            69,
+            42,
+            114,
+            128,
+            109,
+            184,
+            253,
+            234,
+            140,
+            204,
+            232,
+            253
+          ],
+          "documentId": [
+            59,
+            36,
+            149,
+            119,
+            145,
+            57,
+            24,
+            57,
+            140,
+            206,
+            61,
+            73,
+            84,
+            254,
+            255,
+            159,
+            199,
+            76,
+            230,
+            226,
+            224,
+            130,
+            142,
+            54,
+            7,
+            229,
+            110,
+            22,
+            160,
+            11,
+            211,
+            233
+          ]
+        },
+        "metadata": {
+          "height": "641457",
+          "protocolVersion": 14,
+          "epoch": 19848,
+          "coreChainLockedHeight": 1578260,
+          "timeMs": "1792808984829"
+        },
+        "proof": {
+          "grovedbProofBytes": 2058,
+          "quorumHash": "0000006efa1ba784…",
+          "signatureBytes": 96,
+          "quorumType": 6
+        }
+      }
+    },
+    "identities.fetchWithProof": {
+      "ok": true,
+      "ms": 78,
+      "result": {
+        "id": [
+          45,
+          64,
+          248,
+          239,
+          100,
+          108,
+          184,
+          34,
+          235,
+          50,
+          242,
+          42,
+          19,
+          102,
+          29,
+          209,
+          12,
+          60,
+          140,
+          163,
+          69,
+          42,
+          114,
+          128,
+          109,
+          184,
+          253,
+          234,
+          140,
+          204,
+          232,
+          253
+        ],
+        "found": true,
+        "balance": "59593802680",
+        "keyCount": 3,
+        "metadata": {
+          "height": "641457",
+          "protocolVersion": 14,
+          "epoch": 19848,
+          "coreChainLockedHeight": 1578260,
+          "timeMs": "1792808984829"
+        },
+        "proof": {
+          "grovedbProofBytes": 2383,
+          "quorumHash": "0000006efa1ba784…",
+          "signatureBytes": 96,
+          "quorumType": 6
+        }
+      }
+    },
+    "dpns.resolveName": {
+      "ok": true,
+      "ms": 198,
+      "result": {
+        "name": "a00.dash",
+        "identityId": "43eotCGDsMXeHsYZYq7Q6bDmsuYKhNvrwmxNez2ghYMA"
+      }
+    },
+    "dpns.reverse(username)": {
+      "ok": true,
+      "ms": 203,
+      "result": {
+        "identityId": [
+          45,
+          64,
+          248,
+          239,
+          100,
+          108,
+          184,
+          34,
+          235,
+          50,
+          242,
+          42,
+          19,
+          102,
+          29,
+          209,
+          12,
+          60,
+          140,
+          163,
+          69,
+          42,
+          114,
+          128,
+          109,
+          184,
+          253,
+          234,
+          140,
+          204,
+          232,
+          253
+        ],
+        "username": "a00.dash"
+      }
+    },
+    "dpns.getUsernameByName(plain)": {
+      "ok": true,
+      "ms": 68,
+      "result": {
+        "name": "a00.dash",
+        "info": {
+          "username": "a00.dash",
+          "identityId": [
+            45,
+            64,
+            248,
+            239,
+            100,
+            108,
+            184,
+            34,
+            235,
+            50,
+            242,
+            42,
+            19,
+            102,
+            29,
+            209,
+            12,
+            60,
+            140,
+            163,
+            69,
+            42,
+            114,
+            128,
+            109,
+            184,
+            253,
+            234,
+            140,
+            204,
+            232,
+            253
+          ],
+          "documentId": [
+            59,
+            36,
+            149,
+            119,
+            145,
+            57,
+            24,
+            57,
+            140,
+            206,
+            61,
+            73,
+            84,
+            254,
+            255,
+            159,
+            199,
+            76,
+            230,
+            226,
+            224,
+            130,
+            142,
+            54,
+            7,
+            229,
+            110,
+            22,
+            160,
+            11,
+            211,
+            233
+          ]
+        },
+        "metadata": {
+          "height": "641457",
+          "protocolVersion": 14,
+          "epoch": 19848,
+          "coreChainLockedHeight": 1578260,
+          "timeMs": "1792808984829"
+        }
+      }
+    },
+    "dpns.getUsernameByName(homographSafe)": {
+      "ok": true,
+      "ms": 72,
+      "result": {
+        "name": "a00.dash",
+        "info": {
+          "username": "a00.dash",
+          "identityId": [
+            45,
+            64,
+            248,
+            239,
+            100,
+            108,
+            184,
+            34,
+            235,
+            50,
+            242,
+            42,
+            19,
+            102,
+            29,
+            209,
+            12,
+            60,
+            140,
+            163,
+            69,
+            42,
+            114,
+            128,
+            109,
+            184,
+            253,
+            234,
+            140,
+            204,
+            232,
+            253
+          ],
+          "documentId": [
+            59,
+            36,
+            149,
+            119,
+            145,
+            57,
+            24,
+            57,
+            140,
+            206,
+            61,
+            73,
+            84,
+            254,
+            255,
+            159,
+            199,
+            76,
+            230,
+            226,
+            224,
+            130,
+            142,
+            54,
+            7,
+            229,
+            110,
+            22,
+            160,
+            11,
+            211,
+            233
+          ]
+        },
+        "metadata": {
+          "height": "641457",
+          "protocolVersion": 14,
+          "epoch": 19848,
+          "coreChainLockedHeight": 1578260,
+          "timeMs": "1792808984829"
+        }
+      }
+    },
+    "voting.votePollsByEndDate(active)": {
+      "ok": true,
+      "ms": 71,
+      "result": {
+        "buckets": 1,
+        "polls": 1,
+        "first": [
+          {
+            "type": "electedCharter",
+            "endsAtMs": "1792894955093",
+            "label": null
+          }
+        ],
+        "metadata": {
+          "height": "641457",
+          "protocolVersion": 14,
+          "epoch": 19848,
+          "coreChainLockedHeight": 1578260,
+          "timeMs": "1792808984829"
+        },
+        "proof": {
+          "grovedbProofBytes": 679,
+          "quorumHash": "0000006efa1ba784…",
+          "signatureBytes": 96,
+          "quorumType": 6
+        }
+      }
+    },
+    "voting.votePollsByEndDate(recent)": {
+      "ok": true,
+      "ms": 71,
+      "result": {
+        "polls": 1,
+        "first": [
+          {
+            "type": "electedCharter",
+            "endsAtMs": "1792894955093",
+            "label": null
+          }
+        ],
+        "metadata": {
+          "height": "641457",
+          "protocolVersion": 14,
+          "epoch": 19848,
+          "coreChainLockedHeight": 1578260,
+          "timeMs": "1792808984829"
+        }
+      }
+    },
+    "group.contestedResources(dash)": {
+      "ok": true,
+      "ms": 78,
+      "result": {
+        "sample": [
+          "000",
+          "0000",
+          "00000",
+          "000000000000000000",
+          "0001"
+        ],
+        "metadata": {
+          "height": "641457",
+          "protocolVersion": 14,
+          "epoch": 19848,
+          "coreChainLockedHeight": 1578260,
+          "timeMs": "1792808984829"
+        },
+        "proof": {
+          "grovedbProofBytes": 2151,
+          "quorumHash": "0000006efa1ba784…",
+          "signatureBytes": 96,
+          "quorumType": 6
+        }
+      }
+    },
+    "voting.contestedResourceVoteState": {
+      "ok": true,
+      "ms": 80,
+      "result": {
+        "label": "000",
+        "active": false,
+        "contenders": [
+          {
+            "identityId": "9idHpqmf8i9U6tfWiWMQCVF39vshNgYisT7DL6yK2pCF",
+            "voteTally": 0,
+            "hasDoc": false
+          }
+        ],
+        "abstain": 0,
+        "lock": 0,
+        "winner": {
+          "kind": "WonByIdentity",
+          "identityId": "9idHpqmf8i9U6tfWiWMQCVF39vshNgYisT7DL6yK2pCF",
+          "blockTimeMs": "1741367615203"
+        },
+        "metadata": {
+          "height": "641457",
+          "protocolVersion": 14,
+          "epoch": 19848,
+          "coreChainLockedHeight": 1578260,
+          "timeMs": "1792808984829"
+        },
+        "proof": {
+          "grovedbProofBytes": 1815,
+          "quorumHash": "0000006efa1ba784…",
+          "signatureBytes": 96,
+          "quorumType": 6
+        }
+      }
+    },
+    "group.contestedResourceVotersForIdentity": {
+      "ok": true,
+      "ms": 83,
+      "result": {
+        "votersReturned": 0,
+        "first": [],
+        "metadata": {
+          "height": "641457",
+          "protocolVersion": 14,
+          "epoch": 19848,
+          "coreChainLockedHeight": 1578260,
+          "timeMs": "1792808984829"
+        }
+      }
+    },
+    "documentCreateCost-capable (Document.fromBytes ver)": {
+      "ok": true,
+      "ms": 0,
+      "result": {
+        "sdkVersion": 14,
+        "fnPresent": true
+      }
+    }
+  },
+  "problems": [],
+  "timings": {
+    "importMs": 77,
+    "wasmInitMs": 71,
+    "connectMs": 122,
+    "firstProvenQueryMs": 246,
+    "warmProvenQueryMs": 188
+  },
+  "latestSupportedVersion": 14,
+  "versionBeforeConnect": "throws: SDK is not connected. Call EvoSDK#connect() first.",
+  "versionAfterConnect": 13,
+  "versionAfterFirstQuery": 14,
+  "notes": [
+    "no active (future-ending) DPNS contests; falling back to the most recent ended poll / archive"
+  ],
+  "contestLabel": "000",
+  "contestActive": false,
+  "versionFinal": 14
+}

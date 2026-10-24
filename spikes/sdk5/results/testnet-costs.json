@@ -1,0 +1,1582 @@
+{
+  "at": "2026-10-24T02:13:59.886Z",
+  "network": "testnet (protocol 14): fees indicative of PV13, not exact",
+  "creditsPerDash": "100000000000",
+  "contracts": {
+    "gov": {
+      "id": "3ueAfbVe8LvCxYWk7bKvXxc5uHe7E1TDJHzN3k3ZDehZ",
+      "nonce": "2",
+      "credits": "0",
+      "dash": "0.00000000",
+      "registrationFormulaCredits": "24000000000",
+      "registrationFormulaDash": "0.24000000",
+      "overheadCredits": "-24000000000",
+      "readBackIdentical": true,
+      "ms": 1963,
+      "types": 4,
+      "indexes": 6,
+      "measurementSuspect": true,
+      "note": "balance read came from a lagging node; use registrationFormulaCredits + ~0.002-0.003 DASH storage"
+    },
+    "forum": {
+      "id": "HfLWUEWnp4YCQ9Mzp9DexG58WPKvHm7SahMVSuzKSQRw",
+      "nonce": "3",
+      "credits": "43299794600",
+      "dash": "0.43299794",
+      "registrationFormulaCredits": "43000000000",
+      "registrationFormulaDash": "0.43000000",
+      "overheadCredits": "299794600",
+      "readBackIdentical": true,
+      "ms": 2806,
+      "types": 10,
+      "indexes": 13
+    },
+    "badge": {
+      "id": "38xNhUdbPSzFgpUA8JjLd6xcqqRo2e8K3BkqiVXqzRy3",
+      "nonce": "4",
+      "credits": "0",
+      "dash": "0.00000000",
+      "registrationFormulaCredits": "22000000000",
+      "registrationFormulaDash": "0.22000000",
+      "overheadCredits": "-22000000000",
+      "readBackIdentical": true,
+      "ms": 1451,
+      "types": 4,
+      "indexes": 4,
+      "measurementSuspect": true,
+      "note": "balance read came from a lagging node; use registrationFormulaCredits + ~0.002-0.003 DASH storage"
+    },
+    "mod": {
+      "id": "CWJ5PyMMKwchk5H3FjX9enVQToWZUFA1xQaRn8zNZVjY",
+      "nonce": "5",
+      "credits": "14058642190",
+      "dash": "0.14058642",
+      "registrationFormulaCredits": "14000000000",
+      "registrationFormulaDash": "0.14000000",
+      "overheadCredits": "58642190",
+      "readBackIdentical": true,
+      "ms": 2617,
+      "types": 1,
+      "indexes": 2
+    }
+  },
+  "ops": [
+    {
+      "label": "identity.creditTransfer owner->u6 0.02 DASH",
+      "contract": "-",
+      "type": "identity",
+      "op": "creditTransfer",
+      "payer": "owner",
+      "credits": "2002970340",
+      "dash": "0.02002970",
+      "ms": 1942,
+      "retries": 0,
+      "netFeeCredits": "2970340",
+      "netFeeDash": "0.00002970"
+    },
+    {
+      "label": "gov.proposal create (R2.gov.proposal.A)",
+      "contract": "gov",
+      "type": "proposal",
+      "op": "create",
+      "note": "",
+      "payer": "owner",
+      "credits": "79233280",
+      "dash": "0.00079233",
+      "ms": 2076,
+      "retries": 0,
+      "estimate": {
+        "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+      }
+    },
+    {
+      "label": "gov.proposal create (R2.gov.proposal.B)",
+      "contract": "gov",
+      "type": "proposal",
+      "op": "create",
+      "note": "",
+      "payer": "owner",
+      "credits": "79768020",
+      "dash": "0.00079768",
+      "ms": 1950,
+      "retries": 0,
+      "estimate": {
+        "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+      }
+    },
+    {
+      "label": "gov.tally create (R2.gov.tally.A)",
+      "contract": "gov",
+      "type": "tally",
+      "op": "create",
+      "note": "",
+      "payer": "owner",
+      "credits": "25056460",
+      "dash": "0.00025056",
+      "ms": 1686,
+      "retries": 0,
+      "estimate": {
+        "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+      }
+    },
+    {
+      "label": "gov.tally replace (R2.gov.tally.A) (tally refresh)",
+      "contract": "gov",
+      "type": "tally",
+      "op": "replace",
+      "note": "(tally refresh)",
+      "payer": "owner",
+      "credits": "2557440",
+      "dash": "0.00002557",
+      "ms": 1818,
+      "retries": 0
+    },
+    {
+      "label": "gov.tally create (R2.gov.tally.B)",
+      "contract": "gov",
+      "type": "tally",
+      "op": "create",
+      "note": "",
+      "payer": "owner",
+      "credits": "25210460",
+      "dash": "0.00025210",
+      "ms": 1729,
+      "retries": 0,
+      "estimate": {
+        "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+      }
+    },
+    {
+      "label": "gov.cycle create (R2.gov.cycle.A)",
+      "contract": "gov",
+      "type": "cycle",
+      "op": "create",
+      "note": "",
+      "payer": "owner",
+      "credits": "21929240",
+      "dash": "0.00021929",
+      "ms": 1804,
+      "retries": 0,
+      "estimate": {
+        "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+      }
+    },
+    {
+      "label": "gov.cycle replace (R2.gov.cycle.A)",
+      "contract": "gov",
+      "type": "cycle",
+      "op": "replace",
+      "note": "",
+      "payer": "owner",
+      "credits": "2486740",
+      "dash": "0.00002486",
+      "ms": 1509,
+      "retries": 0
+    },
+    {
+      "label": "gov.claimAttestation create (R2.gov.claimAttestation.A)",
+      "contract": "gov",
+      "type": "claimAttestation",
+      "op": "create",
+      "note": "",
+      "payer": "owner",
+      "credits": "28873660",
+      "dash": "0.00028873",
+      "ms": 1960,
+      "retries": 0,
+      "estimate": {
+        "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+      }
+    },
+    {
+      "label": "forum.profile create (R2.forum.profile.A)",
+      "contract": "forum",
+      "type": "profile",
+      "op": "create",
+      "note": "",
+      "payer": "u6",
+      "credits": "33121580",
+      "dash": "0.00033121",
+      "ms": 1992,
+      "retries": 0,
+      "estimate": {
+        "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+      }
+    },
+    {
+      "label": "forum.profile replace (R2.forum.profile.A)",
+      "contract": "forum",
+      "type": "profile",
+      "op": "replace",
+      "note": "",
+      "payer": "u6",
+      "credits": "2940860",
+      "dash": "0.00002940",
+      "ms": 1672,
+      "retries": 0
+    },
+    {
+      "label": "forum.comment create (R2.forum.comment.A) 280 chars",
+      "contract": "forum",
+      "type": "comment",
+      "op": "create",
+      "note": "280 chars",
+      "payer": "u3",
+      "credits": "56175700",
+      "dash": "0.00056175",
+      "ms": 2009,
+      "retries": 0,
+      "estimate": {
+        "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+      }
+    },
+    {
+      "label": "forum.comment create (R2.forum.comment.B) 50 chars, reply",
+      "contract": "forum",
+      "type": "comment",
+      "op": "create",
+      "note": "50 chars, reply",
+      "payer": "u3",
+      "credits": "42925560",
+      "dash": "0.00042925",
+      "ms": 1682,
+      "retries": 0,
+      "estimate": {
+        "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+      }
+    },
+    {
+      "label": "forum.comment create (R2.forum.comment.C) 1000 chars",
+      "contract": "forum",
+      "type": "comment",
+      "op": "create",
+      "note": "1000 chars",
+      "payer": "u3",
+      "credits": "68134040",
+      "dash": "0.00068134",
+      "ms": 1473,
+      "retries": 0,
+      "estimate": {
+        "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+      }
+    },
+    {
+      "label": "forum.comment create (R2.forum.comment.D) 5000 chars (max)",
+      "contract": "forum",
+      "type": "comment",
+      "op": "create",
+      "note": "5000 chars (max)",
+      "payer": "u3",
+      "credits": "178395000",
+      "dash": "0.00178395",
+      "ms": 1765,
+      "retries": 0,
+      "estimate": {
+        "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+      }
+    },
+    {
+      "label": "forum.reaction create (R2.forum.reaction.A) community up-vote on proposal",
+      "contract": "forum",
+      "type": "reaction",
+      "op": "create",
+      "note": "community up-vote on proposal",
+      "payer": "u3",
+      "credits": "50109000",
+      "dash": "0.00050109",
+      "ms": 1474,
+      "retries": 0,
+      "estimate": {
+        "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+      }
+    },
+    {
+      "label": "forum.reaction replace (R2.forum.reaction.A) flip to down",
+      "contract": "forum",
+      "type": "reaction",
+      "op": "replace",
+      "note": "flip to down",
+      "payer": "u3",
+      "credits": "3207060",
+      "dash": "0.00003207",
+      "ms": 1602,
+      "retries": 0
+    },
+    {
+      "label": "forum.reaction create (R2.forum.reaction.B) second target",
+      "contract": "forum",
+      "type": "reaction",
+      "op": "create",
+      "note": "second target",
+      "payer": "u3",
+      "credits": "50242940",
+      "dash": "0.00050242",
+      "ms": 9004,
+      "retries": 0,
+      "estimate": {
+        "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+      }
+    },
+    {
+      "label": "forum.claim create (R2.forum.claim.A)",
+      "contract": "forum",
+      "type": "claim",
+      "op": "create",
+      "note": "",
+      "payer": "u3",
+      "credits": "35775120",
+      "dash": "0.00035775",
+      "ms": 1660,
+      "retries": 0,
+      "estimate": {
+        "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+      }
+    },
+    {
+      "label": "forum.proposalPost create (R2.forum.proposalPost.A) b0 1500 B",
+      "contract": "forum",
+      "type": "proposalPost",
+      "op": "create",
+      "note": "b0 1500 B",
+      "payer": "u3",
+      "credits": "79229560",
+      "dash": "0.00079229",
+      "ms": 2026,
+      "retries": 0,
+      "estimate": {
+        "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+      }
+    },
+    {
+      "label": "forum.proposalPost replace (R2.forum.proposalPost.A) add b1 2500 B",
+      "contract": "forum",
+      "type": "proposalPost",
+      "op": "replace",
+      "note": "add b1 2500 B",
+      "payer": "u3",
+      "credits": "73999400",
+      "dash": "0.00073999",
+      "ms": 1597,
+      "retries": 0
+    },
+    {
+      "label": "forum.proposalPost create (R2.forum.proposalPost.MAX) MAX: b0+b1+b2 = 15360 B + title/links",
+      "contract": "forum",
+      "type": "proposalPost",
+      "op": "create",
+      "note": "MAX: b0+b1+b2 = 15360 B + title/links",
+      "payer": "u3",
+      "credits": "491364200",
+      "dash": "0.00491364",
+      "ms": 1920,
+      "retries": 0,
+      "estimate": {
+        "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+      }
+    },
+    {
+      "label": "forum.proposalDraft create (R2.forum.proposalDraft.A)",
+      "contract": "forum",
+      "type": "proposalDraft",
+      "op": "create",
+      "note": "",
+      "payer": "u3",
+      "credits": "63253360",
+      "dash": "0.00063253",
+      "ms": 1403,
+      "retries": 0,
+      "estimate": {
+        "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+      }
+    },
+    {
+      "label": "forum.proposalDraft replace (R2.forum.proposalDraft.A) stage 1 -> 2, + collateralTxid",
+      "contract": "forum",
+      "type": "proposalDraft",
+      "op": "replace",
+      "note": "stage 1 -> 2, + collateralTxid",
+      "payer": "u3",
+      "credits": "-3211103",
+      "dash": "-0.00003211",
+      "ms": 1567,
+      "retries": 0
+    },
+    {
+      "label": "forum.blockSubs create (R2.forum.blockSubs.A) 3 lists",
+      "contract": "forum",
+      "type": "blockSubs",
+      "op": "create",
+      "note": "3 lists",
+      "payer": "u6",
+      "credits": "25187660",
+      "dash": "0.00025187",
+      "ms": 1657,
+      "retries": 0,
+      "estimate": {
+        "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+      }
+    },
+    {
+      "label": "forum.blockSubs replace (R2.forum.blockSubs.A) 5 lists",
+      "contract": "forum",
+      "type": "blockSubs",
+      "op": "replace",
+      "note": "5 lists",
+      "payer": "u6",
+      "credits": "4525580",
+      "dash": "0.00004525",
+      "ms": 1727,
+      "retries": 0
+    },
+    {
+      "label": "forum.settings create (R2.forum.settings.A) 600 B deflated JSON",
+      "contract": "forum",
+      "type": "settings",
+      "op": "create",
+      "note": "600 B deflated JSON",
+      "payer": "u6",
+      "credits": "39318280",
+      "dash": "0.00039318",
+      "ms": 1730,
+      "retries": 0,
+      "estimate": {
+        "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+      }
+    },
+    {
+      "label": "forum.settings replace (R2.forum.settings.A) 900 B",
+      "contract": "forum",
+      "type": "settings",
+      "op": "replace",
+      "note": "900 B",
+      "payer": "u6",
+      "credits": "11507700",
+      "dash": "0.00011507",
+      "ms": 2006,
+      "retries": 0
+    },
+    {
+      "label": "forum.vault create (R2.forum.vault.A)",
+      "contract": "forum",
+      "type": "vault",
+      "op": "create",
+      "note": "",
+      "payer": "u3",
+      "credits": "29693500",
+      "dash": "0.00029693",
+      "ms": 3556,
+      "retries": 0,
+      "estimate": {
+        "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+      }
+    },
+    {
+      "label": "forum.vault replace (R2.forum.vault.A)",
+      "contract": "forum",
+      "type": "vault",
+      "op": "replace",
+      "note": "",
+      "payer": "u3",
+      "credits": "3338620",
+      "dash": "0.00003338",
+      "ms": 2080,
+      "retries": 0
+    },
+    {
+      "label": "badge.issuerKey create (R2.badge.issuerKey.A) RSA-2048 SPKI 294 B, CRITICAL key",
+      "contract": "badge",
+      "type": "issuerKey",
+      "op": "create",
+      "note": "RSA-2048 SPKI 294 B, CRITICAL key",
+      "payer": "owner",
+      "credits": "30532980",
+      "dash": "0.00030532",
+      "ms": 1895,
+      "retries": 0,
+      "estimate": {
+        "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+      }
+    },
+    {
+      "label": "badge.issuerKey create (R2.badge.issuerKey.B) RSA-4096 SPKI 550 B",
+      "contract": "badge",
+      "type": "issuerKey",
+      "op": "create",
+      "note": "RSA-4096 SPKI 550 B",
+      "payer": "owner",
+      "credits": "37554100",
+      "dash": "0.00037554",
+      "ms": 5017,
+      "retries": 0,
+      "estimate": {
+        "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+      }
+    },
+    {
+      "label": "badge.issuerRevocation create (R2.badge.issuerRevocation.A) CRITICAL key",
+      "contract": "badge",
+      "type": "issuerRevocation",
+      "op": "create",
+      "note": "CRITICAL key",
+      "payer": "owner",
+      "credits": "21015200",
+      "dash": "0.00021015",
+      "ms": 1924,
+      "retries": 0,
+      "estimate": {
+        "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+      }
+    },
+    {
+      "label": "badge.issuerReport create (R2.badge.issuerReport.A)",
+      "contract": "badge",
+      "type": "issuerReport",
+      "op": "create",
+      "note": "",
+      "payer": "owner",
+      "credits": "20169600",
+      "dash": "0.00020169",
+      "ms": 1813,
+      "retries": 0,
+      "estimate": {
+        "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+      }
+    },
+    {
+      "label": "badge.mnBadge create (R2.badge.mnBadge.A) RSA-2048 sig 256 B",
+      "contract": "badge",
+      "type": "mnBadge",
+      "op": "create",
+      "note": "RSA-2048 sig 256 B",
+      "payer": "u3",
+      "credits": "30124180",
+      "dash": "0.00030124",
+      "ms": 1730,
+      "retries": 0,
+      "estimate": {
+        "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+      }
+    },
+    {
+      "label": "badge.mnBadge create (R2.badge.mnBadge.B) sig 384 B (u6)",
+      "contract": "badge",
+      "type": "mnBadge",
+      "op": "create",
+      "note": "sig 384 B (u6)",
+      "payer": "u6",
+      "credits": "58261980",
+      "dash": "0.00058261",
+      "ms": 1552,
+      "retries": 0,
+      "estimate": {
+        "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+      }
+    },
+    {
+      "label": "mod.block create (R2.mod.block.B)",
+      "contract": "mod",
+      "type": "block",
+      "op": "create",
+      "note": "",
+      "payer": "owner",
+      "credits": "37914380",
+      "dash": "0.00037914",
+      "ms": 1670,
+      "retries": 0,
+      "estimate": {
+        "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+      }
+    },
+    {
+      "label": "gov.proposal delete (R2.gov.proposal.B)",
+      "contract": "gov",
+      "type": "proposal",
+      "op": "delete",
+      "note": "",
+      "payer": "owner",
+      "credits": "-46724900",
+      "dash": "-0.00046724",
+      "ms": 1650,
+      "retries": 0
+    },
+    {
+      "label": "gov.tally delete (R2.gov.tally.B)",
+      "contract": "gov",
+      "type": "tally",
+      "op": "delete",
+      "note": "",
+      "payer": "owner",
+      "credits": "-19650700",
+      "dash": "-0.00019650",
+      "ms": 1695,
+      "retries": 0
+    },
+    {
+      "label": "forum.comment delete (R2.forum.comment.B)",
+      "contract": "forum",
+      "type": "comment",
+      "op": "delete",
+      "note": "",
+      "payer": "u3",
+      "credits": "-22129275",
+      "dash": "-0.00022129",
+      "ms": 1652,
+      "retries": 0
+    },
+    {
+      "label": "forum.comment delete (R2.forum.comment.C)",
+      "contract": "forum",
+      "type": "comment",
+      "op": "delete",
+      "note": "",
+      "payer": "u3",
+      "credits": "-45118132",
+      "dash": "-0.00045118",
+      "ms": 1864,
+      "retries": 0
+    },
+    {
+      "label": "forum.comment delete (R2.forum.comment.D)",
+      "contract": "forum",
+      "type": "comment",
+      "op": "delete",
+      "note": "",
+      "payer": "u3",
+      "credits": "-153454092",
+      "dash": "-0.00153454",
+      "ms": 1969,
+      "retries": 0
+    },
+    {
+      "label": "forum.reaction delete (R2.forum.reaction.B)",
+      "contract": "forum",
+      "type": "reaction",
+      "op": "delete",
+      "note": "",
+      "payer": "u3",
+      "credits": "-43185272",
+      "dash": "-0.00043185",
+      "ms": 1595,
+      "retries": 0
+    },
+    {
+      "label": "forum.proposalPost delete (R2.forum.proposalPost.MAX)",
+      "contract": "forum",
+      "type": "proposalPost",
+      "op": "delete",
+      "note": "",
+      "payer": "u3",
+      "credits": "-464960217",
+      "dash": "-0.00464960",
+      "ms": 9876,
+      "retries": 0
+    },
+    {
+      "label": "mod.block delete (R2.mod.block.B)",
+      "contract": "mod",
+      "type": "block",
+      "op": "delete",
+      "note": "",
+      "payer": "owner",
+      "credits": "-19574449",
+      "dash": "-0.00019574",
+      "ms": 8509,
+      "retries": 0
+    },
+    {
+      "label": "forum.block create (R2.forum.block.A)",
+      "contract": "forum",
+      "type": "block",
+      "op": "create",
+      "note": "",
+      "payer": "u3",
+      "credits": "22541040",
+      "dash": "0.00022541",
+      "ms": 1912,
+      "retries": 0,
+      "estimate": {
+        "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+      }
+    },
+    {
+      "label": "mod.block create (R2.mod.block.A)",
+      "contract": "mod",
+      "type": "block",
+      "op": "create",
+      "note": "",
+      "payer": "owner",
+      "credits": "36779740",
+      "dash": "0.00036779",
+      "ms": 1532,
+      "retries": 0,
+      "estimate": {
+        "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+      }
+    }
+  ],
+  "failures": [],
+  "balancesAfter": {
+    "owner": "8427193146",
+    "u3": "10580581042",
+    "u6": "3642895500"
+  },
+  "round1": {
+    "note": "unreliable balance reads (stale nodes); superseded by round 2",
+    "failures": [
+      {
+        "label": "gov.tally replace (gov.tally.A) (tally refresh)",
+        "error": "44XzTUrgpoA6APRmrHsktAAxi7Udnn3MGheC4HLHwsbn document not found [code 40101]"
+      }
+    ],
+    "ops": [
+      {
+        "label": "identity.creditTransfer owner->u3 0.1 DASH",
+        "contract": "-",
+        "type": "identity",
+        "op": "creditTransfer",
+        "payer": "owner",
+        "credits": "10003021540",
+        "dash": "0.10003021",
+        "ms": 4653,
+        "netFeeCredits": "3021540",
+        "netFeeDash": "0.00003021"
+      },
+      {
+        "label": "gov.proposal create (gov.proposal.A)",
+        "contract": "gov",
+        "type": "proposal",
+        "op": "create",
+        "note": "",
+        "payer": "owner",
+        "credits": "77984840",
+        "dash": "0.00077984",
+        "ms": 2012,
+        "estimate": {
+          "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+        }
+      },
+      {
+        "label": "gov.proposal create (gov.proposal.B)",
+        "contract": "gov",
+        "type": "proposal",
+        "op": "create",
+        "note": "",
+        "payer": "owner",
+        "credits": "0",
+        "dash": "0.00000000",
+        "ms": 1758,
+        "estimate": {
+          "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+        }
+      },
+      {
+        "label": "gov.tally create (gov.tally.A)",
+        "contract": "gov",
+        "type": "tally",
+        "op": "create",
+        "note": "",
+        "payer": "owner",
+        "credits": "103410960",
+        "dash": "0.00103410",
+        "ms": 3018,
+        "estimate": {
+          "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+        }
+      },
+      {
+        "label": "gov.tally create (gov.tally.B)",
+        "contract": "gov",
+        "type": "tally",
+        "op": "create",
+        "note": "",
+        "payer": "owner",
+        "credits": "25056460",
+        "dash": "0.00025056",
+        "ms": 1938,
+        "estimate": {
+          "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+        }
+      },
+      {
+        "label": "gov.cycle create (gov.cycle.A)",
+        "contract": "gov",
+        "type": "cycle",
+        "op": "create",
+        "note": "",
+        "payer": "owner",
+        "credits": "21744900",
+        "dash": "0.00021744",
+        "ms": 2889,
+        "estimate": {
+          "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+        }
+      },
+      {
+        "label": "gov.cycle replace (gov.cycle.A)",
+        "contract": "gov",
+        "type": "cycle",
+        "op": "replace",
+        "note": "",
+        "payer": "owner",
+        "credits": "2288400",
+        "dash": "0.00002288",
+        "ms": 1879
+      },
+      {
+        "label": "gov.claimAttestation create (gov.claimAttestation.A)",
+        "contract": "gov",
+        "type": "claimAttestation",
+        "op": "create",
+        "note": "",
+        "payer": "owner",
+        "credits": "0",
+        "dash": "0.00000000",
+        "ms": 1562,
+        "estimate": {
+          "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+        }
+      },
+      {
+        "label": "forum.profile create (forum.profile.A)",
+        "contract": "forum",
+        "type": "profile",
+        "op": "create",
+        "note": "",
+        "payer": "u3",
+        "credits": "35793980",
+        "dash": "0.00035793",
+        "ms": 5626,
+        "estimate": {
+          "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+        }
+      },
+      {
+        "label": "forum.profile replace (forum.profile.A)",
+        "contract": "forum",
+        "type": "profile",
+        "op": "replace",
+        "note": "",
+        "payer": "u3",
+        "credits": "0",
+        "dash": "0.00000000",
+        "ms": 1546
+      },
+      {
+        "label": "forum.comment create (forum.comment.A) 280 chars",
+        "contract": "forum",
+        "type": "comment",
+        "op": "create",
+        "note": "280 chars",
+        "payer": "u3",
+        "credits": "2653040",
+        "dash": "0.00002653",
+        "ms": 2946,
+        "estimate": {
+          "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+        }
+      },
+      {
+        "label": "forum.comment create (forum.comment.B) 50 chars, reply",
+        "contract": "forum",
+        "type": "comment",
+        "op": "create",
+        "note": "50 chars, reply",
+        "payer": "u3",
+        "credits": "42592060",
+        "dash": "0.00042592",
+        "ms": 1871,
+        "estimate": {
+          "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+        }
+      },
+      {
+        "label": "forum.comment create (forum.comment.C) 1000 chars",
+        "contract": "forum",
+        "type": "comment",
+        "op": "create",
+        "note": "1000 chars",
+        "payer": "u3",
+        "credits": "0",
+        "dash": "0.00000000",
+        "ms": 1782,
+        "estimate": {
+          "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+        }
+      },
+      {
+        "label": "forum.comment create (forum.comment.D) 5000 chars (max)",
+        "contract": "forum",
+        "type": "comment",
+        "op": "create",
+        "note": "5000 chars (max)",
+        "payer": "u3",
+        "credits": "178167700",
+        "dash": "0.00178167",
+        "ms": 5663,
+        "estimate": {
+          "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+        }
+      },
+      {
+        "label": "forum.reaction create (forum.reaction.A) community up-vote on proposal",
+        "contract": "forum",
+        "type": "reaction",
+        "op": "create",
+        "note": "community up-vote on proposal",
+        "payer": "u3",
+        "credits": "0",
+        "dash": "0.00000000",
+        "ms": 2697,
+        "estimate": {
+          "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+        }
+      },
+      {
+        "label": "forum.reaction replace (forum.reaction.A) flip to down",
+        "contract": "forum",
+        "type": "reaction",
+        "op": "replace",
+        "note": "flip to down",
+        "payer": "u3",
+        "credits": "62574600",
+        "dash": "0.00062574",
+        "ms": 2937
+      },
+      {
+        "label": "forum.reaction create (forum.reaction.B) second target",
+        "contract": "forum",
+        "type": "reaction",
+        "op": "create",
+        "note": "second target",
+        "payer": "u3",
+        "credits": "53047440",
+        "dash": "0.00053047",
+        "ms": 3225,
+        "estimate": {
+          "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+        }
+      },
+      {
+        "label": "forum.claim create (forum.claim.A)",
+        "contract": "forum",
+        "type": "claim",
+        "op": "create",
+        "note": "",
+        "payer": "u3",
+        "credits": "35574060",
+        "dash": "0.00035574",
+        "ms": 1804,
+        "estimate": {
+          "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+        }
+      },
+      {
+        "label": "forum.proposalPost create (forum.proposalPost.A) b0 1500 B",
+        "contract": "forum",
+        "type": "proposalPost",
+        "op": "create",
+        "note": "b0 1500 B",
+        "payer": "u3",
+        "credits": "77236700",
+        "dash": "0.00077236",
+        "ms": 1612,
+        "estimate": {
+          "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+        }
+      },
+      {
+        "label": "forum.proposalPost replace (forum.proposalPost.A) add b1 2500 B",
+        "contract": "forum",
+        "type": "proposalPost",
+        "op": "replace",
+        "note": "add b1 2500 B",
+        "payer": "u3",
+        "credits": "149147120",
+        "dash": "0.00149147",
+        "ms": 3109
+      },
+      {
+        "label": "forum.proposalPost create (forum.proposalPost.MAX) MAX: b0+b1+b2 = 15360 B + title/links",
+        "contract": "forum",
+        "type": "proposalPost",
+        "op": "create",
+        "note": "MAX: b0+b1+b2 = 15360 B + title/links",
+        "payer": "u3",
+        "credits": "489519500",
+        "dash": "0.00489519",
+        "ms": 2985,
+        "estimate": {
+          "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+        }
+      },
+      {
+        "label": "forum.proposalDraft create (forum.proposalDraft.A)",
+        "contract": "forum",
+        "type": "proposalDraft",
+        "op": "create",
+        "note": "",
+        "payer": "u3",
+        "credits": "72281600",
+        "dash": "0.00072281",
+        "ms": 2833,
+        "estimate": {
+          "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+        }
+      },
+      {
+        "label": "forum.proposalDraft replace (forum.proposalDraft.A) stage 1 -> 2, + collateralTxid",
+        "contract": "forum",
+        "type": "proposalDraft",
+        "op": "replace",
+        "note": "stage 1 -> 2, + collateralTxid",
+        "payer": "u3",
+        "credits": "0",
+        "dash": "0.00000000",
+        "ms": 2678
+      },
+      {
+        "label": "forum.block create (forum.block.A)",
+        "contract": "forum",
+        "type": "block",
+        "op": "create",
+        "note": "",
+        "payer": "u3",
+        "credits": "34805397",
+        "dash": "0.00034805",
+        "ms": 1716,
+        "estimate": {
+          "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+        }
+      },
+      {
+        "label": "forum.blockSubs create (forum.blockSubs.A) 3 lists",
+        "contract": "forum",
+        "type": "blockSubs",
+        "op": "create",
+        "note": "3 lists",
+        "payer": "u3",
+        "credits": "55101360",
+        "dash": "0.00055101",
+        "ms": 7932,
+        "estimate": {
+          "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+        }
+      },
+      {
+        "label": "forum.blockSubs replace (forum.blockSubs.A) 5 lists",
+        "contract": "forum",
+        "type": "blockSubs",
+        "op": "replace",
+        "note": "5 lists",
+        "payer": "u3",
+        "credits": "29082000",
+        "dash": "0.00029082",
+        "ms": 1845
+      },
+      {
+        "label": "forum.settings create (forum.settings.A) 600 B deflated JSON",
+        "contract": "forum",
+        "type": "settings",
+        "op": "create",
+        "note": "600 B deflated JSON",
+        "payer": "u3",
+        "credits": "38685260",
+        "dash": "0.00038685",
+        "ms": 1677,
+        "estimate": {
+          "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+        }
+      },
+      {
+        "label": "forum.settings replace (forum.settings.A) 900 B",
+        "contract": "forum",
+        "type": "settings",
+        "op": "replace",
+        "note": "900 B",
+        "payer": "u3",
+        "credits": "0",
+        "dash": "0.00000000",
+        "ms": 1443
+      },
+      {
+        "label": "forum.vault create (forum.vault.A)",
+        "contract": "forum",
+        "type": "vault",
+        "op": "create",
+        "note": "",
+        "payer": "u3",
+        "credits": "49220760",
+        "dash": "0.00049220",
+        "ms": 1775,
+        "estimate": {
+          "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+        }
+      },
+      {
+        "label": "forum.vault replace (forum.vault.A)",
+        "contract": "forum",
+        "type": "vault",
+        "op": "replace",
+        "note": "",
+        "payer": "u3",
+        "credits": "3048520",
+        "dash": "0.00003048",
+        "ms": 1554
+      },
+      {
+        "label": "badge.issuerKey create (badge.issuerKey.A) RSA-2048 SPKI 294 B, CRITICAL key",
+        "contract": "badge",
+        "type": "issuerKey",
+        "op": "create",
+        "note": "RSA-2048 SPKI 294 B, CRITICAL key",
+        "payer": "owner",
+        "credits": "37609220",
+        "dash": "0.00037609",
+        "ms": 1727,
+        "estimate": {
+          "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+        }
+      },
+      {
+        "label": "badge.issuerKey create (badge.issuerKey.B) RSA-4096 SPKI 550 B",
+        "contract": "badge",
+        "type": "issuerKey",
+        "op": "create",
+        "note": "RSA-4096 SPKI 550 B",
+        "payer": "owner",
+        "credits": "74749680",
+        "dash": "0.00074749",
+        "ms": 4017,
+        "estimate": {
+          "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+        }
+      },
+      {
+        "label": "badge.issuerRevocation create (badge.issuerRevocation.A) CRITICAL key",
+        "contract": "badge",
+        "type": "issuerRevocation",
+        "op": "create",
+        "note": "CRITICAL key",
+        "payer": "owner",
+        "credits": "28643720",
+        "dash": "0.00028643",
+        "ms": 1970,
+        "estimate": {
+          "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+        }
+      },
+      {
+        "label": "badge.issuerReport create (badge.issuerReport.A)",
+        "contract": "badge",
+        "type": "issuerReport",
+        "op": "create",
+        "note": "",
+        "payer": "owner",
+        "credits": "27812200",
+        "dash": "0.00027812",
+        "ms": 1584,
+        "estimate": {
+          "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+        }
+      },
+      {
+        "label": "badge.mnBadge create (badge.mnBadge.A) RSA-2048 sig 256 B",
+        "contract": "badge",
+        "type": "mnBadge",
+        "op": "create",
+        "note": "RSA-2048 sig 256 B",
+        "payer": "u3",
+        "credits": "0",
+        "dash": "0.00000000",
+        "ms": 1672,
+        "estimate": {
+          "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+        }
+      },
+      {
+        "label": "badge.mnBadge create (badge.mnBadge.B) sig 384 B",
+        "contract": "badge",
+        "type": "mnBadge",
+        "op": "create",
+        "note": "sig 384 B",
+        "payer": "u3",
+        "credits": "0",
+        "dash": "0.00000000",
+        "ms": 2867,
+        "estimate": {
+          "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+        }
+      },
+      {
+        "label": "mod.block create (mod.block.A)",
+        "contract": "mod",
+        "type": "block",
+        "op": "create",
+        "note": "",
+        "payer": "owner",
+        "credits": "0",
+        "dash": "0.00000000",
+        "ms": 1767,
+        "estimate": {
+          "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+        }
+      },
+      {
+        "label": "mod.block create (mod.block.B)",
+        "contract": "mod",
+        "type": "block",
+        "op": "create",
+        "note": "",
+        "payer": "owner",
+        "credits": "84484200",
+        "dash": "0.00084484",
+        "ms": 7423,
+        "estimate": {
+          "error": "document create cost: drive: drive unknown version on document_create_cost (add_document_for_contract_operations), received: 0"
+        }
+      },
+      {
+        "label": "gov.proposal delete (gov.proposal.B)",
+        "contract": "gov",
+        "type": "proposal",
+        "op": "delete",
+        "note": "",
+        "payer": "owner",
+        "credits": "-46270488",
+        "dash": "-0.00046270",
+        "ms": 2033
+      },
+      {
+        "label": "gov.tally delete (gov.tally.B)",
+        "contract": "gov",
+        "type": "tally",
+        "op": "delete",
+        "note": "",
+        "payer": "owner",
+        "credits": "-19790380",
+        "dash": "-0.00019790",
+        "ms": 3177
+      },
+      {
+        "label": "forum.comment delete (forum.comment.B)",
+        "contract": "forum",
+        "type": "comment",
+        "op": "delete",
+        "note": "",
+        "payer": "u3",
+        "credits": "-20104855",
+        "dash": "-0.00020104",
+        "ms": 2413
+      },
+      {
+        "label": "forum.comment delete (forum.comment.C)",
+        "contract": "forum",
+        "type": "comment",
+        "op": "delete",
+        "note": "",
+        "payer": "u3",
+        "credits": "-45224752",
+        "dash": "-0.00045224",
+        "ms": 2881
+      },
+      {
+        "label": "forum.comment delete (forum.comment.D)",
+        "contract": "forum",
+        "type": "comment",
+        "op": "delete",
+        "note": "",
+        "payer": "u3",
+        "credits": "0",
+        "dash": "0.00000000",
+        "ms": 7302
+      },
+      {
+        "label": "forum.reaction delete (forum.reaction.B)",
+        "contract": "forum",
+        "type": "reaction",
+        "op": "delete",
+        "note": "",
+        "payer": "u3",
+        "credits": "-196738204",
+        "dash": "-0.00196738",
+        "ms": 2105
+      },
+      {
+        "label": "forum.proposalPost delete (forum.proposalPost.MAX)",
+        "contract": "forum",
+        "type": "proposalPost",
+        "op": "delete",
+        "note": "",
+        "payer": "u3",
+        "credits": "-464967017",
+        "dash": "-0.00464967",
+        "ms": 1809
+      },
+      {
+        "label": "mod.block delete (mod.block.B)",
+        "contract": "mod",
+        "type": "block",
+        "op": "delete",
+        "note": "",
+        "payer": "owner",
+        "credits": "-19574449",
+        "dash": "-0.00019574",
+        "ms": 1681
+      }
+    ]
+  },
+  "documentsLeftOnChain": {
+    "gov.proposal.A": {
+      "contract": "gov",
+      "type": "proposal",
+      "id": "GiCkEzSnk6SCCbXgjCnPYtvviYiRS5Vnbu7AcpAMUPFE",
+      "owner": "9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv"
+    },
+    "gov.tally.A": {
+      "contract": "gov",
+      "type": "tally",
+      "id": "44XzTUrgpoA6APRmrHsktAAxi7Udnn3MGheC4HLHwsbn",
+      "owner": "9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv"
+    },
+    "gov.cycle.A": {
+      "contract": "gov",
+      "type": "cycle",
+      "id": "GpnnrZFTM8V4fhQRzsoFTNSFs9f55dwHLVvkQyGNELSn",
+      "owner": "9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv"
+    },
+    "gov.claimAttestation.A": {
+      "contract": "gov",
+      "type": "claimAttestation",
+      "id": "36RGe6di4WhQQBDPCs6tMMhjgUv4apZ51Kq33NTj8ban",
+      "owner": "9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv"
+    },
+    "forum.profile.A": {
+      "contract": "forum",
+      "type": "profile",
+      "id": "7ZStBFwiTwfxJcG5DMBtUdjSgge4kUbU1EPEb6GqdYx3",
+      "owner": "4eYvJ1QzRxFy82CRK3tP5QHmdRcgkG8xdbGBQMqSroif"
+    },
+    "forum.comment.A": {
+      "contract": "forum",
+      "type": "comment",
+      "id": "2ryUrWZwQFzf6SA9CtnxahscGM5sMLHjRYBzmhDhYXe8",
+      "owner": "4eYvJ1QzRxFy82CRK3tP5QHmdRcgkG8xdbGBQMqSroif"
+    },
+    "forum.reaction.A": {
+      "contract": "forum",
+      "type": "reaction",
+      "id": "G4xAELXRrW6gvS7dcAg8eZBS1pNUqX1KKyGw3L8kntc4",
+      "owner": "4eYvJ1QzRxFy82CRK3tP5QHmdRcgkG8xdbGBQMqSroif"
+    },
+    "forum.claim.A": {
+      "contract": "forum",
+      "type": "claim",
+      "id": "DSNRL9PtsW31Q2eLD5kmF3h6C4Ab2xdPpBxKwv2v5s7u",
+      "owner": "4eYvJ1QzRxFy82CRK3tP5QHmdRcgkG8xdbGBQMqSroif"
+    },
+    "forum.proposalPost.A": {
+      "contract": "forum",
+      "type": "proposalPost",
+      "id": "42TqHdgf3aQkj1xMNnq5F7LAfu5QBz7v75Ut7tWDkQux",
+      "owner": "4eYvJ1QzRxFy82CRK3tP5QHmdRcgkG8xdbGBQMqSroif"
+    },
+    "forum.proposalDraft.A": {
+      "contract": "forum",
+      "type": "proposalDraft",
+      "id": "5qcn4JbThSL6sfsUUhbXTX7ChKV9Sin7Cs6C1xE4qvnk",
+      "owner": "4eYvJ1QzRxFy82CRK3tP5QHmdRcgkG8xdbGBQMqSroif"
+    },
+    "forum.block.A": {
+      "contract": "forum",
+      "type": "block",
+      "id": "2HLqQVKbnBwykiUmLFPHaDCxuuNxEuHUPFB3fa4CEQGM",
+      "owner": "4eYvJ1QzRxFy82CRK3tP5QHmdRcgkG8xdbGBQMqSroif"
+    },
+    "forum.blockSubs.A": {
+      "contract": "forum",
+      "type": "blockSubs",
+      "id": "GsprAHtH2uDCBiRLSxxumXzx9zn5Q53159Tkn46eMExp",
+      "owner": "4eYvJ1QzRxFy82CRK3tP5QHmdRcgkG8xdbGBQMqSroif"
+    },
+    "forum.settings.A": {
+      "contract": "forum",
+      "type": "settings",
+      "id": "2smZd5uHqyibX61QwxvFTChSjZF271v5eEyBMegLXWyH",
+      "owner": "4eYvJ1QzRxFy82CRK3tP5QHmdRcgkG8xdbGBQMqSroif"
+    },
+    "forum.vault.A": {
+      "contract": "forum",
+      "type": "vault",
+      "id": "9d4nmszDARw29RbMp8NxXhAXrdScLDBpun6gucFT6ay4",
+      "owner": "4eYvJ1QzRxFy82CRK3tP5QHmdRcgkG8xdbGBQMqSroif"
+    },
+    "badge.issuerKey.A": {
+      "contract": "badge",
+      "type": "issuerKey",
+      "id": "4DALHpg2BwBrdqqF3H5Ht3GpUNRPFeQP5SFkc2UYGvuY",
+      "owner": "9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv"
+    },
+    "badge.issuerKey.B": {
+      "contract": "badge",
+      "type": "issuerKey",
+      "id": "FzpCKGcptBc2sqtUZ2HzSir1VNAuphbJ1JVaaxNtWwEY",
+      "owner": "9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv"
+    },
+    "badge.issuerRevocation.A": {
+      "contract": "badge",
+      "type": "issuerRevocation",
+      "id": "6YDxbVy33tT8rt7waTPw7wpX4GdPKesPZyet3PuDhyip",
+      "owner": "9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv"
+    },
+    "badge.issuerReport.A": {
+      "contract": "badge",
+      "type": "issuerReport",
+      "id": "2oMVbx1v36QanizdFqS4gccocW9Yibbp2z3Z3pgBDohv",
+      "owner": "9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv"
+    },
+    "badge.mnBadge.A": {
+      "contract": "badge",
+      "type": "mnBadge",
+      "id": "AVB12VqgPCsgHCB398VQnr3PAJooBWZaHHL33scLcPAz",
+      "owner": "4eYvJ1QzRxFy82CRK3tP5QHmdRcgkG8xdbGBQMqSroif"
+    },
+    "badge.mnBadge.B": {
+      "contract": "badge",
+      "type": "mnBadge",
+      "id": "ACrr9hAoDjfJyLUQMqyEnrs2wpE4rZDqJVFZqu1hKCuw",
+      "owner": "4eYvJ1QzRxFy82CRK3tP5QHmdRcgkG8xdbGBQMqSroif"
+    },
+    "mod.block.A": {
+      "contract": "mod",
+      "type": "block",
+      "id": "WKWd14yzXvo2muvgnVwjiqbb9faimEuDj5kzX7DxRwA",
+      "owner": "9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv"
+    },
+    "R2.gov.proposal.A": {
+      "contract": "gov",
+      "type": "proposal",
+      "id": "CCbUCyMWTaypeYHQPXZoH6ga6NXFcJE9Jkq6cRuhE2K5",
+      "owner": "9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv"
+    },
+    "R2.gov.tally.A": {
+      "contract": "gov",
+      "type": "tally",
+      "id": "FgWs2ZwPeD65cJRMn5vJBBbkhsgfzTFSvfSwg5Nc8YhG",
+      "owner": "9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv"
+    },
+    "R2.gov.cycle.A": {
+      "contract": "gov",
+      "type": "cycle",
+      "id": "GvoZVH1oQXZ4EBBVdpUvrsyvERJcBtrZqkSGHY9XjkH6",
+      "owner": "9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv"
+    },
+    "R2.gov.claimAttestation.A": {
+      "contract": "gov",
+      "type": "claimAttestation",
+      "id": "2ty7X9r7bNyHBPnHZPSA1KxWH3gJhSNGGY4E3ueKt94y",
+      "owner": "9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv"
+    },
+    "R2.forum.profile.A": {
+      "contract": "forum",
+      "type": "profile",
+      "id": "5fkmj6hDg2fG5AJzNFy2EKgEmg9GpQ6qPievxyRNrafS",
+      "owner": "4TEp8FeD7iMD9nKMGBK492ZnbESdwFPPXtvjRA6Zrxhv"
+    },
+    "R2.forum.comment.A": {
+      "contract": "forum",
+      "type": "comment",
+      "id": "AWf9ZB521jBDgNMj7aDTrx9fNHtT5Ua522CBdDm2S13y",
+      "owner": "4eYvJ1QzRxFy82CRK3tP5QHmdRcgkG8xdbGBQMqSroif"
+    },
+    "R2.forum.reaction.A": {
+      "contract": "forum",
+      "type": "reaction",
+      "id": "Fc7QN5GKymySFGqxDsLYPhFsMq4mvDUM2vJusHowwiER",
+      "owner": "4eYvJ1QzRxFy82CRK3tP5QHmdRcgkG8xdbGBQMqSroif"
+    },
+    "R2.forum.claim.A": {
+      "contract": "forum",
+      "type": "claim",
+      "id": "9XCoSkWqcoJKim2mvPcvvuN2gMd9iUbmSZop3NrLgrTi",
+      "owner": "4eYvJ1QzRxFy82CRK3tP5QHmdRcgkG8xdbGBQMqSroif"
+    },
+    "R2.forum.proposalPost.A": {
+      "contract": "forum",
+      "type": "proposalPost",
+      "id": "8Pwv9WeAWPPvTbUyKeXqacLyeBGby8sQ5nc6NJMnqRjD",
+      "owner": "4eYvJ1QzRxFy82CRK3tP5QHmdRcgkG8xdbGBQMqSroif"
+    },
+    "R2.forum.proposalDraft.A": {
+      "contract": "forum",
+      "type": "proposalDraft",
+      "id": "CA8Pd8Z2VvGKakPzPv6jBShuSMA4MaefXWy7wXJDHzvh",
+      "owner": "4eYvJ1QzRxFy82CRK3tP5QHmdRcgkG8xdbGBQMqSroif"
+    },
+    "R2.forum.blockSubs.A": {
+      "contract": "forum",
+      "type": "blockSubs",
+      "id": "BCzvAWr1i4W8ddkWYmNpeSKEPsDuUfoK4ZVGjZ2mdn3e",
+      "owner": "4TEp8FeD7iMD9nKMGBK492ZnbESdwFPPXtvjRA6Zrxhv"
+    },
+    "R2.forum.settings.A": {
+      "contract": "forum",
+      "type": "settings",
+      "id": "6ECzfWJVF8jkMNuB2dFFgHpb2LMQQcFaCkWCh97oPTah",
+      "owner": "4TEp8FeD7iMD9nKMGBK492ZnbESdwFPPXtvjRA6Zrxhv"
+    },
+    "R2.forum.vault.A": {
+      "contract": "forum",
+      "type": "vault",
+      "id": "7VdZ4m8brAAaASPqbxPugLqt6oXFQi17LkAerukAVJu3",
+      "owner": "4eYvJ1QzRxFy82CRK3tP5QHmdRcgkG8xdbGBQMqSroif"
+    },
+    "R2.badge.issuerKey.A": {
+      "contract": "badge",
+      "type": "issuerKey",
+      "id": "6Mr2Zwcw4tQrZoBvFHS5ALfC35MKvtSD3dVzvTNAbM7m",
+      "owner": "9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv"
+    },
+    "R2.badge.issuerKey.B": {
+      "contract": "badge",
+      "type": "issuerKey",
+      "id": "AFNzkzoAv9FbfxALhZzSeFUyqeAaTkDmrytGK6tAanUG",
+      "owner": "9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv"
+    },
+    "R2.badge.issuerRevocation.A": {
+      "contract": "badge",
+      "type": "issuerRevocation",
+      "id": "BrDLHGeNb3DGVRog1f5NthjhCzCnc47thG1daGUX9fkF",
+      "owner": "9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv"
+    },
+    "R2.badge.issuerReport.A": {
+      "contract": "badge",
+      "type": "issuerReport",
+      "id": "7jdwqvBAj1dJFWJdfmxtzUZZYomk5LjPx2fQBY5uitFm",
+      "owner": "9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv"
+    },
+    "R2.badge.mnBadge.A": {
+      "contract": "badge",
+      "type": "mnBadge",
+      "id": "FLwP6tpd5nMEyS2VNvyZ9cQwcDtzAFGbW8FTo9SPnaTh",
+      "owner": "4eYvJ1QzRxFy82CRK3tP5QHmdRcgkG8xdbGBQMqSroif"
+    },
+    "R2.badge.mnBadge.B": {
+      "contract": "badge",
+      "type": "mnBadge",
+      "id": "B5Zh9F4EoE3vdQz1PKCNYWGFwSNPjRNdcLhzdnqoz1u1",
+      "owner": "4TEp8FeD7iMD9nKMGBK492ZnbESdwFPPXtvjRA6Zrxhv"
+    },
+    "R2.forum.block.A": {
+      "contract": "forum",
+      "type": "block",
+      "id": "DvaX1oV5DhmVujW2T5Vie7mNyo9ajxmkaiXQ9XwSuFhP",
+      "owner": "4eYvJ1QzRxFy82CRK3tP5QHmdRcgkG8xdbGBQMqSroif"
+    },
+    "R2.mod.block.A": {
+      "contract": "mod",
+      "type": "block",
+      "id": "5u7LiACoVqzQ2tjRgW27gQd5uQEYPFHdbmgQJmBTUKE2",
+      "owner": "9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv"
+    }
+  }
+}
