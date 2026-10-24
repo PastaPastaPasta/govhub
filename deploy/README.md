@@ -480,7 +480,7 @@ Cloudflare, and the container only needs the tunnel token.
    the tunnel, its ingress and DNS as they were. If you ran it on another machine, copy the token file into `secrets/` and
    re-run `scripts/init.sh` as root, which chowns it to uid 1000 so cloudflared can read it.
 3. In `.env`: `COMPOSE_PROFILES=tunnel`, then `docker compose up -d`. `docker compose logs
-   cloudflared` should show four `Registered tunnel connection` lines.
+   cloudflared` shows nothing on success: cloudflared runs at loglevel error (no request logs, section 11.5). Check it from outside (step 4).
 4. Check from outside:
 
    ```sh
@@ -641,7 +641,9 @@ table is in `services/issuer/README.md`, "What is stored and logged"):
 - the issuer's own stdout/stderr (kept by Docker's json-file driver) has no MN ids, outpoints, addresses or per-request
   lines, only hourly counters;
 - the tunnel gateway runs `caddy/tunnel-gateway-issuer.Caddyfile` with no access log and the default logger discarded;
-- cloudflared runs at `--loglevel info` (connection events only; never debug, which logs every request);
+- cloudflared runs at `--loglevel error` (no per-request lines; debug logs every request, info and warn log failed origin
+  requests). The `Registered tunnel connection` lines are info, so check the tunnel with `cloudflared tunnel info` or the
+  metrics port instead of the log;
 - Cloudflare's edge sees request metadata and is outside our control. Turn off Logpush, Web Analytics and other request
   logging for the issuer hostname where the plan allows. Do not put a logging proxy (or Caddy's `log` directive) in front
   of the issuer.

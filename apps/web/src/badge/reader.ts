@@ -192,6 +192,7 @@ export class BadgeReader {
       const cfg = await this.#cfg();
       // count the badges that were valid in E's display window, also when auditing a past epoch (the sticky flag below)
       const at = Math.min(coreHeight, b.displayWindow(b.EPOCH_PARAMS[this.#net], epoch).to);
+      const auditKey = { ...key, revokedFrom: null };
       let count = 0;
       let after: string | undefined;
       let pages = 0;
@@ -201,7 +202,8 @@ export class BadgeReader {
         pages++;
         for (const d of res.docs) {
           try {
-            if ((await b.verifyMnBadge(cfg, key, b.parseMnBadgeDoc(d), at)).ok) count++;
+            // the issuer's own revocation must not shrink its count after the fact (it would clear a flag): count as unrevoked
+            if ((await b.verifyMnBadge(cfg, auditKey, b.parseMnBadgeDoc(d), at)).ok) count++;
           } catch {
             /* malformed: not counted */
           }
@@ -213,13 +215,15 @@ export class BadgeReader {
         after = String(res.docs[res.docs.length - 1]!.$id);
       }
       const tokensIssued = await this.reportedTokens(issuer, epoch);
-      const bound = tokensIssued === null ? { value: this.#maxPlausible, source: 'pinned bound' } : await this.#bound();
+      const bound = await this.#bound();
       const reportDue = coreHeight > b.reportWindow(b.EPOCH_PARAMS[this.#net], epoch).to;
       let flagReason: string | null = null;
       if (tokensIssued !== null && tokensIssued > bound.value) flagReason = `reported ${tokensIssued} tokens, more than there are masternodes (${bound.source})`;
       else if (tokensIssued !== null && count > tokensIssued) flagReason = `${count} valid badges but only ${tokensIssued} tokens reported`;
       else if (tokensIssued === null && reportDue) flagReason = 'no valid issuerReport for this epoch';
       else if (tokensIssued !== null && !complete) flagReason = 'too many badges to audit';
+      // before E's report can exist (it comes at S(E+1)), at least the badge count must stay plausible
+      else if (tokensIssued === null && (count > bound.value || !complete)) flagReason = `more valid badges than there are masternodes (${bound.source})`;
       // only a flag is final: badge counts only grow and a report is immutable; anything else is re-read after the TTL (N3)
       entry.final = flagReason !== null;
       return { ...base, badges: count, complete, tokensIssued, flagged: flagReason !== null, flagReason, keyProblem: null };
@@ -249,7 +253,8 @@ export class BadgeReader {
     for (const issuer of this.#issuers) {
       for (const epoch of b.displayEpochsAt(b.EPOCH_PARAMS[this.#net], now)) {
         const a = await this.audit(issuer, epoch, now);
-        if (!a.flagged && a.badges > 0) return true;
+        const prevFlagged = epoch > 1 && (await this.audit(issuer, epoch - 1, now)).flagged;
+        if (!a.flagged && !prevFlagged && a.badges > 0) return true;
       }
     }
     return false;

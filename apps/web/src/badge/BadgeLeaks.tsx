@@ -22,14 +22,17 @@ export function BadgeLeaks({ net, open = false }: { net: CoreNetwork; open?: boo
         </li>
         <li>
           <b>Standard</b> (the default): the issuer signs a token for the current epoch and your badge is posted right away. The signature is blind, but the issuer sees your
-          request and could see the badge appear a minute later, so it could tell which masternode the badge belongs to. Our issuer keeps no records or logs that would let it
-          (no request times, addresses or masternode ids beyond the one-per-epoch check, deleted when the epoch ends), but you are trusting that.
+          request and could see the badge appear a minute later, so it could tell which masternode the badge belongs to. The govhub issuer keeps no records or logs that
+          would let it (no request times, addresses or masternode ids beyond the one-per-epoch check, deleted when the epoch ends), but you are trusting that; other
+          issuers decide for themselves. Switching to Private later does not undo this for an identity that already used Standard with that issuer: use a new identity.
         </li>
         <li>
           <b>Private</b>: the token is for the next epoch, requested at a random time during this one, and the badge is posted at a random time in the first{' '}
-          {days(p.graceBlocks)} of the next epoch, so every private token exists before any of those badges appear. The badge hides among everyone who asked the same issuer:
-          it is not posted if the issuer reported fewer than {minSet} tokens for the epoch before (the issuer’s own count). Requests and posts are kept at least half an hour
-          apart from anything this browser writes to Platform. A badge appears up to one epoch ({days(epochLength(p))}) after you ask.
+          {days(p.graceBlocks)} of the next epoch, so every private token exists before any of those badges appear. The badge hides among the others who chose a private
+          mode with the same issuer (the issuer knows who they are). It is not posted if the issuer reported fewer than {minSet} tokens for the epoch before: that is the
+          issuer’s own count and includes Standard tokens, so the real crowd can be smaller. A badge that appears for the first time, or stops, can still be matched to a
+          masternode that started or stopped asking at the same time when few others did. Requests and posts are kept at least half an hour apart from anything this
+          browser writes to Platform. A badge appears up to one epoch ({days(epochLength(p))}) after you ask.
         </li>
         <li>
           <b>Extra private</b>: like Private, but the badge is posted at a random time across the first half of the next epoch.

@@ -24,12 +24,12 @@ function eta(height: number, now: number | null): string {
 export const MODES: Record<PrivacyMode, { label: string; summary: string }> = {
   standard: {
     label: 'Standard',
-    summary: 'Fast: your badge appears now. The issuer could tell which masternode it belongs to; we keep no records that would let us.',
+    summary: 'Fast: your badge appears now. The issuer could tell which masternode it belongs to; the govhub issuer keeps no records that would let it.',
   },
   private: {
     label: 'Private',
     summary:
-      'Your badge appears at the start of the next epoch, at a random time and among everyone who asked, so the issuer cannot tell by timing which masternode it belongs to.',
+      'Your badge appears at the start of the next epoch, at a random time, among the others who chose Private with the same issuer, so the issuer cannot tell by timing which masternode it belongs to.',
   },
   extra: {
     label: 'Extra private',

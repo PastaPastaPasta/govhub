@@ -2,7 +2,7 @@
 // (which Docker's json-file driver keeps) or the token store: no proTxHash, collateral outpoint, IP address, user agent or
 // per-request timestamp. This runs a full request flow, failures included, and searches everything that was written.
 import Database from 'better-sqlite3';
-import { mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -57,6 +57,9 @@ describe('no linkable logs', () => {
     const s = openTokenStore(path);
     s.markStarted(0);
     s.reserve({ epoch: 5, windowFrom: 1, proTxHash: 'aa'.repeat(32), collateral: 'bb'.repeat(32) + ':1', blindedHash: new Uint8Array(32) }, () => new Uint8Array(256));
+    // no write-ahead log: it would keep the masternodes in the order they got tokens (review H3)
+    expect(existsSync(`${path}-wal`)).toBe(false);
+    expect(existsSync(`${path}-journal`)).toBe(false);
     const db = new Database(path, { readonly: true });
     const cols = (t: string) => (db.prepare(`PRAGMA table_info(${t})`).all() as Array<{ name: string }>).map((c) => c.name);
     expect(cols('tokens')).toEqual(['epoch', 'pro_tx_hash', 'collateral', 'blinded_hash']);

@@ -139,6 +139,7 @@ function deps(who: 'A' | 'B', reader: BadgeReader): ClientDeps {
     hasBadge: async (iid, e) => (await query(badgesOfAuthors(iid, e, [ownerId]))).docs.length > 0,
     trusted: (id) => id === ISSUER.identityId,
     reportedTokens: (i, e) => reader.reportedTokens(i, e),
+    issuerFlagged: async (i, e) => (await reader.audit({ ...i, enabled: true }, e, await coreHeight())).flagged,
     minAnonymitySet: BADGE_NETWORKS.testnet.minAnonymitySet,
   };
 }

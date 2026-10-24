@@ -15,7 +15,7 @@ import { createJob, isActive, renewal, requestWindow, step, type BadgeJob, type 
 import { badgeQuery, badgesOfAuthors } from './queries.ts';
 import { createBadgeReader, type BadgeReader } from './reader.ts';
 import { deriveStoreKey, encryptedJobStore, jobStorageKey, memoryJobStore, type JobStore } from './store.ts';
-import { mayPost, mayRequest, noteIdentityWrite, noteRequestSent, onVisitChange, requestCooldownLeft } from './visit.ts';
+import { mayPost, mayRequest, mayStandard, noteIdentityWrite, notePrivateRequest, noteRequestSent, onVisitChange, requestCooldownLeft } from './visit.ts';
 import { badgeWorker } from './workerClient.ts';
 
 export interface BadgeCtx {
@@ -152,6 +152,7 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
       },
       trusted: (id) => trustRef.current.some((t) => t.identityId === id && t.enabled),
       reportedTokens: (i, e) => reader.reportedTokens(i, e),
+      issuerFlagged: async (i, e) => (await reader.audit({ ...i, enabled: true }, e, await reader.coreHeight())).flagged,
       minAnonymitySet: cfg.minAnonymitySet,
     };
   }, [reader, session, net, contractId, registry, cfg.minAnonymitySet]);
@@ -210,9 +211,10 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
       }
       const due = snapshot.filter((j) => isActive(j) && !updates.has(j.id) && height >= (j.state === 'scheduled' ? j.requestAt : (j.postAt ?? clientPostingWindow(p, j.epoch, j.mode === 'extra' ? 'extra' : 'private').from)));
       // Standard mode: no waiting of any kind (the user accepted that the issuer could link the two by timing): request, then post
-      for (const j of due.filter((x) => x.mode === 'standard' && Date.now() >= (x.retryAt ?? 0))) {
+      // (only a Private request's cooldown in this browser holds them, so they cannot undo its separation)
+      for (const j of due.filter((x) => x.mode === 'standard' && Date.now() >= (x.retryAt ?? 0) && mayStandard())) {
         let cur = j;
-        for (let i = 0; i < 2 && isActive(cur) && (cur.state === 'token' ? height >= (cur.postAt ?? 0) : height >= cur.requestAt); i++) {
+        for (let i = 0; i < 2 && isActive(cur) && Date.now() >= (cur.retryAt ?? 0) && (cur.state === 'token' ? height >= (cur.postAt ?? 0) : height >= cur.requestAt); i++) {
           const before = cur;
           cur = await step(deps, cur, height);
           if (JSON.stringify(cur) === JSON.stringify(before)) break;
@@ -248,7 +250,7 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
             noteIdentityWrite(); // before the post path's reads: the write is on its way
             for (const j of posts) await run(j);
           } else if (requests.length && mayRequest()) {
-            noteRequestSent();
+            notePrivateRequest();
             await run(requests[0]!);
           }
         },

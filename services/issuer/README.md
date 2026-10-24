@@ -179,16 +179,15 @@ The owner's rule: users may accept that the issuer could learn which masternode 
 
 | Layer | What it keeps |
 |---|---|
-| Token store (SQLite, `issuer-data`) | only `(epoch, proTxHash, collateral, sha256(blindedMsg))` for one-token-per-MN dedup and idempotent retries, plus per-epoch counts. No request times, IPs, user agents, request strings or signatures. Rows are deleted (`secure_delete`, WAL checkpointed) when the epoch's issuance window closes, at `S(E+1)` plus the margin |
-| Application logs (stderr, kept by Docker's json-file driver) | lifecycle and error lines with no MN, outpoint, address or request detail; requests only as hourly aggregate counters. Hono's error handler is replaced so no request is ever printed. `test/logging.test.ts` runs a full flow with `cf-connecting-ip`/user-agent headers at debug level and searches all output for the proTxHash, outpoint, IP and user agent |
+| Token store (SQLite, `issuer-data`) | only `(epoch, proTxHash, collateral, sha256(blindedMsg))` for one-token-per-MN dedup and idempotent retries, plus per-epoch counts. No request times, IPs, user agents, request strings or signatures. Rows are deleted (`secure_delete`) when the epoch's issuance window closes, at `S(E+1)` plus the margin. Rollback journal, not WAL: a WAL would keep every insert in order until a checkpoint, i.e. the order in which masternodes got tokens. SSD and filesystem remnants are a host property |
+| Application logs (stderr, kept by Docker's json-file driver) | lifecycle and error lines with no MN, outpoint, address or request detail; requests only as hourly aggregate counters. Hono's error handler is replaced and `console` is silenced in `issuer run`, so no library prints a request. `test/logging.test.ts` runs a full flow with `cf-connecting-ip`/user-agent headers at debug level and searches all output for the proTxHash, outpoint, IP and user agent |
 | Rate limits | in memory only (per MN after authentication, a global budget), never persisted |
 | Tunnel gateway (Caddy, `caddy/tunnel-gateway-issuer.Caddyfile`) | nothing: no access log, and the default logger (which writes proxy errors with the client address) is discarded |
-| cloudflared | `--loglevel info`: tunnel connection events only. Debug would log every request; never run it |
+| cloudflared | `--loglevel error`: no per-request lines (debug logs every request; info and warn log failed origin requests with a time and cfRay). Only while an origin is down does it log a line per request, without the client address |
 | Cloudflare's edge | outside our control: Cloudflare sees request metadata (client IP, time, path). An operator can reduce what it keeps by turning off Logpush, Web Analytics and similar features for the issuer's hostname where the plan allows |
 
-- SQLite runs with `secure_delete`, `synchronous = FULL` and WAL.
-- Once an epoch's issuance window has closed (plus the margin), its rows are deleted and the WAL is checkpointed
-  (`TRUNCATE`), so the old frames do not linger. Only the per-epoch count stays, and the epoch is marked closed, so late
+- SQLite runs with `secure_delete`, `synchronous = FULL` and a rollback journal (`journal_mode = DELETE`).
+- Once an epoch's issuance window has closed (plus the margin), its rows are deleted. Only the per-epoch count stays, and the epoch is marked closed, so late
   requests for it get `wrong-epoch`. Keep `/data` and the key directory out of host backups and snapshots.
 - After the window closes the issuer publishes `issuerReport {epoch, tokensIssued}` with the HIGH key, once per epoch
   it served. Tokens for E can be issued until `S(E+1)` (Standard mode), so the report is published after that, and

@@ -47,7 +47,10 @@ export interface TokenStore {
 export function openTokenStore(path: string): TokenStore {
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
   const db = new Database(path);
-  db.pragma('journal_mode = WAL');
+  // Rollback journal, not WAL: a WAL keeps every committed page version in order until a checkpoint, which would be an ordered
+  // record of which masternodes got tokens (review H3). With DELETE the journal is removed after each transaction, and
+  // secure_delete zeroes freed content in the database file.
+  db.pragma('journal_mode = DELETE');
   db.pragma('synchronous = FULL');
   db.pragma('secure_delete = ON');
   // A database from before the started_height guard ran from before its windows opened (it has the epochs table but no meta).
@@ -87,8 +90,7 @@ export function openTokenStore(path: string): TokenStore {
     startedAt: db.prepare<[], { value: number }>("SELECT value FROM meta WHERE key = 'started_height'"),
   };
   if (legacy) q.started.run(0);
-  // frames of rows deleted before a crash may still be in the WAL (N17)
-  db.pragma('wal_checkpoint(TRUNCATE)');
+
 
   const reserve = db.transaction((o: ReserveInput, sign: () => Uint8Array): ReserveOutcome => {
     // A store that did not exist for the whole window cannot dedup it (a lost or reset database): refuse until the next epoch.
@@ -117,8 +119,7 @@ export function openTokenStore(path: string): TokenStore {
         q.closeAll.run(epoch);
         return deleted;
       })();
-      // secure_delete overwrites the pages in the database file; the WAL still holds the old frames until a checkpoint
-      if (n) db.pragma('wal_checkpoint(TRUNCATE)');
+
       return n;
     },
     issued: (epoch) => q.epoch.get(epoch)?.issued ?? 0,

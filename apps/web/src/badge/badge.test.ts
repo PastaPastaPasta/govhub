@@ -112,6 +112,7 @@ function setup(o: Parameters<typeof fakeWorker>[0] = {}) {
     hasBadge: async (iid, e) => platform.badges.some((b) => b.$ownerId === ownerId && b.issuerId === iid && b.epoch === e),
     trusted: (id) => id === issuer.identityId,
     reportedTokens: (i, e) => reader.reportedTokens(i, e),
+    issuerFlagged: async (i, e) => (await reader.audit({ ...i, enabled: true }, e, platform.core)).flagged,
     minAnonymitySet: 3,
   };
   return { platform, reader, deps, ownerId, posted };
@@ -420,6 +421,19 @@ describe('badge reader', () => {
     expect((await r.badgesFor([a])).byOwner.size).toBe(0);
   });
 
+  it('before E\'s report can exist the badge count must stay plausible; a later revocation does not shrink the count', async () => {
+    const p = new FakePlatform();
+    await p.addKey(E);
+    for (let i = 0; i < 3; i++) await issued(p, bytesToId(rnd(32)));
+    const r = () => new BadgeReader({ net: 'testnet', contractId, issuers: [issuer], query: (q) => p.query(q), maxPlausibleTokens: 2 });
+    expect(await r().audit(issuer, E, p.core)).toMatchObject({ flagged: true, tokensIssued: null }); // 3 badges > 2 masternodes, no report yet
+    p.reports.set(E, 1);
+    p.core = epochStart(P, E + 1) + 10;
+    p.revocation = { $ownerId: issuer.identityId, $createdAtCoreBlockHeight: p.core, epoch: E, keyId: p.keys.get(E)!.keyId, effectiveCoreHeight: 0 };
+    const wide = new BadgeReader({ net: 'testnet', contractId, issuers: [issuer], query: (q) => p.query(q) });
+    expect(await wide.audit(issuer, E, p.core)).toMatchObject({ badges: 3, flagged: true }); // revoking after the fact does not clear it
+  });
+
   it('a report counts only if created in [S(E+1), S(E+1)+W] and plausible; none after S(E+1)+W flags the issuer', async () => {
     const p = new FakePlatform();
     await p.addKey(E);
@@ -455,6 +469,12 @@ describe('trust list and storage', () => {
     noteIdentityWrite(st, t0 + COOLDOWN_MS);
     expect(mayRequest(st, t0 + COOLDOWN_MS + 1)).toBe(false); // a reload does not reset it
     expect(mayRequest(st, t0 + 2 * COOLDOWN_MS)).toBe(true);
+    // Standard waits only for a PRIVATE request's cooldown
+    const { mayStandard, notePrivateRequest } = await import('./visit.ts');
+    expect(mayStandard(st, t0 + 1000)).toBe(true); // the request above was not private
+    notePrivateRequest(st, t0 + 3 * COOLDOWN_MS);
+    expect(mayStandard(st, t0 + 3 * COOLDOWN_MS + 1000)).toBe(false);
+    expect(mayStandard(st, t0 + 4 * COOLDOWN_MS)).toBe(true);
   });
 
   it('validates issuers', () => {
@@ -494,6 +514,7 @@ describe('trust list and storage', () => {
     const other = encryptedJobStore(`${id}.2`, id, await deriveStoreKey(rnd(32), id), storage);
     await expect(other.load()).rejects.toThrow();
     expect(await s.load()).toHaveLength(2);
+    expect((await s.load()).every((j) => j.mode === 'private')).toBe(true); // jobs from before privacy modes
     await expect(deriveStoreKey(new Uint8Array(32), id)).rejects.toThrow();
   });
 

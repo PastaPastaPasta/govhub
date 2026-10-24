@@ -2,7 +2,7 @@
 //   standard  token for the CURRENT epoch, requested and posted at once: the badge shows within minutes, and the issuer could link
 //             the masternode to the identity by timing (we keep no records that would let us)
 //   private   token for the NEXT epoch at a random height in this epoch, badge at a random height in [S(E), S(E)+W], kept apart
-//             from this browser's other Platform writes, and only if enough others took part
+//             from this browser's other Platform writes; not posted if the issuer's count for the previous epoch is too small
 //   extra     as private, with the badge spread over the first half of the epoch
 //
 //
@@ -104,6 +104,8 @@ export interface ClientDeps {
   reportedTokens(issuer: Pick<TrustedIssuer, 'identityId'>, epoch: number): Promise<number | null>;
   /** a badge is posted only when at least this many tokens were issued for its epoch */
   minAnonymitySet: number;
+  /** the reader's audit flags the issuer for this epoch */
+  issuerFlagged(issuer: Pick<TrustedIssuer, 'name' | 'identityId' | 'url'>, epoch: number): Promise<boolean>;
 }
 
 export class BadgeRequestError extends Error {}
@@ -258,6 +260,8 @@ export async function step(d: ClientDeps, job: BadgeJob, height: number): Promis
       // comes too late; the crowd size is read from the issuer's report for E-1 (published from S(E)). No report yet: wait for
       // it until its window has passed; an issuer without one (new, or for that epoch) is posted without the check.
       if (j.mode !== 'standard') {
+        // readers hide an issuer flagged on E-1 for E anyway: posting would only expose the user (review M2)
+        if (await d.issuerFlagged(j.issuer, j.epoch - 1)) return wipe({ ...j, state: 'expired', note: `${j.issuer.name} failed the audit for epoch ${j.epoch - 1}, so readers hide its badges for epoch ${j.epoch}: the badge is not posted.` });
         const tokens = await d.reportedTokens(j.issuer, j.epoch - 1);
         if (tokens === null && height <= epochStart(p, j.epoch) + p.graceBlocks) return { ...backoff(j, `Waiting for ${j.issuer.name}'s token count for epoch ${j.epoch - 1} before posting.`), postAt };
         if (tokens !== null && tokens < d.minAnonymitySet)
@@ -303,7 +307,7 @@ export async function renewal(d: ClientDeps, jobs: readonly BadgeJob[], prev: Ba
   if (jobs.some((x) => x.issuer.identityId === prev.issuer.identityId && x.epoch === next)) return null;
   try {
     const job = await createJob(d, jobs, prev.signer.wif, prev.proTxHash, height, { issuer, keepKey: true, mode: prev.mode });
-    return job.epoch === next ? job : null; // late in a private window createJob moves on to the epoch after
+    return job.epoch >= next ? job : null; // late in a private window createJob moves on to the epoch after: the chain goes on
   } catch {
     return null;
   }

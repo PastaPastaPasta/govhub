@@ -218,8 +218,9 @@ services:
     user: "1000:1000"
     depends_on:
       - bridge
-    # loglevel info logs tunnel connections only; debug would log every request (path and client address). Never run debug.
-    command: ["tunnel", "--loglevel", "info", "--metrics", "127.0.0.1:20241", "run"]
+    # loglevel error: no per-request lines (debug logs every request; info and warn log failed origin requests with a time and
+    # cfRay). What remains: errors of the tunnel itself, and a line per request only while an origin is down (no client address).
+    command: ["tunnel", "--loglevel", "error", "--metrics", "127.0.0.1:20241", "run"]
     # edge only: cloudflared reaches the bridge, never dashd's RPC or ZMQ, whatever ingress Cloudflare
     # is told to serve.
     networks:
