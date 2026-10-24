@@ -150,6 +150,8 @@ describe('watched votes', () => {
     expect(needsRebroadcast(v, NOW + 599)).toBe(false);
     expect(needsRebroadcast(v, NOW + 600)).toBe(true);
     expect(needsRebroadcast({ ...v, rebroadcasts: 3 }, NOW + 99999)).toBe(false);
+    // restored from another device's PENDING backup: never re-sent from here (it may have been cancelled since)
+    expect(needsRebroadcast({ ...v, restored: true }, NOW + 99999)).toBe(false);
     expect(pickRebroadcastRelay(v, ['https://r1', 'https://r2'])).toBe('https://r2');
     expect(pruneWatched([{ ...v, status: 'confirmed' }], NOW + 8 * 86400)).toEqual([]);
   });

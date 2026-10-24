@@ -16,6 +16,11 @@ export interface WatchedVote extends SignedVoteRecord {
   /** last relay status seen, per relay */
   relayStatus?: Record<string, RelayVoteStatus>;
   rebroadcasts: number;
+  /**
+   * Restored from the keyring's PENDING backup on another device or session. Never re-broadcast from here: only a relay that still
+   * holds it sends it (the user may have cancelled or replaced it since the backup was written).
+   */
+  restored?: boolean;
 }
 
 /** A vote not visible in the bridge this long after its release is re-sent (to another relay when there is one). */
@@ -71,7 +76,7 @@ export function bridgeVerdict(v: WatchedVote, current: BridgeVote | undefined): 
 
 /** Whether the watchdog should re-send the vote now. */
 export function needsRebroadcast(v: WatchedVote, now: number): boolean {
-  return isOpen(v) && now >= v.releaseAt + REBROADCAST_AFTER_S * (v.rebroadcasts + 1) && v.rebroadcasts < MAX_REBROADCASTS;
+  return !v.restored && isOpen(v) && now >= v.releaseAt + REBROADCAST_AFTER_S * (v.rebroadcasts + 1) && v.rebroadcasts < MAX_REBROADCASTS;
 }
 
 /** Relay to use for a re-broadcast: one this vote was not sent to yet, else the first. */
@@ -109,5 +114,6 @@ export function fromPending(p: PendingVote, proTxHash: string, voteHash: string)
     refs: p.refs,
     status: 'held',
     rebroadcasts: 0,
+    restored: true,
   };
 }

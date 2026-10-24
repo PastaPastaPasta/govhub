@@ -59,6 +59,10 @@ key. What stops it from using up a masternode's limits or the queue:
   rightmost `x-forwarded-for` entry, and buckets IPv6 by /64, so neither a forged header nor a rotating IPv6 address within
   one prefix gets a fresh bucket.
 
+**Cancels need an honest relay.** A cancel asks the relay to drop the vote; a relay that ignores it can still broadcast the
+signed vote at its release time, and its nTime then beats any newer vote with an earlier nTime. The web client therefore
+cancels on every relay that holds the vote, and the UI tells the user to cast the replacement as well.
+
 ## Running
 
 ```sh

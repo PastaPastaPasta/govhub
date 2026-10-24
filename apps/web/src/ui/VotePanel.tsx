@@ -228,7 +228,9 @@ export function WatchedList() {
   return (
     <section aria-labelledby="watched-title">
       <h2 id="watched-title">Signed votes</h2>
-      <p className="small muted">Kept in this browser until the bridge shows them; held votes are re-sent through another relay if they do not show up.</p>
+      <p className="small muted">
+        Kept in this browser until the bridge shows them; votes sent from here are re-sent through another relay if they do not show up. Cancelling relies on the relay: a relay that ignored a cancel could still broadcast the held vote at its time, so to change your mind, also cast the new vote (it is timed later and wins).
+      </p>
       <div className="vote-table-wrap">
         <table className="vote-table" data-testid="watched">
           <thead>

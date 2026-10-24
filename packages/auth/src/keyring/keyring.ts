@@ -147,12 +147,13 @@ export async function loadKeyring(ctx: KeyringContext, ownerId: string, key: Unl
     pt.fill(0);
   }
   try {
+    const authenticated = seedCheck ? content.unlockers.some((u) => u.type === UnlockerType.SEED && bytesEqual(u.recipientKey, seedCheck.pair.publicKey)) : null;
     let pending: PendingContent = { keyringId: content.keyringId.slice(), votes: [] };
     const pendingDoc = await ctx.store.get(ownerId, KeyringKind.PENDING);
     if (pendingDoc && pendingDoc.ownerId === ownerId) {
-      // Opened with the seed when the session has it: a passkey's recipient key is public, so anyone holding a HIGH key could seal
+      // Opened with the seed when the session has it and the keyring lists it: a passkey's recipient key is public, so anyone holding a HIGH key could seal
       // a PENDING document to it. It must also carry this keyring's id, which only someone who could open KEYS knows.
-      const pkey = seedCheck ?? key;
+      const pkey = authenticated && seedCheck ? seedCheck : key;
       try {
         const ppt = openKeyring({ contractId, ownerId: owner, kind: KeyringKind.PENDING, sealed: pendingDoc.sealed, recipientPrivateKey: pkey.pair.privateKey });
         try {
@@ -165,7 +166,6 @@ export async function loadKeyring(ctx: KeyringContext, ownerId: string, key: Unl
         // a pending document this key cannot open (written before an unlocker change, or planted) is ignored and overwritten
       }
     }
-    const authenticated = seedCheck ? content.unlockers.some((u) => u.type === UnlockerType.SEED && bytesEqual(u.recipientKey, seedCheck.pair.publicKey)) : null;
     return opened({ ownerId, content, pending, keysDoc, pendingDoc, authenticated, openedWith: key.type, openedBy: key.pair.publicKey.slice() });
   } catch (e) {
     wipeKeysContent(content);
