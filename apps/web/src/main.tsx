@@ -12,6 +12,9 @@ import { ActivePage } from './pages/ActivePage.tsx';
 import { PastPage } from './pages/PastPage.tsx';
 import { ProposalByHash, ProposalByName } from './pages/ProposalPage.tsx';
 import { SettingsPage } from './pages/SettingsPage.tsx';
+import { MasternodesPage } from './pages/MasternodesPage.tsx';
+import { MyVotesPage } from './pages/MyVotesPage.tsx';
+import { KeyringProvider } from './voting/KeyringContext.tsx';
 import { useEffect } from 'react';
 
 /** Starts downloading evo-sdk (big WASM chunk) once the first paint is done, in live mode only. */
@@ -42,6 +45,7 @@ createRoot(document.getElementById('root')!).render(
       <AppProvider>
         <ForumProvider>
           <AuthProvider>
+            <KeyringProvider>
             <SdkWarmup />
             <Routes>
               <Route element={<Layout />}>
@@ -51,9 +55,12 @@ createRoot(document.getElementById('root')!).render(
                 <Route path="p/:name" element={<ProposalByName />} />
                 <Route path="p/:identity/:name" element={<ProposalByName />} />
                 <Route path="settings" element={<SettingsPage />} />
+                <Route path="masternodes" element={<MasternodesPage />} />
+                <Route path="votes" element={<MyVotesPage />} />
                 <Route path="*" element={<NotFoundPage />} />
               </Route>
             </Routes>
+            </KeyringProvider>
           </AuthProvider>
         </ForumProvider>
       </AppProvider>

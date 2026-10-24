@@ -8,6 +8,7 @@ import { createPasskey, forgetPasskey, getPasskeyPrf, PasskeyError, prfSupport, 
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from './context.tsx';
 import { errorText, rpId } from './runtime.ts';
+import { stashPasskeyUnlock } from '../voting/stash.ts';
 
 const isCancelled = (e: unknown): boolean => e instanceof PasskeyError && e.code === 'cancelled';
 
@@ -28,7 +29,10 @@ export function PasskeySignIn() {
     try {
       const a = await getPasskeyPrf({ rpId: rpId(), prfInput: prfInput(identifierBytes(forumContractId)) });
       try {
-        signIn(await openVault({ platform: await platform(), contractId: forumContractId }, a));
+        const s = await openVault({ platform: await platform(), contractId: forumContractId }, a);
+        // the same PRF output opens the masternode keyring (voting/stash.ts): no second passkey prompt
+        stashPasskeyUnlock(s.identityId, a.prfOutput);
+        signIn(s);
       } finally {
         wipe(a.prfOutput);
       }
@@ -105,6 +109,8 @@ export function Passkeys() {
       setStep('saving');
       const c = await ctx();
       const recipient = await storeInVault(c, session, a);
+      // an open masternode keyring gets this passkey as an unlocker too
+      stashPasskeyUnlock(session.identityId, a.prfOutput, 'add');
       await waitForEntry(c, session.identityId, created.credentialId, recipient);
       localPasskeys.add(localStorage, session.identityId, toBase64(created.credentialId));
       setStep('done');

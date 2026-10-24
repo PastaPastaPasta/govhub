@@ -24,6 +24,7 @@ import { VerificationPanel } from '../ui/VerificationPanel.tsx';
 import type { CollateralVerdict } from '../verify/collateral.ts';
 import { collateralHeightProv, collateralStatus, deadlineFact, fundedFact, paymentsFact, thresholdFact } from '../verify/facts.ts';
 import type { RankingDone, VotesDone } from '../verify/protocol.ts';
+import { ProposalVotePanel } from '../ui/VotePanel.tsx';
 
 export function ProposalByHash() {
   const { hash = '' } = useParams();
@@ -323,6 +324,12 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
 
         <VerificationPanel proposal={p} collateral={collateral} chain={chain} cycle={cycle?.value ?? null} targets={targets} onVotes={setVotes} onRanking={setRanking} />
       </div>
+
+      {p.endEpoch > Date.now() / 1000 && (
+        <ErrorBoundary what="masternode voting">
+          <ProposalVotePanel proposal={p} />
+        </ErrorBoundary>
+      )}
 
       {ownerId && (
         <ErrorBoundary what="owner's description">
