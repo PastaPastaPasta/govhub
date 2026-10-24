@@ -15,10 +15,29 @@ export interface GovParams {
   blockSeconds: number;
 }
 
+/** Core's superblock-time estimate (signing.cpp:59): the same 2.62 minutes per block on every network. */
+const BLOCK_SECONDS = 2.62 * 60;
+
+/** Chain parameters per network: the fallback until the bridge reports `getgovernanceinfo` for the network actually in use. */
 export const GOV_PARAMS: Record<CoreNetwork, GovParams> = {
-  mainnet: { superblockCycle: 16616, maturityWindow: 1662, minQuorum: 10, blockSeconds: 2.62 * 60 },
-  testnet: { superblockCycle: 24, maturityWindow: 8, minQuorum: 1, blockSeconds: 2.62 * 60 },
+  mainnet: { superblockCycle: 16616, maturityWindow: 1662, minQuorum: 10, blockSeconds: BLOCK_SECONDS },
+  testnet: { superblockCycle: 24, maturityWindow: 8, minQuorum: 1, blockSeconds: BLOCK_SECONDS },
 };
+
+/**
+ * `getgovernanceinfo` as a bridge's `/v1/cycle` relays it (`governance`): superblockcycle, superblockmaturitywindow and
+ * governanceminquorum. Null when any is missing or implausible, so the caller keeps the chain parameters.
+ */
+export function parseGovParams(info: unknown): GovParams | null {
+  if (!info || typeof info !== 'object') return null;
+  const o = info as Record<string, unknown>;
+  const pos = (k: string): number | null => (typeof o[k] === 'number' && Number.isSafeInteger(o[k]) && (o[k] as number) > 0 ? (o[k] as number) : null);
+  const superblockCycle = pos('superblockcycle');
+  const maturityWindow = pos('superblockmaturitywindow');
+  const minQuorum = pos('governanceminquorum');
+  if (superblockCycle === null || maturityWindow === null || minQuorum === null || maturityWindow >= superblockCycle) return null;
+  return { superblockCycle, maturityWindow, minQuorum, blockSeconds: BLOCK_SECONDS };
+}
 
 /** GOVERNANCE_FUDGE_WINDOW (signing.cpp:23). */
 export const FUDGE_WINDOW_S = 2 * 3600;

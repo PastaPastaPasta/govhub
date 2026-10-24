@@ -1,8 +1,19 @@
 // Endpoint registry (PLAN §1.1): every backend is replaceable by the user. Persisted in
 // localStorage, exportable/importable as JSON, loadable from `?config=` (base64url JSON or an
-// https URL to a JSON file). Core and Platform networks are separate settings because phase 1
-// reads mainnet Core data but publishes into a testnet contract; production uses one network.
+// https URL to a JSON file).
+//
+// Settings start from a network PROFILE (Testnet, Dev, Mainnet): one coherent set of Core network, Platform network,
+// `gov` contract, bridge, DAPI node source and forum contracts. Any field can still be overridden ("custom") under
+// Advanced, but switching profile is one action and never mixes one network's data with another's parameters.
 import type { CoreNetwork } from '../data/types.ts';
+
+/**
+ * The testnet `gov` contract (Core testnet proposals published on testnet Platform), owned by the testnet bridge identity.
+ * FILL IN once it is deployed. While empty, the Testnet profile shows "Testnet backend is being set up" and reads nothing.
+ */
+export const TESTNET_GOV_CONTRACT_ID = '';
+/** The testnet bridge's identity (the owner of TESTNET_GOV_CONTRACT_ID): its claim attestations count. Optional; empty = none. */
+export const TESTNET_BRIDGE_IDENTITY_ID = '';
 
 export interface BridgeEndpoint {
   name: string;
@@ -32,15 +43,19 @@ export interface ForumEndpoints {
   claimPortals: string[];
 }
 
+export type ProfileId = 'testnet' | 'dev' | 'mainnet';
+
 export interface Registry {
-  version: 1;
+  version: 2;
+  /** The profile these settings start from; fields that differ from it are "custom" overrides. */
+  profile: ProfileId;
   coreNetwork: CoreNetwork;
   platformNetwork: CoreNetwork;
   /** Core-side DAPI (grpc-web on evonodes) for collateral and SML checks, on `coreNetwork`. */
   dapi: { source: 'quorum' | 'manual'; quorumUrl: string; nodes: string[] };
   /** evo-sdk connection for Platform reads, on `platformNetwork`. Empty addresses = SDK defaults. */
   platform: { trusted: boolean; addresses: string[] };
-  /** The `gov` contract to read proposals, tallies and cycles from. */
+  /** The `gov` contract to read proposals, tallies and cycles from. Empty: no backend for this profile yet (nothing is read). */
   govContractId: string;
   bridges: BridgeEndpoint[];
   relays: NamedUrl[];
@@ -57,22 +72,93 @@ export const QUORUM_SERVICE: Record<CoreNetwork, string> = {
   testnet: 'https://quorums.testnet.networks.dash.org/masternodes',
 };
 
-/** Testnet `gov` contract from phase 0 (owner = the bridge identity). */
-export const TESTNET_GOV_CONTRACT = '3ueAfbVe8LvCxYWk7bKvXxc5uHe7E1TDJHzN3k3ZDehZ';
-export const TESTNET_BRIDGE_IDENTITY = '9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv';
+/** Dev profile `gov` contract: MAINNET Core proposals published on testnet Platform (phase 0/1; owner = the Dev bridge identity). */
+export const DEV_GOV_CONTRACT_ID = '3ueAfbVe8LvCxYWk7bKvXxc5uHe7E1TDJHzN3k3ZDehZ';
+export const DEV_BRIDGE_IDENTITY_ID = '9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv';
 export const DEFAULT_FAUCET: NamedUrl = { name: 'faucet.dashhq.org', url: 'https://faucet.dashhq.org' };
 
 /**
- * Testnet `forum` and `mod` contracts from phase 0. The moderation identity on testnet is the phase-0 spike owner
- * (the `mod` contract's owner, the only identity that can create `mod.block`); mainnet uses a separate key.
+ * Testnet `forum` and `mod` contracts from phase 0, shared by the Testnet and Dev profiles (their documents are keyed by govHash,
+ * so the two profiles' proposals never collide). The moderation identity is the phase-0 spike owner (the `mod` contract's owner,
+ * the only identity that can create `mod.block`); mainnet uses a separate key.
  */
 export const TESTNET_FORUM: ForumEndpoints = {
   contractId: 'HfLWUEWnp4YCQ9Mzp9DexG58WPKvHm7SahMVSuzKSQRw',
   modContractId: 'CWJ5PyMMKwchk5H3FjX9enVQToWZUFA1xQaRn8zNZVjY',
-  moderationIdentityId: TESTNET_BRIDGE_IDENTITY,
+  moderationIdentityId: DEV_BRIDGE_IDENTITY_ID,
   moderationName: 'govhub moderation',
   claimPortals: ['gov.dashhq.org'],
 };
+
+export interface NetworkProfile {
+  id: ProfileId;
+  /** Short label (segmented control, mobile header). */
+  label: string;
+  /** What the header shows. */
+  title: string;
+  /** One line for Settings. */
+  description: string;
+  coreNetwork: CoreNetwork;
+  platformNetwork: CoreNetwork;
+  govContractId: string;
+  /** The profile's bridge, publishing into `govContractId`. */
+  bridge: { url: string; identityId: string } | null;
+  forum: ForumEndpoints | null;
+  /** Not deployed: shown, but cannot be selected. */
+  deployed: boolean;
+}
+
+export const PROFILES: Record<ProfileId, NetworkProfile> = {
+  testnet: {
+    id: 'testnet',
+    label: 'Testnet',
+    title: 'Testnet',
+    description: 'Core testnet governance (proposals, votes, superblocks every 24 blocks) published on testnet Platform.',
+    coreNetwork: 'testnet',
+    platformNetwork: 'testnet',
+    govContractId: TESTNET_GOV_CONTRACT_ID,
+    bridge: { url: 'https://gov-bridge-testnet.dashhq.org', identityId: TESTNET_BRIDGE_IDENTITY_ID },
+    forum: TESTNET_FORUM,
+    deployed: true,
+  },
+  dev: {
+    id: 'dev',
+    label: 'Dev',
+    title: 'Dev: mainnet data on testnet Platform',
+    description: 'Mainnet governance (real Core mainnet proposals, votes and superblocks) published on testnet Platform, for development.',
+    coreNetwork: 'mainnet',
+    platformNetwork: 'testnet',
+    govContractId: DEV_GOV_CONTRACT_ID,
+    bridge: { url: 'https://gov-bridge.dashhq.org', identityId: DEV_BRIDGE_IDENTITY_ID },
+    forum: TESTNET_FORUM,
+    deployed: true,
+  },
+  mainnet: {
+    id: 'mainnet',
+    label: 'Mainnet',
+    title: 'Mainnet',
+    description: 'Core mainnet governance on mainnet Platform. Not yet deployed.',
+    coreNetwork: 'mainnet',
+    platformNetwork: 'mainnet',
+    govContractId: '',
+    bridge: null,
+    forum: null,
+    deployed: false,
+  },
+};
+
+export const PROFILE_ORDER: readonly ProfileId[] = ['testnet', 'dev', 'mainnet'];
+
+/** The profile the app starts on. */
+export const DEFAULT_PROFILE: ProfileId = 'dev';
+
+const isProfileId = (v: unknown): v is ProfileId => typeof v === 'string' && Object.hasOwn(PROFILES, v);
+
+/** Why a profile has nothing to read yet (no `gov` contract), or null when it has one. Never answered with another network's data. */
+export function backendNotice(r: Pick<Registry, 'profile' | 'govContractId'>): string | null {
+  if (r.govContractId) return null;
+  return r.profile === 'testnet' ? 'Testnet backend is being set up' : 'No governance contract is configured';
+}
 
 /**
  * Identities whose `claimAttestation` documents count (PLAN §6.3 method 4): the hosting team, i.e. the owner of the
@@ -80,42 +166,107 @@ export const TESTNET_FORUM: ForumEndpoints = {
  */
 export function attestorsFor(r: Registry): string[] {
   const ids = r.bridges.filter((b) => b.govContractId === r.govContractId && b.bridgeIdentityId).map((b) => b.bridgeIdentityId);
-  if (r.govContractId === TESTNET_GOV_CONTRACT) ids.push(TESTNET_BRIDGE_IDENTITY);
+  for (const p of Object.values(PROFILES)) if (p.govContractId && p.govContractId === r.govContractId && p.bridge?.identityId) ids.push(p.bridge.identityId);
   return [...new Set(ids)];
 }
 
-/**
- * The project's reference bridge (deploy/README.md, "Reference deployment"): mainnet Core, publishing into the testnet
- * `gov` contract, matching the phase-1 network defaults below.
- */
-const DEFAULT_BRIDGE_URL = 'https://gov-bridge.dashhq.org';
-
-/** VITE_GOVHUB_BRIDGE_URL replaces the default bridge for a build; empty or `none` builds with no bridge. */
-function envBridges(): BridgeEndpoint[] {
-  const env = (import.meta.env?.VITE_GOVHUB_BRIDGE_URL as string | undefined)?.trim();
-  if (env === '' || env === 'none') return [];
-  const url = (env ?? DEFAULT_BRIDGE_URL).replace(/\/+$/, '');
-  return [{ name: url.replace(/^[a-z]+:\/\//i, ''), httpBase: url, govContractId: TESTNET_GOV_CONTRACT, bridgeIdentityId: TESTNET_BRIDGE_IDENTITY, enabled: true }];
+/** VITE_GOVHUB_BRIDGE_URL replaces the Dev profile's bridge for a build; empty or `none` builds with no bridge. */
+function profileBridges(p: NetworkProfile): BridgeEndpoint[] {
+  const env = p.id === 'dev' ? (import.meta.env?.VITE_GOVHUB_BRIDGE_URL as string | undefined)?.trim() : undefined;
+  if (env === '' || env === 'none' || !p.bridge) return [];
+  const url = (env ?? p.bridge.url).replace(/\/+$/, '');
+  return [{ name: url.replace(/^[a-z]+:\/\//i, ''), httpBase: url, govContractId: p.govContractId, bridgeIdentityId: p.bridge.identityId, enabled: true }];
 }
 
-export function defaultRegistry(): Registry {
+const PRICE_FEED: NamedUrl = { name: 'CoinGecko', url: 'https://api.coingecko.com/api/v3/simple/price?ids=dash&vs_currencies=usd' };
+const EMPTY_FORUM: ForumEndpoints = { contractId: '', modContractId: '', moderationIdentityId: '', moderationName: 'govhub moderation', claimPortals: [] };
+
+/** A profile's settings, with no overrides. */
+export function profileRegistry(id: ProfileId): Registry {
+  const p = PROFILES[id];
+  const forum = p.forum ?? EMPTY_FORUM;
   return {
-    version: 1,
-    coreNetwork: 'mainnet',
-    platformNetwork: 'testnet',
-    dapi: { source: 'quorum', quorumUrl: QUORUM_SERVICE.mainnet, nodes: [] },
+    version: 2,
+    profile: id,
+    coreNetwork: p.coreNetwork,
+    platformNetwork: p.platformNetwork,
+    dapi: { source: 'quorum', quorumUrl: QUORUM_SERVICE[p.coreNetwork], nodes: [] },
     platform: { trusted: true, addresses: [] },
-    govContractId: TESTNET_GOV_CONTRACT,
-    bridges: envBridges(),
+    govContractId: p.govContractId,
+    bridges: profileBridges(p),
     relays: [],
-    priceFeed: { name: 'CoinGecko', url: 'https://api.coingecko.com/api/v3/simple/price?ids=dash&vs_currencies=usd' },
+    priceFeed: { ...PRICE_FEED },
     accounts: null,
-    faucet: DEFAULT_FAUCET,
-    forum: { ...TESTNET_FORUM, claimPortals: [...TESTNET_FORUM.claimPortals] },
+    faucet: { ...DEFAULT_FAUCET },
+    forum: { ...forum, claimPortals: [...forum.claimPortals] },
   };
 }
 
-const STORAGE_KEY = 'govhub.registry.v1';
+export const defaultRegistry = (): Registry => profileRegistry(DEFAULT_PROFILE);
+
+/** Settings that may differ from the profile, in the order Settings shows them. */
+export const OVERRIDABLE = ['coreNetwork', 'platformNetwork', 'govContractId', 'dapi', 'platform', 'bridges', 'relays', 'priceFeed', 'accounts', 'faucet', 'forum'] as const;
+export type Overridable = (typeof OVERRIDABLE)[number];
+
+/** The fields of `r` that differ from its profile's defaults (shown as "custom"). */
+export function customFields(r: Registry): Set<Overridable> {
+  const d = profileRegistry(r.profile);
+  return new Set(OVERRIDABLE.filter((k) => JSON.stringify(r[k]) !== JSON.stringify(d[k])));
+}
+
+/**
+ * Switching profile is one action: every network-specific setting becomes the new profile's; only the price feed (not tied to a
+ * network) carries over. Overrides made for the old profile do not leak into the new one.
+ */
+export function registryForProfile(r: Registry, id: ProfileId): Registry {
+  if (!PROFILES[id].deployed) throw new Error(`${PROFILES[id].label} is not deployed yet`);
+  return { ...profileRegistry(id), priceFeed: r.priceFeed };
+}
+
+/** What every cached value of these settings is keyed by: a different profile, network or contract never reads another's cache. */
+export const registryScope = (r: Pick<Registry, 'profile' | 'coreNetwork' | 'platformNetwork' | 'govContractId'>): string =>
+  `${r.profile}:${r.coreNetwork}:${r.platformNetwork}:${r.govContractId || '-'}`;
+
+// ---- migration -------------------------------------------------------------------------------------------------------------
+
+/**
+ * Version 1 settings (separate Core and Platform network selects) to version 2. Core testnet + Platform testnet means the user
+ * asked for testnet: they land on the Testnet profile, keeping only what fits it (the Dev contract and its bridge were the reason
+ * such settings showed mainnet proposals with testnet superblock maths). Everything else lands on Dev, overrides kept.
+ */
+export function migrateV1(o: Record<string, unknown>): Record<string, unknown> {
+  const wantsTestnet = o.coreNetwork === 'testnet' && o.platformNetwork === 'testnet';
+  if (!wantsTestnet) {
+    // The Dev contract only makes sense with the Dev networks (mainnet Core, testnet Platform).
+    const dev = o.govContractId === undefined || o.govContractId === DEV_GOV_CONTRACT_ID ? { coreNetwork: PROFILES.dev.coreNetwork, platformNetwork: PROFILES.dev.platformNetwork } : {};
+    const dapi = (o.dapi ?? {}) as Record<string, unknown>;
+    const quorum = dev.coreNetwork && dapi.source !== 'manual' ? { dapi: { ...dapi, source: 'quorum', quorumUrl: QUORUM_SERVICE[dev.coreNetwork] } } : {};
+    return { ...o, version: 2, profile: 'dev', ...dev, ...quorum };
+  }
+  const d = profileRegistry('testnet') as unknown as Record<string, unknown>;
+  const devContract = (x: unknown) => x === DEV_GOV_CONTRACT_ID;
+  const bridges = (Array.isArray(o.bridges) ? o.bridges : []).filter((b: unknown) => {
+    const x = (b ?? {}) as Record<string, unknown>;
+    return !devContract(x.govContractId) && String(x.httpBase ?? '').replace(/\/+$/, '') !== PROFILES.dev.bridge?.url;
+  });
+  const ownContract = typeof o.govContractId === 'string' && o.govContractId !== '' && !devContract(o.govContractId);
+  const dapi = (o.dapi ?? {}) as Record<string, unknown>;
+  const keepDapi = dapi.source === 'manual' || dapi.quorumUrl === QUORUM_SERVICE.testnet;
+  return {
+    ...d,
+    ...(keepDapi ? { dapi: o.dapi } : {}),
+    ...(o.platform !== undefined ? { platform: o.platform } : {}),
+    ...(o.priceFeed !== undefined ? { priceFeed: o.priceFeed } : {}),
+    ...(o.forum !== undefined ? { forum: o.forum } : {}),
+    ...(ownContract ? { govContractId: o.govContractId, bridges } : {}),
+  };
+}
+
+// ---- parsing ---------------------------------------------------------------------------------------------------------------
+
+const STORAGE_KEY = 'govhub.registry.v2';
+/** Where version 1 settings were saved; read once and migrated. */
+export const LEGACY_STORAGE_KEY = 'govhub.registry.v1';
 const B58_ID = /^[1-9A-HJ-NP-Za-km-z]{42,44}$/;
 const HOST_PORT = /^[a-zA-Z0-9.-]+:\d{1,5}$/;
 
@@ -163,13 +314,17 @@ function parseForum(v: unknown, d: ForumEndpoints, errors: string[]): ForumEndpo
   };
 }
 
-/** Validates untrusted JSON into a Registry. Unknown keys are dropped. */
+/** Validates untrusted JSON (version 2, or version 1 which is migrated first) into a Registry. Unknown keys are dropped. */
 export function parseRegistry(input: unknown): { registry: Registry; errors: string[] } {
   const errors: string[] = [];
-  const d = defaultRegistry();
-  if (!input || typeof input !== 'object') return { registry: d, errors: ['settings must be a JSON object'] };
-  const o = input as Record<string, unknown>;
-  if (o.version !== 1) errors.push('version must be 1');
+  if (!input || typeof input !== 'object') return { registry: defaultRegistry(), errors: ['settings must be a JSON object'] };
+  let o = input as Record<string, unknown>;
+  if (o.version === 1) o = migrateV1(o);
+  if (o.version !== 2) errors.push('version must be 2 (or 1, which is migrated)');
+  const profile: ProfileId = isProfileId(o.profile) ? o.profile : DEFAULT_PROFILE;
+  if (!isProfileId(o.profile)) errors.push(`profile must be one of ${PROFILE_ORDER.join(', ')}`);
+  else if (!PROFILES[profile].deployed) errors.push(`the ${PROFILES[profile].label} profile is not deployed yet`);
+  const d = profileRegistry(profile);
   const dapi = (o.dapi ?? {}) as Record<string, unknown>;
   const platform = (o.platform ?? {}) as Record<string, unknown>;
   const nodes = Array.isArray(dapi.nodes) ? dapi.nodes.filter((n): n is string => typeof n === 'string') : [];
@@ -177,7 +332,7 @@ export function parseRegistry(input: unknown): { registry: Registry; errors: str
   const addresses = Array.isArray(platform.addresses) ? platform.addresses.filter((n): n is string => typeof n === 'string') : [];
   for (const a of addresses) httpsUrl(a, `Platform address ${a}`, errors);
   const govContractId = typeof o.govContractId === 'string' ? o.govContractId : '';
-  if (!B58_ID.test(govContractId)) errors.push('govContractId must be a base58 identifier');
+  if (govContractId && !B58_ID.test(govContractId)) errors.push('govContractId must be a base58 identifier');
   const bridges: BridgeEndpoint[] = (Array.isArray(o.bridges) ? o.bridges : []).map((b: unknown, i: number) => {
     const x = (b ?? {}) as Record<string, unknown>;
     const govId = typeof x.govContractId === 'string' ? x.govContractId : '';
@@ -206,7 +361,8 @@ export function parseRegistry(input: unknown): { registry: Registry; errors: str
     return { name: typeof x.name === 'string' && x.name ? x.name.slice(0, 60) : what, url: httpsUrl(x.url, `${what} URL`, errors) };
   };
   const registry: Registry = {
-    version: 1,
+    version: 2,
+    profile,
     coreNetwork: network(o.coreNetwork, 'coreNetwork', errors),
     platformNetwork: network(o.platformNetwork, 'platformNetwork', errors),
     dapi: {
@@ -224,26 +380,62 @@ export function parseRegistry(input: unknown): { registry: Registry; errors: str
     forum: parseForum(o.forum, d.forum, errors),
   };
   if (registry.dapi.source === 'manual' && nodes.length === 0) errors.push('manual DAPI source needs at least one node');
+  // A profile's contract holds that profile's networks' data: read under other networks it would be computed with the wrong rules.
+  for (const p of Object.values(PROFILES)) {
+    if (p.govContractId && p.govContractId === govContractId && (registry.coreNetwork !== p.coreNetwork || registry.platformNetwork !== p.platformNetwork)) {
+      errors.push(`the ${p.label} governance contract holds Core ${p.coreNetwork} data on Platform ${p.platformNetwork}; choose the ${p.label} profile instead of other networks`);
+    }
+  }
   return { registry, errors };
 }
 
-export function loadRegistry(storage: Pick<Storage, 'getItem'> | undefined = globalThis.localStorage): Registry {
+type Store = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+
+/**
+ * What is saved: the profile and only the fields the user overrode. Everything else is rebuilt from the profile on load, so a
+ * profile that changes in a later build (the Testnet contract id filled in, a new bridge URL) reaches users who saved before.
+ */
+interface SavedRegistry {
+  version: 2;
+  profile: ProfileId;
+  overrides: Partial<Pick<Registry, Overridable>>;
+}
+
+function expand(o: Record<string, unknown>): unknown {
+  if (o.version !== 2 || !o.overrides || typeof o.overrides !== 'object' || !isProfileId(o.profile)) return o;
+  const overrides = Object.fromEntries(Object.entries(o.overrides as Record<string, unknown>).filter(([k]) => (OVERRIDABLE as readonly string[]).includes(k)));
+  return { ...profileRegistry(o.profile), ...overrides };
+}
+
+/**
+ * Saved settings, or the defaults. Version 1 settings (the legacy key) are migrated once: saved under the new key, the old one
+ * removed. Settings that do not validate fall back to the defaults rather than half-applying.
+ */
+export function loadRegistry(storage: Store | undefined = globalThis.localStorage): Registry {
   try {
     const raw = storage?.getItem(STORAGE_KEY);
-    if (!raw) return defaultRegistry();
-    const { registry, errors } = parseRegistry(JSON.parse(raw));
-    return errors.length ? defaultRegistry() : registry;
+    const legacy = raw ? null : storage?.getItem(LEGACY_STORAGE_KEY);
+    if (!raw && !legacy) return defaultRegistry();
+    const { registry, errors } = parseRegistry(expand(JSON.parse((raw ?? legacy)!) as Record<string, unknown>));
+    if (errors.length) return defaultRegistry();
+    if (legacy) {
+      saveRegistry(registry, storage);
+      storage?.removeItem(LEGACY_STORAGE_KEY);
+    }
+    return registry;
   } catch {
     return defaultRegistry();
   }
 }
 
 export function saveRegistry(r: Registry, storage: Pick<Storage, 'setItem'> | undefined = globalThis.localStorage): void {
-  storage?.setItem(STORAGE_KEY, JSON.stringify(r));
+  const saved: SavedRegistry = { version: 2, profile: r.profile, overrides: Object.fromEntries([...customFields(r)].map((k) => [k, r[k]])) };
+  storage?.setItem(STORAGE_KEY, JSON.stringify(saved));
 }
 
 export function resetRegistry(storage: Pick<Storage, 'removeItem'> | undefined = globalThis.localStorage): Registry {
   storage?.removeItem(STORAGE_KEY);
+  storage?.removeItem(LEGACY_STORAGE_KEY);
   return defaultRegistry();
 }
 
@@ -285,4 +477,9 @@ export async function resolveConfigParam(value: string, fetcher: typeof fetch = 
   return parseRegistry(json);
 }
 
-export const enabledBridges = (r: Registry): BridgeEndpoint[] => r.bridges.filter((b) => b.enabled && b.httpBase);
+/**
+ * Bridges that may be asked for this registry's data: enabled, and publishing into the `gov` contract in use (a bridge for
+ * another contract serves another network's or deployment's proposals). No contract, no bridge.
+ */
+export const enabledBridges = (r: Registry): BridgeEndpoint[] =>
+  r.govContractId ? r.bridges.filter((b) => b.enabled && b.httpBase && (!b.govContractId || b.govContractId === r.govContractId)) : [];

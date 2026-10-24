@@ -1,8 +1,9 @@
 // The data layer the UI talks to. Two implementations: live (Platform with proofs + bridge +
 // DAPI) and fixtures (mainnet snapshot). Every value comes back with its provenance.
-import { enabledBridges, type Registry } from '../config/registry.ts';
+import { backendNotice, enabledBridges, registryScope, type Registry } from '../config/registry.ts';
 import type { DataMode } from '../config/mode.ts';
 import { shortHash, formatInt } from '../lib/format.ts';
+import { GOV_PARAMS, type GovParams } from '../lib/governance.ts';
 import { HttpBridge, type Bridge } from './bridge.ts';
 import { cacheGet, cachePut } from './cache.ts';
 import { createWebDapi, dapiConfig } from './dapi.ts';
@@ -10,7 +11,7 @@ import { loadFixtures } from './fixtures.ts';
 import { docToCycle, docToProposal, docToTally, queryDocs } from './platform.ts';
 import { activeProposals, latestCycles, pastProposals, proposalByHash, proposalsByName, talliesFor, PAGE } from './queries.ts';
 import type { BridgeDescriptor, DapiDescriptor } from '../verify/protocol.ts';
-import type { Cycle, Proposal, Provenance, Sourced, Tally } from './types.ts';
+import type { CoreNetwork, Cycle, Proposal, Provenance, Sourced, Tally } from './types.ts';
 
 export interface Page {
   items: Sourced<Proposal>[];
@@ -24,6 +25,16 @@ export type OnStale<T> = (cached: T) => void;
 export interface DataSource {
   readonly mode: DataMode;
   readonly registry: Registry;
+  /** The Core network the data belongs to (fixtures are a mainnet snapshot whatever the profile): addresses, votes and claims use it. */
+  readonly coreNetwork: CoreNetwork;
+  /** Everything cached for this source is keyed by this (profile, networks, contract). */
+  readonly scope: string;
+  /** Set when there is nothing to read (no `gov` contract for this profile yet); the source then reads nothing at all. */
+  readonly notice: string | null;
+  /** Chain parameters of `coreNetwork`, until `params()` answers. */
+  readonly defaultParams: GovParams;
+  /** Governance parameters as a bridge on `coreNetwork` reports them (getgovernanceinfo); the chain parameters without one. */
+  params(): Promise<Sourced<GovParams>>;
   /** unix seconds; frozen in fixture mode */
   now(): number;
   cycle(onStale?: OnStale<Sourced<Cycle> | null>): Promise<Sourced<Cycle> | null>;
@@ -51,27 +62,38 @@ export function fixtureSource(registry: Registry): DataSource {
     value,
     prov: { kind: 'fixture', source: 'mainnet snapshot', detail },
   });
+  const proposals = async () => {
+    const s = await snap;
+    return [...s.proposals, ...s.invalid];
+  };
   return {
     mode: 'fixtures',
     registry,
+    coreNetwork: 'mainnet',
+    scope: `fixtures:${registryScope(registry)}`,
+    notice: null,
+    defaultParams: GOV_PARAMS.mainnet,
+    async params() {
+      return wrap(GOV_PARAMS.mainnet, 'mainnet chain parameters');
+    },
     now: () => now,
     async cycle() {
       return wrap((await snap).cycle, 'superblock budget from getsuperblockbudget; allocation computed like Core');
     },
     async active() {
       const s = await snap;
-      return s.proposals.filter((p) => p.endEpoch > s.now).map((p) => wrap(p));
+      return (await proposals()).filter((p) => p.endEpoch > s.now).map((p) => wrap(p));
     },
     async pastPage() {
       const s = await snap;
       return { items: s.proposals.filter((p) => p.endEpoch <= s.now).sort((a, b) => b.endEpoch - a.endEpoch).map((p) => wrap(p)) };
     },
     async proposal(h) {
-      const p = (await snap).proposals.find((x) => x.govHash === h.toLowerCase());
+      const p = (await proposals()).find((x) => x.govHash === h.toLowerCase());
       return p ? wrap(p) : null;
     },
     async byName(name) {
-      return (await snap).proposals.filter((p) => p.name === name).map((p) => wrap(p));
+      return (await proposals()).filter((p) => p.name === name).map((p) => wrap(p));
     },
     async tallies(hashes) {
       const s = await snap;
@@ -106,7 +128,15 @@ interface Proven<T> {
 
 const nowSeconds = (): number => Math.floor(Date.now() / 1000);
 
+/** The chain parameters of a Core network (no bridge asked), with where they come from. */
+const chainParams = (network: CoreNetwork, detail?: string): Sourced<GovParams> => ({
+  value: GOV_PARAMS[network],
+  prov: { kind: 'reported', source: `Dash Core ${network} chain parameters`, ...(detail ? { detail } : {}) },
+});
+
 export function liveSource(registry: Registry): DataSource {
+  const notice = backendNotice(registry);
+  if (notice) return emptySource(registry, notice);
   const contract = shortHash(registry.govContractId, 4);
   const proof = (height: number | null, extra?: string): Provenance => ({
     kind: 'proof',
@@ -114,7 +144,9 @@ export function liveSource(registry: Registry): DataSource {
     detail: [`gov contract ${contract}`, height ? `Platform height ${formatInt(height)}` : null, extra].filter(Boolean).join(', '),
   });
   const bridges: Bridge[] = enabledBridges(registry).map((b) => new HttpBridge(b.name, b.httpBase));
-  const cacheKey = (k: string) => `${registry.platformNetwork}:${registry.govContractId}:${k}`;
+  const scope = registryScope(registry);
+  const cacheKey = (k: string) => `${scope}:${k}`;
+  const defaultParams = GOV_PARAMS[registry.coreNetwork];
 
   /** Proven read with an IndexedDB copy: `onStale` gets the cached value (and its age) first. */
   async function cached<T>(key: string, onStale: ((v: T, note: string) => void) | undefined, run: () => Promise<Proven<T>>): Promise<Proven<T>> {
@@ -130,9 +162,27 @@ export function liveSource(registry: Registry): DataSource {
     return r;
   }
 
-  /** First bridge that answers. */
+  // A bridge is only asked once its status says it runs on this Core network and publishes into this contract: a bridge for another
+  // network would answer with that network's proposals and cycle, which must never be shown under this profile.
+  const coherent = new Map<Bridge, Promise<boolean>>();
+  const isCoherent = (b: Bridge): Promise<boolean> => {
+    let p = coherent.get(b);
+    if (!p) {
+      p = b.status().then((st) => st.network === registry.coreNetwork && (!st.govContractId || st.govContractId === registry.govContractId));
+      coherent.set(b, p);
+      p.catch(() => coherent.delete(b)); // unreachable: ask again next time
+    }
+    return p.catch(() => false);
+  };
+
+  /** The first bridge whose status checked out: the one the verification worker is pointed at. */
+  let coherentIndex: number | null = null;
+
+  /** First coherent bridge that answers. */
   async function firstBridge<T>(fn: (b: Bridge) => Promise<T>): Promise<{ value: T; bridge: Bridge } | null> {
-    for (const b of bridges) {
+    for (const [i, b] of bridges.entries()) {
+      if (!(await isCoherent(b))) continue;
+      coherentIndex ??= i;
       try {
         return { value: await fn(b), bridge: b };
       } catch {
@@ -149,7 +199,22 @@ export function liveSource(registry: Registry): DataSource {
   return {
     mode: 'live',
     registry,
+    coreNetwork: registry.coreNetwork,
+    scope,
+    notice: null,
+    defaultParams,
     now: nowSeconds,
+
+    async params() {
+      const b = await firstBridge(async (x) => {
+        const p = await x.params();
+        if (!p) throw new Error('no governance info');
+        return p;
+      });
+      return b
+        ? { value: b.value, prov: reported(b.bridge, `getgovernanceinfo on ${registry.coreNetwork}: superblock every ${formatInt(b.value.superblockCycle)} blocks`) }
+        : chainParams(registry.coreNetwork, 'no bridge reported getgovernanceinfo');
+    },
 
     async cycle(onStale) {
       try {
@@ -263,9 +328,36 @@ export function liveSource(registry: Registry): DataSource {
     },
 
     bridgeDescriptor() {
-      const b = enabledBridges(registry)[0];
+      // The worker asks a bridge for votes and the MN list directly: the one whose status matched, once one has.
+      const b = enabledBridges(registry)[coherentIndex ?? 0];
       return b ? { kind: 'http', name: b.name, base: b.httpBase } : null;
     },
+    dapiDescriptor: () => ({ kind: 'live', cfg: dapiConfig(registry) }),
+  };
+}
+
+/** A profile with no `gov` contract yet: nothing is read, from Platform, a bridge or DAPI. */
+function emptySource(registry: Registry, notice: string): DataSource {
+  const defaultParams = GOV_PARAMS[registry.coreNetwork];
+  return {
+    mode: 'live',
+    registry,
+    coreNetwork: registry.coreNetwork,
+    scope: registryScope(registry),
+    notice,
+    defaultParams,
+    params: async () => chainParams(registry.coreNetwork),
+    now: nowSeconds,
+    cycle: async () => null,
+    active: async () => [],
+    pastPage: async () => ({ items: [] }),
+    proposal: async () => null,
+    byName: async () => [],
+    tallies: async () => new Map(),
+    bridgeTallies: async () => new Map(),
+    height: async () => null,
+    usdPrice: async () => null,
+    bridgeDescriptor: () => null,
     dapiDescriptor: () => ({ kind: 'live', cfg: dapiConfig(registry) }),
   };
 }

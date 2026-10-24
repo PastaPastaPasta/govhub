@@ -4,15 +4,16 @@ import { Link } from 'react-router-dom';
 import { useApp } from '../app/context.tsx';
 import { formatDash, formatDashAmount, formatDateTime, formatDuration, formatInt, formatPercent } from '../lib/format.ts';
 import { fundingThreshold, votingDeadlineTime } from '../lib/governance.ts';
-import { byRank, countNames, deriveRow, proposalHref } from '../lib/view.ts';
+import { budgetView, countNames, proposalHref } from '../lib/view.ts';
 import { ProvMark } from './Provenance.tsx';
 
 export function BudgetHeader() {
-  const { gov, source, params } = useApp();
+  const { gov, source, params, activeRows } = useApp();
   const cycle = gov.cycle.data;
   const now = source.now();
-  const proposals = gov.active.data ?? [];
 
+  // No backend for this profile: the banner above says so, and there is no cycle to show.
+  if (source.notice) return null;
   if (gov.cycle.loading && !cycle) {
     return (
       <section className="budget budget-loading" aria-busy="true" aria-label="Budget">
@@ -33,11 +34,14 @@ export function BudgetHeader() {
   const untilSb = c.estTime - now;
   const deadline = votingDeadlineTime(c, params);
   const untilDeadline = deadline - now;
-  const rows = proposals.map((p) => deriveRow(p, gov.tallies, gov.bridgeTallies, cycle, params, now)).sort(byRank);
-  const funded = rows.filter((r) => r.tally?.value.inNextBudget);
-  const fundedSum = funded.reduce((sum, r) => sum + r.p.value.paymentAmount, 0);
-  const names = countNames(proposals.map((p) => p.value));
-  const allocatedFrac = c.budget ? Math.min(1, c.allocated / c.budget) : 0;
+  // Proposals that failed verification are not counted: not allocated, not in the budget, not active.
+  const { funded, fundedSum, allocated, active } = budgetView(
+    activeRows.shown.map((r) => r.item),
+    activeRows.failed.map((r) => r.item),
+    c,
+  );
+  const names = countNames(activeRows.shown.map((r) => r.item.p.value));
+  const allocatedFrac = c.budget ? Math.min(1, allocated / c.budget) : 0;
   const height = gov.height.data;
   const blocksLeft = height ? c.superblockHeight - height.value : null;
 
@@ -69,7 +73,7 @@ export function BudgetHeader() {
         )}
       </p>
 
-      <div className="strip" role="img" aria-label={`Allocated ${formatDash(c.allocated)} of ${formatDash(c.budget)} (${formatPercent(allocatedFrac)}) across ${funded.length} proposals`}>
+      <div className="strip" role="img" aria-label={`Allocated ${formatDash(allocated)} of ${formatDash(c.budget)} (${formatPercent(allocatedFrac)}) across ${funded.length} proposals`}>
         {funded.map((r) => (
           <Link
             key={r.p.value.govHash}
@@ -82,15 +86,15 @@ export function BudgetHeader() {
           />
         ))}
         {/* Allocation the cycle reports beyond the proposals listed here (e.g. not yet published). */}
-        {c.allocated > fundedSum && <span className="strip-other" style={{ flexGrow: c.allocated - fundedSum }} title={`${formatDash(c.allocated - fundedSum)} allocated to proposals not listed here`} />}
-        <span className="strip-free" style={{ flexGrow: Math.max(0, c.budget - Math.max(c.allocated, fundedSum)) }} />
+        {allocated > fundedSum && <span className="strip-other" style={{ flexGrow: allocated - fundedSum }} title={`${formatDash(allocated - fundedSum)} allocated to proposals not listed here`} />}
+        <span className="strip-free" style={{ flexGrow: Math.max(0, c.budget - Math.max(allocated, fundedSum)) }} />
       </div>
 
       <dl className="budget-facts">
         <div>
           <dt>Allocated</dt>
           <dd>
-            <span className="num">{formatDashAmount(c.allocated)}</span> of {formatDash(c.budget)} <span className="muted">({formatPercent(allocatedFrac)})</span>
+            <span className="num">{formatDashAmount(allocated)}</span> of {formatDash(c.budget)} <span className="muted">({formatPercent(allocatedFrac)})</span>
             {gov.usd && (
               <span className="muted">
                 {' '}
@@ -102,13 +106,13 @@ export function BudgetHeader() {
         <div>
           <dt>Still available</dt>
           <dd>
-            <span className="num">{formatDashAmount(Math.max(0, c.budget - c.allocated))}</span> DASH
+            <span className="num">{formatDashAmount(Math.max(0, c.budget - allocated))}</span> DASH
           </dd>
         </div>
         <div>
           <dt>In the next budget</dt>
           <dd>
-            <span className="num">{formatInt(funded.length)}</span> of {formatInt(proposals.length)} active proposals
+            <span className="num">{formatInt(funded.length)}</span> of {formatInt(active)} active proposals
           </dd>
         </div>
         <div>

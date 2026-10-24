@@ -55,3 +55,21 @@ export async function cacheClear(): Promise<void> {
     tx.onerror = () => resolve();
   });
 }
+
+/** Deletes the entries whose key matches (e.g. one profile's document cache when the user leaves it). */
+export async function cacheDeleteWhere(match: (key: string) => boolean): Promise<void> {
+  const d = await db();
+  if (!d) return;
+  await new Promise<void>((resolve) => {
+    const tx = d.transaction(STORE, 'readwrite');
+    const req = tx.objectStore(STORE).openKeyCursor();
+    req.onsuccess = () => {
+      const c = req.result;
+      if (!c) return;
+      if (typeof c.key === 'string' && match(c.key)) tx.objectStore(STORE).delete(c.key);
+      c.continue();
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => resolve();
+  });
+}

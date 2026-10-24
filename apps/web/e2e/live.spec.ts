@@ -48,6 +48,59 @@ test('@live reads the gov contract with proofs and verifies a collateral over ma
   expect(await cspViolations(page)).toEqual([]);
 });
 
+// ---- the Dev profile hides what fails verification ---------------------------------------------------------------------
+// Phase-0 spike documents in the Dev contract: two whose gov hash does not recompute, and a synthetic claim test whose collateral
+// is not on mainnet. None may count or show by default.
+const SPIKES = ['govhub-spike-r2-1', 'govhub-spike-1'];
+
+test('@live Dev profile: spike proposals are hidden, counts and remaining payments are sane', async ({ page }) => {
+  test.setTimeout(300_000);
+  const errors = await watchPage(page);
+  await page.goto('/?fixtures=0');
+  await expect(page.getByTestId('profile-label')).toContainText('Dev: mainnet data on testnet Platform');
+  const cards = page.locator('article.card');
+  await expect(cards.first()).toBeVisible({ timeout: 120_000 });
+  // Reveal the whole list, then wait for the background collateral checks to settle.
+  for (let i = 0; i < 5; i++) await page.locator('.sentinel').scrollIntoViewIfNeeded();
+  await expect(page.locator('article.card[data-check="pending"]')).toHaveCount(0, { timeout: 240_000 });
+  for (let i = 0; i < 5; i++) await page.locator('.sentinel').scrollIntoViewIfNeeded();
+  for (const name of SPIKES) await expect(page.locator('article.card', { hasText: name })).toHaveCount(0);
+
+  const shown = await cards.count();
+  const navCount = Number(await page.getByRole('link', { name: /^Active/ }).locator('.count').innerText());
+  expect(navCount).toBe(shown);
+  await expect(page.locator('.budget-facts')).toContainText(`of ${shown} active proposals`);
+  const pays = await page.locator('article.card .card-pay').allInnerTexts();
+  const totals = pays.flatMap((t) => [...t.matchAll(/(\d+) of (\d+) remaining/g)].map((m) => ({ left: Number(m[1]), total: Number(m[2]) })));
+  console.log(`live: ${shown} shown; payments ${JSON.stringify(totals)}`);
+  expect(totals.length).toBeGreaterThan(0);
+  for (const t of totals) {
+    expect(t.total).toBeLessThanOrEqual(40);
+    expect(t.left).toBeLessThanOrEqual(t.total);
+  }
+  if (process.env.SCREENSHOTS) await page.screenshot({ path: 'screenshots/live-active-light-desktop.png', fullPage: true });
+
+  const toggle = page.getByTestId('toggle-failed');
+  const label = await toggle.innerText();
+  console.log(`live: ${label}`);
+  expect(Number(/Show (\d+)/.exec(label)?.[1])).toBeGreaterThanOrEqual(SPIKES.length);
+  await toggle.click();
+  for (const name of SPIKES) await expect(page.locator('article.card.card-invalid', { hasText: name }).getByTestId('invalid-reason')).toContainText('Governance hash');
+  await expect(page.locator('.budget-facts')).toContainText(`of ${shown} active proposals`);
+  if (process.env.SCREENSHOTS) await page.locator('.list-section').screenshot({ path: 'screenshots/live-failed-shown-light-desktop.png' });
+
+  await page.getByRole('link', { name: 'Past', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Past proposals' })).toBeVisible();
+  const pastToggle = page.getByTestId('toggle-failed');
+  await expect(pastToggle).toBeVisible({ timeout: 120_000 });
+  await expect(page.locator('table.past tr', { hasText: 'govhub-claim-test' })).toHaveCount(0);
+  await pastToggle.click();
+  const claimTest = page.locator('table.past tr.row-invalid', { hasText: 'govhub-claim-test' });
+  await expect(claimTest).toBeVisible();
+  console.log(`live: govhub-claim-test: ${(await claimTest.innerText()).replace(/\s+/g, ' ')}`);
+  expect(errors).toEqual([]);
+});
+
 // ---- voting keys against the live DAPI masternode list ----------------------------------------------------------------
 // The bridge is a stand-in serving the RECORDED mainnet votes and masternode entries (services/bridge/test/fixtures); Platform
 // and the DAPI nodes are live. The recount is compared with whatever tally Platform holds for the proposal.
@@ -114,6 +167,8 @@ test('@live voting keys of recorded votes are confirmed by the masternode list t
   await expect(page.getByRole('heading', { level: 1, name: 'dash-growth-q4-2026' })).toBeVisible({ timeout: 120_000 });
 
   await expect(page.getByRole('checkbox', { name: /Confirm voting keys/ })).toBeChecked();
+  // The recount targets the Platform tally's height: wait for that tally, or the click races it and recounts the live set.
+  await expect(page.locator('.info-row', { hasText: 'Votes, weighted' })).toContainText(/\d+ yes/, { timeout: 120_000 });
   await page.getByRole('button', { name: 'Verify votes' }).click();
   const votes = page.getByTestId('votes-check');
   await expect(votes.locator('[data-votes]')).toBeVisible({ timeout: 200_000 });

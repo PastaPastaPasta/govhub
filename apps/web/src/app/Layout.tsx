@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { resolveConfigParam, type Registry } from '../config/registry.ts';
+import { customFields, PROFILES, resolveConfigParam, type Registry } from '../config/registry.ts';
 import { formatInt } from '../lib/format.ts';
 import { ProvLegend } from '../ui/Provenance.tsx';
 import { useAuth } from '../auth/context.tsx';
@@ -87,6 +87,7 @@ function ConfigOffer() {
 
 function ConfigSummary({ r }: { r: Registry }) {
   const rows: Array<[string, string]> = [
+    ['Profile', `${PROFILES[r.profile].title}${customFields(r).size ? ' (with custom overrides)' : ''}`],
     ['Networks', `Core ${r.coreNetwork}, Platform ${r.platformNetwork}`],
     ['Governance contract', r.govContractId],
     ['DAPI nodes', r.dapi.source === 'manual' ? r.dapi.nodes.join(', ') : `from ${r.dapi.quorumUrl}`],
@@ -113,16 +114,30 @@ function ConfigSummary({ r }: { r: Registry }) {
 }
 
 function ModeBanner() {
-  const { mode, setMode, source, gov } = useApp();
+  const { mode, setMode, source, gov, registry, switchProfile } = useApp();
   if (mode === 'fixtures') {
     return (
       <div className="banner banner-fixture" role="status">
         <p>
-          <b>Fixture snapshot.</b> 28 real mainnet proposals as Core saw them at block 2,560,391 on Oct 23, 2026, with recorded DAPI answers, real recorded votes for three proposals and synthetic voters for the rest. Nothing here is live.
+          <b>Fixture snapshot.</b> 28 real mainnet proposals as Core saw them at block 2,560,391 on Oct 23, 2026, with recorded DAPI answers, real recorded votes for three proposals and synthetic voters for the rest, plus two synthetic proposals that fail verification. Nothing here is live.
         </p>
         <button type="button" className="btn" onClick={() => setMode('live')}>
           Switch to live data
         </button>
+      </div>
+    );
+  }
+  if (source.notice) {
+    return (
+      <div className="banner banner-empty" role="status" data-testid="backend-notice">
+        <p>
+          <b>{source.notice}.</b> The {PROFILES[registry.profile].label} profile has no governance contract yet, so nothing is read; govhub never shows another network's proposals in its place.
+        </p>
+        {registry.profile !== 'dev' && (
+          <button type="button" className="btn" onClick={() => switchProfile('dev')}>
+            Switch to Dev
+          </button>
+        )}
       </div>
     );
   }
@@ -148,9 +163,24 @@ function ModeBanner() {
   );
 }
 
+/** The active profile, always visible: the full title on wide screens, the short label on narrow ones. */
+function ProfileLabel() {
+  const { registry, mode } = useApp();
+  const p = PROFILES[registry.profile];
+  const custom = customFields(registry).size > 0;
+  return (
+    <NavLink to="/settings" className="netinfo" data-testid="profile-label" title={`Core ${registry.coreNetwork}, Platform ${registry.platformNetwork}${custom ? ', with custom overrides' : ''}. Change in Settings.`}>
+      <span className="profile-title">{p.title}</span>
+      <span className="chip chip-profile">{p.label}</span>
+      {custom && <span className="chip chip-custom">custom</span>}
+      {mode === 'fixtures' && <span className="chip chip-fixture">fixtures</span>}
+    </NavLink>
+  );
+}
+
 export function Layout() {
-  const { registry, mode, gov } = useApp();
-  const count = gov.active.data?.length;
+  const { gov, activeRows } = useApp();
+  const count = gov.active.data ? activeRows.shown.length : undefined;
   return (
     <div className="shell">
       <a className="skip" href="#main">
@@ -174,10 +204,7 @@ export function Layout() {
             <NavLink to="/past">Past</NavLink>
             <NavLink to="/settings">Settings</NavLink>
           </nav>
-          <p className="netinfo" title="Core data and Platform documents can come from different networks during phase 1">
-            Core {registry.coreNetwork}, Platform {registry.platformNetwork}
-            {mode === 'fixtures' && <span className="chip chip-fixture">fixtures</span>}
-          </p>
+          <ProfileLabel />
           <ThemeSwitch />
           <SessionControl />
         </div>

@@ -16,7 +16,7 @@ const TOP_UP_MS = 6 * 60 * 60 * 1000;
 const entriesOf = (cs: readonly Comment[]): Entry[] => cs.map((c) => [c.id, c.ownerId, c.createdAt]);
 
 export function useCommentCounts(govHashes: readonly string[]): Map<string, number> {
-  const { mode, registry } = useApp();
+  const { mode, registry, source } = useApp();
   const { forum, moderation } = useForum();
   const [entries, setEntries] = useState(new Map<string, Entry[]>());
   const key = govHashes.join(',');
@@ -24,7 +24,7 @@ export function useCommentCounts(govHashes: readonly string[]): Map<string, numb
   useEffect(() => {
     let live = true;
     const persist = mode === 'live';
-    const cacheKey = (h: string) => `${registry.platformNetwork}:${registry.forum.contractId}:comments:${h}`;
+    const cacheKey = (h: string) => `${source.scope}:${registry.forum.contractId}:comments:${h}`;
     const put = (h: string, e: Entry[]) => live && setEntries((m) => new Map(m).set(h, e));
     void mapLimit(govHashes, 3, async (h) => {
       try {
@@ -50,7 +50,7 @@ export function useCommentCounts(govHashes: readonly string[]): Map<string, numb
       live = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [forum, key, mode, registry]);
+  }, [forum, key, mode, registry, source]);
 
   return useMemo(() => {
     const out = new Map<string, number>();

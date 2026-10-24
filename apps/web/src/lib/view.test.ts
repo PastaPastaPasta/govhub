@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Proposal, Sourced, Tally } from '../data/types.ts';
 import { paymentText } from '../ui/ProposalCard.tsx';
-import { GOV_PARAMS } from './governance.ts';
+import { GOV_PARAMS, parseGovParams } from './governance.ts';
 import { byRank, countNames, deriveRow, pickTally, proposalHref, weakest } from './view.ts';
 
 const prov = { kind: 'proof', source: 'test' } as const;
@@ -71,3 +71,56 @@ describe('view model', () => {
     expect(paymentText(1e8, null)).toBe('1 DASH per payment');
   });
 });
+
+describe('view model with testnet parameters', () => {
+  // getgovernanceinfo as the bridge relays it in /v1/cycle (mainnet sample from gov-bridge.dashhq.org; testnet per chainparams.cpp:382-384).
+  const MAINNET_INFO = { governanceminquorum: 10, proposalfee: 1, superblockcycle: 16616, superblockmaturitywindow: 1662, lastsuperblock: 2558864, nextsuperblock: 2575480, fundingthreshold: 332 };
+  const TESTNET_INFO = { governanceminquorum: 1, proposalfee: 1, superblockcycle: 24, superblockmaturitywindow: 8, lastsuperblock: 1577976, nextsuperblock: 1578000, fundingthreshold: 3 };
+  const T = parseGovParams(TESTNET_INFO)!;
+
+  it('parses getgovernanceinfo into the same parameters as Core chainparams', () => {
+    expect(parseGovParams(MAINNET_INFO)).toEqual(GOV_PARAMS.mainnet);
+    expect(T).toEqual(GOV_PARAMS.testnet);
+    expect(parseGovParams({ superblockcycle: 24 })).toBeNull();
+    expect(parseGovParams({ ...TESTNET_INFO, superblockmaturitywindow: 30 })).toBeNull();
+    expect(parseGovParams(null)).toBeNull();
+  });
+
+  it('testnet: hourly superblocks, min quorum 1, payments counted per 24-block cycle', () => {
+    const now = 1_800_000_000;
+    const sbPeriod = 24 * T.blockSeconds; // ~63 minutes
+    const cycle = { value: { superblockHeight: 1578000, budget: 1e12, allocated: 0, votingDeadlineHeight: 1578000 - 8, estTime: now + 600, validWeighted: 7, paid: 0 }, prov };
+    // A one-day proposal that started an hour ago.
+    const p = proposal('a', 'day');
+    p.value.startEpoch = now - 3600;
+    p.value.endEpoch = now + 86400 - 3600;
+    const r = deriveRow(p, new Map([['a', tally('a', { yesWeighted: 3, noWeighted: 1 })]]), new Map(), cycle, T, now);
+    expect(r.threshold?.value).toBe(1); // max(1, floor(7 / 10))
+    expect(r.state).toMatchObject({ passing: true, margin: 1 });
+    // Superblocks k (relative to the next one) whose time falls in [start - 2h, end + 2h]; those after now are still to come.
+    const ks: number[] = [];
+    for (let k = -10; k < 40; k++) {
+      const t = cycle.value.estTime + k * sbPeriod;
+      if (t >= p.value.startEpoch - 7200 && t <= p.value.endEpoch + 7200) ks.push(k);
+    }
+    const future = ks.filter((k) => cycle.value.estTime + k * sbPeriod > now).length;
+    expect(r.schedule).toEqual({ total: ks.length, remaining: future, oneTime: false });
+    expect(r.schedule!.total).toBeGreaterThan(20);
+    expect(r.schedule!.total).toBeLessThan(30);
+    // The same proposal under mainnet rules is one payment: the parameters must follow the data's network.
+    expect(deriveRow(p, new Map(), new Map(), cycle, GOV_PARAMS.mainnet, now).schedule).toMatchObject({ total: 1, remaining: 1, oneTime: true });
+  });
+
+  it('mainnet proposals under testnet rules give absurd counts (the reported bug): profiles never mix them', () => {
+    const now = 1_792_807_235;
+    const cycle = { value: { superblockHeight: 2575480, budget: 1e12, allocated: 0, votingDeadlineHeight: 2573818, estTime: 1795180092, validWeighted: 3324, paid: 0 }, prov };
+    const p = proposal('a', 'six-months');
+    p.value.startEpoch = now - 90 * 86400;
+    p.value.endEpoch = now + 90 * 86400;
+    const right = deriveRow(p, new Map(), new Map(), cycle, GOV_PARAMS.mainnet, now).schedule!;
+    expect(right.total).toBeLessThanOrEqual(7);
+    const wrong = deriveRow(p, new Map(), new Map(), cycle, GOV_PARAMS.testnet, now).schedule!;
+    expect(wrong.total).toBeGreaterThan(1000);
+  });
+});
+

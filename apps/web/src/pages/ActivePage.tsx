@@ -1,23 +1,23 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { urlClaimIdentity } from '@govhub/verify';
 import { useApp } from '../app/context.tsx';
 import { BudgetHeader } from '../ui/BudgetHeader.tsx';
+import { FailedProposalsToggle } from '../ui/HiddenToggle.tsx';
 import { ProposalCard } from '../ui/ProposalCard.tsx';
 import { useReveal } from '../ui/hooks.ts';
 import { useCommentCounts } from '../ui/useCommentCounts.ts';
-import { byRank, countNames, deriveRow, proposalHref } from '../lib/view.ts';
+import { countNames, proposalHref } from '../lib/view.ts';
 
 export function ActivePage() {
-  const { gov, source, params, registry } = useApp();
-  const now = source.now();
-  const rows = useMemo(() => {
-    const ps = gov.active.data ?? [];
-    return ps.map((p) => deriveRow(p, gov.tallies, gov.bridgeTallies, gov.cycle.data ?? null, params, now)).sort(byRank);
-  }, [gov.active.data, gov.tallies, gov.bridgeTallies, gov.cycle.data, params, now]);
-  const names = useMemo(() => countNames(rows.map((r) => r.p.value)), [rows]);
+  const { gov, activeRows, registry } = useApp();
+  const [showFailed, setShowFailed] = useState(false);
+  const all = useMemo(() => [...activeRows.shown, ...activeRows.failed], [activeRows]);
+  const rows = showFailed ? all : activeRows.shown;
+  const names = useMemo(() => countNames(all.map((r) => r.item.p.value)), [all]);
   const { count, sentinel, more } = useReveal(rows.length, 12);
   const shown = useMemo(() => rows.slice(0, count), [rows, count]);
-  const counts = useCommentCounts(useMemo(() => shown.map((r) => r.p.value.govHash), [shown]));
+  const counts = useCommentCounts(useMemo(() => shown.map((r) => r.item.p.value.govHash), [shown]));
+  const failed = activeRows.failed.length;
 
   return (
     <>
@@ -37,10 +37,11 @@ export function ActivePage() {
           <p className="empty">No active proposals to show.</p>
         ) : (
           <div className="grid">
-            {shown.map((r) => (
+            {shown.map(({ item: r, check }) => (
               <ProposalCard
                 key={r.p.value.govHash}
                 row={r}
+                check={check}
                 href={proposalHref(r.p.value, names)}
                 comments={counts.get(r.p.value.govHash)}
                 urlOwner={r.content.ok ? urlClaimIdentity(r.p.value.url, r.p.value.name, registry.forum.claimPortals) : null}
@@ -50,6 +51,7 @@ export function ActivePage() {
         )}
         <div ref={sentinel} className="sentinel" aria-hidden="true" />
         {more && <p className="muted small center">Scroll for more</p>}
+        {!more && failed > 0 && <FailedProposalsToggle count={failed} shown={showFailed} onToggle={() => setShowFailed((v) => !v)} />}
       </section>
     </>
   );

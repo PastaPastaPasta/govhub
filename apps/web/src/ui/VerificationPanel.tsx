@@ -170,7 +170,7 @@ export function VerificationPanel({
   targets: VoteTarget[];
   onVotes(r: VotesDone | null): void;
 }) {
-  const { source, registry, mode } = useApp();
+  const { source, mode } = useApp();
   const bridge = source.bridgeDescriptor();
   const [sml, setSml] = useState(true);
   const [votes, setVotes] = useState<{ running: boolean; progress?: string; result?: VotesDone; error?: string }>({ running: false });
@@ -187,7 +187,7 @@ export function VerificationPanel({
         targets,
         bridge,
         dapi: source.dapiDescriptor(),
-        network: registry.coreNetwork,
+        network: source.coreNetwork,
         now: source.now(),
         crossCheckSml: sml && mode === 'live',
       },

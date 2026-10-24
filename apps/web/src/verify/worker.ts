@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 // Verification worker: all hashing, signature recovery, DAPI fetches, the ChainLock proof and the SML
 // download run here so the page stays responsive.
-import { createDapi, type Dapi } from '@govhub/dapi';
+import { AllNodesFailedError, createDapi, GrpcError, type Dapi } from '@govhub/dapi';
 import { installRecordedDapi, RECORDED_NODE } from '../data/dapiRecorded.ts';
 import { createWebDapi, lookupCollateral } from '../data/dapi.ts';
 import { BridgeError, type BridgeVotes } from '../data/bridge.ts';
@@ -40,6 +40,18 @@ function byHeight(targets: readonly VoteTarget[]): Array<{ height: number | null
   return [...groups].map(([height, ts]) => ({ height, targets: ts }));
 }
 
+const NOT_FOUND = 5;
+/**
+ * The transaction is not on that chain: at least two distinct nodes answered NOT_FOUND (Dapi.call throws the second one), or the
+ * recorded replay (a recording, not a node that could lag) did. One live node's NOT_FOUND is inconclusive.
+ */
+function isNotFound(e: unknown, recorded: boolean): boolean {
+  if (e instanceof GrpcError && e.code === NOT_FOUND) return true;
+  if (!(e instanceof AllNodesFailedError)) return false;
+  const nf = new Set(e.errors.filter((x) => x.error instanceof GrpcError && x.error.code === NOT_FOUND).map((x) => x.node));
+  return nf.size === e.errors.length && nf.size >= (recorded ? 1 : 2);
+}
+
 async function handle(req: WorkerRequest): Promise<void> {
   const progress = (message: string) => post({ id: req.id, kind: 'progress', message });
   if (req.kind === 'collateral') {
@@ -47,10 +59,11 @@ async function handle(req: WorkerRequest): Promise<void> {
     let lookup: Parameters<typeof verifyCollateral>[1];
     try {
       const dapi = await dapiFor(req.dapi);
-      progress(req.dapi.kind === 'live' ? 'Fetching the collateral transaction and proving it into a block' : 'Fetching the collateral transaction');
-      lookup = await lookupCollateral(dapi, req.proposal.collateralTxid, { verify: req.dapi.kind === 'live', onProgress: progress });
+      const verify = req.dapi.kind === 'live' && !req.light;
+      progress(verify ? 'Fetching the collateral transaction and proving it into a block' : 'Fetching the collateral transaction');
+      lookup = await lookupCollateral(dapi, req.proposal.collateralTxid, { verify, onProgress: progress });
     } catch (e) {
-      lookup = { error: (e as Error).message };
+      lookup = { error: (e as Error).message, ...(isNotFound(e, req.dapi.kind === 'recorded') ? { notFound: true } : {}) };
     }
     post({ id: req.id, kind: 'collateral', verdict: verifyCollateral(req.proposal, lookup) });
     return;
