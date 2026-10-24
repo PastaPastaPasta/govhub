@@ -13,14 +13,16 @@
   "exports": {
     ".": "./src/index.ts",
     "./bls": "./src/bls.ts",
-    "./x11": "./src/x11.ts"
+    "./x11": "./src/x11.ts",
+    "./coreproof": "./src/coreproof.ts"
   },
   "scripts": {
     "test": "vitest run",
     "test:live": "node test/live/run.mjs",
     "typecheck": "tsc --noEmit",
     "size": "node scripts/size.mjs",
-    "vendor:x11": "node scripts/vendor-x11.mjs"
+    "vendor:x11": "node scripts/vendor-x11.mjs",
+    "build:coreproof": "core-proof-wasm/build.sh"
   },
   "dependencies": {
     "@noble/curves": "^2.0.0",

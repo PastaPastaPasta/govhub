@@ -1,0 +1,23 @@
+[package]
+name = "govhub-core-proof-wasm"
+version = "0.0.0"
+edition = "2021"
+license = "MIT"
+publish = false
+description = "C-ABI WebAssembly wrapper around dash-core-proof (DIP 175 quorum proof chains) for @govhub/dapi"
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dependencies]
+dash-core-proof = { path = "vendor/dash-core-proof" }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[workspace]

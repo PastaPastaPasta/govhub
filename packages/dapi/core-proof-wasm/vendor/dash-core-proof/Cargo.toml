@@ -1,0 +1,17 @@
+# Vendored from dashpay/platform PR #5521 (feat/core-snapshot-proof-verifier), packages/rs-core-proof at
+# ab2b6b45a97698b728e24e991fd822cf8718554b. Sources (src/, README.md) are byte-identical to upstream; this manifest only
+# replaces the workspace-inherited fields with their values (version 5.0.0-rc.4, rust-version 1.98).
+[package]
+name = "dash-core-proof"
+version = "5.0.0-rc.4"
+rust-version = "1.98"
+edition = "2021"
+license = "MIT"
+description = "Verifies Dash Core quorum proof chains (DIP 175) from a trusted checkpoint"
+
+[dependencies]
+blst = "0.3.17"
+hex = "0.4"
+rs-x11-hash = "0.1.8"
+serde = { version = "1.0", features = ["derive"] }
+sha2 = "0.10"
