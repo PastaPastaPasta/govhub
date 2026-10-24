@@ -1,0 +1,591 @@
+{
+  "origin": "http://localhost:54541",
+  "startedAt": "2026-10-24T04:13:40.067Z",
+  "flows": {
+    "bootstrap": {
+      "ok": true,
+      "ms": 960,
+      "nodes": 198,
+      "height": 2560440,
+      "bestBlockHash": "000000000000001a0ed5b1eb65cf40296f63ecce39581279b790132782156ef3",
+      "node": "109.199.109.39:443"
+    },
+    "verifiedCollateral": {
+      "cold": {
+        "ok": true,
+        "ms": 6217,
+        "txid": "3451d292d461d1255007392a43d0da7b47eed938ff9a1234fb06ae19157fa365",
+        "height": 2559683,
+        "blockHash": "000000000000002411139f9e5be8c3cd0ebecdfbe1815888f8e299afc871cab0",
+        "confirmations": 758,
+        "chainLocked": "verified",
+        "instantLocked": "claimed",
+        "proof": {
+          "merkle": true,
+          "blockHash": "verified",
+          "chainLock": {
+            "height": 2560440,
+            "blockHash": "000000000000001a0ed5b1eb65cf40296f63ecce39581279b790132782156ef3",
+            "quorumHash": "0000000000000021752739d157619def8b120a143f8d4ae885a8926cc526fd72",
+            "exact": true,
+            "verifiedConfirmations": 758
+          },
+          "notes": []
+        },
+        "node": "5.161.103.48:443",
+        "rawBytes": 234
+      },
+      "warm": {
+        "ok": true,
+        "ms": 5182,
+        "txid": "3451d292d461d1255007392a43d0da7b47eed938ff9a1234fb06ae19157fa365",
+        "height": 2559683,
+        "blockHash": "000000000000002411139f9e5be8c3cd0ebecdfbe1815888f8e299afc871cab0",
+        "confirmations": 758,
+        "chainLocked": "verified",
+        "instantLocked": "no",
+        "proof": {
+          "merkle": true,
+          "blockHash": "verified",
+          "chainLock": {
+            "height": 2560440,
+            "blockHash": "000000000000001a0ed5b1eb65cf40296f63ecce39581279b790132782156ef3",
+            "quorumHash": "0000000000000021752739d157619def8b120a143f8d4ae885a8926cc526fd72",
+            "exact": true,
+            "verifiedConfirmations": 758
+          },
+          "notes": []
+        },
+        "node": "89.125.50.14:443",
+        "rawBytes": 234
+      },
+      "loaded": {
+        "x11": 1,
+        "bls": 1
+      }
+    },
+    "verifiedRecent": {
+      "ok": true,
+      "ms": 4708,
+      "tipHeight": 2560440,
+      "plain": {
+        "txid": "aec29e2a5af39cf1821c8bdf2e1f3d1af5f3b52df7f276fd3b37eb3cf6c25960",
+        "height": 2560434,
+        "blockHash": "0000000000000002a75e0fca6e86ff5944e883ececb601ed44854c690880179b",
+        "confirmations": 7,
+        "chainLocked": "verified",
+        "instantLocked": "claimed",
+        "proof": {
+          "merkle": true,
+          "blockHash": "verified",
+          "chainLock": {
+            "height": 2560440,
+            "blockHash": "000000000000001a0ed5b1eb65cf40296f63ecce39581279b790132782156ef3",
+            "quorumHash": "0000000000000021752739d157619def8b120a143f8d4ae885a8926cc526fd72",
+            "exact": true,
+            "verifiedConfirmations": 7
+          },
+          "notes": []
+        },
+        "node": "62.171.189.0:443",
+        "rawBytes": 1277
+      },
+      "coinbase": {
+        "txid": "7a6c1587e2289ee393086bf3085799015fcfa96e442565ecf54ecedb983df613",
+        "height": 2560434,
+        "blockHash": "0000000000000002a75e0fca6e86ff5944e883ececb601ed44854c690880179b",
+        "confirmations": 7,
+        "chainLocked": "verified",
+        "instantLocked": "no",
+        "proof": {
+          "merkle": true,
+          "blockHash": "verified",
+          "chainLock": {
+            "height": 2560440,
+            "blockHash": "000000000000001a0ed5b1eb65cf40296f63ecce39581279b790132782156ef3",
+            "quorumHash": "0000000000000021752739d157619def8b120a143f8d4ae885a8926cc526fd72",
+            "exact": true,
+            "verifiedConfirmations": 7
+          },
+          "notes": []
+        },
+        "node": "54.69.95.118:443",
+        "rawBytes": 377
+      }
+    },
+    "notFound": {
+      "ok": false,
+      "ms": 598,
+      "error": {
+        "name": "GrpcError",
+        "code": 5,
+        "message": "Transaction not found",
+        "network": false
+      }
+    },
+    "sml": {
+      "ok": true,
+      "ms": 1833,
+      "blockHash": "000000000000001a0ed5b1eb65cf40296f63ecce39581279b790132782156ef3",
+      "height": 2560440,
+      "agreedBy": [
+        "161.97.166.49:443",
+        "161.97.142.210:443"
+      ],
+      "asked": [
+        "139.84.231.221:443",
+        "161.97.142.210:443",
+        "161.97.166.49:443"
+      ],
+      "mnCount": 3014,
+      "evonodes": 356,
+      "quorums400": 4,
+      "poolBefore": 198,
+      "poolAfter": 356,
+      "added": 158
+    },
+    "watchNoDeposit": {
+      "ok": true,
+      "ms": 6439,
+      "readyMs": 2438,
+      "opened": 4,
+      "liveAtReady": 3,
+      "liveDuring": 3,
+      "filterBytes": 200,
+      "fromHeight": 2560437,
+      "events": {
+        "tx": 0,
+        "locks": 0,
+        "blocks": 4,
+        "errors": [
+          "stream-closed: network error: Failed to fetch"
+        ]
+      }
+    },
+    "watchPositive": {
+      "ok": true,
+      "ms": 1065,
+      "found": true,
+      "deliveries": 1,
+      "distinctTxids": 1,
+      "blocks": 10,
+      "dupes": 0,
+      "firstBy": {
+        "52.10.213.198:443": 11
+      }
+    },
+    "watchIsLock": {
+      "ok": true,
+      "ms": 30963,
+      "gotIsLock": true,
+      "locks": [
+        {
+          "txid": "f6c790b375899ae4a9c11867d3ccc882f6ffec235d4387f5d0c48ed5ea217456",
+          "bytes": 414,
+          "known": true,
+          "sigBytes": 96,
+          "node": "185.185.80.117:443"
+        },
+        {
+          "txid": "e04eb444ae992ce4f771c38d72dae50b213a70ba242b800a6b2bf944a397352b",
+          "bytes": 486,
+          "known": true,
+          "sigBytes": 96,
+          "node": "185.185.80.117:443"
+        }
+      ],
+      "distinctLocks": 2,
+      "deliveredLocks": 2,
+      "txs": 32,
+      "dupTxDeliveries": 0,
+      "blocks": 2,
+      "errors": [
+        "stream-closed: network error: Failed to fetch",
+        "stream-closed: network error: Failed to fetch",
+        "stream-closed: network error: Failed to fetch"
+      ],
+      "dupes": 71,
+      "firstBy": {
+        "185.185.80.117:443": 35,
+        "161.97.166.49:443": 1
+      },
+      "opened": 6,
+      "allKnown": true
+    },
+    "bloom": {
+      "bytes": 200,
+      "hashFuncs": 50,
+      "contains": true
+    }
+  },
+  "network": {
+    "dapiRequests": 43,
+    "hosts": 36,
+    "maxRequestsPerHostPerMinute": 3,
+    "abortedByClient": 19,
+    "failedByReason": {
+      "net::ERR_CONNECTION_REFUSED": 1,
+      "net::ERR_CERT_COMMON_NAME_INVALID": 1,
+      "net::ERR_CERT_DATE_INVALID": 2
+    },
+    "inflightAtEnd": 0,
+    "nonDapiRequests": [
+      "https://quorums.mainnet.networks.dash.org/masternodes"
+    ]
+  },
+  "browser": "156.0.8078.4",
+  "checks": [
+    {
+      "name": "node list fetched cross-origin from the quorum service (CORS) and a synced node answered",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "ms": 960,
+        "nodes": 198,
+        "height": 2560440,
+        "bestBlockHash": "000000000000001a0ed5b1eb65cf40296f63ecce39581279b790132782156ef3",
+        "node": "109.199.109.39:443"
+      }
+    },
+    {
+      "name": "getVerifiedTransaction(collateral): chainLocked \"verified\", merkle ok, block hash X11-verified, height from coinbase",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "ms": 6217,
+        "txid": "3451d292d461d1255007392a43d0da7b47eed938ff9a1234fb06ae19157fa365",
+        "height": 2559683,
+        "blockHash": "000000000000002411139f9e5be8c3cd0ebecdfbe1815888f8e299afc871cab0",
+        "confirmations": 758,
+        "chainLocked": "verified",
+        "instantLocked": "claimed",
+        "proof": {
+          "merkle": true,
+          "blockHash": "verified",
+          "chainLock": {
+            "height": 2560440,
+            "blockHash": "000000000000001a0ed5b1eb65cf40296f63ecce39581279b790132782156ef3",
+            "quorumHash": "0000000000000021752739d157619def8b120a143f8d4ae885a8926cc526fd72",
+            "exact": true,
+            "verifiedConfirmations": 758
+          },
+          "notes": []
+        },
+        "node": "5.161.103.48:443",
+        "rawBytes": 234
+      }
+    },
+    {
+      "name": "  ...with an exact Core-selected quorum and >= 700 verified confirmations",
+      "ok": true,
+      "detail": {
+        "merkle": true,
+        "blockHash": "verified",
+        "chainLock": {
+          "height": 2560440,
+          "blockHash": "000000000000001a0ed5b1eb65cf40296f63ecce39581279b790132782156ef3",
+          "quorumHash": "0000000000000021752739d157619def8b120a143f8d4ae885a8926cc526fd72",
+          "exact": true,
+          "verifiedConfirmations": 758
+        },
+        "notes": []
+      }
+    },
+    {
+      "name": "  ...a warm second call (SML and quorum heights cached) is verified and faster",
+      "ok": true,
+      "detail": {
+        "cold": 6217,
+        "warm": 5182
+      }
+    },
+    {
+      "name": "X11 and BLS were loaded lazily, once",
+      "ok": true,
+      "detail": {
+        "x11": 1,
+        "bls": 1
+      }
+    },
+    {
+      "name": "recent tx and coinbase: merkle + X11 verified, ChainLock verified",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "ms": 4708,
+        "tipHeight": 2560440,
+        "plain": {
+          "txid": "aec29e2a5af39cf1821c8bdf2e1f3d1af5f3b52df7f276fd3b37eb3cf6c25960",
+          "height": 2560434,
+          "blockHash": "0000000000000002a75e0fca6e86ff5944e883ececb601ed44854c690880179b",
+          "confirmations": 7,
+          "chainLocked": "verified",
+          "instantLocked": "claimed",
+          "proof": {
+            "merkle": true,
+            "blockHash": "verified",
+            "chainLock": {
+              "height": 2560440,
+              "blockHash": "000000000000001a0ed5b1eb65cf40296f63ecce39581279b790132782156ef3",
+              "quorumHash": "0000000000000021752739d157619def8b120a143f8d4ae885a8926cc526fd72",
+              "exact": true,
+              "verifiedConfirmations": 7
+            },
+            "notes": []
+          },
+          "node": "62.171.189.0:443",
+          "rawBytes": 1277
+        },
+        "coinbase": {
+          "txid": "7a6c1587e2289ee393086bf3085799015fcfa96e442565ecf54ecedb983df613",
+          "height": 2560434,
+          "blockHash": "0000000000000002a75e0fca6e86ff5944e883ececb601ed44854c690880179b",
+          "confirmations": 7,
+          "chainLocked": "verified",
+          "instantLocked": "no",
+          "proof": {
+            "merkle": true,
+            "blockHash": "verified",
+            "chainLock": {
+              "height": 2560440,
+              "blockHash": "000000000000001a0ed5b1eb65cf40296f63ecce39581279b790132782156ef3",
+              "quorumHash": "0000000000000021752739d157619def8b120a143f8d4ae885a8926cc526fd72",
+              "exact": true,
+              "verifiedConfirmations": 7
+            },
+            "notes": []
+          },
+          "node": "54.69.95.118:443",
+          "rawBytes": 377
+        }
+      }
+    },
+    {
+      "name": "unknown txid -> GrpcError NOT_FOUND (code 5)",
+      "ok": true,
+      "detail": {
+        "ok": false,
+        "ms": 598,
+        "error": {
+          "name": "GrpcError",
+          "code": 5,
+          "message": "Transaction not found",
+          "network": false
+        }
+      }
+    },
+    {
+      "name": "getSml: >= 2 of 3 nodes agree on tip, 4 LLMQ_400_60 quorums, 300+ evonodes",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "ms": 1833,
+        "blockHash": "000000000000001a0ed5b1eb65cf40296f63ecce39581279b790132782156ef3",
+        "height": 2560440,
+        "agreedBy": [
+          "161.97.166.49:443",
+          "161.97.142.210:443"
+        ],
+        "asked": [
+          "139.84.231.221:443",
+          "161.97.142.210:443",
+          "161.97.166.49:443"
+        ],
+        "mnCount": 3014,
+        "evonodes": 356,
+        "quorums400": 4,
+        "poolBefore": 198,
+        "poolAfter": 356,
+        "added": 158
+      }
+    },
+    {
+      "name": "refreshNodesFromSml appends the SML evonodes to the pool",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "ms": 1833,
+        "blockHash": "000000000000001a0ed5b1eb65cf40296f63ecce39581279b790132782156ef3",
+        "height": 2560440,
+        "agreedBy": [
+          "161.97.166.49:443",
+          "161.97.142.210:443"
+        ],
+        "asked": [
+          "139.84.231.221:443",
+          "161.97.142.210:443",
+          "161.97.166.49:443"
+        ],
+        "mnCount": 3014,
+        "evonodes": 356,
+        "quorums400": 4,
+        "poolBefore": 198,
+        "poolAfter": 356,
+        "added": 158
+      }
+    },
+    {
+      "name": "watchAddressForDeposit: ready with >= 2 live streams of 3+ nodes, 200+ byte filter, no events for a random address, still 3 streams live after 4 s",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "ms": 6439,
+        "readyMs": 2438,
+        "opened": 4,
+        "liveAtReady": 3,
+        "liveDuring": 3,
+        "filterBytes": 200,
+        "fromHeight": 2560437,
+        "events": {
+          "tx": 0,
+          "locks": 0,
+          "blocks": 4,
+          "errors": [
+            "stream-closed: network error: Failed to fetch"
+          ]
+        }
+      }
+    },
+    {
+      "name": "  ...merkleblock heartbeats arrive without any match",
+      "ok": true,
+      "detail": {
+        "tx": 0,
+        "locks": 0,
+        "blocks": 4,
+        "errors": [
+          "stream-closed: network error: Failed to fetch"
+        ]
+      }
+    },
+    {
+      "name": "watch positive control: the collateral tx is delivered exactly once across 3 merged streams",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "ms": 1065,
+        "found": true,
+        "deliveries": 1,
+        "distinctTxids": 1,
+        "blocks": 10,
+        "dupes": 0,
+        "firstBy": {
+          "52.10.213.198:443": 11
+        }
+      }
+    },
+    {
+      "name": "IS-lock path: >= 1 live ISDLOCK received, parsed (96 B sig), delivered once per distinct lock, after its tx",
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "ms": 30963,
+        "gotIsLock": true,
+        "locks": [
+          {
+            "txid": "f6c790b375899ae4a9c11867d3ccc882f6ffec235d4387f5d0c48ed5ea217456",
+            "bytes": 414,
+            "known": true,
+            "sigBytes": 96,
+            "node": "185.185.80.117:443"
+          },
+          {
+            "txid": "e04eb444ae992ce4f771c38d72dae50b213a70ba242b800a6b2bf944a397352b",
+            "bytes": 486,
+            "known": true,
+            "sigBytes": 96,
+            "node": "185.185.80.117:443"
+          }
+        ],
+        "distinctLocks": 2,
+        "deliveredLocks": 2,
+        "txs": 32,
+        "dupTxDeliveries": 0,
+        "blocks": 2,
+        "errors": [
+          "stream-closed: network error: Failed to fetch",
+          "stream-closed: network error: Failed to fetch",
+          "stream-closed: network error: Failed to fetch"
+        ],
+        "dupes": 71,
+        "firstBy": {
+          "185.185.80.117:443": 35,
+          "161.97.166.49:443": 1
+        },
+        "opened": 6,
+        "allKnown": true
+      }
+    },
+    {
+      "name": "  ...merged streams suppressed duplicates from other nodes",
+      "ok": true,
+      "detail": {
+        "dupes": 71,
+        "opened": 6
+      }
+    },
+    {
+      "name": "bloom filter built in the browser: >= 200 bytes, contains its element",
+      "ok": true,
+      "detail": {
+        "bytes": 200,
+        "hashFuncs": 50,
+        "contains": true
+      }
+    },
+    {
+      "name": "no host received more than 150 requests in any 60 s window (including HTTP preflights counted as requests)",
+      "ok": true,
+      "detail": {
+        "109.199.109.39": 1,
+        "5.161.103.48": 2,
+        "192.248.178.237": 1,
+        "161.97.75.36": 1,
+        "95.111.233.139": 1,
+        "95.111.242.220": 2,
+        "34.210.238.67": 1,
+        "161.97.102.156": 1,
+        "161.97.66.31": 1,
+        "109.199.124.30": 1,
+        "89.125.50.14": 2,
+        "178.18.254.136": 1,
+        "88.216.191.113": 1,
+        "161.97.166.49": 3,
+        "62.171.189.0": 2,
+        "84.32.22.199": 1,
+        "54.69.95.118": 2,
+        "158.220.101.10": 1,
+        "144.126.141.62": 1,
+        "139.84.231.221": 1,
+        "161.97.142.210": 1,
+        "31.220.91.60": 1,
+        "161.97.175.233": 1,
+        "65.108.74.78": 1,
+        "91.198.108.35": 1,
+        "109.199.124.135": 1,
+        "62.171.150.24": 1,
+        "51.68.35.98": 1,
+        "84.32.22.20": 1,
+        "52.10.213.198": 1,
+        "161.97.88.219": 1,
+        "65.109.108.139": 1,
+        "37.27.67.164": 1,
+        "185.185.80.117": 1,
+        "193.70.43.172": 1,
+        "139.180.143.115": 1
+      }
+    },
+    {
+      "name": "no DAPI request left in flight after every watcher/stream was cancelled",
+      "ok": true,
+      "detail": []
+    },
+    {
+      "name": "the page only talked to DAPI nodes and the quorum service",
+      "ok": true,
+      "detail": [
+        "https://quorums.mainnet.networks.dash.org/masternodes"
+      ]
+    }
+  ]
+}
