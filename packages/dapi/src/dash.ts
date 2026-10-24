@@ -1,6 +1,6 @@
 // Minimal Dash wire-format parsers: tx, block, header, merkleblock, CLSIG, ISDLOCK, coinbase payload.
 // All hashes are exposed as display-order (RPC) hex, as on Platform; `*Internal` fields keep wire order.
-import { Reader, bytesEqual, hashBytes, hashHex, sha256d } from './bytes.ts';
+import { Reader, bytesEqual, concat, hashBytes, hashHex, sha256d } from './bytes.ts';
 
 export interface TxIn { prevTxid: string; vout: number; script: Uint8Array; sequence: number }
 export interface TxOut { value: bigint; script: Uint8Array }
@@ -76,19 +76,69 @@ export function parseHeader(h: Uint8Array): BlockHeader {
   return { version: r.i32(), prevHash: hashHex(r.bytes(32)), merkleRoot: hashHex(r.bytes(32)), time: r.u32(), bits: r.u32(), nonce: r.u32(), raw: h.subarray(0, 80) };
 }
 
-/** Binary merkle root over internal-order txids, with Bitcoin's odd-node duplication. */
-function merkleRoot(level: Uint8Array[]): Uint8Array {
-  if (!level.length) return new Uint8Array(32);
+/** Bitcoin merkle root over internal-order leaves (ComputeMerkleRoot, consensus/merkle.cpp); `mutated` per CVE-2012-2459. */
+export function merkleRoot(leaves: readonly Uint8Array[]): { root: Uint8Array; mutated: boolean } {
+  if (!leaves.length) return { root: new Uint8Array(32), mutated: false };
+  let level = leaves.slice(), mutated = false;
   while (level.length > 1) {
     const next: Uint8Array[] = [];
     for (let i = 0; i < level.length; i += 2) {
       const a = level[i]!, b = level[i + 1] ?? a;
-      const c = new Uint8Array(64); c.set(a); c.set(b, 32);
-      next.push(sha256d(c));
+      if (i + 1 < level.length && bytesEqual(a, b)) mutated = true;
+      next.push(sha256d(concat(a, b)));
     }
     level = next;
   }
-  return level[0]!;
+  return { root: level[0]!, mutated };
+}
+
+export interface PartialMerkle {
+  /** Internal-order root the tree hashes to. */
+  root: Uint8Array;
+  /** Matched leaves (display-order txids), in tree order. */
+  matched: string[];
+  /** Position of each matched leaf. */
+  positions: number[];
+  total: number;
+}
+
+/**
+ * Parse and evaluate a serialized CPartialMerkleTree (nTransactions u32 | vHash | vBits bytes) with Core's checks
+ * (merkleblock.cpp:100-170: no unconsumed hashes or bits, no duplicate siblings, sane counts).
+ */
+export function readPartialMerkleTree(r: Reader): PartialMerkle {
+  const total = r.u32();
+  if (total === 0 || total > (2_000_000 / 60) * 2) throw new Error('merkle: bad tx count');
+  const nHashes = r.varint();
+  if (nHashes > total) throw new Error('merkle: more hashes than txs');
+  const hashes: Uint8Array[] = [];
+  for (let n = 0; n < nHashes; n++) hashes.push(r.bytes(32));
+  const flags = r.bytes(r.varint());
+  let height = 0;
+  while (((total + (1 << height) - 1) >> height) > 1) height++;
+  let bit = 0, hi = 0;
+  const matched: string[] = [], positions: number[] = [];
+  const width = (h: number) => (total + (1 << h) - 1) >> h;
+  const walk = (h: number, pos: number): Uint8Array => {
+    if ((bit >> 3) >= flags.length) throw new Error('merkle: ran out of flag bits');
+    const parentOfMatch = (flags[bit >> 3]! >> (bit & 7)) & 1; bit++;
+    if (h === 0 || !parentOfMatch) {
+      if (hi >= hashes.length) throw new Error('merkle: ran out of hashes');
+      const hash = hashes[hi++]!;
+      if (h === 0 && parentOfMatch) { matched.push(hashHex(hash)); positions.push(pos); }
+      return hash;
+    }
+    const left = walk(h - 1, pos * 2);
+    let right = left;
+    if (pos * 2 + 1 < width(h - 1)) {
+      right = walk(h - 1, pos * 2 + 1);
+      if (bytesEqual(left, right)) throw new Error('merkle: duplicate sibling hashes (CVE-2012-2459)');
+    }
+    return sha256d(concat(left, right));
+  };
+  const root = walk(height, 0);
+  if (hi !== hashes.length || Math.ceil(bit / 8) !== flags.length) throw new Error('merkle: unconsumed hashes or flag bits');
+  return { root, matched, positions, total };
 }
 
 export interface Block { header: BlockHeader; txs: Tx[]; /** merkle root recomputed from the txids equals the header's */ merkleOk: boolean }
@@ -100,8 +150,9 @@ export function parseBlock(raw: Uint8Array): Block {
   const txs: Tx[] = [];
   for (let n = r.varint(); n > 0; n--) txs.push(readTx(r));
   if (r.left) throw new Error(`block: ${r.left} trailing bytes`);
-  const root = merkleRoot(txs.map((t) => hashBytes(t.txid)));
-  return { header, txs, merkleOk: hashBytes(header.merkleRoot).every((v, i) => v === root[i]) };
+  // A mutated tree (duplicated trailing txs, CVE-2012-2459) hashes to the real root but Core rejects the block (bad-txns-duplicate).
+  const { root, mutated } = merkleRoot(txs.map((t) => hashBytes(t.txid)));
+  return { header, txs, merkleOk: !mutated && bytesEqual(hashBytes(header.merkleRoot), root) };
 }
 
 export interface MerkleBlock {
@@ -117,39 +168,7 @@ export interface MerkleBlock {
 export function parseMerkleBlock(raw: Uint8Array): MerkleBlock {
   const r = new Reader(raw);
   const header = parseHeader(r.bytes(80));
-  const total = r.u32();
-  // Same sanity limits as Core: at least one tx, at most one per 60 bytes of max block size.
-  if (total === 0 || total > (2_000_000 / 60) * 2) throw new Error('merkleblock: bad tx count');
-  const nHashes = r.varint();
-  if (nHashes > total) throw new Error('merkleblock: more hashes than txs');
-  const hashes: Uint8Array[] = [];
-  for (let n = 0; n < nHashes; n++) hashes.push(r.bytes(32));
-  const flags = r.bytes(r.varint());
-  let height = 0;
-  while (((total + (1 << height) - 1) >> height) > 1) height++;
-  let bit = 0, hi = 0;
-  const matched: string[] = [];
-  const width = (h: number) => (total + (1 << h) - 1) >> h;
-  const walk = (h: number, pos: number): Uint8Array => {
-    if ((bit >> 3) >= flags.length) throw new Error('merkleblock: ran out of flag bits');
-    const parentOfMatch = (flags[bit >> 3]! >> (bit & 7)) & 1; bit++;
-    if (h === 0 || !parentOfMatch) {
-      if (hi >= hashes.length) throw new Error('merkleblock: ran out of hashes');
-      const hash = hashes[hi++]!;
-      if (h === 0 && parentOfMatch) matched.push(hashHex(hash));
-      return hash;
-    }
-    const left = walk(h - 1, pos * 2);
-    let right = left;
-    if (pos * 2 + 1 < width(h - 1)) {
-      right = walk(h - 1, pos * 2 + 1);
-      if (bytesEqual(left, right)) throw new Error('merkleblock: duplicate sibling hashes (CVE-2012-2459)');
-    }
-    const c = new Uint8Array(64); c.set(left); c.set(right, 32);
-    return sha256d(c);
-  };
-  const root = walk(height, 0);
-  if (hi !== hashes.length || Math.ceil(bit / 8) !== flags.length) throw new Error('merkleblock: unconsumed hashes or flag bits');
+  const { root, matched, total } = readPartialMerkleTree(r);
   return { header, total, matched, rootOk: hashHex(root) === header.merkleRoot };
 }
 

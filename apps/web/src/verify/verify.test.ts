@@ -82,7 +82,7 @@ describe('what is verified and what is node-reported (ChainLock, confirmations, 
     ...tx,
     confirmations: 760,
     chainLocked: 'verified',
-    proof: { merkle: true, blockHash: 'verified', chainLock: { height: tx.height + 758, blockHash: 'aa'.repeat(32), quorumHash: 'bb'.repeat(32), exact: true, verifiedConfirmations: 759, ...over }, notes: [] },
+    proof: { merkle: true, blockHash: 'verified', chainLock: { height: tx.height + 758, blockHash: 'aa'.repeat(32), quorumHash: 'bb'.repeat(32), exact: true, verifiedConfirmations: 759, ...over }, anchor: null, notes: [] },
   });
 
   it('claims only (the recorded replay): ChainLock and confirmations are "reported", the second-node check stands in for the block proof', async () => {
@@ -90,7 +90,7 @@ describe('what is verified and what is node-reported (ChainLock, confirmations, 
     const v = verifyCollateral(p, await recorded(p.collateralTxid));
     expect(v.ok).toBe(true);
     for (const id of ['confirmations', 'chainlock']) expect(stepOf(v, id)).toMatchObject({ status: 'ok', basis: 'reported' });
-    expect(stepOf(v, 'chainlock').detail).toContain('node-reported');
+    expect(stepOf(v, 'chainlock').detail).toContain('a node reports');
     expect(stepOf(v, 'crosscheck').status).toBe('warn');
     expect(v.steps.some((s) => s.id === 'block')).toBe(false);
     expect(v.chain).toMatchObject({ merkle: false, chainLocked: 'claimed', provenConfirmations: null });
@@ -103,7 +103,7 @@ describe('what is verified and what is node-reported (ChainLock, confirmations, 
     expect(stepOf(v, 'block')).toMatchObject({ status: 'ok', basis: 'verified' });
     expect(v.steps.some((s) => s.id === 'crosscheck')).toBe(false);
     expect(stepOf(v, 'chainlock')).toMatchObject({ status: 'ok', basis: 'verified' });
-    expect(stepOf(v, 'chainlock').detail).toContain('BLS-valid ChainLock');
+    expect(stepOf(v, 'chainlock').detail).toContain('BLS-verified ChainLock');
     expect(stepOf(v, 'confirmations')).toMatchObject({ status: 'ok', basis: 'verified' });
     expect(stepOf(v, 'confirmations').detail).toContain('at least 759');
     expect(stepOf(v, 'height').basis).toBe('verified');
@@ -113,14 +113,14 @@ describe('what is verified and what is node-reported (ChainLock, confirmations, 
   it('a block proof without a ChainLock proof keeps confirmations and the lock as node claims', async () => {
     const p = byName('OrchardPay');
     const tx = await recorded(p.collateralTxid);
-    const v = verifyCollateral(p, { ...tx, proof: { merkle: true, blockHash: 'claimed', chainLock: null, notes: ['no BLS verifier: ChainLock signature not checked'] } });
+    const v = verifyCollateral(p, { ...tx, proof: { merkle: true, blockHash: 'claimed', chainLock: null, anchor: null, notes: ['no BLS verifier: ChainLock signature not checked'] } });
     // a merkle proof alone does not tie the block to the chain (no proof-of-work): it stays "reported", and a second node weighs in
     expect(stepOf(v, 'block')).toMatchObject({ status: 'ok', basis: 'reported' });
     expect(stepOf(v, 'block').detail).toContain('nothing ties that block to the chain');
     expect(stepOf(v, 'crosscheck').status).toBe('warn');
     expect(stepOf(v, 'height').basis).toBe('reported');
     expect(stepOf(v, 'chainlock')).toMatchObject({ status: 'ok', basis: 'reported' });
-    expect(stepOf(v, 'chainlock').detail).toContain('no BLS verifier');
+    expect(stepOf(v, 'chainlock').more).toContain('no BLS verifier');
     expect(stepOf(v, 'confirmations').basis).toBe('reported');
     expect(v.chain).toMatchObject({ merkle: true, chainLocked: 'claimed', lockDepth: null });
   });
@@ -128,7 +128,7 @@ describe('what is verified and what is node-reported (ChainLock, confirmations, 
   it('a ChainLock proof that FAILED (as opposed to not attempted) is a warning, not a quiet "ok"', async () => {
     const p = byName('OrchardPay');
     const tx = await recorded(p.collateralTxid);
-    const v = verifyCollateral(p, { ...tx, proof: { merkle: true, blockHash: 'verified', chainLock: null, notes: ['chainlock proof failed: header chain breaks at +3'] } });
+    const v = verifyCollateral(p, { ...tx, proof: { merkle: true, blockHash: 'verified', chainLock: null, anchor: null, notes: ['chainlock proof failed: header chain breaks at +3'] } });
     expect(stepOf(v, 'chainlock')).toMatchObject({ status: 'warn', basis: 'reported' });
     expect(stepOf(v, 'chainlock').detail).toContain('FAILED');
   });
@@ -139,6 +139,40 @@ describe('what is verified and what is node-reported (ChainLock, confirmations, 
     expect(stepOf(v, 'chainlock').basis).toBe('verified');
     expect(stepOf(v, 'confirmations')).toMatchObject({ status: 'ok', basis: 'reported' });
     expect(v.chain).toMatchObject({ provenConfirmations: null, lockDepth: 2 });
+  });
+
+  it('anchored: the block is the verified one at its height; confirmations count from the verified tip; final only under the ChainLock', async () => {
+    const p = byName('OrchardPay');
+    const tx = await recorded(p.collateralTxid);
+    const anchoredTx = (final: boolean): TxLookup => ({
+      ...tx, confirmations: 760, chainLocked: final ? 'verified' : 'claimed',
+      proof: {
+        merkle: true, blockHash: 'verified', notes: [],
+        anchor: { tip: tx.height + 999, confirmations: 1000, chainLockHeight: final ? tx.height + 998 : tx.height - 1, weak: null },
+        chainLock: final ? { height: tx.height + 998, blockHash: 'aa'.repeat(32), quorumHash: 'bb'.repeat(32), exact: true, verifiedConfirmations: 999 } : null,
+      },
+    });
+    const v = verifyCollateral(p, anchoredTx(true));
+    expect(v.ok).toBe(true);
+    expect(stepOf(v, 'block')).toMatchObject({ basis: 'verified' });
+    expect(stepOf(v, 'block').detail).toContain('chain verified in this browser');
+    expect(stepOf(v, 'confirmations')).toMatchObject({ status: 'ok', basis: 'verified', detail: 'at least 1,000 (Core needs 6)' });
+    expect(stepOf(v, 'chainlock')).toMatchObject({ status: 'ok', basis: 'verified' });
+    expect(stepOf(v, 'height').basis).toBe('verified');
+    expect(v.steps.some((s) => s.id === 'crosscheck')).toBe(false); // no second node needed
+    expect(v.chain!.anchored).toEqual({ tip: tx.height + 999, confirmations: 1000, chainLockHeight: tx.height + 998, final: true, weak: null });
+    // the same proof on a chain proof of work does not protect (testnet): every chain step stays "reported"
+    const t = anchoredTx(true);
+    const weak = verifyCollateral(p, { ...t, proof: { ...t.proof, anchor: { ...t.proof.anchor!, weak: 'testnet difficulty is too low' } } });
+    for (const id of ['block', 'confirmations', 'chainlock', 'height']) expect(stepOf(weak, id).basis, id).toBe('reported');
+    expect(stepOf(weak, 'chainlock').more).toContain('not secure');
+    // a block above the newest ChainLock: inclusion and depth are still proven, finality is not
+    const w = verifyCollateral(p, anchoredTx(false));
+    expect(stepOf(w, 'chainlock')).toMatchObject({ status: 'warn', basis: 'verified' });
+    expect(stepOf(w, 'chainlock').detail).toContain('not final yet');
+    expect(stepOf(w, 'confirmations').basis).toBe('verified');
+    // nothing in any step mentions developer parameters
+    expect([...v.steps, ...w.steps].map((s) => s.detail).join(' ')).not.toMatch(/maxHeaderSpan/);
   });
 
   it('lookupCollateral keeps the helper\'s proof, and falls back to the node\'s claim (saying why) when the proof fails', async () => {
@@ -159,7 +193,7 @@ describe('what is verified and what is node-reported (ChainLock, confirmations, 
     expect(fell.chainLocked).toBe('claimed');
     expect(fell.proof).toMatchObject({ merkle: false, chainLock: null });
     expect(fell.proof.notes[0]).toContain('merkle root does not match');
-    expect(verifyCollateral(byName('OrchardPay'), fell).steps.find((s) => s.id === 'chainlock')!.detail).toContain('merkle root does not match');
+    expect(verifyCollateral(byName('OrchardPay'), fell).steps.find((s) => s.id === 'chainlock')!.more).toContain('merkle root does not match');
     // a node that contradicted itself is a lie, not a flaky node: the lookup fails instead of asking the next node for its claim
     const lie = new AllNodesFailedError([{ node: 'a:443', error: new VerificationError('merkle', 'transaction is not in the claimed block') }]);
     await expect(lookupCollateral(dapi(() => Promise.reject(lie)), 'ab'.repeat(32), { verify: true })).rejects.toBe(lie);
@@ -196,10 +230,15 @@ describe('vote verification against the fixture bridge (synthetic voters)', () =
     expect(voteVerdict([run(r, tally.asOfHeight)]).level).toBe('keys-reported');
   });
 
-  it('is verified only with keys confirmed by the SML', () => {
-    const sml = new Map(mns.map((m) => [m.proTxHash, { votingAddress: m.votingAddress, isValid: true, nType: 0 }]));
-    const r = check({ sml });
+  /** ProRegTx facts matching the list (what the worker proves per voter). */
+  const proRegOf = (list: typeof mns) => new Map(list.map((m) => [m.proTxHash.toLowerCase(), { type: m.type === 'evo' ? 1 : 0, collateral: { txid: m.collateralTxid, index: m.collateralIndex } }]));
+
+  it('is verified only with keys confirmed by the proven SML and collateral and type proven by the ProRegTxs', () => {
+    const sml = new Map(mns.map((m) => [m.proTxHash, { votingAddress: m.votingAddress, isValid: true, nType: 0, typeProven: true }]));
+    expect(check({ sml }).keysFrom).toBe('bridge'); // keys alone: the outpoint -> masternode mapping is still the bridge's
+    const r = check({ sml, proReg: proRegOf(mns) });
     expect(r.keysFrom).toBe('sml');
+    expect(r.collateralProven).toBe(r.verified);
     expect(voteVerdict([run(r, tally.asOfHeight)]).level).toBe('verified');
     const prov = tallyProvenance({ name: PLATFORM_TARGET, prov: { kind: 'proof', source: 'Platform' }, tally }, [run(r, tally.asOfHeight)]);
     expect(prov.kind).toBe('verified');
@@ -274,6 +313,10 @@ describe('vote verification against the fixture bridge (synthetic voters)', () =
     expect(r.problems['duplicate-masternode']).toBe(2);
     const dupOutpoint = [...mns, { ...mns[2]!, proTxHash: 'ee'.repeat(32) }];
     expect(check({ masternodes: dupOutpoint }).problems['duplicate-masternode']).toBe(1);
+    // a vote dropped this way never counts as a proven recount, even with every remaining key proven
+    const sml = new Map(dupProTx.map((m) => [m.proTxHash, { votingAddress: m.votingAddress, isValid: true, nType: 0, typeProven: true }]));
+    const reg = new Map(dupProTx.map((m) => [m.proTxHash.toLowerCase(), { type: m.type === 'evo' ? 1 : 0, collateral: { txid: m.collateralTxid, index: m.collateralIndex } }]));
+    expect(check({ masternodes: dupProTx, sml, proReg: reg }).keysFrom).toBe('bridge');
   });
 
   it('votes on other signals are skipped, not counted as problems', () => {
@@ -283,8 +326,8 @@ describe('vote verification against the fixture bridge (synthetic voters)', () =
   });
 
   it('SML cross-check flags a voting address the DAPI list disagrees with', () => {
-    const sml = new Map(mns.map((m) => [m.proTxHash, { votingAddress: m.votingAddress, isValid: true, nType: 0 }]));
-    sml.set(mns[1]!.proTxHash, { votingAddress: mns[2]!.votingAddress, isValid: true, nType: 0 });
+    const sml = new Map(mns.map((m) => [m.proTxHash, { votingAddress: m.votingAddress, isValid: true, nType: 0, typeProven: true }]));
+    sml.set(mns[1]!.proTxHash, { votingAddress: mns[2]!.votingAddress, isValid: true, nType: 0, typeProven: true });
     const r = check({ sml, targets: [] });
     expect(r.problems['sml-mismatch']).toBe(1);
     expect(r.smlChecked).toBe(votes.length);
@@ -293,7 +336,7 @@ describe('vote verification against the fixture bridge (synthetic voters)', () =
 
   it('a masternode the (current) DAPI list no longer has keeps its vote in the recount but blocks "verified"', () => {
     // The SML is today's list, the tally is older: a masternode that left or re-keyed since must not turn an honest tally into a mismatch.
-    const sml = new Map(mns.map((m) => [m.proTxHash, { votingAddress: m.votingAddress, isValid: true, nType: 0 }]));
+    const sml = new Map(mns.map((m) => [m.proTxHash, { votingAddress: m.votingAddress, isValid: true, nType: 0, typeProven: true }]));
     sml.delete(mns[1]!.proTxHash);
     const r = check({ sml });
     expect(r.smlUnconfirmed).toBe(1);
@@ -301,6 +344,20 @@ describe('vote verification against the fixture bridge (synthetic voters)', () =
     expect(r.targets[0]!.matches).toBe(true);
     expect(r.keysFrom).toBe('bridge');
     expect(voteVerdict([run(r, tally.asOfHeight)]).level).toBe('keys-reported');
+  });
+
+  it('a bridge that maps an outpoint to another masternode, or misstates a type, is caught by the ProRegTx', () => {
+    const sml = new Map(mns.map((m) => [m.proTxHash, { votingAddress: m.votingAddress, isValid: true, nType: 0, typeProven: false }]));
+    const reg = proRegOf(mns);
+    reg.set(mns[1]!.proTxHash.toLowerCase(), { type: 0, collateral: { txid: 'ab'.repeat(32), index: 0 } });
+    const r = check({ sml, proReg: reg });
+    expect(r.smlUnconfirmed).toBe(1);
+    expect(r.keysFrom).toBe('bridge');
+    const typed = proRegOf(mns);
+    typed.set(mns[2]!.proTxHash.toLowerCase(), { ...typed.get(mns[2]!.proTxHash.toLowerCase())!, type: 1 });
+    expect(check({ sml, proReg: typed }).smlUnconfirmed).toBe(1);
+    // a version-1 entry's type is not in the list's hash: without a ProRegTx it cannot count as proven
+    expect(check({ sml }).smlUnconfirmed).toBe(r.verified);
   });
 });
 

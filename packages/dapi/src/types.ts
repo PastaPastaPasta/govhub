@@ -5,11 +5,15 @@ import type { Network } from './chainlock.ts';
 import type { ChainLock, InstantLock, MerkleBlock, Tx } from './dash.ts';
 import type { NodePool } from './pool.ts';
 import type { MergeStats } from './race.ts';
+import type { Checkpoint, HeaderChain, StoredChain } from './headerchain.ts';
 import type { Sml, SmlQuorum } from './sml.ts';
+import type { SmlProof } from './smlproof.ts';
 
 export interface Verifiers {
   /** X11 of an 80-byte header -> 32-byte internal-order hash. `x11` from '@govhub/dapi/x11'. */
   hashHeader?: (header: Uint8Array) => Uint8Array;
+  /** X11 of n concatenated 80-byte headers -> n * 32 bytes. `x11Many` from '@govhub/dapi/x11'. Falls back to hashHeader. */
+  hashHeaders?: (headers: Uint8Array) => Uint8Array;
   /** `verifyChainLock` from '@govhub/dapi/bls'. */
   verifyChainLock?: (cl: ChainLock, quorums: readonly SmlQuorum[], o?: VerifyChainLockOptions) => ChainLockCheck;
 }
@@ -87,13 +91,61 @@ export interface VerifiedTransaction {
     /** The block's hash was recomputed (X11) and matches what the node claimed. */
     blockHash: 'verified' | 'claimed';
     chainLock: null | { height: number; blockHash: string; quorumHash: string; exact: boolean; verifiedConfirmations: number };
+    /** The block is in the verified chain of `options.anchor`: `confirmations` = verified tip - height + 1 (a lower bound). */
+    anchor: null | { tip: number; confirmations: number; chainLockHeight: number; weak: string | null };
     /** Why the ChainLock was not verified, when it was not. */
     notes: string[];
   };
   node: string;
 }
 
+/** Where anchorChain keeps the verified header run between sessions (the web app uses IndexedDB). */
+export interface HeaderStore {
+  load(network: Network): Promise<StoredChain | null>;
+  save(chain: StoredChain): Promise<void>;
+}
+
+export interface AnchorOptions extends CallOptions {
+  /** Lowest height that must be in the verified chain (a collateral block, say). Default: just the checkpoint region. */
+  from?: number;
+  store?: HeaderStore;
+  onProgress?: (message: string) => void;
+  /** Reuse a result this young. Default 60 s. */
+  maxAgeMs?: number;
+  /** Heights kept in the store. Default 400,000 (~13 MB). */
+  maxStoredHeights?: number;
+  /** Test seams. */
+  checkpoint?: Checkpoint;
+  now?: () => number;
+}
+
+/** A full masternode list whose entries and quorums are proven by the coinbase of a block in the verified chain. */
+export interface ProvenSml extends Sml {
+  proof: SmlProof;
+  /** The node that sent it (no trust placed in it). */
+  node: string;
+}
+
+export interface AnchoredChain {
+  network: Network;
+  checkpoint: Checkpoint;
+  /** Verified block hashes from `chain.lo` to `tip`: work and difficulty above the checkpoint, hash links below it. */
+  chain: HeaderChain;
+  /** The highest verified header (a node could withhold newer blocks: heights are lower bounds of the real tip). */
+  tip: number;
+  /** Set when proof of work cannot be relied on for this network (testnet): the facts are consistent, not secure. */
+  weak: string | null;
+  /** BLS-valid ChainLock on a block of `chain`: everything at or below `height` is final. */
+  chainLock: { height: number; blockHash: string; quorumHash: string; exact: boolean; /** the locked header's time */ time: number };
+  sml: ProvenSml;
+  /** ms epoch when this was established. */
+  at: number;
+  stats: { cachedHeaders: number; fetchedHeaders: number; ms: Record<string, number> };
+}
+
 export interface GetVerifiedTransactionOptions extends CallOptions {
+  /** Prove the block against this verified chain instead of streaming headers to a ChainLock (no height limit). */
+  anchor?: AnchoredChain;
   /** Skip the ChainLock proof (one block fetch, no header stream, no SML). */
   chainLock?: boolean;
   /** Longest header chain to download and hash to reach a ChainLock. Default 2000 (about 3.5 days). */

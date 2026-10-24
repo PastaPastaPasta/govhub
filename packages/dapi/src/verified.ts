@@ -8,7 +8,7 @@ import type { DapiCore } from './core.ts';
 import { type Block, type ChainLock, coinbaseHeight, parseBlock, parseChainLock, parseHeader, parseTx } from './dash.ts';
 import { VerificationError } from './errors.ts';
 import { GrpcError, abortReason, isAbort } from './grpcweb.ts';
-import type { CallOptions, GetVerifiedTransactionOptions, Tristate, VerifiedTransaction, Verifiers } from './types.ts';
+import type { AnchoredChain, CallOptions, GetVerifiedTransactionOptions, Tristate, VerifiedTransaction, Verifiers } from './types.ts';
 
 const heights = new WeakMap<Dapi, Map<string, number>>();
 
@@ -17,6 +17,22 @@ export async function getBlock(d: Dapi, q: { height: number } | { hash: string }
     const raw = await core.getBlock(q, { signal });
     const block = parseBlock(raw);
     if (!block.merkleOk) throw new VerificationError('merkle', 'block merkle root does not match its header');
+    return { raw, block };
+  }, o);
+  return { ...value, node };
+}
+
+/** A block of the verified chain, by height: fetched by its verified hash, its merkle root recomputed and its header hashed (X11) to that hash. */
+export async function getAnchoredBlock(d: Dapi, anchor: AnchoredChain, height: number, o?: CallOptions): Promise<{ block: Block; raw: Uint8Array; node: string }> {
+  const want = anchor.chain.hashHexAt(height);
+  if (!want) throw new Error(`block ${height} is outside the verified chain (${anchor.chain.lo}..${anchor.tip})`);
+  const v = await d.crypto();
+  if (!v.hashHeader) throw new Error('getAnchoredBlock needs verifiers.hashHeader');
+  const { value, node } = await d.call(async (core, signal) => {
+    const raw = await core.getBlock({ hash: want }, { signal });
+    const block = parseBlock(raw);
+    if (!block.merkleOk) throw new VerificationError('merkle', 'block merkle root does not match its header');
+    if (hashHex(v.hashHeader!(block.header.raw)) !== want) throw new VerificationError('block-hash', `block ${height} is not the verified one`);
     return { raw, block };
   }, o);
   return { ...value, node };
@@ -82,13 +98,23 @@ export async function getVerifiedTransaction(d: Dapi, txid: string, o: GetVerifi
     if (v.hashHeader) {
       if (hashHex(v.hashHeader(block.header.raw)) !== claims.blockHash) throw new VerificationError('block-hash', 'block header does not hash to the claimed block hash');
       hashChecked = true;
+      const known = o.anchor?.chain.hashHexAt(claims.height);
+      if (known && known !== claims.blockHash) throw new VerificationError('block-hash', `block ${claims.height} is not the one in the verified chain`);
     }
     return { claims, tx, merkle: true, blockHash: claims.blockHash, height: claims.height, hashChecked, instantLocked };
   }, o);
 
   const notes: string[] = [];
   let chainLock: VerifiedTransaction['proof']['chainLock'] = null;
-  if (base.merkle && o.chainLock !== false) {
+  let anchored: VerifiedTransaction['proof']['anchor'] = null;
+  const a = o.anchor;
+  if (base.merkle && base.hashChecked && a && a.chain.hashHexAt(base.height) === base.blockHash) {
+    // the block is in the verified chain: inclusion, height and depth are proven without another header stream
+    anchored = { tip: a.tip, confirmations: a.tip - base.height + 1, chainLockHeight: a.chainLock.height, weak: a.weak };
+    if (base.height <= a.chainLock.height) {
+      chainLock = { height: a.chainLock.height, blockHash: a.chainLock.blockHash, quorumHash: a.chainLock.quorumHash, exact: a.chainLock.exact, verifiedConfirmations: a.chainLock.height - base.height + 1 };
+    } else notes.push(`the block is newer than the newest verified ChainLock (${a.chainLock.height})`);
+  } else if (base.merkle && o.chainLock !== false) {
     if (!v.hashHeader) notes.push('no X11 verifier: block hash and header chain not checked');
     else if (!v.verifyChainLock) notes.push('no BLS verifier: ChainLock signature not checked');
     else {
@@ -107,7 +133,7 @@ export async function getVerifiedTransaction(d: Dapi, txid: string, o: GetVerifi
   return {
     txid, raw: base.claims.raw, tx: base.tx, height: base.height, blockHash: base.blockHash,
     confirmations: base.claims.confirmations, chainLocked, instantLocked: base.instantLocked,
-    proof: { merkle: base.merkle, blockHash: base.hashChecked ? 'verified' : 'claimed', chainLock, notes }, node,
+    proof: { merkle: base.merkle, blockHash: base.hashChecked ? 'verified' : 'claimed', chainLock, anchor: anchored, notes }, node,
   };
 }
 

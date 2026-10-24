@@ -29,8 +29,10 @@ export interface SmlMasternode {
   proTxHash: string;
   /** Base58 P2PKH address of the voting key (keyIDVoting). */
   votingAddress: string;
-  /** 0 regular, 1 evonode. */
+  /** 0 regular, 1 evonode. Committed by the SML's merkle root only when nVersion >= 2 (evo/simplifiedmns.h:89-99). */
   nType: number;
+  /** Entry version (ProTxVersion: 1 legacy BLS, 2 basic BLS, 3 extended addresses). */
+  nVersion: number;
   /** Not PoSe-banned. */
   isValid: boolean;
 }
@@ -66,8 +68,10 @@ const hexOf = (o: Obj, k: string, bytes: number): string => {
 const int = (o: Obj, k: string): number => { const v = o[k]; if (typeof v !== 'number') throw new Error(`sml: ${k} is not a number`); return v; };
 const arr = (o: Obj, k: string): Cbor[] => { const v = o[k]; if (!Array.isArray(v)) throw new Error(`sml: ${k} is not an array`); return v; };
 
-export function parseSml(bytes: Uint8Array): Sml {
-  const d = decodeCbor(bytes);
+export const parseSml = (bytes: Uint8Array): Sml => parseSmlDecoded(decodeCbor(bytes));
+
+/** parseSml on an already decoded message. */
+export function parseSmlDecoded(d: Cbor): Sml {
   if (!isObj(d)) throw new Error('sml: not a map');
   const blockHash = hexOf(d, 'blockHash', 32), baseBlockHash = hexOf(d, 'baseBlockHash', 32);
   const merkleRootMNList = hexOf(d, 'merkleRootMNList', 32), merkleRootQuorums = hexOf(d, 'merkleRootQuorums', 32);
@@ -81,7 +85,7 @@ export function parseSml(bytes: Uint8Array): Sml {
     const valid = m.isValid === true;
     if (valid) validMnCount++;
     if (typeof m.proRegTxHash === 'string' && /^[0-9a-f]{64}$/i.test(m.proRegTxHash) && typeof m.votingAddress === 'string' && typeof m.nType === 'number') {
-      masternodes.push({ proTxHash: m.proRegTxHash.toLowerCase(), votingAddress: m.votingAddress, nType: m.nType, isValid: valid });
+      masternodes.push({ proTxHash: m.proRegTxHash.toLowerCase(), votingAddress: m.votingAddress, nType: m.nType, nVersion: typeof m.nVersion === 'number' ? m.nVersion : 1, isValid: valid });
     }
     if (m.nType !== 1) continue;
     evonodeCount++;

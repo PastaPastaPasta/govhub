@@ -43,7 +43,9 @@ test.describe('fixture mode', () => {
     await expect(collateral).toContainText('recorded.dapi.invalid');
     // The recorded replay carries node claims only: confirmations and ChainLock are "reported", not "verified".
     for (const step of ['confirmations', 'chainlock']) await expect(collateral.locator(`[data-step="${step}"]`)).toHaveAttribute('data-basis', 'reported');
-    await expect(collateral.locator('[data-step="chainlock"]')).toContainText('node-reported');
+    await expect(collateral.locator('[data-step="chainlock"]')).toContainText('a node reports');
+    // Recorded data has no header chain: the chain facts say so instead of claiming anything.
+    await expect(page.getByTestId('chain-check').locator('[data-chain]')).toHaveAttribute('data-chain', 'unavailable');
     await expect(collateral.locator('[data-step="block"]')).toHaveCount(0);
     await expect(collateral.locator('[data-step="hash"]')).toHaveAttribute('data-basis', 'verified');
     const status = page.locator('.info-row', { hasText: 'Collateral status' });

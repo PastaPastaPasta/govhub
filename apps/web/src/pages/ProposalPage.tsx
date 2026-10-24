@@ -16,13 +16,14 @@ import { votingDeadlineTime } from '../lib/governance.ts';
 import { deriveRow, weakest } from '../lib/view.ts';
 import { BRIDGE_TARGET, PLATFORM_TARGET, tallyProvenance } from '../verify/verdict.ts';
 import type { VoteTarget } from '../verify/votes.ts';
-import { useAsync, useCollateralCheck } from '../ui/hooks.ts';
+import { useAsync, useChainReport, useCollateralCheck } from '../ui/hooks.ts';
 import { PassingBar } from '../ui/PassingBar.tsx';
 import { paymentText } from '../ui/ProposalCard.tsx';
 import { ProvMark } from '../ui/Provenance.tsx';
 import { VerificationPanel } from '../ui/VerificationPanel.tsx';
-import type { ChainFacts, CollateralVerdict } from '../verify/collateral.ts';
-import type { VotesDone } from '../verify/protocol.ts';
+import type { CollateralVerdict } from '../verify/collateral.ts';
+import { collateralHeightProv, collateralStatus, deadlineFact, fundedFact, paymentsFact, thresholdFact } from '../verify/facts.ts';
+import type { RankingDone, VotesDone } from '../verify/protocol.ts';
 
 export function ProposalByHash() {
   const { hash = '' } = useParams();
@@ -105,23 +106,6 @@ function contentProvenance(p: Proposal, sourced: Provenance, verdict: Collateral
   return { kind: 'mismatch', source, detail: verdict.steps.filter((s) => s.status === 'fail').map((s) => s.label).join(', ') };
 }
 
-/** What is known about the collateral's place in the chain, and whether this browser proved it or a node said so. */
-function chainStatus(c: ChainFacts): { text: string; prov: Provenance } {
-  const source = 'collateral check in this browser';
-  if (c.chainLocked === 'verified' && c.lockDepth !== null) {
-    return {
-      text: `ChainLocked, BLS-verified (${formatInt(c.lockDepth)} blocks of verified headers up to the lock); a node claims ${formatInt(c.confirmations)} confirmations`,
-      prov: { kind: 'verified', source, detail: 'block proven by its merkle root; a BLS-valid ChainLock covers it through an X11-checked header chain' },
-    };
-  }
-  const proven = c.merkle ? 'the block a node names is internally consistent (merkle root, coinbase height) but is not tied to the chain' : 'block inclusion not proven';
-  const conf = formatInt(c.confirmations);
-  return {
-    text: c.chainLocked === 'claimed' ? `ChainLocked as a node reports; ${conf} confirmations (node-reported)` : `Not ChainLocked yet; ${conf} confirmations (node-reported)`,
-    prov: { kind: 'reported', source, detail: `${proven}; the ChainLock was not verified here` },
-  };
-}
-
 function RawData({ json, dataHex, bytes }: { json: string; dataHex: string; bytes: number }) {
   return (
     <>
@@ -168,6 +152,8 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
   useSyncExternalStore(checks.subscribe, checks.getVersion);
   const check = checks.state(p);
   const [votes, setVotes] = useState<VotesDone | null>(null);
+  const [ranking, setRanking] = useState<RankingDone | null>(null);
+  const chain = useChainReport(p, collateral.verdict);
   const cycle = gov.cycle.data ?? null;
   const row = useMemo(() => deriveRow(sp, tallies.data ?? new Map(), gov.bridgeTallies, cycle, params, now), [sp, tallies.data, gov.bridgeTallies, cycle, params, now]);
   const parsed = useMemo(() => parseProposalData(p.dataHex), [p.dataHex]);
@@ -200,7 +186,11 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
   // Only link a URL that is the hash-committed one (the synchronous check passed).
   const host = row.content.ok ? urlHost(p.url) : null;
   const sched = row.schedule;
-  const deadline = cycle ? `${formatRelative(votingDeadlineTime(cycle.value, params), now)}, block ${formatInt(cycle.value.votingDeadlineHeight)}` : null;
+  // Chain facts proven in this browser replace the bridge's numbers where they exist (heights verified, times estimated).
+  const deadline = deadlineFact(chain.report, cycle?.value ?? null, now, cycle?.prov, cycle ? votingDeadlineTime(cycle.value, params) : null);
+  const threshold = thresholdFact(chain.report, row.threshold);
+  const paid = paymentsFact(chain.report);
+  const funded = fundedFact(ranking?.result ?? null, p.govHash);
 
   return (
     <article className="proposal">
@@ -227,7 +217,7 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
             </>
           )}
         </p>
-        {row.state && row.absYes !== null && row.threshold && <PassingBar absYes={row.absYes} threshold={row.threshold.value} state={row.state} />}
+        {row.state && row.absYes !== null && threshold && <PassingBar absYes={row.absYes} threshold={threshold.value} state={row.state} />}
         <CommunityVote govHash={p.govHash} />
       </header>
 
@@ -238,15 +228,26 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
             <Item label="Payment" prov={contentProv}>
               {formatDash(p.paymentAmount)} per superblock
             </Item>
-            <Item label="Payments" prov={cycle?.prov}>
-              {sched ? (
-                <>
-                  {formatInt(sched.total)} in total, {formatInt(sched.remaining)} remaining <span className="muted">(estimated from superblock times)</span>
-                </>
-              ) : (
-                '–'
-              )}
-            </Item>
+            {paid ? (
+              <>
+                <Item label="Payments made" prov={paid.made.prov}>
+                  {paid.made.text}
+                </Item>
+                <Item label="Payments remaining" prov={paid.remaining.prov}>
+                  {paid.remaining.text} <span className="muted">(estimated from block times)</span>
+                </Item>
+              </>
+            ) : (
+              <Item label="Payments" prov={cycle?.prov}>
+                {sched ? (
+                  <>
+                    {formatInt(sched.total)} in total, {formatInt(sched.remaining)} remaining <span className="muted">(estimated from superblock times)</span>
+                  </>
+                ) : (
+                  '–'
+                )}
+              </Item>
+            )}
             <Item label="Total requested">{sched ? formatDash(p.paymentAmount * sched.total) : '–'}</Item>
             <Item label="Start" prov={contentProv}>
               {formatDateTime(p.startEpoch)}
@@ -254,9 +255,9 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
             <Item label="End" prov={contentProv}>
               {formatDateTime(p.endEpoch)}
             </Item>
-            {cycle && (
-              <Item label="Voting deadline" prov={cycle.prov}>
-                {deadline}
+            {deadline && (
+              <Item label="Voting deadline" prov={deadline.prov}>
+                {deadline.text}
               </Item>
             )}
             <Item label="Votes, weighted" prov={tallyProv}>
@@ -275,18 +276,18 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
             <Item label="Votes, masternodes" prov={tallyProv}>
               {t ? `${formatInt(t.yesCount)} yes, ${formatInt(t.noCount)} no, ${formatInt(t.abstainCount)} abstain` : '–'}
             </Item>
-            <Item label="Net yes" prov={tallyProv && row.threshold ? weakest(tallyProv, row.threshold.prov) : null}>
-              {row.absYes !== null && row.threshold ? (
+            <Item label="Net yes" prov={tallyProv && threshold ? weakest(tallyProv, threshold.prov) : null}>
+              {row.absYes !== null && threshold ? (
                 <>
-                  {formatSigned(row.absYes)} of {formatInt(row.threshold.value)} needed
+                  {formatSigned(row.absYes)} of {formatInt(threshold.value)} needed
                 </>
               ) : (
                 '–'
               )}
             </Item>
-            <Item label="Funded" prov={tallyProv}>
-              {t ? (t.inNextBudget ? 'Yes, in the next superblock' : row.state?.passing ? 'Passing, but not in the next superblock (budget full or outside its payment window)' : 'No') : '–'}
-              {t && t.rank > 0 && <span className="muted"> (rank {t.rank})</span>}
+            <Item label="Funded" prov={funded?.prov ?? tallyProv}>
+              {funded ? funded.text : t ? (t.inNextBudget ? 'Yes, in the next superblock' : row.state?.passing ? 'Passing, but not in the next superblock (budget full or outside its payment window)' : 'No') : '–'}
+              {!funded && t && t.rank > 0 && <span className="muted"> (rank {t.rank})</span>}
             </Item>
             {row.platformTally && row.bridgeTally && row.platformTally.value.asOfHeight !== row.bridgeTally.value.asOfHeight && (
               <Item label="Tallies" prov={row.bridgeTally.prov}>
@@ -297,12 +298,12 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
               <OwnerValue p={p} own={own} />
               <RejectedClaims own={own} />
             </Item>
-            <Item label="Collateral" prov={contentProv}>
+            <Item label="Collateral" prov={collateralHeightProv(collateral.verdict?.chain, p.collateralHeight, contentProv)}>
               <span className="mono-ish break">{p.collateralTxid}</span> <span className="muted">at block {formatInt(p.collateralHeight)}</span>
             </Item>
             {collateral.verdict?.chain && (
-              <Item label="Collateral status" prov={chainStatus(collateral.verdict.chain).prov}>
-                {chainStatus(collateral.verdict.chain).text}
+              <Item label="Collateral status" prov={collateralStatus(collateral.verdict.chain).prov}>
+                {collateralStatus(collateral.verdict.chain).text}
               </Item>
             )}
             <Item label="Submitted" prov={contentProv}>
@@ -320,7 +321,7 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
           <ClaimPanel p={p} own={own} collateral={collateral.verdict} />
         </section>
 
-        <VerificationPanel proposal={p} collateral={collateral} targets={targets} onVotes={setVotes} />
+        <VerificationPanel proposal={p} collateral={collateral} chain={chain} cycle={cycle?.value ?? null} targets={targets} onVotes={setVotes} onRanking={setRanking} />
       </div>
 
       {ownerId && (

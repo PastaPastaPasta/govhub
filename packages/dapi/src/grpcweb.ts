@@ -191,6 +191,10 @@ export function stream(base: string, method: string, req: Uint8Array, o: StreamO
   const ctrl = new AbortController();
   const unlink = link(signal, ctrl);
   let cancelled = false, idle: ReturnType<typeof setTimeout> | undefined;
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  // Node's fetch does not fail a pending body read when the signal aborts after the body started (browsers do); cancelling the
+  // reader ends it everywhere. Without this a stream cancelled from its own message handler hangs in Node.
+  ctrl.signal.addEventListener('abort', () => { reader?.cancel(ctrl.signal.reason).catch(() => {}); }, { once: true });
   const bumpIdle = () => {
     if (idleTimeoutMs > 0) { clearTimeout(idle); idle = setTimeout(() => ctrl.abort(new GrpcError(4, 'idle timeout')), idleTimeoutMs); }
   };
@@ -198,13 +202,15 @@ export function stream(base: string, method: string, req: Uint8Array, o: StreamO
     try {
       const timer = setTimeout(() => ctrl.abort(new GrpcError(4, 'connect timeout')), connectTimeoutMs);
       const res = await open(base + method, req, ctrl.signal).finally(() => clearTimeout(timer));
-      const reader = res.body!.getReader();
+      reader = res.body!.getReader();
+      if (ctrl.signal.aborted) throw ctrl.signal.reason;
       const parser = new FrameParser(maxMessageBytes);
       let trailers: Record<string, string> | null = null;
       bumpIdle();
       try { onOpen?.(); } catch (e) { return { reason: 'error', error: e, handler: true }; }
       for (;;) {
         const { value, done } = await reader.read();
+        if (ctrl.signal.aborted) throw ctrl.signal.reason ?? new DOMException('aborted', 'AbortError'); // a cancelled reader reads as done
         if (done) break;
         bumpIdle();
         for (const f of parser.push(value)) {
