@@ -40,6 +40,9 @@ jobs:
           - name: mainnet + proxy profile
             compose_file: docker-compose.yml
             profiles: proxy
+          - name: mainnet + tunnel profile
+            compose_file: docker-compose.yml
+            profiles: tunnel
           - name: testnet + p2p + proxy profile
             compose_file: docker-compose.yml:docker-compose.testnet.yml:docker-compose.p2p.yml
             profiles: proxy

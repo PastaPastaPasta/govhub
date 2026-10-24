@@ -69,9 +69,13 @@ fi
 # The directory is 0700, so other host users cannot reach it. Files are bind-mounted into the
 # containers, where dashd and the bridge run as uid 1000. A file mode of 0600 is only readable
 # there if the host owner is also uid 1000 (the usual first Linux user, and always fine with
-# Docker Desktop). Otherwise the files get 0644, which stays private because of the 0700 directory.
+# Docker Desktop). As root (a typical LXC or VM deployment) the files are chowned to uid 1000 and
+# stay 0600. Otherwise the files get 0644, which stays private because of the 0700 directory.
 secret_mode=600
-if [ "$(uname -s)" = Linux ] && [ "$(id -u)" -ne 1000 ]; then
+secret_owner=""
+if [ "$(uname -s)" = Linux ] && [ "$(id -u)" -eq 0 ]; then
+  secret_owner=1000:1000
+elif [ "$(uname -s)" = Linux ] && [ "$(id -u)" -ne 1000 ]; then
   secret_mode=644
   warn "host uid is $(id -u), not 1000: secret files get mode 0644 inside the 0700 directory so the containers can read them"
 fi
@@ -104,7 +108,16 @@ else
   say "created: $identity_file (EMPTY placeholder; fill it before setting PUBLISH=1, see README)"
 fi
 
-chmod "$secret_mode" "$rpc_pw_file" "$identity_file"
+tunnel_file="$SECRETS_DIR/cloudflare_tunnel_token"
+if [ -e "$tunnel_file" ]; then
+  say "kept: $tunnel_file"
+else
+  (umask 077 && : > "$tunnel_file")
+  say "created: $tunnel_file (EMPTY placeholder; only the \`tunnel\` profile uses it, see README)"
+fi
+
+chmod "$secret_mode" "$rpc_pw_file" "$identity_file" "$tunnel_file"
+[ -z "$secret_owner" ] || chown "$secret_owner" "$rpc_pw_file" "$identity_file" "$tunnel_file"
 
 # ---- .env ------------------------------------------------------------------------------------
 env_file="$DEPLOY_DIR/.env"
