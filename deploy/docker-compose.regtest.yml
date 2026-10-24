@@ -1,0 +1,22 @@
+# Regtest override, for CI and smoke tests. Layer it on the base file:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.regtest.yml
+#
+# An isolated single-node chain: mine blocks by hand, create a proposal with `gobject prepare`, and
+# watch the bridge archive it. Nothing is written to Platform: the bridge runs with PUBLISH=0, so it
+# needs no gov contract and no identity key. scripts/smoke-regtest.sh drives all of this.
+services:
+  dashd:
+    image: dashpay/dashd:${DASHD_TAG:-24.0.0-rc.4}
+    environment:
+      DASH_NETWORK: regtest
+  bridge:
+    environment:
+      CORE_NETWORK: regtest
+      PLATFORM_NETWORK: ${PLATFORM_NETWORK:-testnet}
+      PUBLISH: "0"
+      GOV_CONTRACT_ID: ""
+      # Reconcile quickly so the smoke test does not wait ten minutes if a ZMQ message is missed.
+      RECONCILE_INTERVAL_S: ${RECONCILE_INTERVAL_S:-10}
+    # No identity secret: PUBLISH=0 never reads it.
+    secrets: !override
+      - core_rpc_password

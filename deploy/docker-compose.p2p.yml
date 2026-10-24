@@ -1,0 +1,11 @@
+# Optional: publish dashd's P2P port so other nodes can connect to yours (helps the network and
+# speeds up your own peer discovery; costs bandwidth). Layer it on the base file:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.p2p.yml
+#
+# Set DASHD_P2P_PORT in .env. dashd listens on it, and it is published on the same host port:
+#   mainnet 9999, testnet 19999.
+# Open that TCP port in your firewall. Never publish 9998 (RPC) or 29998 (ZMQ).
+services:
+  dashd:
+    ports:
+      - "${DASHD_P2P_BIND:-0.0.0.0}:${DASHD_P2P_PORT:?set DASHD_P2P_PORT in .env (mainnet 9999, testnet 19999)}:${DASHD_P2P_PORT}"

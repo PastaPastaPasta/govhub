@@ -1,0 +1,20 @@
+# PLACEHOLDER -- delete this file (and deploy/stub/) once services/bridge/Dockerfile is on the
+# branch you deploy from.
+#
+# Replaces the bridge with a static server that returns a fixed /v1/status, so the rest of the
+# stack (dashd, the volumes, caddy, the smoke script up to the Core side) can be exercised before
+# the real bridge image exists. It archives nothing and serves no data.
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.regtest.yml:docker-compose.bridge-stub.yml
+services:
+  bridge:
+    build: !reset null
+    image: busybox:1.37
+    entrypoint: ["httpd", "-f", "-p", "8787", "-h", "/www"]
+    command: !reset []
+    volumes:
+      - ./stub/www:/www:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8787/v1/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
