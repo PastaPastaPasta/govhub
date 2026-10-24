@@ -12,15 +12,16 @@ const checked = (q: DocQuery): DocQuery => {
   return q;
 };
 
+/** The issuer's one document of `type` for epoch E (B1-B3). */
+const ownerEpochQuery = (type: string, issuerId: string, epoch: number): DocQuery =>
+  checked({ documentTypeName: type, where: [['$ownerId', '==', issuerId], ['epoch', '==', epoch]] });
+
 /** B1: the issuerKey of issuer I for epoch E. */
-export const issuerKeyQuery = (issuerId: string, epoch: number): DocQuery =>
-  checked({ documentTypeName: 'issuerKey', where: [['$ownerId', '==', issuerId], ['epoch', '==', epoch]] });
+export const issuerKeyQuery = (issuerId: string, epoch: number): DocQuery => ownerEpochQuery('issuerKey', issuerId, epoch);
 /** B2: the issuer's revocation for epoch E. */
-export const revocationQuery = (issuerId: string, epoch: number): DocQuery =>
-  checked({ documentTypeName: 'issuerRevocation', where: [['$ownerId', '==', issuerId], ['epoch', '==', epoch]] });
+export const revocationQuery = (issuerId: string, epoch: number): DocQuery => ownerEpochQuery('issuerRevocation', issuerId, epoch);
 /** B3: the issuer's self-reported token count for epoch E. */
-export const reportQuery = (issuerId: string, epoch: number): DocQuery =>
-  checked({ documentTypeName: 'issuerReport', where: [['$ownerId', '==', issuerId], ['epoch', '==', epoch]] });
+export const reportQuery = (issuerId: string, epoch: number): DocQuery => ownerEpochQuery('issuerReport', issuerId, epoch);
 /** B4: which of these authors (<= 100) hold a badge from issuer I in epoch E. */
 export const badgesOfAuthors = (issuerId: string, epoch: number, authors: string[]): DocQuery =>
   checked({ documentTypeName: 'mnBadge', where: [['issuerId', '==', issuerId], ['epoch', '==', epoch], ['$ownerId', 'in', authors]], orderBy: [['$ownerId', 'asc']], limit: 100 });

@@ -7,6 +7,15 @@
 import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { equalBytes } from '@govhub/badge';
+
+export interface ReserveInput {
+  epoch: number;
+  windowFrom: number;
+  proTxHash: string;
+  collateral: string;
+  blindedHash: Uint8Array;
+}
 
 export type ReserveOutcome =
   | { kind: 'signed'; blindSig: Uint8Array; retry: boolean }
@@ -21,7 +30,7 @@ export interface TokenStore {
    * (signed again, not counted); with another blindedHash, or another proTxHash holding the collateral, a conflict; otherwise
    * sign, insert and count. `sign` runs inside the transaction: if it throws, nothing is stored.
    */
-  reserve(o: { epoch: number; windowFrom: number; proTxHash: string; collateral: string; blindedHash: Uint8Array }, sign: () => Uint8Array): ReserveOutcome;
+  reserve(o: ReserveInput, sign: () => Uint8Array): ReserveOutcome;
   /** Records the core height the store first ran at (kept across restarts; a lost database starts again). */
   markStarted(height: number): void;
   /** Marks the epoch as served by this server (it had the key), so a zero count is still reported. */
@@ -80,9 +89,8 @@ export function openTokenStore(path: string): TokenStore {
   if (legacy) q.started.run(0);
   // frames of rows deleted before a crash may still be in the WAL (N17)
   db.pragma('wal_checkpoint(TRUNCATE)');
-  const same = (a: Uint8Array, b: Uint8Array) => a.length === b.length && Buffer.compare(Buffer.from(a), Buffer.from(b)) === 0;
 
-  const reserve = db.transaction((o: { epoch: number; windowFrom: number; proTxHash: string; collateral: string; blindedHash: Uint8Array }, sign: () => Uint8Array): ReserveOutcome => {
+  const reserve = db.transaction((o: ReserveInput, sign: () => Uint8Array): ReserveOutcome => {
     // A store that did not exist for the whole window cannot dedup it (a lost or reset database): refuse until the next epoch.
     const started = q.startedAt.get()?.value;
     if (started === undefined || started > o.windowFrom) return { kind: 'store-too-new' };
@@ -90,7 +98,7 @@ export function openTokenStore(path: string): TokenStore {
     if (closed !== null && closed !== undefined && o.epoch <= closed) return { kind: 'closed' };
     q.open.run(o.epoch);
     const mine = q.byMn.get(o.epoch, o.proTxHash);
-    if (mine) return same(mine.blinded_hash, o.blindedHash) ? { kind: 'signed', blindSig: sign(), retry: true } : { kind: 'conflict', reason: 'mn' };
+    if (mine) return equalBytes(mine.blinded_hash, o.blindedHash) ? { kind: 'signed', blindSig: sign(), retry: true } : { kind: 'conflict', reason: 'mn' };
     if (q.byCollateral.get(o.epoch, o.collateral)) return { kind: 'conflict', reason: 'collateral' };
     const blindSig = sign();
     q.insert.run(o.epoch, o.proTxHash, o.collateral, Buffer.from(o.blindedHash));

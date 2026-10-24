@@ -3,14 +3,12 @@ import { BLOCK_SECONDS, EPOCH_PARAMS, epochLength } from '@govhub/badge';
 import type { CoreNetwork } from '../data/types.ts';
 import { BADGE_NETWORKS } from './config.ts';
 
-type BadgeNetwork = CoreNetwork;
-
 const days = (blocks: number) => {
   const d = (blocks * BLOCK_SECONDS) / 86400;
   return d >= 2 ? `about ${Math.round(d)} days` : `about ${Math.round(d * 24)} hours`;
 };
 
-export function BadgeLeaks({ net, open = false }: { net: BadgeNetwork; open?: boolean }) {
+export function BadgeLeaks({ net, open = false }: { net: CoreNetwork; open?: boolean }) {
   const p = EPOCH_PARAMS[net];
   const minSet = BADGE_NETWORKS[net].minAnonymitySet;
   return (

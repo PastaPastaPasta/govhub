@@ -7,7 +7,7 @@
 //                                                 OFFLINE: publish the manifest's issuerKey documents (CRITICAL key)
 //   issuer epoch --network N --height H           print the epoch schedule around height H
 import { parseArgs } from 'node:util';
-import { EPOCH_PARAMS, epochStart, fromHex, isNetwork, issuingEpochAt, keyDeadline, type BadgeNetwork } from '@govhub/badge';
+import { EPOCH_PARAMS, epochStart, fromHex, isNetwork, issuingEpochAt, keyDeadline, toHex, type BadgeNetwork } from '@govhub/badge';
 import { readIdentityKeyFile } from './config.ts';
 import { keygen, manifestSpki, readManifest } from './keys.ts';
 import { errText } from './log.ts';
@@ -67,7 +67,7 @@ async function main(): Promise<void> {
       for (const m of manifest) {
         const existing = await platform.issuerKey(key.identityId, m.epoch);
         if (existing) {
-          const same = Buffer.from(existing.keyId).toString('hex') === m.keyId;
+          const same = toHex(existing.keyId) === m.keyId;
           console.log(JSON.stringify({ epoch: m.epoch, status: same ? 'already published' : 'CONFLICT: a different key is published for this epoch', keyId: m.keyId }));
           continue;
         }

@@ -16,6 +16,8 @@ import { badgeWorker } from './workerClient.ts';
 
 type Badge = typeof import('@govhub/badge');
 export type Query = (q: DocQuery) => Promise<BadgeQueryResult>;
+/** The accepted key of an (issuer, epoch), or why there is none. */
+export type KeyLookup = { key: AcceptedIssuerKey | null; problem: string | null };
 
 export interface IssuerEpochAudit {
   issuer: TrustedIssuer;
@@ -65,7 +67,7 @@ export class BadgeReader {
   #provenCount: Promise<number | null> | null = null;
   readonly #ttl: number;
   #badge: Promise<Badge> | null = null;
-  readonly #keys = new Map<string, { at: number; p: Promise<{ key: AcceptedIssuerKey | null; problem: string | null }> }>();
+  readonly #keys = new Map<string, { at: number; p: Promise<KeyLookup> }>();
   readonly #audits = new Map<string, { at: number; final: boolean; p: Promise<IssuerEpochAudit> }>();
 
   constructor(o: { net: BadgeNetwork; contractId: string; query: Query; issuers: TrustedIssuer[] } & ReaderOptions) {
@@ -90,7 +92,7 @@ export class BadgeReader {
   }
 
   /** The proved, accepted key of (issuer, epoch), or why there is none. */
-  key(issuer: TrustedIssuer, epoch: number): Promise<{ key: AcceptedIssuerKey | null; problem: string | null }> {
+  key(issuer: TrustedIssuer, epoch: number): Promise<KeyLookup> {
     const k = `${issuer.identityId}:${epoch}`;
     const hit = this.#keys.get(k);
     let p = hit && Date.now() - hit.at < this.#ttl ? hit.p : undefined;
@@ -207,16 +209,11 @@ export class BadgeReader {
       const tokensIssued = await this.reportedTokens(issuer, epoch);
       const bound = await this.#bound();
       const reportDue = coreHeight > b.postingWindow(b.EPOCH_PARAMS[this.#net], epoch).to;
-      const flagReason =
-        tokensIssued !== null && tokensIssued > bound.value
-          ? `reported ${tokensIssued} tokens, more than there are masternodes (${bound.source})`
-          : tokensIssued !== null && count > tokensIssued
-            ? `${count} valid badges but only ${tokensIssued} tokens reported`
-            : tokensIssued === null && reportDue
-              ? 'no valid issuerReport for this epoch'
-              : tokensIssued !== null && !complete
-                ? 'too many badges to audit'
-                : null;
+      let flagReason: string | null = null;
+      if (tokensIssued !== null && tokensIssued > bound.value) flagReason = `reported ${tokensIssued} tokens, more than there are masternodes (${bound.source})`;
+      else if (tokensIssued !== null && count > tokensIssued) flagReason = `${count} valid badges but only ${tokensIssued} tokens reported`;
+      else if (tokensIssued === null && reportDue) flagReason = 'no valid issuerReport for this epoch';
+      else if (tokensIssued !== null && !complete) flagReason = 'too many badges to audit';
       // only a flag is final: badge counts only grow and a report is immutable; anything else is re-read after the TTL (N3)
       entry.final = flagReason !== null;
       return { ...base, badges: count, complete, tokensIssued, flagged: flagReason !== null, flagReason, keyProblem: null };

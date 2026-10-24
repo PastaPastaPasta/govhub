@@ -20,7 +20,7 @@ export async function runService(): Promise<void> {
   // Readers flag an issuer without a valid issuerReport and clients post no badge without one, so the report key is required (N7).
   if (!cfg.reportKeyFile || !readSecretFile(cfg.reportKeyFile, 'ISSUER_REPORT_KEY_FILE')) throw new Error('ISSUER_REPORT_KEY_FILE (the issuer identity\'s HIGH key) is required: without issuerReport documents readers flag the issuer');
   const reportKey = readIdentityKeyFile(cfg.reportKeyFile);
-  if (reportKey && reportKey.identityId !== cfg.issuerId) throw new Error('ISSUER_REPORT_KEY_FILE belongs to another identity');
+  if (reportKey.identityId !== cfg.issuerId) throw new Error('ISSUER_REPORT_KEY_FILE belongs to another identity');
   let platform: IssuerPlatform | null = null;
   const connect = async () => {
     try {

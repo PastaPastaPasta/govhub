@@ -1,6 +1,6 @@
 // Epoch housekeeping, run on a timer: which key may sign, destroying keys and token rows of closed windows, and the per-epoch
 // issuerReport. Every step works from the dashd tip; the issuerKey check reads Platform with proofs.
-import { epochStart, equalBytes, issuingEpochAt, keyDeadline, sha256, toHex, type EpochParams } from '@govhub/badge';
+import { deriveKeyId, epochStart, equalBytes, issuingEpochAt, keyDeadline, toHex, type EpochParams } from '@govhub/badge';
 import type { IdentityKeyFile } from './config.ts';
 import type { CoreView, MnLists } from './core.ts';
 import type { TokenStore } from './db.ts';
@@ -121,7 +121,7 @@ export class EpochManager {
     }
     if (!doc) return `no issuerKey document for epoch ${epoch} on Platform`;
     if (doc.createdAtCoreBlockHeight >= keyDeadline(d.params, epoch)) return `the issuerKey of epoch ${epoch} was published too late; readers would reject every badge`;
-    if (!equalBytes(doc.keyId, await sha256(doc.spki))) return `the issuerKey of epoch ${epoch} has keyId != SHA256(spki)`;
+    if (!equalBytes(doc.keyId, await deriveKeyId(doc.spki))) return `the issuerKey of epoch ${epoch} has keyId != SHA256(spki)`;
     let signer: BlindSigner;
     try {
       signer = new BlindSigner(priv, { expectedSpki: doc.spki });

@@ -5,7 +5,7 @@
 // a store lock, and token requests kept COOLDOWN_MS away from any Platform write from this browser and from each other (visit.ts),
 // so the issuer's view of a request and the public view of this identity's writes do not line up.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { clientIssuanceWindow, clientPostingWindow, displayWindow, EPOCH_PARAMS, resumeDelayMs } from '@govhub/badge';
+import { clientIssuanceWindow, clientPostingWindow, displayWindow, epochLength, EPOCH_PARAMS, resumeDelayMs } from '@govhub/badge';
 import { signMessageWif } from '@govhub/verify';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
@@ -202,14 +202,14 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
       await withLock(
         'govhub-badge-activity',
         async () => {
-        if (!live) return;
-        if (posts.length && mayPost()) {
-          noteIdentityWrite(); // before the post path's reads: the write is on its way
-          for (const j of posts) await run(j);
-        } else if (requests.length && mayRequest()) {
-          noteRequestSent();
-          await run(requests[0]!);
-        }
+          if (!live) return;
+          if (posts.length && mayPost()) {
+            noteIdentityWrite(); // before the post path's reads: the write is on its way
+            for (const j of posts) await run(j);
+          } else if (requests.length && mayRequest()) {
+            noteRequestSent();
+            await run(requests[0]!);
+          }
         },
         { signal: ac.signal },
       );
@@ -227,7 +227,7 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
         }
       }
       if (!live) return TICK_MS;
-      const keepFrom = Math.floor(height / (p.superblockCycle * p.epochCycles)) - 2;
+      const keepFrom = Math.floor(height / epochLength(p)) - 2;
       await commit((latest) => {
         // a renewal made from an older snapshot must not duplicate a job added meanwhile for the same issuer and epoch (N11)
         const fresh = added.filter((a) => !latest.some((j) => j.id === a.id || (j.issuer.identityId === a.issuer.identityId && j.epoch === a.epoch && j.state !== 'failed' && j.state !== 'expired')));

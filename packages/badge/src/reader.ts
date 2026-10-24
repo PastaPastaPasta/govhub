@@ -8,10 +8,10 @@
 //         the current height in the same window; sig of modulus length, s < n, RSABSSA-valid over the message rebuilt from
 //         the key binding (issuer and epoch from the issuerKey document, net and contract from config) and $ownerId.
 
-import { equalBytes, sha256 } from './bytes.ts';
+import { equalBytes } from './bytes.ts';
 import { bindIssuerKey, importIssuerKey, VARIANT, verifyBadgeSignature, type BoundIssuerKey, type ImportOptions } from './client.ts';
 import { EPOCH_PARAMS, inDisplayWindow, keyDeadline, type BadgeNetwork, type EpochParams } from './epoch.ts';
-import { MSG_PREFIX_LEN } from './format.ts';
+import { deriveKeyId, MSG_PREFIX_LEN } from './format.ts';
 
 export interface IssuerKeyDoc {
   ownerId: Uint8Array;
@@ -79,7 +79,7 @@ export async function acceptIssuerKey(
   if (doc.epoch !== expected.epoch) return no('issuerKey epoch mismatch');
   if (doc.variant !== VARIANT) return no('issuerKey variant');
   if (!isU32(doc.createdAtCoreBlockHeight) || doc.createdAtCoreBlockHeight >= keyDeadline(p, doc.epoch)) return no('issuerKey published too late (must precede S(E-1))');
-  if (!equalBytes(doc.keyId, await sha256(doc.spki))) return no('issuerKey keyId != SHA256(spki)');
+  if (!equalBytes(doc.keyId, await deriveKeyId(doc.spki))) return no('issuerKey keyId != SHA256(spki)');
   let key;
   try {
     key = await importIssuerKey(doc.spki, cfg.importOptions);

@@ -10,13 +10,14 @@
 // keyring registered) go to the issuer from the worker; the answer is finalized and verified. At a uniformly random height in
 // [S(E), S(E)+W] the badge document is posted with the identity's own key. One job per (issuer, epoch): an identity can show only
 // one badge per issuer, and asking for more would only tell the issuer which MNs belong together.
-import type { AcceptedIssuerKey, BadgeNetwork } from '@govhub/badge';
 import {
   base64ToBytes,
+  BLOCK_SECONDS,
   buildTokenRequestFor,
   bytesToBase64,
   clientIssuanceWindow,
   displayWindow,
+  epochLength,
   EPOCH_PARAMS,
   fromHex,
   idToBytes,
@@ -26,10 +27,10 @@ import {
   prepareBadge,
   requestableEpoch,
   toHex,
-  BLOCK_SECONDS,
-  epochLength,
+  type BadgeNetwork,
 } from '@govhub/badge';
 import type { TrustedIssuer } from './config.ts';
+import type { KeyLookup } from './reader.ts';
 import type { badgeWorker } from './workerClient.ts';
 
 /** Signs a message with Dash `signmessage` semantics using the MN's voting key; returns the base64 signature. */
@@ -77,7 +78,7 @@ export interface ClientDeps {
   contractId: string;
   ownerId: string;
   /** the accepted (proved, rule-checked) key of an issuer for an epoch */
-  issuerKey(issuer: TrustedIssuer, epoch: number): Promise<{ key: AcceptedIssuerKey | null; problem: string | null }>;
+  issuerKey(issuer: TrustedIssuer, epoch: number): Promise<KeyLookup>;
   worker: typeof badgeWorker;
   /** signmessage with a WIF on this network */
   signWithWif(wif: string, message: string): string;
@@ -130,7 +131,9 @@ export async function createJob(d: ClientDeps, jobs: readonly BadgeJob[], voting
   if (!key) throw new BadgeRequestError(`${o.issuer.name} has no valid key for epoch ${epoch} on Platform (${problem}).`);
   if (key.revokedFrom !== null) throw new BadgeRequestError(`${o.issuer.name} revoked its key for epoch ${epoch}.`);
   const prepared = prepareBadge(key.key, idToBytes(d.ownerId));
-  const blinded = await d.worker({ kind: 'blind', spki: bytesToBase64(key.key.spki), preparedMsg: bytesToBase64(prepared.preparedMsg) });
+  const spki = bytesToBase64(key.key.spki);
+  const preparedMsg = bytesToBase64(prepared.preparedMsg);
+  const blinded = await d.worker({ kind: 'blind', spki, preparedMsg });
   const requestAt = o.immediate ? coreHeight : (pickRequestHeight(p, epoch, coreHeight) ?? coreHeight);
   return {
     v: 1,
@@ -141,9 +144,9 @@ export async function createJob(d: ClientDeps, jobs: readonly BadgeJob[], voting
     issuer: { name: o.issuer.name, identityId: o.issuer.identityId, url: o.issuer.url },
     epoch,
     keyId: toHex(key.key.keyId),
-    spki: bytesToBase64(key.key.spki),
+    spki,
     proTxHash,
-    preparedMsg: bytesToBase64(prepared.preparedMsg),
+    preparedMsg,
     blindedMsg: blinded.blindedMsg,
     inv: blinded.inv,
     msgPrefix: bytesToBase64(prepared.msgPrefix),
@@ -180,7 +183,8 @@ export async function step(d: ClientDeps, job: BadgeJob, height: number): Promis
       return wipe({ ...j, state: 'expired', note: 'The request window closed before the request could be sent: the app was not open during a quiet half hour (no posts, comments or other requests from this browser), or the issuer was unreachable.' });
     if (height < j.requestAt) return j;
     if (!d.trusted(j.issuer.identityId)) return { ...j, note: `${j.issuer.name} is not on your trust list (or is turned off): the request waits.` };
-    const signer: VotingSigner | undefined = j.signer.kind === 'wif' ? ((w) => async (m: string) => d.signWithWif(w, m))(j.signer.wif) : d.externalSigner(j.proTxHash);
+    const keySource = j.signer;
+    const signer: VotingSigner | undefined = keySource.kind === 'wif' ? async (m: string) => d.signWithWif(keySource.wif, m) : d.externalSigner(j.proTxHash);
     if (!signer) return { ...j, note: 'Waiting for the voting key: unlock the MN keyring.' };
     j.attempts++;
     try {

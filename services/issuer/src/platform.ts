@@ -33,13 +33,12 @@ export async function connectPlatform(network: PlatformNetwork, contractId: stri
   const writer = createEvoPlatform(evo, sdk, network);
   const w = evo as unknown as { PrivateKey: { fromWIF(wif: string): { toBytes(): Uint8Array } } };
 
-  async function query(type: string, where: unknown[][]): Promise<{ docs: Record<string, unknown>[]; coreHeight: number }> {
+  async function query(type: string, where: unknown[][]): Promise<Record<string, unknown>[]> {
     const res = await sdk.documents.queryWithProof({ dataContractId: contractId, documentTypeName: type, where, limit: 2 } as never);
-    const docs = [...res.data.values()].filter((d): d is NonNullable<typeof d> => !!d).map((d) => d.toJSON() as Record<string, unknown>);
-    return { docs, coreHeight: Number((res as unknown as { metadata: { coreChainLockedHeight: number } }).metadata.coreChainLockedHeight) };
+    return [...res.data.values()].filter((d): d is NonNullable<typeof d> => !!d).map((d) => d.toJSON() as Record<string, unknown>);
   }
   const one = async <T>(type: string, issuerId: string, epoch: number, parse: (d: Record<string, unknown>) => T): Promise<T | null> => {
-    const { docs } = await query(type, [['$ownerId', '==', issuerId], ['epoch', '==', epoch]]);
+    const docs = await query(type, [['$ownerId', '==', issuerId], ['epoch', '==', epoch]]);
     if (docs.length > 1) throw new Error(`${type}: more than one document for a unique index`);
     return docs[0] ? parse(docs[0]) : null;
   };
@@ -54,7 +53,7 @@ export async function connectPlatform(network: PlatformNetwork, contractId: stri
     try {
       // Every badge type requires $createdAtCoreBlockHeight; Drive overwrites it with the block's core height, the client only
       // sends a plausible value.
-      const $createdAtCoreBlockHeight = await this_.coreHeight();
+      const $createdAtCoreBlockHeight = await platform.coreHeight();
       const r = await writer.writeDocument({ ownerId: k.identityId, key: signingKey(k, level), op: { action: 'create', contractId, type, data: { ...data, $createdAtCoreBlockHeight } } });
       return r.id;
     } catch (e) {
@@ -62,7 +61,7 @@ export async function connectPlatform(network: PlatformNetwork, contractId: stri
     }
   };
 
-  const this_: IssuerPlatform = {
+  const platform: IssuerPlatform = {
     issuerKey: (issuerId, epoch) => one(BADGE_TYPES.issuerKey, issuerId, epoch, parseIssuerKeyDoc),
     issuerReport: (issuerId, epoch) => one(BADGE_TYPES.issuerReport, issuerId, epoch, parseIssuerReportDoc),
     async coreHeight() {
@@ -72,6 +71,6 @@ export async function connectPlatform(network: PlatformNetwork, contractId: stri
     publishIssuerKey: (k, o) => create(k, SECURITY.critical, BADGE_TYPES.issuerKey, issuerKeyData(o)),
     publishIssuerReport: (k, o) => create(k, SECURITY.high, BADGE_TYPES.issuerReport, issuerReportData(o)),
   };
-  return this_;
+  return platform;
 }
 

@@ -35,6 +35,11 @@ export function bigIntToBytes(v: bigint, len: number): Uint8Array {
   return fromHex(h.padStart(len * 2, '0'));
 }
 
+/** Throws unless `b` is a Uint8Array of exactly 32 bytes (identifiers, key ids, hashes). */
+export function need32(name: string, b: Uint8Array): void {
+  if (!(b instanceof Uint8Array) || b.length !== 32) throw new Error(`${name} must be 32 bytes`);
+}
+
 /** Constant-time for equal lengths. */
 export function equalBytes(a: Uint8Array, b: Uint8Array): boolean {
   if (a.length !== b.length) return false;

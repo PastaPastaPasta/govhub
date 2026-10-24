@@ -7,7 +7,7 @@
 // signature. Readers rebuild the message from the proved issuerKey document and their own config, never from the badge.
 
 import type { BadgeNetwork } from './epoch.ts';
-import { concat, equalBytes, sha256 } from './bytes.ts';
+import { concat, equalBytes, need32, sha256 } from './bytes.ts';
 
 export const BADGE_TAG = new TextEncoder().encode('govhub-badge:v2');
 export const MSG_PREFIX_LEN = 32;
@@ -26,10 +26,6 @@ export interface BadgeFields {
   keyId: Uint8Array;
   epoch: number;
   ownerId: Uint8Array;
-}
-
-function need32(name: string, b: Uint8Array): void {
-  if (!(b instanceof Uint8Array) || b.length !== 32) throw new Error(`${name} must be 32 bytes`);
 }
 
 export function buildBadgeMessage(f: BadgeFields): Uint8Array {

@@ -10,7 +10,7 @@
 //      in E-1's window; valid now; in the list and valid at S(E-1) with the same collateral
 //   5. atomic dedup on (proTxHash, epoch) and (collateral, epoch); a retry with the same SHA256(blindedMsg) gets the same signature
 //   6. OpenSSL raw RSA signature, verified before it is returned
-import { base64ToBytes, buildTokenRequest, equalBytes, idToBytes, issuanceWindow, issuingEpochAt, parseTokenRequest, sha256, toHex, type BadgeNetwork, type EpochParams, type TokenRequest } from '@govhub/badge';
+import { base64ToBytes, buildTokenRequest, equalBytes, idToBytes, issuanceWindow, issuingEpochAt, parseTokenRequest, requestBindsBlindedMsg, toHex, type BadgeNetwork, type EpochParams, type TokenRequest } from '@govhub/badge';
 import { recoverMessageSigner } from '@govhub/verify';
 import type { Challenges } from './challenge.ts';
 import type { CoreView, MnLists } from './core.ts';
@@ -145,7 +145,7 @@ export class TokenService {
     if (!key) throw new IssueError('unavailable', `no signing key is ready for epoch ${epoch}`);
     if (!equalBytes(req.keyId, key.keyId)) throw new IssueError('wrong-key', `the request names another key than the issuerKey of epoch ${epoch}`);
     if (!d.challenges.check(req.nonce, d.nowSec())) throw new IssueError('bad-challenge', 'challenge invalid or expired: fetch a new one');
-    if (!equalBytes(req.blindedMsgSha256, await sha256(blindedMsg))) throw new IssueError('bad-request', 'the request does not bind this blinded message');
+    if (!(await requestBindsBlindedMsg(req, blindedMsg))) throw new IssueError('bad-request', 'the request does not bind this blinded message');
     if (blindedMsg.length !== key.signer.modulusBytes) throw new IssueError('bad-request', `blindedMsg must be ${key.signer.modulusBytes} bytes`);
     // 3. authentication (the voting key in the current list). One answer for every failure.
     this.#budget();

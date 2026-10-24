@@ -5,6 +5,7 @@
 //   AAD = identityId, a fresh 12-byte IV per save.
 // The plaintext is padded to 16 KiB buckets so the stored size does not tell how many MNs a browser requested badges for.
 // Without a key-holding session (fixture identities) jobs live in memory only.
+import { bytesToBase64 } from '@govhub/badge';
 import type { BadgeJob } from './client.ts';
 
 export interface JobStore {
@@ -16,11 +17,6 @@ const enc = new TextEncoder();
 const BUCKET = 16 * 1024;
 export const jobStorageKey = (slot: string) => `govhub.badge.jobs.v1.${slot}`;
 
-const b64 = (b: Uint8Array) => {
-  let s = '';
-  for (const x of b) s += String.fromCharCode(x);
-  return btoa(s);
-};
 const unb64 = (s: string): Uint8Array<ArrayBuffer> => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 
 export async function deriveStoreKey(secret: Uint8Array, identityId: string): Promise<CryptoKey> {
@@ -62,7 +58,7 @@ export function encryptedJobStore(slot: string, identityId: string, key: CryptoK
       if (!jobs.length) return storage.removeItem(jobStorageKey(slot));
       const iv = crypto.getRandomValues(new Uint8Array(12));
       const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: aad }, key, pad(JSON.stringify(jobs))));
-      storage.setItem(jobStorageKey(slot), JSON.stringify({ iv: b64(iv), ct: b64(ct) }));
+      storage.setItem(jobStorageKey(slot), JSON.stringify({ iv: bytesToBase64(iv), ct: bytesToBase64(ct) }));
     },
   };
 }

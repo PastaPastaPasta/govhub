@@ -10,7 +10,7 @@
 // Binding sha256(blindedMsg) means whoever sees a signed request (a CDN, an extension, a voting-key host) cannot use it to
 // take the MN's slot with their own blinded message.
 
-import { bytesToId, equalBytes, fromHex, idToBytes, sha256, toHex } from './bytes.ts';
+import { bytesToId, equalBytes, fromHex, idToBytes, need32, sha256, toHex } from './bytes.ts';
 import type { BadgeNetwork } from './epoch.ts';
 import { isNetwork } from './format.ts';
 
@@ -31,10 +31,6 @@ export interface TokenRequest {
 
 const HEX64 = /^[0-9a-f]{64}$/;
 const NONCE = /^(?:[0-9a-f]{2}){16,64}$/;
-
-function need32(name: string, b: Uint8Array) {
-  if (!(b instanceof Uint8Array) || b.length !== 32) throw new Error(`${name} must be 32 bytes`);
-}
 
 export function buildTokenRequest(r: TokenRequest): string {
   if (!isNetwork(r.net)) throw new Error('unknown net');

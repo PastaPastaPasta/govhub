@@ -25,12 +25,15 @@ export interface IssuerKeyPair {
   spki: Uint8Array;
 }
 
+/** A JWK integer member (base64url, big-endian) as a bigint. */
+const jwkInt = (v: string): bigint => bytesToBigInt(Buffer.from(v, 'base64url'));
+
 /** RSA key, e = 65537. OpenSSL may produce a modulus one bit short for odd sizes; 2048/3072 are exact. */
 export function generateIssuerKey(modulusLength: 2048 | 3072): IssuerKeyPair {
   for (;;) {
     const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength, publicExponent: 65537 });
     const spki = new Uint8Array(publicKey.export({ type: 'spki', format: 'der' }));
-    const n = bytesToBigInt(new Uint8Array(Buffer.from(publicKey.export({ format: 'jwk' }).n!, 'base64url')));
+    const n = jwkInt(publicKey.export({ format: 'jwk' }).n!);
     if (n.toString(2).length === modulusLength) return { privateKey, spki };
   }
 }
@@ -61,8 +64,8 @@ export class BlindSigner {
     this.#privateKey = privateKey;
     this.#publicKey = createPublicKey(privateKey);
     const jwk = this.#publicKey.export({ format: 'jwk' });
-    if (bytesToBigInt(new Uint8Array(Buffer.from(jwk.e!, 'base64url'))) !== 65537n) throw new SignerError('bad-key', 'public exponent must be 65537');
-    const n = bytesToBigInt(new Uint8Array(Buffer.from(jwk.n!, 'base64url')));
+    if (jwkInt(jwk.e!) !== 65537n) throw new SignerError('bad-key', 'public exponent must be 65537');
+    const n = jwkInt(jwk.n!);
     const bits = n.toString(2).length;
     if (!(opts.allowedModulusBits ?? [2048, 3072]).includes(bits)) throw new SignerError('bad-key', `modulus ${bits} bits not allowed`);
     this.spki = new Uint8Array(this.#publicKey.export({ type: 'spki', format: 'der' }));
