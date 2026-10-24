@@ -72,9 +72,10 @@ export function ownerProvenance(o: ClaimVerdict['owner'], fixture: boolean): Pro
 
 /** The "Owner" value of the details table. */
 export function OwnerValue({ p, own }: { p: Proposal; own: Ownership }) {
-  const { forum } = useForum();
+  const { forum, moderation } = useForum();
   const [profile, setProfile] = useState<Awaited<ReturnType<typeof forum.reader.profiles>> | null>(null);
   const o = own.verdict?.owner ?? null;
+  const blocked = !!o && moderation.index.identityHidden(o.identityId);
   useEffect(() => {
     if (!o) return;
     let live = true;
@@ -93,9 +94,10 @@ export function OwnerValue({ p, own }: { p: Proposal; own: Ownership }) {
   }
   return (
     <span className="owner-value" data-testid="owner" data-owner={o.identityId} data-method={o.method}>
-      <Avatar id={o.identityId} profile={profile?.get(o.identityId)} size={20} />
-      <AuthorName id={o.identityId} profile={profile?.get(o.identityId)} />
+      <Avatar id={o.identityId} profile={blocked ? undefined : profile?.get(o.identityId)} size={20} />
+      <AuthorName id={o.identityId} profile={blocked ? undefined : profile?.get(o.identityId)} />
       <span className="chip chip-owner">owner</span>
+      {blocked && <span className="muted small">(on a block list: name and avatar hidden)</span>}
       <span className="muted small">by {CLAIM_METHOD_LABEL[o.method]}</span>
     </span>
   );
@@ -262,11 +264,26 @@ export function useOwnerPost(govHash: string, ownerId: string | null) {
 }
 
 export function OwnerPost({ govHash, ownerId, post }: { govHash: string; ownerId: string; post: ReturnType<typeof useOwnerPost> }) {
-  const { session } = useForum();
+  const { session, moderation } = useForum();
   const [editing, setEditing] = useState(false);
+  const [reveal, setReveal] = useState(false);
   const s = post.state;
   const isOwner = session?.identityId === ownerId;
-  if (!s) return null;
+  if (!s || !moderation.ready) return null;
+  // Block lists apply here like anywhere else: an owner on a list, or this post's document, stays behind a click.
+  const reasons = s.post && !isOwner ? moderation.index.reasons({ id: s.post.id, ownerId }) : [];
+  if (reasons.length && !reveal) {
+    return (
+      <section className="owner-post" data-testid="owner-post">
+        <p className="muted small">
+          The owner's description is hidden: on {reasons.map((r) => r.list).join(', ')}.{' '}
+          <button type="button" className="linkish" onClick={() => setReveal(true)}>
+            Show it
+          </button>
+        </p>
+      </section>
+    );
+  }
   return (
     <section aria-labelledby="post-title" className="owner-post" data-testid="owner-post">
       {s.error && <p className="error small">{s.error}</p>}

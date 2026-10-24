@@ -46,8 +46,8 @@ export interface CollateralVerdict {
   govHashComputed?: string;
   chain?: ChainFacts;
   /**
-   * hash160s of the keys that signed the collateral's inputs (claim method 3). Set only when the transaction's txid
-   * matched the proposal's collateral and it burns to the recomputed gov hash.
+   * hash160s of the keys that signed the collateral's inputs (claim method 3). Set only when the whole verdict is ok
+   * (txid matches the proposal's collateral, it burns to the recomputed gov hash, enough confirmations).
    */
   inputKeys?: string[];
 }
@@ -174,5 +174,5 @@ export function verifyCollateral(p: ProposalCore, lookup: TxLookup | { error: st
   const critical: Step['id'][] = ['hash', 'fields', 'tx', 'collateral', 'confirmations'];
   const ok = steps.filter((s) => critical.includes(s.id)).every((s) => s.status === 'ok') && !steps.some((s) => s.status === 'fail');
   const chain: ChainFacts = { height: lookup.height, merkle: proof.merkle, chainLocked: lookup.chainLocked, provenConfirmations: proven, lockDepth: anchored && cl ? cl.verifiedConfirmations : null, confirmations: lookup.confirmations };
-  return { ok, steps, chain, ...(govHashComputed ? { govHashComputed } : {}), ...(inputKeys ? { inputKeys } : {}) };
+  return { ok, steps, chain, ...(govHashComputed ? { govHashComputed } : {}), ...(ok && inputKeys ? { inputKeys } : {}) };
 }

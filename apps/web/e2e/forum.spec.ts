@@ -46,11 +46,15 @@ test.describe('discussion (fixtures)', () => {
     await d.getByTestId('show-all').click();
     await expect(d.locator('li.comment:not(.comment-placeholder)')).toHaveCount(5);
 
-    // Deep link: the hidden spam comment is revealed, focused and scrolled to.
+    // Deep link to a blocked comment: focused, but still behind its placeholder; one click reveals it.
     await d.getByTestId('toggle-hidden').click();
     const spamId = await comment(page, 'FREE DASH!!!').getAttribute('data-comment-id');
     await gotoFixtures(page, `/p/OrchardPay?comment=${spamId}`);
-    await expect(page.locator(`#comment-${spamId}`)).toHaveClass(/comment-focus/);
+    const linked = page.locator(`#comment-${spamId}`);
+    await expect(linked).toHaveClass(/comment-focus/);
+    await expect(linked).toContainText('Hidden: on govhub moderation');
+    await expect(linked).not.toContainText('FREE DASH!!!');
+    await linked.getByRole('button', { name: 'Show this comment' }).click();
     await expect(page.locator(`#comment-${spamId}`)).toContainText('FREE DASH!!!');
 
     expect(errors).toEqual([]);

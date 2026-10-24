@@ -54,7 +54,8 @@ export function useCommentCounts(govHashes: readonly string[]): Map<string, numb
 
   return useMemo(() => {
     const out = new Map<string, number>();
+    if (!moderation.ready) return out; // never count before the block lists are known
     for (const [h, es] of entries) out.set(h, es.filter(([id, ownerId]) => moderation.index.reasons({ id, ownerId }).length === 0).length);
     return out;
-  }, [entries, moderation.index]);
+  }, [entries, moderation.index, moderation.ready]);
 }

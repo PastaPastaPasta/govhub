@@ -5,6 +5,8 @@ import {
   buildHideIndex,
   buildThreads,
   ancestors,
+  MAX_THREAD_DEPTH,
+  visibleSubtrees,
   flatten,
   forumOps,
   ForumReader,
@@ -212,6 +214,19 @@ describe('threading', () => {
     const roots = buildThreads([c('b', 1, 'a'), c('a', 1), c('z', 2, 'q'), c('q', 1, undefined, H2)]);
     expect(flatten(roots).map((n) => n.comment.id)).toEqual(['a', 'b', 'q', 'z']);
     expect(roots.find((n) => n.comment.id === 'z')!.orphan).toBe(true);
+  });
+
+  it('a 10,000-deep reply chain neither overflows the stack nor nests past the cap', () => {
+    const chain = Array.from({ length: 10_000 }, (_, i) => c(`n${String(i).padStart(5, '0')}`, i + 1, i ? `n${String(i - 1).padStart(5, '0')}` : undefined));
+    const roots = buildThreads(chain.reverse());
+    const flat = flatten(roots);
+    expect(flat).toHaveLength(10_000);
+    expect(Math.max(...flat.map((n) => n.depth))).toBe(MAX_THREAD_DEPTH);
+    expect(flat.map((n) => n.comment.createdAt)).toEqual(Array.from({ length: 10_000 }, (_, i) => i + 1));
+    expect(ancestors(roots, 'n09999')).toHaveLength(MAX_THREAD_DEPTH);
+    const vis = visibleSubtrees(roots, (x) => x.id === 'n09999');
+    expect(vis.get('n00000')).toBe(true);
+    expect(visibleSubtrees(roots, () => false).get('n00000')).toBe(false);
   });
 
   it('duplicate ids are kept once', () => {

@@ -23,6 +23,11 @@ import { base58 } from '@scure/base';
 export const CLAIM_METHODS = { url: 1, paymentAddress: 2, collateralInput: 3, attestation: 4 } as const;
 export type ClaimMethodId = (typeof CLAIM_METHODS)[keyof typeof CLAIM_METHODS];
 
+/** Upper bound on signature recoveries per proposal (each claim document costs its author ~0.00036 DASH). */
+export const MAX_SIGNATURE_CHECKS = 50;
+/** Retries one identity gets per method (a typo then a correct signature must still work). */
+export const MAX_TRIES_PER_IDENTITY = 3;
+
 export const CLAIM_METHOD_LABEL: Record<ClaimMethodId, string> = {
   1: 'identity embedded in the proposal URL',
   2: 'signature from the payment address',
@@ -183,15 +188,43 @@ export function verifyClaims(input: ClaimInput): ClaimVerdict {
 
   const p2pkh = paymentAddress ? decodeAddress(paymentAddress, input.network)?.type === 'p2pkh' : false;
   const inputs = input.collateralInputKeys ? new Set(input.collateralInputKeys.map((k) => k.toLowerCase())) : null;
-  for (const c of input.claims) {
+  // Claim documents are cheap to spam and each costs a public-key recovery, so: oldest first, per
+  // (identity, method) a few tries, nothing after the first valid claim of a method (a later one can never outrank it), and at
+  // most MAX_SIGNATURE_CHECKS recoveries; whatever is skipped is reported, never silently trusted.
+  const perIdentity = new Map<string, number>();
+  const won = new Set<number>();
+  let checks = 0;
+  const ordered = [...input.claims].sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
+  for (const c of ordered) {
     const reject = (reason: string) => rejected.push({ docId: c.id, ownerId: c.ownerId, method: c.method, reason });
+    const k = `${c.ownerId}:${c.method}`;
+    const tries = (perIdentity.get(k) ?? 0) + 1;
+    perIdentity.set(k, tries);
+    if (tries > MAX_TRIES_PER_IDENTITY) {
+      reject(`not checked: more than ${MAX_TRIES_PER_IDENTITY} claims by this identity with this method`);
+      continue;
+    }
+    if (won.has(c.method)) {
+      reject('not checked: an earlier claim with this method is already valid');
+      continue;
+    }
+    if (fields && checks >= MAX_SIGNATURE_CHECKS) {
+      reject(`not checked: more than ${MAX_SIGNATURE_CHECKS} claims on this proposal`);
+      continue;
+    }
+    if (fields) checks++;
+    const before = valid.length;
+    checkOne(c, reject);
+    if (valid.length > before) won.add(c.method);
+  }
+  function checkOne(c: ClaimDoc, reject: (reason: string) => void): void {
     if (!fields) {
       reject('the proposal data does not match its hash');
-      continue;
+      return;
     }
     if (c.sig.length !== 65) {
       reject('signature is not 65 bytes');
-      continue;
+      return;
     }
     const msg = claimMessage(input.network, input.govHash, c.ownerId);
     if (c.method === CLAIM_METHODS.paymentAddress) {
@@ -201,7 +234,7 @@ export function verifyClaims(input: ClaimInput): ClaimVerdict {
     } else if (c.method === CLAIM_METHODS.collateralInput) {
       if (!inputs) {
         reject('the collateral transaction has not been verified here');
-        continue;
+        return;
       }
       const signer = recoverMessageSigner(c.sig, msg, input.network);
       if (!signer) reject('signature is malformed');

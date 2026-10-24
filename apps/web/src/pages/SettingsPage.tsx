@@ -61,10 +61,13 @@ function BlockListSettings() {
           ))}
         </ul>
         {moderation.error && <p className="error small">{moderation.error}</p>}
+        {session && moderation.subs.doc && <p className="muted small">While you are signed in, your blockSubs document on Platform decides; changes here are saved to it.</p>}
         <div className="form-actions">
-          <button type="button" className="btn" disabled={busy} onClick={() => save(false)}>
-            Save in this browser
-          </button>
+          {!(session && moderation.subs.doc) && (
+            <button type="button" className="btn" disabled={busy} onClick={() => save(false)}>
+              Save in this browser
+            </button>
+          )}
           {session && (
             <button type="button" className="btn btn-primary" disabled={busy} onClick={() => save(true)}>
               Save to Platform (about {formatCredits(cost, true)}; balance {balance === null ? '…' : formatCredits(balance)})
@@ -83,7 +86,11 @@ export function SettingsPage() {
   const [json, setJson] = useState('');
   const [msg, setMsg] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  useEffect(() => setDraft(registry), [registry]);
+  const [portalsText, setPortalsText] = useState(registry.forum.claimPortals.join(' '));
+  useEffect(() => {
+    setDraft(registry);
+    setPortalsText(registry.forum.claimPortals.join(' '));
+  }, [registry]);
 
   const set = <K extends keyof Registry>(k: K, v: Registry[K]) => setDraft((d) => ({ ...d, [k]: v }));
   const setBridge = (i: number, patch: Partial<BridgeEndpoint>) => set('bridges', draft.bridges.map((b, j) => (j === i ? { ...b, ...patch } : b)));
@@ -262,7 +269,14 @@ export function SettingsPage() {
           </div>
           <label>
             Hosts accepted in URL-embedded ownership claims (https://host/p/&lt;identity&gt;/&lt;name&gt;)
-            <input value={draft.forum.claimPortals.join(' ')} onChange={(e) => set('forum', { ...draft.forum, claimPortals: lines(e.target.value) })} spellCheck={false} />
+            <input
+              value={portalsText}
+              onChange={(e) => {
+                setPortalsText(e.target.value);
+                set('forum', { ...draft.forum, claimPortals: lines(e.target.value) });
+              }}
+              spellCheck={false}
+            />
           </label>
         </fieldset>
 

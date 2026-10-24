@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseMarkdown, parsePlain, safeHref, type MdBlock, type MdInline } from '../src/index.ts';
+import { parseMarkdown, parsePlain, safeHref, tooCostly, type MdBlock, type MdInline } from '../src/index.ts';
 
 /** Every string that ends up in the tree, flattened, to assert nothing becomes markup. */
 function texts(bs: MdBlock[]): string[] {
@@ -30,7 +30,7 @@ describe('safe markdown', () => {
   it('only absolute http(s) links survive', () => {
     expect(safeHref('https://dash.org/x?y=1')).toBe('https://dash.org/x?y=1');
     expect(safeHref('http://dash.org')).toBe('http://dash.org/');
-    for (const bad of ['javascript:alert(1)', 'JAVASCRIPT:alert(1)', ' javascript:alert(1)', 'java\nscript:alert(1)', 'data:text/html,<script>', 'vbscript:x', '//evil.org/x', '/relative', '#frag', 'mailto:a@b.c', 'file:///etc/passwd', '', null]) {
+    for (const bad of ['javascript:alert(1)', 'JAVASCRIPT:alert(1)', ' javascript:alert(1)', 'java\nscript:alert(1)', 'data:text/html,<script>', 'vbscript:x', '//evil.org/x', '/relative', '#frag', 'mailto:a@b.c', 'file:///etc/passwd', 'https://gov.dashhq.org@evil.example/x', 'https://a:b@x.org', '', null]) {
       expect(safeHref(bad as string)).toBeNull();
     }
   });
@@ -83,6 +83,18 @@ describe('safe markdown', () => {
     expect(d).toBeLessThanOrEqual(8);
     expect(() => parseMarkdown('*'.repeat(5000) + 'x' + '*'.repeat(5000))).not.toThrow();
     expect(() => parseMarkdown('[' .repeat(3000) + 'x' + '](https://a.b)'.repeat(3000))).not.toThrow();
+  });
+
+  it('delimiter-dense input that would make the lexer quadratic is shown as plain text, fast', () => {
+    const worst = (n: number) => '*a_'.repeat(n);
+    for (const input of [worst(1700), worst(21_000), worst(500) + 'x'.repeat(5_000), ('*a_'.repeat(30) + 'x'.repeat(2_300)).repeat(28)]) {
+      const t = performance.now();
+      parseMarkdown(input);
+      expect(performance.now() - t).toBeLessThan(400);
+    }
+    expect(tooCostly(worst(2000))).toBe(true);
+    expect(tooCostly('**bold** and _it_ '.repeat(200))).toBe(false);
+    expect(tooCostly('x'.repeat(70_000))).toBe(true);
   });
 
   it('plain comments keep every character literally', () => {

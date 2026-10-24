@@ -31,7 +31,7 @@ export function parseSecret(secret: string, network: 'mainnet' | 'testnet'): { w
 }
 
 /** Lagging nodes: a write right after another can fail with "document not found" or a stale nonce (spikes/sdk5 §5.3). */
-const RETRYABLE = /not found|40101|nonce/i;
+const RETRYABLE = /40101|document not found|nonce/i;
 
 function errText(e: unknown): string {
   if (e && typeof e === 'object' && 'message' in e) return String((e as { message: unknown }).message);
@@ -60,8 +60,11 @@ export async function devKeySession(registry: Registry, identityId: string, secr
     return signer;
   };
 
-  /** Builds the transition's document once, so a retry re-sends the same document (same entropy and id at PV13). */
-  function prepare(op: DocumentOp): () => Promise<DocumentResult> {
+  /**
+   * Builds the transition's document once, so a retry re-sends the same document. A PV14 create is never retried:
+   * its id comes from the nonce at broadcast, so a retry after a write that landed would create a second document.
+   */
+  function prepare(op: DocumentOp): (() => Promise<DocumentResult>) & { noRetry?: boolean } {
     const owner = idToBytes(identityId);
     const contract = idToBytes(op.contractId);
     if (op.action === 'delete') {
@@ -88,10 +91,24 @@ export async function devKeySession(registry: Registry, identityId: string, secr
       { $formatVersion: '0', $id: id, $ownerId: owner, $dataContractId: contract, $type: op.type, $revision: 1n, $entropy: entropy, ...toSdk(op.data) } as never,
       evo.PlatformVersion.latest(),
     );
-    return async () => {
+    const run = async () => {
       const created = await sdk.documents.create({ document, identityKey: key, signer: live() });
       return { id: created.id.toString(), revision: 1 };
     };
+    if (sdk.version() > 13) return Object.assign(run, { noRetry: true });
+    // PV13: a retry re-sends the same id. If the first attempt did land, "already exists" means success.
+    const pv13Id = pv13DocumentId(op.contractId, identityId, op.type, entropy);
+    return Object.assign(
+      async () => {
+        try {
+          return await run();
+        } catch (e) {
+          if (/already exists|duplicate/i.test(errText(e))) return { id: pv13Id, revision: 1 };
+          throw e;
+        }
+      },
+      { noRetry: false },
+    );
   }
 
   return {
@@ -107,8 +124,9 @@ export async function devKeySession(registry: Registry, identityId: string, secr
           return await run();
         } catch (e) {
           const msg = errText(e);
-          // Retried only on errors a lagging node raises before executing; at PV13 the same create cannot apply twice.
-          if (attempt < 3 && RETRYABLE.test(msg)) {
+          // Retried only on errors a lagging node raises before executing (stale nonce, a just-created document not
+          // found yet by the node a replace/delete went to).
+          if (!run.noRetry && attempt < 3 && RETRYABLE.test(msg)) {
             await new Promise((r) => setTimeout(r, 2500));
             continue;
           }

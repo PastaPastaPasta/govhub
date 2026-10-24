@@ -47,6 +47,7 @@ createRoot(document.getElementById('root')!).render(
               <Route path="past" element={<PastPage />} />
               <Route path="p/h/:hash" element={<ProposalByHash />} />
               <Route path="p/:name" element={<ProposalByName />} />
+              <Route path="p/:identity/:name" element={<ProposalByName />} />
               <Route path="settings" element={<SettingsPage />} />
               <Route path="*" element={<NotFoundPage />} />
             </Route>

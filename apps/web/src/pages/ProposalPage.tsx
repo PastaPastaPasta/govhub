@@ -1,10 +1,11 @@
 // /p/h/<govHash> (canonical) and /p/<name> (slug; duplicate names get a chooser).
 import { useMemo, useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { parseProposalData } from '@govhub/verify';
+import { parseProposalData, urlClaimIdentity } from '@govhub/verify';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { Discussion } from '../ui/Discussion.tsx';
+import { ErrorBoundary } from '../ui/ErrorBoundary.tsx';
 import { ClaimPanel, OwnerPost, OwnerValue, ownerProvenance, useOwnership, useOwnerPost } from '../ui/Ownership.tsx';
 import { openSignIn } from '../ui/SignIn.tsx';
 import { useReactions } from '../ui/useReactions.ts';
@@ -33,13 +34,19 @@ export function ProposalByHash() {
   return <ProposalView sp={load.data} />;
 }
 
+/**
+ * /p/<name>, and /p/<identityId>/<name>: the URL govhub's wizard commits into new proposals (claim method 1). With an
+ * identity, the proposals of that name whose hashed URL names it are preferred; the page's own claim check decides.
+ */
 export function ProposalByName() {
-  const { name = '' } = useParams();
-  const { source } = useApp();
+  const { name = '', identity } = useParams();
+  const { source, registry } = useApp();
   const load = useAsync(() => source.byName(name), [source, name]);
   if (load.loading) return <Loading />;
   if (load.error) return <p className="error">Platform could not be read: {load.error}</p>;
-  const list = load.data ?? [];
+  const all = load.data ?? [];
+  const named = identity ? all.filter((s) => urlClaimIdentity(s.value.url, s.value.name, registry.forum.claimPortals) === identity) : [];
+  const list = named.length ? named : all;
   if (list.length === 0) return <NotFound what={`a proposal named "${name}"`} />;
   if (list.length === 1) return <ProposalView sp={list[0]!} />;
   return (
@@ -308,7 +315,11 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
         <VerificationPanel proposal={p} collateral={collateral} targets={targets} onVotes={setVotes} />
       </div>
 
-      {ownerId && <OwnerPost govHash={p.govHash} ownerId={ownerId} post={post} />}
+      {ownerId && (
+        <ErrorBoundary what="owner's description">
+          <OwnerPost govHash={p.govHash} ownerId={ownerId} post={post} />
+        </ErrorBoundary>
+      )}
 
       {postShown ? (
         <details className="raw raw-collapsed">
@@ -322,7 +333,9 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
         </section>
       )}
 
-      <Discussion govHash={p.govHash} owner={ownerId} />
+      <ErrorBoundary what="discussion">
+        <Discussion govHash={p.govHash} owner={ownerId} />
+      </ErrorBoundary>
     </article>
   );
 }

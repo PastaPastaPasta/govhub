@@ -1,7 +1,7 @@
 // The proposal's discussion: every comment (paged by 100 from Platform), threaded here by parentId, with
 // DashCentral-style indentation, scores, replies, retraction, ?comment= deep links, the comment view filter and
 // block lists that hide (never delete) with a "show hidden (N)" toggle.
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   BLOCK_KIND,
@@ -17,6 +17,7 @@ import {
   type HideReason,
   type Profile,
   type ThreadNode,
+  visibleSubtrees,
 } from '@govhub/forum';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
@@ -90,12 +91,15 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
   const reasonsOf = useCallback((c: Comment) => moderation.index.reasons(c), [moderation.index]);
   const hiddenCount = useMemo(() => comments.filter((c) => reasonsOf(c).length > 0).length, [comments, reasonsOf]);
   const filteredCount = useMemo(() => comments.filter((c) => !reasonsOf(c).length && !passesFilter(c, filter, { owner, badged: noBadge })).length, [comments, reasonsOf, filter, owner]);
+  const [unfiltered, setUnfiltered] = useState(false);
+  // The deep-linked comment always gets at least its placeholder.
+  const visible = useMemo(() => visibleSubtrees(roots, (c) => c.id === focus || shown(c, { reasonsOf, showHidden, revealed, filter, owner })), [roots, reasonsOf, showHidden, revealed, filter, owner, focus]);
 
-  // A deep link always shows its comment: reveal it if a list hides it, widen the view if the filter does.
+  // A deep link widens the view if the filter hides its comment and scrolls to it. A comment a block list hides stays
+  // behind its placeholder: a shared link must not bypass the lists (one click on the placeholder reveals it).
   useEffect(() => {
     if (!focus || !comments.some((c) => c.id === focus)) return;
     const c = comments.find((x) => x.id === focus)!;
-    if (reasonsOf(c).length) setRevealed((s) => new Set(s).add(focus));
     if (!passesFilter(c, filter, { owner, badged: noBadge })) setFilter('all');
     requestAnimationFrame(() => document.getElementById(`comment-${focus}`)?.scrollIntoView({ block: 'center' }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -157,14 +161,18 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
     block,
     unblock,
     reveal: (id) => setRevealed((s) => new Set(s).add(id)),
+    visible,
   };
 
   const count = comments.length;
+  // Fail closed: nothing renders before the block lists are read, and a list that failed collapses the thread until
+  // the reader chooses to see it without that list.
+  const gated = !moderation.ready || (!!moderation.error && !unfiltered);
   return (
     <section aria-labelledby="discussion-title" className="discussion" data-testid="discussion">
       <div className="discussion-head">
         <h2 id="discussion-title">
-          Discussion {thread.data && <span className="count">{formatInt(count)}</span>} {thread.data && <ProvMark prov={thread.data.prov} />}
+          Discussion {thread.data && <span className="count">{formatInt(count - hiddenCount)}</span>} {thread.data && <ProvMark prov={thread.data.prov} />}
         </h2>
         <div className="discussion-tools">
           <fieldset className="seg" aria-label="Which comments to show">
@@ -219,11 +227,28 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
       {thread.data && count === 0 && <p className="muted">No comments yet.</p>}
       {thread.data?.truncated && <p className="error small">This proposal has more comments than one read returns (10,000); the oldest are shown.</p>}
       {reactions.error && <p className="error small">Scores could not be read: {reactions.error}</p>}
-      <ol className="thread">
-        {roots.map((n) => (
-          <CommentNode key={n.comment.id} node={n} ctx={ctx} />
-        ))}
-      </ol>
+      {!moderation.ready && thread.data && count > 0 && (
+        <p className="muted" aria-busy="true">
+          <span className="spinner" aria-hidden="true" /> Applying block lists…
+        </p>
+      )}
+      {moderation.ready && moderation.error && (
+        <p className="notice-warn small" role="alert">
+          {moderation.error}, so comments they would hide may show.{' '}
+          {!unfiltered && (
+            <button type="button" className="linkish" onClick={() => setUnfiltered(true)}>
+              Show the comments anyway
+            </button>
+          )}
+        </p>
+      )}
+      {!gated && (
+        <ol className="thread">
+          {roots.map((n) => (
+            <CommentNode key={n.comment.id} node={n} ctx={ctx} />
+          ))}
+        </ol>
+      )}
     </section>
   );
 }
@@ -247,13 +272,11 @@ interface NodeCtx {
   block(list: 'forum' | 'mod', target: string, kind: 1 | 2): Promise<void>;
   unblock(list: 'forum' | 'mod', b: Block): Promise<void>;
   reveal(id: string): void;
+  /** comment id -> it or a reply below it is shown (visibleSubtrees) */
+  visible: Map<string, boolean>;
 }
 
-/** Whether a node or any descendant is shown, so hidden parents of visible replies leave a placeholder. */
-function visible(n: ThreadNode, ctx: NodeCtx): boolean {
-  return shown(n.comment, ctx) || n.children.some((c) => visible(c, ctx));
-}
-function shown(c: Comment, ctx: NodeCtx): boolean {
+function shown(c: Comment, ctx: Pick<NodeCtx, 'reasonsOf' | 'showHidden' | 'revealed' | 'filter' | 'owner'>): boolean {
   const hidden = ctx.reasonsOf(c).length > 0 && !ctx.showHidden && !ctx.revealed.has(c.id);
   return !hidden && passesFilter(c, ctx.filter, { owner: ctx.owner, badged: noBadge });
 }
@@ -264,7 +287,9 @@ function CommentNode({ node, ctx }: { node: ThreadNode; ctx: NodeCtx }) {
   const [confirmRetract, setConfirmRetract] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  if (!visible(node, ctx)) return null;
+  const menu = useRef<HTMLDetailsElement>(null);
+  // Hidden parents of visible replies leave a placeholder; subtrees with nothing shown are omitted.
+  if (!ctx.visible.get(c.id)) return null;
   const reasons = ctx.reasonsOf(c);
   const isShown = shown(c, ctx);
   const isOwner = ctx.owner !== null && c.ownerId === ctx.owner;
@@ -277,6 +302,7 @@ function CommentNode({ node, ctx }: { node: ThreadNode; ctx: NodeCtx }) {
     setError(null);
     try {
       await f();
+      if (menu.current) menu.current.open = false; // the action is done: close the "Hide…" menu
     } catch (e) {
       setError(errText(e));
     } finally {
@@ -294,7 +320,7 @@ function CommentNode({ node, ctx }: { node: ThreadNode; ctx: NodeCtx }) {
   if (!isShown) {
     const why = reasons.length ? `Hidden: on ${reasons.map((r) => r.list).join(', ')}` : 'Not in this view';
     return (
-      <li className="comment comment-placeholder" id={`comment-${c.id}`} data-comment-id={c.id}>
+      <li className={`comment comment-placeholder ${ctx.focus === c.id ? 'comment-focus' : ''}`} id={`comment-${c.id}`} data-comment-id={c.id}>
         <p className="muted small">
           {why}.{' '}
           {reasons.length > 0 && (
@@ -352,7 +378,7 @@ function CommentNode({ node, ctx }: { node: ThreadNode; ctx: NodeCtx }) {
               </button>
             ))}
           {ctx.session && !mine && (
-            <details className="menu">
+            <details className="menu" ref={menu}>
               <summary className="btn btn-quiet btn-s">Hide…</summary>
               <div className="menu-body">
                 {myBlock ? (

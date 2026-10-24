@@ -36,6 +36,8 @@ interface ModerationState {
   lists: BlockList[];
   subs: Subscriptions;
   loading: boolean;
+  /** the lists have been read at least once for this identity and network: until then nothing may be shown unfiltered */
+  ready: boolean;
   error?: string;
 }
 
@@ -76,7 +78,7 @@ export function ForumProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [balance, setBalance] = useState<bigint | null>(null);
   const [modNonce, setModNonce] = useState(0);
-  const [moderation, setModeration] = useState<ModerationState>({ index: EMPTY_HIDE_INDEX, lists: [], subs: loadLocalSubs(), loading: true });
+  const [moderation, setModeration] = useState<ModerationState>({ index: EMPTY_HIDE_INDEX, lists: [], subs: loadLocalSubs(), loading: true, ready: false });
 
   // A different network or data mode means a different identity space: sign out.
   useEffect(() => () => setSession((s) => (s?.close(), null)), [forum]);
@@ -104,6 +106,9 @@ export function ForumProvider({ children }: { children: ReactNode }) {
     [session, refreshBalance],
   );
 
+  // A different identity or network has different lists: fail closed until they are read again.
+  useEffect(() => setModeration((m) => ({ ...m, index: EMPTY_HIDE_INDEX, lists: [], ready: false })), [forum, session]);
+
   // Moderation lists: the subscriptions (Platform document when signed in and present, else this browser), then
   // every list they name plus the user's own list.
   useEffect(() => {
@@ -124,8 +129,8 @@ export function ForumProvider({ children }: { children: ReactNode }) {
       const settled = await Promise.allSettled(wanted);
       const lists = settled.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
       const failed = settled.filter((r) => r.status === 'rejected').length;
-      if (live) setModeration({ index: buildHideIndex(lists), lists, subs, loading: false, ...(failed ? { error: `${failed} block list(s) could not be read` } : {}) });
-    })().catch((e: unknown) => live && setModeration((m) => ({ ...m, loading: false, error: e instanceof Error ? e.message : String(e) })));
+      if (live) setModeration({ index: buildHideIndex(lists), lists, subs, loading: false, ready: true, ...(failed ? { error: `${failed} block list(s) could not be read` } : {}) });
+    })().catch((e: unknown) => live && setModeration((m) => ({ ...m, loading: false, ready: true, error: e instanceof Error ? e.message : String(e) })));
     return () => {
       live = false;
     };

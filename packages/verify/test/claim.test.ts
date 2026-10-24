@@ -245,7 +245,26 @@ describe('ranking within a method', () => {
       portals: PORTALS,
     });
     expect(v.owner).toMatchObject({ identityId: ida, method: 2, createdAt: 1000 });
-    expect(v.valid).toHaveLength(2);
-    expect(v.rejected.map((r) => r.docId).sort()).toEqual(['x', 'y']);
+    // y (a malformed earlier try by the same identity) does not lock it out; the later valid claim by idb is not even checked.
+    expect(v.valid).toHaveLength(1);
+    expect(v.rejected.map((r) => [r.docId, r.reason.slice(0, 11)]).sort()).toEqual([
+      ['doc' + (n - 1), 'not checked'],
+      ['x', 'unknown cla'],
+      ['y', 'signature i'],
+    ]);
+  });
+
+  it('claim spam is bounded: per-identity tries and a total signature budget, skipped claims reported', () => {
+
+    const junk = (owner: string, i: number): ClaimDoc => ({ id: `j${owner.slice(0, 3)}${i}`, ownerId: owner, method: 2, sig: new Uint8Array(65).fill(i % 250), createdAt: i });
+    const owners = Array.from({ length: 30 }, (_, i) => fx.identities[i % 2 ? 'I1' : 'I2'].slice(0, 40) + String(i).padStart(4, 'x'));
+    const claims = [...Array.from({ length: 10 }, (_, i) => junk(fx.identities.I1, i)), ...owners.flatMap((o, i) => [junk(o, 100 + i), junk(o, 200 + i)]), claim(fx.identities.I1, 2, S('pay-p2pkh-valid').sigBase64, 5000)];
+    const t = performance.now();
+    const v = verifyClaims(input('pay-p2pkh', { claims }));
+    expect(performance.now() - t).toBeLessThan(2000);
+    expect(v.rejected.filter((r) => r.reason.startsWith('not checked: more than 3 claims by this identity'))).toHaveLength(8); // 7 junk + the real one, all by I1
+    expect(v.rejected.filter((r) => r.reason.startsWith('not checked: more than 50 claims'))).not.toHaveLength(0);
+    expect(v.owner).toBeNull(); // the real claim came after the budget ran out: reported, not trusted
+    expect(v.rejected.at(-1)).toMatchObject({ ownerId: fx.identities.I1, reason: expect.stringContaining('more than 3') });
   });
 });

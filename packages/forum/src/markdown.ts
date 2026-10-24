@@ -26,8 +26,19 @@ export type MdBlock =
   | { t: 'table'; align: Array<'left' | 'center' | 'right' | null>; head: MdInline[][]; rows: MdInline[][][] };
 
 export const MAX_DEPTH = 8;
-/** Inputs are at most 5,000 B for comments; posts inflate to at most 256 KiB. */
-const MAX_INPUT = 256 * 1024;
+/** Comments are at most 5,000 B; longer post bodies than this are shown as plain text. */
+const MAX_INPUT = 64 * 1024;
+/**
+ * marked's inline lexer is quadratic in mixed emphasis / bracket / backtick delimiters (64 KB of `*a_` takes ~20 s).
+ * Text dense in them is rendered as plain text instead: ordinary prose and formatting stay far below this.
+ */
+const DELIMITER_BUDGET = 1500;
+const DELIMITERS = /[*_~`[\]<]/g;
+export function tooCostly(text: string): boolean {
+  if (text.length >= MAX_INPUT) return true;
+  const n = text.match(DELIMITERS)?.length ?? 0;
+  return n > DELIMITER_BUDGET && n > text.length * 0.04;
+}
 
 /** Only absolute http(s) URLs survive, normalised by the URL parser (so `java\nscript:` tricks cannot pass). */
 export function safeHref(href: string | undefined | null): string | null {
@@ -35,7 +46,8 @@ export function safeHref(href: string | undefined | null): string | null {
   try {
     const u = new URL(href.trim());
     if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
-    if (!u.hostname) return null;
+    // `https://gov.dashhq.org@evil.example/` goes to evil.example: refuse userinfo outright.
+    if (!u.hostname || u.username || u.password) return null;
     return u.href;
   } catch {
     return null;
@@ -171,6 +183,7 @@ function blocks(tokens: readonly Token[], depth: number): MdBlock[] {
  */
 export function parseMarkdown(src: string): MdBlock[] {
   const text = (src.length > MAX_INPUT ? src.slice(0, MAX_INPUT) : src).replace(/^((?:[ \t]*>){8})(?:[ \t]*>)+/gm, '$1');
+  if (tooCostly(text)) return parsePlain(text);
   try {
     return blocks(Lexer.lex(text, { gfm: true, breaks: true }), 0);
   } catch (e) {
