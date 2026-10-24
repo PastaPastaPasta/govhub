@@ -9,6 +9,11 @@ import { x11Many } from '../src/x11.ts';
 import { loadAnchorFixture, runOf } from './anchor-fixtures.ts';
 
 const nets = { mainnet: loadAnchorFixture('mainnet'), testnet: loadAnchorFixture('testnet') };
+/** The pinned headers (mainnet 2,544,000, testnet 1,578,000), as 8 of 8 random nodes returned them. */
+const PINNED_HEADERS = {
+  mainnet: '000000207720b36c9def554cc4a7421746f14adb372e67fabea999fd190000000000000097f9bc34829d1a852b2d20b92dc813c5dc22acb08cf35efb1ee7501d99f4e1f84ba6b46aabfb2519c3091b2e',
+  testnet: '00000020339f6df5282091adb20c895b1e93823aacb00215def5bd2eccbbe54a0d00000032bc5666abc05aa6141581091e46240526824609401d40ac124fcc2e9d04a367ef86db6a75fe001e0a1a0d00',
+} as const;
 const clone = <T>(x: T): T => structuredClone(x);
 const timing = (h: Uint8Array): HeaderTiming => { const p = parseHeader(h); return { bits: p.bits, time: p.time }; };
 
@@ -95,9 +100,12 @@ describe.each(Object.entries(nets))('%s HeaderChain', (net, f) => {
     expect(() => c.extendUp(runOf(f, f.from + at + 1, f.from + at + 2), o)).toThrow(/expected/);
   });
 
-  it('pins bits and time that match the pinned header (CHECKPOINTS)', () => {
-    const pin = CHECKPOINTS[network];
-    expect(f.cpAt(pin.height)).toEqual(pin);
+  it('pins hash, bits and time of the real pinned header (CHECKPOINTS)', () => {
+    const pin = CHECKPOINTS[network], h = unhex(PINNED_HEADERS[network]);
+    const p = parseHeader(h);
+    expect({ height: pin.height, hash: hashHex(x11Many(h)), bits: p.bits, time: p.time }).toEqual(pin);
+    // policy (scripts/checkpoint.mjs): a pin is at least 30 days old when it ships; the recorded runs postdate both
+    expect(f.now - pin.time).toBeGreaterThan(network === 'mainnet' ? 30 * 86400 : 0);
   });
 
   it('refuses headers whose difficulty is more than 8x below the checkpoint (a cheap fork after a fast DGW drop)', () => {

@@ -92,7 +92,7 @@ export interface VerifiedTransaction {
     blockHash: 'verified' | 'claimed';
     chainLock: null | { height: number; blockHash: string; quorumHash: string; exact: boolean; verifiedConfirmations: number };
     /** The block is in the verified chain of `options.anchor`: `confirmations` = verified tip - height + 1 (a lower bound). */
-    anchor: null | { tip: number; confirmations: number; chainLockHeight: number };
+    anchor: null | { tip: number; confirmations: number; chainLockHeight: number; weak: string | null };
     /** Why the ChainLock was not verified, when it was not. */
     notes: string[];
   };
@@ -133,6 +133,8 @@ export interface AnchoredChain {
   chain: HeaderChain;
   /** The highest verified header (a node could withhold newer blocks: heights are lower bounds of the real tip). */
   tip: number;
+  /** Set when proof of work cannot be relied on for this network (testnet): the facts are consistent, not secure. */
+  weak: string | null;
   /** BLS-valid ChainLock on a block of `chain`: everything at or below `height` is final. */
   chainLock: { height: number; blockHash: string; quorumHash: string; exact: boolean; /** the locked header's time */ time: number };
   sml: ProvenSml;

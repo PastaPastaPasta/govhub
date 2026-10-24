@@ -9,6 +9,9 @@ import type { RankingResult } from './ranking.ts';
 const SOURCE = 'chain verified in this browser';
 
 const verified = (detail: string): Provenance => ({ kind: 'verified', source: SOURCE, detail });
+/** "verified", unless the chain is one proof of work does not protect (testnet): then the same detail, labelled reported. */
+const chainProv = (r: { anchor?: { weak: string | null } } | null, detail: string): Provenance =>
+  r?.anchor?.weak ? { kind: 'reported', source: SOURCE, detail: `${detail}; not secure: ${r.anchor.weak}` } : verified(detail);
 const estimate = (detail: string): Provenance => ({ kind: 'reported', source: 'estimate', detail });
 
 /** The collateral's place in the chain: verified when its block is in the verified chain or under a verified ChainLock. */
@@ -16,9 +19,10 @@ export function collateralStatus(c: ChainFacts): { text: string; prov: Provenanc
   const source = 'collateral check in this browser';
   if (c.anchored) {
     const a = c.anchored;
+    const detail = 'the block is the one at its height in the chain verified from the checkpoint; confirmations counted from the verified tip; ChainLock BLS-verified';
     return {
       text: `at least ${formatInt(a.confirmations)} confirmations; ${a.final ? `final (ChainLocked at block ${formatInt(a.chainLockHeight)})` : `not ChainLocked yet (newest lock: block ${formatInt(a.chainLockHeight)})`}`,
-      prov: { kind: 'verified', source, detail: 'the block is the one at its height in the chain verified from the checkpoint; confirmations counted from the verified tip; ChainLock BLS-verified' },
+      prov: a.weak ? { kind: 'reported', source, detail: `${detail}; not secure: ${a.weak}` } : { kind: 'verified', source, detail },
     };
   }
   if (c.chainLocked === 'verified' && c.lockDepth !== null) {
@@ -37,6 +41,7 @@ export function collateralStatus(c: ChainFacts): { text: string; prov: Provenanc
 /** The collateral height as shown next to the txid. */
 export function collateralHeightProv(c: ChainFacts | undefined, published: number, fallback: Provenance): Provenance {
   if (!c || c.height !== published) return fallback;
+  if (c.anchored?.weak) return { kind: 'reported', source: SOURCE, detail: `the block's coinbase commits to this height and the block is in the checked chain; not secure: ${c.anchored.weak}` };
   if (c.anchored || c.chainLocked === 'verified') return verified("the block's coinbase commits to this height and the block is in the verified chain");
   return fallback;
 }
@@ -46,7 +51,7 @@ export function thresholdFact(r: ChainReport | null, fallback: { value: number; 
   if (!r) return fallback;
   const t = r.threshold;
   const how = `${formatInt(t.validWeighted)} weighted valid masternodes / 10 (at least the minimum quorum), list at block ${formatInt(t.height)}`;
-  if (t.status === 'verified') return { value: t.value, prov: verified(`${how}; masternode list proven by that block's coinbase${t.legacy.valid ? `, ${formatInt(t.legacy.valid)} older entries' types proven by their registrations` : ''}`) };
+  if (t.status === 'verified') return { value: t.value, prov: chainProv(r, `${how}; masternode list proven by that block's coinbase${t.legacy.valid ? `, ${formatInt(t.legacy.valid)} older entries' types proven by their registrations` : ''}`) };
   return { value: t.value, prov: { kind: 'reported', source: 'masternode list', detail: `${how}; ${t.reason ?? 'not fully proven'}` } };
 }
 
@@ -55,7 +60,7 @@ export function deadlineFact(r: ChainReport | null, cycle: Cycle | null, nowS: n
   if (r) {
     const s = r.schedule;
     const when = s.inMaturityWindow ? 'passed: the payees of the next superblock are being decided' : `${formatRelative(s.deadlineEstTime, nowS)} (estimated)`;
-    return { text: `block ${formatInt(s.votingDeadline)}, ${when}`, prov: verified(`height from the superblock schedule at verified block ${formatInt(s.tip)}; the date assumes 2.62 minutes per block, as Core does`) };
+    return { text: `block ${formatInt(s.votingDeadline)}, ${when}`, prov: chainProv(r, `height from the superblock schedule at verified block ${formatInt(s.tip)}; the date assumes 2.62 minutes per block, as Core does`) };
   }
   if (!cycle) return null;
   return { text: `${fallbackTime !== null ? `${formatRelative(fallbackTime, nowS)}, ` : ''}block ${formatInt(cycle.votingDeadlineHeight)}`, prov: cycleProv };
@@ -66,15 +71,16 @@ export function paymentsFact(r: ChainReport | null): { made: { text: string; pro
   const p = r?.payments;
   if (!r || !p) return null;
   const heights = p.paid.map((x) => formatInt(x.height)).join(', ');
-  const how = `${p.paid.length ? `paid in superblock${p.paid.length > 1 ? 's' : ''} ${heights}` : 'no payment found'}: each superblock in the payment window, from the collateral's block to the verified tip (${formatInt(p.checked.length)} checked), was read from its coinbase in the verified chain`;
+  const how = `${p.paid.length ? `paid in superblock${p.paid.length > 1 ? 's' : ''} ${heights}` : 'no payment found'}: each superblock in the payment window, from the collateral's block to the verified tip (${formatInt(p.checked.length)} checked), was read from its coinbase in the verified chain, and no other proposal listed on Platform pays the same address the same amount in that window (one missing from Platform could not be ruled out)`;
   const doubt = [
     ...(p.unread.length ? [`${p.unread.length} superblocks could not be read`] : []),
     ...(p.ambiguous.length ? [`${p.ambiguous.length} matching payments could equally be for another proposal with the same address and amount`] : []),
+    ...(p.othersComplete === false ? ['not every listed proposal could be read to rule out another with the same address and amount'] : []),
   ];
   return {
     made: {
       text: `${formatInt(p.paid.length)}${p.unread.length || p.ambiguous.length ? ' or more' : ''}`,
-      prov: doubt.length ? { kind: 'reported', source: 'superblock coinbases', detail: `${how}; not exact: ${doubt.join('; ')}` } : verified(how),
+      prov: doubt.length ? { kind: 'reported', source: 'superblock coinbases', detail: `${how}; not exact: ${doubt.join('; ')}` } : chainProv(r, how),
     },
     remaining: {
       text: `${formatInt(p.remainingEstimate)} more possible`,

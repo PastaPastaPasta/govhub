@@ -74,7 +74,7 @@ function chainRows(r: ChainReport, cycle: Cycle | null, nowS: number): Row[] {
   const rows: Row[] = [
     {
       id: 'chain', status: 'ok', label: 'Chain',
-      detail: `verified from the pinned checkpoint to block ${n(a.tip)}`,
+      detail: `${a.weak ? 'checked' : 'verified'} from the pinned checkpoint to block ${n(a.tip)}`,
       more: `${n(a.tip - a.lo + 1)} block hashes from ${n(a.lo)}: hash links down to the checkpoint at ${n(a.checkpoint)}, and above it every header's proof of work, difficulty (Dark Gravity Wave) and timestamp checked like Core does; ${n(a.headers.cached)} came from this browser's cache, ${n(a.headers.fetched)} were downloaded (${(a.ms.total! / 1000).toFixed(1)} s)`,
     },
     {
@@ -84,7 +84,7 @@ function chainRows(r: ChainReport, cycle: Cycle | null, nowS: number): Row[] {
     },
     {
       id: 'mnlist', status: 'ok', label: 'Masternode list',
-      detail: `${n(a.sml.entries)} masternodes and ${n(a.sml.quorums)} quorums proven by block ${n(a.sml.height)}`,
+      detail: `${n(a.sml.entries)} masternodes and ${n(a.sml.quorums)} quorums ${a.weak ? 'match' : 'proven by'} block ${n(a.sml.height)}`,
       more: `every entry and quorum commitment re-serialized and hashed; both merkle roots equal the ones in block ${n(a.sml.height)}'s coinbase, which the block's merkle root covers`,
     },
     {
@@ -104,14 +104,17 @@ function chainRows(r: ChainReport, cycle: Cycle | null, nowS: number): Row[] {
     },
   ];
   const p = r.payments;
+  // a chain proof of work does not protect (testnet) gives consistent facts, not secure ones
+  const done = (rs: Row[]) =>
+    a.weak ? rs.map((x) => (x.basis === 'reported' ? x : { ...x, basis: 'reported' as const, more: `${x.more ? `${x.more}; ` : ''}not secure: ${a.weak}` })) : rs;
   if (p) {
     rows.push({
-      id: 'payments', status: p.unread.length || p.ambiguous.length ? 'warn' : 'ok', basis: p.unread.length || p.ambiguous.length ? 'reported' : 'verified', label: 'Payments made',
+      id: 'payments', status: p.unread.length || p.ambiguous.length ? 'warn' : 'ok', basis: p.unread.length || p.ambiguous.length || p.othersComplete === false ? 'reported' : 'verified', label: 'Payments made',
       detail: `${n(p.paid.length)}${p.unread.length || p.ambiguous.length ? ' or more' : ''}${p.paid.length ? ` (superblock${p.paid.length > 1 ? 's' : ''} ${p.paid.map((x) => n(x.height)).join(', ')})` : ''}; ${n(p.remainingEstimate)} more possible (estimate)`,
-      more: `${n(p.checked.length)} superblocks in the payment window from the collateral's block to the verified tip read from their coinbases, each block proven to be the verified one${p.unread.length ? `; not read: ${p.unread.map((u) => `${n(u.height)} (${u.error})`).join(', ')}` : ''}${p.ambiguous.length ? `; payments another proposal with the same address and amount could account for: ${p.ambiguous.map((x) => n(x.height)).join(', ')}` : ''}. "More possible" counts later superblocks whose estimated time falls in the payment window`,
+      more: `${n(p.checked.length)} superblocks in the payment window from the collateral's block to the verified tip read from their coinbases, each block proven to be the verified one${p.unread.length ? `; not read: ${p.unread.map((u) => `${n(u.height)} (${u.error})`).join(', ')}` : ''}${p.ambiguous.length ? `; payments another proposal with the same address and amount could account for: ${p.ambiguous.map((x) => n(x.height)).join(', ')}` : ''}${p.othersComplete === false ? '; not every listed proposal could be read to rule out another with the same address and amount' : '; no other proposal listed on Platform pays the same address the same amount in that window'}. "More possible" counts later superblocks whose estimated time falls in the payment window`,
     });
   }
-  return rows;
+  return done(rows);
 }
 
 function ChainBlock({ chain, cycle, nowS }: { chain: ChainCheck; cycle: Cycle | null; nowS: number }) {
@@ -121,8 +124,11 @@ function ChainBlock({ chain, cycle, nowS }: { chain: ChainCheck; cycle: Cycle | 
       <h3>Chain facts</h3>
       {report ? (
         <>
-          <p className="verdict verdict-ok" data-chain="verified" data-ms={JSON.stringify(report.anchor.ms)} data-headers={JSON.stringify(report.anchor.headers)}>
-            <ProvGlyph kind="verified" /> Chain verified to block {n(report.anchor.tip)}, ChainLocked {formatRelative(report.anchor.chainLock.time, nowS)}
+          <p className={`verdict ${report.anchor.weak ? 'verdict-partial' : 'verdict-ok'}`} data-chain={report.anchor.weak ? 'weak' : 'verified'} data-ms={JSON.stringify(report.anchor.ms)} data-headers={JSON.stringify(report.anchor.headers)}>
+            <ProvGlyph kind={report.anchor.weak ? 'reported' : 'verified'} />
+            {report.anchor.weak
+              ? `Chain checked to block ${n(report.anchor.tip)}, ChainLocked ${formatRelative(report.anchor.chainLock.time, nowS)}, but not secure: ${report.anchor.weak}`
+              : `Chain verified to block ${n(report.anchor.tip)}, ChainLocked ${formatRelative(report.anchor.chainLock.time, nowS)}`}
           </p>
           <Steps steps={chainRows(report, cycle, nowS)} />
         </>
@@ -227,7 +233,7 @@ function RunResult({ run, bridge, sml }: { run: VoteRun; bridge: string; sml: Vo
     <div className="vote-run" data-run-height={run.votesAsOf}>
       <p className="muted small">
         {formatInt(r.total)} votes from {bridge} (as of block {formatInt(run.votesAsOf)}), masternode list at block {formatInt(run.mnlistHeight)}
-        {sml && `, voting keys checked against the masternode list proven by block ${formatInt(sml.height)} (${formatInt(r.smlChecked)} checked), collateral and type of ${formatInt(r.collateralProven)} voters proven by their registration transactions`}
+        {sml && `, voting keys checked against the masternode list ${sml.weak ? 'checked (not secure on this network)' : 'proven'} by block ${formatInt(sml.height)} (${formatInt(r.smlChecked)} checked), collateral and type of ${formatInt(r.collateralProven)} voters proven by their registration transactions`}
         {r.rejectedTime > 0 && `, ${r.rejectedTime} dropped for a time Core would reject`}
         {r.otherSignal > 0 && `, ${r.otherSignal} votes on other signals skipped`}. Superseded votes are counted once, latest wins.
         {run.listMatches === false && ' The masternode list served for this height is not the one the bridge built its tally from; a mismatch may come from that.'}

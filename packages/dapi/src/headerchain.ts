@@ -9,9 +9,12 @@
 //     consensus allows only after a 10-minute gap), so each forged header costs at least 1/8 of a real block's work;
 //   - the anchor (anchor.ts) needs a recent ChainLocked block at least (now - 1 h - checkpoint time) / 225 s above the checkpoint, so
 //     a forged chain must have that many headers.
-// Together: forging costs about one real block of work per hour since the pin (~4% of the network's hash rate, sustained). Real
-// difficulty falling 8x below the pin, or blocks coming 43% slower than the 150 s target, fails closed (nothing verified) until
-// the pin moves. A ChainLock on top (checked elsewhere) makes the verified part final.
+// Together: a forged chain needs (now - 1 h - pin time) / 225 headers at >= 1/8 of the pin's work each, i.e. about two real blocks of
+// work per hour since the pin (~8% of the hash rate, sustained). Pins ship at least 30 days old (scripts/checkpoint.mjs), so today's
+// floor is ~1,440 real blocks, ~2.5 days of the whole network. If difficulty rises after the pin, a forged header costs less than
+// 1/8 of a current block. Real difficulty falling 8x below the pin, or blocks coming 43% slower than the 150 s target, fails closed
+// (nothing verified) until the pin moves. On testnet difficulty is negligible, so these facts are flagged weak (POW_SECURE).
+// A ChainLock on top (checked elsewhere) makes the verified part final.
 import { bytesEqual, hashBytes, hashHex } from './bytes.ts';
 import type { Network } from './chainlock.ts';
 import { VerificationError } from './errors.ts';
@@ -30,13 +33,20 @@ export interface Checkpoint {
 export const WORK_FLOOR_FACTOR = 8;
 
 /**
- * Pinned per network. Each pin was checked by `scripts/checkpoint.mjs` to descend from Dash Core's newest hard-coded checkpoint
+ * Whether proof of work protects the anchor at all. Testnet's difficulty is so low (its pin's target is ~powLimit / 16) that the
+ * floor allows ~2 million hashes per header: a forged chain costs seconds on a GPU. Testnet facts are computed the same way but
+ * must be labelled as not secure against a malicious node.
+ */
+export const POW_SECURE: Record<Network, boolean> = { mainnet: true, testnet: false };
+
+/**
+ * Pinned per network, at least 30 days old when shipped. Each pin was checked by `scripts/checkpoint.mjs` to descend from Dash Core's newest hard-coded checkpoint
  * (mainnet 2,487,500, chainparams.cpp:345; testnet 1,380,000, chainparams.cpp:528) through headers that pass every rule above, and
  * 8 random nodes returned the same hash. Move a pin forward (same script) to keep cold verification short: the first verification
  * on a device downloads every header from the lower of (checkpoint - 24, block of interest) to the tip.
  */
 export const CHECKPOINTS: Record<Network, Checkpoint> = {
-  mainnet: { height: 2_560_000, hash: '0000000000000007c3d73af34a556850b5748c66812021a136387bec1dd79675', bits: 0x19255f53, time: 1_792_745_925 },
+  mainnet: { height: 2_544_000, hash: '0000000000000007929630c9c796deef212c2ed31c726e93c993bdbb524c14bf', bits: 0x1925fbab, time: 1_790_223_947 },
   testnet: { height: 1_578_000, hash: '0000009c0b6cbd13862a8049d0a117a4210ae6eeb90d8022cd2276e875fe639c', bits: 0x1e00fe75, time: 1_792_771_823 },
 };
 

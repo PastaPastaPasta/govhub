@@ -86,6 +86,7 @@ describe.each(['mainnet', 'testnet'] as const)('%s anchorChain', (network) => {
     const a = await dapiFor([N(1), N(2), N(3)], network).anchorChain({ ...base, store });
     expect([a.chain.lo, a.tip]).toEqual([f.checkpoint.height - 24, f.top]);
     expect(a.chainLock).toMatchObject({ height: f.chainLock.height, blockHash: f.chainLock.blockHash, exact: true });
+    expect(a.weak).toEqual(network === 'testnet' ? expect.stringContaining('difficulty is too low') : null);
     expect(a.sml.proof.blockHash).toBe(f.sml.blockHash);
     expect(a.sml.masternodes.length).toBe((f.sml.mnList as unknown[]).length);
     expect(a.stats).toMatchObject({ cachedHeaders: 0, fetchedHeaders: f.count });
@@ -155,7 +156,7 @@ describe('getVerifiedTransaction with an anchored chain (mainnet)', () => {
     const v = await d.getVerifiedTransaction(fx.txid, { anchor });
     expect(fake.calls.filter((c) => c.endsWith('subscribeToBlockHeadersWithChainLocks')).length).toBe(before);
     expect(v.chainLocked).toBe('verified');
-    expect(v.proof.anchor).toEqual({ tip: f.top, confirmations: f.top - fx.height + 1, chainLockHeight: f.chainLock.height });
+    expect(v.proof.anchor).toEqual({ tip: f.top, confirmations: f.top - fx.height + 1, chainLockHeight: f.chainLock.height, weak: null });
     expect(v.proof.chainLock).toMatchObject({ height: f.chainLock.height, verifiedConfirmations: f.chainLock.height - fx.height + 1 });
     // a block that is not the verified one at that height is a lie, not a fallback
     const wrong = { ...anchor, chain: Object.create(anchor.chain, { hashHexAt: { value: () => hex(hashBytes(f.hashAt(f.from))) } }) };

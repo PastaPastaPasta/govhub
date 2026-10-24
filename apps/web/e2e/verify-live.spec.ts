@@ -122,7 +122,7 @@ test('@live vote recount and funding order rest on the proven list and registrat
 const TESTNET_CONTRACT = '5gMnJLDpcoMaQCQNqmHtBiSqCxRCmroXFAffPNdJ2NJC';
 const TESTNET_BRIDGE_ID = '24tL6v5jMR1H9dtUoTgbedePsMJtYPk4Q4bo6h8jTdK9';
 
-test('@live testnet: the same chain facts verify on testnet (LLMQ_50_60 ChainLocks, cycle 24, v24 SML and CbTx)', async ({ page }) => {
+test('@live testnet: the same chain facts are computed on testnet (LLMQ_50_60, cycle 24, v24 SML and CbTx) but labelled not secure', async ({ page }) => {
   test.setTimeout(600_000);
   const props = (await (await fetch('https://gov-bridge-testnet.dashhq.org/v1/proposals')).json()) as { proposals: Array<{ govHash: string; collateralHeight?: number }> };
   const target = props.proposals[0]!;
@@ -138,9 +138,18 @@ test('@live testnet: the same chain facts verify on testnet (LLMQ_50_60 ChainLoc
   const errors = await watchPage(page);
   const r = await openAndVerify(page, target.govHash);
   await expect(page.getByTestId('profile-label')).toContainText('Testnet');
-  expect(r.state).toBe('verified');
-  for (const id of ['height', 'confirmations']) await expect(r.collateral.locator(`[data-step="${id}"]`), id).toHaveAttribute('data-basis', 'verified');
-  for (const id of ['chain', 'chainlock', 'mnlist', 'threshold', 'schedule', 'budget']) await expect(r.chain.locator(`[data-step="${id}"]`), id).toHaveAttribute('data-basis', 'verified');
+  // every check passes, but testnet difficulty cannot stop a forged chain: nothing chain-derived may say "verified"
+  expect(r.state).toBe('weak');
+  await expect(r.chain.locator('[data-chain]')).toContainText('not secure');
+  for (const id of ['height', 'confirmations']) {
+    await expect(r.collateral.locator(`[data-step="${id}"]`), id).toHaveAttribute('data-status', 'ok');
+    await expect(r.collateral.locator(`[data-step="${id}"]`), id).toHaveAttribute('data-basis', 'reported');
+  }
+  for (const id of ['chain', 'chainlock', 'mnlist', 'threshold', 'schedule', 'budget']) {
+    await expect(r.chain.locator(`[data-step="${id}"]`), id).toHaveAttribute('data-status', 'ok');
+    await expect(r.chain.locator(`[data-step="${id}"]`), id).toHaveAttribute('data-basis', 'reported');
+  }
+  await expect(page.locator('.info-table [data-prov="verified"]', { hasText: '' }).filter({ has: page.locator('xpath=ancestor::div[contains(@class,"info-row")][.//dt[text()="Voting deadline"]]') })).toHaveCount(0);
   await expect(r.chain.locator('[data-step="schedule"]')).toContainText('voting deadline block');
   expect(errors).toEqual([]);
 });

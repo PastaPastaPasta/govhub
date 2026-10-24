@@ -85,29 +85,55 @@ export function useChainReport(p: Proposal | undefined, verdict: CollateralVerdi
   const [error, setError] = useState<string | null>(null);
   // only for a proposal whose content and collateral checked out: payments are matched by its committed address and amount
   const from = verdict?.ok && verdict.chain?.anchored ? verdict.chain.height : null;
-  const active = gov.active.data;
   const live = source.dapiDescriptor().kind === 'live';
+  // payments to the same address and amount may belong to another proposal: wait for the active list, then add past ones
+  const activeReady = !gov.active.loading;
   useEffect(() => {
-    if (!p || !live || from === null) return;
+    if (!p || !live || from === null || !activeReady) return;
     let on = true;
     setReport(null);
     setError(null);
-    const others = (active ?? []).map((x) => x.value).filter((o) => o.govHash !== p.govHash).map(({ govHash, paymentAddress, paymentAmount, startEpoch, endEpoch }) => ({ govHash, paymentAddress, paymentAmount, startEpoch, endEpoch }));
-    runVerification({ kind: 'chain', proposal: p, from, others, dapi: source.dapiDescriptor(), network: source.coreNetwork, now: source.now() }, (m) => on && setProgress(m)).then(
+    void (async () => {
+      const { others, complete } = await listedProposals(source, gov.active, p);
+      const twins = others.filter((o) => o.govHash !== p.govHash).map(({ govHash, paymentAddress, paymentAmount, startEpoch, endEpoch }) => ({ govHash, paymentAddress, paymentAmount, startEpoch, endEpoch }));
+      return runVerification({ kind: 'chain', proposal: p, from, others: twins, othersComplete: complete, dapi: source.dapiDescriptor(), network: source.coreNetwork, now: source.now() }, (m) => on && setProgress(m));
+    })().then(
       (r) => on && setReport(r.report),
       (e: Error) => on && setError(e.message),
     );
     return () => {
       on = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- the active list only refines payment ambiguity; not a reason to rerun
-  }, [p, source, from, live]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reruns when the active list has loaded, not on every refresh of it
+  }, [p, source, from, live, activeReady]);
   const unavailable = !live
     ? 'needs live DAPI nodes (recorded data has no header chain)'
     : verdict && from === null
       ? (!verdict.ok ? 'the collateral check did not pass' : (verdict.anchorError ?? 'the collateral could not be placed in the verified chain'))
       : null;
   return { report, progress, error, unavailable };
+}
+
+/**
+ * Every listed proposal whose payment window could overlap `p`'s: the active ones and the past ones, newest-ending first, until they end
+ * before `p`'s window opens. `complete` is false when a list failed or paging stopped early.
+ */
+async function listedProposals(source: ReturnType<typeof useApp>['source'], active: ReturnType<typeof useApp>['gov']['active'], p: Proposal) {
+  const others: Proposal[] = (active.data ?? []).map((x) => x.value);
+  let complete = !active.error;
+  try {
+    let cursor: string | undefined;
+    for (let i = 0; ; i++) {
+      const page = await source.pastPage(cursor);
+      others.push(...page.items.map((x) => x.value));
+      if (!page.next || page.items.some((x) => x.value.endEpoch < p.startEpoch - 3 * 86_400)) break;
+      if (i === 20) { complete = false; break; }
+      cursor = page.next;
+    }
+  } catch {
+    complete = false;
+  }
+  return { others, complete };
 }
 
 export type ChainCheck = ReturnType<typeof useChainReport>;

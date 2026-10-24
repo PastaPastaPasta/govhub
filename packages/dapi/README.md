@@ -145,8 +145,9 @@ With an [anchored chain](#anchored-chain) it rests on the checkpoint and proof o
    free within MTP and +2 h, so a forger can walk the difficulty down to powLimit for about a dozen blocks of real work (and testnet's
    minimum-difficulty rule makes it free). Two floors that Core does not need (it has most-work selection) close that: every header's target
    is at most 8x the checkpoint's (testnet's consensus minimum-difficulty blocks excepted), and step 4 needs the chain to be as long as the
-   clock requires. Forging then costs about one real block of work per hour since the pin, i.e. ~4% of the network's hash rate sustained
-   since then. Real difficulty falling 8x below the pin, or blocks coming 43% slower than the target, fails closed until the pin moves.
+   clock requires. Forging then costs about two real blocks of work per hour since the pin (~8% of the network's hash rate, sustained);
+   pins ship at least 30 days old (`scripts/checkpoint.mjs` refuses younger ones), so the floor today is ~1,440 real blocks, about 2.5
+   days of the whole network. A rise in difficulty after the pin makes each forged header cheaper relative to a current block. Real difficulty falling 8x below the pin, or blocks coming 43% slower than the target, fails closed until the pin moves.
 2. **SML**: one node's full list (no agreement round). Every entry is re-serialized to Core's consensus bytes and hashed
    (`evo/simplifiedmns.h:72-101`, `simplifiedmns.cpp:45-50`, sorted by proRegTxHash `:78-80`; legacy CService for versions 1-2, ExtNetInfo in BIP155
    form for version 3, `evo/netinfo.h:226-240, 325-333, 411-419`), every quorum commitment too (`llmq/commitment.h:95-115`, sorted hashes
@@ -176,9 +177,10 @@ would otherwise serialize like 0), masternode types must be 0 or 1, and a repeat
 `evo/cbtx.cpp:151-153`, `simplifiedmns.cpp:137-139`).
 
 Trust assumptions that remain: the pinned checkpoint (checked by `scripts/checkpoint.mjs` to descend from Dash Core's own newest checkpoint,
-`chainparams.cpp:345` mainnet / `:528` testnet, through 72,500 / 198,000 headers that pass every rule, and returned by 8 of 8 random nodes),
-no adversary with ~4% of the hash rate since the pin (on testnet, where minimum-difficulty blocks are legal, the length rule still forces
-~60% of the headers to carry real work, but testnet work is cheap), and that withheld newest blocks are at most an hour's worth.
+`chainparams.cpp:345` mainnet / `:528` testnet, through 56,500 / 198,000 headers that pass every rule, and returned by 8 of 8 random nodes),
+no adversary with the work above since the pin, an honest local clock (it bounds staleness and the minimum height), and that withheld
+newest blocks are at most an hour's worth. **Testnet** runs the same checks, but its difficulty makes forging a chain a matter of
+seconds on a GPU, so `AnchoredChain.weak` is set there and the app labels testnet chain facts as not secure against a malicious node.
 
 Why not the cheaper ChainLock-in-coinbase path: CbTx v3 carries `bestCLSignature` for an ancestor, but verifying it needs the quorum set active
 at that height. Those keys are in `merkleRootQuorums` of blocks near it, which would themselves need anchoring first, and DAPI has no historical
@@ -289,7 +291,7 @@ Additions to the spike's findings 1-13 (README of `spikes/dapi-browser`). Items 
 27. **Node's `fetch` does not end a pending body read when the request's signal aborts after the body started** (browsers do), so a stream cancelled from its own message handler hung until the idle timeout and Node exited with "unsettled top-level await". `stream()` now cancels the body reader on every abort.
 28. **Testnet DAPI nodes report `isSynced: false` / status ERROR while Platform is halted**, although their Core is current: `anchorChain` falls back to a node's block count as the tip hint (everything up to it is verified anyway).
 29. **Testnet runs v24**: CbTx version 4 (asset-unlock merkle root) and version-3 entries with ExtNetInfo are live there; mainnet still has CbTx v3 and versions 1-2.
-30. **The pins**: mainnet 2,560,000 descends from Core's checkpoint 2,487,500 through 72,500 headers that pass every rule (10.7 s), testnet 1,578,000 from 1,380,000 through 198,000 (24.3 s); 8 of 8 random nodes returned each pinned hash.
+30. **The pins**: mainnet 2,544,000 (30.7 days old when pinned) descends from Core's checkpoint 2,487,500 through 56,500 headers that pass every rule including the work floor (9.6 s), testnet 1,578,000 from 1,380,000 through 198,000 (24.3 s); 8 of 8 random nodes returned each pinned hash.
 32. **Consensus header rules do not bound a forged chain's cost for a light client** (code review): DGW reacts to every block and timestamps can be spaced 3x apart within MTP and +2 h, so a fork from the pin reaches powLimit after ~100-200 headers costing ~12 real blocks, and testnet's minimum-difficulty rule makes it free. A ChainLock does not help on its own: its quorum keys come from a list proven by the same chain. Hence the work floor (8x the pin's target) and the minimum-height-by-clock rule.
 31. **A ChainLock in a later block's CbTx (`bestCLSignature`) does not help anchor an old block**: verifying it needs that era's quorum keys, which are only provable from blocks near it. The header walk is the sound route.
 

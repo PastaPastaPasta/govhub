@@ -41,7 +41,7 @@ export interface RankingResult {
 /** How far Core's own superblock-time estimate (made at the start of the maturity window) can plausibly be from ours. */
 const TIME_MARGIN_S = 12 * 3600;
 
-export function rankRecounts(rs: readonly RecountedProposal[], threshold: ThresholdFact, budget: { height: number; limit: string }, superblockTime: number): RankingResult {
+export function rankRecounts(rs: readonly RecountedProposal[], threshold: ThresholdFact, budget: { height: number; limit: string }, superblockTime: number, weak: string | null = null): RankingResult {
   const sel = selectBudget(rs.map((r) => ({ govHash: r.govHash, absYes: r.absYes, amount: r.amount, startEpoch: r.startEpoch, endEpoch: r.endEpoch })), Number(budget.limit), threshold.value, superblockTime);
   const rank = new Map(sel.ranked.map((h, i) => [h, i + 1]));
   const near = (t: number) => Math.abs(superblockTime - t) <= TIME_MARGIN_S;
@@ -52,7 +52,7 @@ export function rankRecounts(rs: readonly RecountedProposal[], threshold: Thresh
     timeSensitive: rank.has(r.govHash) && (near(r.startEpoch - FUDGE_WINDOW_S) || near(r.endEpoch + FUDGE_WINDOW_S)),
   }));
   entries.sort((a, b) => (a.rank ?? Infinity) - (b.rank ?? Infinity) || b.absYes - a.absYes);
-  const reasons: string[] = [];
+  const reasons: string[] = weak ? [`not secure: ${weak}`] : [];
   const unproven = rs.filter((r) => !r.proven);
   if (unproven.length) reasons.push(`${unproven.length} of ${rs.length} recounts are not fully proven (${unproven.slice(0, 3).map((r) => `${r.name}: ${r.problem ?? 'keys not proven'}`).join('; ')})`);
   if (threshold.status !== 'verified') reasons.push(`the funding threshold is not proven (${threshold.reason ?? 'reported'})`);

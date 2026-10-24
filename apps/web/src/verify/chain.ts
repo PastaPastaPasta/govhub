@@ -14,6 +14,8 @@ const FUDGE_S = 2 * 3600;
 
 /** What the anchored chain itself established (shown in "how this was checked"). */
 export interface AnchorSummary {
+  /** Set on networks where proof of work protects nothing (testnet): every fact below is consistent, not secure. */
+  weak: string | null;
   /** Lowest and highest verified heights (the tip is a lower bound: a node can withhold newer blocks, not invent them). */
   lo: number;
   tip: number;
@@ -41,6 +43,8 @@ export interface PaymentsFact {
   checked: number[];
   /** Those whose coinbase pays the proposal's address its exact amount. */
   paid: Array<{ height: number; output: number; time: number }>;
+  /** Whether every listed proposal (active and past) was compared; otherwise an unlisted twin could account for a payment. */
+  othersComplete?: boolean;
   /** Payments another listed proposal (same address and amount, its window too) could equally account for. */
   ambiguous: Array<{ height: number; with: string }>;
   /** Superblocks that could not be read (the count above is then a lower bound). */
@@ -61,7 +65,7 @@ export interface ChainReport {
 
 export function summarize(a: AnchoredChain): AnchorSummary {
   return {
-    lo: a.chain.lo, tip: a.tip, checkpoint: a.checkpoint.height, chainLock: a.chainLock,
+    weak: a.weak, lo: a.chain.lo, tip: a.tip, checkpoint: a.checkpoint.height, chainLock: a.chainLock,
     sml: { height: a.sml.proof.height, blockHash: a.sml.proof.blockHash, entries: a.sml.proof.entries, quorums: a.sml.proof.quorums },
     headers: { cached: a.stats.cachedHeaders, fetched: a.stats.fetchedHeaders }, ms: a.stats.ms,
   };

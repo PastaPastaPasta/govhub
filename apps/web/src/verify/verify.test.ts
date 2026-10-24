@@ -148,7 +148,7 @@ describe('what is verified and what is node-reported (ChainLock, confirmations, 
       ...tx, confirmations: 760, chainLocked: final ? 'verified' : 'claimed',
       proof: {
         merkle: true, blockHash: 'verified', notes: [],
-        anchor: { tip: tx.height + 999, confirmations: 1000, chainLockHeight: final ? tx.height + 998 : tx.height - 1 },
+        anchor: { tip: tx.height + 999, confirmations: 1000, chainLockHeight: final ? tx.height + 998 : tx.height - 1, weak: null },
         chainLock: final ? { height: tx.height + 998, blockHash: 'aa'.repeat(32), quorumHash: 'bb'.repeat(32), exact: true, verifiedConfirmations: 999 } : null,
       },
     });
@@ -160,7 +160,12 @@ describe('what is verified and what is node-reported (ChainLock, confirmations, 
     expect(stepOf(v, 'chainlock')).toMatchObject({ status: 'ok', basis: 'verified' });
     expect(stepOf(v, 'height').basis).toBe('verified');
     expect(v.steps.some((s) => s.id === 'crosscheck')).toBe(false); // no second node needed
-    expect(v.chain!.anchored).toEqual({ tip: tx.height + 999, confirmations: 1000, chainLockHeight: tx.height + 998, final: true });
+    expect(v.chain!.anchored).toEqual({ tip: tx.height + 999, confirmations: 1000, chainLockHeight: tx.height + 998, final: true, weak: null });
+    // the same proof on a chain proof of work does not protect (testnet): every chain step stays "reported"
+    const t = anchoredTx(true);
+    const weak = verifyCollateral(p, { ...t, proof: { ...t.proof, anchor: { ...t.proof.anchor!, weak: 'testnet difficulty is too low' } } });
+    for (const id of ['block', 'confirmations', 'chainlock', 'height']) expect(stepOf(weak, id).basis, id).toBe('reported');
+    expect(stepOf(weak, 'chainlock').more).toContain('not secure');
     // a block above the newest ChainLock: inclusion and depth are still proven, finality is not
     const w = verifyCollateral(p, anchoredTx(false));
     expect(stepOf(w, 'chainlock')).toMatchObject({ status: 'warn', basis: 'verified' });

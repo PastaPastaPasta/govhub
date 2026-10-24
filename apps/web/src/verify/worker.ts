@@ -65,7 +65,7 @@ function anchor(dapi: Dapi, progress: (m: string) => void, from?: number): Promi
 /** The proven list as the vote check uses it (types count as proven only where the list's hash covers them). */
 function smlEntries(a: AnchoredChain): { entries: Map<string, SmlEntry>; used: SmlUsed } {
   const entries = new Map(a.sml.masternodes.map((m) => [m.proTxHash, { votingAddress: m.votingAddress, isValid: m.isValid, nType: m.nType, typeProven: m.nVersion >= 2 }]));
-  return { entries, used: { height: a.sml.proof.height, blockHash: a.sml.proof.blockHash, node: a.sml.node, validWeighted: claimedWeight(a.sml.masternodes) } };
+  return { entries, used: { height: a.sml.proof.height, blockHash: a.sml.proof.blockHash, node: a.sml.node, validWeighted: claimedWeight(a.sml.masternodes), weak: a.weak } };
 }
 
 /** ProRegTx facts for the masternodes behind these votes (the bridge's outpoint -> proTxHash mapping is what they check). */
@@ -130,7 +130,7 @@ async function handle(req: WorkerRequest): Promise<void> {
     progress('Computing the funding threshold from the proven masternode list');
     const th = await threshold(dapi, a, req.network, proRegCache(req.network), progress);
     progress('Reading superblock coinbases for this proposal\'s payments');
-    const pay = req.from ? await payments(dapi, a, req.proposal, req.others, req.network, req.from, req.now) : null;
+    const pay = req.from ? { ...(await payments(dapi, a, req.proposal, req.others, req.network, req.from, req.now)), othersComplete: req.othersComplete } : null;
     post({ id: req.id, kind: 'chain', report: { network: req.network, anchor: summarize(a), ...scheduleAndBudget(a, req.network, req.now), threshold: th, payments: pay } });
     return;
   }
@@ -169,6 +169,8 @@ async function handle(req: WorkerRequest): Promise<void> {
     const proReg = dapi ? await proRegFor(dapi, req.network, votes, mnlist, progress) : null;
     progress(`Checking ${votes.votes.length} signatures`);
     const result = verifyVotes({ govHash: req.govHash, votes: votes.votes, masternodes: mnlist.masternodes, network: req.network, now: req.now, targets: g.targets, sml: sml?.entries ?? null, proReg });
+    // keys checked against a list on a chain proof of work does not protect (testnet): a match is not "verified"
+    if (sml?.used.weak) result.keysFrom = 'bridge';
     // votesAsOf is the height of the tally whose set was actually served (<= the requested height), not the height echoed back.
     runs.push({ result, votesAsOf: votes.tallyHeight, mnlistHeight: mnlist.height, listMatches: votes.mnListHash && mnlist.listHash ? votes.mnListHash === mnlist.listHash : null });
   }
@@ -205,7 +207,7 @@ async function ranking(req: Extract<WorkerRequest, { kind: 'ranking' }>, bridge:
     }
   }
   const sb = scheduleAndBudget(a, req.network, req.now);
-  return rankRecounts(recounts, th, sb.budget, Math.round(req.now + (sb.schedule.next - a.tip) * EST_BLOCK_SECONDS));
+  return rankRecounts(recounts, th, sb.budget, Math.round(req.now + (sb.schedule.next - a.tip) * EST_BLOCK_SECONDS), a.weak);
 }
 
 self.onmessage = (ev: MessageEvent<WorkerRequest>) => {

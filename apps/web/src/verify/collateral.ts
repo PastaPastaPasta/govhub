@@ -41,7 +41,7 @@ export interface ChainFacts {
   /** The node's claim. */
   confirmations: number;
   /** The block is in the chain this browser verified (headers from the checkpoint); `confirmations` below is then counted from its tip. */
-  anchored?: { tip: number; confirmations: number; chainLockHeight: number; final: boolean };
+  anchored?: { tip: number; confirmations: number; chainLockHeight: number; final: boolean; /** proof of work does not protect it (testnet) */ weak: string | null };
 }
 
 export interface CollateralVerdict {
@@ -213,13 +213,22 @@ export function verifyCollateral(p: ProposalCore, lookup: TxLookup | LookupError
       detail: same ? `block ${num(lookup.height)}${proven ? ' (the coinbase of the verified block commits to it)' : ''}` : `chain says ${num(lookup.height)}, published ${num(p.collateralHeight)}`,
     });
   }
+  // A chain anchored where proof of work protects nothing (testnet) is consistent, not secure: its facts stay "reported".
+  if (anc?.weak) {
+    for (const st of steps) {
+      if (st.basis === 'verified' && (['block', 'confirmations', 'chainlock', 'height'] as const).includes(st.id as 'block')) {
+        st.basis = 'reported';
+        st.more = `${st.more ? `${st.more}; ` : ''}not secure: ${anc.weak}`;
+      }
+    }
+  }
   const critical: Step['id'][] = ['hash', 'fields', 'tx', 'collateral', 'confirmations'];
   const ok = steps.filter((s) => critical.includes(s.id)).every((s) => s.status === 'ok') && !steps.some((s) => s.status === 'fail');
   const chain: ChainFacts = {
     height: lookup.height, merkle: proof.merkle, chainLocked: lookup.chainLocked, confirmations: lookup.confirmations,
     provenConfirmations: provenConf !== null && provenConf >= GOVERNANCE_FEE_CONFIRMATIONS ? provenConf : null,
     lockDepth: locked && cl ? cl.verifiedConfirmations : null,
-    ...(anc ? { anchored: { tip: anc.tip, confirmations: anc.confirmations, chainLockHeight: anc.chainLockHeight, final: locked } } : {}),
+    ...(anc ? { anchored: { tip: anc.tip, confirmations: anc.confirmations, chainLockHeight: anc.chainLockHeight, final: locked, weak: anc.weak } } : {}),
   };
   return { ok, steps, chain, ...(govHashComputed ? { govHashComputed } : {}), ...(ok && inputKeys ? { inputKeys } : {}) };
 }

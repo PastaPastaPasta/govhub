@@ -13,7 +13,7 @@ import { type Cbor, decodeCbor } from './cbor.ts';
 import { type ChainLock, parseChainLock, parseHeader } from './dash.ts';
 import { VerificationError } from './errors.ts';
 import { GrpcError, abortReason, isAbort, link } from './grpcweb.ts';
-import { CHECKPOINTS, type Checkpoint, DGW_WINDOW, HeaderChain, type HeaderRun, type StoredChain } from './headerchain.ts';
+import { CHECKPOINTS, type Checkpoint, DGW_WINDOW, HeaderChain, type HeaderRun, POW_SECURE, type StoredChain } from './headerchain.ts';
 import { MAX_FUTURE_BLOCK_TIME, POW_PARAMS } from './pow.ts';
 import { type Sml, type SmlQuorum, parseSmlDecoded } from './sml.ts';
 import { type SmlProof, proveSml } from './smlproof.ts';
@@ -94,7 +94,8 @@ async function runInner(d: Dapi, st: State, o: AnchorOptions, smlSignal: AbortSi
   // 2. the tip a node claims, the masternode list and the newest ChainLock, in parallel with the header download
   t = Date.now();
   // a node's tip claim only sizes the download; cap it by what the clock allows since the checkpoint
-  const tip = Math.min((await tipHint(d, o)).height, cp.height + Math.ceil((clock() + MAX_FUTURE_BLOCK_TIME - cp.time) / FASTEST_SPACING_S));
+  const maxTip = cp.height + Math.ceil((clock() + MAX_FUTURE_BLOCK_TIME - cp.time) / FASTEST_SPACING_S);
+  const tip = Math.min((await tipHint(d, o)).height, maxTip);
   const best = { height: tip };
   const tSml = Date.now();
   const smlP = fetchSml(d, { signal: smlSignal });
@@ -123,8 +124,8 @@ async function runInner(d: Dapi, st: State, o: AnchorOptions, smlSignal: AbortSi
   }
   lap('headers', t);
   const extendTo = async (h: number) => {
-    // a node's list or lock a few blocks newer than its tip claim is normal; far beyond it is not
-    if (h > chain!.hi + 64) throw new VerificationError('height', `block ${h} is far above the tip the nodes reported (${chain!.hi})`);
+    // a list or lock newer than the tip a node claimed is fine (that node may lag); beyond what the clock allows is not
+    if (h > maxTip) throw new VerificationError('height', `block ${h} is beyond any height the time since the checkpoint allows (${maxTip})`);
     if (h > chain!.hi) await applyRun(d, await fetchRun(chain!.hi + 1, h), hash, (x) => chain!.extendUp(x, { pow, now: clock() }), o);
   };
 
@@ -171,6 +172,7 @@ async function runInner(d: Dapi, st: State, o: AnchorOptions, smlSignal: AbortSi
   }
   const out: AnchoredChain = {
     network: d.network, checkpoint: cp, chain, tip: chain.hi,
+    weak: POW_SECURE[d.network] ? null : `${d.network} difficulty is too low for proof of work to stop a malicious node from forging the chain`,
     chainLock: { height: cl.height, blockHash: cl.blockHash, quorumHash: check.quorumHash, exact: check.exact, time: clTime },
     sml, at: Date.now(),
     stats: { cachedHeaders: cached, fetchedHeaders: fetched, ms: { ...ms, total: Date.now() - t0 } },

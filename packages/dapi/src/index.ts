@@ -30,7 +30,7 @@ export {
 } from './chainlock.ts';
 export type { CandidateSets, ChainLockParams, Network } from './chainlock.ts';
 export { Reader, hex, hashBytes, hashHex, reversed, sha256d, unhex } from './bytes.ts';
-export { CHECKPOINTS, DGW_WINDOW, HeaderChain } from './headerchain.ts';
+export { CHECKPOINTS, DGW_WINDOW, HeaderChain, POW_SECURE, WORK_FLOOR_FACTOR } from './headerchain.ts';
 export type { Checkpoint, HeaderRun, StoredChain } from './headerchain.ts';
 export { POW_PARAMS, checkProofOfWork, compactToTarget, darkGravityWave, medianTimePast, nextWorkRequired, targetToCompact } from './pow.ts';
 export type { HeaderTiming, PowParams } from './pow.ts';

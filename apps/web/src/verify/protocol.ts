@@ -16,6 +16,8 @@ export interface SmlUsed {
   /** The node that sent it (nothing rests on it: the list is proven). */
   node: string;
   validWeighted: number;
+  /** The chain the list is proven into is not protected by proof of work (testnet). */
+  weak: string | null;
 }
 
 export type WorkerRequest =
@@ -26,6 +28,8 @@ export type WorkerRequest =
       id: number; kind: 'chain'; proposal: Proposal; from: number; dapi: DapiDescriptor; network: CoreNetwork; now: number;
       /** Other listed proposals: a payment to the same address and amount inside their window is ambiguous. */
       others: Array<Pick<Proposal, 'govHash' | 'paymentAddress' | 'paymentAmount' | 'startEpoch' | 'endEpoch'>>;
+      /** Every listed proposal (active and past) could be read: otherwise a twin may have been missed. */
+      othersComplete: boolean;
     }
   | {
       id: number;
