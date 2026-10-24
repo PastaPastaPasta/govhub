@@ -336,13 +336,14 @@ export function VerificationPanel({
   onVotes(r: VotesDone | null): void;
   onRanking(r: RankingDone | null): void;
 }) {
-  const { source, mode, gov } = useApp();
+  const { source, mode, gov, checks } = useApp();
   const bridge = source.bridgeDescriptor();
   const [sml, setSml] = useState(true);
   const [votes, setVotes] = useState<{ running: boolean; progress?: string; result?: VotesDone; error?: string }>({ running: false });
   const [ranking, setRanking] = useState<{ running: boolean; progress?: string; result?: RankingDone; error?: string }>({ running: false });
   const { verdict, progress, error } = collateral;
-  const active = gov.active.data?.map((x) => x.value) ?? [];
+  // Proposals that failed verification (hash or collateral) are not governance objects Core holds: they cannot be ranked.
+  const active = (gov.active.data ?? []).map((x) => x.value).filter((p) => checks.state(p).status !== 'failed');
 
   const verifyRanking = () => {
     if (!bridge) return;

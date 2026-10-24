@@ -86,3 +86,34 @@ test('@live a deep collateral: height, confirmations, ChainLock, threshold and c
   expect(errors).toEqual([]);
   expect(await cspViolations(page)).toEqual([]);
 });
+
+test('@live vote recount and funding order rest on the proven list and registrations', async ({ page }) => {
+  test.setTimeout(900_000);
+  const errors = await watchPage(page);
+  await page.goto(`/p/h/${DCG}?fixtures=0`);
+  await expect(page.getByTestId('chain-check').locator('[data-chain]')).toBeVisible({ timeout: 240_000 });
+  await expect(page.locator('.info-row', { hasText: 'Votes, weighted' })).toContainText(/\d+ yes/, { timeout: 120_000 });
+
+  let t0 = Date.now();
+  await page.getByRole('button', { name: 'Verify votes' }).click();
+  const votes = page.getByTestId('votes-check');
+  await expect(votes.locator('[data-votes]')).toBeVisible({ timeout: 400_000 });
+  const tVotes = Date.now() - t0;
+  console.log(`live: votes (${tVotes} ms): ${(await votes.innerText()).replace(/\s+/g, ' ').slice(0, 900)}`);
+  await expect(votes).toContainText('masternode list proven by block');
+
+  t0 = Date.now();
+  await page.getByRole('button', { name: 'Verify funding order' }).click();
+  const ranking = page.getByTestId('ranking-check');
+  await expect(ranking.locator('[data-ranking]')).toBeVisible({ timeout: 800_000 });
+  const tRanking = Date.now() - t0;
+  const level = await ranking.locator('[data-ranking]').getAttribute('data-ranking');
+  console.log(`live: funding order ${level} (${tRanking} ms): ${(await ranking.innerText()).replace(/\s+/g, ' ').slice(0, 1500)}`);
+  const funded = page.locator('.info-row', { hasText: 'Funded' });
+  console.log(`live: funded row: ${(await funded.innerText()).replace(/\s+/g, ' ')} prov=${await funded.locator('[data-prov]').first().getAttribute('data-prov')}`);
+  if (process.env.SCREENSHOTS) await page.screenshot({ path: 'screenshots/live-funding-order-light-desktop.png', fullPage: true });
+  await expect(votes.locator('[data-votes]')).toHaveAttribute('data-votes', /verified|different-height/);
+  expect(level).toBe('verified');
+  await expect(funded.locator('[data-prov]').first()).toHaveAttribute('data-prov', 'verified');
+  expect(errors).toEqual([]);
+});
