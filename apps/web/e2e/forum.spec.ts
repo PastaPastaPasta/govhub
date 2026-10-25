@@ -148,12 +148,11 @@ test.describe('discussion (fixtures)', () => {
     const owner = page.getByTestId('owner');
     await expect(owner).toHaveAttribute('data-method', '4');
     await expect(owner).toContainText('Dash Growth team');
-    await expect(owner).toContainText('attestation by the hosting team');
+    await expect(owner).toContainText('vouched for by the hosting team');
     await expect(comment(page, 'Cost per funded wallet').locator('.chip-owner')).toHaveText('proposal owner');
     const post = page.getByTestId('owner-post');
     await expect(post.getByRole('heading', { name: 'Dash growth, Q4 2026' })).toBeVisible();
     await expect(post.locator('table td', { hasText: '420' })).toBeVisible();
-    await expect(page.locator('details.raw-collapsed > summary')).toHaveText(/Raw proposal data/);
 
     await signInAs(page, /Dash Growth team/);
     await post.getByRole('button', { name: 'Edit the description' }).click();
@@ -181,9 +180,9 @@ test.describe('discussion (fixtures)', () => {
 
   test('list cards count comments without the hidden ones; the default list can be turned off', async ({ page }) => {
     await gotoFixtures(page, '/');
-    await expect(page.locator('article.card', { hasText: 'DCG-Operations-Aug-Nov-26' }).getByTestId('card-comments')).toHaveText(/2$/);
+    await expect(page.locator('article.prow', { hasText: 'DCG-Operations-Aug-Nov-26' }).getByTestId('card-comments')).toHaveText(/2$/);
     await page.locator('.sentinel').scrollIntoViewIfNeeded();
-    await expect(page.locator('article.card', { hasText: 'OrchardPay' }).getByTestId('card-comments')).toHaveText(/5$/);
+    await expect(page.locator('article.prow', { hasText: 'OrchardPay' }).getByTestId('card-comments')).toHaveText(/5$/);
 
     await page.getByRole('link', { name: 'Settings' }).click();
     const lists = page.getByRole('region', { name: 'Block lists' });

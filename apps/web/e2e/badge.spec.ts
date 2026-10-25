@@ -8,7 +8,7 @@ test.describe('MN badge (fixtures)', () => {
     await gotoFixtures(page, '/badge');
     await expect(page.getByRole('heading', { name: 'MN owner badge' })).toBeVisible();
     await page.getByText('What the badge reveals, and to whom').first().click();
-    await expect(page.getByText('What the issuer learns:')).toBeVisible();
+    await expect(page.getByText('In every mode', { exact: true })).toBeVisible();
     await expect(page.getByText(/Badges need live data/)).toBeVisible();
     expect(errors).toEqual([]);
     expect(await cspViolations(page)).toEqual([]);

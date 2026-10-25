@@ -18,5 +18,12 @@ export async function cspViolations(page: Page): Promise<string[]> {
 
 export async function gotoFixtures(page: Page, path = '/') {
   await page.goto(`${path}${path.includes('?') ? '&' : '?'}fixtures=1`);
-  await expect(page.getByText('Fixture snapshot.')).toBeVisible();
+  await expect(page.getByText('Demo data.', { exact: true })).toBeVisible();
+}
+
+/** Opens the proposal's "How do we know?" drawer (every check's detail lives there). */
+export async function openDrawer(page: Page) {
+  await page.getByTestId('trust-badge').click();
+  await expect(page.getByTestId('verify-drawer')).toBeVisible();
+  return page.getByTestId('verify-drawer');
 }

@@ -7,9 +7,9 @@ test('create flow shows a fresh phrase, checks three words, then offers funding'
   const errors = await watchPage(page);
   await gotoFixtures(page);
   await page.getByRole('button', { name: 'Sign in' }).click();
-  const sheet = page.getByRole('dialog', { name: 'Sign in to govhub' });
+  const sheet = page.getByRole('dialog', { name: 'Sign in or create an account' });
   await expect(sheet).toBeVisible();
-  await sheet.getByRole('button', { name: /Create a new identity/ }).click();
+  await sheet.getByRole('button', { name: /Create an account/ }).click();
 
   const words = page.getByTestId('phrase-words').locator('li');
   await expect(words).toHaveCount(12);

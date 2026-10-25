@@ -1,25 +1,25 @@
 // End-to-end in fixture mode: the mainnet snapshot, recorded mainnet DAPI responses replayed
 // through the real grpc-web client inside the verification worker, synthetic signed votes.
 import { expect, test } from '@playwright/test';
-import { cspViolations, gotoFixtures, watchPage } from './helpers.ts';
+import { cspViolations, gotoFixtures, openDrawer, watchPage } from './helpers.ts';
 
 test.describe('fixture mode', () => {
   test('list -> proposal -> collateral verified -> votes verified', async ({ page }) => {
     const errors = await watchPage(page);
     await gotoFixtures(page);
 
-    // Budget header (DashCentral parity).
-    await expect(page.getByRole('heading', { name: /Superblock 2,575,480 pays in/ })).toBeVisible();
-    await expect(page.getByText('Voting closes in')).toBeVisible();
-    await expect(page.getByText('Passing threshold')).toBeVisible();
+    // Budget summary (DashCentral parity, in plain words).
+    await expect(page.getByRole('heading', { name: /Next payout in 27 days/ })).toBeVisible();
+    await expect(page.getByText('Masternodes can vote for another')).toBeVisible();
+    await expect(page.locator('.budget-facts')).toContainText('To pass');
     await expect(page.locator('.budget-facts')).toContainText('332');
 
     // Cards sorted by rank; the best-ranked one is DCG operations (net yes 687).
-    const cards = page.locator('article.card');
+    const cards = page.locator('article.prow');
     await expect(cards.first()).toContainText('DCG-Operations-Aug-Nov-26');
-    await expect(cards.first()).toContainText('Passing +355');
-    await expect(cards.first()).toContainText('per superblock (~monthly)');
-    const failing = page.locator('article.card', { hasText: 'GEG-PPP-30M-Film-On-Chain' });
+    await expect(cards.first()).toContainText('Passing by 355');
+    await expect(cards.first()).toContainText('per month');
+    const failing = page.locator('article.prow', { hasText: 'GEG-PPP-30M-Film-On-Chain' });
 
     // Infinite scroll: 12 first, the rest after scrolling.
     await expect(cards).toHaveCount(12);
@@ -31,10 +31,17 @@ test.describe('fixture mode', () => {
     await page.getByRole('link', { name: 'OrchardPay', exact: true }).click();
     await expect(page).toHaveURL(/\/p\/OrchardPay$/);
     await expect(page.getByRole('heading', { level: 1, name: 'OrchardPay' })).toBeVisible();
-    await expect(page.locator('.info-table')).toContainText('197 yes, 22 no, 9 abstain');
+    await expect(page.getByTestId('p-votes')).toContainText('from 228 masternodes (197 yes, 22 no, 9 abstain)');
 
-    // Collateral check in the worker over the recorded DAPI answer.
-    const collateral = page.getByTestId('collateral-check');
+    // Fixture data is "Demo data", never "Verified", whatever the checks find.
+    const badge = page.getByTestId('trust-badge');
+    await expect(badge).toHaveAttribute('data-trust', 'demo');
+    // No provenance marks on the page itself any more.
+    await expect(page.locator('[data-prov]')).toHaveCount(0);
+
+    // Every check runs on its own; the detail is in the drawer.
+    const drawer = await openDrawer(page);
+    const collateral = drawer.getByTestId('collateral-check');
     await expect(collateral.locator('[data-verdict]')).toHaveAttribute('data-verdict', 'ok');
     await expect(collateral).toContainText('Content matches the on-chain collateral');
     for (const step of ['hash', 'fields', 'tx', 'collateral', 'confirmations', 'chainlock']) {
@@ -44,23 +51,26 @@ test.describe('fixture mode', () => {
     // The recorded replay carries node claims only: confirmations and ChainLock are "reported", not "verified".
     for (const step of ['confirmations', 'chainlock']) await expect(collateral.locator(`[data-step="${step}"]`)).toHaveAttribute('data-basis', 'reported');
     await expect(collateral.locator('[data-step="chainlock"]')).toContainText('a node reports');
+    // ...so the collateral check is only "reported" in the aggregate, even though its verdict is ok.
+    await expect(drawer.locator('[data-check="content"]')).toHaveAttribute('data-state', 'proven');
+    await expect(drawer.locator('[data-check="collateral"]')).toHaveAttribute('data-state', 'reported');
     // Recorded data has no header chain: the chain facts say so instead of claiming anything.
-    await expect(page.getByTestId('chain-check').locator('[data-chain]')).toHaveAttribute('data-chain', 'unavailable');
+    await expect(drawer.getByTestId('chain-check').locator('[data-chain]')).toHaveAttribute('data-chain', 'unavailable');
+    await expect(drawer.locator('[data-check="chain"]')).toHaveAttribute('data-state', 'reported');
     await expect(collateral.locator('[data-step="block"]')).toHaveCount(0);
     await expect(collateral.locator('[data-step="hash"]')).toHaveAttribute('data-basis', 'verified');
-    const status = page.locator('.info-row', { hasText: 'Collateral status' });
-    await expect(status).toContainText('ChainLocked as a node reports');
-    await expect(status.locator('[data-prov="reported"]')).toBeVisible();
-    // Content values now carry the verified mark.
-    await expect(page.locator('.info-table [data-prov="verified"]').first()).toBeVisible();
 
-    // Vote verification against the fixture bridge.
-    await page.getByRole('button', { name: 'Verify votes' }).click();
-    const votes = page.getByTestId('votes-check');
+    // The vote recount runs on its own, against the fixture bridge.
+    const votes = drawer.getByTestId('votes-check');
     await expect(votes.locator('[data-votes]')).toHaveAttribute('data-votes', 'keys-reported', { timeout: 30_000 });
     await expect(votes).toContainText('Recount matches the Platform tally: 229 of 229 signatures check out');
     await expect(votes).toContainText('fixture bridge (synthetic voters)');
     await expect(votes.locator('table.compare td.bad')).toHaveCount(0);
+    // Keys as the fixture bridge reports them: not proven.
+    await expect(drawer.locator('[data-check="votes"]')).toHaveAttribute('data-state', 'reported');
+    await expect(drawer.getByTestId('drawer-verdict')).toHaveAttribute('data-trust', 'demo');
+    await page.keyboard.press('Escape');
+    await expect(drawer).toBeHidden();
 
     expect(errors).toEqual([]);
     expect(await cspViolations(page)).toEqual([]);
@@ -71,12 +81,13 @@ test.describe('fixture mode', () => {
     await gotoFixtures(page, '/p/dash-growth-q4-2026');
     await expect(page.getByRole('heading', { level: 1, name: 'dash-growth-q4-2026' })).toBeVisible();
     // Evonodes weigh 4: 298 yes masternodes are 673 weighted votes.
-    await expect(page.locator('.info-table')).toContainText('673 yes, 475 no, 5 abstain');
-    await expect(page.locator('.info-table')).toContainText('298 yes, 160 no, 2 abstain');
-    await expect(page.getByTestId('collateral-check').locator('[data-verdict]')).toHaveAttribute('data-verdict', 'ok');
+    await expect(page.getByTestId('p-votes')).toContainText('673 yes');
+    await expect(page.getByTestId('p-votes')).toContainText('475 no');
+    await expect(page.getByTestId('p-votes')).toContainText('(298 yes, 160 no, 2 abstain)');
+    const drawer = await openDrawer(page);
+    await expect(drawer.getByTestId('collateral-check').locator('[data-verdict]')).toHaveAttribute('data-verdict', 'ok');
 
-    await page.getByRole('button', { name: 'Verify votes' }).click();
-    const votes = page.getByTestId('votes-check');
+    const votes = drawer.getByTestId('votes-check');
     await expect(votes.locator('[data-votes]')).toHaveAttribute('data-votes', 'keys-reported', { timeout: 30_000 });
     // 460 real signed votes by real masternodes: every signature recovers to the masternode's voting key.
     await expect(votes).toContainText('Recount matches the Platform tally: 460 of 460 signatures check out');
@@ -89,19 +100,31 @@ test.describe('fixture mode', () => {
     await expect(table.locator('tr', { hasText: 'voteSetHash' })).toContainText('34a829');
     await expect(table.locator('td.bad')).toHaveCount(0);
     await expect(table.locator('tr', { hasText: 'voteSetHash' }).locator('.visually-hidden').last()).toHaveText('matches');
-    // A bridge match on bridge-supplied keys is not "verified": the recounted tally keeps its Platform-proof label.
-    await expect(page.locator('.info-row', { hasText: 'Votes, weighted' }).locator('[data-prov]')).toHaveAttribute('data-prov', 'fixture');
+    // A bridge match on bridge-supplied keys is not "verified".
+    await expect(drawer.locator('[data-check="votes"]')).toHaveAttribute('data-state', 'reported');
+    await expect(drawer.locator('[data-check="votes"]')).toContainText('voting keys only as the bridge reports them');
     expect(errors).toEqual([]);
   });
 
-  test('provenance popover explains the source', async ({ page }) => {
-    await gotoFixtures(page);
-    await page.locator('.budget-line .prov').click();
-    const pop = page.locator('.prov-pop:popover-open');
-    await expect(pop).toContainText('Fixture snapshot');
-    await expect(pop).toContainText('mainnet snapshot');
+  test('the badge opens "How do we know?"; Escape closes it and focus returns to the badge', async ({ page }) => {
+    await gotoFixtures(page, '/p/OrchardPay');
+    const badge = page.getByTestId('trust-badge');
+    await expect(badge).toHaveAccessibleName(/^Demo data: .*How do we know\?$/);
+    const drawer = await openDrawer(page);
+    await expect(drawer.getByRole('heading', { name: 'How do we know?' })).toBeVisible();
+    await expect(drawer.getByTestId('checks').locator('[data-check]')).toHaveCount(5);
+    await expect(drawer).toContainText("votes the bridge didn't serve can't be detected");
+    await drawer.getByText('Proposal data and hashes').click();
+    await expect(drawer.getByTestId('raw-data')).toContainText('"name": "OrchardPay"');
     await page.keyboard.press('Escape');
-    await expect(pop).toHaveCount(0);
+    await expect(drawer).toBeHidden();
+    await expect(badge).toBeFocused();
+  });
+
+  test('About verification explains every state', async ({ page }) => {
+    await gotoFixtures(page, '/about/verification');
+    await expect(page.getByRole('heading', { level: 1, name: 'How govhub checks what it shows' })).toBeVisible();
+    for (const s of ['Verified', 'Checking…', 'Partly verified', "Couldn't verify", 'Failed verification', 'Demo data']) await expect(page.locator('.about-states')).toContainText(s);
   });
 
   test('duplicate names get a chooser; /p/h/<hash> is canonical', async ({ page }) => {
@@ -112,13 +135,14 @@ test.describe('fixture mode', () => {
     await links.first().click();
     await expect(page).toHaveURL(/\/p\/h\/[0-9a-f]{64}$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Dash-Mass-Organic-Content-Attraction' })).toBeVisible();
-    await expect(page.getByTestId('collateral-check').locator('[data-verdict]')).toHaveAttribute('data-verdict', 'ok');
+    const drawer = await openDrawer(page);
+    await expect(drawer.getByTestId('collateral-check').locator('[data-verdict]')).toHaveAttribute('data-verdict', 'ok');
   });
 
   test('cards of duplicate names link to the hash route', async ({ page }) => {
     await gotoFixtures(page);
     await page.locator('.sentinel').scrollIntoViewIfNeeded();
-    const dupLinks = page.locator('article.card h3 a', { hasText: 'Dash-Mass-Organic-Content-Attraction' });
+    const dupLinks = page.locator('article.prow h3 a', { hasText: 'Dash-Mass-Organic-Content-Attraction' });
     await expect(dupLinks).toHaveCount(2);
     for (const href of await dupLinks.evaluateAll((as) => as.map((a) => a.getAttribute('href')))) expect(href).toMatch(/^\/p\/h\/[0-9a-f]{64}$/);
   });
@@ -179,7 +203,8 @@ test.describe('settings', () => {
 
   test('theme switch sets data-theme and persists', async ({ page }) => {
     await gotoFixtures(page);
-    await page.getByText('Dark', { exact: true }).click();
+    await page.getByTestId('menu-button').click();
+    await page.locator('#account-menu').getByText('Dark', { exact: true }).click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     await page.reload();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
