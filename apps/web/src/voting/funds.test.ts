@@ -1,7 +1,7 @@
 // F2: forum writes check the balance against what Platform wants available (more than the fee), and put its refusal in plain words.
 import { describe, expect, it } from 'vitest';
 import { commentCost, forumOps, upfrontRequired, UPFRONT_HEADROOM, type DocumentOp } from '@govhub/forum';
-import { assertCanAffordWrite, costText, forumWriteRequired, isShort, topUpFromError, TopUpError } from './funds.ts';
+import { assertCanAffordWrite, costText, forumWriteFee, forumWriteRequired, hasMeasuredHeadroom, isShort, topUpFromError, TopUpError } from './funds.ts';
 
 const contracts = { forum: 'F'.repeat(43), mod: 'M'.repeat(43) } as unknown as Parameters<typeof forumOps>[0];
 const ops = forumOps(contracts, () => 1_800_000_000_000);
@@ -20,33 +20,48 @@ describe('F2: the up-front balance check', () => {
 
   it('the shown fee alone is not enough', () => {
     const fee = commentCost(52);
-    expect(isShort(BigInt(fee) + 1_000_000n, fee)).toBe(true);
-    expect(isShort(BigInt(fee) * 6n, fee)).toBe(false);
-    expect(isShort(null, fee)).toBe(false); // unknown balance: the write is tried
+    expect(isShort(BigInt(fee) + 1_000_000n, fee, true)).toBe(true);
+    expect(isShort(BigInt(fee) * 6n, fee, true)).toBe(false);
+    expect(isShort(null, fee, true)).toBe(false); // unknown balance: the write is tried
+    // kinds whose headroom was not measured only need their fee
+    expect(isShort(BigInt(fee) + 1_000_000n, fee)).toBe(false);
+    expect(isShort(BigInt(fee) - 1n, fee)).toBe(true);
   });
 
-  it('covers every forum write kind, and never stops a delete', () => {
+  it('measured kinds (comment, reaction create) need the fee plus the headroom; the others only their fee, never a guess', () => {
     const ID = 'D'.repeat(43);
-    const written: DocumentOp[] = [
-      ops.react({ govHash: GOV }, 1),
-      ops.react({ commentId: ID }, -1, { id: ID, revision: 1, value: 1 }),
+    const measured: DocumentOp[] = [comment52(), ops.react({ govHash: GOV }, 1), ops.react({ commentId: ID }, -1)];
+    for (const op of measured) {
+      expect(hasMeasuredHeadroom(op), op.type).toBe(true);
+      expect(forumWriteRequired(op), op.type).toBe(BigInt(forumWriteFee(op)! + UPFRONT_HEADROOM));
+    }
+    const others: DocumentOp[] = [
+      ops.react({ commentId: ID }, -1, { id: ID, revision: 1, value: 1 }), // a flip (replace)
       ops.block('forum', ID, 2),
       ops.claim(GOV, 2, new Uint8Array(65)),
       ops.profile({ displayName: 'Alice' }),
       ops.proposalPost(GOV, 'A title', [new Uint8Array(100)]),
       ops.blockSubs([], false),
     ];
-    for (const op of written) {
-      expect(forumWriteRequired(op), op.type).toBeGreaterThan(185_000_000n);
-      expect(() => assertCanAffordWrite(10_000_000n, op), op.type).toThrow(TopUpError);
+    for (const op of others) {
+      expect(hasMeasuredHeadroom(op), op.type).toBe(false);
+      expect(forumWriteRequired(op), op.type).toBe(BigInt(forumWriteFee(op)!));
+      // a balance below the fee is certainly refused; one above it is left to Platform (its refusal becomes the top-up message)
+      expect(() => assertCanAffordWrite(BigInt(forumWriteFee(op)!) - 1n, op), op.type).toThrow(TopUpError);
+      expect(() => assertCanAffordWrite(BigInt(forumWriteFee(op)!), op), op.type).not.toThrow();
     }
+  });
+
+  it('never stops a delete', () => {
+    const ID = 'D'.repeat(43);
     expect(forumWriteRequired(ops.retractComment(ID))).toBeNull();
     expect(() => assertCanAffordWrite(0n, ops.retractComment(ID))).not.toThrow();
     expect(() => assertCanAffordWrite(0n, ops.react({ commentId: ID }, 1, { id: ID, revision: 1, value: 1 }))).not.toThrow(); // clearing refunds
   });
 
   it('says both numbers: the fee, and what must be available', () => {
-    expect(costText(commentCost(52))).toMatch(/^costs about 0\.00043 DASH, needs about 0\.0023 DASH available$/);
+    expect(costText(commentCost(52), true)).toMatch(/^costs about 0\.00043 DASH, needs about 0\.0023 DASH available$/);
+    expect(costText(commentCost(52))).toBe('costs about 0.00043 DASH');
   });
 });
 
@@ -58,7 +73,7 @@ describe('F2: Platform’s refusal in plain words', () => {
     const m = (e as Error).message;
     expect(m).toContain('0.00150438 DASH available');
     expect(m).toContain('about 0.00227124 DASH available');
-    expect(m).toMatch(/Top up the identity, then try again\. Nothing was posted\./);
+    expect(m).toMatch(/Top up the identity, then try again\. Nothing was sent\./);
     expect(m).not.toMatch(/Protocol error|Insufficient identity|AeJk/);
   });
   it('also reads a WASM SDK error whose message is a prototype getter', () => {

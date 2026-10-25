@@ -209,6 +209,18 @@ export function RecoverFunds() {
                   {' '}
                   <button type="button" className="btn btn-s" onClick={() => void scan(true)} data-testid="recover-retry">
                     Try again
+                  </button>{' '}
+                  <button
+                    type="button"
+                    className="btn btn-quiet btn-s"
+                    onClick={() => {
+                      forget(); // the phrase or key kept in memory for "Try again" is wiped
+                      setError(null);
+                      setRetryable(false);
+                    }}
+                    data-testid="recover-forget"
+                  >
+                    Forget it
                   </button>
                 </>
               )}

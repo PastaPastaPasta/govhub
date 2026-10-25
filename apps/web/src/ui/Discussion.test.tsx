@@ -18,8 +18,9 @@ let stored: Comment[] = [];
 let session: { identityId: string } | null = { identityId: ME };
 const write = vi.fn(async () => ({ id: 'NewComment5555555555555555555555555555555555', revision: 1 }));
 // stable objects: a fresh `forum` on every render would restart the thread read forever
+let readGate: Promise<void> | null = null;
 const forum = {
-  reader: { comments: async () => ({ comments: stored, height: 1, truncated: false }), profiles: async () => new Map() },
+  reader: { comments: async () => ((await readGate), { comments: stored, height: 1, truncated: false }), profiles: async () => new Map() },
   names: async () => new Map(),
   prov: () => ({ source: 'platform', height: 1 }),
   ops: { comment: (_g: string, body: string) => ({ action: 'create', type: 'comment', data: { body } }) },
@@ -94,6 +95,24 @@ describe('F1: your own comment stays under the default view', () => {
     await flush();
     expect(shownTexts(r.el)).not.toContain('someone else, as far as this reader knows');
     expect(r.el.querySelector('[data-testid="only-you-note"]')).toBeNull();
+    await r.unmount();
+  });
+
+  it('a comment posted while the first read is still running is not lost when the read lands', async () => {
+    let open!: () => void;
+    readGate = new Promise<void>((r) => (open = r));
+    const r = await mount();
+    await flush();
+    const box = r.el.querySelector<HTMLTextAreaElement>('textarea[aria-label="Post comment"]')!;
+    await type(box, 'posted too early');
+    await click(r.el.querySelector<HTMLButtonElement>('form.composer button[type="submit"]')!);
+    await flush();
+    expect(write).toHaveBeenCalledTimes(1);
+    open();
+    readGate = null;
+    await flush();
+    await flush();
+    expect(shownTexts(r.el)).toContain('posted too early');
     await r.unmount();
   });
 });

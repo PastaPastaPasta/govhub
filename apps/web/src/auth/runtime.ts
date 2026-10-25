@@ -87,7 +87,25 @@ export function errorText(e: unknown): string {
  * Errors that mean "the network or a node failed just now" rather than "this cannot work": the SDK's quorum prefetch, its WASM streaming
  * fetch, DAPI transport and timeouts. Retrying is the right answer to these, and nothing the user holds is affected.
  */
-const TRANSIENT_ERROR = /failed to prefetch quorums|webassembly (compilation|instantiation)[^.]*(network|aborted)|network ?error|http request error|failed to fetch|load failed|transport error|timed? ?out|deadline exceeded|ERR_(NETWORK|INTERNET|CONNECTION|ABORTED|TIMED)|dapi client error|temporarily unavailable|(?:HTTP|status)[ :]+50[234]/i;
+const TRANSIENT_ERROR = new RegExp(
+  [
+    'failed to prefetch quorums',
+    'webassembly (?:compilation|instantiation) aborted:? network',
+    '\\bnetwork ?error\\b',
+    'http request error',
+    // the browser's own fetch failure, not the SDK's "Failed to fetch identity: <any cause>" wrapper
+    '\\bfailed to fetch\\b(?! \\w)',
+    '\\bload failed\\b',
+    // gRPC and HTTP transport trouble, with a transport word after it: the SDK also reports refused requests as "transport error"
+    'transport error[^\\n]*\\b(?:connect|connection|timed out|dns|reset|refused|unreachable)',
+    '\\btimed out\\b',
+    '\\bdeadline exceeded\\b',
+    '\\bERR_(?:NETWORK|INTERNET|CONNECTION|ABORTED|TIMED)',
+    '\\btemporarily unavailable\\b',
+    '\\b(?:HTTP|status)[ :]+50[234]\\b',
+  ].join('|'),
+  'i',
+);
 
 export const isTransientError = (e: unknown): boolean => TRANSIENT_ERROR.test(errText(e));
 

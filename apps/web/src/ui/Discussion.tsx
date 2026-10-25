@@ -59,6 +59,8 @@ function useThread(govHash: string) {
   const [data, setData] = useState<ThreadData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
+  /** Comments posted before a read finished (no data to add them to yet): merged into it, so a post is never lost to a slow read. */
+  const early = useRef<Comment[]>([]);
   useEffect(() => {
     let live = true;
     setError(null);
@@ -66,7 +68,11 @@ function useThread(govHash: string) {
       const r = await forum.reader.comments(govHash);
       const authors = [...new Set(r.comments.map((c) => c.ownerId))];
       const [profiles, names] = await Promise.all([authors.length ? forum.reader.profiles(authors) : new Map<string, Profile>(), forum.names(authors).catch(() => new Map<string, string>())]);
-      if (live) setData({ comments: r.comments, profiles, names, prov: forum.prov(r.height), truncated: r.truncated });
+      if (live) {
+        const mine = early.current.filter((c) => c.govHash === govHash && !r.comments.some((x) => x.id === c.id));
+        early.current = [];
+        setData({ comments: [...r.comments, ...mine], profiles, names, prov: forum.prov(r.height), truncated: r.truncated });
+      }
     })().catch((e: unknown) => live && setError(errText(e)));
     return () => {
       live = false;
@@ -74,8 +80,14 @@ function useThread(govHash: string) {
   }, [forum, govHash, nonce]);
   const reload = useCallback(() => setNonce((n) => n + 1), []);
   /** Local edits after a write, so a lagging node does not make the user's own comment vanish. */
-  const add = useCallback((c: Comment) => setData((d) => (d ? { ...d, comments: [...d.comments.filter((x) => x.id !== c.id), c] } : d)), []);
-  const remove = useCallback((id: string) => setData((d) => (d ? { ...d, comments: d.comments.filter((x) => x.id !== id) } : d)), []);
+  const add = useCallback((c: Comment) => {
+    early.current = [...early.current.filter((x) => x.id !== c.id), c];
+    setData((d) => (d ? { ...d, comments: [...d.comments.filter((x) => x.id !== c.id), c] } : d));
+  }, []);
+  const remove = useCallback((id: string) => {
+    early.current = early.current.filter((x) => x.id !== id);
+    setData((d) => (d ? { ...d, comments: d.comments.filter((x) => x.id !== id) } : d));
+  }, []);
   return { data, error, reload, add, remove };
 }
 

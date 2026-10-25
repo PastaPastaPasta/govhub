@@ -1,5 +1,4 @@
 // A failed write as the user sees it: the message, and a Top up button when the reason is the identity's balance.
-import { upfrontRequired } from '@govhub/forum';
 import { useAuth } from '../auth/context.tsx';
 import { formatCredits } from '../lib/format.ts';
 
@@ -30,12 +29,12 @@ export function WriteError({ error, needsTopUp = false, onTopUp, inline = false 
   );
 }
 
-/** Shown, before anything is signed, when the balance is under what Platform needs available for a write whose fee is about `fee`. */
-export function LowBalance({ what, balance, fee }: { what: string; balance: bigint; fee: number }) {
+/** Shown, before anything is signed, when the balance is under what `what` needs available (`needed` credits: the fee, or the up-front requirement). */
+export function LowBalance({ what, balance, needed }: { what: string; balance: bigint; needed: number }) {
   const { openSheet } = useAuth();
   return (
     <p className="error small" data-testid="low-balance">
-      Your balance ({formatCredits(balance)}) is below the about {formatCredits(upfrontRequired(fee), true)} Platform needs available for {what}. Top up the identity first.{' '}
+      Your balance is {formatCredits(balance)}, and {what} needs about {formatCredits(needed, true)} available. Top up the identity first.{' '}
       <button type="button" className="btn btn-s" data-testid="low-balance-topup" onClick={() => openSheet('topup')}>
         Top up
       </button>

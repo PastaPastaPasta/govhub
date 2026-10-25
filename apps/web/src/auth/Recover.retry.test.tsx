@@ -52,11 +52,22 @@ describe('F4: Recover scan retry', () => {
     const retry = r.el.querySelector<HTMLButtonElement>('[data-testid="recover-retry"]')!;
     expect(retry).toBeTruthy();
     expect(scans).toBe(1);
+    expect(r.el.querySelector('[data-testid="recover-forget"]')).toBeTruthy();
     await click(retry);
     await flush();
     expect(scans).toBe(2); // the phrase was not typed again
     expect(r.el.querySelector('[data-testid="recover-retry"]')).toBeNull();
     expect(r.el.querySelector('[role="alert"]')).toBeNull();
+    await r.unmount();
+  });
+
+  it('"Forget it" wipes what was kept for Try again', async () => {
+    failures = [new Error('Failed to prefetch quorums: HTTP request error: error sending request')];
+    const r = await start();
+    await click(r.el.querySelector<HTMLButtonElement>('[data-testid="recover-forget"]')!);
+    expect(r.el.querySelector('[role="alert"]')).toBeNull();
+    expect(r.el.querySelector('[data-testid="recover-retry"]')).toBeNull();
+    expect(scans).toBe(1);
     await r.unmount();
   });
 

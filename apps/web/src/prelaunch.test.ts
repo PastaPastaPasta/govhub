@@ -61,10 +61,10 @@ describe('F7: the wizard names the network’s superblock', () => {
 });
 
 describe('F4: network failures in plain words', () => {
-  const raw = ['Failed to prefetch quorums: HTTP request error: error sending request', 'WebAssembly compilation aborted: Network error: Failed to fetch', 'Dapi client error: transport error', 'request timed out'];
+  const raw = ['Failed to prefetch quorums: HTTP request error: error sending request', 'WebAssembly compilation aborted: Network error: Failed to fetch', 'Dapi client error: transport error: connection refused', 'request timed out', 'TypeError: Failed to fetch', 'the bridge answered HTTP 503'];
   it('recognises the transient ones', () => {
     for (const m of raw) expect(isTransientError(new Error(m)), m).toBe(true);
-    for (const m of ['Insufficient identity balance', 'Not a valid phrase', 'The identity does not exist', 'document not found 40101']) expect(isTransientError(new Error(m)), m).toBe(false);
+    for (const m of ['Insufficient identity balance', 'Not a valid phrase', 'The identity does not exist', 'document not found 40101', 'Failed to fetch identity: proof verification failed', 'Dapi client error: invalid argument', 'transport error: not found', 'the time outpoint is wrong', 'payload failed the check']) expect(isTransientError(new Error(m)), m).toBe(false);
   });
   it('says what happened and what to do, keeping the technical text after it', () => {
     const t = plainErrorText(new Error(raw[0]), 'Platform');

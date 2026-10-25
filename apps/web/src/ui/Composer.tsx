@@ -23,7 +23,7 @@ export function Composer({ onSubmit, onCancel, label, autoFocus = false }: { onS
   const cost = commentCost(bytes);
   const over = bytes > COMMENT_MAX_BYTES;
   const required = upfrontRequired(cost); // Platform wants more available than the fee itself
-  const poor = isShort(balance, cost);
+  const poor = isShort(balance, cost, true);
   const blank = isBlank(body); // zero-width, bidi and other invisible characters alone are not a comment
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -66,11 +66,11 @@ export function Composer({ onSubmit, onCancel, label, autoFocus = false }: { onS
           </button>
         </div>
       </div>
-      {poor && balance !== null && <LowBalance what="this comment" balance={balance} fee={cost} />}
+      {poor && balance !== null && <LowBalance what="this comment" balance={balance} needed={required} />}
       <WriteError error={error} needsTopUp={needsTopUp} />
       {posted && !busy && !error && (
         <p className="notice small" role="status" data-testid="composer-posted">
-          Posted. It is on Platform and in the discussion; there is no need to post it again.
+          Posted. It is on Platform; there is no need to post it again.
         </p>
       )}
     </form>

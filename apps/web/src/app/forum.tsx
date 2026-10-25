@@ -93,7 +93,12 @@ export function ForumProvider({ children }: { children: ReactNode }) {
       if (forum.store && 'auth' in session) throw new Error('Fixture mode shows sample data only. Switch to live data (Settings) and sign in again to post with your identity.');
       // Platform wants more available than the fee (see `upfrontRequired`): say so before signing, and put its own refusal in plain
       // words (the balance read can lag, so the refusal is still worded the same way).
-      assertCanAffordWrite(balanceRef.current, op);
+      try {
+        assertCanAffordWrite(balanceRef.current, op);
+      } catch (e) {
+        refreshBalance(); // the balance this was judged on may be stale (a top-up just landed)
+        throw e;
+      }
       try {
         return await session.signAndBroadcastDocument(op);
       } catch (e) {

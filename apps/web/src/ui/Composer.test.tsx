@@ -29,7 +29,7 @@ describe('F2: Composer balance check', () => {
     expect(meta).toMatch(/costs about 0\.00043 DASH · needs about 0\.0023 DASH available · your balance 0\.00150438 DASH/);
     expect(submitBtn(r.el).disabled).toBe(true);
     const low = r.el.querySelector('[data-testid="low-balance"]')!;
-    expect(low.textContent).toMatch(/below the about 0\.0023 DASH Platform needs available for this comment/);
+    expect(low.textContent).toMatch(/Your balance is 0\.00150438 DASH, and this comment needs about 0\.0023 DASH available/);
     await click(button(low, /Top up/));
     expect(openSheet).toHaveBeenCalledWith('topup');
     await r.unmount();
@@ -99,7 +99,7 @@ describe('F1: a posted comment is acknowledged', () => {
     await click(submitBtn(r.el));
     await flush();
     expect(textarea(r.el).value).toBe('');
-    expect(r.el.querySelector('[data-testid="composer-posted"]')!.textContent).toMatch(/Posted\. It is on Platform and in the discussion; there is no need to post it again/);
+    expect(r.el.querySelector('[data-testid="composer-posted"]')!.textContent).toMatch(/Posted\. It is on Platform; there is no need to post it again/);
     await type(textarea(r.el), 'next');
     expect(r.el.querySelector('[data-testid="composer-posted"]')).toBeNull();
     await r.unmount();

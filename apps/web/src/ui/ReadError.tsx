@@ -6,7 +6,7 @@ export function ReadError({ error, what, lead, onRetry }: { error: string; what:
   const text = plainErrorText(error, what);
   return (
     <div className="error read-error" role="alert" data-testid="read-error">
-      <p>{lead && !isTransientError(error) ? `${lead}: ${text}` : text}</p>
+      <p>{lead ? (isTransientError(error) ? `${lead}. ${text}` : `${lead}: ${text}`) : text}</p>
       <p className="form-actions">
         <button type="button" className="btn btn-s" onClick={onRetry} data-testid="read-retry">
           Retry

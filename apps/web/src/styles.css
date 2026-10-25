@@ -2606,11 +2606,16 @@ li[data-status='now'] > .fund-dot {
     outline-color: transparent;
   }
 }
-@media (prefers-reduced-motion: reduce) {
-  .comment-new > article {
-    animation: none;
+@keyframes comment-landed-still {
+  from,
+  to {
     outline: 2px solid var(--accent);
     outline-offset: 1px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .comment-new > article {
+    animation: comment-landed-still 2.4s step-end 1; /* the same highlight without the fade, gone after the same time */
   }
 }
 .comment-placeholder > p {

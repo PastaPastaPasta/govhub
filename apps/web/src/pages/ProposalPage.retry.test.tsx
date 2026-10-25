@@ -35,6 +35,7 @@ describe('F4: the proposal page retries a failed read', () => {
     const err = r.el.querySelector('[data-testid="read-error"]')!;
     expect(err.textContent).toMatch(/Could not reach Platform just now/);
     expect(err.textContent).toMatch(/Try again in a moment/);
+    expect(err.textContent).toMatch(/^The proposal could not be read\. Could not reach Platform/); // the lead stays, so two failed reads differ
     expect(err.textContent).not.toMatch(/^Platform could not be read: Failed/);
     expect(calls).toBe(1);
     await click(err.querySelector<HTMLButtonElement>('[data-testid="read-retry"]')!);

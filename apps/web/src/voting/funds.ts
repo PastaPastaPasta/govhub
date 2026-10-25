@@ -18,7 +18,7 @@ export class TopUpError extends Error {
   ) {
     super(
       kind === 'forum'
-        ? `Your identity has ${formatCredits(balance)} available, and Platform needs about ${formatCredits(required)} available to take this (the fee itself is lower, but Platform checks for more first). Top up the identity, then try again. Nothing was posted.`
+        ? `Your identity has ${formatCredits(balance)} available, and Platform needs about ${formatCredits(required)} available to take this (the fee itself can be lower, but Platform checks for more first). Top up the identity, then try again. Nothing was sent.`
         : `Your identity has ${formatCredits(balance)}, and saving the keyring on Platform needs about ${formatCredits(required)}. Top up the identity (menu, Top up), then try again. Nothing was saved.`,
     );
     this.name = 'TopUpError';
@@ -59,7 +59,7 @@ export function forumWriteFee(op: DocumentOp): number | null {
       return replace ? COSTS.blockSubsReplace : COSTS.blockSubsCreate;
     case 'proposalPost': {
       const stored = ['b0', 'b1', 'b2'].reduce((n, k) => n + (op.data[k] instanceof Uint8Array ? (op.data[k] as Uint8Array).length : 0), 0);
-      // A replace's bytes added are not known here (the editor, which knows the old size, checks that itself): never refuse on a guess.
+      // a replace's bytes added are not known here: the fee is only a floor for it
       return replace ? postCost(0, 0) : postCost(stored);
     }
     default:
@@ -67,22 +67,32 @@ export function forumWriteFee(op: DocumentOp): number | null {
   }
 }
 
-/** What Platform wants available for this write (credits, the fee plus its up-front headroom), or null for a delete. */
+/**
+ * Whether the up-front requirement of this kind of write has been measured: a comment (the refusal `UPFRONT_HEADROOM` is calibrated on)
+ * and a reaction (the same two non-unique-plus-owner index shape and about the same fee). The others have fewer indexes, so the same
+ * headroom would overstate what they need; for them only the settled fee is a certain floor, and Platform's own refusal (with its
+ * numbers, in `TopUpError`) says the rest. Never refuse a write on a guess.
+ */
+export const hasMeasuredHeadroom = (op: Pick<DocumentOp, 'action' | 'type'>): boolean => op.action === 'create' && (op.type === 'comment' || op.type === 'reaction');
+
+/** At least what must be available for this write (credits): the fee, plus the up-front headroom where that was measured; null for a delete. */
 export function forumWriteRequired(op: DocumentOp): bigint | null {
   const fee = forumWriteFee(op);
-  return fee === null ? null : BigInt(upfrontRequired(fee));
+  return fee === null ? null : BigInt(hasMeasuredHeadroom(op) ? upfrontRequired(fee) : fee);
 }
 
-/** Throws a TopUpError when the known balance is below what Platform wants for `op` (unknown balance: the write is tried). */
+/** Throws a TopUpError when the known balance is below what Platform needs for `op` (unknown balance: the write is tried). */
 export function assertCanAffordWrite(balance: bigint | null, op: DocumentOp): void {
   const need = forumWriteRequired(op);
   if (balance !== null && need !== null && balance < need) throw new TopUpError(balance, need, 'forum');
 }
 
-/** Whether the known balance is below what Platform wants available for a write whose settled fee is about `fee` credits. */
-export const isShort = (balance: bigint | null, fee: number): boolean => balance !== null && balance < BigInt(upfrontRequired(fee));
+/**
+ * Whether the known balance is below what a write whose settled fee is about `fee` credits needs: with `measured` (comment, reaction)
+ * the up-front requirement, otherwise the fee itself.
+ */
+export const isShort = (balance: bigint | null, fee: number, measured = false): boolean => balance !== null && balance < BigInt(measured ? upfrontRequired(fee) : fee);
 
-/** "costs about 0.00043 DASH" plus, since Platform asks for more, "needs about 0.0023 DASH available". */
-export function costText(fee: number): string {
-  return `costs about ${formatCredits(fee, true)}, needs about ${formatCredits(upfrontRequired(fee), true)} available`;
-}
+/** "costs about 0.00043 DASH", plus "needs about 0.0023 DASH available" where the up-front requirement is higher (`measured`). */
+export const costText = (fee: number, measured = false): string =>
+  measured ? `costs about ${formatCredits(fee, true)}, needs about ${formatCredits(upfrontRequired(fee), true)} available` : `costs about ${formatCredits(fee, true)}`;

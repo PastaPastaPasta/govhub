@@ -294,7 +294,7 @@ export function ClaimPanel({ p, own, collateral }: { p: Proposal; own: Ownership
               <p className="muted small">
                 Publishing the claim {costText(COSTS.claim)}; your balance is {balance === null ? '…' : formatCredits(balance)}.
               </p>
-              {poor && balance !== null && <LowBalance what="the claim" balance={balance} fee={COSTS.claim} />}
+              {poor && balance !== null && <LowBalance what="the claim" balance={balance} needed={COSTS.claim} />}
               {warning && (
                 <div className="notice-warn small" role="alert" data-testid="claim-warning">
                   <p>{warning}</p>
@@ -339,7 +339,7 @@ function AcceptNaming({ p, own, poor }: { p: Proposal; own: Ownership; poor: boo
         Accepting publishes a claim from your identity (no signature needed) and {costText(COSTS.claim)}; your balance is{' '}
         {balance === null ? '…' : formatCredits(balance)}.
       </p>
-      {poor && balance !== null && <LowBalance what="the claim" balance={balance} fee={COSTS.claim} />}
+      {poor && balance !== null && <LowBalance what="the claim" balance={balance} needed={COSTS.claim} />}
       <p className="form-actions">
         <button type="button" className="btn btn-primary" disabled={busy || poor || done} onClick={accept} data-testid="accept-naming-button">
           {busy ? 'Signing and broadcasting…' : done ? 'Accepted. Checking it…' : 'Accept ownership'}
@@ -516,7 +516,7 @@ function PostEditor({ govHash, existing, initialBody, onDone }: { govHash: strin
           </div>
         </details>
       )}
-      {poor && balance !== null && <LowBalance what="this description" balance={balance} fee={cost} />}
+      {poor && balance !== null && <LowBalance what="this description" balance={balance} needed={cost} />}
       <WriteError error={error} needsTopUp={needsTopUp} />
       <div className="form-actions">
         <button type="submit" className="btn btn-primary" disabled={busy || poor || !title.trim() || !packed || !('chunks' in packed)}>
