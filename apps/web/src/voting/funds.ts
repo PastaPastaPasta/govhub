@@ -75,10 +75,13 @@ export function forumWriteFee(op: DocumentOp): number | null {
  */
 export const hasMeasuredHeadroom = (op: Pick<DocumentOp, 'action' | 'type'>): boolean => op.action === 'create' && (op.type === 'comment' || op.type === 'reaction');
 
+/** What must be available for a write whose settled fee is about `fee`: with `measured` the up-front requirement, otherwise the fee itself. */
+const requiredFor = (fee: number, measured: boolean): bigint => BigInt(measured ? upfrontRequired(fee) : fee);
+
 /** At least what must be available for this write (credits): the fee, plus the up-front headroom where that was measured; null for a delete. */
 export function forumWriteRequired(op: DocumentOp): bigint | null {
   const fee = forumWriteFee(op);
-  return fee === null ? null : BigInt(hasMeasuredHeadroom(op) ? upfrontRequired(fee) : fee);
+  return fee === null ? null : requiredFor(fee, hasMeasuredHeadroom(op));
 }
 
 /** Throws a TopUpError when the known balance is below what Platform needs for `op` (unknown balance: the write is tried). */
@@ -87,11 +90,8 @@ export function assertCanAffordWrite(balance: bigint | null, op: DocumentOp): vo
   if (balance !== null && need !== null && balance < need) throw new TopUpError(balance, need, 'forum');
 }
 
-/**
- * Whether the known balance is below what a write whose settled fee is about `fee` credits needs: with `measured` (comment, reaction)
- * the up-front requirement, otherwise the fee itself.
- */
-export const isShort = (balance: bigint | null, fee: number, measured = false): boolean => balance !== null && balance < BigInt(measured ? upfrontRequired(fee) : fee);
+/** Whether the known balance is below what a write whose settled fee is about `fee` credits needs (`measured`: comment, reaction). */
+export const isShort = (balance: bigint | null, fee: number, measured = false): boolean => balance !== null && balance < requiredFor(fee, measured);
 
 /** "costs about 0.00043 DASH", plus "needs about 0.0023 DASH available" where the up-front requirement is higher (`measured`). */
 export const costText = (fee: number, measured = false): string =>

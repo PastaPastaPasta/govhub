@@ -66,7 +66,7 @@ export function Composer({ onSubmit, onCancel, label, autoFocus = false }: { onS
           </button>
         </div>
       </div>
-      {poor && balance !== null && <LowBalance what="this comment" balance={balance} needed={required} />}
+      {poor && <LowBalance what="this comment" balance={balance} needed={required} />}
       <WriteError error={error} needsTopUp={needsTopUp} />
       {posted && !busy && !error && (
         <p className="notice small" role="status" data-testid="composer-posted">

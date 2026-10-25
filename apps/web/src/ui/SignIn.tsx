@@ -6,9 +6,9 @@ import { cleanName, COSTS, nameProblem, type Profile } from '@govhub/forum';
 import { useApp, type Theme } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { OPEN_SIGNIN_EVENT, useAuth } from '../auth/context.tsx';
-import { errText, formatCredits, shortHash } from '../lib/format.ts';
-import { TopUpError } from '../voting/funds.ts';
+import { formatCredits, shortHash } from '../lib/format.ts';
 import { Avatar } from './Identity.tsx';
+import { useAction } from './useAction.ts';
 import { WriteError } from './WriteError.tsx';
 
 /** Opens the sign-in sheet from anywhere ("Sign in to comment"). */
@@ -145,8 +145,8 @@ function SessionPanel({ onDone, onSaved }: { onDone(): void; onSaved(name: strin
   const [profile, setProfile] = useState<Profile | null | undefined>(undefined);
   const [name, setName] = useState('');
   const [avatar, setAvatar] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string; topUp?: boolean } | null>(null);
+  const { busy, error, needsTopUp, run } = useAction();
+  const [saved, setSaved] = useState(false);
   useEffect(() => {
     if (!session) return;
     let live = true;
@@ -167,21 +167,16 @@ function SessionPanel({ onDone, onSaved }: { onDone(): void; onSaved(name: strin
   if (!session) return null;
   // Invisible or text-direction characters and badge text are refused (D-035): they let a name pass for another or for a label.
   const problem = name.trim() ? nameProblem(name) : null;
-  const save = async (e: FormEvent) => {
+  const save = (e: FormEvent) => {
     e.preventDefault();
     if (problem) return;
-    setBusy(true);
-    setMsg(null);
-    try {
+    setSaved(false);
+    void run(async () => {
       const r = await write(forum.ops.profile({ displayName: name, ...(profile?.about ? { about: profile.about } : {}), avatarUrl: avatar }, profile ?? undefined));
       setProfile({ id: r.id, ownerId: session.identityId, revision: r.revision ?? 1, displayName: name.trim(), ...(avatar.trim() ? { avatarUrl: avatar.trim() } : {}) });
       onSaved(name.trim());
-      setMsg({ ok: true, text: 'Profile saved on Platform.' });
-    } catch (err) {
-      setMsg({ ok: false, text: errText(err), topUp: err instanceof TopUpError });
-    } finally {
-      setBusy(false);
-    }
+      setSaved(true);
+    });
   };
   return (
     <form className="form" onSubmit={save}>
@@ -201,7 +196,8 @@ function SessionPanel({ onDone, onSaved }: { onDone(): void; onSaved(name: strin
         <input value={avatar} onChange={(e) => setAvatar(e.target.value)} maxLength={512} spellCheck={false} />
       </label>
       <p className="muted small">Saving costs about {formatCredits(profile ? COSTS.profileReplace : COSTS.profileCreate, true)} from your balance.</p>
-      {msg && (msg.ok ? <p className="notice">{msg.text}</p> : <WriteError error={msg.text} needsTopUp={msg.topUp} onTopUp={onDone} />)}
+      {saved && <p className="notice">Profile saved on Platform.</p>}
+      <WriteError error={error} needsTopUp={needsTopUp} onTopUp={onDone} />
       <div className="form-actions">
         <button type="submit" className="btn btn-primary" disabled={busy || profile === undefined || !name.trim() || !!problem}>
           {busy ? 'Saving…' : profile ? 'Save profile' : 'Create profile'}

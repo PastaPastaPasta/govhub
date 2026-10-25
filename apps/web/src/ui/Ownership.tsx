@@ -16,7 +16,7 @@ import { HiddenToggle, plural } from './HiddenToggle.tsx';
 import { AuthorName, Avatar } from './Identity.tsx';
 import { Markdown } from './Markdown.tsx';
 import { openSignIn } from './SignIn.tsx';
-import { TopUpError, costText, isShort } from '../voting/funds.ts';
+import { costText, isShort } from '../voting/funds.ts';
 import { useAction } from './useAction.ts';
 import { LowBalance, WriteError } from './WriteError.tsx';
 
@@ -191,8 +191,8 @@ export function ClaimPanel({ p, own, collateral }: { p: Proposal; own: Ownership
   const [method, setMethod] = useState<2 | 3>(payP2pkh ? 2 : 3);
   const [inputAddr, setInputAddr] = useState('');
   const [sig, setSig] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string; topUp?: boolean } | null>(null);
+  const { busy, error, needsTopUp, run } = useAction();
+  const [published, setPublished] = useState(false);
   const [ackFor, setAckFor] = useState<string | null>(null); // the warning the reader chose to publish through
   const o = own.verdict?.owner;
   const named = own.verdict?.named ?? null;
@@ -208,23 +208,18 @@ export function ClaimPanel({ p, own, collateral }: { p: Proposal; own: Ownership
   const warning = session ? claimWarning(own.verdict, method, session.identityId) : null;
   const anyway = !!warning && ackFor === warning; // a different warning (another method) asks again
   const blocked = (!!warning && !anyway) || poor;
-  const submit = async (e: FormEvent) => {
+  const submit = (e: FormEvent) => {
     e.preventDefault();
     const bytes = decodeSignature(sig.trim());
     if (!bytes || !sigOk || blocked) return;
-    setBusy(true);
-    setMsg(null);
-    try {
+    setPublished(false);
+    void run(async () => {
       await write(forum.ops.claim(p.govHash, method === 2 ? CLAIM_METHOD.paymentAddress : CLAIM_METHOD.collateralInput, bytes));
-      setMsg({ ok: true, text: 'Claim published. Checking it…' });
+      setPublished(true);
       setSig('');
       own.reload();
       setTimeout(own.reload, 4000);
-    } catch (err) {
-      setMsg({ ok: false, text: errText(err), topUp: err instanceof TopUpError });
-    } finally {
-      setBusy(false);
-    }
+    });
   };
 
   return (
@@ -294,7 +289,7 @@ export function ClaimPanel({ p, own, collateral }: { p: Proposal; own: Ownership
               <p className="muted small">
                 Publishing the claim {costText(COSTS.claim)}; your balance is {balance === null ? '…' : formatCredits(balance)}.
               </p>
-              {poor && balance !== null && <LowBalance what="the claim" balance={balance} needed={COSTS.claim} />}
+              {poor && <LowBalance what="the claim" balance={balance} needed={COSTS.claim} />}
               {warning && (
                 <div className="notice-warn small" role="alert" data-testid="claim-warning">
                   <p>{warning}</p>
@@ -308,7 +303,8 @@ export function ClaimPanel({ p, own, collateral }: { p: Proposal; own: Ownership
                   {busy ? 'Publishing…' : 'Publish claim'}
                 </button>
               </div>
-              {msg && (msg.ok ? <p className="notice">{msg.text}</p> : <WriteError error={msg.text} needsTopUp={msg.topUp} />)}
+              {published && <p className="notice">Claim published. Checking it…</p>}
+              <WriteError error={error} needsTopUp={needsTopUp} />
             </fieldset>
           </form>
         )}
@@ -339,7 +335,7 @@ function AcceptNaming({ p, own, poor }: { p: Proposal; own: Ownership; poor: boo
         Accepting publishes a claim from your identity (no signature needed) and {costText(COSTS.claim)}; your balance is{' '}
         {balance === null ? '…' : formatCredits(balance)}.
       </p>
-      {poor && balance !== null && <LowBalance what="the claim" balance={balance} needed={COSTS.claim} />}
+      {poor && <LowBalance what="the claim" balance={balance} needed={COSTS.claim} />}
       <p className="form-actions">
         <button type="button" className="btn btn-primary" disabled={busy || poor || done} onClick={accept} data-testid="accept-naming-button">
           {busy ? 'Signing and broadcasting…' : done ? 'Accepted. Checking it…' : 'Accept ownership'}
@@ -516,7 +512,7 @@ function PostEditor({ govHash, existing, initialBody, onDone }: { govHash: strin
           </div>
         </details>
       )}
-      {poor && balance !== null && <LowBalance what="this description" balance={balance} needed={cost} />}
+      {poor && <LowBalance what="this description" balance={balance} needed={cost} />}
       <WriteError error={error} needsTopUp={needsTopUp} />
       <div className="form-actions">
         <button type="submit" className="btn btn-primary" disabled={busy || poor || !title.trim() || !packed || !('chunks' in packed)}>

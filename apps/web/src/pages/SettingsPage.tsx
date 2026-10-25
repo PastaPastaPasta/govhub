@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { COSTS, isIdentifier } from '@govhub/forum';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
-import { errText, formatCredits } from '../lib/format.ts';
+import { formatCredits } from '../lib/format.ts';
 import {
   customFields,
   defaultRegistry,
@@ -25,8 +25,8 @@ import { cacheClear } from '../data/cache.ts';
 import { BadgeSettings } from '../badge/BadgeSettings.tsx';
 import { RecoverFunds } from '../auth/Recover.tsx';
 import { ThemeSwitch } from '../ui/SignIn.tsx';
+import { useAction } from '../ui/useAction.ts';
 import { WriteError } from '../ui/WriteError.tsx';
-import { TopUpError } from '../voting/funds.ts';
 
 const lines = (s: string) => s.split(/[\s,]+/).map((x) => x.trim()).filter(Boolean);
 
@@ -154,26 +154,21 @@ function BlockListSettings() {
   const { moderation, session, setSubs, balance } = useForum();
   const [defaultOff, setDefaultOff] = useState(moderation.subs.defaultOff);
   const [lists, setLists] = useState(moderation.subs.lists.join('\n'));
-  const [msg, setMsg] = useState<{ kind: 'ok' | 'error'; text: string; topUp?: boolean } | null>(null);
-  const [busy, setBusy] = useState(false);
+  const { busy, error, needsTopUp, run } = useAction();
+  const [saved, setSaved] = useState<string | null>(null);
   useEffect(() => {
     setDefaultOff(moderation.subs.defaultOff);
     setLists(moderation.subs.lists.join('\n'));
   }, [moderation.subs]);
   const ids = lines(lists);
   const bad = ids.filter((x) => !isIdentifier(x));
-  const save = async (publish: boolean) => {
-    if (bad.length) return setMsg({ kind: 'error', text: `Not identity ids: ${bad.join(', ')}` });
-    setBusy(true);
-    setMsg(null);
-    try {
+  const save = (publish: boolean) => {
+    setSaved(null);
+    void run(async () => {
+      if (bad.length) throw new Error(`Not identity ids: ${bad.join(', ')}`);
       await setSubs({ defaultOff, lists: [...new Set(ids)], ...(moderation.subs.doc ? { doc: moderation.subs.doc } : {}) }, publish);
-      setMsg({ kind: 'ok', text: publish ? 'Saved to your blockSubs document on Platform.' : 'Saved in this browser.' });
-    } catch (e) {
-      setMsg({ kind: 'error', text: errText(e), topUp: e instanceof TopUpError });
-    } finally {
-      setBusy(false);
-    }
+      setSaved(publish ? 'Saved to your blockSubs document on Platform.' : 'Saved in this browser.');
+    });
   };
   const cost = moderation.subs.doc ? COSTS.blockSubsReplace : COSTS.blockSubsCreate;
   return (
@@ -213,7 +208,8 @@ function BlockListSettings() {
             </button>
           )}
         </div>
-        {msg && (msg.kind === 'ok' ? <p className="notice">{msg.text}</p> : <WriteError error={msg.text} needsTopUp={msg.topUp} />)}
+        {saved && <p className="notice">{saved}</p>}
+        <WriteError error={error} needsTopUp={needsTopUp} />
       </fieldset>
     </section>
   );

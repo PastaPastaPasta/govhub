@@ -30,8 +30,9 @@ export function WriteError({ error, needsTopUp = false, onTopUp, inline = false 
 }
 
 /** Shown, before anything is signed, when the balance is under what `what` needs available (`needed` credits: the fee, or the up-front requirement). */
-export function LowBalance({ what, balance, needed }: { what: string; balance: bigint; needed: number }) {
+export function LowBalance({ what, balance, needed }: { what: string; balance: bigint | null; needed: number }) {
   const { openSheet } = useAuth();
+  if (balance === null) return null;
   return (
     <p className="error small" data-testid="low-balance">
       Your balance is {formatCredits(balance)}, and {what} needs about {formatCredits(needed, true)} available. Top up the identity first.{' '}

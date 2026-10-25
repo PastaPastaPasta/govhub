@@ -335,13 +335,12 @@ function ItemCard({ item, scan, secret, onBusy }: { item: RecoveryItem; scan: Re
   }, [busy]); // eslint-disable-line react-hooks/exhaustive-deps
   useLeaveWarning(busy && !!view && view.state !== 'awaiting-deposit');
 
-  const last = useRef<((signal: AbortSignal) => Promise<ReactNode>) | null>(null);
-  const [retryable, setRetryable] = useState(false);
+  // the action that just failed on a dropped connection, offered again by "Try again"
+  const [retry, setRetry] = useState<((signal: AbortSignal) => Promise<ReactNode>) | null>(null);
   const run = async (f: (signal: AbortSignal) => Promise<ReactNode>) => {
-    last.current = f;
     setBusy(true);
     setError(null);
-    setRetryable(false);
+    setRetry(null);
     setView(null);
     const c = new AbortController();
     ac.current = c;
@@ -350,7 +349,7 @@ function ItemCard({ item, scan, secret, onBusy }: { item: RecoveryItem; scan: Re
     } catch (e) {
       if (!c.signal.aborted) {
         setError(plainErrorText(e));
-        setRetryable(isTransientError(e));
+        if (isTransientError(e)) setRetry(() => f);
       }
     } finally {
       setBusy(false);
@@ -427,10 +426,10 @@ function ItemCard({ item, scan, secret, onBusy }: { item: RecoveryItem; scan: Re
           {error && (
             <p className="error" role="alert">
               {error}
-              {retryable && !busy && last.current && (
+              {retry && !busy && (
                 <>
                   {' '}
-                  <button type="button" className="btn btn-s" onClick={() => void run(last.current!)} data-testid="recover-item-retry">
+                  <button type="button" className="btn btn-s" onClick={() => void run(retry)} data-testid="recover-item-retry">
                     Try again
                   </button>
                 </>
