@@ -9,7 +9,11 @@
 //    page (`pagehide` until a back/forward-cache `pageshow`) takes nothing in.
 //  - Every tab of the origin hears every message: sharing is for an origin govhub has to itself (AuthProvider turns it off when
 //    served from a sub-path, such as a shared GitHub Pages origin).
-//  - Only the login is shared: the masternode keyring (voting/KeyringContext.tsx) and passkey PRF outputs stay in their tab.
+//  - The masternode keyring (voting/KeyringContext.tsx) and passkey PRF outputs stay in their tab; only the keyring's LOCK is shared
+//    (D-015): a lock in any tab (button or idle) locks every tab, and a tab that takes the session over opens the keyring with the
+//    seed only while the session says unlocked for that identity. Fail closed: a new tab starts locked, a lock heard from any tab is
+//    always taken, and an "unlocked" only when it is newer than everything this tab has heard. Generations are timestamps (the tabs
+//    of a browser share its clock), so a tab that slept through sign-outs, sign-ins or a bfcache stay compares like the others.
 // Received bytes are wiped once used (or ignored); none of the material is ever logged.
 import { hash160, SeedWallet, signInWithKeyBytes, signInWithSeed, SignInError, wipe, type KeyMatch, type PlatformPort, type Session, type SessionSource } from '@govhub/auth';
 
@@ -17,7 +21,10 @@ const CHANNEL_NAME = 'govhub.session';
 /** How long a new tab waits for an answer; it shows signed out meanwhile (first render is never held up). */
 const REPLY_WAIT_MS = 300;
 
-const V = 1;
+// 2: the keyring lock (a tab of version 1 would open a locked keyring: the versions do not talk, except that a sign-out, which only
+// ever wipes, is sent and taken as version 1 so the tabs of both versions follow it while a deploy rolls out)
+const V = 2;
+const SIGNOUT_V = 1;
 const SOURCES: readonly SessionSource[] = ['seed', 'key', 'passkey'];
 const NONCE = /^[0-9a-f]{32}$/;
 const BASE58_ID = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
@@ -36,11 +43,18 @@ interface Material {
   credentialId?: Uint8Array;
 }
 
+/**
+ * The masternode keyring's lock, shared by the tabs. Locked: for every identity. Unlocked: for `identityId` only (the one whose phrase
+ * or passkey unlocked it, or that signed in with its phrase). `gen`: when it was set (ms; at least one more than the last one heard).
+ */
+type KeyringLockState = { locked: true; gen: number } | { locked: false; gen: number; identityId: string };
+
 type Message =
   | { type: 'request'; profile: string; nonce: string }
   /** nonce: the request answered; null: a sign-in announced by the tab that made it. */
-  | { type: 'session'; profile: string; nonce: string | null; material: Material }
-  | { type: 'signout'; profile: string };
+  | { type: 'session'; profile: string; nonce: string | null; material: Material; keyring: KeyringLockState }
+  | { type: 'signout'; profile: string }
+  | { type: 'keyring'; profile: string; keyring: KeyringLockState };
 
 /** The part of a BroadcastChannel this needs. */
 export interface TabChannel {
@@ -68,6 +82,10 @@ export interface TabShareOptions {
   drop(): void;
   /** True while a received session is being rebuilt (a short "restoring" state). */
   restoring?(on: boolean): void;
+  /** Another tab locked the keyring (also: a session taken over says locked): close it here and wipe its keys, now. */
+  keyringLocked?(): void;
+  /** Runs before this tab answers a request with its session: an idle lock that is due locks first (a new tab never beats it). */
+  beforeAnswer?(): void;
   open?: (onMessage: (data: unknown) => void) => TabChannel;
   waitMs?: number;
 }
@@ -79,6 +97,15 @@ export interface TabShare {
   announce(s: Session): void;
   /** Explicit sign-out in this tab: every tab signs out. */
   signOut(): void;
+  /** The keyring is locked for `identityId`: its saved copy may not be opened with the session's seed (only the phrase or a passkey). */
+  keyringLocked(identityId: string): boolean;
+  /** This tab locked the keyring (button or idle): every tab locks. */
+  lockKeyring(): void;
+  /**
+   * The phrase or a passkey opened `identityId`'s keyring in this tab: a tab that takes that session over from now on may open it with
+   * the seed. The other open tabs stay locked until they are unlocked themselves.
+   */
+  unlockKeyring(identityId: string): void;
   /** `pagehide`: forgets a pending request or restore and takes nothing in until resume(); tells nobody. */
   suspend(): void;
   /** `pageshow` from the back/forward cache: takes messages again and asks the open tabs for the session. */
@@ -94,6 +121,7 @@ export function createTabShare(o: TabShareOptions): TabShare {
   // bumped by every sign-in, sign-out or cancel: a restore that finishes under an older generation is dropped (its key wiped)
   let gen = 0;
   const seen = new Set<string>();
+  let lock: KeyringLockState = { locked: true, gen: 0 }; // before it hears from the others (and before any sign-in here): locked
 
   const post = (m: Message) => channel.postMessage({ v: V, ...m }); // cloned synchronously: the caller may wipe right after
   const clearPending = () => {
@@ -110,6 +138,26 @@ export function createTabShare(o: TabShareOptions): TabShare {
     const s = o.current();
     return s && !s.ended ? s : null;
   };
+  /** A change made here: later than everything heard. */
+  const setLock = (identityId: string | null) => {
+    const at = Math.max(lock.gen + 1, Date.now());
+    lock = identityId === null ? { locked: true, gen: at } : { locked: false, gen: at, identityId };
+  };
+  const shareLock = (identityId: string | null) => {
+    setLock(identityId);
+    if (live()) post({ type: 'keyring', profile: o.profile, keyring: lock });
+  };
+  /**
+   * Another tab's state: a lock is always taken, and closes the keyring here unless it is the lock this tab already knows (memory-only
+   * keys added since stay); an unlock is taken only if newer than this tab's state.
+   */
+  function hear(k: KeyringLockState) {
+    if (k.locked) {
+      const news = !lock.locked || k.gen > lock.gen;
+      lock = { locked: true, gen: Math.max(lock.gen, k.gen) };
+      if (news) o.keyringLocked?.();
+    } else if (k.gen > lock.gen) lock = k;
+  }
 
   function receive(data: unknown) {
     const m = parse(data);
@@ -119,14 +167,20 @@ export function createTabShare(o: TabShareOptions): TabShare {
       if (liveSession()) o.drop();
       return;
     }
-    if (!o.live()) return wipeLoose(data);
+    if (!o.live()) return wipeLoose(data); // fixture mode opens only the demo keyring: nothing to lock
+    if (m.type === 'keyring') return hear(m.keyring);
     if (m.type === 'request') {
       if (seen.has(m.nonce)) return;
       seen.add(m.nonce);
       if (seen.size > SEEN_LIMIT) seen.delete(seen.values().next().value!);
+      o.beforeAnswer?.();
       const s = liveSession();
       if (s) send(s, m.nonce);
-    } else if (m.nonce === null || m.nonce === pending?.nonce) void restore(m.material);
+      return;
+    }
+    // before the session is taken over: the keyring of the session adopted below opens only if the newest state says unlocked
+    hear(m.keyring);
+    if (m.nonce === null || m.nonce === pending?.nonce) void restore(m.material);
     else wipeMaterial(m.material);
   }
 
@@ -134,7 +188,7 @@ export function createTabShare(o: TabShareOptions): TabShare {
     const material = materialOf(s);
     if (!material) return;
     try {
-      post({ type: 'session', profile: o.profile, nonce, material });
+      post({ type: 'session', profile: o.profile, nonce, material, keyring: lock });
     } finally {
       wipeMaterial(material);
     }
@@ -172,12 +226,19 @@ export function createTabShare(o: TabShareOptions): TabShare {
     request,
     announce(s) {
       supersede();
+      // a sign-in here with the phrase opens its keyring, and so may the tabs that adopt it. A pasted key proves nothing about the
+      // phrase, nor does a passkey (one can be added to the vault while the keyring is locked): those change nothing here (a passkey
+      // that opens the keyring unlocks it through unlockKeyring)
+      if (s.source === 'seed' && s.wallet) setLock(s.identityId);
       if (live()) send(s, null);
     },
     signOut() {
       supersede();
-      if (live()) post({ type: 'signout', profile: o.profile });
+      if (live()) channel.postMessage({ v: SIGNOUT_V, type: 'signout', profile: o.profile });
     },
+    keyringLocked: (identityId) => lock.locked || lock.identityId !== identityId,
+    lockKeyring: () => shareLock(null),
+    unlockKeyring: (identityId) => shareLock(identityId),
     suspend() {
       supersede();
       hidden = true;
@@ -247,14 +308,24 @@ function parseMaterial(x: unknown): Material | null {
   return null;
 }
 
+function parseLock(x: unknown): KeyringLockState | null {
+  if (!isObject(x) || typeof x.gen !== 'number' || !Number.isFinite(x.gen) || x.gen < 0) return null;
+  if (x.locked === true) return { locked: true, gen: x.gen };
+  return x.locked === false && typeof x.identityId === 'string' && BASE58_ID.test(x.identityId) ? { locked: false, gen: x.gen, identityId: x.identityId } : null;
+}
+
 function parse(data: unknown): Message | null {
-  if (!isObject(data) || data.v !== V || typeof data.profile !== 'string') return null;
+  if (!isObject(data) || typeof data.profile !== 'string') return null;
   const { type, profile, nonce } = data;
+  if (type === 'signout' && data.v === SIGNOUT_V) return { type, profile };
+  if (data.v !== V) return null;
   if (type === 'request') return typeof nonce === 'string' && NONCE.test(nonce) ? { type, profile, nonce } : null;
-  if (type === 'signout') return { type, profile };
+  const keyring = parseLock(data.keyring);
+  if (!keyring) return null;
+  if (type === 'keyring') return { type, profile, keyring };
   if (type !== 'session' || !(nonce === null || (typeof nonce === 'string' && NONCE.test(nonce)))) return null;
   const material = parseMaterial(data.material);
-  return material && { type, profile, nonce, material };
+  return material && { type, profile, nonce, material, keyring };
 }
 
 function wipeMaterial(m: Material) {

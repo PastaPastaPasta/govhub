@@ -2,7 +2,8 @@
 // ForumProvider as the app-level `Session` (session/session.ts); a real sign-in is wrapped by appSessionFromAuth and handed to it, so
 // every write goes through @govhub/auth's document writer. This provider adds what only real sessions have (funding records, the
 // sign-in sheet, top-ups and passkeys). The signing key lives in memory only, shared with this browser's other open govhub tabs
-// (session/tabShare.ts); keeping it across browser restarts is opt-in and goes through the passkey vault, never plain storage.
+// (session/tabShare.ts), and so is the masternode keyring's lock; keeping it across browser restarts is opt-in and goes through the
+// passkey vault, never plain storage.
 import { storageFundingStore, type FundingStore, type Network, type PlatformPort, type Session } from '@govhub/auth';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useApp } from '../app/context.tsx';
@@ -12,6 +13,25 @@ import { createTabShare, type TabShare } from '../session/tabShare.ts';
 import { getAuthDapi, getPlatformPort } from './runtime.ts';
 
 export type SheetView = 'choose' | 'create' | 'phrase' | 'key' | 'passkey' | 'topup' | 'passkeys';
+
+/** The masternode keyring's lock (voting/KeyringContext.tsx), one for the open tabs of the session (session/tabShare.ts, D-015). */
+export interface KeyringLockCtl {
+  /** Locked for `identityId`: its saved keyring opens with the phrase or a passkey only, never with the session's seed. */
+  locked(identityId: string): boolean;
+  /** Locks the keyring in every tab (Lock now, idle lock). */
+  lock(): void;
+  /** The phrase or a passkey opened `identityId`'s keyring in this tab: a tab that takes the session over may open it with the seed. */
+  unlocked(identityId: string): void;
+  /**
+   * Wires this tab's keyring in: `locked` runs when another tab locks it, `beforeShare` before this tab hands the session to a new
+   * tab (an idle lock that is due locks first, so the new tab never beats it). Both synchronous. Returns the unwire function.
+   */
+  attach(k: KeyringHooks): () => void;
+}
+export interface KeyringHooks {
+  locked(): void;
+  beforeShare(): void;
+}
 
 interface AuthCtx {
   /** The real auth session behind the app session, when the app is signed in through @govhub/auth. */
@@ -26,6 +46,7 @@ interface AuthCtx {
   signIn(s: Session): void;
   /** Signs out this tab and the other open tabs of this profile. */
   signOut(): void;
+  keyringLock: KeyringLockCtl;
   refreshBalance(): void;
   platform(): Promise<PlatformPort>;
   dapi(): ReturnType<typeof getAuthDapi>;
@@ -58,6 +79,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [sheet, setSheet] = useState<SheetView | null>(null);
   const [restoring, setRestoring] = useState(false);
   const share = useRef<TabShare | null>(null);
+  const keyringHooks = useRef<KeyringHooks | null>(null);
+  // No sharing (a sub-path): this tab's own lock (voting/gate.ts KeyringLock) is the only one. Sharing but no channel yet: locked.
+  const keyringLock = useMemo<KeyringLockCtl>(
+    () => ({
+      locked: (id) => (share.current ? share.current.keyringLocked(id) : SHARE_TABS),
+      lock: () => share.current?.lockKeyring(),
+      unlocked: (id) => share.current?.unlockKeyring(id),
+      attach(k) {
+        keyringHooks.current = k;
+        return () => {
+          if (keyringHooks.current === k) keyringHooks.current = null;
+        };
+      },
+    }),
+    [],
+  );
   const store = useMemo(() => storageFundingStore(localStorage), []);
   const platform = useCallback(() => getPlatformPort(registry), [registry]);
   const dapi = useCallback(() => getAuthDapi(registry), [registry]);
@@ -99,6 +136,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       adopt: signInHere,
       drop,
       restoring: setRestoring,
+      keyringLocked: () => keyringHooks.current?.locked(),
+      beforeAnswer: () => keyringHooks.current?.beforeShare(),
     });
     share.current = s;
     s.request();
@@ -136,10 +175,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AuthCtx>(
     () => ({
-      session, restoring: restoring && !session, balance: session ? forum.balance : null, network: registry.platformNetwork, forumContractId: registry.forum.contractId, signIn, signOut,
+      session, restoring: restoring && !session, balance: session ? forum.balance : null, network: registry.platformNetwork, forumContractId: registry.forum.contractId, signIn, signOut, keyringLock,
       refreshBalance: forum.refreshBalance, platform, dapi, store, sheet, openSheet: setSheet, closeSheet: () => setSheet(null),
     }),
-    [session, restoring, forum.balance, forum.refreshBalance, registry.platformNetwork, registry.forum.contractId, signIn, signOut, platform, dapi, store, sheet],
+    [session, restoring, forum.balance, forum.refreshBalance, registry.platformNetwork, registry.forum.contractId, signIn, signOut, keyringLock, platform, dapi, store, sheet],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

@@ -4,6 +4,9 @@
 // the recovery phrase and the user's passkeys and stored in `forum.keyring`; the operator only ever sees ciphertext. A seed sign-in
 // opens it at once, a passkey sign-in with the same ceremony; a pasted-key session cannot open it (memory-only keys still work).
 // After the idle timeout the keys are wiped and the keyring has to be unlocked again (passkey or phrase).
+// A lock (button or idle) covers every open tab of the session (session/tabShare.ts, D-015): each one wipes its keys at once, and no
+// tab opens the saved keyring with the seed again (a new tab, a reload, a page restored from the back/forward cache) until the
+// phrase or a passkey unlocks it; every tab that was open at the lock needs its own unlock.
 //
 // Session safety: every async path captures `sessionToken()` (session generation, identity, Core network, mode) and checks it before
 // it opens, writes or keeps anything; sign-out wipes the keys synchronously (session/end.ts), before React re-renders.
@@ -31,6 +34,7 @@ import {
   type KeyringContext as StoreCtx,
   type OpenedKeyring,
   type PendingVote,
+  type Session,
   type UnlockKey,
 } from '@govhub/auth';
 import { getPasskeyPrf } from '@govhub/auth/webauthn';
@@ -217,6 +221,14 @@ export class SessionChangedError extends Error {
   }
 }
 
+/** An open that a lock (here or in another tab) overtook: its keys were wiped. */
+class LockedMeanwhileError extends Error {
+  constructor() {
+    super('The keyring was locked meanwhile (in this tab or another one). Unlock it again.');
+    this.name = 'LockedMeanwhileError';
+  }
+}
+
 const LOCKED_SAVE = 'Your saved keyring is locked. Unlock it with your recovery phrase or a passkey first, then add these keys there.';
 
 /** Weighted counts after replacing `prev` (or nothing) with `outcome` for a masternode of `weight`, run backwards for "before". */
@@ -297,6 +309,11 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
   }, []);
   /** The session in which the saved keyring was locked (button or idle): only the phrase or a passkey reopens it (D-015). */
   const lockRef = useRef(new KeyringLock());
+  const keyringLock = auth.keyringLock;
+  /** Locked here, or in any tab of the session (the shared lock): the session's seed must not open the saved keyring. */
+  const lockedFor = useCallback((s: Session | null) => lockRef.current.lockedIn(s) || (!!s?.wallet && keyringLock.locked(s.identityId)), [keyringLock]);
+  /** Bumped by every lock, here or in another tab: an open that started before it keeps nothing. */
+  const lockEpoch = useRef(0);
   const touch = () => setVersion((v) => v + 1);
 
   // Sign-out or identity switch: the keys are wiped NOW, before React re-renders (and before a bfcache freeze on pagehide, D-025)
@@ -373,12 +390,19 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
     setKeyInfos(NO_KEY_INFOS);
   }, []);
 
-  /** Shows an opened keyring. `t`: the session it was opened for; a stale one is wiped instead (returns false). */
+  /**
+   * Shows an opened keyring. `t`: the session it was opened for; a stale one is wiped instead (returns false). `epoch`: lockEpoch
+   * when the open started; a lock since then wipes it too (LockedMeanwhileError).
+   */
   const opened = useCallback(
-    (k: OpenedKeyring, memory: boolean, t: string): boolean => {
+    (k: OpenedKeyring, memory: boolean, t: string, epoch: number): boolean => {
       if (sessionToken() !== t) {
         k.close();
         return false;
+      }
+      if (lockEpoch.current !== epoch) {
+        k.close();
+        throw new LockedMeanwhileError();
       }
       // the public data once, here, while the keys are live (and before anything changes): renders read this and never derive from a
       // private key
@@ -449,13 +473,18 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
   const tryOpen = useCallback(
     async (key: UnlockKey, seedCheck: UnlockKey | null, t: string): Promise<'open' | 'absent'> => {
       if (!identityId) throw new Error('Sign in first.');
+      const epoch = lockEpoch.current;
       const k = await loadKeyring(await storeCtx(), identityId, key, seedCheck);
       if (sessionToken() !== t) {
         k?.close();
         throw new SessionChangedError();
       }
+      if (lockEpoch.current !== epoch) {
+        k?.close();
+        throw new LockedMeanwhileError();
+      }
       if (!k) return 'absent';
-      opened(k, false, t);
+      opened(k, false, t, epoch);
       return 'open';
     },
     [identityId, storeCtx, opened, sessionToken],
@@ -483,16 +512,19 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
     if (demo || !session) {
       const k = emptyKeyring(identityId, []);
       for (const d of DEMO_KEYS) k.content.keys.push({ privateKey: fixtureMnKey(d.index).slice(), compressed: true, label: d.label });
-      opened(k, true, t);
+      opened(k, true, t, lockEpoch.current);
       setMnNonce((n) => n + 1); // same demo keys for every sample identity: the lookup must still run again
       return;
     }
     setWatched(loadWatched(localStorage, coreNetwork, identityId).map((v) => ({ ...v, network: v.network ?? coreNetwork })));
     const stash = takeStash(identityId);
-    // locked in this session (button or idle lock): a profile switch or re-render must not reopen it with the session seed (D-015)
-    const locked = lockRef.current.lockedIn(session);
-    const seed = locked ? null : seedUnlockKey(session);
-    const key = locked ? null : stash?.purpose === 'unlock' ? stash.key : seed;
+    // locked in this session (button or idle lock, in this tab or another): a new tab, a reload, a profile switch or a re-render must
+    // not reopen it with the session seed (D-015). The passkey of a passkey sign-in in this tab still may: it is that passkey's own
+    // ceremony, and it opens the keyring only if it is one of its unlockers (the seed then only checks it, never opens it).
+    const passkey = stash?.purpose === 'unlock' ? stash.key : null;
+    const locked = lockedFor(session);
+    const seed = locked && !passkey ? null : seedUnlockKey(session);
+    const key = passkey ?? (locked ? null : seed);
     if (stash && stash.key !== key) stash.key.wipe(); // a passkey stashed for another purpose: nothing takes it now (D-068)
     if (!key) {
       setStatus('locked');
@@ -500,10 +532,14 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
     }
     setStatus('checking');
     tryOpen(key, seed, t)
-      .then((r) => sessionToken() === t && r === 'absent' && setStatus('absent'))
+      .then((r) => {
+        if (sessionToken() !== t) return;
+        if (r === 'absent') setStatus('absent');
+        else if (passkey) unlockedHere(); // a passkey ceremony opened it: tabs taking the session over may open it too
+      })
       .catch((e) => {
         if (sessionToken() !== t) return;
-        if (e instanceof KeyringLockedError) setStatus('locked');
+        if (e instanceof KeyringLockedError || e instanceof LockedMeanwhileError) setStatus('locked');
         else {
           setStatus('error');
           setError(errorText(e));
@@ -519,32 +555,64 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
   useEffect(() => () => kr.current?.close(), []);
 
   /**
-   * Locks: wipes the keys. A saved keyring then needs the phrase or a passkey again in this session, whatever happens meanwhile
-   * (memory-only keys, "Save encrypted", a profile switch: D-015). A memory-only one is simply gone.
+   * Locks this tab: wipes the keys. A saved keyring then needs the phrase or a passkey again in this session, whatever happens
+   * meanwhile (memory-only keys, "Save encrypted", a profile switch: D-015). A memory-only one is simply gone.
    */
-  const lockNow = useCallback(() => {
+  const lockHere = useCallback(() => {
+    lockEpoch.current++;
     close();
     if (!memoryOnly) lockRef.current.lock(session);
-    setStatus(lockRef.current.lockedIn(session) ? 'locked' : 'absent');
+    setStatus(lockedFor(session) ? 'locked' : 'absent');
     setMns(EMPTY_MNS);
-  }, [close, memoryOnly, session]);
+  }, [close, memoryOnly, session, lockedFor]);
+  /** Lock now, idle lock: every tab of the session locks. */
+  const lockNow = useCallback(() => {
+    keyringLock.lock();
+    lockHere();
+  }, [keyringLock, lockHere]);
   const lock = useCallback(() => lockNow(), [lockNow]);
+  const lockHereRef = useRef(lockHere);
+  lockHereRef.current = lockHere;
+  /** The idle lock, if due now (set while a keyring is open). */
+  const idleCheck = useRef(() => {});
+  useEffect(
+    () =>
+      keyringLock.attach({
+        // another tab locked: an open in flight here keeps nothing, an open keyring is wiped at once (before React re-renders)
+        locked() {
+          lockEpoch.current++;
+          if (kr.current) lockHereRef.current();
+        },
+        // a new tab asks for the session: a background tab whose idle timer is throttled locks first if it is due
+        beforeShare: () => idleCheck.current(),
+      }),
+    [keyringLock],
+  );
+  /** The phrase or a passkey opened the keyring here (or this session's own phrase found none): this session's seed may open it again. */
+  const unlockedHere = useCallback(() => {
+    lockRef.current.unlock();
+    if (identityId) keyringLock.unlocked(identityId);
+  }, [keyringLock, identityId]);
 
   // ---- idle lock ----
   const idleMinutes = keyring?.content.idleLockMinutes ?? DEFAULT_IDLE_LOCK_MINUTES;
   useEffect(() => {
     if (status !== 'open' || demo) return;
+    // activity in this tab only: another tab in use does not keep this one's keys open (and its idle lock locks every tab)
     let last = Date.now();
     const bump = () => (last = Date.now());
     const evs = ['pointerdown', 'keydown', 'scroll'] as const;
     evs.forEach((e) => addEventListener(e, bump, { passive: true }));
-    const t = setInterval(() => {
+    const check = () => {
       if (Date.now() - last > idleMinutes * 60_000) {
         lockNow();
         setError(memoryOnly ? 'The keyring was idle and its memory-only keys were wiped.' : 'The keyring locked itself after being idle. Unlock it again to vote.');
       }
-    }, 15_000);
+    };
+    idleCheck.current = check;
+    const t = setInterval(check, 15_000);
     return () => {
+      idleCheck.current = () => {};
       clearInterval(t);
       evs.forEach((e) => removeEventListener(e, bump));
     };
@@ -603,7 +671,9 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         const seed = session ? seedUnlockKey(session) : null;
         try {
           const r = await tryOpen(key, seed, t);
-          if (r === 'absent') setStatus('absent');
+          // any passkey "opens" a keyring that does not exist: only a real open unlocks
+          if (r === 'open') unlockedHere();
+          else setStatus('absent');
         } catch (e) {
           if (e instanceof KeyringLockedError) throw new Error('This passkey does not unlock the keyring. Use your recovery phrase, or a passkey that was added while the keyring was open.');
           throw e;
@@ -612,7 +682,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
           seed?.wipe();
         }
       }),
-    [run, registry.forum.contractId, session, tryOpen, sessionToken],
+    [run, registry.forum.contractId, session, tryOpen, sessionToken, unlockedHere],
   );
 
   const unlockWithPhrase = useCallback(
@@ -624,9 +694,14 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         const e = w.entropy();
         w.wipe();
         const key = seedUnlockKeyFromEntropy(e, auth.network, identityId);
+        // any phrase "opens" a keyring that does not exist: then only this session's own phrase unlocks
+        const own = session?.wallet && !session.wallet.wiped ? session.wallet.entropy() : null;
+        const isOwn = !!own && bytesEqual(own, e);
+        own?.fill(0);
         e.fill(0);
         try {
           const r = await tryOpen(key, key, t);
+          if (r === 'open' || isOwn) unlockedHere();
           if (r === 'absent') setStatus('absent');
         } catch (err) {
           if (err instanceof KeyringLockedError) throw new Error("That recovery phrase doesn't unlock this identity's keyring.");
@@ -635,15 +710,16 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
           key.wipe();
         }
       }),
-    [run, identityId, auth.network, tryOpen, sessionToken],
+    [run, identityId, auth.network, session, tryOpen, sessionToken, unlockedHere],
   );
 
   const createKeyring = useCallback(
     (memory: boolean) =>
       run(memory ? 'Starting a memory-only keyring' : 'Creating the keyring', async () => {
         const t = sessionToken();
+        const epoch = lockEpoch.current;
         if (!identityId || !session) throw new Error('Sign in first.');
-        if (!memory && lockRef.current.lockedIn(session)) throw new Error(LOCKED_SAVE);
+        if (!memory && lockedFor(session)) throw new Error(LOCKED_SAVE);
         const k = emptyKeyring(identityId, []);
         if (!memory) {
           const seed = seedUnlockKey(session);
@@ -654,9 +730,9 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
           await saveKeys(await storeCtx(), session, k);
           auth.refreshBalance();
         }
-        if (!opened(k, memory, t)) throw new SessionChangedError();
+        if (!opened(k, memory, t, epoch)) throw new SessionChangedError();
       }),
-    [run, identityId, session, storeCtx, opened, auth, canWrite, sessionToken],
+    [run, identityId, session, storeCtx, opened, auth, canWrite, sessionToken, lockedFor],
   );
 
   /**
@@ -846,11 +922,12 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
     () =>
       run('Saving the keyring on Platform', async () => {
         const t = sessionToken();
+        const epoch = lockEpoch.current;
         const k = kr.current;
         if (!k || !session) throw new Error('Nothing to save.');
         if (demo) throw new Error('The demo keyring of fixture mode cannot be saved.');
         // a locked saved keyring is opened by its phrase or a passkey, never by this session's seed behind the user's back (D-015)
-        if (lockRef.current.lockedIn(session)) throw new Error(LOCKED_SAVE);
+        if (lockedFor(session)) throw new Error(LOCKED_SAVE);
         const seed = seedUnlockKey(session);
         if (!seed) throw new Error('Saving needs your recovery phrase in this session. A pasted key cannot open a saved keyring.');
         // merge into an existing keyring rather than replacing it blindly
@@ -860,6 +937,11 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
             if (e instanceof KeyringLockedError) throw new Error('You already have a saved keyring that your recovery phrase cannot open (its phrase unlocker was removed). Unlock it with a passkey and add these keys there.');
             throw e;
           });
+          // locked (here or in another tab) while it loaded: the memory-only keys are gone, and the seed must not open the saved keyring
+          if (lockEpoch.current !== epoch) {
+            existing?.close();
+            throw new LockedMeanwhileError();
+          }
           if (existing) {
             const seen = Number(localStorage.getItem(generationKey(registry.platformNetwork, existing.ownerId)) ?? 0);
             if (existing.authenticated !== true || existing.content.generation < seen) {
@@ -874,12 +956,13 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
               existing.close();
               throw e;
             }
-            if (!opened(existing, false, t)) throw new SessionChangedError();
+            if (!opened(existing, false, t, epoch)) throw new SessionChangedError();
           } else {
             addUnlocker(k, seed);
             canWrite(k);
             await saveKeys(ctx, session, k);
             if (sessionToken() !== t) throw new SessionChangedError();
+            if (lockEpoch.current !== epoch) throw new LockedMeanwhileError(); // saved, and locked: the phrase or a passkey opens it
             setMemoryOnly(false);
             keepVotesSealedTo(k);
             touch();
@@ -889,7 +972,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         }
         auth.refreshBalance();
       }),
-    [run, session, storeCtx, opened, auth, registry.platformNetwork, demo, canWrite, sessionToken, keepVotesSealedTo],
+    [run, session, storeCtx, opened, auth, registry.platformNetwork, demo, canWrite, sessionToken, keepVotesSealedTo, lockedFor],
   );
 
   // ---- masternodes for the keys: ONE lookup, read by this page and every vote panel ----
