@@ -11,7 +11,7 @@
 //    Otherwise (an older testnet contract): one `tally` per proposal, as before.
 //  - `proposal.url` absent (mainnet gov.json): the slim proposal; url, payment address/amount and start are in dataHex only.
 import { createHash } from 'node:crypto';
-import { bytesToHex, paginateTallySet, tallySetFields, type TallySetEntry } from '@govhub/verify';
+import { bytesToHex, decodeTallySet, paginateTallySet, TALLY_SET_FIELDS, TALLY_SET_MAX_PAGES, tallySetFields, type TallySetEntry } from '@govhub/verify';
 import type { DB, GovObjectRow, PlatformDocRow, TallySetEntryRow } from '../archive/db.ts';
 import type { BridgeConfig } from '../config.ts';
 import { errText, log, nowS } from '../log.ts';
@@ -94,8 +94,8 @@ export function tallySetProps(page: number, asOfHeight: number, entries: readonl
   return { page: BigInt(page), asOfHeight: BigInt(asOfHeight), ...tallySetFields(entries) };
 }
 
-/** The final per-proposal `tally` of a proposal that left the active set: its last packed entry, rank 0, not in the next budget. */
-export function finalTallyProps(e: TallySetEntry, asOfHeight: number): Record<string, unknown> {
+/** A per-proposal `tally` document from a packed entry (the entry already has the margin clamped to i32). */
+function entryTallyProps(e: TallySetEntry, asOfHeight: number): Record<string, unknown> {
   return {
     govHash: displayHashBytes(e.govHash),
     asOfHeight: BigInt(asOfHeight),
@@ -106,27 +106,19 @@ export function finalTallyProps(e: TallySetEntry, asOfHeight: number): Record<st
     noCount: BigInt(e.noCount),
     abstainCount: BigInt(e.abstainCount),
     voteSetHash: displayHashBytes(e.voteSetHash),
-    rank: 0n,
-    inNextBudget: false,
+    rank: BigInt(e.rank),
+    inNextBudget: e.inNextBudget,
     margin: BigInt(e.margin),
   };
 }
 
+/** The final per-proposal `tally` of a proposal that left the active set: its last packed entry, rank 0, not in the next budget. */
+export function finalTallyProps(e: TallySetEntry, asOfHeight: number): Record<string, unknown> {
+  return entryTallyProps({ ...e, rank: 0, inNextBudget: false }, asOfHeight);
+}
+
 export function tallyProps(t: ComputedTally): Record<string, unknown> {
-  return {
-    govHash: displayHashBytes(t.govHash),
-    asOfHeight: BigInt(t.asOfHeight),
-    yesWeighted: BigInt(t.weighted.yes),
-    noWeighted: BigInt(t.weighted.no),
-    abstainWeighted: BigInt(t.weighted.abstain),
-    yesCount: BigInt(t.unweighted.yes),
-    noCount: BigInt(t.unweighted.no),
-    abstainCount: BigInt(t.unweighted.abstain),
-    voteSetHash: displayHashBytes(t.voteSetHash),
-    rank: BigInt(t.rank),
-    inNextBudget: t.inNextBudget,
-    margin: BigInt(Math.max(-2147483648, Math.min(2147483647, t.margin))),
-  };
+  return entryTallyProps(tallySetEntry(t), t.asOfHeight);
 }
 
 /**
@@ -217,9 +209,48 @@ export class Publisher {
     this.db.prepare('INSERT INTO publish_log(at, contract_id, doc_type, doc_key, op, doc_id, revision, ok, error, attempts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(nowS(), this.platform.contractId, type, key, op, id, revision, ok ? 1 : 0, error, attempts);
   }
 
+  /** Takes over a document found on Platform without a local record; its content is unknown, so the next upsert replaces it. */
+  private adopt(type: DocType, key: string, found: PlatformDoc): PlatformDocRow {
+    this.save(type, key, found.id, found.revision, {});
+    this.db.prepare('UPDATE platform_docs SET content_hash = ? WHERE contract_id = ? AND doc_type = ? AND doc_key = ?').run('adopted', this.platform.contractId, type, key);
+    log.info('adopted existing platform document', { type, key, id: found.id, revision: found.revision });
+    return this.record(type, key)!;
+  }
+
+  private talliesSetDiscovered = false;
+
+  /**
+   * Once per process, when the archive knows no `talliesSet` page (a fresh or restored archive, or the first run after a contract
+   * update): adopts every page on Platform, so pages no longer needed are emptied, and remembers their entries, so a proposal that
+   * ended meanwhile still gets its final tally from the entry readers saw.
+   */
+  private async discoverTallySet(): Promise<void> {
+    if (this.talliesSetDiscovered) return;
+    if (this.db.prepare("SELECT 1 FROM platform_docs WHERE contract_id = ? AND doc_type = 'talliesSet'").get(this.platform.contractId)) {
+      this.talliesSetDiscovered = true;
+      return;
+    }
+    const docs = await this.platform.query('talliesSet', { where: [['page', '>=', 0]], orderBy: [['page', 'asc']], limit: TALLY_SET_MAX_PAGES });
+    const seed = this.db.prepare('INSERT OR IGNORE INTO tally_set_entries(contract_id, gov_hash, as_of_height, entry_json, published_at, finalized_at) VALUES (?, ?, ?, ?, ?, NULL)');
+    for (const d of docs) {
+      const page = String(d.data.page);
+      this.adopt('talliesSet', page, d);
+      try {
+        const entries = decodeTallySet(TALLY_SET_FIELDS.map((f) => (d.data[f] == null ? undefined : Uint8Array.from(Buffer.from(String(d.data[f]), 'base64')))));
+        for (const e of entries) seed.run(this.platform.contractId, e.govHash, Number(d.data.asOfHeight), JSON.stringify(e), nowS());
+      } catch (e) {
+        log.error('adopted talliesSet page does not decode; it is replaced on this run', { page, error: errText(e) });
+      }
+    }
+    this.talliesSetDiscovered = true;
+  }
+
   /** The document behind a unique index on Platform (proved read), or null. */
   async lookup(type: DocType, key: string): Promise<PlatformDoc | null> {
-    const where = type === 'cycle' ? [['superblockHeight', '==', Number(key)]] : type === 'talliesSet' ? [['page', '==', Number(key)]] : [['govHash', '==', displayHashB64(key)]];
+    let where: unknown[][];
+    if (type === 'cycle') where = [['superblockHeight', '==', Number(key)]];
+    else if (type === 'talliesSet') where = [['page', '==', Number(key)]];
+    else where = [['govHash', '==', displayHashB64(key)]];
     const docs = await this.platform.query(type, { where, limit: 2 });
     if (docs.length > 1) log.error('unique index returned more than one document', { type, key });
     return docs[0] ?? null;
@@ -235,12 +266,7 @@ export class Publisher {
     if (!rec) {
       const found = await this.lookup(type, key);
       if (found) {
-        // adopt the existing document; content is compared by re-publishing below when it differs
-        this.save(type, key, found.id, found.revision, {});
-        rec = this.record(type, key)!;
-        this.db.prepare('UPDATE platform_docs SET content_hash = ? WHERE contract_id = ? AND doc_type = ? AND doc_key = ?').run('adopted', this.platform.contractId, type, key);
-        rec.content_hash = 'adopted';
-        log.info('adopted existing platform document', { type, key, id: found.id, revision: found.revision });
+        rec = this.adopt(type, key, found);
         if (opts.immutable) return 'adopted';
       }
     }
@@ -265,7 +291,10 @@ export class Publisher {
       }
     }
     if (rec.content_hash === changeHash || opts.immutable) return 'unchanged';
-    if (rec.content_hash !== 'adopted' && Date.now() / 1000 - rec.published_at < opts.minIntervalSec) return 'throttled';
+    // Not throttled: a document of this very height whose content changed. The bridge stored a second record at that block (a
+    // refresh with new votes before the next block) and readers recount the document against it, so it would read as a mismatch.
+    const sameHeight = 'asOfHeight' in props && rec.content_hash !== 'adopted' && new Map(JSON.parse(rec.content_json) as Array<[string, unknown]>).get('asOfHeight') === String(props.asOfHeight);
+    if (rec.content_hash !== 'adopted' && !sameHeight && Date.now() / 1000 - rec.published_at < opts.minIntervalSec) return 'throttled';
     const revision = rec.revision + 1;
     const label = `replace ${type} ${key} r${revision}`;
     try {
@@ -293,20 +322,26 @@ export class Publisher {
    * Every entry that went out is remembered (tally_set_entries) as the source of the proposal's final tally.
    */
   private async publishTallySet(height: number, tallies: readonly ComputedTally[], minIntervalSec: number, count: (r: string) => void, failed: () => void): Promise<void> {
+    await this.discoverTallySet();
     const pages = paginateTallySet(tallies.map(tallySetEntry));
+    if (pages.length > TALLY_SET_MAX_PAGES) {
+      // readers ask for TALLY_SET_MAX_PAGES pages; more would never be read
+      log.error('more active tallies than the tally set pages readers read: the rest are not published', { tallies: tallies.length, pages: pages.length, max: TALLY_SET_MAX_PAGES });
+      pages.length = TALLY_SET_MAX_PAGES;
+    }
     const known = this.db.prepare("SELECT doc_key FROM platform_docs WHERE contract_id = ? AND doc_type = 'talliesSet'").all(this.platform.contractId) as Array<{ doc_key: string }>;
     const last = Math.max(pages.length - 1, ...known.map((r) => Number(r.doc_key)));
+    const put = this.db.prepare(
+      `INSERT INTO tally_set_entries(contract_id, gov_hash, as_of_height, entry_json, published_at, finalized_at) VALUES (?, ?, ?, ?, ?, NULL)
+       ON CONFLICT(contract_id, gov_hash) DO UPDATE SET as_of_height = excluded.as_of_height, entry_json = excluded.entry_json,
+         published_at = excluded.published_at, finalized_at = NULL`,
+    );
     for (let page = 0; page <= last; page++) {
       const entries = pages[page] ?? [];
       try {
         const r = await this.upsert('talliesSet', String(page), tallySetProps(page, height, entries), { minIntervalSec });
         count(r);
         if (r !== 'created' && r !== 'replaced') continue;
-        const put = this.db.prepare(
-          `INSERT INTO tally_set_entries(contract_id, gov_hash, as_of_height, entry_json, published_at, finalized_at) VALUES (?, ?, ?, ?, ?, NULL)
-           ON CONFLICT(contract_id, gov_hash) DO UPDATE SET as_of_height = excluded.as_of_height, entry_json = excluded.entry_json,
-             published_at = excluded.published_at, finalized_at = NULL`,
-        );
         this.db.transaction(() => {
           for (const e of entries) put.run(this.platform.contractId, e.govHash, height, JSON.stringify(e), nowS());
         })();
@@ -371,8 +406,8 @@ export class Publisher {
     // Fail closed: a tally goes out only if Core was asked and agreed, and the threshold (margin, inNextBudget) agrees too.
     const thresholdOk = run.threshold === run.coreThreshold;
     if (!thresholdOk && !this.cfg.publish.publishOnMismatch) log.error('tallies held back: funding threshold differs from Core', { bridge: run.threshold, core: run.coreThreshold });
-    const tallies = run.tallies.filter((t) => {
-      if (!this.record('proposal', t.govHash)) return false;
+    const onPlatform = run.tallies.filter((t) => this.record('proposal', t.govHash));
+    const tallies = onPlatform.filter((t) => {
       const cmp = comparisons.get(t.govHash);
       if ((cmp?.match && thresholdOk) || this.cfg.publish.publishOnMismatch) return true;
       s.held++;
@@ -380,8 +415,14 @@ export class Publisher {
       else if (!cmp) log.warn('tally held back: no Core comparison', { hash: t.govHash });
       return false;
     });
-    if (this.platform.hasDocType('talliesSet')) await this.publishTallySet(run.height, tallies, tallyInterval, count, () => s.failed++);
-    else {
+    if (this.platform.hasDocType('talliesSet')) {
+      // A held tally cannot stay in the set at its old numbers (the document has one asOfHeight, and the stored record at the new
+      // one differs), so a proposal Core disagrees with is left out. A hold that says nothing about the proposal (the threshold
+      // differs, or Core could not be asked) leaves the whole set as it is instead: it would otherwise empty or thin the set.
+      const unknown = onPlatform.filter((t) => !comparisons.has(t.govHash)).length;
+      if (!this.cfg.publish.publishOnMismatch && (!thresholdOk || unknown > 0)) log.warn('tally set not replaced this run', { thresholdOk, withoutCoreComparison: unknown });
+      else await this.publishTallySet(run.height, tallies, tallyInterval, count, () => s.failed++);
+    } else {
       await pool(tallies, limit, async (t) => {
         try {
           count(await this.upsert('tally', t.govHash, tallyProps(t), { minIntervalSec: tallyInterval }));
@@ -397,20 +438,23 @@ export class Publisher {
     // published entry; a per-proposal document from before (older contracts) is retired the same way.
     const active = new Set(run.tallies.map((t) => t.govHash));
     const finals = new Map<string, Record<string, unknown>>();
-    for (const r of this.db.prepare('SELECT * FROM tally_set_entries WHERE contract_id = ? AND finalized_at IS NULL').all(this.platform.contractId) as TallySetEntryRow[]) {
-      if (!active.has(r.gov_hash)) finals.set(r.gov_hash, finalTallyProps(JSON.parse(r.entry_json) as TallySetEntry, r.as_of_height));
+    const remembered = this.db.prepare('SELECT * FROM tally_set_entries WHERE contract_id = ?').all(this.platform.contractId) as TallySetEntryRow[];
+    for (const r of remembered) {
+      if (r.finalized_at === null && !active.has(r.gov_hash)) finals.set(r.gov_hash, finalTallyProps(JSON.parse(r.entry_json) as TallySetEntry, r.as_of_height));
     }
+    const inPackedEra = new Set(remembered.map((r) => r.gov_hash));
     for (const r of this.db.prepare("SELECT * FROM platform_docs WHERE contract_id = ? AND doc_type = 'tally'").all(this.platform.contractId) as PlatformDocRow[]) {
-      if (active.has(r.doc_key) || finals.has(r.doc_key) || this.db.prepare('SELECT 1 FROM tally_set_entries WHERE contract_id = ? AND gov_hash = ?').get(this.platform.contractId, r.doc_key)) continue;
+      if (active.has(r.doc_key) || inPackedEra.has(r.doc_key)) continue;
       const props = retiredTallyProps(r);
       if (props) finals.set(r.doc_key, props);
     }
+    const markFinalized = this.db.prepare('UPDATE tally_set_entries SET finalized_at = ? WHERE contract_id = ? AND gov_hash = ?');
     for (const [hash, props] of finals) {
       try {
         const res = await this.upsert('tally', hash, props, { minIntervalSec: tallyInterval });
         if (res === 'throttled') continue;
         count(res);
-        this.db.prepare('UPDATE tally_set_entries SET finalized_at = ? WHERE contract_id = ? AND gov_hash = ?').run(nowS(), this.platform.contractId, hash);
+        markFinalized.run(nowS(), this.platform.contractId, hash);
       } catch (e) {
         s.failed++;
         log.error('final tally failed', { hash, error: errText(e) });

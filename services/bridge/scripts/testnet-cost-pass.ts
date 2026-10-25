@@ -15,10 +15,10 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { bytesToHex, type TallySetEntry } from '@govhub/verify';
+import { bytesToHex, TALLY_SET_ENTRY_BYTES, TALLY_SET_HEADER_BYTES } from '@govhub/verify';
 import type { GovObjectRow } from '../src/archive/db.ts';
 import { PlatformClient } from '../src/publish/platform.ts';
-import { proposalProps, tallyProps, tallySetProps } from '../src/publish/publisher.ts';
+import { proposalProps, tallyProps, tallySetEntry, tallySetProps } from '../src/publish/publisher.ts';
 import type { ComputedTally } from '../src/tally.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -133,7 +133,6 @@ const rhex = (n: number) => bytesToHex(Uint8Array.from(randomBytes(n)));
 const proposalRow = (): GovObjectRow => ({ hash: rhex(32), parent_hash: '0'.repeat(64), revision: 1, time: typical.creationTime, collateral_hash: typical.collateralHash, data_hex: typical.dataHex, collateral_height: 2_550_000 }) as GovObjectRow;
 const tallyOf = (i: number): ComputedTally =>
   ({ govHash: rhex(32), asOfHeight: 1_579_000, weighted: { yes: 1500 + i * 13, no: 120 + i, abstain: 9 }, unweighted: { yes: 1100 + i * 9, no: 90 + i, abstain: 7 }, voteSetHash: rhex(32), rank: i + 1, inNextBudget: i < 20, margin: 1168 - i * 40 }) as unknown as ComputedTally;
-const entryOf = (t: ComputedTally): TallySetEntry => ({ govHash: t.govHash, yesWeighted: t.weighted.yes, noWeighted: t.weighted.no, abstainWeighted: t.weighted.abstain, yesCount: t.unweighted.yes, noCount: t.unweighted.no, abstainCount: t.unweighted.abstain, voteSetHash: t.voteSetHash, rank: t.rank, inNextBudget: t.inNextBudget, margin: t.margin });
 
 const cmd = process.argv[2];
 
@@ -206,8 +205,8 @@ if (cmd === 'measure') {
     const ts = Array.from({ length: n }, (_, i) => tallyOf(i));
     let height = 1_579_000;
     let r = 1;
-    const props = () => tallySetProps(page, height, ts.map(entryOf));
-    const bytes = () => 3 + ts.length * 95;
+    const props = () => tallySetProps(page, height, ts.map(tallySetEntry));
+    const bytes = () => TALLY_SET_HEADER_BYTES + ts.length * TALLY_SET_ENTRY_BYTES;
     await measured(`talliesSet create, ${n} entries`, devOwner, { op: 'create', type: 'talliesSet', entries: n, packedBytes: bytes() }, async () => {
       R.docIds[`set${n}`] = (await reh.create('talliesSet', props())).id;
     });

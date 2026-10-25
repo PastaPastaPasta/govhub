@@ -9,14 +9,15 @@
 // `dev-owner` reads the dev gov owner's HIGH key from ~/.local/share/govhub-phase0/testnet/state.json. Nothing secret is printed.
 // Results (fee, height, entries): appended to scripts/results/publish-tally-set.json.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { TALLY_SET_ENTRY_BYTES, TALLY_SET_HEADER_BYTES } from '@govhub/verify';
 import { openArchive } from '../src/archive/db.ts';
-import { loadConfig, readIdentityKeyFile, type IdentityKeyFile } from '../src/config.ts';
+import { loadConfig } from '../src/config.ts';
 import { displayHashB64, PlatformClient } from '../src/publish/platform.ts';
 import { Publisher, tallySetEntry, tallySetProps } from '../src/publish/publisher.ts';
 import type { ComputedTally } from '../src/tally.ts';
+import { identityKeyFromArg } from './identity-key-arg.ts';
 
 const [base, keyArg, ...flags] = process.argv.slice(2);
 if (!base || !keyArg) throw new Error('usage: publish-tally-set.ts <bridge base URL> <identity key file | dev-owner> [--dry]');
@@ -29,13 +30,7 @@ const get = async (path: string) => {
 };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-let key: IdentityKeyFile;
-if (keyArg === 'dev-owner') {
-  const st = JSON.parse(readFileSync(join(homedir(), '.local/share/govhub-phase0/testnet/state.json'), 'utf8'));
-  const owner = st.items.find((i: any) => i.name === 'owner');
-  const high = owner.keys.find((k: any) => k.purpose === 'authentication' && k.securityLevel === 'high');
-  key = { identityId: owner.identityId, keyId: high.keyId, privateKeyHex: high.hex };
-} else key = readIdentityKeyFile(keyArg);
+const key = identityKeyFromArg(keyArg);
 
 const status = await get('/v1/status');
 const contractId: string = status.govContractId;
@@ -85,7 +80,7 @@ for (let i = 0; i < 40 && after === before; i++) {
   after = await stable();
 }
 const doc = await publisher.lookup('talliesSet', '0');
-const out = { at: new Date().toISOString(), bridge: base, coreNetwork: status.network, contractId, publisher: key.identityId, op, docId: doc?.id, revision: doc?.revision, asOfHeight: H, entries: entries.length, skipped, packedBytes: 3 + 95 * entries.length, feeCredits: String(before - after), feeDash: (Number(before - after) / 1e11).toFixed(8) };
+const out = { at: new Date().toISOString(), bridge: base, coreNetwork: status.network, contractId, publisher: key.identityId, op, docId: doc?.id, revision: doc?.revision, asOfHeight: H, entries: entries.length, skipped, packedBytes: TALLY_SET_HEADER_BYTES + TALLY_SET_ENTRY_BYTES * entries.length, feeCredits: String(before - after), feeDash: (Number(before - after) / 1e11).toFixed(8) };
 const file = join(here, 'results/publish-tally-set.json');
 const all = existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as { runs: unknown[] }) : { runs: [] };
 all.runs.push(out);

@@ -8,7 +8,7 @@
 // Entries are sorted by govHash, strictly ascending (no duplicates). The stream is split into the byteArray fields b0, b1, b2 of
 // at most 5,120 bytes each, every field but the last full. Hashes are in RPC/display order, like every other gov document.
 // The document's `asOfHeight` applies to every entry; it is a document field, not part of the stream.
-import { bytesToHex, hexToBytes } from './bytes.ts';
+import { bytesToHex, concatBytes, hexToBytes } from './bytes.ts';
 
 export const TALLY_SET_VERSION = 1;
 export const TALLY_SET_HEADER_BYTES = 3;
@@ -16,6 +16,8 @@ export const TALLY_SET_ENTRY_BYTES = 95;
 /** Platform's per-field value cap. */
 export const TALLY_SET_FIELD_BYTES = 5120;
 export const TALLY_SET_FIELDS = ['b0', 'b1', 'b2'] as const;
+/** Pages a reader asks for (one query) and a writer may fill: 8 x 161 = 1,288 proposals, far above the ~30 active on mainnet. */
+export const TALLY_SET_MAX_PAGES = 8;
 /** Entries that fit in one document (3 fields): 161. More go to the next page document. */
 export const TALLY_SET_MAX_ENTRIES = Math.floor((TALLY_SET_FIELD_BYTES * TALLY_SET_FIELDS.length - TALLY_SET_HEADER_BYTES) / TALLY_SET_ENTRY_BYTES);
 
@@ -36,6 +38,9 @@ export interface TallySetEntry {
 
 const U32 = 0xffffffff;
 const HASH = /^[0-9a-f]{64}$/;
+/** The six u32 counters of an entry, in stream order. */
+const COUNTERS = ['yesWeighted', 'noWeighted', 'abstainWeighted', 'yesCount', 'noCount', 'abstainCount'] as const;
+type TallySetFields = Partial<Record<(typeof TALLY_SET_FIELDS)[number], Uint8Array>>;
 
 function int(name: string, v: number, min: number, max: number): number {
   if (!Number.isSafeInteger(v) || v < min || v > max) throw new Error(`tally set: ${name} ${v} outside ${min}..${max}`);
@@ -46,11 +51,14 @@ function hash(name: string, v: string): Uint8Array {
   if (!HASH.test(h)) throw new Error(`tally set: ${name} is not 64 hex chars`);
   return hexToBytes(h);
 }
+function sortedByGovHash<T extends Pick<TallySetEntry, 'govHash'>>(entries: readonly T[]): T[] {
+  return [...entries].sort((a, b) => (a.govHash.toLowerCase() < b.govHash.toLowerCase() ? -1 : 1));
+}
 
 /** The packed stream of up to TALLY_SET_MAX_ENTRIES entries (sorted here; duplicates are an error). */
 export function encodeTallySetStream(entries: readonly TallySetEntry[]): Uint8Array {
   if (entries.length > TALLY_SET_MAX_ENTRIES) throw new Error(`tally set: ${entries.length} entries, at most ${TALLY_SET_MAX_ENTRIES} fit in one document`);
-  const sorted = [...entries].sort((a, b) => (a.govHash.toLowerCase() < b.govHash.toLowerCase() ? -1 : 1));
+  const sorted = sortedByGovHash(entries);
   const out = new Uint8Array(TALLY_SET_HEADER_BYTES + sorted.length * TALLY_SET_ENTRY_BYTES);
   const dv = new DataView(out.buffer);
   dv.setUint8(0, TALLY_SET_VERSION);
@@ -63,9 +71,7 @@ export function encodeTallySetStream(entries: readonly TallySetEntry[]): Uint8Ar
     prev = gh;
     out.set(hash('govHash', gh), o);
     out.set(hash('voteSetHash', e.voteSetHash), o + 32);
-    const nums = [e.yesWeighted, e.noWeighted, e.abstainWeighted, e.yesCount, e.noCount, e.abstainCount];
-    const names = ['yesWeighted', 'noWeighted', 'abstainWeighted', 'yesCount', 'noCount', 'abstainCount'];
-    nums.forEach((n, i) => dv.setUint32(o + 64 + 4 * i, int(names[i]!, n, 0, U32)));
+    COUNTERS.forEach((name, i) => dv.setUint32(o + 64 + 4 * i, int(name, e[name], 0, U32)));
     dv.setUint16(o + 88, int('rank', e.rank, 0, 0xffff));
     dv.setUint8(o + 90, e.inNextBudget ? 1 : 0);
     dv.setInt32(o + 91, int('margin', e.margin, -0x80000000, 0x7fffffff));
@@ -83,8 +89,8 @@ export function splitTallySetStream(stream: Uint8Array): Uint8Array[] {
 }
 
 /** The `b0`..`b2` properties of a `talliesSet` document for these entries. */
-export function tallySetFields(entries: readonly TallySetEntry[]): Partial<Record<(typeof TALLY_SET_FIELDS)[number], Uint8Array>> {
-  const out: Partial<Record<(typeof TALLY_SET_FIELDS)[number], Uint8Array>> = {};
+export function tallySetFields(entries: readonly TallySetEntry[]): TallySetFields {
+  const out: TallySetFields = {};
   splitTallySetStream(encodeTallySetStream(entries)).forEach((f, i) => (out[TALLY_SET_FIELDS[i]!] = f));
   return out;
 }
@@ -103,12 +109,7 @@ export function decodeTallySet(fields: ReadonlyArray<Uint8Array | undefined>): T
     if (f.length > TALLY_SET_FIELD_BYTES) throw new Error(`tally set: ${TALLY_SET_FIELDS[i]} longer than ${TALLY_SET_FIELD_BYTES} bytes`);
     if (i < present.length - 1 && f.length !== TALLY_SET_FIELD_BYTES) throw new Error(`tally set: ${TALLY_SET_FIELDS[i]} is not full but a later field follows`);
   });
-  const stream = new Uint8Array(present.reduce((n, f) => n + f!.length, 0));
-  let at = 0;
-  for (const f of present) {
-    stream.set(f!, at);
-    at += f!.length;
-  }
+  const stream = concatBytes(...(present as Uint8Array[]));
   if (stream.length < TALLY_SET_HEADER_BYTES) throw new Error('tally set: shorter than its header');
   const dv = new DataView(stream.buffer);
   const version = dv.getUint8(0);
@@ -143,7 +144,7 @@ export function decodeTallySet(fields: ReadonlyArray<Uint8Array | undefined>): T
 
 /** Entries split into page documents of at most TALLY_SET_MAX_ENTRIES, in govHash order. Always at least one (maybe empty) page. */
 export function paginateTallySet<T extends Pick<TallySetEntry, 'govHash'>>(entries: readonly T[]): T[][] {
-  const sorted = [...entries].sort((a, b) => (a.govHash.toLowerCase() < b.govHash.toLowerCase() ? -1 : 1));
+  const sorted = sortedByGovHash(entries);
   const pages: T[][] = [];
   for (let i = 0; i < sorted.length; i += TALLY_SET_MAX_ENTRIES) pages.push(sorted.slice(i, i + TALLY_SET_MAX_ENTRIES));
   return pages.length ? pages : [[]];

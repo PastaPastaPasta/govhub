@@ -109,8 +109,12 @@ const hex = (d: Record<string, unknown>, k: string) => b64ToHex(s(d, k));
  */
 export function docToProposal(d: Record<string, unknown>): Proposal {
   const dataHex = s(d, 'dataHex');
-  const full = 'url' in d;
-  const f = full ? null : parseProposalData(dataHex).fields;
+  let content: Pick<Proposal, 'url' | 'paymentAddress' | 'paymentAmount' | 'startEpoch'>;
+  if ('url' in d) content = { url: s(d, 'url'), paymentAddress: s(d, 'paymentAddress'), paymentAmount: num(d, 'paymentAmount'), startEpoch: num(d, 'startEpoch') };
+  else {
+    const f = parseProposalData(dataHex).fields;
+    content = { url: f?.url ?? '', paymentAddress: f?.paymentAddress ?? '', paymentAmount: f ? Math.round(f.paymentAmount * DUFFS_PER_DASH) : 0, startEpoch: f?.startEpoch ?? 0 };
+  }
   return {
     govHash: hex(d, 'govHash'),
     parentHash: hex(d, 'parentHash'),
@@ -118,10 +122,7 @@ export function docToProposal(d: Record<string, unknown>): Proposal {
     time: num(d, 'time'),
     dataHex,
     name: s(d, 'name'),
-    url: full ? s(d, 'url') : (f?.url ?? ''),
-    paymentAddress: full ? s(d, 'paymentAddress') : (f?.paymentAddress ?? ''),
-    paymentAmount: full ? num(d, 'paymentAmount') : f ? Math.round(f.paymentAmount * DUFFS_PER_DASH) : 0,
-    startEpoch: full ? num(d, 'startEpoch') : (f?.startEpoch ?? 0),
+    ...content,
     endEpoch: num(d, 'endEpoch'),
     collateralTxid: hex(d, 'collateralTxid'),
     collateralHeight: num(d, 'collateralHeight'),
@@ -150,7 +151,7 @@ export function docToTally(d: Record<string, unknown>): Tally {
 /** One `talliesSet` page: every entry becomes a Tally at the page's asOfHeight. Throws when the packed bytes do not decode. */
 export function docToTallySet(d: Record<string, unknown>): { page: number; asOfHeight: number; tallies: Tally[] } {
   const asOfHeight = num(d, 'asOfHeight');
-  const fields = TALLY_SET_FIELDS.map((k) => (d[k] === undefined ? undefined : base64.decode(s(d, k))));
+  const fields = TALLY_SET_FIELDS.map((k) => (d[k] == null ? undefined : base64.decode(s(d, k))));
   return { page: num(d, 'page'), asOfHeight, tallies: decodeTallySet(fields).map((e) => ({ ...e, asOfHeight })) };
 }
 

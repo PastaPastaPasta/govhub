@@ -47,6 +47,7 @@ export async function fixtureBridge(env: Record<string, string> = {}, withhold: 
   const list = b.ingest.lists.load((db.prepare('SELECT list_hash FROM mn_snapshots').get() as { list_hash: string }).list_hash)!;
   b.lastRun = computeAll(db, list, vf.mnList.height, GOV_INFO, b.nextBudgetDuffs, FIXTURE_NOW);
   for (const t of b.lastRun.tallies) storeTally(db, t, null);
+  b.lastRun.persisted = true;
   db.prepare('INSERT INTO superblocks(height, block_hash, block_time, budget_duffs, paid_duffs, trigger_hash, payments, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
     2558864,
     'bb'.repeat(32),

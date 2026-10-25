@@ -205,6 +205,7 @@ export class Bridge {
     if (!snap) return null;
     const list = this.ingest.lists.load(snap.listHash)!;
     const run = computeAll(this.db, list, snap.height, info, this.nextBudgetDuffs, nowS());
+    run.persisted = opts.persist;
     if (opts.persist && run.threshold !== run.coreThreshold) {
       recordEvent(this.db, 'threshold-mismatch', { bridge: run.threshold, core: run.coreThreshold, validWeighted: run.validWeighted, height: run.height });
       log.error('funding threshold differs from getgovernanceinfo', { bridge: run.threshold, core: run.coreThreshold });
@@ -287,6 +288,11 @@ export class Bridge {
     }
     const run = this.lastRun ?? (await this.refresh());
     if (!run) throw new Error('no MN snapshot yet: cannot publish');
+    // a published tally must match the stored record of its height, which readers recount it against
+    if (!run.persisted) {
+      log.warn('not publishing: the latest tallies are a live refresh, not stored');
+      return null;
+    }
     const s = await this.publisher.publish(run, this.lastComparisons, this.cycles(run), opts);
     this.lastPublish = { ...s, at: nowS() };
     recordEvent(this.db, 'publish', { ...s, skipped: s.skipped.length });

@@ -11,25 +11,17 @@
 //   DB_PATH=/tmp/fixture-publish.sqlite node scripts/fixture-publish.ts <gov contract id> <identity key file | dev-owner>
 //
 // `dev-owner`: the dev gov owner's HIGH key from ~/.local/share/govhub-phase0/testnet/state.json. Nothing secret is printed.
-import { readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
-import { loadConfig, readIdentityKeyFile, type IdentityKeyFile } from '../src/config.ts';
+import { loadConfig } from '../src/config.ts';
 import { PlatformClient } from '../src/publish/platform.ts';
 import { Publisher } from '../src/publish/publisher.ts';
 import { storeTally, type CoreComparison } from '../src/tally.ts';
 import { fixtureBridge } from '../test/world.ts';
+import { identityKeyFromArg } from './identity-key-arg.ts';
 
 const [contractId, keyArg] = process.argv.slice(2);
 const dbPath = process.env.DB_PATH;
 if (!contractId || !keyArg || !dbPath) throw new Error('usage: DB_PATH=... fixture-publish.ts <gov contract id> <identity key file | dev-owner>');
-let key: IdentityKeyFile;
-if (keyArg === 'dev-owner') {
-  const st = JSON.parse(readFileSync(join(homedir(), '.local/share/govhub-phase0/testnet/state.json'), 'utf8'));
-  const owner = st.items.find((i: any) => i.name === 'owner');
-  const high = owner.keys.find((k: any) => k.purpose === 'authentication' && k.securityLevel === 'high');
-  key = { identityId: owner.identityId, keyId: high.keyId, privateKeyHex: high.hex };
-} else key = readIdentityKeyFile(keyArg);
+const key = identityKeyFromArg(keyArg);
 
 const b = await fixtureBridge();
 const cfg = loadConfig({ GOV_CONTRACT_ID: contractId, BRIDGE_IDENTITY_KEY_FILE: '/dev/null', CORE_NETWORK: 'mainnet', PLATFORM_NETWORK: 'testnet', TALLY_PUBLISH_INTERVAL_S: '0' });

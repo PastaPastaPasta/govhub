@@ -186,7 +186,7 @@ with 161 entries 11,228,280).
 
 | ID | Purpose | where | orderBy |
 |---|---|---|---|
-| G8 | every page, page 0 first | `page >= 0` | `[[page, asc]]`, `limit` 8 |
+| G8 | every page, page 0 first | `page >= 0` | `[[page, asc]]`, `limit` 8 (`TALLY_SET_MAX_PAGES`) |
 | G8b | one page (bridge lookup) | `page == <n>` | - |
 
 **Format, version 1** (`packages/verify/src/tallyset.ts`, shared by the bridge and the web app). Big-endian,
@@ -212,18 +212,33 @@ entry  = govHash[32] | voteSetHash[32]
   tally. A new format gets a new version byte.
 
 **Publishing** (`services/bridge/src/publish/publisher.ts`): every publishable tally (proposal on Platform,
-Core agreed, same funding threshold) goes in; a held tally is left out, never sent with numbers Core
-disagrees with. The bridge replaces a page at most every `TALLY_PUBLISH_INTERVAL_S` (3600) and only when an
-entry changed (`asOfHeight` alone is no change), so a new proposal's first entry can wait up to an hour.
-More than 161 tallies spill into page 1 (then 2, ...) in `govHash` order; a page that is no longer needed is
-emptied (`count` 0) once.
+Core agreed, same funding threshold) goes in. Only stored runs are published (the `tallies` rows readers
+recount against), never a live vote refresh. Holds:
+- Core disagrees with one proposal's tally: that entry is left out (it cannot stay at its old numbers, because
+  the document has one `asOfHeight` and the record stored at the new one differs). Until Core agrees again
+  readers have no Platform tally for it ("no vote tally published", not verified); its other entries go out.
+- The funding threshold differs from Core's, or Core could not be asked about some proposal (an RPC error):
+  the set is not replaced at all that run, so a transient hold never empties or thins it.
+
+The bridge replaces a page at most every `TALLY_PUBLISH_INTERVAL_S` (3600) and only when an entry changed
+(`asOfHeight` alone is no change), so a new proposal's first entry can wait up to an hour. One exception: when
+the record stored at the page's own height changed (a second stored run at the same block, with new votes),
+the page is replaced at once, because readers recount it against that record. More than 161 tallies spill into
+page 1 (then 2, ... up to `TALLY_SET_MAX_PAGES` = 8, 1,288 proposals; more are logged and not published) in
+`govHash` order; a page that is no longer needed is emptied (`count` 0) once. A bridge whose archive knows no
+page (fresh or restored, or the first run after a contract update) adopts every page on Platform first (G8) and
+remembers its entries, so stale pages are still emptied and a proposal that ended meanwhile still gets its final
+tally.
 
 **Reading** (`apps/web/src/data/repo.ts` `tallies()`): G8, plus G5 for the same proposals; per proposal the
-entry with the higher `asOfHeight` wins, the packed one on a tie. Each entry is a `Tally` at the page's
+entry with the higher `asOfHeight` wins. On a tie the packed one wins, except over a final tally (`rank` 0, not in
+the next budget), which the bridge may write before its next throttled replace drops the entry. Each entry is a `Tally` at the page's
 `asOfHeight`, verified exactly like a `tally` document: a recount of the bridge's signed votes for that
-height must reproduce every count and the `voteSetHash`. Between replaces an entry that did not change is
-re-stamped with the new `asOfHeight`; the bridge, asked for the votes at that height, serves the record in
-force there (its newest at or below it), which is that entry's vote set, so the recount still matches.
+height must reproduce every count and the `voteSetHash`. When a replace re-stamps an entry that did
+not change with the new `asOfHeight`, the bridge, asked for the votes at that height, serves the record in
+force there (its newest at or below it), which is that entry's vote set, so the recount still matches
+(`services/bridge/test/publisher.test.ts` "a re-stamped entry"; `scripts/readback.ts` checks every entry
+against that record).
 
 **Ended proposals: why a final per-proposal `tally` and not a packed "ended" document.** Measured, a final
 `tally` create costs 24,989,200 credits (0.00025 DASH) per proposal: about 0.04 DASH a year at ~150 proposals.

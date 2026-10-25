@@ -8,7 +8,7 @@ import { HttpBridge, type Bridge } from './bridge.ts';
 import { cacheGet, cachePut } from './cache.ts';
 import { createWebDapi, dapiConfig } from './dapi.ts';
 import { loadFixtures } from './fixtures.ts';
-import { docToCycle, docToProposal, docToTally, docToTallySet, govDocTypes, queryDocs, type DocsResult } from './platform.ts';
+import { docToCycle, docToProposal, docToTally, docToTallySet, govDocTypes, queryDocs } from './platform.ts';
 import { activeProposals, latestCycles, pastProposals, proposalByHash, proposalsByName, talliesFor, tallySetPages, PAGE } from './queries.ts';
 import type { BridgeDescriptor, DapiDescriptor } from '../verify/protocol.ts';
 import type { CoreNetwork, Cycle, Proposal, Provenance, Sourced, Tally } from './types.ts';
@@ -284,8 +284,9 @@ export function liveSource(registry: Registry): DataSource {
     },
 
     async tallies(hashes) {
-      const uniq = [...new Set(hashes.map((h) => h.toLowerCase()))];
-      if (!uniq.length) return new Map();
+      const want = new Set(hashes.map((h) => h.toLowerCase()));
+      if (!want.size) return new Map();
+      const uniq = [...want];
       const packed = async (): Promise<Sourced<Tally>[]> => {
         if (!(await govDocTypes(registry)).has('talliesSet')) return [];
         const r = await queryDocs(registry, tallySetPages());
@@ -302,16 +303,22 @@ export function liveSource(registry: Registry): DataSource {
         });
       };
       const single = async (): Promise<Sourced<Tally>[]> => {
-        const pages: DocsResult[] = [];
-        for (let i = 0; i < uniq.length; i += PAGE) pages.push(await queryDocs(registry, talliesFor(uniq.slice(i, i + PAGE))));
-        return pages.flatMap((r) => r.docs.map(docToTally).map((t) => ({ value: t, prov: proof(r.height, `tally as of Core block ${formatInt(t.asOfHeight)}`) })));
+        const found: Sourced<Tally>[] = [];
+        for (let i = 0; i < uniq.length; i += PAGE) {
+          const r = await queryDocs(registry, talliesFor(uniq.slice(i, i + PAGE)));
+          for (const t of r.docs.map(docToTally)) found.push({ value: t, prov: proof(r.height, `tally as of Core block ${formatInt(t.asOfHeight)}`) });
+        }
+        return found;
       };
       const [fromSet, fromDocs] = await Promise.all([packed(), single()]);
-      const want = new Set(uniq);
       const out = new Map<string, Sourced<Tally>>();
+      // On a tie the packed entry wins, except over a proposal's final tally (rank 0, not in the next budget): the bridge writes that
+      // when the proposal leaves the active set, possibly before its next (throttled) replace of the set drops the entry.
+      const final = (t: Tally) => t.rank === 0 && !t.inNextBudget;
       for (const t of [...fromSet, ...fromDocs]) {
         const cur = out.get(t.value.govHash);
-        if (want.has(t.value.govHash) && (!cur || t.value.asOfHeight > cur.value.asOfHeight)) out.set(t.value.govHash, t);
+        if (!want.has(t.value.govHash)) continue;
+        if (!cur || t.value.asOfHeight > cur.value.asOfHeight || (t.value.asOfHeight === cur.value.asOfHeight && final(t.value) && !final(cur.value))) out.set(t.value.govHash, t);
       }
       return out;
     },

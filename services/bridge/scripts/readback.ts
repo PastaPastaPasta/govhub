@@ -92,10 +92,20 @@ for (const r of recs) {
     if (d.revision !== r.revision) mism.push(`revision ${d.revision} != ${r.revision}`);
     try {
       const entries = decodeTallySet(TALLY_SET_FIELDS.map((f) => (j[f] === undefined ? undefined : hexToBytes(b64hex(j[f])))));
+      // what a reader recounts each entry against: the bridge's record in force at the page's height (GET .../votes?height=)
+      const inForce = db.prepare('SELECT * FROM tallies WHERE gov_hash = ? AND as_of_height <= ? ORDER BY as_of_height DESC, id DESC LIMIT 1');
       for (const e of entries) {
-        const t = db.prepare('SELECT * FROM tallies WHERE gov_hash = ? AND vote_set_hash = ? ORDER BY id DESC LIMIT 1').get(e.govHash, e.voteSetHash) as TallyRow | undefined;
-        if (!t) mism.push(`${e.govHash.slice(0, 12)}: voteSetHash not in archive tally history`);
-        else if (t.core_match !== 1) mism.push(`${e.govHash.slice(0, 12)}: archived tally did not match Core`);
+        const t = inForce.get(e.govHash, num(j.asOfHeight)) as TallyRow | undefined;
+        const at = `${e.govHash.slice(0, 12)}`;
+        if (!t) mism.push(`${at}: no archived tally at or below asOfHeight`);
+        else {
+          const diff = (
+            [['voteSetHash', t.vote_set_hash, e.voteSetHash], ['yesWeighted', t.yes_weighted, e.yesWeighted], ['noWeighted', t.no_weighted, e.noWeighted], ['abstainWeighted', t.abstain_weighted, e.abstainWeighted],
+              ['yesCount', t.yes_count, e.yesCount], ['noCount', t.no_count, e.noCount], ['abstainCount', t.abstain_count, e.abstainCount]] as const
+          ).filter(([, a, b]) => a !== b).map(([f]) => f);
+          if (diff.length) mism.push(`${at}: differs from the record in force at ${String(j.asOfHeight)} (${diff.join(', ')})`);
+          if (t.core_match !== 1) mism.push(`${at}: archived tally did not match Core`);
+        }
       }
     } catch (e) {
       mism.push(`does not decode: ${(e as Error).message}`);

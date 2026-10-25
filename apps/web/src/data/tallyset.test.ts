@@ -144,6 +144,12 @@ describe('tallies(): packed set first, per-proposal documents as the fallback', 
     expect(out.get(b.govHash)!.value).toMatchObject({ asOfHeight: 900, yesWeighted: b.yesWeighted });
   });
 
+  it('on a tie a final per-proposal tally (rank 0, not in the next budget) wins over the entry the set has not dropped yet', async () => {
+    platform.docs.set('talliesSet', [setDoc(0, 900, [{ ...a, rank: 3, inNextBudget: true }])]);
+    platform.docs.set('tally', [tallyDoc({ ...a, asOfHeight: 900, rank: 0, inNextBudget: false })]);
+    expect((await source().tallies([a.govHash])).get(a.govHash)!.value).toMatchObject({ rank: 0, inNextBudget: false });
+  });
+
   it('only the asked proposals are returned; a page that does not decode contributes nothing', async () => {
     const broken = setDoc(1, 900, [c]);
     platform.docs.set('talliesSet', [setDoc(0, 900, [a, b]), { ...broken, b0: base64.encode(base64.decode(broken.b0 as string).slice(1)) }]);

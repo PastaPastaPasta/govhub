@@ -86,6 +86,8 @@ export class PlatformClient {
     const contract = await this.sdk.contracts.fetch(this.contractId);
     if (!contract) throw new Error(`gov contract ${this.contractId} not found on ${this.network}`);
     this.schemas = contract.schemas;
+    // the publisher picks the document shapes from these: fail closed on a contract that is not a gov contract
+    if (!this.schemas.proposal || !this.schemas.tally) throw new Error(`contract ${this.contractId} has no proposal/tally types: not a gov contract`);
     log.info('platform connected', { network: this.network, protocolVersion: this.sdk.version(), contractId: this.contractId, docTypes: Object.keys(this.schemas) });
   }
 

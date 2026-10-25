@@ -63,7 +63,8 @@ updated contract).
 | Starter vouchers | 0.003 each, from the faucet treasury |
 
 Annual bridge cost with 30 active proposals, every one changing every hour (the worst case of "hourly on change"),
-~150 new proposals a year (30 active, median duration ~4 months on mainnet today):
+~150 new proposals a year (an upper estimate: the 28 mainnet proposals of the fixture snapshot last ~4 months by median,
+~2 by harmonic mean, which gives ~90 to ~170 a year at 30 active; the proposal lines scale with it and are small):
 
 | Item | Before (DASH/yr) | After (DASH/yr) |
 |---|---|---|
