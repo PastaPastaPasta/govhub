@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-10-25T00:35:09.257Z",
+  "ranAt": "2026-10-25T00:56:03.801Z",
   "testnet": {
     "proposal": "govhub-mn-voting-test-2026-10-24",
     "level": "verified",
@@ -11,6 +11,19 @@
       "votes": "proven",
       "funding": "proven"
     },
-    "settleMs": 5443
+    "settleMs": 4921
+  },
+  "dev": {
+    "proposal": "DCG-Operations-Aug-Nov-26",
+    "level": "verified",
+    "reason": null,
+    "states": {
+      "content": "proven",
+      "collateral": "proven",
+      "chain": "proven",
+      "votes": "proven",
+      "funding": "proven"
+    },
+    "settleMs": 32701
   }
 }
