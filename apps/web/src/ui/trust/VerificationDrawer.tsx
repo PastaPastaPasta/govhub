@@ -13,7 +13,7 @@ import { checkContent, verdictFailure, type CollateralVerdict, type StepBasis, t
 import { budgetFact } from '../../verify/facts.ts';
 import type { RankingDone, VotesDone } from '../../verify/protocol.ts';
 import { comparable, PLATFORM_TARGET, voteVerdict, type VoteLevel } from '../../verify/verdict.ts';
-import { excludedText, PROBLEM_TEXT, type VoteCheckResult, type VoteProblem, type VoteRun } from '../../verify/votes.ts';
+import { excludedText, PROBLEM_TEXT, problemCounts, type VoteCheckResult, type VoteRun } from '../../verify/votes.ts';
 import { Drawer } from '../Drawer.tsx';
 import type { ChainCheck, CollateralCheck } from '../hooks.ts';
 import { ProvGlyph } from '../Provenance.tsx';
@@ -344,7 +344,7 @@ function verdictText(level: VoteLevel, r: VoteCheckResult, matched: string | und
       if (r.listDiffers > 0) return `Recount matches the ${matched}: ${sigs}, keys proven, but the bridge's masternode list differs from the proven one for ${formatInt(r.listDiffers)} voters (key or type)`;
       return `Recount matches the ${matched}: ${sigs}, but the voting keys are only as the bridge reports them. Check them against the proven masternode list for a verified result`;
     case 'excluded':
-      return `Not verified: ${excluded ?? 'votes were excluded'}. The ${matched} counts them; the count here, without them, differs (a masternode may have left or changed its key since the tally, or the bridge reports one that doesn't exist)`;
+      return `Not verified: ${excluded}. The ${matched} counts them; the count here, without them, differs (a masternode may have left or changed its key since the tally, or the bridge reports one that doesn't exist)`;
     case 'different-height':
       return `Not compared: the votes the bridge served are for another block than the published tallies (${sigs}), so this recount neither confirms nor contradicts them. Re-check later`;
     case 'mismatch':
@@ -357,7 +357,7 @@ function verdictText(level: VoteLevel, r: VoteCheckResult, matched: string | und
 /** One recount: what it read, what it dropped, and the field-by-field comparison with the tallies of its height. */
 function RunResult({ run, bridge, sml, proven, demo }: { run: VoteRun; bridge: string; sml: VotesDone['sml']; proven: boolean; demo: boolean }) {
   const r = run.result;
-  const problems = (Object.entries(r.problems) as Array<[VoteProblem, number]>).filter(([, n]) => n > 0);
+  const problems = problemCounts(r.problems);
   return (
     <div className="vote-run" data-run-height={run.votesAsOf}>
       <p className="muted small">

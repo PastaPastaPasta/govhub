@@ -15,7 +15,7 @@ import { rankRecounts, type RecountedProposal } from './ranking.ts';
 import { BRIDGE_TARGET } from './verdict.ts';
 import { headerStore, proRegCache, superblockCache } from './stores.ts';
 import { loadVerifiers } from './verifiers.ts';
-import { verifyVotes, type ProReg, type SmlEntry, type VoteRun, type VoteTarget } from './votes.ts';
+import { problemCounts, verifyVotes, type ProReg, type SmlEntry, type VoteRun, type VoteTarget } from './votes.ts';
 
 declare const self: DedicatedWorkerGlobalScope;
 const post = (m: WorkerResponse) => self.postMessage(m);
@@ -249,8 +249,9 @@ async function ranking(req: Extract<WorkerRequest, { kind: 'ranking' }>, bridge:
       const tally = published.find((t) => t.govHash === p.govHash && t.asOfHeight === votes.tallyHeight);
       const r = verifyVotes({ govHash: p.govHash, votes: votes.votes, masternodes: list.masternodes, network: req.network, now: req.now, targets: tally ? [{ name: BRIDGE_TARGET, tally }] : [], sml: entries, proReg });
       const matches = !!tally && r.targets[0]!.matches;
-      const bad = Object.entries(r.problems).filter(([, n]) => n > 0).map(([k, n]) => `${n} ${k.replace(/-/g, ' ')}`);
-      const problem = a.weak ? `not secure: ${a.weak}` : r.keysFrom !== 'sml' ? (bad.length ? `not every vote proven (${bad.join(', ')})` : `the bridge's masternode list differs from the proven one for ${r.listDiffers} voters`) : !tally ? `no published tally at block ${votes.tallyHeight}` : !matches ? 'the recount differs from the published tally' : null;
+      const bad = problemCounts(r.problems).map(([k, n]) => `${n} ${k.replace(/-/g, ' ')}`);
+      const unproven = bad.length ? `not every vote proven (${bad.join(', ')})` : `the bridge's masternode list differs from the proven one for ${r.listDiffers} voters`;
+      const problem = a.weak ? `not secure: ${a.weak}` : r.keysFrom !== 'sml' ? unproven : !tally ? `no published tally at block ${votes.tallyHeight}` : !matches ? 'the recount differs from the published tally' : null;
       recounts.push({ ...base, absYes: r.weighted.yes - r.weighted.no, proven: problem === null, ...(problem ? { problem } : {}) });
     } catch (e) {
       recounts.push({ ...base, absYes: 0, proven: false, problem: `not recounted: ${(e as Error).message}` });

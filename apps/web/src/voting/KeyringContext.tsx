@@ -1366,8 +1366,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
           const seen = new Map<string, CurrentVote>();
           elsewhere.set(other.name, seen);
           const ask = [...confirmedHashes].filter((h) => open.some((v) => v.govHash === h && !v.alsoSeenBy?.includes(other.name)));
-          const sets = await Promise.all(ask.map((h) => other.votes(h).then((vs) => [h, vs] as const, () => null))); // unreachable or no tally there: no claim
-          for (const x of sets) if (x) currentIn(x[1], x[0], seen);
+          await Promise.all(ask.map((h) => other.votes(h).then((vs) => currentIn(vs, h, seen), () => {}))); // unreachable or no tally there: no claim
         }),
       );
       const updates: WatchedVote[] = [];

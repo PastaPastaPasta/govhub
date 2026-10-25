@@ -63,10 +63,15 @@ export const PROBLEM_TEXT: Record<VoteProblem, string> = {
   'unproven-registration': "collateral or type not proven by the masternode's registration (ProRegTx)",
 };
 
+/** The reasons that excluded at least one vote, with their counts. */
+export function problemCounts(problems: Record<VoteProblem, number>): Array<[VoteProblem, number]> {
+  return (Object.entries(problems) as Array<[VoteProblem, number]>).filter(([, n]) => n > 0);
+}
+
 /** "3 votes excluded (2 masternode not in the proven masternode list; 1 ...)", or null when nothing was excluded. */
 export function excludedText(r: Pick<VoteCheckResult, 'excluded' | 'problems'>): string | null {
   if (r.excluded === 0) return null;
-  const parts = (Object.entries(r.problems) as Array<[VoteProblem, number]>).filter(([, n]) => n > 0).map(([k, n]) => `${n.toLocaleString('en-US')}: ${PROBLEM_TEXT[k]}`);
+  const parts = problemCounts(r.problems).map(([k, n]) => `${n.toLocaleString('en-US')}: ${PROBLEM_TEXT[k]}`);
   return `${r.excluded.toLocaleString('en-US')} vote${r.excluded === 1 ? '' : 's'} excluded (${parts.join('; ')})`;
 }
 
