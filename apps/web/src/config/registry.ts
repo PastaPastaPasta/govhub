@@ -164,7 +164,7 @@ export const PROFILES: Record<ProfileId, NetworkProfile> = {
     govContractId: DEV_GOV_CONTRACT_ID,
     bridge: { url: 'https://gov-bridge.dashhq.org', identityId: DEV_BRIDGE_IDENTITY_ID },
     relays: [MAINNET_RELAY],
-    // its dashd (23.1.8) has no getquorumproofchain yet: it answers 501 and chain facts use proof of work until it runs v24
+    // its dashd runs v24 (24.0.0-rc.4) and serves quorum proofs; a bridge on Core 23.x answers 501 and chain facts fall back to proof of work
     proofBridges: ['https://gov-bridge.dashhq.org'],
     forum: TESTNET_FORUM,
     deployed: true,

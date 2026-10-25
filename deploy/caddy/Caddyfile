@@ -6,6 +6,22 @@
 #                      that browsers on any origin (the govhub frontend, other portals) may read.
 #
 # Only GET, HEAD, OPTIONS and POST /v1/quorum-proof reach the bridge. Dashd's RPC and ZMQ are never proxied.
+#
+# No request logs: there is no access log (no `log` directive in the site block), and the default logger, which writes handler
+# and proxy errors with the request (client address, headers) to stdout that Docker keeps, is discarded. Only the certificate
+# management loggers (ACME obtain/renew, cache maintenance) are kept, on stderr, so a failing certificate stays visible; they
+# carry host names and ACME errors, not client addresses. `tls.handshake` (client addresses) and every http.* logger stay
+# discarded. deploy-lint checks this against an allowlist of those namespaces; the tunnel gateways discard everything.
+{
+	log default {
+		output discard
+	}
+	log certs {
+		output stderr
+		include tls.obtain tls.renew tls.issuance.acme tls.issuance.zerossl tls.cache.maintenance http.acme_client
+	}
+}
+
 {$DOMAIN:localhost} {
 	encode zstd gzip
 
