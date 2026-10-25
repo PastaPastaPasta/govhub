@@ -140,10 +140,10 @@ describe('seed keys', () => {
 // What rs-platform-wallet itself derives for the BIP39 test phrase: platform 371a3b3961c (key-wallet at rust-dashcore 40268cc), printed by
 // a scratch program outside this repo that builds the wallet the way PlatformWalletManager::create_wallet_from_mnemonic does, then reads
 //  - registration: the IdentityRegistration account's pool, addresses 0..2. AssetLockManager::peek_next_funding_address funds a
-//    registration from its next unused address, which is index 0 for a fresh wallet (wallet/asset_lock/build.rs:396-512)
-//  - topUp[i]: the IdentityTopUp { registration_index: i } pool that ensure_identity_topup_account adds (build.rs:569-640), 0..1
+//    registration from its next unused address, which is index 0 for a fresh wallet (wallet/asset_lock/build.rs:392-517)
+//  - topUp[i]: the IdentityTopUp { registration_index: i } pool that ensure_identity_topup_account adds (build.rs:569-699), 0..1
 //  - auth[i][k]: derive_identity_auth_keypair(wallet, network, i, k) (wallet/identity/network/identity_handle.rs:197)
-//  - legacy: key-wallet DerivationPath::identity_registration_path(network, i) (dip9.rs:692), the hardened path govhub used before
+//  - legacy: key-wallet DerivationPath::identity_registration_path(network, i) (bip32.rs:1085), the hardened path govhub used before
 type AddrKey = readonly [address: string, publicKey: string];
 const RS_PLATFORM_WALLET: Record<'mainnet' | 'testnet', { registration: AddrKey[]; topUp: AddrKey[][]; auth: string[][]; legacy: AddrKey[] }> = {
   mainnet: {

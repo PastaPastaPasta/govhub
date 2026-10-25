@@ -218,7 +218,8 @@ key layout**, identity index 0, and key id = key index:
   - Dash Evo Tool.
   - Yappr recovery-phrase sign-in: testnet only today.
   - Android: looks for key 0 at identity index 0. Needs a real-device test.
-- Funding paths match the wallets: registration `m/9'/5'/5'/1'/0'`, top-up `m/9'/5'/5'/2'/0'/n`.
+- Funding paths match the wallets: registration `m/9'/5'/5'/1'/0` (key-wallet's pool; the hardened `…/1'/0'` used until
+  2026-10-25 is scan-only), top-up `m/9'/5'/5'/2'/0'/n`. Per-wallet table: docs/RECOVERY.md, "Derivation paths".
 - **Platform login** accepts this seed, an existing DashPay/Evo Tool seed, a pasted key (as in
   EvoVote), or the passkey vault. Wallet login (App Connect) arrives with v2.
 
