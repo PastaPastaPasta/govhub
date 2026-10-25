@@ -318,8 +318,9 @@ docker compose up -d dashd
 dashd gets 3 minutes to flush on stop. A major upgrade can rewrite on-disk databases, after which
 **you cannot go back** to the old version with the same datadir. Mainnet runs the v24 release
 candidate (it serves quorum proofs; V24 itself is not active on mainnet yet) and moves to v24.0.0 when
-it is released. The mainnet default was 23.1.8 until 2026-10-25: a mainnet node that never set `DASHD_TAG` moves to
-24.0.0-rc.4 on its next `docker compose pull`, and can't go back with the same datadir. Set `DASHD_TAG=23.1.8` in `.env`
+it is released. The mainnet default was 23.1.8 until 2026-10-25: a mainnet node that never set `DASHD_TAG` gets the
+24.0.0-rc.4 image on its next `docker compose pull`, and runs it once `docker compose up -d dashd` recreates the
+container; after that it can't go back with the same datadir. Set `DASHD_TAG=23.1.8` in `.env`
 first to stay on 23.1.8. The bridge reconnects to ZMQ on its own
 (votes published during the restart are recovered through RPC reconciliation, except superseded
 ones).
