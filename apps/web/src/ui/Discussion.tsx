@@ -34,6 +34,7 @@ import { openSignIn } from './SignIn.tsx';
 import { useReactions } from './useReactions.ts';
 import { MnBadges } from '../badge/BadgeChip.tsx';
 import { useBadges } from '../badge/context.tsx';
+import { ReadError } from './ReadError.tsx';
 import { TopUpError } from '../voting/funds.ts';
 import { Votes } from './Votes.tsx';
 import { WriteError } from './WriteError.tsx';
@@ -254,7 +255,7 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
         </p>
       )}
 
-      {thread.error && <p className="error">Comments could not be read: {thread.error}</p>}
+      {thread.error && <ReadError error={thread.error} what="Platform" lead="Comments could not be read" onRetry={thread.reload} />}
       {!thread.data && !thread.error && (
         <p className="muted" aria-busy="true">
           <span className="spinner" aria-hidden="true" /> Loading comments…

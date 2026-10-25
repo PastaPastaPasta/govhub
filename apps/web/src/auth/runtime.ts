@@ -82,3 +82,21 @@ export const formatDuffs = (duffs: number | bigint): string => `${(Number(duffs)
 export function errorText(e: unknown): string {
   return errText(e).replace(/[0-9a-fA-F]{64,}/g, '[…]').replace(/[1-9A-HJ-NP-Za-km-z]{50,}/g, '[…]').slice(0, 400);
 }
+
+/**
+ * Errors that mean "the network or a node failed just now" rather than "this cannot work": the SDK's quorum prefetch, its WASM streaming
+ * fetch, DAPI transport and timeouts. Retrying is the right answer to these, and nothing the user holds is affected.
+ */
+const TRANSIENT_ERROR = /failed to prefetch quorums|webassembly (compilation|instantiation)[^.]*(network|aborted)|network ?error|http request error|failed to fetch|load failed|transport error|timed? ?out|deadline exceeded|ERR_(NETWORK|INTERNET|CONNECTION|ABORTED|TIMED)|dapi client error|temporarily unavailable|(?:HTTP|status)[ :]+50[234]/i;
+
+export const isTransientError = (e: unknown): boolean => TRANSIENT_ERROR.test(errText(e));
+
+/**
+ * `errorText`, except that a transient network failure is put in plain words ("could not reach ..., try again") with the technical
+ * text kept after it, for a bug report. `what` is what was being read or done ("Platform", "the Dash network").
+ */
+export function plainErrorText(e: unknown, what = 'the Dash network'): string {
+  const raw = errorText(e);
+  if (!isTransientError(e)) return raw;
+  return `Could not reach ${what} just now: the connection dropped or a node was too slow. Try again in a moment. (${raw.length > 160 ? `${raw.slice(0, 160)}…` : raw})`;
+}

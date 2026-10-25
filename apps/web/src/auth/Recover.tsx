@@ -11,7 +11,7 @@ import { useLocation } from 'react-router-dom';
 import { SecretField } from './SecretField.tsx';
 import { useAuth } from './context.tsx';
 import { useLeaveWarning } from './leaveWarning.ts';
-import { errorText, formatDuffs } from './runtime.ts';
+import { errorText, formatDuffs, isTransientError, plainErrorText } from './runtime.ts';
 
 type Start = 'default' | 'month' | 'year' | 'custom';
 type Held = { secret: RecoverySecret; owned: boolean };
@@ -35,6 +35,7 @@ export function RecoverFunds() {
   const [progress, setProgress] = useState<ScanProgress | null>(null);
   const [result, setResult] = useState<RecoveryScan | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [retryable, setRetryable] = useState(false);
   const held = useRef<Held | null>(null);
   const ac = useRef<AbortController | null>(null);
   const ref = useRef<HTMLElement>(null);
@@ -85,6 +86,7 @@ export function RecoverFunds() {
   /** `again`: scan with the phrase or key already held (the input was cleared after the first scan). */
   const scan = async (again = false) => {
     setError(null);
+    setRetryable(false);
     setResult(null);
     ac.current?.abort();
     if (!again) forget();
@@ -113,8 +115,12 @@ export function RecoverFunds() {
       if (!c.signal.aborted) setResult(r);
     } catch (err) {
       if (!c.signal.aborted) {
-        setError(errorText(err));
-        forget();
+        // A dropped connection is not the end of this scan: the phrase or key stays held (memory only) for "Try again", which
+        // re-runs it without a reload. Anything else wipes it.
+        const keep = isTransientError(err) && !!held.current;
+        setError(plainErrorText(err));
+        setRetryable(keep);
+        if (!keep) forget();
       }
     } finally {
       if (ac.current === c) setProgress(null);
@@ -195,7 +201,19 @@ export function RecoverFunds() {
             Pick an older start if you first used govhub (or this phrase in another Dash Platform wallet) earlier. The scan replays every block since then from a
             DAPI node, roughly a minute per 5,000 to 10,000 blocks.
           </p>
-          {error && <p className="error" role="alert">{error}</p>}
+          {error && (
+            <p className="error" role="alert">
+              {error}
+              {retryable && !progress && (
+                <>
+                  {' '}
+                  <button type="button" className="btn btn-s" onClick={() => void scan(true)} data-testid="recover-retry">
+                    Try again
+                  </button>
+                </>
+              )}
+            </p>
+          )}
           <div className="form-actions">
             {progress ? (
               <button type="button" className="btn" onClick={cancel}>
@@ -305,16 +323,23 @@ function ItemCard({ item, scan, secret, onBusy }: { item: RecoveryItem; scan: Re
   }, [busy]); // eslint-disable-line react-hooks/exhaustive-deps
   useLeaveWarning(busy && !!view && view.state !== 'awaiting-deposit');
 
+  const last = useRef<((signal: AbortSignal) => Promise<ReactNode>) | null>(null);
+  const [retryable, setRetryable] = useState(false);
   const run = async (f: (signal: AbortSignal) => Promise<ReactNode>) => {
+    last.current = f;
     setBusy(true);
     setError(null);
+    setRetryable(false);
     setView(null);
     const c = new AbortController();
     ac.current = c;
     try {
       setOutcome(await f(c.signal));
     } catch (e) {
-      if (!c.signal.aborted) setError(errorText(e));
+      if (!c.signal.aborted) {
+        setError(plainErrorText(e));
+        setRetryable(isTransientError(e));
+      }
     } finally {
       setBusy(false);
     }
@@ -387,7 +412,19 @@ function ItemCard({ item, scan, secret, onBusy }: { item: RecoveryItem; scan: Re
               instead.
             </p>
           )}
-          {error && <p className="error" role="alert">{error}</p>}
+          {error && (
+            <p className="error" role="alert">
+              {error}
+              {retryable && !busy && last.current && (
+                <>
+                  {' '}
+                  <button type="button" className="btn btn-s" onClick={() => void run(last.current!)} data-testid="recover-item-retry">
+                    Try again
+                  </button>
+                </>
+              )}
+            </p>
+          )}
           <ExportKey item={item} scan={scan} secret={secret} />
         </>
       )}

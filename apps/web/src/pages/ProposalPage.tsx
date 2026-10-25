@@ -8,6 +8,7 @@ import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { Discussion } from '../ui/Discussion.tsx';
 import { ErrorBoundary } from '../ui/ErrorBoundary.tsx';
+import { ReadError } from '../ui/ReadError.tsx';
 import { FundingMeter } from '../ui/FundingMeter.tsx';
 import { ClaimPanel, OwnerPost, OwnerValue, RejectedClaims, useOwnership, useOwnerPost } from '../ui/Ownership.tsx';
 import { openSignIn } from '../ui/SignIn.tsx';
@@ -28,9 +29,10 @@ import { useKeyring } from '../voting/KeyringContext.tsx';
 export function ProposalByHash() {
   const { hash = '' } = useParams();
   const { source } = useApp();
-  const load = useAsync(() => (/^[0-9a-fA-F]{64}$/.test(hash) ? source.proposal(hash.toLowerCase()) : Promise.resolve(null)), [source, hash]);
+  const [attempt, setAttempt] = useState(0); // Retry re-runs the read in place: no reload, so memory-only keys stay
+  const load = useAsync(() => (/^[0-9a-fA-F]{64}$/.test(hash) ? source.proposal(hash.toLowerCase()) : Promise.resolve(null)), [source, hash, attempt]);
   if (load.loading) return <Loading />;
-  if (load.error) return <p className="error">Platform could not be read: {load.error}</p>;
+  if (load.error) return <ReadError error={load.error} what="Platform" lead="The proposal could not be read" onRetry={() => setAttempt((n) => n + 1)} />;
   if (!load.data) return <NotFound what={`a proposal with hash ${shortHash(hash)}`} />;
   return <ProposalView sp={load.data} />;
 }
@@ -42,9 +44,10 @@ export function ProposalByHash() {
 export function ProposalByName() {
   const { name = '', identity } = useParams();
   const { source, registry } = useApp();
-  const load = useAsync(() => source.byName(name), [source, name]);
+  const [attempt, setAttempt] = useState(0);
+  const load = useAsync(() => source.byName(name), [source, name, attempt]);
   if (load.loading) return <Loading />;
-  if (load.error) return <p className="error">Platform could not be read: {load.error}</p>;
+  if (load.error) return <ReadError error={load.error} what="Platform" lead="The proposal could not be read" onRetry={() => setAttempt((n) => n + 1)} />;
   const all = load.data ?? [];
   const named = identity ? all.filter((s) => urlClaimIdentity(s.value.url, s.value.name, registry.forum.claimPortals) === identity) : [];
   const list = named.length ? named : all;
@@ -127,7 +130,8 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
   const k = useKeyring();
   const p = sp.value;
   const now = source.now();
-  const tallies = useAsync(() => source.tallies([p.govHash]), [source, p.govHash]);
+  const [talliesAttempt, setTalliesAttempt] = useState(0);
+  const tallies = useAsync(() => source.tallies([p.govHash]), [source, p.govHash, talliesAttempt]);
   const cycle = gov.cycle.data ?? null;
   // The Platform tally document whenever there is one: the recount is checked against that proven record, not the bridge's own.
   const row = useMemo(() => deriveRow(sp, tallies.data ?? new Map(), gov.bridgeTallies, cycle, params, now, 'platform'), [sp, tallies.data, gov.bridgeTallies, cycle, params, now]);
@@ -220,7 +224,7 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
                 </span>
               </p>
             )}
-            {tallies.error && <p className="error small">The tally could not be read: {tallies.error}</p>}
+            {tallies.error && <ReadError error={tallies.error} what="Platform" lead="The tally could not be read" onRetry={() => setTalliesAttempt((n) => n + 1)} />}
             <VoteCta proposal={p} active={active} />
           </section>
 

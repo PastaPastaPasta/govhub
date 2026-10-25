@@ -16,7 +16,7 @@ import { FundingPanel } from './FundingPanel.tsx';
 import { PasskeySignIn, Passkeys } from './Passkeys.tsx';
 import { RecoverLink } from './RecoverLink.tsx';
 import { SecretField } from './SecretField.tsx';
-import { errorText, formatDuffs } from './runtime.ts';
+import { formatDuffs, plainErrorText } from './runtime.ts';
 
 export { SecretField }; // moved to its own file (the Recover tool uses it too); tests import it from here
 
@@ -356,7 +356,7 @@ function FundNewIdentity({ phrase, identityIndex, resume }: { phrase: string; id
       signIn(s);
       closeSheet();
     } catch (e) {
-      setError(errorText(e));
+      setError(plainErrorText(e));
     }
   };
   if (!wallet) return null;
@@ -413,14 +413,14 @@ function VoucherRedeem({ wallet, identityIndex, onDone }: { wallet: SeedWallet; 
     try {
       voucher = parseVoucher(text, network);
     } catch (err) {
-      return setError(errorText(err));
+      return setError(plainErrorText(err));
     }
     setBusy(true);
     try {
       const r = await redeemVoucher({ voucher, wallet, identityIndex, dapi: dapi(), platform: await platform(), onUpdate: (n) => setNote(n) });
       onDone(r.identityId);
     } catch (err) {
-      setError(errorText(err));
+      setError(plainErrorText(err));
     } finally {
       wipe(voucher.privateKey);
       setBusy(false);
@@ -493,7 +493,7 @@ function PhraseSignIn() {
       // a new identity skips an index whose payment was used to top up another identity
       setState({ phrase, found, createIndex: found.length ? undefined : nextCreateIndex(store, wallet) });
     } catch (err) {
-      setError(errorText(err));
+      setError(plainErrorText(err));
     } finally {
       if (!handedOver) wallet.wipe();
       setBusy(false);
@@ -508,7 +508,7 @@ function PhraseSignIn() {
       closeSheet();
     } catch (err) {
       wallet.wipe();
-      setError(errorText(err));
+      setError(plainErrorText(err));
       setBusy(false);
     }
   };
@@ -572,7 +572,7 @@ function KeySignIn() {
       if (keep) openSheet('passkeys');
       else closeSheet();
     } catch (err) {
-      setError(errorText(err));
+      setError(plainErrorText(err));
     } finally {
       setBusy(false);
     }
