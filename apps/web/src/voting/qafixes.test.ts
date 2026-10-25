@@ -351,6 +351,7 @@ describe('D-023: a key is checked against the masternode list before it is saved
     expect(keyRole('yP2', [], [{ proTxHash: 'bb'.repeat(32), payoutAddress: 'yP2' }])).toMatchObject({ kind: 'payout' });
     expect(keyRole('yNothing', list, [])).toMatchObject({ kind: 'none', message: expect.stringMatching(/not the voting key of any registered masternode/) });
     expect(keyRole('yVoting', list, [{ proTxHash: 'aa'.repeat(32) }])).toEqual({ kind: 'voting', count: 1 });
+    expect(keyRole('yNew', [], [], 1)).toEqual({ kind: 'voting', count: 1 }); // in the DAPI list, not the bridge's yet
   });
 });
 

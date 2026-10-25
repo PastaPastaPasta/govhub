@@ -191,6 +191,8 @@ export function keyRole(
   address: string,
   list: ReadonlyArray<Pick<BridgeMasternode, 'proTxHash' | 'collateralAddress' | 'payoutAddress'>>,
   owned: ReadonlyArray<Pick<OwnedMasternode, 'proTxHash' | 'payoutAddress'>>,
+  /** masternodes the DAPI list gives this voting key but the bridge does not list yet (LookupResult.missing) */
+  missing = 0,
 ): { kind: 'voting'; count: number } | { kind: 'collateral' | 'payout' | 'none'; message: string } {
   const short = (h: string) => `${h.slice(0, 12)}…`;
   const coll = list.find((m) => m.collateralAddress === address);
@@ -205,6 +207,6 @@ export function keyRole(
       kind: 'payout',
       message: `This is the payout key of masternode ${short(pay.proTxHash)}: it can spend the masternode's rewards. It was not saved. Use a voting key that holds no funds (set one with protx update_registrar if the voting and payout keys are the same).`,
     };
-  if (owned.length) return { kind: 'voting', count: owned.length };
-  return { kind: 'none', message: 'This key is not the voting key of any registered masternode (it may be an owner key, or the masternode is not in the list yet). It was not saved.' };
+  if (owned.length || missing) return { kind: 'voting', count: owned.length + missing };
+  return { kind: 'none', message: 'This key is not the voting key of any registered masternode, so it was not saved. It may be an owner, payout or collateral key (never paste those), or the masternode is not registered yet. Paste the key of its votingAddress (Dash Core: protx info).' };
 }

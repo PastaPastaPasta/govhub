@@ -132,10 +132,10 @@ interface Ctx {
   createKeyring(memoryOnly: boolean): Promise<void>;
   lock(): void;
   /**
-   * keys and labels; addKey resolves with the new key's id. The key is checked against the masternode list first: collateral and
-   * payout keys are refused; a key that votes for no masternode only with `force` (KeyCheckError.canForce).
+   * keys and labels; addKey resolves with the new key's id. The key is checked against the masternode list first: only a key that
+   * is some masternode's voting key is saved (collateral and payout keys get their own message).
    */
-  addKey(input: string, label: string, opts?: { force?: boolean }): Promise<string>;
+  addKey(input: string, label: string): Promise<string>;
   removeKey(index: number): Promise<void>;
   setNodeLabel(proTxHash: string, label: string): Promise<void>;
   setIdleMinutes(m: number): Promise<void>;
@@ -196,17 +196,6 @@ export class SessionChangedError extends Error {
   constructor() {
     super('The session changed meanwhile; nothing was kept.');
     this.name = 'SessionChangedError';
-  }
-}
-
-/** A pasted key refused by the masternode-list check. `canForce`: it may be added anyway (it votes for no known masternode). */
-export class KeyCheckError extends Error {
-  constructor(
-    message: string,
-    readonly canForce: boolean,
-  ) {
-    super(message);
-    this.name = 'KeyCheckError';
   }
 }
 
@@ -676,13 +665,13 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
     async (privateKey: Uint8Array, compressed: boolean) => {
       if (!lookupDeps) throw new Error('no bridge is configured (Settings)');
       const r = await lookupMasternodes([{ index: 0, keyId: votingKeyId(privateKey, compressed) }], lookupDeps, { signal: new AbortController().signal });
-      return keyRole(votingAddressOf(privateKey, compressed, coreNetwork), r.list ?? [], r.owned);
+      return keyRole(votingAddressOf(privateKey, compressed, coreNetwork), r.list ?? [], r.owned, r.missing.length);
     },
     [lookupDeps, coreNetwork],
   );
 
   const addKey = useCallback(
-    async (input: string, label: string, opts: { force?: boolean } = {}) => {
+    async (input: string, label: string) => {
       const t = sessionToken();
       setError(null);
       setNeedsTopUp(false);
@@ -719,13 +708,14 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         try {
           role = await checkKey(privateKey, compressed);
         } catch (e) {
-          role = { kind: 'error', message: `The key could not be checked against the masternode list (${errorText(e)}). It was not saved. Adding it anyway also skips the check that it is not a collateral or payout key.` };
+          role = { kind: 'error', message: `The key could not be checked against the masternode list (${errorText(e)}). It was not saved; try again in a moment.` };
         } finally {
           setBusy(null);
         }
         if (sessionToken() !== t || kr.current !== k) refuse(new SessionChangedError());
-        if (role.kind === 'collateral' || role.kind === 'payout') refuse(new KeyCheckError(role.message, false));
-        if ((role.kind === 'none' || role.kind === 'error') && !opts.force) refuse(new KeyCheckError(role.message, true));
+        // nothing but a voting key is saved: without the list (or with a bridge that does not give collateral and payout addresses)
+        // a key that votes for nothing could be a collateral key, so there is no "add it anyway"
+        if (role.kind !== 'voting') refuse(new Error(role.message));
       }
       try {
         await edit('Adding the voting key', (d) => d.content.keys.push({ privateKey, compressed, label }), { onFail: () => privateKey.fill(0), after: () => setMnNonce((n) => n + 1) });
