@@ -2,7 +2,7 @@
 // "verified" only for what this browser proved; heights from consensus rules are verified, times derived from them are estimates.
 import type { Cycle, Provenance } from '../data/types.ts';
 import { formatDash, formatInt, formatRelative } from '../lib/format.ts';
-import type { ChainReport } from './chain.ts';
+import { isLowerBound, type ChainReport } from './chain.ts';
 import type { ChainFacts } from './collateral.ts';
 import type { RankingResult } from './ranking.ts';
 
@@ -85,7 +85,7 @@ export function paymentsFact(r: ChainReport | null): { made: { text: string; pro
   ];
   return {
     made: {
-      text: `${formatInt(p.paid.length)}${p.unread.length || p.ambiguous.length || p.skipped ? ' or more' : ''}`,
+      text: `${formatInt(p.paid.length)}${isLowerBound(p) ? ' or more' : ''}`,
       prov: doubt.length ? { kind: 'reported', source: 'superblock coinbases', detail: `${how}; not exact: ${doubt.join('; ')}` } : chainProv(r, how),
     },
     remaining: {

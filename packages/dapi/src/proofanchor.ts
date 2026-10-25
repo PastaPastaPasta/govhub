@@ -86,10 +86,18 @@ const cannotServe = (e: unknown): boolean =>
  */
 async function fetchProof(sources: readonly ProofSource[], from: ProofState, minHeight: number, ctx: ProofContext): Promise<Got> {
   const reasons: string[] = [];
+  /** Sources that failed, as opposed to answering that nothing newer exists yet ('not-yet'). */
   const failures: string[] = [];
+  const note = (source: ProofSource, message: string, failed = true) => {
+    // source errors already name their source ("<name>: HTTP 502"): do not name it twice
+    const m = message.startsWith(`${source.name}:`) ? message : `${source.name}: ${message}`;
+    reasons.push(m);
+    if (failed) failures.push(m);
+  };
   for (const source of sources) {
     if ((ctx.down.get(source.name) ?? 0) > Date.now()) {
-      reasons.push(`${source.name}: skipped (failed recently)`);
+      // a source in cooldown failed recently: that is a failure too, not "nothing newer"
+      note(source, 'skipped (failed recently)');
       continue;
     }
     try {
@@ -101,17 +109,13 @@ async function fetchProof(sources: readonly ProofSource[], from: ProofState, min
       }
       const time = parseHeader(proof.chainLock.header).time;
       if (time < ctx.clock() - FRESH_S) {
-        reasons.push(`${source.name}: its newest ChainLock (block ${proof.state.height}) is ${Math.round((ctx.clock() - time) / 60)} minutes old`);
-        failures.push(reasons.at(-1)!);
+        note(source, `its newest ChainLock (block ${proof.state.height}) is ${Math.round((ctx.clock() - time) / 60)} minutes old`);
         continue;
       }
       return { proof, source, bytes: bytes.length, time };
     } catch (e) {
       if (ctx.signal?.aborted) throw ctx.signal.reason;
-      // source errors already name their source ("<name>: HTTP 502"): do not name it twice
-      const message = (e as Error).message;
-      reasons.push(message.startsWith(`${source.name}:`) ? message : `${source.name}: ${message}`);
-      if (!(e instanceof ProofSourceError && e.code === 'not-yet')) failures.push(reasons.at(-1)!);
+      note(source, (e as Error).message, !(e instanceof ProofSourceError && e.code === 'not-yet'));
       if (cannotServe(e)) ctx.down.set(source.name, Date.now() + SOURCE_DOWN_MS);
     }
   }

@@ -84,6 +84,14 @@ export interface Replay {
   tamper(t: Tamper): void;
 }
 
+/** Every request that leaves the preview server. */
+const external = (base: string) => (u: URL) => !u.href.startsWith(base) && /^https?:/.test(u.protocol);
+
+function newReplay(): { r: Replay; tampers: Tamper[] } {
+  const tampers: Tamper[] = [];
+  return { r: { misses: [], served: [], tamper: (t) => void tampers.push(t) }, tampers };
+}
+
 /**
  * Answers every non-local request of `ctx` from `rec`, applying tampers, and shifts the clock back to `rec.recordedAt`. Identical
  * requests get the recorded answers in order (the last one repeats). Call before the first page is opened.
@@ -95,10 +103,9 @@ export async function replay(ctx: BrowserContext, rec: Recording, base: string):
     index.set(k, [...(index.get(k) ?? []), e]);
   }
   const next = new Map<string, number>();
-  const tampers: Tamper[] = [];
-  const r: Replay = { misses: [], served: [], tamper: (t) => void tampers.push(t) };
+  const { r, tampers } = newReplay();
   await installClock(ctx, base, rec.recordedAt);
-  await ctx.route((u) => !u.href.startsWith(base) && /^https?:/.test(u.protocol), async (route: Route) => {
+  await ctx.route(external(base), async (route: Route) => {
     const req = route.request();
     const post = postOf(req);
     if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': 'GET, POST' } });
@@ -143,7 +150,7 @@ export async function record(ctx: BrowserContext, base: string): Promise<{ done(
   // a whole second (plus a little): the replay's "now" in seconds is then the recording's
   const rec: Recording = { recordedAt: Math.floor(Date.now() / 1000) * 1000 + 100, entries: [] };
   await installClock(ctx, base, rec.recordedAt);
-  await ctx.route((u) => !u.href.startsWith(base) && /^https?:/.test(u.protocol), async (route) => {
+  await ctx.route(external(base), async (route) => {
     const req = route.request();
     if (req.method() === 'OPTIONS') return route.continue();
     const headers = Object.fromEntries(Object.entries(req.headers()).filter(([k]) => !k.startsWith(':') && !/^(host|content-length|origin|referer|cookie)$/i.test(k)));
@@ -182,9 +189,8 @@ export async function record(ctx: BrowserContext, base: string): Promise<{ done(
  * Streams (grpc-web server streaming) pass through untouched unless a tamper aborts them; the clock is the real one.
  */
 export async function liveTamper(ctx: BrowserContext, base: string): Promise<Replay> {
-  const tampers: Tamper[] = [];
-  const r: Replay = { misses: [], served: [], tamper: (t) => void tampers.push(t) };
-  await ctx.route((u) => !u.href.startsWith(base) && /^https?:/.test(u.protocol), async (route) => {
+  const { r, tampers } = newReplay();
+  await ctx.route(external(base), async (route) => {
     const req = route.request();
     const post = req.postDataBuffer() ?? Buffer.alloc(0);
     const ask = (out: { status: number; headers: Record<string, string>; body: Buffer }) => {

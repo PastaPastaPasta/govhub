@@ -245,7 +245,7 @@ export function fundingComponent(i: {
   if (up.some((s) => s.status !== 'proven') || !i.report) return { status: 'reported', reason: 'Not fully checked: it depends on the checks above' };
   if (i.payments?.pending) return { status: 'pending', note: i.payments.progress || "Reading this proposal's superblock payments" };
   const p = i.report.payments;
-  if (i.payments?.error && !p) return { status: 'reported', reason: `The proposal's payments couldn't be read: ${i.payments.error}` };
+  if (i.payments?.error) return { status: 'reported', reason: `The proposal's payments couldn't be read: ${i.payments.error}` };
   if (p?.skipped) return { status: 'reported', reason: `The proposal's payment history isn't fully read yet: ${p.skipped.toLocaleString('en-US')} superblocks of its window are left for the next visit` };
   if (p && (p.unread.length || p.ambiguous.length || p.othersComplete === false)) return { status: 'reported', reason: "The proposal's payment history couldn't be fully proven" };
   const active = i.proposal.endEpoch > i.nowS;

@@ -9,7 +9,7 @@ const CHAINS = 'chains';
 const PROREG = 'proreg';
 const SUPERBLOCKS = 'superblocks';
 /** At most this many cached superblock coinbases (testnet has one an hour); past it the store starts over. */
-export const MAX_CACHED_SUPERBLOCKS = 20_000;
+const MAX_CACHED_SUPERBLOCKS = 20_000;
 
 let dbp: Promise<IDBDatabase | null> | null = null;
 
@@ -80,14 +80,14 @@ export function proRegCache(network: string): ProRegCache {
 }
 
 /**
- * Superblock coinbases by network and height. An entry is used only for the block hash the verified chain has at that height
+ * Superblock coinbases of `network` by height. An entry is used only for the block hash the verified chain has at that height
  * (verify/chain.ts), so a reorganised or forged entry is never read as a fact. Bounded: past MAX_CACHED_SUPERBLOCKS it is cleared.
  */
-export function superblockCache(): SuperblockCache {
+export function superblockCache(network: Network): SuperblockCache {
   let puts = 0;
   return {
-    get: (network, height) => run<SuperblockCoinbase>(SUPERBLOCKS, 'readonly', (s) => s.get(`${network}:${height}`)),
-    async put(network, height, value) {
+    get: (height) => run<SuperblockCoinbase>(SUPERBLOCKS, 'readonly', (s) => s.get(`${network}:${height}`)),
+    async put(height, value) {
       if (puts++ % 100 === 0 && ((await run<number>(SUPERBLOCKS, 'readonly', (s) => s.count())) ?? 0) >= MAX_CACHED_SUPERBLOCKS) {
         await run(SUPERBLOCKS, 'readwrite', (s) => void s.clear());
       }

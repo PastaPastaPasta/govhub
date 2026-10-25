@@ -217,7 +217,7 @@ describe('D-013: payments read only the proposal\'s window, at most MAX_SUPERBLO
   };
   const memoryCache = (): SuperblockCache & { m: Map<string, SuperblockCoinbase> } => {
     const m = new Map<string, SuperblockCoinbase>();
-    return { m, get: async (n, h) => m.get(`${n}:${h}`), put: async (n, h, v) => void m.set(`${n}:${h}`, v) };
+    return { m, get: async (h) => m.get(`testnet:${h}`), put: async (h, v) => void m.set(`testnet:${h}`, v) };
   };
 
   it('a proposal whose window is a fraction of the range reads O(log n) blocks outside it, and nothing before its start', async () => {

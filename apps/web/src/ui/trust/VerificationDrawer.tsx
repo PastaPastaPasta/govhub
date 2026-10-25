@@ -8,7 +8,7 @@ import { useApp } from '../../app/context.tsx';
 import type { Cycle, Proposal, Sourced } from '../../data/types.ts';
 import { formatDash, formatDateTime, formatInt, formatRelative, shortHash } from '../../lib/format.ts';
 import { CHECK_LABEL, LEVEL_LABEL, VERIFIED_LINE, type CheckId, type Component, type ComponentState } from '../../verify/aggregate.ts';
-import type { ChainReport } from '../../verify/chain.ts';
+import { isLowerBound, type ChainReport } from '../../verify/chain.ts';
 import { checkContent, verdictFailure, type CollateralVerdict, type StepBasis, type StepStatus } from '../../verify/collateral.ts';
 import { budgetFact } from '../../verify/facts.ts';
 import type { RankingDone, VotesDone } from '../../verify/protocol.ts';
@@ -39,9 +39,17 @@ type Glyph = 'verified' | 'mismatch' | 'reported' | 'fixture';
  * network, bytes that do not hash to the txid) as "reported" too, not as a mismatch of the proposal. Demo data is never "verified".
  */
 function stepGlyph(s: Row, demo: boolean): Glyph {
-  if (s.status === 'ok') return s.basis === 'reported' ? 'reported' : demo ? 'fixture' : 'verified';
-  if (s.status === 'fail') return s.basis === 'reported' ? 'reported' : 'mismatch';
-  return s.status === 'warn' ? 'reported' : 'fixture';
+  switch (s.status) {
+    case 'ok':
+      if (s.basis === 'reported') return 'reported';
+      return demo ? 'fixture' : 'verified';
+    case 'fail':
+      return s.basis === 'reported' ? 'reported' : 'mismatch';
+    case 'warn':
+      return 'reported';
+    case 'skip':
+      return 'fixture';
+  }
 }
 
 function Steps({ steps, demo }: { steps: Row[]; demo: boolean }) {
@@ -49,13 +57,16 @@ function Steps({ steps, demo }: { steps: Row[]; demo: boolean }) {
   return (
     <>
       <ol className="steps">
-        {steps.map((s) => (
-          <li key={s.id} className={`step step-${s.status}`} data-step={s.id} data-status={s.status} data-basis={s.basis ?? (s.status === 'ok' && !demo ? 'verified' : 'reported')}>
-            <ProvGlyph kind={stepGlyph(s, demo)} />
+        {steps.map((s) => {
+          const glyph = stepGlyph(s, demo);
+          return (
+          <li key={s.id} className={`step step-${s.status}`} data-step={s.id} data-status={s.status} data-basis={s.basis ?? (glyph === 'verified' ? 'verified' : 'reported')}>
+            <ProvGlyph kind={glyph} />
             <span className="step-label">{s.label}</span>
             <span className="step-detail">{s.detail}</span>
           </li>
-        ))}
+          );
+        })}
       </ol>
       {more.length > 0 && <How rows={more.map((s) => [s.label, s.more!])} />}
     </>
@@ -159,7 +170,7 @@ function chainRows(r: ChainReport, cycle: Cycle | null, nowS: number): Row[] {
   const done = (rs: Row[]) =>
     a.weak ? rs.map((x) => (x.basis === 'reported' ? x : { ...x, basis: 'reported' as const, more: `${x.more ? `${x.more}; ` : ''}not secure: ${a.weak}` })) : rs;
   if (p) {
-    const partial = p.unread.length > 0 || p.ambiguous.length > 0 || !!p.skipped;
+    const partial = isLowerBound(p);
     rows.push({
       id: 'payments', status: partial ? 'warn' : 'ok', basis: partial || p.othersComplete === false ? 'reported' : 'verified', label: 'Payments made',
       detail: `${n(p.paid.length)}${partial ? ' or more' : ''}${p.paid.length ? ` (superblock${p.paid.length > 1 ? 's' : ''} ${p.paid.map((x) => n(x.height)).join(', ')})` : ''}; ${n(p.remainingEstimate)} more possible (estimate)${p.skipped ? `; ${n(p.skipped)} superblocks of the window not read yet (the next visit continues)` : ''}`,
@@ -433,15 +444,20 @@ function VotesResult({ done, fixtures, proven }: { done: VotesDone; fixtures: bo
   );
 }
 
-const STATE_GLYPH: Record<Component['state']['status'], Glyph> = {
-  proven: 'verified', reported: 'reported', error: 'reported', failed: 'mismatch', pending: 'fixture',
-};
-
 /** Sources that contradict each other show as a mismatch; demo data never shows as proven. */
 function stateGlyph(s: ComponentState, demo: boolean): Glyph {
-  if (s.status === 'error' && s.mismatch) return 'mismatch';
-  if (s.status === 'proven' && demo) return 'fixture';
-  return STATE_GLYPH[s.status];
+  switch (s.status) {
+    case 'proven':
+      return demo ? 'fixture' : 'verified';
+    case 'error':
+      return s.mismatch ? 'mismatch' : 'reported';
+    case 'reported':
+      return 'reported';
+    case 'failed':
+      return 'mismatch';
+    case 'pending':
+      return 'fixture';
+  }
 }
 
 function checkLine(s: Component['state']): string {
@@ -459,7 +475,7 @@ function CheckRow({ c, demo, children }: { c: Component; demo: boolean; children
   const s = c.state;
   const line = checkLine(s);
   return (
-    <li className={`check-row check-${s.status}`} data-check={c.id} data-state={s.status} {...(s.status === 'error' && s.mismatch ? { 'data-mismatch': '' } : {})}>
+    <li className={`check-row check-${s.status}`} data-check={c.id} data-state={s.status} data-mismatch={s.status === 'error' && s.mismatch ? '' : undefined}>
       <div className="check-line">
         {s.status === 'pending' ? <span className="spinner" aria-hidden="true" /> : <ProvGlyph kind={stateGlyph(s, demo)} />}
         <div>
