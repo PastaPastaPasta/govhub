@@ -77,8 +77,11 @@ export function AboutPage() {
       <h2>What it can’t detect</h2>
       <p>
         A bridge can <b>withhold</b>. The recount proves the votes it was given, so votes the bridge didn’t serve can’t be detected, and neither can a proposal
-        it never published. Using more than one bridge (Settings) or your own Dash Core node closes that gap. Who owns a proposal is checked separately, from
+        it never published. Comparing with another bridge (Settings) or your own Dash Core node narrows that gap. Who owns a proposal is checked separately, from
         the owner’s signed claim, and is not part of the badge.
+      </p>
+      <p>
+        <Link to="/about/trust">What we can and can’t lie about</Link>: every server govhub uses, and what each could get wrong or hide.
       </p>
 
       <h2>Your own votes</h2>

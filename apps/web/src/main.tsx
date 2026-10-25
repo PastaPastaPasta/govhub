@@ -16,6 +16,7 @@ import { ActivePage } from './pages/ActivePage.tsx';
 import { PastPage } from './pages/PastPage.tsx';
 import { ProposalByHash, ProposalByName } from './pages/ProposalPage.tsx';
 import { SettingsPage } from './pages/SettingsPage.tsx';
+import { TrustPage } from './pages/TrustPage.tsx';
 import { MasternodesPage } from './pages/MasternodesPage.tsx';
 import { MyVotesPage } from './pages/MyVotesPage.tsx';
 import { KeyringProvider } from './voting/KeyringContext.tsx';
@@ -68,6 +69,7 @@ createRoot(document.getElementById('root')!).render(
                 <Route path="votes" element={<MyVotesPage />} />
                 <Route path="badge" element={<BadgePage />} />
                 <Route path="about/verification" element={<AboutPage />} />
+                <Route path="about/trust" element={<TrustPage />} />
                 <Route path="*" element={<NotFoundPage />} />
               </Route>
             </Routes>

@@ -649,12 +649,16 @@ export function VerificationDrawer({ sp, trust, cycle, open, onClose }: { sp: So
         <h3 id="cant-title">What this can't detect</h3>
         <p className="small">
           A bridge can withhold. The recount proves the votes it was given, so votes the bridge didn't serve can't be detected, and neither can a proposal it never
-          published. Use more than one bridge in Settings, or compare with your own Dash Core node using the commands above.
+          published. Switch to another bridge in Settings, or compare with your own Dash Core node using the commands above.
         </p>
       </section>
       <p className="small">
         <Link to="/about/verification" onClick={onClose}>
           About verification: what each state means
+        </Link>
+        {' · '}
+        <Link to="/about/trust" onClick={onClose} data-testid="trust-page-link">
+          What we can and can't lie about
         </Link>
       </p>
     </Drawer>
