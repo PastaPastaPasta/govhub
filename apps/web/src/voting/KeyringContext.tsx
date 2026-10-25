@@ -144,7 +144,10 @@ interface Ctx {
   removeKey(index: number): Promise<void>;
   setNodeLabel(proTxHash: string, label: string): Promise<void>;
   setIdleMinutes(m: number): Promise<void>;
+  /** a passkey the user already has (one sign-in prompt) */
   addPasskeyUnlocker(): Promise<void>;
+  /** a passkey just created (auth/usePasskeyCreate.ts): adds its PRF output as an unlocker, resolving once saved. The caller wipes `prfOutput`. */
+  addPasskeyUnlockerFrom(prfOutput: Uint8Array): Promise<void>;
   removeUnlockerKey(recipientKey: Uint8Array): Promise<void>;
   saveToPlatform(): Promise<void>;
   /** the opened keyring could be planted or replayed: saving waits until the user confirms its unlockers */
@@ -762,6 +765,21 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
 
   const setIdleMinutes = useCallback((m: number) => edit('Saving the idle lock', (d) => void (d.content.idleLockMinutes = m)), [edit]);
 
+  const addPasskeyUnlockerFrom = useCallback(
+    async (prfOutput: Uint8Array) => {
+      if (!kr.current || memoryOnly) throw new Error('Open a saved keyring first.');
+      const key = passkeyUnlockKey(prfOutput);
+      try {
+        await edit('Adding a passkey unlocker', (d) => {
+          if (!addUnlocker(d, key)) throw new Error('This passkey already unlocks the keyring.');
+        });
+      } finally {
+        key.wipe();
+      }
+    },
+    [edit, memoryOnly],
+  );
+
   const addPasskeyUnlocker = useCallback(
     async () => {
       if (!kr.current || memoryOnly) throw new Error('Open a saved keyring first.');
@@ -772,17 +790,13 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         setError(errorText(e));
         throw e;
       }
-      const key = passkeyUnlockKey(a.prfOutput);
-      a.prfOutput.fill(0);
       try {
-        await edit('Adding a passkey unlocker', (d) => {
-          if (!addUnlocker(d, key)) throw new Error('This passkey already unlocks the keyring.');
-        });
+        await addPasskeyUnlockerFrom(a.prfOutput);
       } finally {
-        key.wipe();
+        a.prfOutput.fill(0);
       }
     },
-    [edit, memoryOnly, registry.forum.contractId],
+    [addPasskeyUnlockerFrom, memoryOnly, registry.forum.contractId],
   );
 
   const removeUnlockerKey = useCallback((recipientKey: Uint8Array) => edit('Removing the unlocker', (d) => removeUnlocker(d, recipientKey), { unconfirmedOk: true }), [edit]);
@@ -1506,6 +1520,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       setNodeLabel,
       setIdleMinutes,
       addPasskeyUnlocker,
+      addPasskeyUnlockerFrom,
       removeUnlockerKey,
       saveToPlatform,
       needsConfirm,
@@ -1519,7 +1534,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       verifyVote,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [status, error, needsTopUp, demo, session, memoryOnly, needsConfirm, confirmUnlockers, keyring, keyInfos, version, busy, mns, watched, coreNetwork, relays, relayHealth, celebrations, dismissCelebration, bridgeEndpoint?.httpBase, unlockWithPasskey, unlockWithPhrase, createKeyring, lock, addKey, removeKey, setNodeLabel, setIdleMinutes, addPasskeyUnlocker, removeUnlockerKey, saveToPlatform, currentVotes, cast, cancel, retryNow, submitSigned, verifyVote],
+    [status, error, needsTopUp, demo, session, memoryOnly, needsConfirm, confirmUnlockers, keyring, keyInfos, version, busy, mns, watched, coreNetwork, relays, relayHealth, celebrations, dismissCelebration, bridgeEndpoint?.httpBase, unlockWithPasskey, unlockWithPhrase, createKeyring, lock, addKey, removeKey, setNodeLabel, setIdleMinutes, addPasskeyUnlocker, addPasskeyUnlockerFrom, removeUnlockerKey, saveToPlatform, currentVotes, cast, cancel, retryNow, submitSigned, verifyVote],
   );
   return <C.Provider value={value}>{children}</C.Provider>;
 }
