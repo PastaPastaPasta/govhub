@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DependencyList } from 'react';
 import { useApp, type Load } from '../app/context.tsx';
+import { errText } from '../lib/format.ts';
 import type { Proposal } from '../data/types.ts';
 import type { ChainReport } from '../verify/chain.ts';
 import { runVerification } from '../verify/client.ts';
@@ -17,7 +18,7 @@ export function useAsync<T>(fn: () => Promise<T>, deps: DependencyList): Load<T>
     let live = true;
     fn().then(
       (data) => live && setState({ run, load: { data, loading: false } }),
-      (e: unknown) => live && setState({ run, load: { error: e instanceof Error ? e.message : String(e), loading: false } }),
+      (e: unknown) => live && setState({ run, load: { error: errText(e), loading: false } }),
     );
     return () => {
       live = false;

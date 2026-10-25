@@ -7,6 +7,7 @@ import { createWebDapi, lookupCollateral } from '../data/dapi.ts';
 import { BridgeError, type Bridge, type BridgeMnList, type BridgeVotes } from '../data/bridge.ts';
 import { makeBridge } from '../data/bridgeFactory.ts';
 import type { CoreNetwork } from '../data/types.ts';
+import { errText } from '../lib/format.ts';
 import { claimedWeight, payments, scheduleAndBudget, summarize, threshold, EST_BLOCK_SECONDS } from './chain.ts';
 import { verifyCollateral } from './collateral.ts';
 import type { DapiDescriptor, SmlUsed, WorkerRequest, WorkerResponse } from './protocol.ts';
@@ -229,5 +230,5 @@ async function ranking(req: Extract<WorkerRequest, { kind: 'ranking' }>, bridge:
 }
 
 self.onmessage = (ev: MessageEvent<WorkerRequest>) => {
-  handle(ev.data).catch((e: unknown) => post({ id: ev.data.id, kind: 'error', message: e instanceof Error ? e.message : String(e) }));
+  handle(ev.data).catch((e: unknown) => post({ id: ev.data.id, kind: 'error', message: errText(e) }));
 };

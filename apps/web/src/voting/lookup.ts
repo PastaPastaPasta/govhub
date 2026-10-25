@@ -8,6 +8,7 @@
 // outpoints stay, labelled. Only when the bridge itself cannot be read is the lookup an error.
 import type { AgreedSml } from '@govhub/dapi';
 import type { BridgeMnList } from '../data/bridge.ts';
+import { errText } from '../lib/format.ts';
 import type { SmlEntry } from '../verify/votes.ts';
 import { matchMasternodes, proveCollaterals, type KeyRef, type OwnedMasternode } from './masternodes.ts';
 
@@ -74,7 +75,7 @@ async function step<T>(name: LookupStep, ms: number, outer: AbortSignal, fn: (si
   }
 }
 
-const msg = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+const msg = errText;
 
 export async function lookupMasternodes(
   keys: readonly KeyRef[],

@@ -6,6 +6,7 @@ import { QUORUM_SERVICE, type Registry } from '../config/registry.ts';
 import { createWebDapi, type DapiConfig } from '../data/dapi.ts';
 import { getSdk } from '../data/platform.ts';
 import { noteIdentityWrite } from '../badge/visit.ts';
+import { errText } from '../lib/format.ts';
 
 let port: { key: string; value: Promise<PlatformPort> } | null = null;
 
@@ -79,6 +80,5 @@ export const formatDuffs = (duffs: number | bigint): string => `${(Number(duffs)
 
 /** Error text safe to show: no long hex / base58 runs (the SDK can echo transition bytes). */
 export function errorText(e: unknown): string {
-  const m = e && typeof e === 'object' && 'message' in e ? String((e as { message: unknown }).message) : String(e);
-  return m.replace(/[0-9a-fA-F]{64,}/g, '[…]').replace(/[1-9A-HJ-NP-Za-km-z]{50,}/g, '[…]').slice(0, 400);
+  return errText(e).replace(/[0-9a-fA-F]{64,}/g, '[…]').replace(/[1-9A-HJ-NP-Za-km-z]{50,}/g, '[…]').slice(0, 400);
 }

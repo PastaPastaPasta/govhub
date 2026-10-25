@@ -81,8 +81,14 @@ export function formatCredits(credits: number | bigint, approx = false, locale =
 /** "3 hours ago" for a Platform millisecond timestamp. */
 export const formatAgoMs = (ms: number, nowS: number): string => (Math.abs(ms / 1000 - nowS) < 90 ? 'just now' : formatRelative(Math.floor(ms / 1000), nowS));
 
-/** A thrown value as text fit to show the user. */
-export const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+/**
+ * A thrown value as text fit to show the user. evo-sdk throws WASM error objects that are not `Error`s (their `message` is a getter on
+ * the prototype): String() of those is "[object Object]".
+ */
+export const errText = (e: unknown): string => {
+  const m = e && typeof e === 'object' && 'message' in e ? (e as { message: unknown }).message : undefined;
+  return typeof m === 'string' && m ? m : String(e);
+};
 
 /** Hostname of a proposal URL for display, or null when it is not an http(s) URL. */
 export function urlHost(url: string): string | null {
