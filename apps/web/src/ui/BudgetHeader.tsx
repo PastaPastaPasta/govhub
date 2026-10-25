@@ -38,7 +38,8 @@ export function BudgetHeader() {
     activeRows.shown.map((r) => r.item),
     c,
   );
-  const names = countNames(activeRows.shown.map((r) => r.item.p.value));
+  // names are counted over the lame ducks too: the cards link by hash when a name is shared with one
+  const names = countNames([...activeRows.shown, ...activeRows.lameDucks].map((r) => r.item.p.value));
   const allocatedFrac = c.budget ? Math.min(1, allocated / c.budget) : 0;
   const available = Math.max(0, c.budget - allocated);
   const threshold = fundingThreshold(c.validWeighted, params);

@@ -9,13 +9,28 @@
 //   - the next superblock falls after end_epoch + 2 h, or the window holds no superblock at all.
 // A proposal that was paid in part and still has a superblock ahead in its window is not a lame duck.
 //
-// The superblock times are Core's own 2.62-minute-per-block estimates, so this is an estimate, labelled so where it is shown.
-import type { Proposal } from '../data/types.ts';
+// The superblock times are Core's own 2.62-minute-per-block estimates, so this is an estimate, labelled so where it is shown; one day
+// of slack on each edge of the window keeps a borderline proposal in the normal list.
+import type { Cycle, Proposal } from '../data/types.ts';
+import { paymentSchedule, type GovParams } from './governance.ts';
+
+/**
+ * Slack on each edge of the payment window when deciding that nothing can pay a proposal any more (the same day chain.ts allows
+ * for reading real payments). Core decides with a superblock-time estimate made about three days before the superblock; this app
+ * extrapolates from the cycle document, up to a month, so a superblock estimated just outside the window might really be inside it.
+ * Lame means no superblock is even close to the window, and a borderline proposal stays in the normal list.
+ */
+export const LAME_DUCK_SLACK_S = 86_400;
+
+/** Superblocks still to come within the proposal's payment window widened by `LAME_DUCK_SLACK_S` (never fewer than `paymentSchedule`'s). */
+export function remainingWithSlack(p: Pick<Proposal, 'startEpoch' | 'endEpoch'>, cycle: Pick<Cycle, 'estTime'>, params: GovParams, nowS: number): number {
+  return paymentSchedule({ startEpoch: p.startEpoch - LAME_DUCK_SLACK_S, endEpoch: p.endEpoch + LAME_DUCK_SLACK_S }, cycle, params, nowS).remaining;
+}
 
 /**
  * Whether a proposal that is still active can receive no more payments.
- * - `remaining`: superblocks still to come whose estimated time is in the proposal's window (`PaymentSchedule.remaining`, or the
- *   payments fact's `remainingEstimate`); null when the schedule is unknown, which is never a lame duck.
+ * - `remaining`: superblocks still to come whose estimated time is in the proposal's window, with slack (`remainingWithSlack`);
+ *   null when the schedule is unknown, which is never a lame duck.
  * - `inNextBudget`: the next superblock's own flag. A proposal reported as paid in the next superblock can still be paid, so a
  *   disagreement between that flag and the estimate is resolved toward "not a lame duck" (the estimate is the weaker of the two).
  */

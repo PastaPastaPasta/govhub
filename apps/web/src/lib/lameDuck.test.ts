@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Cycle, Proposal, Sourced, Tally } from '../data/types.ts';
-import { FUDGE_WINDOW_S, GOV_PARAMS, paymentSchedule } from './governance.ts';
-import { isLameDuck } from './lameDuck.ts';
+import { FUDGE_WINDOW_S, GOV_PARAMS, paymentSchedule, type GovParams } from './governance.ts';
+import { isLameDuck, LAME_DUCK_SLACK_S } from './lameDuck.ts';
 import { budgetView, deriveRow } from './view.ts';
 
 const prov = { kind: 'proof', source: 'test' } as const;
@@ -26,6 +26,9 @@ const NOW = Date.UTC(2026, 9, 25) / 1000;
 const SEP29 = Date.UTC(2026, 8, 29) / 1000;
 const OCT27 = Date.UTC(2026, 9, 27) / 1000;
 
+// a row with no tallies
+const bare = (p: Sourced<Proposal>, cycle: Sourced<Cycle> | null, params: GovParams, now = NOW) => deriveRow(p, new Map(), new Map(), cycle, params, now);
+
 describe('isLameDuck', () => {
   it('fully paid: its one superblock is behind us and the next is after it ends (the pshenmic proposal)', () => {
     const next = NOW + 23 * DAY; // the previous superblock was ~7 days ago, inside Sep 29..Oct 27
@@ -41,16 +44,29 @@ describe('isLameDuck', () => {
     const cycle = cycleAt(NOW + 10 * DAY); // the previous superblock was ~20 days ago, before it started
     const sched = paymentSchedule(p.value, cycle.value, MAIN, NOW);
     expect(sched).toMatchObject({ total: 0, remaining: 0 });
-    expect(deriveRow(p, new Map(), new Map(), cycle, MAIN, NOW).lameDuck).toBe(true);
+    expect(bare(p, cycle, MAIN, NOW).lameDuck).toBe(true);
   });
 
-  it("uses Core's inclusive window: a superblock at end_epoch + 2 h can pay, one second later cannot (signing.cpp:94)", () => {
+  it("uses Core's inclusive window, plus a day of slack for the estimate (signing.cpp:94)", () => {
     const end = NOW + 3 * DAY;
     const p = proposal('a', { startEpoch: NOW - 10 * DAY, endEpoch: end });
-    const at = (t: number) => deriveRow(p, new Map(), new Map(), cycleAt(t), MAIN, NOW);
-    expect(at(end + FUDGE_WINDOW_S).lameDuck).toBe(false);
+    const at = (t: number) => bare(p, cycleAt(t), MAIN, NOW);
+    // at end + 2 h Core still pays it (inclusive); just after, only the estimate's drift could
     expect(at(end + FUDGE_WINDOW_S).schedule?.remaining).toBe(1);
-    expect(at(end + FUDGE_WINDOW_S + 1).lameDuck).toBe(true);
+    expect(at(end + FUDGE_WINDOW_S + 1).schedule?.remaining).toBe(0);
+    expect(at(end + FUDGE_WINDOW_S).lameDuck).toBe(false);
+    expect(at(end + FUDGE_WINDOW_S + 1).lameDuck).toBe(false);
+    expect(at(end + FUDGE_WINDOW_S + LAME_DUCK_SLACK_S).lameDuck).toBe(false);
+    expect(at(end + FUDGE_WINDOW_S + LAME_DUCK_SLACK_S + 1).lameDuck).toBe(true);
+  });
+
+  it('the same slack at the start, for a proposal that has not begun', () => {
+    const start = NOW + 3 * DAY;
+    const p = proposal('a', { startEpoch: start, endEpoch: start + 5 * DAY });
+    // the superblock after the next is a cycle later, past its end: only the next one can pay it
+    const lame = (est: number) => bare(p, cycleAt(est), MAIN, NOW).lameDuck;
+    expect(lame(start - FUDGE_WINDOW_S - 100)).toBe(false); // just before the window opens: the estimate's drift could bring it in
+    expect(lame(start - FUDGE_WINDOW_S - LAME_DUCK_SLACK_S - 1)).toBe(true); // well before it, and the one after is far past the end
   });
 
   it('partly paid with payments left is not a lame duck', () => {
@@ -60,14 +76,14 @@ describe('isLameDuck', () => {
     const sched = paymentSchedule(p.value, cycle.value, MAIN, NOW);
     expect(sched.total).toBeGreaterThanOrEqual(2);
     expect(sched.remaining).toBeGreaterThanOrEqual(1);
-    expect(deriveRow(p, new Map(), new Map(), cycle, MAIN, NOW).lameDuck).toBe(false);
+    expect(bare(p, cycle, MAIN, NOW).lameDuck).toBe(false);
     // down to its last payment: still not (that payment is yet to come)
     const last = proposal('b', { startEpoch: NOW - 40 * DAY, endEpoch: NOW + 6 * DAY });
-    expect(deriveRow(last, new Map(), new Map(), cycle, MAIN, NOW)).toMatchObject({ lameDuck: false, schedule: { remaining: 1 } });
+    expect(bare(last, cycle, MAIN, NOW)).toMatchObject({ lameDuck: false, schedule: { remaining: 1 } });
     // the superblock one cycle later falls after end + 2 h, so it is the last: still to come a second ahead of it, and lame once it has passed
     const afterLast = cycleAt(NOW + 5 * DAY + mainPeriod);
-    expect(deriveRow(last, new Map(), new Map(), afterLast, MAIN, NOW + 5 * DAY - 1).lameDuck).toBe(false);
-    expect(deriveRow(last, new Map(), new Map(), afterLast, MAIN, NOW + 5 * DAY + 1).lameDuck).toBe(true);
+    expect(bare(last, afterLast, MAIN, NOW + 5 * DAY - 1).lameDuck).toBe(false);
+    expect(bare(last, afterLast, MAIN, NOW + 5 * DAY + 1).lameDuck).toBe(true);
   });
 
   it('is only for proposals still in the active set, and only when the schedule is known', () => {
@@ -75,7 +91,7 @@ describe('isLameDuck', () => {
     expect(isLameDuck({ endEpoch: NOW }, 0, NOW)).toBe(false); // Core: expired once end_epoch <= now (object.cpp:148)
     expect(isLameDuck({ endEpoch: NOW + 1 }, 0, NOW)).toBe(true);
     expect(isLameDuck({ endEpoch: NOW + DAY }, null, NOW)).toBe(false);
-    expect(deriveRow(proposal('a', { startEpoch: NOW - 9 * DAY, endEpoch: NOW + DAY }), new Map(), new Map(), null, MAIN, NOW).lameDuck).toBe(false);
+    expect(bare(proposal('a', { startEpoch: NOW - 9 * DAY, endEpoch: NOW + DAY }), null, MAIN, NOW).lameDuck).toBe(false);
   });
 
   it('a proposal the next superblock is flagged to pay is never a lame duck, whatever the estimate says', () => {
@@ -88,26 +104,25 @@ describe('isLameDuck', () => {
   it('testnet hourly cycle: the 2 h fudge is longer than the cycle, so an active proposal always has a superblock ahead', () => {
     const p = proposal('a', { startEpoch: NOW - 6 * 3600, endEpoch: NOW + 20 * 60 });
     // next superblock in 10 minutes: this one and the next two (~73 and ~136 minutes) are all inside end + 2 h
-    const live = deriveRow(p, new Map(), new Map(), cycleAt(NOW + 600), TEST, NOW);
+    const live = bare(p, cycleAt(NOW + 600), TEST, NOW);
     expect(live.schedule!.remaining).toBe(3);
     expect(live.lameDuck).toBe(false);
     // wherever the next superblock falls within the cycle, and however close the end, it can still pay
     for (let offset = 1; offset <= testPeriod; offset += 97) {
       for (const left of [1, 60, 20 * 60, 6 * 3600]) {
         const q = proposal('q', { startEpoch: NOW - 6 * 3600, endEpoch: NOW + left });
-        expect(deriveRow(q, new Map(), new Map(), cycleAt(NOW + offset), TEST, NOW).lameDuck).toBe(false);
+        expect(bare(q, cycleAt(NOW + offset), TEST, NOW).lameDuck).toBe(false);
       }
     }
     // the same proposal under mainnet rules has no superblock in its window: the parameters must follow the data's network
-    expect(deriveRow(p, new Map(), new Map(), cycleAt(NOW + 3 * 3600), MAIN, NOW).lameDuck).toBe(true);
+    expect(bare(p, cycleAt(NOW + 3 * DAY), MAIN, NOW).lameDuck).toBe(true);
   });
 
-  it('testnet with a longer cycle: lame once its last superblock has passed', () => {
-    // a custom 6-hour cycle (a bridge may report any cycle): end + 2 h is shorter than the cycle
-    const params = { ...TEST, superblockCycle: Math.round((6 * 3600) / TEST.blockSeconds) };
+  it('a custom 3-day cycle (a bridge may report any): lame once the next superblock is past end + 2 h + the slack', () => {
+    const params = { ...TEST, superblockCycle: Math.round((3 * DAY) / TEST.blockSeconds) };
     const p = proposal('a', { startEpoch: NOW - 12 * 3600, endEpoch: NOW + 3600 });
-    expect(deriveRow(p, new Map(), new Map(), cycleAt(NOW + 3 * 3600), params, NOW).lameDuck).toBe(false);
-    expect(deriveRow(p, new Map(), new Map(), cycleAt(NOW + 4 * 3600), params, NOW).lameDuck).toBe(true);
+    expect(bare(p, cycleAt(NOW + 20 * 3600), params, NOW).lameDuck).toBe(false);
+    expect(bare(p, cycleAt(NOW + 2 * DAY), params, NOW).lameDuck).toBe(true);
   });
 });
 

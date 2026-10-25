@@ -10,7 +10,7 @@ import { ProposalCard } from '../ui/ProposalCard.tsx';
 import { ProposalTabs } from '../ui/ProposalTabs.tsx';
 import { useReveal } from '../ui/hooks.ts';
 import { useCommentCounts } from '../ui/useCommentCounts.ts';
-import { countNames, proposalHref } from '../lib/view.ts';
+import { countNames, proposalHref, type Checked, type Row } from '../lib/view.ts';
 
 /** Display names of these identities (self-chosen profiles), for the owners named in proposal URLs. */
 function useProfiles(ids: readonly string[]): ReadonlyMap<string, Profile> {
@@ -48,7 +48,7 @@ export function ActivePage() {
   );
   const profiles = useProfiles([...owners.values()].filter((x): x is string => !!x));
   const failed = activeRows.failed.length;
-  const card = ({ item: r, check }: (typeof cards)[number]) => {
+  function card({ item: r, check }: Checked<Row>) {
     const owner = owners.get(r.p.value.govHash) ?? null;
     return (
       <ProposalCard
@@ -61,7 +61,7 @@ export function ActivePage() {
         ownerProfile={owner ? profiles.get(owner) : undefined}
       />
     );
-  };
+  }
 
   return (
     <>

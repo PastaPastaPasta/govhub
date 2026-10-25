@@ -44,10 +44,11 @@ export function ProposalCard({
   const inBudget = trust && mark?.level === 'verified' ? (trust.funded ?? undefined) : t?.inNextBudget;
   const ask = askText(p.paymentAmount, row.schedule, params);
   // Nothing left that can pay it: no funding bars or budget tag, and no "payments left" claim either.
-  const ended = row.lameDuck;
+  const ended = row.lameDuck && !inBudget;
   const left = ended ? null : paymentsLeft(row.schedule);
+  const tone = failed ? 'invalid' : ended ? 'ended' : (row.state?.light ?? 'none');
   return (
-    <article className={`prow prow-${failed ? 'invalid' : ended ? 'ended' : (row.state?.light ?? 'none')}`} data-govhash={p.govHash} data-check={check?.status} data-lameduck={ended ? 'true' : undefined} data-testid="proposal-card">
+    <article className={`prow prow-${tone}`} data-govhash={p.govHash} data-check={check?.status} data-lameduck={ended ? 'true' : undefined} data-testid="proposal-card">
       <div className="prow-main">
         {/* h2: the list's heading is the page's h1 (a skipped level breaks heading navigation) */}
         <h2 className="prow-title">

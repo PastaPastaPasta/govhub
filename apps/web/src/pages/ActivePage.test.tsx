@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Cycle, Proposal, Sourced, Tally } from '../data/types.ts';
 import { GOV_PARAMS } from '../lib/governance.ts';
 import { deriveRow } from '../lib/view.ts';
+import { LAME_DUCK_EXPLAINER } from '../ui/LameDuck.tsx';
 import { button, click, render } from '../test/render.tsx';
 import type { ActiveRows } from '../app/context.tsx';
 
@@ -70,7 +71,8 @@ describe('ActivePage with a lame duck', () => {
     const toggle = el.querySelector('[data-testid="toggle-lameduck"]') as HTMLButtonElement;
     expect(toggle.textContent).toBe('Finished, still on the network (1)');
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
-    expect(el.textContent).toContain('No superblock left can pay these, whether or not they were paid. They drop off the network when they end.');
+    expect(el.textContent).toContain(LAME_DUCK_EXPLAINER);
+    expect(LAME_DUCK_EXPLAINER).toContain('They drop off the network when they end.');
     expect(el.textContent).not.toContain('pshenmic');
     // the section comes after the live list
     const list = el.querySelector('.plist')!;

@@ -8,21 +8,27 @@ const OCT27 = Date.UTC(2026, 9, 27, 12) / 1000;
 
 describe('lameDuckSummary', () => {
   it('paid in full: every payment of its window has been made', () => {
-    expect(lameDuckSummary({ total: 1, paid: { count: 1, atLeast: false }, endEpoch: OCT27 })).toEqual({
+    expect(lameDuckSummary({ total: 1, paid: { count: 1, atLeast: false, firm: true }, endEpoch: OCT27 })).toEqual({
       headline: 'Paid in full',
       detail: '1 of 1 payment made. No more payments are possible; it leaves the network on Oct 27, 2026.',
     });
     // a count that is only a lower bound but already reaches the total is still in full; more than estimated counts as what was paid
-    expect(lameDuckSummary({ total: 2, paid: { count: 3, atLeast: true }, endEpoch: OCT27 }).detail).toContain('3 of 3 payments made');
+    expect(lameDuckSummary({ total: 2, paid: { count: 3, atLeast: true, firm: true }, endEpoch: OCT27 }).detail).toContain('3 of 3 payments made');
     // an estimate of zero superblocks does not stop a payment that was found
-    expect(lameDuckSummary({ total: 0, paid: { count: 1, atLeast: false }, endEpoch: OCT27 }).headline).toBe('Paid in full');
+    expect(lameDuckSummary({ total: 0, paid: { count: 1, atLeast: false, firm: true }, endEpoch: OCT27 }).headline).toBe('Paid in full');
+  });
+
+  it('a count that is not fully proven is "found", never "paid in full"', () => {
+    const s = lameDuckSummary({ total: 1, paid: { count: 1, atLeast: false, firm: false }, endEpoch: OCT27 });
+    expect(s.headline).toBe('No more payments possible');
+    expect(s.detail).toContain('1 of 1 payment found, not fully proven');
   });
 
   it('paid in part, or not at all: says so instead of "paid in full"', () => {
-    expect(lameDuckSummary({ total: 3, paid: { count: 2, atLeast: false }, endEpoch: OCT27 })).toMatchObject({ headline: 'No more payments possible', detail: expect.stringContaining('2 of 3 payments made') });
-    expect(lameDuckSummary({ total: 3, paid: { count: 2, atLeast: true }, endEpoch: OCT27 }).detail).toContain('At least 2 of 3');
-    expect(lameDuckSummary({ total: 1, paid: { count: 0, atLeast: false }, endEpoch: OCT27 }).detail).toContain('No payment was made');
-    expect(lameDuckSummary({ total: 1, paid: { count: 0, atLeast: true }, endEpoch: OCT27 }).detail).toContain('No payment found yet in the superblocks read');
+    expect(lameDuckSummary({ total: 3, paid: { count: 2, atLeast: false, firm: true }, endEpoch: OCT27 })).toMatchObject({ headline: 'No more payments possible', detail: expect.stringContaining('2 of 3 payments made') });
+    expect(lameDuckSummary({ total: 3, paid: { count: 2, atLeast: true, firm: true }, endEpoch: OCT27 }).detail).toContain('At least 2 of 3');
+    expect(lameDuckSummary({ total: 1, paid: { count: 0, atLeast: false, firm: true }, endEpoch: OCT27 }).detail).toContain('No payment was made');
+    expect(lameDuckSummary({ total: 1, paid: { count: 0, atLeast: true, firm: true }, endEpoch: OCT27 }).detail).toContain('No payment found yet in the superblocks read');
   });
 
   it('without a payment count (chain not checked yet) it claims no payment', () => {
@@ -35,7 +41,7 @@ describe('lameDuckSummary', () => {
 
 describe('LameDuckPageStatus', () => {
   it('replaces the funding status: no passing, budget or voting-deadline words, and labels the estimate', async () => {
-    const { el } = await render(<LameDuckPageStatus total={1} paid={{ count: 1, atLeast: false }} endEpoch={OCT27} counting={false} />);
+    const { el } = await render(<LameDuckPageStatus total={1} paid={{ count: 1, atLeast: false, firm: true }} endEpoch={OCT27} counting={false} />);
     const text = el.textContent ?? '';
     expect(text).toContain('Paid in full');
     expect(text).toContain('1 of 1 payment made. No more payments are possible; it leaves the network on Oct 27, 2026.');

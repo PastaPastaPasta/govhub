@@ -1,7 +1,7 @@
 // View model: joins a proposal with its tallies and the cycle into what a card / page shows.
 import type { Cycle, Proposal, Provenance, ProvenanceKind, Sourced, Tally } from '../data/types.ts';
 import { contentFailure, isFailed, type CheckState } from '../verify/checks.ts';
-import { isLameDuck } from './lameDuck.ts';
+import { isLameDuck, remainingWithSlack } from './lameDuck.ts';
 import { absoluteYes, compareRank, fundingThreshold, passState, paymentSchedule, type GovParams, type PassState, type PaymentSchedule } from './governance.ts';
 
 export interface Row {
@@ -65,7 +65,6 @@ export function deriveRow(
   const tally = pickTally(platformTally, bridgeTally, prefer);
   const threshold = thresholdOf(cycle, params);
   const absYes = tally ? absoluteYes(tally.value) : null;
-  const schedule = cycle ? paymentSchedule(p.value, cycle.value, params, nowS) : null;
   return {
     p,
     tally,
@@ -74,8 +73,8 @@ export function deriveRow(
     absYes,
     threshold,
     state: absYes !== null && threshold ? passState(absYes, threshold.value, tally!.value.inNextBudget) : null,
-    schedule,
-    lameDuck: isLameDuck(p.value, schedule ? schedule.remaining : null, nowS, !!tally?.value.inNextBudget),
+    schedule: cycle ? paymentSchedule(p.value, cycle.value, params, nowS) : null,
+    lameDuck: isLameDuck(p.value, cycle ? remainingWithSlack(p.value, cycle.value, params, nowS) : null, nowS, !!tally?.value.inNextBudget),
     content: contentCheck(p.value),
   };
 }

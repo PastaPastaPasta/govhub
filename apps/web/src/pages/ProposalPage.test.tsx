@@ -119,6 +119,12 @@ describe('ProposalView for a proposal with payments left', () => {
     expect(el.querySelector('[data-testid="vote-panel"]')).not.toBeNull();
   });
 
+  it('is not a lame duck when the verified chain still counts a payment possible (the page never contradicts its own summary)', async () => {
+    const { el } = await view(pshenmic, { estTime: NOW + 23 * DAY, report: report({ paid: 1, remainingEstimate: 1 }) });
+    expect(el.querySelector('[data-testid="lameduck-status"]')).toBeNull();
+    expect(el.querySelector('[data-testid="summary"]')!.textContent).toContain('1, 1 more possible');
+  });
+
   it('is not a lame duck when the next superblock is flagged to pay it', async () => {
     const { el } = await view(pshenmic, { estTime: NOW + 23 * DAY, report: report({ paid: 1, remainingEstimate: 0 }), inNextBudget: true });
     expect(el.querySelector('[data-testid="lameduck-status"]')).toBeNull();

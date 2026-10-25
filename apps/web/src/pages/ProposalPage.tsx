@@ -23,7 +23,6 @@ import { useAsync } from '../ui/hooks.ts';
 import type { Proposal, Sourced } from '../data/types.ts';
 import { formatDash, formatDate, formatDateTime, formatDuration, formatInt, shortHash, urlHost } from '../lib/format.ts';
 import { passState, perPayment, votingDeadlineTime } from '../lib/governance.ts';
-import { isLameDuck } from '../lib/lameDuck.ts';
 import { deriveRow } from '../lib/view.ts';
 import { isLowerBound } from '../verify/chain.ts';
 import { paymentsFact, thresholdFact } from '../verify/facts.ts';
@@ -158,10 +157,10 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
   // Proven data decides "in the next budget" once the badge is Verified; until then it is the tally's flag, under a lesser badge.
   const inBudget = trust.funded ?? !!t?.inNextBudget;
   const state = t && row.absYes !== null && threshold ? passState(row.absYes, threshold.value, inBudget) : null;
-  // Nothing left that can pay it: the same estimate as the list and the "N more possible" fact above (the verified chain's, once
-  // there is one), so the page never says "0 more possible" next to a passing bar.
+  // Nothing left that can pay it: the list's estimate (with its slack) and, once there is one, the verified chain's "N more possible"
+  // fact must both say so, so the page never shows "0 more possible" next to a passing bar, nor "1 payment left" above "no more".
   const payments = chain?.payments ?? null;
-  const lameDuck = isLameDuck(p, payments ? payments.remainingEstimate : sched ? sched.remaining : null, now, inBudget);
+  const lameDuck = row.lameDuck && !inBudget && (!payments || payments.remainingEstimate <= 0);
   // the verified chain's schedule once there is one (the deadline height is then proven, its time Core's own estimate)
   const untilDeadline = chain ? chain.schedule.deadlineEstTime - now : cycle ? votingDeadlineTime(cycle.value, params) - now : null;
 
@@ -205,7 +204,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
             {lameDuck ? (
               <LameDuckPageStatus
                 total={sched?.total ?? 0}
-                paid={payments ? { count: payments.paid.length, atLeast: isLowerBound(payments) } : null}
+                paid={payments ? { count: payments.paid.length, atLeast: isLowerBound(payments), firm: payments.othersComplete !== false && !payments.anchor?.weak } : null}
                 endEpoch={p.endEpoch}
                 counting={!chain && !trust.chain.error && !trust.chain.unavailable}
               />
