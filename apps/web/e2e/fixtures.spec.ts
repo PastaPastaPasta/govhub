@@ -24,8 +24,19 @@ test.describe('fixture mode', () => {
     // Infinite scroll: 12 first, the rest after scrolling.
     await expect(cards).toHaveCount(12);
     await page.locator('.sentinel').scrollIntoViewIfNeeded();
-    await expect(cards).toHaveCount(28);
+    // 28 proposals, 7 of them lame ducks (nothing left that can pay them): those wait in a collapsed section at the end.
+    await expect(cards).toHaveCount(21);
     await expect(failing).toContainText(/Needs 585 more yes/);
+    const lameToggle = page.getByTestId('toggle-lameduck');
+    await expect(lameToggle).toHaveText('Finished, still on the network (7)');
+    await expect(lameToggle).toHaveAttribute('aria-expanded', 'false');
+    await lameToggle.click();
+    await expect(cards).toHaveCount(28);
+    const pshenmic = page.locator('[data-testid="lameduck-section"] article.prow', { hasText: 'pshenmic-dev-dash-desktop-november-2026' });
+    await expect(pshenmic).toContainText('No more payments possible');
+    await expect(pshenmic).not.toContainText(/Passing by|next budget/);
+    await lameToggle.click();
+    await expect(cards).toHaveCount(21);
 
     // Open a proposal.
     await page.getByRole('link', { name: 'OrchardPay', exact: true }).click();
@@ -159,9 +170,22 @@ test.describe('fixture mode', () => {
   test('cards of duplicate names link to the hash route', async ({ page }) => {
     await gotoFixtures(page);
     await page.locator('.sentinel').scrollIntoViewIfNeeded();
+    // one of the two is a lame duck (its October payment was the only one it can get): it is in the collapsed section
     const dupLinks = page.locator('article.prow h2 a', { hasText: 'Dash-Mass-Organic-Content-Attraction' });
+    await expect(dupLinks).toHaveCount(1);
+    await page.getByTestId('toggle-lameduck').click();
     await expect(dupLinks).toHaveCount(2);
     for (const href of await dupLinks.evaluateAll((as) => as.map((a) => a.getAttribute('href')))) expect(href).toMatch(/^\/p\/h\/[0-9a-f]{64}$/);
+  });
+
+  test('a lame duck proposal page shows its outcome instead of passing, budget and deadline', async ({ page }) => {
+    await gotoFixtures(page, '/p/pshenmic-dev-dash-desktop-november-2026');
+    await expect(page.getByRole('heading', { level: 1, name: 'pshenmic-dev-dash-desktop-november-2026' })).toBeVisible();
+    const status = page.getByTestId('lameduck-status');
+    await expect(status).toContainText('No more payments are possible');
+    await expect(status).toContainText('it leaves the network on');
+    await expect(page.locator('.p-ask')).not.toContainText(/Passing|next budget|Voting closes|Voting for this payout/);
+    await expect(page.getByTestId('p-votes')).toContainText('These votes no longer affect payment.');
   });
 
   test('past proposals: empty state at the snapshot time', async ({ page }) => {

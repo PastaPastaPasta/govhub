@@ -5,6 +5,7 @@ import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { BudgetHeader } from '../ui/BudgetHeader.tsx';
 import { FailedProposalsToggle } from '../ui/HiddenToggle.tsx';
+import { LameDuckSection } from '../ui/LameDuck.tsx';
 import { ProposalCard } from '../ui/ProposalCard.tsx';
 import { ProposalTabs } from '../ui/ProposalTabs.tsx';
 import { useReveal } from '../ui/hooks.ts';
@@ -30,19 +31,37 @@ function useProfiles(ids: readonly string[]): ReadonlyMap<string, Profile> {
 export function ActivePage() {
   const { gov, activeRows, registry } = useApp();
   const [showFailed, setShowFailed] = useState(false);
+  const [showLameDucks, setShowLameDucks] = useState(false);
   const all = useMemo(() => [...activeRows.shown, ...activeRows.failed], [activeRows]);
   const rows = showFailed ? all : activeRows.shown;
-  const names = useMemo(() => countNames(all.map((r) => r.item.p.value)), [all]);
+  const lameDucks = activeRows.lameDucks;
+  const names = useMemo(() => countNames([...all, ...lameDucks].map((r) => r.item.p.value)), [all, lameDucks]);
   // 12 rows first; the rest in one go once the reader scrolls (rows are tall, so small steps would stall the observer)
   const { count, sentinel, more } = useReveal(rows.length, 40, undefined, 12);
   const shown = useMemo(() => rows.slice(0, count), [rows, count]);
-  const counts = useCommentCounts(useMemo(() => shown.map((r) => r.item.p.value.govHash), [shown]));
+  // the lame ducks are few and listed once the reader opens them; their comment counts and owners are read with the rest
+  const cards = useMemo(() => [...shown, ...lameDucks], [shown, lameDucks]);
+  const counts = useCommentCounts(useMemo(() => cards.map((r) => r.item.p.value.govHash), [cards]));
   const owners = useMemo(
-    () => new Map(shown.map(({ item: r }) => [r.p.value.govHash, r.content.ok ? urlClaimIdentity(r.p.value.url, r.p.value.name, registry.forum.claimPortals) : null])),
-    [shown, registry.forum.claimPortals],
+    () => new Map(cards.map(({ item: r }) => [r.p.value.govHash, r.content.ok ? urlClaimIdentity(r.p.value.url, r.p.value.name, registry.forum.claimPortals) : null])),
+    [cards, registry.forum.claimPortals],
   );
   const profiles = useProfiles([...owners.values()].filter((x): x is string => !!x));
   const failed = activeRows.failed.length;
+  const card = ({ item: r, check }: (typeof cards)[number]) => {
+    const owner = owners.get(r.p.value.govHash) ?? null;
+    return (
+      <ProposalCard
+        key={r.p.value.govHash}
+        row={r}
+        check={check}
+        href={proposalHref(r.p.value, names)}
+        comments={counts.get(r.p.value.govHash)}
+        urlOwner={owner}
+        ownerProfile={owner ? profiles.get(owner) : undefined}
+      />
+    );
+  };
 
   return (
     <>
@@ -64,25 +83,15 @@ export function ActivePage() {
         ) : rows.length === 0 ? (
           <p className="empty">No active proposals right now.</p>
         ) : (
-          <div className="plist">
-            {shown.map(({ item: r, check }) => {
-              const owner = owners.get(r.p.value.govHash) ?? null;
-              return (
-                <ProposalCard
-                  key={r.p.value.govHash}
-                  row={r}
-                  check={check}
-                  href={proposalHref(r.p.value, names)}
-                  comments={counts.get(r.p.value.govHash)}
-                  urlOwner={owner}
-                  ownerProfile={owner ? profiles.get(owner) : undefined}
-                />
-              );
-            })}
-          </div>
+          <div className="plist">{shown.map(card)}</div>
         )}
         <div ref={sentinel} className="sentinel" aria-hidden="true" />
         {more && <p className="muted small center">Scroll for more</p>}
+        {!more && (
+          <LameDuckSection count={lameDucks.length} open={showLameDucks} onToggle={() => setShowLameDucks((v) => !v)}>
+            {lameDucks.map(card)}
+          </LameDuckSection>
+        )}
         {!more && failed > 0 && <FailedProposalsToggle count={failed} shown={showFailed} onToggle={() => setShowFailed((v) => !v)} />}
       </section>
     </>
