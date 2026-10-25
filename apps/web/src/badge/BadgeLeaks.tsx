@@ -5,7 +5,7 @@ import type { CoreNetwork } from '../data/types.ts';
 import { BADGE_NETWORKS } from './config.ts';
 
 /** The govhub issuer's logging policy: what its operator commits to keep and not keep. */
-export const ISSUER_POLICY_URL = 'https://github.com/PastaPastaPasta/govhub/blob/main/services/issuer/README.md#what-is-stored-and-logged-logging-policy';
+const ISSUER_POLICY_URL = 'https://github.com/PastaPastaPasta/govhub/blob/main/services/issuer/README.md#what-is-stored-and-logged-logging-policy';
 
 /** "3 hours", "25 hours", "32 days" (no "about": the caller words it). */
 export const span = (blocks: number): string => {
@@ -13,7 +13,7 @@ export const span = (blocks: number): string => {
   return d >= 2 ? `${Math.round(d)} days` : `${Math.max(1, Math.round(d * 24))} hours`;
 };
 
-function PolicyLink() {
+export function PolicyLink() {
   return (
     <a href={ISSUER_POLICY_URL} target="_blank" rel="noreferrer noopener" data-testid="badge-policy-link">
       logging policy

@@ -35,6 +35,15 @@ export interface IssuerEpochAudit {
   keyProblem: string | null;
 }
 
+/** A cached audit. `dueFrom`: the first core height at which a missing report flags the issuer, and `reportDue`: whether the audit was computed at or past it (both set once computed). */
+interface AuditEntry {
+  at: number;
+  final: boolean;
+  dueFrom?: number;
+  reportDue?: boolean;
+  p: Promise<IssuerEpochAudit>;
+}
+
 export interface BadgeView {
   /** ownerId -> names of the trusted issuers that vouch for it (each issuer at most once) */
   byOwner: Map<string, string[]>;
@@ -69,8 +78,7 @@ export class BadgeReader {
   readonly #ttl: number;
   #badge: Promise<Badge> | null = null;
   readonly #keys = new Map<string, { at: number; p: Promise<KeyLookup> }>();
-  /** `dueFrom`: the first core height at which a missing report flags the issuer (set once computed) */
-  readonly #audits = new Map<string, { at: number; final: boolean; dueFrom?: number; reportDue?: boolean; p: Promise<IssuerEpochAudit> }>();
+  readonly #audits = new Map<string, AuditEntry>();
 
   constructor(o: { net: BadgeNetwork; contractId: string; query: Query; issuers: TrustedIssuer[] } & ReaderOptions) {
     this.#net = o.net;
@@ -187,7 +195,7 @@ export class BadgeReader {
     // one computed before the deadline must not stand in for one after it (a missing report flags the issuer then, SR-34).
     const sameSide = !hit || hit.dueFrom === undefined || (coreHeight >= hit.dueFrom) === hit.reportDue;
     if (hit && (hit.final || (Date.now() - hit.at < this.#ttl && sameSide))) return hit.p;
-    const entry: { at: number; final: boolean; dueFrom?: number; reportDue?: boolean; p: Promise<IssuerEpochAudit> } = { at: Date.now(), final: false, p: null as unknown as Promise<IssuerEpochAudit> };
+    const entry: AuditEntry = { at: Date.now(), final: false, p: null as unknown as Promise<IssuerEpochAudit> };
     entry.p = (async (): Promise<IssuerEpochAudit> => {
       const b = await this.#lib();
       const base = { issuer, epoch };

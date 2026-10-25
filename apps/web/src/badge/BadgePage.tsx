@@ -3,12 +3,12 @@
 // posted.
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { EPOCH_PARAMS, epochStart, PRIVACY_MODES, type EpochParams, type PrivacyMode } from '@govhub/badge';
+import { EPOCH_PARAMS, epochOf, epochStart, PRIVACY_MODES, type EpochParams, type PrivacyMode } from '@govhub/badge';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { errText, formatInt } from '../lib/format.ts';
 import { openSignIn } from '../ui/SignIn.tsx';
-import { BadgeLeaks, ISSUER_POLICY_URL, ModeDetails } from './BadgeLeaks.tsx';
+import { BadgeLeaks, ModeDetails, PolicyLink } from './BadgeLeaks.tsx';
 import { checkKeyAvailability, etaSeconds, isActive, requestWindow, type BadgeJob, type KeyAvailability } from './client.ts';
 import { useBadgeCtx } from './context.tsx';
 
@@ -150,6 +150,8 @@ export function BadgePage() {
   const issuer = enabled.find((t) => t.identityId === issuerId) ?? enabled[0];
   // D-044: which modes the issuer has keys for, from proved issuerKey reads only (nothing goes to the issuer)
   const [avail, setAvail] = useState<{ issuerId: string; av: KeyAvailability | null; error: string | null } | null>(null);
+  // checked again when the epoch changes (a new key may apply), not on every block
+  const epochNow = coreHeight === null ? null : epochOf(p, coreHeight);
   useEffect(() => {
     if (!reader || !session || !issuer) return setAvail(null);
     let live = true;
@@ -162,7 +164,7 @@ export function BadgePage() {
     return () => {
       live = false;
     };
-  }, [reader, session, issuer, net]);
+  }, [reader, session, issuer, net, epochNow]);
   const av = avail?.issuerId === issuer?.identityId ? (avail?.av ?? null) : null;
   const blocked = modeBlocked(av, privacy);
 
@@ -190,8 +192,8 @@ export function BadgePage() {
       kind: 'ok',
       text:
         j.state === 'token'
-          ? `Cancelled: the badge for epoch ${j.epoch} will not be posted, and the token and any voting key stored with it were deleted from this browser. The issuer already counted the token.`
-          : `Cancelled: the request for epoch ${j.epoch} and the voting key stored with it were deleted from this browser. Nothing more goes to the issuer for it.`,
+          ? `Cancelled: the badge for epoch ${j.epoch} is not posted, and the token and any voting key stored with it are deleted from this browser. The issuer already counted the token. (If a post was already on its way at this moment, it may still appear.)`
+          : `Cancelled: the request for epoch ${j.epoch} and the voting key stored with it are deleted from this browser. (If the request was already on its way to the issuer at this moment, the issuer may still have counted a token.)`,
     });
   };
 
@@ -202,11 +204,7 @@ export function BadgePage() {
         Masternode owners can show <span className="chip chip-mn">MN · vouched by …</span> next to their name without revealing which masternode, how many, or of what type. An issuer
         blind-signs a token for your identity after you prove control of a masternode’s <b>voting key</b>. Blind signing means the token itself does not tell the issuer which
         identity it is for; the issuer can still try to match your request to a badge by timing. How hard that is depends on the mode you choose below. The govhub issuer’s
-        operator commits to keeping no logs that could link them (
-        <a href={ISSUER_POLICY_URL} target="_blank" rel="noreferrer noopener">
-          logging policy
-        </a>
-        ).
+        operator commits to keeping no logs that could link them (<PolicyLink />).
       </p>
       <BadgeLeaks net={net} />
       {mode !== 'live' || !contractId ? (

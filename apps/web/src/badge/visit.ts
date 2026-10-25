@@ -62,18 +62,18 @@ export function noteRequestSent(storage: Store = local(), now = Date.now()): voi
  * no token request (the issuer was unreachable): it restores the previous marks, unless something newer was marked meanwhile.
  */
 export function notePrivateRequest(storage: Store = local(), now = Date.now()): () => void {
-  const prev = [PRIVATE_KEY, REQUEST_KEY].map((k) => {
+  const keys = [PRIVATE_KEY, REQUEST_KEY];
+  const prev = keys.map((k) => {
     try {
       return storage?.getItem(k) ?? null;
     } catch {
       return null;
     }
   });
-  write(storage, PRIVATE_KEY, now);
-  write(storage, REQUEST_KEY, now);
+  for (const k of keys) write(storage, k, now);
   emit();
   return () => {
-    [PRIVATE_KEY, REQUEST_KEY].forEach((k, i) => {
+    keys.forEach((k, i) => {
       try {
         if (storage?.getItem(k) !== String(now)) return; // newer mark: keep it
         const old = prev[i];
