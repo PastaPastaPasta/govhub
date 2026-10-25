@@ -12,7 +12,13 @@ export interface TestMnKey {
   wif: string;
 }
 
-export function testnetMnKeys(): TestMnKey[] {
+/** Masternodes the owner uses for other work: never used by govhub tests (dropped from testnetMnKeys). */
+export const RESERVED_TESTNET_MNS: ReadonlySet<string> = new Set(['masternode-27', 'masternode-41', 'masternode-43', 'hp-masternode-23']);
+
+/** The usable test keys: every yml masternode except the reserved ones. */
+export const testnetMnKeys = (): TestMnKey[] => allTestnetMnKeys().filter((k) => !RESERVED_TESTNET_MNS.has(k.name));
+
+function allTestnetMnKeys(): TestMnKey[] {
   const text = readFileSync(join(homedir(), 'workspace/dash-network-configs/testnet.yml'), 'utf8');
   const out: TestMnKey[] = [];
   let name: string | null = null;
