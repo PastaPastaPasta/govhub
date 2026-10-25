@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type DependencyList } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type DependencyList } from 'react';
 import { useApp, type Load } from '../app/context.tsx';
 import type { Proposal } from '../data/types.ts';
 import type { ChainReport } from '../verify/chain.ts';
@@ -50,17 +50,30 @@ export function useReveal(total: number, step = 12, onExhausted?: () => void, in
   return { count: Math.min(count, total), sentinel: ref, more: count < total };
 }
 
+/**
+ * A result of an async run, tagged with the run it belongs to: a result is only ever returned for the run (proposal, source, Re-check
+ * nonce...) that produced it, never for a newer one in the render before the newer run's effect has reset the state.
+ */
+export function useRunResult<T>(run: object): [T | null, (r: T) => void, () => void] {
+  const [held, setHeld] = useState<{ run: object; value: T } | null>(null);
+  const set = useCallback((value: T) => setHeld({ run, value }), [run]);
+  const clear = useCallback(() => setHeld(null), []);
+  return [held && held.run === run ? held.value : null, set, clear];
+}
+
 /** Runs the collateral check in the verification worker whenever the proposal changes (or `nonce` does: "Re-check"). */
 export function useCollateralCheck(p: Proposal | undefined, nonce = 0) {
   const { source } = useApp();
-  const [verdict, setVerdict] = useState<CollateralVerdict | null>(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- a new identity per run
+  const run = useMemo(() => ({}), [p, source, nonce]);
+  const [verdict, setVerdict, clearVerdict] = useRunResult<CollateralVerdict>(run);
+  const [error, setError, clearError] = useRunResult<string>(run);
   const [progress, setProgress] = useState('');
-  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     if (!p) return;
     let live = true;
-    setVerdict(null);
-    setError(null);
+    clearVerdict();
+    clearError();
     setProgress('');
     runVerification({ kind: 'collateral', proposal: p, dapi: source.dapiDescriptor() }, (m) => live && setProgress(m)).then(
       (r) => live && setVerdict(r.verdict),
@@ -69,7 +82,7 @@ export function useCollateralCheck(p: Proposal | undefined, nonce = 0) {
     return () => {
       live = false;
     };
-  }, [p, source, nonce]);
+  }, [p, source, nonce, setVerdict, setError, clearVerdict, clearError]);
   return { verdict, progress, error };
 }
 
@@ -81,19 +94,21 @@ export type CollateralCheck = ReturnType<typeof useCollateralCheck>;
  */
 export function useChainReport(p: Proposal | undefined, verdict: CollateralVerdict | null, nonce = 0) {
   const { source, gov } = useApp();
-  const [report, setReport] = useState<ChainReport | null>(null);
-  const [progress, setProgress] = useState('');
-  const [error, setError] = useState<string | null>(null);
   // only for a proposal whose content and collateral checked out: payments are matched by its committed address and amount
   const from = verdict?.ok && verdict.chain?.anchored ? verdict.chain.height : null;
   const live = source.dapiDescriptor().kind === 'live';
   // payments to the same address and amount may belong to another proposal: wait for the active list, then add past ones
   const activeReady = !gov.active.loading;
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- a new identity per run
+  const run = useMemo(() => ({}), [p, source, from, live, activeReady, nonce]);
+  const [report, setReport, clearReport] = useRunResult<ChainReport>(run);
+  const [error, setError, clearError] = useRunResult<string>(run);
+  const [progress, setProgress] = useState('');
   useEffect(() => {
     if (!p || !live || from === null || !activeReady) return;
     let on = true;
-    setReport(null);
-    setError(null);
+    clearReport();
+    clearError();
     void (async () => {
       const { others, complete } = await listedProposals(source, gov.active, p);
       const twins = others.filter((o) => o.govHash !== p.govHash).map(({ govHash, paymentAddress, paymentAmount, startEpoch, endEpoch }) => ({ govHash, paymentAddress, paymentAmount, startEpoch, endEpoch }));

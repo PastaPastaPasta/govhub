@@ -2687,7 +2687,8 @@ li[data-status='now'] > .fund-dot {
 }
 
 /* ---- network profiles (Settings) --------------------------------------------------------------- */
-.form fieldset.profile-switch {
+.form fieldset.profile-switch,
+.form fieldset.theme-switch {
   display: inline-flex;
   flex-wrap: wrap;
   gap: 0;
@@ -2696,7 +2697,8 @@ li[data-status='now'] > .fund-dot {
   background: transparent;
   border-radius: var(--radius-m);
 }
-.form .profile-switch label {
+.form .profile-switch label,
+.form .theme-switch label {
   display: inline-flex;
   align-items: baseline;
   gap: 0;
@@ -2705,7 +2707,8 @@ li[data-status='now'] > .fund-dot {
   color: var(--ink-2);
   cursor: pointer;
 }
-.form .profile-switch label.on {
+.form .profile-switch label.on,
+.form .theme-switch label.on {
   color: var(--ink);
 }
 .form .profile-switch label.disabled {

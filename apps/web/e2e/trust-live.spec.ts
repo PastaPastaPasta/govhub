@@ -2,7 +2,7 @@
 // page runs every check by itself and its one badge settles on "Verified", or on "Partly verified" with the reason of the first
 // check that is not proven. Never "Couldn't verify" or "Failed verification" for a real proposal. Records timings to
 // trust-live-results.json; with SCREENSHOTS=1 also screenshots and a video of the badge settling.
-import { writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 import { cspViolations, watchPage } from './helpers.ts';
 
@@ -10,7 +10,12 @@ test.skip(!process.env.GOVHUB_LIVE, 'set GOVHUB_LIVE=1 to run against live Platf
 if (process.env.SCREENSHOTS) test.use({ video: { mode: 'on', size: { width: 1280, height: 800 } }, viewport: { width: 1280, height: 800 } });
 
 const DCG = '91808ffd72336fd89bcf5f0b3377b3c73a9b5873da8ac9419b59ba8c92e56640'; // DCG-Operations-Aug-Nov-26: passing, so the funding order runs too
-const results: Record<string, unknown> = {};
+const RESULTS = new URL('./trust-live-results.json', import.meta.url);
+/** The two tests run in parallel workers: each merges its own entry into the file. */
+function record(key: string, value: unknown) {
+  const old = existsSync(RESULTS) ? (JSON.parse(readFileSync(RESULTS, 'utf8')) as Record<string, unknown>) : {};
+  writeFileSync(RESULTS, JSON.stringify({ ...old, ranAt: new Date().toISOString(), [key]: value }, null, 2) + '\n');
+}
 
 async function settle(page: Page, govHash: string) {
   const t0 = Date.now();
@@ -59,7 +64,7 @@ test('@live trust badge on Dev settles on Verified or Partly verified with its r
   const r = await settle(page, DCG);
   console.log(`live: Dev ${r.level} in ${r.ms} ms ${JSON.stringify(r.states)}${r.reason ? `: ${r.reason}` : ''}`);
   await expectSettled(r);
-  results.dev = { proposal: 'DCG-Operations-Aug-Nov-26', level: r.level, reason: r.reason, states: r.states, settleMs: r.ms };
+  record('dev', { proposal: 'DCG-Operations-Aug-Nov-26', level: r.level, reason: r.reason, states: r.states, settleMs: r.ms });
   if (process.env.SCREENSHOTS) await page.screenshot({ path: 'screenshots/after/live-dev-drawer-light-desktop.png' });
   // the header's chain status agrees
   await page.keyboard.press('Escape');
@@ -87,8 +92,7 @@ test('@live trust badge on Testnet settles on Verified or Partly verified with i
   await expectSettled(r);
   // testnet is only "Verified" through quorum-proven ChainLocks; on proof of work alone it must say so
   if (r.level === 'partial' && r.states.chain === 'reported') expect(r.reason).toMatch(/Testnet|proof of work|not verified/);
-  results.testnet = { proposal: p.name ?? p.govHash, level: r.level, reason: r.reason, states: r.states, settleMs: r.ms };
+  record('testnet', { proposal: p.name ?? p.govHash, level: r.level, reason: r.reason, states: r.states, settleMs: r.ms });
   if (process.env.SCREENSHOTS) await page.screenshot({ path: 'screenshots/after/live-testnet-drawer-light-desktop.png' });
   expect(errors).toEqual([]);
-  writeFileSync(new URL('./trust-live-results.json', import.meta.url), JSON.stringify({ ranAt: new Date().toISOString(), ...results }, null, 2) + '\n');
 });

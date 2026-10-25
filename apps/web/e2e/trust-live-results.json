@@ -1,0 +1,16 @@
+{
+  "ranAt": "2026-10-25T00:35:09.257Z",
+  "testnet": {
+    "proposal": "govhub-mn-voting-test-2026-10-24",
+    "level": "verified",
+    "reason": null,
+    "states": {
+      "content": "proven",
+      "collateral": "proven",
+      "chain": "proven",
+      "votes": "proven",
+      "funding": "proven"
+    },
+    "settleMs": 5443
+  }
+}

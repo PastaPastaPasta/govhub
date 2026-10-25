@@ -24,6 +24,16 @@ export interface Run<T> {
 }
 const idle = <T,>(): Run<T> => ({ result: null, error: null, progress: '', running: false });
 
+/**
+ * A run's state, tagged with the run (an object identity per set of inputs): a newer run never sees an older run's result, not even in
+ * the render before its effect starts it. That keeps a stale recount out of the aggregate (and out of the cards' cache).
+ */
+function useTaggedRun<T>(run: object): [Run<T>, (f: (r: Run<T>) => Run<T>) => void] {
+  const [held, setHeld] = useState<{ run: object; state: Run<T> }>({ run, state: idle<T>() });
+  const set = useCallback((f: (r: Run<T>) => Run<T>) => setHeld((h) => ({ run, state: f(h.run === run ? h.state : idle<T>()) })), [run]);
+  return [held.run === run ? held.state : idle<T>(), set];
+}
+
 export interface ProposalTrust {
   aggregate: Aggregate;
   collateral: CollateralCheck;
@@ -61,50 +71,55 @@ export function useProposalTrust(p: Proposal, row: Row, talliesLoading: boolean)
   const targetsKey = targets.map((t) => `${t.name}@${t.tally.asOfHeight}`).join(',');
 
   // ---- the vote recount, after the collateral check (so the anchored chain is cached for it)
-  const [votes, setVotes] = useState<Run<VotesDone>>(idle);
   const collateralDone = !!collateral.verdict || !!collateral.error;
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- a new identity per run
+  const votesRun = useMemo(() => ({}), [p.govHash, source, mode, collateralDone, talliesLoading, targetsKey, nonce, !!bridge]);
+  const [votes, setVotes] = useTaggedRun<VotesDone>(votesRun);
   useEffect(() => {
     if (!bridge || !collateralDone || talliesLoading || targets.length === 0) return;
     let on = true;
-    setVotes({ result: null, error: null, progress: 'Recounting the signed votes', running: true });
+    setVotes(() => ({ result: null, error: null, progress: 'Recounting the signed votes', running: true }));
     runVerification(
       { kind: 'votes', govHash: p.govHash, targets, bridge, dapi: source.dapiDescriptor(), network: source.coreNetwork, now: source.now(), crossCheckSml: mode === 'live' },
       (m) => on && setVotes((v) => ({ ...v, progress: m })),
     ).then(
-      (result) => on && setVotes({ result, error: null, progress: '', running: false }),
-      (e: Error) => on && setVotes({ result: null, error: e.message, progress: '', running: false }),
+      (result) => on && setVotes(() => ({ result, error: null, progress: '', running: false })),
+      (e: Error) => on && setVotes(() => ({ result: null, error: e.message, progress: '', running: false })),
     );
     return () => {
       on = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- targetsKey stands for targets
-  }, [p.govHash, source, mode, collateralDone, talliesLoading, targetsKey, nonce, !!bridge]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- votesRun stands for its inputs
+  }, [votesRun]);
 
   // ---- the funding order, when it decides the funding status
   const netYes = provenNetYes(votes.result, shown);
   const nowS = source.now();
   const active = p.endEpoch > nowS;
   const wantRanking = needsRanking({ active, netYes, report: chain.report });
-  const [ranking, setRanking] = useState<Run<RankingDone>>(idle);
   const activeList = useMemo(() => (gov.active.data ?? []).map((x) => x.value).filter((x) => checks.state(x).status !== 'failed'), [gov.active.data, checks]);
+  const listKey = activeList.map((x) => x.govHash).join(',');
   const [forceRanking, setForceRanking] = useState(0);
   const forced = useRef(0);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- a new identity per run
+  const rankingRun = useMemo(() => ({}), [wantRanking, source, listKey, forceRanking, !!bridge]);
+  const [ranking, setRanking] = useTaggedRun<RankingDone>(rankingRun);
   useEffect(() => {
     if (!wantRanking || !bridge) return;
     let on = true;
     // only the run right after "Re-check" skips the shared result
     const force = forced.current !== forceRanking;
     forced.current = forceRanking;
-    setRanking({ result: null, error: null, progress: 'Ranking every active proposal', running: true });
+    setRanking(() => ({ result: null, error: null, progress: 'Ranking every active proposal', running: true }));
     sharedRanking(source, activeList, { force, onProgress: (m) => on && setRanking((r) => ({ ...r, progress: m })) }).then(
-      (result) => on && setRanking({ result, error: null, progress: '', running: false }),
-      (e: Error) => on && setRanking({ result: null, error: e.message, progress: '', running: false }),
+      (result) => on && setRanking(() => ({ result, error: null, progress: '', running: false })),
+      (e: Error) => on && setRanking(() => ({ result: null, error: e.message, progress: '', running: false })),
     );
     return () => {
       on = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- the list matters by its members
-  }, [wantRanking, source, activeList.map((x) => x.govHash).join(','), forceRanking, !!bridge]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- rankingRun stands for its inputs
+  }, [rankingRun]);
 
   const { agg, funded } = useMemo(() => {
     const content = contentComponent(contentFailure(p));
@@ -137,8 +152,6 @@ export function useProposalTrust(p: Proposal, row: Row, talliesLoading: boolean)
   const recheck = useCallback(() => {
     setNonce((n) => n + 1);
     setForceRanking((n) => n + 1);
-    setVotes(idle);
-    setRanking(idle);
   }, []);
 
   return { aggregate: agg, collateral, chain, votes, ranking: wantRanking ? ranking : null, funded, shown, targets, recheck };
