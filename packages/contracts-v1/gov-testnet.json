@@ -1,0 +1,120 @@
+{
+  "proposal": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": true,
+    "transferable": 0,
+    "creationRestrictionMode": 1,
+    "signatureSecurityLevelRequirement": 2,
+    "indices": [
+      {"name": "byGovHash", "unique": true, "properties": [{"govHash": "asc"}]},
+      {"name": "byEndEpoch", "properties": [{"endEpoch": "asc"}]},
+      {"name": "byNameCreated", "properties": [{"name": "asc"}, {"$createdAt": "asc"}]}
+    ],
+    "properties": {
+      "govHash": {"type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": 0},
+      "parentHash": {"type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": 1},
+      "revision": {"type": "integer", "minimum": 0, "maximum": 4294967295, "position": 2},
+      "time": {"type": "integer", "minimum": 0, "maximum": 9007199254740991, "position": 3},
+      "dataHex": {"type": "string", "minLength": 2, "maxLength": 1024, "position": 4},
+      "name": {"type": "string", "minLength": 1, "maxLength": 40, "pattern": "^[-_a-zA-Z0-9]{1,40}$", "position": 5},
+      "url": {"type": "string", "minLength": 1, "maxLength": 512, "position": 6},
+      "paymentAddress": {"type": "string", "minLength": 26, "maxLength": 64, "position": 7},
+      "paymentAmount": {"type": "integer", "minimum": 0, "maximum": 2100000000000000, "position": 8},
+      "startEpoch": {"type": "integer", "minimum": 0, "maximum": 9007199254740991, "position": 9},
+      "endEpoch": {"type": "integer", "minimum": 0, "maximum": 9007199254740991, "position": 10},
+      "collateralTxid": {"type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": 11},
+      "collateralHeight": {"type": "integer", "minimum": 0, "maximum": 4294967295, "position": 12}
+    },
+    "required": ["$createdAt", "govHash", "parentHash", "revision", "time", "dataHex", "name", "url", "paymentAddress", "paymentAmount", "startEpoch", "endEpoch", "collateralTxid", "collateralHeight"],
+    "additionalProperties": false
+  },
+  "tally": {
+    "type": "object",
+    "documentsMutable": true,
+    "canBeDeleted": true,
+    "transferable": 0,
+    "creationRestrictionMode": 1,
+    "signatureSecurityLevelRequirement": 2,
+    "indices": [
+      {"name": "byGovHash", "unique": true, "properties": [{"govHash": "asc"}]}
+    ],
+    "properties": {
+      "govHash": {"type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": 0},
+      "asOfHeight": {"type": "integer", "minimum": 0, "maximum": 4294967295, "position": 1},
+      "yesWeighted": {"type": "integer", "minimum": 0, "maximum": 4294967295, "position": 2},
+      "noWeighted": {"type": "integer", "minimum": 0, "maximum": 4294967295, "position": 3},
+      "abstainWeighted": {"type": "integer", "minimum": 0, "maximum": 4294967295, "position": 4},
+      "yesCount": {"type": "integer", "minimum": 0, "maximum": 4294967295, "position": 5},
+      "noCount": {"type": "integer", "minimum": 0, "maximum": 4294967295, "position": 6},
+      "abstainCount": {"type": "integer", "minimum": 0, "maximum": 4294967295, "position": 7},
+      "voteSetHash": {"type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": 8},
+      "rank": {"type": "integer", "minimum": 0, "maximum": 4294967295, "position": 9},
+      "inNextBudget": {"type": "boolean", "position": 10},
+      "margin": {"type": "integer", "minimum": -2147483648, "maximum": 2147483647, "position": 11}
+    },
+    "required": ["govHash", "asOfHeight", "yesWeighted", "noWeighted", "abstainWeighted", "yesCount", "noCount", "abstainCount", "voteSetHash", "rank", "inNextBudget", "margin"],
+    "additionalProperties": false
+  },
+  "talliesSet": {
+    "type": "object",
+    "documentsMutable": true,
+    "canBeDeleted": true,
+    "transferable": 0,
+    "creationRestrictionMode": 1,
+    "signatureSecurityLevelRequirement": 2,
+    "indices": [
+      {"name": "byPage", "unique": true, "properties": [{"page": "asc"}]}
+    ],
+    "properties": {
+      "page": {"type": "integer", "minimum": 0, "maximum": 255, "position": 0},
+      "asOfHeight": {"type": "integer", "minimum": 0, "maximum": 4294967295, "position": 1},
+      "b0": {"type": "array", "byteArray": true, "minItems": 3, "maxItems": 5120, "position": 2},
+      "b1": {"type": "array", "byteArray": true, "minItems": 1, "maxItems": 5120, "position": 3},
+      "b2": {"type": "array", "byteArray": true, "minItems": 1, "maxItems": 5120, "position": 4}
+    },
+    "required": ["page", "asOfHeight", "b0"],
+    "additionalProperties": false
+  },
+  "cycle": {
+    "type": "object",
+    "documentsMutable": true,
+    "canBeDeleted": true,
+    "transferable": 0,
+    "creationRestrictionMode": 1,
+    "signatureSecurityLevelRequirement": 2,
+    "indices": [
+      {"name": "bySuperblock", "unique": true, "properties": [{"superblockHeight": "asc"}]}
+    ],
+    "properties": {
+      "superblockHeight": {"type": "integer", "minimum": 0, "maximum": 4294967295, "position": 0},
+      "budget": {"type": "integer", "minimum": 0, "maximum": 2100000000000000, "position": 1},
+      "allocated": {"type": "integer", "minimum": 0, "maximum": 2100000000000000, "position": 2},
+      "votingDeadlineHeight": {"type": "integer", "minimum": 0, "maximum": 4294967295, "position": 3},
+      "estTime": {"type": "integer", "minimum": 0, "maximum": 9007199254740991, "position": 4},
+      "validWeighted": {"type": "integer", "minimum": 0, "maximum": 4294967295, "position": 5},
+      "paid": {"type": "integer", "minimum": 0, "maximum": 2100000000000000, "position": 6}
+    },
+    "required": ["superblockHeight", "budget", "allocated", "votingDeadlineHeight", "estTime", "validWeighted", "paid"],
+    "additionalProperties": false
+  },
+  "claimAttestation": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": true,
+    "transferable": 0,
+    "creationRestrictionMode": 1,
+    "signatureSecurityLevelRequirement": 2,
+    "indices": [
+      {"name": "byGovHash", "properties": [{"govHash": "asc"}]}
+    ],
+    "properties": {
+      "govHash": {"type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": 0},
+      "identityId": {"type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "contentMediaType": "application/x.dash.dpp.identifier", "position": 1},
+      "method": {"type": "integer", "minimum": 1, "maximum": 255, "position": 2},
+      "note": {"type": "string", "minLength": 1, "maxLength": 500, "position": 3}
+    },
+    "required": ["govHash", "identityId", "method"],
+    "additionalProperties": false
+  }
+}

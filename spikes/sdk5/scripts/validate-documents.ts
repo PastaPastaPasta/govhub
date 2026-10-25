@@ -17,7 +17,7 @@ import { contractsDir, errText, saveResult } from './lib.ts';
 
 const OWNER = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
 const OWNER_BYTES = Uint8Array.from(Buffer.from('11'.repeat(32), 'hex'));
-const NAMES = ['gov', 'forum', 'badge', 'mod'] as const;
+const NAMES = ['gov', 'gov-testnet', 'forum', 'badge', 'mod'] as const;
 const mods = { 'wasm-dpp 4.1.1': await loadDpp4(), 'wasm-dpp 5.0.0-rc.8': await loadDpp5() } as Record<string, any>;
 const engines: { label: string; mod: any; version: number }[] = [
   { label: '4.1.1 @PV13', mod: mods['wasm-dpp 4.1.1'], version: 13 },

@@ -42,6 +42,16 @@ export const talliesFor = (govHashesHex: readonly string[]): DocQuery =>
 export const tallyByHash = (govHashHex: string): DocQuery =>
   checked({ documentTypeName: 'tally', where: [['govHash', '==', hexToB64(govHashHex)]] });
 
+/** Most `talliesSet` pages a reader asks for (161 proposals each; one page holds every active mainnet proposal). */
+export const TALLY_SET_PAGES = 8;
+
+/** G8: every page of the packed tally set, page 0 first. */
+export const tallySetPages = (): DocQuery =>
+  checked({ documentTypeName: 'talliesSet', where: [['page', '>=', 0]], orderBy: [['page', 'asc']], limit: TALLY_SET_PAGES });
+
+/** G8b: one page of the packed tally set (the bridge's lookup). */
+export const tallySetPage = (page: number): DocQuery => checked({ documentTypeName: 'talliesSet', where: [['page', '==', page]] });
+
 /** G6: latest cycles, highest superblock first. */
 export const latestCycles = (limit = 3): DocQuery =>
   checked({ documentTypeName: 'cycle', where: [['superblockHeight', '>', 0]], orderBy: [['superblockHeight', 'desc']], limit });

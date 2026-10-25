@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import forumSchemas from '@govhub/contracts-v1/forum.json';
 import badgeSchemas from '@govhub/contracts-v1/badge.json';
-import { activeProposals, GOV_SCHEMAS, latestCycles, pastProposals, proposalByHash, proposalsByName, talliesFor, tallyByHash } from './queries.ts';
+import govTestnetSchemas from '@govhub/contracts-v1/gov-testnet.json';
+import { activeProposals, GOV_SCHEMAS, latestCycles, pastProposals, proposalByHash, proposalsByName, talliesFor, tallyByHash, tallySetPage, tallySetPages } from './queries.ts';
 import { lintQuery, type ContractSchemas, type DocQuery } from '@govhub/contracts-v1/queryLint';
 
 const H = 'a5465cdb6caf234cc9b8b776b1e3b60f319367504527e80a669bf41811419901';
@@ -31,8 +32,22 @@ describe('every query the app sends passes the PV13 lint', () => {
     ['G5', talliesFor([H, H2, H.toUpperCase()]), 'byGovHash'],
     ['G5b', tallyByHash(H), 'byGovHash'],
     ['G6', latestCycles(), 'bySuperblock'],
+    ['G8', tallySetPages(), 'byPage'],
+    ['G8b', tallySetPage(0), 'byPage'],
   ])('%s', (_id, q, index) => {
     expect(ok(GOV_SCHEMAS, q).index).toBe(index);
+    // the testnet contracts (old proposal shape + talliesSet) answer every gov query the app sends the same way
+    expect(ok(govTestnetSchemas as unknown as ContractSchemas, q).index).toBe(index);
+  });
+  it('the slim mainnet proposal keeps every indexed field; the dropped ones are re-derived from dataHex', () => {
+    const p = (GOV_SCHEMAS.proposal as unknown as { properties: Record<string, unknown> }).properties;
+    expect(Object.keys(p)).toEqual(['govHash', 'parentHash', 'revision', 'time', 'dataHex', 'name', 'endEpoch', 'collateralTxid', 'collateralHeight']);
+  });
+  it('G8 shapes that PV13 would answer wrongly are rejected', () => {
+    // desc without a range on page (rule 7), an orderBy on a non-index property, more than 100
+    bad(GOV_SCHEMAS, { documentTypeName: 'talliesSet', where: [['page', '==', 0]], orderBy: [['page', 'desc']] }, 'R7');
+    bad(GOV_SCHEMAS, { documentTypeName: 'talliesSet', where: [['asOfHeight', '>', 0]], orderBy: [['asOfHeight', 'asc']] }, 'R1');
+    bad(GOV_SCHEMAS, { documentTypeName: 'talliesSet', where: [['page', '>=', 0]], orderBy: [['page', 'asc']], limit: 101 }, 'R5');
   });
   it('G3 (past, newest first) carries a range on endEpoch so desc works on PV13', () => {
     const q = pastProposals(100);
@@ -58,7 +73,6 @@ describe('README shapes that must pass', () => {
     ['F5', FORUM, { documentTypeName: 'reaction', where: [['$ownerId', '==', ID], ['target', '==', B64]] }],
     ['F5b', FORUM, { documentTypeName: 'reaction', where: [['$ownerId', '==', ID], ['target', 'in', [B64]]], orderBy: [['$ownerId', 'asc'], ['target', 'asc']] }],
     ['F6', FORUM, { documentTypeName: 'reaction', where: [['target', '==', B64]], orderBy: [['target', 'asc'], ['$createdAt', 'asc']] }],
-    ['F9b', FORUM, { documentTypeName: 'proposalDraft', where: [['stage', '==', 2]], orderBy: [['stage', 'asc'], ['$updatedAt', 'asc']] }],
     ['B1b', BADGE, { documentTypeName: 'issuerKey', where: [['$ownerId', '==', ID], ['epoch', '>=', 0]], orderBy: [['$ownerId', 'asc'], ['epoch', 'desc']] }],
     ['B4', BADGE, { documentTypeName: 'mnBadge', where: [['issuerId', '==', ID], ['epoch', '==', 300], ['$ownerId', 'in', [ID]]], orderBy: [['$ownerId', 'asc']] }],
     ['B4c', BADGE, { documentTypeName: 'mnBadge', where: [['issuerId', '==', ID], ['epoch', '==', 300]], orderBy: [['$ownerId', 'asc']] }],

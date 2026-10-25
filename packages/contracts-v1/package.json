@@ -6,6 +6,7 @@
   "type": "module",
   "exports": {
     "./gov.json": "./gov.json",
+    "./gov-testnet.json": "./gov-testnet.json",
     "./forum.json": "./forum.json",
     "./badge.json": "./badge.json",
     "./mod.json": "./mod.json",
