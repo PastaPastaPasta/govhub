@@ -288,8 +288,8 @@ export class World {
     return { status: r.status, headers: r.headers, body: (await r.json()) as any };
   }
 
-  async get(path: string, headers: Record<string, string> = {}) {
-    const r = await this.app.request(path, { headers });
+  async get(path: string) {
+    const r = await this.app.request(path);
     return { status: r.status, headers: r.headers, body: (await r.json()) as any };
   }
 

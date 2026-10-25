@@ -21,7 +21,7 @@ describe.each(SCHEMES)('votes API (%s)', (network) => {
     expect(r.body.id).not.toBe(r.body.voteHash);
 
     const id = r.body.id as string;
-    expect((await w.get(`/v1/votes/${id}`)).body).toEqual({ id, voteHash: r.body.voteHash, status: 'held', releaseAt: T0, broadcastAt: null, confirmedAt: null, attempts: 0, lastError: null, nextAttemptAt: T0, holdReason: 'release-time', sameAsCurrent: false });
+    expect((await w.get(`/v1/votes/${id}`)).body).toEqual({ id, voteHash: r.body.voteHash, status: 'held', releaseAt: T0, broadcastAt: null, confirmedAt: null, attempts: 0, lastError: null, nextAttemptAt: T0, holdReason: 'release-time', sameAsCurrent: false, maybeSent: false });
 
     await w.broadcaster.tickBroadcast();
     expect(w.core.count('voteraw')).toBe(1);
@@ -235,27 +235,6 @@ describe.each(SCHEMES)('votes API (%s)', (network) => {
     expect(later.body).toMatchObject({ id: first.body.id, status: 'broadcast' });
     expect(w.store.db.prepare('SELECT COUNT(*) n FROM votes').get()).toEqual({ n: 1 });
     expect(w.core.count('voteraw')).toBe(1);
-  });
-
-  it('GET /v1/votes/by-hash/:voteHash: the record and relay id of a vote whose POST answer was lost; 404, 400 and the IP limit', async () => {
-    const w = world({ RATE_IP_PER_MIN: '4', CLIENT_IP_HEADER: 'X-Test-IP' });
-    const mn = w.mn();
-    const gov = w.proposal();
-    const body = w.voteBody(mn, { govHash: gov });
-    const voteHash = w.voteHashOf(mn, gov, 'yes', T0);
-    const hdr = { 'x-test-ip': '203.0.113.20' };
-    expect((await w.get(`/v1/votes/by-hash/${voteHash}`, hdr)).body).toMatchObject({ code: 'unknown-vote' });
-    const first = await w.post('/v1/votes', body, { 'x-test-ip': '203.0.113.21' }); // the client never sees this answer
-    const found = await w.get(`/v1/votes/by-hash/${voteHash.toUpperCase()}`, hdr);
-    expect(found.status).toBe(200);
-    expect(found.body).toEqual((await w.get(`/v1/votes/${first.body.id}`)).body);
-    expect(found.body).toMatchObject({ id: first.body.id, voteHash, status: 'held' });
-    await w.broadcaster.tickBroadcast();
-    expect((await w.get(`/v1/votes/by-hash/${voteHash}`, hdr)).body).toMatchObject({ id: first.body.id, status: 'broadcast' });
-    expect((await w.get('/v1/votes/by-hash/xyz', hdr)).body).toMatchObject({ code: 'bad-request' });
-    const limited = await w.get(`/v1/votes/by-hash/${voteHash}`, hdr);
-    expect(limited.status).toBe(429);
-    expect((await w.app.request(`/v1/votes/by-hash/${voteHash}`, { method: 'POST' })).status).toBe(405);
   });
 
   it('replaces a held vote with a later one, and refuses an earlier or equal one (later-vote-held)', async () => {

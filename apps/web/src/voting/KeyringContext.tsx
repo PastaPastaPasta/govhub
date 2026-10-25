@@ -821,7 +821,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
           // 409 not-held: only sending / broadcast / confirmed mean the vote went (or is going) out; failed, superseded and
           // cancelled are dead. 409 maybe-broadcast: the relay may already have put it in Core, so it counts as sent.
           if (e instanceof RelayError && e.status === 409) {
-            if (['sending', 'maybe-broadcast', 'broadcast', 'confirmed'].includes(e.voteStatus ?? '')) sent = true;
+            if (e.code === 'maybe-broadcast' || ['sending', 'maybe-broadcast', 'broadcast', 'confirmed'].includes(e.voteStatus ?? '')) sent = true;
             continue;
           }
           firstError ??= e;

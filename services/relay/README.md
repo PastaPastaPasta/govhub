@@ -41,9 +41,10 @@ What the relay does to keep that exposure small:
   id order, then `VACUUM`), and its `-wal` file goes away.
 
 The id returned by `POST /v1/votes` (16 random bytes), not the vote hash, is the handle for status and cancel. A signed vote
-is public once broadcast, so a vote hash is not a secret; cancelling needs the voting key regardless. A client whose
-`POST /v1/votes` timed out can look its vote up by hash (`GET /v1/votes/by-hash/:voteHash`); that lookup is rate-limited per
-IP like the POSTs, because anyone who guesses a held vote (masternode, proposal, outcome, time) can compute its hash.
+is public once broadcast, so a vote hash is not a secret; cancelling needs the voting key regardless. There is deliberately no
+lookup by vote hash: a vote hash can be computed from public data (masternode, proposal, outcome, a guessed time), so such a
+lookup would let anyone confirm that a vote is held. A client whose `POST /v1/votes` timed out re-sends the same signed vote
+instead: a vote whose hash is already stored returns 200 with the stored receipt (`id`, `status`), in any state.
 
 ### Abuse resistance
 
@@ -133,9 +134,8 @@ has `X-Content-Type-Options: nosniff`, every POST body is limited to 4096 bytes 
 | | |
 |---|---|
 | `POST /v1/votes` | submit a signed funding vote → 202 `{id, voteHash, status: "held", releaseAt}` (200 with the stored record if this exact vote is already known) |
-| `POST /v1/votes/cancel` | `{id, sig}` → 200 `{id, status: "cancelled"}`; 409 `maybe-broadcast` (with a `reason` to show) when an earlier attempt may have reached Core; 409 `not-held` once it left the held state otherwise |
-| `GET /v1/votes/:id` | `{id, voteHash, status, releaseAt, broadcastAt, confirmedAt, attempts, lastError, nextAttemptAt, holdReason, sameAsCurrent}` |
-| `GET /v1/votes/by-hash/:voteHash` | the same record by vote hash (for a client whose POST timed out); 404 `unknown-vote`; rate-limited per IP |
+| `POST /v1/votes/cancel` | `{id, sig}` → 200 `{id, status: "cancelled"}`; 409 `maybe-broadcast` (with `status` and a `reason` to show) when an earlier attempt may have reached Core (`maybeSent`); 409 `not-held` once it left the held state otherwise |
+| `GET /v1/votes/:id` | `{id, voteHash, status, releaseAt, broadcastAt, confirmedAt, attempts, lastError, nextAttemptAt, holdReason, sameAsCurrent, maybeSent}` |
 | `GET /v1/status` | `{service, version, network, core: {reachable, height}, held, proposalSubmit}`, 200 whenever the process serves |
 | `POST /v1/proposals/submit` | `{network, parentHash: "0", revision: 1, time, dataHex, collateralTxid}` → `{govHash, result}` |
 
@@ -217,8 +217,10 @@ From Dash Core `governance/object.cpp` `ProcessVote`, `governance/vote.cpp` `IsV
   answers "already known" and the vote becomes `broadcast`). Clients must accept `sending` as a transient status.
 - `maybe-broadcast`: waiting to be sent again, like `held` (same `holdReason`, `nextAttemptAt`, retries and limits), but an
   earlier attempt may already have reached Core: voteraw got no answer, the relay restarted mid-call, or the vote was broadcast
-  and never showed up (`not-visible`, re-broadcast). A vote never goes from here back to `held`, and a cancel is refused with
-  409 `maybe-broadcast` and a `reason` the client can show, so no client reports "cancelled" for a vote that may count.
+  and never showed up (`not-visible`, re-broadcast). A vote never goes from here back to `held`. `maybeSent` stays true when
+  such a vote later fails, and a cancel is refused with 409 `maybe-broadcast` (the vote's `status` and a `reason` the client
+  can show) whenever the flag is set and the vote was not superseded, so no client reports "cancelled" for a vote that may
+  count. A row left in `sending` by a crash comes back with `lastError: core-error`.
 - `broadcast`: `voteraw` answered "Voted successfully", or Core said it already has the vote (empty "Error voting : " /
   "Already known valid vote"; the confirmer then decides `confirmed`, `superseded` or a re-broadcast). The confirmer checks `gobject getcurrentvotes <govHash> <txid> <n>` every 30 s.
 - `confirmed`, `superseded`, `cancelled`, `failed` are final (a final state is never overwritten). `failed` carries `lastError`: `obsolete`, `mn-gone`, `mn-banned`,

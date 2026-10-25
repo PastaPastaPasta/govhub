@@ -262,7 +262,7 @@ describe('M5: cancel vs in-flight voteraw', () => {
   });
 
   it('SR-07: a cancel racing a broadcast whose answer was lost is refused (409 maybe-broadcast), never reported as cancelled', async () => {
-    const { w, mn, sub, tick, release } = await inFlight();
+    const { w, mn, gov, sub, tick, release } = await inFlight();
     // the cancel arrives while voteraw runs: refused
     expect((await w.post('/v1/votes/cancel', w.cancelBody(mn, sub.id, sub.voteHash))).body).toMatchObject({ code: 'not-held', status: 'sending' });
     // Core takes the vote, but the answer is lost (timeout)
@@ -282,6 +282,17 @@ describe('M5: cancel vs in-flight voteraw', () => {
       new Broadcaster({ cfg: w.cfg, store: w.store, core: w.core, mns: w.relay.mns, clock: w.clock.now });
     }
     expect(w.row(sub.id).status).toBe('maybe-broadcast');
+    // a client whose POST timed out recovers the id and status by re-sending the same signed vote (no lookup by hash)
+    const again = await w.post('/v1/votes', w.voteBody(mn, { govHash: gov }));
+    expect(again.status).toBe(200);
+    expect(again.body).toMatchObject({ id: sub.id, status: 'maybe-broadcast' });
+    expect((await w.get(`/v1/votes/${sub.id}`)).body).toMatchObject({ status: 'maybe-broadcast', maybeSent: true });
+    // decided on the flag, not the status: re-sent right now (`sending`) or failed later, it may still be on the network
+    for (const status of ['sending', 'failed']) {
+      w.store.db.prepare('UPDATE votes SET status = ? WHERE id = ?').run(status, sub.id);
+      expect((await w.post('/v1/votes/cancel', w.cancelBody(mn, sub.id, sub.voteHash))).body).toMatchObject({ code: 'maybe-broadcast', status });
+    }
+    w.store.db.prepare(`UPDATE votes SET status = 'maybe-broadcast' WHERE id = ?`).run(sub.id);
     // the next attempt: Core says it already has it, the confirmer confirms
     w.core.voterawGate = null;
     w.clock.advance(31);
@@ -325,7 +336,8 @@ describe('M5: cancel vs in-flight voteraw', () => {
     w.store.db.prepare(`UPDATE votes SET status = 'sending' WHERE id = ?`).run(id);
     w.clock.advance(7);
     const restarted = new Broadcaster({ cfg: w.cfg, store: w.store, core: w.core, mns: w.relay.mns, clock: w.clock.now });
-    expect(w.row(id)).toMatchObject({ status: 'maybe-broadcast', maybe_sent: 1, next_attempt_at: T0 + 7 });
+    expect(w.row(id)).toMatchObject({ status: 'maybe-broadcast', maybe_sent: 1, next_attempt_at: T0 + 7, last_error: 'core-error' });
+    expect((await w.get(`/v1/votes/${id}`)).body.holdReason).toBe('retrying');
     await restarted.tickBroadcast();
     expect(w.row(id).status).toBe('broadcast');
   });

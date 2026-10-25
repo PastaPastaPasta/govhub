@@ -74,6 +74,11 @@ export interface VoteStatusView {
    * before the release. null: Core could not be asked.
    */
   sameAsCurrent: boolean | null;
+  /**
+   * An attempt may have reached Core (voteraw got no answer, the relay restarted mid-call, or it was broadcast and re-sent). Also
+   * on a vote that later failed or was superseded: it may still be on the network. Such a vote can never be cancelled.
+   */
+  maybeSent: boolean;
 }
 
 const WAITING = new Set<string>(['held', 'maybe-broadcast']);
@@ -272,8 +277,9 @@ export class Relay {
     const now = this.store.get(row.id)!;
     if (now.status === 'cancelled') return { id: row.id, status: 'cancelled' };
     // An earlier attempt may have reached Core: cancelling here would not take it back from the network, so it is refused
-    // and the client must not report the vote as cancelled.
-    if (now.status === 'maybe-broadcast') {
+    // and the client must not report the vote as cancelled. Decided on the flag, not the status: a vote that is being re-sent
+    // (`sending`) or later failed may be on the network all the same. (A superseded one is not: a newer vote replaces it.)
+    if (now.maybe_sent === 1 && now.status !== 'superseded') {
       throw new RelayError(409, 'maybe-broadcast', 'the relay already tried to send this vote and Dash Core may have it, so it can no longer be cancelled', {
         status: now.status,
         reason: 'This relay already sent the vote to Dash Core once and is not sure it arrived. It may already count, so it cannot be cancelled. To change it, cast a new vote.',
@@ -289,23 +295,6 @@ export class Relay {
     if (!ID_RE.test(id)) throw badRequest('id must be 32 lowercase hex characters');
     const row = this.store.get(id);
     if (!row) throw new RelayError(404, 'unknown-id', 'unknown vote id');
-    return this.view(row);
-  }
-
-  // ---- GET /v1/votes/by-hash/:voteHash ----
-
-  /**
-   * The relay's record of a vote by its governance vote hash: for a client whose POST /v1/votes timed out, so it never learned the
-   * relay id. Same answer as GET /v1/votes/:id (the id included); 404 when this relay does not hold it.
-   */
-  getVoteByHash(voteHash: string): VoteStatusView {
-    if (!HEX64.test(voteHash)) throw badRequest('voteHash must be 64 hex characters');
-    const row = this.store.getByVoteHash(voteHash.toLowerCase());
-    if (!row) throw new RelayError(404, 'unknown-vote', 'this relay holds no vote with this hash');
-    return this.view(row);
-  }
-
-  private view(row: VoteRow): VoteStatusView {
     const reason = holdReason(row, this.clock());
     return {
       id: row.id,
@@ -319,6 +308,7 @@ export class Relay {
       nextAttemptAt: WAITING.has(row.status) ? Math.max(row.next_attempt_at, row.release_at) : null,
       holdReason: reason,
       sameAsCurrent: (row.same_as_current ?? null) === null ? null : row.same_as_current === 1,
+      maybeSent: row.maybe_sent === 1,
     };
   }
 

@@ -7,7 +7,7 @@ const spec = JSON.parse(read('../openapi.json'));
 
 describe('openapi.json', () => {
   it('lists exactly the served routes and methods', () => {
-    const served = ['GET /v1/status', 'POST /v1/votes', 'POST /v1/votes/cancel', 'GET /v1/votes/{id}', 'GET /v1/votes/by-hash/{voteHash}', 'POST /v1/proposals/submit'];
+    const served = ['GET /v1/status', 'POST /v1/votes', 'POST /v1/votes/cancel', 'GET /v1/votes/{id}', 'POST /v1/proposals/submit'];
     const documented = Object.entries(spec.paths).flatMap(([p, ops]) => Object.keys(ops as object).map((m) => `${m.toUpperCase()} ${p}`));
     expect(documented.sort()).toEqual(served.sort());
     expect(spec.openapi).toBe('3.1.0');

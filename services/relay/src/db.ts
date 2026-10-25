@@ -145,9 +145,6 @@ export function openDb(path: string): Database.Database {
   return db;
 }
 
-/** A vote that goes back to waiting: `maybe-broadcast` once any attempt may have reached Core, `held` before that. */
-const WAITING = `CASE WHEN maybe_sent = 1 THEN 'maybe-broadcast' ELSE 'held' END`;
-
 export class Store {
   readonly db: Database.Database;
   private readonly q;
@@ -176,7 +173,7 @@ export class Store {
       finish: db.prepare(`UPDATE votes SET status = ?, finished_at = ?, last_error = ? WHERE id = ? AND status IN ('held', 'maybe-broadcast', 'sending', 'broadcast')`),
       markSending: db.prepare(`UPDATE votes SET status = 'sending' WHERE id = ? AND status IN ('held', 'maybe-broadcast')`),
       // a crash mid-voteraw: the call may have reached Core
-      recoverSending: db.prepare(`UPDATE votes SET status = 'maybe-broadcast', maybe_sent = 1, next_attempt_at = ? WHERE status = 'sending'`),
+      recoverSending: db.prepare(`UPDATE votes SET status = 'maybe-broadcast', maybe_sent = 1, next_attempt_at = ?, last_error = 'core-error' WHERE status = 'sending'`),
       // only a vote that never left the relay can be cancelled
       cancelHeld: db.prepare(`UPDATE votes SET status = 'cancelled', finished_at = ?, last_error = NULL WHERE id = ? AND status = 'held'`),
       supersedeHeld: db.prepare(`UPDATE votes SET status = 'superseded', finished_at = ?, last_error = NULL WHERE id = ? AND status = 'held'`),
