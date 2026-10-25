@@ -13,7 +13,9 @@
 //   replaced   a newer vote of the same masternode on the same proposal won (Core keeps the latest nTime)
 //   dropped    replaced by a newer vote of yours before it ever left this browser: never sent
 //   cancelled  withdrawn from every relay that held it
-import { MAX_REFS_PER_VOTE, openLocalRecord, sealLocalRecord, type PendingVote } from '@govhub/auth';
+import { MAX_REFS_PER_VOTE, MAX_RELAYS, openLocalRecord, sealLocalRecord, type PendingVote } from '@govhub/auth';
+import { bytesToHex } from '@govhub/verify';
+import { sha256 } from '@noble/hashes/sha2.js';
 import { base64 } from '@scure/base';
 import type { BridgeVote } from '../data/bridge.ts';
 import { currentKey, mnId, type Outcome, type SignedVoteRecord } from './plan.ts';
@@ -165,13 +167,17 @@ export function loadWatched(storage: Pick<Storage, 'getItem'>, network: string, 
  * (deferred ones link masternodes until they are released) never sit in plain storage. Plain lists (v1, v2) of the same network and
  * identity are read (loadWatched), saved sealed and then removed (removePlainWatched).
  */
-const keyV3 = (network: string, identityId: string) => `govhub.votes.v3.${network}.${identityId}`;
+/**
+ * One slot per keyring (a tag of the storage key): opening another keyring of the identity (replaced, or planted) never overwrites the
+ * list sealed to the first one; that keyring's list comes back when it is opened again.
+ */
+const keyV3 = (network: string, identityId: string, key: Uint8Array) => `govhub.votes.v3.${network}.${identityId}.${bytesToHex(sha256(key)).slice(0, 16)}`;
 export const watchedScope = (platformNetwork: string, network: string, identityId: string): string => `votes|${platformNetwork}|${network}|${identityId}`;
 const te = new TextEncoder();
 const td = new TextDecoder();
 
 export function loadWatchedSealed(storage: Pick<Storage, 'getItem'>, network: 'mainnet' | 'testnet', identityId: string, scope: string, key: Uint8Array): WatchedVote[] {
-  const blob = storage.getItem(keyV3(network, identityId));
+  const blob = storage.getItem(keyV3(network, identityId, key));
   const pt = blob ? openLocalRecord(key, scope, blob) : null;
   if (!pt) return [];
   try {
@@ -186,8 +192,8 @@ export function loadWatchedSealed(storage: Pick<Storage, 'getItem'>, network: 'm
 
 export function saveWatchedSealed(storage: Pick<Storage, 'setItem' | 'removeItem'>, network: 'mainnet' | 'testnet', identityId: string, scope: string, key: Uint8Array, all: readonly WatchedVote[]): void {
   const votes = all.filter((v) => !v.ephemeral && (v.network ?? network) === network);
-  if (!votes.length) return storage.removeItem(keyV3(network, identityId));
-  storage.setItem(keyV3(network, identityId), sealLocalRecord(key, scope, te.encode(JSON.stringify(votes))));
+  if (!votes.length) return storage.removeItem(keyV3(network, identityId, key));
+  storage.setItem(keyV3(network, identityId, key), sealLocalRecord(key, scope, te.encode(JSON.stringify(votes))));
 }
 
 /** Removes the plain (v1/v2) list of an earlier version, once it has been read (loadWatched) and saved sealed. */
@@ -227,11 +233,23 @@ export function mergeWatched(list: readonly WatchedVote[], add: readonly Watched
   return [...out.values()];
 }
 
-/** Still on its way: in this browser's queue, at a relay, or broadcast and not yet seen. */
-export const isOpen = (v: WatchedVote): boolean => v.status === 'queued' || v.status === 'held' || v.status === 'broadcast';
+/** A vote that "may already count" (withdrawn) is watched for the bridge this long after its release, then it is finished. */
+export const WITHDRAWN_WATCH_S = 6 * 3600;
+
+/** Unresolved for good: cancelled after it may have been sent, or possibly held by a relay that could not be asked. */
+const limbo = (v: WatchedVote): boolean => !!v.withdrawn || (v.status === 'queued' && !!v.restored && !!v.maybeAt?.length);
+
+/**
+ * Still on its way: in this browser's queue, at a relay, or broadcast and not yet seen. A vote in limbo is not: nothing here can move
+ * it any more (it is still shown, and pruned like a finished one).
+ */
+export const isOpen = (v: WatchedVote): boolean => (v.status === 'queued' || v.status === 'held' || v.status === 'broadcast') && !limbo(v);
+
+/** A withdrawn vote may still show up in the bridge for a while (then it did count): counted as current and watched until then. */
+export const maybeCounts = (v: WatchedVote, now: number): boolean => v.status === 'broadcast' && (!v.withdrawn || now - v.releaseAt < WITHDRAWN_WATCH_S);
 
 /** Worth asking the relay and the bridge about: open, or seen and waiting for the recount. */
-export const isTracked = (v: WatchedVote, now: number): boolean => isOpen(v) || (v.status === 'confirmed' && !v.countedAt && now - (v.seenAt ?? 0) < COUNT_WATCH_S);
+export const isTracked = (v: WatchedVote, now: number): boolean => isOpen(v) || (!!v.withdrawn && maybeCounts(v, now)) || (v.status === 'confirmed' && !v.countedAt && now - (v.seenAt ?? 0) < COUNT_WATCH_S);
 
 export function pruneWatched(list: readonly WatchedVote[], now: number): WatchedVote[] {
   return list.filter((v) => isOpen(v) || now - v.releaseAt < KEEP_FINISHED_S);
@@ -307,18 +325,28 @@ export function fromPending(p: PendingVote, proTxHash: string, voteHash: string)
 
 /**
  * The PENDING backup after a change on `network`: this network's held and broadcast votes (newest signed first), then what the
- * document holds for the OTHER Core network (the Dev and Testnet profiles share one keyring), newest first, cut at `cap`. Untagged
- * entries (version-1 documents) are this network's previous backup, which `list` replaces.
+ * document holds for the OTHER Core network (the Dev and Testnet profiles share one keyring), newest first, cut at `cap` votes and at
+ * the format's relay table (MAX_RELAYS). Untagged entries (version-1 documents) are this network's previous backup (which `list`
+ * replaces) when `untaggedIsOurs` says so (signed for this network by one of the keyring's keys), else the other network's.
  */
-export function pendingBackup(list: readonly WatchedVote[], network: 'mainnet' | 'testnet', existing: readonly PendingVote[], cap: number): PendingVote[] {
+export function pendingBackup(list: readonly WatchedVote[], network: 'mainnet' | 'testnet', existing: readonly PendingVote[], cap: number, untaggedIsOurs: (p: PendingVote) => boolean = () => true): PendingVote[] {
   const newest = (a: { t: number }, b: { t: number }) => b.t - a.t;
   const ours = list
     .filter((v) => (v.status === 'held' || v.status === 'broadcast') && !v.withdrawn && !v.ephemeral && (v.network ?? network) === network)
     .map((v) => ({ t: v.signedAt ?? v.time, p: toPending({ ...v, network }) }))
     .sort(newest);
   const others = existing
-    .filter((p) => p.network && p.network !== network)
+    .filter((p) => (p.network ? p.network !== network : !untaggedIsOurs(p)))
     .map((p) => ({ t: p.time, p }))
     .sort(newest);
-  return [...ours, ...others].slice(0, cap).map((x) => x.p);
+  const out: PendingVote[] = [];
+  const relays = new Set<string>();
+  for (const { p } of [...ours, ...others]) {
+    if (out.length >= cap) break;
+    const more = p.refs.map((r) => r.relay).filter((r) => !relays.has(r));
+    if (relays.size + new Set(more).size > MAX_RELAYS) continue; // would not fit the relay table
+    more.forEach((r) => relays.add(r));
+    out.push(p);
+  }
+  return out;
 }

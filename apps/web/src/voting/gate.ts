@@ -1,5 +1,6 @@
 // Small pieces of the keyring provider's session rules, kept pure so they can be tested without React.
 import type { VotingKeyEntry } from '@govhub/auth';
+import { onSessionEnd } from '../session/end.ts';
 import type { OwnedMasternode } from './masternodes.ts';
 import { mnId } from './plan.ts';
 
@@ -33,12 +34,25 @@ export const ownerOf = (owned: readonly OwnedMasternode[], m: MnRef): OwnedMaste
  */
 export function castKeys(keys: readonly Pick<VotingKeyEntry, 'privateKey' | 'compressed'>[], owned: readonly OwnedMasternode[]) {
   const copies = keys.map((x) => ({ privateKey: x.privateKey.slice(), compressed: x.compressed }));
+  // sign-out (or pagehide) while the cast waits on the network wipes them too
+  const off = onSessionEnd(() => copies.forEach((x) => x.privateKey.fill(0)));
   return {
     ownerOf: (m: MnRef) => ownerOf(owned, m),
     keyOf: (m: MnRef) => {
       const o = ownerOf(owned, m);
       return o ? copies[o.keyIndex] : undefined;
     },
-    wipe: () => copies.forEach((x) => x.privateKey.fill(0)),
+    wipe: () => {
+      copies.forEach((x) => x.privateKey.fill(0));
+      off();
+    },
   };
+}
+
+/** A copy of one voting key for async work (a cancel): a lock meanwhile does not zero it; sign-out does. `wipe()` when done. */
+export function keyCopy(k: Pick<VotingKeyEntry, 'privateKey' | 'compressed'> | undefined) {
+  if (!k) return undefined;
+  const c = { privateKey: k.privateKey.slice(), compressed: k.compressed };
+  const off = onSessionEnd(() => c.privateKey.fill(0));
+  return { ...c, wipe: () => (c.privateKey.fill(0), off()) };
 }

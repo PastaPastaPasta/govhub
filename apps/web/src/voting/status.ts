@@ -211,7 +211,14 @@ export function voteButtonText(outcome: 1 | 2 | 3 | 0, count: number, deferred: 
 
 /** Whether a relay ever handed this vote to Core (it may count even if a relay holds or cancelled it now). */
 export function everLeft(v: Pick<WatchedVote, 'status' | 'relayStatus' | 'relayInfo'>): boolean {
-  return v.status === 'broadcast' || Object.values(v.relayInfo ?? {}).some((i) => i.maybeSent === true || (i.maybeSent == null && (!!i.broadcastAt || i.lastError === 'not-visible'))) || Object.values(v.relayStatus ?? {}).some((x) => x === 'sending' || x === 'broadcast' || x === 'confirmed');
+  const relays = new Set([...Object.keys(v.relayInfo ?? {}), ...Object.keys(v.relayStatus ?? {})]);
+  if (!relays.size) return v.status === 'broadcast'; // e.g. a relay answered "Core already has it"
+  return [...relays].some((r) => {
+    const i = v.relayInfo?.[r];
+    if (i?.maybeSent != null) return i.maybeSent; // the relay knows (an explicit false wins)
+    const s = v.relayStatus?.[r];
+    return !!i?.broadcastAt || i?.lastError === 'not-visible' || s === 'sending' || s === 'broadcast' || s === 'confirmed';
+  });
 }
 
 /** Applies what a relay said about a vote to our record (refs, per-relay status and details, and the vote's own status). */

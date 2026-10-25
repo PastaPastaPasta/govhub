@@ -5,7 +5,7 @@
 import type { WatchedVote } from './pending.ts';
 import { RelayError } from './relay.ts';
 import type { RelayPort } from './sim.ts';
-import { applyRelayState, classifySubmitError, everLeft } from './status.ts';
+import { applyRelayState, everLeft } from './status.ts';
 
 /**
  * - cancelled: every relay that held it cancelled it, and none may have sent it before
@@ -21,7 +21,13 @@ export interface WithdrawDeps {
   network: 'mainnet' | 'testnet';
   /** the signed cancel for this vote (signmessage by its voting key) */
   cancelSig(v: WatchedVote): string;
+  now(): number;
 }
+
+/** A vote posted again only to learn its relay id is held at least this long, so it is cancelled before any relay can send it. */
+export const REPOST_HOLD_S = 300;
+/** Relay answers that prove it does not hold the vote (it refused it against another vote of the masternode). */
+const NOT_HELD = new Set(['later-vote-held', 'newer-vote-in-core']);
 
 /** Thrown when a relay could not be reached; `vote` carries what was learned (relay ids), which the caller should keep. */
 export class WithdrawError extends Error {
@@ -34,28 +40,34 @@ export class WithdrawError extends Error {
   }
 }
 
-/** Learns the vote's id at each relay whose answer was lost, by posting the same signed vote again. */
-export async function reconcileMaybe(v: WatchedVote, d: WithdrawDeps): Promise<WatchedVote> {
+/**
+ * Learns the vote's id at each relay whose answer was lost, by posting the same signed vote again (idempotent by vote hash: a relay
+ * that has it answers with its receipt). The release time is pushed out (it is not signed), so a relay that never had the vote and
+ * takes it now holds it until it is cancelled instead of broadcasting it. `inCore`: a relay said Core already has this vote.
+ */
+export async function reconcileMaybe(v: WatchedVote, d: WithdrawDeps): Promise<{ vote: WatchedVote; inCore: boolean }> {
   const unsure: string[] = [];
+  let inCore = false;
   for (const relay of v.maybeAt ?? []) {
     if (v.refs.some((r) => r.relay === relay)) continue;
     try {
-      v = applyRelayState(v, relay, await d.relayFor(relay).submit(v, d.network));
+      v = applyRelayState(v, relay, await d.relayFor(relay).submit({ ...v, releaseAt: Math.max(v.releaseAt, d.now() + REPOST_HOLD_S) }, d.network));
     } catch (e) {
-      // a refusal means the relay does not hold it; a lost answer again (or no answer) leaves it unknown
-      if (classifySubmitError(e, relay).kind === 'retry') unsure.push(relay);
+      if (e instanceof RelayError && e.code === 'already-current') inCore = true;
+      else if (!(e instanceof RelayError && NOT_HELD.has(e.code ?? ''))) unsure.push(relay); // anything else: it may hold it
     }
   }
   const { maybeAt: _m, ...rest } = v;
-  return unsure.length ? { ...rest, maybeAt: unsure } : rest;
+  return { vote: unsure.length ? { ...rest, maybeAt: unsure } : rest, inCore };
 }
 
 export async function withdrawVote(v0: WatchedVote, d: WithdrawDeps): Promise<{ result: WithdrawResult; vote: WatchedVote }> {
-  let v = await reconcileMaybe(v0, d);
+  const r0 = await reconcileMaybe(v0, d);
+  let v = r0.vote;
   const unsure = !!v.maybeAt?.length;
-  if (!v.refs.length) return { result: unsure ? 'unknown' : 'gone', vote: v };
+  if (!v.refs.length) return { result: r0.inCore ? 'sent' : unsure ? 'unknown' : 'gone', vote: v };
   const sig = d.cancelSig(v);
-  let sent = false;
+  let sent = r0.inCore;
   let firstError: unknown = null;
   // every relay is tried even when one fails, so one unreachable relay never leaves the others holding the vote
   for (const r of v.refs) {
@@ -80,6 +92,7 @@ export async function withdrawVote(v0: WatchedVote, d: WithdrawDeps): Promise<{ 
   if (firstError) throw new WithdrawError(firstError, v);
   if (sent) return { result: 'sent', vote: v };
   if (unsure) return { result: 'unknown', vote: v };
-  if (everLeft(v0) || everLeft(v)) return { result: 'maybe', vote: v };
+  // what each relay says now (maybeSent), with the relay statuses seen before the cancel
+  if (everLeft({ status: v0.status, relayStatus: v0.relayStatus, relayInfo: v.relayInfo })) return { result: 'maybe', vote: v };
   return { result: 'cancelled', vote: v };
 }

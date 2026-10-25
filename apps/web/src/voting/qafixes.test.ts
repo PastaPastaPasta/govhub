@@ -6,14 +6,14 @@ import { bytesToHex, decodeAddress, encodeWif, hexToBytes, recoverVoteSigner, si
 import { endSession, onSessionEnd } from '../session/end.ts';
 import type { BridgeMasternode } from '../data/bridge.ts';
 import { assertCanWrite, KEYRING_WRITE_CREDITS, topUpFromError, TopUpError } from './funds.ts';
-import { castKeys, KeyringLock } from './gate.ts';
+import { castKeys, keyCopy, KeyringLock } from './gate.ts';
 import { clearStash, stashPasskeyUnlock, takeStash } from './stash.ts';
 import { keyRole, matchMasternodes, parseVotingKey, PROTX_FETCH, proveCollaterals, type OwnedMasternode } from './masternodes.ts';
-import { loadWatchedSealed, mergeWatched, needsRebroadcast, pendingBackup, saveWatchedSealed, toPending, fromPending, type WatchedVote } from './pending.ts';
+import { isOpen, isTracked, loadWatchedSealed, maybeCounts, mergeWatched, needsRebroadcast, WITHDRAWN_WATCH_S, pendingBackup, saveWatchedSealed, toPending, fromPending, type WatchedVote } from './pending.ts';
 import { mnId, offlineSigningRequest, offlineVoteTime, signPlanned, voteFields, voterawCommand } from './plan.ts';
 import { parseRelayState, RelayError, type RelayVoteState } from './relay.ts';
 import type { RelayPort } from './sim.ts';
-import { applyRelayState, describeVote, relaySummary, VOTE_NOW_DELAY_TEXT } from './status.ts';
+import { applyRelayState, describeVote, everLeft, relaySummary, VOTE_NOW_DELAY_TEXT } from './status.ts';
 import { withdrawVote, type WithdrawDeps } from './withdraw.ts';
 
 const priv = hexToBytes('33'.repeat(32));
@@ -47,13 +47,15 @@ const state = (v: WatchedVote, over: Partial<RelayVoteState> = {}): RelayVoteSta
 });
 
 /** A relay holding votes, idempotent by vote hash. `lose`: answers time out (it still stores); `refuse`: it refuses new votes. */
-function fakeRelay(o: { lose?: boolean; refuse?: boolean } = {}) {
+function fakeRelay(o: { lose?: boolean; refuse?: string } = {}) {
   const held = new Map<string, RelayVoteState>();
   const calls: string[] = [];
+  const posted: number[] = [];
   const port: RelayPort = {
     submit: async (v) => {
       calls.push('submit');
-      if (o.refuse && !held.has(v.voteHash)) throw new RelayError('the masternode is PoSe-banned', 409, 'mn-banned');
+      posted.push(v.releaseAt);
+      if (o.refuse && !held.has(v.voteHash)) throw new RelayError('refused', 409, o.refuse);
       const st = held.get(v.voteHash) ?? { ...state(v as WatchedVote), id: v.voteHash.slice(0, 32) };
       held.set(v.voteHash, st);
       if (o.lose) throw new RelayError('relay x unreachable: signal timed out');
@@ -73,9 +75,9 @@ function fakeRelay(o: { lose?: boolean; refuse?: boolean } = {}) {
     },
     health: async () => ({ ok: true, checkedAt: 0 }),
   };
-  return { port, held, calls };
+  return { port, held, calls, posted };
 }
-const deps = (relays: Record<string, RelayPort>): WithdrawDeps => ({ relayFor: (u) => relays[u]!, network: 'testnet', cancelSig: () => 'sig' });
+const deps = (relays: Record<string, RelayPort>): WithdrawDeps => ({ relayFor: (u) => relays[u]!, network: 'testnet', cancelSig: () => 'sig', now: () => NOW });
 
 describe('D-004 / D-025: sign-out wipes synchronously', () => {
   it('session-end hooks run synchronously, all of them, even when one throws', () => {
@@ -122,6 +124,22 @@ describe('D-015: a locked keyring needs the phrase or a passkey again in that se
   });
 });
 
+describe('D-029 / D-025: key copies for async work', () => {
+  it('copies survive a lock but are wiped by sign-out', () => {
+    const live = { privateKey: priv.slice(), compressed: true };
+    const c = keyCopy(live)!;
+    live.privateKey.fill(0);
+    expect(bytesToHex(c.privateKey)).toBe(bytesToHex(priv));
+    endSession();
+    expect(c.privateKey.every((b) => b === 0)).toBe(true);
+    const keys = [{ privateKey: priv.slice(), compressed: true }];
+    const owned = [{ ...mn, type: 'regular', valid: true, votingAddress: '', keyIndex: 0, provenance: { key: 'sml', collateral: 'protx' } }] as OwnedMasternode[];
+    const cast = castKeys(keys, owned);
+    endSession();
+    expect(cast.keyOf(mn)!.privateKey.every((b) => b === 0)).toBe(true);
+  });
+});
+
 describe('D-029: locking during a cast does not leave it without keys', () => {
   it('the cast signs with copies that survive the keyring being wiped, and wipes them itself', () => {
     const keys = [{ privateKey: priv.slice(), compressed: true }];
@@ -160,15 +178,17 @@ describe('D-005: a vote a relay may hold is reconciled, not silently dropped', (
     expect(out.vote.maybeAt).toBeUndefined();
     expect(r.held.get(lost.voteHash)!.status).toBe('cancelled');
   });
-  it('a relay that never got it takes it now and it is cancelled at once; one that refuses it never held it ("gone")', async () => {
+  it('a relay that never got it takes it now, held (release pushed out), and it is cancelled at once', async () => {
     const r = fakeRelay();
-    const v = vote({ maybeAt: [R1] });
+    const v = vote({ maybeAt: [R1] }); // release time NOW: due
     expect((await withdrawVote(v, deps({ [R1]: r.port }))).result).toBe('cancelled');
+    expect(r.posted[0]).toBeGreaterThanOrEqual(NOW + 300); // posted again with a later release, so the relay does not send it
     expect(r.held.get(v.voteHash)!.status).toBe('cancelled');
-    const refusing = fakeRelay({ refuse: true });
-    const g = await withdrawVote(vote({ maybeAt: [R1] }), deps({ [R1]: refusing.port }));
-    expect(g.result).toBe('gone');
-    expect(refusing.calls).toEqual(['submit']);
+  });
+  it('relay answers on the re-post: only a later or newer vote proves "not held"; "Core already has it" is sent; others stay unsure', async () => {
+    for (const code of ['later-vote-held', 'newer-vote-in-core']) expect((await withdrawVote(vote({ maybeAt: [R1] }), deps({ [R1]: fakeRelay({ refuse: code }).port }))).result).toBe('gone');
+    expect((await withdrawVote(vote({ maybeAt: [R1] }), deps({ [R1]: fakeRelay({ refuse: 'already-current' }).port }))).result).toBe('sent');
+    for (const code of ['mn-banned', 'stale-vote', 'bad-signature']) expect((await withdrawVote(vote({ maybeAt: [R1] }), deps({ [R1]: fakeRelay({ refuse: code }).port }))).result).toBe('unknown');
   });
   it('a relay whose answers keep getting lost leaves it "unknown" (never "dropped"), shown as possibly held', async () => {
     const r = fakeRelay({ lose: true });
@@ -190,6 +210,12 @@ describe('D-017: a vote the relay may have sent is never reported "Cancelled"', 
     expect(after).toMatchObject({ status: 'broadcast', withdrawn: true });
     expect(describeVote(after, NOW, fmt).badge).toBe('May already count');
     expect(needsRebroadcast(after, NOW + 99_999)).toBe(false);
+    // it finishes: not open, watched for the bridge only for a while, counted as current only meanwhile
+    expect(isOpen(after)).toBe(false);
+    expect(isTracked(after, after.releaseAt + 60)).toBe(true);
+    expect(isTracked(after, after.releaseAt + WITHDRAWN_WATCH_S + 1)).toBe(false);
+    expect(maybeCounts(after, after.releaseAt + WITHDRAWN_WATCH_S + 1)).toBe(false);
+    expect(isOpen({ ...vote({ maybeAt: [R1] }), restored: true })).toBe(false);
     // never broadcast: a plain cancel
     expect(applyRelayState(v, R1, state(v, { status: 'cancelled', maybeSent: null })).status).toBe('cancelled');
   });
@@ -197,6 +223,8 @@ describe('D-017: a vote the relay may have sent is never reported "Cancelled"', 
     const v = vote({ status: 'held', refs: [{ relay: R1, id: 'ab'.repeat(16) }] });
     for (const status of ['failed', 'superseded', 'cancelled'] as const) expect(applyRelayState(v, R1, state(v, { status, maybeSent: true }))).toMatchObject({ status: 'broadcast', withdrawn: true });
     expect(applyRelayState(v, R1, state(v, { status: 'failed', maybeSent: false, broadcastAt: NOW })).status).toBe('failed');
+    // an explicit maybeSent=false wins over an earlier broadcast status
+    expect(everLeft({ status: 'broadcast', relayStatus: { [R1]: 'broadcast' }, relayInfo: { [R1]: { maybeSent: false } } })).toBe(false);
     const r = fakeRelay();
     r.held.set(v.voteHash, state(v, { status: 'failed', maybeSent: true }));
     expect((await withdrawVote(v, deps({ [R1]: r.port }))).result).toBe('maybe');
@@ -218,6 +246,16 @@ describe('D-016 / D-028: votes are tagged with their Core network; the backup ke
     expect(out[0]!.time).toBe(NOW + 5); // newest first
     // votes signed for the other network in this list are not backed up as this network's
     expect(pendingBackup([vote({ status: 'held', network: 'mainnet' })], 'testnet', [], 60)).toEqual([]);
+  });
+  it('keeps the relay table within the format (Dev + Testnet relays merged) and classifies untagged entries by signature', () => {
+    const relayed = (i: number, relay: string, network: 'mainnet' | 'testnet') => ({ ...toPending(vote({ status: 'held', refs: [{ relay, id: 'ab'.repeat(16) }], collateralIndex: i }, 1, NOW + i)), network });
+    const ours = [1, 2, 3].map((i) => ({ ...vote({ status: 'held', network: 'testnet', signedAt: NOW + i, collateralIndex: i, refs: [{ relay: `https://t${i}.example`, id: 'ab'.repeat(16) }] }, 1, NOW + i) }));
+    const out = pendingBackup(ours, 'testnet', [relayed(10, 'https://m1.example', 'mainnet'), relayed(11, 'https://m2.example', 'mainnet')], 60);
+    expect(new Set(out.flatMap((p) => p.refs.map((r) => r.relay))).size).toBeLessThanOrEqual(4);
+    expect(out.length).toBe(4);
+    const legacy = { ...toPending(vote({ status: 'held' }, 3, NOW - 50)) };
+    expect(pendingBackup([], 'testnet', [legacy], 60, () => false)).toEqual([legacy]); // the other network's: kept
+    expect(pendingBackup([], 'testnet', [legacy], 60, () => true)).toEqual([]); // this network's old backup: replaced
   });
   it('the cap keeps the NEWEST votes', () => {
     const many = Array.from({ length: 70 }, (_, i) => vote({ status: 'held', network: 'testnet', signedAt: NOW + i, collateralIndex: i }, 1, NOW + i));
@@ -250,6 +288,11 @@ describe('D-027: signed votes are stored sealed to the keyring, never in plain t
     expect(raw).not.toContain(gov);
     expect(loadWatchedSealed(st, 'testnet', 'ID', scope, key).map((x) => x.voteHash)).toEqual([v.voteHash]);
     expect(loadWatchedSealed(st, 'testnet', 'ID', scope, localRecordKey(new Uint8Array(16).fill(8), scope))).toEqual([]);
+    // opening another keyring of the identity (replaced or planted) never overwrites the first one's list
+    const other = localRecordKey(new Uint8Array(16).fill(8), scope);
+    saveWatchedSealed(st, 'testnet', 'ID', scope, other, []);
+    saveWatchedSealed(st, 'testnet', 'ID', scope, other, [vote({ status: 'held', network: 'testnet' }, 1, NOW + 7)]);
+    expect(loadWatchedSealed(st, 'testnet', 'ID', scope, key).map((x) => x.voteHash)).toEqual([v.voteHash]);
   });
 });
 

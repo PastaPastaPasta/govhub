@@ -1,7 +1,7 @@
 // Masternode voting UI (PLAN §5.1-5.2). One proposal (the proposal page's panel) or many (/votes): pick Yes / No / Abstain for the
 // selected masternodes, sign in the browser, send through the relays now or each masternode at its own random time before the
 // deadline, then follow every vote until the network counts it. Also offline signing (the exact text for `signmessage`).
-import { bytesEqual, decodeAddress, governanceVoteHash, recoverVoteSigner, type Network } from '@govhub/verify';
+import { bytesEqual, decodeAddress, governanceVoteHash, recoverVoteSigner, verifyVoteSignature, VOTE_MAX_FUTURE_S, type Network } from '@govhub/verify';
 import { useEffect, useState, type KeyboardEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useApp } from '../app/context.tsx';
@@ -423,7 +423,10 @@ export function OfflineSign({ proposal }: { proposal: Proposal }) {
       const now = Math.floor(Date.now() / 1000);
       setMns(
         list.map((m) => {
-          const cur = votes?.votes.filter((v) => v.signal === 1 && mnId(v) === mnId(m)).sort((a, b) => b.time - a.time)[0];
+          // the latest of: the bridge's votes this address signed (checked here), and ours that went out or may have
+          const fromBridge = (votes?.votes ?? []).filter((v) => v.signal === 1 && mnId(v) === mnId(m) && v.time <= now + VOTE_MAX_FUTURE_S && verifyVoteSignature(v.sig, { collateralTxid: v.collateralTxid, collateralIndex: v.collateralIndex, govHashDisplay: proposal.govHash, signal: 1, outcome: v.outcome, time: v.time }, d.hash160, network));
+          const ours = k.watched.filter((w) => w.govHash === proposal.govHash && mnId(w) === mnId(m) && (w.status === 'broadcast' || w.status === 'held' || w.status === 'confirmed' || (w.status === 'queued' && !!w.maybeAt?.length)));
+          const cur = [...fromBridge, ...ours].sort((a, b) => b.time - a.time)[0];
           return { ...m, ...offlineVoteTime(now, cur) };
         }),
       );
@@ -462,6 +465,7 @@ export function OfflineSign({ proposal }: { proposal: Proposal }) {
         </button>
       </div>
       {err && <p className="error small">{err}</p>}
+      {mns && (k.status !== 'open' || k.memoryOnly) && <p className="muted small">Your saved keyring is not open, so this browser follows a vote sent from here only until the tab closes (the relay still holds and sends it).</p>}
       {mns && !mns.length && <p className="muted small">No valid masternode votes with that address.</p>}
       {mns?.map((m) => {
         const vote = { mn: m, govHash: proposal.govHash, outcome, time: m.time };

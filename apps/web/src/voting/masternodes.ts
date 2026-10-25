@@ -90,7 +90,7 @@ export function matchMasternodes(keys: readonly KeyRef[], bridge: readonly Bridg
 }
 
 /** Requests in flight at once while reading ProRegTxs, and the random pause before each (so they do not arrive as one burst). */
-export const PROTX_FETCH = { concurrency: 3, jitterMs: 250, maxDecoys: 8 };
+export const PROTX_FETCH = { concurrency: 6, jitterMs: 250, maxDecoys: 8 };
 
 /**
  * Checks each masternode's outpoint (and reads its registered payout) against its ProRegTx. `fetchRaw` returns the raw transaction

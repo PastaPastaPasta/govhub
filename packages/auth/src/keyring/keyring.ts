@@ -194,7 +194,8 @@ export function removeUnlocker(k: OpenedKeyring, recipientKey: Uint8Array): void
 export async function saveKeys(ctx: KeyringContext, s: Session, k: OpenedKeyring): Promise<void> {
   assertLive(s);
   if (s.identityId !== k.ownerId) throw new KeyringError('This keyring belongs to another identity.');
-  // saturates at the u32 maximum: a keyring planted at 2^32-1 must stay writable (the user then re-saves it at the maximum)
+  // saturates at the u32 maximum: a keyring planted at 2^32-1 must stay writable (the user then re-saves it at the maximum). From
+  // then on the rollback warning cannot tell an older copy at the same maximum from the current one.
   const before = k.content.generation;
   k.content.generation = Math.min(before + 1, MAX_GENERATION);
   let encoded: ReturnType<typeof encodeKeys>;

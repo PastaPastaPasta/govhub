@@ -120,8 +120,21 @@ export function storeMnAddresses(db: DB, raw: ProTxEntry[], height: number): voi
   })();
 }
 
-/** The latest known collateral and payout address per proTxHash. */
-export function mnAddresses(db: DB): Map<string, { collateralAddress?: string; payoutAddress?: string }> {
+type MnAddresses = Map<string, { collateralAddress?: string; payoutAddress?: string }>;
+const addressCache = new WeakMap<DB, { stamp: string; map: MnAddresses }>();
+
+/** The latest known collateral and payout address per proTxHash (re-read only after a snapshot changed them). */
+export function mnAddresses(db: DB): MnAddresses {
+  const st = db.prepare('SELECT MAX(height) AS h, COUNT(*) AS n FROM mn_addresses').get() as { h: number | null; n: number };
+  const stamp = `${st.h}:${st.n}`;
+  const hit = addressCache.get(db);
+  if (hit?.stamp === stamp) return hit.map;
+  const map = readMnAddresses(db);
+  addressCache.set(db, { stamp, map });
+  return map;
+}
+
+function readMnAddresses(db: DB): MnAddresses {
   const rows = db.prepare('SELECT pro_tx_hash, collateral_address, payout_address FROM mn_addresses').all() as Array<{ pro_tx_hash: string; collateral_address: string | null; payout_address: string | null }>;
   return new Map(rows.map((r) => [r.pro_tx_hash, { ...(r.collateral_address ? { collateralAddress: r.collateral_address } : {}), ...(r.payout_address ? { payoutAddress: r.payout_address } : {}) }]));
 }
