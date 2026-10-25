@@ -2,7 +2,6 @@
 // D-032: an underpayment says what came in and what is still needed, and the wallet link / QR ask for just that.
 // D-006: a lock too small for Platform is final (no "Try again"), and a create's lock can top up an existing identity instead.
 import { KeyConflictError, LockTooSmallError, type FundingView } from '@govhub/auth';
-import { act } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { button, click, flush, render, type } from '../test/render.tsx';
 
@@ -121,21 +120,6 @@ describe('D-006: lock too small', () => {
     await r.unmount();
   });
 
-  it('"Pay again" after a legacy-bound (starter) setup lets runFunding pick the key: a new index never starts on the old hardened key', async () => {
-    script = async (o) => {
-      if (o.identityIndex === 0) throw new LockTooSmallError('create', 209_646_000n, 221_500_000n);
-      return { identityId: 'NEW', record: { identityIndex: o.identityIndex } };
-    };
-    const r = await render(<FundingPanel kind="create" wallet={{} as never} identityIndex={0} legacy onDone={() => {}} />);
-    await flush();
-    expect(runs.at(-1)!.legacy).toBe(true);
-    await click(r.el.querySelector<HTMLButtonElement>('[data-testid="pay-again"]')!);
-    await flush();
-    expect(runs.at(-1)).toMatchObject({ identityIndex: 2, kind: 'create' });
-    expect(runs.at(-1)!.legacy).toBeUndefined();
-    await r.unmount();
-  });
-
   it("offers this phrase's own identities as one-click targets", async () => {
     script = async (o) => {
       if (!o.recoverInto) throw new LockTooSmallError('create', 209_646_000n, 221_500_000n);
@@ -229,46 +213,6 @@ describe('stuck funds: prevention and the way out', () => {
     await flush();
     expect(button(r.el, /Try again/)).toBeTruthy();
     expect([...r.el.querySelectorAll('a')].some((a) => a.getAttribute('href') === '/settings#recover')).toBe(true);
-    await r.unmount();
-  });
-});
-
-describe('starter hooks: onAwaitingDeposit and deposit', () => {
-  it('fires once, with the address, when the watcher is live; the deposit block replaces the QR code', async () => {
-    const onAwaiting = vi.fn();
-    let push!: (v: FundingView) => void;
-    script = async (o) => {
-      push = o.onUpdate;
-      return never();
-    };
-    const r = await render(<FundingPanel kind="create" wallet={null} identityIndex={0} onDone={() => {}} onAwaitingDeposit={onAwaiting} deposit={<p data-testid="starter-deposit">faucet</p>} />);
-    await flush();
-    expect(onAwaiting).not.toHaveBeenCalled(); // connecting: not subscribed yet
-    await act(async () => push(view({})));
-    expect(onAwaiting).toHaveBeenCalledWith(ADDRESS);
-    expect(r.el.querySelector('[data-testid="starter-deposit"]')).not.toBeNull();
-    expect(r.el.querySelector('.qr, [data-testid="deposit-address"]')).toBeNull();
-    await act(async () => push(view({ pendingDuffs: 600_000n, remainingDuffs: 0n })));
-    expect(onAwaiting).toHaveBeenCalledTimes(1);
-    await act(async () => push(view({ state: 'locking', remainingDuffs: 0n })));
-    expect(r.el.querySelector('[data-testid="starter-deposit"]')).toBeNull();
-    await r.unmount();
-  });
-
-  it('never fires for a funding already past the deposit (a resumed setup)', async () => {
-    const onAwaiting = vi.fn();
-    script = async (o) => (o.onUpdate(view({ state: 'locked', remainingDuffs: 0n, lockTxid: 'd3'.repeat(32) })), never());
-    const r = await render(<FundingPanel kind="create" wallet={null} identityIndex={0} onDone={() => {}} onAwaitingDeposit={onAwaiting} deposit={<p>faucet</p>} />);
-    await flush();
-    expect(onAwaiting).not.toHaveBeenCalled();
-    await r.unmount();
-  });
-
-  it('without a deposit block the QR code shows as before', async () => {
-    script = async (o) => (o.onUpdate(view({})), never());
-    const r = await render(<FundingPanel kind="create" wallet={null} identityIndex={0} onDone={() => {}} onAwaitingDeposit={() => {}} />);
-    await flush();
-    expect(r.el.querySelector('[data-testid="deposit-address"]')!.textContent).toBe(ADDRESS);
     await r.unmount();
   });
 });

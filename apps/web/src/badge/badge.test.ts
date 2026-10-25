@@ -89,8 +89,6 @@ function fakeWorker(o: { answer?: (req: string, sig: string) => IssuerAnswer; se
       }
       case 'provenMasternodes':
         return { id: 0, kind: 'provenMasternodes', count: 150, height: 1, weak: null };
-      case 'starterRedeem':
-        throw new Error('not a badge call');
     }
   };
 }

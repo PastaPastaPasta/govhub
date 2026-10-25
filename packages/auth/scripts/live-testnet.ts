@@ -108,7 +108,7 @@ if (steps.has('create')) {
 // ---- 2. voucher: mint one ourselves (burn NOT at vout 0), redeem into a new identity of phrase B --------------------------
 if (steps.has('voucher')) {
   if (!st.voucher) {
-    const lockDuffs = 300_000n; // the PLAN's 0.003 DASH starter
+    const lockDuffs = 300_000n; // the PLAN's 0.003 DASH funding
     const v = await funder.mintVoucher(lockDuffs);
     st.voucher = { txid: v.txid, link: v.link, lockDuffs: lockDuffs.toString(), burnVout: v.burnVout, creditIndex: 0 };
     save(st);

@@ -1,8 +1,8 @@
 // Epoch housekeeping, run on a timer: which key may sign, destroying keys and token rows of closed windows, and the per-epoch
 // issuerReport. Every step works from the dashd tip; the issuerKey check reads Platform with proofs. The irreversible steps (key
 // destruction, closing epochs, the store's start height) also need Platform's chain-locked core height to confirm the tip
-// (checkTip). EpochKeys (the key part) is shared with the starter issuer (starter-epochs.ts).
-import { deriveKeyId, epochOf, epochStart, equalBytes, issuingEpochsAt, keyDeadline, reportWindow, toHex, VARIANT, type EpochParams, type IssuerKeyDoc } from '@govhub/badge';
+// (checkTip).
+import { deriveKeyId, epochOf, epochStart, equalBytes, issuingEpochsAt, keyDeadline, reportWindow, toHex, VARIANT, type EpochParams } from '@govhub/badge';
 import { defaultMaxTipLead, type IdentityKeyFile } from './config.ts';
 import type { CoreView, MnLists } from './core.ts';
 import { storeWindowFrom, type TokenStore } from './db.ts';
@@ -13,65 +13,12 @@ import type { ActiveKey } from './service.ts';
 import { BlindSigner } from './signer.ts';
 
 /**
- * The other issuer identity on this server (badge vs starter). Blind signatures are separated by KEY only: the issuer never sees what
- * it signs, so the message tags (govhub-badge vs govhub-starter) protect nothing on the signer's side. A key that signs for both would
- * let any masternode turn a badge request into starter tokens, and a proposal owner a starter request into an MN badge.
- */
-export interface OtherIssuer {
-  /** 'badge' or 'starter', in problem texts */
-  label: string;
-  issuerId: string;
-  /** keyIds the other side has loaded right now (any epoch) */
-  activeKeyIds(): Uint8Array[];
-}
-
-/**
- * Why `keyId` (this side's key for `epoch`) must not be used, or null: it equals a key the other side has loaded, or ANY proved
- * issuerKey the other identity published for epoch-1 or later (one proved range query; a key reused for a distant epoch would
- * still let one side's requests mint the other's tokens there). Epochs before epoch-1 are not checked: their keys were destroyed
- * when their windows closed, so they can sign nothing. Fails closed when Platform cannot answer.
- */
-export async function keyConflict(platform: IssuerPlatform, other: OtherIssuer, epoch: number, keyId: Uint8Array): Promise<string | null> {
-  const clash = `the key of epoch ${epoch} is also a ${other.label} key: refused (badge and starter keys must differ)`;
-  if (other.activeKeyIds().some((k) => equalBytes(k, keyId))) return clash;
-  let docs;
-  try {
-    docs = await platform.issuerKeysFrom(other.issuerId, Math.max(1, epoch - 1));
-  } catch (err) {
-    return `could not check the key of epoch ${epoch} against the ${other.label} keys: ${errText(err)}`;
-  }
-  return docs.some((d) => equalBytes(d.keyId, keyId)) ? clash : null;
-}
-
-export interface EpochKeysDeps {
-  params: EpochParams;
-  issuerId: string;
-  keyDir: string;
-  maxStagedKeys: number;
-  /** null until Platform is reachable */
-  platform: () => IssuerPlatform | null;
-  /** in log lines: 'signing key' (badge) or 'starter key' */
-  label: string;
-  /**
-   * Called for every epoch whose issuerKey readers accept, whether or not this server holds its key file (the badge side opens the
-   * epoch then, so its report is still published).
-   */
-  onPublished?: (epoch: number, doc: IssuerKeyDoc) => void;
-  /** A last check before a key may sign (the badge token store's start height); a problem, or null. */
-  canSign?: (epoch: number, doc: IssuerKeyDoc) => string | null;
-  /** called once per key that is ready to sign, with its proved document */
-  onLoad?: (epoch: number, doc: IssuerKeyDoc) => void;
-  /** the other issuer identity on this server, whose keys this one must never share (keyConflict) */
-  other?: () => OtherIssuer | null;
-}
-
-/**
- * The per-epoch private keys of one issuer identity (badge or starter): ISSUER_KEY_DIR / STARTER_KEY_DIR. Loads the key of an
+ * The per-epoch private keys of the badge issuer identity: ISSUER_KEY_DIR. Loads the key of an
  * issuing epoch only if it matches the proved issuerKey document (present, created before keyDeadline = S(E+1) - margin, so it may
  * be published late, variant, keyId = SHA256(spki), private key matches the SPKI), refuses to sign while more later keys are staged
  * than allowed, and destroys keys whose window closed. A missing key is retried every tick until it is ready.
  */
-export class EpochKeys {
+class EpochKeys {
   readonly #d: EpochKeysDeps;
   /** ready keys by epoch: at most the current and the next one */
   readonly #active = new Map<number, ActiveKey>();
@@ -83,11 +30,6 @@ export class EpochKeys {
 
   activeKey(epoch: number): ActiveKey | null {
     return this.#blocked ? null : (this.#active.get(epoch) ?? null);
-  }
-
-  /** keyIds of the loaded keys (for the other side's keyConflict) */
-  activeKeyIds(): Uint8Array[] {
-    return [...this.#active.values()].map((k) => k.keyId);
   }
 
   /** hex keyId per epoch with a ready key */
@@ -112,9 +54,9 @@ export class EpochKeys {
         // a file the service cannot remove (wrong owner, read-only directory) must not stop the rest of the housekeeping
         try {
           destroyKey(d.keyDir, e);
-          log.info(`destroyed the ${d.label} of a closed epoch`, { epoch: e });
+          log.info('destroyed the signing key of a closed epoch', { epoch: e });
         } catch (err) {
-          log.error(`could not destroy the ${d.label} of a closed epoch: remove it by hand`, { epoch: e, error: errText(err) });
+          log.error('could not destroy the signing key of a closed epoch: remove it by hand', { epoch: e, error: errText(err) });
         }
       }
     }
@@ -182,20 +124,17 @@ export class EpochKeys {
       // The slot is unique and immutable, so a different key there is final (README "Revoking a key").
       if (!equalBytes(signer.spki, doc.spki)) return `CONFLICT: the key file of epoch ${epoch} does not match the published SPKI; if you did not publish that issuerKey, the CRITICAL key is compromised`;
     }
-    // Readers accept this key whether or not this server can sign with it.
-    d.onPublished?.(epoch, doc);
+    // Readers accept a published key, so readers expect E's report: the epoch is opened (a report with 0 tokens if this server
+    // never signs), since a missing one would flag the issuer for E and hide its badges for E+1.
+    d.store.openEpoch(epoch);
     if (!signer) return `no key file for epoch ${epoch}, although an issuerKey is published for it (keyId ${toHex(doc.keyId)}): if it is in manifest.json, copy epoch-${epoch}.pem here; if not, the CRITICAL key is compromised`;
-    // the cheap local refusal first: it needs no Platform read and gives the clearer reason
-    const refused = d.canSign?.(epoch, doc);
-    if (refused) return refused;
-    const other = d.other?.();
-    if (other) {
-      const clash = await keyConflict(platform, other, epoch, doc.keyId);
-      if (clash) return clash;
+    // A store that started after E's window opened and its key was published cannot know the tokens issued before (lost or reset).
+    const started = d.store.startedHeight();
+    if (started !== null && started > storeWindowFrom(d.params, epoch, doc.createdAtCoreBlockHeight)) {
+      return `the token store started at height ${started}, after epoch ${epoch}'s window opened and its key was published (at ${doc.createdAtCoreBlockHeight}): it cannot know tokens issued before, so it issues again from epoch ${epoch + 1}`;
     }
     this.#active.set(epoch, { epoch, keyId: doc.keyId, signer, keyCreatedAt: doc.createdAtCoreBlockHeight });
-    d.onLoad?.(epoch, doc);
-    log.info(`${d.label} ready`, { epoch, keyId: toHex(doc.keyId), modulusBits: signer.modulusBytes * 8 });
+    log.info('signing key ready', { epoch, keyId: toHex(doc.keyId), modulusBits: signer.modulusBytes * 8 });
     return null;
   }
 }
@@ -212,11 +151,11 @@ export interface EpochManagerDeps {
   /** null until Platform is reachable */
   platform: () => IssuerPlatform | null;
   reportKey: IdentityKeyFile | null;
-  /** the starter identity, when this server also issues starters: its keys are never loaded as badge keys */
-  other?: () => OtherIssuer | null;
   /** blocks the dashd tip may lead Platform's core height before the irreversible steps wait (checkTip); default defaultMaxTipLead */
   maxTipLead?: number;
 }
+
+type EpochKeysDeps = Pick<EpochManagerDeps, 'params' | 'issuerId' | 'keyDir' | 'maxStagedKeys' | 'platform' | 'store'>;
 
 export interface EpochStatus {
   height: number | null;
@@ -230,11 +169,11 @@ export interface EpochStatus {
 }
 
 /**
- * The first step of both housekeeping ticks (badge and starter): the dashd tip and whether dashd has caught up. Returns the status to
+ * The first step of the housekeeping tick: the dashd tip and whether dashd has caught up. Returns the status to
  * publish when the tick must stop here, else the tip and the epochs being issued. A syncing node's tip is not the network's: no
  * start height, no lists, no issuing until it has caught up (N8), so its keys are blocked. An unreachable Core keeps the last status.
  */
-export async function readCore(
+async function readCore(
   core: Pick<CoreView, 'tipHeight' | 'synced'>,
   params: EpochParams,
   keys: EpochKeys,
@@ -324,24 +263,7 @@ export class EpochManager {
   constructor(deps: EpochManagerDeps) {
     this.#d = deps;
     this.#guard = new TipGuard('badge housekeeping', deps.maxTipLead ?? defaultMaxTipLead(deps.params));
-    this.#keys = new EpochKeys({ params: deps.params, issuerId: deps.issuerId, keyDir: deps.keyDir, maxStagedKeys: deps.maxStagedKeys, platform: deps.platform, label: 'signing key',
-      // Readers accept a published key, so readers expect E's report: the epoch is opened (a report with 0 tokens if this server
-      // never signs), since a missing one would flag the issuer for E and hide its badges for E+1.
-      onPublished: (e) => deps.store.openEpoch(e),
-      // A store that started after E's window opened and its key was published cannot know the tokens issued before (lost or reset).
-      canSign: (e, doc) => {
-        const started = deps.store.startedHeight();
-        return started !== null && started > storeWindowFrom(deps.params, e, doc.createdAtCoreBlockHeight)
-          ? `the token store started at height ${started}, after epoch ${e}'s window opened and its key was published (at ${doc.createdAtCoreBlockHeight}): it cannot know tokens issued before, so it issues again from epoch ${e + 1}`
-          : null;
-      },
-      other: deps.other,
-    });
-  }
-
-  /** keyIds of the loaded badge keys (the starter side refuses them) */
-  activeKeyIds(): Uint8Array[] {
-    return this.#keys.activeKeyIds();
+    this.#keys = new EpochKeys(deps);
   }
 
   get status(): EpochStatus {

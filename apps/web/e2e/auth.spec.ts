@@ -32,7 +32,6 @@ test('create flow shows a fresh phrase, checks three words, then offers funding'
   }
   await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByRole('button', { name: /Pay with DASH/ })).toBeVisible();
-  await expect(page.getByRole('button', { name: /Get a free starter/ })).toBeVisible();
   await expect(page.getByRole('button', { name: /I have a voucher link/ })).toBeVisible();
 
   await page.keyboard.press('Escape');

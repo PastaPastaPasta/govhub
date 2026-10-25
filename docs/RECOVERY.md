@@ -89,7 +89,7 @@ the IS-lock. "Recover" means the tool above, from the phrase or key on any devic
 | Network or profile switch mid-flow | Records are keyed per network. A running funding keeps the network it started on; it resumes on that profile. | Same browser, same profile | Recover scans the current profile's Platform network and says so. Funds on the other network show after switching. | No |
 | Wrong-network send | Deposit addresses carry the Platform network's prefix: `y…` on testnet (version 140), `X…` on mainnet (76). A wallet refuses an address of the other network (Base58Check version byte), so a cross-network send can't happen with a standard wallet. The "Dev" profile (mainnet proposals, testnet Platform) shows a testnet address; the deposit screen now says "testnet address: send testnet DASH only". Sweep destinations are checked the same way. | n/a | n/a | n/a |
 | Tab closed while waiting for the payment | The record stays and the pending list offers "Continue". A payment made while no tab watched is found by replaying from the record's start height. | Same browser | Recover, any device. | No |
-| Starter voucher | The faucet's lock credits the voucher's key, not the user's; redeeming creates the identity with the user's keys. A failed voucher is not the user's to spend elsewhere (`LockTooSmallError`, recoverable = false). Not scanned by Recover. Owned by the `starter-tokens` work. | n/a | n/a | n/a |
+| Voucher link | The faucet's lock credits the voucher's key, not the user's; redeeming creates the identity with the user's keys. A failed voucher is not the user's to spend elsewhere (`LockTooSmallError`, recoverable = false). Not scanned by Recover. | n/a | n/a | n/a |
 | Proposal fee paid from the browser, interrupted before the fee transaction was built (tab closed, a payment after the deadline check, below the fee) | The payment stays at the wizard's one-time deposit address. The draft (this browser or its backup file) resumes it with the same sign-in; a resume builds the fee transaction from it. | n/a (new) | Recover sweeps it (sweep only: the money was meant for the fee burn, never for Platform). | No |
 | Proposal fee: a payment after the fee transaction | Reported as late; it stays at the deposit address. | n/a (new) | Recover sweeps it. | No |
 | Proposal fee transaction broadcast | The 1 DASH is burned; the change already went to the refund address in the same transaction. Nothing is left to recover; what matters is submitting the proposal (the backup file, the relay, or `gobject submit`). | n/a | n/a | No |
@@ -110,7 +110,7 @@ testnet. The phrase is BIP39 English with **no passphrase**.
 | Key | Path / rule | Used for |
 |---|---|---|
 | Account setup (registration funding) | `m/9'/coin'/5'/1'/i`: identity index `i`, **not hardened** (key-wallet's `IdentityRegistration` pool, DIP-13) | The deposit address and asset lock of a new identity at index `i` (its auth keys are `m/9'/coin'/5'/0'/0'/i'/k'`) |
-| Account setup before 2026-10-25 (legacy, scan-only) | `m/9'/coin'/5'/1'/i'`: identity index `i`, hardened | What govhub used until 2026-10-25 (and the phase-0 mainnet run). No new funding goes here. Recover scans it (`legacyCreateFamily`, lane "Account setup (before 2026-10-25)"); what is there can be swept, finish its account or top up an identity. A browser that began a setup on this key and has not finished it (hidden ones included), with nothing at that index under today's key, or that holds a starter token or request made for it, finishes with it (`createFundingPath`, `starterOnLegacyKey`). |
+| Account setup before 2026-10-25 (legacy, scan-only) | `m/9'/coin'/5'/1'/i'`: identity index `i`, hardened | What govhub used until 2026-10-25 (and the phase-0 mainnet run). No new funding goes here. Recover scans it (`legacyCreateFamily`, lane "Account setup (before 2026-10-25)"); what is there can be swept, finish its account or top up an identity. A browser that began a setup on this key and has not finished it (hidden ones included), with nothing at that index under today's key, finishes with it (`createFundingPath`). |
 | Top-up | `m/9'/coin'/5'/2'/i'/n`: identity index `i` hardened, top-up `n` not hardened (key-wallet `IdentityTopUp { registration_index }`, DIP-13) | The n-th top-up of identity `i` |
 | Top-up with a pasted key | `HMAC-SHA256(key = the 32-byte signed-in private key, msg = "govhub/topup/v1" ‖ identity id (32 bytes) ‖ u32be(n) ‖ u8(ctr))`, `ctr` = 0, then 1, … until the result is a valid private key | The n-th top-up while signed in with a pasted key (no phrase). Only govhub derives it. |
 | Proposal fee deposit | `m/9'/coin'/100'/0'/n`: DIP-9 feature `100'` (unregistered, govhub's own), branch `0'`, index `n` **not hardened** (DIP-13's convention for funding keys) | The one-time address a proposal fee is paid to from the browser (the creation wizard). The wizard picks a free `n` among 0..19 at random; Recover always scans 0..19 plus a gap of 20 (`proposalFeeFamily`). |
@@ -223,7 +223,7 @@ What support can't do:
 - move asset-lock credit back to Core;
 - move credits between identities.
 
-Starter vouchers belong to the faucet's own flow.
+Voucher links belong to the faucet's own flow.
 
 ## For developers: adding a one-time key family
 

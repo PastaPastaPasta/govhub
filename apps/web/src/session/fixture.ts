@@ -1,9 +1,9 @@
 // Fixture mode: sign in as a sample identity whose writes go into the in-memory fixture store. The balance starts
-// at the 0.003 DASH faucet starter and is charged the same fee estimates the UI shows.
+// at 0.003 DASH (what a new account pays in) and is charged the same fee estimates the UI shows.
 import { commentCost, COSTS, postCost, type DocumentOp, type MemoryStore } from '@govhub/forum';
 import type { Session } from './session.ts';
 
-const STARTER_CREDITS = 300_000_000n; // 0.003 DASH
+const INITIAL_CREDITS = 300_000_000n; // 0.003 DASH
 
 function estimate(op: DocumentOp): number {
   if (op.action === 'delete') return op.type === 'reaction' ? COSTS.reactionDelete : op.type === 'block' ? COSTS.blockDelete : -20_000_000;
@@ -32,7 +32,7 @@ function estimate(op: DocumentOp): number {
 }
 
 export function fixtureSession(store: MemoryStore, identityId: string, label: string): Session {
-  let balance = STARTER_CREDITS;
+  let balance = INITIAL_CREDITS;
   let open = true;
   return {
     identityId,

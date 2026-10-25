@@ -142,14 +142,10 @@ fi
 issuer_keys="$SECRETS_DIR/issuer-keys"
 mkdir -p "$issuer_keys"
 chmod 700 "$issuer_keys"
-# the starter identity's keys (empty unless STARTER_ISSUER_IDENTITY_ID is set); must exist before compose bind-mounts it
-starter_keys="$SECRETS_DIR/starter-keys"
-mkdir -p "$starter_keys"
-chmod 700 "$starter_keys"
 
 chmod "$secret_mode" "$rpc_pw_file" "$identity_file" "$tunnel_file" "$hmac_file" "$report_file"
 [ -z "$secret_owner" ] || chown "$secret_owner" "$rpc_pw_file" "$identity_file" "$tunnel_file" "$hmac_file" "$report_file"
-[ -z "$secret_owner" ] || chown -R "$secret_owner" "$issuer_keys" "$starter_keys"
+[ -z "$secret_owner" ] || chown -R "$secret_owner" "$issuer_keys"
 
 # ---- .env ------------------------------------------------------------------------------------
 env_file="$DEPLOY_DIR/.env"

@@ -69,7 +69,7 @@ export function qaFunder(dapi: Dapi) {
       record('proposal collateral', p.txid, 100_000_000n, u.value - 100_000_000n - (out ?? 0n), out === null ? null : { vout: p.changeVout!, value: out });
       return p.txid;
     },
-    /** A starter voucher shaped like dash-faucet-cf's (change first, so the burn is at vout 1). Returns the dashpay:// link. */
+    /** A voucher shaped like dash-faucet-cf's (change first, so the burn is at vout 1). Returns the dashpay:// link. */
     async mintVoucher(lockDuffs: bigint): Promise<{ link: string; txid: string; burnVout: number }> {
       const u = await utxo();
       const vkey = randomBytes(32);

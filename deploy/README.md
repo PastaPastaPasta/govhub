@@ -269,7 +269,6 @@ from Core or from Platform. Back it up, and test a restore.
 |---|---|
 | `bridge-data` volume (`/data/bridge.sqlite`) | **Yes. Daily at least, and before every upgrade.** |
 | `issuer-data` volume: `/data/issuer.sqlite` (badge token store) | **No.** Its rows matter only while an epoch's window is open; keep it out of snapshots (services/issuer/README.md) |
-| `starter-data` volume: `/data-starter/starter.sqlite` (starter dedup, when starters are on) | **Rarely**: at most once per epoch after the window's retry data is cleared, latest copy only, encrypted, never in automatic snapshots. Frequent copies date who took a starter (services/issuer/README.md, "Back up the starter store, but rarely") |
 | `secrets/` (RPC password, identity key) | Yes, encrypted, separately from the data backup |
 | `.env` | Yes (no secrets in it) |
 | `dashd-data` | No. It is re-downloadable. Back it up only to save the sync time |
@@ -679,22 +678,11 @@ table is in `services/issuer/README.md`, "What is stored and logged"):
   logging for the issuer hostname where the plan allows. Do not put a logging proxy (or Caddy's `log` directive) in front
   of the issuer.
 
-**Starter tokens (optional).** Set `STARTER_ISSUER_IDENTITY_ID` in `.env` (its own identity, never `ISSUER_IDENTITY_ID`) and
-put the starter identity's `epoch-<E>.pem` files in `secrets/starter-keys` (`init.sh` creates the directory; mode 0600, owner uid
-1000, writable). Generate and publish them with `--purpose starter` (`services/issuer/README.md`, "Starter tokens"), then check
-`curl -s http://127.0.0.1:8789/v1/starter/info | jq '{ready, issuingEpochs, keys: [.keys[].epoch]}'`. The starter store is
-`/data-starter/starter.sqlite` in its own volume `starter-data`: it is the **lifetime** dedup (losing it re-opens every starter), but
-two copies taken at different times show which masternodes and proposals took a starter in between, and payout times are public.
-So back it up **rarely**: at most once per epoch, after the housekeeping tick has cleared the closed window's retry columns, with
-SQLite's online backup, keeping **only the latest copy**, encrypted, without its mtime (`cp` without `-p`). Exclude the volume
-from Proxmox backup jobs, ZFS auto-snapshots and VM snapshots (services/issuer/README.md, "Back up the starter store, but rarely").
-
 **State.** The `issuer-data` volume holds the badge dedup rows of the open issuance window and the per-epoch counts that become
 `issuerReport`. It is small and is **not backed up**: copies taken while a window is open would be a record of which masternodes
 asked. A lost or reset store refuses the epoch whose window was already open (it cannot dedup tokens issued before) and issues
-again from the next one, so nothing is issued twice. Keep it, the starter store and the key directories out of automatic snapshots.
-The starter store (`starter-data`) is the exception that is backed up, rarely (above). Private keys are in neither volume: they live
-in `secrets/issuer-keys` and `secrets/starter-keys`.
+again from the next one, so nothing is issued twice. Keep it and the key directory out of automatic snapshots.
+Private keys are not in the volume: they live in `secrets/issuer-keys`.
 
 **Update.** `git pull && docker compose build issuer && docker compose up -d issuer`. A restart is safe: the
 challenge secret, the keys and the store survive it.

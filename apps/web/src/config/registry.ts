@@ -78,7 +78,7 @@ export interface Registry {
   priceFeed: NamedUrl | null;
   /** Central login (accounts service, PLAN 4.2). Not built yet: the interface is in @govhub/auth `central.ts`. */
   accounts: NamedUrl | null;
-  /** Starter-voucher faucet (PLAN 4.3). Vouchers are pasted as links; the app never calls the mainnet invitation endpoint itself. */
+  /** Voucher faucet (PLAN 4.3). Vouchers are pasted as links; the app never calls the mainnet invitation endpoint itself. */
   faucet: NamedUrl | null;
   forum: ForumEndpoints;
 }

@@ -43,7 +43,7 @@ const STATUS: Record<IssueErrorCode, number> = {
 };
 
 /** Blocks the cached list may trail the fresh tip before it is refused (the timer refreshes it every ISSUER_TICK_S). */
-export const MAX_LIST_LAG = 5;
+const MAX_LIST_LAG = 5;
 
 export class IssueError extends Error {
   readonly code: IssueErrorCode;
@@ -85,66 +85,9 @@ export interface TokenServiceDeps {
   /**
    * Requests per second allowed past the cheap checks (shape, epoch, key, challenge HMAC, blinded-message hash), i.e. into signature
    * recovery; default 2000 (a recovery costs about 0.1 ms). Junk that fails the cheap checks does not consume it (N6); well-formed
-   * floods are for the edge's per-IP limit. Ignored when `budget` is given.
+   * floods are for the edge's per-IP limit.
    */
   maxRecoveriesPerSec?: number;
-  /** a budget shared with the starter service (one CPU, one backstop) */
-  budget?: RecoveryBudget;
-}
-
-/** The global per-second budget for signature recoveries (a CPU backstop), shared by the badge and the starter services. */
-export class RecoveryBudget {
-  readonly #max: number;
-  #second = 0;
-  #inSecond = 0;
-
-  constructor(maxPerSec = 2000) {
-    this.#max = maxPerSec;
-  }
-
-  take(): void {
-    const s = Math.floor(Date.now() / 1000);
-    if (s !== this.#second) {
-      this.#second = s;
-      this.#inSecond = 0;
-    }
-    if (++this.#inSecond > this.#max) throw new IssueError('unavailable', 'busy, retry later');
-  }
-}
-
-/**
- * Request counts per key (an MN, a starter subject) for the current wall-clock minute only, in memory only. The whole map is dropped
- * as soon as the minute changes (on every call and on the housekeeping tick), so nothing about who asked, or when, is held beyond
- * the current minute. A fixed window: up to twice the limit can pass around a minute boundary, which is fine for a backstop.
- */
-export class MinuteCounts {
-  readonly #max: number;
-  #counts = new Map<string, number>();
-  #minute = -1;
-
-  constructor(maxPerMinute: number) {
-    this.#max = maxPerMinute;
-  }
-
-  prune(now = Date.now()): void {
-    const minute = Math.floor(now / 60_000);
-    if (minute === this.#minute) return;
-    this.#minute = minute;
-    this.#counts = new Map();
-  }
-
-  /** Counts one request for `key`; false (and not counted) once the key has reached the limit this minute. */
-  take(key: string): boolean {
-    this.prune();
-    const n = this.#counts.get(key) ?? 0;
-    if (n >= this.#max) return false;
-    this.#counts.set(key, n + 1);
-    return true;
-  }
-
-  snapshot(): { minute: number; entries: Array<[string, number]> } {
-    return { minute: this.#minute, entries: [...this.#counts] };
-  }
 }
 
 export interface TokenInput {
@@ -153,22 +96,7 @@ export interface TokenInput {
   blindedMsg: unknown;
 }
 
-/** A fresh tip (one cheap RPC, only after authentication). */
-export async function freshTip(core: Pick<CoreView, 'tipHeight'>): Promise<number> {
-  try {
-    return await core.tipHeight();
-  } catch {
-    throw new IssueError('unavailable', 'Core is not reachable');
-  }
-}
-
-/** What a failed reserve-and-sign means for the client: its blinded message is out of range, or the server failed. */
-export function signFailure(e: unknown): IssueError {
-  if (e instanceof SignerError && (e.code === 'bad-length' || e.code === 'out-of-range')) return new IssueError('bad-request', e.message);
-  return new IssueError('unavailable', 'signing failed');
-}
-
-export function b64(v: unknown, what: string, max: number): Uint8Array {
+function b64(v: unknown, what: string, max: number): Uint8Array {
   if (typeof v !== 'string' || v.length === 0 || v.length > max || !/^[A-Za-z0-9+/]+={0,2}$/.test(v)) throw new IssueError('bad-request', `${what} must be base64`);
   try {
     return base64ToBytes(v);
@@ -180,15 +108,19 @@ export function b64(v: unknown, what: string, max: number): Uint8Array {
 export class TokenService {
   readonly #d: TokenServiceDeps;
   readonly #issuerBytes: Uint8Array;
-  readonly #budget: RecoveryBudget;
-  /** per-MN request counts for the current wall-clock minute only (memory only) */
-  readonly #perMn: MinuteCounts;
+  /**
+   * Per-MN request counts for the current wall-clock minute only (memory only). The whole map is dropped as soon as the minute
+   * changes (on every call and on the housekeeping tick), so the issuer never holds which masternodes asked, or when, beyond the
+   * current minute.
+   */
+  #perMn = new Map<string, number>();
+  #minute = -1;
+  #second = 0;
+  #inSecond = 0;
 
   constructor(deps: TokenServiceDeps) {
     this.#d = deps;
     this.#issuerBytes = idToBytes(deps.issuerId);
-    this.#budget = deps.budget ?? new RecoveryBudget(deps.maxRecoveriesPerSec);
-    this.#perMn = new MinuteCounts(deps.perMnPerMinute ?? 6);
   }
 
   challenge(): { nonce: string; expiresAt: number } {
@@ -226,14 +158,14 @@ export class TokenService {
     if (!(await requestBindsBlindedMsg(req, blindedMsg))) throw new IssueError('bad-request', 'the request does not bind this blinded message');
     if (blindedMsg.length !== key.signer.modulusBytes) throw new IssueError('bad-request', `blindedMsg must be ${key.signer.modulusBytes} bytes`);
     // 3. authentication (the voting key in the current list). One answer for every failure.
-    this.#budget.take();
+    this.#budget();
     const proTxHash = toHex(req.proTxHash);
     const recovered = recoverMessageSigner(sig, buildTokenRequest(req), d.network, { strict: true });
     const mnNow = recovered ? now.list.get(proTxHash) : undefined;
     if (!recovered || !mnNow || !equalBytes(mnNow.votingKeyId, recovered.keyId)) throw new IssueError('unauthorized', 'the signature is not from this masternode’s voting key');
     // 4. eligibility
     this.#limit(proTxHash);
-    const tip = await freshTip(d.core);
+    const tip = await this.#tip();
     // a list that stopped refreshing (protx list failing while getblockcount works) is not used (N9)
     if (tip - now.height > MAX_LIST_LAG) throw new IssueError('unavailable', 'the masternode list is out of date');
     const [tipCurrent, tipNext] = issuingEpochsAt(d.params, tip);
@@ -252,7 +184,8 @@ export class TokenService {
     try {
       out = d.store.reserve({ epoch, windowFrom, proTxHash, collateral: mnNow.collateral, blindedHash: req.blindedMsgSha256 }, () => key.signer.sign(blindedMsg));
     } catch (e) {
-      throw signFailure(e);
+      if (e instanceof SignerError && (e.code === 'bad-length' || e.code === 'out-of-range')) throw new IssueError('bad-request', e.message);
+      throw new IssueError('unavailable', 'signing failed');
     }
     if (out.kind === 'closed') throw new IssueError('wrong-epoch', `issuance for epoch ${epoch} has closed`, epoch + 1);
     if (out.kind === 'store-too-new') throw new IssueError('unavailable', `this issuer's token store started after epoch ${epoch}'s window opened and its key was published; it issues again from the next epoch`);
@@ -261,9 +194,30 @@ export class TokenService {
     return { blindSig: out.blindSig, epoch, retry: out.retry };
   }
 
+  async #tip(): Promise<number> {
+    try {
+      return await this.#d.core.tipHeight();
+    } catch {
+      throw new IssueError('unavailable', 'Core is not reachable');
+    }
+  }
+
+  /** The global budget for signature recoveries (a CPU backstop). */
+  #budget(): void {
+    const s = Math.floor(Date.now() / 1000);
+    if (s !== this.#second) {
+      this.#second = s;
+      this.#inSecond = 0;
+    }
+    if (++this.#inSecond > (this.#d.maxRecoveriesPerSec ?? 2000)) throw new IssueError('unavailable', 'busy, retry later');
+  }
+
   /** Drops the per-MN counts once their minute is over. Called on every request and by the housekeeping tick. */
   prune(now = Date.now()): void {
-    this.#perMn.prune(now);
+    const minute = Math.floor(now / 60_000);
+    if (minute === this.#minute) return;
+    this.#minute = minute;
+    this.#perMn = new Map();
   }
 
   /**
@@ -271,12 +225,18 @@ export class TokenService {
    * in the service reads it.
    */
   debugSnapshot(): { minute: number; perMn: Array<[string, number]> } {
-    const s = this.#perMn.snapshot();
-    return { minute: s.minute, perMn: s.entries };
+    return { minute: this.#minute, perMn: [...this.#perMn] };
   }
 
-  /** A few requests per MN per wall-clock minute, counted only after authentication (memory only, nothing about the requester). */
+  /**
+   * A few requests per MN per wall-clock minute, counted only after authentication (memory only, nothing about the requester).
+   * A fixed window: up to twice the limit can pass around a minute boundary, which is fine for a backstop.
+   */
   #limit(proTxHash: string): void {
-    if (!this.#perMn.take(proTxHash)) throw new IssueError('unavailable', 'too many requests for this masternode; wait a minute');
+    this.prune();
+    const max = this.#d.perMnPerMinute ?? 6;
+    const n = this.#perMn.get(proTxHash) ?? 0;
+    if (n >= max) throw new IssueError('unavailable', 'too many requests for this masternode; wait a minute');
+    this.#perMn.set(proTxHash, n + 1);
   }
 }
