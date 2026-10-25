@@ -59,9 +59,14 @@ export interface WatchedVote extends SignedVoteRecord {
   failReason?: string;
   /** replaced / dropped: the vote hash that replaced it ('' = a vote not cast in this browser) */
   replacedBy?: string;
-  /** confirmed: first seen in the bridge's verified vote set; counted: the recount of that set includes it */
+  /**
+   * confirmed: first seen in the first bridge's vote set (signature checked here); counted: the recount of that set includes it. Both are
+   * that bridge's report, not proof that Dash Core counted the vote.
+   */
   seenAt?: number;
   countedAt?: number;
+  /** Other configured bridges whose vote set also has this exact vote (signature checked here): agreement from another source. */
+  alsoSeenBy?: string[];
   /** at signing: the masternode's weight (1 regular, 4 evonode) and its current vote, for the tally change shown on success */
   weight?: number;
   prev?: { outcome: number; time: number } | null;

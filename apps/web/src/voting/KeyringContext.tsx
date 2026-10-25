@@ -181,6 +181,8 @@ const HEALTH_TTL_MS = 60_000;
 /** Watchdog: fast while something is about to change, slower otherwise; each quiet tick stretches the wait (up to x4). */
 const TICK_FAST_MS = 4000;
 const TICK_SLOW_MS = 20_000;
+/** Other configured bridges asked whether they also show a vote the first bridge reports. */
+const MAX_CORROBORATING_BRIDGES = 2;
 /**
  * Deferred batches: random delays (so a relay does not see the batch as one burst) that still respect the same pacing: after the
  * first ten requests, at least IMMEDIATE_PACE_MS apart. Returned in submission order's terms (index i = vote i).
@@ -322,6 +324,9 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
 
   const bridgeEndpoint = enabledBridges(registry)[0] ?? null;
   const bridge = useMemo<Bridge | null>(() => (sim ? sim.bridge : bridgeEndpoint ? new HttpBridge(bridgeEndpoint.name, bridgeEndpoint.httpBase) : null), [sim, bridgeEndpoint?.name, bridgeEndpoint?.httpBase]);
+  // Other configured bridges: asked only whether they show a vote the first bridge reports, so the status can say who else agrees.
+  const otherBridgesKey = sim ? '' : JSON.stringify(enabledBridges(registry).slice(1, 1 + MAX_CORROBORATING_BRIDGES).map((b) => [b.name, b.httpBase]));
+  const otherBridges = useMemo<Bridge[]>(() => (otherBridgesKey ? (JSON.parse(otherBridgesKey) as Array<[string, string]>).map(([name, base]) => new HttpBridge(name, base)) : []), [otherBridgesKey]);
   const dapi = useMemo(() => (mode === 'live' ? createWebDapi(dapiConfig(registry)) : null), [registry, mode]);
   const lookupDeps = useMemo<LookupDeps | null>(
     () =>
@@ -1323,12 +1328,22 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       // works while the keyring is locked too (no private key needed).
       const current = new Map<string, CurrentVote>();
       const sets = new Map<string, BridgeVotes>();
-      if (bridge) {
-        const signerOf = new Map<string, Uint8Array>();
-        for (const v of open) {
-          const r = recoverVoteSigner(v.sig, voteFields({ mn: v, govHash: v.govHash, outcome: v.outcome, time: v.time }), coreNetwork);
-          if (r) signerOf.set(currentKey(v, v.govHash), r.keyId);
+      const signerOf = new Map<string, Uint8Array>();
+      for (const v of open) {
+        const r = recoverVoteSigner(v.sig, voteFields({ mn: v, govHash: v.govHash, outcome: v.outcome, time: v.time }), coreNetwork);
+        if (r) signerOf.set(currentKey(v, v.govHash), r.keyId);
+      }
+      /** The current vote of each of our masternodes in one bridge's vote set for `h`, signature checked here. */
+      const currentIn = (vs: BridgeVotes, h: string, into: Map<string, CurrentVote>) => {
+        for (const b of vs.votes) {
+          const ck = currentKey(b, h);
+          const keyId = signerOf.get(ck);
+          if (!keyId || b.signal !== 1 || b.time > now + VOTE_MAX_FUTURE_S || (into.get(ck)?.time ?? -1) >= b.time) continue;
+          const fields = { collateralTxid: b.collateralTxid, collateralIndex: b.collateralIndex, govHashDisplay: h, signal: b.signal, outcome: b.outcome, time: b.time };
+          if (verifyVoteSignature(b.sig, fields, keyId, coreNetwork)) into.set(ck, { outcome: b.outcome, time: b.time });
         }
+      };
+      if (bridge) {
         now = nowS();
         for (const h of new Set(open.map((v) => v.govHash))) {
           let vs;
@@ -1338,14 +1353,24 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
             continue; // no tally yet, or unreachable
           }
           sets.set(h, vs);
-          for (const b of vs.votes) {
-            const ck = currentKey(b, h);
-            const keyId = signerOf.get(ck);
-            if (!keyId || b.signal !== 1 || b.time > now + VOTE_MAX_FUTURE_S || (current.get(ck)?.time ?? -1) >= b.time) continue;
-            const fields = { collateralTxid: b.collateralTxid, collateralIndex: b.collateralIndex, govHashDisplay: h, signal: b.signal, outcome: b.outcome, time: b.time };
-            if (verifyVoteSignature(b.sig, fields, keyId, coreNetwork)) current.set(ck, { outcome: b.outcome, time: b.time });
+          currentIn(vs, h, current);
+        }
+      }
+      // 2b. other configured bridges: does one of them show the vote the first one reports? (Only asked for votes that one confirmed;
+      // a second bridge run by another operator is the one independent check here short of your own node.)
+      const elsewhere = new Map<string, Map<string, CurrentVote>>();
+      const confirmedHashes = new Set(open.filter((v) => v.status === 'confirmed' || bridgeVerdict(v, current.get(currentKey(v, v.govHash)), watchedRef.current)?.status === 'confirmed').map((v) => v.govHash));
+      for (const other of otherBridges) {
+        const seen = new Map<string, CurrentVote>();
+        for (const h of confirmedHashes) {
+          if (open.every((v) => v.govHash !== h || v.alsoSeenBy?.includes(other.name))) continue;
+          try {
+            currentIn(await other.votes(h), h, seen);
+          } catch {
+            /* unreachable, or no tally there: no claim either way */
           }
         }
+        elsewhere.set(other.name, seen);
       }
       const updates: WatchedVote[] = [];
       const newlySeen: string[] = [];
@@ -1357,6 +1382,10 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
           next = { ...next, status: 'confirmed', seenAt: now };
           if (now - (v.signedAt ?? v.time) < 86400) newlySeen.push(v.voteHash);
         } else if (verdict?.status === 'replaced') next = { ...next, status: 'replaced', replacedBy: verdict.replacedBy };
+        if (next.status === 'confirmed') {
+          const agreeing = [...elsewhere].filter(([name, seen]) => !next.alsoSeenBy?.includes(name) && bridgeVerdict(next, seen.get(currentKey(v, v.govHash)), watchedRef.current)?.status === 'confirmed').map(([name]) => name);
+          if (agreeing.length) next = { ...next, alsoSeenBy: [...(next.alsoSeenBy ?? []), ...agreeing] };
+        }
         // 3. counted: the recount of the tally's vote set has our vote as the masternode's current one, and recounts to the set's hash
         if (next.status === 'confirmed' && !next.countedAt) {
           const vs = sets.get(v.govHash);
@@ -1433,7 +1462,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       kickRef.current = () => {};
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [identityId, mode, bridge, relaysKey, updateWatched, sessionObj]);
+  }, [identityId, mode, bridge, otherBridges, relaysKey, updateWatched, sessionObj]);
 
   // relay health: checked once the keyring opens, and again while votes wait for a relay
   useEffect(() => {
@@ -1482,9 +1511,9 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
           const vs = await bridge.votes(v.govHash);
           const b = vs.votes.find((x) => mnId(x) === mnId(v));
           const exact = !!b && b.time === v.time && b.outcome === v.outcome && b.sig === v.sig;
-          checks.push({ label: 'The network has it as the current vote', ok: exact, detail: exact ? `The bridge’s vote set as of block ${vs.asOfHeight} has exactly this vote.` : b ? 'The bridge’s vote set has a different vote for this masternode.' : 'The bridge’s vote set has no vote for this masternode yet.' });
+          checks.push({ label: 'The bridge reports the network has it as the current vote', ok: exact, detail: exact ? `The bridge’s vote set as of block ${vs.asOfHeight} has exactly this vote.` : b ? 'The bridge’s vote set has a different vote for this masternode.' : 'The bridge’s vote set has no vote for this masternode yet.' });
         } catch (e) {
-          checks.push({ label: 'The network has it as the current vote', ok: null, detail: errorText(e) });
+          checks.push({ label: 'The bridge reports the network has it as the current vote', ok: null, detail: errorText(e) });
         }
       }
       return { checks };

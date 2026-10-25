@@ -5,6 +5,7 @@ import { errorText } from '../../auth/runtime.ts';
 import { useKeyring, type VoteProof } from '../../voting/KeyringContext.tsx';
 import type { WatchedVote } from '../../voting/pending.ts';
 import { OUTCOME_NAME } from '../../voting/plan.ts';
+import { corroboration } from '../../voting/status.ts';
 import { CopyButton, OUTCOME_LABEL } from './common.tsx';
 
 const reducedMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -97,7 +98,10 @@ export function VoteSuccess({ vote, name, proposalName, onRecount }: { vote: Wat
     <section ref={ref} tabIndex={-1} className="vwin" role="status" data-testid="vote-success" aria-labelledby={`win-${vote.voteHash}`}>
       <WinMark />
       <div className="vwin-body">
-        <h3 id={`win-${vote.voteHash}`}>Your vote is on the network</h3>
+        <h3 id={`win-${vote.voteHash}`}>The bridge reports your vote is on the network</h3>
+        <p className="small muted" data-testid="vote-success-source">
+          {corroboration(vote).trim()}
+        </p>
         <p className="vwin-sub">
           <b>{name}</b> voted <b className={`vwin-word vwin-word-${vote.outcome}`}>{word}</b> on {proposalName}.
         </p>
