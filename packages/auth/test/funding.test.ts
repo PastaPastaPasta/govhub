@@ -844,16 +844,27 @@ describe('account-setup key: key-wallet path, and the hardened one used until 20
     expect(r.identityId).toBe(identityIdFromOutpoint(r.record.lock!.txid, 0));
   });
 
-  it('a finished or discarded legacy record, or an explicit choice, leaves new fundings on the key-wallet path', async () => {
-    for (const patch of [{ state: 'done' as const }, { discarded: true }]) {
-      const store = memStore();
-      store.save(legacyRecord(patch));
-      expect(createFundingPath(store, w(), 0)).toBe("m/9'/1'/5'/1'/0");
-    }
+  it('a finished legacy record, a record under today\'s key at that index, or an explicit choice leave fundings on the key-wallet path', async () => {
+    const done = memStore();
+    done.save(legacyRecord({ state: 'done' }));
+    expect(createFundingPath(done, w(), 0)).toBe("m/9'/1'/5'/1'/0");
+    // e.g. the Recover tool finished a payment at today's address of that index
+    const both = memStore();
+    both.save(legacyRecord());
+    const now = w().derive(registrationFundingPath('testnet', 0)).publicKey;
+    both.save({ ...legacyRecord(), key: fundingRecordKey('testnet', 'create', hash160(now)), address: addressOf(now, 'testnet') });
+    expect(createFundingPath(both, w(), 0)).toBe("m/9'/1'/5'/1'/0");
     const store = memStore();
     store.save(legacyRecord());
     expect(await firstAddress(store, false)).toBe('yM5Wg7qxSi4sMiZuwrx37FxRdacdCyraaB');
     expect(await firstAddress(memStore(), true)).toBe('yR8PUe4jSZ37A4HUtFwtLfe9WhB7braYG2');
+  });
+
+  it('a hidden (discarded) legacy setup is still replayed at its address when the phrase continues, as the hide dialog promises', () => {
+    const store = memStore();
+    store.save(legacyRecord({ discarded: true }));
+    expect(createFundingPath(store, w(), 0)).toBe("m/9'/1'/5'/1'/0'");
+    expect(nextCreateIndex(store, w())).toBe(0);
   });
 
   it('nextCreateIndex skips an index whose legacy lock is too small, as before', () => {

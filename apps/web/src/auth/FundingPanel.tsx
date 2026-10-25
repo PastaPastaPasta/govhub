@@ -121,8 +121,9 @@ export function FundingPanel(p: FundingPanelProps) {
     errorBox = <TooSmall error={error} offerTopUp wallet={p.wallet} problem={recoverError} initialId={lastTarget} onTopUp={startRecovery} />;
   else if (error) errorBox = <ErrorBox text={(recoverError ? `${recoverError} ` : '') + errorText(error)} retry={retry} onRecover={closeSheet} />;
 
-  // a new payment at another index: another address, which a starter token (bound to the first one) cannot pay
-  if (fresh !== null) return <FundingPanel key={fresh} {...p} identityIndex={fresh} onAwaitingDeposit={undefined} deposit={undefined} />;
+  // a new payment at another index: another address, which a starter token (bound to the first one) cannot pay. Not `legacy` either:
+  // runFunding picks the key (today's, unless this browser began that index on the old one)
+  if (fresh !== null) return <FundingPanel key={fresh} {...p} identityIndex={fresh} legacy={undefined} onAwaitingDeposit={undefined} deposit={undefined} />;
   if (recovered) {
     return (
       <div className="funding" data-state="recovered">

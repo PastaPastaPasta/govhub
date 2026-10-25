@@ -108,17 +108,22 @@ export const fundingRecordKey = (network: Network, kind: FundingKind, keyHash160
 /**
  * The account-setup key path of identity `identityIndex`. New fundings use key-wallet's `m/9'/c'/5'/1'/i` (registrationFundingPath).
  * The hardened `m/9'/c'/5'/1'/i'` govhub used until 2026-10-25 is used only when `legacy` is true (the Recover tool's legacy lane) or,
- * with `legacy` unset, when this browser holds an unfinished funding there: that one finishes at the address it showed.
+ * with `legacy` unset, when this browser began that index there and has not finished it (hidden ones included: continuing replays
+ * their address) and holds nothing at that index under today's key: such a funding finishes at the address it showed.
  */
 export function createFundingPath(store: FundingStore, wallet: SeedWallet, identityIndex: number, legacy?: boolean): string {
   const old = legacyRegistrationFundingPath(wallet.network, identityIndex);
+  const now = registrationFundingPath(wallet.network, identityIndex);
   if (legacy === undefined) {
-    const k = wallet.derive(old);
-    wipe(k.privateKey);
-    const r = store.load(fundingRecordKey(wallet.network, 'create', hash160(k.publicKey)));
-    legacy = !!r && r.state !== 'done' && !r.discarded;
+    const record = (path: string) => {
+      const k = wallet.derive(path);
+      wipe(k.privateKey);
+      return store.load(fundingRecordKey(wallet.network, 'create', hash160(k.publicKey)));
+    };
+    const r = record(old);
+    legacy = !!r && r.state !== 'done' && !record(now);
   }
-  return legacy ? old : registrationFundingPath(wallet.network, identityIndex);
+  return legacy ? old : now;
 }
 
 export interface FundingView {

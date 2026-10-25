@@ -110,7 +110,7 @@ testnet. The phrase is BIP39 English with **no passphrase**.
 | Key | Path / rule | Used for |
 |---|---|---|
 | Account setup (registration funding) | `m/9'/coin'/5'/1'/i`: identity index `i`, **not hardened** (key-wallet's `IdentityRegistration` pool, DIP-13) | The deposit address and asset lock of a new identity at index `i` (its auth keys are `m/9'/coin'/5'/0'/0'/i'/k'`) |
-| Account setup before 2026-10-25 (legacy, scan-only) | `m/9'/coin'/5'/1'/i'`: identity index `i`, hardened | What govhub used until 2026-10-25 (and the phase-0 mainnet run). No new funding goes here. Recover scans it (`legacyCreateFamily`, lane "Account setup (before 2026-10-25)"); what is there can be swept, finish its account or top up an identity. A browser with an unfinished funding, or a starter token, made for this key finishes with it (`createFundingPath`, `starterOnLegacyKey`). |
+| Account setup before 2026-10-25 (legacy, scan-only) | `m/9'/coin'/5'/1'/i'`: identity index `i`, hardened | What govhub used until 2026-10-25 (and the phase-0 mainnet run). No new funding goes here. Recover scans it (`legacyCreateFamily`, lane "Account setup (before 2026-10-25)"); what is there can be swept, finish its account or top up an identity. A browser that began a setup on this key and has not finished it (hidden ones included), with nothing at that index under today's key, or that holds a starter token or request made for it, finishes with it (`createFundingPath`, `starterOnLegacyKey`). |
 | Top-up | `m/9'/coin'/5'/2'/i'/n`: identity index `i` hardened, top-up `n` not hardened (key-wallet `IdentityTopUp { registration_index }`, DIP-13) | The n-th top-up of identity `i` |
 | Top-up with a pasted key | `HMAC-SHA256(key = the 32-byte signed-in private key, msg = "govhub/topup/v1" ‖ identity id (32 bytes) ‖ u32be(n) ‖ u8(ctr))`, `ctr` = 0, then 1, … until the result is a valid private key | The n-th top-up while signed in with a pasted key (no phrase). Only govhub derives it. |
 | Proposal fee deposit | `m/9'/coin'/100'/0'/n`: DIP-9 feature `100'` (unregistered, govhub's own), branch `0'`, index `n` **not hardened** (DIP-13's convention for funding keys) | The one-time address a proposal fee is paid to from the browser (the creation wizard). The wizard picks a free `n` among 0..19 at random; Recover always scans 0..19 plus a gap of 20 (`proposalFeeFamily`). |
@@ -153,6 +153,11 @@ sees govhub's account-setup addresses in its registration pool. govhub's index i
 Top-ups match rs-platform-wallet and Evo Tool; DashSync and dashj have no per-identity top-up level, so they never derive govhub's
 top-up keys (nor key-wallet's per-identity ones).
 
+One consequence of sharing the path: rs-platform-wallet takes the next unused pool address, while govhub uses the identity index. A
+phrase used in both can see govhub's identity `j` funded at an address the other wallet already used for another identity (address
+reuse), and Recover's "Account setup" lane may list another wallet's unused lock at index `j` as "finish account #j". Both are the
+same seed's keys: nothing is lost, and Platform refuses a lock that is used twice.
+
 ## What other wallets see
 
 Checked in source at these commits, read without running them:
@@ -174,8 +179,8 @@ What they show:
   - key-wallet (Dash Evo Tool) puts identity funding addresses in its filter, but checks ordinary payments only against fund accounts.
 - **Asset locks crediting govhub's keys:** key-wallet based wallets (Dash Evo Tool, the iOS develop wallet) match type-8 locks to
   identity funding keys in their pools: the registration pool, which now holds govhub's account-setup keys, and the top-up accounts
-  they provisioned. Account setups made before 2026-10-25 used the hardened `…/1'/i'`, which no other wallet derives: for those, use
-  Recover. dashj also matches locks against its funding chains (`AuthenticationGroupExtension.java:722-740`), registration keys
+  they provisioned. Account setups made before 2026-10-25 used the hardened `…/1'/i'`, which no other wallet funds from or scans
+  (Evo Tool lists it in a display-only address book): for those, use Recover. dashj also matches locks against its funding chains (`AuthenticationGroupExtension.java:722-740`), registration keys
   included. Treat any other wallet showing a govhub lock as an exception.
 - **Exporting the one-time key** (the Recover tool's advanced option, WIF) is the way to use another wallet. Before it shows the key,
   the tool warns that anyone holding the WIF can take the payments at that address and use an unused asset lock that credits it. The

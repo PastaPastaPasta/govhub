@@ -668,7 +668,7 @@ function Redeem(p: { deps: StarterDeps; token: StarterToken; expected: string; l
     if (confirm(msg)) setPayInstead(true);
   };
   const deposit = payInstead ? undefined : <StarterDeposit st={st} onRetry={() => run(expected)} onPayInstead={payWithDash} />;
-  return <FundingPanel kind="create" wallet={p.wallet} identityIndex={p.identityIndex} legacy={p.legacy || undefined} onDone={p.onDone} onAwaitingDeposit={run} deposit={deposit} />;
+  return <FundingPanel kind="create" wallet={p.wallet} identityIndex={p.identityIndex} legacy={p.legacy} onDone={p.onDone} onAwaitingDeposit={run} deposit={deposit} />;
 }
 
 function StarterDeposit({ st, onRetry, onPayInstead }: { st: RedeemState; onRetry(): void; onPayInstead(): void }) {

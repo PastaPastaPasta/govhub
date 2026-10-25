@@ -544,7 +544,8 @@ describe('redeem later and resume', () => {
     expect(starterOnLegacyKey(localStorage, w, 0)).toBe(false);
     const r = await render(<FundNewIdentity phrase={phrase} identityIndex={0} resume />);
     await until(() => h.funding.length, 'the funding panel');
-    expect(h.funding.at(-1)!.legacy).toBeUndefined();
+    // explicit: the funding run must watch the address the token is bound to, whatever else this browser holds
+    expect(h.funding.at(-1)!.legacy).toBe(false);
     await r.unmount();
   });
 
