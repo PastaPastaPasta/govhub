@@ -115,7 +115,7 @@ export function SessionControl() {
         {session && auth.session && item('Add passkey', () => auth.openSheet('passkeys'))}
         {!session && item('Sign in or create an account', openSignIn)}
         {session && (
-          <Link className="menu-item" to="/badge" onClick={hide} data-testid="menu-badge">
+          <Link className="menu-item" to="/masternodes#mn-badge" onClick={hide} data-testid="menu-badge">
             Masternode badge
           </Link>
         )}

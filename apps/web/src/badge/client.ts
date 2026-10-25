@@ -121,7 +121,15 @@ export interface RequestOptions {
   mode?: PrivacyMode;
   /** tests and the live script only: request at once instead of at a random height */
   immediate?: boolean;
+  /**
+   * A later epoch to ask for, when the issuer has no key yet for the one `mode` asks for now (its first key's epoch, from
+   * checkKeyAvailability): the job waits for that epoch's request window like any other. At most MAX_AHEAD epochs ahead.
+   */
+  epoch?: number;
 }
+
+/** How far ahead of the epoch a mode asks for now a request may be scheduled (checkKeyAvailability looks as far). */
+const MAX_AHEAD = 3;
 
 /** Where a job's request may go out: Standard during its (current) epoch, the private modes during the epoch before. */
 export function requestWindow(p: EpochParams, epoch: number, mode: PrivacyMode): HeightRange {
@@ -193,8 +201,10 @@ export async function createJob(d: ClientDeps, jobs: readonly BadgeJob[], voting
   if (typeof voting === 'string' && !voting.trim()) throw new BadgeRequestError('Paste the MN voting key (WIF).');
   const p = EPOCH_PARAMS[d.net];
   const mode = o.mode ?? 'standard';
-  const epoch = jobEpoch(p, coreHeight, mode, o.immediate);
-  if (epoch === null) throw new BadgeRequestError('No issuance window is open.');
+  const now = jobEpoch(p, coreHeight, mode, o.immediate);
+  if (now === null) throw new BadgeRequestError('No issuance window is open.');
+  if (o.epoch !== undefined && (!Number.isInteger(o.epoch) || o.epoch < now || o.epoch > now + MAX_AHEAD)) throw new BadgeRequestError(`Epoch ${o.epoch} cannot be requested now (only ${now} to ${now + MAX_AHEAD}).`);
+  const epoch = o.epoch ?? now;
   if (jobs.some((j) => j.issuer.identityId === o.issuer.identityId && j.epoch === epoch && j.state !== 'expired' && j.state !== 'failed'))
     throw new BadgeRequestError(`You already have a badge request with ${o.issuer.name} for epoch ${epoch}. One badge per issuer is all an identity can show; asking with more MNs would only tell the issuer they belong together.`);
   const wif = typeof voting === 'string' ? voting.trim() : null;

@@ -14,11 +14,25 @@ test.describe('MN badge (fixtures)', () => {
     expect(await cspViolations(page)).toEqual([]);
   });
 
-  test('the badge page is reachable from My masternodes, and its copy does not overclaim', async ({ page }) => {
+  test('"Get an MN badge" leads to the unified flow on My masternodes; the keyring card has the badge row; the badge page copy does not overclaim', async ({ page }) => {
     const errors = await watchPage(page);
     await gotoFixtures(page, '/masternodes');
-    await page.getByTestId('mn-badge-link').click();
+    await page.getByTestId('session-button').click();
+    await page.getByRole('button', { name: /^Alice$/ }).click();
+    await expect(page.getByTestId('key-group')).toHaveCount(2);
+    // the account menu's badge link lands on this page's badge row
+    await page.getByTestId('session-button').click();
+    await page.getByTestId('menu-badge').click();
+    await expect(page).toHaveURL(/\/masternodes(\?[^#]*)?#mn-badge$/);
+    const row = page.getByTestId('mnb-row');
+    await expect(row).toBeVisible();
+    await expect(row.getByTestId('mnb-summary')).toHaveText('not available here');
+    await expect(row).toContainText('MN badges need live data');
+    await expect(row.getByRole('switch')).toBeDisabled();
+    // the standalone badge page stays, and points back to the unified flow
+    await gotoFixtures(page, '/badge');
     await expect(page.getByRole('heading', { name: 'MN owner badge' })).toBeVisible();
+    await expect(page.getByTestId('badge-main-path').getByRole('link', { name: 'add your masternodes' })).toHaveAttribute('href', /\/masternodes#mn-badge$/);
     const main = page.locator('#main');
     await expect(main).not.toContainText('never learns which identity');
     await expect(main).not.toContainText('cannot tell by timing');
