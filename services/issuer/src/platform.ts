@@ -9,11 +9,19 @@ type Evo = typeof import('@dashevo/evo-sdk');
 type Sdk = InstanceType<Evo['EvoSDK']>;
 
 const SECURITY = { critical: 1, high: 2 } as const;
+/** issuerKeysFrom reads at most this many pages of 100 keys (testnet publishes about one a day, mainnet one a month). */
+export const ISSUER_KEYS_MAX_PAGES = 20;
 
 /** What the service and the CLI need from Platform; tests use a fake. */
 export interface IssuerPlatform {
   /** Proved: the issuerKey of `issuerId` for `epoch` (B1), or null. */
   issuerKey(issuerId: string, epoch: number): Promise<IssuerKeyDoc | null>;
+  /**
+   * Proved: every issuerKey of `issuerId` with epoch >= `fromEpoch`, in epoch order (a range on the byOwnerEpoch index, paged).
+   * Throws when Platform cannot answer; at most ISSUER_KEYS_MAX_PAGES pages (100 each) are read, then it throws rather than
+   * return a list that might be incomplete.
+   */
+  issuerKeysFrom(issuerId: string, fromEpoch: number): Promise<IssuerKeyDoc[]>;
   /** Proved: the issuerRevocation of `issuerId` for `epoch` (B2), or null. */
   issuerRevocation(issuerId: string, epoch: number): Promise<IssuerRevocationDoc | null>;
   /** Proved: the issuerReport for `epoch` (B3), or null. */
@@ -24,6 +32,24 @@ export interface IssuerPlatform {
   publishIssuerReport(key: IdentityKeyFile, o: { epoch: number; tokensIssued: number }): Promise<string>;
   /** CRITICAL key: badges of `epoch` created at or after `effectiveCoreHeight` become void for readers. Immutable and unique per epoch. */
   publishIssuerRevocation(key: IdentityKeyFile, o: { epoch: number; keyId: Uint8Array; effectiveCoreHeight: number }): Promise<string>;
+}
+
+const ISSUER_KEYS_PAGE = 100;
+
+/**
+ * Every issuerKey of one owner from `fromEpoch` on, read in pages of ISSUER_KEYS_PAGE by epoch (unique per owner, so no startAfter
+ * document id is needed). The next page starts after the HIGHEST epoch seen, whatever order the SDK's result map iterates in. More
+ * than ISSUER_KEYS_MAX_PAGES pages throws rather than return a list that might be incomplete (the caller fails closed).
+ */
+export async function pageIssuerKeys(fromEpoch: number, page: (fromEpoch: number) => Promise<IssuerKeyDoc[]>): Promise<IssuerKeyDoc[]> {
+  const out: IssuerKeyDoc[] = [];
+  for (let from = fromEpoch, n = 0; ; n++) {
+    if (n >= ISSUER_KEYS_MAX_PAGES) throw new Error(`issuerKey: more than ${ISSUER_KEYS_MAX_PAGES * ISSUER_KEYS_PAGE} keys from epoch ${fromEpoch}`);
+    const docs = await page(from);
+    out.push(...docs);
+    if (docs.length < ISSUER_KEYS_PAGE) return out;
+    from = Math.max(...docs.map((d) => d.epoch)) + 1;
+  }
 }
 
 export async function connectPlatform(network: PlatformNetwork, contractId: string): Promise<IssuerPlatform> {
@@ -37,8 +63,8 @@ export async function connectPlatform(network: PlatformNetwork, contractId: stri
   const writer = createEvoPlatform(evo, sdk, network);
   const w = evo as unknown as { PrivateKey: { fromWIF(wif: string): { toBytes(): Uint8Array } } };
 
-  async function query(type: string, where: unknown[][]): Promise<Record<string, unknown>[]> {
-    const res = await sdk.documents.queryWithProof({ dataContractId: contractId, documentTypeName: type, where, limit: 2 } as never);
+  async function query(type: string, where: unknown[][], more: { orderBy?: unknown[][]; limit?: number } = {}): Promise<Record<string, unknown>[]> {
+    const res = await sdk.documents.queryWithProof({ dataContractId: contractId, documentTypeName: type, where, limit: 2, ...more } as never);
     return [...res.data.values()].filter((d): d is NonNullable<typeof d> => !!d).map((d) => d.toJSON() as Record<string, unknown>);
   }
   const one = async <T>(type: string, issuerId: string, epoch: number, parse: (d: Record<string, unknown>) => T): Promise<T | null> => {
@@ -67,6 +93,8 @@ export async function connectPlatform(network: PlatformNetwork, contractId: stri
 
   const platform: IssuerPlatform = {
     issuerKey: (issuerId, epoch) => one(BADGE_TYPES.issuerKey, issuerId, epoch, parseIssuerKeyDoc),
+    issuerKeysFrom: (issuerId, fromEpoch) =>
+      pageIssuerKeys(fromEpoch, async (from) => (await query(BADGE_TYPES.issuerKey, [['$ownerId', '==', issuerId], ['epoch', '>=', from]], { orderBy: [['epoch', 'asc']], limit: ISSUER_KEYS_PAGE })).map(parseIssuerKeyDoc)),
     issuerRevocation: (issuerId, epoch) => one(BADGE_TYPES.issuerRevocation, issuerId, epoch, parseIssuerRevocationDoc),
     issuerReport: (issuerId, epoch) => one(BADGE_TYPES.issuerReport, issuerId, epoch, parseIssuerReportDoc),
     async coreHeight() {

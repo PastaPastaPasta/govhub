@@ -1,6 +1,7 @@
-// The issuer's view of Core, from its own dashd over JSON-RPC (PLAN §8.4 rules 2-3): the tip height and the masternode list at a
-// height (`protx list registered true [height]`). Read-only RPCs only: getblockcount, getblockchaininfo, protx list.
-import { decodeAddress, type Network } from '@govhub/verify';
+// The issuer's view of Core, from its own dashd over JSON-RPC (PLAN §8.4 rules 2-3): the tip height, the masternode list at a
+// height (`protx list registered true [height]`) and, for starter tokens, the valid proposals (`gobject list valid proposals`).
+// Read-only RPCs only: getblockcount, getblockchaininfo, protx list, mnsync status, gobject list.
+import { decodeAddress, parseProposalData, type Network } from '@govhub/verify';
 import { log } from './log.ts';
 
 export interface MnState {
@@ -12,12 +13,21 @@ export interface MnState {
   valid: boolean;
 }
 
+export interface ProposalState {
+  /** hash160 of the payment address if it is P2PKH (only such an address can sign a message), else null */
+  paymentKeyId: Uint8Array | null;
+  /** end_epoch (unix seconds) */
+  endEpoch: number;
+}
+
 export interface CoreView {
   tipHeight(): Promise<number>;
   /** Out of initial block download (a syncing node's tip and lists are not the network's). */
   synced(): Promise<boolean>;
   /** Every registered MN at `height` ('tip' = now), keyed by display-order proTxHash. */
   mnList(height: number | 'tip'): Promise<Map<string, MnState>>;
+  /** The proposals Core holds as valid now, keyed by display-order (lowercase hex) govHash. */
+  proposals(): Promise<Map<string, ProposalState>>;
 }
 
 export class CoreRpcError extends Error {
@@ -56,6 +66,14 @@ export function createRpc(o: RpcOptions) {
   };
 }
 
+interface GobjectEntry {
+  DataHex: string;
+  ObjectType: number;
+  fCachedValid: boolean;
+}
+/** GOVERNANCE_OBJECT_PROPOSAL */
+const GOV_PROPOSAL = 1;
+
 interface ProTxEntry {
   proTxHash: string;
   collateralHash: string;
@@ -80,6 +98,22 @@ export function createCoreView(call: ReturnType<typeof createRpc>, network: Netw
           continue;
         }
         out.set(e.proTxHash, { collateral: `${e.collateralHash}:${e.collateralIndex}`, votingKeyId: dest.hash160, valid: e.state.PoSeBanHeight === -1 });
+      }
+      return out;
+    },
+    async proposals() {
+      // Until governance sync has finished the list is partial: refuse it (the cache keeps its last list or stays empty, and a
+      // proposal owner gets "unavailable", not "unauthorized").
+      const sync = await call<{ IsSynced: boolean }>('mnsync', ['status']);
+      if (!sync.IsSynced) throw new Error('governance is not synced yet (mnsync)');
+      const entries = await call<Record<string, GobjectEntry>>('gobject', ['list', 'valid', 'proposals']);
+      const out = new Map<string, ProposalState>();
+      for (const [hash, e] of Object.entries(entries)) {
+        if (e.ObjectType !== GOV_PROPOSAL || !e.fCachedValid || !/^[0-9a-fA-F]{64}$/.test(hash)) continue;
+        const fields = parseProposalData(e.DataHex).fields;
+        if (!fields) continue; // Core keeps it, but nobody could prove its payment address from it
+        const dest = decodeAddress(fields.paymentAddress, network);
+        out.set(hash.toLowerCase(), { paymentKeyId: dest?.type === 'p2pkh' ? dest.hash160 : null, endEpoch: fields.endEpoch });
       }
       return out;
     },
@@ -114,5 +148,27 @@ export class MnLists {
 
   snapshot(height: number): Map<string, MnState> | null {
     return this.#snaps.get(height) ?? null;
+  }
+}
+
+/**
+ * The valid proposals, refreshed on the housekeeping timer like MnLists, so a starter request for a proposal needs no RPC before it
+ * is authenticated (a stranger cannot make the issuer hit dashd with junk govHashes).
+ */
+export class ProposalCache {
+  readonly #core: Pick<CoreView, 'tipHeight' | 'proposals'>;
+  #now: { height: number; list: Map<string, ProposalState> } | null = null;
+
+  constructor(core: Pick<CoreView, 'tipHeight' | 'proposals'>) {
+    this.#core = core;
+  }
+
+  async refresh(): Promise<void> {
+    const height = await this.#core.tipHeight();
+    this.#now = { height, list: await this.#core.proposals() };
+  }
+
+  get now(): { height: number; list: Map<string, ProposalState> } | null {
+    return this.#now;
   }
 }

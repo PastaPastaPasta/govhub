@@ -40,15 +40,18 @@ ENV NODE_ENV=production \
     HTTP_HOST=0.0.0.0 \
     HTTP_PORT=8789 \
     DB_PATH=/data/issuer.sqlite \
-    ISSUER_KEY_DIR=/keys
+    ISSUER_KEY_DIR=/keys \
+    STARTER_DB_PATH=/data-starter/starter.sqlite \
+    STARTER_KEY_DIR=/starter-keys
 WORKDIR /app
 COPY --from=build /app /app
-# uid/gid 1000 = the image's `node` user. /data (token store) and /keys (per-epoch private keys, destroyed after their window)
-# are created owned by it so fresh volumes are writable.
-RUN mkdir -p /data /keys && chown node:node /data /keys && chmod 700 /keys
+# uid/gid 1000 = the image's `node` user. /data (badge token store, never backed up), /data-starter (starter store: lifetime dedup,
+# its own volume so it can be backed up rarely on its own), /keys and /starter-keys (per-epoch private keys of the badge and the
+# starter identity, destroyed after their window) are created owned by it so fresh volumes are writable.
+RUN mkdir -p /data /data-starter /keys /starter-keys && chown node:node /data /data-starter /keys /starter-keys && chmod 700 /keys /starter-keys
 USER node
 WORKDIR /app/services/issuer
-VOLUME ["/data"]
+VOLUME ["/data", "/data-starter"]
 EXPOSE 8789
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 CMD ["node", "bin/issuer.mjs", "healthcheck"]
 ENTRYPOINT ["node", "bin/issuer.mjs"]

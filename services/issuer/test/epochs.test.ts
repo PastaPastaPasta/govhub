@@ -9,12 +9,13 @@ import { closableThrough, EpochManager } from '../src/epochs.ts';
 import { keyFileName, keygen, manifestSpki } from '../src/keys.ts';
 import type { IssuerPlatform } from '../src/platform.ts';
 import { MnLists } from '../src/core.ts';
-import { E, FakeCore, legacyClose, P, rnd, tmpDb } from './helpers.ts';
+import { E, FakeCore, keysFrom, legacyClose, P, rnd, tmpDb } from './helpers.ts';
 
 const sign = () => rnd(256);
 const ISSUER = 'H62hSf5TpKbUSMov85GMhPQahZDbqsTipeoBsYPgveUH';
+const STARTER = '9Jwa6v2Bwj9TtDmgJGn3KV9qqXprYZUBEkKzkxzx3HD8';
 
-async function setup(epochs: number[], o: { lateDoc?: boolean; maxStaged?: number; startedAt?: number; store?: TokenStore } = {}) {
+async function setup(epochs: number[], o: { lateDoc?: boolean; maxStaged?: number; startedAt?: number; store?: TokenStore; starterKeyIds?: () => Uint8Array[] } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'issuer-keys-'));
   const manifest = await keygen(dir, Math.min(...epochs), Math.max(...epochs) - Math.min(...epochs) + 1, 2048);
   const docs = new Map<number, IssuerKeyDoc>();
@@ -26,7 +27,8 @@ async function setup(epochs: number[], o: { lateDoc?: boolean; maxStaged?: numbe
   const core = new FakeCore();
   const ctl: { platformHeight: number | null } = { platformHeight: null };
   const platform: IssuerPlatform = {
-    issuerKey: async (_i, e) => docs.get(e) ?? null,
+    issuerKey: async (i, e) => (i === ISSUER ? (docs.get(e) ?? null) : null),
+    issuerKeysFrom: (i, from) => keysFrom(platform.issuerKey)(i, from),
     issuerReport: async () => null,
     issuerRevocation: async () => null,
     coreHeight: async () => ctl.platformHeight ?? core.tip,
@@ -36,7 +38,7 @@ async function setup(epochs: number[], o: { lateDoc?: boolean; maxStaged?: numbe
   };
   const store = o.store ?? openTokenStore(':memory:');
   store.markStarted(o.startedAt ?? 0);
-  const m = new EpochManager({ params: P, issuerId: ISSUER, keyDir: dir, maxStagedKeys: o.maxStaged ?? 1, core, lists: new MnLists(core), store, platform: () => platform, reportKey: { identityId: ISSUER, keyId: 2, privateKeyHex: '11'.repeat(32) } });
+  const m = new EpochManager({ params: P, issuerId: ISSUER, keyDir: dir, maxStagedKeys: o.maxStaged ?? 1, core, lists: new MnLists(core), store, platform: () => platform, reportKey: { identityId: ISSUER, keyId: 2, privateKeyHex: '11'.repeat(32) }, other: () => (o.starterKeyIds ? { label: 'starter', issuerId: STARTER, activeKeyIds: o.starterKeyIds } : null) });
   return {
     dir, docs, core, store, m, reports,
     get platformHeight() { return ctl.platformHeight; },
@@ -45,6 +47,15 @@ async function setup(epochs: number[], o: { lateDoc?: boolean; maxStaged?: numbe
 }
 
 describe('epoch manager', () => {
+  it('refuses a badge key that the starter side has loaded (keys, not message tags, separate blind signatures)', async () => {
+    let starterKey: Uint8Array = new Uint8Array(32);
+    const t = await setup([E], { starterKeyIds: () => [starterKey] });
+    starterKey = t.docs.get(E)!.keyId;
+    await t.m.tick();
+    expect(t.m.activeKey(E)).toBeNull();
+    expect(t.m.status.problem).toMatch(/also a starter key/);
+  });
+
   it('loads the key for the issuing epoch when it matches the proved issuerKey', async () => {
     const t = await setup([E, E + 1]);
     await t.m.tick();
@@ -107,7 +118,7 @@ describe('epoch manager', () => {
     const t = await setup([E]);
     const fresh = openTokenStore(':memory:');
     let ph: number | null = null;
-    const platform: IssuerPlatform = { issuerKey: async () => null, issuerReport: async () => null, issuerRevocation: async () => null, coreHeight: async () => { if (ph === null) throw new Error('down'); return ph; }, publishIssuerKey: async () => 'x', publishIssuerReport: async () => 'x', publishIssuerRevocation: async () => 'x' };
+    const platform: IssuerPlatform = { issuerKey: async () => null, issuerReport: async () => null, issuerRevocation: async () => null, coreHeight: async () => { if (ph === null) throw new Error('down'); return ph; }, issuerKeysFrom: async () => [], publishIssuerKey: async () => 'x', publishIssuerReport: async () => 'x', publishIssuerRevocation: async () => 'x' };
     const m = new EpochManager({ params: P, issuerId: ISSUER, keyDir: t.dir, maxStagedKeys: 1, core: t.core, lists: new MnLists(t.core), store: fresh, platform: () => platform, reportKey: null });
     await m.tick();
     expect(fresh.startedHeight()).toBeNull(); // no Platform height yet

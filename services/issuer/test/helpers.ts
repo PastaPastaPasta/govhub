@@ -5,13 +5,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { secp256k1 } from '@noble/curves/secp256k1.js';
-import { bigIntToBytes, bindIssuerKey, blind, buildTokenRequestFor, bytesToBase64, bytesToId, EPOCH_PARAMS, epochStart, finalize, fromHex, idToBytes, importIssuerKey, prepareBadge, toHex, verifyBadgeSignature, type IssuerKey } from '@govhub/badge';
-import { hash160, signMessage } from '@govhub/verify';
+import { bigIntToBytes, bindIssuerKey, blind, buildStarterRequestFor, buildTokenRequestFor, bytesToBase64, bytesToId, EPOCH_PARAMS, epochStart, finalize, fromHex, idToBytes, importIssuerKey, prepareBadge, prepareStarter, toHex, verifyBadgeSignature, verifyStarterToken, type IssuerKey, type StarterKind } from '@govhub/badge';
+import { encodeAddress, hash160, signMessage } from '@govhub/verify';
 import { Challenges } from '../src/challenge.ts';
-import type { CoreView, MnState } from '../src/core.ts';
+import type { CoreView, MnState, ProposalState } from '../src/core.ts';
 import { openTokenStore, type TokenStore } from '../src/db.ts';
-import { TokenService } from '../src/service.ts';
+import { RecoveryBudget, TokenService } from '../src/service.ts';
 import { BlindSigner, generateIssuerKey } from '../src/signer.ts';
+import { openStarterStore, type StarterStore } from '../src/starter-db.ts';
+import { StarterService, type StarterServiceDeps } from '../src/starter.ts';
 
 export const rnd = (n: number) => new Uint8Array(randomBytes(n));
 
@@ -74,9 +76,35 @@ export function fakeMn(o: { votingPriv?: Uint8Array; collateral?: string } = {})
   return { proTxHash: toHex(rnd(32)), votingPriv: priv, now: { ...st }, snap: { ...st } };
 }
 
+export interface FakeProposal {
+  govHash: string;
+  /** the payment address's key (null for a P2SH payment address) */
+  payPriv: Uint8Array | null;
+  /** the payment address as it appears in the proposal data */
+  paymentAddress: string;
+  state: ProposalState;
+}
+
+/** the test clock's start (unix seconds) */
+export const NOW_SEC = 1_800_000_000;
+
+/** A valid proposal; `endEpoch` in unix seconds (default: a month after the test clock's start). */
+export function fakeProposal(o: { endEpoch?: number; p2sh?: boolean } = {}): FakeProposal {
+  const k = votingKey();
+  const p2sh = !!o.p2sh;
+  const scriptHash = rnd(20);
+  return {
+    govHash: toHex(rnd(32)),
+    payPriv: p2sh ? null : k.priv,
+    paymentAddress: p2sh ? encodeAddress('p2sh', scriptHash, NET) : encodeAddress('p2pkh', k.keyId, NET),
+    state: { paymentKeyId: p2sh ? null : k.keyId, endEpoch: o.endEpoch ?? NOW_SEC + 30 * 86_400 },
+  };
+}
+
 export class FakeCore implements CoreView {
   tip = TIP;
   mns = new Map<string, FakeMn>();
+  props = new Map<string, FakeProposal>();
   calls = 0;
   down = false;
   isSynced = true;
@@ -100,6 +128,24 @@ export class FakeCore implements CoreView {
       if (st) out.set(k, st);
     }
     return out;
+  }
+  addProposal(p: FakeProposal) {
+    this.props.set(p.govHash, p);
+    return p;
+  }
+  async proposals() {
+    this.calls++;
+    if (this.down) throw new Error('down');
+    return new Map([...this.props].map(([k, p]) => [k, p.state]));
+  }
+  /** What ProposalCache would hold after a refresh, read live. */
+  liveProposals() {
+    const self = this;
+    return {
+      get now() {
+        return self.down ? null : { height: self.tip, list: new Map([...self.props].map(([k, p]) => [k, p.state])) };
+      },
+    };
   }
   /** What MnLists would hold after a refresh, read live (tests change MNs after creating the world). */
   liveLists() {
@@ -149,7 +195,7 @@ export async function world(o: { keyReady?: boolean; keyCreatedAt?: number; star
   const challenges = new Challenges(rnd(32), `${NET}|${issuerId}`, 600);
   const signer = new BlindSigner(cachedKey.priv);
   const key = await importIssuerKey(cachedKey.spki);
-  const now = { sec: 1_800_000_000 };
+  const now = { sec: NOW_SEC };
   const service = new TokenService({
     network: NET,
     params: P,
@@ -184,3 +230,100 @@ export async function finishBadge(w: World, r: Awaited<ReturnType<typeof clientR
   return verifyBadgeSignature(r.bound, { ownerId: r.ownerId, msgPrefix: r.prepared.msgPrefix, sig });
 }
 
+
+// ---- starter tokens ---------------------------------------------------------------------------------------------------------------
+
+export interface StarterWorld {
+  issuerId: string;
+  core: FakeCore;
+  store: StarterStore;
+  challenges: Challenges;
+  signer: BlindSigner;
+  key: IssuerKey;
+  service: StarterService;
+  now: { sec: number };
+}
+
+export async function starterWorld(o: { keyReady?: boolean; graceDays?: number; store?: StarterStore; budget?: RecoveryBudget } = {}): Promise<StarterWorld> {
+  cachedKey ??= (() => {
+    const k = generateIssuerKey(2048);
+    return { priv: k.privateKey, spki: k.spki };
+  })();
+  const issuerId = bytesToId(rnd(32));
+  const core = new FakeCore();
+  const store = o.store ?? openStarterStore(':memory:');
+  const challenges = new Challenges(rnd(32), `starter|${NET}|${issuerId}`, 1800);
+  const signer = new BlindSigner(cachedKey.priv);
+  const key = await importIssuerKey(cachedKey.spki);
+  const now = { sec: NOW_SEC };
+  const w: StarterWorld = { issuerId, core, store, challenges, signer, key, now, service: undefined as never };
+  w.service = starterService(w, {
+    activeKey: (e) => (o.keyReady === false || e !== E ? null : { epoch: E, keyId: key.keyId, signer, keyCreatedAt: 1 }),
+    proposalGraceDays: o.graceDays ?? 30,
+    budget: o.budget ?? new RecoveryBudget(),
+  });
+  return w;
+}
+
+/** A StarterService on the world's state, with some dependencies replaced (a stale list, a failing Core, ...). */
+export function starterService(w: Omit<StarterWorld, 'service'>, over: Partial<StarterServiceDeps> = {}): StarterService {
+  return new StarterService({
+    network: NET,
+    params: P,
+    issuerId: w.issuerId,
+    core: w.core,
+    lists: w.core.liveLists(),
+    proposals: w.core.liveProposals(),
+    store: w.store,
+    challenges: w.challenges,
+    activeKey: () => ({ epoch: E, keyId: w.key.keyId, signer: w.signer, keyCreatedAt: 1 }),
+    nowSec: () => w.now.sec,
+    proposalGraceDays: 30,
+    budget: new RecoveryBudget(),
+    ...over,
+  });
+}
+
+/**
+ * What the browser does: a starter message for a fresh funding key (pubKeyHash), blinded; the request for the MN or proposal,
+ * signed with its voting key or payment-address key.
+ */
+export async function starterRequest(
+  w: StarterWorld,
+  subject: { kind: StarterKind; id: string; priv: Uint8Array },
+  over: { epoch?: number; keyId?: Uint8Array; issuerId?: string; net?: 'testnet' | 'mainnet'; nonce?: Uint8Array; signWith?: Uint8Array; pubKeyHash?: Uint8Array; blindedMsg?: Uint8Array } = {},
+) {
+  const pubKeyHash = over.pubKeyHash ?? rnd(20);
+  const fields = { net: NET, issuerId: idToBytes(w.issuerId), epoch: E, pubKeyHash };
+  const prepared = prepareStarter(w.key, fields);
+  const blinded = await blind(w.key, prepared.preparedMsg);
+  const blindedMsg = over.blindedMsg ?? blinded.blindedMsg;
+  const nonce = over.nonce ?? fromHex(w.service.challenge().nonce);
+  const request = await buildStarterRequestFor(
+    { net: over.net ?? NET, issuerId: idToBytes(over.issuerId ?? w.issuerId), epoch: over.epoch ?? E, keyId: over.keyId ?? w.key.keyId, kind: subject.kind, subject: fromHex(subject.id), nonce },
+    blindedMsg,
+  );
+  const signature = signMessage(over.signWith ?? subject.priv, request);
+  return { fields, prepared, blindedMsg, inv: blinded.inv, request, signature, body: { request, signature, blindedMsg: bytesToBase64(blindedMsg) } };
+}
+
+export const mnSubject = (m: FakeMn) => ({ kind: 'mn' as const, id: m.proTxHash, priv: m.votingPriv });
+export const proposalSubject = (p: FakeProposal) => ({ kind: 'proposal' as const, id: p.govHash, priv: p.payPriv ?? votingKey().priv });
+
+/** The browser's finalize, then the faucet's check of the token. */
+export async function finishStarter(w: StarterWorld, r: Awaited<ReturnType<typeof starterRequest>>, blindSig: Uint8Array) {
+  const sig = await finalize(w.key, r.prepared.preparedMsg, blindSig, r.inv);
+  return verifyStarterToken(w.key, r.fields, r.prepared.msgPrefix, sig);
+}
+
+/** A fake IssuerPlatform.issuerKeysFrom over a fake issuerKey (epochs from..from+199). */
+export function keysFrom(issuerKey: (issuerId: string, epoch: number) => Promise<import('@govhub/badge').IssuerKeyDoc | null>) {
+  return async (issuerId: string, from: number) => {
+    const out = [];
+    for (let e = from; e < from + 200; e++) {
+      const d = await issuerKey(issuerId, e);
+      if (d) out.push(d);
+    }
+    return out;
+  };
+}

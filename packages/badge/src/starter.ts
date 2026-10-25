@@ -3,7 +3,7 @@
 //
 // The issuer blind-signs (RSABSSA-SHA384-PSS-Randomized, the badge machinery) under a STARTER key: an `issuerKey` document of the
 // `badge` contract owned by a starter-only identity (never a badge issuer's), one per epoch, under the badge epoch schedule and reader
-// rules (acceptIssuerKey: created before S(E-1), keyId = SHA256(spki), canonical RSA-2048/3072). The client blinds only against that
+// rules (acceptIssuerKey: created before keyDeadline = S(E+1) - margin, keyId = SHA256(spki), canonical RSA-2048/3072). The client blinds only against that
 // PROVED document for an epoch it derives itself, so the issuer cannot hand one user a key of their own (key tagging).
 //
 // Token message (fixed width, 106 bytes), blind-signed; RSABSSA's randomized prepare prepends a fresh 32-byte msgPrefix:
