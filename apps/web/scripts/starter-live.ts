@@ -7,7 +7,7 @@
 //   ISSUER_URL=http://127.0.0.1:8789 FAUCET_URL=http://127.0.0.1:8787 npx vite-node scripts/starter-live.ts [mn|proposal|all]
 //
 // MN voting keys come from ~/workspace/dash-network-configs/testnet.yml (owner key = voting key on these MNs; only MNs whose bridge
-// voting address matches are used; masternode-27/41/43 and hp-masternode-23 are never used). The proposal key is the QA wallet's.
+// voting address matches are used; the owner's reserved MNs, RESERVED_TESTNET_MNS in testnet-mn-keys.ts, are never used). The proposal key is the QA wallet's.
 // State (phrases) in ~/.local/share/govhub-starter-live/ (0700/0600). Results (public data only: no keys, and on purpose no
 // masternode/proposal next to the identity it funded) go to scripts/results/starter-live.json. Prints no keys.
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
@@ -25,14 +25,13 @@ import { BadgeReader } from '../src/badge/reader.ts';
 import { handleBadgeCall } from '../src/badge/workerOps.ts';
 import { fundingTarget, prepareStarterRequest, redeemStarter, requestMnStarter, signWithWif, StarterError, submitProposalStarter, type StarterDeps, type StarterToken } from '../src/starter/client.ts';
 import { STARTER_ISSUERS } from '../src/starter/config.ts';
+import { RESERVED_TESTNET_MNS, testnetMnKeys } from './testnet-mn-keys.ts';
 
 const NET = 'testnet' as const;
 const DIR = join(homedir(), '.local/share/govhub-starter-live');
 const STATE = join(DIR, 'state.json');
-const YML = join(homedir(), 'workspace/dash-network-configs/testnet.yml');
 const QA_KEY = join(homedir(), '.local/share/evovote-v2-qa-20261018/wallet.key');
 const BRIDGE = 'https://gov-bridge-testnet.dashhq.org';
-const NEVER = new Set(['masternode-27', 'masternode-41', 'masternode-43', 'hp-masternode-23']);
 const RESULTS = new URL('./results/starter-live.json', import.meta.url);
 const which = process.argv[2] ?? 'all';
 
@@ -56,27 +55,6 @@ const record = (k: string, v: unknown) => {
 const t0 = Date.now();
 const log = (m: string) => console.log(`[${((Date.now() - t0) / 1000).toFixed(1).padStart(6)} s] ${m}`);
 
-function ymlOwnerKeys(): Map<string, string> {
-  const out = new Map<string, string>();
-  let mn: string | null = null;
-  let sec: string | null = null;
-  for (const l of readFileSync(YML, 'utf8').split('\n')) {
-    let m = /^ {2}((?:hp-)?masternode-\d+):\s*$/.exec(l);
-    if (m) {
-      mn = m[1]!;
-      sec = null;
-      continue;
-    }
-    m = /^ {4}(\w+):\s*$/.exec(l);
-    if (m) {
-      sec = m[1]!;
-      continue;
-    }
-    m = /^ {6}private_key:\s*(\S+)/.exec(l);
-    if (m && mn && sec === 'owner') out.set(mn, m[1]!);
-  }
-  return out;
-}
 
 const evo = await import('@dashevo/evo-sdk');
 await evo.ensureInitialized?.();
@@ -144,12 +122,14 @@ log(`platform core height ${height}`);
 record('run', { at: new Date().toISOString(), platformCoreHeight: height, issuer: issuer.identityId, faucet: deps.faucetUrl });
 
 if (which === 'mn' || which === 'all') {
-  const keys = ymlOwnerKeys();
+  // the shared helper drops the owner's reserved MNs (RESERVED_TESTNET_MNS: masternode-27/41/43, hp-masternode-23)
+  const keys = new Map(testnetMnKeys().map((k) => [k.name, k.wif]));
+  for (const name of st.usedMns) if (RESERVED_TESTNET_MNS.has(name)) throw new Error(`state used reserved ${name}: refusing`);
   const list = (await (await fetch(`${BRIDGE}/v1/mnlist`)).json()) as { masternodes: Array<{ proTxHash: string; votingAddress: string; valid: boolean }> };
   const byAddr = new Map(list.masternodes.filter((m) => m.valid).map((m) => [m.votingAddress, m.proTxHash]));
   let pick: { name: string; wif: string; proTxHash: string } | null = null;
   for (const [name, wif] of keys) {
-    if (NEVER.has(name) || st.usedMns.includes(name)) continue;
+    if (st.usedMns.includes(name)) continue;
     const { privKey, compressed } = decodeWif(wif, NET);
     const pro = byAddr.get(encodeAddress('p2pkh', hash160(secp256k1.getPublicKey(privKey, compressed)), NET));
     if (pro) {
