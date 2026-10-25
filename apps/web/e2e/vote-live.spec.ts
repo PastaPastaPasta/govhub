@@ -1,10 +1,11 @@
 // Opt-in live TESTNET run of the masternode keyring and voting in headless Chromium (GOVHUB_LIVE_VOTE=1 npm run e2e:vote):
 //   1. sign in with a recovery phrase (the keyring opens, or is created on Platform)
-//   2. add the masternode-27 voting key (removed first if a previous run left it) -> exactly its 1 masternode, with details
+//   2. add the GOVHUB_VOTE_MN voting key (removed first if a previous run left it) -> exactly its 1 masternode, with details
 //   3. vote on an active testnet proposal, immediately -> the tracker reaches "seen by the network" (the bridge's verified vote set)
 //   4. vote again at once: Core's one-change-per-hour rule makes the relay hold it -> cancel it
-// Inputs (env): GOVHUB_VOTE_PROPOSAL (gov hash; default: a testnet proposal masternode-27 had not voted on), GOVHUB_VOTE_MN
-// (testnet.yml masternode name, default masternode-27), GOVHUB_VOTE_RELAY (default: the Testnet profile's relay). The phrase is
+// Inputs (env, required): GOVHUB_VOTE_PROPOSAL (gov hash of an active testnet proposal the MN has not voted on), GOVHUB_VOTE_MN
+// (testnet.yml masternode name; reserved MNs are refused), GOVHUB_VOTE_PROTX and GOVHUB_VOTE_PAYOUT (its public registration,
+// what step 2 must find). Optional: GOVHUB_VOTE_RELAY (default: the Testnet profile's relay). The phrase is
 // the e2e identity's (~/.local/share/govhub-phase2/e2e-phrase.json); the voting key comes from
 // ~/workspace/dash-network-configs/testnet.yml. Neither is printed; traces are off for live runs (playwright.config.ts).
 // Results without secrets: e2e/results/vote-live.json.
@@ -13,16 +14,16 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { profileRegistry } from '../src/config/registry.ts';
-import { testnetMnKeys } from '../scripts/testnet-mn-keys.ts';
+import { RESERVED_TESTNET_MNS, testnetMnKeys } from '../scripts/testnet-mn-keys.ts';
 import { cspViolations, watchPage } from './helpers.ts';
 
 test.skip(!process.env.GOVHUB_LIVE_VOTE, 'set GOVHUB_LIVE_VOTE=1 to run the live testnet keyring and voting flow (spends tCredits)');
 test.setTimeout(20 * 60_000);
 
-const GOV = process.env.GOVHUB_VOTE_PROPOSAL ?? '7531d5e06fea29dcde36b80767b4bd204aa7552a7fe5a1622f66732ab43e9354';
-const MN = process.env.GOVHUB_VOTE_MN ?? 'masternode-27';
-/** masternode-27's registration (public): what step 2 must find */
-const EXPECT = { proTxHash: 'c87218fb9d031f4926c22430c69b4edf1f0fb80c331c1a79e3b1b3873407c0ac', payout: 'yVXDAM73Tg6A44Bm3qduXsMCYxzuqBCT48' };
+const GOV = process.env.GOVHUB_VOTE_PROPOSAL ?? '';
+const MN = process.env.GOVHUB_VOTE_MN ?? '';
+/** the MN's registration (public): what step 2 must find */
+const EXPECT = { proTxHash: process.env.GOVHUB_VOTE_PROTX ?? '', payout: process.env.GOVHUB_VOTE_PAYOUT ?? '' };
 const PHRASE = JSON.parse(readFileSync(join(homedir(), '.local/share/govhub-phase2/e2e-phrase.json'), 'utf8')).phrase as string;
 const base = profileRegistry('testnet');
 const REGISTRY = process.env.GOVHUB_VOTE_RELAY ? { ...base, relays: [{ name: 'relay', url: process.env.GOVHUB_VOTE_RELAY }] } : base;
@@ -37,8 +38,11 @@ async function signInWithPhrase(page: Page) {
 }
 const since = (t0: number) => Math.round((Date.now() - t0) / 1000);
 
-test('@live-vote keyring: add masternode-27, vote now until the network has it, hold one for the hour rule and cancel it', async ({ page }) => {
+test('@live-vote keyring: add a masternode, vote now until the network has it, hold one for the hour rule and cancel it', async ({ page }) => {
   expect(GOV).toMatch(/^[0-9a-f]{64}$/);
+  expect(EXPECT.proTxHash).toMatch(/^[0-9a-f]{64}$/);
+  expect(EXPECT.payout).not.toBe('');
+  expect(RESERVED_TESTNET_MNS.has(MN), `${MN} is reserved: pick another masternode`).toBe(false);
   const key = testnetMnKeys().find((k) => k.name === MN);
   expect(key).toBeTruthy();
   const errors = await watchPage(page);
@@ -59,7 +63,7 @@ test('@live-vote keyring: add masternode-27, vote now until the network has it, 
   }
   await expect(status).toContainText('opens with your recovery phrase');
 
-  // ---- 2. add the masternode-27 key: exactly its masternode ----
+  // ---- 2. add the GOVHUB_VOTE_MN key: exactly its masternode ----
   console.log('step 2: add the voting key');
   const group = page.getByTestId('key-group').filter({ hasText: key!.address });
   if (await group.count()) {

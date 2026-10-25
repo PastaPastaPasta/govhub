@@ -38,13 +38,13 @@ import { BADGE_NETWORKS, type TrustedIssuer } from '../src/badge/config.ts';
 import { createJob, step, type BadgeJob, type ClientDeps } from '../src/badge/client.ts';
 import { badgeQuery, badgesOfAuthors } from '../src/badge/queries.ts';
 import { BadgeReader } from '../src/badge/reader.ts';
+import { RESERVED_TESTNET_MNS, testnetMnKeys } from './testnet-mn-keys.ts';
 import { handleBadgeCall } from '../src/badge/workerOps.ts';
 
 const NET = 'testnet' as const;
 const P = EPOCH_PARAMS[NET];
 const DIR = join(homedir(), '.local/share/govhub-badge-live');
 const STATE = join(DIR, 'state.json');
-const YML = join(homedir(), 'workspace/dash-network-configs/testnet.yml');
 const CONTRACT = BADGE_NETWORKS.testnet.contractId;
 const ISSUER: TrustedIssuer = { ...BADGE_NETWORKS.testnet.defaultIssuers[0]!, url: process.env.ISSUER_URL ?? 'http://127.0.0.1:18789' };
 const FUND_DUFFS = 2_000_000n; // 0.02 tDASH per test identity
@@ -77,27 +77,11 @@ const save = () => {
 save();
 const log = (m: string) => console.log(`[${new Date().toISOString().slice(11, 19)}] ${m}`);
 
-/** owner WIF and address per yml entry (the owner key is the voting key on these testnet MNs) */
-function ymlKeys(): Map<string, string> {
-  const out = new Map<string, string>();
-  let mn: string | null = null;
-  let sec: string | null = null;
-  for (const l of readFileSync(YML, 'utf8').split('\n')) {
-    let m = /^ {2}((?:hp-)?masternode-\d+):\s*$/.exec(l);
-    if (m) {
-      mn = m[1]!;
-      sec = null;
-      continue;
-    }
-    m = /^ {4}(\w+):\s*$/.exec(l);
-    if (m) {
-      sec = m[1]!;
-      continue;
-    }
-    m = /^ {6}private_key:\s*(\S+)/.exec(l);
-    if (m && mn && sec === 'owner') out.set(mn, m[1]!);
-  }
-  return out;
+/** owner WIF per yml entry (the owner key is the voting key on these testnet MNs), reserved MNs excluded */
+const ymlKeys = (): Map<string, string> => new Map(testnetMnKeys().map((k) => [k.name, k.wif]));
+// a state from before the reserved list may have picked one: refuse it rather than use its key
+for (const m of st.mns ? [st.mns.main, ...st.mns.shared, ...(st.mns.extra ?? [])] : []) {
+  if (RESERVED_TESTNET_MNS.has(m.name)) throw new Error(`state picked reserved ${m.name}: delete "mns" from ${STATE} and run setup again`);
 }
 
 const evo = await import('@dashevo/evo-sdk');
