@@ -99,8 +99,11 @@ export function pickSeedKey(wallet: SeedWallet, identityIndex: number, keys: rea
   return null;
 }
 
-/** Signs in with a seed for one discovered identity. The session takes ownership of `wallet`. */
-export async function signInWithSeed(wallet: SeedWallet, found: FoundIdentity, platform: PlatformPort, source: SessionSource = 'seed'): Promise<Session> {
+/**
+ * Signs in with a seed for one discovered identity. The session takes ownership of `wallet` (and of `credentialId`: the passkey a
+ * 'passkey' session was opened with).
+ */
+export async function signInWithSeed(wallet: SeedWallet, found: FoundIdentity, platform: PlatformPort, source: SessionSource = 'seed', credentialId?: Uint8Array): Promise<Session> {
   const keys = await platform.identityKeys(found.identityId);
   if (!keys) throw new SignInError("This identity couldn't be found. Try again in a moment.");
   const picked = pickSeedKey(wallet, found.identityIndex, keys);
@@ -114,6 +117,7 @@ export async function signInWithSeed(wallet: SeedWallet, found: FoundIdentity, p
     source,
     privateKey: picked.privateKey,
     wallet,
+    credentialId,
   });
 }
 
@@ -153,11 +157,15 @@ export async function findKeyIdentities(privateKey: Uint8Array, platform: Platfo
 
 /** Key-paste sign-in. Parses WIF or hex, finds the identity, returns an in-memory session (the caller decides about storage). */
 export async function signInWithKey(input: string, platform: PlatformPort, pick?: (m: KeyMatch[]) => KeyMatch): Promise<Session> {
-  const privateKey = parsePrivateKey(input, platform.network);
+  return signInWithKeyBytes(parsePrivateKey(input, platform.network), platform, pick);
+}
+
+/** Key sign-in from the key's bytes, which the session takes ownership of (wiped here on failure); `credentialId` as in signInWithSeed. */
+export async function signInWithKeyBytes(privateKey: Uint8Array, platform: PlatformPort, pick?: (m: KeyMatch[]) => KeyMatch, source: SessionSource = 'key', credentialId?: Uint8Array): Promise<Session> {
   try {
     const matches = await findKeyIdentities(privateKey, platform);
     const m = pick ? pick(matches) : matches[0]!;
-    return makeSession({ network: platform.network, identityId: m.identityId, identityIndex: null, keyId: m.keyId, securityLevel: m.securityLevel, source: 'key', privateKey, wallet: null });
+    return makeSession({ network: platform.network, identityId: m.identityId, identityIndex: null, keyId: m.keyId, securityLevel: m.securityLevel, source, privateKey, wallet: null, credentialId });
   } catch (e) {
     wipe(privateKey);
     throw e;

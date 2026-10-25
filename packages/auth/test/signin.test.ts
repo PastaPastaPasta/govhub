@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { bytesToHex, randomBytes, toBase58 } from '../src/bytes.ts';
 import { KeyInputError, KeyPurpose, KeyType, parsePrivateKey, SecurityLevel, wifOf } from '../src/keys.ts';
 import { SeedWallet } from '../src/seed.ts';
-import { discoverIdentities, findKeyIdentities, pickSeedKey, signInWithKey, signInWithSeed, SignInError } from '../src/signin.ts';
+import { discoverIdentities, findKeyIdentities, pickSeedKey, signInWithKey, signInWithKeyBytes, signInWithSeed, SignInError } from '../src/signin.ts';
 import { FakePlatform } from './fake-platform.ts';
 
 const PHRASE = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
@@ -115,5 +115,16 @@ describe('key paste', () => {
     await expect(findKeyIdentities(master, fp)).rejects.toThrow(/MASTER key/);
     await expect(signInWithKey('not a key', fp)).rejects.toThrow(KeyInputError);
     await expect(signInWithKey('00'.repeat(32), fp)).rejects.toThrow(/valid/);
+  });
+
+  it('signs in from key bytes, which the session owns (wiped on failure), keeping the source and passkey credential', async () => {
+    const cred = new Uint8Array(16).fill(5);
+    const key = priv.slice();
+    const s = await signInWithKeyBytes(key, fp, undefined, 'passkey', cred);
+    expect(s).toMatchObject({ identityId: i, keyId: 2, source: 'passkey', credentialId: cred });
+    expect(s.privateKey).toBe(key);
+    const bad = master.slice();
+    await expect(signInWithKeyBytes(bad, fp)).rejects.toThrow(/MASTER key/);
+    expect(bad.every((b) => b === 0)).toBe(true);
   });
 });

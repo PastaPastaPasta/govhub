@@ -40,7 +40,7 @@ export function ThemeSwitch() {
  * the account menu (balance, profile, top-up, passkeys, settings, theme, sign out).
  */
 export function SessionControl() {
-  const { forum, session, balance, signOut } = useForum();
+  const { forum, session, balance } = useForum();
   const auth = useAuth();
   const menu = useRef<HTMLDivElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
@@ -87,7 +87,7 @@ export function SessionControl() {
       ) : (
         <>
           <button type="button" className="btn btn-primary" onClick={openSignIn} id="session-button" data-testid="session-button">
-            Sign in
+            {auth.restoring ? 'Signing in…' : 'Sign in'}
           </button>
           <button type="button" className="icon-btn" popoverTarget="account-menu" aria-label="Menu: settings, theme, about" data-testid="menu-button">
             <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
@@ -107,7 +107,7 @@ export function SessionControl() {
               Balance <b data-testid="session-balance">{balance === null ? 'reading…' : formatCredits(balance)}</b>{' '}
               <span className="muted">(pays for posts and votes on Platform)</span>
             </p>
-            <p className="small muted">Signed in with {session.label}. The key stays in this tab only: reloading or closing it signs you out.</p>
+            <p className="small muted">Signed in with {session.label}. The key stays in memory, shared with your other open govhub tabs: closing the browser (or the last govhub tab) signs you out.</p>
           </div>
         )}
         {session && item('Edit profile', () => dialog.current?.showModal())}
@@ -129,7 +129,7 @@ export function SessionControl() {
           <span className="small muted">Theme</span>
           <ThemeSwitch />
         </div>
-        {session && item('Sign out', signOut)}
+        {session && item('Sign out', auth.signOut)}
       </div>
       <dialog ref={dialog} className="dialog" aria-labelledby="session-title" onClick={(e) => e.target === dialog.current && close()}>
         <div className="dialog-body">{session && <SessionPanel onDone={close} onSaved={setName} />}</div>

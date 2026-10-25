@@ -1,13 +1,14 @@
 // Sign-in state for the real sessions (@govhub/auth: seed, pasted key, passkey). The app has ONE signed-in session, held by
 // ForumProvider as the app-level `Session` (session/session.ts); a real sign-in is wrapped by appSessionFromAuth and handed to it, so
 // every write goes through @govhub/auth's document writer. This provider adds what only real sessions have (funding records, the
-// sign-in sheet, top-ups and passkeys). The signing key lives in this tab's memory only; keeping it across visits is opt-in and goes
-// through the passkey vault, never plain storage.
+// sign-in sheet, top-ups and passkeys). The signing key lives in memory only, shared with this browser's other open govhub tabs
+// (session/tabShare.ts); keeping it across browser restarts is opt-in and goes through the passkey vault, never plain storage.
 import { storageFundingStore, type FundingStore, type Network, type PlatformPort, type Session } from '@govhub/auth';
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { appSessionFromAuth, type AppAuthSession } from '../session/authSession.ts';
+import { createTabShare, type TabShare } from '../session/tabShare.ts';
 import { getAuthDapi, getPlatformPort } from './runtime.ts';
 
 export type SheetView = 'choose' | 'create' | 'phrase' | 'key' | 'passkey' | 'topup' | 'passkeys';
@@ -15,11 +16,15 @@ export type SheetView = 'choose' | 'create' | 'phrase' | 'key' | 'passkey' | 'to
 interface AuthCtx {
   /** The real auth session behind the app session, when the app is signed in through @govhub/auth. */
   session: Session | null;
+  /** True while a session handed over by another tab is being signed in with. */
+  restoring: boolean;
   /** Credits; null while unknown. */
   balance: bigint | null;
   network: Network;
   forumContractId: string;
+  /** Signs in this tab and the other open tabs of this profile. */
   signIn(s: Session): void;
+  /** Signs out this tab and the other open tabs of this profile. */
   signOut(): void;
   refreshBalance(): void;
   platform(): Promise<PlatformPort>;
@@ -41,34 +46,88 @@ export function useAuth(): AuthCtx {
 /** Fired by `openSignIn()` (ui/SignIn.tsx): "Sign in to comment" buttons open the sheet. */
 export const OPEN_SIGNIN_EVENT = 'govhub:signin';
 
+/**
+ * Every tab of an origin hears the tab-sharing channel, so the session is shared only where govhub has its origin to itself: not
+ * from a sub-path (GitHub Pages before the custom domain, where the account's other Pages sites share the origin).
+ */
+const SHARE_TABS = import.meta.env.BASE_URL === '/';
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const { registry } = useApp();
+  const { registry, mode } = useApp();
   const forum = useForum();
   const [sheet, setSheet] = useState<SheetView | null>(null);
+  const [restoring, setRestoring] = useState(false);
+  const share = useRef<TabShare | null>(null);
   const store = useMemo(() => storageFundingStore(localStorage), []);
   const platform = useCallback(() => getPlatformPort(registry), [registry]);
   const dapi = useCallback(() => getAuthDapi(registry), [registry]);
 
   const session = (forum.session as Partial<AppAuthSession> | null)?.auth ?? null;
   const { signIn: forumSignIn, signOut: forumSignOut } = forum;
-  const signIn = useCallback((s: Session) => forumSignIn(appSessionFromAuth(s, platform)), [forumSignIn, platform]);
-  const signOut = useCallback(() => {
+  const signInHere = useCallback((s: Session) => forumSignIn(appSessionFromAuth(s, platform)), [forumSignIn, platform]);
+  const signOutHere = useCallback(() => {
     forumSignOut(); // closes the app session, which ends the auth session (wipes the key and the seed)
     setSheet(null);
   }, [forumSignOut]);
+  const signIn = useCallback((s: Session) => {
+    signInHere(s);
+    share.current?.announce(s);
+  }, [signInHere]);
+  const signOut = useCallback(() => {
+    share.current?.signOut();
+    signOutHere();
+  }, [signOutHere]);
 
-  // Leaving the page signs out completely: the key is wiped and the session dropped, so a page restored from the back/forward cache
-  // never shows a session whose key bytes are already zero (they would derive keys anyone can compute).
+  // The other open tabs of this profile share the session (live data only: fixture tabs neither send nor adopt). A new channel per
+  // profile asks the open tabs for theirs, so a new tab, or a profile switch to one another tab is signed in to, comes up signed in.
+  const current = useRef(session);
   useEffect(() => {
-    const onHide = () => signOut();
-    const onShow = (e: PageTransitionEvent) => e.persisted && signOut();
+    current.current = session;
+  }, [session]);
+  // another tab signed out: the views that need the session close, a sign-in in progress here stays
+  const drop = useCallback(() => {
+    forumSignOut();
+    setSheet((v) => (v === 'topup' || v === 'passkeys' ? null : v));
+  }, [forumSignOut]);
+  useEffect(() => {
+    if (!SHARE_TABS) return;
+    const s = createTabShare({
+      profile: `${registry.platformNetwork}:${registry.forum.contractId}`,
+      live: () => mode === 'live',
+      current: () => current.current,
+      platform,
+      adopt: signInHere,
+      drop,
+      restoring: setRestoring,
+    });
+    share.current = s;
+    s.request();
+    return () => {
+      share.current = null;
+      s.close();
+    };
+  }, [registry.platformNetwork, registry.forum.contractId, mode, platform, signInHere, drop]);
+
+  // Leaving the page wipes this tab's copy (the other tabs keep theirs: nothing is announced), so a page restored from the
+  // back/forward cache never shows a session whose key bytes are already zero (they would derive keys anyone can compute). The
+  // restored page asks the open tabs for the session again.
+  useEffect(() => {
+    const onHide = () => {
+      share.current?.suspend();
+      signOutHere();
+    };
+    const onShow = (e: PageTransitionEvent) => {
+      if (!e.persisted) return;
+      signOutHere();
+      share.current?.resume();
+    };
     addEventListener('pagehide', onHide);
     addEventListener('pageshow', onShow);
     return () => {
       removeEventListener('pagehide', onHide);
       removeEventListener('pageshow', onShow);
     };
-  }, [signOut]);
+  }, [signOutHere]);
   useEffect(() => {
     const open = () => setSheet('choose');
     addEventListener(OPEN_SIGNIN_EVENT, open);
@@ -77,10 +136,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AuthCtx>(
     () => ({
-      session, balance: session ? forum.balance : null, network: registry.platformNetwork, forumContractId: registry.forum.contractId, signIn, signOut,
+      session, restoring: restoring && !session, balance: session ? forum.balance : null, network: registry.platformNetwork, forumContractId: registry.forum.contractId, signIn, signOut,
       refreshBalance: forum.refreshBalance, platform, dapi, store, sheet, openSheet: setSheet, closeSheet: () => setSheet(null),
     }),
-    [session, forum.balance, forum.refreshBalance, registry.platformNetwork, registry.forum.contractId, signIn, signOut, platform, dapi, store, sheet],
+    [session, restoring, forum.balance, forum.refreshBalance, registry.platformNetwork, registry.forum.contractId, signIn, signOut, platform, dapi, store, sheet],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
