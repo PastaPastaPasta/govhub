@@ -22,7 +22,11 @@ import { type SmlProof, proveSml } from './smlproof.ts';
 import type { AnchorOptions, AnchoredChain, ProvenSml, Verifiers } from './types.ts';
 import type { VerifiedChain } from './linkedchain.ts';
 import { ChainLockConflictError, type ProofAnchorState, anchorByProof } from './proofanchor.ts';
+import { PinConflictError, PinnedChain, PinnedView } from './pinned.ts';
+import { QUORUM_PINS } from './quorumpins.ts';
 
+/** A kept list older than this is unlikely to be within 8 blocks of the next ChainLock (~20 min): its replacement is downloaded at once. */
+const KEPT_SML_MS = 10 * 60_000;
 /** Headers per stream request. Nodes stream ~1-2k headers/s each, with a heavy tail, so ranges are split and run in parallel. */
 const CHUNK = 2000;
 const PARALLEL = 16;
@@ -35,7 +39,13 @@ const SLOWEST_SPACING_S = 225;
 /** No honest chain grows faster than one block per this many seconds: caps node-claimed heights (a huge claim is a DoS). */
 const FASTEST_SPACING_S = 30;
 
-interface State extends ProofAnchorState { stored?: StoredChain; last?: AnchoredChain; inflight?: Promise<AnchoredChain> }
+interface State extends ProofAnchorState {
+  stored?: StoredChain;
+  last?: AnchoredChain;
+  inflight?: Promise<AnchoredChain>;
+  /** Segments linked to pinned hashes (blocks below the contiguous run), shared by every anchor of this client. */
+  pinned?: PinnedChain;
+}
 const states = new WeakMap<Dapi, State>();
 
 export const now = (): number => Math.floor(Date.now() / 1000);
@@ -51,43 +61,115 @@ function hashMany(v: Verifiers): (headers: Uint8Array) => Uint8Array {
   };
 }
 
+/** Whether `a` already proves block `from` (the contiguous run, or a pinned segment below it). */
+const covers = (a: AnchoredChain, from: number | undefined): boolean => from === undefined || from >= a.chain.lo || a.chain.hashAt(from) !== null;
+
 /**
  * The verified chain, reusing (and extending) what is cached. Concurrent callers share one run; a result younger than `maxAgeMs`
- * that already covers `from` is returned as is.
+ * that already covers `from` is returned as is, and one that does not, when a pin reaches `from`, only gains the headers from `from`
+ * up to that pin.
  */
 export function anchorChain(d: Dapi, o: AnchorOptions = {}): Promise<AnchoredChain> {
   const st: State = states.get(d) ?? { down: new Map() };
   states.set(d, st);
-  const fresh = st.last && Date.now() - st.last.at < (o.maxAgeMs ?? 60_000) && (o.from === undefined || o.from >= st.last.chain.lo);
-  if (fresh) return Promise.resolve(st.last!);
-  if (st.inflight) return st.inflight.then((r) => (o.from === undefined || o.from >= r.chain.lo ? r : anchorChain(d, o)));
-  const p = run(d, st, o).finally(() => { if (st.inflight === p) st.inflight = undefined; });
+  const isYoung = () => !!st.last && Date.now() - st.last.at < (o.maxAgeMs ?? 60_000);
+  const young = isYoung();
+  if (young && covers(st.last!, o.from)) return Promise.resolve(st.last!);
+  if (st.inflight) {
+    // a run that failed only on another caller's old block still left a fresh anchor that may serve this one
+    return st.inflight.then((r) => (covers(r, o.from) ? r : anchorChain(d, o)), (e: unknown) => { if (isYoung() && covers(st.last!, o.from)) return st.last!; throw e; });
+  }
+  const p = (young ? deepOnly(d, st, o) : Promise.resolve(null))
+    .then((r) => r ?? run(d, st, o))
+    .catch((e: unknown) => {
+      // a pinned block and the verified chain disagree: nothing anchored so far is served again, and held runs that disagreed are
+      // dropped (fetched and linked afresh next time)
+      if (e instanceof PinConflictError) {
+        st.last = undefined;
+        if (st.pinned && e.pins.length) {
+          for (const pin of e.pins) st.pinned.drop(pin);
+          void o.pinStore?.save(st.pinned.toStored()).catch(() => {});
+        }
+      }
+      throw e;
+    })
+    .finally(() => { if (st.inflight === p) st.inflight = undefined; });
   st.inflight = p;
   return p;
 }
 
+/** The pinned segments of this client, loaded from the store once (and again when the table changes, as in tests). */
+async function pinnedOf(d: Dapi, st: State, o: AnchorOptions): Promise<PinnedChain> {
+  const table = o.pins ?? QUORUM_PINS[d.network];
+  if (st.pinned?.table !== table) st.pinned = PinnedChain.fromStored(await o.pinStore?.load(d.network).catch(() => null), table);
+  return st.pinned;
+}
+
+/**
+ * Cover `from` with headers up to the pin above it (or down to the segment that already reaches toward it). Returns how many headers
+ * were downloaded: 0 when it was covered, null when no pin reaches it. Every run must link to the pinned hash, and agree with `main`
+ * wherever both have a block (else PinConflictError, and nothing is kept).
+ */
+async function reachPinned(d: Dapi, pinned: PinnedChain, main: VerifiedChain, from: number, hash: (h: Uint8Array) => Uint8Array, o: AnchorOptions): Promise<number | null> {
+  const need = pinned.need(from);
+  if (need === undefined) return null;
+  if (need === null) return 0;
+  const n = need.to - need.from + 1;
+  o.onProgress?.(`Downloading ${n.toLocaleString('en-US')} block headers up to a pinned block`);
+  await applyRun(d, await fetchHeaders(d, need.from, need.to, hash, o), hash, (r) => pinned.apply(r, main), o);
+  await o.pinStore?.save(pinned.toStored()).catch(() => {});
+  return n;
+}
+
+/** A fresh anchor that only lacks an old block a pin reaches: fetch that run and hand the anchor out again (null: a full run is needed). */
+async function deepOnly(d: Dapi, st: State, o: AnchorOptions): Promise<AnchoredChain | null> {
+  const last = st.last!;
+  if (o.from === undefined || covers(last, o.from)) return null;
+  const pinned = await pinnedOf(d, st, o);
+  if (!pinned.pinFor(o.from) || !(last.chain instanceof PinnedView)) return null;
+  const fetched = await reachPinned(d, pinned, last.chain.main, o.from, hashMany(await d.crypto()), o);
+  if (fetched === null) return null;
+  st.last = { ...last, stats: { ...last.stats, fetchedHeaders: last.stats.fetchedHeaders + fetched, pinned: pinnedStats(pinned, fetched + (last.stats.pinned?.fetched ?? 0)) } };
+  return st.last;
+}
+
+const pinnedStats = (p: PinnedChain, fetched: number) => ({ segments: p.segments, heights: p.heights, fetched });
+
 async function run(d: Dapi, st: State, o: AnchorOptions): Promise<AnchoredChain> {
+  // a block a pin reaches is not walked down to from the ChainLock: the path anchors as for no `from`, and the run up to the pin follows
+  const pinned = await pinnedOf(d, st, o);
+  const deep = o.from !== undefined && pinned.pinFor(o.from) !== null;
+  const out = await runPath(d, st, deep ? { ...o, from: undefined } : o);
+  pinned.checkAgainst(out.chain);
+  // kept even if the run to the pin fails below: the next call only retries that run
+  st.last = { ...out, chain: new PinnedView(out.chain, pinned), stats: { ...out.stats, pinned: pinnedStats(pinned, 0) } };
+  if (!deep) return st.last;
+  return (await deepOnly(d, st, o)) ?? st.last;
+}
+
+async function runPath(d: Dapi, st: State, o: AnchorOptions): Promise<AnchoredChain> {
   // the list download runs beside the headers: stop it whenever the run ends early
   const smlCtrl = new AbortController();
   const unlink = link(o.signal, smlCtrl);
   try {
     const v = await d.crypto();
     const hash = hashMany(v);
-    // one masternode list download, shared by whichever path completes
+    // one masternode list download, shared by whichever path completes; started at once unless a list proven earlier in this
+    // session may still serve (the proof path then only downloads one when the new ChainLock is too far above it)
     let smlP: Promise<RawSml> | undefined;
     const sml = () => {
       if (!smlP) { smlP = fetchSml(d, { signal: smlCtrl.signal }); smlP.catch(() => {}); }
       return smlP;
     };
+    if (!st.sml || Date.now() - st.sml.at > KEPT_SML_MS || !o.proofSources?.length || !v.verifyQuorumProof) sml();
     let fallback: string;
     if (!o.proofSources?.length) fallback = 'no quorum proof source is configured';
     else if (!v.verifyQuorumProof) fallback = 'the quorum proof verifier is not loaded';
     else {
       try {
-        const out = await anchorByProof(d, st, o, v, hash, sml(), smlCtrl.signal);
-        st.last = out;
-        return out;
+        return await anchorByProof(d, st, o, v, hash, sml, smlCtrl.signal);
       } catch (e) {
+        st.sml = undefined; // whatever went wrong, the next run downloads a list again
         // two verified ChainLocks on different blocks at one height: refuse, never paper over it with proof of work
         if (o.signal?.aborted || e instanceof ChainLockConflictError) throw e;
         fallback = (e as Error).message;
@@ -203,7 +285,6 @@ async function runInner(d: Dapi, st: State, o: AnchorOptions, v: Verifiers, hash
     sml, at: Date.now(),
     stats: { cachedHeaders: cached, fetchedHeaders: fetched, ms: { ...ms, total: Date.now() - t0 } },
   };
-  st.last = out;
   return out;
 }
 

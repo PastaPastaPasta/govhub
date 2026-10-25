@@ -26,6 +26,8 @@ export interface AnchorSummary {
   sml: { height: number; blockHash: string; entries: number; quorums: number };
   headers: { cached: number; fetched: number };
   ms: Record<string, number>;
+  /** Blocks below `lo` are checked against pinned hashes, directly or through runs of headers linked up to one: the runs this browser holds. */
+  pinned?: { segments: number; heights: number; fetched: number };
 }
 
 export interface ThresholdFact {
@@ -80,6 +82,7 @@ export function summarize(a: AnchoredChain): AnchorSummary {
     weak: a.weak, lo: a.chain.lo, tip: a.tip, checkpoint: a.checkpoint.height, trust: a.trust, chainLock: a.chainLock,
     sml: { height: a.sml.proof.height, blockHash: a.sml.proof.blockHash, entries: a.sml.proof.entries, quorums: a.sml.proof.quorums },
     headers: { cached: a.stats.cachedHeaders, fetched: a.stats.fetchedHeaders }, ms: a.stats.ms,
+    ...(a.stats.pinned ? { pinned: a.stats.pinned } : {}),
   };
 }
 
@@ -167,28 +170,58 @@ export const MAX_SUPERBLOCK_READS = 100;
  */
 export async function payments(
   dapi: Dapi, a: AnchoredChain, p: Payee, others: ReadonlyArray<Payee & { govHash: string }>, network: CoreNetwork, from: number, nowS: number,
-  opts: { cache?: SuperblockCache; maxReads?: number; progress?: (m: string) => void } = {},
+  opts: {
+    cache?: SuperblockCache; maxReads?: number; progress?: (m: string) => void;
+    /** Verify an older block `a` does not cover yet (the run up to a pinned block, or further down from the ChainLock): an anchor that does. */
+    reach?: (height: number) => Promise<AnchoredChain>;
+  } = {},
 ): Promise<PaymentsFact> {
   const out: PaymentsFact = { checked: [], paid: [], ambiguous: [], unread: [], remainingEstimate: 0 };
   const twins = others.filter((x) => x.paymentAddress === p.paymentAddress && x.paymentAmount === p.paymentAmount);
-  const sbs = superblocksBetween(Math.max(from, a.chain.lo), a.tip, network);
+  // from the collateral's block: superblocks below the contiguous run are pinned (mainnet) or reached through the pin above them
+  const sbs = superblocksBetween(from, a.tip, network);
   const memo = new Map<number, SuperblockCoinbase | Error>();
+  const asError = (e: unknown) => (e instanceof Error ? e : new Error(String(e)));
+  /** The anchor read from: `a`, or the newer one that reached further down. */
+  let cur = a;
+  /** Why any anchor read from is not secure (a later one may have fallen back to testnet proof of work): the result says the weakest. */
+  let weak = a.weak;
+  /** Whether `h` lies below `cur`'s contiguous run, unverified there, with a way to reach it. */
+  const needsReach = (h: number): boolean => !cur.chain.hashHexAt?.(h) && h < cur.chain.lo && !!opts.reach;
+  /** Have `cur` cover `h` (below its contiguous run); false (and the reason memoized) when that fails. */
+  const reach = async (h: number): Promise<boolean> => {
+    if (!needsReach(h)) return true;
+    try {
+      cur = await opts.reach!(h); // needsReach checked it is there
+      weak ??= cur.weak;
+      return true;
+    } catch (e) {
+      // a pinned block and the verified chain disagree: nothing read through that chain is trusted, not just this block
+      if ((e as { code?: unknown }).code === 'pin-conflict') throw e;
+      memo.set(h, asError(e));
+      return false;
+    }
+  };
   /** The superblock's coinbase: from this run, the cache (for the verified block hash only), or, while `budget` lasts, the chain. */
   const read = async (h: number, budget: { left: number } | null = null): Promise<SuperblockCoinbase | Error | null> => {
     const m = memo.get(h);
     if (m) return m;
-    const hash = a.chain.hashHexAt?.(h) ?? null;
+    if (needsReach(h)) {
+      if (budget && budget.left <= 0) return null; // left for later: no headers fetched for a block that will not be read
+      if (!(await reach(h))) return memo.get(h)!;
+    }
+    const hash = cur.chain.hashHexAt?.(h) ?? null;
     const c = opts.cache && hash ? await opts.cache.get(h).catch(() => undefined) : undefined;
     let v: SuperblockCoinbase | Error;
     if (c && c.blockHash === hash) v = c;
     else {
       if (budget && budget.left-- <= 0) return null;
       try {
-        const { block } = await dapi.getAnchoredBlock(a, h);
+        const { block } = await dapi.getAnchoredBlock(cur, h);
         v = { blockHash: hash ?? '', time: block.header.time, outputs: block.txs[0]!.outputs.map((x) => ({ script: bytesToHex(x.script), value: x.value.toString() })) };
         if (opts.cache && hash) void opts.cache.put(h, v).catch(() => {});
       } catch (e) {
-        v = e instanceof Error ? e : new Error(String(e));
+        v = asError(e);
       }
     }
     memo.set(h, v);
@@ -213,6 +246,8 @@ export async function payments(
   const first = await edge((t) => t < w.start, 'lo');
   const last = (await edge((t) => t <= w.end, 'hi')) - 1;
   const budget = { left: opts.maxReads ?? MAX_SUPERBLOCK_READS };
+  // the newest superblocks of the window (the ones this run reads), lowest first: one run of headers per pin interval covers them all
+  for (let i = Math.max(first, last - budget.left + 1); i <= last; i++) if (!memo.has(sbs[i]!)) await reach(sbs[i]!);
   for (let i = last; i >= first; i--) {
     const h = sbs[i]!;
     if ((last - i) % 25 === 0) opts.progress?.(`Reading superblock ${h.toLocaleString('en-US')} for this proposal's payments (${(last - i + 1).toLocaleString('en-US')} of ${(last - first + 1).toLocaleString('en-US')})`);
@@ -245,6 +280,7 @@ export async function payments(
     if (est > p.endEpoch + FUDGE_S) break;
     if (est >= p.startEpoch - FUDGE_S) out.remainingEstimate++;
   }
+  out.anchor = { tip: a.tip, weak };
   return out;
 }
 

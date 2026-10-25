@@ -43,7 +43,9 @@ export class QuorumProofError extends Error {
  * 2026-10-24 with `getblockhash` + `getblock <hash> 1` (cbTx.merkleRootMNList, cbTx.merkleRootQuorums) from two independent nodes per
  * network (the govhub CT 185 dashd and the CT 164 relay's Core build) and matched; packages/dapi/README.md "Quorum proof anchoring"
  * has the record. Trusting a checkpoint means trusting every ChainLock quorum committed under its quorum root, and every ChainLock
- * quorum mined later (or under 4,096 blocks before it): move it forward with releases.
+ * quorum mined later (or under 4,096 blocks before it): move it forward with releases. Block hashes pinned below it (ancestors it fixes,
+ * for old blocks without every header in between) are in quorumpins.ts, generated from it by scripts/quorum-pins.mjs: regenerate them
+ * when it moves.
  */
 export const QUORUM_CHECKPOINTS: Record<Network, ProofState> = {
   mainnet: {

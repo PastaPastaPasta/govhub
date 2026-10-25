@@ -7,6 +7,8 @@ import type { NodePool } from './pool.ts';
 import type { MergeStats } from './race.ts';
 import type { Checkpoint, StoredChain } from './headerchain.ts';
 import type { StoredLinkedChain, VerifiedChain } from './linkedchain.ts';
+import type { StoredPinned } from './pinned.ts';
+import type { PinTable } from './quorumpins.ts';
 import type { ProofSource, ProofState, VerifiedQuorumProof } from './quorumproof.ts';
 import type { Sml, SmlQuorum } from './sml.ts';
 import type { SmlProof } from './smlproof.ts';
@@ -96,7 +98,11 @@ export interface VerifiedTransaction {
     blockHash: 'verified' | 'claimed';
     chainLock: null | { height: number; blockHash: string; quorumHash: string; exact: boolean; verifiedConfirmations: number };
     /** The block is in the verified chain of `options.anchor`: `confirmations` = verified tip - height + 1 (a lower bound). */
-    anchor: null | { tip: number; confirmations: number; chainLockHeight: number; weak: string | null; /** what the chain rests on */ trust: AnchorTrust['kind'] };
+    anchor: null | {
+      tip: number; confirmations: number; chainLockHeight: number; weak: string | null; /** what the chain rests on */ trust: AnchorTrust['kind'];
+      /** The block is below the contiguous run: its hash links up to this pinned block (QUORUM_PINS), an ancestor of the quorum checkpoint. */
+      pinned?: { height: number; hash: string };
+    };
     /** Why the ChainLock was not verified, when it was not. */
     notes: string[];
   };
@@ -127,9 +133,12 @@ export interface AnchorOptions extends CallOptions {
   maxAgeMs?: number;
   /** Heights kept in the store. Default 400,000 (~13 MB). */
   maxStoredHeights?: number;
+  /** Runs of old headers linked to pinned hashes (QUORUM_PINS): a block of interest below the contiguous run costs the headers up to the next pin. */
+  pinStore?: HeaderStore<StoredPinned>;
   /** Test seams. */
   checkpoint?: Checkpoint;
   quorumCheckpoint?: ProofState;
+  pins?: PinTable;
   now?: () => number;
 }
 
@@ -174,7 +183,8 @@ export interface AnchoredChain {
   checkpoint: { height: number; hash: string };
   trust: AnchorTrust;
   /** Verified block hashes from `chain.lo` to `tip`: hash links down from the ChainLock (quorum proof), or work and difficulty above the
-   *  header checkpoint and hash links below it (proof of work). */
+   *  header checkpoint and hash links below it (proof of work). Below `chain.lo`, `chain.hashAt` also answers for blocks linked up to a
+   *  pinned hash (QUORUM_PINS, an ancestor of the quorum checkpoint); `pinOf` names that pin. */
   chain: VerifiedChain;
   /** The highest verified header (a node could withhold newer blocks: heights are lower bounds of the real tip). */
   tip: number;
@@ -186,7 +196,14 @@ export interface AnchoredChain {
   sml: ProvenSml;
   /** ms epoch when this was established. */
   at: number;
-  stats: { cachedHeaders: number; fetchedHeaders: number; ms: Record<string, number> };
+  stats: {
+    cachedHeaders: number;
+    /** Headers downloaded for this result, the runs up to pins included. */
+    fetchedHeaders: number;
+    ms: Record<string, number>;
+    /** Runs linked to pinned hashes this client holds, and how many of their headers were downloaded for this result. */
+    pinned?: { segments: number; heights: number; fetched: number };
+  };
 }
 
 export interface GetVerifiedTransactionOptions extends CallOptions {

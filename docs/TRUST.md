@@ -96,7 +96,7 @@ part of the code, so you then also review those.
 
 ### 2.2 The pinned quorum checkpoint
 
-`QUORUM_CHECKPOINTS` in `packages/dapi/src/quorumproof.ts:48-63` pins one block per network. Each entry gives the block's height
+`QUORUM_CHECKPOINTS` in `packages/dapi/src/quorumproof.ts:50-65` pins one block per network. Each entry gives the block's height
 and hash, and the masternode and quorum merkle roots its coinbase commits to:
 
 - mainnet: block 2,550,000, `000000000000000759db5eed...9c9683ce`
@@ -108,6 +108,26 @@ under its quorum root, or mined after it, ever signs a false ChainLock. That inc
 follows the path the proof source chooses; like Dash Core's own verifier, it does not check that each link's signer was the
 quorum selected for that height. The app checks selection only for the final ChainLock (`packages/dapi/README.md`, "Trust
 assumptions of this path").
+
+### 2.2a Block hashes pinned below the quorum checkpoint
+
+`QUORUM_PINS` in `packages/dapi/src/quorumpins.ts` pins block hashes below each quorum checkpoint: every 2,000 blocks for
+400,000 blocks (mainnet 2,150,000 to 2,550,000, 225 pins with the superblocks; testnet 1,160,000 to 1,560,000, 201 pins), plus
+every mainnet superblock in that range. They let the app verify an old block (a collateral months back, a superblock's
+coinbase) with the headers from it up to the next pin above it, at most 2,000, instead of every header down from the ChainLock.
+
+This adds no new root. Every pin is an ancestor of the checkpoint block in 2.2, and that block's hash fixes all of its
+ancestors through prevHash links. `packages/dapi/scripts/quorum-pins.mjs` derives the table that way. It downloads every header
+from the lowest pin up to the checkpoint over DAPI, checks the X11 linkage up to the checkpoint's pinned hash, and reads the pins
+from that verified run. It also cross-checks every pin against two independent sources (mainnet: insight.dash.org and
+chainz.cryptoid.info; testnet: insight.testnet.networks.dash.org and two DAPI nodes agreeing). `--check` re-derives the table and
+fails on any difference; run it to review the table. On the proof-of-work fallback (2.3) the pins are a second hard-coded root
+next to the header checkpoint, as the quorum checkpoint itself is.
+
+In the app (`packages/dapi/src/pinned.ts`), a run of headers counts only if each header's hash is the next one's prevHash up to
+the pinned hash. A run that disagrees with the ChainLocked run wherever both have a block stops the check with an error
+(`PinConflictError`). A DAPI node can withhold such a run but cannot substitute one. A block more than 5,000 blocks below the
+lowest pin is out of reach, and the old walk down from the ChainLock applies, up to 400,000 blocks ("too old to verify here").
 
 ### 2.3 The header checkpoint and proof of work (fallback)
 
@@ -123,7 +143,7 @@ forging past these floors at about two real blocks of work per hour since the pi
 
 - **Mainnet:** proof of work is accepted as secure. Facts proven this way can reach "Verified".
 - **Testnet:** difficulty is too low to stop a forger (`POW_SECURE`, `headerchain.ts:41`). The chain is flagged `weak`, and
-  every fact that rests on it is shown as "reported", never "Verified" (`packages/dapi/src/anchor.ts:201`;
+  every fact that rests on it is shown as "reported", never "Verified" (`packages/dapi/src/anchor.ts:283`;
   `apps/web/src/verify/aggregate.ts:125,152,210,254`).
 
 The app uses this path whenever no quorum-proof source returns a valid, fresh proof and no saved ChainLock is fresh enough
@@ -133,12 +153,12 @@ The app uses this path whenever no quorum-proof source returns a valid, fresh pr
 
 Freshness checks use the local clock:
 
-- A ChainLock target must be under an hour old (`FRESH_S`, `packages/dapi/src/anchor.ts:32`; `packages/dapi/src/proofanchor.ts:111,131`).
+- A ChainLock target must be under an hour old (`FRESH_S`, `packages/dapi/src/anchor.ts:36`; `packages/dapi/src/proofanchor.ts:111,131`).
 - On the proof-of-work path, the clock sets the minimum chain height.
 - Votes more than 1 h in the future are dropped (`countVotes`, `packages/verify/src/tally.ts:111`).
 
 On the quorum-proof path, a wrong clock causes failures or stale results, not forged ones. On the proof-of-work path it also
-weakens the proof: a clock that runs behind lowers the minimum chain height (`anchor.ts:188`), and with it the cost of
+weakens the proof: a clock that runs behind lowers the minimum chain height (`anchor.ts:270`), and with it the cost of
 forging a chain.
 
 ### 2.5 Dash's quorum list service (for Platform reads)
@@ -173,34 +193,36 @@ whenever the configured gov contract is the profile's (`registry.ts:205-209`).
 ## 3. How the chain is verified
 
 The verification worker (`apps/web/src/verify/worker.ts`) builds one "anchored chain" per DAPI setting. It reuses the result
-in memory for a minute (`packages/dapi/src/anchor.ts:58-67`), and keeps the verified headers in IndexedDB so later runs only
-extend them. Both paths end in the same facts: verified block
+in memory for a minute (`packages/dapi/src/anchor.ts:72-99`), and keeps the verified headers in IndexedDB so later runs only
+extend them. Within the minute, an old block that a pin reaches adds only the run of headers up to that pin. Both paths end in the same facts: verified block
 hashes from a low height up to a ChainLocked tip, and a masternode list (SML) proven by a block's coinbase.
 
-**Quorum-proof path (no proof of work).** This is `anchorByProof`, `packages/dapi/src/proofanchor.ts:154`.
+**Quorum-proof path (no proof of work).** This is `anchorByProof`, `packages/dapi/src/proofanchor.ts:159`.
 
 1. A source sends a DIP 175 proof chain (`DASHNC02`). It is checked in WebAssembly by `dash-core-proof`, the verifier of
    dashpay/platform PR #5521, built unmodified (`packages/dapi/core-proof-wasm/`). The proof runs from the pinned quorum
    checkpoint to a ChainLocked target T, which must be under an hour old.
-2. The masternode list from a DAPI node must be from a block S with T - 8 <= S <= T.
-3. Headers from T down to S, and down to any older block of interest, are tied together by hash linkage alone. A ChainLock is
-   final, so no proof-of-work rule is needed.
+2. The masternode list from a DAPI node must be from a block S with T - 8 <= S <= T. Within one session, the list the last
+   anchor proved is used again while the new T still meets that rule; it is proven against the new chain again (step 4).
+3. Headers from T down to S, and down to any older block of interest above the quorum checkpoint, are tied together by hash
+   linkage alone. A ChainLock is final, so no proof-of-work rule is needed. An older block at or below the checkpoint is reached
+   through a pinned hash instead (2.2a).
 4. The SML is re-serialized to Core's consensus bytes and hashed. It must reproduce the coinbase's `merkleRootMNList` and
    `merkleRootQuorums`, and the coinbase must be merkle-proven into the header at S.
 5. T's signature is checked against the quorum Core's `SelectQuorumForSigning` picks from the proven list.
 
-**Proof-of-work path.** This is `runInner`, `packages/dapi/src/anchor.ts:104`. Headers are fetched from the pin and checked
+**Proof-of-work path.** This is `runInner`, `packages/dapi/src/anchor.ts:186`. Headers are fetched from the pin and checked
 under the rules in 2.3. Then the SML is proven into a block of that chain, and the newest ChainLock is verified against
 quorums from that proven SML.
 
-**Which path you get.** `anchor.ts:82-97` decides:
+**Which path you get.** `anchor.ts:150-183` decides:
 
 - The proof path runs when at least one source is configured and the verifier loads. If no source has a newer proof, a
-  ChainLock this browser proved earlier is reused while it is under an hour old (`savedChainLock`, `proofanchor.ts:126-133,198`).
+  ChainLock this browser proved earlier is reused while it is under an hour old (`savedChainLock`, `proofanchor.ts:126-133,204`).
 - If every source fails (unreachable, HTTP 501 from a pre-v24 dashd, 403, a forged or stale proof) and nothing saved is fresh
   enough, the app falls back to proof of work.
 - Two verified ChainLocks for different blocks at one height stop the check with an error. They never fall back
-  (`ChainLockConflictError`, `anchor.ts:91-92`).
+  (`ChainLockConflictError`, `anchor.ts:173-174`).
 - A source that cannot serve proofs at all is skipped for 10 minutes (`proofanchor.ts:50`).
 - The fallback reason is kept in `trust.fallback`. The chain shield in the header shows what the chain rests on
   (`apps/web/src/ui/trust/ChainShield.tsx:106-108`).
@@ -222,7 +244,7 @@ anything still running, then any error, then anything only reported. Fixture dat
 
 1. **Proposal text** (`contentComponent`, `aggregate.ts:91`). The governance hash recomputes from
    `(parentHash, revision, time, dataHex)`, and every displayed field equals the one parsed from `dataHex`
-   (`checkContent`, `apps/web/src/verify/collateral.ts:103-133`). This runs synchronously, with no network.
+   (`checkContent`, `apps/web/src/verify/collateral.ts:105-135`). This runs synchronously, with no network.
 2. **Submission fee** (`collateralComponent`, `aggregate.ts:103-143`). All of these are needed:
    - steps `hash`, `fields`, `tx`, `block`, `collateral`, `confirmations`, `chainlock` and `height` are all `ok`;
    - the chain steps rest on the anchored chain (basis `verified`);
@@ -272,19 +294,19 @@ that the content is true.
 
 | Fact shown in the UI | How it is proven | Who could lie, and what they could do | What you would see |
 |---|---|---|---|
-| Proposal text, name, URL, amount, address, dates | Governance hash recomputed; fields parsed from `dataHex` (`collateral.ts:103-133`). The collateral must burn to that hash. | Bridge (publisher), or Platform reads (6.6): a changed field breaks the hash. A rewritten proposal with a matching new hash has no collateral, so the collateral check fails. While that check is pending or inconclusive the proposal stays listed (`view.ts:102-105`). | "Failed verification"; the proposal is hidden from lists. |
+| Proposal text, name, URL, amount, address, dates | Governance hash recomputed; fields parsed from `dataHex` (`collateral.ts:105-135`). The collateral must burn to that hash. | Bridge (publisher), or Platform reads (6.6): a changed field breaks the hash. A rewritten proposal with a matching new hash has no collateral, so the collateral check fails. While that check is pending or inconclusive the proposal stays listed (`view.ts:102-105`). | "Failed verification"; the proposal is hidden from lists. |
 | The list of active and past proposals | Platform proof of the query result (`apps/web/src/data/repo.ts:232-269`). | Bridge: can omit, or delete its documents (`gov.json` `canBeDeleted: true`). A lying quorum service (6.6) could forge an incomplete result. | Nothing. A missing proposal is not detected. |
 | Proposals marked "not yet published on Platform" | Bridge `/v1/proposals`, labelled reported (`repo.ts:256-259`). Content is checked like any other proposal. | Bridge: can't fake one without a real collateral. | Reported mark; the same content and collateral checks. |
-| Proposal collateral: fee, block, confirmations, height | Tx bytes hash to the txid; it burns at least 1 DASH to the hash; merkle-proven into a block of the anchored chain; at least 6 confirmations from the verified tip; ChainLock verified (`apps/web/src/verify/collateral.ts`; `worker.ts:96-136`). | DAPI nodes: can withhold or answer slowly, and can't forge a collateral. But if every node asked (at least two) answers NOT_FOUND, the proposal fails (`worker.ts:57-62`; `collateral.ts:188`; `aggregate.ts:110-111`). Without an anchored chain, the result is "reported". | "Couldn't verify", "Partly verified" or "Failed verification", with the reason. |
-| A proposal hidden as "failed verification" in lists | Background "light" check: a node's answer plus a second node's, no block proof (`apps/web/src/app/context.tsx:138-153`). | DAPI: two nodes answering NOT_FOUND count as "not on chain" (`worker.ts:57-62`). That hides a real proposal from lists, and the full check on its page fails the same way. Altered bytes or low confirmations from one node never hide one (`verdictFailure`, `collateral.ts:90-97`). | Hidden behind "Show N proposals that failed verification". |
+| Proposal collateral: fee, block, confirmations, height | Tx bytes hash to the txid; it burns at least 1 DASH to the hash; merkle-proven into a block of the anchored chain; at least 6 confirmations from the verified tip; ChainLock verified (`apps/web/src/verify/collateral.ts`; `worker.ts:114-154`). | DAPI nodes: can withhold or answer slowly, and can't forge a collateral. But if every node asked (at least two) answers NOT_FOUND, the proposal fails (`worker.ts:74-79`; `collateral.ts:196`; `aggregate.ts:110-111`). Without an anchored chain, the result is "reported". | "Couldn't verify", "Partly verified" or "Failed verification", with the reason. |
+| A proposal hidden as "failed verification" in lists | Background "light" check: a node's answer plus a second node's, no block proof (`apps/web/src/app/context.tsx:138-153`). | DAPI: two nodes answering NOT_FOUND count as "not on chain" (`worker.ts:74-79`). That hides a real proposal from lists, and the full check on its page fails the same way. Altered bytes or low confirmations from one node never hide one (`verdictFailure`, `collateral.ts:92-99`). | Hidden behind "Show N proposals that failed verification". |
 | Funding threshold and masternode count (proposal page) | Proven SML, version-1 types from ProRegTxs (`chain.ts`, `threshold`). | DAPI: can withhold. | Reported until proven. |
 | Funding threshold, budget, allocated (lists, budget header) | Bridge-published `cycle` document (Platform proof), or bridge `/v1/cycle` if Platform fails (`repo.ts:214-230`). | Bridge: can publish wrong values. The proposal page compares the budget with the proven limit ("the bridge reports ...", `apps/web/src/verify/facts.ts:100-105`). | Lists: nothing. Proposal page: a differing figure. |
 | Superblock height, voting deadline, budget limit | Consensus rules at the verified tip (`chain.ts`, `scheduleAndBudget`). Dates are estimates at 2.62 min per block. | DAPI: can withhold newer blocks, so the tip is up to an hour stale (2.4). The heights themselves are computed, not reported. | — |
 | Tally numbers on list cards | The fresher of the Platform tally (proof) and the bridge's live tally (reported) (`pickTally`, `apps/web/src/lib/view.ts:39-43`). | Bridge: it publishes both. Its Platform tally carries the "Platform proof" mark, which only shows who published it. A live tally with a higher `asOfHeight` wins (`view.ts:41`). | A provenance mark. No recount on lists. |
 | "Passing", "in next budget" on list cards | Computed from the shown tally; uses the tally's own `inNextBudget` field (`view.ts:72`). | Bridge: sets that flag. | Nothing on lists. The proposal page shows the proven result once verified. |
-| Tally on the proposal page | Platform tally document (`docToTally`, `platform.ts:101`), recounted from signed votes (section 4, check 4). | Bridge: can withhold votes, or serve an older vote of a masternode in place of its newer one. It can't alter a signed vote. It can add a vote from a masternode it made up, or misstate a key or weight, but the check flags that. On testnet the voting keys are never proven (`worker.ts:203`). | Nothing for withholding. Otherwise a recount mismatch, or "Partly verified". |
+| Tally on the proposal page | Platform tally document (`docToTally`, `platform.ts:101`), recounted from signed votes (section 4, check 4). | Bridge: can withhold votes, or serve an older vote of a masternode in place of its newer one. It can't alter a signed vote. It can add a vote from a masternode it made up, or misstate a key or weight, but the check flags that. On testnet the voting keys are never proven (`worker.ts:221`). | Nothing for withholding. Otherwise a recount mismatch, or "Partly verified". |
 | The vote set ("Check the votes yourself") | Each signature recovered against the voting key; the key and type checked against the proven SML; the outpoint checked against the ProRegTx (`votes.ts:159-206`). Duplicate masternodes in the bridge's list are refused (`votes.ts:132-152`). A vote whose key or type the proven data doesn't confirm is still counted with the bridge's key, but flagged (`votes.ts:177-205`). | Bridge: can omit. | Counts of bad, unknown or unconfirmed votes. |
-| Funded / rank (proposal page) | Funding order recount (`worker.ts:211-241`; `ranking.ts`). | Bridge: can omit votes, or omit whole proposals from the ranking set (`facts.ts:112`). The result can still be "verified". | Nothing for omission. |
+| Funded / rank (proposal page) | Funding order recount (`worker.ts:229-257`; `ranking.ts`). | Bridge: can omit votes, or omit whole proposals from the ranking set (`facts.ts:112`). The result can still be "verified". | Nothing for omission. |
 | Payments made | Superblock coinbases of the verified chain (`chain.ts`, `payments`). | DAPI: can withhold blocks, which leaves "unread" superblocks. A proposal missing from Platform with the same address and amount can't be ruled out (`facts.ts:79`). | A lower bound, "not exact". |
 | Payments remaining | Estimate only (`facts.ts:93-94`). | — | Marked estimate. |
 | Best block height (header) | One synced DAPI node's word, or the bridge's (`repo.ts:301-310`). | DAPI or bridge. | Marked reported. |
@@ -346,7 +368,7 @@ that the content is true.
 - **Set `rank` and `inNextBudget` on tallies.** Lists show them. The proposal page never uses them for "Verified".
 - **Add a vote from a masternode it made up, or misstate a key or type.** The vote is still counted with the bridge's key, but
   the check notes it, and the result can't pass (`votes.ts:177-205`). On testnet, where voting keys are never proven, it only
-  drops the result to "Partly verified" as testnet always is (`worker.ts:203`).
+  drops the result to "Partly verified" as testnet always is (`worker.ts:221`).
 - **Make "confirmed" appear for your vote** (6.2).
 
 **What it can't do:**
