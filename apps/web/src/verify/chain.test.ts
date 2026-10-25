@@ -88,8 +88,8 @@ describe('payments of an old proposal: superblocks below the contiguous run', ()
 
   it('has each verified first and reads it through the anchor that covers it; one that cannot be reached is unread', async () => {
     // as in the worker: reaching further down from the ChainLock hands out a NEW anchor; the old one never covers more
-    const a = { ...anchor, chain: { lo: 2_560_000, hashHexAt: (h: number) => (h >= 2_560_000 ? hash : null) } } as unknown as AnchoredChain;
-    const deeper = { ...anchor, chain: { lo: 2_550_000, hashHexAt: (h: number) => (h >= 2_550_000 ? hash : null) } } as unknown as AnchoredChain;
+    const a = { ...anchor, weak: null, chain: { lo: 2_560_000, hashHexAt: (h: number) => (h >= 2_560_000 ? hash : null) } } as unknown as AnchoredChain;
+    const deeper = { ...anchor, weak: null, chain: { lo: 2_550_000, hashHexAt: (h: number) => (h >= 2_550_000 ? hash : null) } } as unknown as AnchoredChain;
     const reached: number[] = [];
     const reach = vi.fn(async (h: number) => { reached.push(h); return deeper; });
     const read: Array<[unknown, number]> = [];
@@ -98,6 +98,14 @@ describe('payments of an old proposal: superblocks below the contiguous run', ()
     expect(reached).toEqual([2_558_864]); // below lo: reached before it is read, once
     expect(read).toEqual([[deeper, 2_558_864]]);
     expect(p.checked).toEqual([2_558_864]);
+    expect(p.anchor).toEqual({ tip: TIP, weak: null });
+    // the anchor that reached further fell back to weak proof of work (testnet, a proof source refusing): the result says so
+    const weakDeeper = { ...deeper, weak: 'testnet difficulty is too low' } as unknown as AnchoredChain;
+    const w = await payments(dapi, a, prop, [], 'testnet' as never, 2_545_000, fx.now, { reach: async () => weakDeeper });
+    expect(w.anchor?.weak).toBe('testnet difficulty is too low');
+    // a pinned block that disagrees with the verified chain fails the whole check, not one superblock
+    const conflict = Object.assign(new Error('the pinned chain and the verified chain disagree'), { code: 'pin-conflict' });
+    await expect(payments(dapi, a, prop, [], 'mainnet', 2_545_000, fx.now, { reach: async () => { throw conflict; } })).rejects.toThrow(/disagree/);
     // a superblock the pins cannot reach is reported unread (a lower bound), never read unverified
     const none = { ...anchor, chain: { lo: 2_560_000, hashHexAt: () => null } } as unknown as AnchoredChain;
     const fail = await payments(dapi, none, prop, [], 'mainnet', 2_545_000, fx.now, { reach: async () => { throw new Error('too old to verify here'); } });

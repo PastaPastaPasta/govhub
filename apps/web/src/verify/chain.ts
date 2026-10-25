@@ -184,6 +184,8 @@ export async function payments(
   const asError = (e: unknown) => (e instanceof Error ? e : new Error(String(e)));
   /** The anchor read from: `a`, or the newer one that reached further down. */
   let cur = a;
+  /** Why any anchor read from is not secure (a later one may have fallen back to testnet proof of work): the result says the weakest. */
+  let weak = a.weak;
   /** Whether `h` lies below `cur`'s contiguous run, unverified there, with a way to reach it. */
   const needsReach = (h: number): boolean => !cur.chain.hashHexAt?.(h) && h < cur.chain.lo && !!opts.reach;
   /** Have `cur` cover `h` (below its contiguous run); false (and the reason memoized) when that fails. */
@@ -191,8 +193,11 @@ export async function payments(
     if (!needsReach(h)) return true;
     try {
       cur = await opts.reach!(h); // needsReach checked it is there
+      weak ??= cur.weak;
       return true;
     } catch (e) {
+      // a pinned block and the verified chain disagree: nothing read through that chain is trusted, not just this block
+      if ((e as { code?: unknown }).code === 'pin-conflict') throw e;
       memo.set(h, asError(e));
       return false;
     }
@@ -275,6 +280,7 @@ export async function payments(
     if (est > p.endEpoch + FUDGE_S) break;
     if (est >= p.startEpoch - FUDGE_S) out.remainingEstimate++;
   }
+  out.anchor = { tip: a.tip, weak };
   return out;
 }
 
