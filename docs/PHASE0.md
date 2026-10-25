@@ -44,7 +44,7 @@ every active tally in one `talliesSet` document, slim `proposal`, a final `tally
 | A proposal joins the active set | 24,989,200 (`tally` create) | +2,603,800 on that hour's replace (95 bytes more) |
 | A proposal ends | 2,475,040 (retire replace) | 24,989,200 (final `tally` create, once) |
 | `proposal` create | 66,150,000 (mean of 4) | 61,200,000 (mean of #2..#4; #1 in a fresh contract: 74,213,920) |
-| Register `gov` | 0.24195 DASH (4 types, 6 indexes) | 0.27210 DASH (5 types, 7 indexes) |
+| Register `gov` | 0.24195 DASH (4 types, 6 indexes; testnet gov `5gMnJ…` registration on 2026-10-24, `contractFeeCredits` 24,195,056,280) | 0.27210 DASH (5 types, 7 indexes) |
 | Register `forum` | 0.433 DASH (with `proposalDraft`) | ~0.423 DASH (formula 0.42 + storage, with `keyring`, without `proposalDraft`) |
 
 On the real testnet contracts (same day): `talliesSet` create 0.00036408 DASH with 6 entries (testnet gov) and

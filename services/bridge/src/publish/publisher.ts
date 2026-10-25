@@ -41,6 +41,9 @@ function canonical(props: Record<string, unknown>, omit: string[] = []): string 
 const contentHash = (s: string) => createHash('sha256').update(s).digest('hex');
 
 /** Fields that change without anything meaningful changing; ignored for "did it change?". */
+/** Final tallies written per publish run at most (proposals end a few a week on mainnet). */
+export const MAX_FINALS_PER_RUN = 10;
+
 const VOLATILE: Record<DocType, string[]> = { proposal: [], tally: ['asOfHeight'], talliesSet: ['asOfHeight'], cycle: ['estTime'] };
 
 /**
@@ -194,7 +197,7 @@ export class Publisher {
     return this.db.prepare('SELECT * FROM platform_docs WHERE contract_id = ? AND doc_type = ? AND doc_key = ?').get(this.platform.contractId, type, key) as PlatformDocRow | undefined;
   }
 
-  private save(type: DocType, key: string, id: string, revision: number, props: Record<string, unknown>): void {
+  private save(type: DocType, key: string, id: string, revision: number, props: Record<string, unknown>, publishedAt = nowS()): void {
     const json = canonical(props);
     this.db
       .prepare(
@@ -202,7 +205,7 @@ export class Publisher {
          ON CONFLICT(contract_id, doc_type, doc_key) DO UPDATE SET doc_id = excluded.doc_id, revision = excluded.revision, content_hash = excluded.content_hash,
            content_json = excluded.content_json, published_at = excluded.published_at`,
       )
-      .run(this.platform.contractId, type, key, id, revision, contentHash(canonical(props, VOLATILE[type])), json, nowS());
+      .run(this.platform.contractId, type, key, id, revision, contentHash(canonical(props, VOLATILE[type])), json, publishedAt);
   }
 
   private logWrite(type: DocType, key: string, op: string, id: string | null, revision: number | null, ok: boolean, error: string | null, attempts: number): void {
@@ -218,11 +221,14 @@ export class Publisher {
   }
 
   private talliesSetDiscovered = false;
+  /** Consecutive runs the packed set was left as it is because of a hold that says nothing about a proposal. */
+  private frozenRuns = 0;
 
   /**
    * Once per process, when the archive knows no `talliesSet` page (a fresh or restored archive, or the first run after a contract
-   * update): adopts every page on Platform, so pages no longer needed are emptied, and remembers their entries, so a proposal that
-   * ended meanwhile still gets its final tally from the entry readers saw.
+   * update): adopts the pages on Platform, so pages no longer needed are emptied, and remembers their entries, so a proposal that
+   * ended meanwhile still gets its final tally from the entry readers saw. Defensive, because what it adopts can turn into paid
+   * writes: only pages this bridge identity owns, and only entries of proposals this archive knows.
    */
   private async discoverTallySet(): Promise<void> {
     if (this.talliesSetDiscovered) return;
@@ -232,15 +238,27 @@ export class Publisher {
     }
     const docs = await this.platform.query('talliesSet', { where: [['page', '>=', 0]], orderBy: [['page', 'asc']], limit: TALLY_SET_MAX_PAGES });
     const seed = this.db.prepare('INSERT OR IGNORE INTO tally_set_entries(contract_id, gov_hash, as_of_height, entry_json, published_at, finalized_at) VALUES (?, ?, ?, ?, ?, NULL)');
+    const known = this.db.prepare('SELECT 1 FROM gov_objects WHERE hash = ? AND type = 1');
     for (const d of docs) {
       const page = String(d.data.page);
+      if (d.data.$ownerId !== this.platform.identityId) {
+        log.error('talliesSet page not owned by this bridge identity: not adopted', { page, owner: d.data.$ownerId, identity: this.platform.identityId });
+        continue;
+      }
       this.adopt('talliesSet', page, d);
+      let entries: TallySetEntry[];
       try {
-        const entries = decodeTallySet(TALLY_SET_FIELDS.map((f) => (d.data[f] == null ? undefined : Uint8Array.from(Buffer.from(String(d.data[f]), 'base64')))));
-        for (const e of entries) seed.run(this.platform.contractId, e.govHash, Number(d.data.asOfHeight), JSON.stringify(e), nowS());
+        entries = decodeTallySet(TALLY_SET_FIELDS.map((f) => (d.data[f] == null ? undefined : Uint8Array.from(Buffer.from(String(d.data[f]), 'base64')))));
       } catch (e) {
         log.error('adopted talliesSet page does not decode; it is replaced on this run', { page, error: errText(e) });
+        continue;
       }
+      // its real content, so a page that already says what this run would write is not written again (published at an unknown
+      // time: the throttle does not hold back its first change)
+      this.save('talliesSet', page, d.id, d.revision, tallySetProps(Number(page), Number(d.data.asOfHeight), entries), 0);
+      const ours = entries.filter((e) => known.get(e.govHash) || this.record('proposal', e.govHash));
+      if (ours.length < entries.length) log.warn('adopted talliesSet page has entries of proposals this archive does not know: not remembered', { page, entries: entries.length, unknown: entries.length - ours.length });
+      for (const e of ours) seed.run(this.platform.contractId, e.govHash, Number(d.data.asOfHeight), JSON.stringify(e), nowS());
     }
     this.talliesSetDiscovered = true;
   }
@@ -322,7 +340,14 @@ export class Publisher {
    * Every entry that went out is remembered (tally_set_entries) as the source of the proposal's final tally.
    */
   private async publishTallySet(height: number, tallies: readonly ComputedTally[], minIntervalSec: number, count: (r: string) => void, failed: () => void): Promise<void> {
-    await this.discoverTallySet();
+    try {
+      await this.discoverTallySet();
+    } catch (e) {
+      // without knowing the pages on Platform nothing is written; the next run asks again
+      failed();
+      log.error('talliesSet pages could not be read: tally set not published this run', { error: errText(e) });
+      return;
+    }
     const pages = paginateTallySet(tallies.map(tallySetEntry));
     if (pages.length > TALLY_SET_MAX_PAGES) {
       // readers ask for TALLY_SET_MAX_PAGES pages; more would never be read
@@ -420,8 +445,14 @@ export class Publisher {
       // one differs), so a proposal Core disagrees with is left out. A hold that says nothing about the proposal (the threshold
       // differs, or Core could not be asked) leaves the whole set as it is instead: it would otherwise empty or thin the set.
       const unknown = onPlatform.filter((t) => !comparisons.has(t.govHash)).length;
-      if (!this.cfg.publish.publishOnMismatch && (!thresholdOk || unknown > 0)) log.warn('tally set not replaced this run', { thresholdOk, withoutCoreComparison: unknown });
-      else await this.publishTallySet(run.height, tallies, tallyInterval, count, () => s.failed++);
+      if (!this.cfg.publish.publishOnMismatch && (!thresholdOk || unknown > 0)) {
+        this.frozenRuns++;
+        // about an hour of blocks: a hold that does not clear needs an operator
+        (this.frozenRuns >= 24 ? log.error : log.warn)('tally set not replaced this run', { thresholdOk, withoutCoreComparison: unknown, consecutiveRuns: this.frozenRuns });
+      } else {
+        this.frozenRuns = 0;
+        await this.publishTallySet(run.height, tallies, tallyInterval, count, () => s.failed++);
+      }
     } else {
       await pool(tallies, limit, async (t) => {
         try {
@@ -438,18 +469,25 @@ export class Publisher {
     // published entry; a per-proposal document from before (older contracts) is retired the same way.
     const active = new Set(run.tallies.map((t) => t.govHash));
     const finals = new Map<string, Record<string, unknown>>();
+    const tallyHeight = (r: PlatformDocRow | undefined) => (r ? Number(new Map(JSON.parse(r.content_json) as Array<[string, unknown]>).get('asOfHeight') ?? -1) : -1);
     const remembered = this.db.prepare('SELECT * FROM tally_set_entries WHERE contract_id = ?').all(this.platform.contractId) as TallySetEntryRow[];
+    const inPackedEra = new Set<string>();
     for (const r of remembered) {
+      // a per-proposal tally at least as new (written before this contract had talliesSet) is retired as such, never downgraded
+      if (tallyHeight(this.record('tally', r.gov_hash)) >= r.as_of_height) continue;
+      inPackedEra.add(r.gov_hash);
       if (r.finalized_at === null && !active.has(r.gov_hash)) finals.set(r.gov_hash, finalTallyProps(JSON.parse(r.entry_json) as TallySetEntry, r.as_of_height));
     }
-    const inPackedEra = new Set(remembered.map((r) => r.gov_hash));
     for (const r of this.db.prepare("SELECT * FROM platform_docs WHERE contract_id = ? AND doc_type = 'tally'").all(this.platform.contractId) as PlatformDocRow[]) {
       if (active.has(r.doc_key) || inPackedEra.has(r.doc_key)) continue;
       const props = retiredTallyProps(r);
       if (props) finals.set(r.doc_key, props);
     }
     const markFinalized = this.db.prepare('UPDATE tally_set_entries SET finalized_at = ? WHERE contract_id = ? AND gov_hash = ?');
-    for (const [hash, props] of finals) {
+    // Only for proposals on Platform, and a bounded number per run: no archive loss or bad page fans out into a burst of paid writes.
+    const due = [...finals].filter(([hash]) => this.record('proposal', hash));
+    if (due.length > MAX_FINALS_PER_RUN) log.warn('more final tallies due than one run writes: the rest follow on the next runs', { due: due.length, max: MAX_FINALS_PER_RUN });
+    for (const [hash, props] of due.slice(0, MAX_FINALS_PER_RUN)) {
       try {
         const res = await this.upsert('tally', hash, props, { minIntervalSec: tallyInterval });
         if (res === 'throttled') continue;

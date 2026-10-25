@@ -226,9 +226,14 @@ the record stored at the page's own height changed (a second stored run at the s
 the page is replaced at once, because readers recount it against that record. More than 161 tallies spill into
 page 1 (then 2, ... up to `TALLY_SET_MAX_PAGES` = 8, 1,288 proposals; more are logged and not published) in
 `govHash` order; a page that is no longer needed is emptied (`count` 0) once. A bridge whose archive knows no
-page (fresh or restored, or the first run after a contract update) adopts every page on Platform first (G8) and
-remembers its entries, so stale pages are still emptied and a proposal that ended meanwhile still gets its final
-tally.
+page (fresh or restored, or the first run after a contract update) adopts the pages on Platform first (G8): only
+pages its own identity owns, and it remembers only entries of proposals its archive knows. Stale pages are then
+still emptied (a page that already says what the run would write is not rewritten), and a proposal that ended
+meanwhile still gets its final tally. Final tallies are written only for proposals on Platform, at most 10 per run
+(`MAX_FINALS_PER_RUN`; the rest follow on the next runs), and never over a per-proposal tally that is at least as
+new (testnet documents from before the update). Context: on 2026-10-25 a first version of this adoption, run on the
+rehearsal contract, turned 192 synthetic entries left by the fee measurement into 192 paid `tally` creates
+(0.046 tDASH); `services/bridge/test/publisher.test.ts` "regression (testnet burst 2026-10-25)" pins the fix.
 
 **Reading** (`apps/web/src/data/repo.ts` `tallies()`): G8, plus G5 for the same proposals; per proposal the
 entry with the higher `asOfHeight` wins. On a tie the packed one wins, except over a final tally (`rank` 0, not in

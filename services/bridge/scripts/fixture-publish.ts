@@ -62,6 +62,11 @@ const s3 = await pass('3. one tally changed');
 const gone = run.tallies.pop()!;
 const s4 = await pass(`4. ${gone.govHash.slice(0, 12)} left the active set`);
 await b.db.backup(dbPath);
-const ok = s1.failed + s2.failed + s3.failed + s4.failed === 0 && s2.created + s2.replaced === 0 && s3.replaced === 1 && s4.created + s4.replaced === 2;
-console.log(JSON.stringify({ contractId, dbPath, final: gone.govHash, ok }));
+// every tally write of the whole run is the one final (a burst of finals for entries nobody published here is a failure)
+const tallyWrites = b.db.prepare("SELECT COUNT(*) n FROM publish_log WHERE contract_id = ? AND doc_type = 'tally' AND ok = 1").get(contractId) as { n: number };
+const finalDoc = await b.publisher.lookup('tally', gone.govHash);
+const ok =
+  s1.failed + s2.failed + s3.failed + s4.failed === 0 && s2.created + s2.replaced === 0 && s3.replaced === 1 && s4.created + s4.replaced === 2 &&
+  tallyWrites.n === 1 && String(finalDoc?.data.rank) === '0' && finalDoc?.data.inNextBudget === false;
+console.log(JSON.stringify({ contractId, dbPath, final: gone.govHash, finalDoc: finalDoc?.id, tallyWrites: tallyWrites.n, ok }));
 process.exit(ok ? 0 : 1);

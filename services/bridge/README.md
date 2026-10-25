@@ -203,7 +203,8 @@ proposals): every publishable tally packed into one document (format v1, package
 sight, then replaced when an entry changes (not for `asOfHeight` alone), at most once per `TALLY_PUBLISH_INTERVAL_S` (unless
 the record stored at the page's own height changed); a tally Core disagrees with is left out, and a threshold mismatch or a
 missing Core comparison leaves the whole set as it is that run. Only a stored run is published, never a live vote refresh
-(`TallyRun.persisted`). When a proposal leaves the active set its final tally (its last published entry, `rank` 0,
+(`TallyRun.persisted`). Final tallies: only for proposals on Platform, at most `MAX_FINALS_PER_RUN` (10) a run. A fresh
+archive adopts only `talliesSet` pages its own identity owns, and remembers only entries of proposals it knows. When a proposal leaves the active set its final tally (its last published entry, `rank` 0,
 `inNextBudget` false) is written once as a per-proposal `tally` for the Past list; a `tally` from before the update is
 replaced the same way. `cycle` (per superblock height): the next superblock (live, replaced as it fills, `estTime`
 ignored for change detection) and the last one with `paid` = trigger payments found in its coinbase. Hashes are stored in
