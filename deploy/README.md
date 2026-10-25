@@ -533,7 +533,10 @@ testnet bridge in a test). Instead:
 - the **guest** stack (no cloudflared) layers `docker-compose.tunnel-guest.yml`. It adds `tunnel-gateway`, a
   Caddy reverse proxy (read-only filesystem, uid 1000) on the guest's `edge` network and on a new
   `<project>_tunnel` network, under the alias `TUNNEL_ALIAS` (default `<project>-bridge`). It forwards everything
-  to the guest's bridge, which still answers GET/HEAD/OPTIONS only and sets CORS itself.
+  to the guest's bridge, which still answers GET/HEAD/OPTIONS only and sets CORS itself. Its config is
+  `caddy/tunnel-gateway-bridge.Caddyfile`: no access log, and Caddy's default logger (which writes proxy errors with the
+  client address to stdout, kept by Docker) is discarded. Every `caddy/tunnel-gateway-*.Caddyfile` does the same, and the
+  deploy-lint workflow fails if one does not, or if a compose file runs the gateway without one.
 - the **host** stack (with `COMPOSE_PROFILES=tunnel`) layers `docker-compose.tunnel-host.yml`. cloudflared then
   also joins that network as an external network (`TUNNEL_GUEST_NETWORK`, default `govhub-testnet_tunnel`).
 
@@ -584,7 +587,7 @@ only, for rate limits; nothing about clients is stored). Route: `gov-relay.<zone
 A second stack's relay (say testnet next to mainnet) is published through the host stack's tunnel by the guest's
 `tunnel-gateway` (section 11.3), never by joining the shared `tunnel` network itself: layer
 `docker-compose.relay-tunnel-guest.yml` after `docker-compose.tunnel-guest.yml` (with `COMPOSE_PROFILES=relay`). It gives the
-gateway a Caddyfile (`caddy/tunnel-gateway-relay.Caddyfile`) with a second listener, `8788 -> relay:8788` over the guest's
+gateway a Caddyfile (`caddy/tunnel-gateway-relay.Caddyfile`, no logs like the others) with a second listener, `8788 -> relay:8788` over the guest's
 `edge` network, and a second alias `<project>-relay` on `tunnel`. Route: `gov-relay-testnet.<zone> ->
 http://govhub-testnet-relay:8788`. The relay answers browsers itself (CORS, 4 KiB POST bodies, per-IP and per-masternode
 limits, client address from `cf-connecting-ip`, which the gateway passes through).

@@ -1,7 +1,8 @@
 name: deploy-lint
 
 # Static checks for deploy/: every compose combination must render, the RPC and ZMQ ports must
-# never be published, the scripts must pass shellcheck and the Caddyfile must validate.
+# never be published, the scripts must pass shellcheck and the Caddyfiles must validate. Every tunnel gateway must write
+# no logs (no access log, Caddy's default logger discarded), and run from such a Caddyfile.
 # The live regtest smoke test (deploy/scripts/smoke-regtest.sh) is not run here yet: it needs the
 # bridge image from services/bridge/Dockerfile.
 
@@ -101,6 +102,18 @@ jobs:
             and (if $n.tunnel then ([$s | to_entries[] | select((.value.networks // {}) | has("tunnel")) | .key] == ["tunnel-gateway"]) else true end)' > /dev/null \
             || { echo "::error::network isolation violated"; docker compose config --format json | jq '.services | map_values(.networks)'; exit 1; }
 
+      - name: the tunnel gateway runs from a no-logs Caddyfile (never `caddy reverse-proxy`, whose default logger cannot be discarded)
+        working-directory: deploy
+        run: |
+          set -euo pipefail
+          docker compose config --format json | jq -e '
+            .services["tunnel-gateway"] as $g
+            | if $g == null then true
+              else ($g.command | join(" ")) == "caddy run --adapter caddyfile --config /etc/caddy/Caddyfile"
+                and ([$g.volumes[] | select(.target == "/etc/caddy/Caddyfile") | .source | test("/caddy/tunnel-gateway-[a-z]+\\.Caddyfile$")] == [true])
+              end' > /dev/null \
+            || { echo "::error::tunnel-gateway must run caddy/tunnel-gateway-*.Caddyfile"; docker compose config --format json | jq '.services["tunnel-gateway"] | {command, volumes}'; exit 1; }
+
   scripts:
     name: shellcheck and Caddyfile
     runs-on: ubuntu-latest
@@ -121,3 +134,23 @@ jobs:
             -e DOMAIN=gov.example.org -e CORS_ALLOW_ORIGIN='*' \
             -v "$GITHUB_WORKSPACE/deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro" \
             caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+
+      - name: every tunnel-gateway Caddyfile validates and writes no logs
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(deploy/caddy/tunnel-gateway-*.Caddyfile)
+          [ "${#files[@]}" -gt 0 ] || { echo "::error::no tunnel-gateway Caddyfiles found"; exit 1; }
+          for f in "${files[@]}"; do
+            echo "== $f"
+            docker run --rm -v "$GITHUB_WORKSPACE/$f:/etc/caddy/Caddyfile:ro" caddy:2-alpine \
+              caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+            # the adapted JSON: exactly one logger, `default`, writing to discard; no server has access logs
+            docker run --rm -v "$GITHUB_WORKSPACE/$f:/etc/caddy/Caddyfile:ro" caddy:2-alpine \
+              caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile \
+              | jq -e '
+                  (.logging.logs | keys) == ["default"]
+                  and .logging.logs.default.writer.output == "discard"
+                  and ([.apps.http.servers[] | has("logs")] | any | not)' > /dev/null \
+              || { echo "::error file=$f::$f must discard Caddy's default logger (log default { output discard }) and have no access log"; exit 1; }
+          done
