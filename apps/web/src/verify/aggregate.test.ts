@@ -8,7 +8,7 @@ import { lookupCollateral } from '../data/dapi.ts';
 import { FixtureBridge, loadFixtures, type FixtureSnapshot } from '../data/fixtures.ts';
 import type { Proposal, Tally } from '../data/types.ts';
 import {
-  aggregate, chainComponent, collateralComponent, contentComponent, fundingComponent, needsRanking, provenNetYes, REQUIRED, votesComponent,
+  aggregate, chainComponent, collateralComponent, contentComponent, fundingComponent, needsRanking, provenFunded, provenNetYes, REQUIRED, votesComponent,
   type CheckId, type Component, type ComponentState, type TrustLevel,
 } from './aggregate.ts';
 import type { ChainReport } from './chain.ts';
@@ -196,7 +196,9 @@ describe('collateral: only an anchored, final, height-matching collateral is pro
     const tx = await recorded(orig.collateralTxid);
     const tampered = { ...orig, dataHex: orig.dataHex.replace('4f7263686172645061', '4f7263686172645062') };
     expect(comp(tampered, anchoredTx(tx)).status).toBe('failed');
+    // D-104: DAPI down or lying (an inconclusive lookup) is "couldn't verify", never "failed"
     expect(comp(orig, { error: 'timeout' }).status).toBe('error');
+    expect(comp(orig, { error: 'all nodes failed: node a returned a transaction that does not hash to its txid' }).status).toBe('error');
     expect(comp(orig, { error: 'NOT_FOUND', notFound: true }).status).toBe('failed');
     expect(collateralComponent({ verdict: null, error: null, publishedHeight: 1 }).status).toBe('pending');
     expect(collateralComponent({ verdict: null, error: 'worker crashed', publishedHeight: 1 }).status).toBe('error');
@@ -304,9 +306,30 @@ describe('votes', () => {
     expect(comp(done(verifyVotes({ ...base, sml }))).status).toBe('reported');
   });
 
-  it('a forged vote makes the recount contradict the tally: failed', () => {
+  it('a forged vote makes the recount contradict the tally at the same block: couldn\'t verify (the source is wrong, not the proposal)', () => {
     const forged = base.votes.map((v, i) => (i === 3 ? { ...v, sig: base.votes[4]!.sig } : v));
-    expect(comp(done(verifyVotes({ ...base, votes: forged }))).status).toBe('failed');
+    const c = comp(done(verifyVotes({ ...base, votes: forged })));
+    expect(c.status).toBe('error');
+    expect(aggregate([{ id: 'votes', state: c }]).level).not.toBe('failed');
+  });
+
+  it('D-101: a bridge that withholds votes and serves a matching live tally is not verified while the Platform tally disagrees', () => {
+    // the bridge recounts to its own live tally (newer block); the Platform tally of an older block has other counts
+    const r0 = verifyVotes(base);
+    const live: Tally = { ...tally, asOfHeight: tally.asOfHeight + 7, yesWeighted: r0.weighted.yes, noWeighted: r0.weighted.no, abstainWeighted: r0.weighted.abstain, voteSetHash: r0.voteSetHash };
+    const platform: Tally = { ...tally, yesWeighted: tally.yesWeighted + 40, voteSetHash: 'ff'.repeat(32) };
+    const r = verifyVotes({ ...base, targets: [{ name: PLATFORM_TARGET, tally: platform }, { name: BRIDGE_TARGET, tally: live }] });
+    const d = done(r, { asOf: live.asOfHeight });
+    expect(r.targets.find((t) => t.name === BRIDGE_TARGET)!.matches).toBe(true);
+    // the page shows the Platform tally: not comparable (other block), not matching: partly verified
+    const onPlatform = votesComponent({ shown: { name: PLATFORM_TARGET, tally: platform }, talliesLoading: false, bridge: true, result: d, error: null });
+    expect(onPlatform.status).toBe('reported');
+    // even if the page showed the bridge's matching live tally, it is not the proven record
+    expect(votesComponent({ shown: { name: BRIDGE_TARGET, tally: live }, talliesLoading: false, bridge: true, result: d, error: null }).status).toBe('reported');
+    expect(provenNetYes(d, { name: BRIDGE_TARGET, tally: live })).toBeNull();
+    // and a Platform tally at the very block of the served votes that differs is a contradiction
+    const same = done(verifyVotes({ ...base, targets: [{ name: PLATFORM_TARGET, tally: platform }] }));
+    expect(votesComponent({ shown: { name: PLATFORM_TARGET, tally: platform }, talliesLoading: false, bridge: true, result: same, error: null }).status).toBe('error');
   });
 
   it('a match on a different tally than the one shown is not a proof of the shown one', () => {
@@ -370,6 +393,18 @@ describe('funding', () => {
     expect(f({ report: report({ payments: { unread: [{ height: 1, error: 'x' }] } }) }).status).toBe('reported');
     expect(f({ report: report({ payments: { ambiguous: [{ height: 1, with: 'x' }] } }) }).status).toBe('reported');
     expect(f({ report: report({ payments: { othersComplete: false } }) }).status).toBe('reported');
+  });
+
+  it('D-100: a tally flag (inNextBudget, rank) never decides "in the next budget"; only proven numbers or the funding order do', () => {
+    // not passing on proven numbers: "no", whatever a tally document claims
+    const notPassing = f({ netYes: 100, ranking: null });
+    expect(provenFunded({ funding: notPassing, govHash: P.govHash, netYes: 100, report: report(), ranking: null })).toBe(false);
+    // passing: the funding order's answer
+    expect(provenFunded({ funding: f(), govHash: P.govHash, netYes: 400, report: report(), ranking: rk() })).toBe(true);
+    expect(provenFunded({ funding: f(), govHash: P.govHash, netYes: 400, report: report(), ranking: rk({}, { funded: false }) })).toBe(false);
+    // not proven: no answer (the page shows the source's flag under a badge that is not "Verified")
+    const unproven = f({ ranking: { result: rk({ verified: false }), error: null } });
+    expect(provenFunded({ funding: unproven, govHash: P.govHash, netYes: 400, report: report(), ranking: rk({ verified: false }) })).toBeNull();
   });
 
   it('ended: proven from the proven payments; not checked payments are reported', () => {

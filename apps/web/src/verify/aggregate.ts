@@ -6,7 +6,7 @@ import type { Proposal, Tally } from '../data/types.ts';
 import type { ChainReport } from './chain.ts';
 import { verdictFailure, type CollateralVerdict, type Step } from './collateral.ts';
 import type { RankingDone, VotesDone } from './protocol.ts';
-import { voteVerdict } from './verdict.ts';
+import { PLATFORM_TARGET } from './verdict.ts';
 
 export type CheckId = 'content' | 'collateral' | 'chain' | 'votes' | 'funding';
 export const REQUIRED: readonly CheckId[] = ['content', 'collateral', 'chain', 'votes', 'funding'];
@@ -165,15 +165,15 @@ export function votesComponent(i: {
   if (i.error) return { status: 'error', reason: `The votes couldn't be recounted: ${i.error}` };
   const d = i.result;
   if (!d) return { status: 'pending', note: i.progress || 'Recounting the signed votes' };
-  if (voteVerdict(d.runs).level === 'mismatch') return { status: 'failed', reason: "The recounted votes don't match the published tally" };
-  const hit = d.runs.flatMap((run) => run.result.targets.map((t) => ({ run, t }))).find(({ t }) => t.name === i.shown!.name && t.asOfHeight === i.shown!.tally.asOfHeight);
+  const pairs = d.runs.flatMap((run) => run.result.targets.map((t) => ({ run, t })));
+  // A tally at the very block of the votes it was recounted from, and different: whoever published it, or served the votes, is wrong.
+  if (pairs.some(({ run, t }) => t.asOfHeight === run.votesAsOf && !t.matches)) return { status: 'error', reason: "The recounted votes don't match a tally published for the same block" };
+  // The Platform tally document is the proven record of the tally; the bridge's own live tally proves nothing about it.
+  if (i.shown.name !== PLATFORM_TARGET) return { status: 'reported', reason: "The tally isn't on Platform yet, so the recount can't be checked against the proven record" };
+  const hit = pairs.find(({ t }) => t.name === PLATFORM_TARGET && t.asOfHeight === i.shown!.tally.asOfHeight);
   if (!hit) return { status: 'reported', reason: 'The tally changed while the votes were recounted; re-check to recount it' };
-  const { run, t } = hit;
-  if (!t.matches) {
-    // Same height and different: a contradiction. Otherwise the votes moved on since this tally.
-    return t.asOfHeight === run.votesAsOf ? { status: 'failed', reason: "The recounted votes don't match the published tally" } : { status: 'reported', reason: 'Votes have changed since this tally was published; re-check later' };
-  }
-  const r = run.result;
+  if (!hit.t.matches) return { status: 'reported', reason: "The bridge served the votes of another block than the Platform tally's, so the two can't be compared" };
+  const r = hit.run.result;
   if (d.sml?.weak) return { status: 'reported', reason: 'Testnet: voting keys were checked against a list only proof of work protects' };
   if (r.keysFrom !== 'sml') {
     if (r.smlUnconfirmed > 0) return { status: 'reported', reason: `Votes not fully recounted: ${r.smlUnconfirmed.toLocaleString('en-US')} voters couldn't be matched to the proven masternode list` };
@@ -181,16 +181,16 @@ export function votesComponent(i: {
     if (dropped > 0) return { status: 'reported', reason: `Votes not fully recounted: ${dropped.toLocaleString('en-US')} votes in the bridge's set didn't check out` };
     return { status: 'reported', reason: 'Votes not fully recounted: voting keys only as the bridge reports them' };
   }
-  return { status: 'proven', summary: `${r.verified.toLocaleString('en-US')} signed votes recounted against the proven masternode list; the tally and its voteSetHash match` };
+  return { status: 'proven', summary: `${r.verified.toLocaleString('en-US')} signed votes recounted against the proven masternode list; they reproduce the Platform tally and its voteSetHash` };
 }
 
 // ---- 5. funding ---------------------------------------------------------------------------------------------------------------
 
-/** Recounted net yes (weighted yes - no) of the shown tally, when the votes component proved it. */
+/** Recounted net yes (weighted yes - no) of the shown Platform tally, when the recount reproduced it on proven keys. */
 export function provenNetYes(result: VotesDone | null, shown: ShownTally | null): number | null {
-  if (!result || !shown) return null;
+  if (!result || !shown || shown.name !== PLATFORM_TARGET) return null;
   for (const run of result.runs) {
-    const t = run.result.targets.find((x) => x.name === shown.name && x.asOfHeight === shown.tally.asOfHeight);
+    const t = run.result.targets.find((x) => x.name === PLATFORM_TARGET && x.asOfHeight === shown.tally.asOfHeight);
     if (t?.matches && run.result.keysFrom === 'sml') return run.result.weighted.yes - run.result.weighted.no;
   }
   return null;
@@ -233,4 +233,16 @@ export function fundingComponent(i: {
   if (e.timeSensitive) return { status: 'reported', reason: "Whether it is paid depends on Core's estimate of the superblock time" };
   if (!r.verified) return { status: 'reported', reason: `The funding order isn't fully proven (${r.reasons[0] ?? 'reported'})` };
   return { status: 'proven', summary: e.funded ? `Passing and in the next budget (rank ${e.rank})` : `Passing (rank ${e.rank ?? '–'}), but not in the next budget` };
+}
+
+/**
+ * Whether the proposal is in the next budget, on proven data only: the funding order's answer, or "no" when the proven net yes is
+ * below the proven threshold. Null when the funding status is not proven: the page then shows the source's flag, under a badge
+ * that is not "Verified". Never reads a tally's `inNextBudget` or `rank`, which whoever publishes the tally sets.
+ */
+export function provenFunded(i: { funding: ComponentState; govHash: string; netYes: number | null; report: ChainReport | null; ranking: RankingDone | null }): boolean | null {
+  if (i.funding.status !== 'proven' || i.netYes === null || !i.report) return null;
+  if (i.netYes < i.report.threshold.value) return false;
+  const e = i.ranking?.result.entries.find((x) => x.govHash === i.govHash);
+  return e ? e.funded : null;
 }
