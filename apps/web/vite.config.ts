@@ -42,7 +42,7 @@ function cspPlugin(): Plugin {
  * `.wasm` asset (its `new URL('wasm_sdk_bg.wasm', import.meta.url)`), served as application/wasm, compressed by the CDN and
  * compiled while it streams. Same exports, same `init()`.
  */
-export const EVO_SDK_ALIASES = [
+const EVO_SDK_ALIASES = [
   { find: /^@dashevo\/evo-sdk$/, replacement: fileURLToPath(new URL('sdk.js', import.meta.resolve('@dashevo/evo-sdk'))) },
   { find: /^@dashevo\/wasm-sdk\/compressed$/, replacement: '@dashevo/wasm-sdk/raw' },
 ];

@@ -37,6 +37,8 @@ function Custom({ on }: { on: boolean }) {
 }
 
 type Msg = { kind: 'ok' | 'error'; text: string };
+/** Where on the page a message belongs: next to the buttons that produced it. */
+type Area = 'advanced' | 'share' | 'json';
 
 /** A result shown next to the control that produced it (a message at the top of the page is off-screen from the lower groups). */
 function Message({ msg }: { msg: Msg | null }) {
@@ -205,9 +207,9 @@ export function SettingsPage() {
   const [draft, setDraft] = useState<Registry>(registry);
   const [json, setJson] = useState('');
   // one message per area, rendered next to the buttons that produced it
-  type Area = 'advanced' | 'share' | 'json';
   const [msg, setMsg] = useState<(Msg & { area: Area }) | null>(null);
   const say = (area: Area, kind: Msg['kind'], text: string) => setMsg({ area, kind, text });
+  const at = (area: Area) => (msg?.area === area ? msg : null);
   const fileRef = useRef<HTMLInputElement>(null);
   const [portalsText, setPortalsText] = useState(registry.forum.claimPortals.join(' '));
   const [advanced, setAdvanced] = useState(() => customFields(registry).size > 0);
@@ -458,7 +460,7 @@ export function SettingsPage() {
               Reset to defaults
             </button>
           </div>
-          <Message msg={msg?.area === 'advanced' ? msg : null} />
+          <Message msg={at('advanced')} />
         </form>
       </details>
 
@@ -528,7 +530,7 @@ export function SettingsPage() {
               }}
             />
           </div>
-          <Message msg={msg?.area === 'share' ? msg : null} />
+          <Message msg={at('share')} />
           <label>
             Settings JSON (paste and import, or copy)
             <textarea rows={10} className="code" value={json} onChange={(e) => setJson(e.target.value)} spellCheck={false} placeholder={exportRegistry(defaultRegistry()).slice(0, 120) + '…'} />
@@ -538,7 +540,7 @@ export function SettingsPage() {
               Import this JSON
             </button>
           </div>
-          <Message msg={msg?.area === 'json' ? msg : null} />
+          <Message msg={at('json')} />
         </section>
       </details>
     </section>

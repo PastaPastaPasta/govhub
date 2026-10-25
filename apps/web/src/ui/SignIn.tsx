@@ -77,7 +77,7 @@ export function SessionControl() {
   return (
     <div className="account">
       {session ? (
-        <button type="button" className="account-btn" popoverTarget="account-menu" data-testid="session-button">
+        <button type="button" className="account-btn" popoverTarget="account-menu" id="session-button" data-testid="session-button">
           <Avatar id={session.identityId} size={22} />
           <span className="account-name">{name ?? shortHash(session.identityId, 4)}</span>
           <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
@@ -86,7 +86,7 @@ export function SessionControl() {
         </button>
       ) : (
         <>
-          <button type="button" className="btn btn-primary" onClick={openSignIn} data-testid="session-button">
+          <button type="button" className="btn btn-primary" onClick={openSignIn} id="session-button" data-testid="session-button">
             Sign in
           </button>
           <button type="button" className="icon-btn" popoverTarget="account-menu" aria-label="Menu: settings, theme, about" data-testid="menu-button">

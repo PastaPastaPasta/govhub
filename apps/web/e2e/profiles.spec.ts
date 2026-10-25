@@ -1,10 +1,9 @@
 // Network profiles (one-action switch, header label, v1 migration, "being set up") and the failed-verification hide rules.
 // No live backend: fixture mode, or live mode with every non-local request aborted.
-import { expect, test, type BrowserContext } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { TESTNET_GOV_CONTRACT_ID } from '../src/config/registry.ts';
-import { cspViolations, gotoFixtures, openDrawer, openGroup, watchPage } from './helpers.ts';
+import { cspViolations, gotoFixtures, offline, openDrawer, openGroup, watchPage } from './helpers.ts';
 
-const offline = (context: BrowserContext) => context.route(/^https?:\/\/(?!localhost[:/]|127\.0\.0\.1[:/])/, (r) => r.abort());
 
 test.describe('failed verification is hidden (fixtures)', () => {
   test('lists, budget header and active count leave out the two invalid proposals; the toggle reveals them', async ({ page }) => {

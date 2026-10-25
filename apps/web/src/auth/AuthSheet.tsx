@@ -41,7 +41,7 @@ export function AuthSheet() {
   }, [sheet]);
   const onClose = () => {
     closeSheet();
-    const back = opener.current?.isConnected && opener.current.getClientRects().length ? opener.current : document.querySelector<HTMLElement>('[data-testid="session-button"]');
+    const back = opener.current?.isConnected && opener.current.getClientRects().length ? opener.current : document.getElementById('session-button');
     opener.current = null;
     back?.focus();
   };

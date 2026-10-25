@@ -1,16 +1,16 @@
 // Hosting, settings, accessibility and loading fixes (QA ledger D-050 … D-086). Fixture mode or live mode with every non-local
 // request aborted: no backend needed.
-import { devices, expect, test, type BrowserContext, type Page } from '@playwright/test';
-import { cspViolations, gotoFixtures, openGroup, watchPage } from './helpers.ts';
+import { devices, expect, test, type Page } from '@playwright/test';
+import { cspViolations, gotoFixtures, offline, openGroup, watchPage } from './helpers.ts';
 
-const offline = (context: BrowserContext) => context.route(/^https?:\/\/(?!localhost[:/]|127\.0\.0\.1[:/])/, (r) => r.abort());
+const JSON_BOX = 'Settings JSON (paste and import, or copy)';
 const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url');
 const savedProfile = (page: Page) => page.evaluate(() => JSON.parse(localStorage.getItem('govhub.registry.v2') ?? 'null')?.profile ?? null);
 
 async function exportedSettings(page: Page) {
   await openGroup(page, 'Export, import and share');
   await page.getByRole('button', { name: 'Show JSON' }).click();
-  return JSON.parse(await page.getByLabel('Settings JSON (paste and import, or copy)').inputValue());
+  return JSON.parse(await page.getByLabel(JSON_BOX).inputValue());
 }
 
 test.describe('?config= links', () => {
@@ -88,7 +88,7 @@ test.describe('settings', () => {
   test('D-056 / D-057: import messages show next to the control; oversized files are refused', async ({ page }) => {
     await gotoFixtures(page, '/settings');
     const g = await openGroup(page, 'Export, import and share');
-    await g.getByLabel('Settings JSON (paste and import, or copy)').fill('{oops');
+    await g.getByLabel(JSON_BOX).fill('{oops');
     await page.getByRole('button', { name: 'Import this JSON' }).click();
     await expect(page.getByRole('alert')).toContainText('Not valid JSON');
     await expect(page.getByRole('alert')).toBeInViewport();
@@ -97,7 +97,7 @@ test.describe('settings', () => {
     await expect(page.getByRole('alert')).toContainText('Too large to be govhub settings: 12.0 MB');
     await expect(page.getByRole('alert')).toBeInViewport();
 
-    await g.getByLabel('Settings JSON (paste and import, or copy)').fill(' '.repeat(70 * 1024) + '{}');
+    await g.getByLabel(JSON_BOX).fill(' '.repeat(70 * 1024) + '{}');
     await page.getByRole('button', { name: 'Import this JSON' }).click();
     await expect(page.getByRole('alert')).toContainText('Too large');
   });

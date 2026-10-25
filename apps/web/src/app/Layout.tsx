@@ -14,7 +14,7 @@ function LazyAuthSheet() {
   // Once loaded it stays mounted: unmounting the open <dialog> skipped close(), and focus fell to <body> instead of going back.
   const [loaded, setLoaded] = useState(false);
   if (sheet && !loaded) setLoaded(true);
-  return sheet || loaded ? (
+  return loaded ? (
     <Suspense fallback={null}>
       <AuthSheet />
     </Suspense>
@@ -25,7 +25,7 @@ function LazyAuthSheet() {
  * Whether govhub is shown inside another page's frame. GitHub Pages cannot send frame-ancestors / X-Frame-Options, so a page
  * could frame a `?config=` link and trick a click on "Use these settings"; such a link is then only offered in its own tab.
  */
-export function isFramed(): boolean {
+function isFramed(): boolean {
   try {
     return window.top !== window.self;
   } catch {
@@ -97,12 +97,14 @@ function ConfigOffer() {
       </div>
     );
   }
-  const diff = current.errors.length ? [] : registryDiff(registry, current.registry);
+  const ok = current.errors.length === 0;
+  const diff = ok ? registryDiff(registry, current.registry) : [];
+  const changed = new Set(diff.map((d) => d.label));
   return (
     <div className="banner banner-config" role="alertdialog" aria-labelledby="cfg-title" data-testid="config-offer">
       <p id="cfg-title">
         <b>This link carries endpoint settings.</b>{' '}
-        {current.errors.length
+        {!ok
           ? `They can't be used: ${current.errors.join('; ')}.`
           : diff.length
             ? `Using them changes ${diff.length === 1 ? 'one setting' : `${diff.length} settings`}; everything else stays as it is. Check every host: a bridge or DAPI node you do not trust can report false numbers.`
@@ -122,13 +124,13 @@ function ConfigOffer() {
           ))}
         </dl>
       )}
-      {!current.errors.length && (
+      {ok && (
         // every other setting too, hosts included: what the user would be running on, not only what moves
         <details className="config-unchanged">
           <summary className="small">{diff.length ? 'Settings that stay the same' : 'The settings'}</summary>
           <dl className="config-summary">
             {registryRows(current.registry)
-              .filter(([k]) => !diff.some((d) => d.label === k))
+              .filter(([k]) => !changed.has(k))
               .map(([k, v]) => (
                 <div key={k}>
                   <dt>{k}</dt>
