@@ -5,7 +5,7 @@
 // chain) a vote is counted only when its masternode is in that list, the masternode's ProRegTx (hash-checked) proves the vote's
 // collateral outpoint and the type (weight), and the signature recovers to the voting key the proven list assigns. Everything else is
 // excluded and counted by reason. Without a proven list (demo data) the bridge's list stands in, and `keysFrom` says so.
-import { countVotes, decodeAddress, normalizeMnId, verifyVoteSignature, EVONODE_WEIGHT, REGULAR_MN_WEIGHT, VOTE_SIGNAL, type Network, type TallyVote } from '@govhub/verify';
+import { bytesEqual, countVotes, decodeAddress, normalizeMnId, verifyVoteSignature, EVONODE_WEIGHT, REGULAR_MN_WEIGHT, VOTE_SIGNAL, type Network, type TallyVote } from '@govhub/verify';
 import type { BridgeMasternode, BridgeVote } from '../data/bridge.ts';
 import type { Tally } from '../data/types.ts';
 
@@ -259,7 +259,9 @@ export function verifyVotes(input: VoteCheckInput): VoteCheckResult {
       continue;
     }
     const provenKey = decodeAddress(e.votingAddress, input.network);
-    if (!provenKey || provenKey.type !== 'p2pkh' || !verifyVoteSignature(v.sig, fields, provenKey.hash160, input.network)) {
+    // the same key as the bridge's (the usual case): its signature check already ran
+    const provenOk = !!provenKey && provenKey.type === 'p2pkh' && (bytesEqual(provenKey.hash160, mn.keyId) ? servedOk : verifyVoteSignature(v.sig, fields, provenKey.hash160, input.network));
+    if (!provenOk) {
       excludeProven(servedOk ? 'unproven-key' : 'bad-signature', servedOk ? `signed by ${mn.votingAddress}, but the proven list gives this masternode ${e.votingAddress}` : `does not recover to ${e.votingAddress}`);
       continue;
     }
