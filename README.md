@@ -7,6 +7,8 @@ possible.
 
 Status: **phase 0 (spikes)**. Nothing here is production-ready.
 
+- Trust model: [`docs/TRUST.md`](docs/TRUST.md) says what the browser proves, and what each backend (bridge, relays,
+  badge issuers, faucet, DAPI and Platform nodes) could still lie about or hide.
 - Design: [`docs/PLAN.md`](docs/PLAN.md) (r3.1). [`docs/PLAN-r2.md`](docs/PLAN-r2.md) holds the
   earlier revision, including the shelved ZK badge design.
 - Phase 0 spikes: [`spikes/`](spikes/). Each spike is a standalone package with its own README

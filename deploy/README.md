@@ -20,6 +20,9 @@ replaceable (PLAN section 1.1), so a third-party bridge is a first-class deploym
 Slots for `relay` and `accounts` are marked in `docker-compose.yml`. They are not built yet. The
 MN badge `issuer` is built (profile `issuer`, sections 11.5 and 13.2).
 
+What a backend you run is trusted with, what the app checks behind it, and what it learns about users is in
+[`docs/TRUST.md`](../docs/TRUST.md) (section 6 per service, section 7 for privacy and logging).
+
 ## Contents
 
 1. [Quick start](#1-quick-start)
