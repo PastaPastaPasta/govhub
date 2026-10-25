@@ -49,6 +49,9 @@ export interface BridgeMasternode {
   collateralTxid: string;
   collateralIndex: number;
   votingAddress: string;
+  /** Core's `collateralAddress` and current `payoutAddress` (bridges from before these fields leave them out) */
+  collateralAddress?: string;
+  payoutAddress?: string;
   /** 'regular' (weight 1) or 'evo' (weight 4) */
   type: 'regular' | 'evo';
   valid: boolean;
@@ -181,7 +184,8 @@ export function parseMasternode(raw: unknown): BridgeMasternode {
   const o = obj(raw, 'masternode');
   const type = o.type;
   if (type !== 'regular' && type !== 'evo') throw new BridgeError('bad masternode type');
-  return { proTxHash: hex64(o, 'proTxHash'), collateralTxid: hex64(o, 'collateralTxid'), collateralIndex: int(o, 'collateralIndex'), votingAddress: str(o, 'votingAddress'), type, valid: bool(o, 'valid') };
+  const addr = (k: string) => (typeof o[k] === 'string' && /^[1-9A-HJ-NP-Za-km-z]{25,40}$/.test(o[k] as string) ? { [k]: o[k] as string } : {});
+  return { proTxHash: hex64(o, 'proTxHash'), collateralTxid: hex64(o, 'collateralTxid'), collateralIndex: int(o, 'collateralIndex'), votingAddress: str(o, 'votingAddress'), ...addr('collateralAddress'), ...addr('payoutAddress'), type, valid: bool(o, 'valid') };
 }
 
 function list<T>(o: unknown, key: string, each: (x: unknown) => T): T[] {

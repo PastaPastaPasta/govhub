@@ -73,6 +73,8 @@ export function describeVote(v: WatchedVote, now: number, fmt: TimeFmt): VoteVie
   const host = lead ? relayHost(lead.relay) : '';
   switch (v.status) {
     case 'queued':
+      if (v.restored && v.maybeAt?.length)
+        return { badge: 'May be at a relay', tone: 'wait', line: `Its submission to ${v.maybeAt.map(relayHost).join(', ')} got no answer, so that relay may hold it and could still release it. This browser does not send it again; a newer vote of yours is timed after it, so the newer one wins.` };
       if (v.restored) return { badge: 'Signed elsewhere', tone: 'quiet', line: 'Signed on another device. This browser does not send it; only a relay that already holds it can.' };
       if (v.lastSendError) {
         const when = v.nextSendAt && v.nextSendAt > now ? `Trying again at ${fmt(v.nextSendAt)}.` : 'Trying again now.';
@@ -82,6 +84,7 @@ export function describeVote(v: WatchedVote, now: number, fmt: TimeFmt): VoteVie
     case 'held':
       return { badge: 'Held by relay', tone: 'wait', line: holdText(v, now, fmt) };
     case 'broadcast': {
+      if (v.withdrawn) return { badge: 'May already count', tone: 'wait', line: 'Cancelled at the relay, but the relay had already handed it to the network once, so it may already count. Vote again to change it (Core allows one change per hour).' };
       const at = lead?.info.broadcastAt;
       return { badge: 'Broadcast', tone: 'progress', line: `Broadcast${host ? ` by ${host}` : ''}${at ? ` at ${fmt(at)}` : ''}, waiting for the network.` };
     }
@@ -206,6 +209,11 @@ export function voteButtonText(outcome: 1 | 2 | 3 | 0, count: number, deferred: 
   return `${deferred ? 'Schedule' : 'Vote'} ${what} with ${count} masternode${count === 1 ? '' : 's'}`;
 }
 
+/** Whether a relay ever handed this vote to Core (it may count even if a relay holds or cancelled it now). */
+export function everLeft(v: Pick<WatchedVote, 'status' | 'relayStatus'>, info: WatchedVote['relayInfo'] = {}): boolean {
+  return v.status === 'broadcast' || Object.values(info).some((i) => !!i.broadcastAt || i.lastError === 'not-visible') || Object.values(v.relayStatus ?? {}).some((x) => x === 'sending' || x === 'broadcast' || x === 'confirmed');
+}
+
 /** Applies what a relay said about a vote to our record (refs, per-relay status and details, and the vote's own status). */
 export function applyRelayState(v: WatchedVote, relay: string, st: RelayVoteState): WatchedVote {
   const refs = v.refs.some((r) => r.relay === relay && r.id === st.id) ? v.refs : [...v.refs.filter((r) => r.relay !== relay), { relay, id: st.id }];
@@ -216,8 +224,11 @@ export function applyRelayState(v: WatchedVote, relay: string, st: RelayVoteStat
   };
   const next: WatchedVote = { ...v, refs, relayStatus, relayInfo };
   // the bridge decides confirmed / replaced; relays only move a vote along or end it
-  if (v.status === 'confirmed' || v.status === 'replaced' || v.status === 'cancelled') return next;
+  if (v.status === 'confirmed' || v.status === 'replaced' || v.status === 'cancelled' || v.withdrawn) return next;
   const all = Object.values(relayStatus);
+  // A relay re-sends a broadcast vote that does not show up by moving it back to `held` (lastError not-visible, broadcastAt kept):
+  // cancelling it then stops the re-sends, but Core may already have it. Never "Cancelled" for such a vote.
+  if (all.every((x) => x === 'cancelled') && everLeft(v, relayInfo)) return { ...next, status: 'broadcast', withdrawn: true };
   if (all.some((x) => x === 'broadcast' || x === 'confirmed' || x === 'sending')) return { ...next, status: 'broadcast', lastSendError: undefined };
   if (all.some((x) => x === 'held')) return { ...next, status: 'held', lastSendError: undefined };
   if (all.every((x) => x === 'cancelled')) return { ...next, status: 'cancelled' };
@@ -237,3 +248,21 @@ export function deferredUnavailable(deadline: number | null, now: number, networ
   return `Voting closes in ${formatDuration(deadline - now)}, too soon to spread votes out (the last ${formatDuration(DEADLINE_MARGIN_S[network])} are kept free)${hourly}.`;
 }
 
+
+/**
+ * Where "Vote now" sends (D-070): ONE relay at a time, the others only take over when it fails. `health` is the last check per relay
+ * (missing: not checked yet).
+ */
+export function relaySummary(relays: readonly string[], health: Readonly<Record<string, { ok: boolean } | undefined>>): { text: string; warn: boolean } {
+  if (!relays.length) return { text: 'No relay is configured (Settings).', warn: true };
+  const up = relays.filter((r) => health[r]?.ok);
+  const down = relays.filter((r) => health[r] && !health[r]!.ok);
+  const first = up[0] ?? relays.find((r) => !health[r]) ?? relays[0]!;
+  const backups = relays.length - 1;
+  const via = `through ${relayHost(first)}${backups ? ` (${backups === 1 ? 'another relay takes over' : `${backups} others take over`} if it fails)` : ''}`;
+  if (down.length === relays.length) return { text: `Signed in your browser and sent ${via}. No relay answered its last check, so sending may wait until one does.`, warn: true };
+  return { text: `Signed in your browser and sent ${via}.`, warn: false };
+}
+
+/** How long until "Vote now" shows up (D-071): the bridge's vote set refreshes once per block. */
+export const VOTE_NOW_DELAY_TEXT = 'The network usually shows it within a few minutes (the vote list refreshes with each block, about 2.5 minutes apart).';

@@ -200,6 +200,23 @@ test.describe('vote panel (fixtures)', () => {
     await expect(page.getByTestId('vote-tracker')).toHaveCount(0);
   });
 
+  test('D-005: a vote whose submission timed out is found at the relay and cancelled before a newer vote, not "dropped"', async ({ page }) => {
+    await openPanel(page, 'lost');
+    const no = await voteWithFirst(page, 'No');
+    await expect(no).toHaveAttribute('data-status', 'queued');
+    await expect(no.getByTestId('vote-tracker-badge')).toHaveText('Not sent yet');
+    const simVotes = () => page.evaluate(() => (window as unknown as { __voteSim: { votes(): Array<{ status: string }> } }).__voteSim.votes());
+    // the relays stored the No although their answers were lost
+    await expect.poll(async () => (await simVotes()).filter((v) => v.status === 'held').length).toBeGreaterThan(0);
+    const heldNo = (await simVotes()).length;
+    await voteWithFirst(page, 'Yes');
+    await expect(page.getByTestId('vote-send')).not.toHaveText(/Signing/, { timeout: 30_000 });
+    // every relay copy of the No was cancelled there; the Yes is the only vote any relay still holds
+    const after = await simVotes();
+    expect(after.slice(0, heldNo).map((v) => v.status)).toEqual(Array(heldNo).fill('cancelled'));
+    expect(after.slice(heldNo).every((v) => v.status === 'held')).toBe(true);
+  });
+
   test('my votes: grouped by proposal on the keyring page, with the new statuses', async ({ page }) => {
     await openPanel(page, 'manual');
     await voteWithFirst(page, 'No');

@@ -8,7 +8,7 @@ import { shortAddress } from '../lib/format.ts';
 import { openSignIn } from '../ui/SignIn.tsx';
 import { CopyButton, HashCopy, useLabels, useNow } from '../ui/vote/common.tsx';
 import { VotesList } from '../ui/vote/VotesList.tsx';
-import { useKeyring } from '../voting/KeyringContext.tsx';
+import { KeyCheckError, useKeyring } from '../voting/KeyringContext.tsx';
 import { STEP_NAME } from '../voting/lookup.ts';
 import { votingAddressOf, votingKeyId, type OwnedMasternode } from '../voting/masternodes.ts';
 import '../voting/voting.css';
@@ -110,7 +110,7 @@ function Create() {
           <button type="button" className="btn btn-primary" onClick={() => void k.createKeyring(false).catch(() => {})} disabled={!canSave || !!k.busy} data-testid="create-keyring">
             Save encrypted on Platform
           </button>
-          <p className="small muted">Encrypted in this browser to your recovery phrase (and passkeys you add). Back on any device when you sign in. About 0.0016 DASH in credits the first time.</p>
+          <p className="small muted">Encrypted in this browser to your recovery phrase (and passkeys you add). Back on any device when you sign in. About 0.003 DASH in credits for each save.</p>
         </div>
         <div>
           <button type="button" className="btn" onClick={() => void k.createKeyring(true).catch(() => {})} disabled={!!k.busy} data-testid="memory-keyring">
@@ -129,16 +129,23 @@ function AddKey() {
   const [wif, setWif] = useState('');
   const [label, setLabel] = useState('');
   const [added, setAdded] = useState<{ keyId: string; label: string } | null>(null);
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
+  /** the masternode-list check refused the key but it may be added anyway (it votes for no masternode in the list) */
+  const [canForce, setCanForce] = useState(false);
+  const add = async (force: boolean) => {
+    setCanForce(false);
     try {
-      const keyId = await k.addKey(wif, label);
+      const keyId = await k.addKey(wif, label, { force });
       setAdded({ keyId, label: label.trim() });
       setWif('');
       setLabel('');
-    } catch {
+    } catch (e) {
       /* shown by the provider */
+      setCanForce(e instanceof KeyCheckError && e.canForce);
     }
+  };
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    void add(false);
   };
   // what the new key found, once the lookup that includes it is done
   const ring = k.keyring;
@@ -152,7 +159,7 @@ function AddKey() {
       <form className="kr-form" onSubmit={submit} aria-label="Add a voting key">
         <label className="kr-field">
           <span>Voting private key ({k.coreNetwork}, as Dash Core shows it)</span>
-          <input type="password" value={wif} onChange={(e) => setWif(e.target.value)} autoComplete="off" spellCheck={false} data-testid="voting-key-input" aria-describedby="addkey-warn" />
+          <input type="password" value={wif} onChange={(e) => (setWif(e.target.value), setCanForce(false))} autoComplete="off" spellCheck={false} data-testid="voting-key-input" aria-describedby="addkey-warn" />
         </label>
         <p className="kr-inline-warn small" id="addkey-warn">
           Only the voting key. Never an owner, payout or collateral key: a voting key can only vote.
@@ -164,6 +171,11 @@ function AddKey() {
         <button type="submit" className="btn btn-primary" disabled={!wif.trim() || !!k.busy || k.demo} data-testid="voting-key-add">
           {adding ? 'Adding…' : 'Add key'}
         </button>
+        {canForce && wif.trim() && (
+          <button type="button" className="btn btn-s btn-quiet" onClick={() => void add(true)} disabled={!!k.busy} data-testid="voting-key-force">
+            I’m sure it is a voting key: add it anyway
+          </button>
+        )}
         {k.demo && <p className="small muted">The demo keyring has its keys already.</p>}
       </form>
       {added && idx >= 0 && (
@@ -441,6 +453,7 @@ function Privacy() {
 
 export function MasternodesPage() {
   const k = useKeyring();
+  const { openSheet } = useAuth();
   return (
     <section className="kr-page" aria-labelledby="mn-page-title">
       <Header />
@@ -450,9 +463,14 @@ export function MasternodesPage() {
         </p>
       )}
       {k.error && (
-        <p className="kr-alert" role="alert" data-testid="keyring-error">
-          {k.error}
-        </p>
+        <div className="kr-alert" role="alert" data-testid="keyring-error">
+          <p>{k.error}</p>
+          {k.needsTopUp && (
+            <button type="button" className="btn btn-s" onClick={() => openSheet('topup')} data-testid="keyring-topup">
+              Top up
+            </button>
+          )}
+        </div>
       )}
       {k.status === 'signed-out' && (
         <section className="kr-card kr-gate">

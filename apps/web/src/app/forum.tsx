@@ -6,6 +6,7 @@ import { createForum, fixtureForum, type ForumSource } from '../data/forum.ts';
 import { seedFixtureForum } from '../data/fixtureForum.ts';
 import { loadFixtures } from '../data/fixtures.ts';
 import { errText, shortHash } from '../lib/format.ts';
+import { endSession } from '../session/end.ts';
 import type { Session } from '../session/session.ts';
 import { useApp } from './context.tsx';
 
@@ -75,13 +76,24 @@ export function ForumProvider({ children }: { children: ReactNode }) {
       ),
     [mode, registry, source],
   );
-  const [session, setSession] = useState<Session | null>(null);
+  const [session, setSessionState] = useState<Session | null>(null);
+  // The session is replaced or ended synchronously (not inside a state updater, which React may run later): its key and everything
+  // derived from it (session/end.ts hooks: the masternode keyring) are wiped before the click or `pagehide` handler returns.
+  const sessionRef = useRef<Session | null>(null);
+  const setSession = useCallback((next: Session | null) => {
+    const old = sessionRef.current;
+    if (old === next) return;
+    endSession(next?.identityId ?? null);
+    sessionRef.current = next;
+    old?.close();
+    setSessionState(next);
+  }, []);
   const [balance, setBalance] = useState<bigint | null>(null);
   const [modNonce, setModNonce] = useState(0);
   const [moderation, setModeration] = useState<ModerationState>({ index: EMPTY_HIDE_INDEX, lists: [], subs: loadLocalSubs(), loading: true, ready: false });
 
   // A different network or data mode means a different identity space: sign out.
-  useEffect(() => () => setSession((s) => (s?.close(), null)), [forum]);
+  useEffect(() => () => setSession(null), [forum, setSession]);
 
   const refreshBalance = useCallback(() => {
     if (!session) return setBalance(null);
@@ -89,10 +101,8 @@ export function ForumProvider({ children }: { children: ReactNode }) {
   }, [session]);
   useEffect(refreshBalance, [refreshBalance]);
 
-  const signIn = useCallback((s: Session) => {
-    setSession((old) => (old?.close(), s));
-  }, []);
-  const signOut = useCallback(() => setSession((old) => (old?.close(), null)), []);
+  const signIn = useCallback((s: Session) => setSession(s), [setSession]);
+  const signOut = useCallback(() => setSession(null), [setSession]);
 
   const write = useCallback(
     async (op: DocumentOp) => {

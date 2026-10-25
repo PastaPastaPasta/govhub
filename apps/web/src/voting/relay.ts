@@ -157,6 +157,24 @@ export class RelayClient {
     }
   }
 
+  /**
+   * GET /v1/votes/by-hash/:voteHash: what this relay holds under Core's vote hash, so a vote whose submission timed out can be found
+   * (and cancelled) without sending it again. null: the relay answered that it does not have it. 'unsupported': a relay without
+   * this endpoint (its generic 404 `not-found`, or 400/405), so nothing is known.
+   */
+  async byHash(voteHash: string): Promise<RelayVoteState | null | 'unsupported'> {
+    if (!/^[0-9a-f]{64}$/.test(voteHash)) throw new RelayError('bad vote hash');
+    try {
+      const st = parseRelayState((await this.req(`/v1/votes/by-hash/${voteHash}`)).json);
+      if (st.voteHash !== voteHash) throw new RelayError('the relay answered for a different vote');
+      return st;
+    } catch (e) {
+      if (e instanceof RelayError && e.status === 404) return e.code === 'not-found' || !e.code ? 'unsupported' : null;
+      if (e instanceof RelayError && (e.status === 400 || e.status === 405 || e.status === 501)) return 'unsupported';
+      throw e;
+    }
+  }
+
   /** POST /v1/votes/cancel with a `signmessage` signature by the voting key over relayCancelMessage (both networks). */
   async cancel(id: string, signatureBase64: string): Promise<RelayVoteStatus> {
     const { json } = await this.req('/v1/votes/cancel', { id, sig: signatureBase64 });

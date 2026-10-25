@@ -5,6 +5,9 @@
 // opens it at once, a passkey sign-in with the same ceremony; a pasted-key session cannot open it (memory-only keys still work).
 // After the idle timeout the keys are wiped and the keyring has to be unlocked again (passkey or phrase).
 //
+// Session safety: every async path captures `sessionToken()` (session generation, identity, Core network, mode) and checks it before
+// it opens, writes or keeps anything; sign-out wipes the keys synchronously (session/end.ts), before React re-renders.
+//
 // Fixture mode opens a memory-only demo keyring on sign-in and talks to the pretend relays and bridge of voting/sim.ts.
 import {
   addUnlocker,
@@ -12,9 +15,10 @@ import {
   emptyKeyring,
   hexToBytes,
   identifierBytes,
-  isValidPrivateKey,
   KeyringLockedError,
+  KEYS_CAPS,
   loadKeyring,
+  localRecordKey,
   passkeyUnlockKey,
   PENDING_CAPS,
   prfInput,
@@ -39,30 +43,37 @@ import { BridgeError, HttpBridge, type Bridge, type BridgeVotes } from '../data/
 import { createWebDapi, dapiConfig } from '../data/dapi.ts';
 import { fixtureMnKey } from '../data/fixtureVotes.ts';
 import { getSdk } from '../data/platform.ts';
-import { lookupMasternodes, type LookupResult, type LookupStep } from './lookup.ts';
-import { proveCollaterals, votingKeyId, type OwnedMasternode } from './masternodes.ts';
+import { onSessionEnd } from '../session/end.ts';
+import { assertCanWrite, topUpFromError, TopUpError } from './funds.ts';
+import { castKeys, KeyringLock } from './gate.ts';
+import { lookupMasternodes, type LookupDeps, type LookupResult, type LookupStep } from './lookup.ts';
+import { keyRole, parseVotingKey, proveCollaterals, votingAddressOf, votingKeyId, type OwnedMasternode } from './masternodes.ts';
 import {
   bridgeVerdict,
   fromPending,
   isOpen,
   isTracked,
   loadWatched,
+  loadWatchedSealed,
   mergeWatched,
   needsRebroadcast,
+  pendingBackup,
   pickRebroadcastRelay,
   pruneWatched,
-  saveWatched,
+  removePlainWatched,
+  saveWatchedSealed,
   sendDue,
   sendRetryDelay,
-  toPending,
+  watchedScope,
   type WatchedVote,
 } from './pending.ts';
 import { currentKey, deferredWindow, mnId, planDeferred, planImmediate, signPlanned, submitDelays, voteFields, type CurrentVote, type Intent, type PlanResult } from './plan.ts';
 import { cancelSignature, normalizeRelayUrl, RelayClient, RelayError, type RelayHealth, type RelayVoteState } from './relay.ts';
+import { withdrawVote, WithdrawError, type WithdrawResult } from './withdraw.ts';
 import { DEMO_KEYS, SIM_RELAYS, simScenario, VoteSim, type RelayPort } from './sim.ts';
 import { applyRelayState, classifySubmitError } from './status.ts';
-import { KEYRING_STASH_EVENT, takeStash } from './stash.ts';
-import { bytesEqual, countVotes, decodeWif, governanceVoteHash, normalizeMnId, p2pkhAddress, recoverVoteSigner, verifyVoteSignature, VOTE_MAX_FUTURE_S, type OutcomeCounts } from '@govhub/verify';
+import { clearStash, KEYRING_STASH_EVENT, takeStash } from './stash.ts';
+import { bytesEqual, bytesToHex, countVotes, governanceVoteHash, normalizeMnId, p2pkhAddress, recoverVoteSigner, verifyVoteSignature, VOTE_MAX_FUTURE_S, type OutcomeCounts } from '@govhub/verify';
 
 export type KeyringStatus = 'signed-out' | 'checking' | 'absent' | 'locked' | 'open' | 'error';
 
@@ -94,6 +105,8 @@ export interface VoteProof {
 interface Ctx {
   status: KeyringStatus;
   error: string | null;
+  /** the error is "not enough credits for a keyring write": offer a top-up */
+  needsTopUp: boolean;
   /** fixture mode: a demo keyring with synthetic masternodes, pretend relays */
   demo: boolean;
   /** the session can open a Platform keyring (seed or passkey); a pasted key cannot */
@@ -115,8 +128,11 @@ interface Ctx {
   unlockWithPhrase(phrase: string): Promise<void>;
   createKeyring(memoryOnly: boolean): Promise<void>;
   lock(): void;
-  /** keys and labels; addKey resolves with the new key's id */
-  addKey(input: string, label: string): Promise<string>;
+  /**
+   * keys and labels; addKey resolves with the new key's id. The key is checked against the masternode list first: collateral and
+   * payout keys are refused; a key that votes for no masternode only with `force` (KeyCheckError.canForce).
+   */
+  addKey(input: string, label: string, opts?: { force?: boolean }): Promise<string>;
   removeKey(index: number): Promise<void>;
   setNodeLabel(proTxHash: string, label: string): Promise<void>;
   setIdleMinutes(m: number): Promise<void>;
@@ -172,20 +188,26 @@ export function pacedRandomDelays(n: number): number[] {
 const generationKey = (platformNetwork: string, ownerId: string) => `govhub.keyring.generation.${platformNetwork}.${ownerId}`;
 const EMPTY_MNS: MnState = { phase: 'idle', owned: [], missing: [], mismatch: [], smlNodes: 0, forKeys: '' };
 
-function parseVotingKey(input: string, network: 'mainnet' | 'testnet'): { privateKey: Uint8Array; compressed: boolean } {
-  const t = input.trim();
-  if (/^(?:0x)?[0-9a-fA-F]{64}$/.test(t)) {
-    const privateKey = hexToBytes(t.replace(/^0x/, ''));
-    if (!isValidPrivateKey(privateKey)) throw new Error('That is not a valid private key.');
-    return { privateKey, compressed: true };
-  }
-  try {
-    const { privKey, compressed } = decodeWif(t, network);
-    return { privateKey: privKey, compressed };
-  } catch {
-    throw new Error(`Enter the voting key as a ${network} WIF (or 64 hex characters).`);
+/** Async work whose session ended (sign-out, another identity or network) meanwhile: it stopped and kept nothing. */
+export class SessionChangedError extends Error {
+  constructor() {
+    super('The session changed meanwhile; nothing was kept.');
+    this.name = 'SessionChangedError';
   }
 }
+
+/** A pasted key refused by the masternode-list check. `canForce`: it may be added anyway (it votes for no known masternode). */
+export class KeyCheckError extends Error {
+  constructor(
+    message: string,
+    readonly canForce: boolean,
+  ) {
+    super(message);
+    this.name = 'KeyCheckError';
+  }
+}
+
+const LOCKED_SAVE = 'Your saved keyring is locked. Unlock it with your recovery phrase or a passkey first, then add these keys there.';
 
 /** Weighted counts after replacing `prev` (or nothing) with `outcome` for a masternode of `weight`, run backwards for "before". */
 function tallyBefore(after: OutcomeCounts, outcome: number, weight: number, prev: number | undefined): OutcomeCounts {
@@ -209,6 +231,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
   const relayFor = useCallback((url: string): RelayPort => (sim ? sim.relay(url) : new RelayClient(url)), [sim]);
   const [status, setStatus] = useState<KeyringStatus>('signed-out');
   const [error, setError] = useState<string | null>(null);
+  const [needsTopUp, setNeedsTopUp] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [memoryOnly, setMemoryOnly] = useState(false);
   const [keyring, setKeyring] = useState<OpenedKeyring | null>(null);
@@ -243,7 +266,44 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
   /** The identity signed in NOW: async work started for another identity (a cast, a re-send) must not write into this one's votes. */
   const identityRef = useRef(identityId);
   identityRef.current = identityId;
+  const netRef = useRef(coreNetwork);
+  netRef.current = coreNetwork;
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+  /** Bumped synchronously when the session ends or is replaced (session/end.ts). */
+  const genRef = useRef(0);
+  /**
+   * The session this work belongs to: generation, identity, Core network and mode. Async keyring work captures it when it starts and
+   * opens, writes or keeps nothing once it differs (D-004 sign-out or identity switch, D-016 profile switch).
+   */
+  const sessionToken = useCallback(() => `${genRef.current}|${identityRef.current ?? ''}|${netRef.current}|${modeRef.current}`, []);
+  /** The key the watched votes are stored under, sealed to the keyring (D-027); kept while the session lasts, locked or not. */
+  const storeKeyRef = useRef<{ key: Uint8Array; scope: string } | null>(null);
+  const dropStoreKey = useCallback(() => {
+    storeKeyRef.current?.key.fill(0);
+    storeKeyRef.current = null;
+  }, []);
+  /** The session in which the saved keyring was locked (button or idle): only the phrase or a passkey reopens it (D-015). */
+  const lockRef = useRef(new KeyringLock());
   const touch = () => setVersion((v) => v + 1);
+
+  // Sign-out or identity switch: the keys are wiped NOW, before React re-renders (and before a bfcache freeze on pagehide, D-025)
+  useEffect(
+    () =>
+      onSessionEnd((next) => {
+        genRef.current++;
+        kr.current?.close();
+        kr.current = null;
+        // the next render must not read the wiped keys (they are zero now): the keyring is gone with the session
+        setKeyring(null);
+        setMns(EMPTY_MNS);
+        clearStash(next);
+        dropStoreKey();
+        watchedRef.current = [];
+        lockRef.current.unlock();
+      }),
+    [dropStoreKey],
+  );
 
   useEffect(() => {
     if (!sim) return;
@@ -256,19 +316,63 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
     return { store: createEvoKeyringStore(evo, sdk, port, registry.forum.contractId), contractId: registry.forum.contractId };
   }, [registry]);
 
+  const bridgeEndpoint = enabledBridges(registry)[0] ?? null;
+  const bridge = useMemo<Bridge | null>(() => (sim ? sim.bridge : bridgeEndpoint ? new HttpBridge(bridgeEndpoint.name, bridgeEndpoint.httpBase) : null), [sim, bridgeEndpoint?.name, bridgeEndpoint?.httpBase]);
+  const dapi = useMemo(() => (mode === 'live' ? createWebDapi(dapiConfig(registry)) : null), [registry, mode]);
+  const lookupDeps = useMemo<LookupDeps | null>(
+    () =>
+      bridge && {
+        mnlist: () => bridge.mnlist(),
+        sml: dapi ? (signal) => dapi.getSml({ signal }) : null,
+        rawTx: dapi ? async (txid, signal) => (await dapi.call((core, s) => core.getTransaction(txid, { signal: s }), { signal })).value.raw : null,
+        network: coreNetwork,
+      },
+    [bridge, dapi, coreNetwork],
+  );
+
+  /** From now on the watched votes are stored sealed to this (saved) keyring. */
+  const keepVotesSealedTo = useCallback(
+    (k: OpenedKeyring) => {
+      dropStoreKey();
+      if (!identityId) return null;
+      const scope = watchedScope(registry.platformNetwork, coreNetwork, identityId);
+      return (storeKeyRef.current = { key: localRecordKey(k.content.keyringId, scope), scope });
+    },
+    [identityId, coreNetwork, registry.platformNetwork, dropStoreKey],
+  );
+
+  /** Writes the watched votes sealed to the keyring (nothing while no saved keyring was opened in this session). */
+  const persistWatched = useCallback(
+    (list: readonly WatchedVote[]) => {
+      const s = storeKeyRef.current;
+      if (s && identityId) saveWatchedSealed(localStorage, coreNetwork, identityId, s.scope, s.key, list);
+    },
+    [identityId, coreNetwork],
+  );
+
   const close = useCallback(() => {
     kr.current?.close();
     setKeyring(null);
   }, []);
 
+  /** Shows an opened keyring. `t`: the session it was opened for; a stale one is wiped instead (returns false). */
   const opened = useCallback(
-    (k: OpenedKeyring, memory: boolean) => {
+    (k: OpenedKeyring, memory: boolean, t: string): boolean => {
+      if (sessionToken() !== t) {
+        k.close();
+        return false;
+      }
       kr.current?.close();
       setKeyring(k);
       setMemoryOnly(memory);
       setStatus('open');
       setError(null);
-      if (demo) return setNeedsConfirm(false);
+      setNeedsTopUp(false);
+      if (demo) {
+        setNeedsConfirm(false);
+        return true;
+      }
+      if (!memory) lockRef.current.unlock();
       const gkey = generationKey(registry.platformNetwork, k.ownerId);
       const seen = Number(localStorage.getItem(gkey) ?? 0);
       const rolledBack = !memory && k.content.generation < seen;
@@ -276,67 +380,96 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       setNeedsConfirm(!memory && (k.authenticated !== true || rolledBack));
       if (rolledBack) setError(`This keyring is older than one this browser opened before (version ${k.content.generation}, seen ${seen}): someone who held a key of this identity may have put back an old copy. Check the unlockers below before saving anything.`);
       else if (k.authenticated === false) setError('This keyring does not list your recovery phrase as an unlocker. Someone who held a key of this identity may have replaced it: check the unlockers below and remove any you do not recognise before adding keys.');
-      // restore pending votes kept on Platform into the local watch list
-      if (k.pending.votes.length && identityId) {
-        const restored = k.pending.votes.map((p) => {
-          const voteHash = governanceVoteHash({ collateralTxid: p.collateralTxid, collateralIndex: p.collateralIndex, govHashDisplay: p.govHash, signal: 1, outcome: p.outcome, time: p.time });
-          return fromPending(p, '', voteHash);
-        });
-        const w = watchedRef.current;
-        const known = new Set(w.map((x) => x.voteHash));
-        const merged = mergeWatched(w, restored.filter((r) => !known.has(r.voteHash)));
-        if (!memory) saveWatched(localStorage, coreNetwork, identityId, merged);
-        setWatched(merged);
+      if (!identityId) return true;
+      // the watched votes: sealed to this keyring on this device (D-027), a plain list left by an earlier version, and the
+      // Platform backup (this Core network's only, D-016/D-028)
+      let list = watchedRef.current;
+      const known = new Set(list.map((x) => x.voteHash));
+      const add = (more: WatchedVote[]) => {
+        for (const v of more) if (!known.has(v.voteHash)) (known.add(v.voteHash), (list = [...list, v]));
+      };
+      if (!memory) {
+        const { key, scope } = keepVotesSealedTo(k)!;
+        add(loadWatchedSealed(localStorage, coreNetwork, identityId, scope, key));
+        add(loadWatched(localStorage, coreNetwork, identityId).map((v) => ({ ...v, network: v.network ?? coreNetwork })));
       }
+      const keyIds = new Set(k.content.keys.map((x) => votingKeyId(x.privateKey, x.compressed)));
+      add(
+        k.pending.votes.flatMap((p) => {
+          const fields = { collateralTxid: p.collateralTxid, collateralIndex: p.collateralIndex, govHashDisplay: p.govHash, signal: 1, outcome: p.outcome, time: p.time };
+          const r = fromPending(p, '', governanceVoteHash(fields));
+          if (p.network) return p.network === coreNetwork ? [r] : [];
+          // an untagged backup (written before the network tag): this network's when one of our keys signed it for this network
+          const signer = recoverVoteSigner(r.sig, fields, coreNetwork);
+          return signer && keyIds.has(bytesToHex(signer.keyId)) ? [{ ...r, network: coreNetwork }] : [];
+        }),
+      );
+      const next = pruneWatched(list, nowS());
+      if (!memory) {
+        persistWatched(next);
+        removePlainWatched(localStorage, coreNetwork, identityId);
+      }
+      setWatched(next);
+      return true;
     },
-    [identityId, coreNetwork, registry.platformNetwork, setWatched, demo],
+    [identityId, coreNetwork, registry.platformNetwork, setWatched, demo, sessionToken, keepVotesSealedTo, persistWatched],
   );
 
   const tryOpen = useCallback(
-    async (key: UnlockKey, seedCheck: UnlockKey | null): Promise<'open' | 'absent'> => {
+    async (key: UnlockKey, seedCheck: UnlockKey | null, t: string): Promise<'open' | 'absent'> => {
       if (!identityId) throw new Error('Sign in first.');
       const k = await loadKeyring(await storeCtx(), identityId, key, seedCheck);
+      if (sessionToken() !== t) {
+        k?.close();
+        throw new SessionChangedError();
+      }
       if (!k) return 'absent';
-      opened(k, false);
+      opened(k, false, t);
       return 'open';
     },
-    [identityId, storeCtx, opened],
+    [identityId, storeCtx, opened, sessionToken],
   );
 
   // ---- session changes: open with the seed, or with the passkey ceremony that signed in (fixtures: the demo keyring) ----
+  const sessionObj = demo ? appSession : session;
   useEffect(() => {
+    const t = sessionToken();
     close();
+    dropStoreKey();
     setMns(EMPTY_MNS);
     setError(null);
+    setNeedsTopUp(false);
     setMemoryOnly(false);
     setCelebrations([]);
+    // signed votes are read when the keyring opens (they are sealed to it)
+    setWatched([]);
     if (!identityId || (!demo && !session)) {
+      lockRef.current.unlock();
       setStatus('signed-out');
-      setWatched([]);
       return;
     }
     if (demo || !session) {
-      setWatched([]);
       const k = emptyKeyring(identityId, []);
       for (const d of DEMO_KEYS) k.content.keys.push({ privateKey: fixtureMnKey(d.index).slice(), compressed: true, label: d.label });
-      opened(k, true);
+      opened(k, true, t);
       setMnNonce((n) => n + 1); // same demo keys for every sample identity: the lookup must still run again
       return;
     }
-    setWatched(loadWatched(localStorage, coreNetwork, identityId));
-    let live = true;
-    const seed = seedUnlockKey(session);
     const stash = takeStash(identityId);
-    const key = stash?.purpose === 'unlock' ? stash.key : seed;
+    // locked in this session (button or idle lock): a profile switch or re-render must not reopen it with the session seed (D-015)
+    const locked = lockRef.current.lockedIn(session);
+    const seed = locked ? null : seedUnlockKey(session);
+    const key = locked ? null : stash?.purpose === 'unlock' ? stash.key : seed;
+    if (stash && stash.key !== key) stash.key.wipe(); // a passkey stashed for another purpose: nothing takes it now (D-068)
     if (!key) {
       setStatus('locked');
       return;
     }
     setStatus('checking');
-    tryOpen(key, seed)
-      .then((r) => live && r === 'absent' && setStatus('absent'))
+    tryOpen(key, seed, t)
+      .then((r) => sessionToken() === t && r === 'absent' && setStatus('absent'))
       .catch((e) => {
-        if (!live) return;
+        if (sessionToken() !== t) return;
         if (e instanceof KeyringLockedError) setStatus('locked');
         else {
           setStatus('error');
@@ -347,13 +480,22 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         key.wipe();
         if (seed && seed !== key) seed.wipe();
       });
-    return () => {
-      live = false;
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [identityId, mode, coreNetwork]);
+  }, [identityId, mode, coreNetwork, sessionObj]);
 
   useEffect(() => () => kr.current?.close(), []);
+
+  /**
+   * Locks: wipes the keys. A saved keyring then needs the phrase or a passkey again in this session, whatever happens meanwhile
+   * (memory-only keys, "Save encrypted", a profile switch: D-015). A memory-only one is simply gone.
+   */
+  const lockNow = useCallback(() => {
+    close();
+    if (!memoryOnly) lockRef.current.lock(session);
+    setStatus(lockRef.current.lockedIn(session) ? 'locked' : 'absent');
+    setMns(EMPTY_MNS);
+  }, [close, memoryOnly, session]);
+  const lock = useCallback(() => lockNow(), [lockNow]);
 
   // ---- idle lock ----
   const idleMinutes = keyring?.content.idleLockMinutes ?? DEFAULT_IDLE_LOCK_MINUTES;
@@ -365,8 +507,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
     evs.forEach((e) => addEventListener(e, bump, { passive: true }));
     const t = setInterval(() => {
       if (Date.now() - last > idleMinutes * 60_000) {
-        close();
-        setStatus(memoryOnly ? 'absent' : 'locked');
+        lockNow();
         setError(memoryOnly ? 'The keyring was idle and its memory-only keys were wiped.' : 'The keyring locked itself after being idle. Unlock it again to vote.');
       }
     }, 15_000);
@@ -374,39 +515,55 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       clearInterval(t);
       evs.forEach((e) => removeEventListener(e, bump));
     };
-  }, [status, idleMinutes, memoryOnly, close, demo]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, idleMinutes, memoryOnly, demo]);
 
   const run = useCallback(async <T,>(what: string, fn: () => Promise<T>): Promise<T> => {
+    const t = sessionToken();
     setBusy(what);
     setError(null);
+    setNeedsTopUp(false);
     try {
       return await fn();
-    } catch (e) {
-      setError(errorText(e));
+    } catch (e0) {
+      const e = topUpFromError(e0);
+      // an error of a session that ended is nobody's business now
+      if (sessionToken() === t) {
+        setError(errorText(e));
+        setNeedsTopUp(e instanceof TopUpError);
+      }
       throw e;
     } finally {
       setBusy(null);
     }
-  }, []);
+  }, [sessionToken]);
+
+  /** Keyring writes are paid from the identity's credits: refused up front when the balance cannot cover one (D-024). */
+  const canWrite = useCallback(
+    (k: OpenedKeyring) => assertCanWrite(auth.balance, k.content.keys.length <= KEYS_CAPS[1].keys && k.content.labels.length <= KEYS_CAPS[1].labels ? 1 : 2),
+    [auth.balance],
+  );
 
   const persist = useCallback(async (target?: OpenedKeyring, unconfirmedOk = false) => {
     const k = target ?? kr.current;
     if (!k || memoryOnly || !session) return;
     if (needsConfirm && !unconfirmedOk) throw new Error('Check the list of unlockers below and confirm it before saving: this keyring could not be verified as yours.');
+    canWrite(k);
     await saveKeys(await storeCtx(), session, k);
     localStorage.setItem(generationKey(registry.platformNetwork, k.ownerId), String(k.content.generation));
     auth.refreshBalance();
-  }, [memoryOnly, needsConfirm, session, storeCtx, auth, registry.platformNetwork]);
+  }, [memoryOnly, needsConfirm, session, storeCtx, auth, registry.platformNetwork, canWrite]);
 
   const unlockWithPasskey = useCallback(
     () =>
       run('Unlocking with a passkey', async () => {
+        const t = sessionToken();
         const a = await getPasskeyPrf({ rpId: rpId(), prfInput: prfInput(identifierBytes(registry.forum.contractId)) });
         const key = passkeyUnlockKey(a.prfOutput);
         a.prfOutput.fill(0);
         const seed = session ? seedUnlockKey(session) : null;
         try {
-          const r = await tryOpen(key, seed);
+          const r = await tryOpen(key, seed, t);
           if (r === 'absent') setStatus('absent');
         } catch (e) {
           if (e instanceof KeyringLockedError) throw new Error('This passkey does not unlock the keyring. Use your recovery phrase, or a passkey that was added while the keyring was open.');
@@ -416,12 +573,13 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
           seed?.wipe();
         }
       }),
-    [run, registry.forum.contractId, session, tryOpen],
+    [run, registry.forum.contractId, session, tryOpen, sessionToken],
   );
 
   const unlockWithPhrase = useCallback(
     (phrase: string) =>
       run('Unlocking with the recovery phrase', async () => {
+        const t = sessionToken();
         if (!identityId) throw new Error('Sign in first.');
         const w = SeedWallet.fromPhrase(phrase, auth.network);
         const e = w.entropy();
@@ -429,7 +587,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         const key = seedUnlockKeyFromEntropy(e, auth.network, identityId);
         e.fill(0);
         try {
-          const r = await tryOpen(key, key);
+          const r = await tryOpen(key, key, t);
           if (r === 'absent') setStatus('absent');
         } catch (err) {
           if (err instanceof KeyringLockedError) throw new Error("That recovery phrase doesn't unlock this identity's keyring.");
@@ -438,33 +596,29 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
           key.wipe();
         }
       }),
-    [run, identityId, auth.network, tryOpen],
+    [run, identityId, auth.network, tryOpen, sessionToken],
   );
 
   const createKeyring = useCallback(
     (memory: boolean) =>
       run(memory ? 'Starting a memory-only keyring' : 'Creating the keyring', async () => {
+        const t = sessionToken();
         if (!identityId || !session) throw new Error('Sign in first.');
+        if (!memory && lockRef.current.lockedIn(session)) throw new Error(LOCKED_SAVE);
         const k = emptyKeyring(identityId, []);
         if (!memory) {
           const seed = seedUnlockKey(session);
           if (!seed) throw new Error('Saving a keyring needs your recovery phrase in this session (sign in with it, or with a passkey that keeps it). A pasted key cannot open a saved keyring; use memory-only.');
           addUnlocker(k, seed);
           seed.wipe();
+          canWrite(k);
           await saveKeys(await storeCtx(), session, k);
           auth.refreshBalance();
         }
-        opened(k, memory);
+        if (!opened(k, memory, t)) throw new SessionChangedError();
       }),
-    [run, identityId, session, storeCtx, opened, auth],
+    [run, identityId, session, storeCtx, opened, auth, canWrite, sessionToken],
   );
-
-  const lock = useCallback(() => {
-    const wasMemory = memoryOnly;
-    close();
-    setStatus(wasMemory ? 'absent' : 'locked');
-    setMns(EMPTY_MNS);
-  }, [close, memoryOnly]);
 
   /**
    * Every keyring edit is saved from a draft and applied only once the save succeeded, so the page never shows (and the next save
@@ -474,6 +628,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
   const edit = useCallback(
     (what: string, change: (draft: OpenedKeyring) => void, o: { unconfirmedOk?: boolean; after?(): void; onFail?(): void } = {}) =>
       run(what, async () => {
+        const t = sessionToken();
         const k = kr.current;
         if (!k) throw new Error('Open the keyring first.');
         const c = k.content;
@@ -483,6 +638,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         change(draft);
         try {
           await persist(draft, o.unconfirmedOk);
+          if (sessionToken() !== t || kr.current !== k) throw new SessionChangedError();
         } catch (e) {
           o.onFail?.();
           throw e;
@@ -492,12 +648,24 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         touch();
         o.after?.();
       }),
-    [run, persist, registry.platformNetwork],
+    [run, persist, registry.platformNetwork, sessionToken],
+  );
+
+  /** What a key is, from the masternode list (this key's own lookup), before it is saved anywhere (D-023). */
+  const checkKey = useCallback(
+    async (privateKey: Uint8Array, compressed: boolean) => {
+      if (!lookupDeps) throw new Error('no bridge is configured (Settings)');
+      const r = await lookupMasternodes([{ index: 0, keyId: votingKeyId(privateKey, compressed) }], lookupDeps, { signal: new AbortController().signal });
+      return keyRole(votingAddressOf(privateKey, compressed, coreNetwork), r.list ?? [], r.owned);
+    },
+    [lookupDeps, coreNetwork],
   );
 
   const addKey = useCallback(
-    async (input: string, label: string) => {
+    async (input: string, label: string, opts: { force?: boolean } = {}) => {
+      const t = sessionToken();
       setError(null);
+      setNeedsTopUp(false);
       const k = kr.current;
       if (!k) throw new Error('Open the keyring first.');
       let parsed: { privateKey: Uint8Array; compressed: boolean };
@@ -508,16 +676,41 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         throw e;
       }
       const { privateKey, compressed } = parsed;
-      const id = votingKeyId(privateKey, compressed);
-      if (k.content.keys.some((x) => votingKeyId(x.privateKey, x.compressed) === id)) {
+      const refuse = (e: Error): never => {
         privateKey.fill(0);
-        setError('That voting key is in the keyring already.');
-        throw new Error('That voting key is in the keyring already.');
+        if (sessionToken() === t) {
+          setError(e.message);
+          setNeedsTopUp(e instanceof TopUpError);
+        }
+        throw e;
+      };
+      const id = votingKeyId(privateKey, compressed);
+      if (k.content.keys.some((x) => votingKeyId(x.privateKey, x.compressed) === id)) refuse(new Error('That voting key is in the keyring already.'));
+      if (!memoryOnly && !demo) {
+        try {
+          canWrite(k);
+        } catch (e) {
+          refuse(e as Error);
+        }
+      }
+      if (!demo) {
+        setBusy('Checking the key against the masternode list');
+        let role: Awaited<ReturnType<typeof checkKey>> | { kind: 'error'; message: string };
+        try {
+          role = await checkKey(privateKey, compressed);
+        } catch (e) {
+          role = { kind: 'error', message: `The key could not be checked against the masternode list (${errorText(e)}). It was not saved.` };
+        } finally {
+          setBusy(null);
+        }
+        if (sessionToken() !== t || kr.current !== k) refuse(new SessionChangedError());
+        if (role.kind === 'collateral' || role.kind === 'payout') refuse(new KeyCheckError(role.message, false));
+        if ((role.kind === 'none' || role.kind === 'error') && !opts.force) refuse(new KeyCheckError(role.message, true));
       }
       await edit('Adding the voting key', (d) => d.content.keys.push({ privateKey, compressed, label }), { onFail: () => privateKey.fill(0), after: () => setMnNonce((n) => n + 1) });
       return id;
     },
-    [edit, coreNetwork],
+    [edit, coreNetwork, memoryOnly, demo, canWrite, checkKey, sessionToken],
   );
 
   const removeKey = useCallback(
@@ -594,9 +787,12 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
   const saveToPlatform = useCallback(
     () =>
       run('Saving the keyring on Platform', async () => {
+        const t = sessionToken();
         const k = kr.current;
         if (!k || !session) throw new Error('Nothing to save.');
         if (demo) throw new Error('The demo keyring of fixture mode cannot be saved.');
+        // a locked saved keyring is opened by its phrase or a passkey, never by this session's seed behind the user's back (D-015)
+        if (lockRef.current.lockedIn(session)) throw new Error(LOCKED_SAVE);
         const seed = seedUnlockKey(session);
         if (!seed) throw new Error('Saving needs your recovery phrase in this session. A pasted key cannot open a saved keyring.');
         // merge into an existing keyring rather than replacing it blindly
@@ -614,16 +810,20 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
             }
             for (const key of k.content.keys) if (!existing.content.keys.some((x) => votingKeyId(x.privateKey, x.compressed) === votingKeyId(key.privateKey, key.compressed))) existing.content.keys.push({ ...key, privateKey: key.privateKey.slice() });
             try {
+              canWrite(existing);
               await saveKeys(ctx, session, existing);
             } catch (e) {
               existing.close();
               throw e;
             }
-            opened(existing, false);
+            if (!opened(existing, false, t)) throw new SessionChangedError();
           } else {
             addUnlocker(k, seed);
+            canWrite(k);
             await saveKeys(ctx, session, k);
+            if (sessionToken() !== t) throw new SessionChangedError();
             setMemoryOnly(false);
+            keepVotesSealedTo(k);
             touch();
           }
         } finally {
@@ -631,37 +831,25 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         }
         auth.refreshBalance();
       }),
-    [run, session, storeCtx, opened, auth, registry.platformNetwork, demo],
+    [run, session, storeCtx, opened, auth, registry.platformNetwork, demo, canWrite, sessionToken, keepVotesSealedTo],
   );
 
   // ---- masternodes for the keys: ONE lookup, read by this page and every vote panel ----
-  const bridgeEndpoint = enabledBridges(registry)[0] ?? null;
-  const bridge = useMemo<Bridge | null>(() => (sim ? sim.bridge : bridgeEndpoint ? new HttpBridge(bridgeEndpoint.name, bridgeEndpoint.httpBase) : null), [sim, bridgeEndpoint?.name, bridgeEndpoint?.httpBase]);
-  const dapi = useMemo(() => (mode === 'live' ? createWebDapi(dapiConfig(registry)) : null), [registry, mode]);
   const keysSig = keyring ? keyring.content.keys.map((k) => votingKeyId(k.privateKey, k.compressed)).join(',') : '';
   useEffect(() => {
     if (!keyring || !keysSig) return setMns(EMPTY_MNS);
-    if (!bridge) return setMns({ ...EMPTY_MNS, phase: 'error', error: 'No bridge is configured (Settings): the masternode list and collateral outpoints come from a bridge.', forKeys: keysSig });
+    if (!lookupDeps) return setMns({ ...EMPTY_MNS, phase: 'error', error: 'No bridge is configured (Settings): the masternode list and collateral outpoints come from a bridge.', forKeys: keysSig });
     const ctrl = new AbortController();
     // while a lookup runs, keep what an earlier one found for the same keys (a refresh) or for the keys before one was added
     setMns((m) => ({ ...(m.forKeys && (keysSig === m.forKeys || keysSig.startsWith(`${m.forKeys},`)) ? m : EMPTY_MNS), phase: 'loading', step: 'bridge', error: undefined, startedAt: Date.now(), forKeys: keysSig }));
     const keys = keyring.content.keys.map((k, index) => ({ index, keyId: votingKeyId(k.privateKey, k.compressed) }));
-    lookupMasternodes(
-      keys,
-      {
-        mnlist: () => bridge.mnlist(),
-        sml: dapi ? (signal) => dapi.getSml({ signal }) : null,
-        rawTx: dapi ? async (txid, signal) => (await dapi.call((core, s) => core.getTransaction(txid, { signal: s }), { signal })).value.raw : null,
-        network: coreNetwork,
-      },
-      { signal: ctrl.signal, onStep: (step) => !ctrl.signal.aborted && setMns((m) => ({ ...m, step })) },
-    ).then(
+    lookupMasternodes(keys, lookupDeps, { signal: ctrl.signal, onStep: (step) => !ctrl.signal.aborted && setMns((m) => ({ ...m, step })) }).then(
       (r) => !ctrl.signal.aborted && setMns({ ...r, phase: 'ready', forKeys: keysSig }),
       (e) => !ctrl.signal.aborted && setMns((m) => ({ ...m, phase: 'error', error: errorText(e) })),
     );
     return () => ctrl.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [keysSig, bridge, dapi, coreNetwork, mnNonce]);
+  }, [keysSig, lookupDeps, mnNonce]);
 
   // ---- current votes (bridge's verified live vote set) ----
   /**
@@ -700,37 +888,36 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
     [bridge, mns.owned, coreNetwork],
   );
 
-  const updateWatchedRef = useRef<(f: (w: WatchedVote[]) => WatchedVote[]) => void>(() => {});
+  const updateWatchedRef = useRef<(f: (w: WatchedVote[]) => WatchedVote[], t: string) => void>(() => {});
 
+  /** `t`: the session the change belongs to. A change from work of an ended session, another identity or network is dropped. */
   const updateWatched = useCallback(
-    (f: (w: WatchedVote[]) => WatchedVote[]) => {
-      // a callback created for an identity that is no longer signed in updates THAT identity's saved list (never the current one)
-      if (identityRef.current !== identityId) {
-        if (identityId && !memoryOnly) saveWatched(localStorage, coreNetwork, identityId, pruneWatched(f(loadWatched(localStorage, coreNetwork, identityId)), nowS()));
-        return;
-      }
+    (f: (w: WatchedVote[]) => WatchedVote[], t: string) => {
+      if (sessionToken() !== t) return;
       // computed from (and written to) the ref synchronously, so the watchdog's "unchanged" check always sees the latest records
       const next = pruneWatched(f(watchedRef.current), nowS());
-      watchedRef.current = next;
-      // memory-only keyrings keep nothing on the device, not even signed votes
-      if (identityId && !memoryOnly) saveWatched(localStorage, coreNetwork, identityId, next);
+      // memory-only keyrings keep nothing on the device, not even signed votes (ephemeral records are never written)
+      persistWatched(next);
       setWatched(next);
     },
-    [identityId, coreNetwork, memoryOnly, setWatched],
+    [sessionToken, persistWatched, setWatched],
   );
   updateWatchedRef.current = updateWatched;
 
   /** Rewrites the PENDING backup. `create`: may create it (the user opted in); otherwise only an existing one is kept current. */
   const backupPending = useCallback(
-    async (list: WatchedVote[], create: boolean) => {
+    async (list: WatchedVote[], create: boolean, t: string) => {
       const k = kr.current;
-      if (!k || memoryOnly || !session || identityRef.current !== session.identityId || k.ownerId !== session.identityId || (!create && !k.pendingDoc)) return;
+      if (sessionToken() !== t || !k || memoryOnly || !session || k.ownerId !== session.identityId || (!create && !k.pendingDoc)) return;
       if (needsConfirm) throw new Error('Confirm the keyring’s unlockers before backing up votes.');
-      k.pending = { keyringId: k.content.keyringId.slice(), votes: list.filter((v) => v.status === 'held' || v.status === 'broadcast').slice(0, PENDING_CAPS[2].votes).map(toPending) };
+      // this Core network's votes, newest first; what the backup holds for the other network (Dev and Testnet share it) stays
+      const votes = pendingBackup(list, coreNetwork, k.pending.votes, PENDING_CAPS[2].votes);
+      assertCanWrite(auth.balance, votes.length > PENDING_CAPS[1].votes ? 2 : 1);
+      k.pending = { keyringId: k.content.keyringId.slice(), votes };
       await savePending(await storeCtx(), session, k);
       auth.refreshBalance();
     },
-    [memoryOnly, needsConfirm, session, storeCtx, auth],
+    [memoryOnly, needsConfirm, session, storeCtx, auth, coreNetwork, sessionToken],
   );
 
   // ---- relays: health, failover ----
@@ -791,58 +978,58 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
     [relayOrder, relayFor, coreNetwork, noteHealth],
   );
 
+  /** The keyring's key for a vote's masternode, now (null while locked). */
+  const liveKey = (v: Pick<WatchedVote, 'collateralTxid' | 'collateralIndex'>) => {
+    const k = kr.current;
+    const owner = mnsRef.current.owned.find((m) => mnId(m) === mnId(v));
+    return k && owner ? k.content.keys[owner.keyIndex] : undefined;
+  };
+
   /**
-   * Cancels a held vote on EVERY relay that holds it (signed cancel). Returns 'cancelled' only when no relay will broadcast it any more;
-   * 'sent' when some relay already broadcast it (or is broadcasting it).
+   * Takes a vote back at every relay that holds it or may hold it (withdraw.ts: a vote whose submission timed out is first looked up
+   * by hash), records what was learned and the outcome, and returns the outcome. `gone` (no relay has it) becomes `onGone`.
    */
-  const cancelEverywhere = useCallback(
-    async (v: WatchedVote): Promise<'cancelled' | 'sent' | 'unknown'> => {
-      const k = kr.current;
-      const owner = mns.owned.find((m) => mnId(m) === mnId(v));
-      const key = k && owner ? k.content.keys[owner.keyIndex] : undefined;
+  const withdraw = useCallback(
+    async (w: WatchedVote, key: { privateKey: Uint8Array; compressed: boolean } | undefined, t: string, onGone: 'dropped' | 'cancelled'): Promise<WithdrawResult> => {
       if (!key) throw new Error('Unlock the keyring holding this masternode’s voting key to cancel.');
-      const sig = cancelSignature(key.privateKey, key.compressed, coreNetwork, v.voteHash);
-      // a watchdog re-send may be on its way to another relay: wait for it, then use the latest refs
-      await inflightRef.current.get(v.voteHash)?.catch(() => {});
-      v = watchedRef.current.find((x) => x.voteHash === v.voteHash) ?? v;
-      // No relay id: the submission's answer was lost, so a relay may hold it without us knowing which. It cannot be cancelled
-      // safely (re-submitting to find it could store and release it); the caller treats it as possibly sent.
-      if (!v.refs.length) return 'unknown';
-      // a relay whose answer timed out may hold it too, under an id we never learned
-      const unsure = (v.maybeAt ?? []).some((r) => !v.refs.some((x) => x.relay === r));
-      let sent = false;
-      let firstError: unknown = null;
-      // every relay is tried even when one fails, so one unreachable relay never leaves the others holding the vote
-      for (const r of v.refs) {
-        try {
-          await relayFor(r.relay).cancel(r.id, sig);
-        } catch (e) {
-          if (e instanceof RelayError && e.status === 404) continue; // it never held it
-          // 409 not-held: only sending / broadcast / confirmed mean the vote went (or is going) out; failed, superseded and
-          // cancelled are dead
-          if (e instanceof RelayError && e.status === 409) {
-            if (['sending', 'broadcast', 'confirmed'].includes(e.voteStatus ?? '')) sent = true;
-            continue;
-          }
-          firstError ??= e;
-        }
+      // a watchdog re-send may be on its way to another relay: wait for it, then use the latest record
+      await inflightRef.current.get(w.voteHash)?.catch(() => {});
+      const cur = watchedRef.current.find((x) => x.voteHash === w.voteHash) ?? w;
+      const sigOf = (v: WatchedVote) => cancelSignature(key.privateKey, key.compressed, coreNetwork, v.voteHash);
+      let r: Awaited<ReturnType<typeof withdrawVote>>;
+      try {
+        r = await withdrawVote(cur, { relayFor, network: coreNetwork, cancelSig: sigOf, now: nowS });
+      } catch (e) {
+        // keep the relay ids found on the way, so the next try (or the watchdog) can reach the vote
+        if (e instanceof WithdrawError) updateWatched((list) => list.map((x) => (x.voteHash === w.voteHash ? { ...x, refs: e.vote.refs, relayStatus: e.vote.relayStatus, relayInfo: e.vote.relayInfo } : x)), t);
+        throw e instanceof WithdrawError ? e.reason : e;
       }
-      if (firstError) throw firstError;
-      return sent ? 'sent' : unsure ? 'unknown' : 'cancelled';
+      const after: Record<WithdrawResult, Partial<WatchedVote>> = {
+        cancelled: { status: 'cancelled' },
+        gone: { status: onGone },
+        sent: { status: 'broadcast' },
+        maybe: { status: 'broadcast', withdrawn: true },
+        // a relay may still hold it: never sent again from here, and shown as such (not "dropped")
+        unknown: { status: 'queued', restored: true },
+      };
+      updateWatched((list) => list.map((x) => (x.voteHash === w.voteHash ? { ...r.vote, ...after[r.result] } : x)), t);
+      return r.result;
     },
-    [mns.owned, coreNetwork, relayFor],
+    [coreNetwork, relayFor, updateWatched],
   );
 
   const cast = useCallback(
     (intents: Intent[], opts: CastOptions, deadline: number | null, currentIn: Map<string, CurrentVote>) =>
       run(opts.mode === 'now' ? 'Signing and sending the votes' : 'Signing and scheduling the votes', async () => {
+        const t = sessionToken();
         const k = kr.current;
         if (!k) throw new Error('Unlock the keyring first.');
         if (!relays.length) throw new Error('No relay is configured (Settings, Relays).');
         // A vote of ours that is still held for the same masternode and proposal would be broadcast later and win (a later nTime):
         // cancel it, but only once a new vote can actually be made for that masternode (planned first). One that already went
         // out counts as the current vote (Core's 1-hour rule and "later wins" apply to it), and those masternodes are re-planned.
-        // A vote still queued in this browser never left: the new one simply takes its place (mergeWatched drops it).
+        // A vote still queued in this browser never left: the new one simply takes its place (mergeWatched drops it). One whose
+        // submission timed out may be held by that relay: it is looked up there and cancelled like a held one (D-005).
         const now = nowS();
         let window: { earliest: number; latest: number } | null = null;
         if (opts.mode === 'deferred') {
@@ -853,122 +1040,130 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
           if (latest <= w.earliest) throw new Error('The release window ends too soon.');
           window = { earliest: w.earliest, latest };
         }
-        const planWith = (cur: Map<string, CurrentVote>, list: Intent[]): PlanResult => (window ? planDeferred(list, cur, now, window) : planImmediate(list, cur, now, { resend: !!opts.resend }));
-        const current = new Map(currentIn);
-        /** A vote of ours that went out (or may have) is the masternode's current vote when it is newer than what the bridge shows. */
-        const countAsCurrent = (w: WatchedVote) => {
-          const ck = currentKey(w, w.govHash);
-          if ((current.get(ck)?.time ?? -Infinity) < w.time) current.set(ck, { outcome: w.outcome, time: w.time });
+        // Copies of the keys and the masternode list this cast uses, the keys wiped as soon as the votes are signed: locking the
+        // keyring mid-cast (button or idle lock) then no longer cancels the held votes and leaves the new ones unsigned (D-029).
+        const { keyOf, ownerOf, wipe: wipeKeys } = castKeys(k.content.keys, mnsRef.current.owned);
+        const stillHere = () => {
+          if (sessionToken() !== t) throw new SessionChangedError();
         };
-        watchedRef.current.filter((x) => x.status === 'broadcast').forEach(countAsCurrent);
-        // a queued vote being sent right now (watchdog) may land at a relay: wait, so it is cancelled like any held vote
-        await Promise.all([...inflightRef.current.values()].map((p) => p.catch(() => {})));
-        let plan = planWith(current, intents);
-        // masternodes that get a new vote, plus those whose new choice equals the current vote (skipped as "already voted"):
-        // a held vote of ours for either would otherwise go out later and win
-        const keep = new Set([
-          ...plan.ok.map((p) => currentKey(p.mn, p.govHash)),
-          ...intents.filter((i) => current.get(currentKey(i.mn, i.govHash))?.outcome === i.outcome).map((i) => currentKey(i.mn, i.govHash)),
-        ]);
-        const cancelled: string[] = [];
-        let replan = false;
-        castingRef.current = true;
         try {
+          const planWith = (cur: Map<string, CurrentVote>, list: Intent[]): PlanResult => (window ? planDeferred(list, cur, now, window) : planImmediate(list, cur, now, { resend: !!opts.resend }));
+          const current = new Map(currentIn);
+          /** A vote of ours that went out (or may have) is the masternode's current vote when it is newer than what the bridge shows. */
+          const countAsCurrent = (w: WatchedVote) => {
+            const ck = currentKey(w, w.govHash);
+            if ((current.get(ck)?.time ?? -Infinity) < w.time) current.set(ck, { outcome: w.outcome, time: w.time });
+          };
+          watchedRef.current.filter((x) => x.status === 'broadcast').forEach(countAsCurrent);
+          // a queued vote being sent right now (watchdog) may land at a relay: wait, so it is cancelled like any held vote
+          await Promise.all([...inflightRef.current.values()].map((p) => p.catch(() => {})));
+          let plan = planWith(current, intents);
+          // masternodes that get a new vote, plus those whose new choice equals the current vote (skipped as "already voted"):
+          // a held vote of ours for either would otherwise go out later and win
+          const keep = new Set([
+            ...plan.ok.map((p) => currentKey(p.mn, p.govHash)),
+            ...intents.filter((i) => current.get(currentKey(i.mn, i.govHash))?.outcome === i.outcome).map((i) => currentKey(i.mn, i.govHash)),
+          ]);
+          let replan = false;
+          castingRef.current = true;
           let n = 0;
-          for (const w of watchedRef.current.filter((x) => x.status === 'held' && keep.has(currentKey(x, x.govHash)))) {
+          const taking = (x: WatchedVote) => x.status === 'held' || (x.status === 'queued' && !!x.maybeAt?.length);
+          for (const w of watchedRef.current.filter((x) => taking(x) && keep.has(currentKey(x, x.govHash)))) {
+            stillHere();
             // paced like submissions, so replacing many held votes stays under a relay's per-IP limit
             if (n++ >= 10) await new Promise((r) => setTimeout(r, IMMEDIATE_PACE_MS));
-            if ((await cancelEverywhere(w)) === 'cancelled') cancelled.push(w.voteHash);
-            else {
-              // went out, or cannot be cancelled safely: it counts as the current vote, and the new one is timed after it
+            const r = await withdraw(w, keyOf(w), t, 'dropped');
+            if (r !== 'cancelled' && r !== 'gone') {
+              // went out, may have, or a relay may still hold it: it counts as the current vote, and the new one is timed after it
               replan = true;
               countAsCurrent(w);
             }
           }
+          stillHere();
+          if (replan) plan = planWith(current, intents);
+          const signed: WatchedVote[] = plan.ok.map((p) => {
+            const owner = ownerOf(p.mn);
+            const key = keyOf(p.mn);
+            if (!key) throw new Error(`No key for masternode ${p.mn.proTxHash.slice(0, 12)}…`);
+            const prev = currentIn.get(currentKey(p.mn, p.govHash)) ?? null;
+            return { ...signPlanned(p, key.privateKey, key.compressed, coreNetwork), refs: [], status: 'queued', rebroadcasts: 0, signedAt: now, network: coreNetwork, weight: owner?.type === 'evo' ? 4 : 1, prev, ...(opts.mode === 'now' && p.time > now ? { hourRule: true } : {}), ...(memoryOnly ? { ephemeral: true } : {}) };
+          });
+          wipeKeys();
+          // every signed vote is kept (queued) before the first request, so a failed or interrupted send never loses one
+          updateWatched((w) => mergeWatched(w, signed), t);
+          // deferred: random delays (unlinkability); immediate: the first few at once, then paced under a relay's per-IP limit
+          const delays = opts.mode === 'deferred' ? pacedRandomDelays(signed.length) : signed.map((_, i) => Math.max(0, i - 9) * IMMEDIATE_PACE_MS);
+          const order = signed.map((_, i) => i).sort((a, b) => delays[a]! - delays[b]!);
+          let waited = 0;
+          for (const i of order) {
+            const d = delays[i]! - waited;
+            if (d > 0) await new Promise((r) => setTimeout(r, d));
+            waited += Math.max(0, d);
+            // signed out, another identity or network: the rest stay queued (sealed) for that session and are sent when it opens again
+            stillHere();
+            const before = watchedRef.current.find((x) => x.voteHash === signed[i]!.voteHash);
+            if (!before || before.status !== 'queued') continue; // dropped or cancelled meanwhile
+            const after = await trySend(before);
+            updateWatched((w) => w.map((x) => (x.voteHash === after.voteHash && x.status === 'queued' ? after : x)), t);
+          }
+          // the backup is created only when the user asks for it, but an existing one is always kept current (cancelled votes leave it)
+          await backupPending(watchedRef.current, opts.mode === 'deferred' && !!opts.backupOnPlatform, t).catch((e) => sessionToken() === t && setError(`Backup on Platform failed: ${errorText(topUpFromError(e))}`));
+          castingRef.current = false;
+          kickRef.current();
+          return plan;
         } finally {
-          if (cancelled.length) updateWatched((list) => list.map((x) => (cancelled.includes(x.voteHash) ? { ...x, status: 'cancelled' } : x)));
+          wipeKeys();
         }
-        if (replan) plan = planWith(current, intents);
-        const owned = mnsRef.current.owned;
-        const signed: WatchedVote[] = plan.ok.map((p) => {
-          const owner = owned.find((m) => mnId(m) === mnId(p.mn));
-          const key = owner ? k.content.keys[owner.keyIndex] : undefined;
-          if (!key) throw new Error(`No key for masternode ${p.mn.proTxHash.slice(0, 12)}…`);
-          const prev = currentIn.get(currentKey(p.mn, p.govHash)) ?? null;
-          return { ...signPlanned(p, key.privateKey, key.compressed, coreNetwork), refs: [], status: 'queued', rebroadcasts: 0, signedAt: now, weight: owner?.type === 'evo' ? 4 : 1, prev, ...(opts.mode === 'now' && p.time > now ? { hourRule: true } : {}), ...(memoryOnly ? { ephemeral: true } : {}) };
-        });
-        // every signed vote is kept (queued) before the first request, so a failed or interrupted send never loses one
-        updateWatched((w) => mergeWatched(w, signed));
-        // deferred: random delays (unlinkability); immediate: the first few at once, then paced under a relay's per-IP limit
-        const delays = opts.mode === 'deferred' ? pacedRandomDelays(signed.length) : signed.map((_, i) => Math.max(0, i - 9) * IMMEDIATE_PACE_MS);
-        const order = signed.map((_, i) => i).sort((a, b) => delays[a]! - delays[b]!);
-        let waited = 0;
-        const castFor = identityRef.current;
-        for (const i of order) {
-          const d = delays[i]! - waited;
-          if (d > 0) await new Promise((r) => setTimeout(r, d));
-          waited += Math.max(0, d);
-          if (identityRef.current !== castFor) throw new Error('Signed out while sending: the remaining votes stay queued for that identity.');
-          const before = watchedRef.current.find((x) => x.voteHash === signed[i]!.voteHash);
-          if (!before || before.status !== 'queued') continue; // dropped or cancelled meanwhile
-          const after = await trySend(before);
-          updateWatched((w) => w.map((x) => (x.voteHash === after.voteHash && x.status === 'queued' ? after : x)));
-        }
-        // the backup is created only when the user asks for it, but an existing one is always kept current (cancelled votes leave it)
-        await backupPending(watchedRef.current, opts.mode === 'deferred' && !!opts.backupOnPlatform).catch((e) => setError(`Backup on Platform failed: ${errorText(e)}`));
-        castingRef.current = false;
-        kickRef.current();
-        return plan;
       }).finally(() => {
         castingRef.current = false;
       }),
-    [run, relays, coreNetwork, updateWatched, backupPending, cancelEverywhere, trySend, memoryOnly],
+    [run, relays, coreNetwork, updateWatched, backupPending, withdraw, trySend, memoryOnly, sessionToken],
   );
 
   const submitSigned = useCallback(
     (v: Omit<WatchedVote, 'refs' | 'status' | 'rebroadcasts'>) =>
       run('Sending the signed vote', async () => {
+        const t = sessionToken();
         if (!relays.length) throw new Error('No relay is configured (Settings, Relays).');
-        const queued: WatchedVote = { ...v, refs: [], status: 'queued', rebroadcasts: 0, signedAt: nowS(), ...(memoryOnly ? { ephemeral: true } : {}) };
-        updateWatched((list) => mergeWatched(list, [queued]));
+        const queued: WatchedVote = { ...v, network: coreNetwork, refs: [], status: 'queued', rebroadcasts: 0, signedAt: nowS(), ...(memoryOnly ? { ephemeral: true } : {}) };
+        updateWatched((list) => mergeWatched(list, [queued]), t);
         const after = await trySend(queued);
-        updateWatched((list) => list.map((x) => (x.voteHash === after.voteHash ? after : x)));
+        updateWatched((list) => list.map((x) => (x.voteHash === after.voteHash ? after : x)), t);
         kickRef.current();
       }),
-    [run, relays, trySend, updateWatched, memoryOnly],
+    [run, relays, trySend, updateWatched, memoryOnly, coreNetwork, sessionToken],
   );
 
   const cancel = useCallback(
     (voteHash: string) =>
       run('Cancelling the held vote', async () => {
+        const t = sessionToken();
         // a send of this vote may be on its way (watchdog): wait for its answer, then decide on the latest record
         await inflightRef.current.get(voteHash)?.catch(() => {});
         const v = watchedRef.current.find((x) => x.voteHash === voteHash);
         if (!v) return;
         // never left this browser: taking it out of the queue is the cancel
         if (v.status === 'queued' && !v.maybeAt?.length) {
-          updateWatched((list) => list.map((x) => (x.voteHash === voteHash ? { ...x, status: 'cancelled' } : x)));
+          updateWatched((list) => list.map((x) => (x.voteHash === voteHash ? { ...x, status: 'cancelled' } : x)), t);
           return;
         }
         castingRef.current = true;
-        const r = await cancelEverywhere(v).finally(() => (castingRef.current = false));
-        if (r === 'unknown') {
-          // never re-sent from here any more; only a relay that silently got the lost submission could still release it
-          updateWatched((list) => list.map((x) => (x.voteHash === voteHash ? { ...x, restored: true } : x)));
-          throw new Error('It is not known whether a relay holds this vote (its submission was never confirmed). This browser will not send it again, but if a relay did receive it, it could still be released: vote again to be sure, the new vote is timed later and wins.');
-        }
-        updateWatched((list) => list.map((x) => (x.voteHash === voteHash ? { ...x, status: r === 'cancelled' ? 'cancelled' : 'broadcast' } : x)));
-        if (r !== 'cancelled') throw new Error('Too late: a relay has already broadcast this vote. Vote again to change it (Core allows one change per hour).');
-        await backupPending(watchedRef.current.filter((x) => x.voteHash !== voteHash), false).catch(() => {});
+        const r = await withdraw(v, liveKey(v), t, 'cancelled').finally(() => (castingRef.current = false));
+        if (r === 'unknown')
+          throw new Error('It is not known whether a relay holds this vote (its submission was never confirmed, and the relay could not be asked). This browser will not send it again, but if a relay did receive it, it could still be released: vote again to be sure, the new vote is timed later and wins.');
+        if (r === 'sent') throw new Error('Too late: a relay has already broadcast this vote. Vote again to change it (Core allows one change per hour).');
+        if (r === 'maybe') throw new Error('Cancelled at the relay, but the relay had already handed this vote to the network once, so it may already count. Vote again to change it (Core allows one change per hour).');
+        await backupPending(watchedRef.current.filter((x) => x.voteHash !== voteHash), false, t).catch(() => {});
       }),
-    [run, cancelEverywhere, updateWatched, backupPending],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [run, withdraw, updateWatched, backupPending, sessionToken],
   );
 
   const retryNow = useCallback(() => {
-    updateWatched((list) => list.map((x) => (x.status === 'queued' && !x.restored ? { ...x, nextSendAt: 0 } : x)));
+    updateWatched((list) => list.map((x) => (x.status === 'queued' && !x.restored ? { ...x, nextSendAt: 0 } : x)), sessionToken());
     for (const r of relays) void checkHealth(r, true);
     kickRef.current();
-  }, [updateWatched, relays, checkHealth]);
+  }, [updateWatched, relays, checkHealth, sessionToken]);
 
   const dismissCelebration = useCallback((h: string) => setCelebrations((c) => c.filter((x) => x !== h)), []);
 
@@ -981,7 +1176,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
     let running = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let quiet = 0;
-    const tickFor = identityId;
+    const tickFor = sessionToken();
     const mnlists = new Map<number, Promise<Map<string, number>>>();
     const weightsAt = (height: number): Promise<Map<string, number>> => {
       let p = mnlists.get(height);
@@ -1023,16 +1218,12 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       quiet = 0;
       schedule(50);
     };
-    /** Applies updates to the records this tick started from (a cancel or a new cast in the meantime wins). */
+    /**
+     * Applies updates to the records this tick started from (a cancel or a new cast in the meantime wins). A tick of a session that
+     * ended writes nothing (updateWatched drops it); its relays keep the votes, and the next session reads them again.
+     */
     const apply = (from: Map<string, WatchedVote>, updates: WatchedVote[]) => {
-      if (!updates.length) return;
-      if (identityRef.current !== tickFor) {
-        // signed out meanwhile: that identity's saved list was reloaded (fresh objects), so match by vote hash and unchanged status
-        updateWatched((w) => w.map((x) => {
-          const u = updates.find((y) => y.voteHash === x.voteHash);
-          return u && x.status === from.get(x.voteHash)?.status ? u : x;
-        }));
-      } else updateWatchedRef.current((w) => w.map((x) => (from.get(x.voteHash) === x ? (updates.find((u) => u.voteHash === x.voteHash) ?? x) : x)));
+      if (updates.length) updateWatchedRef.current((w) => w.map((x) => (from.get(x.voteHash) === x ? (updates.find((u) => u.voteHash === x.voteHash) ?? x) : x)), tickFor);
     };
     const tickOnce = async (): Promise<boolean> => {
       let now = nowS();
@@ -1040,7 +1231,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       // 1. queued votes that are due: submit (one at a time; paced by the relays' answers)
       if (!castingRef.current) {
         for (const v of watchedRef.current.filter((x) => sendDue(x, now))) {
-          if (stop || castingRef.current || identityRef.current !== tickFor) break;
+          if (stop || castingRef.current || sessionToken() !== tickFor) break;
           const p = trySend(v);
           inflightRef.current.set(v.voteHash, p);
           let after: WatchedVote;
@@ -1052,8 +1243,9 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
           const nowRec = watchedRef.current.find((x) => x.voteHash === v.voteHash);
           if (nowRec && nowRec !== v && (nowRec.status === 'cancelled' || nowRec.status === 'dropped') && after.refs.length) {
             // withdrawn while the relay was taking it: remember where it is, and take it back there
-            updateWatchedRef.current((w) => w.map((x) => (x.voteHash === v.voteHash ? { ...x, refs: after.refs, relayStatus: after.relayStatus, relayInfo: after.relayInfo } : x)));
-            void cancelEverywhere({ ...after, status: 'held' }).catch(() => {});
+            updateWatchedRef.current((w) => w.map((x) => (x.voteHash === v.voteHash ? { ...x, refs: after.refs, relayStatus: after.relayStatus, relayInfo: after.relayInfo } : x)), tickFor);
+            const status = nowRec.status;
+            void withdraw({ ...nowRec, refs: after.refs, relayStatus: after.relayStatus, relayInfo: after.relayInfo, status: 'held' }, liveKey(v), tickFor, status).catch(() => {});
             continue;
           }
           apply(new Map([[v.voteHash, v]]), [after]);
@@ -1153,7 +1345,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
               // the new relay's id is recorded at once, whatever happens to this tick's other updates, so it can be cancelled
               const ref = next.refs.find((r) => r.relay === relay)!;
               const before = watchedRef.current.find((x) => x.voteHash === v.voteHash);
-              updateWatchedRef.current((w) => w.map((x) => (x.voteHash === v.voteHash && !x.refs.some((r) => r.relay === relay) ? { ...x, refs: [...x.refs, ref] } : x)));
+              updateWatchedRef.current((w) => w.map((x) => (x.voteHash === v.voteHash && !x.refs.some((r) => r.relay === relay) ? { ...x, refs: [...x.refs, ref] } : x)), tickFor);
               const after = watchedRef.current.find((x) => x.voteHash === v.voteHash);
               if (before === v && after) from.set(v.voteHash, after);
             } catch (e) {
@@ -1166,7 +1358,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         if (JSON.stringify(next) !== JSON.stringify(v)) updates.push(next);
       }
       apply(from, updates);
-      if (newlySeen.length && identityRef.current === tickFor) setCelebrations((c) => [...c.filter((x) => !newlySeen.includes(x)), ...newlySeen]);
+      if (newlySeen.length && sessionToken() === tickFor) setCelebrations((c) => [...c.filter((x) => !newlySeen.includes(x)), ...newlySeen]);
       return changed || updates.length > 0;
     };
     void tick();
@@ -1239,6 +1431,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
     () => ({
       status,
       error,
+      needsTopUp,
       demo,
       canUsePlatform: !demo && !!session && (!!session.wallet || session.source === 'passkey'),
       memoryOnly,
@@ -1274,7 +1467,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       verifyVote,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [status, error, demo, session, memoryOnly, needsConfirm, confirmUnlockers, keyring, version, busy, mns, watched, coreNetwork, relays, relayHealth, celebrations, dismissCelebration, bridgeEndpoint?.httpBase, unlockWithPasskey, unlockWithPhrase, createKeyring, lock, addKey, removeKey, setNodeLabel, setIdleMinutes, addPasskeyUnlocker, removeUnlockerKey, saveToPlatform, currentVotes, cast, cancel, retryNow, submitSigned, verifyVote],
+    [status, error, needsTopUp, demo, session, memoryOnly, needsConfirm, confirmUnlockers, keyring, version, busy, mns, watched, coreNetwork, relays, relayHealth, celebrations, dismissCelebration, bridgeEndpoint?.httpBase, unlockWithPasskey, unlockWithPhrase, createKeyring, lock, addKey, removeKey, setNodeLabel, setIdleMinutes, addPasskeyUnlocker, removeUnlockerKey, saveToPlatform, currentVotes, cast, cancel, retryNow, submitSigned, verifyVote],
   );
   return <C.Provider value={value}>{children}</C.Provider>;
 }

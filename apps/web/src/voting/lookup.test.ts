@@ -26,7 +26,8 @@ describe('lookupMasternodes', () => {
   it('finds masternode-27 for its voting key (SML decides, ProRegTx unreachable keeps the bridge outpoint, labelled)', async () => {
     const deps: LookupDeps = { mnlist: async () => LIST, sml: async () => SML, rawTx: async () => Promise.reject(new Error('down')), network: 'testnet' };
     const steps: string[] = [];
-    const r = await lookupMasternodes(keys, deps, { signal: new AbortController().signal, onStep: (s) => steps.push(s), timeouts: T });
+    // the ProRegTx step paces its reads (with decoys, D-026): give it room to see every read fail
+    const r = await lookupMasternodes(keys, deps, { signal: new AbortController().signal, onStep: (s) => steps.push(s), timeouts: { ...T, protxMs: 3000 } });
     expect(steps).toEqual(['bridge', 'sml', 'protx']);
     expect(r.owned).toHaveLength(1);
     expect(r.owned[0]).toMatchObject({ proTxHash: PRO, collateralIndex: 62, type: 'regular', valid: true, provenance: { key: 'sml', collateral: 'bridge' } });

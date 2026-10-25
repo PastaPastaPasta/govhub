@@ -419,7 +419,15 @@ function PhraseSignIn() {
       // replaying their address). One that already holds money continues first; an unpaid one only when the phrase has no identity.
       const resume = store
         .list()
-        .find((r) => r.network === network && r.kind === 'create' && r.state !== 'done' && r.address === addressOf(wallet.derive(registrationFundingPath(network, r.identityIndex)).publicKey, network));
+        .find((r) => {
+          if (r.network !== network || r.kind !== 'create' || r.state === 'done') return false;
+          const d = wallet.derive(registrationFundingPath(network, r.identityIndex));
+          try {
+            return r.address === addressOf(d.publicKey, network);
+          } finally {
+            d.privateKey.fill(0); // only the address was needed
+          }
+        });
       if (resume && (resume.deposits.length || resume.lock)) return setState({ phrase, found: [], resume });
       const port = await platform();
       const found = await discoverIdentities(wallet, port);

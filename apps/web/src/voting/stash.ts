@@ -24,8 +24,9 @@ export function takeStash(identityId: string): { purpose: StashPurpose; key: Unl
   return { purpose, key };
 }
 
-export function clearStash(): void {
-  if (!stashed) return;
+/** Wipes the stashed key, unless it is for `keepFor` (a passkey sign-in stashes before the session it opens replaces the old one). */
+export function clearStash(keepFor?: string | null): void {
+  if (!stashed || (keepFor && stashed.identityId === keepFor)) return;
   clearTimeout(stashed.timer);
   stashed.key.wipe();
   stashed = null;

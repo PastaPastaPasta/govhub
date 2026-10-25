@@ -9,12 +9,14 @@
 import type { AgreedSml } from '@govhub/dapi';
 import type { BridgeMnList } from '../data/bridge.ts';
 import type { SmlEntry } from '../verify/votes.ts';
-import { matchMasternodes, proveCollaterals, type KeyRef, type OwnedMasternode } from './masternodes.ts';
+import { matchMasternodes, pickDecoys, proveCollaterals, type KeyRef, type OwnedMasternode } from './masternodes.ts';
 
 export type LookupStep = 'bridge' | 'sml' | 'protx';
 
 export interface LookupResult {
   owned: OwnedMasternode[];
+  /** the bridge's list the lookup used (collateral and payout addresses, when the bridge gives them) */
+  list?: BridgeMnList['masternodes'];
   /** listed for our key in the SML but not (yet) in the bridge's list: cannot vote */
   missing: string[];
   /** the bridge named another collateral than the ProRegTx: dropped */
@@ -99,16 +101,17 @@ export async function lookupMasternodes(
     }
   }
   const m = matchMasternodes(keys, list.masternodes, sml, deps.network);
-  if (!deps.rawTx || !m.owned.length) return { owned: m.owned, missing: m.missing, mismatch: [], smlNodes, ...(warning ? { warning } : {}) };
+  if (!deps.rawTx || !m.owned.length) return { owned: m.owned, list: list.masternodes, missing: m.missing, mismatch: [], smlNodes, ...(warning ? { warning } : {}) };
   o.onStep?.('protx');
   const rawTx = deps.rawTx;
   try {
-    const proved = await step('protx', t.protxMs, o.signal, (signal) => proveCollaterals(m.owned, (txid) => rawTx(txid, signal), deps.network));
+    const decoys = pickDecoys(sml ? [...sml.keys()] : list.masternodes.map((x) => x.proTxHash), m.owned.map((x) => x.proTxHash));
+    const proved = await step('protx', t.protxMs, o.signal, (signal) => proveCollaterals(m.owned, (txid) => rawTx(txid, signal), deps.network, { decoys }));
     const unproved = proved.mns.filter((x) => x.provenance.collateral !== 'protx').length;
     if (unproved && !warning) warning = `${unproved} collateral${unproved === 1 ? '' : 's'} could not be proved from the registration transaction yet; the bridge’s outpoint is used.`;
-    return { owned: proved.mns, missing: m.missing, mismatch: proved.mismatch, smlNodes, ...(warning ? { warning } : {}) };
+    return { owned: proved.mns, list: list.masternodes, missing: m.missing, mismatch: proved.mismatch, smlNodes, ...(warning ? { warning } : {}) };
   } catch (e) {
     if (o.signal.aborted) throw o.signal.reason;
-    return { owned: m.owned, missing: m.missing, mismatch: [], smlNodes, warning: warning ?? `Collaterals not proved yet (${msg(e)}); the bridge’s outpoints are used.` };
+    return { owned: m.owned, list: list.masternodes, missing: m.missing, mismatch: [], smlNodes, warning: warning ?? `Collaterals not proved yet (${msg(e)}); the bridge’s outpoints are used.` };
   }
 }
