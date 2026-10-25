@@ -55,7 +55,8 @@ export default defineConfig({
   preview: { port: 4317, strictPort: true },
   server: { port: 5317 },
   test: {
-    include: ['src/**/*.test.ts'],
+    // component tests (*.test.tsx) pick a DOM per file: `// @vitest-environment happy-dom`
+    include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     environment: 'node',
   },
 });
