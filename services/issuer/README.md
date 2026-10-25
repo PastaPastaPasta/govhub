@@ -41,6 +41,7 @@ runs `issuer healthcheck` (exit 0 if `GET /healthz` answers).
 | `issuer healthcheck` | exit 0 when the local service answers `/healthz` on `HTTP_PORT` |
 | `issuer keygen --dir D --from E --epochs N [--bits 2048\|3072]` | **offline**: one key per epoch, see "Keys" |
 | `issuer publish-keys --dir D --identity-file critical.json --contract C --network N [--min-ahead 3]` | **offline**: publish the `issuerKey` documents with the CRITICAL key |
+| `issuer revoke --epoch E [--through E2] --from-height H --identity-file critical.json --contract C --network N [--yes]` | **offline**: publish `issuerRevocation` documents with the CRITICAL key (a dry run without `--yes`), see "Revoking a key" |
 | `issuer epoch --network N --height H` | print the epoch schedule around height H (JSON) |
 
 ## What the issuer checks
@@ -167,6 +168,39 @@ On the server:
   The file must not be readable by group or others.
 - Once the issuance window of an epoch has closed (`S(E+1)` plus the margin), its key is destroyed: overwritten with zeros,
   fsynced, unlinked. On ZFS, btrfs and SSDs old blocks may survive; that is a property of the host, not of this code.
+
+### Revoking a key
+
+If the server is compromised, every epoch key it held (the two being issued and the staged ones) can mint badges. Revoke
+them from the offline machine with the CRITICAL key, like `publish-keys`:
+
+```sh
+issuer revoke --epoch 2742 --through 2744 --from-height 1650000 --identity-file critical.json --contract <badge contract> --network testnet        # dry run
+issuer revoke --epoch 2742 --through 2744 --from-height 1650000 --identity-file critical.json --contract <badge contract> --network testnet --yes
+```
+
+Readers (`packages/badge/src/reader.ts`) void every badge of epoch E created at or after the revocation's
+`effectiveCoreHeight`. Any revocation the issuer published for (issuer, E) counts, whatever its `keyId`, so an epoch with
+no published key can be revoked too (the command uses a zero `keyId`), and any key published for it later is void from
+that height. Pick the height of the compromise or earlier: badges created before it stay valid. The document is
+immutable, cannot be deleted and is unique per (issuer, epoch), so the command prints the plan and publishes only with
+`--yes`. For an epoch that already has a revocation it reports `already revoked` (at or below the height) or `conflict`
+(a later height, which cannot be replaced; exit code 3).
+
+**Squatting risk.** Whoever holds the CRITICAL key can publish a revocation for any epoch. A thief can publish one with
+`effectiveCoreHeight = 4294967295` (never in effect) for every epoch: the unique index then blocks the issuer's real
+revocation, and badges minted with stolen epoch keys stay valid. The same thief can also publish `issuerKey` documents
+for epochs that have none yet. Revocations do not help once the CRITICAL key itself is lost; recovery is: disable the
+CRITICAL key with the MASTER key (identity update), revoke what is still free, and have readers drop or replace the
+issuer identity in their trust lists. Keeping the CRITICAL key offline is the protection.
+
+Pre-publishing a no-op revocation (`effectiveCoreHeight = max`) for every future epoch was considered and **not
+adopted**. Under the reader rules it is sound in the narrow sense (a revocation at the maximum height voids nothing), and
+it would stop a thief from squatting those slots or from griefing honest badges with an early height. But the slot is
+unique and immutable, so it would block the issuer's own revocation in exactly the same way: no epoch with a
+pre-published revocation could ever be revoked, including after the likelier event, a server compromise that leaks
+epoch keys while the CRITICAL key is safe. It trades the main use of revocations for protection against a key that is
+kept offline anyway.
 
 Keep the identity's MASTER and CRITICAL keys offline (CRITICAL signs the `issuerKey` documents). Only the HIGH key goes
 to the server, and only for `issuerReport` documents. Key files are JSON

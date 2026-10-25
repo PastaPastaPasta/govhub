@@ -5,12 +5,15 @@
 //                                                 OFFLINE: one RSA key per epoch E..E+N-1 (epoch-<E>.pem 0600 + manifest.json)
 //   issuer publish-keys --dir D --identity-file critical.json --contract C --network N [--min-ahead 3]
 //                                                 OFFLINE: publish the manifest's issuerKey documents (CRITICAL key)
+//   issuer revoke --epoch E [--through E2] --from-height H --identity-file critical.json --contract C --network N [--yes]
+//                                                 OFFLINE: publish issuerRevocation documents (CRITICAL key); a dry run without --yes
 //   issuer epoch --network N --height H           print the epoch schedule around height H
 import { parseArgs } from 'node:util';
 import { EPOCH_PARAMS, epochOf, epochStart, fromHex, isNetwork, keyDeadline, toHex, type BadgeNetwork } from '@govhub/badge';
 import { readIdentityKeyFile } from './config.ts';
 import { keygen, manifestSpki, readManifest } from './keys.ts';
 import { errText } from './log.ts';
+import { parseEpochRange, revokeEpochs } from './revoke.ts';
 
 const [cmd, ...rest] = process.argv.slice(2);
 
@@ -91,6 +94,38 @@ async function main(): Promise<void> {
       process.exit(0);
       return;
     }
+    case 'revoke': {
+      const { values } = parseArgs({
+        args: rest,
+        options: {
+          epoch: { type: 'string' },
+          through: { type: 'string' },
+          'from-height': { type: 'string' },
+          'identity-file': { type: 'string' },
+          contract: { type: 'string' },
+          network: { type: 'string' },
+          yes: { type: 'boolean', default: false },
+        },
+      });
+      if (!values['identity-file'] || !values.contract || values.epoch === undefined || values['from-height'] === undefined) throw new Error('--epoch, --from-height, --identity-file and --contract are required');
+      const network = net(values.network);
+      const epochs = parseEpochRange(num(values.epoch, '--epoch'), values.through === undefined ? undefined : num(values.through, '--through'));
+      const fromHeight = num(values['from-height'], '--from-height');
+      const key = readIdentityKeyFile(values['identity-file']);
+      if (key.keyId !== 1) console.error('warning: issuerRevocation documents need a CRITICAL key (keyId 1 in the standard layout)');
+      const { connectPlatform } = await import('./platform.ts');
+      const platform = await connectPlatform(network === 'mainnet' ? 'mainnet' : 'testnet', values.contract);
+      const height = await platform.coreHeight();
+      console.error(`platform core height ${height}; badges of epoch(s) ${epochs[0]}..${epochs.at(-1)} created at or after ${fromHeight} become void${fromHeight > height ? ' (a height in the future: badges created before it stay valid)' : ''}`);
+      if (!values.yes) console.error('dry run: nothing is published. A revocation is immutable and unique per epoch; re-run with --yes to publish.');
+      const results = await revokeEpochs(platform, key, { epochs, fromHeight, publish: values.yes });
+      for (const r of results) {
+        const back = r.status === 'published' ? await platform.issuerRevocation(key.identityId, r.epoch) : null;
+        console.log(JSON.stringify(r.status === 'published' ? { ...r, visible: !!back } : r));
+      }
+      process.exit(results.some((r) => r.status === 'conflict') ? 3 : 0);
+      return;
+    }
     case 'epoch': {
       const { values } = parseArgs({ args: rest, options: { network: { type: 'string' }, height: { type: 'string' } } });
       const p = EPOCH_PARAMS[net(values.network)];
@@ -100,7 +135,7 @@ async function main(): Promise<void> {
       return;
     }
     default:
-      console.error('usage: issuer run | healthcheck | keygen | publish-keys | epoch   (see src/cli.ts)');
+      console.error('usage: issuer run | healthcheck | keygen | publish-keys | revoke | epoch   (see src/cli.ts)');
       process.exit(2);
   }
 }
