@@ -209,12 +209,15 @@ test.describe('vote panel (fixtures)', () => {
     // the relays stored the No although their answers were lost
     await expect.poll(async () => (await simVotes()).filter((v) => v.status === 'held').length).toBeGreaterThan(0);
     const heldNo = (await simVotes()).length;
-    await voteWithFirst(page, 'Yes');
+    // a different vote for the same masternode (its current vote in the fixtures is Yes, which would be skipped)
+    await voteWithFirst(page, 'Abstain');
     await expect(page.getByTestId('vote-send')).not.toHaveText(/Signing/, { timeout: 30_000 });
-    // every relay copy of the No was cancelled there; the Yes is the only vote any relay still holds
+    // every relay copy of the No was cancelled there; the Abstain is the only vote any relay still holds
     const after = await simVotes();
     expect(after.slice(0, heldNo).map((v) => v.status)).toEqual(Array(heldNo).fill('cancelled'));
-    expect(after.slice(heldNo).every((v) => v.status === 'held')).toBe(true);
+    const yes = after.slice(heldNo);
+    expect(yes.length).toBeGreaterThan(0);
+    expect(yes.every((v) => v.status === 'held')).toBe(true);
   });
 
   test('my votes: grouped by proposal on the keyring page, with the new statuses', async ({ page }) => {

@@ -74,7 +74,7 @@ export function describeVote(v: WatchedVote, now: number, fmt: TimeFmt): VoteVie
   switch (v.status) {
     case 'queued':
       if (v.restored && v.maybeAt?.length)
-        return { badge: 'May be at a relay', tone: 'wait', line: `Its submission to ${v.maybeAt.map(relayHost).join(', ')} got no answer, so that relay may hold it and could still release it. This browser does not send it again; a newer vote of yours is timed after it, so the newer one wins.` };
+        return { badge: 'May be at a relay', tone: 'wait', line: `Its submission to ${v.maybeAt.map(relayHost).join(', ')} got no answer, so that relay may hold it and could still release it. This browser does not send it again. To be sure it does not count, vote again: a new vote is timed after it and wins.` };
       if (v.restored) return { badge: 'Signed elsewhere', tone: 'quiet', line: 'Signed on another device. This browser does not send it; only a relay that already holds it can.' };
       if (v.lastSendError) {
         const when = v.nextSendAt && v.nextSendAt > now ? `Trying again at ${fmt(v.nextSendAt)}.` : 'Trying again now.';

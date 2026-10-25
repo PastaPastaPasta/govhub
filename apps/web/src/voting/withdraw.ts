@@ -78,7 +78,7 @@ export async function withdrawVote(v0: WatchedVote, d: WithdrawDeps): Promise<{ 
     try {
       await port.cancel(r.id, sig);
     } catch (e) {
-      if (e instanceof RelayError && e.status === 404) continue; // it never held it
+      if (e instanceof RelayError && e.status === 404 && e.code === 'unknown-id') continue; // it never held it (another 404, e.g. unknown-mn: it may)
       // 409 not-held: sending / broadcast / confirmed mean the vote went (or is going) out; maybe-broadcast (the relay refuses to
       // cancel a vote that may already be in Core) means it may count; failed, superseded and cancelled are final, but may still
       // have been sent once (the relay's maybeSent, read below)

@@ -438,8 +438,8 @@ export function OfflineSign({ proposal }: { proposal: Proposal }) {
     const sig = (sigs[m.proTxHash] ?? '').trim();
     const fields = { collateralTxid: m.collateralTxid.toLowerCase(), collateralIndex: m.collateralIndex, govHashDisplay: proposal.govHash, signal: 1, outcome, time: m.time };
     const signer = recoverVoteSigner(sig, fields, network);
-    const d = decodeAddress(address.trim(), network)!;
-    if (!signer || !bytesEqual(signer.keyId, d.hash160)) return setErr(`That signature is not by this voting address over this ${network === 'testnet' ? 'vote hash' : 'text'}.`);
+    const d = decodeAddress(address.trim(), network);
+    if (!signer || !d || !bytesEqual(signer.keyId, d.hash160)) return setErr(`That signature is not by this voting address over this ${network === 'testnet' ? 'vote hash' : 'text'}.`);
     setErr(null);
     await k.submitSigned({ proTxHash: m.proTxHash, collateralTxid: fields.collateralTxid, collateralIndex: m.collateralIndex, govHash: proposal.govHash, outcome, time: m.time, releaseAt: m.releaseAt, sig, voteHash: governanceVoteHash(fields), network }).catch(() => {});
   };
@@ -454,7 +454,7 @@ export function OfflineSign({ proposal }: { proposal: Proposal }) {
         <p className="small muted">Paste your voting address, sign each line below with <code>signmessage &lt;address&gt; "&lt;text&gt;"</code>, and paste the signature back. The key never enters this page.</p>
       )}
       <div className="form-actions">
-        <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="voting address" aria-label="Voting address" className="mono-ish vinput" />
+        <input value={address} onChange={(e) => (setAddress(e.target.value), setMns(null))} placeholder="voting address" aria-label="Voting address" className="mono-ish vinput" />
         <select value={outcome} onChange={(e) => (setOutcome(Number(e.target.value) as Outcome), setMns(null))} aria-label="Vote" className="vinput">
           <option value={1}>Yes</option>
           <option value={2}>No</option>

@@ -190,6 +190,14 @@ describe('D-005: a vote a relay may hold is reconciled, not silently dropped', (
     expect((await withdrawVote(vote({ maybeAt: [R1] }), deps({ [R1]: fakeRelay({ refuse: 'already-current' }).port }))).result).toBe('sent');
     for (const code of ['mn-banned', 'stale-vote', 'bad-signature']) expect((await withdrawVote(vote({ maybeAt: [R1] }), deps({ [R1]: fakeRelay({ refuse: code }).port }))).result).toBe('unknown');
   });
+  it('only a 404 unknown-id means the relay never held it; another 404 (unknown-mn) is an error to retry, not "cancelled"', async () => {
+    const v = vote({ status: 'held', refs: [{ relay: R1, id: 'ab'.repeat(16) }] });
+    const r = fakeRelay();
+    r.port.cancel = async () => Promise.reject(new RelayError('the masternode is no longer registered', 404, 'unknown-mn'));
+    await expect(withdrawVote(v, deps({ [R1]: r.port }))).rejects.toThrow();
+    const gone = fakeRelay();
+    expect((await withdrawVote(v, deps({ [R1]: gone.port }))).result).toBe('cancelled');
+  });
   it('a relay whose answers keep getting lost leaves it "unknown" (never "dropped"), shown as possibly held', async () => {
     const r = fakeRelay({ lose: true });
     const b = await withdrawVote(vote({ maybeAt: [R1] }), deps({ [R1]: r.port }));
