@@ -35,13 +35,17 @@ export const cleanName = (s: string): string => stripInvisible(s).replace(/\s+/g
 
 /** Words and marks the UI itself puts next to names (the owner chip, badges): a name must not imitate them. */
 const BADGE_WORDS = /(?<![a-z])(?:owner|verified|moderator|moderation|official|admin|masternode)(?![a-z])/i;
-const CHECK_MARKS = /[\u2611\u2713\u2714\u2705\u{1F5F8}\u{1F5F9}\u2BBD]/u;
+const CHECK_MARKS = /[\u221A\u2611\u2713\u2714\u2705\u{1F5F8}\u{1F5F9}\u2BBD]/u;
 /** Cyrillic and Greek letters (and digits and symbols) that look like Latin ones, folded before the badge-word check. */
 const CONFUSABLE_FROM = [...'\u0430\u0435\u043E\u0440\u0441\u0443\u0445\u0456\u0458\u0455\u0501\u0261\u043A\u043C\u043D\u0442\u0432\u0438\u03BF\u03BD\u03B1\u03B5\u03B9\u03BA\u03C1\u03C4\u03C5\u03C703457@$'];
 const CONFUSABLE_TO = 'aeopcyxijsdgkmhtbuovaeikptuxoeastas';
 const CONFUSABLE = new Map(CONFUSABLE_FROM.map((c, i) => [c, CONFUSABLE_TO[i]!]));
+/** Lower case, NFKC, combining marks dropped (o\u0332wner is owner), look-alikes folded, separators as spaces. */
 const skeleton = (s: string): string =>
-  [...cleanName(s).normalize('NFKC').toLowerCase()].map((c) => CONFUSABLE.get(c) ?? c).join('').replace(/[_\-.\s]+/g, ' ');
+  [...cleanName(s).normalize('NFKD').replace(/\p{M}/gu, '').normalize('NFKC').toLowerCase()]
+    .map((c) => CONFUSABLE.get(c) ?? c)
+    .join('')
+    .replace(/[_\-.\s]+/g, ' ');
 const LATIN = /\p{Script=Latin}/u;
 const LOOKALIKE_SCRIPT = /[\p{Script=Cyrillic}\p{Script=Greek}]/u;
 

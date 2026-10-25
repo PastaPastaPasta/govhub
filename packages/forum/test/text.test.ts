@@ -147,7 +147,7 @@ describe('D-035: display names', () => {
   });
 
   it('look-alike letters and digits, separators, a ".dash" ending and mixed scripts do not get around it; emoji names do', () => {
-    for (const name of ['Verifi\u0435d', 'bob_owner', '0wner', 'Adm1n', 'alice.dash', 'ALICE.DASH', 'p\u0430ypal']) {
+    for (const name of ['Verifi\u0435d', 'bob_owner', '0wner', 'Adm1n', 'alice.dash', 'ALICE.DASH', 'p\u0430ypal', 'bob \u221A', 'o\u0332wner', 'v\u00E9rified']) {
       expect(nameProblem(name), name).not.toBeNull();
       expect(badgeLike(name), name).toBe(true);
     }
