@@ -21,6 +21,13 @@ export interface FundingPanelProps {
   session?: Session;
   /** `identityIndex`: where the identity was made (a new payment after a too-small one moves to a later index). */
   onDone(identityId: string, identityIndex: number): void;
+  /**
+   * Called once per run when the deposit watcher is live (the first view in state 'awaiting-deposit': runFunding reports it only
+   * after subscribing). The starter pays the address only then, because IS-locks are never replayed.
+   */
+  onAwaitingDeposit?(address: string): void;
+  /** Shown instead of the QR code and payment text while waiting for the deposit (the starter: the faucet pays it). */
+  deposit?: ReactNode;
 }
 
 const STEPS: Array<{ id: FundingView['state'] | 'is'; label: string }> = [
@@ -50,15 +57,26 @@ export function FundingPanel(p: FundingPanelProps) {
   done.current = p.onDone;
   // an asset lock in flight: closing the tab now loses its IS-lock (a ChainLock proof then takes minutes)
   useLeaveWarning(!error && !!view && (view.state === 'locking' || view.state === 'locked' || view.state === 'registering'));
+  const awaiting = useRef(p.onAwaitingDeposit);
+  awaiting.current = p.onAwaitingDeposit;
 
   useEffect(() => {
     const ac = new AbortController();
     setError(null);
+    let live = false;
+    const onUpdate = (v: FundingView) => {
+      if (ac.signal.aborted) return;
+      setView(v);
+      if (v.state === 'awaiting-deposit' && !live) {
+        live = true;
+        awaiting.current?.(v.address);
+      }
+    };
     (async () => {
       const port = await platform();
       const r = await runFunding({
         wallet: p.wallet, dapi: dapi(), platform: port, store, kind: p.kind, identityIndex: p.identityIndex, topUp: p.topUp, session: p.session,
-        recoverInto: recoverInto ?? undefined, signal: ac.signal, onUpdate: (v) => !ac.signal.aborted && setView(v),
+        recoverInto: recoverInto ?? undefined, signal: ac.signal, onUpdate,
       });
       if (ac.signal.aborted) return;
       // a recovery is saved in the record: a later resume (also without recoverInto) finishes it
@@ -101,7 +119,8 @@ export function FundingPanel(p: FundingPanelProps) {
     errorBox = <TooSmall error={error} offerTopUp wallet={p.wallet} problem={recoverError} initialId={lastTarget} onTopUp={startRecovery} />;
   else if (error) errorBox = <ErrorBox text={(recoverError ? `${recoverError} ` : '') + errorText(error)} retry={retry} onRecover={closeSheet} />;
 
-  if (fresh !== null) return <FundingPanel key={fresh} {...p} identityIndex={fresh} />;
+  // a new payment at another index: another address, which a starter token (bound to the first one) cannot pay
+  if (fresh !== null) return <FundingPanel key={fresh} {...p} identityIndex={fresh} onAwaitingDeposit={undefined} deposit={undefined} />;
   if (recovered) {
     return (
       <div className="funding" data-state="recovered">
@@ -130,7 +149,8 @@ export function FundingPanel(p: FundingPanelProps) {
   };
   return (
     <div className="funding" data-state={view.state} aria-live="polite">
-      {view.state === 'awaiting-deposit' && (
+      {view.state === 'awaiting-deposit' && p.deposit}
+      {view.state === 'awaiting-deposit' && !p.deposit && (
         <div className="deposit">
           <Qr text={view.uri} label={`Dash payment request to ${view.address}`} />
           <div className="deposit-text">

@@ -1,13 +1,13 @@
 // What the badge worker does (worker.ts runs it off the main thread; the live test script runs it in Node): the blinding math,
-// finalize, and every request to an issuer. Issuer requests use credentials 'omit', no referrer, no cache, no redirects, and carry
-// nothing but the token request itself.
+// finalize, and every request to an issuer (MN badges and starter tokens) or to the faucet's starter endpoint. Those requests use
+// credentials 'omit', no referrer, no cache, no redirects, https only (http on localhost), and carry nothing but their own body.
 import { base64ToBytes, blind, bytesToBase64, finalize, importIssuerKey } from '@govhub/badge';
-import type { BadgeWorkerCall, BadgeWorkerResponse, IssuerAnswer } from './protocol.ts';
+import type { BadgeWorkerCall, BadgeWorkerResponse, FaucetAnswer, IssuerAnswer, IssuerApi } from './protocol.ts';
 
 function endpoint(base: string, path: string): string {
   const u = new URL(path, base.endsWith('/') ? base : `${base}/`);
   const local = u.hostname === 'localhost' || u.hostname === '127.0.0.1';
-  if (u.protocol !== 'https:' && !(local && u.protocol === 'http:')) throw new Error('issuer URL must be https');
+  if (u.protocol !== 'https:' && !(local && u.protocol === 'http:')) throw new Error('the URL must be https');
   return u.toString();
 }
 
@@ -18,6 +18,11 @@ async function call(base: string, path: string, body: unknown): Promise<{ status
   const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   return { status: res.status, json };
 }
+
+/** The issuer path of a call: `v1/<name>` (badges) or `v1/starter/<name>` (starter tokens). */
+const issuerPath = (api: IssuerApi | undefined, name: 'challenge' | 'token'): string => (api === 'starter' ? `v1/starter/${name}` : `v1/${name}`);
+const NONCE = /^(?:[0-9a-f]{2}){16,64}$/;
+const TXID = /^[0-9a-fA-F]{64}$/;
 
 const dapis = new Map<string, import('@govhub/dapi').Dapi>();
 
@@ -30,12 +35,13 @@ export async function handleBadgeCall(m: BadgeWorkerCall & { id?: number }): Pro
       return { id, kind: 'blind', blindedMsg: bytesToBase64(out.blindedMsg), inv: bytesToBase64(out.inv) };
     }
     case 'challenge': {
-      const r = await call(m.url, 'v1/challenge', {});
-      if (r.status !== 200 || typeof r.json.nonce !== 'string' || !/^(?:[0-9a-f]{2}){16,64}$/.test(r.json.nonce)) throw new Error(`issuer challenge failed (HTTP ${r.status})`);
-      return { id, kind: 'challenge', nonce: r.json.nonce };
+      const r = await call(m.url, issuerPath(m.api, 'challenge'), {});
+      if (r.status !== 200 || typeof r.json.nonce !== 'string' || !NONCE.test(r.json.nonce)) throw new Error(`issuer challenge failed (HTTP ${r.status})`);
+      const expiresAt = Number.isSafeInteger(r.json.expiresAt) && (r.json.expiresAt as number) > 0 ? (r.json.expiresAt as number) : undefined;
+      return { id, kind: 'challenge', nonce: r.json.nonce, ...(expiresAt ? { expiresAt } : {}) };
     }
     case 'token': {
-      const r = await call(m.url, 'v1/token', { request: m.request, signature: m.signature, blindedMsg: m.blindedMsg });
+      const r = await call(m.url, issuerPath(m.api, 'token'), { request: m.request, signature: m.signature, blindedMsg: m.blindedMsg });
       const answer: IssuerAnswer =
         r.status === 200 && typeof r.json.blindSig === 'string'
           ? { ok: true, blindSig: r.json.blindSig }
@@ -47,6 +53,21 @@ export async function handleBadgeCall(m: BadgeWorkerCall & { id?: number }): Pro
               ...(Number.isInteger(r.json.issuingEpoch) ? { issuingEpoch: r.json.issuingEpoch as number } : {}),
             };
       return { id, kind: 'token', answer };
+    }
+    case 'starterRedeem': {
+      const r = await call(m.url, 'api/starter', m.body);
+      const j = r.json;
+      const answer: FaucetAnswer =
+        r.status === 200 && typeof j.txid === 'string' && TXID.test(j.txid)
+          ? { ok: true, txid: j.txid.toLowerCase(), amountSats: Number.isSafeInteger(j.amountSats) ? (j.amountSats as number) : 0, address: String(j.address ?? ''), replay: j.replay === true }
+          : {
+              ok: false,
+              status: r.status,
+              code: typeof j.code === 'string' ? j.code.slice(0, 40) : 'unknown',
+              message: String(j.message ?? j.error ?? `HTTP ${r.status}`).slice(0, 300),
+              ...(Number.isFinite(j.retryAfter) ? { retryAfter: j.retryAfter as number } : {}),
+            };
+      return { id, kind: 'starterRedeem', answer };
     }
     case 'provenMasternodes': {
       // the same anchored chain and header cache the verification worker uses (verify/stores.ts)

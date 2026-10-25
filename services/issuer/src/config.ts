@@ -1,6 +1,7 @@
 // Issuer configuration: environment variables plus mounted secret files (docker compose secrets). Every variable is
 // documented in README.md. Secrets (RPC password, HMAC secret, identity key) are only read from files.
 import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { idToBytes, isNetwork, type BadgeNetwork } from '@govhub/badge';
 
 export type PlatformNetwork = 'mainnet' | 'testnet';
@@ -28,6 +29,25 @@ export interface IssuerConfig {
   maxTokenRequestsPerSec: number;
   /** Seconds between chain polls (epoch roll-over, key loading, record deletion, reports). */
   tickSec: number;
+  /** Starter tokens (README "Starter tokens"); null unless STARTER_ISSUER_IDENTITY_ID is set. */
+  starter: StarterConfig | null;
+}
+
+/**
+ * The starter issuer: its own identity (owner of the starter issuerKey documents in the same `badge` contract), key directory and
+ * store. It shares Core, Platform, the HMAC secret (with its own challenge domain) and the recovery budget with the badge issuer.
+ */
+export interface StarterConfig {
+  /** base58; never the badge issuer's identity (a starter key must never pass as a badge key, nor the reverse) */
+  issuerId: string;
+  keyDir: string;
+  maxStagedKeys: number;
+  /** its own SQLite file: lifetime dedup, so it is backed up, unlike the badge store (losing it re-opens every starter) */
+  dbPath: string;
+  /** proposal owners sign by hand in Dash Core, so the default is longer than the badge challenge's */
+  challengeTtlSec: number;
+  /** a proposal whose end_epoch is more than this many days in the past gets no starter */
+  proposalGraceDays: number;
 }
 
 function str(env: NodeJS.ProcessEnv, key: string, def: string): string {
@@ -71,6 +91,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): IssuerConfig {
     if (!/^[0-9a-fA-F]{64,}$/.test(s)) throw new Error('ISSUER_HMAC_SECRET_FILE must hold at least 32 bytes as hex');
     hmacSecret = new Uint8Array(Buffer.from(s, 'hex'));
   }
+  const keyDir = str(env, 'ISSUER_KEY_DIR', './keys');
+  const dbPath = str(env, 'DB_PATH', './data/issuer.sqlite');
   return {
     network,
     platformNetwork,
@@ -82,15 +104,40 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): IssuerConfig {
       rpcPassword,
       rpcTimeoutMs: int(env, 'CORE_RPC_TIMEOUT_MS', 15_000, 1),
     },
-    keyDir: str(env, 'ISSUER_KEY_DIR', './keys'),
+    keyDir,
     maxStagedKeys: int(env, 'ISSUER_MAX_STAGED_KEYS', 1),
     hmacSecret,
     challengeTtlSec: int(env, 'ISSUER_CHALLENGE_TTL_S', 600, 30),
-    dbPath: str(env, 'DB_PATH', './data/issuer.sqlite'),
+    dbPath,
     http: { host: str(env, 'HTTP_HOST', '127.0.0.1'), port: int(env, 'HTTP_PORT', 8789) },
     reportKeyFile: str(env, 'ISSUER_REPORT_KEY_FILE', ''),
     maxTokenRequestsPerSec: int(env, 'ISSUER_MAX_TOKEN_RPS', 2000, 1),
     tickSec: int(env, 'ISSUER_TICK_S', 30, 1),
+    starter: loadStarterConfig(env, issuerId, keyDir, dbPath),
+  };
+}
+
+function loadStarterConfig(env: NodeJS.ProcessEnv, badgeIssuerId: string, badgeKeyDir: string, badgeDbPath: string): StarterConfig | null {
+  const issuerId = str(env, 'STARTER_ISSUER_IDENTITY_ID', '');
+  if (!issuerId) return null;
+  try {
+    idToBytes(issuerId);
+  } catch {
+    throw new Error('STARTER_ISSUER_IDENTITY_ID must be a base58 identifier');
+  }
+  if (issuerId === badgeIssuerId) throw new Error('STARTER_ISSUER_IDENTITY_ID must be its own identity, not ISSUER_IDENTITY_ID');
+  const keyDir = str(env, 'STARTER_KEY_DIR', './starter-keys');
+  const dbPath = str(env, 'STARTER_DB_PATH', './data/starter.sqlite');
+  // both managers would count and destroy the same key files; the lifetime dedup would live in the badge store
+  if (resolve(keyDir) === resolve(badgeKeyDir)) throw new Error('STARTER_KEY_DIR must be its own directory, not ISSUER_KEY_DIR');
+  if (resolve(dbPath) === resolve(badgeDbPath)) throw new Error('STARTER_DB_PATH must be its own file, not DB_PATH');
+  return {
+    issuerId,
+    keyDir,
+    maxStagedKeys: int(env, 'STARTER_MAX_STAGED_KEYS', 1),
+    dbPath,
+    challengeTtlSec: int(env, 'STARTER_CHALLENGE_TTL_S', 1800, 30),
+    proposalGraceDays: int(env, 'STARTER_PROPOSAL_GRACE_DAYS', 30),
   };
 }
 

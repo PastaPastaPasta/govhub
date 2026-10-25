@@ -3,7 +3,8 @@
 The MN badge issuer (docs/PLAN.md section 8.4). It blind-signs one badge token per masternode per epoch, for requests
 signed with the masternode's **voting key**. It never sees the badge message, so it cannot tell which identity
 receives the badge. The formats, epoch table and reader rules are in `packages/badge/README.md`; this file covers the
-service, its keys, its API and how to run it.
+service, its keys, its API and how to run it. The same service can also issue **starter tokens** (one free starter credit per
+masternode or proposal, redeemed at the faucet) under a separate identity: see "Starter tokens".
 
 ```
  dashd (RPC only)                         Platform (evo-sdk, proved reads)
@@ -81,9 +82,12 @@ Notes:
   so the length check is explicit). The raw operation is `privateDecrypt` with `RSA_NO_PADDING`, which uses CRT. Before
   the result leaves the class, `publicEncrypt` with `RSA_NO_PADDING` must give back `m`: one faulty CRT signature
   would leak the key. Signing runs inside the SQLite transaction, so a failure stores nothing.
-- Core is read-only: `getblockcount`, `protx list`. If Core is unreachable or the lists are not loaded, the answer is
-  `503 unavailable`. The issuer currently uses the stack's RPC credential, which allows every RPC; before mainnet,
-  give it its own `rpcauth` user with `rpcwhitelist=<user>:getblockcount,getblockchaininfo,protx` (not done yet).
+- Core is read-only: `getblockcount`, `getblockchaininfo`, `protx list`, and with starter tokens on also `mnsync status` and
+  `gobject list valid proposals`. If Core is unreachable or the lists are not loaded, the answer is `503 unavailable`. The issuer
+  currently uses the stack's RPC credential, which allows every RPC; before mainnet, give it its own `rpcauth` user with
+  `rpcwhitelist=<user>:getblockcount,getblockchaininfo,protx` (badges only) or
+  `rpcwhitelist=<user>:getblockcount,getblockchaininfo,protx,mnsync,gobject` (with starters; see "Starter tokens" for what
+  whitelisting `gobject` also allows) (not done yet).
 
 ### Challenges
 
@@ -253,6 +257,125 @@ kept offline anyway. The web client also treats any revocation for an epoch as f
 epoch and does not post badges whose key is revoked, whatever the height, so a no-op revocation would stop the epoch's
 badges in this app as well.
 
+## Starter tokens
+
+A starter token pays for a new identity: one free starter credit (the faucet's `STARTER_AMOUNT_SATS`) per **masternode** (proved
+with its voting key) and per **proposal** (proved with a signature from its payment address), for life. Nobody else gets one. The
+issuer blind-signs the token like a badge token (RSABSSA, `src/signer.ts`); the browser finalizes it and hands it to the faucet with
+the one-time funding address of the new identity, so neither the issuer nor the faucet can tell which masternode or proposal funded
+which identity. Format, request string and epoch helpers: `packages/badge/src/starter.ts`.
+
+**Identity and keys.** Starter keys are `issuerKey` documents in the same `badge` contract, owned by a **separate identity**
+(`STARTER_ISSUER_IDENTITY_ID`, used for nothing else), so a starter key can never pass as a badge key. One key per epoch, under the
+badge epoch schedule and the same rules as badge keys (see "Keys"): generated offline, published with the starter identity's CRITICAL
+key before `keyDeadline(E) = S(E+1) - margin` (publish ahead anyway: only a key published before `S(E-1)` serves the whole issuance window), `STARTER_KEY_DIR` holds the current and next epoch plus at most `STARTER_MAX_STAGED_KEYS` later ones, a key is
+used only if it matches the proved `issuerKey`, and it is destroyed once its window has closed.
+
+One rule is stricter than for badges: a starter key for the **current** epoch is used only if it was published **before that
+epoch began** (`starterKeyUsable` in `packages/badge/src/starter.ts`; the issuer answers `wrong-key` otherwise, and clients skip
+it). Clients ask for the current epoch and fall back to the next one when the current one has no key. If a current-epoch key could
+appear mid-epoch, whoever holds the starter CRITICAL key could watch a request arrive (labelled E+1, because E had no key), then
+publish E's key, so that everyone after is labelled E: the E+1 token would then hide only among the requests made before the
+publication, a crowd split by time that "redeem later" cannot undo. With the rule, the label depends on the height alone. A next
+epoch's key may still be published late (up to `keyDeadline`), and once that epoch starts it counts, since it predates it. Badges
+have no such fallback (the privacy mode fixes the epoch), which is why their late keys stay allowed.
+
+```sh
+issuer keygen --purpose starter --dir ./starter-keys-offline --from 2743 --epochs 14
+issuer publish-keys --purpose starter --dir ./starter-keys-offline --identity-file starter-critical.json --contract <badge contract> --network testnet
+```
+
+`--purpose` refuses a directory that holds the other kind of keys, and `publish-keys` binds a directory to the identity that first
+publishes it (it stamps `identityId` on every `manifest.json` entry) and refuses to publish it under any other identity. **Badge and
+starter keys must be different RSA keys:** the issuer signs blind, so the message tags (`govhub-badge` vs `govhub-starter`) separate
+nothing on its side; with one shared key any masternode could turn a badge request into starter tokens, and a proposal owner a
+starter request into an MN badge. At run time each side therefore refuses a key that the other side has loaded, or that the other
+identity published for epoch E-1 or any later epoch (one proved range query on the `byOwnerEpoch` index, paged); it fails closed when Platform cannot answer, and the
+problem shows in the log (both sides) and in `problem` of `/v1/starter/info`; a refused badge key leaves `/v1/info` not `ready`. Use separate key directories, identities and
+offline keygen runs per purpose and per network. There is no `issuerReport` for starters. The browser blinds only
+against the proved `issuerKey` of the starter identity for an epoch it derives itself (`starterRequestEpochs`), never against a key
+the issuer or the faucet serves.
+
+**API.** Routes exist only when `STARTER_ISSUER_IDENTITY_ID` is set (404 otherwise), with the same headers, CORS and 4 KiB body limit:
+
+| Endpoint | |
+|---|---|
+| `POST /v1/starter/challenge` | `{nonce, expiresAt}`: its own challenge domain `starter|<net>|<starterIssuerId>` (same HMAC secret), TTL `STARTER_CHALLENGE_TTL_S` |
+| `POST /v1/starter/token` | `{request, signature, blindedMsg}` -> `{blindSig, epoch}`; errors as for `/v1/token` |
+| `GET /v1/starter/info` | `{variant, network, issuerId, contractId, epochParams, height, issuingEpochs, ready, problem, keys: [{epoch, keyId, spki}], challengeTtlSec, note}` |
+
+`keys` are the epochs `starterRedeemEpochs(height)` (previous, current, next) that have a proved `issuerKey` of the starter identity
+passing the reader rules (`acceptIssuerKey`) and **no `issuerRevocation`** (re-read every tick; a revoked epoch is also never signed
+for again). The previous epoch stays listed after its private key was destroyed, so a token stays redeemable for at least one whole
+epoch after issuance. It is advisory for clients and authoritative for the faucet (we run both).
+
+**Checks** (`src/starter.ts`, the same order as the badge service):
+
+| # | Check | Failure |
+|---|---|---|
+| 1 | shape: `request` string, `signature` base64 of 65 bytes, `blindedMsg` base64 (at most 700 chars); the request parses in canonical form (`govhub-starter-req:v1|<net>|<starterIssuerId>|<epoch>|<keyIdHex>|<mn\|proposal>|<subject>|<nonce>|<sha256(blindedMsg)>`) | `bad-request` |
+| 2 | network; the issuer is the **starter** identity | `wrong-network`, `wrong-issuer` |
+| 3 | `epoch` is the current or next one at the cached tip (with `issuingEpoch`); a starter key is ready for it; `keyId` is that key | `wrong-epoch`, `unavailable`, `wrong-key` |
+| 4 | the starter challenge is authentic and unexpired; `sha256(blindedMsg)` is bound; `blindedMsg` has modulus length | `bad-challenge`, `bad-request` |
+| 5 | the global `ISSUER_MAX_TOKEN_RPS` budget, **shared** with the badge service | `unavailable` |
+| 6 | **authentication**: kind `mn`: the recovered key's hash160 is `keyIDVoting` of the proTxHash in the **current** cached list; kind `proposal`: the govHash is a valid proposal in the cached list (`gobject list valid proposals`), its payment address is P2PKH, and the recovered key's hash160 is that address's | `unauthorized` |
+| 7 | at most 6 requests per subject per minute (memory only); the tip, read fresh, at most 5 blocks ahead of the cached list and still issuing the epoch | `unavailable`, `wrong-epoch` |
+| 8 | **eligibility**: `mn`: valid (not PoSe-banned) now, and registered with the same collateral at the start of the current epoch (the cached `S(current)` snapshot, or `S(current-1)` until it has settled; not loaded: `unavailable`); `proposal`: `end_epoch` at most `STARTER_PROPOSAL_GRACE_DAYS` days ago | `not-eligible` |
+| 9 | atomic lifetime dedup (proTxHash, collateral outpoint, govHash), then sign and verify | `already-issued` |
+
+- Every failure in step 6 is the same `403 unauthorized` for both kinds. A proposal paid to a P2SH address cannot sign a message, so
+  it can never get a starter.
+- Both lists are cached by the housekeeping timer (the MN list by the badge epoch manager, the proposals by the starter manager), so
+  nothing before authentication reaches dashd: a stranger cannot make the issuer run `gobject list` or `protx list` with junk.
+- **Minimum MN age.** One ProRegTx can spend an MN's collateral and create a new one in its own outputs: a new proTxHash and a new
+  outpoint for a fee, so dedup on both alone would let one collateral re-register every block and take a starter each time. An MN
+  must therefore already have been registered, with the same collateral, at the start of the current epoch: one collateral yields at
+  most one starter per epoch (about a month on mainnet), and a new MN waits until the next epoch starts.
+- A retry with the same epoch and blinded message, while the epoch's window is open, gets the same signature. Anything else for a
+  used subject is `already-issued`: "this masternode already received its starter (one per masternode, ever)", "this collateral
+  already received its starter (one per masternode, ever)" (a new proTxHash on a used collateral), or "this proposal already
+  received its starter (one per proposal)". Two MNs that share a voting key each get one.
+- Core RPCs used additionally: `mnsync status` (a partial proposal list during governance sync is refused, so owners get
+  `unavailable`, not `unauthorized`) and `gobject list valid proposals`. `rpcwhitelist` is per method, so whitelisting `gobject`
+  (like `protx`) also allows its writing subcommands: run the issuer's dashd with `disablewallet=1`.
+
+**What is stored and logged.**
+
+| Layer | What it keeps |
+|---|---|
+| Starter store (`STARTER_DB_PATH`, its own SQLite file) | one `WITHOUT ROWID` table `starters(kind, subject, collateral, epoch, blinded_hash)`, `PRIMARY KEY (kind, subject)`, `UNIQUE (collateral)` (NULL for proposals). The dedup keys (kind, proTxHash or govHash, collateral outpoint) are kept **for life**. `epoch` and `sha256(blindedMsg)` exist only for idempotent retries: they are cleared (set to NULL, `secure_delete`) by the housekeeping tick once the epoch's window has closed (`S(E+1)` plus the margin). No timestamps, IPs, user agents, request strings, signatures or per-time counts. Rollback journal, not WAL, as in the token store |
+| Logs | as for badges: no proTxHash, outpoint, govHash, payment address, IP or user agent; hourly aggregate counters only, prefixed `starter-` (`starter-issued`, `starter-retry`, `starter-<error code>`) |
+| Rate limits | the per-subject counts of the current wall-clock minute only, dropped when the minute changes (`StarterService.debugSnapshot()` for the tests) |
+
+`test/logging.test.ts` runs a full starter flow (MN and proposal, successes, duplicates, wrong keys, junk) at debug level with
+`cf-connecting-ip` and user-agent headers and checks that none of these values is written anywhere, that the store has exactly the
+columns above and no WAL or journal file, and that the limiter forgets the subjects after the minute.
+
+**Back up the starter store, but rarely.** Unlike the badge store (whose rows only matter while a window is open), the starter store
+is the lifetime dedup: if `STARTER_DB_PATH` is lost, **every masternode and proposal can claim a starter again** (the faucet's daily
+budget bounds the cost). But the store has no timestamps only as long as there is one copy: two copies taken at different times show
+which masternodes and proposals took a starter **between** them, and faucet payouts are public with their times, so frequent backups
+or snapshots turn into a dated issuance log that links a masternode or proposal to its payout and so to the identity. The trade-off:
+
+- Back up **at most once per epoch**, right after the housekeeping tick has cleared the closed window's retry columns (`closeThrough`,
+  at `S(E)` plus the margin), with the SQLite online backup (`sqlite3 starter.sqlite ".backup starter-backup.sqlite"`).
+- Keep **only the latest copy** (overwrite it; no dated series, no retention history). The time granularity then equals the epoch, the
+  same unit as the anonymity set.
+- Keep `STARTER_DB_PATH` **off volumes with automatic snapshots** (Proxmox backup jobs, ZFS auto-snapshots, VM snapshots, cloud volume
+  snapshots): exclude it explicitly, as for the badge store and the key directory. The file's mtime is the time of the last issuance;
+  copies should not keep it (`cp` without `-p`, or `touch` the copy).
+- A copy holds the list of masternodes and proposals that took a starter (never which identity), so store it encrypted.
+
+**Timing caveat.** We run both the issuer and the faucet. A token redeemed right after it was issued lets the operator correlate the
+two by time, which links the masternode or proposal to the funded identity. The client therefore offers "redeem later" (a random
+later time, still inside the redeem window). No linkable logs are kept on either side, but the operator could watch both live; the
+same IP at both is a link as well (see "Trust and residual risks").
+
+**Compromise.** A stolen starter key can mint tokens for the epochs whose keys were on the server (current, next, staged). The
+faucet's daily budget bounds the loss. Disable starters at the faucet, publish `issuerRevocation`s for those epochs with the starter
+identity's CRITICAL key (`issuer revoke`, as for badges: the issuer then stops listing and signing them), and remove the keys. A
+stolen or lost starter store re-opens every starter (above).
+
 ## What is stored and logged (logging policy)
 
 The owner's rule: users may accept that the issuer could learn which masternode a badge belongs to (Standard mode), but
@@ -311,6 +434,12 @@ Environment variables plus secret files. An empty value means the default. Secre
 | `ISSUER_MAX_TOKEN_RPS` | `2000` | requests per second allowed into signature recovery (per-MN limits apply after authentication) |
 | `ISSUER_TICK_S` | `30` | seconds between epoch housekeeping runs (min 1) |
 | `ISSUER_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
+| `STARTER_ISSUER_IDENTITY_ID` | | enables starter tokens: base58 id of the **starter** identity (must differ from `ISSUER_IDENTITY_ID`). Unset: `/v1/starter/*` answer 404 |
+| `STARTER_KEY_DIR` | `./starter-keys` | the starter identity's `epoch-<E>.pem` files; the image sets `/starter-keys` |
+| `STARTER_MAX_STAGED_KEYS` | `1` | starter keys for epochs after the issuing ones |
+| `STARTER_DB_PATH` | `./data/starter.sqlite` | the starter store (its own file; back it up **rarely**, see "Back up the starter store, but rarely"); the image sets `/data-starter/starter.sqlite` (its own volume) |
+| `STARTER_CHALLENGE_TTL_S` | `1800` | minimum 30; long because proposal owners sign by hand in Dash Core |
+| `STARTER_PROPOSAL_GRACE_DAYS` | `30` | a proposal whose `end_epoch` is more than this many days in the past gets no starter |
 
 ## Deployment
 
@@ -318,7 +447,8 @@ The compose service `issuer` (profile `issuer`) is in `deploy/docker-compose.yml
 repository root as context, joins `default` (dashd RPC) and `edge`, and publishes `${ISSUER_BIND:-127.0.0.1}:${ISSUER_PORT:-8789}`. It
 uses the secrets `core_rpc_password`, `issuer_hmac_secret` and `issuer_report_key`, and the volumes
 `issuer-data:/data` and `${SECRETS_DIR}/issuer-keys:/keys` (mode 0700, uid 1000, writable so the service can
-destroy old keys). `deploy/scripts/init.sh` creates the HMAC secret, an empty `issuer_report_key.json` placeholder
+destroy old keys), plus `${SECRETS_DIR}/starter-keys:/starter-keys` for the starter keys (empty while
+`STARTER_ISSUER_IDENTITY_ID` is unset; the starter store is `/data-starter/starter.sqlite` in its own volume `starter-data`, so it can be backed up rarely while `issuer-data` never is). `deploy/scripts/init.sh` creates the HMAC secret, an empty `issuer_report_key.json` placeholder
 (the service refuses to start until you fill it) and the key directory. `deploy/docker-compose.issuer-tunnel-guest.yml` publishes it
 through another stack's tunnel via the guest's gateway. How to publish it, and the testnet deployment, are in
 `deploy/README.md` (sections 11.5 and 13.2).
@@ -397,4 +527,8 @@ none. Ids and the deployment are in `deploy/README.md` section 13.2.
 `npm test -w @govhub/issuer` runs offline against fakes of Core and Platform, on the RFC 9474 vectors in `test/vectors`:
 the signer (including a simulated faulty CRT signature, which must be refused), challenges, the token store, the
 order of checks and every error code, the HTTP layer, the epoch manager (key loading, late keys, staged-key limit, key
-destruction, row deletion, reports), and `publish-keys` (late keys, adoption, conflicts).
+destruction, row deletion, reports), and `publish-keys` (late keys, adoption, conflicts). `test/starter.test.ts` covers starter
+tokens: the order of checks and every error code for both kinds, lifetime dedup and retries, the store, the proposal list parser,
+the starter key manager (only the starter identity's proved key, late or mismatched keys, roll-over, the redeem key list,
+revocations) and the config; a full browser-to-faucet flow (`prepareStarter`, blind, finalize, `verifyStarterToken`) runs in the
+service and HTTP tests.

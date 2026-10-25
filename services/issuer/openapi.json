@@ -3,7 +3,7 @@
   "info": {
     "title": "govhub MN badge issuer",
     "version": "0.1.0",
-    "description": "Blind-signs MN owner badge tokens (docs/PLAN.md \u00a78.4). RSABSSA-SHA384-PSS-Randomized (RFC 9474). The issuer never sees the badge message; clients derive the epoch and keyId from proved Platform data and the core height, never from this API. Cross-origin, no credentials, no cookies, no caching. Serve it from its own origin."
+    "description": "Blind-signs MN owner badge tokens (docs/PLAN.md \u00a78.4). RSABSSA-SHA384-PSS-Randomized (RFC 9474). The issuer never sees the badge message; clients derive the epoch and keyId from proved Platform data and the core height, never from this API. Cross-origin, no credentials, no cookies, no caching. Serve it from its own origin. Starter tokens (one free starter credit per masternode or proposal, redeemed at the faucet) are served under /v1/starter/* when STARTER_ISSUER_IDENTITY_ID is set, else those routes are 404."
   },
   "paths": {
     "/healthz": {
@@ -258,6 +258,315 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/starter/info": {
+      "get": {
+        "summary": "Starter status and the redeemable starter keys",
+        "responses": {
+          "200": {
+            "description": "status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "variant": {
+                      "const": "RSABSSA-SHA384-PSS-Randomized"
+                    },
+                    "network": {
+                      "type": "string",
+                      "enum": [
+                        "mainnet",
+                        "testnet",
+                        "devnet",
+                        "regtest"
+                      ]
+                    },
+                    "issuerId": {
+                      "type": "string",
+                      "description": "base58 id of the STARTER issuer identity (owner of the starter issuerKey documents; never the badge issuer)"
+                    },
+                    "contractId": {
+                      "type": "string",
+                      "description": "the badge contract the starter issuerKey documents live in"
+                    },
+                    "epochParams": {
+                      "type": "object",
+                      "properties": {
+                        "superblockCycle": {
+                          "type": "integer"
+                        },
+                        "epochCycles": {
+                          "type": "integer"
+                        },
+                        "graceBlocks": {
+                          "type": "integer"
+                        },
+                        "boundaryMarginBlocks": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "height": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "description": "the issuer's dashd tip"
+                    },
+                    "ready": {
+                      "type": "boolean"
+                    },
+                    "problem": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "why starter issuance is (partly) unavailable, e.g. a starter key that is also a badge key (refused), or null"
+                    },
+                    "challengeTtlSec": {
+                      "type": "integer",
+                      "description": "STARTER_CHALLENGE_TTL_S (default 1800: proposal owners sign by hand)"
+                    },
+                    "note": {
+                      "type": "string"
+                    },
+                    "issuingEpochs": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      },
+                      "description": "[current, next] at the dashd tip"
+                    },
+                    "keys": {
+                      "type": "array",
+                      "description": "starterRedeemEpochs(height) = previous, current and next epoch, each listed only if it has a proved issuerKey of the starter identity that passes the reader rules and has no issuerRevocation. Authoritative for the faucet (same operator); clients blind only against the proved document.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "epoch",
+                          "keyId",
+                          "spki"
+                        ],
+                        "properties": {
+                          "epoch": {
+                            "type": "integer"
+                          },
+                          "keyId": {
+                            "type": "string",
+                            "description": "hex SHA256(spki)"
+                          },
+                          "spki": {
+                            "type": "string",
+                            "description": "base64 rsaEncryption SPKI DER"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "the starter is not configured on this issuer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "const": "not-found"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/starter/challenge": {
+      "post": {
+        "summary": "Stateless challenge for a starter request (own domain starter|<net>|<starterIssuerId>, TTL STARTER_CHALLENGE_TTL_S)",
+        "responses": {
+          "200": {
+            "description": "challenge",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "nonce",
+                    "expiresAt"
+                  ],
+                  "properties": {
+                    "nonce": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{80}$",
+                      "description": "40 bytes hex"
+                    },
+                    "expiresAt": {
+                      "type": "integer",
+                      "description": "unix seconds"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "the starter is not configured on this issuer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "const": "not-found"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/starter/token": {
+      "post": {
+        "summary": "Blind-sign the one starter token of a masternode or a proposal",
+        "description": "`request` is the canonical string govhub-starter-req:v1|<net>|<starterIssuerId>|<epoch>|<keyIdHex>|<mn|proposal>|<subject>|<nonce>|<sha256(blindedMsg)> (subject = proTxHash or govHash, 64 lowercase hex in RPC order) and `signature` is Dash signmessage over it by the MN's VOTING key (kind mn) or the proposal's P2PKH PAYMENT address (kind proposal). The epoch must be the current or the next one. One starter per proTxHash, per collateral outpoint and per govHash, for life; a retry with the same epoch and blindedMsg returns the same blindSig while the epoch's issuance window is open. Authentication failures all return 403 unauthorized. The blinded message is a starter message (packages/badge/src/starter.ts), which the issuer never sees.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "request",
+                  "signature",
+                  "blindedMsg"
+                ],
+                "properties": {
+                  "request": {
+                    "type": "string",
+                    "maxLength": 512
+                  },
+                  "signature": {
+                    "type": "string",
+                    "description": "base64, 65 bytes (compact, recoverable)"
+                  },
+                  "blindedMsg": {
+                    "type": "string",
+                    "description": "base64, modulus length (256 or 384 bytes)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "signed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "blindSig",
+                    "epoch"
+                  ],
+                  "properties": {
+                    "blindSig": {
+                      "type": "string",
+                      "description": "base64, modulus length; verified by the issuer before it is returned"
+                    },
+                    "epoch": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "malformed body or request, wrong network or issuer, unbound blinded message",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "challenge invalid or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "unauthorized (not the MN's voting key, not a valid proposal with a P2PKH payment address signed by it) or not-eligible (MN PoSe-banned now or not registered with this collateral at the start of the current epoch, proposal ended more than STARTER_PROPOSAL_GRACE_DAYS ago)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "wrong-epoch (with issuingEpoch), wrong-key, or already-issued (this MN, collateral or proposal already received its starter)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "body larger than 4 KiB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "no starter key ready, lists not loaded or stale, Core unreachable, per-subject or global rate limit (Retry-After: 5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "the starter is not configured on this issuer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "const": "not-found"
+                    }
+                  }
                 }
               }
             }
