@@ -2,7 +2,7 @@
 // signed-in views reached from the account menu (top-up, passkeys). Secrets are held in component state only while a view needs
 // them; the session takes ownership of the seed when sign-in completes, and closing the sheet drops the rest.
 import {
-  addressOf, discardFunding, discoverIdentities, generatePhrase, nextCreateIndex, isValidPhrase, localPasskeys, MIN_CREATE_DEPOSIT_DUFFS, MIN_TOPUP_DEPOSIT_DUFFS, nextTopUpIndex, normalizePhrase,
+  addressOf, discardFunding, discoverIdentities, generatePhrase, lockTooSmall, nextCreateIndex, isValidPhrase, localPasskeys, MIN_CREATE_DEPOSIT_DUFFS, MIN_TOPUP_DEPOSIT_DUFFS, nextTopUpIndex, normalizePhrase,
   parseVoucher, pendingFundings, PhraseError, redeemVoucher, registrationFundingPath, SeedWallet, signInWithKey, signInWithSeed, toBase64, wipe, type FoundIdentity, type FundingRecord,
   type PhraseLength,
 } from '@govhub/auth';
@@ -302,10 +302,11 @@ function FundNewIdentity({ phrase, identityIndex, resume }: { phrase: string; id
     };
   }, [phrase, network]);
 
-  const finish = async (identityId: string) => {
+  // `index`: a new account paid for after a too-small payment lives at a later index
+  const finish = async (identityId: string, index = identityIndex) => {
     if (!wallet) return;
     try {
-      const s = await signInWithSeed(wallet, { identityIndex, identityId }, await platform());
+      const s = await signInWithSeed(wallet, { identityIndex: index, identityId }, await platform());
       owned.current = true;
       signIn(s);
       closeSheet();
@@ -454,9 +455,12 @@ function PhraseSignIn() {
     try {
       // An unfinished identity setup of this phrase (hidden ones included: a payment made while no tab watched is only found by
       // replaying their address). One that already holds money continues first; an unpaid one only when the phrase has no identity.
-      const resume = store
+      // A setup paid again after a too-small payment comes before the too-small one.
+      const mine = store
         .list()
-        .find((r) => r.network === network && r.kind === 'create' && r.state !== 'done' && r.address === addressOf(wallet.derive(registrationFundingPath(network, r.identityIndex)).publicKey, network));
+        .filter((r) => r.network === network && r.kind === 'create' && r.state !== 'done' && r.address === addressOf(wallet.derive(registrationFundingPath(network, r.identityIndex)).publicKey, network));
+      const paid = (r: FundingRecord) => r.deposits.length > 0 || !!r.lock;
+      const resume = mine.find((r) => paid(r) && !lockTooSmall(r)) ?? mine.find(paid) ?? mine[0];
       if (resume && (resume.deposits.length || resume.lock)) return setState({ phrase, found: [], resume });
       const port = await platform();
       const found = await discoverIdentities(wallet, port);

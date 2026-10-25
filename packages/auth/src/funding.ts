@@ -19,7 +19,7 @@ import {
   CREATE_KEYS, createRequiredCredits, CREDITS_PER_DUFF, MIN_CREATE_DEPOSIT_DUFFS, MIN_CREATE_LOCK_DUFFS, MIN_TOPUP_DEPOSIT_DUFFS, MIN_TOPUP_LOCK_DUFFS, topUpRequiredCredits,
 } from './layout.ts';
 import type { AssetLockProofInput, PlatformPort, SigningKey } from './platform.ts';
-import { registrationFundingPath, topUpFundingPath, type SeedWallet } from './seed.ts';
+import { IDENTITY_GAP_LIMIT, registrationFundingPath, topUpFundingPath, type SeedWallet } from './seed.ts';
 import { assertLive, type Session } from './signin.ts';
 import { buildAssetLock, estimateAssetLockFee, identityIdFromOutpoint, MAX_ASSET_LOCK_INPUTS, type Utxo } from './tx.ts';
 
@@ -565,7 +565,7 @@ async function fund(o: FundingOptions, fk: { privateKey: Uint8Array; publicKey: 
         watchers.push(lw);
       }
       // Built under an older, lower floor and never sent: rebuilt from the same payments once they cover today's floor.
-      if (status === 'unknown' && !rec.isLock && BigInt(lock.lockDuffs) < minLock) return await restart('the payment is below the current minimum; waiting for more');
+      if (status === 'unknown' && !rec.isLock && !rec.broadcastAt && BigInt(lock.lockDuffs) < minLock) return await restart('the payment is below the current minimum; waiting for more');
       if (status === 'unknown') {
         const sent = await broadcastLock(dapi, lock, () => !!rec.isLock, signal, log);
         if (!sent) {
@@ -592,12 +592,13 @@ async function fund(o: FundingOptions, fk: { privateKey: Uint8Array; publicKey: 
     const mode: FundingKind = rec.recoveredInto ? 'topup' : kind;
     const identityId = rec.recoveredInto ?? rec.identityId!;
     // The top-up baseline: re-read until something was submitted, so a balance change from anything else never counts as this top-up.
-    if (mode === 'topup' && (rec.balanceBefore === undefined || !rec.proofKind)) {
+    const freshBaseline = mode === 'topup' && (rec.balanceBefore === undefined || !rec.proofKind);
+    if (freshBaseline) {
       rec.balanceBefore = ((await platform.balance(identityId)) ?? 0n).toString();
       save();
     }
     let consumed = false;
-    if (!(await settled(mode, platform, identityId, rec))) {
+    if (freshBaseline || !(await settled(mode, platform, identityId, rec))) {
       // Platform's floor is known: a lock below it (built under older, lower floors) is refused before anything is sent.
       const lockCredits = BigInt(lock.lockDuffs) * CREDITS_PER_DUFF;
       const required = mode === 'create' ? createRequiredCredits(CREATE_KEYS.length) : topUpRequiredCredits();
@@ -718,16 +719,21 @@ export function discardFunding(store: FundingStore, key: string): boolean {
 export function nextTopUpIndex(store: FundingStore, network: Network, identityId: string): number {
   const mine = store.list().filter((r) => r.kind === 'topup' && r.network === network && r.identityId === identityId);
   // a lock too small to top up never finishes: the next index gets a fresh address
-  const pending = mine.find((r) => r.state !== 'done' && !lockTooSmall(r));
+  const pending = mine.find((r) => r.state !== 'done' && !(r.state === 'registering' && lockTooSmall(r)));
   if (pending?.topUpIndex !== undefined) return pending.topUpIndex;
   return mine.reduce((m, r) => Math.max(m, (r.topUpIndex ?? -1) + 1), 0);
 }
 
-/** The identity index for a new identity of this seed: past any whose create lock was spent as a top-up (that funding key is used up). */
+/**
+ * The identity index for a new identity of this seed: past any whose create lock is too small or was spent as a top-up (that funding key
+ * can never create). Stays within the discovery gap limit, so wallets still find the identity.
+ */
 export function nextCreateIndex(store: FundingStore, wallet: SeedWallet): number {
-  for (let i = 0; ; i++) {
+  for (let i = 0; i < IDENTITY_GAP_LIMIT; i++) {
     const fk = wallet.derive(registrationFundingPath(wallet.network, i));
     wipe(fk.privateKey);
-    if (!store.load(fundingRecordKey(wallet.network, 'create', hash160(fk.publicKey)))?.recoveredInto) return i;
+    const r = store.load(fundingRecordKey(wallet.network, 'create', hash160(fk.publicKey)));
+    if (!r || !(r.recoveredInto || (r.state === 'registering' && lockTooSmall(r)))) return i;
   }
+  throw new FundingError(`This recovery phrase has ${IDENTITY_GAP_LIMIT} unusable account setups in a row; use another phrase.`);
 }

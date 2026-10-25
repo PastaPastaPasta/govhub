@@ -704,8 +704,12 @@ describe('D-006 review: recovery edge cases', () => {
     expect(lockTooSmall(rec)).toBe(true);
     expect(nextTopUpIndex(store, 'testnet', target)).toBe(1);
     expect(nextCreateIndex(store, w())).toBe(0);
+    store.save(stuckRecord(209_646n)); // index 0 holds a too-small lock
+    expect(nextCreateIndex(store, w())).toBe(1);
     store.save({ ...stuckRecord(209_646n), recoveredInto: target, state: 'done' });
     expect(nextCreateIndex(store, w())).toBe(1);
+    store.save({ ...stuckRecord(300_000n) });
+    expect(nextCreateIndex(store, w())).toBe(0); // big enough: index 0 can still create
   });
 
   it('fromRefusal takes what Platform says is left; a voucher is never offered for a top-up', () => {

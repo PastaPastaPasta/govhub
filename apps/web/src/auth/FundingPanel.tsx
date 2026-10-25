@@ -1,7 +1,7 @@
 // Funding screen: QR for the one-time deposit address, live status, IS-lock, done. The address is only shown once the DAPI
 // deposit watcher is subscribed (runFunding calls onUpdate after the streams are live), because IS-locks are never replayed.
 // A create whose lock is too small for Platform (LockTooSmallError, permanent) is offered as a top-up of an existing identity instead.
-import { discoverIdentities, identifierBytes, LockTooSmallError, runFunding, type FoundIdentity, type FundingView, type SeedWallet, type Session } from '@govhub/auth';
+import { discoverIdentities, identifierBytes, LockTooSmallError, nextCreateIndex, runFunding, type FoundIdentity, type FundingView, type SeedWallet, type Session } from '@govhub/auth';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useAuth } from './context.tsx';
 import { Qr } from './Qr.tsx';
@@ -14,7 +14,8 @@ export interface FundingPanelProps {
   topUp?: { identityId: string; index: number };
   /** Seedless top-ups: the key-paste session whose key derives the one-time key. */
   session?: Session;
-  onDone(identityId: string): void;
+  /** `identityIndex`: where the identity was made (a new payment after a too-small one moves to a later index). */
+  onDone(identityId: string, identityIndex: number): void;
 }
 
 const STEPS: Array<{ id: FundingView['state'] | 'is'; label: string }> = [
@@ -38,6 +39,8 @@ export function FundingPanel(p: FundingPanelProps) {
   const [recoverError, setRecoverError] = useState<string | null>(null);
   /** The last identity id tried, kept for the form when it comes back with a reason. */
   const [lastTarget, setLastTarget] = useState('');
+  /** A new account paid for at this index, after a payment too small to create one. */
+  const [fresh, setFresh] = useState<number | null>(null);
   const done = useRef(p.onDone);
   done.current = p.onDone;
 
@@ -53,7 +56,7 @@ export function FundingPanel(p: FundingPanelProps) {
       if (ac.signal.aborted) return;
       // a recovery is saved in the record: a later resume (also without recoverInto) finishes it
       if (r.record.recoveredInto) setRecovered(r.identityId);
-      else done.current(r.identityId);
+      else done.current(r.identityId, r.record.identityIndex);
     })().catch((e) => {
       if (ac.signal.aborted) return;
       if (recoverInto && !(e instanceof LockTooSmallError)) {
@@ -65,7 +68,20 @@ export function FundingPanel(p: FundingPanelProps) {
     return () => ac.abort();
     // The funding is keyed by what it funds; a new attempt is an explicit retry.
   }, [p.kind, p.identityIndex, p.topUp?.identityId, p.topUp?.index, attempt, recoverInto]); // eslint-disable-line react-hooks/exhaustive-deps
-  const retry = () => setAttempt((a) => a + 1);
+  const retry = () => {
+    setRecoverError(null);
+    setAttempt((a) => a + 1);
+  };
+  const payAgain =
+    p.kind === 'create' && p.wallet
+      ? () => {
+          try {
+            setFresh(nextCreateIndex(store, p.wallet!));
+          } catch (e) {
+            setRecoverError(errorText(e));
+          }
+        }
+      : undefined;
   const startRecovery = (identityId: string) => {
     setRecoverError(null);
     setLastTarget(identityId);
@@ -73,12 +89,13 @@ export function FundingPanel(p: FundingPanelProps) {
   };
   const errorBox = error ? (
     error instanceof LockTooSmallError ? (
-      <TooSmall error={error} offerTopUp={p.kind === 'create' && error.canTopUp} wallet={p.wallet} problem={recoverError} initialId={lastTarget} onTopUp={startRecovery} />
+      <TooSmall error={error} offerTopUp={p.kind === 'create' && error.canTopUp} wallet={p.wallet} problem={recoverError} initialId={lastTarget} onTopUp={startRecovery} onPayAgain={payAgain} />
     ) : (
       <ErrorBox text={(recoverError ? `${recoverError} ` : '') + errorText(error)} retry={retry} />
     )
   ) : null;
 
+  if (fresh !== null) return <FundingPanel key={fresh} {...p} identityIndex={fresh} />;
   if (recovered) {
     return (
       <div className="funding" data-state="recovered">
@@ -173,7 +190,16 @@ export function FundingPanel(p: FundingPanelProps) {
 }
 
 /** A lock Platform can never register (permanent: no retry). A create's lock can still top up an existing identity. */
-function TooSmall(p: { error: LockTooSmallError; offerTopUp: boolean; wallet: SeedWallet | null; problem: string | null; initialId: string; onTopUp(identityId: string): void }) {
+function TooSmall(p: {
+  error: LockTooSmallError;
+  offerTopUp: boolean;
+  wallet: SeedWallet | null;
+  problem: string | null;
+  initialId: string;
+  onTopUp(identityId: string): void;
+  /** Start over with a new payment for a new account (at the next free identity index). */
+  onPayAgain?(): void;
+}) {
   const { error, offerTopUp, problem, onTopUp } = p;
   const { platform } = useAuth();
   const [open, setOpen] = useState(!!problem);
@@ -235,6 +261,11 @@ function TooSmall(p: { error: LockTooSmallError; offerTopUp: boolean; wallet: Se
             Use these funds to top up {mine.length ? 'another' : 'an existing'} identity
           </button>
         ))}
+      {p.onPayAgain && p.error.kind === 'create' && (
+        <button type="button" className="btn btn-quiet" onClick={p.onPayAgain} data-testid="pay-again">
+          Pay again for a new account
+        </button>
+      )}
     </div>
   );
 }

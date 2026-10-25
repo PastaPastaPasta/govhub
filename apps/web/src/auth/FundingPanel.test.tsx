@@ -6,11 +6,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { button, click, flush, render, type } from '../test/render.tsx';
 
 const runs: Array<Record<string, unknown>> = [];
-let script: (o: { onUpdate(v: FundingView): void; recoverInto?: string }) => Promise<{ identityId: string; record: { recoveredInto?: string } }>;
+let script: (o: { onUpdate(v: FundingView): void; recoverInto?: string; identityIndex: number }) => Promise<{ identityId: string; record: { recoveredInto?: string; identityIndex?: number } }>;
 vi.mock('@govhub/auth', async (orig) => ({
   ...(await orig<typeof import('@govhub/auth')>()),
   runFunding: (o: never) => (runs.push(o), script(o)),
   discoverIdentities: async () => [{ identityId: TARGET, identityIndex: 1 }],
+  nextCreateIndex: () => 2,
 }));
 const closeSheet = vi.fn();
 vi.mock('./context.tsx', () => {
@@ -100,6 +101,22 @@ describe('D-006: lock too small', () => {
     expect(onDone).not.toHaveBeenCalled(); // never signs in as the identity that was never created
     await click(button(r.el, /Close/));
     expect(closeSheet).toHaveBeenCalled();
+    await r.unmount();
+  });
+
+  it('"Pay again for a new account" funds a new identity at the next free index and signs in to that index', async () => {
+    const onDone = vi.fn();
+    script = async (o) => {
+      if (o.identityIndex === 0) throw new LockTooSmallError('create', 209_646_000n, 221_500_000n);
+      return { identityId: 'NEW', record: { identityIndex: o.identityIndex } };
+    };
+    const r = await render(<FundingPanel kind="create" wallet={{} as never} identityIndex={0} onDone={onDone} />);
+    await flush();
+    await click(r.el.querySelector<HTMLButtonElement>('[data-testid="pay-again"]')!);
+    await flush();
+    expect(runs.at(-1)).toMatchObject({ identityIndex: 2, kind: 'create' });
+    expect(runs.at(-1)!.recoverInto).toBeUndefined();
+    expect(onDone).toHaveBeenCalledWith('NEW', 2);
     await r.unmount();
   });
 
