@@ -22,7 +22,7 @@ import type { Proposal, Sourced } from '../data/types.ts';
 import { formatDash, formatDate, formatDateTime, formatDuration, formatInt, shortHash, urlHost } from '../lib/format.ts';
 import { passState, perPayment, votingDeadlineTime } from '../lib/governance.ts';
 import { deriveRow } from '../lib/view.ts';
-import { deadlineFact, paymentsFact, thresholdFact } from '../verify/facts.ts';
+import { paymentsFact, thresholdFact } from '../verify/facts.ts';
 import { useKeyring } from '../voting/KeyringContext.tsx';
 
 export function ProposalByHash() {
@@ -146,11 +146,10 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
   const chain = trust.chain.report;
   // The proven threshold replaces the bridge's once the chain is verified.
   const threshold = thresholdFact(chain, row.threshold);
-  const deadline = deadlineFact(chain, cycle?.value ?? null, now, cycle?.prov, cycle ? votingDeadlineTime(cycle.value, params) : null);
   const paid = paymentsFact(chain);
-  const state = t && row.absYes !== null && threshold ? passState(row.absYes, threshold.value, trust.funded ?? t.inNextBudget) : null;
   // Proven data decides "in the next budget" once the badge is Verified; until then it is the tally's flag, under a lesser badge.
   const inBudget = trust.funded ?? !!t?.inNextBudget;
+  const state = t && row.absYes !== null && threshold ? passState(row.absYes, threshold.value, inBudget) : null;
   // the verified chain's schedule once there is one (the deadline height is then proven, its time Core's own estimate)
   const untilDeadline = chain ? chain.schedule.deadlineEstTime - now : cycle ? votingDeadlineTime(cycle.value, params) - now : null;
 
@@ -232,11 +231,11 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
 
           <section className="p-about" aria-labelledby="about-title">
             <h2 id="about-title">About this proposal</h2>
-            {ownerId ? (
+            {ownerId && (
               <ErrorBoundary what="owner's description">
                 <OwnerPost govHash={p.govHash} ownerId={ownerId} post={post} />
               </ErrorBoundary>
-            ) : null}
+            )}
             {!(post.state?.post && post.state.body !== null) && (
               <p className="muted">
                 {host ? (

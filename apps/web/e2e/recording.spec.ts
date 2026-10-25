@@ -15,15 +15,15 @@ test('@screenshots walkthrough video', async ({ page }) => {
   await pause(page, 1600);
   await page.mouse.wheel(0, 500);
   await pause(page, 1200);
-  await page.getByRole('link', { name: 'OrchardPay', exact: true }).click();
-  await expect(page.getByRole('heading', { level: 1, name: 'OrchardPay' })).toBeVisible();
+  await page.getByRole('link', { name: 'Dash-Italia-Management-2026', exact: true }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Dash-Italia-Management-2026' })).toBeVisible();
   await pause(page, 1500);
   // the one trust badge, and everything behind it
   await page.getByTestId('trust-badge').click();
   const drawer = page.getByTestId('verify-drawer');
   await expect(drawer).toBeVisible();
   await pause(page, 1500);
-  await drawer.locator('[data-check="collateral"] summary').click();
+  await drawer.locator('[data-check="collateral"] .check-more > summary').click();
   await pause(page, 1500);
   await drawer.getByText('Check the votes yourself').click();
   await drawer.getByTestId('votes-check').scrollIntoViewIfNeeded();

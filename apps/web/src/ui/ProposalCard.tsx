@@ -33,7 +33,9 @@ export function ProposalCard({
   const t = row.tally?.value;
   const failed = check?.status === 'failed' ? check.reason : null;
   const trust = useCachedTrust(trustScope(source), p, t ?? null);
-  const mark = failed ? null : trust && trust.level !== 'error' ? trust : null;
+  const mark = !failed && trust && trust.level !== 'error' ? trust : null;
+  // Proven data decides once the cached result is "verified" for this very tally; otherwise it is the tally's own flag.
+  const inBudget = mark?.level === 'verified' && mark.funded !== null ? mark.funded : t?.inNextBudget;
   const ask = askText(p.paymentAmount, row.schedule, params);
   const left = paymentsLeft(row.schedule);
   return (
@@ -74,7 +76,13 @@ export function ProposalCard({
         ) : (
           <p className="muted small">{row.tally ? 'Waiting for the budget cycle' : 'No votes yet'}</p>
         )}
-        {(mark?.level === 'verified' && mark.funded !== null ? mark.funded : t?.inNextBudget) ? <span className="tag tag-pass">In the next budget</span> : row.state?.passing ? <span className="tag tag-warn" title="Passing, but the budget is full or the next payout is outside its window">Not in the next budget</span> : null}
+        {inBudget ? (
+          <span className="tag tag-pass">In the next budget</span>
+        ) : row.state?.passing ? (
+          <span className="tag tag-warn" title="Passing, but the budget is full or the next payout is outside its window">
+            Not in the next budget
+          </span>
+        ) : null}
       </div>
 
       <p className="prow-meta small">

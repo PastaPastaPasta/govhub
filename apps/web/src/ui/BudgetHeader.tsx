@@ -40,6 +40,7 @@ export function BudgetHeader() {
   );
   const names = countNames(activeRows.shown.map((r) => r.item.p.value));
   const allocatedFrac = c.budget ? Math.min(1, allocated / c.budget) : 0;
+  const available = Math.max(0, c.budget - allocated);
   const threshold = fundingThreshold(c.validWeighted, params);
   const height = gov.height.data?.value;
 
@@ -51,7 +52,7 @@ export function BudgetHeader() {
             Next payout in <span className="num">{formatDuration(untilSb)}</span>
           </>
         ) : (
-          <>The next payout is due any moment</>
+          'The next payout is due any moment'
         )}
       </h2>
       <p className="budget-sub">
@@ -60,7 +61,7 @@ export function BudgetHeader() {
             Masternodes can vote for another <b>{formatDuration(untilDeadline)}</b>, until {formatDate(deadline)}.
           </>
         ) : (
-          <>Voting for this payout has closed.</>
+          'Voting for this payout has closed.'
         )}
       </p>
 
@@ -82,7 +83,7 @@ export function BudgetHeader() {
       </div>
 
       <p className="budget-compact">
-        <b>{formatDashAmount(Math.max(0, c.budget - allocated))} DASH</b> still available; <b>{formatInt(funded.length)}</b> of {formatInt(active)} proposals in the budget
+        <b>{formatDashAmount(available)} DASH</b> still available; <b>{formatInt(funded.length)}</b> of {formatInt(active)} proposals in the budget
       </p>
       <dl className="budget-facts">
         <div>
@@ -95,7 +96,7 @@ export function BudgetHeader() {
         <div>
           <dt>Still available</dt>
           <dd>
-            <span className="num">{formatDashAmount(Math.max(0, c.budget - allocated))}</span> DASH
+            <span className="num">{formatDashAmount(available)}</span> DASH
           </dd>
         </div>
         <div>

@@ -9,13 +9,13 @@ import type { Cycle, Proposal, Sourced } from '../../data/types.ts';
 import { formatDash, formatDateTime, formatInt, formatRelative, shortHash } from '../../lib/format.ts';
 import { CHECK_LABEL, LEVEL_LABEL, VERIFIED_LINE, type CheckId, type Component } from '../../verify/aggregate.ts';
 import type { ChainReport } from '../../verify/chain.ts';
-import { checkContent, type StepBasis, type StepStatus } from '../../verify/collateral.ts';
+import { checkContent, type CollateralVerdict, type StepBasis, type StepStatus } from '../../verify/collateral.ts';
 import { budgetFact } from '../../verify/facts.ts';
 import type { RankingDone, VotesDone } from '../../verify/protocol.ts';
 import { voteVerdict, type VoteLevel } from '../../verify/verdict.ts';
 import type { VoteRun } from '../../verify/votes.ts';
 import { Drawer } from '../Drawer.tsx';
-import type { ChainCheck } from '../hooks.ts';
+import type { ChainCheck, CollateralCheck } from '../hooks.ts';
 import { ProvGlyph } from '../Provenance.tsx';
 import { CopyButton } from '../vote/common.tsx';
 import { ShieldIcon } from './TrustBadge.tsx';
@@ -185,11 +185,53 @@ function ChainBlock({ chain, cycle, nowS }: { chain: ChainCheck; cycle: Cycle | 
           Chain facts are not verified here: {unavailable}. Threshold, schedule and payments are as the bridge reports them.
         </p>
       ) : (
-        <p className="verdict verdict-pending" aria-busy="true">
-          <span className="spinner" aria-hidden="true" /> {progress || 'Verifying the chain'}…
-        </p>
+        <Pending text={progress || 'Verifying the chain'} />
       )}
     </div>
+  );
+}
+
+const COLLATERAL_STYLE = {
+  ok: { className: 'verdict-ok', glyph: 'verified', text: 'Content matches the on-chain collateral' },
+  inconclusive: { className: 'verdict-partial', glyph: 'reported', text: "Couldn't fetch the collateral from the network" },
+  fail: { className: 'verdict-fail', glyph: 'mismatch', text: 'Content does not match the on-chain collateral' },
+} as const;
+
+function collateralKind(v: CollateralVerdict): keyof typeof COLLATERAL_STYLE {
+  if (v.ok) return 'ok';
+  // an inconclusive lookup (DAPI down, or a node whose answer did not check out) says nothing about the proposal
+  return v.inconclusive ? 'inconclusive' : 'fail';
+}
+
+function CollateralBlock({ check }: { check: CollateralCheck }) {
+  const { verdict, progress, error } = check;
+  const kind = verdict && collateralKind(verdict);
+  return (
+    <div className="verify-block" data-testid="collateral-check">
+      {kind ? (
+        <p className={`verdict ${COLLATERAL_STYLE[kind].className}`} data-verdict={kind}>
+          <ProvGlyph kind={COLLATERAL_STYLE[kind].glyph} />
+          {COLLATERAL_STYLE[kind].text}
+        </p>
+      ) : error ? (
+        <p className="verdict verdict-fail">
+          <ProvGlyph kind="mismatch" /> Collateral check could not run: {error}
+        </p>
+      ) : (
+        <Pending text={progress || 'Checking the collateral'} />
+      )}
+      {verdict && <Steps steps={verdict.steps} />}
+      {verdict?.anchorError && <p className="small muted">The chain could not be anchored: {verdict.anchorError}</p>}
+    </div>
+  );
+}
+
+/** A check that has not answered yet. */
+function Pending({ text }: { text: string }) {
+  return (
+    <p className="verdict verdict-pending" aria-busy="true">
+      <span className="spinner" aria-hidden="true" /> {text}…
+    </p>
   );
 }
 
@@ -371,14 +413,24 @@ function VotesResult({ done, fixtures, proven }: { done: VotesDone; fixtures: bo
   );
 }
 
-
 const STATE_GLYPH: Record<Component['state']['status'], 'verified' | 'reported' | 'mismatch' | 'fixture'> = {
   proven: 'verified', reported: 'reported', error: 'reported', failed: 'mismatch', pending: 'fixture',
 };
 
+function checkLine(s: Component['state']): string {
+  switch (s.status) {
+    case 'proven':
+      return s.summary;
+    case 'pending':
+      return `${s.note ?? 'Checking'}…`;
+    default:
+      return s.reason;
+  }
+}
+
 function CheckRow({ c, children }: { c: Component; children?: ReactNode }) {
   const s = c.state;
-  const line = s.status === 'proven' ? s.summary : s.status === 'pending' ? `${s.note ?? 'Checking'}…` : s.reason;
+  const line = checkLine(s);
   return (
     <li className={`check-row check-${s.status}`} data-check={c.id} data-state={s.status}>
       <div className="check-line">
@@ -466,17 +518,22 @@ function RawData({ p, sp }: { p: Proposal; sp: Sourced<Proposal> }) {
   );
 }
 
+/** What the funding row says while there is no ranking to show: its progress, why it failed, or why it may not run at all. */
+function rankingNote(ranking: ProposalTrust['ranking']): string {
+  if (ranking?.running) return `${ranking.progress || 'Ranking every active proposal'}…`;
+  if (ranking?.error) return `The funding order couldn't be recounted: ${ranking.error}`;
+  return "A proposal that is not passing on the recounted votes and the proven threshold is not funded; one that is passing is ranked against every active proposal, by Core's rules. The ranking leaves out proposals that failed verification, as Core does, and can't include a proposal the bridge never published.";
+}
+
 const byId = (cs: readonly Component[], id: CheckId) => cs.find((c) => c.id === id)!;
 
 export function VerificationDrawer({ sp, trust, cycle, open, onClose }: { sp: Sourced<Proposal>; trust: ProposalTrust; cycle: Cycle | null; open: boolean; onClose(): void }) {
   const { source, mode } = useApp();
   const p = sp.value;
   const a = trust.aggregate;
-  const { verdict, progress, error } = trust.collateral;
   const bridge = source.bridgeDescriptor();
   const bridgeBase = bridge?.kind === 'http' ? bridge.base : null;
   const contentSteps = useMemo(() => checkContent(p).steps, [p]);
-  const running = a.level === 'checking';
   return (
     <Drawer open={open} onClose={onClose} title="How do we know?" testId="verify-drawer">
       <section className={`drawer-verdict trust-${a.level}`} aria-live="polite" data-testid="drawer-verdict" data-trust={a.level}>
@@ -498,25 +555,7 @@ export function VerificationDrawer({ sp, trust, cycle, open, onClose }: { sp: So
           <Steps steps={contentSteps} />
         </CheckRow>
         <CheckRow c={byId(a.components, 'collateral')}>
-          <div className="verify-block" data-testid="collateral-check">
-            {verdict ? (
-              // an inconclusive lookup (DAPI down, or a node whose answer did not check out) says nothing about the proposal
-              <p className={`verdict ${verdict.ok ? 'verdict-ok' : verdict.inconclusive ? 'verdict-partial' : 'verdict-fail'}`} data-verdict={verdict.ok ? 'ok' : verdict.inconclusive ? 'inconclusive' : 'fail'}>
-                <ProvGlyph kind={verdict.ok ? 'verified' : verdict.inconclusive ? 'reported' : 'mismatch'} />
-                {verdict.ok ? 'Content matches the on-chain collateral' : verdict.inconclusive ? "Couldn't fetch the collateral from the network" : 'Content does not match the on-chain collateral'}
-              </p>
-            ) : error ? (
-              <p className="verdict verdict-fail">
-                <ProvGlyph kind="mismatch" /> Collateral check could not run: {error}
-              </p>
-            ) : (
-              <p className="verdict verdict-pending" aria-busy="true">
-                <span className="spinner" aria-hidden="true" /> {progress || 'Checking the collateral'}…
-              </p>
-            )}
-            {verdict && <Steps steps={verdict.steps} />}
-            {verdict?.anchorError && <p className="small muted">The chain could not be anchored: {verdict.anchorError}</p>}
-          </div>
+          <CollateralBlock check={trust.collateral} />
         </CheckRow>
         <CheckRow c={byId(a.components, 'chain')}>
           <ChainBlock chain={trust.chain} cycle={cycle} nowS={source.now()} />
@@ -529,13 +568,7 @@ export function VerificationDrawer({ sp, trust, cycle, open, onClose }: { sp: So
             </div>
           ) : (
             <>
-              <p className="small muted">
-                {trust.ranking?.running
-                  ? `${trust.ranking.progress || 'Ranking every active proposal'}…`
-                  : trust.ranking?.error
-                    ? `The funding order couldn't be recounted: ${trust.ranking.error}`
-                    : "A proposal that is not passing on the recounted votes and the proven threshold is not funded; one that is passing is ranked against every active proposal, by Core's rules. The ranking leaves out proposals that failed verification, as Core does, and can't include a proposal the bridge never published."}
-              </p>
+              <p className="small muted">{rankingNote(trust.ranking)}</p>
               {trust.rankNow && (
                 <button type="button" className="btn btn-s" onClick={trust.rankNow} data-testid="rank-now">
                   Rank every active proposal
@@ -557,9 +590,7 @@ export function VerificationDrawer({ sp, trust, cycle, open, onClose }: { sp: So
         ) : trust.votes.error ? (
           <p className="error small">The votes couldn't be recounted: {trust.votes.error}</p>
         ) : (
-          <p className="verdict verdict-pending" aria-busy="true">
-            <span className="spinner" aria-hidden="true" /> {trust.votes.progress || 'Waiting for the collateral check'}…
-          </p>
+          <Pending text={trust.votes.progress || 'Waiting for the collateral check'} />
         )}
         <YourselfCommands govHash={p.govHash} bridgeBase={bridgeBase} />
       </details>

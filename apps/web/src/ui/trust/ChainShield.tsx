@@ -29,6 +29,13 @@ function anchorOnce(source: DataSource, onProgress: (m: string) => void): Promis
   return promise;
 }
 
+function chainLevel(demo: boolean, notice: string | null, s: State): TrustLevel {
+  if (demo) return 'demo';
+  if (notice) return 'error';
+  if (s.anchor) return s.anchor.weak ? 'partial' : 'verified';
+  return s.error ? 'error' : 'checking';
+}
+
 function useChainStatus(): { level: TrustLevel; state: State } {
   const { source, mode } = useApp();
   const [state, setState] = useState<State>({});
@@ -49,8 +56,7 @@ function useChainStatus(): { level: TrustLevel; state: State } {
       clearTimeout(t);
     };
   }, [source, idle]);
-  const level: TrustLevel = mode === 'fixtures' ? 'demo' : source.notice ? 'error' : state.anchor ? (state.anchor.weak ? 'partial' : 'verified') : state.error ? 'error' : 'checking';
-  return { level, state };
+  return { level: chainLevel(mode === 'fixtures', source.notice, state), state };
 }
 
 function headline(level: TrustLevel, s: State, notice: string | null, nowS: number): string {
@@ -93,34 +99,34 @@ export function ChainShield() {
         {a && (
           <details className="learn">
             <summary>What the chain check rests on</summary>
-          <dl className="kv">
-            <div>
-              <dt>Rests on</dt>
-              <dd>
-                {a.trust.kind === 'quorum-proof'
-                  ? `ChainLocks proven from the quorum checkpoint pinned in this app (block ${formatInt(a.trust.checkpoint.height)}), each a BLS signature checked here. No proof of work involved.`
-                  : `The header checkpoint pinned in this app (block ${formatInt(a.trust.checkpoint.height)}) and proof of work${a.weak ? ', which is too weak on this network to stop a forged chain' : ''}.`}
-              </dd>
-            </div>
-            <div>
-              <dt>Newest ChainLock</dt>
-              <dd>
-                block {formatInt(a.chainLock.height)}, {formatRelative(a.chainLock.time, nowS)}
-              </dd>
-            </div>
-            <div>
-              <dt>Masternode list</dt>
-              <dd>
-                {formatInt(a.sml.entries)} masternodes, proven by block {formatInt(a.sml.height)}
-              </dd>
-            </div>
-            <div>
-              <dt>Headers</dt>
-              <dd>
-                {formatInt(a.tip - a.lo + 1)} checked ({formatInt(a.headers.cached)} from this browser's cache, {formatInt(a.headers.fetched)} downloaded{a.ms.total ? `, ${(a.ms.total / 1000).toFixed(1)} s` : ''})
-              </dd>
-            </div>
-          </dl>
+            <dl className="kv">
+              <div>
+                <dt>Rests on</dt>
+                <dd>
+                  {a.trust.kind === 'quorum-proof'
+                    ? `ChainLocks proven from the quorum checkpoint pinned in this app (block ${formatInt(a.trust.checkpoint.height)}), each a BLS signature checked here. No proof of work involved.`
+                    : `The header checkpoint pinned in this app (block ${formatInt(a.trust.checkpoint.height)}) and proof of work${a.weak ? ', which is too weak on this network to stop a forged chain' : ''}.`}
+                </dd>
+              </div>
+              <div>
+                <dt>Newest ChainLock</dt>
+                <dd>
+                  block {formatInt(a.chainLock.height)}, {formatRelative(a.chainLock.time, nowS)}
+                </dd>
+              </div>
+              <div>
+                <dt>Masternode list</dt>
+                <dd>
+                  {formatInt(a.sml.entries)} masternodes, proven by block {formatInt(a.sml.height)}
+                </dd>
+              </div>
+              <div>
+                <dt>Headers</dt>
+                <dd>
+                  {formatInt(a.tip - a.lo + 1)} checked ({formatInt(a.headers.cached)} from this browser's cache, {formatInt(a.headers.fetched)} downloaded{a.ms.total ? `, ${(a.ms.total / 1000).toFixed(1)} s` : ''})
+                </dd>
+              </div>
+            </dl>
           </details>
         )}
         <p className="small muted">

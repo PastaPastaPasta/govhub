@@ -165,7 +165,7 @@ function BlockListSettings() {
 }
 
 export function SettingsPage() {
-  const { registry, setRegistry, mode, setMode } = useApp();
+  const { registry, setRegistry } = useApp();
   const [draft, setDraft] = useState<Registry>(registry);
   const [json, setJson] = useState('');
   const [msg, setMsg] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
@@ -397,25 +397,25 @@ export function SettingsPage() {
             </label>
           </fieldset>
 
-        <div className="form-actions">
-          <button type="submit" className="btn btn-primary">
-            Save settings
-          </button>
-          <button type="button" className="btn" onClick={() => setDraft(registry)}>
-            Discard changes
-          </button>
-          <button
-            type="button"
-            className="btn btn-quiet"
-            onClick={() => {
-              setRegistry(resetRegistry());
-              void cacheClear();
-              setMsg({ kind: 'ok', text: 'Reset to the defaults and cleared the cache.' });
-            }}
-          >
-            Reset to defaults
-          </button>
-        </div>
+          <div className="form-actions">
+            <button type="submit" className="btn btn-primary">
+              Save settings
+            </button>
+            <button type="button" className="btn" onClick={() => setDraft(registry)}>
+              Discard changes
+            </button>
+            <button
+              type="button"
+              className="btn btn-quiet"
+              onClick={() => {
+                setRegistry(resetRegistry());
+                void cacheClear();
+                setMsg({ kind: 'ok', text: 'Reset to the defaults and cleared the cache.' });
+              }}
+            >
+              Reset to defaults
+            </button>
+          </div>
         </form>
       </details>
 
@@ -440,53 +440,53 @@ export function SettingsPage() {
           <span className="group-title">Export, import and share</span>
           <span className="small muted">Move these settings to another browser, or share them as a link.</span>
         </summary>
-      <section className="form" aria-labelledby="share-title">
-        <h2 id="share-title">Export, import and share</h2>
-        <div className="form-actions">
-          <button type="button" className="btn" onClick={download}>
-            Download JSON
-          </button>
-          <button type="button" className="btn" onClick={() => setJson(exportRegistry(registry))}>
-            Show JSON
-          </button>
-          <button
-            type="button"
-            className="btn"
-            onClick={() => {
-              const link = shareLink(registry, location.origin);
-              void navigator.clipboard?.writeText(link).then(
-                () => setMsg({ kind: 'ok', text: 'Share link copied. Whoever opens it is asked before anything changes.' }),
-                () => setJson(link),
-              );
-            }}
-          >
-            Copy share link
-          </button>
-          <button type="button" className="btn" onClick={() => fileRef.current?.click()}>
-            Import file
-          </button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="application/json,.json"
-            hidden
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void f.text().then(importText);
-              e.target.value = '';
-            }}
-          />
-        </div>
-        <label>
-          Settings JSON (paste and import, or copy)
-          <textarea rows={10} className="code" value={json} onChange={(e) => setJson(e.target.value)} spellCheck={false} placeholder={exportRegistry(defaultRegistry()).slice(0, 120) + '…'} />
-        </label>
-        <div className="form-actions">
-          <button type="button" className="btn" onClick={() => importText(json)} disabled={!json.trim()}>
-            Import this JSON
-          </button>
-        </div>
-      </section>
+        <section className="form" aria-labelledby="share-title">
+          <h2 id="share-title">Export, import and share</h2>
+          <div className="form-actions">
+            <button type="button" className="btn" onClick={download}>
+              Download JSON
+            </button>
+            <button type="button" className="btn" onClick={() => setJson(exportRegistry(registry))}>
+              Show JSON
+            </button>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                const link = shareLink(registry, location.origin);
+                void navigator.clipboard?.writeText(link).then(
+                  () => setMsg({ kind: 'ok', text: 'Share link copied. Whoever opens it is asked before anything changes.' }),
+                  () => setJson(link),
+                );
+              }}
+            >
+              Copy share link
+            </button>
+            <button type="button" className="btn" onClick={() => fileRef.current?.click()}>
+              Import file
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="application/json,.json"
+              hidden
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void f.text().then(importText);
+                e.target.value = '';
+              }}
+            />
+          </div>
+          <label>
+            Settings JSON (paste and import, or copy)
+            <textarea rows={10} className="code" value={json} onChange={(e) => setJson(e.target.value)} spellCheck={false} placeholder={exportRegistry(defaultRegistry()).slice(0, 120) + '…'} />
+          </label>
+          <div className="form-actions">
+            <button type="button" className="btn" onClick={() => importText(json)} disabled={!json.trim()}>
+              Import this JSON
+            </button>
+          </div>
+        </section>
       </details>
     </section>
   );

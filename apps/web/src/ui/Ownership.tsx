@@ -7,7 +7,7 @@ import { CLAIM_METHOD_LABEL, checkClaimSignature, claimMessage, decodeAddress, d
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { attestorsFor } from '../config/registry.ts';
-import type { Proposal, Provenance } from '../data/types.ts';
+import type { Proposal } from '../data/types.ts';
 import { errText, formatCredits, formatInt, shortAddress } from '../lib/format.ts';
 import type { CollateralVerdict } from '../verify/collateral.ts';
 import { HiddenToggle, plural } from './HiddenToggle.tsx';

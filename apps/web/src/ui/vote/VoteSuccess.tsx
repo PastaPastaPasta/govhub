@@ -128,42 +128,42 @@ export function VoteSuccess({ vote, name, proposalName, onRecount }: { vote: Wat
               </button>
             )}
           </div>
-        {proofError && <p className="error small">{proofError}</p>}
-        {proof && (
-          <div className="vproof" data-testid="vote-proof">
-            <dl className="vproof-vote">
-              <div>
-                <dt>Masternode collateral</dt>
-                <dd className="mono-ish break">
-                  {vote.collateralTxid}:{vote.collateralIndex}
-                </dd>
-              </div>
-              <div>
-                <dt>Vote</dt>
-                <dd>
-                  {word}, signed for {new Date(vote.time * 1000).toLocaleString()}
-                </dd>
-              </div>
-              <div>
-                <dt>Signature</dt>
-                <dd className="mono-ish break">{vote.sig}</dd>
-              </div>
-            </dl>
-            <ul className="vproof-checks">
-              {proof.checks.map((c) => (
-                <li key={c.label} className={c.ok === true ? 'ok' : c.ok === false ? 'bad' : 'unknown'}>
-                  <span aria-hidden="true">{c.ok === true ? '✓' : c.ok === false ? '✗' : '?'}</span>
-                  <span>
-                    <b>{c.label}</b> <span className="muted">{c.detail}</span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-            <p className="small muted">
-              Anyone running Dash Core can confirm it with <code>{coreCmd.slice(0, 40)}…</code> (copy the full command above).
-            </p>
-          </div>
-        )}
+          {proofError && <p className="error small">{proofError}</p>}
+          {proof && (
+            <div className="vproof" data-testid="vote-proof">
+              <dl className="vproof-vote">
+                <div>
+                  <dt>Masternode collateral</dt>
+                  <dd className="mono-ish break">
+                    {vote.collateralTxid}:{vote.collateralIndex}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Vote</dt>
+                  <dd>
+                    {word}, signed for {new Date(vote.time * 1000).toLocaleString()}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Signature</dt>
+                  <dd className="mono-ish break">{vote.sig}</dd>
+                </div>
+              </dl>
+              <ul className="vproof-checks">
+                {proof.checks.map((c) => (
+                  <li key={c.label} className={c.ok === true ? 'ok' : c.ok === false ? 'bad' : 'unknown'}>
+                    <span aria-hidden="true">{c.ok === true ? '✓' : c.ok === false ? '✗' : '?'}</span>
+                    <span>
+                      <b>{c.label}</b> <span className="muted">{c.detail}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <p className="small muted">
+                Anyone running Dash Core can confirm it with <code>{coreCmd.slice(0, 40)}…</code> (copy the full command above).
+              </p>
+            </div>
+          )}
         </details>
       </div>
       <button type="button" className="vwin-close" aria-label="Dismiss" onClick={() => k.dismissCelebration(vote.voteHash)}>

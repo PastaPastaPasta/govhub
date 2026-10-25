@@ -199,8 +199,10 @@ export function VoteComposer({ proposals, onVerify }: { proposals: Proposal[]; o
     : !chosen.length
       ? 'Select at least one masternode'
       : multi
-      ? `${mode === 'deferred' ? 'Schedule' : 'Sign and send'} ${toSend.length} vote${toSend.length === 1 ? '' : 's'}`
-      : voteButtonText(single, new Set(toSend.map((r) => r.intent.mn.proTxHash)).size || chosen.length, mode === 'deferred');
+        ? `${mode === 'deferred' ? 'Schedule' : 'Sign and send'} ${toSend.length} vote${toSend.length === 1 ? '' : 's'}`
+        : voteButtonText(single, new Set(toSend.map((r) => r.intent.mn.proTxHash)).size || chosen.length, mode === 'deferred');
+  // The button already says what the hint would (e.g. "Select at least one masternode"), so the hint is then left out.
+  const hint = disabledHint && disabledHint.replace(/\.$/, '') !== buttonText ? disabledHint : null;
 
   const go = async () => {
     setSkipped([]);
@@ -356,7 +358,7 @@ export function VoteComposer({ proposals, onVerify }: { proposals: Proposal[]; o
       </details>
 
       <div className="vgo">
-        <button type="button" className="btn btn-primary btn-l vgo-btn" disabled={blocked || !toSend.length} onClick={go} data-testid="vote-send" aria-describedby={disabledHint && disabledHint.replace(/\.$/, '') !== buttonText ? 'vote-send-hint' : undefined}>
+        <button type="button" className="btn btn-primary btn-l vgo-btn" disabled={blocked || !toSend.length} onClick={go} data-testid="vote-send" aria-describedby={hint ? 'vote-send-hint' : undefined}>
           {buttonText}
         </button>
         {toSend.length > 0 && !blocked && (
@@ -368,9 +370,9 @@ export function VoteComposer({ proposals, onVerify }: { proposals: Proposal[]; o
                 : `Signed in your browser and sent to the network through ${k.relays.length === 1 ? relayHost(k.relays[0]!) : `${k.relays.length} relays`}.`}
           </p>
         )}
-        {disabledHint && disabledHint.replace(/\.$/, '') !== buttonText && (
+        {hint && (
           <p className={`small ${currentError ? 'error' : 'muted'}`} id="vote-send-hint" data-testid="vote-send-hint">
-            {currentError ? `Your current votes could not be read from the bridge (${currentError}); voting waits until they can.` : disabledHint}
+            {currentError ? `Your current votes could not be read from the bridge (${currentError}); voting waits until they can.` : hint}
           </p>
         )}
         {skipped.map((s) => (

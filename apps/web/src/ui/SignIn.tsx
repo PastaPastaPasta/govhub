@@ -38,12 +38,11 @@ export function ThemeSwitch() {
  * the account menu (balance, profile, top-up, passkeys, settings, theme, sign out).
  */
 export function SessionControl() {
-  const { session, balance, signOut } = useForum();
+  const { forum, session, balance, signOut } = useForum();
   const auth = useAuth();
   const menu = useRef<HTMLDivElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const [name, setName] = useState<string | null>(null);
-  const { forum } = useForum();
   const close = () => dialog.current?.close();
   const hide = () => menu.current?.hidePopover?.();
   // Signing out from elsewhere (leaving the page, another network) closes the panels.
@@ -61,7 +60,15 @@ export function SessionControl() {
     };
   }, [session, forum]);
   const item = (label: string, onClick: () => void, testId?: string) => (
-    <button type="button" className="menu-item" onClick={() => (hide(), onClick())} data-testid={testId}>
+    <button
+      type="button"
+      className="menu-item"
+      onClick={() => {
+        hide();
+        onClick();
+      }}
+      data-testid={testId}
+    >
       {label}
     </button>
   );

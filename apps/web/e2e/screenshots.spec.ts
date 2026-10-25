@@ -131,7 +131,7 @@ test.describe('extra', () => {
     const drawer = await openDrawer(page);
     await expect(drawer.getByTestId('votes-check').locator('[data-votes]')).toHaveAttribute('data-votes', 'keys-reported', { timeout: 30_000 });
     await drawer.getByText('Check the votes yourself').click();
-    await drawer.locator('[data-check="collateral"] summary').click();
+    await drawer.locator('[data-check="collateral"] .check-more > summary').click();
     await shoot(page, 'drawer-votes-light-desktop', false);
   });
   test('@screenshots settings groups opened', async ({ page }) => {

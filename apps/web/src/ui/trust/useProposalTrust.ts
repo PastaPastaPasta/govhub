@@ -23,6 +23,9 @@ export interface Run<T> {
   running: boolean;
 }
 const idle = <T,>(): Run<T> => ({ result: null, error: null, progress: '', running: false });
+const started = <T,>(progress: string): Run<T> => ({ result: null, error: null, progress, running: true });
+const finished = <T,>(result: T): Run<T> => ({ result, error: null, progress: '', running: false });
+const errored = <T,>(error: string): Run<T> => ({ result: null, error, progress: '', running: false });
 
 /**
  * A run's state, tagged with the run (an object identity per set of inputs): a newer run never sees an older run's result, not even in
@@ -80,13 +83,13 @@ export function useProposalTrust(p: Proposal, row: Row, talliesLoading: boolean)
   useEffect(() => {
     if (!bridge || !collateralDone || talliesLoading || targets.length === 0) return;
     let on = true;
-    setVotes(() => ({ result: null, error: null, progress: 'Recounting the signed votes', running: true }));
+    setVotes(() => started('Recounting the signed votes'));
     runVerification(
       { kind: 'votes', govHash: p.govHash, targets, bridge, dapi: source.dapiDescriptor(), network: source.coreNetwork, now: source.now(), crossCheckSml: mode === 'live' },
       (m) => on && setVotes((v) => ({ ...v, progress: m })),
     ).then(
-      (result) => on && setVotes(() => ({ result, error: null, progress: '', running: false })),
-      (e: Error) => on && setVotes(() => ({ result: null, error: e.message, progress: '', running: false })),
+      (result) => on && setVotes(() => finished(result)),
+      (e: Error) => on && setVotes(() => errored(e.message)),
     );
     return () => {
       on = false;
@@ -114,10 +117,10 @@ export function useProposalTrust(p: Proposal, row: Row, talliesLoading: boolean)
     // only the run right after "Re-check" skips the shared result
     const force = forced.current !== forceRanking;
     forced.current = forceRanking;
-    setRanking(() => ({ result: null, error: null, progress: 'Ranking every active proposal', running: true }));
+    setRanking(() => started('Ranking every active proposal'));
     sharedRanking(source, activeList, { force, onProgress: (m) => on && setRanking((r) => ({ ...r, progress: m })) }).then(
-      (result) => on && setRanking(() => ({ result, error: null, progress: '', running: false })),
-      (e: Error) => on && setRanking(() => ({ result: null, error: e.message, progress: '', running: false })),
+      (result) => on && setRanking(() => finished(result)),
+      (e: Error) => on && setRanking(() => errored(e.message)),
     );
     return () => {
       on = false;

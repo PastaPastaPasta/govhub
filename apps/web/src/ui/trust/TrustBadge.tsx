@@ -1,6 +1,5 @@
 // The trust badge: a shield whose mark says the level, and the level's word. `size="s"` is the icon alone (cards), still named.
-import type { TrustLevel } from '../../verify/aggregate.ts';
-import { LEVEL_LABEL } from '../../verify/aggregate.ts';
+import { LEVEL_LABEL, type TrustLevel } from '../../verify/aggregate.ts';
 
 export function ShieldIcon({ level, size = 18 }: { level: TrustLevel; size?: number }) {
   const outline = 'M12 2.5 4 5.6v6.1c0 4.7 3.3 8.6 8 9.8 4.7-1.2 8-5.1 8-9.8V5.6Z';
@@ -19,7 +18,7 @@ export function ShieldIcon({ level, size = 18 }: { level: TrustLevel; size?: num
 
 export function TrustBadge({ level, reason, onOpen, size = 'm', testId = 'trust-badge' }: { level: TrustLevel; reason: string | null; onOpen?: () => void; size?: 's' | 'm'; testId?: string }) {
   const label = LEVEL_LABEL[level];
-  const name = `${label}${reason ? `: ${reason}` : ''}. How do we know?`;
+  const described = `${label}${reason ? `: ${reason}` : ''}`;
   const body = (
     <>
       <ShieldIcon level={level} size={size === 's' ? 16 : 18} />
@@ -28,13 +27,13 @@ export function TrustBadge({ level, reason, onOpen, size = 'm', testId = 'trust-
   );
   if (!onOpen) {
     return (
-      <span className={`trust trust-${level} trust-${size}`} data-testid={testId} data-trust={level} role="img" aria-label={`${label}${reason ? `: ${reason}` : ''}`} title={reason ?? label}>
+      <span className={`trust trust-${level} trust-${size}`} data-testid={testId} data-trust={level} role="img" aria-label={described} title={reason ?? label}>
         {body}
       </span>
     );
   }
   return (
-    <button type="button" className={`trust trust-${level} trust-${size}`} onClick={onOpen} data-testid={testId} data-trust={level} aria-label={name} title={reason ?? undefined} aria-haspopup="dialog">
+    <button type="button" className={`trust trust-${level} trust-${size}`} onClick={onOpen} data-testid={testId} data-trust={level} aria-label={`${described}. How do we know?`} title={reason ?? undefined} aria-haspopup="dialog">
       {body}
     </button>
   );
