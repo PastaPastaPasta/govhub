@@ -316,7 +316,8 @@ export function liveSource(registry: Registry): DataSource {
 
     async usdPrice() {
       const pf = registry.priceFeed;
-      if (!pf?.url) return null;
+      // testnet DASH has no price: a USD figure next to a testnet budget would be made up
+      if (!pf?.url || registry.coreNetwork === 'testnet') return null;
       try {
         const res = await fetch(pf.url, { credentials: 'omit', referrerPolicy: 'no-referrer', signal: AbortSignal.timeout(8000) });
         const j = (await res.json()) as { dash?: { usd?: unknown } };
