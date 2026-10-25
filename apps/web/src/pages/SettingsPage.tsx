@@ -59,6 +59,9 @@ function ProfileSettings() {
   const [picked, setPicked] = useState(registry.profile);
   const [msg, setMsg] = useState<Msg | null>(null);
   useEffect(() => setPicked(registry.profile), [registry.profile]);
+  // the confirm buttons go away once used: focus returns to the radio group instead of falling to <body>
+  const radios = useRef<HTMLFieldSetElement>(null);
+  const backToRadios = () => requestAnimationFrame(() => radios.current?.querySelector<HTMLInputElement>('input:checked')?.focus());
   const custom = customFields(registry);
   const p = PROFILES[registry.profile];
   const run = (f: () => void, ok: string) => {
@@ -73,7 +76,7 @@ function ProfileSettings() {
     <section className="form" aria-labelledby="profile-title" id="network">
       <h2 id="profile-title">Network</h2>
       <p className="small muted">Which Dash network govhub shows. Testnet is for trying things; Dev shows real mainnet proposals while govhub is being built.</p>
-      <fieldset className="seg profile-switch">
+      <fieldset className="seg profile-switch" ref={radios}>
         <legend className="visually-hidden">Network profile</legend>
         {PROFILE_ORDER.map((id) => {
           const x = PROFILES[id];
@@ -99,10 +102,21 @@ function ProfileSettings() {
       </fieldset>
       {picked !== registry.profile && (
         <div className="form-actions" data-testid="profile-confirm">
-          <button type="button" className="btn btn-primary" onClick={() => run(() => switchProfile(picked), `Switched to ${PROFILES[picked].title}. Data reloads.`)}>
+          <button type="button" className="btn btn-primary" onClick={() => {
+              run(() => switchProfile(picked), `Switched to ${PROFILES[picked].title}. Data reloads.`);
+              backToRadios();
+            }}
+          >
             Switch to {PROFILES[picked].label}
           </button>
-          <button type="button" className="btn btn-quiet" onClick={() => setPicked(registry.profile)}>
+          <button
+            type="button"
+            className="btn btn-quiet"
+            onClick={() => {
+              setPicked(registry.profile);
+              backToRadios();
+            }}
+          >
             Stay on {p.label}
           </button>
         </div>

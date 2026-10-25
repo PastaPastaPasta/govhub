@@ -126,10 +126,12 @@ test.describe('settings', () => {
     expect(await savedProfile(page)).not.toBe('testnet');
     await page.getByRole('button', { name: 'Stay on Dev' }).click();
     await expect(page.getByRole('radio', { name: 'Dev' })).toBeChecked();
+    await expect(page.getByRole('radio', { name: 'Dev' })).toBeFocused();
     await page.locator('.profile-switch label', { hasText: 'Testnet' }).click();
     await page.getByRole('button', { name: 'Switch to Testnet' }).click();
     await expect(label).toContainText('Testnet');
     expect(await savedProfile(page)).toBe('testnet');
+    await expect(page.getByRole('radio', { name: 'Testnet' })).toBeFocused();
     await expect(page.getByRole('status').filter({ hasText: 'Switched to Testnet' })).toBeInViewport();
   });
 

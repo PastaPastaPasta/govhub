@@ -113,7 +113,7 @@ function ConfigOffer() {
       <p id="cfg-title">
         <b>This link carries endpoint settings.</b>{' '}
         {!ok
-          ? `They can't be used: ${current.errors.join('; ')}.`
+          ? `They can't be used: ${current.errors.join('; ').replace(/\.+$/, '')}.`
           : diff.length
             ? `Using them changes ${diff.length === 1 ? 'one setting' : `${diff.length} settings`}; everything else stays as it is. Check every host: a bridge or DAPI node you do not trust can report false numbers.`
             : 'They are the settings you already use: nothing would change.'}

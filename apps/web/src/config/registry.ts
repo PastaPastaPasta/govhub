@@ -611,7 +611,8 @@ export function readInlineConfig(value: string): { registry: Registry; errors: s
 export async function fetchConfig(url: URL, fetcher: typeof fetch = fetch): Promise<{ registry: Registry; errors: string[] }> {
   const fail = (why: string) => ({ registry: defaultRegistry(), errors: [why] });
   try {
-    const res = await fetcher(url.href, { credentials: 'omit', referrerPolicy: 'no-referrer', signal: AbortSignal.timeout(10_000) });
+    // redirect: 'error': a redirect would contact a host the user did not agree to
+    const res = await fetcher(url.href, { credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error', signal: AbortSignal.timeout(10_000) });
     if (res.url && new URL(res.url).host !== url.host) return fail(`config URL redirected to another host (${new URL(res.url).host})`);
     if (!res.ok) return fail(`config URL answered HTTP ${res.status}`);
     const text = await res.text();
@@ -619,6 +620,7 @@ export async function fetchConfig(url: URL, fetcher: typeof fetch = fetch): Prom
     if (tooLarge) return fail(tooLarge);
     return parseRegistry(JSON.parse(text));
   } catch (e) {
+    if ((e as Error).name === 'TimeoutError') return fail(`${url.host} did not answer within 10 seconds`);
     return fail(`config could not be read: ${(e as Error).message}`);
   }
 }
