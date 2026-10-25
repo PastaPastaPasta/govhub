@@ -5,7 +5,8 @@ import { parseTx, type Dapi, type WatchHandlers } from '@govhub/dapi';
 import { describe, expect, it } from 'vitest';
 import { bytesToHex, hash160, hexToBytes } from '../src/bytes.ts';
 import {
-  classifyRegistrationError, discardFunding, FundingError, fundingRecordKey, LockTooSmallError, nextTopUpIndex, pendingFundings, pickInputs, runFunding, sessionTopUpKey, stillNeededDuffs,
+  classifyRegistrationError, discardFunding, FundingError, fundingRecordKey, LockTooSmallError, lockTooSmall, nextCreateIndex, nextTopUpIndex, pendingFundings, pickInputs, runFunding,
+  sessionTopUpKey, stillNeededDuffs,
   type FundingRecord, type FundingStore, type FundingView,
 } from '../src/funding.ts';
 import { addressOf, publicKeyOf, wifOf } from '../src/keys.ts';
@@ -621,5 +622,96 @@ describe('D-032: an underpayment asks only for what is missing', () => {
     expect(pickInputs([...many, { value: need.toString() }], floor, min)).not.toBeNull();
     expect(pickInputs([...many, { value: (need - 1n).toString() }], floor, min)).toBeNull();
     expect(stillNeededDuffs([{ value: '223990' }], floor, min)).toBeGreaterThan(estimateAssetLockFee(2) - estimateAssetLockFee(1));
+  });
+});
+
+describe('D-006 review: recovery edge cases', () => {
+  const target = '8GqCCpTFpgPREMUTqHESkuDMvkrfwBEd45fVeLUEYKYL';
+  const w = () => SeedWallet.fromPhrase(PHRASE, 'testnet');
+  const dapi = () => fakeDapi({ events: [], deliverIsLock: false, mined: 0 }) as unknown as Dapi;
+
+  it('a balance change before anything was submitted is not taken for the top-up', async () => {
+    const store = memStore();
+    // pinned earlier with a baseline of 7; the identity was topped up by something else meanwhile (now 100)
+    store.save({ ...stuckRecord(209_646n), recoveredInto: target, balanceBefore: '7', proofKind: undefined });
+    const platform = topUpPlatform(target, 100n);
+    const r = await runFunding({ wallet: w(), dapi: dapi(), platform, store, kind: 'create', identityIndex: 0 });
+    expect(r.identityId).toBe(target);
+    expect(platform.topUps).toHaveLength(1); // submitted, not skipped as "already landed"
+  });
+
+  it('a top-up Platform reports consumed has landed, even when the balance has since been spent below the baseline', async () => {
+    const store = memStore();
+    store.save({ ...stuckRecord(209_646n), recoveredInto: target });
+    const platform = topUpPlatform(target, 500n);
+    platform.topUpIdentity = async () => {
+      throw Object.assign(new Error('IdentityAssetLockTransactionOutPointAlreadyConsumedError'), { code: 10504 });
+    };
+    const r = await runFunding({ wallet: w(), dapi: dapi(), platform, store, kind: 'create', identityIndex: 0 });
+    expect(r.record.state).toBe('done');
+  });
+
+  it('a recovered record resumes (without recoverInto) as done for its target', async () => {
+    const store = memStore();
+    store.save({ ...stuckRecord(209_646n), recoveredInto: target, state: 'done' });
+    const r = await runFunding({ wallet: w(), dapi: dapi(), platform: topUpPlatform(target, 1n), store, kind: 'create', identityIndex: 0 });
+    expect(r).toMatchObject({ identityId: target, record: { recoveredInto: target } });
+  });
+
+  it('recoverInto is refused for a lock big enough to create, and once the create landed', async () => {
+    const store = memStore();
+    store.save(stuckRecord(300_000n));
+    await expect(runFunding({ wallet: w(), dapi: dapi(), platform: topUpPlatform(target, 1n), store, kind: 'create', identityIndex: 0, recoverInto: target })).rejects.toThrow(/large enough/);
+    const small = stuckRecord(209_646n);
+    store.save(small);
+    const p = topUpPlatform(target, 1n);
+    p.identityKeys = async () => []; // every identity exists, the would-be created one too
+    await expect(runFunding({ wallet: w(), dapi: dapi(), platform: p, store, kind: 'create', identityIndex: 0, recoverInto: target })).rejects.toThrow(/already created/);
+    expect(store.m.get(small.key)!.recoveredInto).toBeUndefined();
+  });
+
+  it('a record saved in "locking" without a lock under an older floor waits for more instead of failing', async () => {
+    const store = memStore();
+    const s0 = stuckRecord(209_646n);
+    store.save({ ...s0, lock: undefined, isLock: undefined, proofKind: undefined, state: 'locking' });
+    const views: FundingView[] = [];
+    const ac = new AbortController();
+    const e = await runFunding({
+      wallet: w(), dapi: dapi(), platform: fakePlatform(), store, kind: 'create', identityIndex: 0, signal: ac.signal,
+      onUpdate: (v) => (views.push(v), v.state === 'awaiting-deposit' && setTimeout(() => ac.abort(), 50)),
+    }).catch((x) => x);
+    expect(e).not.toBeInstanceOf(FundingError);
+    expect(views.some((v) => v.state === 'awaiting-deposit')).toBe(true);
+  });
+
+  it('a lock under the floor that was never sent is dropped and rebuilt, not broadcast', async () => {
+    const store = memStore();
+    store.save({ ...stuckRecord(209_646n), isLock: undefined, proofKind: undefined, state: 'locking' });
+    const s: Script = { events: [], deliverIsLock: false, mined: 0 };
+    const ac = new AbortController();
+    await runFunding({
+      wallet: w(), dapi: fakeDapi(s) as unknown as Dapi, platform: fakePlatform(), store, kind: 'create', identityIndex: 0, signal: ac.signal,
+      onUpdate: (v) => v.state === 'awaiting-deposit' && setTimeout(() => ac.abort(), 50),
+    }).catch(() => {});
+    expect(s.events).not.toContain('broadcast');
+    expect(store.m.get(keyFor(PHRASE))!.lock).toBeUndefined();
+  });
+
+  it('a too-small top-up record does not hold the top-up index; a recovered create index is skipped for new identities', () => {
+    const store = memStore();
+    const rec: FundingRecord = { ...stuckRecord(50_000n), key: 'testnet.topup.x', kind: 'topup', identityId: target, topUpIndex: 0 };
+    store.save(rec);
+    expect(lockTooSmall(rec)).toBe(true);
+    expect(nextTopUpIndex(store, 'testnet', target)).toBe(1);
+    expect(nextCreateIndex(store, w())).toBe(0);
+    store.save({ ...stuckRecord(209_646n), recoveredInto: target, state: 'done' });
+    expect(nextCreateIndex(store, w())).toBe(1);
+  });
+
+  it('fromRefusal takes what Platform says is left; a voucher is never offered for a top-up', () => {
+    const e = LockTooSmallError.fromRefusal('create', 300_000_000n, 221_500_000n, new Error('Asset lock transaction [hex] output 0 only has 100000000 credits left out of 300000000 initial credits on the asset lock but needs 221500000 credits to start processing'));
+    expect(e.lockCredits).toBe(100_000_000n);
+    expect(new LockTooSmallError('create', 209_646_000n, 221_500_000n, false).canTopUp).toBe(false);
+    expect(new LockTooSmallError('create', 209_646_000n, 221_500_000n, false).message).not.toMatch(/top up/);
   });
 });

@@ -1,7 +1,7 @@
 // Funding screen: QR for the one-time deposit address, live status, IS-lock, done. The address is only shown once the DAPI
 // deposit watcher is subscribed (runFunding calls onUpdate after the streams are live), because IS-locks are never replayed.
 // A create whose lock is too small for Platform (LockTooSmallError, permanent) is offered as a top-up of an existing identity instead.
-import { identifierBytes, LockTooSmallError, runFunding, type FundingView, type SeedWallet, type Session } from '@govhub/auth';
+import { discoverIdentities, identifierBytes, LockTooSmallError, runFunding, type FoundIdentity, type FundingView, type SeedWallet, type Session } from '@govhub/auth';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useAuth } from './context.tsx';
 import { Qr } from './Qr.tsx';
@@ -28,7 +28,7 @@ const STEPS: Array<{ id: FundingView['state'] | 'is'; label: string }> = [
 const ORDER: FundingView['state'][] = ['awaiting-deposit', 'locking', 'locked', 'registering', 'done'];
 
 export function FundingPanel(p: FundingPanelProps) {
-  const { dapi, platform, store } = useAuth();
+  const { dapi, platform, store, closeSheet } = useAuth();
   const [view, setView] = useState<FundingView | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [attempt, setAttempt] = useState(0);
@@ -36,6 +36,8 @@ export function FundingPanel(p: FundingPanelProps) {
   const [recoverInto, setRecoverInto] = useState<string | null>(null);
   const [recovered, setRecovered] = useState<string | null>(null);
   const [recoverError, setRecoverError] = useState<string | null>(null);
+  /** The last identity id tried, kept for the form when it comes back with a reason. */
+  const [lastTarget, setLastTarget] = useState('');
   const done = useRef(p.onDone);
   done.current = p.onDone;
 
@@ -66,13 +68,14 @@ export function FundingPanel(p: FundingPanelProps) {
   const retry = () => setAttempt((a) => a + 1);
   const startRecovery = (identityId: string) => {
     setRecoverError(null);
+    setLastTarget(identityId);
     setRecoverInto(identityId);
   };
   const errorBox = error ? (
     error instanceof LockTooSmallError ? (
-      <TooSmall error={error} offerTopUp={p.kind === 'create' && error.canTopUp} problem={recoverError} onTopUp={startRecovery} />
+      <TooSmall error={error} offerTopUp={p.kind === 'create' && error.canTopUp} wallet={p.wallet} problem={recoverError} initialId={lastTarget} onTopUp={startRecovery} />
     ) : (
-      <ErrorBox text={errorText(error)} retry={retry} />
+      <ErrorBox text={(recoverError ? `${recoverError} ` : '') + errorText(error)} retry={retry} />
     )
   ) : null;
 
@@ -82,6 +85,9 @@ export function FundingPanel(p: FundingPanelProps) {
         <p className="notice" role="status" data-testid="recovered">
           Done: the payment was added to identity <span className="break">{recovered}</span>. Sign in with that identity to use it.
         </p>
+        <button type="button" className="btn btn-primary" onClick={closeSheet}>
+          Close
+        </button>
       </div>
     );
   }
@@ -109,6 +115,10 @@ export function FundingPanel(p: FundingPanelProps) {
               <p data-testid="underpaid">
                 Received <b>{formatDuffs(seenDuffs)}</b>, still need <b>{formatDuffs(view.remainingDuffs)}</b>. Send the rest to the same address; the QR code asks
                 for just that.
+              </p>
+            ) : seenDuffs > 0n ? (
+              <p data-testid="enough">
+                Received <b>{formatDuffs(seenDuffs)}</b>: that is enough. Nothing more to send.
               </p>
             ) : (
               <p>
@@ -163,10 +173,22 @@ export function FundingPanel(p: FundingPanelProps) {
 }
 
 /** A lock Platform can never register (permanent: no retry). A create's lock can still top up an existing identity. */
-function TooSmall({ error, offerTopUp, problem, onTopUp }: { error: LockTooSmallError; offerTopUp: boolean; problem: string | null; onTopUp(identityId: string): void }) {
+function TooSmall(p: { error: LockTooSmallError; offerTopUp: boolean; wallet: SeedWallet | null; problem: string | null; initialId: string; onTopUp(identityId: string): void }) {
+  const { error, offerTopUp, problem, onTopUp } = p;
+  const { platform } = useAuth();
   const [open, setOpen] = useState(!!problem);
-  const [id, setId] = useState('');
+  const [id, setId] = useState(p.initialId);
   const [bad, setBad] = useState(false);
+  // This phrase's own identities: one click, no id to copy (and no stranger's id by mistake).
+  const [mine, setMine] = useState<FoundIdentity[]>([]);
+  useEffect(() => {
+    if (!offerTopUp || !p.wallet) return;
+    let live = true;
+    platform()
+      .then((port) => discoverIdentities(p.wallet!, port))
+      .then((f) => live && setMine(f), () => {});
+    return () => void (live = false);
+  }, [offerTopUp, p.wallet, platform]);
   const submit = (e: FormEvent) => {
     e.preventDefault();
     const v = id.trim();
@@ -180,6 +202,15 @@ function TooSmall({ error, offerTopUp, problem, onTopUp }: { error: LockTooSmall
   return (
     <div className="auth-error" role="alert" data-testid="lock-too-small">
       <p>{error.message}</p>
+      {offerTopUp && mine.length > 0 && (
+        <div className="form-actions">
+          {mine.map((f) => (
+            <button key={f.identityId} type="button" className="btn" onClick={() => onTopUp(f.identityId)} data-testid="recover-mine">
+              Top up this phrase's identity #{f.identityIndex} ({f.identityId.slice(0, 8)}…)
+            </button>
+          ))}
+        </div>
+      )}
       {offerTopUp &&
         (open ? (
           <form className="form" onSubmit={submit}>
@@ -201,7 +232,7 @@ function TooSmall({ error, offerTopUp, problem, onTopUp }: { error: LockTooSmall
           </form>
         ) : (
           <button type="button" className="btn" onClick={() => setOpen(true)}>
-            Use these funds to top up an existing identity
+            Use these funds to top up {mine.length ? 'another' : 'an existing'} identity
           </button>
         ))}
     </div>

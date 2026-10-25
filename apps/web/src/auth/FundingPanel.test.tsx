@@ -10,12 +10,17 @@ let script: (o: { onUpdate(v: FundingView): void; recoverInto?: string }) => Pro
 vi.mock('@govhub/auth', async (orig) => ({
   ...(await orig<typeof import('@govhub/auth')>()),
   runFunding: (o: never) => (runs.push(o), script(o)),
+  discoverIdentities: async () => [{ identityId: TARGET, identityIndex: 1 }],
 }));
-vi.mock('./context.tsx', () => ({ useAuth: () => ({ dapi: () => ({}), platform: async () => ({}), store: {} }) }));
+const closeSheet = vi.fn();
+vi.mock('./context.tsx', () => {
+  const auth = { dapi: () => ({}), platform: async () => ({}), store: {}, closeSheet: () => closeSheet() };
+  return { useAuth: () => auth };
+});
 const { FundingPanel } = await import('./FundingPanel.tsx');
 
 const ADDRESS = 'yiKBLWNurnxpqgcQhr7r1uUxWd1nGzsN2e';
-const TARGET = '8GqCCpTFpgPREMUTqHESkuDMvkrfwBEd45fVeLUEYKYL';
+const { TARGET } = vi.hoisted(() => ({ TARGET: '8GqCCpTFpgPREMUTqHESkuDMvkrfwBEd45fVeLUEYKYL' }));
 const view = (v: Partial<FundingView>): FundingView => ({
   state: 'awaiting-deposit', address: ADDRESS, uri: `dash:${ADDRESS}?amount=0.00224`, minDuffs: 224_000, remainingDuffs: 224_000n, receivedDuffs: 0n, pendingDuffs: 0n, lateDuffs: 0n,
   depositTxids: [], isLocked: false, ...v,
@@ -48,6 +53,17 @@ describe('D-032: underpayment', () => {
   });
 });
 
+describe('D-032: enough received', () => {
+  it('says nothing more is needed while the payment confirms', async () => {
+    script = async (o) => (o.onUpdate(view({ pendingDuffs: 224_000n, remainingDuffs: 0n, uri: `dash:${ADDRESS}` })), never());
+    const r = await render(<FundingPanel kind="create" wallet={null} identityIndex={0} onDone={() => {}} />);
+    await flush();
+    expect(r.el.querySelector('[data-testid="enough"]')!.textContent).toMatch(/Received 0\.00224 DASH: that is enough/);
+    expect(r.el.textContent).not.toMatch(/Send at least/);
+    await r.unmount();
+  });
+});
+
 describe('D-006: lock too small', () => {
   it('is final: no "Try again", no "Retry continues"; the lock tops up an existing identity instead', async () => {
     const onDone = vi.fn();
@@ -75,12 +91,32 @@ describe('D-006: lock too small', () => {
     await flush();
     expect(runs.map((x) => x.recoverInto)).toEqual([undefined, unknown, undefined]);
     expect(r.el.textContent).toContain(`There is no identity ${unknown}`);
+    expect(r.el.querySelector<HTMLInputElement>('[data-testid="recover-identity"]')!.value).toBe(unknown); // kept to correct
     await type(r.el.querySelector<HTMLInputElement>('[data-testid="recover-identity"]')!, TARGET);
     await click(button(r.el, /Top up this identity/));
     await flush();
     expect(runs.at(-1)!.recoverInto).toBe(TARGET);
     expect(r.el.querySelector('[data-testid="recovered"]')!.textContent).toContain(TARGET);
     expect(onDone).not.toHaveBeenCalled(); // never signs in as the identity that was never created
+    await click(button(r.el, /Close/));
+    expect(closeSheet).toHaveBeenCalled();
+    await r.unmount();
+  });
+
+  it("offers this phrase's own identities as one-click targets", async () => {
+    script = async (o) => {
+      if (!o.recoverInto) throw new LockTooSmallError('create', 209_646_000n, 221_500_000n);
+      return { identityId: o.recoverInto, record: { recoveredInto: o.recoverInto } };
+    };
+    const r = await render(<FundingPanel kind="create" wallet={{} as never} identityIndex={0} onDone={() => {}} />);
+    await flush();
+    await flush();
+    const b = r.el.querySelector<HTMLButtonElement>('[data-testid="recover-mine"]')!;
+    expect(b.textContent).toMatch(/identity #1/);
+    await click(b);
+    await flush();
+    expect(runs.at(-1)!.recoverInto).toBe(TARGET);
+    expect(r.el.querySelector('[data-testid="recovered"]')).not.toBeNull();
     await r.unmount();
   });
 

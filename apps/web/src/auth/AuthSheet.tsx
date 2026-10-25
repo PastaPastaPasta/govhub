@@ -2,7 +2,7 @@
 // signed-in views reached from the account menu (top-up, passkeys). Secrets are held in component state only while a view needs
 // them; the session takes ownership of the seed when sign-in completes, and closing the sheet drops the rest.
 import {
-  addressOf, discardFunding, discoverIdentities, generatePhrase, isValidPhrase, localPasskeys, MIN_CREATE_DEPOSIT_DUFFS, MIN_TOPUP_DEPOSIT_DUFFS, nextTopUpIndex, normalizePhrase,
+  addressOf, discardFunding, discoverIdentities, generatePhrase, nextCreateIndex, isValidPhrase, localPasskeys, MIN_CREATE_DEPOSIT_DUFFS, MIN_TOPUP_DEPOSIT_DUFFS, nextTopUpIndex, normalizePhrase,
   parseVoucher, pendingFundings, PhraseError, redeemVoucher, registrationFundingPath, SeedWallet, signInWithKey, signInWithSeed, toBase64, wipe, type FoundIdentity, type FundingRecord,
   type PhraseLength,
 } from '@govhub/auth';
@@ -415,7 +415,7 @@ function pasteOneLine(set: (v: string) => void) {
 export function SecretField(p: { label: string; what: string; value: string; onChange(v: string): void; testId: string; placeholder?: string; disabled?: boolean }) {
   const [shown, setShown] = useState(false);
   const common = {
-    value: p.value, placeholder: p.placeholder, disabled: p.disabled, spellCheck: false, autoComplete: 'off', autoCapitalize: 'none', 'data-testid': p.testId, 'data-masked': !shown,
+    value: p.value, placeholder: p.placeholder, disabled: p.disabled, spellCheck: false, autoComplete: 'off', autoCapitalize: 'none', autoCorrect: 'off', 'data-testid': p.testId, 'data-masked': !shown,
   };
   return (
     <div className="secret-field">
@@ -441,7 +441,7 @@ function PhraseSignIn() {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [state, setState] = useState<{ phrase: string; found: FoundIdentity[]; resume?: FundingRecord } | null>(null);
+  const [state, setState] = useState<{ phrase: string; found: FoundIdentity[]; resume?: FundingRecord; createIndex?: number } | null>(null);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -467,7 +467,8 @@ function PhraseSignIn() {
         closeSheet();
         return;
       }
-      setState({ phrase, found });
+      // a new identity skips an index whose payment was used to top up another identity
+      setState({ phrase, found, createIndex: found.length ? undefined : nextCreateIndex(store, wallet) });
     } catch (err) {
       setError(errorText(err));
     } finally {
@@ -494,7 +495,7 @@ function PhraseSignIn() {
     return (
       <div>
         <p>This phrase has no account on Dash Platform ({network}) yet. You can create one now.</p>
-        <FundNewIdentity phrase={state.phrase} identityIndex={0} />
+        <FundNewIdentity phrase={state.phrase} identityIndex={state.createIndex ?? 0} />
       </div>
     );
   }
