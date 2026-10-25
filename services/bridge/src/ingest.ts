@@ -34,6 +34,8 @@ export class Ingestor {
   /** Set by the bridge from `mnsync status` (IsBlockchainSynced). */
   chainSynced = false;
   stats: IngestStats = { objectsNew: 0, votesNew: 0, votesDuplicate: 0, badMessages: 0 };
+  /** Called after a vote that was not archived before arrived over ZMQ (the bridge schedules a live refresh). */
+  onNewVote: (() => void) | null = null;
   private verifyScheduled = false;
   private snapshotInFlight: Promise<MnList | null> | null = null;
   private lastSnapshotHeight = 0;
@@ -58,8 +60,9 @@ export class Ingestor {
           this.badMessage(m, e);
           return;
         }
-        this.archiveVote(v, 'zmq', this.height, m.receivedAt);
+        const isNew = this.archiveVote(v, 'zmq', this.height, m.receivedAt);
         this.scheduleVerify();
+        if (isNew) this.onNewVote?.();
         return;
       }
       case 'rawgovernanceobject': {
@@ -286,6 +289,20 @@ export class Ingestor {
       this.tipHash = await this.rpc.getBlockHash(h);
     }
     return this.height;
+  }
+
+  /**
+   * Makes the latest MN-list snapshot count as read now, so votes that arrived since can be decided without waiting for a block.
+   * Only when Core's tip is still the block it was taken at (same height and hash): the list in force has not changed, so it is
+   * the list Core used for those votes. Returns false when the tip moved (the block path takes a new snapshot then).
+   */
+  async freshenSnapshot(): Promise<boolean> {
+    const snap = latestSnapshot(this.db);
+    if (!snap) return false;
+    const tip = await this.rpc.getBlockCount();
+    if (tip !== snap.height || (await this.rpc.getBlockHash(tip)) !== snap.blockHash) return false;
+    this.db.prepare('UPDATE mn_snapshots SET taken_at = ? WHERE height = ? AND taken_at < ?').run(nowS(), snap.height, nowS());
+    return true;
   }
 
   /** Takes an MN-list snapshot at `height` unless one was taken at that height already. */

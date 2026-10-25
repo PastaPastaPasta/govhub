@@ -20,7 +20,8 @@ export const GOV_INFO: GovernanceInfo = {
   governancebudget: 6828.2637816,
 };
 
-export async function fixtureBridge(env: Record<string, string> = {}): Promise<Bridge> {
+/** `withhold`: vote hashes NOT archived (a test delivers them later, e.g. over ZMQ). */
+export async function fixtureBridge(env: Record<string, string> = {}, withhold: ReadonlySet<string> = new Set()): Promise<Bridge> {
   const vf = votesFixture();
   const of = objectsFixture();
   const { db } = archiveWithList(vf);
@@ -35,7 +36,11 @@ export async function fixtureBridge(env: Record<string, string> = {}): Promise<B
     b.ingest.archiveObject(parseRawGovObject(hexToBytes(o.rawHex)), 'zmq', vf.mnList.height - 10, FIXTURE_NOW - 1000);
     await b.ingest.checkCollateral(o.hash);
   }
-  for (const p of vf.proposals) for (const v of p.votes) b.ingest.archiveVote(parseRawVote(hexToBytes(v.rawHex)), 'zmq', v.firstSeenHeight, FIXTURE_NOW - 500);
+  for (const p of vf.proposals)
+    for (const v of p.votes) {
+      const parsed = parseRawVote(hexToBytes(v.rawHex));
+      if (!withhold.has(parsed.hash)) b.ingest.archiveVote(parsed, 'zmq', v.firstSeenHeight, FIXTURE_NOW - 500);
+    }
   b.ingest.verifyPendingVotes();
   b.govInfo = GOV_INFO;
   b.nextBudgetDuffs = 682826378160;
