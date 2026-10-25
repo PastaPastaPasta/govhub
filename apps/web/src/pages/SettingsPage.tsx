@@ -21,6 +21,7 @@ import {
 } from '../config/registry.ts';
 import { cacheClear } from '../data/cache.ts';
 import { BadgeSettings } from '../badge/BadgeSettings.tsx';
+import { ThemeSwitch } from '../ui/SignIn.tsx';
 
 const lines = (s: string) => s.split(/[\s,]+/).map((x) => x.trim()).filter(Boolean);
 
@@ -39,8 +40,9 @@ function ProfileSettings({ onSwitched }: { onSwitched(text: string): void }) {
   const custom = customFields(registry);
   const p = PROFILES[registry.profile];
   return (
-    <section className="form" aria-labelledby="profile-title">
+    <section className="form" aria-labelledby="profile-title" id="network">
       <h2 id="profile-title">Network</h2>
+      <p className="small muted">Which Dash network govhub shows. Testnet is for trying things; Dev shows real mainnet proposals while govhub is being built.</p>
       <fieldset className="seg profile-switch">
         <legend className="visually-hidden">Network profile</legend>
         {PROFILE_ORDER.map((id) => {
@@ -179,6 +181,10 @@ export function SettingsPage() {
     setPortalsText(registry.forum.claimPortals.join(' '));
     if (customFields(registry).size > 0) setAdvanced(true);
   }, [registry]);
+  // /settings#network (from the header's chain status): React Router does not scroll to fragments by itself
+  useEffect(() => {
+    if (location.hash) document.getElementById(location.hash.slice(1))?.scrollIntoView();
+  }, []);
   const custom = customFields(draft);
   const isCustom = (...ks: Overridable[]) => ks.some((k) => custom.has(k));
 
@@ -208,11 +214,19 @@ export function SettingsPage() {
   };
 
   return (
-    <section className="settings list-section" aria-labelledby="settings-title">
+    <section className="settings page-narrow" aria-labelledby="settings-title">
       <h1 id="settings-title">Settings</h1>
-      <p className="muted">Every backend govhub uses can be replaced. Settings stay in this browser.</p>
+      <p className="muted">Settings stay in this browser.</p>
 
       <ProfileSettings onSwitched={(text) => setMsg({ kind: 'ok', text })} />
+
+      <section className="form" aria-labelledby="appearance-title">
+        <h2 id="appearance-title">Appearance</h2>
+        <ThemeSwitch />
+        <label className="check">
+          <input type="checkbox" checked={mode === 'fixtures'} onChange={(e) => setMode(e.target.checked ? 'fixtures' : 'live')} /> Show demo data (a recorded mainnet snapshot) instead of live data, in this tab
+        </label>
+      </section>
 
       <form
         className="form"
@@ -221,16 +235,11 @@ export function SettingsPage() {
           apply(draft, 'Saved. Data reloads with the new endpoints.');
         }}
       >
-        <fieldset>
-          <legend>Data</legend>
-          <label className="check">
-            <input type="checkbox" checked={mode === 'fixtures'} onChange={(e) => setMode(e.target.checked ? 'fixtures' : 'live')} /> Use the fixture snapshot instead of live data (this tab only)
-          </label>
-        </fieldset>
-
+        <h2 className="form-title">Servers</h2>
+        <p className="muted small">Every server govhub uses can be replaced. Each network starts with govhub's own.</p>
         <details className="advanced" open={advanced} onToggle={(e) => setAdvanced((e.target as HTMLDetailsElement).open)}>
           <summary>
-            Advanced: individual overrides <Custom on={custom.size > 0} />
+            Advanced: choose your own servers <Custom on={custom.size > 0} />
           </summary>
           <p className="muted small">Each setting starts as the {PROFILES[draft.profile].label} profile's. A setting you change here is marked custom; switching profile replaces them all.</p>
           <fieldset>

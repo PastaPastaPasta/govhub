@@ -1,11 +1,10 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { customFields, PROFILES, resolveConfigParam, type Registry } from '../config/registry.ts';
-import { formatInt } from '../lib/format.ts';
-import { ProvLegend } from '../ui/Provenance.tsx';
 import { useAuth } from '../auth/context.tsx';
 import { SessionControl } from '../ui/SignIn.tsx';
-import { useApp, type Theme } from './context.tsx';
+import { ChainShield } from '../ui/trust/ChainShield.tsx';
+import { useApp } from './context.tsx';
 
 // The sign-in sheet (BIP39 wordlist, BIP32, HPKE, tx building) loads when it is first opened.
 const AuthSheet = lazy(() => import('../auth/AuthSheet.tsx').then((m) => ({ default: m.AuthSheet })));
@@ -17,27 +16,6 @@ function LazyAuthSheet() {
       <AuthSheet />
     </Suspense>
   ) : null;
-}
-
-const THEMES: Array<{ id: Theme; label: string }> = [
-  { id: 'system', label: 'System' },
-  { id: 'light', label: 'Light' },
-  { id: 'dark', label: 'Dark' },
-];
-
-function ThemeSwitch() {
-  const { theme, setTheme } = useApp();
-  return (
-    <fieldset className="theme-switch">
-      <legend className="visually-hidden">Theme</legend>
-      {THEMES.map((t) => (
-        <label key={t.id} className={theme === t.id ? 'on' : ''}>
-          <input type="radio" name="theme" value={t.id} checked={theme === t.id} onChange={() => setTheme(t.id)} />
-          {t.label}
-        </label>
-      ))}
-    </fieldset>
-  );
 }
 
 /** `?config=` in the URL: show what it would change and let the user apply or dismiss it. */
@@ -118,10 +96,15 @@ function ModeBanner() {
   if (mode === 'fixtures') {
     return (
       <div className="banner banner-fixture" role="status">
-        <p>
-          <b>Fixture snapshot.</b> 28 real mainnet proposals as Core saw them at block 2,560,391 on Oct 23, 2026, with recorded DAPI answers, real recorded votes for three proposals and synthetic voters for the rest, plus two synthetic proposals that fail verification. Nothing here is live.
-        </p>
-        <button type="button" className="btn" onClick={() => setMode('live')}>
+        <div className="banner-text">
+          <b>Demo data.</b> A recorded mainnet snapshot (block 2,560,391, Oct 23, 2026), with sample voters. Nothing here is live.{' '}
+          <details className="learn inline">
+            <summary>What's in it</summary>
+            28 real mainnet proposals as Core saw them, with recorded DAPI answers, real recorded votes for three proposals and synthetic voters for the
+            rest, plus two synthetic proposals that fail verification.
+          </details>
+        </div>
+        <button type="button" className="btn btn-s" onClick={() => setMode('live')}>
           Switch to live data
         </button>
       </div>
@@ -163,24 +146,10 @@ function ModeBanner() {
   );
 }
 
-/** The active profile, always visible: the full title on wide screens, the short label on narrow ones. */
-function ProfileLabel() {
-  const { registry, mode } = useApp();
-  const p = PROFILES[registry.profile];
-  const custom = customFields(registry).size > 0;
-  return (
-    <NavLink to="/settings" className="netinfo" data-testid="profile-label" title={`Core ${registry.coreNetwork}, Platform ${registry.platformNetwork}${custom ? ', with custom overrides' : ''}. Change in Settings.`}>
-      <span className="profile-title">{p.title}</span>
-      <span className="chip chip-profile">{p.label}</span>
-      {custom && <span className="chip chip-custom">custom</span>}
-      {mode === 'fixtures' && <span className="chip chip-fixture">fixtures</span>}
-    </NavLink>
-  );
-}
-
 export function Layout() {
-  const { gov, activeRows } = useApp();
-  const count = gov.active.data ? activeRows.shown.length : undefined;
+  const loc = useLocation();
+  const proposals = loc.pathname === '/' || loc.pathname.startsWith('/past') || loc.pathname.startsWith('/p/');
+  const masternodes = loc.pathname.startsWith('/masternodes') || loc.pathname.startsWith('/votes');
   return (
     <div className="shell">
       <a className="skip" href="#main">
@@ -189,25 +158,26 @@ export function Layout() {
       <header className="topbar">
         <div className="topbar-inner">
           <NavLink to="/" className="wordmark" aria-label="govhub home">
-            <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true">
-              <rect width="32" height="32" rx="6" className="wordmark-tile" />
-              <rect x="7" y="18" width="4" height="7" fill="#fff" />
-              <rect x="14" y="12" width="4" height="13" fill="#fff" />
-              <rect x="21" y="7" width="4" height="18" fill="#fff" />
+            <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true">
+              <rect width="32" height="32" rx="8" className="wordmark-tile" />
+              <rect x="7" y="18" width="4" height="7" rx="1" fill="#fff" />
+              <rect x="14" y="12" width="4" height="13" rx="1" fill="#fff" />
+              <rect x="21" y="7" width="4" height="18" rx="1" fill="#fff" />
             </svg>
-            govhub
+            <span>govhub</span>
           </NavLink>
-          <nav aria-label="Main">
-            <NavLink to="/" end>
-              Active{count !== undefined && <span className="count">{formatInt(count)}</span>}
-            </NavLink>
-            <NavLink to="/past">Past</NavLink>
-            <NavLink to="/masternodes">Masternodes</NavLink>
-            <NavLink to="/settings">Settings</NavLink>
+          <nav aria-label="Main" className="mainnav">
+            <Link to="/" className={proposals ? 'active' : undefined} aria-current={proposals ? 'page' : undefined}>
+              Proposals
+            </Link>
+            <Link to="/masternodes" className={masternodes ? 'active' : undefined} aria-current={masternodes ? 'page' : undefined}>
+              My masternodes
+            </Link>
           </nav>
-          <ProfileLabel />
-          <ThemeSwitch />
-          <SessionControl />
+          <div className="topbar-end">
+            <ChainShield />
+            <SessionControl />
+          </div>
         </div>
       </header>
       <LazyAuthSheet />
@@ -218,12 +188,9 @@ export function Layout() {
       </main>
       <footer className="footer">
         <div className="footer-inner">
-          <section aria-labelledby="legend-title">
-            <h2 id="legend-title">Where the numbers come from</h2>
-            <ProvLegend />
-          </section>
-          <p className="muted small">
-            govhub reads Dash Platform directly and checks what it can against the Core chain in your browser. Every backend is replaceable in Settings. Open source, MIT.
+          <p className="small muted">
+            govhub reads Dash Platform directly and checks proposals against the Dash chain in your browser. <Link to="/about/verification">How verification works</Link>. Every backend
+            can be replaced in <Link to="/settings">Settings</Link>. Open source, MIT.
           </p>
         </div>
       </footer>
