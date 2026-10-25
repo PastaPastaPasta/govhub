@@ -7,12 +7,12 @@ import { Link } from 'react-router-dom';
 import { useApp } from '../../app/context.tsx';
 import type { Cycle, Proposal, Sourced } from '../../data/types.ts';
 import { formatDash, formatDateTime, formatInt, formatRelative, shortHash } from '../../lib/format.ts';
-import { CHECK_LABEL, LEVEL_LABEL, VERIFIED_LINE, type CheckId, type Component } from '../../verify/aggregate.ts';
-import type { ChainReport } from '../../verify/chain.ts';
-import { checkContent, type CollateralVerdict, type StepBasis, type StepStatus } from '../../verify/collateral.ts';
+import { CHECK_LABEL, LEVEL_LABEL, VERIFIED_LINE, type CheckId, type Component, type ComponentState } from '../../verify/aggregate.ts';
+import { isLowerBound, type ChainReport } from '../../verify/chain.ts';
+import { checkContent, verdictFailure, type CollateralVerdict, type StepBasis, type StepStatus } from '../../verify/collateral.ts';
 import { budgetFact } from '../../verify/facts.ts';
 import type { RankingDone, VotesDone } from '../../verify/protocol.ts';
-import { voteVerdict, type VoteLevel } from '../../verify/verdict.ts';
+import { comparable, PLATFORM_TARGET, voteVerdict, type VoteLevel } from '../../verify/verdict.ts';
 import type { VoteRun } from '../../verify/votes.ts';
 import { Drawer } from '../Drawer.tsx';
 import type { ChainCheck, CollateralCheck } from '../hooks.ts';
@@ -32,24 +32,41 @@ interface Row {
   more?: string;
 }
 
-/** A step that passed because a node said so is drawn as "reported", not "verified". */
-function stepGlyph(s: Row): 'verified' | 'mismatch' | 'reported' | 'fixture' {
-  if (s.status === 'ok') return s.basis === 'reported' ? 'reported' : 'verified';
-  return { fail: 'mismatch', warn: 'reported', skip: 'fixture' }[s.status] as 'mismatch' | 'reported' | 'fixture';
+type Glyph = 'verified' | 'mismatch' | 'reported' | 'fixture';
+
+/**
+ * A step that passed because a node said so is drawn as "reported", not "verified"; one that failed on a node's word (an unreachable
+ * network, bytes that do not hash to the txid) as "reported" too, not as a mismatch of the proposal. Demo data is never "verified".
+ */
+function stepGlyph(s: Row, demo: boolean): Glyph {
+  switch (s.status) {
+    case 'ok':
+      if (s.basis === 'reported') return 'reported';
+      return demo ? 'fixture' : 'verified';
+    case 'fail':
+      return s.basis === 'reported' ? 'reported' : 'mismatch';
+    case 'warn':
+      return 'reported';
+    case 'skip':
+      return 'fixture';
+  }
 }
 
-function Steps({ steps }: { steps: Row[] }) {
+function Steps({ steps, demo }: { steps: Row[]; demo: boolean }) {
   const more = steps.filter((s) => s.more);
   return (
     <>
       <ol className="steps">
-        {steps.map((s) => (
-          <li key={s.id} className={`step step-${s.status}`} data-step={s.id} data-status={s.status} data-basis={s.basis ?? (s.status === 'ok' ? 'verified' : 'reported')}>
-            <ProvGlyph kind={stepGlyph(s)} />
+        {steps.map((s) => {
+          const glyph = stepGlyph(s, demo);
+          return (
+          <li key={s.id} className={`step step-${s.status}`} data-step={s.id} data-status={s.status} data-basis={s.basis ?? (glyph === 'verified' ? 'verified' : 'reported')}>
+            <ProvGlyph kind={glyph} />
             <span className="step-label">{s.label}</span>
             <span className="step-detail">{s.detail}</span>
           </li>
-        ))}
+          );
+        })}
       </ol>
       {more.length > 0 && <How rows={more.map((s) => [s.label, s.more!])} />}
     </>
@@ -91,7 +108,7 @@ function trustRow(a: Anchor): Row {
     id: 'trust', status: 'ok', label: 'Trust root',
     detail: `the ChainLock quorums of the pinned checkpoint at block ${n(tr.checkpoint.height)}, plus BLS`,
     more: tr.proofBytes === 0
-      ? `the ChainLock on block ${n(tr.from.height)}, which this browser proved from that checkpoint earlier with a Dash Core v24 quorum proof (DIP 175); no newer one was available yet. No proof of work involved`
+      ? `the ChainLock on block ${n(tr.from.height)}, which this browser proved from that checkpoint earlier with a Dash Core v24 quorum proof (DIP 175); ${tr.newerUnavailable ? `no newer proof could be fetched (${tr.newerUnavailable})` : 'no newer one was available yet'}. No proof of work involved`
       : `a Dash Core v24 quorum proof (DIP 175) from ${tr.source} (untrusted: the proof authenticates itself) ${start}: ${n(tr.links)} ChainLock quorum handoffs, each a BLS signature by a quorum already trusted on the block that mined the next one, ${(tr.proofBytes / 1024).toFixed(1)} KB, verified in WebAssembly by Dash Core's own rules. No proof of work involved`,
   };
 }
@@ -122,7 +139,7 @@ function chainRows(r: ChainReport, cycle: Cycle | null, nowS: number): Row[] {
     chainRow(a),
     {
       id: 'chainlock', status: 'ok', label: 'ChainLock',
-      detail: `block ${n(a.chainLock.height)} and everything below it are final`,
+      detail: a.weak ? `block ${n(a.chainLock.height)} is ChainLocked, on a chain proof of work does not secure here` : `block ${n(a.chainLock.height)} and everything below it are final`,
       more: a.trust.kind === 'quorum-proof'
         ? `BLS signature verified by the quorum proof from the checkpoint; consistent with Core's quorum selection: ${selected}`
         : `BLS signature of ${selected}`,
@@ -140,7 +157,7 @@ function chainRows(r: ChainReport, cycle: Cycle | null, nowS: number): Row[] {
     {
       id: 'schedule', status: 'ok', label: 'Next superblock',
       detail: `block ${n(s.next)}, ${formatRelative(s.nextEstTime, nowS)} (estimate); voting deadline block ${n(s.votingDeadline)}${s.inMaturityWindow ? ' (passed)' : ''}`,
-      more: `heights follow from the superblock cycle and maturity window at verified block ${n(s.tip)}; times assume 2.62 minutes per block, as Core's own estimate does`,
+      more: `heights follow from the superblock cycle and maturity window at ${a.weak ? 'checked' : 'verified'} block ${n(s.tip)}; times assume 2.62 minutes per block, as Core's own estimate does`,
     },
     {
       id: 'budget', status: budget.ok === false ? 'warn' : 'ok', label: 'Budget',
@@ -150,19 +167,21 @@ function chainRows(r: ChainReport, cycle: Cycle | null, nowS: number): Row[] {
   ];
   const p = r.payments;
   // a chain proof of work does not protect (testnet) gives consistent facts, not secure ones
-  const done = (rs: Row[]) =>
-    a.weak ? rs.map((x) => (x.basis === 'reported' ? x : { ...x, basis: 'reported' as const, more: `${x.more ? `${x.more}; ` : ''}not secure: ${a.weak}` })) : rs;
+  const weaken = (x: Row, weak: string | null | undefined): Row => (!weak || x.basis === 'reported' ? x : { ...x, basis: 'reported', more: `${x.more ? `${x.more}; ` : ''}not secure: ${weak}` });
+  // the payments run anchors on its own: its own chain decides its row too
+  const done = (rs: Row[]) => rs.map((x) => weaken(weaken(x, a.weak), x.id === 'payments' ? p?.anchor?.weak : null));
   if (p) {
+    const partial = isLowerBound(p);
     rows.push({
-      id: 'payments', status: p.unread.length || p.ambiguous.length ? 'warn' : 'ok', basis: p.unread.length || p.ambiguous.length || p.othersComplete === false ? 'reported' : 'verified', label: 'Payments made',
-      detail: `${n(p.paid.length)}${p.unread.length || p.ambiguous.length ? ' or more' : ''}${p.paid.length ? ` (superblock${p.paid.length > 1 ? 's' : ''} ${p.paid.map((x) => n(x.height)).join(', ')})` : ''}; ${n(p.remainingEstimate)} more possible (estimate)`,
-      more: `${n(p.checked.length)} superblocks in the payment window from the collateral's block to the verified tip read from their coinbases, each block proven to be the verified one${p.unread.length ? `; not read: ${p.unread.map((u) => `${n(u.height)} (${u.error})`).join(', ')}` : ''}${p.ambiguous.length ? `; payments another proposal with the same address and amount could account for: ${p.ambiguous.map((x) => n(x.height)).join(', ')}` : ''}${p.othersComplete === false ? '; not every listed proposal could be read to rule out another with the same address and amount' : '; no other proposal listed on Platform pays the same address the same amount in that window'}. "More possible" counts later superblocks whose estimated time falls in the payment window`,
+      id: 'payments', status: partial ? 'warn' : 'ok', basis: partial || p.othersComplete === false ? 'reported' : 'verified', label: 'Payments made',
+      detail: `${n(p.paid.length)}${partial ? ' or more' : ''}${p.paid.length ? ` (superblock${p.paid.length > 1 ? 's' : ''} ${p.paid.map((x) => n(x.height)).join(', ')})` : ''}; ${n(p.remainingEstimate)} more possible (estimate)${p.skipped ? `; ${n(p.skipped)} superblocks of the window not read yet (the next visit continues)` : ''}`,
+      more: `${n(p.checked.length)} superblocks in the payment window from the collateral's block to the ${p.anchor?.weak || a.weak ? 'checked' : 'verified'} tip read from their coinbases, each block proven to be the ${p.anchor?.weak || a.weak ? 'checked' : 'verified'} one (read once, then cached in this browser)${p.unread.length ? `; not read: ${p.unread.map((u) => `${n(u.height)} (${u.error})`).join(', ')}` : ''}${p.ambiguous.length ? `; payments another proposal with the same address and amount could account for: ${p.ambiguous.map((x) => n(x.height)).join(', ')}` : ''}${p.othersComplete === false ? '; not every listed proposal could be read to rule out another with the same address and amount' : '; no other proposal listed on Platform pays the same address the same amount in that window'}. "More possible" counts later superblocks whose estimated time falls in the payment window`,
     });
   }
   return done(rows);
 }
 
-function ChainBlock({ chain, cycle, nowS }: { chain: ChainCheck; cycle: Cycle | null; nowS: number }) {
+function ChainBlock({ chain, cycle, nowS, demo }: { chain: ChainCheck; cycle: Cycle | null; nowS: number; demo: boolean }) {
   const { report, progress, error, unavailable } = chain;
   return (
     <div className="verify-block" aria-live="polite" data-testid="chain-check">
@@ -174,7 +193,9 @@ function ChainBlock({ chain, cycle, nowS }: { chain: ChainCheck; cycle: Cycle | 
               ? `Chain checked to block ${n(report.anchor.tip)}, ChainLocked ${formatRelative(report.anchor.chainLock.time, nowS)}, but not secure: ${report.anchor.weak}`
               : `Chain verified to block ${n(report.anchor.tip)}, ChainLocked ${formatRelative(report.anchor.chainLock.time, nowS)}`}
           </p>
-          <Steps steps={chainRows(report, cycle, nowS)} />
+          <Steps steps={chainRows(report, cycle, nowS)} demo={demo} />
+          {chain.payments.pending && <Pending text={chain.payments.progress || "Reading this proposal's superblock payments"} />}
+          {chain.payments.error && <p className="small muted">The proposal's payments couldn't be read: {chain.payments.error}</p>}
         </>
       ) : error ? (
         <p className="verdict verdict-partial" data-chain="error">
@@ -193,19 +214,28 @@ function ChainBlock({ chain, cycle, nowS }: { chain: ChainCheck; cycle: Cycle | 
 
 const COLLATERAL_STYLE = {
   ok: { className: 'verdict-ok', glyph: 'verified', text: 'Content matches the on-chain collateral' },
+  reported: { className: 'verdict-partial', glyph: 'reported', text: "Content matches the collateral transaction, but not every fact about it is proven (see below)" },
+  demo: { className: 'verdict-partial', glyph: 'fixture', text: 'Content matches the recorded collateral transaction (demo data, not checked against the chain)' },
   inconclusive: { className: 'verdict-partial', glyph: 'reported', text: "Couldn't fetch the collateral from the network" },
+  unconfirmed: { className: 'verdict-partial', glyph: 'reported', text: "Nodes' answers about the collateral couldn't be confirmed" },
+  height: { className: 'verdict-fail', glyph: 'mismatch', text: 'The published collateral height contradicts the verified chain' },
   fail: { className: 'verdict-fail', glyph: 'mismatch', text: 'Content does not match the on-chain collateral' },
 } as const;
 
-function collateralKind(v: CollateralVerdict): keyof typeof COLLATERAL_STYLE {
-  if (v.ok) return 'ok';
-  // an inconclusive lookup (DAPI down, or a node whose answer did not check out) says nothing about the proposal
-  return v.inconclusive ? 'inconclusive' : 'fail';
+/** The headline follows what the collateral check may claim (its trust component), never `verdict.ok` alone. */
+function collateralKind(v: CollateralVerdict, state: ComponentState, demo: boolean): keyof typeof COLLATERAL_STYLE {
+  if (v.steps.some((s) => s.id === 'height' && s.status === 'fail' && s.basis === 'verified')) return 'height';
+  if (verdictFailure(v)) return 'fail';
+  // an inconclusive lookup (DAPI down) or a node whose answer did not check out says nothing about the proposal
+  if (v.inconclusive) return 'inconclusive';
+  if (!v.ok) return 'unconfirmed';
+  if (demo) return 'demo';
+  return state.status === 'proven' ? 'ok' : 'reported';
 }
 
-function CollateralBlock({ check }: { check: CollateralCheck }) {
+function CollateralBlock({ check, state, demo }: { check: CollateralCheck; state: ComponentState; demo: boolean }) {
   const { verdict, progress, error } = check;
-  const kind = verdict && collateralKind(verdict);
+  const kind = verdict && collateralKind(verdict, state, demo);
   return (
     <div className="verify-block" data-testid="collateral-check">
       {kind ? (
@@ -214,13 +244,13 @@ function CollateralBlock({ check }: { check: CollateralCheck }) {
           {COLLATERAL_STYLE[kind].text}
         </p>
       ) : error ? (
-        <p className="verdict verdict-fail">
-          <ProvGlyph kind="mismatch" /> Collateral check could not run: {error}
+        <p className="verdict verdict-partial" data-verdict="error">
+          <ProvGlyph kind="reported" /> Collateral check could not run: {error}
         </p>
       ) : (
         <Pending text={progress || 'Checking the collateral'} />
       )}
-      {verdict && <Steps steps={verdict.steps} />}
+      {verdict && <Steps steps={verdict.steps} demo={demo} />}
       {verdict?.anchorError && <p className="small muted">The chain could not be anchored: {verdict.anchorError}</p>}
     </div>
   );
@@ -313,7 +343,7 @@ function verdictText(level: VoteLevel, verified: number, total: number, matched:
 }
 
 /** One recount: what it read, what it dropped, and the field-by-field comparison with the tallies of its height. */
-function RunResult({ run, bridge, sml }: { run: VoteRun; bridge: string; sml: VotesDone['sml'] }) {
+function RunResult({ run, bridge, sml, proven, demo }: { run: VoteRun; bridge: string; sml: VotesDone['sml']; proven: boolean; demo: boolean }) {
   const r = run.result;
   const problems = Object.entries(r.problems).filter(([, n]) => n > 0);
   return (
@@ -358,9 +388,11 @@ function RunResult({ run, bridge, sml }: { run: VoteRun; bridge: string; sml: Vo
                 <td className="r">{typeof c.computed === 'number' ? formatInt(c.computed) : shortHash(c.computed, 6)}</td>
                 {r.targets.map((t) => {
                   const tc = t.compare[i]!;
+                  // a matching field is "verified" only for the tally the vote check proved; elsewhere it is a match on someone's word
+                  const match: Glyph = demo ? 'fixture' : proven && t.name === PLATFORM_TARGET && r.keysFrom === 'sml' ? 'verified' : 'reported';
                   return (
                     <td key={t.name} className={`r${tc.ok ? '' : ' bad'}`}>
-                      {typeof tc.expected === 'number' ? formatInt(tc.expected) : shortHash(tc.expected || '(none)', 6)} <ProvGlyph kind={tc.ok ? 'verified' : 'mismatch'} />
+                      {typeof tc.expected === 'number' ? formatInt(tc.expected) : shortHash(tc.expected || '(none)', 6)} <ProvGlyph kind={tc.ok ? match : 'mismatch'} />
                       <span className="visually-hidden">{tc.ok ? 'matches' : 'differs'}</span>
                     </td>
                   );
@@ -396,7 +428,7 @@ function VotesResult({ done, fixtures, proven }: { done: VotesDone; fixtures: bo
   // The run that decided the headline: the one holding the matching tally, else the first.
   const lead =
     done.runs.find((run) => run.result.targets.some((t) => t === vv.matched)) ??
-    done.runs.find((run) => run.result.targets.some((t) => !t.matches && t.asOfHeight === run.votesAsOf)) ??
+    done.runs.find((run) => run.result.targets.some((t) => !t.matches && comparable(run, t))) ??
     done.runs[0]!;
   return (
     <div className="votes-result" data-votes={vv.level}>
@@ -407,15 +439,27 @@ function VotesResult({ done, fixtures, proven }: { done: VotesDone; fixtures: bo
           : verdictText(vv.level, lead.result.verified, lead.result.total, vv.matched?.name, done.origin, fixtures, lead.result.smlUnconfirmed, done.sml?.weak ?? null)}
       </p>
       {done.runs.map((run, i) => (
-        <RunResult key={i} run={run} bridge={done.bridge} sml={done.sml} />
+        <RunResult key={i} run={run} bridge={done.bridge} sml={done.sml} proven={proven} demo={fixtures} />
       ))}
     </div>
   );
 }
 
-const STATE_GLYPH: Record<Component['state']['status'], 'verified' | 'reported' | 'mismatch' | 'fixture'> = {
-  proven: 'verified', reported: 'reported', error: 'reported', failed: 'mismatch', pending: 'fixture',
-};
+/** Sources that contradict each other show as a mismatch; demo data never shows as proven. */
+function stateGlyph(s: ComponentState, demo: boolean): Glyph {
+  switch (s.status) {
+    case 'proven':
+      return demo ? 'fixture' : 'verified';
+    case 'error':
+      return s.mismatch ? 'mismatch' : 'reported';
+    case 'reported':
+      return 'reported';
+    case 'failed':
+      return 'mismatch';
+    case 'pending':
+      return 'fixture';
+  }
+}
 
 function checkLine(s: Component['state']): string {
   switch (s.status) {
@@ -428,13 +472,13 @@ function checkLine(s: Component['state']): string {
   }
 }
 
-function CheckRow({ c, children }: { c: Component; children?: ReactNode }) {
+function CheckRow({ c, demo, children }: { c: Component; demo: boolean; children?: ReactNode }) {
   const s = c.state;
   const line = checkLine(s);
   return (
-    <li className={`check-row check-${s.status}`} data-check={c.id} data-state={s.status}>
+    <li className={`check-row check-${s.status}`} data-check={c.id} data-state={s.status} data-mismatch={s.status === 'error' && s.mismatch ? '' : undefined}>
       <div className="check-line">
-        {s.status === 'pending' ? <span className="spinner" aria-hidden="true" /> : <ProvGlyph kind={STATE_GLYPH[s.status]} />}
+        {s.status === 'pending' ? <span className="spinner" aria-hidden="true" /> : <ProvGlyph kind={stateGlyph(s, demo)} />}
         <div>
           <p className="check-label">{CHECK_LABEL[c.id]}</p>
           <p className="check-text">{line}</p>
@@ -534,6 +578,7 @@ export function VerificationDrawer({ sp, trust, cycle, open, onClose }: { sp: So
   const bridge = source.bridgeDescriptor();
   const bridgeBase = bridge?.kind === 'http' ? bridge.base : null;
   const contentSteps = useMemo(() => checkContent(p).steps, [p]);
+  const demo = mode === 'fixtures';
   return (
     <Drawer open={open} onClose={onClose} title="How do we know?" testId="verify-drawer">
       <section className={`drawer-verdict trust-${a.level}`} aria-live="polite" data-testid="drawer-verdict" data-trust={a.level}>
@@ -551,17 +596,17 @@ export function VerificationDrawer({ sp, trust, cycle, open, onClose }: { sp: So
       </p>
 
       <ol className="checks" data-testid="checks">
-        <CheckRow c={byId(a.components, 'content')}>
-          <Steps steps={contentSteps} />
+        <CheckRow c={byId(a.components, 'content')} demo={demo}>
+          <Steps steps={contentSteps} demo={demo} />
         </CheckRow>
-        <CheckRow c={byId(a.components, 'collateral')}>
-          <CollateralBlock check={trust.collateral} />
+        <CheckRow c={byId(a.components, 'collateral')} demo={demo}>
+          <CollateralBlock check={trust.collateral} state={byId(a.components, 'collateral').state} demo={demo} />
         </CheckRow>
-        <CheckRow c={byId(a.components, 'chain')}>
-          <ChainBlock chain={trust.chain} cycle={cycle} nowS={source.now()} />
+        <CheckRow c={byId(a.components, 'chain')} demo={demo}>
+          <ChainBlock chain={trust.chain} cycle={cycle} nowS={source.now()} demo={demo} />
         </CheckRow>
-        <CheckRow c={byId(a.components, 'votes')} />
-        <CheckRow c={byId(a.components, 'funding')}>
+        <CheckRow c={byId(a.components, 'votes')} demo={demo} />
+        <CheckRow c={byId(a.components, 'funding')} demo={demo}>
           {trust.ranking?.result ? (
             <div data-testid="ranking-check">
               <RankingBlock done={trust.ranking.result} govHash={p.govHash} />
@@ -586,7 +631,7 @@ export function VerificationDrawer({ sp, trust, cycle, open, onClose }: { sp: So
             Signed votes come from a bridge, because DAPI has no governance calls. <Link to="/settings">Add a bridge in Settings</Link> to recount them.
           </p>
         ) : trust.votes.result ? (
-          <VotesResult done={trust.votes.result} fixtures={mode === 'fixtures'} proven={byId(a.components, 'votes').state.status === 'proven'} />
+          <VotesResult done={trust.votes.result} fixtures={demo} proven={!demo && byId(a.components, 'votes').state.status === 'proven'} />
         ) : trust.votes.error ? (
           <p className="error small">The votes couldn't be recounted: {trust.votes.error}</p>
         ) : (

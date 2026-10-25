@@ -1,6 +1,6 @@
 // Core data over DAPI, through @govhub/dapi: node pool with failover (nodes from the user's quorum-service URL or a
 // static list), the collateral transaction with its proof, and the agreed masternode list.
-import { AllNodesFailedError, createDapi, VerificationError, type AnchoredChain, type Dapi, type DapiOptions, type VerifiedTransaction } from '@govhub/dapi';
+import { AllNodesFailedError, createDapi, GrpcError, VerificationError, type AnchoredChain, type Dapi, type DapiOptions, type VerifiedTransaction } from '@govhub/dapi';
 import type { Registry } from '../config/registry.ts';
 import type { CoreNetwork } from './types.ts';
 import type { TxLookup } from '../verify/collateral.ts';
@@ -30,6 +30,9 @@ export function createWebDapi(cfg: DapiConfig, verifiers?: DapiOptions['verifier
   return createDapi({ network: cfg.network, ...source, ...(verifiers ? { verifiers } : {}) });
 }
 
+/** grpc-status NOT_FOUND. */
+const NOT_FOUND = 5;
+
 const isAbort = (e: unknown): boolean => (e as { name?: string } | null)?.name === 'AbortError';
 
 /** A node's answer contradicted itself (wrong bytes, tx not in its block, bad coinbase height...): evidence of a lying node, not of a flaky one. */
@@ -49,15 +52,19 @@ async function claimedTransaction(dapi: Dapi, txid: string, note: string): Promi
   };
 }
 
-/** A second node's answer for the same transaction, for lookups whose block inclusion is not proven. */
-async function secondOpinion(dapi: Dapi, txid: string, first: TxLookup): Promise<TxLookup['second']> {
+/**
+ * A second node's answer for the same transaction, for lookups whose block inclusion is not proven. NOT_FOUND is an answer (the
+ * node contradicts the first one); only a node that could not be asked (unreachable, timeout) gives none.
+ */
+export async function secondOpinion(dapi: Pick<Dapi, 'pool' | 'core'>, txid: string, first: Pick<TxLookup, 'node' | 'raw'>): Promise<TxLookup['second']> {
   const [n] = dapi.pool.pick(1, [first.node]);
   if (!n) return null;
   try {
     dapi.pool.charge(n);
     const t = await dapi.core(n).getTransaction(txid);
     return { node: n, height: t.height, sameBytes: t.raw.length === first.raw.length && t.raw.every((b, i) => b === first.raw[i]) };
-  } catch {
+  } catch (e) {
+    if (e instanceof GrpcError && e.code === NOT_FOUND) return { node: n, height: 0, sameBytes: false, notFound: true };
     return null;
   }
 }

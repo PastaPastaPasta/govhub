@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type DependencyList 
 import { useApp, type Load } from '../app/context.tsx';
 import type { Proposal } from '../data/types.ts';
 import { errText } from '../lib/format.ts';
-import type { ChainReport } from '../verify/chain.ts';
+import type { ChainReport, PaymentsFact } from '../verify/chain.ts';
 import { runVerification } from '../verify/client.ts';
 import type { CollateralVerdict } from '../verify/collateral.ts';
 
@@ -95,8 +95,12 @@ export type CollateralCheck = ReturnType<typeof useCollateralCheck>;
 
 /**
  * Chain facts for the proposal page (threshold, superblock schedule and budget, payments), once the collateral check has placed the
- * collateral in the verified chain. Live DAPI only: recorded data has no header chain.
+ * collateral in the verified chain. Live DAPI only: recorded data has no header chain. The anchor, threshold and schedule come first;
+ * the payments (a scan of the proposal's superblocks, bounded per run) follow in their own request and are merged into `report`.
  */
+/** Rounds of payment reads per page visit (about 33 days of testnet superblocks); the rest is left for the next visit. */
+const PAYMENT_ROUNDS = 8;
+
 export function useChainReport(p: Proposal | undefined, verdict: CollateralVerdict | null, nonce = 0) {
   const { source, gov } = useApp();
   // only for a proposal whose content and collateral checked out: payments are matched by its committed address and amount
@@ -105,34 +109,67 @@ export function useChainReport(p: Proposal | undefined, verdict: CollateralVerdi
   // payments to the same address and amount may belong to another proposal: wait for the active list, then add past ones
   const activeReady = !gov.active.loading;
   // eslint-disable-next-line react-hooks/exhaustive-deps -- a new identity per run
-  const run = useMemo(() => ({}), [p, source, from, live, activeReady, nonce]);
-  const [report, setReport, clearReport] = useRunResult<ChainReport>(run);
+  const run = useMemo(() => ({}), [p, source, from, live, nonce]);
+  const [chain, setChain, clearChain] = useRunResult<ChainReport>(run);
   const [error, setError, clearError] = useRunResult<string>(run);
   const [progress, setProgress] = useState('');
   useEffect(() => {
-    if (!p || !live || from === null || !activeReady) return;
+    if (!p || !live || from === null) return;
     let on = true;
-    clearReport();
+    clearChain();
     clearError();
-    void (async () => {
-      const { others, complete } = await listedProposals(source, gov.active, p);
-      const twins = others.filter((o) => o.govHash !== p.govHash).map(({ govHash, paymentAddress, paymentAmount, startEpoch, endEpoch }) => ({ govHash, paymentAddress, paymentAmount, startEpoch, endEpoch }));
-      return runVerification({ kind: 'chain', proposal: p, from, others: twins, othersComplete: complete, dapi: source.dapiDescriptor(), network: source.coreNetwork, now: source.now() }, (m) => on && setProgress(m));
-    })().then(
-      (r) => on && setReport(r.report),
+    runVerification({ kind: 'chain', from, dapi: source.dapiDescriptor(), network: source.coreNetwork, now: source.now() }, (m) => on && setProgress(m)).then(
+      (r) => on && setChain(r.report),
       (e: Error) => on && setError(e.message),
     );
     return () => {
       on = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run stands for its inputs
+  }, [run]);
+
+  // A long window is read in rounds of MAX_SUPERBLOCK_READS blocks (each cached): the next round starts on its own while the last one
+  // made progress, up to PAYMENT_ROUNDS per visit; meanwhile the funding check stays "checking".
+  const [round, setRound] = useState<{ run: object; n: number; skipped: number | null }>({ run, n: 0, skipped: null });
+  const n = round.run === run ? round.n : 0;
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- a new identity per run
+  const payRun = useMemo(() => ({}), [run, activeReady, !!chain, n]);
+  const [paid, setPaid] = useRunResult<PaymentsFact>(payRun);
+  useEffect(() => {
+    if (!paid?.skipped || n + 1 >= PAYMENT_ROUNDS) return;
+    const before = round.run === run ? round.skipped : null;
+    if (before !== null && paid.skipped >= before) return; // no progress (no cache): stop
+    setRound({ run, n: n + 1, skipped: paid.skipped });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per result
+  }, [paid]);
+  const [payError, setPayError] = useRunResult<string>(payRun);
+  const [payProgress, setPayProgress] = useState('');
+  useEffect(() => {
+    if (!p || !chain || from === null || !activeReady) return;
+    let on = true;
+    void (async () => {
+      const { others, complete } = await listedProposals(source, gov.active, p);
+      const twins = others.filter((o) => o.govHash !== p.govHash).map(({ govHash, paymentAddress, paymentAmount, startEpoch, endEpoch }) => ({ govHash, paymentAddress, paymentAmount, startEpoch, endEpoch }));
+      return runVerification({ kind: 'payments', proposal: p, from, others: twins, othersComplete: complete, dapi: source.dapiDescriptor(), network: source.coreNetwork, now: source.now() }, (m) => on && setPayProgress(m));
+    })().then(
+      (r) => on && setPaid(r.payments),
+      (e: Error) => on && setPayError(e.message),
+    );
+    return () => {
+      on = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reruns when the active list has loaded, not on every refresh of it
-  }, [p, source, from, live, activeReady, nonce]);
+  }, [payRun]);
+
+  const report = useMemo(() => (chain ? { ...chain, payments: paid } : null), [chain, paid]);
+  const more = !!paid?.skipped && n + 1 < PAYMENT_ROUNDS && (round.run !== run || round.skipped === null || paid.skipped < round.skipped);
+  const payments = { pending: !!chain && (!paid || more) && !payError, error: payError, progress: payProgress };
   const unavailable = !live
     ? "demo data can't be checked against the live chain"
     : verdict && from === null
       ? (!verdict.ok ? 'the collateral check did not pass' : (verdict.anchorError ?? 'the collateral could not be placed in the verified chain'))
       : null;
-  return { report, progress, error, unavailable };
+  return { report, progress, error, unavailable, payments };
 }
 
 /**

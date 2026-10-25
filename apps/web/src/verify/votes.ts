@@ -88,8 +88,13 @@ export interface VoteCheckResult {
 /** One recount: a vote set (at one height) checked and counted, with what it concluded about the tallies published for that height. */
 export interface VoteRun {
   result: VoteCheckResult;
-  /** Height the vote set is as of, as the bridge answered. Equals the requested `?height=` when the bridge could serve that tally's set. */
+  /** Height of the bridge's tally record whose vote set was served: at or below the requested `?height=` (the tally in force there). */
   votesAsOf: number;
+  /**
+   * The `?height=` the set was asked for, when the bridge served the set in force at that height (null: its live set, including the
+   * fallback when it no longer held that height's set). A tally at that height is then about exactly this set.
+   */
+  asked?: number | null;
   /** Height of the masternode-list snapshot the weights and keys came from. */
   mnlistHeight: number;
   /** The snapshot is the list the bridge says it built the tally from (null: not stated). A difference explains a mismatch. */
