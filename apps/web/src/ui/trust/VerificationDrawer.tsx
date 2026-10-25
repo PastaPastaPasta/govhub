@@ -157,7 +157,7 @@ function chainRows(r: ChainReport, cycle: Cycle | null, nowS: number): Row[] {
     {
       id: 'schedule', status: 'ok', label: 'Next superblock',
       detail: `block ${n(s.next)}, ${formatRelative(s.nextEstTime, nowS)} (estimate); voting deadline block ${n(s.votingDeadline)}${s.inMaturityWindow ? ' (passed)' : ''}`,
-      more: `heights follow from the superblock cycle and maturity window at verified block ${n(s.tip)}; times assume 2.62 minutes per block, as Core's own estimate does`,
+      more: `heights follow from the superblock cycle and maturity window at ${a.weak ? 'checked' : 'verified'} block ${n(s.tip)}; times assume 2.62 minutes per block, as Core's own estimate does`,
     },
     {
       id: 'budget', status: budget.ok === false ? 'warn' : 'ok', label: 'Budget',
@@ -175,7 +175,7 @@ function chainRows(r: ChainReport, cycle: Cycle | null, nowS: number): Row[] {
     rows.push({
       id: 'payments', status: partial ? 'warn' : 'ok', basis: partial || p.othersComplete === false ? 'reported' : 'verified', label: 'Payments made',
       detail: `${n(p.paid.length)}${partial ? ' or more' : ''}${p.paid.length ? ` (superblock${p.paid.length > 1 ? 's' : ''} ${p.paid.map((x) => n(x.height)).join(', ')})` : ''}; ${n(p.remainingEstimate)} more possible (estimate)${p.skipped ? `; ${n(p.skipped)} superblocks of the window not read yet (the next visit continues)` : ''}`,
-      more: `${n(p.checked.length)} superblocks in the payment window from the collateral's block to the verified tip read from their coinbases, each block proven to be the verified one (read once, then cached in this browser)${p.unread.length ? `; not read: ${p.unread.map((u) => `${n(u.height)} (${u.error})`).join(', ')}` : ''}${p.ambiguous.length ? `; payments another proposal with the same address and amount could account for: ${p.ambiguous.map((x) => n(x.height)).join(', ')}` : ''}${p.othersComplete === false ? '; not every listed proposal could be read to rule out another with the same address and amount' : '; no other proposal listed on Platform pays the same address the same amount in that window'}. "More possible" counts later superblocks whose estimated time falls in the payment window`,
+      more: `${n(p.checked.length)} superblocks in the payment window from the collateral's block to the ${p.anchor?.weak || a.weak ? 'checked' : 'verified'} tip read from their coinbases, each block proven to be the ${p.anchor?.weak || a.weak ? 'checked' : 'verified'} one (read once, then cached in this browser)${p.unread.length ? `; not read: ${p.unread.map((u) => `${n(u.height)} (${u.error})`).join(', ')}` : ''}${p.ambiguous.length ? `; payments another proposal with the same address and amount could account for: ${p.ambiguous.map((x) => n(x.height)).join(', ')}` : ''}${p.othersComplete === false ? '; not every listed proposal could be read to rule out another with the same address and amount' : '; no other proposal listed on Platform pays the same address the same amount in that window'}. "More possible" counts later superblocks whose estimated time falls in the payment window`,
     });
   }
   return done(rows);

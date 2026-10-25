@@ -225,9 +225,14 @@ test.describe('tamper (replayed Testnet session)', () => {
 
   // S1-T3.7 (D-014): the bridge's getgovernanceinfo never sets the parameters the page computes with
   test('cycle: tampered governance parameters on /v1/cycle change no parameter on the page', async ({ browser }) => {
-    const { page, r } = await open(browser, onUrl(/\/v1\/cycle/, json((o) => {
-      if (o.governance) Object.assign(o.governance, { superblockcycle: 8000, superblockmaturitywindow: 100, governanceminquorum: 500 });
-    })));
+    // the recording may not hold /v1/cycle (this build never asks for governance parameters): a lying bridge answers it anyway
+    const lie = { superblockcycle: 8000, superblockmaturitywindow: 100, governanceminquorum: 500 };
+    const { page, r } = await open(browser, (e) => {
+      if (!/\/v1\/cycle/.test(e.url)) return null;
+      const o = e.status === 200 && e.body.length ? JSON.parse(e.body.toString('utf8')) : {};
+      o.governance = { ...(o.governance ?? {}), ...lie };
+      return { status: 200, headers: { 'content-type': 'application/json' }, body: Buffer.from(JSON.stringify(o)) };
+    });
     const s = await settle(page);
     complete(r);
     expect(s.level).toBe('verified');

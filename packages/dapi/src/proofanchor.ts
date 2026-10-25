@@ -191,7 +191,7 @@ export async function anchorByProof(
   const orNull = (p: Promise<Got>, failures?: string[]) => p.catch((e: unknown) => {
     if (o.signal?.aborted) throw e;
     failures?.push((e as Error).message);
-    if (failures && e instanceof ProofUnavailableError) sourceFailures.push(...e.failures);
+    if (e instanceof ProofUnavailableError) sourceFailures.push(...e.failures);
     return null;
   });
   const attempt = (from: ProofState) => orNull(fetchProof(sources, from, 0, ctx), reasons);
@@ -210,7 +210,9 @@ export async function anchorByProof(
     if (got.proof.state.height < smlProof.height) {
       const asked = got.source ? [got.source] : sources;
       if (tries >= CATCH_UP_TRIES || asked.every((s) => (st.down.get(s.name) ?? 0) > Date.now())) {
-        throw new ProofUnavailableError(`no source has a ChainLock at the masternode list's block ${smlProof.height} yet`);
+        // a source that failed (HTTP 502, unreachable...) is said so: "not yet" alone would hide it
+        const failed = sourceFailures.length ? ` (${[...new Set(sourceFailures)].join('; ')})` : '';
+        throw new ProofUnavailableError(`no source has a ChainLock at the masternode list's block ${smlProof.height} yet${failed}`, sourceFailures);
       }
       progress(`Waiting for a ChainLock on block ${smlProof.height.toLocaleString('en-US')}`);
       await sleep(CATCH_UP_MS * ++tries, o.signal);
@@ -291,7 +293,7 @@ export async function anchorByProof(
       source: got.source?.name ?? SAVED_SOURCE,
       links: got.proof.links,
       proofBytes: got.bytes,
-      ...(got.source === null && sourceFailures.length ? { newerUnavailable: sourceFailures.join('; ') } : {}),
+      ...(got.source === null && sourceFailures.length ? { newerUnavailable: [...new Set(sourceFailures)].join('; ') } : {}),
     },
     chain: linked, tip: linked.hi, weak: null,
     chainLock: { height: top.height, blockHash: target.blockHash, quorumHash: check.quorumHash, exact: check.exact && !named, time: got.time },

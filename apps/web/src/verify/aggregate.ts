@@ -109,9 +109,14 @@ export function collateralComponent(i: { verdict: CollateralVerdict | null; erro
   if (height) return { status: 'failed', reason: `The published collateral height is wrong: ${height.detail}` };
   const definite = verdictFailure(v);
   if (definite) return { status: 'failed', reason: `The proposal doesn't match its on-chain collateral (${definite})` };
-  if (v.inconclusive) return { status: 'error', reason: "The network couldn't be reached to fetch the collateral" };
+  // the reason names what happened: an unreachable network, a node whose answer did not check out, a height only a node contradicts
+  if (v.inconclusive) {
+    const tx = v.steps.find((s) => s.id === 'tx' && s.status === 'fail');
+    return { status: 'error', reason: `The collateral couldn't be fetched and checked${tx ? ` (${tx.detail})` : ''}` };
+  }
   if (!v.ok) {
     const bad = v.steps.find((s) => s.status === 'fail');
+    if (bad?.id === 'height') return { status: 'error', reason: `The published collateral height differs from the block a node names; the chain could not be verified to settle it (${bad.detail})` };
     return { status: 'error', reason: `Nodes gave answers about the collateral that couldn't be confirmed${bad ? ` (${bad.label}: ${bad.detail})` : ''}` };
   }
   const c = v.chain;
