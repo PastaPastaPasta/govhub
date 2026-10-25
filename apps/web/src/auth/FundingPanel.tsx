@@ -1,10 +1,15 @@
 // Funding screen: QR for the one-time deposit address, live status, IS-lock, done. The address is only shown once the DAPI
 // deposit watcher is subscribed (runFunding calls onUpdate after the streams are live), because IS-locks are never replayed.
-// A create whose lock is too small for Platform (LockTooSmallError, permanent) is offered as a top-up of an existing identity instead.
-import { discoverIdentities, identifierBytes, LockTooSmallError, nextCreateIndex, runFunding, type FoundIdentity, type FundingView, type SeedWallet, type Session } from '@govhub/auth';
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+// A create whose lock can never create an account (too small for Platform, LockTooSmallError; or the phrase's identity at that index
+// already exists, KeyConflictError) is offered as a top-up of an existing identity instead. Anything else stuck has the Recover tool.
+import {
+  discoverIdentities, identifierBytes, KeyConflictError, LockTooSmallError, nextCreateIndex, runFunding, type FoundIdentity, type FundingView, type SeedWallet, type Session,
+} from '@govhub/auth';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useAuth } from './context.tsx';
+import { useLeaveWarning } from './leaveWarning.ts';
 import { Qr } from './Qr.tsx';
+import { RecoverLink } from './RecoverLink.tsx';
 import { errorText, formatDuffs } from './runtime.ts';
 
 export interface FundingPanelProps {
@@ -29,7 +34,7 @@ const STEPS: Array<{ id: FundingView['state'] | 'is'; label: string }> = [
 const ORDER: FundingView['state'][] = ['awaiting-deposit', 'locking', 'locked', 'registering', 'done'];
 
 export function FundingPanel(p: FundingPanelProps) {
-  const { dapi, platform, store, closeSheet } = useAuth();
+  const { dapi, platform, store, closeSheet, network } = useAuth();
   const [view, setView] = useState<FundingView | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [attempt, setAttempt] = useState(0);
@@ -43,6 +48,8 @@ export function FundingPanel(p: FundingPanelProps) {
   const [fresh, setFresh] = useState<number | null>(null);
   const done = useRef(p.onDone);
   done.current = p.onDone;
+  // an asset lock in flight: closing the tab now loses its IS-lock (a ChainLock proof then takes minutes)
+  useLeaveWarning(!error && !!view && (view.state === 'locking' || view.state === 'locked' || view.state === 'registering'));
 
   useEffect(() => {
     const ac = new AbortController();
@@ -59,7 +66,7 @@ export function FundingPanel(p: FundingPanelProps) {
       else done.current(r.identityId, r.record.identityIndex);
     })().catch((e) => {
       if (ac.signal.aborted) return;
-      if (recoverInto && !(e instanceof LockTooSmallError)) {
+      if (recoverInto && !(e instanceof LockTooSmallError || e instanceof KeyConflictError)) {
         // e.g. no such identity: back to the choice, with the reason
         setRecoverError(errorText(e));
         setRecoverInto(null);
@@ -87,13 +94,12 @@ export function FundingPanel(p: FundingPanelProps) {
     setLastTarget(identityId);
     setRecoverInto(identityId);
   };
-  const errorBox = error ? (
-    error instanceof LockTooSmallError ? (
-      <TooSmall error={error} offerTopUp={p.kind === 'create' && error.canTopUp} wallet={p.wallet} problem={recoverError} initialId={lastTarget} onTopUp={startRecovery} onPayAgain={payAgain} />
-    ) : (
-      <ErrorBox text={(recoverError ? `${recoverError} ` : '') + errorText(error)} retry={retry} />
-    )
-  ) : null;
+  let errorBox: ReactNode = null;
+  if (error instanceof LockTooSmallError)
+    errorBox = <TooSmall error={error} offerTopUp={p.kind === 'create' && error.canTopUp} wallet={p.wallet} problem={recoverError} initialId={lastTarget} onTopUp={startRecovery} onPayAgain={payAgain} />;
+  else if (error instanceof KeyConflictError && p.kind === 'create')
+    errorBox = <TooSmall error={error} offerTopUp wallet={p.wallet} problem={recoverError} initialId={lastTarget} onTopUp={startRecovery} />;
+  else if (error) errorBox = <ErrorBox text={(recoverError ? `${recoverError} ` : '') + errorText(error)} retry={retry} onRecover={closeSheet} />;
 
   if (fresh !== null) return <FundingPanel key={fresh} {...p} identityIndex={fresh} />;
   if (recovered) {
@@ -139,12 +145,17 @@ export function FundingPanel(p: FundingPanelProps) {
               </p>
             ) : (
               <p>
-                Send at least <b>{formatDuffs(view.minDuffs)}</b> to this one-time address. Any Dash wallet works.
+                Send at least <b>{formatDuffs(view.minDuffs)}</b> to this one-time address. Any Dash wallet works; one payment is best.
               </p>
             )}
             <p className="address" data-testid="deposit-address">
               {view.address}
             </p>
+            {network && network !== 'mainnet' && (
+              <p className="small" data-testid="deposit-network">
+                This is a <b>{network}</b> address: send {network} DASH only. A mainnet wallet refuses it.
+              </p>
+            )}
             <div className="form-actions">
               <button type="button" className="btn" onClick={() => navigator.clipboard?.writeText(view.address)}>
                 Copy address
@@ -158,7 +169,11 @@ export function FundingPanel(p: FundingPanelProps) {
                 {formatDuffs(view.pendingDuffs)} seen; it counts once InstantSend locks it or it is in a block.
               </p>
             )}
-            <p className="muted small">Everything you send is locked for Platform credits. This page is watching the network; keep it open until it finishes.</p>
+            <p className="muted small" data-testid="deposit-rules">
+              What arrives before your payment is locked becomes Platform credits; anything above the minimum stays in your account's balance. A payment that
+              arrives after that, or one too small to count, stays at this address: Settings, Recover funds, can send it to any Dash address or add it to an
+              account. This page is watching the network; keep it open until it finishes.
+            </p>
           </div>
         </div>
       )}
@@ -173,10 +188,17 @@ export function FundingPanel(p: FundingPanelProps) {
       </ol>
       {view.note && <p className="muted small" data-testid="funding-note">{view.note}</p>}
       {view.lateDuffs > 0n && (
-        <p className="notice-box" role="status">
-          {formatDuffs(view.lateDuffs)} arrived at {view.address} after the asset lock was made. It was not used and is still there; your
-          recovery phrase (or key) controls that address. Use it in a later top-up or move it with a wallet.
-        </p>
+        <div className="notice-box" role="status" data-testid="late-payment">
+          <p>
+            {formatDuffs(view.lateDuffs)} arrived at {view.address} after the asset lock was made. It was not used and is still there; only your recovery phrase
+            (or key) controls that address, and ordinary wallets don't show it.
+          </p>
+          {view.state === 'done' ? (
+            <RecoverLink onClick={closeSheet}>Recover it: send it to a Dash address or add it to an account</RecoverLink>
+          ) : (
+            <p className="small">Once this finishes, Settings, Recover funds can send it to a Dash address or add it to an account.</p>
+          )}
+        </div>
       )}
       {view.lockTxid && (
         <p className="muted small break">
@@ -189,9 +211,9 @@ export function FundingPanel(p: FundingPanelProps) {
   );
 }
 
-/** A lock Platform can never register (permanent: no retry). A create's lock can still top up an existing identity. */
+/** A lock Platform can never register as this create (permanent: no retry). It can still top up an existing identity. */
 function TooSmall(p: {
-  error: LockTooSmallError;
+  error: LockTooSmallError | KeyConflictError;
   offerTopUp: boolean;
   wallet: SeedWallet | null;
   problem: string | null;
@@ -261,7 +283,7 @@ function TooSmall(p: {
             Use these funds to top up {mine.length ? 'another' : 'an existing'} identity
           </button>
         ))}
-      {p.onPayAgain && p.error.kind === 'create' && (
+      {p.onPayAgain && p.error instanceof LockTooSmallError && p.error.kind === 'create' && (
         <button type="button" className="btn btn-quiet" onClick={p.onPayAgain} data-testid="pay-again">
           Pay again for a new account
         </button>
@@ -270,11 +292,14 @@ function TooSmall(p: {
   );
 }
 
-function ErrorBox({ text, retry }: { text: string; retry(): void }) {
+function ErrorBox({ text, retry, onRecover }: { text: string; retry(): void; onRecover(): void }) {
   return (
     <div className="auth-error" role="alert">
       <p>{text}</p>
-      <p className="muted small">Your progress is saved in this browser. Retrying continues where it stopped; nothing is paid twice.</p>
+      <p className="muted small">
+        Your progress is saved in this browser. Retrying continues where it stopped; nothing is paid twice. On another device, or if this keeps failing,{' '}
+        <RecoverLink onClick={onRecover}>Recover funds</RecoverLink> finds the payment from your recovery phrase alone.
+      </p>
       <button type="button" className="btn" onClick={retry}>
         Try again
       </button>

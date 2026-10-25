@@ -38,10 +38,15 @@ export class FakePlatform implements PlatformPort {
   async coreChainLockedHeight() {
     return 1000;
   }
-  async createIdentity(): Promise<void> {
+  /** Asset-lock outpoints (`txid:creditIndex`) Platform has used. */
+  usedLocks = new Map<string, 'used' | 'partial'>();
+  async assetLockStatus(txid: string, creditIndex: number) {
+    return this.usedLocks.get(`${txid}:${creditIndex}`) ?? 'unused';
+  }
+  async createIdentity(_o: Parameters<PlatformPort['createIdentity']>[0]): Promise<void> {
     throw new Error('not in unit tests');
   }
-  async topUpIdentity(): Promise<void> {
+  async topUpIdentity(_o: Parameters<PlatformPort['topUpIdentity']>[0]): Promise<void> {
     throw new Error('not in unit tests');
   }
   async addKeys(): Promise<void> {

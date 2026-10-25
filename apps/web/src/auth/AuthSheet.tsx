@@ -6,7 +6,7 @@ import {
   parseVoucher, pendingFundings, PhraseError, redeemVoucher, registrationFundingPath, SeedWallet, signInWithKey, signInWithSeed, toBase64, wipe, type FoundIdentity, type FundingRecord,
   type PhraseLength,
 } from '@govhub/auth';
-import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { FIXTURE_IDS } from '../data/fixtureForum.ts';
@@ -14,7 +14,11 @@ import { fixtureSession } from '../session/fixture.ts';
 import { useAuth, type SheetView } from './context.tsx';
 import { FundingPanel } from './FundingPanel.tsx';
 import { PasskeySignIn, Passkeys } from './Passkeys.tsx';
+import { RecoverLink } from './RecoverLink.tsx';
+import { SecretField } from './SecretField.tsx';
 import { errorText, formatDuffs } from './runtime.ts';
+
+export { SecretField }; // moved to its own file (the Recover tool uses it too); tests import it from here
 
 const TITLES: Record<SheetView, string> = {
   choose: 'Sign in or create an account',
@@ -117,6 +121,30 @@ function SampleIdentities() {
   );
 }
 
+/**
+ * Money this browser knows is waiting at a one-time address: a payment after the lock (any funding, finished ones too) or a lock too
+ * small for what it was made for. The Recover tool sends it anywhere or uses it; it does not need this browser's records.
+ */
+function stuckDuffs(r: FundingRecord): bigint {
+  const late = (r.lateDeposits ?? []).reduce((a, d) => a + BigInt(d.value), 0n);
+  return late + (r.state === 'registering' && lockTooSmall(r) ? BigInt(r.lock!.lockDuffs) : 0n);
+}
+
+function RecoverableNotice({ records }: { records: FundingRecord[] }) {
+  const { closeSheet } = useAuth();
+  const stuck = records.map(stuckDuffs).filter((d) => d > 0n);
+  if (!stuck.length) return null;
+  return (
+    <div className="notice-box" role="status" data-testid="recoverable">
+      <p>
+        <b>{formatDuffs(stuck.reduce((a, d) => a + d, 0n))}</b> is waiting at {stuck.length === 1 ? 'a deposit address' : 'deposit addresses'} from an earlier
+        payment (paid after an account setup or top-up, or too small for it).
+      </p>
+      <RecoverLink onClick={closeSheet}>Recover funds</RecoverLink>
+    </div>
+  );
+}
+
 function Choose() {
   const { openSheet, store, network } = useAuth();
   const { mode } = useApp();
@@ -151,7 +179,9 @@ function Choose() {
             {pending.map((r) => (
               <li key={r.key}>
                 <span className="mono-ish">{r.address}</span>
-                <span className="muted small">{r.deposits.length || r.lock ? 'payment received' : 'no payment yet'}</span>
+                <span className="muted small">
+                  {stuckDuffs(r) > 0n ? `${formatDuffs(stuckDuffs(r))} recoverable` : r.deposits.length || r.lock ? 'payment received' : 'no payment yet'}
+                </span>
                 {!r.deposits.length && !r.lock && (
                   <button
                     type="button"
@@ -174,6 +204,7 @@ function Choose() {
           </button>
         </div>
       )}
+      <RecoverableNotice records={store.list().filter((r) => r.network === network && !r.discarded)} />
       <ul className="choices">{main.map((o) => choice(o, true))}</ul>
       <p className="small muted choices-more">Other ways to sign in</p>
       <ul className="choices choices-s">{other.map((o) => choice(o, false))}</ul>
@@ -410,44 +441,6 @@ function VoucherRedeem({ wallet, identityIndex, onDone }: { wallet: SeedWallet; 
   );
 }
 
-// ---- secret fields ---------------------------------------------------------------------------------------------------------
-
-/** Masking a textarea needs -webkit-text-security; where it is missing a password input stands in while hidden. */
-const TEXT_SECURITY = typeof CSS !== 'undefined' && !!CSS.supports?.('-webkit-text-security', 'disc');
-
-/** A password input drops line breaks from a paste ("word\nword" becomes "wordword"): paste them as spaces instead. */
-function pasteOneLine(set: (v: string) => void) {
-  return (e: ClipboardEvent<HTMLInputElement>) => {
-    e.preventDefault();
-    const el = e.currentTarget;
-    const t = e.clipboardData.getData('text').replace(/\s+/g, ' ');
-    set(el.value.slice(0, el.selectionStart ?? el.value.length) + t + el.value.slice(el.selectionEnd ?? el.value.length));
-  };
-}
-
-/** A recovery phrase or voucher link: masked until "Show" (shoulder surfing, screen sharing, screenshots). */
-export function SecretField(p: { label: string; what: string; value: string; onChange(v: string): void; testId: string; placeholder?: string; disabled?: boolean }) {
-  const [shown, setShown] = useState(false);
-  const common = {
-    value: p.value, placeholder: p.placeholder, disabled: p.disabled, spellCheck: false, autoComplete: 'off', autoCapitalize: 'none', autoCorrect: 'off', 'data-testid': p.testId, 'data-masked': !shown,
-  };
-  return (
-    <div className="secret-field">
-      <label>
-        {p.label}
-        {shown || TEXT_SECURITY ? (
-          <textarea rows={3} className={shown ? undefined : 'masked'} {...common} onChange={(e) => p.onChange(e.target.value)} />
-        ) : (
-          <input type="password" {...common} onChange={(e) => p.onChange(e.target.value)} onPaste={pasteOneLine(p.onChange)} />
-        )}
-      </label>
-      <button type="button" className="btn btn-quiet" aria-pressed={shown} aria-label={`${shown ? 'Hide' : 'Show'} ${p.what}`} onClick={() => setShown((v) => !v)}>
-        {shown ? 'Hide' : 'Show'}
-      </button>
-    </div>
-  );
-}
-
 // ---- existing phrase -------------------------------------------------------------------------------------------------------
 
 function PhraseSignIn() {
@@ -636,6 +629,7 @@ function TopUp() {
   }
   return (
     <div>
+      <RecoverableNotice records={store.list().filter((r) => r.network === network && r.kind === 'topup' && r.identityId === session.identityId)} />
       <p>Add Platform credits with DASH from any wallet. {formatDuffs(MIN_TOPUP_DEPOSIT_DUFFS)} minimum; about 0.00008 DASH of it pays for the top-up itself.</p>
       <FundingPanel
         kind="topup"

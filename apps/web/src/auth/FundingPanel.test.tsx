@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // D-032: an underpayment says what came in and what is still needed, and the wallet link / QR ask for just that.
 // D-006: a lock too small for Platform is final (no "Try again"), and a create's lock can top up an existing identity instead.
-import { LockTooSmallError, type FundingView } from '@govhub/auth';
+import { KeyConflictError, LockTooSmallError, type FundingView } from '@govhub/auth';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { button, click, flush, render, type } from '../test/render.tsx';
 
@@ -15,7 +15,7 @@ vi.mock('@govhub/auth', async (orig) => ({
 }));
 const closeSheet = vi.fn();
 vi.mock('./context.tsx', () => {
-  const auth = { dapi: () => ({}), platform: async () => ({}), store: {}, closeSheet: () => closeSheet() };
+  const auth = { dapi: () => ({}), platform: async () => ({}), store: {}, network: 'testnet', closeSheet: () => closeSheet() };
   return { useAuth: () => auth };
 });
 const { FundingPanel } = await import('./FundingPanel.tsx');
@@ -145,6 +145,74 @@ describe('D-006: lock too small', () => {
     await flush();
     expect(r.el.querySelector('[data-testid="lock-too-small"]')).not.toBeNull();
     expect(r.el.querySelectorAll('button')).toHaveLength(0);
+    await r.unmount();
+  });
+});
+
+describe('stuck funds: prevention and the way out', () => {
+  it('the deposit screen says the network, the minimum, and what happens to late or too-small payments', async () => {
+    script = async (o) => (o.onUpdate(view({})), never());
+    const r = await render(<FundingPanel kind="create" wallet={null} identityIndex={0} onDone={() => {}} />);
+    await flush();
+    expect(r.el.querySelector('[data-testid="deposit-network"]')!.textContent).toMatch(/testnet address: send testnet DASH only/);
+    expect(r.el.querySelector('[data-testid="deposit-rules"]')!.textContent).toMatch(/after that, or one too small to count, stays at this address: Settings, Recover funds/);
+    await r.unmount();
+  });
+
+  it('asks before the tab closes while the asset lock is in flight, not before', async () => {
+    let push!: (v: FundingView) => void;
+    script = async (o) => ((push = o.onUpdate), o.onUpdate(view({})), never());
+    const r = await render(<FundingPanel kind="create" wallet={null} identityIndex={0} onDone={() => {}} />);
+    await flush();
+    const fire = () => {
+      const e = new Event('beforeunload', { cancelable: true });
+      dispatchEvent(e);
+      return e.defaultPrevented;
+    };
+    expect(fire()).toBe(false);
+    push(view({ state: 'locked', remainingDuffs: 0n, lockTxid: 'ab'.repeat(32) }));
+    await flush();
+    expect(fire()).toBe(true);
+    await r.unmount();
+    expect(fire()).toBe(false);
+  });
+
+  it('a payment after the lock links to Recover funds once the funding is done', async () => {
+    script = async (o) => (o.onUpdate(view({ state: 'done', remainingDuffs: 0n, lateDuffs: 50_000n })), never());
+    const r = await render(<FundingPanel kind="create" wallet={null} identityIndex={0} onDone={() => {}} />);
+    await flush();
+    const late = r.el.querySelector('[data-testid="late-payment"]')!;
+    expect(late.textContent).toMatch(/0\.0005 DASH arrived .* ordinary wallets don't show it/);
+    expect(late.querySelector('a')!.getAttribute('href')).toBe('/settings#recover');
+    await r.unmount();
+  });
+
+  it('a key conflict (the identity exists elsewhere) offers to top up an identity with the lock, never "Try again"', async () => {
+    script = async (o) => {
+      if (!o.recoverInto) throw new KeyConflictError();
+      return { identityId: o.recoverInto, record: { recoveredInto: o.recoverInto } };
+    };
+    const r = await render(<FundingPanel kind="create" wallet={{} as never} identityIndex={0} onDone={() => {}} />);
+    await flush();
+    await flush();
+    expect(r.el.textContent).toMatch(/already registered to another identity/);
+    expect(r.el.textContent).not.toMatch(/Try again/);
+    expect(r.el.querySelector('[data-testid="pay-again"]')).toBeNull();
+    await click(r.el.querySelector<HTMLButtonElement>('[data-testid="recover-mine"]')!);
+    await flush();
+    expect(runs.at(-1)!.recoverInto).toBe(TARGET);
+    expect(r.el.querySelector('[data-testid="recovered"]')).not.toBeNull();
+    await r.unmount();
+  });
+
+  it('any other error links to Recover funds next to "Try again"', async () => {
+    script = async () => {
+      throw new Error('Platform refused the registration: boom');
+    };
+    const r = await render(<FundingPanel kind="create" wallet={null} identityIndex={0} onDone={() => {}} />);
+    await flush();
+    expect(button(r.el, /Try again/)).toBeTruthy();
+    expect([...r.el.querySelectorAll('a')].some((a) => a.getAttribute('href') === '/settings#recover')).toBe(true);
     await r.unmount();
   });
 });
