@@ -288,11 +288,15 @@ The badge flow is in `apps/web/src/badge`:
   token request goes out only after half an hour without any Platform write from this browser (every identity state
   transition is recorded at the PlatformPort) and without another request; badge posts wait half an hour after the last
   request, and go before requests. The check and the mark run under a browser-wide Web Lock. A failed request waits a
-  random 1 to 3 hours. During the cooldown every tab asks the user not to post. One scheduler per identity runs across
+  random 1 to 3 hours; the page shows the error, the next try, and a "Retry now" button. During the cooldown every tab asks the user not to post. One scheduler per identity runs across
   tabs (Web Locks), and every save merges into the latest stored jobs under a lock. Jobs are stored per (identity,
   signing key); an entry that does not decrypt is never overwritten.
-- A badge is posted only when the issuer's report for the epoch shows at least the network's minimum number of tokens
-  (testnet 3, mainnet 10): a badge among two or three would stand out.
+- A Private / Extra private badge is posted only when the issuer's report for the epoch before shows at least the network's
+  minimum number of tokens (testnet 5, mainnet 20): a badge among two or three would stand out. The report has one count
+  for all tokens of an epoch, Standard ones included, so it cannot say how many chose a private mode; the minimum is set
+  higher to allow for that, and the page says so. If the issuer served that epoch but published no report, the badge is not
+  posted (readers hide the issuer's badges then anyway). A token request that never reached the issuer (the challenge
+  failed) does not start the half-hour cooldown.
 - One request per issuer per epoch per identity. More would only tell the issuer which MNs belong together.
 - Pending jobs are kept in `localStorage`, encrypted with AES-256-GCM under
   `HKDF-SHA256(identity signing key, salt "govhub-badge-store-v1", info identityId)`, with the identity id as AAD,

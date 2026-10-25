@@ -2755,6 +2755,35 @@ details.advanced[open] > summary {
   display: grid;
   gap: 0.375rem;
 }
+/* one row per privacy mode: the radio and its sentence, then that mode's own "learn more" */
+.badge-modes {
+  display: grid;
+  gap: 0.75rem;
+}
+.badge-mode {
+  display: grid;
+  gap: 0.25rem;
+}
+.badge-mode .check > span {
+  flex: 1;
+  min-inline-size: 0;
+}
+.badge-mode-more {
+  margin-inline-start: 1.5rem;
+  font-size: var(--t-s);
+}
+.badge-mode-more summary {
+  cursor: pointer;
+  color: var(--accent);
+}
+.badge-mode-more p {
+  margin-block: 0.375rem 0;
+}
+.badge-job-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
 .badge-jobs,
 .badge-trust {
   list-style: none;

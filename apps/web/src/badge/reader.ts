@@ -69,7 +69,8 @@ export class BadgeReader {
   readonly #ttl: number;
   #badge: Promise<Badge> | null = null;
   readonly #keys = new Map<string, { at: number; p: Promise<KeyLookup> }>();
-  readonly #audits = new Map<string, { at: number; final: boolean; p: Promise<IssuerEpochAudit> }>();
+  /** `dueFrom`: the first core height at which a missing report flags the issuer (set once computed) */
+  readonly #audits = new Map<string, { at: number; final: boolean; dueFrom?: number; reportDue?: boolean; p: Promise<IssuerEpochAudit> }>();
 
   constructor(o: { net: BadgeNetwork; contractId: string; query: Query; issuers: TrustedIssuer[] } & ReaderOptions) {
     this.#net = o.net;
@@ -182,8 +183,11 @@ export class BadgeReader {
   audit(issuer: TrustedIssuer, epoch: number, coreHeight: number): Promise<IssuerEpochAudit> {
     const k = `${issuer.identityId}:${epoch}`;
     const hit = this.#audits.get(k);
-    if (hit && (hit.final || Date.now() - hit.at < this.#ttl)) return hit.p;
-    const entry = { at: Date.now(), final: false, p: null as unknown as Promise<IssuerEpochAudit> };
+    // A cached unflagged answer is reused within the TTL only while the report deadline is on the same side of `coreHeight`:
+    // one computed before the deadline must not stand in for one after it (a missing report flags the issuer then, SR-34).
+    const sameSide = !hit || hit.dueFrom === undefined || (coreHeight >= hit.dueFrom) === hit.reportDue;
+    if (hit && (hit.final || (Date.now() - hit.at < this.#ttl && sameSide))) return hit.p;
+    const entry: { at: number; final: boolean; dueFrom?: number; reportDue?: boolean; p: Promise<IssuerEpochAudit> } = { at: Date.now(), final: false, p: null as unknown as Promise<IssuerEpochAudit> };
     entry.p = (async (): Promise<IssuerEpochAudit> => {
       const b = await this.#lib();
       const base = { issuer, epoch };
@@ -218,6 +222,8 @@ export class BadgeReader {
       const tokensIssued = await this.reportedTokens(issuer, epoch);
       const bound = await this.#bound();
       const reportDue = coreHeight > b.reportWindow(b.EPOCH_PARAMS[this.#net], epoch).to;
+      entry.dueFrom = b.reportWindow(b.EPOCH_PARAMS[this.#net], epoch).to + 1;
+      entry.reportDue = reportDue;
       let flagReason: string | null = null;
       if (tokensIssued !== null && tokensIssued > bound.value) flagReason = `reported ${tokensIssued} tokens, more than there are masternodes (${bound.source})`;
       else if (tokensIssued !== null && count > tokensIssued) flagReason = `${count} valid badges but only ${tokensIssued} tokens reported`;

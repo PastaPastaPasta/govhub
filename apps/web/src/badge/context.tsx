@@ -40,7 +40,10 @@ export interface BadgeCtx {
   setPrivacy(mode: PrivacyMode): void;
   /** The keyring registers a signer for an MN while it is unlocked; call the returned function to unregister. */
   registerVotingSigner(proTxHash: string, signer: VotingSigner): () => void;
+  /** Deletes a job and everything stored with it (blinding state, an encrypted voting key): Remove, and Cancel for pending ones. */
   removeJob(id: string): void;
+  /** Clears a job's backoff and wakes the scheduler (Retry now). Private jobs still wait for their quiet half hour. */
+  retryJob(id: string): void;
 }
 
 const Ctx = createContext<BadgeCtx | null>(null);
@@ -99,6 +102,8 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
     return () => (off(), clearTimeout(t));
   }, []);
   const signers = useRef(new Map<string, VotingSigner>());
+  /** token requests handed to the worker so far (a private attempt that sent none undoes its cooldown mark) */
+  const tokenSends = useRef(0);
   const jobsRef = useRef<BadgeJob[]>([]);
   /** the current effect run's merge-and-save (null while no identity is loaded) */
   const commitRef = useRef<((m: Mutate) => Promise<BadgeJob[]>) | null>(null);
@@ -135,9 +140,12 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
       contractId,
       ownerId: session.identityId,
       issuerKey: (i, e) => reader.key(i, e),
-      // anything that reaches an issuer marks this visit (visit.ts)
+      // a token request (it names the masternode) marks this visit (visit.ts); a challenge alone names nothing
       worker: ((call) => {
-        if (call.kind === 'challenge' || call.kind === 'token') noteRequestSent();
+        if (call.kind === 'token') {
+          tokenSends.current++;
+          noteRequestSent();
+        }
         return badgeWorker(call as never);
       }) as ClientDeps['worker'],
       signWithWif: (wif, m) => signMessageWif(wif, m, net),
@@ -253,8 +261,11 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
             noteIdentityWrite(); // before the post path's reads: the write is on its way
             for (const j of posts) await run(j);
           } else if (requests.length && mayRequest()) {
-            notePrivateRequest();
+            const undo = notePrivateRequest();
+            const sent = tokenSends.current;
             await run(requests[0]!);
+            // nothing named the masternode to the issuer (it was unreachable): no cooldown for nothing (D-046)
+            if (tokenSends.current === sent) undo();
           }
         },
         { signal: ac.signal },
@@ -364,10 +375,18 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const removeJob = useCallback((id: string) => void commitRef.current?.((latest) => latest.filter((j) => j.id !== id)).catch(() => undefined), []);
+  const retryJob = useCallback(
+    (id: string) =>
+      void commitRef.current?.((latest) => latest.map((j) => (j.id === id && isActive(j) ? { ...j, retryAt: undefined } : j))).then(
+        () => wakeRef.current(),
+        () => undefined,
+      ),
+    [],
+  );
 
   const value = useMemo<BadgeCtx>(
-    () => ({ contractId, trust, setTrust, resetTrust, reader, jobs, coreHeight, requestBadge, registerVotingSigner, removeJob, privacy, setPrivacy }),
-    [contractId, trust, setTrust, resetTrust, reader, jobs, coreHeight, requestBadge, registerVotingSigner, removeJob, privacy, setPrivacy],
+    () => ({ contractId, trust, setTrust, resetTrust, reader, jobs, coreHeight, requestBadge, registerVotingSigner, removeJob, retryJob, privacy, setPrivacy }),
+    [contractId, trust, setTrust, resetTrust, reader, jobs, coreHeight, requestBadge, registerVotingSigner, removeJob, retryJob, privacy, setPrivacy],
   );
   return (
     <Ctx.Provider value={value}>

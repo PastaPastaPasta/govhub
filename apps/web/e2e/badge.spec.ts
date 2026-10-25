@@ -14,6 +14,18 @@ test.describe('MN badge (fixtures)', () => {
     expect(await cspViolations(page)).toEqual([]);
   });
 
+  test('the badge page is reachable from My masternodes, and its copy does not overclaim', async ({ page }) => {
+    const errors = await watchPage(page);
+    await gotoFixtures(page, '/masternodes');
+    await page.getByTestId('mn-badge-link').click();
+    await expect(page.getByRole('heading', { name: 'MN owner badge' })).toBeVisible();
+    const main = page.locator('#main');
+    await expect(main).not.toContainText('never learns which identity');
+    await expect(main).not.toContainText('cannot tell by timing');
+    await expect(main.getByRole('link', { name: 'logging policy' }).first()).toHaveAttribute('href', /services\/issuer\/README\.md#what-is-stored-and-logged/);
+    expect(errors).toEqual([]);
+  });
+
   test('settings show the default trust list and validate new issuers', async ({ page }) => {
     const errors = await watchPage(page);
     await gotoFixtures(page, '/settings');

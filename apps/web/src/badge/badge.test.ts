@@ -21,7 +21,7 @@ import {
 import { hash160, recoverMessageSigner, signMessageWif, encodeWif } from '@govhub/verify';
 import { secp256k1 } from '@noble/curves/secp256k1.js';
 import type { DocQuery } from '@govhub/contracts-v1/queryLint';
-import { createJob, renewal, step, type BadgeJob, type ClientDeps } from './client.ts';
+import { checkKeyAvailability, createJob, issuerErrorText, renewal, step, type BadgeJob, type ClientDeps } from './client.ts';
 import { parseTrustList, type TrustedIssuer } from './config.ts';
 import type { BadgeWorkerCall, BadgeWorkerResponse, IssuerAnswer } from './protocol.ts';
 import { allBadges, badgesOfAuthors, issuerKeyQuery, reportQuery, revocationQuery } from './queries.ts';
@@ -525,5 +525,104 @@ describe('trust list and storage', () => {
 
   it('fromHex sanity for proTxHash display order', () => {
     expect(toHex(fromHex('00ff'))).toBe('00ff');
+  });
+});
+
+describe('QA fixes (D-044 .. D-047)', () => {
+  it('D-044: key availability per mode is checked from proved keys before the form; Standard without a current key says when and that Private works', async () => {
+    const t = setup();
+    await t.platform.addKey(E); // the issuer's first key: none for E-1
+    const h = epochStart(P, E - 1) + 50;
+    const av = await checkKeyAvailability(t.deps.issuerKey, issuer, 'testnet', h);
+    expect(av.modes).toEqual([
+      { mode: 'standard', epoch: E - 1, ok: false, problem: 'no issuerKey for this epoch' },
+      { mode: 'private', epoch: E, ok: true, problem: null },
+      { mode: 'extra', epoch: E, ok: true, problem: null },
+    ]);
+    expect(av.firstKeyEpoch).toBe(E);
+    const err = await createJob(t.deps, [], votingKey().wif, proTx(), h, { issuer, mode: 'standard' }).catch((e: Error) => e.message);
+    expect(err).toMatch(new RegExp(`current epoch, ${E - 1}`));
+    expect(err).toMatch(/Private may work now/);
+    // no key at all in reach
+    const none = await checkKeyAvailability(setup().deps.issuerKey, issuer, 'testnet', h);
+    expect(none.firstKeyEpoch).toBeNull();
+    expect(none.modes.every((m) => !m.ok)).toBe(true);
+  });
+
+  it('D-046: an unreachable issuer gives the host and the browser error, and a backoff; no token request was sent', async () => {
+    const t = setup();
+    await t.platform.addKey(E);
+    const calls: string[] = [];
+    t.deps.worker = (async (req: BadgeWorkerCall) => {
+      calls.push(req.kind);
+      if (req.kind === 'challenge') throw new TypeError('Failed to fetch');
+      return fakeWorker()(req);
+    }) as ClientDeps['worker'];
+    const h = epochStart(P, E - 1) + 50;
+    const job = await createJob(t.deps, [], votingKey().wif, proTx(), h, { issuer, mode: 'private', immediate: true });
+    const out = await step(t.deps, job, h);
+    expect(out.state).toBe('scheduled');
+    expect(out.note).toMatch(/issuer\.test could not be reached/);
+    expect(out.note).toMatch(/Failed to fetch/);
+    expect(out.retryAt! - Date.now()).toBeGreaterThan(3_500_000);
+    expect(calls).toEqual(['blind', 'challenge']); // the token request (it names the MN) never went out
+    expect(issuerErrorText('https://x.example/', new Error('The operation was aborted due to timeout'))).toMatch(/did not answer in time/);
+  });
+
+  it('D-046: a private attempt that sent no token request undoes its cooldown mark; a newer mark is kept', async () => {
+    const { mayRequest, notePrivateRequest, requestCooldownLeft, noteRequestSent } = await import('./visit.ts');
+    const mem = new Map<string, string>();
+    const st = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v), removeItem: (k: string) => void mem.delete(k) };
+    const t0 = 1_800_000_000_000;
+    const undo = notePrivateRequest(st, t0);
+    expect(mayRequest(st, t0 + 1)).toBe(false);
+    undo();
+    expect(mayRequest(st, t0 + 1)).toBe(true);
+    expect(requestCooldownLeft(st, t0 + 1)).toBe(0);
+    const undo2 = notePrivateRequest(st, t0 + 10);
+    noteRequestSent(st, t0 + 20); // another tab's real request meanwhile
+    undo2();
+    expect(requestCooldownLeft(st, t0 + 20)).toBeGreaterThan(0);
+  });
+
+  it('D-047: no token count after its window from an issuer that served E-1: the private badge is not posted', async () => {
+    const t = setup();
+    await t.platform.addKey(E - 1);
+    await t.platform.addKey(E);
+    const h = epochStart(P, E - 1) + 50;
+    const tok = await step(t.deps, await createJob(t.deps, [], votingKey().wif, proTx(), h, { issuer, mode: 'private', immediate: true }), h);
+    expect(tok.state).toBe('token');
+    // past E-1's report window, no report; the audit of E-1 is cached from before the deadline (not flagged then)
+    const before = epochStart(P, E) + 5;
+    expect((await t.reader.audit({ ...issuer }, E - 1, before)).flagged).toBe(false);
+    const late = epochStart(P, E) + P.graceBlocks + 1;
+    t.platform.core = late;
+    const out = await step(t.deps, { ...tok, postAt: late }, late);
+    expect(out.state).toBe('expired');
+    expect(out.note).toMatch(/no token count for epoch|failed the audit/);
+    expect(t.posted).toHaveLength(0);
+    // the gate itself, without the audit: an issuer that served E-1 and published no report
+    const t2 = setup();
+    await t2.platform.addKey(E - 1);
+    await t2.platform.addKey(E);
+    const tok2 = await step(t2.deps, await createJob(t2.deps, [], votingKey().wif, proTx(), h, { issuer, mode: 'private', immediate: true }), h);
+    const out2 = await step({ ...t2.deps, issuerFlagged: async () => false }, { ...tok2, postAt: late }, late);
+    expect(out2).toMatchObject({ state: 'expired', note: expect.stringMatching(/published no token count/) });
+    expect(t2.posted).toHaveLength(0);
+  });
+
+  it('SR-34: an unflagged audit cached before the report deadline is not reused after it', async () => {
+    const p = new FakePlatform();
+    await p.addKey(E);
+    const r = new BadgeReader({ net: 'testnet', contractId, issuers: [issuer], query: (q) => p.query(q), maxPlausibleTokens: 2000 });
+    const due = epochStart(P, E + 1) + P.graceBlocks;
+    expect((await r.audit(issuer, E, due)).flagged).toBe(false); // the last height of the report window: not due yet
+    expect(await r.audit(issuer, E, due + 1)).toMatchObject({ flagged: true, flagReason: 'no valid issuerReport for this epoch' });
+  });
+
+  it('D-047: the Private crowd minimum is above the old values, since the report also counts Standard tokens', async () => {
+    const { BADGE_NETWORKS } = await import('./config.ts');
+    expect(BADGE_NETWORKS.testnet.minAnonymitySet).toBeGreaterThan(3);
+    expect(BADGE_NETWORKS.mainnet.minAnonymitySet).toBeGreaterThan(10);
   });
 });
