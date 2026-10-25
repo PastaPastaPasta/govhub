@@ -2293,6 +2293,12 @@ li[data-status='now'] > .fund-dot {
   font-weight: 640;
   overflow-wrap: anywhere;
 }
+/* A proven DPNS username: underlined in the accent colour, a style self-chosen names never get. */
+.author-dpns-name {
+  color: var(--accent-ink);
+  text-decoration: underline dotted;
+  text-underline-offset: 0.2em;
+}
 .author-alias {
   font-size: 0.8125rem;
   color: var(--ink-2);

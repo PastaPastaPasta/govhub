@@ -409,10 +409,14 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
       let answered = false;
       const waited = wait.finally(() => (answered = true)).then(() => false);
       const proved = (async () => {
-        await Promise.resolve(); // a wait that answers at once (tests, refusals) never starts the reads
-        for (let i = 0; i < PROVE_READS && !answered; i++) {
-          await sleep(proveDelay(i));
-          if (!answered && (await tryCheck()).state === 'done') return true;
+        try {
+          await Promise.resolve(); // a wait that answers at once (tests, refusals) never starts the reads
+          for (let i = 0; i < PROVE_READS && !answered; i++) {
+            await sleep(proveDelay(i));
+            if (!answered && (await tryCheck()).state === 'done') return true;
+          }
+        } catch {
+          /* a failing read loop must not end the race while the SDK still holds the transition */
         }
         return new Promise<boolean>(() => {}); // never settles: `waited` alone decides the race
       })();

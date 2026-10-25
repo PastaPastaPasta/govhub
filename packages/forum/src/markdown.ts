@@ -118,27 +118,36 @@ function plainText(nodes: readonly MdInline[]): string {
     .join('');
 }
 
-/** Text that is, as a whole, a URL or a bare domain: `https://dash.org/x`, `dash.org`, `www.dash.org/path`. */
+/** A word that is a URL or a bare domain: `https://dash.org/x`, `dash.org`, `www.dash.org/path`. */
 const URL_LIKE = /^(?:[a-z][a-z0-9+.-]*:\/\/)?(?:[^\s/?#@]*@)?((?:[^\s/?#@:.]+\.)+(?:\p{L}{2,63}|xn--[a-z0-9-]+))\.?(?::\d{1,5})?(?:[/?#]\S*)?$/iu;
+/** Brackets, quotes and sentence punctuation around a word in prose. */
+const WRAP = /^[([{<"'\u00AB\u2018\u201C]+|[)\]}>"'\u00BB\u2019\u201D.,;:!?]+$/gu;
 const hostKey = (h: string) => h.toLowerCase().replace(/\.$/, '').replace(/^www\./, '');
 
 /**
- * When a link's text looks like a URL or domain whose host is not the target's (`[dash.org](https://evil.example)`), the
- * target's real host, to show next to the text; null when the text is ordinary words or names the same host.
+ * The target's real host, to show next to a link (`dash.org (→ evil.example)`), or null. Shown when a word of the link text is a
+ * URL or domain naming another host (`[dash.org](https://evil.example)`, `[Visit dash.org](...)`), and always for an
+ * internationalised target host, in its punycode form, since its letters can imitate another name.
  */
 export function linkRealHost(text: string, href: string | null): string | null {
   if (!href) return null;
-  const m = URL_LIKE.exec(text.trim());
-  if (!m) return null;
-  let shown: string;
   let target: string;
   try {
-    shown = new URL(`http://${m[1]}`).hostname;
     target = new URL(href).hostname;
   } catch {
     return null;
   }
-  return hostKey(shown) === hostKey(target) ? null : target;
+  if (target.split('.').some((label) => label.startsWith('xn--'))) return target;
+  for (const word of text.split(/\s+/)) {
+    const m = URL_LIKE.exec(word.replace(WRAP, ''));
+    if (!m) continue;
+    try {
+      if (hostKey(new URL(`http://${m[1]}`).hostname) !== hostKey(target)) return target;
+    } catch {
+      /* not a host after all */
+    }
+  }
+  return null;
 }
 
 function pushText(out: MdInline[], v: string) {

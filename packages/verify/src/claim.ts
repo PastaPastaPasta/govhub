@@ -217,7 +217,7 @@ export function verifyClaims(input: ClaimInput): ClaimVerdict {
     if (c.method === CLAIM_METHODS.url) {
       if (!urlId) reject('the proposal URL does not name an identity');
       else if (c.ownerId !== urlId) reject('the proposal URL names a different identity');
-      else if (accepted) reject('a repeat: this identity already accepted');
+      else if (accepted) reject('not checked: this identity already accepted');
       else {
         accepted = true;
         valid.push({ identityId: c.ownerId, method: 1, docId: c.id, createdAt: c.createdAt, detail: `the hashed proposal URL ${fields.url} names this identity, and it accepted` });

@@ -87,8 +87,13 @@ describe('D-034: link text that names another host shows the real one', () => {
     expect(one('[gov.dashhq.org](https://gov.dashhq.org.evil.example/p)').realHost).toBe('gov.dashhq.org.evil.example');
     // bidi controls cannot hide the domain from the check
     expect(one(`[dash.org${RLO}](https://evil.example)`).realHost).toBe('evil.example');
-    // a look-alike (Cyrillic a) is another host
+    // a look-alike (Cyrillic a) is another host; an internationalised target always shows its punycode
     expect(one('[d\u0430sh.org](https://dash.org)').realHost).toBe('dash.org');
+    expect(one('[d\u0430sh.org](https://d\u0430sh.org/)').realHost).toMatch(/^xn--/);
+    // a domain anywhere in the text, or wrapped in punctuation, counts
+    expect(one('[Visit dash.org today](https://evil.example)').realHost).toBe('evil.example');
+    expect(one('[https://dash.org)](https://evil.example)').realHost).toBe('evil.example');
+    expect(one('[(dash.org)](https://evil.example)').realHost).toBe('evil.example');
   });
 
   it('honest links stay as they are', () => {
@@ -139,6 +144,18 @@ describe('D-035: display names', () => {
       expect(() => ops.profile({ displayName: name })).not.toThrow();
     }
     expect(badgeLike('bob \u2713')).toBe(true);
+  });
+
+  it('look-alike letters and digits, separators, a ".dash" ending and mixed scripts do not get around it; emoji names do', () => {
+    for (const name of ['Verifi\u0435d', 'bob_owner', '0wner', 'Adm1n', 'alice.dash', 'ALICE.DASH', 'p\u0430ypal']) {
+      expect(nameProblem(name), name).not.toBeNull();
+      expect(badgeLike(name), name).toBe(true);
+    }
+    const family = '\u{1F468}\u200D\u{1F469}\u200D\u{1F467}';
+    expect(nameProblem(family)).toBeNull();
+    expect(cleanName(family)).toBe(family);
+    expect(cleanName('a\u200Db')).toBe('ab');
+    expect(nameProblem('\u0421\u0435\u0440\u0433\u0435\u0439')).toBeNull(); // all Cyrillic is fine
   });
 });
 

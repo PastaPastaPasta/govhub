@@ -62,6 +62,14 @@ describe('D-038: only the newest threads are rendered', () => {
     expect(windowRoots(roots, visible, 2, null).roots.map((r) => r.comment.id)).toEqual(['c997', 'c998']);
   });
 
+  it('never leaves a gap: once a thread does not fit, older ones wait too', () => {
+    const thread = (root: number, replies: number) => [c(root), ...Array.from({ length: replies }, (_, i) => c(root + 1 + i, `c${root}`))];
+    const comments = [...thread(0, 9), ...thread(100, 99), ...thread(1000, 149)]; // sizes, newest first: 150, 100, 10
+    const w = windowRoots(buildThreads(comments), new Map(comments.map((x) => [x.id, true])), 200, null);
+    expect(w.roots.map((r) => r.comment.id)).toEqual(['c1000']);
+    expect(w.older).toBe(110);
+  });
+
   it('always keeps at least the newest thread, however large', () => {
     const comments = [c(0), ...Array.from({ length: 300 }, (_, i) => c(i + 1, 'c0'))];
     const w = windowRoots(buildThreads(comments), new Map(comments.map((x) => [x.id, true])), 50, null);

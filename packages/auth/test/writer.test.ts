@@ -326,9 +326,10 @@ describe('writeDocument: a silent result stream (D-041)', () => {
     await new Promise((r) => setTimeout(r, 450)); // the late timeouts are absorbed, not unhandled
   });
 
-  it('a write that has not executed is not reported done by the reads: the wait still decides', async () => {
-    const c = chain({ send: () => ({ before: undefined, hang: 50 }), read: (k) => (k === 'doc' ? 1 : 0) }); // reads lag one block behind
+  it('reads that do not show the write (a lagging node) never settle it: the wait still decides', async () => {
+    const c = chain({ send: () => ({ hang: 50 }), read: (k) => (k === 'doc' ? 1 : 0) }); // every doc read is one block behind
     const r = await write(c, create());
+    expect(c.reads.doc).toBeGreaterThan(0); // proved reads ran while the wait was silent
     expect(c.log.answered).toBe(1);
     expect(c.tip().docs.has(r.id)).toBe(true);
   });

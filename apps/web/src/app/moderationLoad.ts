@@ -45,9 +45,13 @@ export async function readModeration(
 ): Promise<ModerationRead> {
   const ms = o.deadlineMs ?? LIST_DEADLINE_MS;
   let subs = o.localSubs;
+  const failed: string[] = [];
   if (o.identityId) {
-    // Unreadable subscriptions fall back to this browser's, as before; the lists themselves still fail closed.
-    const doc = await withDeadline(reader.blockSubs(o.identityId), ms, 'your list subscriptions').catch(() => null);
+    // Unreadable subscriptions fall back to this browser's, and fail closed: lists subscribed on Platform would be missing.
+    const doc = await withDeadline(reader.blockSubs(o.identityId), ms, 'your list subscriptions').catch(() => {
+      failed.push('your list subscriptions');
+      return null;
+    });
     if (doc) subs = { defaultOff: doc.defaultOff, lists: doc.lists, doc: { id: doc.id, revision: doc.revision } };
   }
   const wanted: Array<{ source: BlockList['source']; contract: 'forum' | 'mod'; ownerId: string; name: string }> = [];
@@ -56,7 +60,6 @@ export async function readModeration(
   if (o.identityId) wanted.push({ source: 'mine', contract: 'forum', ownerId: o.identityId, name: 'your blocks' });
   const settled = await Promise.allSettled(wanted.map((w) => withDeadline(reader.blocks(w.contract, w.ownerId), ms, w.name)));
   const lists: BlockList[] = [];
-  const failed: string[] = [];
   settled.forEach((r, i) => {
     const w = wanted[i]!;
     if (r.status === 'fulfilled') lists.push({ source: w.source, ownerId: w.ownerId, name: w.name, blocks: r.value });

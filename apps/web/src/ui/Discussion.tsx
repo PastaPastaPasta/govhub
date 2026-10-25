@@ -39,8 +39,8 @@ import { Votes } from './Votes.tsx';
 const MAX_INDENT = 6;
 /** Comments rendered at first (whole threads, newest first) and per "show older"; only rendered comments have reactions read. */
 const RENDER_PAGE = 200;
-/** Upper bound on comments whose reactions are read (one F6 query each), whatever one huge thread renders. */
-const MAX_SCORED = 400;
+/** Comments whose reactions are read (one F6 query each) per page shown: one huge thread renders more, and the rest wait. */
+const SCORED_PER_PAGE = 400;
 
 interface ThreadData {
   comments: Comment[];
@@ -114,8 +114,8 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
   const targets = useMemo(() => {
     if (gated) return [];
     const ids = flatten(win.roots).flatMap((n) => (shown(n.comment, showOpts) ? [n.comment.id] : []));
-    return ids.slice(-MAX_SCORED).map((commentId) => ({ commentId }));
-  }, [gated, win, showOpts]);
+    return ids.slice(-(SCORED_PER_PAGE * (limit / RENDER_PAGE))).map((commentId) => ({ commentId }));
+  }, [gated, win, showOpts, limit]);
   const reactions = useReactions(targets);
   const focusMissing = !!focus && !!thread.data && !gated && !comments.some((c) => c.id === focus);
 
@@ -342,7 +342,7 @@ function CommentNode({ node, ctx }: { node: ThreadNode; ctx: NodeCtx }) {
   const isShown = shown(c, ctx);
   const isOwner = ctx.owner !== null && c.ownerId === ctx.owner;
   const mine = ctx.session === c.ownerId;
-  const score = ctx.scores.get(c.id) ?? { up: 0, down: 0, net: 0 };
+  const score = ctx.scores.get(c.id);
   const myBlock = reasons.find((r) => r.source === 'mine');
   const modBlock = reasons.find((r) => r.source === 'default');
   const run = (label: string, f: () => Promise<void>) => async () => {

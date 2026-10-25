@@ -58,14 +58,18 @@ export function windowRoots(roots: readonly ThreadNode[], visible: ReadonlyMap<s
   const keep = new Set<ThreadNode>();
   let n = 0;
   let older = 0;
+  let full = false; // once a thread does not fit, every older one waits too (no gaps in the list)
   for (let i = roots.length - 1; i >= 0; i--) {
     const r = roots[i]!;
     const s = size(r);
     if (s === 0) continue;
-    if (n === 0 || n + s <= limit) {
+    if (!full && (n === 0 || n + s <= limit)) {
       keep.add(r);
       n += s;
-    } else older += s;
+    } else {
+      full = true;
+      older += s;
+    }
   }
   if (focus) {
     const r = roots.find((x) => !keep.has(x) && flatten([x]).some((c) => c.comment.id === focus));

@@ -20,11 +20,11 @@ describe('readModeration', () => {
     expect(failedText(r.failed)).toBe('The block list govhub moderation could not be read');
   });
 
-  it('a hung subscriptions read falls back to this browser\'s subscriptions; errors still fail closed', async () => {
+  it('a hung subscriptions read falls back to this browser\'s subscriptions and fails closed; list errors too', async () => {
     const reader: ListReader = { blocks: () => Promise.reject(new Error('grpc')), blockSubs: () => never() };
     const r = await readModeration(reader, { ...base, identityId: ME });
     expect(r.subs).toEqual(base.localSubs);
-    expect(r.failed).toEqual(['govhub moderation', 'your blocks']);
+    expect(r.failed).toEqual(['your list subscriptions', 'govhub moderation', 'your blocks']);
     expect(failedText(r.failed)).toMatch(/^The block lists /);
   });
 });

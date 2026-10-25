@@ -2,7 +2,8 @@
 // scored client-side, and voted on through the session with local updates so the UI does not wait for a node
 // that lags behind the write. Each target is read once per data source: a growing set (more comments shown) reads only the
 // new targets. F6 stays one query per target: no PV13 index takes an `in` over targets for every author (`in` must be on an
-// index's last property; byTarget ends in $createdAt, and byOwnerTarget needs one $ownerId).
+// index's last property; byTarget ends in $createdAt, and byOwnerTarget needs one $ownerId). Scores are therefore not refreshed
+// when other comments arrive (a reload reads them again), and a failed read is retried when the target set next changes.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { idToHex, mapLimit, REACTION_KIND, score, targetB64, type Reaction, type Score } from '@govhub/forum';
 import { useApp } from '../app/context.tsx';
@@ -48,6 +49,8 @@ export function useReactions(targets: readonly Target[]) {
   const scores = useMemo(() => {
     const out = new Map<string, Score>();
     for (const t of targets) {
+      // A target not read yet has no score: voting then would create a second reaction instead of flipping the first.
+      if (!byKey.has(keyOf(t))) continue;
       out.set(keyOf(t), score(byKey.get(keyOf(t)) ?? [], { kind: kindOf(t), target: hexOf(t), viewer: session?.identityId ?? null, exclude: moderation.index.identityHidden }));
     }
     return out;

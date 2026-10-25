@@ -96,7 +96,8 @@ function useIdentityNames(id: string | null) {
 export function OwnerValue({ p, own }: { p: Proposal; own: Ownership }) {
   const { moderation } = useForum();
   const o = own.verdict?.owner ?? null;
-  const named = own.verdict?.named && !own.verdict.named.accepted ? own.verdict.named : null;
+  const n = own.verdict?.named;
+  const named = n && !n.accepted && n.identityId !== o?.identityId ? n : null; // already the owner by signature: nothing to add
   const ownerNames = useIdentityNames(o?.identityId ?? null);
   const namedNames = useIdentityNames(named?.identityId ?? null);
   const who = (id: string, n: ReturnType<typeof useIdentityNames>, size = 20) => {
@@ -189,19 +190,20 @@ export function ClaimPanel({ p, own, collateral }: { p: Proposal; own: Ownership
   const [sig, setSig] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const [anyway, setAnyway] = useState(false);
+  const [ackFor, setAckFor] = useState<string | null>(null); // the warning the reader chose to publish through
   const o = own.verdict?.owner;
   const named = own.verdict?.named ?? null;
-  if (o && session && o.identityId === session.identityId) return null;
   if (o?.method === 1) return null; // the named identity accepted: nothing can outrank it
   const poor = balance !== null && balance < BigInt(COSTS.claim);
   if (session && named && !named.accepted && named.identityId === session.identityId) return <AcceptNaming p={p} own={own} poor={poor} />;
+  if (o && session && o.identityId === session.identityId) return null;
 
   const address = method === 2 ? p.paymentAddress : inputAddr || inputAddrs[0] || '';
   const message = session ? claimMessage(network, p.govHash, session.identityId) : '';
   const sigOk = !!session && !!address && sig.trim() !== '' && checkClaimSignature(address, sig.trim(), network, p.govHash, session.identityId);
   // Warn before paying for a claim that cannot win (D-036): the reader has to confirm it on purpose.
   const warning = session ? claimWarning(own.verdict, method, session.identityId) : null;
+  const anyway = !!warning && ackFor === warning; // a different warning (another method) asks again
   const blocked = (!!warning && !anyway) || poor;
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -294,7 +296,7 @@ export function ClaimPanel({ p, own, collateral }: { p: Proposal; own: Ownership
                 <div className="notice-warn small" role="alert" data-testid="claim-warning">
                   <p>{warning}</p>
                   <label className="check">
-                    <input type="checkbox" checked={anyway} onChange={(e) => setAnyway(e.target.checked)} data-testid="claim-anyway" /> I understand; publish it anyway
+                    <input type="checkbox" checked={anyway} onChange={(e) => setAckFor(e.target.checked ? warning : null)} data-testid="claim-anyway" /> I understand; publish it anyway
                   </label>
                 </div>
               )}
