@@ -280,7 +280,7 @@ export function VoteComposer({ proposals, onVerify }: { proposals: Proposal[]; o
             const pend = !multi ? pendingFor(k.watched, m, g) : undefined;
             const v = pend ? describeVote(pend, now, fmtTime) : null;
             return (
-              <li key={m.proTxHash} className={`vmn${sel(m) ? ' vmn-on' : ''}`} data-testid="vote-mn-row">
+              <li key={m.proTxHash} className={`vmn${sel(m) ? ' vmn-on' : ''}`} data-testid="vote-mn-row" data-protx={m.proTxHash}>
                 <label className="vmn-pick">
                   <input type="checkbox" checked={sel(m)} onChange={(e) => toggle(m, e.target.checked)} aria-label={`Vote with ${mnName(m, labels)}`} />
                   <span className="vmn-name">{mnName(m, labels)}</span>

@@ -2,9 +2,9 @@
 // accepted by a relay -> broadcast to the network -> seen by the network -> counted in the tally). Pure: the vote record and the
 // clock in, words out. Times are formatted by the caller.
 import { errText, formatDuration } from '../lib/format.ts';
-import type { RelayInfo, WatchedVote } from './pending.ts';
+import { mayBeAtRelay, neverLeft, type RelayInfo, type WatchedVote } from './pending.ts';
 import { DEADLINE_MARGIN_S, deferredWindow, OUTCOME_NAME } from './plan.ts';
-import { relayHost, RelayError, type RelayVoteState } from './relay.ts';
+import { relayHost, RelayError, RelayNotSentError, type RelayVoteState } from './relay.ts';
 
 export type Tone = 'wait' | 'progress' | 'ok' | 'bad' | 'quiet';
 export type TimeFmt = (unixS: number) => string;
@@ -81,11 +81,30 @@ export function corroboration(v: WatchedVote): string {
     : ' That is the bridge’s word: no other bridge or relay you configured confirms it. To be sure, check your own Dash Core node.';
 }
 
+/** The relays that hold the vote or may hold it, for display ("a.org and b.org"). */
+const whereHeld = (v: WatchedVote): string => [...new Set([...v.refs.map((r) => r.relay), ...(v.maybeAt ?? [])])].map(relayHost).join(' and ') || 'the relay';
+
 export function describeVote(v: WatchedVote, now: number, fmt: TimeFmt): VoteView {
   const lead = leadRelay(v);
   const host = lead ? relayHost(lead.relay) : '';
+  if (v.cancelSig && (v.status === 'queued' || v.status === 'held')) {
+    const next = v.nextCancelAt && v.nextCancelAt > now ? `next try at ${fmt(v.nextCancelAt)}` : 'trying again now';
+    return {
+      badge: 'Cancelling',
+      tone: 'bad',
+      line: `Not cancelled yet: ${v.cancelError ?? `${whereHeld(v)} could not be reached`}. ${whereHeld(v)} may still hold this vote and could release it, so this browser keeps asking for the cancel while this page is open (${next}). To be sure it does not count, vote again: a new vote is timed after it and wins.`,
+    };
+  }
   switch (v.status) {
     case 'queued':
+      if (v.maybeAt?.length && !v.restored) {
+        const when = v.nextSendAt && v.nextSendAt > now ? `at ${fmt(v.nextSendAt)}` : 'now';
+        return {
+          badge: 'May be at the relay',
+          tone: 'wait',
+          line: `Tried to send it to ${whereHeld(v)}, but no answer came back${v.lastSendError ? ` (${v.lastSendError})` : ''}, so it may already be held there. Asking again ${when}: a relay keeps one copy of the same vote, and its answer says where the vote is. Cancelling takes it back at the relay too.`,
+        };
+      }
       if (v.restored && v.maybeAt?.length)
         return { badge: 'May be at a relay', tone: 'wait', line: `Its submission to ${v.maybeAt.map(relayHost).join(', ')} got no answer, so that relay may hold it and could still release it. This browser does not send it again. To be sure it does not count, vote again: a new vote is timed after it and wins.` };
       if (v.restored) return { badge: 'Signed elsewhere', tone: 'quiet', line: 'Signed on another device. This browser does not send it; only a relay that already holds it can.' };
@@ -105,8 +124,11 @@ export function describeVote(v: WatchedVote, now: number, fmt: TimeFmt): VoteVie
       return v.countedAt
         ? { badge: 'Bridge: counted', tone: 'ok', line: `The bridge reports the network counted it: its vote set includes it, and the recount of that set matches.${corroboration(v)}` }
         : { badge: 'Bridge: on the network', tone: 'ok', line: `The bridge reports the network has it: its vote set includes it, signature checked here against your voting key.${corroboration(v)}` };
-    case 'failed':
-      return { badge: 'Failed', tone: 'bad', line: `${v.refs.length ? 'Did not reach the network' : 'Not sent'}: ${v.failReason ?? relayCodeText(lead?.info.lastError)}.` };
+    case 'failed': {
+      // refused by one relay after another may have stored it (its answer was lost): that relay could still release it
+      const maybe = v.maybeAt?.length ? ` ${v.maybeAt.map(relayHost).join(' and ')} may still hold it from an earlier try whose answer was lost: cancel it to take it back there.` : '';
+      return { badge: 'Failed', tone: 'bad', line: `${v.refs.length || maybe ? 'Did not reach the network' : 'Not sent'}: ${v.failReason ?? relayCodeText(lead?.info.lastError)}.${maybe}` };
+    }
     case 'replaced':
       return { badge: 'Replaced', tone: 'quiet', line: v.replacedBy ? 'Replaced by your newer vote, which is now the one that counts.' : 'Replaced by a newer vote of this masternode that was not cast in this browser.' };
     case 'dropped':
@@ -182,7 +204,8 @@ export function trackerSteps(v: WatchedVote, now: number, fmt: TimeFmt): Step[] 
           : key === 'seen'
             ? 'Waiting for the bridge’s vote set to show it…'
             : 'Recounting the tally’s vote set…';
-    return { ...base, state: v.status === 'queued' && v.lastSendError ? 'error' : 'active', detail };
+    // the relay step stops (error) only when no relay may have the vote; one whose answer was lost may hold it
+    return { ...base, state: v.status === 'queued' && v.lastSendError && neverLeft(v) ? 'error' : 'active', detail };
   });
 }
 
@@ -191,20 +214,41 @@ export type SubmitOutcome =
   | { kind: 'sent'; text: string }
   | { kind: 'final'; status: 'failed' | 'replaced' | 'dropped'; text: string };
 
+/** 503s the relay writes itself before it stores anything (services/relay: full, or its Core is down): not a lost answer. */
+const RELAY_BUSY = new Set(['relay-full', 'core-unavailable']);
 /**
- * What a failed POST /v1/votes means for the vote. Transport errors, rate limits and a full or Core-less relay are retried (on
- * another relay when there is one); a relay saying Core already has this vote counts as sent; refusals are final, in plain words.
+ * The relay's own refusal of this request: a 4xx with the error code it writes, or its own "full" / "Core down" 503. It answered in
+ * full, and did not store the vote because of this request. (A 500, a proxy's page without a code, or no answer at all: it may have.)
+ */
+export const relayRefused = (e: unknown): e is RelayError & { status: number; code: string } =>
+  e instanceof RelayError && e.status !== undefined && !!e.code && (e.status < 500 || RELAY_BUSY.has(e.code));
+
+/** Plain words for a failure that may have reached the relay (anything but its own refusal). */
+function lostAnswerText(e: unknown, host: string): string {
+  if (e instanceof RelayError && e.status !== undefined) return `${host} answered with an error: ${e.message}`;
+  const msg = errText(e);
+  if (/timeout|timed out|aborted/i.test(msg)) return `${host} did not answer in time`;
+  const transport = /^relay \S+ unreachable: (.*)$/s.exec(msg);
+  if (transport) return `the connection to ${host} failed before its answer arrived: ${transport[1]}`;
+  return `${host} gave an answer this page could not use: ${msg}`;
+}
+
+/**
+ * What a failed POST /v1/votes means for the vote. Only the relay's own refusal (a 4xx with the error code it writes) or a request
+ * that was never made proves the relay did not store it. Anything else (a connection reset or refused, a timeout, a 5xx, an answer
+ * that could not be read) may have reached it after it stored the vote: `maybeReceived`, so the vote is taken back there before it
+ * is discarded or replaced (withdraw.ts). Those, rate limits and a full or Core-less relay are retried (on another relay when there
+ * is one); a relay saying Core already has this vote counts as sent; refusals are final, in plain words.
  */
 export function classifySubmitError(e: unknown, relay: string): SubmitOutcome {
   const host = relayHost(relay);
-  if (!(e instanceof RelayError) || e.status === undefined) {
-    const msg = errText(e);
-    // a request that timed out may have reached the relay; a refused connection or a failed DNS lookup did not
-    const maybeReceived = /timeout|timed out|aborted/i.test(msg);
-    return { kind: 'retry', text: maybeReceived ? `${host} did not answer in time` : /unreachable/.test(msg) ? `${host} is unreachable` : msg, tryOther: true, ...(maybeReceived ? { maybeReceived } : {}) };
+  if (e instanceof RelayNotSentError) return { kind: 'retry', text: `${host}: ${e.message}`, tryOther: true };
+  if (!relayRefused(e)) {
+    const after = e instanceof RelayError && e.retryAfterS ? { afterS: e.retryAfterS } : {};
+    return { kind: 'retry', text: lostAnswerText(e, host), ...after, tryOther: true, maybeReceived: true };
   }
-  const code = e.code ?? '';
-  if (e.status === 429 || e.status >= 500 || code === 'relay-full' || code === 'core-unavailable') {
+  const code = e.code;
+  if (e.status === 429 || RELAY_BUSY.has(code)) {
     return { kind: 'retry', text: `${host}: ${e.message}`, ...(e.retryAfterS ? { afterS: e.retryAfterS } : {}), tryOther: true };
   }
   if (code === 'already-current') return { kind: 'sent', text: 'Core already has this vote' };
@@ -214,6 +258,20 @@ export function classifySubmitError(e: unknown, relay: string): SubmitOutcome {
   if (code === 'unknown-proposal' || code === 'unknown-mn') return { kind: 'retry', text: `${host}: ${e.message}`, tryOther: true };
   return { kind: 'final', status: 'failed', text: `${host} refused it: ${e.message}` };
 }
+
+/** The cancel button's words for a vote, or null when it cannot be cancelled from here. */
+export function cancelAction(v: WatchedVote): string | null {
+  if (v.cancelSig && (v.status === 'queued' || v.status === 'held')) return 'Try cancelling again';
+  if (mayBeAtRelay(v)) return 'Cancel this vote';
+  if (v.status !== 'queued' || v.restored) return null;
+  return neverLeft(v) ? 'Discard' : 'Cancel this vote';
+}
+
+/** Whether a failed POST /v1/votes may have left the vote at the relay (its answer was lost). */
+export const maybeReceived = (e: unknown, relay: string): boolean => {
+  const c = classifySubmitError(e, relay);
+  return c.kind === 'retry' && !!c.maybeReceived;
+};
 
 /** "Vote No with 2 masternodes" */
 export function voteButtonText(outcome: 1 | 2 | 3 | 0, count: number, deferred: boolean): string {
@@ -246,6 +304,8 @@ export function applyRelayState(v: WatchedVote, relay: string, st: RelayVoteStat
   // the bridge decides confirmed / replaced; relays only move a vote along or end it
   if (v.status === 'confirmed' || v.status === 'replaced' || v.status === 'cancelled' || v.withdrawn) return next;
   const all = Object.values(relayStatus);
+  // a cancel still has to reach a relay that may hold the vote from a lost answer (maybeAt): the answers of the others do not end it
+  if (v.cancelSig && v.maybeAt?.length && all.every((x) => x === 'cancelled' || x === 'failed' || x === 'superseded')) return { ...next, status: 'queued' };
   // A vote a relay may have handed to Core (`maybeSent`; on relays without that field: broadcastAt, or a broadcast moved back to
   // `held` as not-visible) is never "Cancelled", "Failed" or "Replaced" because it is final at the relay now: it may already count.
   if (all.every((x) => x === 'cancelled' || x === 'failed' || x === 'superseded') && everLeft({ ...v, relayInfo })) return { ...next, status: 'broadcast', withdrawn: true };

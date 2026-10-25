@@ -65,16 +65,22 @@ import {
   pruneWatched,
   removePlainWatched,
   saveWatchedSealed,
+  cancelDue,
+  keepWhereItMayBe,
+  mayBeAtRelay,
+  neverLeft,
+  ownVoteTimes,
   sendDue,
   sendRetryDelay,
   watchedScope,
   type WatchedVote,
 } from './pending.ts';
-import { currentKey, deferredWindow, mnId, planDeferred, planImmediate, signPlanned, submitDelays, voteFields, type CurrentVote, type Intent, type PlanResult } from './plan.ts';
-import { cancelSignature, normalizeRelayUrl, RelayClient, RelayError, type RelayHealth, type RelayVoteState } from './relay.ts';
+import { currentKey, deferredWindow, mnId, planDeferred, planImmediate, signPlanned, submitDelays, untieOwnTimes, voteFields, type CurrentVote, type Intent, type PlanResult } from './plan.ts';
+import { cancelSignature, normalizeRelayUrl, RelayClient, RelayError, relayHost, type RelayHealth, type RelayVoteState } from './relay.ts';
 import { withdrawVote, WithdrawError, type WithdrawResult } from './withdraw.ts';
 import { DEMO_KEYS, SIM_RELAYS, simScenario, VoteSim, type RelayPort } from './sim.ts';
-import { applyRelayState, classifySubmitError } from './status.ts';
+import { applyRelayState, maybeReceived, relayRefused } from './status.ts';
+import { submitToRelays } from './send.ts';
 import { clearStash, KEYRING_STASH_EVENT, takeStash } from './stash.ts';
 import { bytesEqual, bytesToHex, countVotes, governanceVoteHash, normalizeMnId, p2pkhAddress, recoverVoteSigner, verifyVoteSignature, VOTE_MAX_FUTURE_S, type OutcomeCounts } from '@govhub/verify';
 
@@ -407,7 +413,9 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       const add = (more: WatchedVote[]) => {
         for (const v of more) {
           const o = byHash.get(v.voteHash);
-          if (!o || rank(v) > rank(o)) byHash.set(v.voteHash, v);
+          // the record further along wins, but keeps where the vote may still be and a pending cancel (pending.ts)
+          if (!o || rank(v) > rank(o)) byHash.set(v.voteHash, o ? keepWhereItMayBe(v, o) : v);
+          else byHash.set(v.voteHash, keepWhereItMayBe(o, v));
         }
       };
       if (!memory) {
@@ -999,39 +1007,8 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
     return [...relays].sort(() => Math.random() - 0.5).sort((a, b) => rank(a) - rank(b));
   }, [relays]);
 
-  /**
-   * One submission attempt for a vote not yet accepted by any relay: every configured relay in turn until one takes it. Returns the
-   * updated record: held (or further) with the relay's id, a final state for a refusal, or still queued with the next retry time.
-   */
-  const trySend = useCallback(
-    async (v: WatchedVote): Promise<WatchedVote> => {
-      let last: string | null = null;
-      let afterS = 0;
-      const maybeAt = new Set(v.maybeAt ?? []);
-      const withMaybe = (x: WatchedVote): WatchedVote => (maybeAt.size ? { ...x, maybeAt: [...maybeAt] } : x);
-      for (const relay of relayOrder()) {
-        try {
-          const st = await relayFor(relay).submit(v, coreNetwork);
-          noteHealth(relay, true);
-          maybeAt.delete(relay);
-          const { lastSendError: _e, nextSendAt: _n, ...rest } = v;
-          return withMaybe(applyRelayState({ ...rest, status: 'held' }, relay, st));
-        } catch (e) {
-          const c = classifySubmitError(e, relay);
-          if (c.kind === 'sent') return withMaybe({ ...v, status: 'broadcast', lastSendError: undefined });
-          if (c.kind === 'final') return withMaybe({ ...v, status: c.status, ...(c.status === 'failed' ? { failReason: c.text } : { replacedBy: '', failReason: c.text }) });
-          if (c.kind === 'retry' && c.maybeReceived) maybeAt.add(relay);
-          if (!(e instanceof RelayError && e.status !== undefined)) noteHealth(relay, false, c.text);
-          last = c.text;
-          afterS = Math.max(afterS, c.afterS ?? 0);
-          if (!c.tryOther) break;
-        }
-      }
-      const attempts = (v.sendAttempts ?? 0) + 1;
-      return withMaybe({ ...v, status: 'queued', sendAttempts: attempts, lastSendError: last ?? 'no relay is configured (Settings, Relays)', nextSendAt: nowS() + Math.max(afterS, sendRetryDelay(attempts)) });
-    },
-    [relayOrder, relayFor, coreNetwork, noteHealth],
-  );
+  /** One submission attempt for a vote not yet accepted by any relay (send.ts): every configured relay in turn until one takes it. */
+  const trySend = useCallback((v: WatchedVote): Promise<WatchedVote> => submitToRelays(v, relayOrder(), { relayFor, network: coreNetwork, now: nowS, noteHealth }), [relayOrder, relayFor, coreNetwork, noteHealth]);
 
   /** The keyring's key for a vote's masternode, now (null while locked). */
   const liveKey = (v: Pick<WatchedVote, 'collateralTxid' | 'collateralIndex'>) => {
@@ -1039,35 +1016,53 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
     return owner ? kr.current?.content.keys[owner.keyIndex] : undefined;
   };
 
+  /** The signed cancel for a vote (null while the keyring holding its key is locked). */
+  const cancelSigFor = (v: WatchedVote, key: { privateKey: Uint8Array; compressed: boolean } | undefined): string | undefined => v.cancelSig ?? (key ? cancelSignature(key.privateKey, key.compressed, coreNetwork, v.voteHash) : undefined);
+
   /**
-   * Takes a vote back at every relay that holds it or may hold it (withdraw.ts: a vote whose submission timed out is first looked up
-   * by hash), records what was learned and the outcome, and returns the outcome. `gone` (no relay has it) becomes `onGone`.
+   * Takes a vote back at every relay that holds it or may hold it (withdraw.ts: a vote whose answer was lost is posted again to learn
+   * its id there), records what was learned and the outcome, and returns the outcome. `gone` (no relay has it) becomes `onGone`. A
+   * relay that could not be reached keeps the signed cancel on the record (`cancelSig`): the watchdog asks again until it answers.
    */
   const withdraw = useCallback(
-    async (w: WatchedVote, key: { privateKey: Uint8Array; compressed: boolean } | undefined, t: string, onGone: 'dropped' | 'cancelled'): Promise<WithdrawResult> => {
-      if (!key) throw new Error('Unlock the keyring holding this masternode’s voting key to cancel.');
+    async (w: WatchedVote, sig: string | undefined, t: string, onGone: 'dropped' | 'cancelled'): Promise<WithdrawResult> => {
+      if (!sig) throw new Error('Unlock the keyring holding this masternode’s voting key to cancel.');
       // a watchdog re-send may be on its way to another relay: wait for it, then use the latest record
       await inflightRef.current.get(w.voteHash)?.catch(() => {});
       const cur = watchedRef.current.find((x) => x.voteHash === w.voteHash) ?? w;
-      const sigOf = (v: WatchedVote) => cancelSignature(key.privateKey, key.compressed, coreNetwork, v.voteHash);
+      const retryLater = (x: WatchedVote, why: string): WatchedVote => {
+        const attempts = (x.cancelAttempts ?? 0) + 1;
+        return { ...x, cancelSig: sig, cancelAttempts: attempts, nextCancelAt: nowS() + sendRetryDelay(attempts), cancelError: why };
+      };
+      const settled = (x: WatchedVote): WatchedVote => {
+        const { cancelSig: _s, cancelAttempts: _a, nextCancelAt: _n, cancelError: _e, ...rest } = x;
+        return rest;
+      };
       let r: Awaited<ReturnType<typeof withdrawVote>>;
       try {
-        r = await withdrawVote(cur, { relayFor, network: coreNetwork, cancelSig: sigOf, now: nowS });
+        r = await withdrawVote(cur, { relayFor, network: coreNetwork, cancelSig: () => sig, now: nowS });
       } catch (e) {
         if (!(e instanceof WithdrawError)) throw e;
-        // keep the relay ids found on the way, so the next try (or the watchdog) can reach the vote
-        updateWatched((list) => list.map((x) => (x.voteHash === w.voteHash ? { ...x, refs: e.vote.refs, relayStatus: e.vote.relayStatus, relayInfo: e.vote.relayInfo } : x)), t);
-        throw e.reason;
+        // keep what was learned on the way (relay ids, where it may still be), so the next try can reach the vote; a relay that did
+        // not answer is asked again, one that refused the cancel itself (e.g. the masternode's voting key changed) is not
+        const { refs, relayStatus, relayInfo, maybeAt, status } = e.vote;
+        const learned = { refs, relayStatus, relayInfo, maybeAt, status };
+        const refused = relayRefused(e.reason);
+        updateWatched((list) => list.map((x) => (x.voteHash === w.voteHash ? (refused ? settled({ ...x, ...learned }) : retryLater({ ...x, ...learned }, `a relay could not be reached (${errorText(e.reason)})`)) : x)), t);
+        throw e;
       }
       const after: Record<WithdrawResult, Partial<WatchedVote>> = {
         cancelled: { status: 'cancelled' },
         gone: { status: onGone },
         sent: { status: 'broadcast' },
         maybe: { status: 'broadcast', withdrawn: true },
-        // a relay may still hold it: never sent again from here, and shown as such (not "dropped")
-        unknown: { status: 'queued', restored: true },
+        // a relay may still hold it and its answer was lost: asked again later; one that answered but cannot tell: never sent again
+        // from here, and shown as possibly held (not "dropped")
+        unknown: { status: 'queued', ...(r.lost ? {} : { restored: true }) },
       };
-      updateWatched((list) => list.map((x) => (x.voteHash === w.voteHash ? { ...r.vote, ...after[r.result] } : x)), t);
+      const next = { ...r.vote, ...after[r.result] };
+      const rec = r.lost ? retryLater(next, `no answer from ${(r.vote.maybeAt ?? []).map(relayHost).join(' and ') || 'the relay'}`) : settled(next);
+      updateWatched((list) => list.map((x) => (x.voteHash === w.voteHash ? rec : x)), t);
       return r.result;
     },
     [coreNetwork, relayFor, updateWatched],
@@ -1084,7 +1079,8 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         // cancel it, but only once a new vote can actually be made for that masternode (planned first). One that already went
         // out counts as the current vote (Core's 1-hour rule and "later wins" apply to it), and those masternodes are re-planned.
         // A vote still queued in this browser never left: the new one simply takes its place (mergeWatched drops it). One whose
-        // submission timed out may be held by that relay: it is looked up there and cancelled like a held one (D-005).
+        // answer was lost (a reset, timeout or 5xx) may be held by that relay: it is looked up there and cancelled like a held one
+        // (D-005); one that may still be there afterwards counts as current, so the new vote is timed after it.
         const now = nowS();
         let window: { earliest: number; latest: number } | null = null;
         if (opts.mode === 'deferred') {
@@ -1114,7 +1110,9 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
           // cancelled like any held vote
           castingRef.current = true;
           while (inflightRef.current.size) await Promise.all([...inflightRef.current.values()].map((p) => p.catch(() => {})));
-          let plan = planWith(current, intents);
+          // never the same nTime as an own earlier vote of that masternode there (the hour rule pins it): it would be that vote again
+          const planUntied = (cur: Map<string, CurrentVote>, list: Intent[]): PlanResult => untieOwnTimes(planWith(cur, list), ownVoteTimes(watchedRef.current), now, !!window);
+          let plan = planUntied(current, intents);
           // masternodes that get a new vote, plus those whose new choice equals the current vote (skipped as "already voted"):
           // a held vote of ours for either would otherwise go out later and win
           const keep = new Set([
@@ -1123,12 +1121,15 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
           ]);
           let replan = false;
           let n = 0;
-          const taking = (x: WatchedVote) => x.status === 'held' || (x.status === 'queued' && !!x.maybeAt?.length);
-          for (const w of watchedRef.current.filter((x) => taking(x) && keep.has(currentKey(x, x.govHash)))) {
+          for (const w of watchedRef.current.filter((x) => mayBeAtRelay(x) && keep.has(currentKey(x, x.govHash)))) {
             stillHere();
             // paced like submissions, so replacing many held votes stays under a relay's per-IP limit
             if (n++ >= 10) await new Promise((r) => setTimeout(r, IMMEDIATE_PACE_MS));
-            const r = await withdraw(w, keyOf(w), t, 'dropped');
+            // a relay that could not be asked keeps the cancel retrying (cancelSig): like `unknown`, the new vote is timed after it
+            const r = await withdraw(w, cancelSigFor(w, keyOf(w)), t, 'dropped').catch((e: unknown) => {
+              if (e instanceof WithdrawError && watchedRef.current.find((x) => x.voteHash === w.voteHash)?.cancelSig) return 'unknown' as const;
+              throw e instanceof WithdrawError ? e.reason : e;
+            });
             if (r !== 'cancelled' && r !== 'gone') {
               // went out, may have, or a relay may still hold it: it counts as the current vote, and the new one is timed after it
               replan = true;
@@ -1136,7 +1137,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
             }
           }
           stillHere();
-          if (replan) plan = planWith(current, intents);
+          if (replan) plan = planUntied(current, intents);
           const signed: WatchedVote[] = plan.ok.map((p) => {
             const owner = ownerOf(p.mn);
             const key = keyOf(p.mn);
@@ -1205,19 +1206,27 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
           await inflightRef.current.get(voteHash)?.catch(() => {});
           const v = watchedRef.current.find((x) => x.voteHash === voteHash);
           if (!v) return;
-          // never left this browser: taking it out of the queue is the cancel
-          if (v.status === 'queued' && !v.maybeAt?.length) {
+          // never left this browser (no relay has or may have it): taking it out of the queue is the cancel
+          if (neverLeft(v)) {
             updateWatched((list) => list.map((x) => (x.voteHash === voteHash ? { ...x, status: 'cancelled' } : x)), t);
             return;
           }
           castingRef.current = casting = true;
-          r = await withdraw(v, key, t, 'cancelled');
+          r = await withdraw(v, cancelSigFor(v, key), t, 'cancelled').catch((e: unknown) => {
+            if (!(e instanceof WithdrawError)) throw e;
+            if (relayRefused(e.reason)) throw new Error(`Not cancelled: the relay refused the cancel (${errorText(e.reason)}), so it still holds this vote and can release it. To change it, vote again: the new vote is timed later and wins.`);
+            throw new Error(`Not cancelled yet: a relay that may hold this vote could not be reached (${errorText(e.reason)}). This browser keeps asking it to cancel while this page is open; until it answers, the vote could still be released. To be sure it does not count, vote again: the new vote is timed later and wins.`);
+          });
         } finally {
           if (casting) castingRef.current = false;
           key?.wipe();
         }
         if (r === 'unknown')
-          throw new Error('It is not known whether a relay holds this vote (its submission was never confirmed, and the relay could not be asked). This browser will not send it again, but if a relay did receive it, it could still be released: vote again to be sure, the new vote is timed later and wins.');
+          throw new Error(
+            watchedRef.current.find((x) => x.voteHash === voteHash)?.cancelSig
+              ? 'Not cancelled yet: a relay that may hold this vote did not answer. This browser keeps asking it to cancel while this page is open; until it answers, the vote could still be released. To be sure it does not count, vote again: the new vote is timed later and wins.'
+              : 'It is not known whether a relay holds this vote (its submission was never confirmed, and the relay could not tell). This browser will not send it again, but if a relay did receive it, it could still be released: vote again to be sure, the new vote is timed later and wins.',
+          );
         if (r === 'sent') throw new Error('Too late: a relay has already broadcast this vote. Vote again to change it (Core allows one change per hour).');
         if (r === 'maybe') throw new Error('Cancelled at the relay, but the relay had already handed this vote to the network once, so it may already count. Vote again to change it (Core allows one change per hour).');
         await backupPending(watchedRef.current.filter((x) => x.voteHash !== voteHash), false, t).catch(() => {});
@@ -1227,7 +1236,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
   );
 
   const retryNow = useCallback(() => {
-    updateWatched((list) => list.map((x) => (x.status === 'queued' && !x.restored ? { ...x, nextSendAt: 0 } : x)), sessionToken());
+    updateWatched((list) => list.map((x) => (x.cancelSig ? { ...x, nextCancelAt: 0 } : x.status === 'queued' && !x.restored ? { ...x, nextSendAt: 0 } : x)), sessionToken());
     for (const r of relays) void checkHealth(r, true);
     kickRef.current();
   }, [updateWatched, relays, checkHealth, sessionToken]);
@@ -1274,10 +1283,12 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       if (!list.length) return schedule(TICK_SLOW_MS);
       quiet = changed ? 0 : Math.min(quiet + 1, 3);
       const urgent = list.some(
-        (v) => (v.status === 'broadcast' && !v.withdrawn) || v.status === 'confirmed' || (v.status === 'queued' && !v.restored && (v.nextSendAt ?? 0) - now < 10) || (v.status === 'held' && Math.max(v.releaseAt, ...Object.values(v.relayInfo ?? {}).map((i) => i.nextAttemptAt ?? 0)) - now < 90),
+        (v) => (v.status === 'broadcast' && !v.withdrawn) || v.status === 'confirmed' || (v.status === 'queued' && !v.restored && !v.cancelSig && (v.nextSendAt ?? 0) - now < 10) || (v.status === 'held' && Math.max(v.releaseAt, ...Object.values(v.relayInfo ?? {}).map((i) => i.nextAttemptAt ?? 0)) - now < 90),
       );
       // while a cast is sending, its own votes are not the watchdog's to send: no 1-second ticks for them
-      const nextSend = castingRef.current ? Infinity : Math.min(...list.filter((v) => sendDue({ ...v, nextSendAt: 0 }, now)).map((v) => (v.nextSendAt ?? now) - now));
+      const nextSend = castingRef.current
+        ? Infinity
+        : Math.min(...list.filter((v) => sendDue({ ...v, nextSendAt: 0 }, now) || cancelDue({ ...v, nextCancelAt: 0 }, now)).map((v) => ((v.cancelSig ? v.nextCancelAt : v.nextSendAt) ?? now) - now));
       const base = urgent || castingRef.current ? TICK_FAST_MS * (1 + quiet * 0.5) : TICK_SLOW_MS;
       schedule(Math.max(1000, Math.min(base, Number.isFinite(nextSend) ? nextSend * 1000 + 200 : base)));
     };
@@ -1297,8 +1308,11 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       let changed = false;
       // 1. queued votes that are due: submit (one at a time; paced by the relays' answers)
       if (!castingRef.current) {
-        for (const v of watchedRef.current.filter((x) => sendDue(x, now))) {
+        for (const due of watchedRef.current.filter((x) => sendDue(x, now))) {
           if (stop || castingRef.current || sessionToken() !== tickFor) break;
+          // the record as it is now: discarded or cancelled while an earlier send waited for its relay, it is not sent
+          const v = watchedRef.current.find((x) => x.voteHash === due.voteHash);
+          if (!v || !sendDue(v, nowS())) continue;
           const p = trySend(v);
           inflightRef.current.set(v.voteHash, p);
           let after: WatchedVote;
@@ -1314,13 +1328,33 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
             updateWatchedRef.current((w) => w.map((x) => (x.voteHash === v.voteHash ? { ...x, ...where } : x)), tickFor);
             const status = nowRec.status;
             const key = keyCopy(liveKey(v));
-            void withdraw({ ...nowRec, ...where, status: after.refs.length ? 'held' : 'queued' }, key, tickFor, status)
-              .catch(() => {})
-              .finally(() => key?.wipe());
+            const target: WatchedVote = { ...nowRec, ...where, status: after.refs.length ? 'held' : 'queued' };
+            let sig: string | undefined;
+            try {
+              sig = cancelSigFor(target, key);
+            } finally {
+              key?.wipe();
+            }
+            // a locked keyring cannot sign the cancel: the vote is shown where it may be (held, with its cancel button, or "may be
+            // at a relay", never sent again from here), so it is not forgotten while a relay may still release it
+            if (!sig) updateWatchedRef.current((w) => w.map((x) => (x.voteHash === v.voteHash ? { ...target, ...(target.status === 'queued' ? { restored: true } : {}) } : x)), tickFor);
+            else void withdraw(target, sig, tickFor, status).catch(() => {});
             continue;
           }
           apply(new Map([[v.voteHash, v]]), [after]);
           changed ||= after.status !== v.status;
+        }
+      }
+      // 1b. cancels a relay has not confirmed yet (it could not be reached): asked again, with the signed cancel kept on the record
+      if (!castingRef.current) {
+        for (const v of watchedRef.current.filter((x) => cancelDue(x, nowS()))) {
+          if (stop || castingRef.current || sessionToken() !== tickFor) break;
+          const before = v.status;
+          // registered as in flight, so a user cancel or a cast waits for it instead of withdrawing the same vote at the same time
+          const p = withdraw(v, v.cancelSig, tickFor, 'cancelled').catch(() => null);
+          inflightRef.current.set(v.voteHash, p);
+          const r = await p.finally(() => inflightRef.current.get(v.voteHash) === p && inflightRef.current.delete(v.voteHash));
+          changed ||= r !== null && r !== 'unknown' && before !== watchedRef.current.find((x) => x.voteHash === v.voteHash)?.status;
         }
       }
       const open = watchedRef.current.filter((v) => isTracked(v, nowS()) && v.status !== 'queued');
@@ -1443,6 +1477,8 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
               // a briefly rate-limited relay (429 rate-limited) did not see the vote: that attempt does not count, but the next try
               // waits for Retry-After; anything else (too-many-held, refusals, transport) counts
               if (e instanceof RelayError && e.status === 429 && e.code === 'rate-limited') next = { ...next, rebroadcasts: next.rebroadcasts - 1, retryAt: nowS() + Math.min(Math.max(e.retryAfterS ?? 60, 30), 3600) };
+              // its answer was lost (reset, timeout, 5xx): that relay may hold it now, so a cancel or a newer vote takes it back there
+              else if (maybeReceived(e, relay) && !next.maybeAt?.includes(relay)) next = { ...next, maybeAt: [...(next.maybeAt ?? []), relay] };
             }
           }
         }

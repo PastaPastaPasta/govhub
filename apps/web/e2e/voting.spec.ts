@@ -190,14 +190,16 @@ test.describe('vote panel (fixtures)', () => {
     });
   });
 
-  test('relay unreachable: kept in the browser, plain error, Retry now sends it once a relay is back', async ({ page }) => {
+  test('relay unreachable: kept in the browser, said honestly (it may have arrived), Retry now sends it once a relay is back', async ({ page }) => {
     await openPanel(page, 'down');
     const tracker = await voteWithFirst(page, 'No');
     await expect(tracker).toHaveAttribute('data-status', 'queued');
-    await expect(tracker.getByTestId('vote-tracker-badge')).toHaveText('Not sent yet');
-    await expect(tracker.getByTestId('vote-tracker-line')).toContainText('Not accepted by a relay yet: relay-');
-    await expect(tracker.getByTestId('vote-tracker-line')).toContainText('Kept in this browser');
-    await expect(tracker.locator('[data-step="relay"]')).toHaveAttribute('data-state', 'error');
+    // a browser cannot tell a refused connection from one reset after the relay stored the vote (B-S1-1): never "Not sent yet"
+    await expect(tracker.getByTestId('vote-tracker-badge')).toHaveText('May be at the relay');
+    await expect(tracker.getByTestId('vote-tracker-line')).toContainText('but no answer came back (the connection to relay-');
+    await expect(tracker.getByTestId('vote-tracker-line')).toContainText('so it may already be held there');
+    await expect(tracker.locator('[data-step="relay"]')).toHaveAttribute('data-state', 'active');
+    await expect(tracker.getByTestId('vote-cancel')).toHaveText('Cancel this vote');
     await expect(tracker.getByTestId('vote-retry')).toHaveText('Retry now (tries every relay)');
     await page.evaluate(() => (window as unknown as { __voteSim: { up(): void } }).__voteSim.up());
     await tracker.getByTestId('vote-retry').click();
@@ -209,18 +211,19 @@ test.describe('vote panel (fixtures)', () => {
     await openPanel(page, 'hour');
     const tracker = await voteWithFirst(page, 'Abstain');
     await expect(tracker).toHaveAttribute('data-status', 'held');
-    await expect(tracker.getByTestId('vote-tracker-line')).toContainText(/Core allows one vote change per hour per masternode; relay-(one|two)\.example sends this at \d{1,2}:\d{2}/);
+    // an hour later can be tomorrow (after 23:00 local): then the time carries the date ("Oct 26, 2026, 12:09 AM")
+    await expect(tracker.getByTestId('vote-tracker-line')).toContainText(/Core allows one vote change per hour per masternode; relay-(one|two)\.example sends this at (?:[A-Z][a-z]{2} \d{1,2}, \d{4}, )?\d{1,2}:\d{2}/);
     await openMns(page);
     await expect(page.getByTestId('mn-vote-panel').getByTestId('pending-vote').first()).toContainText('Held by relay');
     await tracker.getByTestId('vote-cancel').click();
     await expect(page.getByTestId('vote-tracker')).toHaveCount(0);
   });
 
-  test('D-005: a vote whose submission timed out is found at the relay and cancelled before a newer vote, not "dropped"', async ({ page }) => {
-    await openPanel(page, 'lost');
+  for (const [sim, how] of [['lost', 'timed out'], ['reset', 'was reset (B-S1-1)']] as const) test(`D-005: a vote whose submission ${how} is found at the relay and cancelled before a newer vote, not "dropped"`, async ({ page }) => {
+    await openPanel(page, sim);
     const no = await voteWithFirst(page, 'No');
-    await expect(no).toHaveAttribute('data-status', 'queued');
-    await expect(no.getByTestId('vote-tracker-badge')).toHaveText('Not sent yet');
+    // never "Not sent yet"; the watchdog's next try (5 s) may already have found it held at the relay
+    await expect(no.getByTestId('vote-tracker-badge')).toHaveText(/^(May be at the relay|Held by relay)$/);
     const simVotes = () => page.evaluate(() => (window as unknown as { __voteSim: { votes(): Array<{ status: string }> } }).__voteSim.votes());
     // the relays stored the No although their answers were lost
     await expect.poll(async () => (await simVotes()).filter((v) => v.status === 'held').length).toBeGreaterThan(0);
@@ -234,6 +237,25 @@ test.describe('vote panel (fixtures)', () => {
     const yes = after.slice(heldNo);
     expect(yes.length).toBeGreaterThan(0);
     expect(yes.every((v) => v.status === 'held')).toBe(true);
+  });
+
+  test('B-S1-1: a vote whose answer was lost as a connection reset is cancelled AT THE RELAY, not discarded in the browser', async ({ page }) => {
+    await openPanel(page, 'reset');
+    const no = await voteWithFirst(page, 'No');
+    // never "Not sent yet"; the watchdog's next try (5 s) may already have found it held at the relay
+    await expect(no.getByTestId('vote-tracker-badge')).toHaveText(/^(May be at the relay|Held by relay)$/);
+    await expect(no.getByTestId('vote-tracker-line')).not.toContainText('Not sent');
+    const simVotes = () => page.evaluate(() => (window as unknown as { __voteSim: { votes(): Array<{ status: string }> } }).__voteSim.votes());
+    // the relays stored the No although every answer was lost
+    await expect.poll(async () => (await simVotes()).filter((v) => v.status === 'held').length).toBeGreaterThan(0);
+    const cancel = no.getByTestId('vote-cancel');
+    await expect(cancel).toHaveText('Cancel this vote');
+    await cancel.click();
+    // every relay copy of the No is cancelled there (posted again to learn its id, then cancelled), and only then is it gone here
+    await expect.poll(async () => (await simVotes()).map((v) => v.status), { timeout: 20_000 }).toEqual((await simVotes()).map(() => 'cancelled'));
+    await expect(page.getByTestId('vote-tracker')).toHaveCount(0);
+    await page.getByRole('link', { name: 'My masternodes', exact: true }).click();
+    await expect(page.getByTestId('watched-row').first().getByTestId('watched-badge')).toHaveText('Cancelled');
   });
 
   test('my votes: grouped by proposal on the keyring page, with the new statuses', async ({ page }) => {

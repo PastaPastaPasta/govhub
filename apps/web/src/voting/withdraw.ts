@@ -1,11 +1,12 @@
 // Taking back a vote of ours before a newer one replaces it (a cast) or because the user cancels it. A vote a relay may hold must be
 // cancelled there, or the relay can release it later and, being timed later, override the newer vote. That includes a vote whose
-// submission timed out (`maybeAt`): the relay may have stored it without us learning its id. It is posted again, which is idempotent
-// by vote hash (a relay that has it answers with its receipt; one that does not takes it now), and then cancelled with that id.
+// answer was lost (`maybeAt`: a connection reset, a timeout, a 5xx): the relay may have stored it without us learning its id. It is
+// posted again, which is idempotent by vote hash (a relay that has it answers with its receipt; one that does not takes it now), and
+// then cancelled with that id.
 import type { WatchedVote } from './pending.ts';
 import { RelayError } from './relay.ts';
 import type { RelayPort } from './sim.ts';
-import { applyRelayState, everLeft } from './status.ts';
+import { applyRelayState, everLeft, relayRefused } from './status.ts';
 
 /**
  * - cancelled: every relay that held it cancelled it, and none may have sent it before
@@ -24,10 +25,20 @@ export interface WithdrawDeps {
   now(): number;
 }
 
-/** A vote posted again only to learn its relay id is held at least this long, so it is cancelled before any relay can send it. */
-export const REPOST_HOLD_S = 300;
-/** Relay answers that prove it does not hold the vote (it refused it against another vote of the masternode). */
-const NOT_HELD = new Set(['later-vote-held', 'newer-vote-in-core']);
+/**
+ * A vote posted again only to learn its relay id asks to be held at least this long (within the relay's bound of a day after its
+ * nTime), so a relay that never had it and takes it now cannot send it before the cancel reaches it, even if that cancel has to be
+ * retried later. A relay that already had it answers with its receipt and keeps its own release time.
+ */
+export const REPOST_HOLD_S = 6 * 3600;
+const repostRelease = (v: WatchedVote, now: number): number => Math.max(v.releaseAt, Math.min(v.time + 86_400 - 120, now + REPOST_HOLD_S));
+/**
+ * Relay answers that prove it does not hold the vote: it looks the vote up by hash before these checks (and answers with the receipt
+ * when it has it), so it refused it against another vote of the masternode, or because it is full. Any other refusal can come before
+ * that lookup (services/relay/src/relay.ts submitVote).
+ */
+const NOT_HELD = new Set(['later-vote-held', 'newer-vote-in-core', 'too-many-held', 'relay-full']);
+export const provesNotHeld = (e: unknown): boolean => e instanceof RelayError && NOT_HELD.has(e.code ?? '');
 
 /** Thrown when a relay could not be reached; `vote` carries what was learned (relay ids), which the caller should keep. */
 export class WithdrawError extends Error {
@@ -45,30 +56,41 @@ export class WithdrawError extends Error {
  * that has it answers with its receipt). The release time is pushed out (it is not signed), so a relay that never had the vote and
  * takes it now holds it until it is cancelled instead of broadcasting it. `inCore`: a relay said Core already has this vote.
  */
-export async function reconcileMaybe(v: WatchedVote, d: WithdrawDeps): Promise<{ vote: WatchedVote; inCore: boolean }> {
+export async function reconcileMaybe(v: WatchedVote, d: WithdrawDeps): Promise<{ vote: WatchedVote; inCore: boolean; lost: boolean }> {
   const unsure: string[] = [];
   let inCore = false;
+  let lost = false;
   for (const relay of v.maybeAt ?? []) {
     if (v.refs.some((r) => r.relay === relay)) continue;
     try {
-      v = applyRelayState(v, relay, await d.relayFor(relay).submit({ ...v, releaseAt: Math.max(v.releaseAt, d.now() + REPOST_HOLD_S) }, d.network));
+      v = applyRelayState(v, relay, await d.relayFor(relay).submit({ ...v, releaseAt: repostRelease(v, d.now()) }, d.network));
     } catch (e) {
       if (e instanceof RelayError && e.code === 'already-current') inCore = true;
-      else if (!(e instanceof RelayError && NOT_HELD.has(e.code ?? ''))) unsure.push(relay); // anything else: it may hold it
+      else if (!provesNotHeld(e)) {
+        unsure.push(relay); // anything else: it may hold it
+        lost ||= !relayRefused(e); // its answer was lost again (asking later may work), not a refusal that cannot tell
+      }
     }
   }
   const { maybeAt: _m, ...rest } = v;
-  return { vote: unsure.length ? { ...rest, maybeAt: unsure } : rest, inCore };
+  return { vote: unsure.length ? { ...rest, maybeAt: unsure } : rest, inCore, lost };
 }
 
-export async function withdrawVote(v0: WatchedVote, d: WithdrawDeps): Promise<{ result: WithdrawResult; vote: WatchedVote }> {
+/**
+ * `lost` (with `unknown`): a relay that may hold the vote did not answer (connection failed, timeout, 5xx), so asking again later can
+ * still settle it; without it, every such relay answered with a refusal that cannot tell.
+ */
+export async function withdrawVote(v0: WatchedVote, d: WithdrawDeps): Promise<{ result: WithdrawResult; vote: WatchedVote; lost?: boolean }> {
   // signed before any await: a sign-out meanwhile wipes the key, and a relay that only got the vote through the re-post must
   // still get its cancel
   const sig = d.cancelSig(v0);
   const r0 = await reconcileMaybe(v0, d);
   let v = r0.vote;
   const unsure = !!v.maybeAt?.length;
-  if (!v.refs.length) return { result: r0.inCore ? 'sent' : unsure ? 'unknown' : 'gone', vote: v };
+  if (!v.refs.length) {
+    if (r0.inCore) return { result: 'sent', vote: v };
+    return unsure ? { result: 'unknown', vote: v, lost: r0.lost } : { result: 'gone', vote: v };
+  }
   let sent = r0.inCore;
   let maybe = false;
   let firstError: unknown = null;
@@ -96,7 +118,7 @@ export async function withdrawVote(v0: WatchedVote, d: WithdrawDeps): Promise<{ 
   }
   if (firstError) throw new WithdrawError(firstError, v);
   if (sent) return { result: 'sent', vote: v };
-  if (unsure) return { result: 'unknown', vote: v };
+  if (unsure) return { result: 'unknown', vote: v, lost: r0.lost };
   // what each relay says now (maybeSent), with the relay statuses seen before the cancel
   if (maybe || everLeft({ status: v0.status, relayStatus: v0.relayStatus, relayInfo: v.relayInfo })) return { result: 'maybe', vote: v };
   return { result: 'cancelled', vote: v };

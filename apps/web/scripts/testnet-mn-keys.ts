@@ -18,6 +18,9 @@ export const RESERVED_TESTNET_MNS: ReadonlySet<string> = new Set(['masternode-27
 /** The usable test keys: every yml masternode except the reserved ones. */
 export const testnetMnKeys = (): TestMnKey[] => allTestnetMnKeys().filter((k) => !RESERVED_TESTNET_MNS.has(k.name));
 
+/** The reserved masternodes' voting addresses (public), for guards that must never let a vote of theirs out. */
+export const reservedTestnetMnAddresses = (): string[] => allTestnetMnKeys().filter((k) => RESERVED_TESTNET_MNS.has(k.name)).map((k) => k.address);
+
 function allTestnetMnKeys(): TestMnKey[] {
   const text = readFileSync(join(homedir(), 'workspace/dash-network-configs/testnet.yml'), 'utf8');
   const out: TestMnKey[] = [];

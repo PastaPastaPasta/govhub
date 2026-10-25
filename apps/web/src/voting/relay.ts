@@ -50,6 +50,17 @@ export class RelayError extends Error {
   }
 }
 
+/**
+ * The request was never made (an unusable relay URL or body): nothing reached the relay. Every other failure of a request may have
+ * reached it, because a browser reports a connection reset after the request was sent the same way as a refused connection.
+ */
+export class RelayNotSentError extends RelayError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'RelayNotSentError';
+  }
+}
+
 const STATUSES = new Set<RelayVoteStatus>(['held', 'maybe-broadcast', 'sending', 'broadcast', 'confirmed', 'failed', 'cancelled', 'superseded']);
 const HOLD_REASONS = new Set<HoldReason>(['release-time', 'one-change-per-hour', 'core-time-limit', 'retrying']);
 export const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -91,16 +102,24 @@ export class RelayClient {
   }
 
   private async req(path: string, body?: unknown, timeoutMs = this.timeoutMs): Promise<{ status: number; json: unknown }> {
+    let url: string;
+    let payload: string | undefined;
+    try {
+      url = new URL(`${this.base}${path}`).href;
+      payload = body === undefined ? undefined : JSON.stringify(body);
+    } catch (e) {
+      throw new RelayNotSentError(`relay ${this.base}: the request could not be made: ${(e as Error).message}`);
+    }
     let res: Response;
     try {
-      res = await fetch(`${this.base}${path}`, {
+      res = await fetch(url, {
         method: body === undefined ? 'GET' : 'POST',
         credentials: 'omit',
         referrerPolicy: 'no-referrer',
         cache: 'no-store',
         signal: AbortSignal.timeout(timeoutMs),
         headers: body === undefined ? { accept: 'application/json' } : { accept: 'application/json', 'content-type': 'application/json' },
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        ...(payload === undefined ? {} : { body: payload }),
       });
     } catch (e) {
       throw new RelayError(`relay ${this.base} unreachable: ${(e as Error).message}`);

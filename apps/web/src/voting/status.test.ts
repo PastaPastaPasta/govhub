@@ -134,6 +134,12 @@ describe('what each state says', () => {
     const d = describeVote(failed, NOW, fmt);
     expect(d).toMatchObject({ badge: 'Not sent yet', tone: 'bad' });
     expect(d.line).toBe('Not accepted by a relay yet: gov-relay-testnet.dashhq.org is unreachable. Kept in this browser. Trying again at T20.');
+    // its answer was lost: never "Not sent yet"
+    const lost = describeVote({ ...failed, maybeAt: [R1], lastSendError: 'the connection to gov-relay-testnet.dashhq.org failed before its answer arrived: Failed to fetch' }, NOW, fmt);
+    expect(lost).toMatchObject({ badge: 'May be at the relay', tone: 'wait' });
+    expect(lost.line).toBe(
+      'Tried to send it to gov-relay-testnet.dashhq.org, but no answer came back (the connection to gov-relay-testnet.dashhq.org failed before its answer arrived: Failed to fetch), so it may already be held there. Asking again at T20: a relay keeps one copy of the same vote, and its answer says where the vote is. Cancelling takes it back at the relay too.',
+    );
     expect(describeVote({ ...failed, restored: true }, NOW, fmt).badge).toBe('Signed elsewhere');
   });
   it('held: by which relay, until when, and why', () => {
@@ -183,6 +189,8 @@ describe('tracker', () => {
   });
   it('a relay that cannot be reached stops at "accepted by relay"; a refusal after the relay took it stops at broadcast', () => {
     expect(states(vote({ lastSendError: 'unreachable', nextSendAt: NOW + 5 }))).toEqual(['done', 'error', 'todo', 'todo', 'todo']);
+    // one whose answer was lost may be at the relay: that step is still open, not stopped
+    expect(states(vote({ lastSendError: 'no answer', maybeAt: [R1], nextSendAt: NOW + 5 }))).toEqual(['done', 'active', 'todo', 'todo', 'todo']);
     const failed = applyRelayState(vote(), R1, relayState({ status: 'failed', lastError: 'obsolete' }));
     expect(failed).toMatchObject({ status: 'failed', failReason: 'Core already has a newer vote from this masternode' });
     expect(states(failed)).toEqual(['done', 'done', 'error', 'todo', 'todo']);
@@ -198,9 +206,15 @@ describe('relay answers and submission errors', () => {
     expect(applyRelayState({ ...v, status: 'confirmed' }, R1, relayState({ status: 'failed' })).status).toBe('confirmed'); // the bridge decided
   });
   it('maps refusals to plain outcomes', () => {
-    expect(classifySubmitError(new RelayError(`relay ${R1} unreachable: Load failed`), R1)).toMatchObject({ kind: 'retry', text: 'gov-relay-testnet.dashhq.org is unreachable', tryOther: true });
+    // a failed connection may have been reset after the relay stored the vote: maybe received (B-S1-1)
+    expect(classifySubmitError(new RelayError(`relay ${R1} unreachable: Load failed`), R1)).toMatchObject({ kind: 'retry', maybeReceived: true, text: 'the connection to gov-relay-testnet.dashhq.org failed before its answer arrived: Load failed', tryOther: true });
     expect(classifySubmitError(new RelayError('slow down', 429, 'rate-limited', undefined, 40), R1)).toMatchObject({ kind: 'retry', afterS: 40 });
-    expect(classifySubmitError(new RelayError('full', 503, 'relay-full'), R1)).toMatchObject({ kind: 'retry', tryOther: true });
+    expect(classifySubmitError(new RelayError('slow down', 429, 'rate-limited', undefined, 40), R1)).not.toHaveProperty('maybeReceived');
+    // the relay's own "full" / "Core down" 503 (written before it stores anything): retried, not a lost answer; any other 5xx is
+    expect(classifySubmitError(new RelayError('full', 503, 'relay-full', undefined, 60), R1)).toMatchObject({ kind: 'retry', tryOther: true, afterS: 60 });
+    expect(classifySubmitError(new RelayError('full', 503, 'relay-full', undefined, 60), R1)).not.toHaveProperty('maybeReceived');
+    expect(classifySubmitError(new RelayError('internal error', 500, 'internal'), R1)).toMatchObject({ kind: 'retry', maybeReceived: true });
+    expect(classifySubmitError(new RelayError('relay answered HTTP 502', 502), R1)).toMatchObject({ kind: 'retry', maybeReceived: true });
     expect(classifySubmitError(new RelayError('have it', 409, 'already-current'), R1).kind).toBe('sent');
     expect(classifySubmitError(new RelayError('newer', 409, 'newer-vote-in-core'), R1)).toMatchObject({ kind: 'final', status: 'replaced' });
     expect(classifySubmitError(new RelayError('later', 409, 'later-vote-held'), R1)).toMatchObject({ kind: 'final', status: 'failed' });

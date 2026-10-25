@@ -72,8 +72,20 @@ export interface WatchedVote extends SignedVoteRecord {
   prev?: { outcome: number; time: number } | null;
   /** signed with a memory-only keyring: kept in this tab only, never written to storage */
   ephemeral?: boolean;
-  /** relays a submission timed out at: they may hold the vote without us knowing its id (a cancel cannot be sure) */
+  /**
+   * Relays a submission may have reached without us learning the answer (connection reset or refused, timeout, 5xx): they may hold
+   * the vote without us knowing its id. It is posted there again (idempotent by vote hash) to find out, and to cancel it.
+   */
   maybeAt?: string[];
+  /**
+   * The user's cancel (or a newer vote's take-back) that a relay has not confirmed yet, because it could not be reached: the signed
+   * cancel (signmessage by the voting key over relayCancelMessage; it can cancel this one vote and nothing else), asked again with
+   * backoff (`nextCancelAt`) until every relay that may hold the vote answered. `cancelError`: why the last try did not finish.
+   */
+  cancelSig?: string;
+  cancelAttempts?: number;
+  nextCancelAt?: number;
+  cancelError?: string;
   /** the Core network it is signed for (records from before this field: the network of the list they are stored in) */
   network?: 'mainnet' | 'testnet';
   /**
@@ -221,6 +233,15 @@ const sameTarget = (a: WatchedVote, b: WatchedVote): boolean => a.voteHash !== b
 const signedBefore = (a: WatchedVote, b: WatchedVote): boolean => (a.signedAt ?? 0) < (b.signedAt ?? 0) || ((a.signedAt ?? 0) === (b.signedAt ?? 0) && a.time < b.time);
 
 /**
+ * No relay has or may have it: never sent, or every attempt was refused by the relay itself. Taking it out of this browser's queue is
+ * all a cancel (or a newer vote) needs.
+ */
+export const neverLeft = (v: WatchedVote): boolean => v.status === 'queued' && !v.maybeAt?.length && !v.refs.length && !v.cancelSig;
+
+/** A relay may hold it (by id, or a submission whose answer was lost): a cancel or a newer vote must take it back there. */
+export const mayBeAtRelay = (v: WatchedVote): boolean => v.status === 'held' || ((v.status === 'queued' || v.status === 'failed') && !!v.maybeAt?.length);
+
+/**
  * Adds or replaces records by vote hash. A vote signed later for the same (masternode, proposal) drops an older one that never left
  * this browser (it is taken out of the send queue, with a note). Older votes that did leave are NOT marked here: a held one is cancelled
  * by the cast, and one that went out stays what it is until the newer vote actually wins in the bridge (bridgeVerdict).
@@ -229,9 +250,9 @@ export function mergeWatched(list: readonly WatchedVote[], add: readonly Watched
   const out = new Map(list.map((v) => [v.voteHash, v]));
   for (const v of add) {
     for (const o of out.values()) {
-      // a queued vote whose submission timed out (maybeAt) may be held by that relay: it is not "never sent", so it stays (the cast
+      // a queued vote whose answer was lost (maybeAt) may be held by that relay: it is not "never sent", so it stays (the cast
       // reconciles it with the relay and cancels it, or times the new vote after it)
-      if (sameTarget(o, v) && o.status === 'queued' && !o.maybeAt?.length && signedBefore(o, v)) out.set(o.voteHash, { ...o, status: 'dropped', replacedBy: v.voteHash });
+      if (sameTarget(o, v) && neverLeft(o) && signedBefore(o, v)) out.set(o.voteHash, { ...o, status: 'dropped', replacedBy: v.voteHash });
     }
     out.set(v.voteHash, { ...out.get(v.voteHash), ...v });
   }
@@ -281,11 +302,39 @@ export function bridgeVerdict(
 
 /** Whether the watchdog should re-send a vote a relay already took (not seen in the bridge long after its release). */
 export function needsRebroadcast(v: WatchedVote, now: number): boolean {
-  return !v.restored && !v.withdrawn && (v.status === 'held' || v.status === 'broadcast') && v.refs.length > 0 && now >= v.releaseAt + REBROADCAST_AFTER_S * (v.rebroadcasts + 1) && v.rebroadcasts < MAX_REBROADCASTS;
+  return !v.restored && !v.withdrawn && !v.cancelSig && (v.status === 'held' || v.status === 'broadcast') && v.refs.length > 0 && now >= v.releaseAt + REBROADCAST_AFTER_S * (v.rebroadcasts + 1) && v.rebroadcasts < MAX_REBROADCASTS;
 }
 
 /** Whether a queued vote is due for another submission. */
-export const sendDue = (v: WatchedVote, now: number): boolean => v.status === 'queued' && !v.restored && (v.nextSendAt ?? 0) <= now;
+export const sendDue = (v: WatchedVote, now: number): boolean => v.status === 'queued' && !v.restored && !v.cancelSig && (v.nextSendAt ?? 0) <= now;
+
+/** Whether a cancel no relay has confirmed yet is due for another try (a relay that may hold the vote is still to be asked). */
+export const cancelDue = (v: WatchedVote, now: number): boolean => !!v.cancelSig && (v.status === 'queued' || v.status === 'held' || !!v.maybeAt?.length) && (v.nextCancelAt ?? 0) <= now;
+
+/**
+ * Two records of one vote (this device, an older list, the Platform backup): `winner` is kept, but never loses where the vote may be
+ * (maybeAt) or a pending cancel (cancelSig) the other record knows about, or a relay could keep a vote this browser forgot.
+ */
+export function keepWhereItMayBe(winner: WatchedVote, other: WatchedVote): WatchedVote {
+  const maybeAt = [...new Set([...(winner.maybeAt ?? []), ...(other.maybeAt ?? [])])];
+  const cancel = !winner.cancelSig && other.cancelSig ? { cancelSig: other.cancelSig, cancelAttempts: other.cancelAttempts, nextCancelAt: other.nextCancelAt, cancelError: other.cancelError } : {};
+  return { ...winner, ...cancel, ...(maybeAt.length ? { maybeAt } : {}) };
+}
+
+/**
+ * The nTimes of our own votes per (masternode, proposal) that reached a relay or may have (cancelled ones too). A new vote never
+ * takes one of them: signed with the same time and outcome it would be the same vote (same hash), and a relay that cancelled it once
+ * answers with that cancelled record ("voting again reuses the pinned vote time": the one-change-per-hour rule pins the time).
+ */
+export function ownVoteTimes(list: readonly WatchedVote[]): Map<string, Set<number>> {
+  const out = new Map<string, Set<number>>();
+  for (const v of list) {
+    if (!v.refs.length && !v.maybeAt?.length && v.status !== 'broadcast' && v.status !== 'confirmed' && v.status !== 'replaced') continue;
+    const k = currentKey(v, v.govHash);
+    out.set(k, (out.get(k) ?? new Set()).add(v.time));
+  }
+  return out;
+}
 
 /** Relay to use for a re-broadcast: one this vote was not sent to yet, else the first. */
 export function pickRebroadcastRelay(v: WatchedVote, relays: readonly string[]): string | null {
