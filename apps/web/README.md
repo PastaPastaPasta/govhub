@@ -125,11 +125,12 @@ the Core commands and plain instructions, and never a key. "Restore from a backu
 trusting it: it recomputes the hash from the time and data, re-validates the data for the network, and
 compares the shown fields with the hashed ones.
 
-**Deposit keys.** These are recoverable, and the funds-recovery scanner uses
-`proposalDepositKey`/`proposalDepositKeys` in `@govhub/auth`:
+**Deposit keys.** These are recoverable: Settings → Recover funds scans them (`proposalFeeFamily` in `DEFAULT_KEY_FAMILIES`,
+docs/RECOVERY.md), with the same derivation as the wizard (`proposalDepositKey` in `@govhub/auth`):
 
-- A seed sign-in uses `m/9'/<coin>'/100'/0'/<index>'`. DIP-9 feature 100' is unregistered and used by
-  govhub; indexes start at 0 and are scanned with a gap of 20.
+- A seed sign-in uses `m/9'/<coin>'/100'/0'/<index>`. DIP-9 feature 100' is unregistered and used by
+  govhub. As in DIP-13's funding keys, the last index is not hardened. The wizard picks a free index among 0..19
+  at random, so two devices rarely collide; the Recover tool always scans 0..19 plus a gap of 20.
 - A key sign-in uses `HMAC-SHA256(key, "govhub/proposal-collateral/v1" || identity id || u32be(index) || ctr)`,
   the same construction as `sessionTopUpKey`.
 

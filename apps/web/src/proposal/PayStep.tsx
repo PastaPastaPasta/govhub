@@ -358,7 +358,7 @@ function Deposit({ draft, view, error, retry, services }: { draft: ProposalDraft
       )}
       {view && view.lateDuffs > 0n && (
         <p className="notice-box small">
-          {fmt(view.lateDuffs)} arrived after the fee transaction was made and is still at {view.address}. Your sign-in controls it: govhub's funds-recovery tool scans these deposit addresses and can send it back.
+          {fmt(view.lateDuffs)} arrived after the fee transaction was made and is still at {view.address}. Your sign-in controls it: Settings → Recover funds finds it and sends it back.
         </p>
       )}
       {error && (

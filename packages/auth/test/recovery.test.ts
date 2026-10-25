@@ -8,11 +8,12 @@ import { addressOf, publicKeyOf, wifOf } from '../src/keys.ts';
 import { MIN_CREATE_DEPOSIT_DUFFS } from '../src/layout.ts';
 import type { AssetLockProofInput } from '../src/platform.ts';
 import {
-  exportItemWif, forgetSpent, itemOptions, parseDashAddress, replayProven, RecoveryError, scanForFunds, sweepItem, fundWithItem, type KeyFamily, type RecoveryScan,
+  DEFAULT_KEY_FAMILIES, exportItemWif, forgetSpent, itemOptions, parseDashAddress, replayProven, RecoveryError, scanForFunds, sweepItem, fundWithItem, type KeyFamily, type RecoveryScan,
 } from '../src/recovery.ts';
 import { registrationFundingPath, SeedWallet, topUpFundingPath } from '../src/seed.ts';
 import { makeSession } from '../src/signin.ts';
-import { buildAssetLock, buildPayment, identityIdFromOutpoint, p2pkhScript } from '../src/tx.ts';
+import { buildAssetLock, buildPayment, buildProposalCollateral, identityIdFromOutpoint, p2pkhScript } from '../src/tx.ts';
+import { proposalDepositKey, proposalFeeFamily, sessionProposalDepositKey } from '../src/proposal.ts';
 import { sessionTopUpKey } from '../src/funding.ts';
 import { FakePlatform } from './fake-platform.ts';
 
@@ -197,7 +198,7 @@ describe('scan: discovery across the gap limits', () => {
     const found = r.items.map((i) => `${i.family}:${i.index}:${i.duffs}`).sort();
     expect(found).toEqual(['create:13:300000', 'create:3:100000', 'create:7:200000', 'topup:4:60000', 'topup:8:70000']);
     expect(r.identities.map((i) => i.identityIndex)).toEqual([0]);
-    expect(r.keysScanned).toBe(24 + 19);
+    expect(r.keysScanned).toBe(24 + 19 + 60); // + proposal fee deposits: 0..19 always, with lookahead
     expect(r.provenDuffs).toBe(730_000n);
     expect(r.items.every((i) => i.type === 'payments' && i.payments.every((p) => p.height! >= BASE))).toBe(true);
   });
@@ -236,6 +237,45 @@ describe('scan: discovery across the gap limits', () => {
     expect(o.sweep).not.toBeNull();
     expect(o.create).toBeNull();
     expect(o.topUp).toBeNull();
+  });
+});
+
+describe('scan: proposal fee deposits (the creation wizard)', () => {
+  it('finds an unspent fee deposit of the phrase (any index 0..19, and past a used one), sweep only; a spent one is gone', async () => {
+    const w = wallet();
+    const dep = (i: number) => proposalDepositKey({ kind: 'seed', index: i }, { wallet: w }, NET).publicKey;
+    const big = (toPub: Uint8Array, duffs: bigint): Tx =>
+      parseTx(buildPayment({ utxos: [{ txid: (++seq).toString(16).padStart(64, 'e'), vout: 0, value: 500_000_000n }], key: funder, to: [{ pubKeyHash: hash160(toPub), duffs }] }).raw);
+    const spentPay = big(dep(2), 101_000_000n);
+    // the wizard's collateral spends the deposit at index 2: nothing left there
+    const collateral = parseTx(
+      buildProposalCollateral({
+        utxos: [{ txid: spentPay.txid, vout: 0, value: 101_000_000n }],
+        key: proposalDepositKey({ kind: 'seed', index: 2 }, { wallet: w }, NET).privateKey,
+        govHashRaw: new Uint8Array(32).fill(9),
+        changeScript: p2pkhScript(new Uint8Array(20).fill(1)),
+      }).raw,
+    );
+    const c: Chain = { blocks: [[big(dep(17), 101_000_000n)], [spentPay], [collateral], [pay(dep(30), 50_000n)]] };
+    const r = await scan(fakeDapi(c), platformWithIdentity0());
+    const fee = r.items.filter((i) => i.family === 'proposal-fee');
+    expect(fee.map((i) => `${i.index}:${i.duffs}`).sort()).toEqual(['17:101000000', '30:50000']);
+    expect(fee[0]!.funding).toBeNull();
+    const o = itemOptions(fee.find((i) => i.index === 17)!, r);
+    expect(o.sweep).not.toBeNull();
+    expect(o.create).toBeNull();
+    expect(o.topUp).toBeNull();
+    expect(DEFAULT_KEY_FAMILIES).toContain(proposalFeeFamily);
+  });
+
+  it('a pasted key finds its own fee deposits (HMAC lane)', async () => {
+    const sk = hexToBytes('55'.repeat(32));
+    const id = '4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF';
+    const k = sessionProposalDepositKey(sk, id, 11);
+    const session = makeSession({ network: NET, identityId: id, identityIndex: null, keyId: 2, securityLevel: 2, source: 'key', privateKey: sk.slice(), wallet: null });
+    const r = await scanForFunds({ secret: { session }, dapi: fakeDapi({ blocks: [[pay(k.publicKey, 2_000_000n)]] }), platform: new FakePlatform(NET), fromHeight: BASE });
+    expect(r.items.map((i) => `${i.family}:${i.index}`)).toEqual(['proposal-fee-key:11']);
+    expect(r.items[0]!.address).toBe(addressOf(k.publicKey, NET));
   });
 });
 

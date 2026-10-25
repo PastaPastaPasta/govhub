@@ -23,13 +23,13 @@ const refundAddress = addressOf(publicKeyOf(refundKey), 'testnet');
 const P2SH_TESTNET = encodeAddress('p2sh', new Uint8Array(20).fill(7), 'testnet');
 
 describe('deposit key derivation', () => {
-  it("seed: m/9'/coin'/100'/0'/index' (pinned: a change breaks every recovery scan)", () => {
-    expect(proposalDepositPath('mainnet', 0)).toBe("m/9'/5'/100'/0'/0'");
-    expect(proposalDepositPath('testnet', 7)).toBe("m/9'/1'/100'/0'/7'");
+  it("seed: m/9'/coin'/100'/0'/index, last index not hardened like DIP-13 funding keys (pinned: a change breaks every recovery scan)", () => {
+    expect(proposalDepositPath('mainnet', 0)).toBe("m/9'/5'/100'/0'/0");
+    expect(proposalDepositPath('testnet', 7)).toBe("m/9'/1'/100'/0'/7");
     const w = SeedWallet.fromPhrase(PHRASE, 'testnet');
     const k0 = proposalDepositKey({ kind: 'seed', index: 0 }, { wallet: w }, 'testnet');
-    expect(k0.publicKey).toEqual(w.derive("m/9'/1'/100'/0'/0'").publicKey);
-    expect(addressOf(k0.publicKey, 'testnet')).toMatchInlineSnapshot(`"yYBWAx3YLJkeu2eFM6TzyUSQ8r7Ykg4v1t"`);
+    expect(k0.publicKey).toEqual(w.derive("m/9'/1'/100'/0'/0").publicKey);
+    expect(addressOf(k0.publicKey, 'testnet')).toMatchInlineSnapshot(`"ygtRiscCdoMiLCL7ewPBYsMqLQJHmEJHvf"`);
     const k1 = proposalDepositKey({ kind: 'seed', index: 1 }, { wallet: w }, 'testnet');
     expect(k1.publicKey).not.toEqual(k0.publicKey);
     expect(() => proposalDepositKey({ kind: 'seed', index: 0 }, { wallet: w }, 'mainnet')).toThrow(/network/);

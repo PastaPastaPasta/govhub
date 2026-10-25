@@ -9,14 +9,16 @@
 // only: never a key. Resuming with the same key continues where it stopped and never builds a second collateral from the same money.
 //
 // ---- Deposit key derivation (for recovery tools: "Recover funds" scans these) ----------------------------------------------------
-//   seed sign-in:  m/9'/<coin>'/100'/0'/<index>'   (BIP32 from the BIP39 seed, no passphrase; coin 5' mainnet, 1' testnet)
+//   seed sign-in:  m/9'/<coin>'/100'/0'/<index>    (BIP32 from the BIP39 seed, no passphrase; coin 5' mainnet, 1' testnet)
 //                  DIP-9 feature 100' is not registered (assigned: 3', 4', 5', 15', 16', 17'; dip-0009/assignments.md); govhub uses
-//                  it for keys no DIP defines, sub-path 0' = proposal collateral deposits. Indexes start at 0 and are used in order.
+//                  it for keys no DIP defines, sub-path 0' = proposal collateral deposits. The last index is NOT hardened, like DIP-13's
+//                  funding keys (`m/9'/coin'/5'/1'/index`, dip-0013.md). The wizard picks a free index among 0..19 at random
+//                  (two devices rarely collide), then the next free one.
 //   key sign-in:   HMAC-SHA256(key, "govhub/proposal-collateral/v1" || identity id (32 bytes) || u32be(index) || u8(ctr)), the first ctr
 //                  giving a valid secp256k1 scalar, where `key` is the signed-in identity's private key (the one pasted). The same
 //                  identity key and index always give the same deposit key.
-//   A scanner derives indexes 0 .. PROPOSAL_DEPOSIT_GAP_LIMIT-1 past the highest used one and looks for P2PKH outputs to each
-//   address (proposalDepositKeys below lists them). The deposit key only ever pays the collateral; whatever is left goes to the refund
+//   A scanner always derives indexes 0 .. PROPOSAL_DEPOSIT_GAP_LIMIT-1, plus that many past the highest used one, and looks for P2PKH
+//   outputs to each address: `proposalFeeFamily` is that scan for the Recover tool (recovery.ts DEFAULT_KEY_FAMILIES). The deposit key only ever pays the collateral; whatever is left goes to the refund
 //   address in the same transaction, so funds stay at a deposit address only when a payment arrived and no collateral was made from it.
 import { classifyScript, type Dapi, type Watcher } from '@govhub/dapi';
 import { hmac } from '@noble/hashes/hmac.js';
@@ -25,7 +27,9 @@ import { decodeAddress, duffsToDash, GOVERNANCE_PROPOSAL_FEE_DUFFS, isCollateral
 import { bytesEqual, bytesToHex, concatBytes, hash160, hexToBytes, identifierBytes, u32be, wipe } from './bytes.ts';
 import { redact, sleep, tipHeight } from './funding.ts';
 import { addressOf, coinType, isValidPrivateKey, publicKeyOf, type Network } from './keys.ts';
+import type { KeyFamily } from './recovery.ts';
 import type { SeedWallet } from './seed.ts';
+import { assertLive } from './signin.ts';
 import { buildProposalCollateral, estimateCollateralFee, FEE_PER_BYTE, p2pkhScript, type Utxo } from './tx.ts';
 
 /** The unregistered DIP-9 feature govhub derives its own keys under. */
@@ -37,14 +41,14 @@ export const PROPOSAL_DEPOSIT_GAP_LIMIT = 20;
 /** Most payments one collateral spends (each costs ~148 bytes of fee). */
 export const MAX_COLLATERAL_INPUTS = 50;
 
-const hardened = (i: number) => {
+const normal = (i: number) => {
   if (!Number.isInteger(i) || i < 0 || i >= 0x80000000) throw new RangeError(`invalid derivation index ${i}`);
-  return `${i}'`;
+  return `${i}`;
 };
 
-/** `m/9'/coin'/100'/0'/index'`: the deposit key of the index-th proposal a seed pays from the browser. */
+/** `m/9'/coin'/100'/0'/index`: a deposit key a seed pays a proposal fee from (last index not hardened, as DIP-13 funding keys). */
 export const proposalDepositPath = (network: Network, index: number): string =>
-  `m/9'/${coinType(network)}'/${GOVHUB_DIP9_FEATURE}'/${PROPOSAL_DEPOSIT_BRANCH}'/${hardened(index)}`;
+  `m/9'/${coinType(network)}'/${GOVHUB_DIP9_FEATURE}'/${PROPOSAL_DEPOSIT_BRANCH}'/${normal(index)}`;
 
 export interface DepositKey {
   privateKey: Uint8Array;
@@ -376,7 +380,7 @@ export async function runCollateralFunding(o: CollateralFundingOptions): Promise
           (rec.rejected ??= []).push(tx.txid);
           if (rec.rejected.length >= 3) {
             update('the network refused the collateral three times');
-            throw new CollateralFundingError('The network refused the collateral three times. The payments are still at the deposit address; the recovery tool can return them.');
+            throw new CollateralFundingError('The network refused the collateral three times. The payments are still at the deposit address: Settings, Recover funds can return them.');
           }
           rec.tx = undefined;
           rec.deposits = [];
@@ -397,3 +401,29 @@ export async function runCollateralFunding(o: CollateralFundingOptions): Promise
   }
 }
 
+
+// ---- recovery --------------------------------------------------------------------------------------------------------------------
+
+/**
+ * The Recover tool's lanes for proposal fee deposits (recovery.ts DEFAULT_KEY_FAMILIES): the seed path, or the key sign-in's HMAC keys.
+ * Indexes 0..19 are always scanned (the wizard picks among them at random). Sweep only: this money was meant for the fee burn, never
+ * for Platform. A collateral that was made from a deposit spends it, so only money no collateral used shows up.
+ */
+export const proposalFeeFamily: KeyFamily = ({ secret, network }) => {
+  const lane = { gap: PROPOSAL_DEPOSIT_GAP_LIMIT, minIndexes: PROPOSAL_DEPOSIT_GAP_LIMIT, funding: () => null };
+  const w = secret.wallet ?? secret.session?.wallet ?? null;
+  if (w) {
+    return [{ ...lane, family: 'proposal-fee', label: 'Proposal fee deposit', derive: (i: number) => w.derive(proposalDepositPath(network, i)), path: (i: number) => proposalDepositPath(network, i) }];
+  }
+  const s = secret.session;
+  if (!s) return [];
+  return [
+    {
+      ...lane,
+      family: 'proposal-fee-key',
+      label: 'Proposal fee deposit (signed-in key)',
+      derive: (i: number) => (assertLive(s), sessionProposalDepositKey(s.privateKey, s.identityId, i)),
+      path: (i: number) => `HMAC-SHA256(key, "govhub/proposal-collateral/v1" || ${s.identityId} || ${i})`,
+    },
+  ];
+};

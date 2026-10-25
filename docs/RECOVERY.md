@@ -90,6 +90,9 @@ the IS-lock. "Recover" means the tool above, from the phrase or key on any devic
 | Wrong-network send | Deposit addresses carry the Platform network's prefix: `y…` on testnet (version 140), `X…` on mainnet (76). A wallet refuses an address of the other network (Base58Check version byte), so a cross-network send can't happen with a standard wallet. The "Dev" profile (mainnet proposals, testnet Platform) shows a testnet address; the deposit screen now says "testnet address: send testnet DASH only". Sweep destinations are checked the same way. | n/a | n/a | n/a |
 | Tab closed while waiting for the payment | The record stays and the pending list offers "Continue". A payment made while no tab watched is found by replaying from the record's start height. | Same browser | Recover, any device. | No |
 | Starter voucher | The faucet's lock credits the voucher's key, not the user's; redeeming creates the identity with the user's keys. A failed voucher is not the user's to spend elsewhere (`LockTooSmallError`, recoverable = false). Not scanned by Recover. Owned by the `starter-tokens` work. | n/a | n/a | n/a |
+| Proposal fee paid from the browser, interrupted before the fee transaction was built (tab closed, a payment after the deadline check, below the fee) | The payment stays at the wizard's one-time deposit address. The draft (this browser or its backup file) resumes it with the same sign-in; a resume builds the fee transaction from it. | n/a (new) | Recover sweeps it (sweep only: the money was meant for the fee burn, never for Platform). | No |
+| Proposal fee: a payment after the fee transaction | Reported as late; it stays at the deposit address. | n/a (new) | Recover sweeps it. | No |
+| Proposal fee transaction broadcast | The 1 DASH is burned; the change already went to the refund address in the same transaction. Nothing is left to recover; what matters is submitting the proposal (the backup file, the relay, or `gobject submit`). | n/a | n/a | No |
 | Phrase or pasted key lost | Nobody can recover it, govhub included. That is the design: govhub never holds keys. | No | No | n/a |
 
 **Limits of the scan**
@@ -109,6 +112,8 @@ testnet. The phrase is BIP39 English with **no passphrase**.
 | Account setup (registration funding) | `m/9'/coin'/5'/1'/i'`: identity index `i`, hardened | The deposit address and asset lock of a new identity at index `i` (its auth keys are `m/9'/coin'/5'/0'/0'/i'/k'`) |
 | Top-up | `m/9'/coin'/5'/2'/i'/n`: identity index `i` hardened, top-up `n` not hardened (key-wallet `IdentityTopUp { registration_index }`, DIP-13) | The n-th top-up of identity `i` |
 | Top-up with a pasted key | `HMAC-SHA256(key = the 32-byte signed-in private key, msg = "govhub/topup/v1" ‖ identity id (32 bytes) ‖ u32be(n) ‖ u8(ctr))`, `ctr` = 0, then 1, … until the result is a valid private key | The n-th top-up while signed in with a pasted key (no phrase). Only govhub derives it. |
+| Proposal fee deposit | `m/9'/coin'/100'/0'/n`: DIP-9 feature `100'` (unregistered, govhub's own), branch `0'`, index `n` **not hardened** (DIP-13's convention for funding keys) | The one-time address a proposal fee is paid to from the browser (the creation wizard). The wizard picks a free `n` among 0..19 at random; Recover always scans 0..19 plus a gap of 20 (`proposalFeeFamily`). |
+| Proposal fee deposit with a pasted key | `HMAC-SHA256(key = the signed-in private key, msg = "govhub/proposal-collateral/v1" ‖ identity id (32 bytes) ‖ u32be(n) ‖ u8(ctr))`, as the top-up rule | The same, while signed in with a pasted key (no phrase). Only govhub derives it. |
 
 > **Note for maintainers (pre-mainnet decision).** DIP-13 lists the registration funding level as a plain `identity index`
 > (`m / 9' / coin' / 5' / 1' / identity index`; [dips@a4d46dd dip-0013.md](https://github.com/dashpay/dips/blob/a4d46dd/dip-0013.md)).
@@ -196,7 +201,7 @@ Starter vouchers belong to the faucet's own flow.
 - an optional `minIndexes`
 - `funding(index)`: `null` for sweep-only payments, or how runFunding should use them.
 
-A later feature with its own one-time deposit key, such as a proposal fee, plugs in by appending its family. Its payments then show in
-the Recover tool and can be swept.
+A later feature with its own one-time deposit key plugs in by appending its family. Its payments then show in the Recover tool and can
+be swept. The proposal wizard's fee deposits do this: `proposalFeeFamily` (packages/auth/src/proposal.ts), sweep only.
 
 `packages/auth/scripts/live-recovery.ts` runs the scan from Node against testnet (`GOVHUB_PHRASE_FILE=…`), printing public data only.

@@ -213,7 +213,7 @@ export function backupFile(d: ProposalDraft): { name: string; text: string } {
       feeStatusNote(d),
       ...(f
         ? [
-            `A browser payment uses the one-time deposit address ${f.address}, derived from your ${f.source.kind === 'seed' ? 'recovery phrase' : 'signed-in identity key'} (${f.source.kind === 'seed' ? `path ${proposalDepositPath(d.network, f.source.index)}` : `govhub key derivation, index ${f.source.index}, identity ${f.source.identityId}`}). Sign in the same way to resume; govhub's recovery tool can return money left there.`,
+            `A browser payment uses the one-time deposit address ${f.address}, derived from your ${f.source.kind === 'seed' ? 'recovery phrase' : 'signed-in identity key'} (${f.source.kind === 'seed' ? `path ${proposalDepositPath(d.network, f.source.index)}` : `govhub key derivation, index ${f.source.index}, identity ${f.source.identityId}`}). Sign in the same way to resume; Settings > Recover funds finds and returns money left there.`,
           ]
         : []),
       'Never change the time or the data: the fee commits to their hash, and a changed proposal needs a new fee.',
