@@ -6,6 +6,7 @@ import { createApi } from '../src/api/server.ts';
 import { paymentCounts } from '../src/api/dashcentral.ts';
 import { votesFixture } from './helpers.ts';
 import { fixtureBridge } from './world.ts';
+import { storeMnAddresses } from '../src/mnlist.ts';
 
 const b = await fixtureBridge();
 const app = createApi(b);
@@ -166,5 +167,21 @@ describe('OpenAPI spec', () => {
     for (const k of req('Cycle')) expect(cycle).toHaveProperty(k);
     const mn = (await get('/v1/mnlist')).body;
     for (const k of req('MnList')) expect(mn).toHaveProperty(k);
+  });
+});
+
+describe('mnlist: collateral and payout addresses (refusing a pasted collateral or payout key in the keyring)', () => {
+  it('serves the latest known addresses next to each entry, without changing the list hash', async () => {
+    const before = (await get('/v1/mnlist')).body;
+    const m = before.masternodes[0];
+    expect(m.collateralAddress).toBeUndefined();
+    storeMnAddresses(b.db, [{ proTxHash: m.proTxHash, collateralAddress: 'XcollateralAddr1111111111111111111', state: { payoutAddress: 'XpayoutAddr11111111111111111111111' } } as never], 10);
+    // an older snapshot does not overwrite them
+    storeMnAddresses(b.db, [{ proTxHash: m.proTxHash, collateralAddress: 'Xolder', state: { payoutAddress: 'Xolder' } } as never], 9);
+    const after = (await get('/v1/mnlist')).body;
+    const e = after.masternodes.find((x: any) => x.proTxHash === m.proTxHash);
+    expect(e.collateralAddress).toBe('XcollateralAddr1111111111111111111');
+    expect(e.payoutAddress).toBe('XpayoutAddr11111111111111111111111');
+    expect(after.listHash).toBe(before.listHash);
   });
 });

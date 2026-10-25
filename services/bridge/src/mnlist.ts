@@ -105,7 +105,25 @@ export async function snapshotMnList(db: DB, rpc: CoreRpc, network: Network, hei
   const [raw, blockHash] = await Promise.all([rpc.protxListRegistered(height), rpc.getBlockHash(height)]);
   const list = reduceProTxList(raw, network);
   storeMnList(db, list, height, blockHash);
+  storeMnAddresses(db, raw, height);
   return list;
+}
+
+/** Records each masternode's `collateralAddress` and `state.payoutAddress` as of `height` (an older snapshot never overwrites them). */
+export function storeMnAddresses(db: DB, raw: ProTxEntry[], height: number): void {
+  const str = (v: unknown) => (typeof v === 'string' && v ? v : null);
+  const up = db.prepare(
+    'INSERT INTO mn_addresses(pro_tx_hash, collateral_address, payout_address, height) VALUES (?, ?, ?, ?) ON CONFLICT(pro_tx_hash) DO UPDATE SET collateral_address = excluded.collateral_address, payout_address = excluded.payout_address, height = excluded.height WHERE excluded.height >= mn_addresses.height',
+  );
+  db.transaction(() => {
+    for (const e of raw) up.run(e.proTxHash, str(e.collateralAddress), str(e.state?.payoutAddress), height);
+  })();
+}
+
+/** The latest known collateral and payout address per proTxHash. */
+export function mnAddresses(db: DB): Map<string, { collateralAddress?: string; payoutAddress?: string }> {
+  const rows = db.prepare('SELECT pro_tx_hash, collateral_address, payout_address FROM mn_addresses').all() as Array<{ pro_tx_hash: string; collateral_address: string | null; payout_address: string | null }>;
+  return new Map(rows.map((r) => [r.pro_tx_hash, { ...(r.collateral_address ? { collateralAddress: r.collateral_address } : {}), ...(r.payout_address ? { payoutAddress: r.payout_address } : {}) }]));
 }
 
 export interface SnapshotRef {
