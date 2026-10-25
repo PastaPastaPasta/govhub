@@ -7,6 +7,7 @@ import { useAuth } from '../auth/context.tsx';
 import { shortAddress } from '../lib/format.ts';
 import { openSignIn } from '../ui/SignIn.tsx';
 import { CopyButton, HashCopy, useLabels, useNow } from '../ui/vote/common.tsx';
+import { AddPasskey } from '../ui/vote/AddPasskey.tsx';
 import { VotesList } from '../ui/vote/VotesList.tsx';
 import { useKeyring } from '../voting/KeyringContext.tsx';
 import { STEP_NAME } from '../voting/lookup.ts';
@@ -413,9 +414,7 @@ function UnlockMethods() {
         {seeds.map((u) => row(u, 'Recovery phrase'))}
         {passkeys.map((u, i) => row(u, passkeys.length > 1 ? `Passkey ${i + 1}` : 'Passkey'))}
       </ul>
-      <button type="button" className="btn btn-s" onClick={() => void k.addPasskeyUnlocker().catch(() => {})} disabled={!!k.busy}>
-        Add a passkey
-      </button>
+      <AddPasskey />
       <label className="kr-setting">
         <span>Lock after being idle for</span>
         <select value={ring.content.idleLockMinutes} onChange={(e) => void k.setIdleMinutes(Number(e.target.value)).catch(() => {})} disabled={!!k.busy}>
