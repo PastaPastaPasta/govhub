@@ -73,6 +73,7 @@ function keyringFake(o: { canSave?: boolean } = {}) {
     status: 'absent',
     error: null,
     needsTopUp: false,
+    dismissError: () => set({ error: null, needsTopUp: false }),
     demo: false,
     memoryOnly: false,
     keyring: null,
@@ -243,6 +244,45 @@ describe('Add your masternodes: one flow with the MN badge', () => {
     expect(bd.request).toHaveLength(0);
     expect(q(el, 'flow-badge-off')?.textContent).toContain('MN badge: off');
     expect(q(el, 'mnb-summary')?.textContent).toBe('not shown');
+  });
+
+  it('F5: after a save fails for credits, choosing memory only clears "Nothing was saved. Top up" and the confirm goes through', async () => {
+    const kr = keyringFake();
+    badgeFake();
+    const el = await start();
+    await pasteAndFind(el);
+    await act(async () =>
+      h.kr.set({
+        saveToPlatform: async () => {
+          kr.save++;
+          h.kr.set({ error: 'Your identity has 0.00193633 DASH, and saving the keyring on Platform needs about 0.003 DASH. Top up the identity (menu, Top up), then try again. Nothing was saved.', needsTopUp: true });
+          throw new Error('top up');
+        },
+      }),
+    );
+    await click(q(el, 'flow-confirm')!);
+    await flush();
+    expect(q(el, 'keyring-error')?.textContent).toContain('Nothing was saved.');
+    expect(q(el, 'keyring-topup')).toBeTruthy();
+    // memory only instead: the error is about saving, so it goes away at once
+    await click(q(el, 'flow-dont-save')!);
+    expect(q(el, 'keyring-error')).toBeNull();
+    expect(q(el, 'keyring-topup')).toBeNull();
+    await click(q(el, 'flow-confirm')!);
+    await flush();
+    expect(kr.save).toBe(1); // not tried again
+    expect(q(el, 'flow-done')?.textContent).toContain('key in memory only');
+    expect(q(el, 'keyring-error')).toBeNull();
+  });
+
+  it('F5: an error that is not about credits stays when memory only is chosen', async () => {
+    keyringFake();
+    badgeFake();
+    const el = await start();
+    await pasteAndFind(el);
+    await act(async () => h.kr.set({ error: 'The keyring locked itself after being idle.', needsTopUp: false }));
+    await click(q(el, 'flow-dont-save')!);
+    expect(q(el, 'keyring-error')?.textContent).toContain('locked itself');
   });
 
   it('memory only: no Platform save, and the copy says the badge request keeps its own encrypted copy until sent', async () => {

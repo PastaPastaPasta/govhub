@@ -195,6 +195,7 @@ function AddMasternodes({ step, setStep, b, savedLocked }: { step: FlowStep | nu
         }
       }
     }
+    if (!save && k.needsTopUp) k.dismissError(); // memory-only: the failed save is moot
     try {
       if (save) await k.saveToPlatform();
     } catch {
@@ -334,7 +335,17 @@ function AddMasternodes({ step, setStep, b, savedLocked }: { step: FlowStep | nu
               </p>
             )}
             <label className="check small kr-dont-save">
-              <input type="checkbox" checked={!save} onChange={(e) => setDontSave(e.target.checked)} disabled={!canSave} data-testid="flow-dont-save" />
+              <input
+                type="checkbox"
+                checked={!save}
+                onChange={(e) => {
+                  setDontSave(e.target.checked);
+                  // "Nothing was saved. Top up" is about saving on Platform: it no longer applies once the key stays in memory only
+                  if (e.target.checked && k.needsTopUp) k.dismissError();
+                }}
+                disabled={!canSave}
+                data-testid="flow-dont-save"
+              />
               <span>Don’t save my key (memory only)</span>
             </label>
             {!canSave && (
