@@ -585,7 +585,7 @@ function KeySignIn() {
         Private key (WIF or 64 hex characters)
         <input type="password" value={text} onChange={(e) => setText(e.target.value)} autoComplete="off" spellCheck={false} data-testid="key-input" disabled={busy} />
       </label>
-      <p className="muted small">Use your identity's HIGH (or CRITICAL) authentication key, never the MASTER key. It stays in this tab's memory and is gone when you sign out or close the tab.</p>
+      <p className="muted small">Use your identity's HIGH (or CRITICAL) authentication key, never the MASTER key. It stays in memory (shared with your other open govhub tabs) and is gone when you sign out or close the browser.</p>
       <label className="check">
         <input type="checkbox" checked={keep} onChange={(e) => setKeep(e.target.checked)} /> Keep it with a passkey so I can sign in again without pasting
       </label>
