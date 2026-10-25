@@ -86,7 +86,8 @@ export function paymentsFact(r: ChainReport | null): { made: { text: string; pro
   return {
     made: {
       text: `${formatInt(p.paid.length)}${isLowerBound(p) ? ' or more' : ''}`,
-      prov: doubt.length ? { kind: 'reported', source: 'superblock coinbases', detail: `${how}; not exact: ${doubt.join('; ')}` } : chainProv(r, how),
+      // the payments run anchored on its own: its chain decides, not the chain facts'
+      prov: doubt.length ? { kind: 'reported', source: 'superblock coinbases', detail: `${how}; not exact: ${doubt.join('; ')}` } : chainProv(p.anchor ? { anchor: p.anchor } : r, how),
     },
     remaining: {
       text: `${formatInt(p.remainingEstimate)} more possible`,

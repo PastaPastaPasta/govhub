@@ -56,6 +56,11 @@ export interface PaymentsFact {
    * it read is cached), so the check finishes in bounded time. The count above is then a lower bound too.
    */
   skipped?: number;
+  /**
+   * The chain the payments were read from (the payments run anchors on its own, possibly later than the chain facts): when it rests
+   * on weak proof of work (testnet), the payments are consistent, not proven, whatever the chain facts' anchor says.
+   */
+  anchor?: { tip: number; weak: string | null };
   /** Later superblocks whose estimated time falls inside the proposal window (Core's estimate: now + blocks * 2.62 min). */
   remainingEstimate: number;
 }

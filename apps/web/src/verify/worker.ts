@@ -158,7 +158,7 @@ async function handle(req: WorkerRequest): Promise<void> {
     const a = await anchor(dapi, progress, req.from);
     progress('Reading superblock coinbases for this proposal\'s payments');
     const pay = await payments(dapi, a, req.proposal, req.others, req.network, req.from, req.now, { cache: superblockCache(req.network), progress });
-    post({ id: req.id, kind: 'payments', payments: { ...pay, othersComplete: req.othersComplete } });
+    post({ id: req.id, kind: 'payments', payments: { ...pay, othersComplete: req.othersComplete, anchor: { tip: a.tip, weak: a.weak } } });
     return;
   }
 

@@ -42,21 +42,30 @@ export const saveRecording = (path: URL, r: Recording) => writeFileSync(path, gz
 const clockShim = (start: number) => `(() => {
   const RealDate = Date, t0 = RealDate.now(), start = ${start};
   const now = () => start + Math.floor((RealDate.now() - t0) / 1000);
-  class ReplayDate extends RealDate {
-    constructor(...a) { if (a.length === 0) super(now()); else super(...a); }
-    static now() { return now(); }
+  // a function, not a class: Date() without new (a string of the current time) must keep working
+  function ReplayDate(...a) {
+    if (!new.target) return new RealDate(now()).toString();
+    return a.length === 0 ? new RealDate(now()) : new RealDate(...a);
   }
+  ReplayDate.prototype = RealDate.prototype;
+  ReplayDate.now = now;
+  ReplayDate.parse = RealDate.parse;
+  ReplayDate.UTC = RealDate.UTC;
   globalThis.Date = ReplayDate;
 })();\n`;
+
+/** Where the workers import the shim from (served by the route below): a first import runs before every other module of theirs. */
+const SHIM_PATH = '/__replay-clock.js';
 
 /** Installs the clock shim in the context's pages and in the preview server's worker scripts. */
 async function installClock(ctx: BrowserContext, base: string, start: number) {
   const shim = clockShim(start);
   await ctx.addInitScript({ content: shim });
-  // the workers are module scripts from the preview server: the shim goes first in each
+  // the workers are module scripts from the preview server: their first import is the shim, so it runs before any of their modules
+  await ctx.route(`${base}${SHIM_PATH}`, (route) => route.fulfill({ status: 200, contentType: 'text/javascript', body: shim }));
   await ctx.route((u) => u.href.startsWith(base) && /\/assets\/[^/]*worker[^/]*\.js$/.test(u.pathname), async (route) => {
     const res = await route.fetch();
-    await route.fulfill({ response: res, body: shim + (await res.text()) });
+    await route.fulfill({ response: res, body: `import '${SHIM_PATH}';\n${await res.text()}` });
   });
 }
 
@@ -193,10 +202,16 @@ export async function liveTamper(ctx: BrowserContext, base: string): Promise<Rep
   await ctx.route(external(base), async (route) => {
     const req = route.request();
     const post = req.postDataBuffer() ?? Buffer.alloc(0);
-    const ask = (out: { status: number; headers: Record<string, string>; body: Buffer }) => {
+    const ask = (out: { status: number; headers: Record<string, string>; body: Buffer }): ReturnType<Tamper> => {
       for (const t of tampers) {
-        const v = t({ method: req.method(), url: req.url(), post, ...out });
-        if (v) return v;
+        try {
+          const v = t({ method: req.method(), url: req.url(), post, ...out });
+          if (v) return v;
+        } catch (err) {
+          // a broken tamper must fail the test, not leave the request hanging
+          r.misses.push(`tamper threw on ${req.url().slice(0, 100)}: ${(err as Error).message}`);
+          return 'abort';
+        }
       }
       return null;
     };

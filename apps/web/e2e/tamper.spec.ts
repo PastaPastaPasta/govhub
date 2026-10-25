@@ -72,7 +72,12 @@ test.describe('@record', () => {
 
 test.describe('tamper (replayed Testnet session)', () => {
   test.skip(!!process.env.GOVHUB_RECORD || !existsSync(REC), 'no recording');
-  test.describe.configure({ timeout: LIVE ? 600_000 : 180_000 });
+  const PER_LOAD_MS = LIVE ? 600_000 : 180_000;
+  test.describe.configure({ timeout: PER_LOAD_MS });
+  /** The scenario ran on the recording alone: no request it lacked (which would fail like a network outage and prove nothing). */
+  const complete = (r: Replay) => {
+    if (!LIVE) expect(r.misses, r.misses.join('\n')).toEqual([]);
+  };
   const rec = existsSync(REC) ? loadRecording(REC) : null;
 
   async function open(browser: import('@playwright/test').Browser, ...tampers: Array<Tamper | { overrides: Record<string, unknown> }>): Promise<{ page: Page; r: Replay; errors: string[]; ctx: BrowserContext }> {
@@ -135,8 +140,9 @@ test.describe('tamper (replayed Testnet session)', () => {
   };
   for (const [name, t] of Object.entries(voteTampers)) {
     test(`${name}: the vote check reports a mismatch; the badge is not Verified`, async ({ browser }) => {
-      const { page } = await open(browser, t);
+      const { page, r } = await open(browser, t);
       const s = await settle(page);
+      complete(r);
       expect(s.level).not.toBe('verified');
       expect(s.level).not.toBe('failed');
       expect(s.states.votes).toBe('error');
@@ -161,9 +167,11 @@ test.describe('tamper (replayed Testnet session)', () => {
       'mnlist-type': (o) => { const m = o.masternodes.find(isV0); m.type = m.type === 'evo' ? 'regular' : 'evo'; m.weight = m.type === 'evo' ? 4 : 1; },
       'mnlist-drop': (o) => { o.masternodes = o.masternodes.filter((x: any) => !isV0(x)); o.count--; },
     };
+    test.setTimeout(PER_LOAD_MS * Object.keys(cases).length);
     for (const [name, edit] of Object.entries(cases)) {
-      const { page, ctx } = await open(browser, onUrl(mnlistUrl, json(edit)));
+      const { page, ctx, r } = await open(browser, onUrl(mnlistUrl, json(edit)));
       const s = await settle(page);
+      complete(r);
       expect(s.level, name).not.toBe('verified');
       expect(s.states.votes, name).not.toBe('proven');
       await expect(s.drawer.getByTestId('votes-check'), name).not.toContainText('Tally verified');
@@ -187,8 +195,9 @@ test.describe('tamper (replayed Testnet session)', () => {
       const t = o.tallies.find((x: any) => x.govHash === P);
       if (t && consistent) { Object.assign(t, consistent); t.absoluteYes = t.yesWeighted - t.noWeighted; }
     }));
-    const { page } = await open(browser, dropVotes, lyingTally);
+    const { page, r } = await open(browser, dropVotes, lyingTally);
     const s = await settle(page);
+    complete(r);
     expect(s.level).not.toBe('verified');
     expect(s.states.votes).not.toBe('proven');
     await s.drawer.getByTestId('votes-check').locator(':scope > summary').click();
@@ -199,6 +208,7 @@ test.describe('tamper (replayed Testnet session)', () => {
 
   // S1-T3.5 (D-001, D-066): "in the next budget" never follows the tally's own flag or rank
   test('funded-flag: a flipped inNextBudget/rank changes nothing the page claims', async ({ browser }) => {
+    test.setTimeout(PER_LOAD_MS * 2);
     const truth = await open(browser);
     const base = await settle(truth.page);
     const fundingLine = await base.drawer.locator('[data-check="funding"] .check-text').textContent();
@@ -215,10 +225,11 @@ test.describe('tamper (replayed Testnet session)', () => {
 
   // S1-T3.7 (D-014): the bridge's getgovernanceinfo never sets the parameters the page computes with
   test('cycle: tampered governance parameters on /v1/cycle change no parameter on the page', async ({ browser }) => {
-    const { page } = await open(browser, onUrl(/\/v1\/cycle/, json((o) => {
+    const { page, r } = await open(browser, onUrl(/\/v1\/cycle/, json((o) => {
       if (o.governance) Object.assign(o.governance, { superblockcycle: 8000, superblockmaturitywindow: 100, governanceminquorum: 500 });
     })));
     const s = await settle(page);
+    complete(r);
     expect(s.level).toBe('verified');
     await page.keyboard.press('Escape');
     await expect(page.locator('.p-per')).toHaveText('per hour'); // testnet: a superblock every 24 blocks
@@ -235,6 +246,7 @@ test.describe('tamper (replayed Testnet session)', () => {
       return { body: b };
     };
     const down: Tamper = (e) => (/\/org\.dash\.platform\.dapi\.v0\.Core\//.test(e.url) ? 'abort' : null);
+    test.setTimeout(PER_LOAD_MS * 2);
     for (const [name, t] of [['dapi-tx-bytes', flipByte], ['dapi-down', down]] as const) {
       const { page, ctx } = await open(browser, t);
       const s = await settle(page);
@@ -285,6 +297,7 @@ test.describe('tamper (replayed Testnet session)', () => {
 
   // S2-T4.5/T4.6 (D-009, D-010): no quorum proof (blocked, or tampered): proof of work, which protects nothing on testnet
   test('proof sources blocked or tampered: every chain row says "checked", none "verified"', async ({ browser }) => {
+    test.setTimeout(PER_LOAD_MS * 2);
     const proofs = /\/proofs$|\/v1\/quorum-proof/;
     for (const [name, t] of [
       ['blocked', (e: Parameters<Tamper>[0]) => (proofs.test(e.url) ? 'abort' : null)],
@@ -311,6 +324,7 @@ test.describe('tamper (replayed Testnet session)', () => {
 
   // D-065: a saved ChainLock reused because the proof source answers 502 says the source failed, naming it once
   test('proof source 502 on a warm load: the trust root says the fetch failed, not "no newer one"', async ({ browser }) => {
+    test.setTimeout(PER_LOAD_MS * 2);
     let warm = false;
     const { page } = await open(browser, (e) => (warm && /\/proofs$/.test(e.url) ? { status: 502, headers: { 'content-type': 'text/plain' }, body: Buffer.from('bad gateway') } : null));
     expect((await settle(page)).level).toBe('verified');
@@ -344,6 +358,7 @@ test.describe('tamper (replayed Testnet session)', () => {
 
   // D-012: the budget header's allocation is the cycle document's, not a sum of the tallies' flags
   test('budget header: tampered inNextBudget flags do not move "Allocated"', async ({ browser }) => {
+    test.setTimeout(PER_LOAD_MS * 2);
     const truth = await open(browser);
     await truth.page.goto('/?fixtures=0');
     const facts = truth.page.locator('.budget-facts');

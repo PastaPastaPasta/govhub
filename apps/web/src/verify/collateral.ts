@@ -75,8 +75,11 @@ export interface CollateralVerdict {
 /** A failed lookup: `notFound` when several distinct DAPI nodes answered NOT_FOUND (the collateral is not on this chain). */
 export type LookupError = { error: string; notFound?: boolean };
 
-/** Steps whose failure can be a fact about the proposal itself, when it does not rest on one node's word (`basis: 'reported'`). */
-const DEFINITE: readonly Step['id'][] = ['hash', 'fields', 'tx', 'collateral', 'confirmations'];
+/**
+ * Steps whose failure can be a fact about the proposal itself, when it does not rest on one node's word (`basis: 'reported'`). The
+ * published collateral height counts only when the verified chain contradicts it (its basis is then 'verified').
+ */
+const DEFINITE: readonly Step['id'][] = ['hash', 'fields', 'tx', 'collateral', 'confirmations', 'height'];
 
 /**
  * Why a verdict means the proposal failed verification, or null when it passed or the check could not conclude. Only facts count:
@@ -138,9 +141,10 @@ export const AGREED_LIST = 'its BLS signature checks against a masternode list D
 function crosscheckStep(sec: TxLookup['second'], height: number): Step {
   const step = { id: 'crosscheck', label: 'Second node' } as const;
   if (!sec) return { ...step, status: 'warn', basis: 'reported', detail: 'no second DAPI node answered; the block and confirmations rest on one node' };
-  if (sec.notFound) return { ...step, status: 'fail', detail: `${sec.node} disagrees: it answers NOT_FOUND, as if the transaction were not on its chain` };
+  // a disagreement between nodes is a node's word against another's: "couldn't verify", never a fact about the proposal
+  if (sec.notFound) return { ...step, status: 'fail', basis: 'reported', detail: `${sec.node} disagrees: it answers NOT_FOUND, as if the transaction were not on its chain` };
   if (sec.sameBytes && sec.height === height) return { ...step, status: 'ok', basis: 'reported', detail: `${sec.node} returns the same transaction in the same block` };
-  return { ...step, status: 'fail', detail: `${sec.node} disagrees: ${sec.sameBytes ? `block ${sec.height} vs ${height}` : 'different transaction bytes'}` };
+  return { ...step, status: 'fail', basis: 'reported', detail: `${sec.node} disagrees: ${sec.sameBytes ? `block ${sec.height} vs ${height}` : 'different transaction bytes'}` };
 }
 
 /** The ChainLock step: final under a lock in the verified chain; the fallback lock and node claims are "reported". */

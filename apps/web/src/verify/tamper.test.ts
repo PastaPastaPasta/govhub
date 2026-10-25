@@ -12,7 +12,7 @@ import type { Proposal, Tally } from '../data/types.ts';
 import { GOV_PARAMS } from '../lib/governance.ts';
 import { aggregate, collateralComponent, fundingComponent, votesComponent, type ComponentState } from './aggregate.ts';
 import { MAX_SUPERBLOCK_READS, payments, type SuperblockCache, type SuperblockCoinbase } from './chain.ts';
-import { verifyCollateral, type TxLookup } from './collateral.ts';
+import { verdictFailure, verifyCollateral, type TxLookup } from './collateral.ts';
 import { paymentsFact } from './facts.ts';
 import type { VotesDone } from './protocol.ts';
 import { BRIDGE_TARGET, PLATFORM_TARGET, voteVerdict } from './verdict.ts';
@@ -54,7 +54,8 @@ describe('D-003: node-claimed confirmations and a second node\'s NOT_FOUND never
     const lookup = await lookupCollateral(twoNodes(tx, () => Promise.reject(new GrpcError(5, 'Transaction not found'))), p.collateralTxid, { verify: false });
     expect(lookup.second).toEqual({ node: 'b:443', height: 0, sameBytes: false, notFound: true });
     const v = verifyCollateral(p, lookup, 'mainnet');
-    expect(stepOf(v, 'crosscheck')).toMatchObject({ status: 'fail' });
+    // a node's word against another's: drawn as "reported", never as a mismatch of the proposal
+    expect(stepOf(v, 'crosscheck')).toMatchObject({ status: 'fail', basis: 'reported' });
     expect(stepOf(v, 'crosscheck')!.detail).toContain('NOT_FOUND');
     expect(v.ok).toBe(false);
     const c = collateralComponent({ verdict: v, error: null, publishedHeight: p.collateralHeight });
@@ -121,6 +122,9 @@ describe('D-011: a collateral height mismatch is a failure', () => {
     const c = collateralComponent({ verdict: v, error: null, publishedHeight: wrong.collateralHeight });
     expect(c.status).toBe('failed');
     expect(aggregate([{ id: 'content', state: { status: 'proven', summary: '' } }, { id: 'collateral', state: c }]).level).toBe('failed');
+    // ...and the lists treat it like any proven failure (hidden, banner); one only a node contradicts is not
+    expect(verdictFailure(v)).toContain('Collateral height');
+    expect(verdictFailure(verifyCollateral(wrong, await recorded(p.collateralTxid), 'mainnet'))).toBeNull();
   });
 });
 
@@ -258,6 +262,26 @@ describe('D-013: payments read only the proposal\'s window, at most MAX_SUPERBLO
     const third = blocks();
     await payments(third.dapi, a, p, [], 'testnet', LO, timeOf(TIP), { cache });
     expect(third.asked).toContain(h);
+  });
+
+  it('a superblock that cannot be read is reported unread, and the count is only a lower bound', async () => {
+    const { dapi, asked } = blocks();
+    const failing = 1_400_016; // a superblock height (multiple of 24)
+    const real = dapi.getAnchoredBlock;
+    (dapi as { getAnchoredBlock: unknown }).getAnchoredBlock = vi.fn(async (x: unknown, h: number) => (h === failing ? Promise.reject(new Error('unreadable')) : real.call(dapi, x as never, h)));
+    const start = timeOf(1_400_000), end = start + 2 * 86_400;
+    const r = await payments(dapi, a, { paymentAddress: address, paymentAmount: amount, startEpoch: start, endEpoch: end }, [], 'testnet', LO, timeOf(TIP));
+    expect(r.unread.map((u) => u.height)).toContain(failing);
+    expect(paymentsFact({ payments: r } as never)!.made.prov.kind).toBe('reported');
+    expect(asked.length).toBeGreaterThan(0);
+  });
+
+  it('payments read from a chain only weak proof of work protects are not proven, whatever the chain facts\' anchor', () => {
+    const proven: ComponentState = { status: 'proven', summary: '' };
+    const payments = { checked: [1], paid: [], ambiguous: [], unread: [], remainingEstimate: 0, othersComplete: true, anchor: { tip: 1, weak: 'testnet difficulty is too low' } };
+    const report = { payments, threshold: { value: 1 }, anchor: { weak: null } } as never;
+    expect(fundingComponent({ proposal: { govHash: 'x', endEpoch: 0 }, nowS: 10, chain: proven, votes: proven, report, netYes: 5, ranking: null }).status).toBe('reported');
+    expect(paymentsFact(report)!.made.prov.kind).toBe('reported');
   });
 
   it('left superblocks keep the funding check from "proven"', () => {

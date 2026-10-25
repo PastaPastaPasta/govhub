@@ -97,6 +97,9 @@ export type CollateralCheck = ReturnType<typeof useCollateralCheck>;
  * collateral in the verified chain. Live DAPI only: recorded data has no header chain. The anchor, threshold and schedule come first;
  * the payments (a scan of the proposal's superblocks, bounded per run) follow in their own request and are merged into `report`.
  */
+/** Rounds of payment reads per page visit (about 33 days of testnet superblocks); the rest is left for the next visit. */
+const PAYMENT_ROUNDS = 8;
+
 export function useChainReport(p: Proposal | undefined, verdict: CollateralVerdict | null, nonce = 0) {
   const { source, gov } = useApp();
   // only for a proposal whose content and collateral checked out: payments are matched by its committed address and amount
@@ -124,9 +127,20 @@ export function useChainReport(p: Proposal | undefined, verdict: CollateralVerdi
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run stands for its inputs
   }, [run]);
 
+  // A long window is read in rounds of MAX_SUPERBLOCK_READS blocks (each cached): the next round starts on its own while the last one
+  // made progress, up to PAYMENT_ROUNDS per visit; meanwhile the funding check stays "checking".
+  const [round, setRound] = useState<{ run: object; n: number; skipped: number | null }>({ run, n: 0, skipped: null });
+  const n = round.run === run ? round.n : 0;
   // eslint-disable-next-line react-hooks/exhaustive-deps -- a new identity per run
-  const payRun = useMemo(() => ({}), [run, activeReady, !!chain]);
+  const payRun = useMemo(() => ({}), [run, activeReady, !!chain, n]);
   const [paid, setPaid] = useRunResult<PaymentsFact>(payRun);
+  useEffect(() => {
+    if (!paid?.skipped || n + 1 >= PAYMENT_ROUNDS) return;
+    const before = round.run === run ? round.skipped : null;
+    if (before !== null && paid.skipped >= before) return; // no progress (no cache): stop
+    setRound({ run, n: n + 1, skipped: paid.skipped });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per result
+  }, [paid]);
   const [payError, setPayError] = useRunResult<string>(payRun);
   const [payProgress, setPayProgress] = useState('');
   useEffect(() => {
@@ -147,7 +161,8 @@ export function useChainReport(p: Proposal | undefined, verdict: CollateralVerdi
   }, [payRun]);
 
   const report = useMemo(() => (chain ? { ...chain, payments: paid } : null), [chain, paid]);
-  const payments = { pending: !!chain && !paid && !payError, error: payError, progress: payProgress };
+  const more = !!paid?.skipped && n + 1 < PAYMENT_ROUNDS && (round.run !== run || round.skipped === null || paid.skipped < round.skipped);
+  const payments = { pending: !!chain && (!paid || more) && !payError, error: payError, progress: payProgress };
   const unavailable = !live
     ? "demo data can't be checked against the live chain"
     : verdict && from === null

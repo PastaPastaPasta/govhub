@@ -167,8 +167,9 @@ function chainRows(r: ChainReport, cycle: Cycle | null, nowS: number): Row[] {
   ];
   const p = r.payments;
   // a chain proof of work does not protect (testnet) gives consistent facts, not secure ones
-  const done = (rs: Row[]) =>
-    a.weak ? rs.map((x) => (x.basis === 'reported' ? x : { ...x, basis: 'reported' as const, more: `${x.more ? `${x.more}; ` : ''}not secure: ${a.weak}` })) : rs;
+  const weaken = (x: Row, weak: string | null | undefined): Row => (!weak || x.basis === 'reported' ? x : { ...x, basis: 'reported', more: `${x.more ? `${x.more}; ` : ''}not secure: ${weak}` });
+  // the payments run anchors on its own: its own chain decides its row too
+  const done = (rs: Row[]) => rs.map((x) => weaken(weaken(x, a.weak), x.id === 'payments' ? p?.anchor?.weak : null));
   if (p) {
     const partial = isLowerBound(p);
     rows.push({
@@ -213,7 +214,7 @@ function ChainBlock({ chain, cycle, nowS, demo }: { chain: ChainCheck; cycle: Cy
 
 const COLLATERAL_STYLE = {
   ok: { className: 'verdict-ok', glyph: 'verified', text: 'Content matches the on-chain collateral' },
-  reported: { className: 'verdict-partial', glyph: 'reported', text: "Content matches the collateral transaction nodes returned, but its place in the chain isn't proven" },
+  reported: { className: 'verdict-partial', glyph: 'reported', text: "Content matches the collateral transaction, but not every fact about it is proven (see below)" },
   demo: { className: 'verdict-partial', glyph: 'fixture', text: 'Content matches the recorded collateral transaction (demo data, not checked against the chain)' },
   inconclusive: { className: 'verdict-partial', glyph: 'reported', text: "Couldn't fetch the collateral from the network" },
   unconfirmed: { className: 'verdict-partial', glyph: 'reported', text: "Nodes' answers about the collateral couldn't be confirmed" },
@@ -223,8 +224,8 @@ const COLLATERAL_STYLE = {
 
 /** The headline follows what the collateral check may claim (its trust component), never `verdict.ok` alone. */
 function collateralKind(v: CollateralVerdict, state: ComponentState, demo: boolean): keyof typeof COLLATERAL_STYLE {
+  if (v.steps.some((s) => s.id === 'height' && s.status === 'fail' && s.basis === 'verified')) return 'height';
   if (verdictFailure(v)) return 'fail';
-  if (state.status === 'failed') return 'height';
   // an inconclusive lookup (DAPI down) or a node whose answer did not check out says nothing about the proposal
   if (v.inconclusive) return 'inconclusive';
   if (!v.ok) return 'unconfirmed';

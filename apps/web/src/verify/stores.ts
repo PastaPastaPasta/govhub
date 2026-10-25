@@ -20,9 +20,21 @@ function db(): Promise<IDBDatabase | null> {
     req.onupgradeneeded = () => {
       for (const name of [CHAINS, PROREG, SUPERBLOCKS]) if (!req.result.objectStoreNames.contains(name)) req.result.createObjectStore(name);
     };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => resolve(null);
-    req.onblocked = () => resolve(null);
+    req.onsuccess = () => {
+      // another tab (or worker) asking for a newer version must not be blocked by this connection: close it, reopen on next use
+      req.result.onversionchange = () => {
+        req.result.close();
+        dbp = null;
+      };
+      resolve(req.result);
+    };
+    // cold for now, but a later call tries again (e.g. once an old tab holding version 1 has closed)
+    const fail = () => {
+      dbp = null;
+      resolve(null);
+    };
+    req.onerror = fail;
+    req.onblocked = fail;
   });
   return dbp;
 }
@@ -32,8 +44,13 @@ function run<T>(store: string, mode: IDBTransactionMode, f: (s: IDBObjectStore) 
     (d) =>
       new Promise<T | undefined>((resolve) => {
         if (!d) return resolve(undefined);
-        const tx = d.transaction(store, mode);
-        const req = f(tx.objectStore(store));
+        let tx: IDBTransaction, req: IDBRequest<T> | void;
+        try {
+          tx = d.transaction(store, mode);
+          req = f(tx.objectStore(store));
+        } catch {
+          return resolve(undefined); // the connection was closed for a newer version meanwhile
+        }
         tx.oncomplete = () => resolve(req ? (req.result as T) : undefined);
         tx.onerror = () => resolve(undefined);
         tx.onabort = () => resolve(undefined);
@@ -60,7 +77,12 @@ export function proRegCache(network: string): ProRegCache {
       const d = await db();
       if (!d) return out;
       await new Promise<void>((resolve) => {
-        const tx = d.transaction(PROREG, 'readonly');
+        let tx: IDBTransaction;
+        try {
+          tx = d.transaction(PROREG, 'readonly');
+        } catch {
+          return resolve(); // the connection was closed for a newer version meanwhile
+        }
         const st = tx.objectStore(PROREG);
         for (const h of hashes) {
           const req = st.get(`${network}:${h}`);

@@ -104,12 +104,12 @@ export function collateralComponent(i: { verdict: CollateralVerdict | null; erro
   if (i.error) return { status: 'error', reason: `The collateral check couldn't run: ${i.error}` };
   const v = i.verdict;
   if (!v) return { status: 'pending', note: i.progress || 'Checking the collateral' };
+  // A published height the verified chain contradicts is a fact about the published data; an unproven one is one node's word.
+  const height = v.steps.find((s) => s.id === 'height' && s.status === 'fail' && s.basis === 'verified');
+  if (height) return { status: 'failed', reason: `The published collateral height is wrong: ${height.detail}` };
   const definite = verdictFailure(v);
   if (definite) return { status: 'failed', reason: `The proposal doesn't match its on-chain collateral (${definite})` };
   if (v.inconclusive) return { status: 'error', reason: "The network couldn't be reached to fetch the collateral" };
-  // A published height the verified chain contradicts is a fact about the published data; an unproven one is one node's word.
-  const height = v.steps.find((s) => s.id === 'height' && s.status === 'fail');
-  if (height?.basis === 'verified') return { status: 'failed', reason: `The published collateral height is wrong: ${height.detail}` };
   if (!v.ok) {
     const bad = v.steps.find((s) => s.status === 'fail');
     return { status: 'error', reason: `Nodes gave answers about the collateral that couldn't be confirmed${bad ? ` (${bad.label}: ${bad.detail})` : ''}` };
@@ -187,7 +187,7 @@ export function votesComponent(i: {
     const fields = contradicted.t.compare.filter((c) => !c.ok).map((c) => c.field).join(', ');
     return {
       status: 'error', mismatch: true,
-      reason: `Mismatch: the signed votes the bridge served contradict the ${contradicted.t.name} for block ${contradicted.t.asOfHeight.toLocaleString('en-US')}${fields ? ` (${fields})` : ''}. One of them is wrong, so the tally isn't verified`,
+      reason: `Mismatch: the signed votes the bridge served contradict the ${contradicted.t.name} for block ${contradicted.t.asOfHeight.toLocaleString('en-US')}${fields ? ` (${fields})` : ''}. Either the tally or the bridge's vote archive is wrong, so the tally isn't verified`,
     };
   }
   // The Platform tally document is the proven record of the tally; the bridge's own live tally proves nothing about it.
@@ -246,6 +246,7 @@ export function fundingComponent(i: {
   if (i.payments?.pending) return { status: 'pending', note: i.payments.progress || "Reading this proposal's superblock payments" };
   const p = i.report.payments;
   if (i.payments?.error) return { status: 'reported', reason: `The proposal's payments couldn't be read: ${i.payments.error}` };
+  if (p?.anchor?.weak) return { status: 'reported', reason: "Testnet: the proposal's payments were read from a chain only proof of work protects" };
   if (p?.skipped) return { status: 'reported', reason: `The proposal's payment history isn't fully read yet: ${p.skipped.toLocaleString('en-US')} superblocks of its window are left for the next visit` };
   if (p && (p.unread.length || p.ambiguous.length || p.othersComplete === false)) return { status: 'reported', reason: "The proposal's payment history couldn't be fully proven" };
   const active = i.proposal.endEpoch > i.nowS;
