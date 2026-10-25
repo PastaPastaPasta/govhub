@@ -5,14 +5,14 @@ import { shortHash } from '../../lib/format.ts';
 import { useKeyring } from '../../voting/KeyringContext.tsx';
 import { isOpen, type WatchedVote } from '../../voting/pending.ts';
 import { relayHost } from '../../voting/relay.ts';
-import { describeVote, leadRelay } from '../../voting/status.ts';
+import { cancelAction, describeVote, leadRelay } from '../../voting/status.ts';
 import { Badge, fmtTime, mnName, OutcomeChip, useLabels, useNow } from './common.tsx';
 import { VoteSuccess } from './VoteSuccess.tsx';
 
 /** Relay reachability, with Retry now when votes wait for one. */
 function RelayStrip() {
   const k = useKeyring();
-  const waiting = k.watched.filter((w) => w.status === 'queued' && !w.restored).length;
+  const waiting = k.watched.filter((w) => w.status === 'queued' && !w.restored && !w.cancelSig).length;
   if (!k.relays.length) return <p className="vwarn small">No relay is configured, so votes cannot be sent. Add one in Settings.</p>;
   return (
     <div className="vrelays" data-testid="relay-strip">
@@ -47,7 +47,8 @@ function VoteRow({ v, name, now }: { v: WatchedVote; name: string; now: number }
   const k = useKeyring();
   const view = describeVote(v, now, fmtTime);
   const lead = leadRelay(v);
-  const canCancel = v.status === 'held' || (v.status === 'queued' && !v.restored);
+  const cancelText = cancelAction(v);
+  const sendError = v.status === 'queued' && !!v.lastSendError && !v.cancelSig;
   return (
     <li className={`vrow vrow-${view.tone}`} data-testid="watched-row" data-status={v.status}>
       <div className="vrow-main">
@@ -64,16 +65,16 @@ function VoteRow({ v, name, now }: { v: WatchedVote; name: string; now: number }
         {v.refs.length > 1 && <> and {v.refs.length - 1} more</>}
         {v.rebroadcasts > 0 && <>, re-sent {v.rebroadcasts}×</>}
       </p>
-      {(canCancel || (v.status === 'queued' && v.lastSendError)) && (
+      {(cancelText || sendError) && (
         <div className="vrow-actions">
-          {v.status === 'queued' && v.lastSendError && (
+          {sendError && (
             <button type="button" className="btn btn-s btn-primary" onClick={k.retryNow} data-testid="vote-retry">
               Retry now
             </button>
           )}
-          {canCancel && (
+          {cancelText && (
             <button type="button" className="btn btn-s" onClick={() => void k.cancel(v.voteHash).catch(() => {})} disabled={!!k.busy} data-testid="vote-cancel">
-              {v.status === 'queued' ? 'Discard' : 'Cancel'}
+              {cancelText}
             </button>
           )}
         </div>

@@ -2,7 +2,7 @@
 // The provider's watchdog polls the relay and the bridge (with backoff); this only renders, with a ticking elapsed time.
 import { useKeyring } from '../../voting/KeyringContext.tsx';
 import { isOpen, type WatchedVote } from '../../voting/pending.ts';
-import { describeVote, trackerSteps } from '../../voting/status.ts';
+import { cancelAction, describeVote, trackerSteps } from '../../voting/status.ts';
 import { Badge, fmtElapsed, fmtTime, OutcomeChip, useNow } from './common.tsx';
 
 export function VoteTracker({ vote, name }: { vote: WatchedVote; name: string }) {
@@ -14,7 +14,9 @@ export function VoteTracker({ vote, name }: { vote: WatchedVote; name: string })
   const view = describeVote(vote, now, fmtTime);
   const start = vote.signedAt ?? vote.time;
   const end = vote.countedAt ?? (moving ? now : (vote.seenAt ?? now));
-  const sendError = vote.status === 'queued' && !!vote.lastSendError;
+  const sendError = vote.status === 'queued' && !!vote.lastSendError && !vote.cancelSig;
+  // a queued vote that is simply being sent has no cancel here (the list has Discard); one that may be at a relay always has one
+  const cancelText = vote.status === 'queued' && !sendError && !vote.maybeAt?.length && !vote.cancelSig ? null : cancelAction(vote);
   const done = steps.filter((s) => s.state === 'done').length;
   return (
     <article className={`vtrack vtrack-${view.tone}`} data-testid="vote-tracker" data-status={vote.status} data-counted={vote.countedAt ? 'yes' : 'no'} aria-label={`${name}: ${view.badge}`}>
@@ -51,16 +53,16 @@ export function VoteTracker({ vote, name }: { vote: WatchedVote; name: string })
       <p className="vtrack-line small" aria-live="polite" data-testid="vote-tracker-line">
         {view.line}
       </p>
-      {(sendError || vote.status === 'held') && (
+      {(sendError || cancelText) && (
         <div className="vtrack-actions">
           {sendError && (
             <button type="button" className="btn btn-s btn-primary" onClick={k.retryNow} data-testid="vote-retry">
               {k.relays.length > 1 ? 'Retry now (tries every relay)' : 'Retry now'}
             </button>
           )}
-          {(vote.status === 'held' || sendError) && (
+          {cancelText && (
             <button type="button" className="btn btn-s" onClick={() => void k.cancel(vote.voteHash).catch(() => {})} disabled={!!k.busy} data-testid="vote-cancel">
-              {vote.status === 'held' ? 'Cancel this vote' : 'Discard'}
+              {cancelText}
             </button>
           )}
         </div>

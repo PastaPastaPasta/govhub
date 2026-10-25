@@ -1,0 +1,75 @@
+{
+  "network": "testnet",
+  "at": "2026-10-25T23:40:07.754Z",
+  "proposal": "e8c7d99fb8ded7a3f5d288f0921ef6dc8b326a82f2827f81a97e8b92b6af2c5f",
+  "masternode": "masternode-48",
+  "proTxHash": "aedce7a4ed26b9f1975d071c46d6b8792c96e618215b1e3086da5d94543f2ad6",
+  "relay": "https://gov-relay-testnet.dashhq.org",
+  "currentBefore": "",
+  "firstVote": {
+    "outcome": "Abstain",
+    "status": "broadcast"
+  },
+  "lostAnswer": {
+    "post": {
+      "at": "2026-10-25T23:40:16.452Z",
+      "outcome": "yes",
+      "status": 202,
+      "id": "87371ed416e26ee94aa4581daf73349c",
+      "relayStatus": "held",
+      "lost": true
+    },
+    "relayAfterLoss": {
+      "id": "87371ed416e26ee94aa4581daf73349c",
+      "voteHash": "e986cd4d2d33df3ce176698488fd2cf5057eb6bf34481aa5ce1978ded5e738ab",
+      "status": "held",
+      "releaseAt": 1792975271,
+      "broadcastAt": null,
+      "confirmedAt": null,
+      "attempts": 0,
+      "lastError": null,
+      "nextAttemptAt": 1792975271,
+      "holdReason": "release-time",
+      "sameAsCurrent": false,
+      "maybeSent": false
+    }
+  },
+  "trackerAfterLoss": {
+    "badge": "May be at the relay",
+    "line": "Tried to send it to gov-relay-testnet.dashhq.org, but no answer came back (the connection to gov-relay-testnet.dashhq.org failed before its answer arrived: Failed to fetch), so it may already be held there. Asking again at 6:40 PM: a relay keeps one copy of the same vote, and its answer says where the vote is. Cancelling takes it back at the relay too.",
+    "cancelButton": "Cancel this vote"
+  },
+  "cancel": {
+    "requests": [
+      {
+        "at": "2026-10-25T23:40:16.784Z",
+        "id": "87371ed416e26ee94aa4581daf73349c"
+      }
+    ],
+    "reposts": [
+      {
+        "at": "2026-10-25T23:40:16.781Z",
+        "outcome": "yes",
+        "status": 200,
+        "id": "87371ed416e26ee94aa4581daf73349c",
+        "relayStatus": "held",
+        "lost": false
+      }
+    ],
+    "relayFinal": {
+      "id": "87371ed416e26ee94aa4581daf73349c",
+      "voteHash": "e986cd4d2d33df3ce176698488fd2cf5057eb6bf34481aa5ce1978ded5e738ab",
+      "status": "cancelled",
+      "releaseAt": 1792975271,
+      "broadcastAt": null,
+      "confirmedAt": null,
+      "attempts": 0,
+      "lastError": null,
+      "nextAttemptAt": null,
+      "holdReason": null,
+      "sameAsCurrent": false,
+      "maybeSent": false
+    }
+  },
+  "blockedByGuard": []
+}

@@ -8,6 +8,8 @@
 // what step 2 must find). Optional: GOVHUB_VOTE_RELAY (default: the Testnet profile's relay). The phrase is
 // the e2e identity's (~/.local/share/govhub-phase2/e2e-phrase.json); the voting key comes from
 // ~/workspace/dash-network-configs/testnet.yml. Neither is printed; traces are off for live runs (playwright.config.ts).
+// The e2e identity's keyring holds other masternodes' keys too (reserved masternode-27 among them): the composer selects ONLY the
+// GOVHUB_VOTE_MN row, and a route guard (live-vote-guard.ts) aborts any vote POST for another masternode; the run fails if it had to.
 // Results without secrets: e2e/results/vote-live.json.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -16,6 +18,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { profileRegistry } from '../src/config/registry.ts';
 import { RESERVED_TESTNET_MNS, testnetMnKeys } from '../scripts/testnet-mn-keys.ts';
 import { cspViolations, watchPage } from './helpers.ts';
+import { guardLiveVotes } from './live-vote-guard.ts';
 
 test.skip(!process.env.GOVHUB_LIVE_VOTE, 'set GOVHUB_LIVE_VOTE=1 to run the live testnet keyring and voting flow (spends tCredits)');
 test.setTimeout(20 * 60_000);
@@ -49,6 +52,7 @@ test('@live-vote keyring: add a masternode, vote now until the network has it, h
   const results: Record<string, unknown> = { network: 'testnet', at: new Date().toISOString(), proposal: GOV, masternode: MN, votingAddress: key!.address, relays: REGISTRY.relays.map((r) => r.url) };
   page.on('console', (m) => m.type() === 'error' && console.log(`console.error: ${m.text().replace(/[1-9A-HJ-NP-Za-km-z]{50,}/g, '[b58]').slice(0, 300)}`));
   await page.addInitScript((r) => localStorage.setItem('govhub.registry.v2', JSON.stringify(r)), REGISTRY);
+  const guard = await guardLiveVotes(page.context(), { bridge: REGISTRY.bridges[0]!.httpBase, proTxHash: EXPECT.proTxHash });
 
   // ---- 1. seed sign-in, keyring ----
   console.log('step 1: sign in with the phrase');
@@ -94,15 +98,24 @@ test('@live-vote keyring: add a masternode, vote now until the network has it, h
   await page.goto(`/p/h/${GOV}`);
   await signInWithPhrase(page); // a full page load is a new tab state: the keyring opens again with the phrase
   const panel = page.getByTestId('mn-vote-panel');
-  const row = panel.getByTestId('vote-mn-row').filter({ hasText: 'c87218…07c0ac' });
+  const row = panel.locator(`[data-testid="vote-mn-row"][data-protx="${EXPECT.proTxHash}"]`);
   await expect(row).toHaveCount(1, { timeout: 180_000 });
   await expect(row.getByTestId('current-vote')).not.toContainText('…', { timeout: 60_000 });
   const before = (await row.getByTestId('current-vote').locator('.vout').innerText()).trim();
   results.currentBefore = before;
   const first = before === 'Abstain' ? 'No' : 'Abstain';
   const second = first === 'Abstain' ? 'Yes' : 'Abstain';
-  if ((await panel.getByTestId('vote-mn-row').count()) > 1) await panel.getByRole('checkbox', { name: 'All masternodes' }).uncheck();
+  // only this masternode: every other row unchecked, whatever the keyring holds
+  const mnsBox = panel.getByTestId('vote-mns');
+  if ((await mnsBox.getAttribute('open')) === null) await mnsBox.locator('summary').click();
+  const all = panel.getByRole('checkbox', { name: 'All masternodes' });
+  if (await all.count()) await all.uncheck();
   await row.getByRole('checkbox').check();
+  const rows = panel.getByTestId('vote-mn-row');
+  for (let i = 0; i < (await rows.count()); i++) {
+    const r = rows.nth(i);
+    await expect(r.getByRole('checkbox')).toBeChecked({ checked: (await r.getAttribute('data-protx')) === EXPECT.proTxHash });
+  }
   await panel.getByTestId('vote-choice').getByRole('radio', { name: first }).click();
   await expect(panel.getByTestId('vote-send')).toHaveText(`Vote ${first} with 1 masternode`);
   const t3 = Date.now();
@@ -146,6 +159,7 @@ test('@live-vote keyring: add a masternode, vote now until the network has it, h
   mkdirSync('e2e/results', { recursive: true });
   writeFileSync('e2e/results/vote-live.json', JSON.stringify(results, null, 2) + '\n');
   console.log(JSON.stringify(results));
+  expect(guard.blocked, 'a vote for another masternode was attempted').toEqual([]);
   expect(errors).toEqual([]);
   expect(await cspViolations(page)).toEqual([]);
 });

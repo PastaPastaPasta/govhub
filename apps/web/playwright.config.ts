@@ -15,8 +15,9 @@ export default defineConfig({
   use: {
     baseURL: `http://localhost:${PORT}`,
     headless: true,
-    // Live runs type real phrases and keys: no traces there (a failed run would keep them in test-results/).
-    trace: process.env.GOVHUB_LIVE || process.env.GOVHUB_LIVE_AUTH || process.env.GOVHUB_LIVE_VOTE ? 'off' : 'retain-on-failure',
+    // Live runs type real phrases and keys: no traces there (a failed run would keep them in test-results/). Every live switch
+    // starts with GOVHUB_LIVE (GOVHUB_LIVE, _AUTH, _VOTE, _NETLOSS, ...).
+    trace: Object.keys(process.env).some((k) => k.startsWith('GOVHUB_LIVE') && process.env[k]) ? 'off' : 'retain-on-failure',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], headless: true } }],
   webServer: {

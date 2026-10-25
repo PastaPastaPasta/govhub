@@ -122,6 +122,23 @@ export function planDeferred(intents: readonly Intent[], current: ReadonlyMap<st
   return out;
 }
 
+/**
+ * Moves a planned vote off the nTime of one of our own earlier votes of that masternode on that proposal (`taken`: ownVoteTimes), a
+ * second later, so it is never the same vote again. Only moves votes that would collide; the release follows the time as planned.
+ */
+export function untieOwnTimes(plan: PlanResult, taken: ReadonlyMap<string, ReadonlySet<number>>, now: number, deferred: boolean): PlanResult {
+  return {
+    ...plan,
+    ok: plan.ok.map((p) => {
+      const t = taken.get(currentKey(p.mn, p.govHash));
+      if (!t?.has(p.time)) return p;
+      let time = p.time;
+      while (t.has(time)) time += 1;
+      return { ...p, time, releaseAt: deferred ? time : Math.max(now, p.releaseAt + (time - p.time)) };
+    }),
+  };
+}
+
 /** Random per-request delays (ms) so a batch of deferred votes does not reach a relay as one burst. */
 export const submitDelays = (n: number, maxMs: number, rand32: () => number = cryptoRand32): number[] => Array.from({ length: n }, () => uniform(0, maxMs, rand32));
 
