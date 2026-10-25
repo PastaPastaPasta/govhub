@@ -163,7 +163,11 @@ export class FundingError extends Error {
   }
 }
 
-const dash = (credits: bigint) => `${(Number(credits) / 1e11).toFixed(8).replace(/0+$/, '').replace(/\.$/, '')} DASH`;
+/** Duffs as a DASH amount without trailing zeros ("0.00224"). */
+const dashAmount = (duffs: number) => (duffs / 1e8).toFixed(8).replace(/0+$/, '').replace(/\.$/, '');
+const dash = (credits: bigint) => `${dashAmount(Number(credits / CREDITS_PER_DUFF))} DASH`;
+/** Platform's "… but needs N credits to start processing" (IdentityAssetLockTransactionOutPointNotEnoughBalanceError). */
+const NEEDS_CREDITS = /needs (\d+) credits to start processing/;
 
 /**
  * The asset lock holds less than Platform needs to start processing this registration. Permanent: retrying can never succeed. A lock too
@@ -187,7 +191,7 @@ export class LockTooSmallError extends FundingError {
 
   /** From Platform's refusal: its own number when it states one (a later protocol version may need more than we know of). */
   static fromRefusal(kind: FundingKind, lockCredits: bigint, required: bigint, e: unknown): LockTooSmallError {
-    const stated = /needs (\d+) credits/.exec(errText(e))?.[1];
+    const stated = NEEDS_CREDITS.exec(errText(e))?.[1];
     return new LockTooSmallError(kind, lockCredits, stated ? BigInt(stated) : required);
   }
 }
@@ -269,7 +273,7 @@ export function classifyRegistrationError(e: unknown): RegistrationOutcome {
   if (code === 10504 || code === 40200 || /\b(IdentityAssetLockTransactionOutPointAlreadyConsumedError|IdentityAlreadyExistsError)\b/.test(m)) return 'used';
   if (code === 40206 || code === 40207 || /\b(DuplicatedIdentityPublicKeyStateError|DuplicatedIdentityPublicKeyIdStateError)\b/.test(m)) return 'key-conflict';
   // The SDK wraps it as "Protocol error: Asset lock transaction … but needs N credits to start processing" with no code (2026-10-24).
-  if (code === 10530 || /\bIdentityAssetLockTransactionOutPointNotEnoughBalanceError\b|needs \d+ credits to start processing/.test(m)) return 'too-small';
+  if (code === 10530 || /\bIdentityAssetLockTransactionOutPointNotEnoughBalanceError\b/.test(m) || NEEDS_CREDITS.test(m)) return 'too-small';
   if (/\b(InvalidInstantAssetLockProofSignatureError|InvalidInstantAssetLockProofError|InvalidAssetLockProofCoreChainHeightError)\b/.test(m) || /instant ?lock|islock/i.test(m)) return 'instant-refused';
   return 'other';
 }
@@ -399,11 +403,10 @@ async function fund(o: FundingOptions, fk: { privateKey: Uint8Array; publicKey: 
   const counted = () => rec.deposits.filter((d) => d.confirmed);
   const view = (note?: string): FundingView => {
     const remainingDuffs = rec.lock ? 0n : stillNeededDuffs(rec.deposits, minLock, BigInt(minDuffs));
-    const amount = (Number(remainingDuffs) / 1e8).toFixed(8).replace(/0+$/, '').replace(/\.$/, '');
     return {
       state: rec.state,
       address,
-      uri: remainingDuffs > 0n ? `dash:${address}?amount=${amount}` : `dash:${address}`,
+      uri: remainingDuffs > 0n ? `dash:${address}?amount=${dashAmount(Number(remainingDuffs))}` : `dash:${address}`,
       minDuffs,
       remainingDuffs,
       receivedDuffs: sum(counted()),

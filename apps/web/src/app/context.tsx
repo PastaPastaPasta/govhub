@@ -63,7 +63,6 @@ export function useApp(): Ctx {
   return c;
 }
 
-
 function useGovSnapshot(source: DataSource, nonce: number): GovSnapshot {
   const [cycle, setCycle] = useState<Load<Sourced<Cycle> | null>>({ loading: true });
   const [height, setHeight] = useState<Load<Sourced<number> | null>>({ loading: true });

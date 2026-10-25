@@ -64,9 +64,13 @@ export function FundingPanel(p: FundingPanelProps) {
     // The funding is keyed by what it funds; a new attempt is an explicit retry.
   }, [p.kind, p.identityIndex, p.topUp?.identityId, p.topUp?.index, attempt, recoverInto]); // eslint-disable-line react-hooks/exhaustive-deps
   const retry = () => setAttempt((a) => a + 1);
+  const startRecovery = (identityId: string) => {
+    setRecoverError(null);
+    setRecoverInto(identityId);
+  };
   const errorBox = error ? (
     error instanceof LockTooSmallError ? (
-      <TooSmall error={error} offerTopUp={p.kind === 'create' && error.canTopUp} problem={recoverError} onTopUp={(id) => (setRecoverError(null), setRecoverInto(id))} />
+      <TooSmall error={error} offerTopUp={p.kind === 'create' && error.canTopUp} problem={recoverError} onTopUp={startRecovery} />
     ) : (
       <ErrorBox text={errorText(error)} retry={retry} />
     )
@@ -181,7 +185,10 @@ function TooSmall({ error, offerTopUp, problem, onTopUp }: { error: LockTooSmall
           <form className="form" onSubmit={submit}>
             <label>
               Identity to top up
-              <input value={id} onChange={(e) => (setId(e.target.value), setBad(false))} placeholder="identity id (base58)" spellCheck={false} autoComplete="off" data-testid="recover-identity" />
+              <input value={id} onChange={(e) => {
+                  setId(e.target.value);
+                  setBad(false);
+                }} placeholder="identity id (base58)" spellCheck={false} autoComplete="off" data-testid="recover-identity" />
             </label>
             {bad && <p className="error small">That is not an identity id.</p>}
             {problem && !bad && <p className="error small">{problem}</p>}

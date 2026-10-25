@@ -67,7 +67,7 @@ export const MIN_TOPUP_LOCK_DUFFS = Number(ceilDiv(topUpRequiredCredits(), CREDI
  * Asked of a depositor on top of the floor: the asset lock's Core fee (206 duffs for one payment, 148 more per extra payment) with room
  * for a dozen payments, and some slack should a later protocol version raise the floor a little.
  */
-export const DEPOSIT_MARGIN_DUFFS = 2_000;
+const DEPOSIT_MARGIN_DUFFS = 2_000;
 const roundUp = (n: number, step: number) => Math.ceil(n / step) * step;
 /** What we ask a depositor for, rounded up to 0.00001 DASH: 0.00224 DASH to create, 0.00053 DASH to top up. */
 export const MIN_CREATE_DEPOSIT_DUFFS = roundUp(MIN_CREATE_LOCK_DUFFS + DEPOSIT_MARGIN_DUFFS, 1000);

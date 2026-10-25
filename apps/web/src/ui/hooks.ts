@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DependencyList } from 'react';
 import { useApp, type Load } from '../app/context.tsx';
-import { errText } from '../lib/format.ts';
 import type { Proposal } from '../data/types.ts';
+import { errText } from '../lib/format.ts';
 import type { ChainReport } from '../verify/chain.ts';
 import { runVerification } from '../verify/client.ts';
 import type { CollateralVerdict } from '../verify/collateral.ts';
