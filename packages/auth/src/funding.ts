@@ -658,6 +658,9 @@ async function fund(o: FundingOptions, fk: { privateKey: Uint8Array; publicKey: 
       }
       // A proved read must show the result; nodes can lag a block or two. A top-up whose lock Platform reports consumed has landed: only
       // the funding key signs for it, and its balance may since have been spent below the baseline.
+      // A recovery's lock may have been spent from another browser or device (same phrase): never name this identity as its target then.
+      if (consumed && rec.recoveredInto && !(await settled(mode, platform, identityId, rec)))
+        throw new FundingError(`Dash Platform says this payment was already used. The balance of ${identityId} did not grow, so it was probably used from another browser or device.`);
       for (let i = 0; !(mode === 'topup' && consumed) && !(await settled(mode, platform, identityId, rec)); i++) {
         if (i >= 20) throw new FundingError('Platform accepted the transition but the result is not visible yet. Reload in a minute to check again.');
         await sleep(3000, signal);

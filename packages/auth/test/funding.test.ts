@@ -14,7 +14,7 @@ import {
   CREATE_KEYS, createRequiredCredits, MIN_CREATE_DEPOSIT_DUFFS, MIN_CREATE_LOCK_DUFFS, MIN_TOPUP_DEPOSIT_DUFFS, MIN_TOPUP_LOCK_DUFFS, topUpRequiredCredits,
 } from '../src/layout.ts';
 import type { AssetLockProofInput, PlatformPort } from '../src/platform.ts';
-import { registrationFundingPath, SeedWallet } from '../src/seed.ts';
+import { registrationFundingPath, SeedWallet, topUpFundingPath } from '../src/seed.ts';
 import { makeSession } from '../src/signin.ts';
 import { AssetLockError, buildAssetLock, buildPayment, estimateAssetLockFee, identityIdFromOutpoint } from '../src/tx.ts';
 
@@ -640,14 +640,29 @@ describe('D-006 review: recovery edge cases', () => {
     expect(platform.topUps).toHaveLength(1); // submitted, not skipped as "already landed"
   });
 
-  it('a top-up Platform reports consumed has landed, even when the balance has since been spent below the baseline', async () => {
+  it('a recovery whose lock Platform reports already used (from another device) says so instead of naming this identity', async () => {
     const store = memStore();
     store.save({ ...stuckRecord(209_646n), recoveredInto: target });
     const platform = topUpPlatform(target, 500n);
     platform.topUpIdentity = async () => {
       throw Object.assign(new Error('IdentityAssetLockTransactionOutPointAlreadyConsumedError'), { code: 10504 });
     };
-    const r = await runFunding({ wallet: w(), dapi: dapi(), platform, store, kind: 'create', identityIndex: 0 });
+    await expect(runFunding({ wallet: w(), dapi: dapi(), platform, store, kind: 'create', identityIndex: 0 })).rejects.toThrow(/already used.*another browser or device/);
+    expect(store.m.get(keyFor(PHRASE))!.state).not.toBe('done');
+  });
+
+  it('an ordinary top-up Platform reports consumed has landed, even when the balance has since been spent below the baseline', async () => {
+    const id = 'EmY5Lj9tq1pzJoNTi1KTyY9sLDWWmbnRczdHr1WAZjUW';
+    const p = topUpPlatform(id, 500n);
+    p.topUpIdentity = async () => {
+      throw Object.assign(new Error('IdentityAssetLockTransactionOutPointAlreadyConsumedError'), { code: 10504 });
+    };
+    const s: Script = { events: [], deliverIsLock: true, mined: 0 };
+    const d = fakeDapi(s);
+    const r = await runFunding({
+      wallet: w(), dapi: d as unknown as Dapi, platform: p, store: memStore(), kind: 'topup', identityIndex: 0, topUp: { identityId: id, index: 0 }, isLockWaitMs: 2000,
+      onUpdate: (v) => v.state === 'awaiting-deposit' && !v.receivedDuffs && !v.pendingDuffs && d.pay(buildPayment({ utxos: [{ txid: 'ee'.repeat(32), vout: 0, value: 10_000_000n }], key: funderKey, to: [{ pubKeyHash: hash160(SeedWallet.fromPhrase(PHRASE, 'testnet').derive(topUpFundingPath('testnet', 0, 0)).publicKey), duffs: 100_000n }] }).raw),
+    });
     expect(r.record.state).toBe('done');
   });
 
