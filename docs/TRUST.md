@@ -604,7 +604,7 @@ There are two ways to get starter credit for a new account: a voucher link, and 
   had the same collateral at the epoch start; a proposal may have ended at most 30 days ago (`starter.ts:133-140`). The issuer
   blind-signs (RFC 9474, like badges) a message binding the hash of the new account's one-time funding key
   (`packages/badge/src/starter.ts:11-15`). The browser blinds only against the starter identity's per-epoch key that it reads,
-  proved, from Platform, and checks the signature it gets back (`apps/web/src/starter/client.ts:93-106,315-320`).
+  proved, from Platform, and checks the signature it gets back (`apps/web/src/starter/client.ts:96-109,318-323`).
 - **Redeeming it.** The browser sends the faucet `{network, epoch, address, msgPrefix, sig}` and nothing about the masternode
   or proposal (`apps/web/src/badge/workerOps.ts:57-58`). The faucet pays plain DASH to that one-time address. The browser
   builds the asset lock and creates the identity with its own keys (`packages/auth/src/funding.ts`). A token is bound to that
@@ -618,7 +618,7 @@ There are two ways to get starter credit for a new account: a voucher link, and 
   double redemptions and keeps no logs is its word; its code (`dash-faucet-cf`) is not in this repository.
 - **Timing and IP.** The same team runs the starter issuer and the faucet, and both see your IP. "Redeem now" is the default,
   and lets them match the two requests by time. "Redeem later" waits a random 15 minutes to 6 hours, which removes the timing
-  link but not the IP; the page says so and suggests Tor or a VPN (`apps/web/src/starter/StarterPanel.tsx:66-73,282-292`).
+  link but not the IP; the page says so and suggests Tor or a VPN (`apps/web/src/starter/StarterPanel.tsx:66-73,284-294`).
   There is no privacy mode or crowd-size check for starters. Anyone can see that the faucet paid the account, which marks it as
   some masternode's or proposal owner's account.
 - **Where.** The starter issuer is pinned in code, for testnet Platform only (Testnet and Dev profiles); mainnet has none
@@ -744,15 +744,16 @@ configuration yet.
 The Recover tool finds money stuck at govhub's one-time keys and lets you send it on (`apps/web/src/auth/Recover.tsx`;
 `packages/auth/src/recovery.ts`; [`docs/RECOVERY.md`](RECOVERY.md)).
 
-- **What it finds.** Unspent payments to the account-funding, top-up and proposal-fee deposit keys of your phrase or pasted
-  key, and asset locks paying them that Platform does not prove fully used (`recovery.ts:442-462`). A payment can be swept to an
+- **What it finds.** Unspent payments to the account-funding (today's `m/9'/c'/5'/1'/i` and the hardened `…/1'/i'` used until
+  2026-10-25; [`docs/RECOVERY.md`](RECOVERY.md#derivation-paths)), top-up and proposal-fee deposit keys of your phrase or pasted
+  key, and asset locks paying them that Platform does not prove fully used (`recovery.ts:455-475`). A payment can be swept to an
   address you type, or used to create or top up an identity. An asset lock can only create or top up an identity
-  (`recovery.ts:512,585`). Proposal-fee deposits can only be swept.
+  (`recovery.ts:525,598`). Proposal-fee deposits can only be swept.
 - **Who it talks to.** DAPI nodes and Platform, nothing else: no bridge, relay, issuer or faucet.
 - **What it checks.** Each transaction's bytes must hash to a txid that a merkleblock from the scan proves into its block
-  header, and up to two other nodes must not contradict it (`recovery.ts:293-354`). The scan must cover every block it asked
-  for (`recovery.ts:312-316`). Lock status is a proved Platform read (`evo.ts:506-515`), rechecked before use. The sweep is
-  built and signed in the browser, and the node must return its txid (`recovery.ts:590-605`).
+  header, and up to two other nodes must not contradict it (`recovery.ts:306-367`). The scan must cover every block it asked
+  for (`recovery.ts:325-329`). Lock status is a proved Platform read (`evo.ts:506-515`), rechecked before use. The sweep is
+  built and signed in the browser, and the node must return its txid (`recovery.ts:603-618`).
 - **What it doesn't check.** The block headers are a node's word: they are not tied to the chain verified in section 3, and
   have no proof-of-work check. The heights it shows are reported.
 - **What nodes can do.** Withhold a payment or lock, so the scan says nothing is stuck. Hide a spend, so a spent payment shows
