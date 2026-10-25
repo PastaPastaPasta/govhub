@@ -39,13 +39,17 @@
   --sunk: #e9eef3;
   --ink: #0d2231;
   --ink-2: #4a5f71;
-  --ink-3: #65798b;
+  --ink-3: #566a7c; /* muted text: AA (4.5:1) on paper, surface, sunk and wash */
   --line: #dce4eb;
   --line-strong: #b4c3d0;
 
   --accent: #008de4; /* Dash blue: fills, focus, bars, "verified" */
   --accent-ink: #006cb0; /* Dash blue for text on paper (AA) */
   --accent-wash: #e3f2fc;
+  /* Filled controls (primary buttons, step numbers): Dash blue dark enough for white text at AA, and the text on it. */
+  --accent-fill: #006cb0;
+  --accent-fill-hover: #005b94;
+  --on-accent: #ffffff;
 
   --pass: #167a46;
   --pass-fill: #22a25f;
@@ -75,6 +79,9 @@
   --accent: #1a9cf0;
   --accent-ink: #5dbdf7;
   --accent-wash: #0d2c43;
+  --accent-fill: #1a9cf0;
+  --accent-fill-hover: #48b0f3;
+  --on-accent: #04131f;
   --pass: #4fcf8b;
   --pass-fill: #2fb46d;
   --warn: #f0be4b;
@@ -102,6 +109,9 @@
     --accent: #1a9cf0;
     --accent-ink: #5dbdf7;
     --accent-wash: #0d2c43;
+    --accent-fill: #1a9cf0;
+    --accent-fill-hover: #48b0f3;
+    --on-accent: #04131f;
     --pass: #4fcf8b;
     --pass-fill: #2fb46d;
     --warn: #f0be4b;
@@ -584,13 +594,13 @@ details.learn.inline > summary {
   cursor: default;
 }
 .btn-primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
+  background: var(--accent-fill);
+  border-color: var(--accent-fill);
+  color: var(--on-accent);
 }
 .btn-primary:hover {
-  background: color-mix(in srgb, var(--accent) 84%, #000);
-  border-color: color-mix(in srgb, var(--accent) 84%, #000);
+  background: var(--accent-fill-hover);
+  border-color: var(--accent-fill-hover);
 }
 .btn-quiet {
   border-color: transparent;
@@ -604,14 +614,6 @@ details.learn.inline > summary {
 .btn-l {
   font-size: var(--t-m);
   padding: 0.6875rem 1.25rem;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) .btn-primary {
-    color: #04131f;
-  }
-}
-:root[data-theme='dark'] .btn-primary {
-  color: #04131f;
 }
 
 .chip {
@@ -1213,6 +1215,7 @@ button.trust-m:hover {
 }
 .prow-title {
   font-size: 1.0625rem;
+  font-stretch: 100%;
   font-weight: 650;
   display: flex;
   align-items: center;
@@ -1720,6 +1723,12 @@ table {
   gap: 0.5rem;
   align-items: flex-start;
   font-size: var(--t-s);
+  /* the label is the checkbox's tap target: at least 24 px (WCAG 2.5.8) */
+  min-block-size: 1.5rem;
+}
+select {
+  /* px: WebKit resolves rem on form controls against its own control font */
+  min-block-size: 24px;
 }
 .spinner {
   display: inline-block;
@@ -1854,6 +1863,8 @@ details summary {
   margin-block-start: var(--s-3);
 }
 .form fieldset {
+  /* fieldsets default to min-inline-size: min-content, so one unbroken id would widen the page on a phone */
+  min-inline-size: 0;
   border: 1px solid var(--line);
   border-radius: var(--radius-l);
   background: var(--surface);
@@ -2027,9 +2038,9 @@ details summary {
   font-weight: 650;
 }
 .steps-bar li[aria-current='step']::before {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
+  background: var(--accent-fill);
+  border-color: var(--accent-fill);
+  color: var(--on-accent);
 }
 .choice:hover {
   border-color: var(--accent);
@@ -2519,6 +2530,9 @@ li[data-status='now'] > .fund-dot {
   flex-wrap: wrap;
 }
 .comment-time {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 1.5rem;
   margin-inline-start: auto;
   font-size: 0.8125rem;
   color: var(--ink-3);
@@ -2543,6 +2557,20 @@ li[data-status='now'] > .fund-dot {
 .menu {
   position: relative;
 }
+@media (max-width: 40rem) {
+  /* on a phone the Hide… button sits mid-row: the menu spans the whole action row instead of starting at the button */
+  .comment-actions {
+    position: relative;
+  }
+  .comment-actions > .menu {
+    position: static;
+  }
+  .comment-actions > .menu > .menu-body {
+    inset-inline: 0;
+    inline-size: auto;
+    max-inline-size: none;
+  }
+}
 .menu > summary {
   list-style: none;
   margin: 0;
@@ -2557,7 +2585,7 @@ li[data-status='now'] > .fund-dot {
   inset-block-start: calc(100% + 4px);
   inset-inline-start: 0;
   inline-size: max-content;
-  max-inline-size: 20rem;
+  max-inline-size: min(20rem, calc(100vw - 2rem));
   background: var(--surface);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-m);
@@ -2752,7 +2780,7 @@ details.advanced[open] > summary {
 
 /* ---- MN badges (badge/) ------------------------------------------------------------------- */
 .chip-mn {
-  color: var(--accent);
+  color: var(--accent-ink);
   border-radius: var(--radius-s);
   white-space: nowrap;
 }

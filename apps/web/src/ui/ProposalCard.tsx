@@ -42,10 +42,11 @@ export function ProposalCard({
   return (
     <article className={`prow prow-${failed ? 'invalid' : (row.state?.light ?? 'none')}`} data-govhash={p.govHash} data-check={check?.status} data-testid="proposal-card">
       <div className="prow-main">
-        <h3 className="prow-title">
+        {/* h2: the list's heading is the page's h1 (a skipped level breaks heading navigation) */}
+        <h2 className="prow-title">
           <Link to={href}>{p.name}</Link>
           {mark && <TrustBadge size="s" level={mark.level} reason={mark.reason} testId="card-trust" />}
-        </h3>
+        </h2>
         {failed ? (
           <FailedNote reason={failed} />
         ) : !row.content.ok ? (

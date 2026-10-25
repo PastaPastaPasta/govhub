@@ -318,11 +318,18 @@ function httpsUrl(s: unknown, field: string, errors: string[], allowEmpty = fals
     const u = new URL(s);
     const local = u.hostname === 'localhost' || u.hostname === '127.0.0.1';
     if (u.protocol !== 'https:' && !(local && u.protocol === 'http:')) errors.push(`${field} must be an https URL`);
+    // https://gov-bridge.dashhq.org@evil.example reads like one host and connects to another
+    if (u.username || u.password) errors.push(`${field} must not contain a user name or password`);
+    // normalised: what is shown is what is connected to (a look-alike Unicode host is shown in punycode)
+    return u.href.replace(/\/+$/, '');
   } catch {
     errors.push(`${field} is not a URL`);
   }
   return s.replace(/\/+$/, '');
 }
+
+/** A display name: no control or format characters (bidi overrides could reorder what the user reads), at most 60 characters. */
+const cleanName = (v: unknown): string => (typeof v === 'string' ? v.replace(/[\p{Cc}\p{Cf}]/gu, '').trim().slice(0, 60) : '');
 
 const network = (v: unknown, field: string, errors: string[]): CoreNetwork => {
   if (v === 'mainnet' || v === 'testnet') return v;
@@ -347,7 +354,7 @@ function parseForum(v: unknown, d: ForumEndpoints, errors: string[]): ForumEndpo
     contractId: id('contractId'),
     modContractId: id('modContractId'),
     moderationIdentityId: id('moderationIdentityId'),
-    moderationName: typeof x.moderationName === 'string' && x.moderationName.trim() ? x.moderationName.trim().slice(0, 60) : d.moderationName,
+    moderationName: cleanName(x.moderationName) || d.moderationName,
     claimPortals: portals.map((p) => p.toLowerCase()),
   };
 }
@@ -378,7 +385,7 @@ export function parseRegistry(input: unknown): { registry: Registry; errors: str
     if (govId && !B58_ID.test(govId)) errors.push(`bridge ${i + 1}: govContractId must be base58`);
     if (idId && !B58_ID.test(idId)) errors.push(`bridge ${i + 1}: bridgeIdentityId must be base58`);
     return {
-      name: typeof x.name === 'string' && x.name.trim() ? x.name.trim().slice(0, 60) : `bridge ${i + 1}`,
+      name: cleanName(x.name) || `bridge ${i + 1}`,
       httpBase: httpsUrl(x.httpBase, `bridge ${i + 1} URL`, errors),
       govContractId: govId,
       bridgeIdentityId: idId,
@@ -388,7 +395,7 @@ export function parseRegistry(input: unknown): { registry: Registry; errors: str
   const named = (v: unknown, what: string): NamedUrl[] =>
     (Array.isArray(v) ? v : []).map((r: unknown, i: number) => {
       const x = (r ?? {}) as Record<string, unknown>;
-      return { name: typeof x.name === 'string' && x.name ? x.name.slice(0, 60) : `${what} ${i + 1}`, url: httpsUrl(x.url, `${what} ${i + 1} URL`, errors) };
+      return { name: cleanName(x.name) || `${what} ${i + 1}`, url: httpsUrl(x.url, `${what} ${i + 1} URL`, errors) };
     });
   const pf = o.priceFeed as Record<string, unknown> | null | undefined;
   // Fields added in phase 2: absent in older saved settings, so they default instead of failing.
@@ -396,7 +403,7 @@ export function parseRegistry(input: unknown): { registry: Registry; errors: str
     if (v === undefined) return fallback;
     if (!v || typeof v !== 'object') return null;
     const x = v as Record<string, unknown>;
-    return { name: typeof x.name === 'string' && x.name ? x.name.slice(0, 60) : what, url: httpsUrl(x.url, `${what} URL`, errors) };
+    return { name: cleanName(x.name) || what, url: httpsUrl(x.url, `${what} URL`, errors) };
   };
   const registry: Registry = {
     version: 2,
@@ -420,7 +427,7 @@ export function parseRegistry(input: unknown): { registry: Registry; errors: str
         if (kind !== 'bridge' && kind !== 'quorum-list') errors.push(`quorum proof source ${i + 1}: kind must be "bridge" or "quorum-list"`);
         return { ...q, kind: kind === 'quorum-list' ? 'quorum-list' : 'bridge' };
       }),
-    priceFeed: pf && typeof pf === 'object' ? { name: typeof pf.name === 'string' ? pf.name : 'price feed', url: httpsUrl(pf.url, 'price feed URL', errors) } : null,
+    priceFeed: pf && typeof pf === 'object' ? { name: cleanName(pf.name) || 'price feed', url: httpsUrl(pf.url, 'price feed URL', errors) } : null,
     accounts: optionalNamed(o.accounts, d.accounts, 'accounts service'),
     faucet: optionalNamed(o.faucet, d.faucet, 'faucet'),
     forum: parseForum(o.forum, d.forum, errors),
@@ -460,23 +467,53 @@ function expand(o: Record<string, unknown>): unknown {
 
 /**
  * Saved settings, or the defaults. Version 1 settings (the legacy key) are migrated once: saved under the new key, the old one
- * removed. Settings that do not validate fall back to the defaults rather than half-applying.
+ * removed. Settings that do not validate fall back to the defaults rather than half-applying, and `errors` says why, so the app
+ * can tell the user instead of silently showing another profile. They stay saved until the user saves new ones.
  */
-export function loadRegistry(storage: Store | undefined = globalThis.localStorage): Registry {
+export function loadSavedRegistry(storage: Store | undefined = globalThis.localStorage): { registry: Registry; errors: string[] } {
+  let raw: string | null | undefined;
+  let legacy: string | null | undefined;
   try {
-    const raw = storage?.getItem(STORAGE_KEY);
-    const legacy = raw ? null : storage?.getItem(LEGACY_STORAGE_KEY);
-    if (!raw && !legacy) return defaultRegistry();
-    const { registry, errors } = parseRegistry(expand(JSON.parse((raw ?? legacy)!) as Record<string, unknown>));
-    if (errors.length) return defaultRegistry();
-    if (legacy) {
-      saveRegistry(registry, storage);
-      storage?.removeItem(LEGACY_STORAGE_KEY);
-    }
-    return registry;
+    raw = storage?.getItem(STORAGE_KEY);
+    legacy = raw ? null : storage?.getItem(LEGACY_STORAGE_KEY);
   } catch {
-    return defaultRegistry();
+    return { registry: defaultRegistry(), errors: [] }; // storage blocked: nothing was saved that could be wrong
   }
+  if (!raw && !legacy) return { registry: defaultRegistry(), errors: [] };
+  try {
+    const { registry, errors } = parseRegistry(expand(JSON.parse((raw ?? legacy)!) as Record<string, unknown>));
+    if (errors.length) return { registry: defaultRegistry(), errors };
+    if (legacy) {
+      try {
+        saveRegistry(registry, storage);
+        storage?.removeItem(LEGACY_STORAGE_KEY);
+      } catch {
+        // storage full: the settings are good, they are migrated on a later load
+      }
+    }
+    return { registry, errors: [] };
+  } catch (e) {
+    return { registry: defaultRegistry(), errors: [`they could not be read (${(e as Error).message})`] };
+  }
+}
+
+export const loadRegistry = (storage: Store | undefined = globalThis.localStorage): Registry => loadSavedRegistry(storage).registry;
+
+/** What a failed save says: a full storage quota is not a problem with the settings themselves. */
+export function saveErrorText(e: unknown): string {
+  const name = (e as { name?: unknown } | null)?.name;
+  if (name === 'QuotaExceededError' || name === 'NS_ERROR_DOM_QUOTA_REACHED') return "Not saved: this browser's storage for govhub is full. Clear some site data and try again.";
+  return `Not saved: ${(e as Error)?.message ?? String(e)}`;
+}
+
+/** The largest settings file Import accepts. An export is a few KB; anything near this size is not govhub settings. */
+export const MAX_IMPORT_BYTES = 64 * 1024;
+
+/** Why an import of `bytes` is refused before it is read, or null. */
+export function importSizeError(bytes: number): string | null {
+  if (bytes <= MAX_IMPORT_BYTES) return null;
+  const size = bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.ceil(bytes / 1024)} KB`;
+  return `Too large to be govhub settings: ${size} (the limit is ${MAX_IMPORT_BYTES / 1024} KB). Nothing was imported.`;
 }
 
 export function saveRegistry(r: Registry, storage: Pick<Storage, 'setItem'> | undefined = globalThis.localStorage): void {
@@ -503,29 +540,89 @@ export function textToB64url(s: string): string {
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-/** Share link for a registry: the current origin + `?config=<base64url JSON>`. */
-export function shareLink(r: Registry, origin: string): string {
-  return `${origin}/?config=${textToB64url(JSON.stringify(r))}`;
+/**
+ * Share link for a registry: the app's own URL (origin and base path, e.g. https://gov.dashhq.org/ or
+ * https://example.github.io/govhub/) + `?config=<base64url JSON>`.
+ */
+export function shareLink(r: Registry, appUrl: string): string {
+  return `${appUrl.replace(/\/*$/, '/')}?config=${textToB64url(JSON.stringify(r))}`;
 }
 
 /**
- * Resolves a `?config=` value: an https URL to fetch, or base64url JSON. The result is NOT applied:
- * the UI asks the user first, because a link could point them at a lying bridge.
+ * The host a `?config=` value would be fetched from, or null for inline (base64url) settings. Such a file is fetched only after
+ * the user agrees: the request alone tells that host who opened the link, and when.
  */
-export async function resolveConfigParam(value: string, fetcher: typeof fetch = fetch): Promise<{ registry: Registry; errors: string[] }> {
-  let json: unknown;
+export function configParamUrl(value: string): URL | null {
+  if (!/^https:\/\//.test(value)) return null;
   try {
-    if (/^https:\/\//.test(value)) {
-      const res = await fetcher(value, { credentials: 'omit', referrerPolicy: 'no-referrer' });
-      if (!res.ok) return { registry: defaultRegistry(), errors: [`config URL answered HTTP ${res.status}`] };
-      json = await res.json();
-    } else {
-      json = JSON.parse(b64urlToText(value));
-    }
+    return new URL(value);
+  } catch {
+    return null;
+  }
+}
+
+type Row = [label: string, value: (r: Registry) => unknown, text: (r: Registry) => string];
+const list = (xs: string[]) => xs.join('; ') || 'none';
+const urlText = (x: NamedUrl | null) => (x ? `${x.name}: ${x.url}` : 'none');
+/** Every setting, each host, contract and identity included. A setting missing here could be changed by a link without the user seeing it. */
+const ROWS: Row[] = [
+  ['Profile', (r) => r.profile, (r) => PROFILES[r.profile].title],
+  ['Networks', (r) => [r.coreNetwork, r.platformNetwork], (r) => `Core ${r.coreNetwork}, Platform ${r.platformNetwork}`],
+  ['Governance contract', (r) => r.govContractId, (r) => r.govContractId || 'none'],
+  // both lists, even the one not in use: switching the source in Settings later would use it
+  ['DAPI nodes', (r) => r.dapi, (r) => `from ${r.dapi.source === 'manual' ? 'my own nodes' : 'the quorum service'}; quorum service ${r.dapi.quorumUrl || 'none'}; my own nodes ${list(r.dapi.nodes)}`],
+  ['Platform', (r) => r.platform, (r) => `${r.platform.trusted ? 'trusted quorum keys' : 'untrusted mode'}, ${r.platform.addresses.length ? `nodes ${list(r.platform.addresses)}` : 'SDK default nodes'}`],
+  ['Bridges', (r) => r.bridges, (r) => list(r.bridges.map((b) => `${b.name}: ${b.httpBase} (contract ${b.govContractId || 'any'}, identity ${b.bridgeIdentityId || 'none'}${b.enabled ? '' : ', off'})`))],
+  ['Relays', (r) => r.relays, (r) => list(r.relays.map(urlText))],
+  ['Quorum proof sources', (r) => r.quorumProofs, (r) => list(r.quorumProofs.map((q) => `${urlText(q)} (${q.kind})`))],
+  ['Price feed', (r) => r.priceFeed, (r) => urlText(r.priceFeed)],
+  ['Accounts service', (r) => r.accounts, (r) => urlText(r.accounts)],
+  ['Faucet', (r) => r.faucet, (r) => urlText(r.faucet)],
+  ['Forum contracts', (r) => [r.forum.contractId, r.forum.modContractId], (r) => `forum ${r.forum.contractId || 'none'}, mod ${r.forum.modContractId || 'none'}`],
+  ['Default block list', (r) => [r.forum.moderationName, r.forum.moderationIdentityId], (r) => `${r.forum.moderationName} (${r.forum.moderationIdentityId || 'none'})`],
+  ['Claim portals', (r) => r.forum.claimPortals, (r) => list(r.forum.claimPortals)],
+];
+
+/** Every setting as [label, text]: what a `?config=` offer shows. */
+export const registryRows = (r: Registry): Array<[string, string]> => ROWS.map(([label, , text]) => [label, text(r)]);
+
+/**
+ * The settings a `?config=` offer would change, each with its current and offered text. Whether a setting changes is decided on
+ * its values, not on the text (free-text names could make two different lists read the same).
+ */
+export function registryDiff(current: Registry, offered: Registry): Array<{ label: string; now: string; offered: string }> {
+  return ROWS.filter(([, value]) => JSON.stringify(value(current)) !== JSON.stringify(value(offered))).map(([label, , text]) => ({ label, now: text(current), offered: text(offered) }));
+}
+
+/** Reads inline (base64url JSON) `?config=` settings. Never touches the network: this is what runs when a link is opened. */
+export function readInlineConfig(value: string): { registry: Registry; errors: string[] } {
+  try {
+    return parseRegistry(JSON.parse(b64urlToText(value)));
   } catch (e) {
     return { registry: defaultRegistry(), errors: [`config could not be read: ${(e as Error).message}`] };
   }
-  return parseRegistry(json);
+}
+
+/**
+ * Fetches `?config=` settings from the URL the user agreed to load (configParamUrl): no credentials, no referrer, 10 s at most,
+ * no redirect to another host, no more than an import may be. The result is NOT applied: the UI asks the user first, because a
+ * link could point them at a lying bridge.
+ */
+export async function fetchConfig(url: URL, fetcher: typeof fetch = fetch): Promise<{ registry: Registry; errors: string[] }> {
+  const fail = (why: string) => ({ registry: defaultRegistry(), errors: [why] });
+  try {
+    // redirect: 'error': a redirect would contact a host the user did not agree to
+    const res = await fetcher(url.href, { credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error', signal: AbortSignal.timeout(10_000) });
+    if (res.url && new URL(res.url).host !== url.host) return fail(`config URL redirected to another host (${new URL(res.url).host})`);
+    if (!res.ok) return fail(`config URL answered HTTP ${res.status}`);
+    const text = await res.text();
+    const tooLarge = importSizeError(new Blob([text]).size);
+    if (tooLarge) return fail(tooLarge);
+    return parseRegistry(JSON.parse(text));
+  } catch (e) {
+    if ((e as Error).name === 'TimeoutError') return fail(`${url.host} did not answer within 10 seconds`);
+    return fail(`config could not be read: ${(e as Error).message}`);
+  }
 }
 
 /**

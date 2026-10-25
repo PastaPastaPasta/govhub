@@ -152,7 +152,7 @@ test.describe('fixture mode', () => {
   test('cards of duplicate names link to the hash route', async ({ page }) => {
     await gotoFixtures(page);
     await page.locator('.sentinel').scrollIntoViewIfNeeded();
-    const dupLinks = page.locator('article.prow h3 a', { hasText: 'Dash-Mass-Organic-Content-Attraction' });
+    const dupLinks = page.locator('article.prow h2 a', { hasText: 'Dash-Mass-Organic-Content-Attraction' });
     await expect(dupLinks).toHaveCount(2);
     for (const href of await dupLinks.evaluateAll((as) => as.map((a) => a.getAttribute('href')))) expect(href).toMatch(/^\/p\/h\/[0-9a-f]{64}$/);
   });

@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import openapi from '../../../../services/bridge/openapi.json';
 import { BridgeError, HttpBridge, parseCycle, parseMasternode, parseMnList, parseProposal, parseTally, parseVote, parseVotes } from './bridge.ts';
 import { loadFixtures } from './fixtures.ts';
+import { liveSource } from './repo.ts';
+import { profileRegistry } from '../config/registry.ts';
 import { docToProposal, docToTally } from './platform.ts';
 import { GOV_PARAMS, absoluteYes, fundingThreshold } from '../lib/governance.ts';
 
@@ -169,5 +171,19 @@ describe('bridge client against services/bridge/openapi.json (untrusted input)',
       expect((await bridge.proposals()).map((p) => p.name)).toEqual(['a']);
       expect((await bridge.cycle())?.superblockHeight).toBe(1);
     });
+  });
+});
+
+describe('USD price (D-083)', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it('is never asked for or shown on testnet, where DASH has no price; mainnet still gets one', async () => {
+    const asked: string[] = [];
+    vi.stubGlobal('fetch', async (u: string) => {
+      asked.push(u);
+      return new Response(JSON.stringify({ dash: { usd: 30 } }), { status: 200 });
+    });
+    expect(await liveSource(profileRegistry('testnet')).usdPrice()).toBeNull();
+    expect(asked).toEqual([]);
+    expect((await liveSource(profileRegistry('dev')).usdPrice())?.value).toBe(30);
   });
 });
