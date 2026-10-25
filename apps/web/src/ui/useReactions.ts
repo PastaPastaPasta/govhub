@@ -34,15 +34,21 @@ export function useReactions(targets: readonly Target[]) {
     if (todo.length === 0) return;
     for (const t of todo) asked.keys.add(keyOf(t));
     setError(null);
-    mapLimit(todo, 4, async (t) => [keyOf(t), await forum.reader.reactions(targetB64(t))] as const).then(
-      (pairs) => {
-        if (requested.current === asked) setByKey((m) => new Map([...m, ...pairs]));
-      },
-      (e: unknown) => {
-        for (const t of todo) asked.keys.delete(keyOf(t)); // read again next time
-        if (requested.current === asked) setError(errText(e));
-      },
-    );
+    // Per target: one failed read must not drop the others' results.
+    mapLimit(todo, 4, async (t) => {
+      try {
+        return { key: keyOf(t), reactions: await forum.reader.reactions(targetB64(t)) };
+      } catch (e) {
+        asked.keys.delete(keyOf(t)); // read again when the target set next changes
+        return { key: keyOf(t), error: e };
+      }
+    }).then((results) => {
+      if (requested.current !== asked) return;
+      const read = results.flatMap((r) => (r.reactions ? [[r.key, r.reactions] as const] : []));
+      if (read.length) setByKey((m) => new Map([...m, ...read]));
+      const failed = results.find((r) => !r.reactions);
+      if (failed) setError(errText(failed.error));
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [forum, keys]);
 

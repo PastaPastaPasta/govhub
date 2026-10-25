@@ -110,6 +110,7 @@ describe('D-077: common named character references decode', () => {
   it('&hellip; &copy; &mdash; &euro; &rarr; and friends show as characters; unknown names stay as typed', () => {
     const all = strings(parseMarkdown('a&hellip; &copy; 2026 &mdash; 5&euro; &rarr; &trade; &frac12; &eacute; &Eacute; &AMP; &bogus;')).join('');
     expect(all).toBe('a\u2026 \u00A9 2026 \u2014 5\u20AC \u2192 \u2122 \u00BD \u00E9 \u00C9 & &bogus;');
+    expect(strings(parseMarkdown('&constructor; &toString; &valueOf; &hasOwnProperty;')).join('')).toBe('&constructor; &toString; &valueOf; &hasOwnProperty;');
   });
 });
 
@@ -154,6 +155,9 @@ describe('D-035: display names', () => {
     const family = '\u{1F468}\u200D\u{1F469}\u200D\u{1F467}';
     expect(nameProblem(family)).toBeNull();
     expect(cleanName(family)).toBe(family);
+    const coder = '\u{1F469}\u{1F3FD}\u200D\u{1F4BB}'; // a skin tone before the joiner
+    expect(nameProblem(coder)).toBeNull();
+    expect(cleanName(coder)).toBe(coder);
     expect(cleanName('a\u200Db')).toBe('ab');
     expect(nameProblem('\u0421\u0435\u0440\u0433\u0435\u0439')).toBeNull(); // all Cyrillic is fine
   });

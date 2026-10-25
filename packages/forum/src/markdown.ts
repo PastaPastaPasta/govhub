@@ -59,7 +59,7 @@ export function safeHref(href: string | undefined | null): string | null {
 }
 
 /** HTML named character references in common use (the full HTML list is 2,000+; others stay as typed). */
-const ENTITIES: Record<string, string> = Object.fromEntries(
+const ENTITIES = new Map<string, string>(
   (
     'amp:38 lt:60 gt:62 quot:34 apos:39 nbsp:160 iexcl:161 cent:162 pound:163 curren:164 yen:165 brvbar:166 sect:167 uml:168 copy:169 ordf:170 ' +
     'laquo:171 not:172 shy:173 reg:174 macr:175 deg:176 plusmn:177 sup2:178 sup3:179 acute:180 micro:181 para:182 middot:183 cedil:184 sup1:185 ' +
@@ -78,7 +78,7 @@ const ENTITIES: Record<string, string> = Object.fromEntries(
     .split(' ')
     .map((e) => {
       const [name, cp] = e.split(':') as [string, string];
-      return [name, String.fromCodePoint(Number(cp))];
+      return [name, String.fromCodePoint(Number(cp))] as const;
     }),
 );
 /**
@@ -92,7 +92,7 @@ function decodeEntities(s: string): string {
         const cp = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
         return cp > 0 && cp <= 0x10ffff && !(cp >= 0xd800 && cp <= 0xdfff) ? String.fromCodePoint(cp) : m;
       }
-      return ENTITIES[e] ?? ENTITIES[e.toLowerCase()] ?? m;
+      return ENTITIES.get(e) ?? ENTITIES.get(e.toLowerCase()) ?? m; // a Map: `&constructor;` is not a prototype key
     }),
   );
 }

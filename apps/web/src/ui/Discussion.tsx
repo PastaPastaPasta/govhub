@@ -96,6 +96,7 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
   const filter = chosenFilter ?? (focus ? 'all' : defaultFilter(BADGES_LIVE));
   const roots = useMemo(() => buildThreads(comments), [comments]);
   const [limit, setLimit] = useState(RENDER_PAGE);
+  const [extraScored, setExtraScored] = useState(0); // "read more scores" inside one thread too large for the window
   const isModerator = session?.identityId === registry.forum.moderationIdentityId;
 
   const reasonsOf = useCallback((c: Comment) => moderation.index.reasons(c), [moderation.index]);
@@ -111,11 +112,13 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
   // Only the newest threads render (a flood cannot bury new comments or make the page read every reaction); older ones on request.
   const win = useMemo(() => windowRoots(roots, visible, limit, focus), [roots, visible, limit, focus]);
   // Scores are read for comments rendered in full (not placeholders: hidden parents, or a deep-linked comment a list hides).
-  const targets = useMemo(() => {
-    if (gated) return [];
+  const scoring = useMemo(() => {
+    if (gated) return { targets: [], unscored: 0 };
     const ids = flatten(win.roots).flatMap((n) => (shown(n.comment, showOpts) ? [n.comment.id] : []));
-    return ids.slice(-(SCORED_PER_PAGE * (limit / RENDER_PAGE))).map((commentId) => ({ commentId }));
-  }, [gated, win, showOpts, limit]);
+    const cap = SCORED_PER_PAGE * (limit / RENDER_PAGE) + extraScored;
+    return { targets: ids.slice(-cap).map((commentId) => ({ commentId })), unscored: Math.max(0, ids.length - cap) };
+  }, [gated, win, showOpts, limit, extraScored]);
+  const targets = scoring.targets;
   const reactions = useReactions(targets);
   const focusMissing = !!focus && !!thread.data && !gated && !comments.some((c) => c.id === focus);
 
@@ -269,6 +272,13 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
               Show the comments anyway
             </button>
           )}
+        </p>
+      )}
+      {!gated && scoring.unscored > 0 && (
+        <p className="center">
+          <button type="button" className="btn btn-quiet" onClick={() => setExtraScored((n) => n + SCORED_PER_PAGE)} data-testid="read-more-scores">
+            Read the scores of {formatInt(scoring.unscored)} older {scoring.unscored === 1 ? 'comment' : 'comments'} (their votes wait until then)
+          </button>
         </p>
       )}
       {!gated && win.older > 0 && (

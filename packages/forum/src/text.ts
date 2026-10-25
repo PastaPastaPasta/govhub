@@ -23,7 +23,7 @@ const PICTO = /\p{Extended_Pictographic}/u;
 const stripInvisible = (s: string): string =>
   s.replace(INVISIBLE, (ch: string, at: number) => {
     if (ch !== ZWJ) return '';
-    const before = s.slice(0, at).replace(/\uFE0F$/u, '');
+    const before = s.slice(0, at).replace(/[\uFE0F\p{Emoji_Modifier}]+$/u, ''); // a variation selector or skin tone after the emoji
     const prev = String.fromCodePoint(before.codePointAt(before.length - 1) ?? 0);
     const prevHigh = before.length >= 2 ? String.fromCodePoint(before.codePointAt(before.length - 2) ?? 0) : '';
     const next = String.fromCodePoint(s.codePointAt(at + 1) ?? 0);
