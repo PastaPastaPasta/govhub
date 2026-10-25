@@ -20,18 +20,19 @@ import '../voting/voting.css';
 const IDLE_CHOICES = [5, 15, 30, 60, 240];
 
 /** "Unlocked · opens with your recovery phrase · locks after 15 min" */
-function statusLine(k: ReturnType<typeof useKeyring>): string {
+/** `badgeKeyKept`: a pending badge request holds its own copy of a voting key (the memory-only line must not say "nothing"). */
+function statusLine(k: ReturnType<typeof useKeyring>, badgeKeyKept: boolean): string {
   const ring = k.keyring!;
   const mins = ring.content.idleLockMinutes;
   if (k.demo) return 'Demo keyring: sample masternodes, and votes aren’t sent';
-  if (k.memoryOnly) return `Unlocked · memory only, nothing is saved · wiped after ${mins} idle min`;
+  if (k.memoryOnly) return `Unlocked · memory only, ${badgeKeyKept ? 'nothing is saved but the pending badge request’s key copy' : 'nothing is saved'} · wiped after ${mins} idle min`;
   const seeds = ring.content.unlockers.filter((u) => u.type === UnlockerType.SEED).length;
   const passkeys = ring.content.unlockers.length - seeds;
   const opens = [seeds ? 'your recovery phrase' : '', passkeys ? `${passkeys} passkey${passkeys > 1 ? 's' : ''}` : ''].filter(Boolean).join(' or ');
   return `Unlocked · opens with ${opens || 'nothing (add an unlocker)'} · locks after ${mins} min`;
 }
 
-function Header({ adding }: { adding: boolean }) {
+function Header({ adding, badgeKeyKept }: { adding: boolean; badgeKeyKept: boolean }) {
   const k = useKeyring();
   const open = k.status === 'open' && !!k.keyring && !adding;
   return (
@@ -41,7 +42,7 @@ function Header({ adding }: { adding: boolean }) {
         {open ? (
           <p className="kr-state" data-testid="keyring-status">
             <span className={`vdot${k.demo ? '' : ' vdot-on'}`} aria-hidden="true" />
-            {statusLine(k)}
+            {statusLine(k, badgeKeyKept)}
           </p>
         ) : (
           <p className="kr-state muted">Vote with your masternodes from any proposal. Only the voting key is needed.</p>
@@ -718,7 +719,7 @@ export function MasternodesPage() {
   }, [hash, navKey, adding, showGrid]);
   return (
     <section className="kr-page" aria-labelledby="mn-page-title">
-      <Header adding={adding && flow !== 'done'} />
+      <Header adding={adding && flow !== 'done'} badgeKeyKept={b.status.kind === 'pending' && b.status.job.signer.kind === 'wif'} />
       {k.busy && (
         <p className="kr-busy small" role="status">
           <span className="spinner" aria-hidden="true" /> {k.busy}…

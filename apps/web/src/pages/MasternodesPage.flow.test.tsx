@@ -129,7 +129,7 @@ function badgeFake(o: { firstKey?: number; shown?: string[]; jobs?: BadgeJob[] }
     requestBadge: async (voting: unknown, pro: string, opts: any) => {
       calls.request.push({ voting, pro, opts });
       const epoch = opts.epoch ?? 2741;
-      const job = { id: `j${calls.request.length}`, issuer: ISSUER, epoch, mode: opts.mode, state: 'scheduled', requestAt: opts.epoch ? epoch * 576 : HEIGHT, attempts: 0, net: 'testnet' } as unknown as BadgeJob;
+      const job = { id: `j${calls.request.length}`, issuer: ISSUER, epoch, mode: opts.mode, state: 'scheduled', requestAt: opts.epoch ? epoch * 576 : HEIGHT, attempts: 0, net: 'testnet', signer: { kind: 'wif', wif: '(stored encrypted)' } } as unknown as BadgeJob;
       h.bd.set({ jobs: [...h.bd.get().jobs, job] });
       return job;
     },
@@ -258,6 +258,8 @@ describe('Add your masternodes: one flow with the MN badge', () => {
     expect(kr.save).toBe(0);
     expect(bd.request).toHaveLength(1);
     expect(q(el, 'flow-done')?.textContent).toContain('key in memory only');
+    expect(q(el, 'flow-done')?.textContent).toContain('except the badge request’s own copy');
+    expect(q(el, 'keyring-status')?.textContent).toContain('nothing is saved but the pending badge request’s key copy');
   });
 
   it('a session that cannot save: memory only is chosen and saving is explained', async () => {
@@ -411,7 +413,7 @@ describe('the keyring card: MN badge row for existing keyrings', () => {
 
   it('pending from a later block: summary says so', async () => {
     openKeyring();
-    badgeFake({ firstKey: 2742, jobs: [{ id: 'x', issuer: ISSUER, epoch: 2742, mode: 'standard', state: 'scheduled', requestAt: 2742 * 576, attempts: 0 } as unknown as BadgeJob] });
+    badgeFake({ firstKey: 2742, jobs: [{ id: 'x', issuer: ISSUER, epoch: 2742, mode: 'standard', state: 'scheduled', requestAt: 2742 * 576, attempts: 0, signer: { kind: 'wif', wif: '(stored encrypted)' } } as unknown as BadgeJob] });
     const el = await start();
     expect(q(el, 'mnb-summary')?.textContent).toBe('pending (from block 1,579,392)');
     expect((q(el, 'mnb-row-toggle') as HTMLInputElement).checked).toBe(true);
