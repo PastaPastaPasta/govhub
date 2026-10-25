@@ -5,7 +5,7 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import { cacheGet, cachePut } from '../../data/cache.ts';
 import type { DataSource } from '../../data/repo.ts';
-import type { Proposal } from '../../data/types.ts';
+import type { Proposal, Tally } from '../../data/types.ts';
 import type { TrustLevel } from '../../verify/aggregate.ts';
 import { runVerification } from '../../verify/client.ts';
 import type { RankingDone } from '../../verify/protocol.ts';
@@ -13,16 +13,21 @@ import type { RankingDone } from '../../verify/protocol.ts';
 export interface StoredTrust {
   level: Exclude<TrustLevel, 'checking' | 'demo'>;
   reason: string | null;
-  /** asOfHeight of the tally the page showed when it was computed (null: none). */
+  /** asOfHeight and voteSetHash of the tally the page showed when it was computed (null: none). */
   tallyHeight: number | null;
+  voteSetHash: string | null;
   /** In the next budget on proven data (only with level "verified"); null otherwise. */
   funded: boolean | null;
   /** ms */
   at: number;
 }
 
-/** How long a cached result is shown on a card at all. */
+/** How long a cached result is shown on a card at all, and a cached "verified" (votes move on). */
 const MAX_AGE_MS = 7 * 86_400_000;
+const VERIFIED_MAX_AGE_MS = 6 * 3_600_000;
+
+/** Results depend on the data source and the bridge that served the votes. */
+export const trustScope = (source: DataSource): string => `${source.scope}:${JSON.stringify(source.bridgeDescriptor())}`;
 
 const memory = new Map<string, StoredTrust | null>();
 const listeners = new Set<() => void>();
@@ -36,7 +41,7 @@ const keyOf = (scope: string, p: Pick<Proposal, 'govHash' | 'collateralTxid'>) =
 export function saveTrust(scope: string, p: Pick<Proposal, 'govHash' | 'collateralTxid'>, t: StoredTrust): void {
   const k = keyOf(scope, p);
   const old = memory.get(k);
-  if (old && old.level === t.level && old.reason === t.reason && old.tallyHeight === t.tallyHeight && old.funded === t.funded) return;
+  if (old && old.level === t.level && old.reason === t.reason && old.tallyHeight === t.tallyHeight && old.voteSetHash === t.voteSetHash && old.funded === t.funded) return;
   memory.set(k, t);
   bump();
   void cachePut(k, t, null).catch(() => {});
@@ -46,7 +51,7 @@ export function saveTrust(scope: string, p: Pick<Proposal, 'govHash' | 'collater
  * What a card may show for this proposal: the cached result, with "verified" only when it was computed for the tally the card shows
  * now. Anything else (no result, too old, verified for another tally) is null: the card then shows no trust mark.
  */
-export function useCachedTrust(scope: string, p: Pick<Proposal, 'govHash' | 'collateralTxid'>, tallyHeight: number | null): StoredTrust | null {
+export function useCachedTrust(scope: string, p: Pick<Proposal, 'govHash' | 'collateralTxid'>, tally: Pick<Tally, 'asOfHeight' | 'voteSetHash'> | null): StoredTrust | null {
   useSyncExternalStore(
     (f) => {
       listeners.add(f);
@@ -67,7 +72,10 @@ export function useCachedTrust(scope: string, p: Pick<Proposal, 'govHash' | 'col
   }, [k]);
   const t = memory.get(k) ?? null;
   if (!t || Date.now() - t.at > MAX_AGE_MS) return null;
-  if (t.level === 'verified' && (t.tallyHeight === null || t.tallyHeight !== tallyHeight)) return null;
+  if (t.level === 'verified') {
+    const same = !!tally && t.tallyHeight === tally.asOfHeight && t.voteSetHash?.toLowerCase() === tally.voteSetHash.toLowerCase();
+    if (!same || Date.now() - t.at > VERIFIED_MAX_AGE_MS) return null;
+  }
   return t;
 }
 
@@ -80,7 +88,7 @@ const rankings = new Map<string, { at: number; promise: Promise<RankingDone>; pr
 export function sharedRanking(source: DataSource, proposals: readonly Proposal[], o: { force?: boolean; onProgress?: (m: string) => void } = {}): Promise<RankingDone> {
   const bridge = source.bridgeDescriptor();
   if (!bridge) return Promise.reject(new Error('no bridge is configured'));
-  const key = `${source.scope}:${JSON.stringify(source.dapiDescriptor())}:${proposals.map((p) => p.govHash).sort().join(',')}`;
+  const key = `${source.scope}:${JSON.stringify(bridge)}:${JSON.stringify(source.dapiDescriptor())}:${proposals.map((p) => p.govHash).sort().join(',')}`;
   const hit = rankings.get(key);
   if (hit && !o.force && Date.now() - hit.at < RANKING_TTL_MS) {
     if (o.onProgress) hit.progress.add(o.onProgress);

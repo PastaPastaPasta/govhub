@@ -84,7 +84,7 @@ test.describe('fixture mode', () => {
     // Evonodes weigh 4: 298 yes masternodes are 673 weighted votes.
     await expect(page.getByTestId('p-votes')).toContainText('673 yes');
     await expect(page.getByTestId('p-votes')).toContainText('475 no');
-    await expect(page.getByTestId('p-voters')).toHaveAttribute('title', '298 yes, 160 no, 2 abstain');
+    await expect(page.getByTestId('p-voters')).toHaveAttribute('title', /^298 yes, 160 no, 2 abstain; counted at block /);
     const drawer = await openDrawer(page);
     await expect(drawer.getByTestId('collateral-check').locator('[data-verdict]')).toHaveAttribute('data-verdict', 'ok');
 
@@ -120,6 +120,15 @@ test.describe('fixture mode', () => {
     await page.keyboard.press('Escape');
     await expect(drawer).toBeHidden();
     await expect(badge).toBeFocused();
+  });
+
+  test('offline signing is there without a keyring; the drawer can rank every active proposal on request', async ({ page }) => {
+    await gotoFixtures(page, '/p/OrchardPay');
+    await expect(page.getByText('Sign offline instead (Dash Core, hardware wallet)')).toBeVisible();
+    const drawer = await openDrawer(page);
+    // fixture data: the votes are not proven, so the funding order did not run on its own
+    await drawer.locator('[data-check="funding"] .check-more > summary').click();
+    await expect(drawer.getByTestId('rank-now')).toBeVisible();
   });
 
   test('About verification explains every state', async ({ page }) => {

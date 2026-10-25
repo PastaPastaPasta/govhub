@@ -10,7 +10,7 @@ import type { CheckState } from '../verify/checks.ts';
 import { FundingMeter } from './FundingMeter.tsx';
 import { FailedNote } from './HiddenToggle.tsx';
 import { Avatar } from './Identity.tsx';
-import { useCachedTrust } from './trust/store.ts';
+import { trustScope, useCachedTrust } from './trust/store.ts';
 import { TrustBadge } from './trust/TrustBadge.tsx';
 
 /** "1 of 4 payments left", "one payment", "ended". */
@@ -32,7 +32,7 @@ export function ProposalCard({
   const p = row.p.value;
   const t = row.tally?.value;
   const failed = check?.status === 'failed' ? check.reason : null;
-  const trust = useCachedTrust(source.scope, p, t?.asOfHeight ?? null);
+  const trust = useCachedTrust(trustScope(source), p, t ?? null);
   const mark = failed ? null : trust && trust.level !== 'error' ? trust : null;
   const ask = askText(p.paymentAmount, row.schedule, params);
   const left = paymentsLeft(row.schedule);

@@ -218,7 +218,7 @@ function MnCard({ m, label }: { m: OwnedMasternode; label: string }) {
       </div>
       <dl className="kr-mn-facts">
         <div>
-          <dt>Masternode ID</dt>
+          <dt>ID</dt>
           <dd>
             <HashCopy value={m.proTxHash} label="masternode ID" />
           </dd>

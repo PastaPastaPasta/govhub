@@ -63,13 +63,6 @@ export function useOwnership(p: Proposal, collateral: CollateralVerdict | null):
   return { verdict, loading: docs === null, error, reload };
 }
 
-export function ownerProvenance(o: ClaimVerdict['owner'], fixture: boolean): Provenance | null {
-  if (!o) return null;
-  if (fixture) return { kind: 'fixture', source: 'fixture discussion', detail: o.detail };
-  if (o.method === 4) return { kind: 'proof', source: 'hosting team attestation', detail: `${o.detail}. Trusted: the team vouches for it; nothing here checks a key` };
-  return { kind: 'verified', source: 'claim check in this browser', detail: o.detail };
-}
-
 /** How the owner proved it, in a few words (CLAIM_METHOD_LABEL has the full name). */
 const OWNER_HOW: Record<1 | 2 | 3 | 4, string> = {
   1: 'named in the proposal URL',

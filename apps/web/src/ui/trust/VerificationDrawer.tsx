@@ -345,8 +345,11 @@ function RunResult({ run, bridge, sml }: { run: VoteRun; bridge: string; sml: Vo
 }
 
 /** The recounts, what they concluded about each published tally, and what they could not check. */
-function VotesResult({ done, fixtures }: { done: VotesDone; fixtures: boolean }) {
-  const vv = voteVerdict(done.runs);
+function VotesResult({ done, fixtures, proven }: { done: VotesDone; fixtures: boolean; proven: boolean }) {
+  const found = voteVerdict(done.runs);
+  // The headline never says "verified" where the badge's vote check does not (another tally than the shown one, a weak list, a stale tally).
+  const downgraded = found.level === 'verified' && !proven;
+  const vv = downgraded ? { ...found, level: 'keys-reported' as const } : found;
   const style = VERDICT_STYLE[vv.level];
   // The run that decided the headline: the one holding the matching tally, else the first.
   const lead =
@@ -357,7 +360,9 @@ function VotesResult({ done, fixtures }: { done: VotesDone; fixtures: boolean })
     <div className="votes-result" data-votes={vv.level}>
       <p className={`verdict ${style.className}`}>
         <ProvGlyph kind={style.glyph} />
-        {verdictText(vv.level, lead.result.verified, lead.result.total, vv.matched?.name, done.origin, fixtures, lead.result.smlUnconfirmed, done.sml?.weak ?? null)}
+        {downgraded
+          ? `Recount matches the ${vv.matched?.name}: ${formatInt(lead.result.verified)} of ${formatInt(lead.result.total)} signatures check out, keys proven; the vote check above says why that doesn't make the shown tally verified`
+          : verdictText(vv.level, lead.result.verified, lead.result.total, vv.matched?.name, done.origin, fixtures, lead.result.smlUnconfirmed, done.sml?.weak ?? null)}
       </p>
       {done.runs.map((run, i) => (
         <RunResult key={i} run={run} bridge={done.bridge} sml={done.sml} />
@@ -480,8 +485,8 @@ export function VerificationDrawer({ sp, trust, cycle, open, onClose }: { sp: So
           <p className="drawer-verdict-title">{LEVEL_LABEL[a.level]}</p>
           <p className="drawer-verdict-line">{a.level === 'verified' ? VERIFIED_LINE : a.reason}</p>
         </div>
-        <button type="button" className="btn btn-s" onClick={trust.recheck} disabled={running} data-testid="recheck">
-          {running ? 'Checking…' : 'Re-check'}
+        <button type="button" className="btn btn-s" onClick={trust.recheck} data-testid="recheck">
+          Re-check
         </button>
       </section>
       <p className="small muted">
@@ -523,11 +528,20 @@ export function VerificationDrawer({ sp, trust, cycle, open, onClose }: { sp: So
               <RankingBlock done={trust.ranking.result} govHash={p.govHash} />
             </div>
           ) : (
-            <p className="small muted">
-              {trust.ranking?.running
-                ? `${trust.ranking.progress || 'Ranking every active proposal'}…`
-                : 'A proposal that is not passing on the recounted votes and the proven threshold is not funded; one that is passing is ranked against every active proposal, by Core\'s rules.'}
-            </p>
+            <>
+              <p className="small muted">
+                {trust.ranking?.running
+                  ? `${trust.ranking.progress || 'Ranking every active proposal'}…`
+                  : trust.ranking?.error
+                    ? `The funding order couldn't be recounted: ${trust.ranking.error}`
+                    : "A proposal that is not passing on the recounted votes and the proven threshold is not funded; one that is passing is ranked against every active proposal, by Core's rules. The ranking leaves out proposals that failed verification, as Core does, and can't include a proposal the bridge never published."}
+              </p>
+              {trust.rankNow && (
+                <button type="button" className="btn btn-s" onClick={trust.rankNow} data-testid="rank-now">
+                  Rank every active proposal
+                </button>
+              )}
+            </>
           )}
         </CheckRow>
       </ol>
@@ -539,7 +553,7 @@ export function VerificationDrawer({ sp, trust, cycle, open, onClose }: { sp: So
             Signed votes come from a bridge, because DAPI has no governance calls. <Link to="/settings">Add a bridge in Settings</Link> to recount them.
           </p>
         ) : trust.votes.result ? (
-          <VotesResult done={trust.votes.result} fixtures={mode === 'fixtures'} />
+          <VotesResult done={trust.votes.result} fixtures={mode === 'fixtures'} proven={byId(a.components, 'votes').state.status === 'proven'} />
         ) : trust.votes.error ? (
           <p className="error small">The votes couldn't be recounted: {trust.votes.error}</p>
         ) : (

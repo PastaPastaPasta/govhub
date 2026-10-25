@@ -57,9 +57,23 @@ states is tested in `aggregate.test.ts`. The in-app version is the page at `/abo
 
 ### Cost
 
-The proposal page checks the collateral first (this anchors the chain: about 20 s cold on mainnet,
-2–4 s warm, the headers stay cached in IndexedDB), then the chain facts and the vote recount, then the
-funding order only when the proposal is active and passing (cached for 10 minutes and shared by every
-proposal page). Lists don't recount: cards show the last full result, and a cached "Verified" only
-while the card shows the same tally it was computed for. See `e2e/verify-live*-results.json` for
-measured timings.
+Measured from a cold browser (empty IndexedDB) on 2026-10-25 (`e2e/trust-live.spec.ts`):
+
+| | Dev (mainnet Core data) | Testnet |
+|---|---|---|
+| Chain anchoring | 45,072 headers on proof of work, ~17 s | a quorum proof + 603 headers, ~1.5 s |
+| Older masternode registrations (once, then cached) | 1,048, ~8 s | 52, under 1 s |
+| Vote recount of the proposal | under 1 s | under 1 s |
+| Funding order (29 proposals, only when passing) | ~5 s | not needed (not passing) |
+| Badge settles on **Verified** | 34.6 s | 5.4 s |
+
+Warm (headers and registrations cached) a proposal page settles in a few seconds. The order is: the
+collateral first (it anchors the chain), then the chain facts and the vote recount, then the funding
+order only when the proposal is active and passing (cached for 10 minutes and shared by every
+proposal page). The header's chain shield anchors the same chain shortly after the first paint, so
+the first proposal page usually finds it ready.
+
+Lists don't run the full checks: recounting and ranking every proposal on each list load would cost
+the funding order's ~5 s plus every collateral's block proof. Cards show the last full result of the
+proposal page, and a cached "Verified" only while the card shows the same tally (same block) it was
+computed for. The light background collateral check still runs, two at a time, to hide failures.

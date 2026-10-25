@@ -151,8 +151,18 @@ export interface ShownTally {
   tally: Tally;
 }
 
+/** How old (in blocks behind the verified tip) the shown tally may be and still count: about a day on mainnet. */
+export const STALE_TALLY_BLOCKS = 576;
+
+const sameCounts = (a: Tally, b: Tally) =>
+  a.yesWeighted === b.yesWeighted && a.noWeighted === b.noWeighted && a.abstainWeighted === b.abstainWeighted && a.voteSetHash.toLowerCase() === b.voteSetHash.toLowerCase();
+
 export function votesComponent(i: {
   shown: ShownTally | null;
+  /** The bridge's live tally, when there is one: a newer one with other counts means the shown tally is out of date. */
+  live?: Tally | null;
+  /** The verified tip, once the chain is anchored. */
+  tip?: number | null;
   talliesLoading: boolean;
   bridge: boolean;
   result: VotesDone | null;
@@ -172,6 +182,12 @@ export function votesComponent(i: {
   const hit = pairs.find(({ t }) => t.name === PLATFORM_TARGET && t.asOfHeight === i.shown!.tally.asOfHeight);
   if (!hit) return { status: 'reported', reason: 'The tally changed while the votes were recounted; re-check to recount it' };
   if (!hit.t.matches) return { status: 'reported', reason: "The bridge served the votes of another block than the Platform tally's, so the two can't be compared" };
+  // A proven but old record: the votes have moved on (or the publisher stopped), so it says nothing about the funding status now.
+  const shownAt = i.shown.tally.asOfHeight;
+  if (i.live && i.live.asOfHeight > shownAt && !sameCounts(i.live, i.shown.tally)) {
+    return { status: 'reported', reason: `The tally on Platform is ${(i.live.asOfHeight - shownAt).toLocaleString('en-US')} blocks old and the votes have changed since; re-check once it is republished` };
+  }
+  if (i.tip != null && i.tip - shownAt > STALE_TALLY_BLOCKS) return { status: 'reported', reason: `The tally on Platform is ${(i.tip - shownAt).toLocaleString('en-US')} blocks old` };
   const r = hit.run.result;
   if (d.sml?.weak) return { status: 'reported', reason: 'Testnet: voting keys were checked against a list only proof of work protects' };
   if (r.keysFrom !== 'sml') {

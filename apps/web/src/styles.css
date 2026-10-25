@@ -1582,6 +1582,10 @@ table {
 .p-ask > .btn {
   justify-self: start;
 }
+.p-vote-cta {
+  display: grid;
+  gap: var(--s-2);
+}
 .p-about {
   display: grid;
   gap: var(--s-3);

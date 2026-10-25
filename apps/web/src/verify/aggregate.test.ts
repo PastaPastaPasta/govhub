@@ -8,7 +8,7 @@ import { lookupCollateral } from '../data/dapi.ts';
 import { FixtureBridge, loadFixtures, type FixtureSnapshot } from '../data/fixtures.ts';
 import type { Proposal, Tally } from '../data/types.ts';
 import {
-  aggregate, chainComponent, collateralComponent, contentComponent, fundingComponent, needsRanking, provenFunded, provenNetYes, REQUIRED, votesComponent,
+  aggregate, chainComponent, collateralComponent, contentComponent, fundingComponent, needsRanking, provenFunded, provenNetYes, REQUIRED, STALE_TALLY_BLOCKS, votesComponent,
   type CheckId, type Component, type ComponentState, type TrustLevel,
 } from './aggregate.ts';
 import type { ChainReport } from './chain.ts';
@@ -330,6 +330,24 @@ describe('votes', () => {
     // and a Platform tally at the very block of the served votes that differs is a contradiction
     const same = done(verifyVotes({ ...base, targets: [{ name: PLATFORM_TARGET, tally: platform }] }));
     expect(votesComponent({ shown: { name: PLATFORM_TARGET, tally: platform }, talliesLoading: false, bridge: true, result: same, error: null }).status).toBe('error');
+  });
+
+  it('D-105: a proven but stale Platform tally is not "verified": the live tally moved on, or it is a day behind the verified tip', () => {
+    const d = done(verifyVotes(base));
+    const shown = { name: PLATFORM_TARGET, tally };
+    const c = (o: Partial<Parameters<typeof votesComponent>[0]>) => votesComponent({ shown, talliesLoading: false, bridge: true, result: d, error: null, ...o });
+    expect(c({}).status).toBe('proven');
+    // the bridge's live tally is newer and different
+    expect(c({ live: { ...tally, asOfHeight: tally.asOfHeight + 30, yesWeighted: tally.yesWeighted + 4 } }).status).toBe('reported');
+    // newer but the same counts and vote set: nothing changed, still proven
+    expect(c({ live: { ...tally, asOfHeight: tally.asOfHeight + 30 } }).status).toBe('proven');
+    // older live tally: irrelevant
+    expect(c({ live: { ...tally, asOfHeight: tally.asOfHeight - 5, yesWeighted: 1 } }).status).toBe('proven');
+    // the publisher stopped: more than a day behind the verified tip
+    expect(c({ tip: tally.asOfHeight + STALE_TALLY_BLOCKS }).status).toBe('proven');
+    const old = c({ tip: tally.asOfHeight + STALE_TALLY_BLOCKS + 1 });
+    expect(old.status).toBe('reported');
+    expect(old.status === 'reported' && old.reason).toContain('blocks old');
   });
 
   it('a match on a different tally than the one shown is not a proof of the shown one', () => {

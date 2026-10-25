@@ -98,6 +98,7 @@ export function SessionControl() {
               Balance <b data-testid="session-balance">{balance === null ? 'reading…' : formatCredits(balance)}</b>{' '}
               <span className="muted">(pays for posts and votes on Platform)</span>
             </p>
+            <p className="small muted">Signed in with {session.label}. The key stays in this tab only: reloading or closing it signs you out.</p>
           </div>
         )}
         {session && item('Edit profile', () => dialog.current?.showModal())}

@@ -16,7 +16,7 @@ import { useProposalTrust } from '../ui/trust/useProposalTrust.ts';
 import { VerificationDrawer } from '../ui/trust/VerificationDrawer.tsx';
 import { useReactions } from '../ui/useReactions.ts';
 import { Votes } from '../ui/Votes.tsx';
-import { ProposalVotePanel } from '../ui/VotePanel.tsx';
+import { OfflineSign, ProposalVotePanel } from '../ui/VotePanel.tsx';
 import { useAsync } from '../ui/hooks.ts';
 import type { Proposal, Sourced } from '../data/types.ts';
 import { formatDash, formatDate, formatDateTime, formatDuration, formatInt, shortHash, urlHost } from '../lib/format.ts';
@@ -104,14 +104,20 @@ function CommunityVote({ govHash }: { govHash: string }) {
   );
 }
 
-/** Masternode owners without an open keyring get a pointer; with one, the vote panel right below is the call to action. */
-function VoteCta({ active }: { active: boolean }) {
+/**
+ * Masternode owners without an open keyring get a pointer, and offline signing (the key never enters the page); with a keyring, the
+ * vote panel right below is the call to action.
+ */
+function VoteCta({ proposal, active }: { proposal: Proposal; active: boolean }) {
   const k = useKeyring();
   if (!active || k.status === 'open') return null;
   return (
-    <p className="small muted">
-      Own a masternode? <Link to="/masternodes">Add your voting key</Link> to vote here.
-    </p>
+    <div className="p-vote-cta">
+      <p className="small muted">
+        Own a masternode? <Link to="/masternodes">Add your voting key</Link> to vote here.
+      </p>
+      <OfflineSign proposal={proposal} />
+    </div>
   );
 }
 
@@ -142,10 +148,11 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
   const threshold = thresholdFact(chain, row.threshold);
   const deadline = deadlineFact(chain, cycle?.value ?? null, now, cycle?.prov, cycle ? votingDeadlineTime(cycle.value, params) : null);
   const paid = paymentsFact(chain);
-  const state = t && row.absYes !== null && threshold ? passState(row.absYes, threshold.value, t.inNextBudget) : null;
+  const state = t && row.absYes !== null && threshold ? passState(row.absYes, threshold.value, trust.funded ?? t.inNextBudget) : null;
   // Proven data decides "in the next budget" once the badge is Verified; until then it is the tally's flag, under a lesser badge.
   const inBudget = trust.funded ?? !!t?.inNextBudget;
-  const untilDeadline = cycle ? votingDeadlineTime(cycle.value, params) - now : null;
+  // the verified chain's schedule once there is one (the deadline height is then proven, its time Core's own estimate)
+  const untilDeadline = chain ? chain.schedule.deadlineEstTime - now : cycle ? votingDeadlineTime(cycle.value, params) - now : null;
 
   return (
     <article className="proposal">
@@ -208,13 +215,13 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
                 <span>
                   <b>{formatInt(t.abstainWeighted)}</b> abstain
                 </span>
-                <span className="muted small" data-testid="p-voters" title={`${formatInt(t.yesCount)} yes, ${formatInt(t.noCount)} no, ${formatInt(t.abstainCount)} abstain`}>
+                <span className="muted small" data-testid="p-voters" title={`${formatInt(t.yesCount)} yes, ${formatInt(t.noCount)} no, ${formatInt(t.abstainCount)} abstain; counted at block ${formatInt(t.asOfHeight)}`}>
                   {formatInt(t.yesCount + t.noCount + t.abstainCount)} masternodes voted; evonodes count 4 times
                 </span>
               </p>
             )}
             {tallies.error && <p className="error small">The tally could not be read: {tallies.error}</p>}
-            <VoteCta active={active} />
+            <VoteCta proposal={p} active={active} />
           </section>
 
           {active && k.status === 'open' && (

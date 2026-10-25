@@ -5,22 +5,26 @@ import type { ChainReport } from '../verify/chain.ts';
 import { runVerification } from '../verify/client.ts';
 import type { CollateralVerdict } from '../verify/collateral.ts';
 
-/** Runs `fn` whenever deps change; ignores results from superseded runs. */
+/**
+ * Runs `fn` whenever deps change; ignores results from superseded runs, and never returns a previous run's data (not even in the
+ * render before the new run's effect starts): a page built from it never shows, or checks, the old data source's documents.
+ */
 export function useAsync<T>(fn: () => Promise<T>, deps: DependencyList): Load<T> {
-  const [state, setState] = useState<Load<T>>({ loading: true });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const run = useMemo(() => ({}), deps);
+  const [state, setState] = useState<{ run: object; load: Load<T> } | null>(null);
   useEffect(() => {
     let live = true;
-    setState({ loading: true });
     fn().then(
-      (data) => live && setState({ data, loading: false }),
-      (e: unknown) => live && setState({ error: e instanceof Error ? e.message : String(e), loading: false }),
+      (data) => live && setState({ run, load: { data, loading: false } }),
+      (e: unknown) => live && setState({ run, load: { error: e instanceof Error ? e.message : String(e), loading: false } }),
     );
     return () => {
       live = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
-  return state;
+  }, [run]);
+  return state && state.run === run ? state.load : { loading: true };
 }
 
 /**

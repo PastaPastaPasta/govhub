@@ -14,7 +14,7 @@ import type { RankingDone, VotesDone } from '../../verify/protocol.ts';
 import { BRIDGE_TARGET, PLATFORM_TARGET } from '../../verify/verdict.ts';
 import type { VoteTarget } from '../../verify/votes.ts';
 import { useChainReport, useCollateralCheck, type ChainCheck, type CollateralCheck } from '../hooks.ts';
-import { saveTrust, sharedRanking } from './store.ts';
+import { saveTrust, sharedRanking, trustScope } from './store.ts';
 
 export interface Run<T> {
   result: T | null;
@@ -46,6 +46,8 @@ export interface ProposalTrust {
   targets: VoteTarget[];
   /** Runs every check again (the funding order too, not from the shared cache). */
   recheck(): void;
+  /** Ranks every active proposal when it did not run on its own (not passing, unproven votes); null when it ran or can't. */
+  rankNow: (() => void) | null;
 }
 
 export function useProposalTrust(p: Proposal, row: Row, talliesLoading: boolean): ProposalTrust {
@@ -96,7 +98,9 @@ export function useProposalTrust(p: Proposal, row: Row, talliesLoading: boolean)
   const netYes = provenNetYes(votes.result, shown);
   const nowS = source.now();
   const active = p.endEpoch > nowS;
-  const wantRanking = needsRanking({ active, netYes, report: chain.report });
+  // On its own when it decides the funding status; on request ("Rank every active proposal" in the drawer) otherwise.
+  const [rankAsked, setRankAsked] = useState(false);
+  const wantRanking = needsRanking({ active, netYes, report: chain.report }) || (rankAsked && active);
   const activeList = useMemo(() => (gov.active.data ?? []).map((x) => x.value).filter((x) => checks.state(x).status !== 'failed'), [gov.active.data, checks]);
   const listKey = activeList.map((x) => x.govHash).join(',');
   const [forceRanking, setForceRanking] = useState(0);
@@ -124,8 +128,14 @@ export function useProposalTrust(p: Proposal, row: Row, talliesLoading: boolean)
   const { agg, funded } = useMemo(() => {
     const content = contentComponent(contentFailure(p));
     const coll = collateralComponent({ verdict: collateral.verdict, error: collateral.error, progress: collateral.progress, publishedHeight: p.collateralHeight });
-    const ch = chainComponent({ report: chain.report, error: chain.error, unavailable: chain.unavailable, progress: chain.progress });
-    const vt = votesComponent({ shown, talliesLoading, bridge: !!bridge, result: votes.result, error: votes.error, progress: votes.progress });
+    // the chain check waits for the collateral (it anchors the chain): when that could not run, neither can this
+    const ch =
+      collateral.error && !chain.report
+        ? ({ status: 'error', reason: "The chain wasn't checked: the collateral check couldn't run" } as const)
+        : chainComponent({ report: chain.report, error: chain.error, unavailable: chain.unavailable, progress: chain.progress });
+    const vt = votesComponent({
+      shown, live: row.bridgeTally?.value ?? null, tip: chain.report?.anchor.tip ?? null, talliesLoading, bridge: !!bridge, result: votes.result, error: votes.error, progress: votes.progress,
+    });
     const fund = fundingComponent({
       proposal: p, nowS, chain: ch, votes: vt, report: chain.report, netYes,
       ranking: wantRanking ? (bridge ? { result: ranking.result, error: ranking.error, progress: ranking.progress } : { result: null, error: 'no bridge is configured' }) : null,
@@ -141,19 +151,20 @@ export function useProposalTrust(p: Proposal, row: Row, talliesLoading: boolean)
       { demo: mode === 'fixtures' },
     );
     return { agg, funded: agg.level === 'verified' ? provenFunded({ funding: fund, govHash: p.govHash, netYes, report: chain.report, ranking: ranking.result }) : null };
-  }, [p, collateral, chain, shown, talliesLoading, bridge, votes, nowS, netYes, wantRanking, ranking, mode]);
+  }, [p, collateral, chain, shown, row.bridgeTally, talliesLoading, bridge, votes, nowS, netYes, wantRanking, ranking, mode]);
 
   // the last full result, for the list cards
   useEffect(() => {
     if (agg.level === 'checking' || agg.level === 'demo') return;
-    saveTrust(source.scope, p, { level: agg.level, reason: agg.reason, tallyHeight: shown?.tally.asOfHeight ?? null, funded, at: Date.now() });
-  }, [agg.level, agg.reason, source.scope, p, shown, funded]);
+    saveTrust(trustScope(source), p, { level: agg.level, reason: agg.reason, tallyHeight: shown?.tally.asOfHeight ?? null, voteSetHash: shown?.tally.voteSetHash ?? null, funded, at: Date.now() });
+  }, [agg.level, agg.reason, source, p, shown, funded]);
 
   const recheck = useCallback(() => {
     setNonce((n) => n + 1);
     setForceRanking((n) => n + 1);
   }, []);
+  const rankNow = useCallback(() => setRankAsked(true), []);
 
-  return { aggregate: agg, collateral, chain, votes, ranking: wantRanking ? ranking : null, funded, shown, targets, recheck };
+  return { aggregate: agg, collateral, chain, votes, ranking: wantRanking ? ranking : null, funded, shown, targets, recheck, rankNow: active && !wantRanking && !!bridge ? rankNow : null };
 }
 

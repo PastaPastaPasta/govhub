@@ -82,14 +82,11 @@
 .kr-card {
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: var(--radius-m);
+  border-radius: var(--radius-l);
   padding: 1rem 1.125rem 1.125rem;
   display: grid;
   gap: 0.875rem;
   min-inline-size: 0;
-}
-.kr-mns {
-  border-block-start: 3px solid var(--accent);
 }
 .kr-card-head {
   display: flex;
