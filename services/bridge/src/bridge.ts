@@ -44,6 +44,8 @@ export class Bridge {
   /** the refresh in progress (block path or live vote refresh): they never overlap */
   private busy: Promise<unknown> | null = null;
   private voteTimer: ReturnType<typeof setTimeout> | null = null;
+  /** a live refresh is waiting for the lock: further votes join it instead of queueing another */
+  private liveQueued = false;
 
   constructor(cfg: BridgeConfig, db?: DB) {
     this.cfg = cfg;
@@ -157,17 +159,26 @@ export class Bridge {
    */
   async refreshVotes(): Promise<TallyRun | null> {
     if (!this.lastRun || !this.govInfo) return null;
+    // a new block is known: the block path recomputes everything anyway
+    if (this.ingest.height !== this.lastRun.height) return null;
     if (!(await this.ingest.freshenSnapshot())) return null;
     await this.ingest.verifyAllPending();
     return this.tally({ compare: true, persist: false });
   }
 
-  /** Schedules refreshVotes after the debounce; votes arriving meanwhile join the same run. */
+  /**
+   * Schedules refreshVotes after the debounce; votes arriving meanwhile join the same run. At most one live refresh waits for the
+   * lock and one runs: while one is queued (the block path holds the lock), new votes join it.
+   */
   scheduleVoteRefresh(): void {
-    if (this.voteTimer || this.stopping) return;
+    if (this.voteTimer || this.liveQueued || this.stopping) return;
     this.voteTimer = setTimeout(() => {
       this.voteTimer = null;
-      this.exclusive(() => this.refreshVotes()).catch((e) => log.warn('live vote refresh failed', { error: errText(e) }));
+      this.liveQueued = true;
+      this.exclusive(() => {
+        this.liveQueued = false; // votes from now on need another run (this one may already have read the archive)
+        return this.refreshVotes();
+      }).catch((e) => log.warn('live vote refresh failed', { error: errText(e) }));
     }, this.cfg.voteRefreshDebounceMs);
     this.voteTimer.unref?.();
   }
@@ -184,7 +195,10 @@ export class Bridge {
     }
   }
 
-  /** Tallies from the latest snapshot and the Core comparison; `persist` stores them and records mismatch events. */
+  /**
+   * Tallies from the latest snapshot and the Core comparison; `persist` stores them and records mismatch events. A live run
+   * (no persist) asks Core only about proposals whose vote set changed since the last run and keeps the other comparisons.
+   */
   private async tally(opts: { compare: boolean; persist: boolean }): Promise<TallyRun | null> {
     const info = this.govInfo!;
     const snap = latestSnapshot(this.db);
@@ -198,7 +212,14 @@ export class Bridge {
     if (opts.compare) {
       const cmps = new Map<string, CoreComparison>();
       let mismatches = 0;
+      const prev = opts.persist ? null : new Map((this.lastRun?.tallies ?? []).map((x) => [x.govHash, x.voteSetHash]));
       for (const t of run.tallies) {
+        const kept = prev?.get(t.govHash) === t.voteSetHash ? this.lastComparisons.get(t.govHash) : undefined;
+        if (kept) {
+          cmps.set(t.govHash, kept);
+          if (!kept.match) mismatches++;
+          continue;
+        }
         try {
           const [obj, cur] = await Promise.all([this.rpc.gobjectGet(t.govHash), this.rpc.gobjectCurrentVotes(t.govHash)]);
           const c = compareWithCore(t, obj.FundingResult, coreCurrentFundingVotes(cur));

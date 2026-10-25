@@ -14,13 +14,13 @@ const vf = votesFixture();
 const prop = vf.proposals.find((p) => p.votes.length >= 3)!;
 const late = prop.votes.slice(0, 2).map((v) => ({ raw: hexToBytes(v.rawHex), hash: parseRawVote(hexToBytes(v.rawHex)).hash }));
 
-/** Core as the live refresh sees it: the tip is still the snapshot's block; the comparison calls fail (no Core comparison). */
-function fakeCore(b: Bridge, tip: () => { height: number; hash: string }) {
+/** Core as the live refresh sees it: the tip is still the snapshot's block; `gobject get` calls are recorded per proposal. */
+function fakeCore(b: Bridge, tip: () => { height: number; hash: string }, asked: string[] = []) {
   const rpc = {
     getBlockCount: async () => tip().height,
     getBlockHash: async () => tip().hash,
-    gobjectGet: async () => Promise.reject(new Error('not in this test')),
-    gobjectCurrentVotes: async () => Promise.reject(new Error('not in this test')),
+    gobjectGet: async (h: string) => (asked.push(h), { FundingResult: { YesCount: 0, NoCount: 0, AbstainCount: 0, AbsoluteYesCount: 0 } }),
+    gobjectCurrentVotes: async () => ({}),
   } as unknown as CoreRpc;
   (b.ingest as { rpc: CoreRpc }).rpc = rpc;
   (b as { rpc: CoreRpc }).rpc = rpc;
@@ -80,5 +80,32 @@ describe('live vote refresh (D-071)', () => {
 
     const off = await fixtureBridge({ VOTE_REFRESH_DEBOUNCE_MS: '0' }, new Set(late.map((v) => v.hash)));
     expect(off.ingest.onNewVote).toBeNull();
+  });
+
+  it('while the block path holds the lock, a stream of votes queues one live refresh, which asks Core only about changed proposals', async () => {
+    const b = await fixtureBridge({}, new Set(late.map((v) => v.hash)));
+    const snap = latestSnapshot(b.db)!;
+    const asked: string[] = [];
+    fakeCore(b, () => ({ height: snap.height, hash: snap.blockHash }), asked);
+    await b.refreshVotes(); // a first live run compares every proposal once
+    const all = asked.length;
+    expect(all).toBe(b.lastRun!.tallies.length);
+    asked.length = 0;
+    const spy = vi.spyOn(b, 'refreshVotes');
+    let release!: () => void;
+    const block = b.exclusive(() => new Promise<void>((r) => (release = r))); // a slow block refresh
+    vi.advanceTimersByTime(10_000);
+    for (let i = 0; i < 10; i++) {
+      await b.ingest.onZmq({ topic: 'rawgovernancevote', body: late[i % 2]!.raw, seq: i, receivedAt: Math.floor(Date.now() / 1000) });
+      if (i === 1) for (const v of late) b.ingest.onNewVote!(); // more new-vote signals than votes
+      await vi.advanceTimersByTimeAsync(3500);
+    }
+    expect(spy).toHaveBeenCalledTimes(0);
+    release();
+    await block;
+    await vi.advanceTimersByTimeAsync(10);
+    expect(spy).toHaveBeenCalledTimes(1);
+    for (const v of late) expect(counted(b).has(v.hash)).toBe(true);
+    expect(asked).toEqual([prop.govHash]); // only the proposal whose vote set changed
   });
 });

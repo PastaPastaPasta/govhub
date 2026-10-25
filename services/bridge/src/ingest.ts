@@ -299,9 +299,11 @@ export class Ingestor {
   async freshenSnapshot(): Promise<boolean> {
     const snap = latestSnapshot(this.db);
     if (!snap) return false;
+    // read before asking Core, and one second back: only votes that arrived strictly before the tip was confirmed count
+    const readAt = nowS() - 1;
     const tip = await this.rpc.getBlockCount();
     if (tip !== snap.height || (await this.rpc.getBlockHash(tip)) !== snap.blockHash) return false;
-    this.db.prepare('UPDATE mn_snapshots SET taken_at = ? WHERE height = ? AND taken_at < ?').run(nowS(), snap.height, nowS());
+    this.db.prepare('UPDATE mn_snapshots SET taken_at = ? WHERE height = ? AND taken_at < ?').run(readAt, snap.height, readAt);
     return true;
   }
 
