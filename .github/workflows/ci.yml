@@ -30,7 +30,8 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
         working-directory: apps/web
-      - run: npx playwright test
+      # the live suites are left out by file: some read local test credentials when they load, which CI does not have
+      - run: npx playwright test $(ls e2e/*.spec.ts | grep -v live)
         working-directory: apps/web
       - uses: actions/upload-artifact@v4
         if: failure()
