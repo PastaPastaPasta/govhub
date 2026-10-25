@@ -9,8 +9,14 @@ import {
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
+import type { Registry } from '../config/registry.ts';
 import { FIXTURE_IDS } from '../data/fixtureForum.ts';
 import { fixtureSession } from '../session/fixture.ts';
+import { starterConfig, type StarterConfig } from '../starter/config.ts';
+import { StarterPanel } from '../starter/StarterPanel.tsx';
+import { closedRequestText, requestClosed, tokenExpired, type PendingStarter } from '../starter/client.ts';
+import { liveStarterDeps } from '../starter/live.ts';
+import { forgetPendingFor, forgetStarter, forgetStarterFor, loadPendingFor, loadStarterFor, pendingStarterKeys, type StoredStarter } from '../starter/store.ts';
 import { useAuth, type SheetView } from './context.tsx';
 import { FundingPanel } from './FundingPanel.tsx';
 import { PasskeySignIn, Passkeys } from './Passkeys.tsx';
@@ -147,11 +153,20 @@ function RecoverableNotice({ records }: { records: FundingRecord[] }) {
 
 function Choose() {
   const { openSheet, store, network } = useAuth();
-  const { mode } = useApp();
+  const { mode, registry } = useApp();
+  const starterOffered = useMemo(() => !!starterConfig(registry), [registry]);
   const [, rerender] = useState(0);
   const pending = pendingFundings(store, network).filter((r) => r.kind === 'create');
+  const starterKeys = pendingStarterKeys(localStorage, network);
+  const starters = starterKeys.length;
   const main: Array<{ v: SheetView; title: string; text: string }> = [
-    { v: 'create', title: 'Create an account', text: 'Free to start: a voucher from the Dash faucet pays for your account and your first comments.' },
+    {
+      v: 'create',
+      title: 'Create an account',
+      text: starterOffered
+        ? 'Free for masternode and proposal owners: a starter from the Dash faucet pays for the account. Everyone else pays a little DASH (about 0.003).'
+        : 'Pay a little DASH (about 0.003) from any Dash wallet; it covers the account and your first comments.',
+    },
     { v: 'phrase', title: 'I have a recovery phrase', text: 'The 12 or 24 words from govhub, DashPay or Dash Evo Tool.' },
   ];
   const other: Array<{ v: SheetView; title: string; text: string }> = [
@@ -170,6 +185,30 @@ function Choose() {
     <div className="sheet-choose">
       <p className="lede">Reading is free and needs no account. Sign in to comment, react, or vote with your masternodes.</p>
       {mode === 'fixtures' && <SampleIdentities />}
+      {starters > 0 && pending.length === 0 && (
+        <div className="notice-box" role="status" data-testid="starter-pending">
+          <p>
+            <b>{starters === 1 ? 'A free starter is' : `${starters} free starters are`} waiting to be redeemed.</b> Enter the new account’s recovery phrase to continue.
+          </p>
+          <div className="form-actions">
+            <button type="button" className="btn" onClick={() => openSheet('phrase')}>
+              Continue
+            </button>
+            <button
+              type="button"
+              className="btn btn-quiet"
+              onClick={() => {
+                // a starter cannot be asked for twice: discarding gives it up for good
+                if (!confirm('Give up the waiting starter? Your masternode or proposal has used its one starter; it cannot get another.')) return;
+                for (const k of starterKeys) forgetStarter(localStorage, network, k);
+                rerender((n) => n + 1);
+              }}
+            >
+              Discard
+            </button>
+          </div>
+        </div>
+      )}
       {pending.length > 0 && (
         <div className="notice-box" role="status">
           <p>
@@ -328,27 +367,90 @@ function Quiz({ words, positions, onPass, onBack }: { words: string[]; positions
   );
 }
 
-/** Funding choice for a new identity at `identityIndex` of `phrase`: pay with DASH (QR) or redeem a faucet voucher. */
-function FundNewIdentity({ phrase, identityIndex, resume }: { phrase: string; identityIndex: number; resume?: boolean }) {
+/**
+ * What an earlier visit left for this account setup (only its phrase opens it): the stored starter token, or else the unanswered token
+ * requests. Nothing is given up unless Platform's PROVED core height says so; a height that cannot be read keeps it.
+ * - token: the wall-clock estimate may be off by hours, so Platform is asked only once the estimate says it is close.
+ * - requests: one whose epoch's issuance has closed can never be resent (`closed`: to be said plainly and dropped).
+ */
+async function loadStarterState(
+  registry: Registry,
+  cfg: StarterConfig | null,
+  wallet: SeedWallet,
+  identityIndex: number,
+): Promise<{ token: StoredStarter | null; expired: boolean; requests: PendingStarter[]; closed: PendingStarter[] }> {
+  const [token, requests] = await Promise.all([loadStarterFor(localStorage, wallet, identityIndex), loadPendingFor(localStorage, wallet, identityIndex)]);
+  if (token) {
+    const near = cfg && token.token.validUntil < Date.now() + 10 * 60_000;
+    const expired = near ? await tokenExpired(liveStarterDeps(registry, cfg), token.token).catch(() => false) : false;
+    return { token: expired ? null : token, expired, requests: [], closed: [] };
+  }
+  const open: PendingStarter[] = [];
+  const closed: PendingStarter[] = [];
+  const deps = cfg && requests.length ? liveStarterDeps(registry, cfg) : null;
+  for (const r of requests) {
+    if (deps && (await requestClosed(deps, r).catch(() => false))) closed.push(r);
+    else open.push(r);
+  }
+  return { token: null, expired: false, requests: open, closed };
+}
+
+/**
+ * Funding choice for a new identity at `identityIndex` of `phrase`: a free starter (masternode and proposal owners), pay with DASH
+ * (QR), or redeem a faucet voucher link. A starter token stored for this setup (an earlier visit) continues before anything else.
+ */
+export function FundNewIdentity({ phrase, identityIndex, resume }: { phrase: string; identityIndex: number; resume?: boolean }) {
   const { network, signIn, closeSheet, platform } = useAuth();
   const { registry } = useApp();
-  const faucetHost = (registry.faucet?.url ?? 'https://faucet.dashhq.org').replace(/^https?:\/\//, '');
+  const starterCfg = useMemo(() => starterConfig(registry), [registry]);
+  const starterOn = !!starterCfg;
   const [wallet, setWallet] = useState<SeedWallet | null>(null);
-  const [how, setHow] = useState<'choose' | 'dash' | 'voucher'>(resume ? 'dash' : 'choose');
+  const [how, setHow] = useState<'checking' | 'choose' | 'dash' | 'voucher' | 'starter'>('checking');
+  const [stored, setStored] = useState<StoredStarter | null>(null);
+  /** starter requests an earlier visit sent (or was about to) without getting the answer: each continued with its own blinding */
+  const [storedRequests, setStoredRequests] = useState<PendingStarter[]>([]);
   const [error, setError] = useState<string | null>(null);
   const owned = useRef(false);
   // The wallet is made and wiped by the effect (StrictMode-safe): unless the session took it over, leaving this view wipes it.
   useEffect(() => {
     const w = SeedWallet.fromPhrase(phrase, network);
     setWallet(w);
+    let live = true;
+    // a starter token kept for this setup (only this phrase opens it) continues the starter instead of the QR code
+    (async () => {
+      let found: Awaited<ReturnType<typeof loadStarterState>>;
+      try {
+        found = await loadStarterState(registry, starterCfg, w, identityIndex);
+      } catch {
+        // never a blank sheet: the other ways to pay still work (a stored token or request stays for the next visit)
+        if (live) setHow(resume ? 'dash' : 'choose');
+        return;
+      }
+      if (!live) return;
+      if (found.expired) {
+        forgetStarterFor(localStorage, w, identityIndex);
+        setError('The starter token kept for this account was not redeemed in time and has expired. Pay with a little DASH instead.');
+      } else if (found.closed.length) {
+        for (const r of found.closed) await forgetPendingFor(localStorage, w, identityIndex, r.kind, r.subject).catch(() => {});
+        if (!live) return;
+        setError(closedRequestText(found.closed[0]!.kind));
+      }
+      setStored(found.token);
+      setStoredRequests(found.requests);
+      if (found.token || found.requests.length) setHow('starter');
+      else setHow(resume ? 'dash' : 'choose');
+    })();
     return () => {
+      live = false;
       if (!owned.current) w.wipe();
     };
-  }, [phrase, network]);
+  }, [phrase, network, identityIndex, resume]);
 
   // `index`: a new account paid for after a too-small payment lives at a later index
   const finish = async (identityId: string, index = identityIndex) => {
     if (!wallet) return;
+    // the account is funded (by any path): a starter token or request kept for this setup can never fund anything else
+    for (const i of new Set([identityIndex, index])) forgetStarterFor(localStorage, wallet, i);
     try {
       const s = await signInWithSeed(wallet, { identityIndex: index, identityId }, await platform());
       owned.current = true;
@@ -358,7 +460,7 @@ function FundNewIdentity({ phrase, identityIndex, resume }: { phrase: string; id
       setError(errorText(e));
     }
   };
-  if (!wallet) return null;
+  if (!wallet || how === 'checking') return null;
   if (how === 'choose') {
     return (
       <div className="fund-choice">
@@ -373,9 +475,13 @@ function FundNewIdentity({ phrase, identityIndex, resume }: { phrase: string; id
         </p>
         <ul className="choices">
           <li>
-            <button type="button" className="choice choice-l" onClick={() => setHow('voucher')}>
-              <b>Redeem a voucher</b>
-              <span className="muted small">Free: get a starter voucher link from the Dash faucet ({faucetHost}) and paste it here. It covers the account and a few comments.</span>
+            <button type="button" className="choice choice-l" onClick={() => setHow('starter')} disabled={!starterOn} data-testid="choice-starter">
+              <b>Get a free starter</b>
+              <span className="muted small">
+                {starterOn
+                  ? 'For masternode and proposal owners: prove it with a signature and the Dash faucet pays for the account and a few comments.'
+                  : `For masternode and proposal owners. Not available on ${network} yet.`}
+              </span>
             </button>
           </li>
           <li>
@@ -385,12 +491,36 @@ function FundNewIdentity({ phrase, identityIndex, resume }: { phrase: string; id
             </button>
           </li>
         </ul>
+        <ul className="choices choices-s">
+          <li>
+            <button type="button" className="choice" onClick={() => setHow('voucher')}>
+              <b>I have a voucher link</b>
+              <span className="muted small">Paste a voucher link someone gave you.</span>
+            </button>
+          </li>
+        </ul>
+        {error && <p className="error" role="alert">{error}</p>}
       </div>
     );
   }
   return (
     <>
-      {how === 'dash' ? <FundingPanel kind="create" wallet={wallet} identityIndex={identityIndex} onDone={finish} /> : <VoucherRedeem wallet={wallet} identityIndex={identityIndex} onDone={finish} />}
+      {how === 'dash' && <FundingPanel kind="create" wallet={wallet} identityIndex={identityIndex} onDone={finish} />}
+      {how === 'voucher' && <VoucherRedeem wallet={wallet} identityIndex={identityIndex} onDone={finish} />}
+      {how === 'starter' && (
+        <StarterPanel
+          wallet={wallet}
+          identityIndex={identityIndex}
+          resume={stored ?? undefined}
+          resumeRequests={storedRequests}
+          onDone={finish}
+          onPayInstead={() => {
+            setStored(null);
+            setStoredRequests([]);
+            setHow('dash');
+          }}
+        />
+      )}
       {error && <p className="error" role="alert">{error}</p>}
     </>
   );
@@ -478,6 +608,8 @@ function PhraseSignIn() {
       if (resume && (resume.deposits.length || resume.lock)) return setState({ phrase, found: [], resume });
       const port = await platform();
       const found = await discoverIdentities(wallet, port);
+      // a starter token kept for a setup whose identity exists now is of no further use
+      for (const f of found) forgetStarterFor(localStorage, wallet, f.identityIndex);
       if (!found.length && resume) return setState({ phrase, found: [], resume });
       if (found.length === 1) {
         signIn(await signInWithSeed(wallet, found[0]!, port));

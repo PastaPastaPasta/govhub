@@ -3,7 +3,8 @@
 import { describe, expect, it } from 'vitest';
 import { useState } from 'react';
 import { button, click, render, type } from '../test/render.tsx';
-import { CreateFlow, SecretField } from './AuthSheet.tsx';
+import { CreateFlow } from './AuthSheet.tsx';
+import { SecretField } from './SecretField.tsx';
 
 const positions = (el: HTMLElement) => [...el.querySelectorAll('[data-testid^="quiz-"]')].map((x) => x.getAttribute('data-testid')).join(',');
 
