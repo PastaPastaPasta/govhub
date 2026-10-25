@@ -211,7 +211,8 @@ test.describe('vote panel (fixtures)', () => {
     await openPanel(page, 'hour');
     const tracker = await voteWithFirst(page, 'Abstain');
     await expect(tracker).toHaveAttribute('data-status', 'held');
-    await expect(tracker.getByTestId('vote-tracker-line')).toContainText(/Core allows one vote change per hour per masternode; relay-(one|two)\.example sends this at \d{1,2}:\d{2}/);
+    // an hour later can be tomorrow (after 23:00 local): then the time carries the date ("Oct 26, 2026, 12:09 AM")
+    await expect(tracker.getByTestId('vote-tracker-line')).toContainText(/Core allows one vote change per hour per masternode; relay-(one|two)\.example sends this at (?:[A-Z][a-z]{2} \d{1,2}, \d{4}, )?\d{1,2}:\d{2}/);
     await openMns(page);
     await expect(page.getByTestId('mn-vote-panel').getByTestId('pending-vote').first()).toContainText('Held by relay');
     await tracker.getByTestId('vote-cancel').click();
