@@ -459,6 +459,9 @@ function creditsKey(tx: Tx, h160: Uint8Array): boolean {
 
 // ---- what an item can do ---------------------------------------------------------------------------------------------------
 
+/** Duffs as DASH for people ("0.002215 DASH"). */
+const dashText = (duffs: number | bigint) => `${(Number(duffs) / 1e8).toFixed(8).replace(/0+$/, '').replace(/\.$/, '')} DASH`;
+
 export interface ItemOptions {
   /** Payments only: what a sweep would send and cost (null: everything would go to the fee). */
   sweep: { sentDuffs: bigint; feeDuffs: bigint } | null;
@@ -481,7 +484,7 @@ export function itemOptions(item: RecoveryItem, scan: Pick<RecoveryScan, 'identi
   else {
     const f = estimateSweepFee(item.payments.length);
     if (item.duffs - f >= DUST_DUFFS) sweep = { sentDuffs: item.duffs - f, feeDuffs: f };
-    else notes.push(`${item.duffs} duffs cannot pay a transaction fee and leave more than dust.`);
+    else notes.push(`${dashText(item.duffs)} cannot pay a transaction fee and leave more than dust.`);
   }
   const usable = isLock ? item.lock!.status !== 'used' : item.payments.length <= 100;
   const fu = item.funding;
@@ -490,14 +493,14 @@ export function itemOptions(item: RecoveryItem, scan: Pick<RecoveryScan, 'identi
   if (!fu) notes.push('This key is not a funding key: its payments can only be sent to an address.');
   else if (usable) {
     const bigEnoughFor = (k: 'create' | 'topup') => credit * CREDITS_PER_DUFF >= (k === 'create' ? createRequiredCredits(CREATE_KEYS.length) : topUpRequiredCredits());
+    const canTopUp = bigEnoughFor('topup');
     if (fu.kind === 'create') {
-      const taken = scan.identities.some((f) => f.identityIndex === fu.identityIndex);
-      if (taken) notes.push(`Identity #${fu.identityIndex} of this phrase already exists, so this can only top up an identity.`);
+      if (scan.identities.some((f) => f.identityIndex === fu.identityIndex)) notes.push(`Identity #${fu.identityIndex} of this phrase already exists, so this cannot create it again.`);
       else if (bigEnoughFor('create')) create = fu.identityIndex;
-      else notes.push(`Creating an account needs at least ${MIN_CREATE_LOCK_DUFFS} duffs locked; this can top up an identity instead.`);
-      if (bigEnoughFor('topup')) topUp = 'any';
-    } else if (bigEnoughFor('topup')) topUp = fu.identityId;
-    if (!create && !topUp) notes.push(`A top-up needs at least ${MIN_TOPUP_LOCK_DUFFS} duffs locked.`);
+      else if (canTopUp) notes.push(`Creating an account needs ${dashText(MIN_CREATE_LOCK_DUFFS)} locked; this is enough to top up an identity instead.`);
+      if (canTopUp) topUp = 'any';
+    } else if (canTopUp) topUp = fu.identityId;
+    if (!canTopUp) notes.push(`Too small to use on Dash Platform: a top-up needs ${dashText(MIN_TOPUP_LOCK_DUFFS)} locked${isLock ? '' : ' after the fee'}.`);
   }
   return { sweep, create, topUp, notes };
 }

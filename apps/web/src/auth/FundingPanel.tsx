@@ -9,7 +9,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useAuth } from './context.tsx';
 import { useLeaveWarning } from './leaveWarning.ts';
 import { Qr } from './Qr.tsx';
-import { RecoverLink } from './Recover.tsx';
+import { RecoverLink } from './RecoverLink.tsx';
 import { errorText, formatDuffs } from './runtime.ts';
 
 export interface FundingPanelProps {

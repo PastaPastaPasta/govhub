@@ -7,24 +7,11 @@ import {
   type FundingView, type RecoveryItem, type RecoveryScan, type RecoverySecret, type ScanProgress,
 } from '@govhub/auth';
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { Link, useInRouterContext, useLocation } from 'react-router-dom';
-import { SecretField } from './AuthSheet.tsx';
+import { useLocation } from 'react-router-dom';
+import { SecretField } from './SecretField.tsx';
 import { useAuth } from './context.tsx';
 import { useLeaveWarning } from './leaveWarning.ts';
 import { errorText, formatDuffs } from './runtime.ts';
-
-export const RECOVER_PATH = '/settings#recover';
-
-/** A link to the Recover tool. From the sign-in sheet it closes the sheet (a funding there stops, and resumes from where it was). */
-export function RecoverLink({ children, onClick }: { children: ReactNode; onClick?(): void }) {
-  return useInRouterContext() ? (
-    <Link to={RECOVER_PATH} onClick={onClick} data-testid="recover-link">
-      {children}
-    </Link>
-  ) : (
-    <a href={RECOVER_PATH}>{children}</a>
-  );
-}
 
 type Start = 'default' | 'month' | 'year' | 'custom';
 type Held = { secret: RecoverySecret; owned: boolean };
@@ -427,7 +414,7 @@ function UseOnPlatform({ opts, scan, busy, onFund }: { opts: ReturnType<typeof i
       {opts.topUp === 'any' && (
         <form className="form recover-topup" onSubmit={submit}>
           <label>
-            Or top up another identity
+            {scan.identities.length ? 'Or top up another identity' : 'Top up an identity'}
             <input value={id} onChange={(e) => (setId(e.target.value), setBad(false))} placeholder="identity id (base58)" spellCheck={false} autoComplete="off" data-testid="recover-topup-id" />
           </label>
           {bad && <p className="error small">That is not an identity id.</p>}
