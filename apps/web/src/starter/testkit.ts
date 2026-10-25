@@ -34,9 +34,9 @@ export class FakePlatform {
     if (q.documentTypeName === 'issuerRevocation' && mine && this.revocations.has(w.epoch as number)) docs = [this.revocations.get(w.epoch as number)!];
     return { docs, coreHeight: this.core };
   }
-  async addKey(epoch: number, o: { badKeyId?: boolean } = {}) {
+  async addKey(epoch: number, o: { badKeyId?: boolean; createdAt?: number } = {}) {
     const keyId = o.badKeyId ? rnd(32) : await sha256(spki);
-    this.keys.set(epoch, { $ownerId: starterId, $createdAtCoreBlockHeight: epochStart(P, epoch - 1) - 5, epoch, spki: bytesToBase64(spki), keyId: bytesToBase64(keyId), variant: VARIANT });
+    this.keys.set(epoch, { $ownerId: starterId, $createdAtCoreBlockHeight: o.createdAt ?? epochStart(P, epoch - 1) - 5, epoch, spki: bytesToBase64(spki), keyId: bytesToBase64(keyId), variant: VARIANT });
   }
   async revoke(epoch: number) {
     this.revocations.set(epoch, { $ownerId: starterId, $createdAtCoreBlockHeight: this.core - 1, epoch, keyId: bytesToBase64(await sha256(spki)), effectiveCoreHeight: this.core - 1 });

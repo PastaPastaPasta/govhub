@@ -245,6 +245,25 @@ describe('starter issuance', () => {
   });
 });
 
+describe('starter key timing (the label depends on the height only)', () => {
+  it('a current-epoch key published after the epoch began is refused with wrong-key; the next epoch\'s late key is used', async () => {
+    const w = await starterWorld();
+    const p = w.core.addProposal(fakeProposal());
+    // inside E-1, E is the NEXT epoch: a key for it published during E-1 (late under the old rule) signs
+    const late = (keyCreatedAt: number) => starterService(w, { activeKey: () => ({ epoch: E, keyId: w.key.keyId, signer: w.signer, keyCreatedAt }) });
+    w.service = late(epochStart(P, E - 1) + 5);
+    expect((await issue(w, (await starterRequest(w, proposalSubject(p))).body)).epoch).toBe(E);
+    // inside E, E is CURRENT: only a key from before S(E)
+    const q = w.core.addProposal(fakeProposal());
+    w.core.tip = epochStart(P, E) + 10;
+    w.service = late(epochStart(P, E) + 5);
+    const e = await expectError(issue(w, (await starterRequest(w, proposalSubject(q))).body), 'wrong-key');
+    expect(e.message).toMatch(/published after the epoch began/);
+    w.service = late(epochStart(P, E) - 1);
+    expect((await issue(w, (await starterRequest(w, proposalSubject(q))).body)).epoch).toBe(E);
+  });
+});
+
 describe('starter store', () => {
   const file = () => join(mkdtempSync(join(tmpdir(), 'starter-db-')), 's.sqlite');
 
@@ -423,6 +442,25 @@ describe('starter key manager', () => {
     await other.m.tick();
     expect(other.m.status.problem).toMatch(/published SPKI/);
     expect(other.m.activeKey(E)).toBeNull();
+  });
+
+  it('a next-epoch key published late (in [S(E-1), keyDeadline)) is loaded and listed; one that appears mid-run is picked up next tick', async () => {
+    const t = await manager([E]);
+    const d = t.docs.get(`${STARTER}:${E}`)!;
+    t.docs.set(`${STARTER}:${E}`, { ...d, createdAtCoreBlockHeight: epochStart(P, E - 1) + 5 });
+    await t.m.tick();
+    expect(t.m.activeKey(E)?.keyCreatedAt).toBe(epochStart(P, E - 1) + 5);
+    expect(t.m.keys().map((k) => k.epoch)).toEqual([E]);
+    const u = await manager([E]);
+    const doc = u.docs.get(`${STARTER}:${E}`)!;
+    u.docs.delete(`${STARTER}:${E}`);
+    await u.m.tick();
+    expect(u.m.activeKey(E)).toBeNull();
+    expect(u.m.keys()).toEqual([]);
+    u.docs.set(`${STARTER}:${E}`, { ...doc, createdAtCoreBlockHeight: epochStart(P, E - 1) + 20 });
+    await u.m.tick();
+    expect(u.m.activeKey(E)?.epoch).toBe(E);
+    expect(u.m.keys().map((k) => k.epoch)).toEqual([E]);
   });
 
   it('refuses to sign while more later keys are staged than allowed', async () => {

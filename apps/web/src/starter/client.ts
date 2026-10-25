@@ -12,7 +12,7 @@
 //   5. redeem: the faucet gets {network, epoch, address, msgPrefix, sig}, nothing about the masternode or proposal.
 import { addressOf, hash160, registrationFundingPath, wipe, type Network, type SeedWallet } from '@govhub/auth';
 import {
-  base64ToBytes, BLOCK_SECONDS, buildStarterRequestFor, bytesToBase64, epochStart, EPOCH_PARAMS, fromHex, idToBytes, importIssuerKey, isStarterKind, prepareStarter, randomBelow, starterRequestEpochs, toHex,
+  base64ToBytes, BLOCK_SECONDS, buildStarterRequestFor, bytesToBase64, epochStart, EPOCH_PARAMS, fromHex, idToBytes, importIssuerKey, isStarterKind, prepareStarter, randomBelow, starterKeyUsable, starterRequestEpochs, toHex,
   verifyStarterToken,
   type IssuerKey, type StarterKind,
 } from '@govhub/badge';
@@ -98,6 +98,8 @@ export async function findStarterKey(d: StarterDeps): Promise<{ key: IssuerKey; 
     const { key, problem } = await d.issuerKey(epoch);
     if (!key) problems.push(`epoch ${epoch}: ${problem ?? 'no valid key'}`);
     else if (key.revokedFrom !== null) problems.push(`epoch ${epoch}: the issuer revoked its key`);
+    // a current-epoch key published after the epoch began is skipped (starterKeyUsable): the label must depend on the height only
+    else if (!starterKeyUsable(EPOCH_PARAMS[d.network], height, epoch, key.keyCreatedAt)) problems.push(`epoch ${epoch}: its key was published after the epoch began`);
     else return { key: key.key, epoch, height };
   }
   throw new StarterError(`The starter issuer has no valid key on Dash Platform right now (${problems.join('; ')}). Try again later, or pay with DASH.`, 'no-key', true);

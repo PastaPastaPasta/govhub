@@ -85,7 +85,9 @@ async function main(): Promise<void> {
       for (let e = issuing + 1; await platform.issuerKey(key.identityId, e); e++) ahead++;
       const now = (await platform.issuerKey(key.identityId, issuing))
         ? 'has a key'
-        : `has NO key: Standard mode is unavailable until one lands before height ${keyDeadline(p, issuing)}. If manifest.json lacks it, run \`issuer keygen --dir ${values.dir} --from ${issuing} --epochs 1 --purpose ${purpose(values.purpose)}\`, publish again, and copy epoch-${issuing}.pem to the server`;
+        : purpose(values.purpose) === 'starter'
+          ? `has NO key: starter tokens for this epoch are unavailable (a starter key for the current epoch counts only if it was published before the epoch began; publishing one now would not be used). Clients use the next epoch's key: make sure epoch ${issuing + 1} has one (\`issuer keygen --dir ${values.dir} --from ${issuing + 1} --epochs 1 --purpose starter\`, publish again, and copy epoch-${issuing + 1}.pem to the server)`
+          : `has NO key: Standard mode is unavailable until one lands before height ${keyDeadline(p, issuing)}. If manifest.json lacks it, run \`issuer keygen --dir ${values.dir} --from ${issuing} --epochs 1 --purpose ${purpose(values.purpose)}\`, publish again, and copy epoch-${issuing}.pem to the server`;
       console.error(`issuing epoch ${issuing} ${now}; ${ahead} consecutive later epoch(s) have keys (${ahead >= minAhead ? 'ok' : `FEWER than ${minAhead}: publish more`})`);
       process.exit(publishExitCode(results));
       return;

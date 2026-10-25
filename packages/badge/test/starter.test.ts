@@ -12,6 +12,7 @@ import {
   parseStarterRequest,
   prepareStarter,
   STARTER_MESSAGE_LEN,
+  starterKeyUsable,
   starterRedeemEpochs,
   starterRequestEpochs,
   verifyStarterToken,
@@ -99,6 +100,17 @@ describe('starter epochs', () => {
     expect(starterRequestEpochs(P, s)).toEqual([2742, 2743]);
     expect(starterRequestEpochs(P, s + 576 - P.boundaryMarginBlocks - 1)).toEqual([2742, 2743]);
     expect(starterRequestEpochs(P, s + 576 - P.boundaryMarginBlocks)).toEqual([2743]);
+  });
+
+  it('a current-epoch key counts only if published before the epoch began; the next epoch\'s key under the reader rules', () => {
+    const s = epochStart(P, 2742);
+    const h = s + 100; // inside 2742
+    expect(starterKeyUsable(P, h, 2742, s - 1)).toBe(true);
+    expect(starterKeyUsable(P, h, 2742, s)).toBe(false); // published at or after S(current): not used, clients ask for 2743
+    expect(starterKeyUsable(P, h, 2742, s + 50)).toBe(false);
+    expect(starterKeyUsable(P, h, 2743, s + 50)).toBe(true); // the next epoch may have a late key (acceptIssuerKey still applies)
+    // the same key once its epoch has started is judged by the same rule, so its label depends on the height only
+    expect(starterKeyUsable(P, epochStart(P, 2743) + 1, 2743, s + 50)).toBe(true);
   });
 
   it('the faucet redeems the previous, current and next epochs', () => {

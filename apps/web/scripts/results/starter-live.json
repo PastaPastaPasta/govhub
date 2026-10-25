@@ -1,18 +1,18 @@
 {
   "run": {
-    "at": "2026-10-25T18:22:59.420Z",
-    "platformCoreHeight": 1579278,
+    "at": "2026-10-25T18:33:43.383Z",
+    "platformCoreHeight": 1579280,
     "issuer": "9Jwa6v2Bwj9TtDmgJGn3KV9qqXprYZUBEkKzkxzx3HD8",
     "faucet": "http://127.0.0.1:18787"
   },
   "masternode": {
-    "epoch": 2741,
-    "identityId": "E9tbm8Fo2RUtHKLUd53JCcmoTs1gHc4H6Lx3H1CvG2Ma",
-    "payoutTxid": "f5b31fd4d32d20acd57b5a0d3ff6a80744903dac66f94687d2ad002228024fa7",
+    "epoch": 2742,
+    "identityId": "DzzoUMCKZGAsR3obRw9rQmZCbFzBsfbfEWyB8atiRFmT",
+    "payoutTxid": "4d900181f7005e7e75822ff4865ca09e4f8a280941ab619c4a74ba7ab9c9ce8a",
     "amountSats": 600000,
-    "lockTxid": "1d84dbe30b3a22b00732109079d64238aa9f1933c64e86ab63d4eaba84df9ed4",
+    "lockTxid": "0e821656062aba71b18f69d669e09c5ee0bf0d26c4682d7eaafb283758e4e1b8",
     "proofKind": "instant",
-    "secondsPaidToIdentity": 10,
+    "secondsPaidToIdentity": 14,
     "replay": {
       "replay": true,
       "sameTxid": true

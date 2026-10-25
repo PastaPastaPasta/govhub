@@ -16,7 +16,7 @@
 // Why the minimum age: one ProRegTx can spend an MN's collateral and create a new one in its own outputs, i.e. a new proTxHash AND a
 // new outpoint for a fee. Without an age rule one 1000-DASH collateral could re-register every block and take a starter each time;
 // with it, at most one per epoch (about a month on mainnet), which is not worth the fees and the lost MN rewards.
-import { epochOf, epochStart, equalBytes, idToBytes, issuingEpochsAt, parseStarterRequest, starterRequestBinds, toHex, type BadgeNetwork, type EpochParams, type StarterRequest } from '@govhub/badge';
+import { epochOf, epochStart, equalBytes, idToBytes, issuingEpochsAt, parseStarterRequest, starterKeyUsable, starterRequestBinds, toHex, type BadgeNetwork, type EpochParams, type StarterRequest } from '@govhub/badge';
 import { recoverMessageSigner } from '@govhub/verify';
 import type { Challenges } from './challenge.ts';
 import type { CoreView, MnState, ProposalState } from './core.ts';
@@ -101,6 +101,9 @@ export class StarterService {
     const key = d.activeKey(epoch);
     if (!key) throw new IssueError('unavailable', `no starter key is ready for epoch ${epoch}`);
     if (!equalBytes(req.keyId, key.keyId)) throw new IssueError('wrong-key', `the request names another key than the starter issuerKey of epoch ${epoch}`);
+    // the current epoch's key only if it was published before the epoch began (starterKeyUsable: a late one would let us relabel
+    // requests by time); clients then ask for the next epoch
+    if (!starterKeyUsable(d.params, cached.height, epoch, key.keyCreatedAt)) throw new IssueError('wrong-key', `the starter key of the current epoch ${epoch} was published after the epoch began, so it is not used for starters: ask for epoch ${next}`);
     if (!d.challenges.check(req.nonce, d.nowSec())) throw new IssueError('bad-challenge', 'challenge invalid or expired: fetch a new one');
     if (!(await starterRequestBinds(req, blindedMsg))) throw new IssueError('bad-request', 'the request does not bind this blinded message');
     if (blindedMsg.length !== key.signer.modulusBytes) throw new IssueError('bad-request', `blindedMsg must be ${key.signer.modulusBytes} bytes`);

@@ -184,13 +184,14 @@ export class EpochKeys {
     // Readers accept this key whether or not this server can sign with it.
     d.onPublished?.(epoch, doc);
     if (!signer) return `no key file for epoch ${epoch}, although an issuerKey is published for it (keyId ${toHex(doc.keyId)}): if it is in manifest.json, copy epoch-${epoch}.pem here; if not, the CRITICAL key is compromised`;
+    // the cheap local refusal first: it needs no Platform read and gives the clearer reason
+    const refused = d.canSign?.(epoch, doc);
+    if (refused) return refused;
     const other = d.other?.();
     if (other) {
       const clash = await keyConflict(platform, other, epoch, doc.keyId);
       if (clash) return clash;
     }
-    const refused = d.canSign?.(epoch, doc);
-    if (refused) return refused;
     this.#active.set(epoch, { epoch, keyId: doc.keyId, signer, keyCreatedAt: doc.createdAtCoreBlockHeight });
     d.onLoad?.(epoch, doc);
     log.info(`${d.label} ready`, { epoch, keyId: toHex(doc.keyId), modulusBits: signer.modulusBytes * 8 });

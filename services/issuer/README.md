@@ -269,7 +269,16 @@ which identity. Format, request string and epoch helpers: `packages/badge/src/st
 (`STARTER_ISSUER_IDENTITY_ID`, used for nothing else), so a starter key can never pass as a badge key. One key per epoch, under the
 badge epoch schedule and the same rules as badge keys (see "Keys"): generated offline, published with the starter identity's CRITICAL
 key before `keyDeadline(E) = S(E+1) - margin` (publish ahead anyway: only a key published before `S(E-1)` serves the whole issuance window), `STARTER_KEY_DIR` holds the current and next epoch plus at most `STARTER_MAX_STAGED_KEYS` later ones, a key is
-used only if it matches the proved `issuerKey`, and it is destroyed once its window has closed:
+used only if it matches the proved `issuerKey`, and it is destroyed once its window has closed.
+
+One rule is stricter than for badges: a starter key for the **current** epoch is used only if it was published **before that
+epoch began** (`starterKeyUsable` in `packages/badge/src/starter.ts`; the issuer answers `wrong-key` otherwise, and clients skip
+it). Clients ask for the current epoch and fall back to the next one when the current one has no key. If a current-epoch key could
+appear mid-epoch, whoever holds the starter CRITICAL key could watch a request arrive (labelled E+1, because E had no key), then
+publish E's key, so that everyone after is labelled E: the E+1 token would then hide only among the requests made before the
+publication, a crowd split by time that "redeem later" cannot undo. With the rule, the label depends on the height alone. A next
+epoch's key may still be published late (up to `keyDeadline`), and once that epoch starts it counts, since it predates it. Badges
+have no such fallback (the privacy mode fixes the epoch), which is why their late keys stay allowed.
 
 ```sh
 issuer keygen --purpose starter --dir ./starter-keys-offline --from 2743 --epochs 14

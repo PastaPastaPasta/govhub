@@ -38,6 +38,16 @@ describe('key selection (proved issuerKey of the starter identity only)', () => 
     expect((await findStarterKey(s2.deps)).epoch).toBe(E);
   });
 
+  it('skips a current-epoch key published after the epoch began (the label depends on the height only); a late next-epoch key is fine', async () => {
+    const { platform, deps } = setup(); // core height inside E
+    await platform.addKey(E, { createdAt: epochStart(P, E) + 5 });
+    await platform.addKey(E + 1, { createdAt: epochStart(P, E) + 5 });
+    expect((await findStarterKey(deps)).epoch).toBe(E + 1);
+    const only = setup();
+    await only.platform.addKey(E, { createdAt: epochStart(P, E) + 5 });
+    await expect(findStarterKey(only.deps)).rejects.toMatchObject({ code: 'no-key', message: expect.stringMatching(/published after the epoch began/) });
+  });
+
   it('skips a revoked key and an invalid one (keyId != SHA256(spki))', async () => {
     const a = setup();
     await a.platform.addKey(E);

@@ -4,7 +4,9 @@
 // The issuer blind-signs (RSABSSA-SHA384-PSS-Randomized, the badge machinery) under a STARTER key: an `issuerKey` document of the
 // `badge` contract owned by a starter-only identity (never a badge issuer's), one per epoch, under the badge epoch schedule and reader
 // rules (acceptIssuerKey: created before keyDeadline = S(E+1) - margin, keyId = SHA256(spki), canonical RSA-2048/3072). The client blinds only against that
-// PROVED document for an epoch it derives itself, so the issuer cannot hand one user a key of their own (key tagging).
+// PROVED document for an epoch it derives itself, so the issuer cannot hand one user a key of their own (key tagging). One rule is
+// stricter than for badges (starterKeyUsable): the CURRENT epoch's key counts only if it was published before that epoch began,
+// because clients fall back to the next epoch when the current one has no key, and a mid-epoch key would split the crowd by time.
 //
 // Token message (fixed width, 106 bytes), blind-signed; RSABSSA's randomized prepare prepends a fresh 32-byte msgPrefix:
 //   "govhub-starter:v1" || net(1) || issuerId(32) || keyId(32) || epoch(u32 BE) || pubKeyHash(20)
@@ -147,6 +149,18 @@ export async function starterRequestBinds(req: StarterRequest, blindedMsg: Uint8
 export function starterRequestEpochs(p: EpochParams, height: number): number[] {
   const e = epochOf(p, height);
   return height < epochStart(p, e + 1) - p.boundaryMarginBlocks ? [Math.max(1, e), e + 1] : [e + 1];
+}
+
+/**
+ * Whether a starter key accepted by the reader rules (acceptIssuerKey: created before keyDeadline = S(E+1) - margin) may be used
+ * for epoch `epoch` at core height `height`. The CURRENT epoch's key only if it was created strictly before S(current); the next
+ * epoch's key under the normal rule. Why: clients fall back from the current epoch to the next when the current one has no key, so
+ * a current-epoch key published mid-epoch would let the operator relabel requests by time (everyone before the publication asked
+ * for E+1, everyone after for E), splitting the crowd a token hides in. With this rule the label depends only on the height.
+ * Badges have no such fallback (the privacy mode fixes the epoch), so their late keys stay allowed.
+ */
+export function starterKeyUsable(p: EpochParams, height: number, epoch: number, keyCreatedAt: number): boolean {
+  return epoch !== epochOf(p, height) || keyCreatedAt < epochStart(p, epoch);
 }
 
 /**
