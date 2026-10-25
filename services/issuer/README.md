@@ -58,7 +58,7 @@ runs `issuer healthcheck` (exit 0 if `GET /healthz` answers).
 | 6 | **authentication**: the public key recovered from the `signmessage` signature has the hash160 that is `keyIDVoting` of the proTxHash in the **current** list (cached) | `unauthorized` |
 | 7 | at most 6 requests per MN per minute (memory only); the tip, read fresh from dashd, still issues E (inside `E-1` or `E`) | `unavailable`, `wrong-epoch` |
 | 8 | **eligibility**: the MN is valid (not PoSe-banned) now; it was registered **and** valid at `S(E-1)` (cached snapshot); its collateral outpoint is the same at both heights | `not-eligible` |
-| 9 | the token store has existed since the window opened; atomic dedup in SQLite, then sign and verify | `unavailable`, `already-issued` |
+| 9 | the token store has existed since the window opened, or since the epoch's key was published if that came later; atomic dedup in SQLite, then sign and verify | `unavailable`, `already-issued` |
 
 Notes:
 
@@ -69,7 +69,10 @@ Notes:
   snapshot with `protx list registered true [height]` (`MnLists`, `src/core.ts`; the snapshot once it is
   `boundaryMarginBlocks` deep). Only an authenticated request costs one `getblockcount`, so a stranger cannot load dashd.
 - A token store created (or reset) after an epoch's window opened refuses that epoch: it cannot know the tokens issued
-  before, so it could neither dedup them nor report the right count. The first height is kept in the database.
+  before, so it could neither dedup them nor report the right count. The first height is kept in the database. The
+  exception is a key published after the store started (by at least `boundaryMarginBlocks`, because Platform's core height
+  can run a few blocks ahead of dashd's): no client can ask before it reads the proved key, so no token for that epoch
+  can predate the store. This lets a new issuer serve the current epoch.
 - Dedup: `PRIMARY KEY (epoch, proTxHash)` and `UNIQUE (epoch, collateral)`. A retry with the same
   `sha256(blindedMsg)` gets the same signature (RSA signing is deterministic) and is not counted again. A
   different blinded message is refused with `already-issued`. Two MNs that share one voting key each get their own
@@ -150,12 +153,27 @@ issuer publish-keys --dir ./keys-offline --identity-file critical.json --contrac
 `keygen` writes `epoch-<E>.pem` (PKCS#8, mode 0600) and `manifest.json` (public: epoch, bits, SPKI in base64,
 `keyId` in hex), and skips epochs that already have a key.
 
-`publish-keys` creates the `issuerKey` documents with the identity's **CRITICAL** key. The contract requires
-`signatureSecurityLevelRequirement: 1` for `issuerKey` and `issuerRevocation`, so the online HIGH key on the server
-can neither publish nor revoke keys. A key is skipped if it would not land before `S(E-1)`. Publish **at least 3
-epochs ahead**, so a later compromise cannot claim those slots (`--min-ahead` only reports whether enough later
-epochs have keys; it does not enforce anything). It reads each document back, and reports a `CONFLICT` if a different key
-is already published for the epoch.
+`publish-keys` (`src/publish.ts`) creates the `issuerKey` documents with the identity's **CRITICAL** key. The contract
+requires `signatureSecurityLevelRequirement: 1` for `issuerKey` and `issuerRevocation`, so the online HIGH key on the
+server can neither publish nor revoke keys. Readers accept a key created before `S(E+1) - margin` (`keyDeadline`), so
+the current epoch's key can still be published; a key is skipped (`too late`) only if it would not land before that.
+Publish **at least 3 epochs ahead** anyway, so a later compromise cannot claim those slots, and so the private modes,
+which ask during E-1, have E's key in time (`--min-ahead` only reports whether enough later epochs have keys; it does
+not enforce anything).
+
+Each slot holds one key forever (unique, immutable, not deletable), so publishing is safe to repeat. Per epoch it prints
+one JSON line with a `status`:
+
+| `status` | |
+|---|---|
+| `published` | created now, and read back |
+| `already published` | the slot already holds this key (same SPKI) |
+| `adopted` | the SDK reported an error (a duplicate, a timeout), but the slot holds this key: the write landed |
+| `conflict` | the slot holds a **different** key. It is final; if you did not publish it, the CRITICAL key is compromised |
+| `too late` | it could not land before `S(E+1) - margin` |
+| `error` | the publish failed and the slot is empty (re-run), the manifest's `keyId` is not `SHA256(spki)`, or our key landed after the deadline |
+
+The exit code is 3 if any epoch is a `conflict`, 1 if any is an `error`, else 0.
 
 On the server:
 
@@ -164,10 +182,36 @@ On the server:
   issue** and says so in `/v1/info` and the log. Every staged key is a future epoch that a server compromise could
   mint badges for.
 - Before using a key, the issuer reads the proved `issuerKey` for the epoch and refuses if it is missing, was
-  published at or after `S(E-1)`, has `keyId != SHA256(spki)`, or the private key does not match the published SPKI.
-  The file must not be readable by group or others.
+  published at or after `S(E+1) - margin`, has another variant or `keyId != SHA256(spki)`, is older than the token store
+  (above), or the private key does not match the published
+  SPKI (logged as a `CONFLICT`: the slot cannot be fixed). The file must not be readable by group or others. A missing
+  key is looked up again on every tick (`ISSUER_TICK_S`), so the issuer starts signing within one tick of the key
+  landing on Platform.
 - Once the issuance window of an epoch has closed (`S(E+1)` plus the margin), its key is destroyed: overwritten with zeros,
   fsynced, unlinked. On ZFS, btrfs and SSDs old blocks may survive; that is a property of the host, not of this code.
+
+**A missing current-epoch key** (a new issuer, or keys that ran out). Standard mode asks for the current epoch, so it
+works as soon as that epoch's key is on Platform; it does not wait for the next epoch. The service cannot publish the
+key itself, because that needs the CRITICAL key, which never goes on the server. On the offline machine:
+
+```sh
+issuer keygen --dir ./keys-offline --from <current epoch> --epochs 1     # skipped if the manifest has it
+issuer publish-keys --dir ./keys-offline --identity-file critical.json --contract <badge contract> --network testnet
+```
+
+In this order:
+
+1. Start the service and let it sync once, then wait until the chain is a few blocks past that (`boundaryMarginBlocks`
+   plus two: about 25 minutes on mainnet, 13 on testnet). The token store records the height it first ran at, and it
+   issues for an epoch only if it is older than that epoch's key by the margin. Otherwise it could have missed tokens
+   issued before it existed. A key published too soon is not used for that epoch; the status and the log say
+   `token store started at height …`.
+2. Copy `epoch-<E>.pem` to the server (0600, uid 1000).
+3. Run the two commands above. The service signs from its next tick.
+
+Once a valid key is on Platform, the epoch is reported at its end, with 0 tokens if this server never signed for it. A
+missing report would flag the issuer for that epoch and the next. Why the old rule (key before `S(E-1)`) could go:
+`packages/badge/README.md` and PLAN §8.9.
 
 Keep the identity's MASTER and CRITICAL keys offline (CRITICAL signs the `issuerKey` documents). Only the HIGH key goes
 to the server, and only for `issuerReport` documents. Key files are JSON
@@ -195,7 +239,7 @@ was published before it is reported, and a re-run reports those epochs as `alrea
 **Squatting risk.** Whoever holds the CRITICAL key can publish a revocation for any epoch. A thief can publish one with
 `effectiveCoreHeight = 4294967295` (never in effect) for every epoch: the unique index then blocks the issuer's real
 revocation, and badges minted with stolen epoch keys stay valid. The same thief can also publish `issuerKey` documents
-for epochs that have none yet. Revocations do not help once the CRITICAL key itself is lost; recovery is: disable the
+for epochs that have none yet, including the current and the next one (publish ahead so there are none). Revocations do not help once the CRITICAL key itself is lost; recovery is: disable the
 CRITICAL key with the MASTER key (identity update), revoke what is still free, and have readers drop or replace the
 issuer identity in their trust lists. Keeping the CRITICAL key offline is the protection.
 
@@ -347,5 +391,5 @@ none. Ids and the deployment are in `deploy/README.md` section 13.2.
 
 `npm test -w @govhub/issuer` runs offline against fakes of Core and Platform, on the RFC 9474 vectors in `test/vectors`:
 the signer (including a simulated faulty CRT signature, which must be refused), challenges, the token store, the
-order of checks and every error code, the HTTP layer, and the epoch manager (key loading, staged-key limit, key
-destruction, row deletion, reports).
+order of checks and every error code, the HTTP layer, the epoch manager (key loading, late keys, staged-key limit, key
+destruction, row deletion, reports), and `publish-keys` (late keys, adoption, conflicts).

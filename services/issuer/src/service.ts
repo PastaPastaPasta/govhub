@@ -14,7 +14,7 @@ import { base64ToBytes, buildTokenRequest, epochStart, equalBytes, idToBytes, is
 import { recoverMessageSigner } from '@govhub/verify';
 import type { Challenges } from './challenge.ts';
 import type { CoreView, MnLists } from './core.ts';
-import type { TokenStore } from './db.ts';
+import { storeWindowFrom, type TokenStore } from './db.ts';
 import { SignerError, type BlindSigner } from './signer.ts';
 
 export type IssueErrorCode =
@@ -64,6 +64,8 @@ export interface ActiveKey {
   epoch: number;
   keyId: Uint8Array;
   signer: BlindSigner;
+  /** the issuerKey document's $createdAtCoreBlockHeight (Platform's core height): no token for the epoch exists before it */
+  keyCreatedAt: number;
 }
 
 export interface TokenServiceDeps {
@@ -170,6 +172,7 @@ export class TokenService {
     if (epoch !== tipCurrent && epoch !== tipNext) throw new IssueError('wrong-epoch', `issuance for epoch ${epoch} is not open (height ${tip})`, tipCurrent);
     if (!mnNow.valid) throw new IssueError('not-eligible', 'the masternode is not valid (PoSe-banned) now');
     const snapHeight = epochStart(d.params, epoch - 1);
+    const windowFrom = storeWindowFrom(d.params, epoch, key.keyCreatedAt);
     const snapList = d.lists.snapshot(snapHeight);
     if (!snapList) throw new IssueError('unavailable', `the masternode list at the snapshot height ${snapHeight} is not loaded yet`);
     const snap = snapList.get(proTxHash);
@@ -179,13 +182,13 @@ export class TokenService {
     // 5 + 6. dedup, sign, verify
     let out;
     try {
-      out = d.store.reserve({ epoch, windowFrom: snapHeight, proTxHash, collateral: mnNow.collateral, blindedHash: req.blindedMsgSha256 }, () => key.signer.sign(blindedMsg));
+      out = d.store.reserve({ epoch, windowFrom, proTxHash, collateral: mnNow.collateral, blindedHash: req.blindedMsgSha256 }, () => key.signer.sign(blindedMsg));
     } catch (e) {
       if (e instanceof SignerError && (e.code === 'bad-length' || e.code === 'out-of-range')) throw new IssueError('bad-request', e.message);
       throw new IssueError('unavailable', 'signing failed');
     }
     if (out.kind === 'closed') throw new IssueError('wrong-epoch', `issuance for epoch ${epoch} has closed`, epoch + 1);
-    if (out.kind === 'store-too-new') throw new IssueError('unavailable', `this issuer's token store started inside epoch ${epoch}'s window; it issues again from the next epoch`);
+    if (out.kind === 'store-too-new') throw new IssueError('unavailable', `this issuer's token store started after epoch ${epoch}'s window opened and its key was published; it issues again from the next epoch`);
     if (out.kind === 'conflict')
       throw new IssueError('already-issued', out.reason === 'mn' ? 'this masternode already obtained a token from this issuer for this epoch' : 'this collateral already obtained a token from this issuer for this epoch');
     return { blindSig: out.blindSig, epoch, retry: out.retry };

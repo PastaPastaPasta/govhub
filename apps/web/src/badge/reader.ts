@@ -110,15 +110,15 @@ export class BadgeReader {
       p = (async () => {
         const b = await this.#lib();
         const [kd, rv] = await Promise.all([this.#query(issuerKeyQuery(issuer.identityId, epoch)), this.#query(revocationQuery(issuer.identityId, epoch))]);
-        let doc = null;
+        let docs;
         let rev = null;
         try {
-          doc = kd.docs[0] ? b.parseIssuerKeyDoc(kd.docs[0]) : null;
+          docs = kd.docs.map((d) => b.parseIssuerKeyDoc(d)); // every returned document: more than one is refused
           rev = rv.docs[0] ? b.parseIssuerRevocationDoc(rv.docs[0]) : null;
         } catch (e) {
           return { key: null, problem: `malformed issuer document: ${(e as Error).message}` };
         }
-        const v = await b.acceptIssuerKey(await this.#cfg(), { issuerId: b.idToBytes(issuer.identityId), epoch }, doc, rev);
+        const v = await b.acceptIssuerKey(await this.#cfg(), { issuerId: b.idToBytes(issuer.identityId), epoch }, docs, rev);
         return v.ok ? { key: v.value, problem: null } : { key: null, problem: v.reason };
       })();
       // only an accepted key is kept, and only for the TTL (a revocation can come later); anything else is read again next time

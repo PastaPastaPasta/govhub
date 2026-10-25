@@ -183,7 +183,7 @@ export async function checkKeyAvailability(issuerKey: ClientDeps['issuerKey'], i
 
 function noKeyMessage(issuer: Pick<TrustedIssuer, 'name'>, epoch: number, mode: PrivacyMode, problem: string | null): string {
   const why = problem ? ` (${problem})` : '';
-  if (mode === 'standard') return `Standard mode needs ${issuer.name}’s key for the current epoch, ${epoch}, and there is none on Platform${why}. Standard works once the issuer’s first key’s epoch starts; Private may work now: it asks for a token for the next epoch.`;
+  if (mode === 'standard') return `Standard mode needs ${issuer.name}’s key for the current epoch, ${epoch}, and there is none on Platform${why}: the issuer hasn’t published this period’s key yet. Standard works as soon as it does; Private may work now: it asks for a token for the next epoch.`;
   return `${issuer.name} has no valid key for epoch ${epoch} on Platform${why}, so a ${mode === 'extra' ? 'Extra private' : 'Private'} request cannot be made yet.`;
 }
 

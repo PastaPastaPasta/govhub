@@ -116,10 +116,16 @@ few blocks.
 | Private / Extra request for E | `[S(E-1) + margin, S(E) - margin)`, one uniformly random height (`privateRequestWindow`) | `pickRequestHeight` |
 | posting of the badge | Standard: at once (never before `S(E)`); Private: `[S(E) + margin, S(E) + W]`; Extra: `[S(E) + margin, S(E) + L/2]`, one uniformly random height | `pickPostHeight` |
 | display of a badge for E | `S(E) <= h <= S(E+1) + W`, for the badge's `$createdAtCoreBlockHeight` **and** for the reader's current height | reader |
-| `issuerKey` for E | created strictly before `S(E-1)` (`keyDeadline`) | reader, issuer |
+| `issuerKey` for E | created strictly before `S(E+1) - margin` (`keyDeadline`); no badge for E is older than it | reader, issuer |
 | `issuerReport` for E | created in `[S(E+1), S(E+1) + W]` (`reportWindow`): after E's issuance window closed | reader, issuer |
 
 Heights on Platform are `$createdAtCoreBlockHeight`, which Drive sets from the block, so they cannot be back-dated.
+
+**Why a key may be published late** (PLAN §8.9). The key used to be required before `S(E-1)`. That added no protection
+against key tagging: the unique, immutable `issuerKey` per (issuer, E) does that, and a client blinds only after a proved
+read of it, so every token for E is signed by that one key whenever it appeared. The private modes still need E's key during
+E-1 (an issuer that publishes ahead has it); a key that appears later only means Private is not offered for E. The bound
+`S(E+1) - margin` is where Standard requests for E stop, and it keeps the key before E's report.
 Epoch 0 is not used: the window functions and `acceptIssuerKey` require `E >= 1`.
 
 **Privacy modes** (PLAN §8.8, owner decision): **Standard** (default) asks for the current epoch and posts at once, so
@@ -134,7 +140,7 @@ Testnet has a superblock every 24 blocks (about 1 hour). One cycle per epoch wou
 badge document every hour, and a browser open every hour to renew. 24 cycles make an epoch about a day: renewal
 is daily and a new badge still shows within about a day. W = 72 is the same ~12% of an epoch as on mainnet.
 
-How long a new badge takes: in Standard mode, minutes (as soon as an epoch with a published key is current). In the
+How long a new badge takes: in Standard mode, minutes (as soon as the current epoch's key is on Platform). In the
 private modes a request is for the next epoch E, sent at a random height in E-1's window, and the badge is posted at
 a random height in `[S(E) + margin, S(E) + W]` (Extra: the first half of E). So a private badge first shows between
 about 0 and one epoch plus W after the user asked (Extra: plus up to half an epoch):
@@ -153,14 +159,15 @@ current core height. `acceptIssuerKey` then checks, in order:
 
 1. a document exists, `$ownerId` is the trusted issuer, `epoch` is the expected E, `variant` is
    `RSABSSA-SHA384-PSS-Randomized`
-2. it was created before `S(E-1)`
+2. it was created before `S(E+1) - margin` (`keyDeadline`), and it is the only document returned (the unique index allows
+   one; more is refused)
 3. `keyId == SHA256(spki)`, and `importIssuerKey` accepts the `spki`
 4. if an `issuerRevocation` exists for (issuer, E), badges created at or after its `effectiveCoreHeight` are void.
    Any revocation counts (fail closed)
 
 `verifyMnBadge` then checks one `mnBadge` document against the accepted key: `issuerId`, `epoch` and `keyId` equal the
-key's; `msgPrefix` is 32 B; the badge's height and the current height are both in the display window; the badge is
-not revoked; the signature has modulus length, is `< n`, and passes RSABSSA verify over the message rebuilt from
+key's; `msgPrefix` is 32 B; the badge's height and the current height are both in the display window; the badge is not
+older than the key (its height is at least the key's `$createdAtCoreBlockHeight`); the badge is not revoked; the signature has modulus length, is `< n`, and passes RSABSSA verify over the message rebuilt from
 the key's binding and `$ownerId`. Copying a badge to another identity fails because `$ownerId` is in the message.
 
 Rules that live above this package (in `apps/web/src/badge/reader.ts`):

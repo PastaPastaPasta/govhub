@@ -13,6 +13,7 @@ import {
   finalize,
   fromHex,
   importIssuerKey,
+  keyDeadline,
   parseTokenRequest,
   sha256,
   toHex,
@@ -46,11 +47,13 @@ class FakePlatform {
   reports = new Map<number, number>();
   reportHeight: number | null = null;
   revocation: Record<string, unknown> | null = null;
+  /** more issuerKey documents returned with the real one (the unique index makes this impossible on Platform) */
+  extraKeyDocs: Record<string, unknown>[] = [];
   async query(q: DocQuery) {
     const w = Object.fromEntries(q.where.map(([k, , v]) => [k, v]));
     let docs: Record<string, unknown>[] = [];
     if (q.documentTypeName === 'issuerRevocation') docs = this.revocation && w.epoch === this.revocation.epoch ? [this.revocation] : [];
-    if (q.documentTypeName === 'issuerKey') docs = w.$ownerId === issuer.identityId && this.keys.has(w.epoch as number) ? [this.keys.get(w.epoch as number)!] : [];
+    if (q.documentTypeName === 'issuerKey') docs = w.$ownerId === issuer.identityId && this.keys.has(w.epoch as number) ? [this.keys.get(w.epoch as number)!, ...this.extraKeyDocs] : [];
     if (q.documentTypeName === 'issuerReport' && this.reports.has(w.epoch as number)) docs = [{ $ownerId: issuer.identityId, $createdAtCoreBlockHeight: this.reportHeight ?? epochStart(P, (w.epoch as number) + 1) + 4, epoch: w.epoch, tokensIssued: this.reports.get(w.epoch as number) }];
     if (q.documentTypeName === 'mnBadge') {
       const inList = (w.$ownerId as string[] | undefined) ?? null;
@@ -195,6 +198,33 @@ describe('badge client', () => {
     expect(view.byOwner.get(t.ownerId)).toEqual(['test']);
   });
 
+  it('Standard mode works as soon as the current epoch\'s key lands, even mid-epoch; readers accept the badge', async () => {
+    const t = setup();
+    const h = epochStart(P, E) + 100;
+    t.platform.core = h;
+    const before = await checkKeyAvailability(t.deps.issuerKey, issuer, 'testnet', h);
+    expect(before.modes.find((m) => m.mode === 'standard')).toMatchObject({ epoch: E, ok: false });
+    await expect(createJob(t.deps, [], votingKey().wif, proTx(), h, { issuer })).rejects.toThrow(/hasn’t published this period’s key yet/);
+    // the issuer publishes E's key now, during E (the old rule wanted it before S(E-1))
+    await t.platform.addKey(E);
+    t.platform.keys.get(E)!.$createdAtCoreBlockHeight = h - 2;
+    const after = await checkKeyAvailability(t.deps.issuerKey, issuer, 'testnet', h);
+    expect(after.modes.find((m) => m.mode === 'standard')).toMatchObject({ epoch: E, ok: true });
+    const job = await createJob(t.deps, [], votingKey().wif, proTx(), h, { issuer });
+    const posted = await step(t.deps, await step(t.deps, job, h), h);
+    expect(posted.state).toBe('posted');
+    const view = await new BadgeReader({ net: 'testnet', contractId, issuers: [issuer], query: (q) => t.platform.query(q) }).badgesFor([t.ownerId]);
+    expect(view.byOwner.get(t.ownerId)).toEqual(['test']);
+  });
+
+  it('the reader refuses an epoch for which the query returns two issuerKey documents', async () => {
+    const t = setup();
+    await t.platform.addKey(E);
+    const other = new Uint8Array(createPublicKey(generateKeyPairSync('rsa', { modulusLength: 2048, publicExponent: 65537 }).privateKey).export({ type: 'spki', format: 'der' }));
+    t.platform.extraKeyDocs = [{ ...t.platform.keys.get(E)!, spki: bytesToBase64(other), keyId: bytesToBase64(await sha256(other)) }];
+    expect(await t.reader.key(issuer, E)).toEqual({ key: null, problem: 'more than one issuerKey for this epoch' });
+  });
+
   it('Standard mode in the last blocks of an epoch asks for the next one and posts from its start', async () => {
     const t = setup();
     await t.platform.addKey(E + 1);
@@ -264,8 +294,8 @@ describe('badge client', () => {
     await expect(createJob(t.deps, [], votingKey().wif, 'abc', h, { issuer, mode: 'private' })).rejects.toThrow(/64 hex/);
     const mainnetWif = encodeWif(secp256k1.utils.randomSecretKey(), true, 'mainnet');
     await expect(createJob(t.deps, [], mainnetWif, proTx(), h, { issuer, mode: 'private' })).rejects.toThrow(/WIF/);
-    // a key published too late (at or after S(E-1)) is not accepted
-    t.platform.keys.get(E)!.$createdAtCoreBlockHeight = epochStart(P, E - 1);
+    // a key published too late (at or after S(E+1) - margin) is not accepted
+    t.platform.keys.get(E)!.$createdAtCoreBlockHeight = keyDeadline(P, E);
     const t2 = setup();
     t2.platform.keys = t.platform.keys;
     await expect(createJob(t2.deps, [], votingKey().wif, proTx(), h, { issuer, mode: 'private' })).rejects.toThrow(/too late/);

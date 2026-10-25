@@ -9,7 +9,8 @@
 //   during E itself (Standard mode asks for the current epoch and posts at once)
 //   a badge for E is never created before S(E); it is shown while S(E) <= h <= S(E+1) + W, and its own height must be in
 //   that range too
-//   the issuerKey for E must have been created before S(E-1)
+//   the issuerKey for E must have been created before S(E+1) - margin (the end of the last Standard request window for E), and a
+//   badge for E is never older than that key (see keyDeadline)
 //   the issuerReport for E is published once E's issuance window has closed: created in [S(E+1), S(E+1) + W]
 //
 // Heights are Core block heights. On Platform the relevant height is `$createdAtCoreBlockHeight` (Drive sets it to the
@@ -136,5 +137,11 @@ export function displayEpochsAt(p: EpochParams, height: number): number[] {
   return [e, e - 1].filter((x) => x >= 1 && inDisplayWindow(p, x, height));
 }
 
-/** The issuerKey for E must exist before minting for E starts: created strictly before S(E-1). */
-export const keyDeadline = (p: EpochParams, epoch: number): number => epochStart(p, epoch - 1);
+/**
+ * The issuerKey for E counts only if created strictly before S(E+1) - margin: inside E's issuance window, before the last
+ * Standard request for E can be made (clients ask for E+1 from then on), and so before E's issuerReport (created from S(E+1)).
+ * It may appear mid-window: the key is unique and immutable per (issuer, E) and clients use only the proved key, so every token
+ * for E is signed by that one key whenever it was published. A key that appears after S(E) - margin is simply too late for the
+ * private modes (they ask during E-1). Readers also reject a badge created before its key.
+ */
+export const keyDeadline = (p: EpochParams, epoch: number): number => epochStart(p, epoch + 1) - p.boundaryMarginBlocks;

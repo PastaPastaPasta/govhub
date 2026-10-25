@@ -45,10 +45,37 @@ describe('reader rules', () => {
     expect((await accept({ epoch: E + 1 })).ok).toBe(false);
     expect((await accept({ variant: 'RSABSSA-SHA384-PSS-Deterministic' })).ok).toBe(false);
     expect((await accept({ keyId: rnd(32) })).ok).toBe(false);
-    expect((await accept({ createdAtCoreBlockHeight: S(E - 1) })).ok).toBe(false); // not strictly before S(E-1)
-    expect((await accept({ createdAtCoreBlockHeight: S(E) })).ok).toBe(false);
+    expect((await accept({ createdAtCoreBlockHeight: S(E + 1) - T.boundaryMarginBlocks })).ok).toBe(false); // not strictly before the bound
+    expect((await accept({ createdAtCoreBlockHeight: S(E + 1) })).ok).toBe(false);
+    expect((await accept({ createdAtCoreBlockHeight: S(E + 1) + T.graceBlocks })).ok).toBe(false);
     const nc = concat(k.spki, Uint8Array.of(0));
     expect((await accept({ spki: nc, keyId: await sha256(nc) })).ok).toBe(false);
+  });
+
+  it('key: published mid-window (after S(E-1), even during E) is accepted, up to S(E+1) - margin', async () => {
+    for (const h of [S(E - 1), S(E - 1) + 1, S(E), S(E) + 200, S(E + 1) - T.boundaryMarginBlocks - 1]) {
+      const a = await accept({ createdAtCoreBlockHeight: h });
+      expect(a.ok, `key at ${h}`).toBe(true);
+      expect(a.ok && a.value.keyCreatedAt).toBe(h);
+    }
+    // a badge made after a mid-epoch key verifies (Standard mode, posted at once)
+    expect((await verdict({ createdAtCoreBlockHeight: S(E) + 200 }, now + 200, { createdAtCoreBlockHeight: S(E) + 150 })).ok).toBe(true);
+  });
+
+  it('key: two issuerKey documents for one epoch (impossible under the unique index) are refused', async () => {
+    const other = await testKey(2048);
+    const second: IssuerKeyDoc = { ...keyDoc, spki: other.spki, keyId: await sha256(other.spki), createdAtCoreBlockHeight: S(E) + 5 };
+    expect(await acceptIssuerKey(cfg, { issuerId, epoch: E }, [keyDoc, second])).toEqual({ ok: false, reason: 'more than one issuerKey for this epoch' });
+    expect(await acceptIssuerKey(cfg, { issuerId, epoch: E }, [keyDoc, keyDoc])).toMatchObject({ ok: false });
+    expect((await acceptIssuerKey(cfg, { issuerId, epoch: E }, [keyDoc])).ok).toBe(true);
+    expect((await acceptIssuerKey(cfg, { issuerId, epoch: E }, [])).ok).toBe(false);
+  });
+
+  it('badge: never older than its key', async () => {
+    const keyAt = S(E) + 50;
+    expect(await verdict({ createdAtCoreBlockHeight: keyAt - 1 }, now, { createdAtCoreBlockHeight: keyAt })).toEqual({ ok: false, reason: 'badge created before its issuerKey' });
+    expect((await verdict({ createdAtCoreBlockHeight: keyAt }, now, { createdAtCoreBlockHeight: keyAt })).ok).toBe(true); // same core height
+    expect((await verdict({ createdAtCoreBlockHeight: keyAt + 1 }, now, { createdAtCoreBlockHeight: keyAt })).ok).toBe(true);
   });
 
   it('badge: issuer, epoch and keyId must match the accepted key', async () => {

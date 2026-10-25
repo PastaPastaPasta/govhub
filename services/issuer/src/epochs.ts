@@ -1,9 +1,9 @@
 // Epoch housekeeping, run on a timer: which key may sign, destroying keys and token rows of closed windows, and the per-epoch
 // issuerReport. Every step works from the dashd tip; the issuerKey check reads Platform with proofs.
-import { deriveKeyId, epochStart, equalBytes, issuingEpochsAt, keyDeadline, reportWindow, toHex, type EpochParams } from '@govhub/badge';
+import { deriveKeyId, epochStart, equalBytes, issuingEpochsAt, keyDeadline, reportWindow, toHex, VARIANT, type EpochParams } from '@govhub/badge';
 import type { IdentityKeyFile } from './config.ts';
 import type { CoreView, MnLists } from './core.ts';
-import type { TokenStore } from './db.ts';
+import { storeWindowFrom, type TokenStore } from './db.ts';
 import { destroyKey, keyEpochs, loadKey } from './keys.ts';
 import { errText, log } from './log.ts';
 import type { IssuerPlatform } from './platform.ts';
@@ -72,7 +72,12 @@ export class EpochManager {
       this.#status = { height, issuingEpochs: [current, next], keyIds: {}, ready: false, problem: typeof synced === 'string' ? synced : 'dashd is not synced' };
       return;
     }
-    d.store.markStarted(height);
+    if (d.store.startedHeight() === null) {
+      // Platform's core height can lead this dashd's tip: start from the higher one, so a key published before the store started
+      // never looks newer than it (storeWindowFrom). Without a Platform height, wait: nothing is issued without Platform anyway.
+      const ph = await d.platform()?.coreHeight().catch(() => null);
+      if (Number.isSafeInteger(ph) && ph! > 0) d.store.markStarted(Math.max(height, ph!));
+    }
     try {
       // a token for E needs the MN valid at S(E-1): S(current-1) and S(current)
       await d.lists.refresh([epochStart(d.params, current - 1), epochStart(d.params, current)], margin);
@@ -120,7 +125,10 @@ export class EpochManager {
     await this.#report().catch((e) => log.warn('issuerReport failed', { error: errText(e) }));
   }
 
-  /** Loads the private key for `epoch` and checks it against the proved issuerKey document. Returns a problem or null. */
+  /**
+   * Loads the private key for `epoch` and checks it against the proved issuerKey document. Returns a problem or null. Runs every
+   * tick until the key is ready: a key may be published at any time before keyDeadline, and signing starts at the next tick.
+   */
   async #load(epoch: number): Promise<string | null> {
     const d = this.#d;
     let priv;
@@ -129,26 +137,36 @@ export class EpochManager {
     } catch (e) {
       return errText(e);
     }
-    if (!priv) return `no key file for epoch ${epoch}`;
     const platform = d.platform();
-    if (!platform) return 'Platform is not reachable';
+    if (!platform) return priv ? 'Platform is not reachable' : `no key file for epoch ${epoch}`;
     let doc;
     try {
       doc = await platform.issuerKey(d.issuerId, epoch);
     } catch (e) {
       return `Platform: ${errText(e)}`;
     }
-    if (!doc) return `no issuerKey document for epoch ${epoch} on Platform`;
-    if (doc.createdAtCoreBlockHeight >= keyDeadline(d.params, epoch)) return `the issuerKey of epoch ${epoch} was published too late; readers would reject every badge`;
-    if (!equalBytes(doc.keyId, await deriveKeyId(doc.spki))) return `the issuerKey of epoch ${epoch} has keyId != SHA256(spki)`;
-    let signer: BlindSigner;
-    try {
-      signer = new BlindSigner(priv, { expectedSpki: doc.spki });
-    } catch (e) {
-      return `key file of epoch ${epoch}: ${errText(e)}`;
+    const deadline = keyDeadline(d.params, epoch);
+    if (!doc) return priv ? `no issuerKey document for epoch ${epoch} on Platform yet: publish it with \`issuer publish-keys\` (offline, CRITICAL key) before height ${deadline}` : `no key file for epoch ${epoch}`;
+    if (doc.createdAtCoreBlockHeight >= deadline) return `the issuerKey of epoch ${epoch} was published too late (at or after ${deadline}); readers would reject every badge`;
+    if (doc.variant !== VARIANT || !equalBytes(doc.keyId, await deriveKeyId(doc.spki))) return `the issuerKey of epoch ${epoch} has another variant or keyId != SHA256(spki)`;
+    let signer: BlindSigner | null = null;
+    if (priv) {
+      try {
+        signer = new BlindSigner(priv);
+      } catch (e) {
+        return `key file of epoch ${epoch}: ${errText(e)}`;
+      }
+      // The slot is unique and immutable, so a different key there is final (README "Revoking a key").
+      if (!equalBytes(signer.spki, doc.spki)) return `CONFLICT: the key file of epoch ${epoch} does not match the published SPKI; if you did not publish that issuerKey, the CRITICAL key is compromised`;
     }
-    this.#active.set(epoch, { epoch, keyId: doc.keyId, signer });
+    // Readers accept this key, so readers expect E's report: it is published (with 0 tokens if this server never signs), since a
+    // missing one would flag the issuer for E and hide its badges for E+1.
     d.store.openEpoch(epoch);
+    if (!signer) return `no key file for epoch ${epoch}, although an issuerKey is published for it (keyId ${toHex(doc.keyId)}): if it is in manifest.json, copy epoch-${epoch}.pem here; if not, the CRITICAL key is compromised`;
+    const started = d.store.startedHeight();
+    if (started !== null && started > storeWindowFrom(d.params, epoch, doc.createdAtCoreBlockHeight))
+      return `the token store started at height ${started}, after epoch ${epoch}'s window opened and its key was published (at ${doc.createdAtCoreBlockHeight}): it cannot know tokens issued before, so it issues again from epoch ${epoch + 1}`;
+    this.#active.set(epoch, { epoch, keyId: doc.keyId, signer, keyCreatedAt: doc.createdAtCoreBlockHeight });
     log.info('signing key ready', { epoch, keyId: toHex(doc.keyId), modulusBits: signer.modulusBytes * 8 });
     return null;
   }

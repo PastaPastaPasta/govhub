@@ -27,7 +27,10 @@ describe('epochs', () => {
     expect(extraPostingWindow(T, E)).toEqual({ from: 2742 * 576, to: 2742 * 576 + 288 });
     expect(displayWindow(T, E)).toEqual({ from: 2742 * 576, to: 2743 * 576 + 72 });
     expect(reportWindow(T, E)).toEqual({ from: 2743 * 576, to: 2743 * 576 + 72 });
-    expect(keyDeadline(T, E)).toBe(2741 * 576);
+    // inside E's issuance window, before the last Standard request for E (clients switch to E+1 there) and before E's report
+    expect(keyDeadline(T, E)).toBe(2743 * 576 - 3);
+    expect(keyDeadline(T, E)).toBe(privateRequestWindow(T, E + 1).to);
+    expect(keyDeadline(T, E)).toBeLessThan(reportWindow(T, E).from);
     expect(issuingEpochsAt(T, 2741 * 576)).toEqual([2741, 2742]);
     expect(issuingEpochsAt(T, 2742 * 576 - 1)).toEqual([2741, 2742]);
   });
