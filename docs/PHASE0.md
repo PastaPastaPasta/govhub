@@ -118,5 +118,5 @@ the packed document is replaced once whenever any entry changed. A 6-hour interv
    `signVote` and by the web app's voting code were accepted by testnet Core (`voteraw`, directly and through the relay); see
    services/relay/README.md "Live testnet run".
 2. Android seed restore. Needs a device, so this is for the user.
-3. A faucet route for 0.003 vouchers at the portal's amount. This lives in dash-faucet-cf, alongside
-   its separate vout fix.
+3. ~~A faucet route for 0.003 vouchers at the portal's amount.~~ Dropped (2026-10-25): govhub gives no
+   starter credit; everyone funds their own identity (PLAN.md section 4.3).
