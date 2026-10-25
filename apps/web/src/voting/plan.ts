@@ -6,6 +6,7 @@
 //     within an hour of the masternode's current vote is planned for (current + 1 h + slack) and the relay holds it until then.
 //   - a vote older than the current one is "obsolete" (object.cpp:421): the new nTime is always later than the current vote's.
 //   - funding votes only (VOTE_SIGNAL.FUNDING); operator BLS signals are out of scope.
+import { assertUsableKey } from './masternodes.ts';
 import { governanceVoteHash, signVote, VOTE_MAX_FUTURE_S, VOTE_SIGNAL, VOTE_UPDATE_MIN_S, voteSchemeFor, voteSignatureHash, voteSignatureString, bytesToHex, type Network, type VoteFields } from '@govhub/verify';
 
 export type Outcome = 1 | 2 | 3;
@@ -149,6 +150,7 @@ export interface SignedVoteRecord {
 
 /** Signs with the network's scheme (mainnet/regtest/devnet: message signing; testnet: the binary vote hash, vote.cpp:176). */
 export function signPlanned(p: PlannedVote, privKey: Uint8Array, compressed: boolean, network: Network): SignedVoteRecord {
+  assertUsableKey(privKey);
   const fields = voteFields(p);
   const s = signVote({ privKey, vote: fields, network, compressed });
   return {

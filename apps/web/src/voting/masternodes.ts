@@ -36,11 +36,55 @@ export interface OwnedMasternode {
   };
 }
 
-export function votingKeyId(privateKey: Uint8Array, compressed: boolean): string {
-  return bytesToHex(hash160(secp256k1.getPublicKey(privateKey, compressed)));
+/**
+ * A private key that is not usable any more: the keyring wipes its keys (zero-fills them) the moment the session ends or the network
+ * changes, and one more render or callback can still hold the old key objects. Not a noble `invalid scalar` from deep inside.
+ */
+export class ZeroedKeyError extends Error {
+  constructor() {
+    super('This voting key was wiped (the session ended or the network changed).');
+    this.name = 'ZeroedKeyError';
+  }
 }
 
-export const votingAddressOf = (privateKey: Uint8Array, compressed: boolean, network: Network): string => p2pkhAddress(hash160(secp256k1.getPublicKey(privateKey, compressed)), network);
+/** Throws ZeroedKeyError for a wiped (all-zero) key: every helper that takes a voting private key calls this first. */
+export function assertUsableKey(privateKey: Uint8Array): void {
+  if (privateKey.every((b) => b === 0)) throw new ZeroedKeyError();
+}
+
+/** The compressed or uncompressed public key of `privateKey`; throws ZeroedKeyError for a wiped key. */
+function publicKeyOfVotingKey(privateKey: Uint8Array, compressed: boolean): Uint8Array {
+  assertUsableKey(privateKey);
+  return secp256k1.getPublicKey(privateKey, compressed);
+}
+
+export function votingKeyId(privateKey: Uint8Array, compressed: boolean): string {
+  return bytesToHex(hash160(publicKeyOfVotingKey(privateKey, compressed)));
+}
+
+export const votingAddressOf = (privateKey: Uint8Array, compressed: boolean, network: Network): string => p2pkhAddress(hash160(publicKeyOfVotingKey(privateKey, compressed)), network);
+
+/**
+ * What the page may show about a keyring key: derived ONCE, when the key is added or the keyring opens, and held in memory beside the
+ * keyring (never in its encrypted document). Nothing here is secret, and rendering reads only this: never a private key.
+ */
+export interface VotingKeyInfo {
+  /** keyIDVoting: hash160 of the public key, hex (the same on every network) */
+  keyId: string;
+  /** the same hash as bytes; the address is formatted from it per network at render */
+  pubKeyHash: Uint8Array;
+  compressed: boolean;
+  label: string;
+}
+
+export const votingKeyInfos = (keys: readonly { privateKey: Uint8Array; compressed: boolean; label: string }[]): VotingKeyInfo[] =>
+  keys.map((k) => {
+    const pubKeyHash = hash160(publicKeyOfVotingKey(k.privateKey, k.compressed));
+    return { keyId: bytesToHex(pubKeyHash), pubKeyHash, compressed: k.compressed, label: k.label };
+  });
+
+/** The voting address of a key on `network`, from its public info (no private key). */
+export const votingAddressOfInfo = (info: Pick<VotingKeyInfo, 'pubKeyHash'>, network: Network): string => p2pkhAddress(info.pubKeyHash, network);
 
 const keyIdOfAddress = (addr: string, network: Network): string | null => {
   const d = decodeAddress(addr, network);

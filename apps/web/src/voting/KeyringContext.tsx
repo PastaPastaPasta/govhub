@@ -49,7 +49,7 @@ import { onSessionEnd } from '../session/end.ts';
 import { assertCanWrite, topUpFromError, TopUpError } from './funds.ts';
 import { castKeys, keyCopy, KeyringLock, ownerOf } from './gate.ts';
 import { lookupMasternodes, type LookupDeps, type LookupResult, type LookupStep } from './lookup.ts';
-import { keyRole, parseVotingKey, proveCollaterals, votingAddressOf, votingKeyId, type OwnedMasternode } from './masternodes.ts';
+import { keyRole, parseVotingKey, proveCollaterals, votingAddressOf, votingKeyId, votingKeyInfos, type OwnedMasternode, type VotingKeyInfo } from './masternodes.ts';
 import {
   bridgeVerdict,
   fromPending,
@@ -116,6 +116,11 @@ interface Ctx {
   canUsePlatform: boolean;
   memoryOnly: boolean;
   keyring: OpenedKeyring | null;
+  /**
+   * The public side of each key in `keyring.content.keys` (same order), derived when the keyring opens or a key is added. Render from
+   * this, never from a key's private bytes: those are zeroed the moment the session ends, and one more render can still see them.
+   */
+  keyInfos: readonly VotingKeyInfo[];
   busy: string | null;
   mns: MnState;
   watched: WatchedVote[];
@@ -189,6 +194,7 @@ export function pacedRandomDelays(n: number): number[] {
 }
 /** Highest keyring generation this browser has opened or written (public: a counter), to notice a replayed older document. */
 const generationKey = (platformNetwork: string, ownerId: string) => `govhub.keyring.generation.${platformNetwork}.${ownerId}`;
+const NO_KEY_INFOS: readonly VotingKeyInfo[] = [];
 const EMPTY_MNS: MnState = { phase: 'idle', owned: [], missing: [], mismatch: [], smlNodes: 0, forKeys: '' };
 
 /** Async work whose session ended (sign-out, another identity or network) meanwhile: it stopped and kept nothing. */
@@ -227,6 +233,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [memoryOnly, setMemoryOnly] = useState(false);
   const [keyring, setKeyring] = useState<OpenedKeyring | null>(null);
+  const [keyInfos, setKeyInfos] = useState<readonly VotingKeyInfo[]>(NO_KEY_INFOS);
   const [version, setVersion] = useState(0); // bump to re-render after in-place keyring edits
   const [mns, setMns] = useState<MnState>(EMPTY_MNS);
   const [mnNonce, setMnNonce] = useState(0);
@@ -289,6 +296,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         kr.current = null;
         // the next render must not read the wiped keys (they are zero now): the keyring is gone with the session
         setKeyring(null);
+        setKeyInfos(NO_KEY_INFOS);
         setMns(EMPTY_MNS);
         clearStash(next);
         dropStoreKey();
@@ -347,6 +355,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
     kr.current?.close();
     kr.current = null;
     setKeyring(null);
+    setKeyInfos(NO_KEY_INFOS);
   }, []);
 
   /** Shows an opened keyring. `t`: the session it was opened for; a stale one is wiped instead (returns false). */
@@ -356,10 +365,14 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         k.close();
         return false;
       }
+      // the public data once, here, while the keys are live (and before anything changes): renders read this and never derive from a
+      // private key
+      const infos = votingKeyInfos(k.content.keys);
       if (kr.current !== k) kr.current?.close();
       // the ref at once (not at the next render): a sign-out before that render must find and wipe this keyring
       kr.current = k;
       setKeyring(k);
+      setKeyInfos(infos);
       setMemoryOnly(memory);
       setStatus('open');
       setError(null);
@@ -394,7 +407,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       }
       add(watchedRef.current);
       if (!memory) add(loadWatched(localStorage, coreNetwork, identityId).map((v) => ({ ...v, network: v.network ?? coreNetwork })));
-      const keyIds = new Set(k.content.keys.map((x) => votingKeyId(x.privateKey, x.compressed)));
+      const keyIds = new Set(infos.map((x) => x.keyId));
       add(
         k.pending.votes.flatMap((p) => {
           const fields = { collateralTxid: p.collateralTxid, collateralIndex: p.collateralIndex, govHashDisplay: p.govHash, signal: 1, outcome: p.outcome, time: p.time };
@@ -645,6 +658,8 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         // a replayed older keyring is saved ABOVE the highest generation seen here, so the rollback check stays meaningful
         const draft: OpenedKeyring = { ...k, content: { ...c, generation: Math.max(c.generation, seen), unlockers: [...c.unlockers], keys: [...c.keys], labels: [...c.labels] } };
         change(draft);
+        // the public data of the new key list, while every key in it is live (a concurrent edit may wipe one before the save is done)
+        const infos = votingKeyInfos(draft.content.keys);
         try {
           await persist(draft, o.unconfirmedOk);
           if (sessionToken() !== t || kr.current !== k) throw new SessionChangedError();
@@ -654,6 +669,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         }
         k.content = draft.content;
         k.keysDoc = draft.keysDoc;
+        setKeyInfos(infos);
         touch();
         o.after?.();
       }),
@@ -849,14 +865,14 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
   );
 
   // ---- masternodes for the keys: ONE lookup, read by this page and every vote panel ----
-  const keysSig = keyring ? keyring.content.keys.map((k) => votingKeyId(k.privateKey, k.compressed)).join(',') : '';
+  const keysSig = keyring ? keyInfos.map((k) => k.keyId).join(',') : '';
   useEffect(() => {
     if (!keyring || !keysSig) return setMns(EMPTY_MNS);
     if (!lookupDeps) return setMns({ ...EMPTY_MNS, phase: 'error', error: 'No bridge is configured (Settings): the masternode list and collateral outpoints come from a bridge.', forKeys: keysSig });
     const ctrl = new AbortController();
     // while a lookup runs, keep what an earlier one found for the same keys (a refresh) or for the keys before one was added
     setMns((m) => ({ ...(m.forKeys && (keysSig === m.forKeys || keysSig.startsWith(`${m.forKeys},`)) ? m : EMPTY_MNS), phase: 'loading', step: 'bridge', error: undefined, startedAt: Date.now(), forKeys: keysSig }));
-    const keys = keyring.content.keys.map((k, index) => ({ index, keyId: votingKeyId(k.privateKey, k.compressed) }));
+    const keys = keyInfos.map((k, index) => ({ index, keyId: k.keyId }));
     lookupMasternodes(keys, lookupDeps, { signal: ctrl.signal, onStep: (step) => !ctrl.signal.aborted && setMns((m) => ({ ...m, step })) }).then(
       (r) => !ctrl.signal.aborted && setMns({ ...r, phase: 'ready', forKeys: keysSig }),
       (e) => !ctrl.signal.aborted && setMns((m) => ({ ...m, phase: 'error', error: errorText(e) })),
@@ -1471,6 +1487,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       canUsePlatform: !demo && !!session && (!!session.wallet || session.source === 'passkey'),
       memoryOnly,
       keyring,
+      keyInfos,
       busy,
       mns,
       watched,
@@ -1502,7 +1519,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       verifyVote,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [status, error, needsTopUp, demo, session, memoryOnly, needsConfirm, confirmUnlockers, keyring, version, busy, mns, watched, coreNetwork, relays, relayHealth, celebrations, dismissCelebration, bridgeEndpoint?.httpBase, unlockWithPasskey, unlockWithPhrase, createKeyring, lock, addKey, removeKey, setNodeLabel, setIdleMinutes, addPasskeyUnlocker, removeUnlockerKey, saveToPlatform, currentVotes, cast, cancel, retryNow, submitSigned, verifyVote],
+    [status, error, needsTopUp, demo, session, memoryOnly, needsConfirm, confirmUnlockers, keyring, keyInfos, version, busy, mns, watched, coreNetwork, relays, relayHealth, celebrations, dismissCelebration, bridgeEndpoint?.httpBase, unlockWithPasskey, unlockWithPhrase, createKeyring, lock, addKey, removeKey, setNodeLabel, setIdleMinutes, addPasskeyUnlocker, removeUnlockerKey, saveToPlatform, currentVotes, cast, cancel, retryNow, submitSigned, verifyVote],
   );
   return <C.Provider value={value}>{children}</C.Provider>;
 }

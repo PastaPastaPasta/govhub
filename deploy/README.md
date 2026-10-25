@@ -912,6 +912,8 @@ the build still in place points its assets at `/govhub/` and the certificate is 
 `crypto.subtle` and WebAuthn). Do the cutover in one sitting. Check that the WASM is served compressed:
 `curl -sI -H 'Accept-Encoding: gzip, br' https://gov.dashhq.org/assets/<wasm_sdk_bg-*.wasm> | grep -i content-encoding`.
 
+Cloudflare Web Analytics: turn off its automatic setup for gov.dashhq.org in the Cloudflare dashboard (privacy; it would inject `static.cloudflareinsights.com/beacon.min.js`, which the app's CSP blocks anyway, so the CSP stays as it is).
+
 Everything the app keeps in the browser (settings, theme, sign-in, keyring, badge state, caches) is per origin, so it does not
 move from the old address. Passkeys are bound to the domain too: a passkey added on `pastapastapasta.github.io` does not work on
 gov.dashhq.org. Users sign in again with their recovery phrase or key (and add a passkey again). Once the custom domain is set,

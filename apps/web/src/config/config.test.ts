@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  attestorsFor, configParamUrl, defaultRegistry, exportRegistry, importSizeError, loadRegistry, loadSavedRegistry, MAX_IMPORT_BYTES, parseRegistry, profileRegistry, registryDiff,
+  attestorsFor, configParamUrl, defaultRegistry, exportRegistry, importSizeError, loadRegistry, loadSavedRegistry, MAX_IMPORT_BYTES, parseRegistry, PROFILES, profileRegistry, registryDiff,
   registryRows, fetchConfig, readInlineConfig, saveErrorText, saveRegistry, shareLink, textToB64url, type Registry,
 } from './registry.ts';
 import { resolveMode } from './mode.ts';
@@ -70,7 +70,12 @@ describe('endpoint registry', () => {
       { name: 'gov-bridge-testnet.dashhq.org', url: 'https://gov-bridge-testnet.dashhq.org', kind: 'bridge' },
       { name: 'quorums.testnet.networks.dash.org', url: 'https://quorums.testnet.networks.dash.org/proofs', kind: 'quorum-list' },
     ]);
-    expect(profileRegistry('dev').quorumProofs.map((q) => q.url)).toEqual(['https://gov-bridge.dashhq.org', 'https://quorums.mainnet.networks.dash.org/proofs']);
+    // mainnet's public quorum list server sends no CORS headers: it is not a default (a CORS error on every page load)
+    expect(profileRegistry('dev').quorumProofs.map((q) => q.url)).toEqual(['https://gov-bridge.dashhq.org']);
+    for (const id of Object.keys(PROFILES) as Array<keyof typeof PROFILES>) {
+      const r = profileRegistry(id);
+      if (r.coreNetwork === 'mainnet') expect(r.quorumProofs.map((q) => q.url).join()).not.toContain('quorums.mainnet.networks.dash.org');
+    }
     const { quorumProofs, ...older } = profileRegistry('testnet');
     expect(quorumProofs.length).toBe(2);
     const parsed = parseRegistry(older);
@@ -85,6 +90,9 @@ describe('endpoint registry', () => {
     const dev = profileRegistry('dev');
     const moved = parseRegistry({ ...dev, coreNetwork: 'testnet', dapi: { ...dev.dapi, quorumUrl: 'https://quorums.testnet.networks.dash.org/masternodes' } });
     expect(moved.registry.quorumProofs).toEqual([{ name: 'quorums.testnet.networks.dash.org', url: 'https://quorums.testnet.networks.dash.org/proofs', kind: 'quorum-list' }]);
+    // and onto mainnet, which has no public proof source: none
+    const test = profileRegistry('testnet');
+    expect(parseRegistry({ ...test, coreNetwork: 'mainnet', dapi: { ...test.dapi, quorumUrl: 'https://quorums.mainnet.networks.dash.org/masternodes' } }).registry.quorumProofs).toEqual([]);
   });
 
   it('allows http only for localhost (local bridge development)', () => {
@@ -154,7 +162,7 @@ describe('hosting and settings fixes (fix-hosting-ui)', () => {
     const offered = { ...now, quorumProofs: [{ name: 'evil', url: 'https://evil.example/proofs', kind: 'bridge' as const }] };
     const d = registryDiff(now, offered);
     expect(d.map((x) => x.label)).toEqual(['Quorum proof sources']);
-    expect(d[0]!.now).toContain('quorums.mainnet.networks.dash.org');
+    expect(d[0]!.now).toContain('gov-bridge.dashhq.org');
     expect(d[0]!.offered).toContain('https://evil.example/proofs');
     expect(registryDiff(now, { ...now, bridges: [{ ...now.bridges[0]!, bridgeIdentityId: '24tL6v5jMR1H9dtUoTgbedePsMJtYPk4Q4bo6h8jTdK9' }] }).map((x) => x.label)).toEqual(['Bridges']);
   });
