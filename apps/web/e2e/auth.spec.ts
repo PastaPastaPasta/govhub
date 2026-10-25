@@ -44,7 +44,13 @@ test('recovery phrase and key paste refuse bad input without echoing it', async 
   await gotoFixtures(page);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await page.getByRole('button', { name: /I have a recovery phrase/ }).click();
+  // D-033: masked until "Show"
+  await expect(page.getByTestId('phrase-input')).toHaveCSS('-webkit-text-security', 'disc');
   await page.getByTestId('phrase-input').fill('abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon');
+  await page.getByRole('button', { name: 'Show the recovery phrase' }).click();
+  await expect(page.getByTestId('phrase-input')).toHaveCSS('-webkit-text-security', 'none');
+  await page.getByRole('button', { name: 'Hide the recovery phrase' }).click();
+  await expect(page.getByTestId('phrase-input')).toHaveCSS('-webkit-text-security', 'disc');
   await page.getByRole('button', { name: 'Sign in' }).last().click();
   await expect(page.getByRole('alert')).toContainText("isn't valid");
 

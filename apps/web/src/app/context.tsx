@@ -6,6 +6,7 @@ import { resolveMode, setMode as persistMode, type DataMode } from '../config/mo
 import { cacheDeleteWhere, cacheGet, cachePut } from '../data/cache.ts';
 import { createSource, type DataSource } from '../data/repo.ts';
 import type { Cycle, Proposal, Sourced, Tally } from '../data/types.ts';
+import { errText } from '../lib/format.ts';
 import type { GovParams } from '../lib/governance.ts';
 import { byRank, deriveRow, partitionByCheck, type Checked, type Row } from '../lib/view.ts';
 import { ProposalChecks, type CheckCache, type StoredCheck } from '../verify/checks.ts';
@@ -65,9 +66,6 @@ export function useApp(): Ctx {
   if (!c) throw new Error('useApp outside AppProvider');
   return c;
 }
-
-/** SDK errors are not always `Error`s (evo-sdk throws WASM error objects): use their message when they have one. */
-const errText = (e: unknown) => (e instanceof Error ? e.message : e && typeof e === 'object' && 'message' in e ? String((e as { message: unknown }).message) : String(e));
 
 function useGovSnapshot(source: DataSource, nonce: number): GovSnapshot {
   const [cycle, setCycle] = useState<Load<Sourced<Cycle> | null>>({ loading: true });

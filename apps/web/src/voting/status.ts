@@ -1,7 +1,7 @@
 // What a watched vote's state means, in plain words, and the five-step tracker shown after signing (signed in your browser ->
 // accepted by a relay -> broadcast to the network -> seen by the network -> counted in the tally). Pure: the vote record and the
 // clock in, words out. Times are formatted by the caller.
-import { formatDuration } from '../lib/format.ts';
+import { errText, formatDuration } from '../lib/format.ts';
 import type { RelayInfo, WatchedVote } from './pending.ts';
 import { DEADLINE_MARGIN_S, deferredWindow, OUTCOME_NAME } from './plan.ts';
 import { relayHost, RelayError, type RelayVoteState } from './relay.ts';
@@ -182,7 +182,7 @@ export type SubmitOutcome =
 export function classifySubmitError(e: unknown, relay: string): SubmitOutcome {
   const host = relayHost(relay);
   if (!(e instanceof RelayError) || e.status === undefined) {
-    const msg = e instanceof Error ? e.message : String(e);
+    const msg = errText(e);
     // a request that timed out may have reached the relay; a refused connection or a failed DNS lookup did not
     const maybeReceived = /timeout|timed out|aborted/i.test(msg);
     return { kind: 'retry', text: maybeReceived ? `${host} did not answer in time` : /unreachable/.test(msg) ? `${host} is unreachable` : msg, tryOther: true, ...(maybeReceived ? { maybeReceived } : {}) };
