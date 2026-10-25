@@ -58,6 +58,40 @@ export interface VoteKey {
   signal: number;
 }
 
+/**
+ * Held proposal submissions (POST /v1/proposals). `waiting`: the collateral is not deep enough yet (or a retry is pending);
+ * `submitting`: `gobject submit` is in flight; `submitted` and `failed` are final.
+ */
+export type ProposalStatus = 'waiting' | 'submitting' | 'submitted' | 'failed';
+
+export interface ProposalRow {
+  /** 16 random bytes, hex: the handle for GET /v1/proposals/:id (never the gov hash) */
+  id: string;
+  gov_hash: string;
+  collateral_txid: string;
+  time: number;
+  data_hex: string;
+  status: ProposalStatus;
+  /** the collateral's confirmations when last looked at (Core's `getrawtransaction <txid> true`) */
+  confirmations: number;
+  /** `gobject submit` calls */
+  attempts: number;
+  /** consecutive Core errors (drives the backoff) */
+  fail_n: number;
+  next_attempt_at: number;
+  last_error: string | null;
+  /** Core's refusal, trimmed; only with last_error `core-rejected` */
+  core_message: string | null;
+  /** when Core was first seen not to know the collateral (null while it does) */
+  missing_since: number | null;
+  /** unix time rounded DOWN to the hour: the only receive time kept */
+  received_hour: number;
+  submitted_at: number | null;
+  finished_at: number | null;
+}
+
+export type NewProposal = Pick<ProposalRow, 'id' | 'gov_hash' | 'collateral_txid' | 'time' | 'data_hex' | 'confirmations' | 'next_attempt_at' | 'received_hour'>;
+
 const VOTES_TABLE = `
 CREATE TABLE IF NOT EXISTS votes (
   id TEXT PRIMARY KEY NOT NULL,
@@ -92,9 +126,32 @@ CREATE TABLE IF NOT EXISTS last_broadcast (
   at INTEGER NOT NULL,
   PRIMARY KEY (collateral_txid, collateral_n, gov_hash, signal)
 ) WITHOUT ROWID`;
+// No IP and no exact receive time, like votes. The UNIQUE key is the idempotency key of POST /v1/proposals (and its index also
+// serves the per-hash count).
+const PROPOSALS_TABLE = `
+CREATE TABLE IF NOT EXISTS proposals (
+  id TEXT PRIMARY KEY NOT NULL,
+  gov_hash TEXT NOT NULL,
+  collateral_txid TEXT NOT NULL,
+  time INTEGER NOT NULL,
+  data_hex TEXT NOT NULL,
+  status TEXT NOT NULL,
+  confirmations INTEGER NOT NULL DEFAULT 0,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  fail_n INTEGER NOT NULL DEFAULT 0,
+  next_attempt_at INTEGER NOT NULL,
+  last_error TEXT,
+  core_message TEXT,
+  missing_since INTEGER,
+  received_hour INTEGER NOT NULL,
+  submitted_at INTEGER,
+  finished_at INTEGER,
+  UNIQUE (gov_hash, collateral_txid)
+) WITHOUT ROWID`;
 const INDEXES = `
 CREATE INDEX IF NOT EXISTS votes_due ON votes (status, next_attempt_at);
 CREATE INDEX IF NOT EXISTS votes_key ON votes (collateral_txid, collateral_n, gov_hash, signal);
+CREATE INDEX IF NOT EXISTS proposals_due ON proposals (status, next_attempt_at);
 `;
 
 /** The CREATE statement of `table` as stored, or null. */
@@ -140,6 +197,8 @@ export function openDb(path: string): Database.Database {
   const migrated = migrate(db);
   db.exec(VOTES_TABLE);
   db.exec(LAST_TABLE);
+  // new in the held-proposal version: never existed as a rowid table, so a database from before simply gets it here
+  db.exec(PROPOSALS_TABLE);
   db.exec(INDEXES);
   if (migrated) db.exec('VACUUM');
   return db;
@@ -196,6 +255,33 @@ export class Store {
       ),
       purgeVotes: db.prepare(`DELETE FROM votes WHERE status IN ('confirmed', 'failed', 'cancelled', 'superseded') AND finished_at < ?`),
       purgeLast: db.prepare('DELETE FROM last_broadcast WHERE at < ?'),
+
+      // ---- held proposals ----
+      pInsert: db.prepare(
+        `INSERT INTO proposals (id, gov_hash, collateral_txid, time, data_hex, status, confirmations, next_attempt_at, received_hour)
+         VALUES (@id, @gov_hash, @collateral_txid, @time, @data_hex, 'waiting', @confirmations, @next_attempt_at, @received_hour)`,
+      ),
+      pById: db.prepare('SELECT * FROM proposals WHERE id = ?'),
+      pByKey: db.prepare('SELECT * FROM proposals WHERE gov_hash = ? AND collateral_txid = ?'),
+      pCountHash: db.prepare('SELECT COUNT(*) n FROM proposals WHERE gov_hash = ?'),
+      pCountHeld: db.prepare(`SELECT COUNT(*) n FROM proposals WHERE status IN ('waiting', 'submitting')`),
+      pDue: db.prepare(`SELECT * FROM proposals WHERE status = 'waiting' AND next_attempt_at <= ? ORDER BY next_attempt_at, id LIMIT ?`),
+      // a row looked at again stays waiting (or retries); `from` names the state it must be in, so a check can never undo a claim
+      pWait: db.prepare(
+        `UPDATE proposals SET status = 'waiting', confirmations = @confirmations, next_attempt_at = @at, last_error = @code, fail_n = @fail_n, missing_since = @missing_since
+         WHERE id = @id AND status = @from`,
+      ),
+      pMarkSubmitting: db.prepare(`UPDATE proposals SET status = 'submitting', confirmations = MAX(0, ?), attempts = attempts + 1, missing_since = NULL WHERE id = ? AND status = 'waiting'`),
+      pSubmitted: db.prepare(`UPDATE proposals SET status = 'submitted', submitted_at = ?, finished_at = ?, last_error = NULL, core_message = NULL, fail_n = 0 WHERE id = ? AND status = 'submitting'`),
+      // a row that failed for a reason that can pass (the collateral went missing, or took too long) is held again on a re-POST
+      pRequeue: db.prepare(
+        `UPDATE proposals SET status = 'waiting', last_error = NULL, core_message = NULL, finished_at = NULL, fail_n = 0, missing_since = NULL,
+         next_attempt_at = @hour, received_hour = @hour WHERE id = @id AND status = 'failed' AND last_error IN ('collateral-missing', 'unconfirmed')`,
+      ),
+      // never overwrites a final state
+      pFail: db.prepare(`UPDATE proposals SET status = 'failed', finished_at = ?, last_error = ?, core_message = ? WHERE id = ? AND status IN ('waiting', 'submitting')`),
+      pRecover: db.prepare(`UPDATE proposals SET status = 'waiting', next_attempt_at = ?, last_error = 'core-error' WHERE status = 'submitting'`),
+      purgeProposals: db.prepare(`DELETE FROM proposals WHERE status IN ('submitted', 'failed') AND finished_at < ?`),
     };
   }
 
@@ -281,9 +367,57 @@ export class Store {
     return r ? r.at : null;
   }
 
-  purge(now: number, retentionDays: number): { votes: number; lastBroadcast: number } {
+  purge(now: number, retentionDays: number): { votes: number; lastBroadcast: number; proposals: number } {
     const votes = this.q.purgeVotes.run(now - retentionDays * 86400).changes;
     const lastBroadcast = this.q.purgeLast.run(now - 2 * 3600).changes;
-    return { votes, lastBroadcast };
+    const proposals = this.q.purgeProposals.run(now - retentionDays * 86400).changes;
+    return { votes, lastBroadcast, proposals };
+  }
+
+  // ---- held proposals ----
+
+  insertProposal(p: NewProposal): void {
+    this.q.pInsert.run(p);
+  }
+  getProposal(id: string): ProposalRow | undefined {
+    return this.q.pById.get(id) as ProposalRow | undefined;
+  }
+  /** The idempotency key of POST /v1/proposals. */
+  findProposal(govHash: string, txid: string): ProposalRow | undefined {
+    return this.q.pByKey.get(govHash, txid) as ProposalRow | undefined;
+  }
+  /** Rows (any state) for one gov hash. */
+  countProposalsForHash(govHash: string): number {
+    return (this.q.pCountHash.get(govHash) as { n: number }).n;
+  }
+  /** waiting + submitting */
+  countHeldProposals(): number {
+    return (this.q.pCountHeld.get() as { n: number }).n;
+  }
+  dueProposals(now: number, limit: number): ProposalRow[] {
+    return this.q.pDue.all(now, limit) as ProposalRow[];
+  }
+  /** `from` (waiting, or submitting after a `gobject submit` that must be retried) -> waiting, looked at again at `at`. */
+  proposalWait(id: string, from: 'waiting' | 'submitting', w: { confirmations: number; at: number; code: string | null; failN: number; missingSince: number | null }): boolean {
+    return this.q.pWait.run({ id, from, confirmations: w.confirmations, at: w.at, code: w.code, fail_n: w.failN, missing_since: w.missingSince }).changes > 0;
+  }
+  /** waiting -> submitting in one conditional UPDATE (counts an attempt). False if the row was not waiting. Call right before `gobject submit`. */
+  markProposalSubmitting(id: string, confirmations: number): boolean {
+    return this.q.pMarkSubmitting.run(confirmations, id).changes > 0;
+  }
+  /** `hour`: the time rounded down to the hour (the caller rounds; see proposer.ts). */
+  markProposalSubmitted(id: string, hour: number): boolean {
+    return this.q.pSubmitted.run(hour, hour, id).changes > 0;
+  }
+  /** failed (collateral-missing / unconfirmed only) -> waiting, due at once, its wait counted from `hour` again. */
+  requeueProposal(id: string, hour: number): boolean {
+    return this.q.pRequeue.run({ id, hour }).changes > 0;
+  }
+  failProposal(id: string, hour: number, code: string, coreMessage: string | null = null): boolean {
+    return this.q.pFail.run(hour, code, coreMessage, id).changes > 0;
+  }
+  /** Startup: rows left in `submitting` by a crash go back to waiting, due now (a resubmit is harmless). Returns how many. */
+  recoverSubmitting(now: number): number {
+    return this.q.pRecover.run(now).changes;
   }
 }

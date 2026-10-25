@@ -1,4 +1,5 @@
-// Releases held votes to Core (`voteraw`), watches that they show up (`gobject getcurrentvotes`), and purges old rows.
+// Releases held votes to Core (`voteraw`), watches that they show up (`gobject getcurrentvotes`), and purges old rows (votes and held
+// proposals; the proposal worker itself is src/proposer.ts).
 // All time comes from the injected clock and all work happens in the tick*() methods, so tests drive it without timers;
 // start() only wires those methods to setInterval.
 //
@@ -274,11 +275,11 @@ export class Broadcaster {
 
   // ---- housekeeping ----
 
-  tickPurge(): { votes: number; lastBroadcast: number } {
+  tickPurge(): { votes: number; lastBroadcast: number; proposals: number } {
     const now = this.clock();
     this.lastPurge = now;
     const r = this.store.purge(now, this.cfg.retentionDays);
-    if (r.votes || r.lastBroadcast) log.info('purged', r);
+    if (r.votes || r.lastBroadcast || r.proposals) log.info('purged', r);
     return r;
   }
 }

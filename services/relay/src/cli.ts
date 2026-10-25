@@ -11,7 +11,7 @@ import { Relay } from './relay.ts';
 const USAGE = `usage: relay <command>
 
 commands:
-  run          HTTP API + broadcaster + confirmer, until SIGTERM
+  run          HTTP API + broadcaster + confirmer + held-proposal worker, until SIGTERM
   healthcheck  exit 0 if GET /v1/status on HTTP_PORT answers 200
 
 configuration: environment variables (see README.md "Configuration")`;
@@ -46,11 +46,13 @@ async function main(): Promise<number> {
   // overrideGlobalObjects: false, as in the bridge: keep the platform's own Request/Response.
   const server = serve({ fetch: app.fetch, port: cfg.http.port, hostname: cfg.http.host, overrideGlobalObjects: false });
   broadcaster.start();
+  relay.proposer.start();
   log.info('http api listening', { host: cfg.http.host, port: cfg.http.port });
 
   const shutdown = (sig: string) => {
     log.info('shutting down', { signal: sig });
     broadcaster.stop();
+    relay.proposer.stop();
     server.close();
     store.close();
     process.exit(0);

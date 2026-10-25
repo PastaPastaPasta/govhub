@@ -13,8 +13,8 @@ export const MAX_BODY_BYTES = 4096;
 
 /** Allowed methods per path; null = not a relay path. (GET also answers HEAD, hono does that.) */
 function allowedMethods(path: string): string[] | null {
-  if (path === '/v1/votes' || path === '/v1/votes/cancel' || path === '/v1/proposals/submit') return ['POST', 'OPTIONS'];
-  if (path === '/v1/status' || /^\/v1\/votes\/[^/]+$/.test(path)) return ['GET', 'HEAD', 'OPTIONS'];
+  if (path === '/v1/votes' || path === '/v1/votes/cancel' || path === '/v1/proposals' || path === '/v1/proposals/submit') return ['POST', 'OPTIONS'];
+  if (path === '/v1/status' || /^\/v1\/(votes|proposals)\/[^/]+$/.test(path)) return ['GET', 'HEAD', 'OPTIONS'];
   return null;
 }
 
@@ -89,6 +89,13 @@ export function createApp(relay: Relay): Hono {
   app.get('/v1/votes/:id', (c) => c.json(relay.getVote(c.req.param('id'))));
 
   app.post('/v1/proposals/submit', ipGuard, sizeGuard, async (c) => c.json(await relay.submitProposal(await readJson(c))));
+
+  app.post('/v1/proposals', ipGuard, sizeGuard, async (c) => {
+    const { httpStatus, view } = await relay.holdProposal(await readJson(c));
+    return c.json(view, httpStatus);
+  });
+
+  app.get('/v1/proposals/:id', (c) => c.json(relay.getProposal(c.req.param('id'))));
 
   return app;
 }

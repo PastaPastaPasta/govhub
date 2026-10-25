@@ -44,14 +44,63 @@ describe('no client address at rest', () => {
       expect(readFileSync(join(dir, 'relay.sqlite')).includes(Buffer.from(ids[0]!))).toBe(true);
 
       // the schema has no place for one
-      const cols = (['votes', 'last_broadcast'] as const).flatMap((t) => (w.store.db.pragma(`table_info(${t})`) as Array<{ name: string }>).map((c) => c.name));
+      const cols = (['votes', 'last_broadcast', 'proposals'] as const).flatMap((t) => (w.store.db.pragma(`table_info(${t})`) as Array<{ name: string }>).map((c) => c.name));
       expect(cols.filter((c) => /(^|_)(ip|addr|address|remote|agent|host)(_|$)/i.test(c))).toEqual([]);
       const tables = (w.store.db.prepare(`SELECT name FROM sqlite_master WHERE type = 'table'`).all() as Array<{ name: string }>).map((t) => t.name).sort();
-      expect(tables).toEqual(['last_broadcast', 'votes']);
+      expect(tables).toEqual(['last_broadcast', 'proposals', 'votes']);
       // receive time is only kept as the hour
       const rows = w.store.db.prepare('SELECT received_hour FROM votes').all() as Array<{ received_hour: number }>;
       for (const r of rows) expect(r.received_hour % 3600).toBe(0);
       expect(rows[0]!.received_hour).toBe(T0 - (T0 % 3600));
+    } finally {
+      w.store.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('a held proposal leaves no trace of the client either, and keeps only the receive hour', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'relay-privacy-proposal-'));
+    const w = new World('regtest', { CLIENT_IP_HEADER: 'X-Real-IP', RATE_IP_PER_MIN: '1000' }, join(dir, 'relay.sqlite'));
+    try {
+      const basic = (JSON.parse(readFileSync(new URL('../../../packages/verify/test/fixtures/proposals.regtest.json', import.meta.url), 'utf8')).proposals as Array<Record<string, any>>).find((p) => p.label === 'p2pkh-basic')!;
+      w.clock.t = basic.time + 1234;
+      w.core.rawTxs.set(basic.txid, { hex: basic.rawTx, confirmations: 2 });
+      w.core.submitResult = basic.coreHash;
+      const ip = '203.0.113.77';
+      const hdr = { 'x-real-ip': ip, 'x-forwarded-for': ip, 'user-agent': 'Mozilla/5.0 privacy-test-agent' };
+      const body = { network: 'regtest', parentHash: '0', revision: 1, time: basic.time, dataHex: basic.dataHex, collateralTxid: basic.txid };
+      const r = await w.post('/v1/proposals', body, hdr);
+      expect(r.status).toBe(202);
+      // the exact receive second is nowhere in the row: only the hour
+      expect(Object.values(w.proposalRow(r.body.id))).not.toContain(basic.time + 1234);
+      expect(w.proposalRow(r.body.id).received_hour % 3600).toBe(0);
+      expect((await w.post('/v1/proposals', body, hdr)).status).toBe(200);
+      await w.post('/v1/proposals', '{broken', hdr);
+      await w.get(`/v1/proposals/${r.body.id}`);
+      w.core.rawTxs.get(basic.txid)!.confirmations = 6;
+      w.clock.advance(60);
+      await w.proposer.tick();
+      expect(w.proposalRow(r.body.id).status).toBe('submitted');
+      // nor afterwards: checks run on a 30 s grid shared by every row, event times are kept to the hour
+      const timeCols = ['next_attempt_at', 'submitted_at', 'finished_at', 'missing_since', 'received_hour'] as const;
+      const row = w.proposalRow(r.body.id);
+      for (const k of timeCols) expect((row[k] ?? 0) % 30, k).toBe(0);
+      expect([row.submitted_at! % 3600, row.finished_at! % 3600]).toEqual([0, 0]);
+      // the same for a proposal submitted within the request
+      const good = (JSON.parse(readFileSync(new URL('../../../packages/verify/test/fixtures/collateral.regtest.json', import.meta.url), 'utf8')).scenarios as Array<Record<string, any>>).find((p) => p.label === 'good-exact')!;
+      w.core.rawTxs.set(good.txid, { hex: good.rawTx, confirmations: 8 });
+      w.core.submitResult = good.coreHash;
+      const now = await w.post('/v1/proposals', { ...body, time: good.time, dataHex: good.dataHex, collateralTxid: good.txid }, hdr);
+      expect(now.body.status).toBe('submitted');
+      const nowRow = w.proposalRow(now.body.id);
+      for (const k of timeCols) expect((nowRow[k] ?? 0) % 3600, k).toBe(0);
+
+      expect(readdirSync(dir)).toEqual(['relay.sqlite']);
+      const file = readFileSync(join(dir, 'relay.sqlite'));
+      for (const n of [ip, 'privacy-test-agent']) expect(file.includes(Buffer.from(n))).toBe(false);
+      expect(file.includes(Buffer.from(r.body.id))).toBe(true);
+      expect(() => w.store.db.prepare('SELECT rowid FROM proposals').all()).toThrow(/no such column/);
+      expect(w.store.db.prepare("SELECT sql FROM sqlite_master WHERE name = 'proposals'").get()).toEqual({ sql: expect.stringMatching(/WITHOUT ROWID$/) });
     } finally {
       w.store.close();
       rmSync(dir, { recursive: true, force: true });
@@ -140,6 +189,9 @@ describe('no client address at rest', () => {
       expect(store.get('cc'.repeat(16))).toMatchObject({ status: 'maybe-broadcast', maybe_sent: 1 });
       expect(store.get('bb'.repeat(16))).toMatchObject({ status: 'confirmed', maybe_sent: 0 });
       expect(store.lastBroadcastAt({ txid: 't', n: 0, govHash: 'g', signal: 1 })).toBe(5);
+      // the held-proposal table did not exist then: it is simply created
+      expect(store.countHeldProposals()).toBe(0);
+      expect(store.db.prepare("SELECT sql FROM sqlite_master WHERE name = 'proposals'").get()).toEqual({ sql: expect.stringMatching(/WITHOUT ROWID$/) });
       expect(() => store.db.prepare('SELECT rowid FROM votes').all()).toThrow(/no such column/);
       expect((store.db.prepare('SELECT name FROM sqlite_master WHERE type = ? ORDER BY name').all('index') as Array<{ name: string }>).map((r) => r.name)).toEqual(expect.arrayContaining(['votes_due', 'votes_key']));
       store.close();

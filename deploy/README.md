@@ -601,6 +601,18 @@ gateway a Caddyfile (`caddy/tunnel-gateway-relay.Caddyfile`, no logs like the ot
 http://govhub-testnet-relay:8788`. The relay answers browsers itself (CORS, 4 KiB POST bodies, per-IP and per-masternode
 limits, client address from `cf-connecting-ip`, which the gateway passes through).
 
+**Proposal submission.** The relay also takes proposals from the web app's creation wizard. `POST /v1/proposals`
+holds a paid proposal until its collateral has `MIN_COLLATERAL_CONFS` (6) confirmations by the relay's own Core,
+then runs `gobject submit`. Its state is in the same `relay-data` volume, so a restart resumes the queue. The older
+`POST /v1/proposals/submit`, which submits now or answers 425, stays. dashd needs `txindex=1` (already set
+in this stack) because the relay reads the collateral with `getrawtransaction`. The relay only stores a proposal whose
+collateral Core already knows and which burns at least 1 DASH to that exact hash. The default limits are at most
+`MAX_HELD_PROPOSALS=500` waiting, 3 per hash, and the per-IP limit. Nothing about the sender is kept, and timestamps are
+rounded to the hour. `PROPOSAL_SUBMIT=0` turns both endpoints and the worker off. Upgrading needs no migration step: the new
+table is created on start-up. Check with `curl https://gov-relay-testnet.<zone>/v1/status`, which should show
+`"proposalHold": true`. The web app falls back to `/v1/proposals/submit` at 6 confirmations on a relay without holding.
+See services/relay/README.md, "Held proposal submission".
+
 ### 11.5 The MN badge issuer
 
 The `issuer` service (profile `issuer`, `services/issuer/README.md`) blind-signs MN badge tokens. It is

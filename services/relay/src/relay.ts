@@ -2,10 +2,8 @@
 import { randomBytes } from 'node:crypto';
 import {
   bytesEqual,
-  checkCollateralTx,
   governanceObjectHash,
   governanceVoteHash,
-  hexToBytes,
   recoverVoteSigner,
   relayVoteError,
   validateProposalData,
@@ -13,14 +11,16 @@ import {
   VOTE_MAX_FUTURE_S,
   VOTE_OUTCOME_NAMES,
   VOTE_SIGNAL_NAMES,
+  type GovObjectHash,
   type VoteFields,
 } from '@govhub/verify';
 import type { RelayConfig } from './config.ts';
 import { HOLD_CODE } from './broadcaster.ts';
-import { rpcMessage, type CoreClient, type GobjectGetResult, type RawTxVerbose } from './core/rpc.ts';
-import { Store, type VoteRow } from './db.ts';
+import { rpcMessage, type CoreClient, type GobjectGetResult } from './core/rpc.ts';
+import { Store, type ProposalRow, type ProposalStatus, type VoteRow } from './db.ts';
 import { log, type Clock } from './log.ts';
 import { MnDirectory, type MnEntry } from './mnlist.ts';
+import { hourOf, lookupCollateral, MAX_PROPOSALS_PER_HASH, PROPOSAL_ERROR, Proposer, storedConfirmations } from './proposer.ts';
 import { RollingHourLimiter } from './ratelimit.ts';
 
 export const SERVICE_VERSION = '0.1.0';
@@ -82,6 +82,34 @@ export interface VoteStatusView {
 }
 
 const WAITING = new Set<string>(['held', 'maybe-broadcast']);
+
+/** GET /v1/proposals/:id and the body of POST /v1/proposals. */
+export interface ProposalStatusView {
+  id: string;
+  govHash: string;
+  collateralTxid: string;
+  status: ProposalStatus;
+  /** the collateral's confirmations when the relay last asked Core */
+  confirmations: number;
+  minConfirmations: number;
+  /** `gobject submit` calls */
+  attempts: number;
+  /** a short code (PROPOSAL_ERROR), never Core's text */
+  lastError: string | null;
+  /** only with lastError `core-rejected`: Core's refusal, at most 200 characters (proposal data is public once submitted) */
+  coreMessage?: string;
+  /** waiting: the earliest time the relay looks at it again (unix s, never in the past); null otherwise */
+  nextAttemptAt: number | null;
+  submittedAt: number | null;
+  finishedAt: number | null;
+}
+
+interface ParsedProposal {
+  time: number;
+  dataHex: string;
+  txid: string;
+  govHash: GovObjectHash;
+}
 
 export function holdReason(row: Pick<VoteRow, 'status' | 'last_error' | 'release_at' | 'next_attempt_at' | 'time'>, now: number): HoldReason | null {
   if (!WAITING.has(row.status)) return null;
@@ -167,6 +195,8 @@ export class Relay {
   private readonly verdicts = new Map<string, { verdict: Verdict; until: number }>();
   private statusCache: { at: number; core: { reachable: boolean; height: number | null } } | null = null;
   private statusInflight: Promise<{ reachable: boolean; height: number | null }> | null = null;
+  /** the held-proposal worker (cli.ts starts and stops its timer; POST /v1/proposals uses it to submit at once) */
+  readonly proposer: Proposer;
 
   constructor(cfg: RelayConfig, store: Store, core: CoreClient, clock: Clock) {
     this.cfg = cfg;
@@ -175,6 +205,7 @@ export class Relay {
     this.clock = clock;
     this.mns = new MnDirectory(core, cfg.network, clock, cfg.mnListTtlS);
     this.mnLimiter = new RollingHourLimiter(cfg.rateMnPerHour, clock);
+    this.proposer = new Proposer({ cfg, store, core, clock });
   }
 
   // ---- POST /v1/votes ----
@@ -322,6 +353,8 @@ export class Relay {
       core: await this.coreStatus(),
       held: this.store.countHeld(),
       proposalSubmit: this.cfg.proposalSubmit,
+      /** this relay has POST /v1/proposals (held submission) */
+      proposalHold: true,
     };
   }
 
@@ -357,11 +390,103 @@ export class Relay {
     }
   }
 
-  // ---- POST /v1/proposals/submit ----
+  // ---- POST /v1/proposals/submit (stateless: submits now or answers 425) ----
 
   async submitProposal(body: unknown): Promise<{ govHash: string; result: unknown }> {
+    this.proposalsEnabled();
+    const p = this.parseProposal(body);
+    const { confirmations } = await this.fetchCollateral(p.txid, p.govHash.raw);
+    if (confirmations < this.cfg.minCollateralConfs) {
+      throw new RelayError(425, 'collateral-unconfirmed', `the collateral needs ${this.cfg.minCollateralConfs} confirmations`, { confirmations });
+    }
+
+    try {
+      const result = await this.core.call('gobject', ['submit', '0', 1, p.time, p.dataHex, p.txid]);
+      return { govHash: p.govHash.display, result };
+    } catch (e) {
+      const m = rpcMessage(e);
+      if (m !== null) throw new RelayError(409, 'core-rejected', m);
+      throw coreDown();
+    }
+  }
+
+  // ---- POST /v1/proposals (held until the collateral is deep enough, then submitted by the relay) ----
+
+  async holdProposal(body: unknown): Promise<{ httpStatus: 200 | 202; view: ProposalStatusView }> {
+    this.proposalsEnabled();
+    const p = this.parseProposal(body);
+    const govHash = p.govHash.display;
+    // a retry (e.g. after a timeout) gets the stored record and never costs a Core call
+    const known = this.store.findProposal(govHash, p.txid);
+    if (known) {
+      // a failure that can pass (collateral missing for a while, or slow to confirm) is not final for the sender: hold it again
+      if (known.status === 'failed' && (known.last_error === PROPOSAL_ERROR.collateralMissing || known.last_error === PROPOSAL_ERROR.unconfirmed)) {
+        this.checkProposalLimits(govHash, true);
+        this.store.requeueProposal(known.id, hourOf(this.clock()));
+        return { httpStatus: 200, view: this.proposalView(this.store.getProposal(known.id)!) };
+      }
+      return { httpStatus: 200, view: this.proposalView(known) };
+    }
+    this.checkProposalLimits(govHash);
+
+    // The main DoS defence: only a real burn of >= 1 DASH to exactly this hash is held (a mempool tx is fine).
+    const { confirmations } = await this.fetchCollateral(p.txid, p.govHash.raw);
+
+    // --- synchronous from here to the insert: the lookup above awaited ---
+    const again = this.store.findProposal(govHash, p.txid);
+    if (again) return { httpStatus: 200, view: this.proposalView(again) };
+    this.checkProposalLimits(govHash);
+    const receivedHour = hourOf(this.clock());
+    const id = randomBytes(16).toString('hex');
+    this.store.insertProposal({
+      id,
+      gov_hash: govHash,
+      collateral_txid: p.txid,
+      time: p.time,
+      data_hex: p.dataHex,
+      confirmations: storedConfirmations(confirmations, this.cfg.minCollateralConfs),
+      // due at once (the worker looks within seconds): a `now + PROPOSAL_CHECK_S` here would keep the exact receive second
+      next_attempt_at: receivedHour,
+      received_hour: receivedHour,
+    });
+    // deep enough already: submit within this request, on the worker's code path
+    if (confirmations >= this.cfg.minCollateralConfs) await this.proposer.submit(this.store.getProposal(id)!, confirmations);
+    return { httpStatus: 202, view: this.proposalView(this.store.getProposal(id)!) };
+  }
+
+  // ---- GET /v1/proposals/:id ----
+
+  getProposal(id: string): ProposalStatusView {
+    this.proposalsEnabled();
+    if (!ID_RE.test(id)) throw badRequest('id must be 32 lowercase hex characters');
+    const row = this.store.getProposal(id);
+    if (!row) throw new RelayError(404, 'not-found', 'unknown proposal id');
+    return this.proposalView(row);
+  }
+
+  private proposalView(r: ProposalRow): ProposalStatusView {
+    return {
+      id: r.id,
+      govHash: r.gov_hash,
+      collateralTxid: r.collateral_txid,
+      status: r.status,
+      confirmations: r.confirmations,
+      minConfirmations: this.cfg.minCollateralConfs,
+      attempts: r.attempts,
+      lastError: r.last_error,
+      ...(r.last_error === PROPOSAL_ERROR.coreRejected && r.core_message !== null ? { coreMessage: r.core_message } : {}),
+      nextAttemptAt: r.status === 'waiting' ? Math.max(r.next_attempt_at, this.clock()) : null,
+      submittedAt: r.submitted_at,
+      finishedAt: r.finished_at,
+    };
+  }
+
+  private proposalsEnabled(): void {
     if (!this.cfg.proposalSubmit) throw new RelayError(501, 'disabled', 'proposal submission is disabled on this relay');
-    const now = this.clock();
+  }
+
+  /** The body of both proposal endpoints, checked the same way: `bad-request`, `wrong-network`, `bad-proposal` (with expiry). */
+  private parseProposal(body: unknown): ParsedProposal {
     if (!isRecord(body)) throw badRequest('body must be a JSON object');
     if (body.network !== this.cfg.network) throw new RelayError(400, 'wrong-network', `this relay serves ${this.cfg.network}`);
     onlyKeys(body, ['network', 'parentHash', 'revision', 'time', 'dataHex', 'collateralTxid']);
@@ -372,34 +497,39 @@ export class Relay {
     const dataHex = body.dataHex.toLowerCase();
     const txid = hex64(body, 'collateralTxid');
 
-    const valid = validateProposalData(dataHex, this.cfg.network, { now });
+    const valid = validateProposalData(dataHex, this.cfg.network, { now: this.clock() });
     if (!valid.valid) throw new RelayError(400, 'bad-proposal', valid.errors.join('; '), { errors: valid.errors });
 
-    const govHash = governanceObjectHash({ parentHash: '0', revision: 1, time, dataHex });
+    return { time, dataHex, txid, govHash: governanceObjectHash({ parentHash: '0', revision: 1, time, dataHex }) };
+  }
 
-    let tx: RawTxVerbose;
-    try {
-      tx = await this.core.call<RawTxVerbose>('getrawtransaction', [txid, true]);
-    } catch (e) {
-      if (rpcMessage(e) !== null) throw new RelayError(404, 'unknown-collateral', 'the collateral transaction is unknown to Core');
-      throw coreDown();
+  /** The collateral as Core has it, checked against the gov hash and the txid: `unknown-collateral`, `core-unavailable`, `bad-collateral`. */
+  private async fetchCollateral(txid: string, govHashRaw: Uint8Array): Promise<{ confirmations: number }> {
+    const col = await lookupCollateral(this.core, txid, govHashRaw);
+    switch (col.kind) {
+      case 'ok':
+        return { confirmations: col.confirmations };
+      case 'missing':
+        throw new RelayError(404, 'unknown-collateral', 'the collateral transaction is unknown to Core');
+      case 'down':
+        throw coreDown();
+      case 'garbled':
+        throw new RelayError(409, 'core-rejected', 'Core returned no raw collateral transaction');
+      case 'bad':
+        throw new RelayError(400, 'bad-collateral', col.message, { failure: col.failure });
     }
-    const raw = typeof tx?.hex === 'string' && /^([0-9a-f]{2})+$/.test(tx.hex) ? hexToBytes(tx.hex) : null;
-    if (!raw) throw new RelayError(409, 'core-rejected', 'Core returned no raw collateral transaction');
-    const col = checkCollateralTx(raw, govHash.raw, { expectedTxid: txid });
-    if (!col.valid) throw new RelayError(400, 'bad-collateral', col.message ?? col.failure ?? 'invalid collateral transaction', { failure: col.failure });
-    const confirmations = typeof tx.confirmations === 'number' ? tx.confirmations : 0;
-    if (confirmations < this.cfg.minCollateralConfs) {
-      throw new RelayError(425, 'collateral-unconfirmed', `the collateral needs ${this.cfg.minCollateralConfs} confirmations`, { confirmations });
-    }
+  }
 
-    try {
-      const result = await this.core.call('gobject', ['submit', '0', 1, time, dataHex, txid]);
-      return { govHash: govHash.display, result };
-    } catch (e) {
-      const m = rpcMessage(e);
-      if (m !== null) throw new RelayError(409, 'core-rejected', m);
-      throw coreDown();
+  /**
+   * `too-many-collaterals` (409) per gov hash, `relay-full` (503) over all held proposals. `existing`: the row is already stored
+   * (a requeue), so only the total of held rows counts.
+   */
+  private checkProposalLimits(govHash: string, existing = false): void {
+    if (!existing && this.store.countProposalsForHash(govHash) >= MAX_PROPOSALS_PER_HASH) {
+      throw new RelayError(409, 'too-many-collaterals', `this relay already holds ${MAX_PROPOSALS_PER_HASH} collaterals for this proposal`);
+    }
+    if (this.store.countHeldProposals() >= this.cfg.maxHeldProposals) {
+      throw new RelayError(503, 'relay-full', 'the relay holds as many proposals as it accepts, try another relay or later', {}, 60);
     }
   }
 
