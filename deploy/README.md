@@ -196,8 +196,10 @@ services:
 
 ## 5. Platform identity and contract (publishing)
 
-Skip this section while `PUBLISH=0`. With `PUBLISH=1` the bridge writes `proposal`, `tally` and
-`cycle` documents to a `gov` contract, signed by an identity you own.
+Skip this section while `PUBLISH=0`. With `PUBLISH=1` the bridge writes `proposal`, `talliesSet`
+(every active tally packed into one document), `tally` (a proposal's final tally, once, when it
+ends) and `cycle` documents to a `gov` contract, signed by an identity you own. On an older
+contract without `talliesSet` it writes one `tally` per proposal instead.
 
 ### 5.1 Registering your own `gov` contract
 
@@ -207,12 +209,14 @@ write to ours. It registers its own copy, and the client merges bridges by `govH
 section 1.1). The `bridgeIdentityId` and contract id you publish are what users put in their
 endpoint registry.
 
-1. Take the schema from `packages/contracts-v1/gov.json`. It is the `documentSchemas` map.
+1. Take the schema from `packages/contracts-v1/gov.json` (the mainnet definition: slim `proposal`,
+   `talliesSet`). It is the `documentSchemas` map. `gov-testnet.json` is what the deployed testnet
+   contracts hold; do not register it for a new deployment.
 2. Create the contract with a `DataContractCreate` transition signed by the identity's **CRITICAL**
    authentication key (HIGH is accepted by consensus, CRITICAL is our policy for contract
    creation). `spikes/sdk5/scripts/estimate-costs.ts` shows the evo-sdk 5.x calls end to end.
-3. Cost: 0.1 DASH + 0.02 per document type + 0.01 per index. For `gov` (4 types, 6 indexes) that is
-   **0.24 DASH** plus a small storage charge (about 0.0022 DASH, measured on the other contracts).
+3. Cost: 0.1 DASH + 0.02 per document type + 0.01 per index. For `gov` (5 types, 7 indexes) that is
+   **0.27 DASH** plus a small storage charge (0.0021 DASH: 0.27209975 measured on testnet).
 4. Put the resulting contract id in `.env` as `GOV_CONTRACT_ID`.
 
 Register on testnet first (`faucet.thepasta.org` funds testnet identities). Contract documents
@@ -226,9 +230,10 @@ republish.
    work. Create it on the network that matches `PLATFORM_NETWORK`.
 2. Keep the MASTER key (and ideally CRITICAL) **offline**. The bridge needs only one
    document-signing key: the **HIGH** AUTHENTICATION key.
-3. Fund the identity by topping it up with DASH. The plan's estimate is on the order of
-   0.015 DASH per day while tallies are republished hourly (PLAN section 6.2), plus the cost of
-   `proposal` and `cycle` documents. Watch the balance and raise the interval
+3. Fund the identity by topping it up with DASH. With the packed tally set the bridge pays about
+   0.0010 DASH per day (one ~0.0000425 DASH replace an hour with 30 active proposals), plus about
+   0.0009 DASH per new proposal (its `proposal` document and, when it ends, its final `tally`):
+   about 0.5 DASH a year (docs/PHASE0.md). Watch the balance and raise the interval
    (`TALLY_PUBLISH_INTERVAL_S`) if it drains faster than you want. An empty identity makes the
    bridge stop publishing, not stop archiving.
 4. Write the key file `secrets/bridge_identity.json` (the path `init.sh` created, mounted at
