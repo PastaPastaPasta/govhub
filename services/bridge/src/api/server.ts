@@ -2,6 +2,7 @@
 // Proposal / tally / cycle objects use the field names of the Platform `gov` documents (packages/contracts-v1), plus extras.
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { routePath } from 'hono/route';
 import type { Bridge } from '../bridge.ts';
 import type { GovObjectRow, TallyRow, VoteRow } from '../archive/db.ts';
 import { latestSnapshot, mnAddresses, snapshotAt } from '../mnlist.ts';
@@ -123,7 +124,8 @@ export function createApi(b: Bridge, deps: { now?: () => number } = {}): Hono {
     return c.json({ error: 'read-only API' }, 405);
   });
   app.onError((e, c) => {
-    log.error('api error', { path: c.req.path, error: String(e?.stack ?? e) });
+    // The route pattern (`/v1/proposals/:hash`), never the URL: the path carries the proposal hash or height the client asked for.
+    log.error('api error', { route: routePath(c), error: String(e?.stack ?? e) });
     return c.json({ error: 'internal error' }, 500);
   });
   app.notFound((c) => c.json({ error: 'not found' }, 404));

@@ -207,7 +207,10 @@ describe('collateral: only an anchored, final, height-matching collateral is pro
     // D-104: DAPI down or lying (an inconclusive lookup) is "couldn't verify", never "failed"
     expect(comp(orig, { error: 'timeout' }).status).toBe('error');
     expect(comp(orig, { error: 'all nodes failed: node a returned a transaction that does not hash to its txid' }).status).toBe('error');
-    expect(comp(orig, { error: 'NOT_FOUND', notFound: true }).status).toBe('failed');
+    // every node asked answering NOT_FOUND is not proof of absence: "couldn't verify (nodes didn't return the fee transaction)"
+    const absent = comp(orig, { error: 'NOT_FOUND', notFound: true });
+    expect(absent.status).toBe('error');
+    expect(absent.status === 'error' && absent.reason).toMatch(/Couldn't verify the submission fee \(the nodes didn't return the fee transaction/);
     expect(collateralComponent({ verdict: null, error: null, publishedHeight: 1 }).status).toBe('pending');
     expect(collateralComponent({ verdict: null, error: 'worker crashed', publishedHeight: 1 }).status).toBe('error');
   });
@@ -311,7 +314,9 @@ describe('votes', () => {
 
   it('a voter missing from the proven list: partly verified', () => {
     const sml = new Map([...base.sml!].slice(1));
-    expect(comp(done(verifyVotes({ ...base, sml }))).status).toBe('reported');
+    const c = comp(done(verifyVotes({ ...base, sml })));
+    expect(c.status).toBe('reported');
+    expect(c.status === 'reported' && c.reason).toMatch(/^Votes not fully proven: \d+ votes? excluded \(\d+: masternode not in the proven masternode list\)/);
   });
 
   it('a forged vote makes the recount contradict the tally at the same block: couldn\'t verify (the source is wrong, not the proposal)', () => {

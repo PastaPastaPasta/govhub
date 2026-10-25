@@ -84,7 +84,8 @@ export class ProposalChecks {
     this.listeners.clear();
   }
 
-  private key = (p: Proposal) => `${this.o.scope}:check:${p.govHash}:${p.collateralTxid}`;
+  // `check2`: results stored before NOT_FOUND stopped counting as a failure (a cached "failed" from then must not hide a proposal)
+  private key = (p: Proposal) => `${this.o.scope}:check2:${p.govHash}:${p.collateralTxid}`;
   private now = () => (this.o.now ?? Date.now)();
 
   state(p: Proposal): CheckState {

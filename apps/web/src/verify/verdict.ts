@@ -2,17 +2,22 @@
 // voting keys confirmed by the DAPI masternode list; a match on bridge-supplied keys only proves
 // the bridge is self-consistent.
 import type { Provenance, Tally } from '../data/types.ts';
-import type { TargetResult, VoteRun } from './votes.ts';
+import { excludedText, type TargetResult, type VoteRun } from './votes.ts';
 
 export const PLATFORM_TARGET = 'Platform tally';
 export const BRIDGE_TARGET = 'Bridge live tally';
 
-export type VoteLevel = 'verified' | 'keys-reported' | 'different-height' | 'mismatch' | 'no-tally';
+/** `excluded`: the tally matches the votes the bridge served, but only with votes this browser couldn't prove (left out here). */
+export type VoteLevel = 'verified' | 'keys-reported' | 'excluded' | 'different-height' | 'mismatch' | 'no-tally';
 
 export interface VoteVerdict {
   level: VoteLevel;
   matched?: TargetResult;
 }
+
+/** A tally that neither the count here nor the bridge's full served set reproduces: the votes and the tally contradict each other. */
+export const contradicts = (run: Pick<VoteRun, 'votesAsOf' | 'asked'>, t: Pick<TargetResult, 'asOfHeight' | 'matches' | 'servedMatches'>): boolean =>
+  comparable(run, t) && !t.matches && !t.servedMatches;
 
 /**
  * Whether a recount is of the vote set behind tally `t`: the bridge served its tally record at that very height, or the record in
@@ -26,9 +31,11 @@ export function voteVerdict(runs: readonly VoteRun[]): VoteVerdict {
   const pairs = runs.flatMap((run) => run.result.targets.map((t) => ({ run, t })));
   if (pairs.length === 0) return { level: 'no-tally' };
   // A tally that a recount of its own vote set contradicts is a failure, even if another tally matched.
-  if (pairs.some(({ run, t }) => comparable(run, t) && !t.matches)) return { level: 'mismatch' };
+  if (pairs.some(({ run, t }) => contradicts(run, t))) return { level: 'mismatch' };
   const hit = pairs.find(({ t }) => t.matches);
   if (hit) return { level: hit.run.result.keysFrom === 'sml' ? 'verified' : 'keys-reported', matched: hit.t };
+  const excluded = pairs.find(({ t }) => t.servedMatches);
+  if (excluded) return { level: 'excluded', matched: excluded.t };
   return { level: 'different-height' };
 }
 
@@ -47,5 +54,6 @@ export function tallyProvenance(shown: { name: string; prov: Provenance; tally: 
       : more('recount matches, but the voting keys are as the bridge reports them');
   }
   if (!comparable(run, target)) return more(`votes are as of block ${run.votesAsOf}, this tally as of block ${target.asOfHeight}`);
+  if (target.servedMatches) return more(`it counts votes this browser couldn't prove: ${excludedText(r)}`);
   return { kind: 'mismatch', source: src, detail: target.compare.filter((c) => !c.ok).map((c) => c.field).join(', ') };
 }

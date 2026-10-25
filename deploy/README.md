@@ -71,7 +71,7 @@ all containers, volumes and temporary secrets. Exit code 0 means it passed.
 
 | Network | `dashpay/dashd` tag | Why |
 |---|---|---|
-| mainnet | `23.1.8` | mainnet needs >= v23.1 |
+| mainnet | `24.0.0-rc.4` | mainnet needs >= v23.1; v24 serves quorum proofs (`/v1/quorum-proof`). Moves to v24.0.0 when it is released |
 | testnet | `24.0.0-rc.4` | testnet activated V24 on 2026-10-23 |
 | regtest | `24.0.0-rc.4` | CI and smoke tests exercise the v24 code path |
 
@@ -93,7 +93,7 @@ wallet disabled (the bridge needs none); `DASHD_EXTRA_ARGS=-disablewallet=0` tur
 | `docker-compose.issuer-tunnel-guest.yml` | override (last, after `docker-compose.tunnel-guest.yml`): the gateway also forwards to this stack's `issuer` (profile `issuer`) under its own alias (section 11.5) |
 | `.env.example` | every variable, commented, no secrets |
 | `dashd/dash.conf`, `dashd/entrypoint.sh` | Core config template and the wrapper that adds network, RPC credentials and `dbcache` |
-| `caddy/Caddyfile` | TLS reverse proxy; GET/HEAD/OPTIONS only, CORS handled here |
+| `caddy/Caddyfile` | TLS reverse proxy; GET/HEAD/OPTIONS only, CORS handled here; no access log, default logger discarded (only certificate-management logs, on stderr) |
 | `scripts/init.sh` | prerequisite check, secrets directory (mode 0700), `.env` |
 | `scripts/cloudflare-tunnel.sh` | creates the Cloudflare Tunnel, its ingress and DNS, and writes the token file (section 11) |
 | `scripts/backup.sh` | online backup of the bridge archive with retention (sections 6 and 13) |
@@ -165,7 +165,7 @@ block and rebuilds chainstate and indexes, so you trust only your own copy. No n
 ```sh
 # Start from an empty volume: `docker compose down -v` first if dashd has already run.
 docker compose up --no-deps --no-start dashd                 # creates the volume
-IMG=dashpay/dashd:23.1.8                                     # the tag you deploy
+IMG=dashpay/dashd:24.0.0-rc.4                                # the tag you deploy
 VOL=govhub_dashd-data                                        # <project>_dashd-data in `docker volume ls`
 DEST=/home/dash/.dashcore/blocks                             # testnet: /home/dash/.dashcore/testnet3/blocks
 docker run --rm -v "$VOL:/home/dash" --entrypoint mkdir "$IMG" -p "$DEST"
@@ -316,8 +316,12 @@ docker compose up -d dashd
 ```
 
 dashd gets 3 minutes to flush on stop. A major upgrade can rewrite on-disk databases, after which
-**you cannot go back** to the old version with the same datadir. Mainnet moves to v24 only after
-v24.0.0 is released and the network has activated V24. The bridge reconnects to ZMQ on its own
+**you cannot go back** to the old version with the same datadir. Mainnet runs the v24 release
+candidate (it serves quorum proofs; V24 itself is not active on mainnet yet) and moves to v24.0.0 when
+it is released. The mainnet default was 23.1.8 until 2026-10-25: a mainnet node that never set `DASHD_TAG` gets the
+24.0.0-rc.4 image on its next `docker compose pull`, and runs it once `docker compose up -d dashd` recreates the
+container; after that it can't go back with the same datadir. Set `DASHD_TAG=23.1.8` in `.env`
+first to stay on 23.1.8. The bridge reconnects to ZMQ on its own
 (votes published during the restart are recovered through RPC reconciliation, except superseded
 ones).
 
@@ -528,8 +532,9 @@ new token, and run `docker compose up -d cloudflared`.
 
 Use Caddy when the host has a public address and you do not want Cloudflare in the path:
 `COMPOSE_PROFILES=proxy`, `DOMAIN=<host>`, DNS pointing at the host, ports 80 and 443 open. Caddy gets
-a certificate from Let's Encrypt, filters methods and owns the CORS headers (`caddy/Caddyfile`). Do not
-serve one hostname through both.
+a certificate from Let's Encrypt, filters methods and owns the CORS headers (`caddy/Caddyfile`). It writes no access
+log and discards Caddy's default logger; only certificate-management loggers (ACME obtain and renew) reach stderr, so a
+failing certificate stays visible. Do not serve one hostname through both.
 
 ### 11.3 One tunnel for two stacks on one host
 

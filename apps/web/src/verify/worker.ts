@@ -15,7 +15,7 @@ import { rankRecounts, type RecountedProposal } from './ranking.ts';
 import { BRIDGE_TARGET } from './verdict.ts';
 import { headerStore, proRegCache, superblockCache } from './stores.ts';
 import { loadVerifiers } from './verifiers.ts';
-import { verifyVotes, type ProReg, type SmlEntry, type VoteRun, type VoteTarget } from './votes.ts';
+import { problemCounts, verifyVotes, type ProReg, type SmlEntry, type VoteRun, type VoteTarget } from './votes.ts';
 
 declare const self: DedicatedWorkerGlobalScope;
 const post = (m: WorkerResponse) => self.postMessage(m);
@@ -99,10 +99,14 @@ function smlEntries(a: AnchoredChain): { entries: Map<string, SmlEntry>; used: S
   return { entries, used: { height: a.sml.proof.height, blockHash: a.sml.proof.blockHash, node: a.sml.node, validWeighted: claimedWeight(a.sml.masternodes), weak: a.weak } };
 }
 
-/** ProRegTx facts for the masternodes behind these votes (the bridge's outpoint -> proTxHash mapping is what they check). */
-async function proRegFor(dapi: Dapi, network: CoreNetwork, votes: BridgeVotes, list: BridgeMnList, progress: (m: string) => void): Promise<Map<string, ProReg>> {
+/**
+ * ProRegTx facts for the masternodes behind these votes (the bridge's outpoint -> proTxHash mapping is what they check). Only for
+ * masternodes in the proven list: a vote of any other is excluded anyway, and a ProRegTx a bridge made up does not exist, so asking
+ * for it would fail the whole recount instead of excluding that one vote.
+ */
+async function proRegFor(dapi: Dapi, network: CoreNetwork, votes: BridgeVotes, list: BridgeMnList, proven: ReadonlyMap<string, SmlEntry>, progress: (m: string) => void): Promise<Map<string, ProReg>> {
   const byOutpoint = new Map(list.masternodes.map((m) => [`${m.collateralTxid.toLowerCase()}-${m.collateralIndex}`, m.proTxHash.toLowerCase()]));
-  const hashes = [...new Set(votes.votes.map((v) => byOutpoint.get(`${v.collateralTxid.toLowerCase()}-${v.collateralIndex}`)).filter((h): h is string => !!h))];
+  const hashes = [...new Set(votes.votes.map((v) => byOutpoint.get(`${v.collateralTxid.toLowerCase()}-${v.collateralIndex}`)).filter((h): h is string => !!h && proven.has(h)))];
   return dapi.getProRegInfo(hashes, {
     cache: proRegCache(network),
     onProgress: (done, total) => { if (done === 1 || done % 50 === 0 || done === total) progress(`Checking ${total.toLocaleString('en-US')} masternode registrations (${done.toLocaleString('en-US')} done; cached afterwards)`); },
@@ -214,7 +218,7 @@ async function handle(req: WorkerRequest): Promise<void> {
     origin = votes.origin ?? origin;
     progress(`Fetching the masternode list at block ${votes.tallyHeight.toLocaleString('en-US')}`);
     const mnlist = await mnlistAt(bridge, JSON.stringify(req.bridge), votes.tallyHeight);
-    const proReg = dapi ? await proRegFor(dapi, req.network, votes, mnlist, progress) : null;
+    const proReg = dapi && sml ? await proRegFor(dapi, req.network, votes, mnlist, sml.entries, progress) : null;
     progress(`Checking ${votes.votes.length} signatures`);
     const result = verifyVotes({ govHash: req.govHash, votes: votes.votes, masternodes: mnlist.masternodes, network: req.network, now: req.now, targets: g.targets, sml: sml?.entries ?? null, proReg });
     // keys checked against a list on a chain proof of work does not protect (testnet): a match is not "verified"
@@ -241,12 +245,13 @@ async function ranking(req: Extract<WorkerRequest, { kind: 'ranking' }>, bridge:
     try {
       const votes = await bridge.votes(p.govHash);
       const list = await mnlistAt(bridge, JSON.stringify(req.bridge), votes.tallyHeight);
-      const proReg = await proRegFor(dapi, req.network, votes, list, progress);
+      const proReg = await proRegFor(dapi, req.network, votes, list, entries, progress);
       const tally = published.find((t) => t.govHash === p.govHash && t.asOfHeight === votes.tallyHeight);
       const r = verifyVotes({ govHash: p.govHash, votes: votes.votes, masternodes: list.masternodes, network: req.network, now: req.now, targets: tally ? [{ name: BRIDGE_TARGET, tally }] : [], sml: entries, proReg });
       const matches = !!tally && r.targets[0]!.matches;
-      const bad = Object.entries(r.problems).filter(([, n]) => n > 0).map(([k, n]) => `${n} ${k.replace(/-/g, ' ')}`);
-      const problem = a.weak ? `not secure: ${a.weak}` : r.keysFrom !== 'sml' ? `not every vote proven (${bad.join(', ') || 'keys'})` : !tally ? `no published tally at block ${votes.tallyHeight}` : !matches ? 'the recount differs from the published tally' : null;
+      const bad = problemCounts(r.problems).map(([k, n]) => `${n} ${k.replace(/-/g, ' ')}`);
+      const unproven = bad.length ? `not every vote proven (${bad.join(', ')})` : `the bridge's masternode list differs from the proven one for ${r.listDiffers} voters`;
+      const problem = a.weak ? `not secure: ${a.weak}` : r.keysFrom !== 'sml' ? unproven : !tally ? `no published tally at block ${votes.tallyHeight}` : !matches ? 'the recount differs from the published tally' : null;
       recounts.push({ ...base, absYes: r.weighted.yes - r.weighted.no, proven: problem === null, ...(problem ? { problem } : {}) });
     } catch (e) {
       recounts.push({ ...base, absYes: 0, proven: false, problem: `not recounted: ${(e as Error).message}` });

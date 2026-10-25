@@ -98,8 +98,8 @@ one socket; deploy/dashd/dash.conf has the exact lines).
 `GET /v1/quorum-proof` and `POST /v1/quorum-proof` relay dashd's `getquorumproofchain` (Dash Core v24, DIP 175 "DASHNC02"
 quorum proof chains). A proof authenticates itself from a checkpoint the client already holds, so **the bridge is an
 untrusted relay**: a client verifies the bytes against its own checkpoint and must not trust the bridge, or the
-`X-Proof-*` headers, for anything. It needs Core v24 (v24.0.0-rc.4 or newer); a bridge on Core 23.x (mainnet runs 23.1.x
-until V24 activates) answers `501 unsupported`.
+`X-Proof-*` headers, for anything. It needs Core v24 (v24.0.0-rc.4 or newer); a bridge on Core 23.x answers `501 unsupported`.
+The compose default is the v24 release candidate on every network, mainnet included.
 
 | | |
 |---|---|

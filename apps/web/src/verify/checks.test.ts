@@ -9,8 +9,10 @@ import { verdictFailure, verifyCollateral, type CollateralVerdict } from './coll
 
 const snap = await loadFixtures();
 const real = snap.proposals[0]!;
-const [tampered, noCollateral] = snap.invalid as [Proposal, Proposal];
+const [tampered, wrongCollateral] = snap.invalid as [Proposal, Proposal];
 const okVerdict: CollateralVerdict = { ok: true, steps: [] };
+/** A cryptographic contradiction: the real collateral (its bytes hash to the txid) does not burn to the gov hash. */
+const contradicted: CollateralVerdict = { ok: false, steps: [{ id: 'collateral', status: 'fail', label: 'OP_RETURN and outputs', detail: 'no-matching-op-return' }] };
 
 class MemCache implements CheckCache {
   m = new Map<string, StoredCheck>();
@@ -27,10 +29,14 @@ let scopes = 0;
 const uniq = () => `test-${scopes++}`;
 
 describe('collateral verdicts that hide a proposal', () => {
-  it('a collateral every node says does not exist: failed', () => {
-    const v = verifyCollateral(noCollateral, { error: 'Transaction not found', notFound: true }, 'mainnet');
-    expect(v.inconclusive).toBeUndefined();
-    expect(verdictFailure(v)).toMatch(/not on the chain/);
+  it("a collateral every node asked answers NOT_FOUND for: couldn't verify, never failed (nodes can't prove absence)", () => {
+    const v = verifyCollateral(wrongCollateral, { error: 'Transaction not found', notFound: true }, 'mainnet');
+    expect(v.inconclusive).toBe(true);
+    expect(v.absent).toBe(true);
+    expect(verdictFailure(v)).toBeNull();
+    const tx = v.steps.find((s) => s.id === 'tx')!;
+    expect(tx).toMatchObject({ status: 'fail', basis: 'reported' });
+    expect(tx.detail).toMatch(/the nodes didn't return the fee transaction/);
   });
   it('unreachable nodes: inconclusive, never a reason to hide', () => {
     const v = verifyCollateral(real, { error: 'all 4 node attempts failed: fetch failed' }, 'mainnet');
@@ -65,23 +71,24 @@ describe('ProposalChecks', () => {
 
   it('pending until the worker answers, then ok or failed; results are cached per govHash', async () => {
     const cache = new MemCache();
-    const c = new ProposalChecks({ scope: 'dev', cache, run: async (p) => (p === noCollateral ? verifyCollateral(p, { error: 'not found', notFound: true }, 'mainnet') : okVerdict) });
+    const c = new ProposalChecks({ scope: 'dev', cache, run: async (p) => (p === wrongCollateral ? contradicted : okVerdict) });
     expect(c.state(real)).toEqual({ status: 'pending' });
-    c.ensure([real, noCollateral]);
+    c.ensure([real, wrongCollateral]);
     expect(c.state(real)).toEqual({ status: 'pending' });
     for (let i = 0; i < 5; i++) await tick();
     expect(c.state(real)).toEqual({ status: 'ok' });
-    expect(c.state(noCollateral)).toMatchObject({ status: 'failed' });
-    expect([...cache.m.keys()].every((k) => k.startsWith('dev:check:'))).toBe(true);
+    expect(c.state(wrongCollateral)).toMatchObject({ status: 'failed' });
+    // `check2`: results cached before NOT_FOUND stopped counting as a failure are not read back
+    expect([...cache.m.keys()].every((k) => k.startsWith('dev:check2:'))).toBe(true);
 
     // A new session (nothing in memory) reads the cache and runs nothing while the results are fresh.
     forgetCheckResults();
     let runs = 0;
     const again = new ProposalChecks({ scope: 'dev', cache, run: async () => (runs++, okVerdict) });
-    again.ensure([real, noCollateral]);
+    again.ensure([real, wrongCollateral]);
     await tick();
     await tick();
-    expect(again.state(noCollateral).status).toBe('failed');
+    expect(again.state(wrongCollateral).status).toBe('failed');
     expect(runs).toBe(0);
   });
 
@@ -89,19 +96,19 @@ describe('ProposalChecks', () => {
     const cache = new MemCache();
     let now = 1_000_000_000_000;
     const scope = uniq();
-    const first = new ProposalChecks({ scope, cache, now: () => now, run: async () => verifyCollateral(noCollateral, { error: 'nf', notFound: true }, 'mainnet') });
-    first.ensure([noCollateral]);
+    const first = new ProposalChecks({ scope, cache, now: () => now, run: async () => contradicted });
+    first.ensure([wrongCollateral]);
     for (let i = 0; i < 5; i++) await tick();
     now += 2 * 86_400_000;
     forgetCheckResults();
     let release!: () => void;
     const second = new ProposalChecks({ scope, cache, now: () => now, run: () => new Promise((r) => (release = () => r(okVerdict))) });
-    second.ensure([noCollateral]);
+    second.ensure([wrongCollateral]);
     for (let i = 0; i < 3; i++) await tick();
-    expect(second.state(noCollateral).status).toBe('failed');
+    expect(second.state(wrongCollateral).status).toBe('failed');
     release();
     for (let i = 0; i < 3; i++) await tick();
-    expect(second.state(noCollateral).status).toBe('ok');
+    expect(second.state(wrongCollateral).status).toBe('ok');
   });
 
   it('runs at most `concurrency` checks at once', async () => {
@@ -122,6 +129,25 @@ describe('ProposalChecks', () => {
     for (let i = 0; i < 60; i++) await tick();
     expect(max).toBe(2);
     expect(snap.proposals.every((p) => c.state(p).status === 'ok')).toBe(true);
+  });
+
+  it('a proposal whose collateral every node answers NOT_FOUND for stays listed as inconclusive, and is not cached', async () => {
+    const cache = new MemCache();
+    const c = new ProposalChecks({ scope: uniq(), cache, run: async (p) => verifyCollateral(p, { error: 'Transaction not found', notFound: true }, 'mainnet') });
+    c.ensure([wrongCollateral]);
+    for (let i = 0; i < 5; i++) await tick();
+    expect(c.state(wrongCollateral)).toMatchObject({ status: 'inconclusive', reason: expect.stringMatching(/didn't return the fee transaction/) });
+    expect(cache.m.size).toBe(0);
+  });
+
+  it('a "failed" cached under the old key (when NOT_FOUND still failed) is not read back', async () => {
+    const cache = new MemCache();
+    const scope = uniq();
+    cache.m.set(`${scope}:check:${wrongCollateral.govHash}:${wrongCollateral.collateralTxid}`, { status: 'failed', reason: 'not on the chain', at: Date.now() });
+    const c = new ProposalChecks({ scope, cache, run: () => new Promise(() => {}) });
+    c.ensure([wrongCollateral]);
+    for (let i = 0; i < 3; i++) await tick();
+    expect(c.state(wrongCollateral).status).toBe('pending');
   });
 
   it('an inconclusive check never hides, and never overrides a definite result', async () => {
@@ -149,9 +175,9 @@ describe('ProposalChecks', () => {
 
   it('a full check outranks a later light result; a disposed instance does nothing', async () => {
     const c = new ProposalChecks({ scope: uniq(), run: async () => okVerdict });
-    c.record(noCollateral, verifyCollateral(noCollateral, { error: 'nf', notFound: true }, 'mainnet'), { full: true });
-    c.record(noCollateral, okVerdict);
-    expect(c.state(noCollateral).status).toBe('failed');
+    c.record(wrongCollateral, contradicted, { full: true });
+    c.record(wrongCollateral, okVerdict);
+    expect(c.state(wrongCollateral).status).toBe('failed');
     let runs = 0;
     const d = new ProposalChecks({ scope: uniq(), run: async () => (runs++, okVerdict) });
     d.dispose();
@@ -163,9 +189,9 @@ describe('ProposalChecks', () => {
 
   it('instances of one scope share results (a rebuilt source does not flash hidden proposals back as pending)', () => {
     const scope = uniq();
-    new ProposalChecks({ scope, run: async () => okVerdict }).record(noCollateral, verifyCollateral(noCollateral, { error: 'nf', notFound: true }, 'mainnet'));
-    expect(new ProposalChecks({ scope, run: async () => okVerdict }).state(noCollateral).status).toBe('failed');
-    expect(new ProposalChecks({ scope: uniq(), run: async () => okVerdict }).state(noCollateral).status).toBe('pending');
+    new ProposalChecks({ scope, run: async () => okVerdict }).record(wrongCollateral, contradicted);
+    expect(new ProposalChecks({ scope, run: async () => okVerdict }).state(wrongCollateral).status).toBe('failed');
+    expect(new ProposalChecks({ scope: uniq(), run: async () => okVerdict }).state(wrongCollateral).status).toBe('pending');
   });
 });
 

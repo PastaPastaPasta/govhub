@@ -67,7 +67,7 @@ test.describe('fixture mode', () => {
     // The vote recount runs on its own, against the fixture bridge.
     const votes = drawer.getByTestId('votes-check');
     await expect(votes.locator('[data-votes]')).toHaveAttribute('data-votes', 'keys-reported', { timeout: 30_000 });
-    await expect(votes).toContainText('Recount matches the Platform tally: 229 of 229 signatures check out');
+    await expect(votes).toContainText('Recount matches the Platform tally: 229 of 229 votes counted');
     await expect(votes).toContainText('fixture bridge (synthetic voters)');
     await expect(votes.locator('table.compare td.bad')).toHaveCount(0);
     // Keys as the fixture bridge reports them: not proven.
@@ -98,7 +98,7 @@ test.describe('fixture mode', () => {
     const votes = drawer.getByTestId('votes-check');
     await expect(votes.locator('[data-votes]')).toHaveAttribute('data-votes', 'keys-reported', { timeout: 30_000 });
     // 460 real signed votes by real masternodes: every signature recovers to the masternode's voting key.
-    await expect(votes).toContainText('Recount matches the Platform tally: 460 of 460 signatures check out');
+    await expect(votes).toContainText('Recount matches the Platform tally: 460 of 460 votes counted');
     await expect(votes).toContainText('recorded mainnet votes and masternodes');
     await expect(votes).toContainText('(as of block 2,560,441)');
     // Field by field, including the voteSetHash (34a829f3... in the bridge fixture), nothing differs.

@@ -68,6 +68,19 @@ export interface VoteView {
   line: string;
 }
 
+/**
+ * Who else shows the vote the first bridge reports: other configured bridges (their vote sets, checked here) and relays that say Core
+ * lists it. Without either, the line says it is the bridge's word, and how to check it yourself.
+ */
+export function corroboration(v: WatchedVote): string {
+  const relays = Object.entries(v.relayStatus ?? {}).filter(([, s]) => s === 'confirmed').map(([r]) => relayHost(r));
+  const others = [...(v.alsoSeenBy ?? []).map((b) => `bridge ${b} (its vote set has it, checked here)`), ...relays.map((r) => `relay ${r} (it reports its Dash Core node lists it)`)];
+  // A source run by the same operator as the bridge agrees just as easily, so the way to be sure is always named.
+  return others.length
+    ? ` Also seen by ${others.join(' and ')}. To be sure, check your own Dash Core node.`
+    : ' That is the bridge’s word: no other bridge or relay you configured confirms it. To be sure, check your own Dash Core node.';
+}
+
 export function describeVote(v: WatchedVote, now: number, fmt: TimeFmt): VoteView {
   const lead = leadRelay(v);
   const host = lead ? relayHost(lead.relay) : '';
@@ -90,8 +103,8 @@ export function describeVote(v: WatchedVote, now: number, fmt: TimeFmt): VoteVie
     }
     case 'confirmed':
       return v.countedAt
-        ? { badge: 'Counted', tone: 'ok', line: 'Counted by the network: the tally’s vote set includes it, and the recount matches.' }
-        : { badge: 'On the network', tone: 'ok', line: 'Seen by the network: the bridge’s vote set has it, signature checked against your voting key.' };
+        ? { badge: 'Bridge: counted', tone: 'ok', line: `The bridge reports the network counted it: its vote set includes it, and the recount of that set matches.${corroboration(v)}` }
+        : { badge: 'Bridge: on the network', tone: 'ok', line: `The bridge reports the network has it: its vote set includes it, signature checked here against your voting key.${corroboration(v)}` };
     case 'failed':
       return { badge: 'Failed', tone: 'bad', line: `${v.refs.length ? 'Did not reach the network' : 'Not sent'}: ${v.failReason ?? relayCodeText(lead?.info.lastError)}.` };
     case 'replaced':
@@ -116,8 +129,8 @@ const LABELS: Record<StepKey, string> = {
   signed: 'Signed in your browser',
   relay: 'Accepted by relay',
   broadcast: 'Broadcast to the network',
-  seen: 'Seen by the network',
-  counted: 'Counted in the tally',
+  seen: 'The bridge reports it on the network',
+  counted: 'The bridge reports it counted',
 };
 
 /** The tracker. Exactly one step is active while the vote moves; a failure marks the step where it stopped. */

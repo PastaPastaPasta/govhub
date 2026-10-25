@@ -147,8 +147,14 @@ describe('what each state says', () => {
     expect(holdText(planned, NOW, fmt)).toBe('Core allows one vote change per hour per masternode; gov-relay-testnet.dashhq.org sends this at T3660.');
   });
   it('the rest', () => {
-    expect(describeVote(vote({ status: 'confirmed' }), NOW, fmt).badge).toBe('On the network');
-    expect(describeVote(vote({ status: 'confirmed', countedAt: NOW }), NOW, fmt).badge).toBe('Counted');
+    expect(describeVote(vote({ status: 'confirmed' }), NOW, fmt).badge).toBe('Bridge: on the network');
+    expect(describeVote(vote({ status: 'confirmed', countedAt: NOW }), NOW, fmt).badge).toBe('Bridge: counted');
+    // confirmed is the bridge's report: the line says so, and names any other configured source that agrees
+    expect(describeVote(vote({ status: 'confirmed', countedAt: NOW }), NOW, fmt).line).toMatch(/^The bridge reports the network counted it.*That is the bridge’s word/);
+    const agreed = describeVote(vote({ status: 'confirmed', alsoSeenBy: ['b2.example'], relayStatus: { 'https://relay-one.example': 'confirmed' } }), NOW, fmt).line;
+    expect(agreed).toContain('Also seen by bridge b2.example (its vote set has it, checked here) and relay relay-one.example (it reports its Dash Core node lists it).');
+    expect(agreed).not.toContain('bridge’s word');
+    expect(agreed).toContain('To be sure, check your own Dash Core node.');
     expect(describeVote(vote({ status: 'failed', failReason: 'gov-relay-testnet.dashhq.org refused it: the masternode is PoSe-banned' }), NOW, fmt).line).toBe('Not sent: gov-relay-testnet.dashhq.org refused it: the masternode is PoSe-banned.');
     expect(describeVote(vote({ status: 'dropped' }), NOW, fmt)).toMatchObject({ badge: 'Not sent', line: 'Never sent: you replaced it with a newer vote before it left this browser.' });
     expect(describeVote(vote({ status: 'replaced', replacedBy: 'x' }), NOW, fmt).line).toMatch(/your newer vote/);

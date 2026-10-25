@@ -27,9 +27,10 @@ services:
   # `ports:` for them, ever. rpcallowip is limited to GOVHUB_SUBNET.
   # ---------------------------------------------------------------------------------------------
   dashd:
-    # Mainnet needs >= v23.1. Testnet activated V24 on 2026-10-23, so the testnet override
-    # defaults to the v24 release candidate. Override the tag with DASHD_TAG in .env.
-    image: dashpay/dashd:${DASHD_TAG:-23.1.8}
+    # Mainnet needs >= v23.1. Every network defaults to the v24 release candidate, which the live
+    # deploys run: v24 is what serves quorum proofs (getquorumproofchain, the bridge's /v1/quorum-proof).
+    # This default moves to the final v24.0.0 when it is released. Override the tag with DASHD_TAG in .env.
+    image: dashpay/dashd:${DASHD_TAG:-24.0.0-rc.4}
     restart: unless-stopped
     logging: *default-logging
     # Give dashd time to flush chainstate; an unclean stop can force a long replay on mainnet.

@@ -2,6 +2,8 @@
 // or a mislabelled verdict, to what the page may actually claim. The Playwright suite (e2e/tamper.spec.ts) replays the same
 // scenarios through the real worker and UI.
 import { createDapi, GrpcError, type AnchoredChain, type Dapi } from '@govhub/dapi';
+import { hash160, p2pkhAddress, signVote } from '@govhub/verify';
+import { secp256k1 } from '@noble/curves/secp256k1.js';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { installRecordedDapi, RECORDED_NODE } from '../data/dapiRecorded.ts';
 import { lookupCollateral, secondOpinion } from '../data/dapi.ts';
@@ -13,7 +15,7 @@ import { base64 } from '@scure/base';
 import { profileRegistry } from '../config/registry.ts';
 import type { Proposal, Tally } from '../data/types.ts';
 import { GOV_PARAMS } from '../lib/governance.ts';
-import { aggregate, collateralComponent, fundingComponent, votesComponent, type ComponentState } from './aggregate.ts';
+import { aggregate, collateralComponent, fundingComponent, provenNetYes, votesComponent, type ComponentState } from './aggregate.ts';
 import { MAX_SUPERBLOCK_READS, payments, type SuperblockCache, type SuperblockCoinbase } from './chain.ts';
 import { verdictFailure, verifyCollateral, type TxLookup } from './collateral.ts';
 import { paymentsFact } from './facts.ts';
@@ -202,6 +204,36 @@ describe('D-007 / D-002: a tampered tally or vote set reads as a mismatch, never
     expect(c).toMatchObject({ status: 'error', mismatch: true });
     // shown the bridge's own (matching) live tally instead, it is still not the proven record
     expect(comp(d, { name: BRIDGE_TARGET, tally: lie }).status).not.toBe('proven');
+  });
+
+  it('a bridge adds a masternode the proven list lacks, with a vote it signed, and a tally that counts it: excluded here, never verified or counted', () => {
+    const key = secp256k1.utils.randomSecretKey();
+    const fake = { proTxHash: 'fa'.repeat(32), collateralTxid: 'fb'.repeat(32), collateralIndex: 0, votingAddress: p2pkhAddress(hash160(secp256k1.getPublicKey(key, true)), 'mainnet'), type: 'evo' as const, valid: true };
+    const fields = { collateralTxid: fake.collateralTxid, collateralIndex: 0, govHashDisplay: p.govHash, signal: 1, outcome: 1, time: snap.now - 60 };
+    const vote = { ...fields, sig: signVote({ privKey: key, vote: fields, network: 'mainnet' }).base64 };
+    const votes = [...base.votes, vote];
+    const masternodes = [...base.masternodes, fake];
+    // the bridge's own view (its list, its keys) gives the fake evonode 4 yes votes; it publishes that tally on Platform
+    const asServed = verifyVotes({ ...base, votes, masternodes, sml: null, proReg: null, targets: [] });
+    expect(asServed.weighted.yes).toBe(95 + 4);
+    const inflated: Tally = { ...tally, yesWeighted: asServed.weighted.yes, yesCount: asServed.unweighted.yes, voteSetHash: asServed.voteSetHash };
+    const r = verifyVotes({ ...base, votes, masternodes, targets: [{ name: PLATFORM_TARGET, tally: inflated }] });
+    expect(r.problems['not-in-proven-list']).toBe(1);
+    expect(r.weighted.yes).toBe(95); // the browser's count leaves it out
+    const d: VotesDone = { ...done([]), runs: [{ result: r, votesAsOf: tally.asOfHeight, mnlistHeight: tally.asOfHeight, listMatches: null }] };
+    const c = comp(d, { name: PLATFORM_TARGET, tally: inflated });
+    expect(c.status).toBe('reported');
+    expect(c.status === 'reported' && c.reason).toMatch(/1 vote excluded \(1: masternode not in the proven masternode list\)/);
+    expect(voteVerdict(d.runs).level).toBe('excluded');
+    expect(provenNetYes(d, { name: PLATFORM_TARGET, tally: inflated })).toBeNull();
+    const agg = aggregate([
+      { id: 'content', state: { status: 'proven', summary: '' } },
+      { id: 'collateral', state: { status: 'proven', summary: '' } },
+      { id: 'chain', state: { status: 'proven', summary: '' } },
+      { id: 'votes', state: c },
+      { id: 'funding', state: { status: 'reported', reason: 'depends on the votes' } },
+    ]);
+    expect(agg.level).toBe('partial');
   });
 });
 

@@ -2,7 +2,8 @@ name: deploy-lint
 
 # Static checks for deploy/: every compose combination must render, the RPC and ZMQ ports must
 # never be published, the scripts must pass shellcheck and the Caddyfiles must validate. Every tunnel gateway must write
-# no logs (no access log, Caddy's default logger discarded), and run from such a Caddyfile.
+# no logs (no access log, Caddy's default logger discarded), and run from such a Caddyfile. The public TLS proxy must also have
+# no access log and a discarded default logger; the only other logger it may have writes certificate-management namespaces.
 # The live regtest smoke test (deploy/scripts/smoke-regtest.sh) is not run here yet: it needs the
 # bridge image from services/bridge/Dockerfile.
 
@@ -134,6 +135,22 @@ jobs:
             -e DOMAIN=gov.example.org -e CORS_ALLOW_ORIGIN='*' \
             -v "$GITHUB_WORKSPACE/deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro" \
             caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+
+      - name: the public proxy Caddyfile writes no access log and discards the default logger (certificate loggers only besides)
+        run: |
+          set -euo pipefail
+          f=deploy/caddy/Caddyfile
+          # Besides the discarded default logger, only loggers limited (`include`) to these certificate-management namespaces may
+          # exist, so ACME failures stay visible. Never `tls.handshake` or an http.* request logger: they carry client addresses.
+          docker run --rm -e DOMAIN=gov.example.org -e CORS_ALLOW_ORIGIN='*' -v "$GITHUB_WORKSPACE/$f:/etc/caddy/Caddyfile:ro" caddy:2-alpine \
+            caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile \
+            | jq -e '
+                ["tls.obtain", "tls.renew", "tls.issuance.acme", "tls.issuance.zerossl", "tls.cache.maintenance", "http.acme_client"] as $allowed
+                | .logging.logs.default.writer.output == "discard"
+                and ([.apps.http.servers[] | has("logs")] | any | not)
+                and ([.logging.logs | to_entries[] | select(.key != "default") | .value
+                      | ((.include // []) | length > 0 and all(. as $n | $allowed | index($n) != null))] | all)' > /dev/null \
+            || { echo "::error file=$f::$f must discard Caddy's default logger (log default { output discard }), have no access log, and log only certificate-management namespaces elsewhere"; exit 1; }
 
       - name: every tunnel-gateway Caddyfile validates and writes no logs
         run: |
