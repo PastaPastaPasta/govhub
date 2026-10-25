@@ -4,7 +4,7 @@
 // voting keys of recorded mainnet votes.
 import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
-import { cspViolations, watchPage } from './helpers.ts';
+import { cspViolations, openDrawer, watchPage } from './helpers.ts';
 
 test.skip(!process.env.GOVHUB_LIVE, 'set GOVHUB_LIVE=1 to run against live Platform and DAPI');
 test.setTimeout(180_000);
@@ -14,7 +14,7 @@ test('@live reads the gov contract with proofs and verifies a collateral over ma
   await page.goto('/?fixtures=0');
 
   // The SDK chunk loads lazily; either proposals or the "nothing published yet" banner appear.
-  const cards = page.locator('article.card');
+  const cards = page.locator('article.prow');
   const empty = page.getByText('No active proposals on Platform yet.');
   await expect(cards.first().or(empty)).toBeVisible({ timeout: 120_000 });
   await expect(page.getByText('Platform could not be read.')).toHaveCount(0);
@@ -24,13 +24,13 @@ test('@live reads the gov contract with proofs and verifies a collateral over ma
   if (process.env.SCREENSHOTS) await page.screenshot({ path: 'screenshots/live-active-light-desktop.png', fullPage: true });
   // Real proposals (content check passes) must verify against mainnet over DAPI; phase-0 spike
   // documents on testnet carry a "do not match" chip and are skipped.
-  const real = cards.filter({ hasNot: page.locator('.chip-bad') });
+  const real = cards.filter({ hasNot: page.locator('.chip-bad, .tag-fail') });
   if ((await real.count()) > 0) {
-    await expect(real.first().locator('[data-prov="proof"], [data-prov="reported"]').first()).toBeVisible();
     await real.first().locator('h3 a').click();
-    const collateral = page.getByTestId('collateral-check');
-    await expect(collateral.locator('[data-verdict]')).toBeVisible({ timeout: 90_000 });
-    console.log(`live: ${await page.locator('h1').innerText()}: ${(await collateral.innerText()).replace(/\s+/g, ' ').slice(0, 500)}`);
+    const drawer = await openDrawer(page);
+    const collateral = drawer.getByTestId('collateral-check');
+    await expect(collateral.locator('[data-verdict]')).toBeAttached({ timeout: 90_000 });
+    console.log(`live: ${await page.locator('h1').innerText()}: ${((await collateral.textContent()) ?? '').replace(/\s+/g, ' ').slice(0, 500)}`);
     await expect(collateral.locator('[data-verdict]')).toHaveAttribute('data-verdict', 'ok');
     await expect(collateral.locator('[data-step="tx"]')).not.toContainText('recorded.dapi.invalid');
     // The block proof (whole block fetched, merkle root recomputed, coinbase height, X11 hash) must have worked against real mainnet
@@ -39,8 +39,8 @@ test('@live reads the gov contract with proofs and verifies a collateral over ma
     // The ChainLock is BLS-verified when the nodes allow it, else a labelled node claim; either way the collateral line says which.
     const chainlock = collateral.locator('[data-step="chainlock"]');
     const basis = await chainlock.getAttribute('data-basis');
-    console.log(`live: ChainLock basis=${basis}: ${(await chainlock.innerText()).replace(/\s+/g, ' ')}`);
-    await expect(page.locator('.info-row', { hasText: 'Collateral status' })).toContainText(basis === 'verified' ? 'BLS-verified' : 'node');
+    console.log(`live: ChainLock basis=${basis}: ${(await chainlock.textContent())?.replace(/\s+/g, ' ')}`);
+    await expect(chainlock).toContainText(basis === 'verified' ? 'BLS-verified' : 'node');
     if (process.env.SCREENSHOTS) await page.screenshot({ path: 'screenshots/live-proposal-light-desktop.png', fullPage: true });
   }
 
@@ -58,20 +58,20 @@ test('@live Dev profile: spike proposals are hidden, counts and remaining paymen
   const errors = await watchPage(page);
   await page.goto('/?fixtures=0');
   await expect(page.getByTestId('profile-label')).toContainText('Dev: mainnet data on testnet Platform');
-  const cards = page.locator('article.card');
+  const cards = page.locator('article.prow');
   await expect(cards.first()).toBeVisible({ timeout: 120_000 });
   // Reveal the whole list, then wait for the background collateral checks to settle.
   for (let i = 0; i < 5; i++) await page.locator('.sentinel').scrollIntoViewIfNeeded();
-  await expect(page.locator('article.card[data-check="pending"]')).toHaveCount(0, { timeout: 240_000 });
+  await expect(page.locator('article.prow[data-check="pending"]')).toHaveCount(0, { timeout: 240_000 });
   for (let i = 0; i < 5; i++) await page.locator('.sentinel').scrollIntoViewIfNeeded();
-  for (const name of SPIKES) await expect(page.locator('article.card', { hasText: name })).toHaveCount(0);
+  for (const name of SPIKES) await expect(page.locator('article.prow', { hasText: name })).toHaveCount(0);
 
   const shown = await cards.count();
   const navCount = Number(await page.getByRole('link', { name: /^Active/ }).locator('.count').innerText());
   expect(navCount).toBe(shown);
-  await expect(page.locator('.budget-facts')).toContainText(`of ${shown} active proposals`);
-  const pays = await page.locator('article.card .card-pay').allInnerTexts();
-  const totals = pays.flatMap((t) => [...t.matchAll(/(\d+) of (\d+) remaining/g)].map((m) => ({ left: Number(m[1]), total: Number(m[2]) })));
+  await expect(page.locator('.budget-facts')).toContainText(`of ${shown} proposals`);
+  const pays = await page.locator('article.prow .prow-ask').allInnerTexts();
+  const totals = pays.flatMap((t) => [...t.matchAll(/(\d+) of (\d+) payments left/g)].map((m) => ({ left: Number(m[1]), total: Number(m[2]) })));
   console.log(`live: ${shown} shown; payments ${JSON.stringify(totals)}`);
   expect(totals.length).toBeGreaterThan(0);
   for (const t of totals) {
@@ -85,8 +85,8 @@ test('@live Dev profile: spike proposals are hidden, counts and remaining paymen
   console.log(`live: ${label}`);
   expect(Number(/Show (\d+)/.exec(label)?.[1])).toBeGreaterThanOrEqual(SPIKES.length);
   await toggle.click();
-  for (const name of SPIKES) await expect(page.locator('article.card.card-invalid', { hasText: name }).getByTestId('invalid-reason')).toContainText('Governance hash');
-  await expect(page.locator('.budget-facts')).toContainText(`of ${shown} active proposals`);
+  for (const name of SPIKES) await expect(page.locator('article.prow.prow-invalid', { hasText: name }).getByTestId('invalid-reason')).toContainText('Governance hash');
+  await expect(page.locator('.budget-facts')).toContainText(`of ${shown} proposals`);
   if (process.env.SCREENSHOTS) await page.locator('.list-section').screenshot({ path: 'screenshots/live-failed-shown-light-desktop.png' });
 
   await page.getByRole('link', { name: 'Past', exact: true }).click();
@@ -166,18 +166,17 @@ test('@live voting keys of recorded votes are confirmed by the masternode list t
   await page.goto(`/p/h/${GROWTH}?fixtures=0`);
   await expect(page.getByRole('heading', { level: 1, name: 'dash-growth-q4-2026' })).toBeVisible({ timeout: 120_000 });
 
-  await expect(page.getByRole('checkbox', { name: /Confirm voting keys/ })).toBeChecked();
-  // The recount targets the Platform tally's height: wait for that tally, or the click races it and recounts the live set.
-  await expect(page.locator('.info-row', { hasText: 'Votes, weighted' })).toContainText(/\d+ yes/, { timeout: 120_000 });
-  await page.getByRole('button', { name: 'Verify votes' }).click();
-  const votes = page.getByTestId('votes-check');
-  await expect(votes.locator('[data-votes]')).toBeVisible({ timeout: 200_000 });
-  const text = (await votes.innerText()).replace(/\s+/g, ' ');
+  // The recount runs on its own once the tallies are read; it targets the Platform tally's height.
+  await expect(page.getByTestId('p-votes')).toContainText(/\d+ yes/, { timeout: 120_000 });
+  const drawer = await openDrawer(page);
+  const votes = drawer.getByTestId('votes-check');
+  await expect(votes.locator('[data-votes]')).toBeAttached({ timeout: 200_000 });
+  const text = ((await votes.textContent()) ?? '').replace(/\s+/g, ' ');
   console.log(`live: votes: ${text.slice(0, 900)}`);
   // Platform's tally may predate the voteSetHash alignment (govhub-voteset-v1) or differ in votes cast since: say which fields.
   console.log(`live: fields that differ from the Platform tally: ${JSON.stringify(await votes.locator('table.compare tr:has(td.bad) th').allInnerTexts())}`);
-  // The keys were checked against the masternode list the DAPI nodes agree on (cross-node agreement, in the worker).
-  await expect(votes).toContainText('voting keys confirmed against the masternode list that DAPI nodes');
+  // The keys were checked against the masternode list proven into the verified chain (in the worker).
+  await expect(votes).toContainText('voting keys checked against the masternode list');
   await expect(votes).toContainText(/\d+ checked/);
   // The vote set was requested at the Platform tally's height, the masternode list at the tally's height.
   expect(requested.some((r) => /\/votes\?height=\d+$/.test(r))).toBe(true);
