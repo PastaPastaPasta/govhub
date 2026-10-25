@@ -216,6 +216,7 @@ export function votesComponent(i: {
   if (d.sml?.weak) return { status: 'reported', reason: 'Testnet: voting keys were checked against a list only proof of work protects' };
   if (r.keysFrom !== 'sml') {
     if (excluded) return { status: 'reported', reason: `Votes not fully proven: ${excluded}` };
+    if (r.listDiffers > 0) return { status: 'reported', reason: `The bridge's masternode list differs from the proven one for ${r.listDiffers.toLocaleString('en-US')} voters (key or type); their votes are counted with the proven key and type` };
     return { status: 'reported', reason: "Not fully checked: the voters' keys are as the bridge lists them" };
   }
   return { status: 'proven', summary: `${r.verified.toLocaleString('en-US')} signed votes recounted; they match the published tally exactly` };

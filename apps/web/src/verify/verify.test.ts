@@ -394,12 +394,14 @@ describe('vote verification against the fixture bridge (synthetic voters)', () =
     expect(voteVerdict([run(r, 0)]).level).toBe('no-tally');
   });
 
-  it('the key the proven list assigns is the one checked: a wrong key in the bridge list does not drop a properly signed vote', () => {
-    const lying = mns.map((m, i) => (i === 1 ? { ...m, votingAddress: mns[2]!.votingAddress } : m));
+  it('the key the proven list assigns is the one checked: a wrong key or type in the bridge list does not drop a properly signed vote, but blocks "verified"', () => {
+    const lying = mns.map((m, i) => (i === 1 ? { ...m, votingAddress: mns[2]!.votingAddress } : i === 3 ? { ...m, type: 'evo' as const } : m));
     const r = check({ masternodes: lying, sml: smlOf(mns), proReg: proRegOf(mns) });
     expect(r.excluded).toBe(0);
-    expect(r.targets[0]!.matches).toBe(true);
-    expect(r.keysFrom).toBe('sml');
+    expect(r.listDiffers).toBe(2);
+    expect(r.targets[0]!.matches).toBe(true); // counted with the proven key and weight
+    expect(r.keysFrom).toBe('bridge');
+    expect(voteVerdict([run(r, tally.asOfHeight)]).level).toBe('keys-reported');
   });
 
   it('a masternode the proven (current) list does not have: its vote is excluded from the count, shown with a reason, and blocks "verified"', () => {

@@ -341,6 +341,7 @@ function verdictText(level: VoteLevel, r: VoteCheckResult, matched: string | und
       if (fixtures) return `Recount matches the ${matched}: ${sigs}. Voting keys come from the fixture bridge (${origin === 'recorded' ? 'recorded mainnet votes and masternodes' : 'synthetic voters'})`;
       if (weak && !excluded) return `Recount matches the ${matched}: ${sigs}, keys checked against the masternode list, but not secure: ${weak}`;
       if (excluded) return `Recount matches the ${matched}: ${sigs}, but ${excluded}`;
+      if (r.listDiffers > 0) return `Recount matches the ${matched}: ${sigs}, keys proven, but the bridge's masternode list differs from the proven one for ${formatInt(r.listDiffers)} voters (key or type)`;
       return `Recount matches the ${matched}: ${sigs}, but the voting keys are only as the bridge reports them. Check them against the proven masternode list for a verified result`;
     case 'excluded':
       return `Not verified: ${excluded ?? 'votes were excluded'}. The ${matched} counts them; the count here, without them, differs (a masternode may have left or changed its key since the tally, or the bridge reports one that doesn't exist)`;
@@ -451,7 +452,7 @@ function VotesResult({ done, fixtures, proven }: { done: VotesDone; fixtures: bo
       <p className={`verdict ${style.className}`}>
         <ProvGlyph kind={style.glyph} />
         {downgraded
-          ? `Recount matches the ${vv.matched?.name}: ${formatInt(lead.result.verified)} of ${formatInt(lead.result.total)} signatures check out, keys proven; the vote check above says why that doesn't make the shown tally verified`
+          ? `Recount matches the ${vv.matched?.name}: ${formatInt(lead.result.verified)} of ${formatInt(lead.result.total)} votes counted, keys proven; the vote check above says why that doesn't make the shown tally verified`
           : verdictText(vv.level, lead.result, vv.matched?.name, done.origin, fixtures, done.sml?.weak ?? null)}
       </p>
       {done.runs.map((run, i) => (

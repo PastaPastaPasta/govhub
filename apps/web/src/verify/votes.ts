@@ -110,6 +110,11 @@ export interface VoteCheckResult {
   voteSetHash: string;
   /** Where the voting keys were confirmed: only the bridge, or every counted vote's by the proven list (and nothing excluded). */
   keysFrom: 'bridge' | 'sml';
+  /**
+   * Counted votes whose masternode the bridge lists with another voting key or type than the proven list and ProRegTx: counted with
+   * the proven ones, but the bridge misstated its list, so the result can't be "verified".
+   */
+  listDiffers: number;
   smlChecked: number;
   /** Counted votes whose outpoint -> proTxHash binding (and type) the masternode's ProRegTx proved. */
   collateralProven: number;
@@ -190,6 +195,7 @@ export function verifyVotes(input: VoteCheckInput): VoteCheckResult {
   let smlChecked = 0;
   let otherSignal = 0;
   let collateralProven = 0;
+  let listDiffers = 0;
   for (const v of input.votes) {
     const outpoint = normalizeMnId(`${v.collateralTxid}-${v.collateralIndex}`);
     if (v.signal !== VOTE_SIGNAL.FUNDING) {
@@ -244,6 +250,7 @@ export function verifyVotes(input: VoteCheckInput): VoteCheckResult {
       continue;
     }
     collateralProven++;
+    if (mn.votingAddress !== e.votingAddress || (mn.type === 'evo') !== (reg.type === 1)) listDiffers++;
     counted.push(tv);
     provenWeights.set(outpoint, reg.type === 1 ? EVONODE_WEIGHT : REGULAR_MN_WEIGHT);
   }
@@ -263,9 +270,11 @@ export function verifyVotes(input: VoteCheckInput): VoteCheckResult {
     weighted: t.weighted,
     unweighted: t.unweighted,
     voteSetHash: t.voteSetHash,
-    // Keys, types and collateral of every counted vote proven (the proven list for keys, the ProRegTxs for collateral and type), and
-    // nothing excluded: an excluded vote is one the tally may count, so the count here could be missing what it stood for.
-    keysFrom: input.sml && input.proReg && excluded === 0 ? 'sml' : 'bridge',
+    // Keys, types and collateral of every counted vote proven (the proven list for keys, the ProRegTxs for collateral and type),
+    // nothing excluded (an excluded vote is one the tally may count, so the count here could be missing what it stood for), and the
+    // bridge's list agreeing with the proven facts (a bridge that misstates them is not one to vouch for).
+    keysFrom: input.sml && input.proReg && excluded === 0 && listDiffers === 0 ? 'sml' : 'bridge',
+    listDiffers,
     smlChecked,
     collateralProven,
     targets: input.targets.map((target) => {
