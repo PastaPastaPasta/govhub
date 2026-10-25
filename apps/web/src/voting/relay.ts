@@ -52,8 +52,8 @@ export class RelayError extends Error {
 
 const STATUSES = new Set<RelayVoteStatus>(['held', 'maybe-broadcast', 'sending', 'broadcast', 'confirmed', 'failed', 'cancelled', 'superseded']);
 const HOLD_REASONS = new Set<HoldReason>(['release-time', 'one-change-per-hour', 'core-time-limit', 'retrying']);
-const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
-const numOrNull = (v: unknown): number | null => (typeof v === 'number' && Number.isSafeInteger(v) ? v : null);
+export const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+export const numOrNull = (v: unknown): number | null => (typeof v === 'number' && Number.isSafeInteger(v) ? v : null);
 
 export function parseRelayState(raw: unknown): RelayVoteState {
   if (!isObj(raw)) throw new RelayError('bad relay answer');

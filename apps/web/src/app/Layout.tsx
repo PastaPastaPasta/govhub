@@ -252,6 +252,7 @@ export function Layout() {
   const loc = useLocation();
   const proposals = loc.pathname === '/' || loc.pathname.startsWith('/past') || loc.pathname.startsWith('/p/');
   const masternodes = loc.pathname.startsWith('/masternodes') || loc.pathname.startsWith('/votes');
+  const create = loc.pathname.startsWith('/create');
   return (
     <div className="shell">
       <a className="skip" href="#main">
@@ -274,6 +275,9 @@ export function Layout() {
             </Link>
             <Link to="/masternodes" className={masternodes ? 'active' : undefined} aria-current={masternodes ? 'page' : undefined}>
               My masternodes
+            </Link>
+            <Link to="/create" className={create ? 'active' : undefined} aria-current={create ? 'page' : undefined} data-testid="nav-create">
+              New<span className="nav-more"> proposal</span>
             </Link>
           </nav>
           <div className="topbar-end">
