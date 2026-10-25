@@ -70,10 +70,11 @@ export const TOPUP_GAP_LIMIT = 5;
 
 /** One account-setup lane per phrase, up to the identity gap limit past the last identity. */
 const setupFamily =
-  (family: string, label: string, pathOf: (n: Network, i: number) => string, legacy: boolean): KeyFamily =>
+  (family: string, label: string, legacy: boolean): KeyFamily =>
   ({ secret, network, identities }) => {
     const w = secret.wallet;
     if (!w) return [];
+    const pathOf = legacy ? legacyRegistrationFundingPath : registrationFundingPath;
     return [
       {
         family,
@@ -88,13 +89,13 @@ const setupFamily =
   };
 
 /** Account setups: m/9'/coin'/5'/1'/i (DIP-13 registration funding, key-wallet's IdentityRegistration pool). */
-export const createFamily: KeyFamily = setupFamily('create', 'Account setup', registrationFundingPath, false);
+export const createFamily: KeyFamily = setupFamily('create', 'Account setup', false);
 
 /**
  * Account setups made before 2026-10-25 at the hardened m/9'/coin'/5'/1'/i' (and the phase-0 mainnet run). Scan-only: no new funding
  * goes there, but what was paid there can still be swept, finish its account or top up an identity.
  */
-export const legacyCreateFamily: KeyFamily = setupFamily('create-legacy', 'Account setup (before 2026-10-25)', legacyRegistrationFundingPath, true);
+export const legacyCreateFamily: KeyFamily = setupFamily('create-legacy', 'Account setup (before 2026-10-25)', true);
 
 /** Top-ups with the phrase: m/9'/coin'/5'/2'/i'/n for every identity the phrase has. */
 export const topUpFamily: KeyFamily = ({ secret, network, identities }) => {

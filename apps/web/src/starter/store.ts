@@ -12,7 +12,7 @@
 // account's funding key, so once the account is funded none of them can fund anything else.
 import { hash160, legacyRegistrationFundingPath, registrationFundingPath, wipe, type Network, type SeedWallet } from '@govhub/auth';
 import { bytesToBase64, toHex } from '@govhub/badge';
-import { fromStoredPending, toStoredPending, type PendingStarter, type StarterToken, type StoredPending } from './client.ts';
+import { fromStoredPending, fundingTarget, toStoredPending, type PendingStarter, type StarterToken, type StoredPending } from './client.ts';
 
 export interface StoredStarter {
   v: 1;
@@ -95,23 +95,17 @@ export function pendingStarterKeys(storage: Pick<Storage, 'key' | 'length'>, net
   return [...out];
 }
 
-const pubKeyHashHexAt = (wallet: SeedWallet, path: string): string => {
-  const k = wallet.derive(path);
-  wipe(k.privateKey);
-  return toHex(hash160(k.publicKey));
-};
-
 /**
  * Whether account setup `identityIndex` keeps its starter token or request under the hardened account-setup key govhub used until
  * 2026-10-25, and nothing under today's key. A token is bound to its key's pubKeyHash, so such a setup finishes with that old key
  * (its address, sealer and funding run) instead of stranding the token.
  */
 export function starterOnLegacyKey(storage: Pick<Storage, 'getItem'>, wallet: SeedWallet, identityIndex: number): boolean {
-  const kept = (path: string) => {
-    const hex = pubKeyHashHexAt(wallet, path);
+  const kept = (legacy: boolean) => {
+    const hex = toHex(fundingTarget(wallet, identityIndex, legacy).pubKeyHash);
     return storage.getItem(starterStorageKey(wallet.network, hex)) !== null || storage.getItem(pendingStorageKey(wallet.network, hex)) !== null;
   };
-  return !kept(registrationFundingPath(wallet.network, identityIndex)) && kept(legacyRegistrationFundingPath(wallet.network, identityIndex));
+  return !kept(false) && kept(true);
 }
 
 /** The seed's funding key for `identityIndex` (the legacy one where starterOnLegacyKey says so), for `fn` only (wiped after). */
@@ -205,5 +199,5 @@ export const forgetPendingFor = (storage: Store, wallet: SeedWallet, identityInd
 
 /** Forgets this setup's token and requests, under today's key and the legacy one (the account is funded: neither funds anything else). */
 export function forgetStarterFor(storage: Store, wallet: SeedWallet, identityIndex: number): void {
-  for (const path of [registrationFundingPath, legacyRegistrationFundingPath]) forgetStarter(storage, wallet.network, pubKeyHashHexAt(wallet, path(wallet.network, identityIndex)));
+  for (const legacy of [false, true]) forgetStarter(storage, wallet.network, toHex(fundingTarget(wallet, identityIndex, legacy).pubKeyHash));
 }

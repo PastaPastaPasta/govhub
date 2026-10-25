@@ -115,15 +115,17 @@ export function createFundingPath(store: FundingStore, wallet: SeedWallet, ident
   const old = legacyRegistrationFundingPath(wallet.network, identityIndex);
   const now = registrationFundingPath(wallet.network, identityIndex);
   if (legacy === undefined) {
-    const record = (path: string) => {
-      const k = wallet.derive(path);
-      wipe(k.privateKey);
-      return store.load(fundingRecordKey(wallet.network, 'create', hash160(k.publicKey)));
-    };
-    const r = record(old);
-    legacy = !!r && r.state !== 'done' && !record(now);
+    const r = createRecordAt(store, wallet, old);
+    legacy = !!r && r.state !== 'done' && !createRecordAt(store, wallet, now);
   }
   return legacy ? old : now;
+}
+
+/** The stored account-setup record of the key at `path`, if any. */
+function createRecordAt(store: FundingStore, wallet: SeedWallet, path: string): FundingRecord | null {
+  const k = wallet.derive(path);
+  wipe(k.privateKey);
+  return store.load(fundingRecordKey(wallet.network, 'create', hash160(k.publicKey)));
 }
 
 export interface FundingView {
@@ -822,9 +824,7 @@ export function nextTopUpIndex(store: FundingStore, network: Network, identityId
  */
 export function nextCreateIndex(store: FundingStore, wallet: SeedWallet): number {
   for (let i = 0; i < IDENTITY_GAP_LIMIT; i++) {
-    const fk = wallet.derive(createFundingPath(store, wallet, i));
-    wipe(fk.privateKey);
-    const r = store.load(fundingRecordKey(wallet.network, 'create', hash160(fk.publicKey)));
+    const r = createRecordAt(store, wallet, createFundingPath(store, wallet, i));
     if (!r || !(r.recoveredInto || (r.state === 'registering' && lockTooSmall(r)))) return i;
   }
   throw new FundingError(`This recovery phrase has ${IDENTITY_GAP_LIMIT} unusable account setups in a row; use another phrase.`);
