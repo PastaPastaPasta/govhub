@@ -88,7 +88,18 @@ export function RecoverFunds() {
     ac.current = c;
     setProgress({ phase: 'identities', done: 0, total: 0, keys: 0 });
     try {
-      if (!held.current) held.current = await secretFor();
+      if (!held.current) {
+        const h = await secretFor();
+        if (c.signal.aborted) {
+          // stopped while the key was being looked up: this one was never held, so wipe it here
+          if (h.owned) {
+            h.secret.wallet?.wipe();
+            h.secret.session?.end();
+          }
+          return;
+        }
+        held.current = h;
+      }
       setPhrase('');
       setKeyText('');
       const d = dapi();
@@ -228,12 +239,19 @@ function ScanStatus({ p }: { p: ScanProgress }) {
 }
 
 function Results({ scan, secret, onRescan, onDone }: { scan: RecoveryScan; secret: RecoverySecret; onRescan(): void; onDone(): void }) {
-  const partial = scan.items.filter((i) => i.lock && i.lock.status !== 'unused');
+  const partial = scan.items.filter((i) => i.lock?.status === 'partial').length;
+  const unchecked = scan.items.filter((i) => i.lock?.status === 'unknown').length;
+  const locks = (n: number) => `${n} asset lock${n > 1 ? 's' : ''}`;
+  // an item being sent or registered: scanning again or leaving would stop it
+  const [busy, setBusy] = useState(0);
+  const onBusy = (d: number) => setBusy((n) => n + d);
   return (
     <div className="recover-results" data-testid="recover-results">
       {scan.items.length ? (
         <p className="notice" role="status" data-testid="recover-total">
-          Found <b>{formatDuffs(scan.provenDuffs)}</b> you can recover{partial.length ? `, plus ${partial.length} asset lock${partial.length > 1 ? 's' : ''} Platform's state could not prove unused` : ''}.
+          Found <b>{formatDuffs(scan.provenDuffs)}</b> you can recover
+          {partial ? `, plus ${locks(partial)} Platform has partly used` : ''}
+          {unchecked ? `, plus ${locks(unchecked)} whose Platform state could not be read` : ''}.
         </p>
       ) : (
         <p className="notice" role="status" data-testid="recover-nothing">
@@ -250,15 +268,15 @@ function Results({ scan, secret, onRescan, onDone }: { scan: RecoveryScan; secre
       <ul className="recover-items">
         {scan.items.map((i) => (
           <li key={i.id}>
-            <ItemCard item={i} scan={scan} secret={secret} />
+            <ItemCard item={i} scan={scan} secret={secret} onBusy={onBusy} />
           </li>
         ))}
       </ul>
       <div className="form-actions">
-        <button type="button" className="btn" onClick={onRescan}>
+        <button type="button" className="btn" onClick={onRescan} disabled={busy > 0}>
           Scan again
         </button>
-        <button type="button" className="btn btn-quiet" onClick={onDone} data-testid="recover-done">
+        <button type="button" className="btn btn-quiet" onClick={onDone} disabled={busy > 0} data-testid="recover-done">
           Done (forget the phrase or key)
         </button>
       </div>
@@ -272,7 +290,7 @@ const LOCK_STATUS: Record<string, string> = {
   unknown: "Dash Platform's state could not be read. Using it is safe: Platform refuses a used lock, and nothing is paid twice.",
 };
 
-function ItemCard({ item, scan, secret }: { item: RecoveryItem; scan: RecoveryScan; secret: RecoverySecret }) {
+function ItemCard({ item, scan, secret, onBusy }: { item: RecoveryItem; scan: RecoveryScan; secret: RecoverySecret; onBusy(d: number): void }) {
   const { dapi, platform, store, network } = useAuth();
   const opts = useMemo(() => itemOptions(item, scan), [item, scan]);
   const [busy, setBusy] = useState(false);
@@ -281,6 +299,11 @@ function ItemCard({ item, scan, secret }: { item: RecoveryItem; scan: RecoverySc
   const [outcome, setOutcome] = useState<ReactNode>(null);
   const ac = useRef<AbortController | null>(null);
   useEffect(() => () => ac.current?.abort(), []);
+  useEffect(() => {
+    if (!busy) return;
+    onBusy(1);
+    return () => onBusy(-1);
+  }, [busy]); // eslint-disable-line react-hooks/exhaustive-deps
   useLeaveWarning(busy && !!view && view.state !== 'awaiting-deposit');
 
   const run = async (f: (signal: AbortSignal) => Promise<ReactNode>) => {

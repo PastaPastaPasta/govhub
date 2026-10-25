@@ -240,10 +240,15 @@ function laneKey(lane: KeyLane, index: number, network: Network): LaneKey {
   return { lane, index, h160: hash160(k.publicKey), pub: k.publicKey, address: addressOf(k.publicKey, network) };
 }
 
+/** Blocks the node serving the last chunk may lag behind the tip another node reported. */
+const TIP_LAG = 3;
+
 /**
  * Replays [from, to] for `filter` and returns the transactions a merkleblock proves (keyed by the txid their bytes hash to). One node
- * per chunk; a chunk whose stream fails, ends early or carries a merkleblock whose tree does not reach its header's root is replayed
- * on another node. `dropped` counts transactions a node sent without proof.
+ * per chunk; a chunk whose stream fails, sends fewer merkleblocks than blocks asked for (one comes per block), or carries a merkleblock
+ * whose tree does not reach its header's root is replayed on another node. Only the last chunk may stop up to TIP_LAG blocks short
+ * (`to` then says how far the replay really got). `dropped` counts transactions a node sent without proof; `nodes`, the nodes whose
+ * replay was used.
  */
 export async function replayProven(
   dapi: Dapi,
@@ -251,10 +256,12 @@ export async function replayProven(
   from: number,
   to: number,
   o: { chunk?: number; signal?: AbortSignal; onBlocks?(n: number): void; log?(m: string): void } = {},
-): Promise<{ txs: Map<string, Tx>; dropped: number }> {
+): Promise<{ txs: Map<string, Tx>; dropped: number; to: number; nodes: Set<string> }> {
   await dapi.ready();
   const out = new Map<string, Tx>();
+  const nodes = new Set<string>();
   let dropped = 0;
+  let reached = to;
   const chunk = o.chunk ?? 5000;
   for (let h = from; h <= to; ) {
     const count = Math.min(chunk, to - h + 1);
@@ -298,38 +305,48 @@ export async function replayProven(
       );
       const closed = await s.closed;
       if (o.signal?.aborted) throw o.signal.reason;
-      if (closed.reason !== 'end' || bad) {
-        const why = bad ?? (closed.reason === 'error' ? closed.error : new Error(closed.reason));
+      const last = h + count - 1 === to;
+      const short = count - blocks;
+      if (closed.reason !== 'end' || bad || (short > 0 && !(last && short <= TIP_LAG))) {
+        const why = bad ?? (closed.reason === 'error' ? closed.error : new Error(closed.reason === 'end' ? `ended after ${blocks} of ${count} blocks` : closed.reason));
         o.log?.(`replay ${h}+${count} on ${node}: ${errText(why)}`);
         dapi.pool.fail(node, why);
         o.onBlocks?.(-blocks);
         continue;
       }
-      // the tip a node reports may be a block or two behind the one asked for: what it did replay is what counts
       for (const [txid, tx] of raws) {
         if (proven.has(txid)) out.set(txid, tx);
         else dropped++;
       }
+      if (last && short > 0) reached = to - short; // this node is a block or two behind the reported tip
+      nodes.add(node);
       dapi.pool.ok(node);
       break;
     }
     h += count;
   }
-  return { txs: out, dropped };
+  return { txs: out, dropped, to: reached, nodes };
 }
 
-/** A second node's word on a proven transaction: its mined height, or null when it contradicts (unknown, other bytes, not mined). */
-async function secondOpinion(dapi: Dapi, tx: Tx, signal?: AbortSignal): Promise<number | null | undefined> {
-  try {
-    const { value } = await dapi.call((core, s) => core.getTransaction(tx.txid, { signal: s }), { signal, attempts: 3 });
-    if (parseTx(value.raw).txid !== tx.txid) return null;
-    return value.height > 0 ? value.height : null;
-  } catch (e) {
-    if (signal?.aborted) throw e;
-    // NOT_FOUND twice (dapi.call asks a second node before believing it): the transaction does not exist for them
-    if (errCode(e) === 5) return null;
-    return undefined; // nobody answered: the merkle proof stands alone
+/**
+ * A second opinion on a proven transaction from nodes that did not serve the replay: its mined height, null when they contradict it
+ * (other bytes, not mined, or unknown to every node that answered), undefined when none answered (the merkle proof stands alone).
+ */
+async function secondOpinion(dapi: Dapi, tx: Tx, replayNodes: ReadonlySet<string>, signal?: AbortSignal): Promise<number | null | undefined> {
+  let unknown = 0;
+  for (const node of dapi.pool.pick(2, replayNodes)) {
+    signal?.throwIfAborted();
+    try {
+      dapi.pool.charge(node);
+      const t = await dapi.core(node).getTransaction(tx.txid, { signal });
+      if (parseTx(t.raw).txid !== tx.txid) return null;
+      return t.height > 0 ? t.height : null;
+    } catch (e) {
+      if (signal?.aborted) throw e;
+      if (errCode(e) === 5) unknown++;
+    }
   }
+  return unknown ? null : undefined;
 }
 
 /**
@@ -355,7 +372,9 @@ export async function scanForFunds(o: ScanOptions): Promise<RecoveryScan> {
   /** Indexes derived so far per lane. */
   const width = new Map<KeyLane, number>();
   const txs = new Map<string, Tx>();
+  const replayNodes = new Set<string>();
   let dropped = 0;
+  let reached = toHeight;
   const span = toHeight - fromHeight + 1;
 
   /**
@@ -383,13 +402,15 @@ export async function scanForFunds(o: ScanOptions): Promise<RecoveryScan> {
   const touched = (k: LaneKey) => [...txs.values()].some((tx) => paysKey(tx, k.h160) || spendsFrom(tx, k.pub) || creditsKey(tx, k.h160));
 
   for (let pass = 0, fresh = grow(); fresh.length; pass++, fresh = grow()) {
-    if (pass >= 8 || keys.length > 400) throw new RecoveryError('These keys have more history than the Recover tool scans in one go. Contact the govhub developers.');
+    if (pass >= 8 || keys.length > 100 + 40 * lanes.length) throw new RecoveryError('These keys have more history than the Recover tool scans in one go. Contact the govhub developers.');
     const f = new BloomFilter(fresh.length * 2);
     for (const k of fresh) f.insert(k.h160).insert(k.pub);
     report({ phase: 'scan', keys: keys.length, total: progress.total + span });
     const r = await replayProven(dapi, f.toJSON(), fromHeight, toHeight, { chunk: o.chunk, signal, log: o.log, onBlocks: (n) => report({ done: progress.done + n }) });
     for (const [txid, tx] of r.txs) txs.set(txid, tx);
+    for (const n of r.nodes) replayNodes.add(n);
     dropped += r.dropped;
+    reached = Math.min(reached, r.to);
   }
 
   // ---- what is still there ----
@@ -397,7 +418,7 @@ export async function scanForFunds(o: ScanOptions): Promise<RecoveryScan> {
   const relevant = [...txs.values()].filter((tx) => keys.some((k) => paysKey(tx, k.h160) || spendsFrom(tx, k.pub) || creditsKey(tx, k.h160)));
   const heights = new Map<string, number | undefined>();
   for (const tx of relevant) {
-    const h = await secondOpinion(dapi, tx, signal);
+    const h = await secondOpinion(dapi, tx, replayNodes, signal);
     if (h === null) {
       dropped++;
       txs.delete(tx.txid);
@@ -437,7 +458,7 @@ export async function scanForFunds(o: ScanOptions): Promise<RecoveryScan> {
   }
   const provenDuffs = items.reduce((a, i) => a + (i.type === 'payments' || i.lock?.status === 'unused' ? i.duffs : 0n), 0n);
   report({ note: undefined });
-  return { network, fromHeight, toHeight, keysScanned: keys.length, identities, items, usedLocks, provenDuffs, dropped };
+  return { network, fromHeight, toHeight: reached, keysScanned: keys.length, identities, items, usedLocks, provenDuffs, dropped };
 }
 
 const paysKey = (tx: Tx, h160: Uint8Array) =>
@@ -496,6 +517,7 @@ export function itemOptions(item: RecoveryItem, scan: Pick<RecoveryScan, 'identi
     const canTopUp = bigEnoughFor('topup');
     if (fu.kind === 'create') {
       if (scan.identities.some((f) => f.identityIndex === fu.identityIndex)) notes.push(`Identity #${fu.identityIndex} of this phrase already exists, so this cannot create it again.`);
+      else if (isLock && item.lock!.status === 'partial') notes.push('Platform has used part of this lock, so how much is left is unknown: it can top up an identity (Platform refuses it, for free, if too little is left).');
       else if (bigEnoughFor('create')) create = fu.identityIndex;
       else if (canTopUp) notes.push(`Creating an account needs ${dashText(MIN_CREATE_LOCK_DUFFS)} locked; this is enough to top up an identity instead.`);
       if (canTopUp) topUp = 'any';
@@ -602,7 +624,7 @@ export type RecoveryTarget = { create: true } | { topUp: string };
  */
 export async function fundWithItem(o: {
   item: RecoveryItem;
-  scan: Pick<RecoveryScan, 'network' | 'identities' | 'toHeight'>;
+  scan: Pick<RecoveryScan, 'network' | 'identities' | 'fromHeight'>;
   secret: RecoverySecret;
   target: RecoveryTarget;
   dapi: Dapi;
@@ -621,6 +643,13 @@ export async function fundWithItem(o: {
   if ('topUp' in target && fu.kind === 'topup' && target.topUp !== fu.identityId) throw new RecoveryError(`A top-up payment only tops up the identity it was for (${fu.identityId}).`);
   if (fu.kind === 'topup' && fu.session !== !!secret.session) throw new RecoveryError('This top-up address belongs to the other kind of sign-in.');
   if (fu.kind === 'create' && !secret.wallet) throw new RecoveryError('An account setup needs its recovery phrase.');
+  if ('create' in target) {
+    // the identity may have been made since the scan (another device): a create would then be refused as a key conflict
+    const k0 = secret.wallet!.identityKey(fu.identityIndex, 0);
+    wipe(k0.privateKey);
+    if ((await platform.identityByUniqueKeyHash(hash160(k0.publicKey))) !== null)
+      throw new RecoveryError(`Identity #${fu.identityIndex} of this phrase exists now (made since the scan, or on another device). Sign in with the phrase, or use this to top up an identity.`);
+  }
   if (item.lock) {
     // checked again right before use: another device may have used it since the scan
     const st = await platform.assetLockStatus(item.lock.txid, item.lock.creditIndex).catch(() => 'unknown' as const);
@@ -640,7 +669,7 @@ export async function fundWithItem(o: {
     identityId: kind === 'topup' ? fu.identityId : item.lock ? identityIdFromOutpoint(item.lock.txid, item.lock.creditIndex) : undefined,
     address: item.address,
     // the watcher replays from the oldest payment, so a rebuild after a refused lock still finds them (spent ones drop out)
-    watchFromHeight: heights.length ? Math.max(0, Math.min(...heights) - 1) : Math.max(0, scan.toHeight - 3),
+    watchFromHeight: heights.length ? Math.max(0, Math.min(...heights) - 1) : scan.fromHeight,
     deposits: item.payments.map((p) => ({ txid: p.txid, vout: p.vout, value: p.duffs.toString(), confirmed: true })),
     lock: item.lock
       ? { raw: item.lock.raw, txid: item.lock.txid, creditIndex: item.lock.creditIndex, burnVout: item.lock.burnVout, lockDuffs: item.lock.lockDuffs.toString(), feeDuffs: '0' }

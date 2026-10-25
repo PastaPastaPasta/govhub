@@ -708,12 +708,21 @@ describe('D-006 review: recovery edge cases', () => {
     const r = await runFunding({ wallet: w(), dapi: fakeDapi({ events: [], deliverIsLock: false, mined: 1500, known: [s0.lock!.txid] }) as unknown as Dapi, platform: p, store, kind: 'create', identityIndex: 0, restore, pollMs: 10 });
     expect(r.identityId).toBe(s0.identityId);
     expect(p.calls).toEqual(['chain']);
-    // in flight with its IS-lock: kept, so the instant proof is used
+    // in flight with its IS-lock: never replaced. Other funds at the address (a later payment) wait until it is finished, and nothing
+    // is sent for them; the same lock is resumed as saved, so the instant proof is used.
     const store2 = memStore();
     store2.save(s0);
     const p2 = fakePlatform();
-    await runFunding({ wallet: w(), dapi: dapi(), platform: p2, store: store2, kind: 'create', identityIndex: 0, restore: { ...restore, lock: undefined, state: 'awaiting-deposit' } });
+    const later = { ...restore, lock: undefined, state: 'awaiting-deposit' as const };
+    await expect(runFunding({ wallet: w(), dapi: dapi(), platform: p2, store: store2, kind: 'create', identityIndex: 0, restore: later, recoverInto: target })).rejects.toThrow(/middle of a funding/);
+    expect(p2.calls).toEqual([]);
+    expect(store2.m.get(s0.key)!.isLock).toBe(s0.isLock);
+    await runFunding({ wallet: w(), dapi: dapi(), platform: p2, store: store2, kind: 'create', identityIndex: 0, restore });
     expect(p2.calls).toEqual(['instant']);
+    // a saved recovery into another identity is never turned into a create (or another target)
+    const store3 = memStore();
+    store3.save({ ...s0, recoveredInto: target });
+    await expect(runFunding({ wallet: w(), dapi: dapi(), platform: p2, store: store3, kind: 'create', identityIndex: 0, restore })).rejects.toThrow(/already being added/);
     // a record for another key is refused
     await expect(runFunding({ wallet: w(), dapi: dapi(), platform: p2, store: memStore(), kind: 'create', identityIndex: 1, restore })).rejects.toThrow(/another key/);
   });

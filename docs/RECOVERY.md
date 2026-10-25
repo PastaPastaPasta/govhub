@@ -35,10 +35,12 @@ whenever this browser knows of recoverable funds.
 3. **Proof.** A transaction counts only if:
    - its bytes hash to a txid that a merkleblock of the stream proves (the partial merkle tree reaches the header's root, the same
      standard as the funding watcher), and
-   - a second node does not contradict it (unknown to that node, or not mined).
+   - a second node, one that did not serve the replay, does not contradict it (by not knowing it, or by saying it isn't mined).
 
-   The tool shows nothing that a node merely claims, and the summary says how many transactions it dropped. Payments still in the
-   mempool appear once they are mined ("Scan again").
+   A chunk whose stream ends before every block it asked for is replayed on another node, so a lazy or hostile node can't make the scan
+   look complete; the summary says up to which block it got. Block headers are not checked against proof of work, so the guarantee is
+   "proven by one node's merkleblock and not contradicted by another", not a full SPV proof. Payments still in the mempool appear once
+   they are mined ("Scan again").
 4. **Items.**
    - **Unspent payments** to a key: every proven output, minus every proven spend.
    - **Type-8 asset locks** whose credit output pays a key. For each, the tool checks Platform's proved state (a path query of Drive's

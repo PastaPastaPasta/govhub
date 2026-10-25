@@ -10,11 +10,12 @@ const PHRASE = 'abandon abandon abandon abandon abandon abandon abandon abandon 
 const calls = { scan: [] as unknown[], sweep: [] as unknown[], fund: [] as unknown[] };
 let scanResult: RecoveryScan;
 let seen: RecoverySecret | null = null;
+let fundHangs = false;
 vi.mock('@govhub/auth', async (orig) => ({
   ...(await orig<typeof import('@govhub/auth')>()),
   scanForFunds: async (o: { secret: RecoverySecret }) => ((seen = o.secret), calls.scan.push(o), scanResult),
   sweepItem: async (o: unknown) => (calls.sweep.push(o), { txid: 'ab'.repeat(32), sentDuffs: 49_774n, feeDuffs: 226n }),
-  fundWithItem: async (o: unknown) => (calls.fund.push(o), { identityId: 'NEWID', record: {} }),
+  fundWithItem: async (o: unknown) => (calls.fund.push(o), fundHangs ? new Promise(() => {}) : { identityId: 'NEWID', record: {} }),
 }));
 vi.mock('./context.tsx', () => {
   const auth = { session: null, network: 'testnet', dapi: () => ({ network: 'testnet' }), platform: async () => ({ network: 'testnet' }), store: {}, closeSheet: () => {} };
@@ -35,6 +36,7 @@ const TESTNET_ADDR = addressOf(DEST, 'testnet');
 const MAINNET_ADDR = addressOf(DEST, 'mainnet');
 
 beforeEach(() => {
+  fundHangs = false;
   for (const l of Object.values(calls)) l.length = 0;
   seen = null;
   scanResult = { network: 'testnet', fromHeight: 1_577_000, toHeight: 1_579_300, keysScanned: 21, identities: [{ identityIndex: 0, identityId: 'MINE' }], items: [payments, lock], usedLocks: 2, provenDuffs: 299_794n, dropped: 1 };
@@ -103,6 +105,16 @@ describe('Recover funds', () => {
     await flush();
     expect((calls.fund[0] as { target: unknown }).target).toEqual({ create: true });
     expect(card.querySelector('[data-testid="recovered-identity"]')!.textContent).toBe('NEWID');
+    await s.unmount();
+  });
+
+  it('"Scan again" and "Done" wait while an item is being used (they would stop it)', async () => {
+    fundHangs = true;
+    const s = await scanned();
+    await click(s.el.querySelector<HTMLButtonElement>('[data-type="lock"] [data-testid="recover-create"]')!);
+    await flush();
+    expect(button(s.el, /Scan again/).disabled).toBe(true);
+    expect(button(s.el, /Done \(forget/).disabled).toBe(true);
     await s.unmount();
   });
 

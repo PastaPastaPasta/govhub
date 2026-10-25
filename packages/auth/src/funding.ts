@@ -404,10 +404,15 @@ export async function runFunding(o: FundingOptions): Promise<{ identityId: strin
     return await withRecordLock(key, () => {
       if (o.restore) {
         if (o.restore.key !== key || o.restore.network !== network || o.restore.kind !== kind) throw new FundingError('the recovered record belongs to another key');
-        // A lock this browser has in flight (maybe with its IS-lock, which the chain no longer shows) is resumed, not replaced.
+        // A lock this browser has in flight (maybe with its IS-lock, which the chain no longer shows) is never replaced: when it is the
+        // lock the user picked it is resumed as saved; anything else at this address waits until that funding is finished.
         const saved = o.store.load(key);
-        const inFlight = saved && saved.state !== 'done' && saved.lock && (!o.restore.lock || saved.lock.txid === o.restore.lock.txid);
-        if (!inFlight) o.store.save(o.restore);
+        if (saved && saved.state !== 'done' && saved.lock) {
+          if (saved.lock.txid !== o.restore.lock?.txid)
+            throw new FundingError('This browser is in the middle of a funding at this address. Continue it (sign in, or Top up), or wait until it finishes, then scan again.');
+          if (saved.recoveredInto && saved.recoveredInto !== o.recoverInto)
+            throw new FundingError(`This payment is already being added to identity ${saved.recoveredInto}.`);
+        } else o.store.save(o.restore);
       }
       return fund(o, fk, key);
     });

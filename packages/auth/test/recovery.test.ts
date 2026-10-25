@@ -68,7 +68,7 @@ interface Chain {
   /** Transactions per height (BASE + index). */
   blocks: Tx[][];
   /** Nodes that misbehave on the stream. */
-  liars?: Record<string, { unproven?: Tx[]; badRoot?: boolean; fakeProven?: Tx[] }>;
+  liars?: Record<string, { unproven?: Tx[]; badRoot?: boolean; fakeProven?: Tx[]; /** ends the stream after this many blocks */ stopAfter?: number }>;
   /** txids the unary getTransaction does not know (a contradiction). */
   unknown?: Set<string>;
   broadcasts?: Uint8Array[];
@@ -111,7 +111,8 @@ function fakeDapi(c: Chain, nodes = ['honest:1', 'honest:2']) {
         c.replays?.push(`${node}@${s.fromHeight}+${s.count}`);
         const bf = filterOf(f);
         const liar = c.liars?.[node];
-        for (let h = s.fromHeight; h < s.fromHeight + s.count && h - BASE < c.blocks.length; h++) {
+        const end = Math.min(s.fromHeight + s.count, s.fromHeight + (liar?.stopAfter ?? Infinity));
+        for (let h = s.fromHeight; h < end && h - BASE < c.blocks.length; h++) {
           const txs = [...(c.blocks[h - BASE] ?? [])];
           const extra = h === s.fromHeight ? (liar?.fakeProven ?? []) : [];
           txs.push(...extra);
@@ -123,6 +124,7 @@ function fakeDapi(c: Chain, nodes = ['honest:1', 'honest:2']) {
         }
         return { cancel: () => {}, closed: Promise.resolve({ reason: 'end', status: null }) };
       },
+      getTransaction: unary.getTransaction,
     }),
     call: async (fn: (core: typeof unary) => Promise<unknown>) => ({ value: await fn(unary), node: 'honest:1' }),
     broadcastTransaction: async (raw: Uint8Array) => {
@@ -273,6 +275,10 @@ describe('scan: what is still there', () => {
     expect(r.usedLocks).toBe(1);
     // proven: only the unused one counts
     expect(r.provenDuffs).toBe(locks[0]!.duffs);
+    // a partly used lock: its remainder is unknown, so only a top-up is offered
+    const po = itemOptions(locks[1]!, r);
+    expect(po.create).toBeNull();
+    expect(po.topUp).toBe('any');
     const o = itemOptions(locks[0]!, r);
     expect(o.sweep).toBeNull();
     expect(o.notes.join(' ')).toMatch(/never sent back to a Dash address/);
@@ -297,6 +303,20 @@ describe('scan: what is still there', () => {
     expect(r.dropped).toBeGreaterThanOrEqual(2);
     expect(c.replays![0]).toMatch(/^liar:2@/);
     expect(c.replays![1]).toMatch(/^liar:1@/);
+  });
+
+  it('a node that ends the stream early never makes the scan look complete: the chunk is replayed elsewhere', async () => {
+    const blocks: Tx[][] = Array.from({ length: 10 }, () => []);
+    blocks[8] = [pay(createPub(0), 300_000n)];
+    const c: Chain = { blocks, liars: { 'lazy:1': { stopAfter: 3 } }, replays: [] };
+    const r = await scanForFunds({ secret: { wallet: wallet() }, dapi: fakeDapi(c, ['lazy:1', 'honest:1', 'honest:2']), platform: new FakePlatform(NET), fromHeight: BASE, chunk: 100 });
+    expect(r.items.map((i) => i.duffs)).toEqual([300_000n]);
+    expect(c.replays!.slice(0, 2)).toEqual([`lazy:1@${BASE}+10`, `honest:1@${BASE}+10`]);
+    expect(r.toHeight).toBe(BASE + 9);
+    // a last chunk a block or two short of the reported tip is accepted, and the scan says how far it got
+    const lag: Chain = { blocks, liars: { 'lag:1': { stopAfter: 8 } } };
+    const r2 = await scanForFunds({ secret: { wallet: wallet() }, dapi: fakeDapi(lag, ['lag:1', 'honest:1']), platform: new FakePlatform(NET), fromHeight: BASE, chunk: 100 });
+    expect(r2.toHeight).toBe(BASE + 7);
   });
 
   it('replayProven keeps only transactions a valid merkleblock proves', async () => {
@@ -394,6 +414,14 @@ describe('use on Platform', () => {
     expect(out.identityId).toBe(identityIdFromOutpoint(lock.txid, 0));
     expect(platform.created.get(out.identityId)).toMatchObject({ kind: 'chain', txid: lock.txid, creditIndex: 0 });
     expect(store.m.get(fundingRecordKey(NET, 'create', hexToBytes(item.keyHash)))!.state).toBe('done');
+  });
+
+  it('refuses to create when the identity was made since the scan (it would be a key conflict)', async () => {
+    const { dapi, platform, r, item } = await lockAt1();
+    const w = wallet();
+    platform.addIdentity('made-elsewhere', [0, 1, 2].map((k) => ({ id: k, purpose: 0, securityLevel: k, priv: w.identityKey(1, k).privateKey })));
+    await expect(fundWithItem({ item, scan: r, secret: { wallet: wallet() }, target: { create: true }, dapi, platform, store: memStore() })).rejects.toThrow(/exists now/);
+    expect(platform.created.size).toBe(0);
   });
 
   it('a lock large enough to create can top up any identity instead when the user chooses it', async () => {
