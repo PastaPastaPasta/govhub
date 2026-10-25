@@ -6,11 +6,11 @@
 import { parseTx, type Dapi } from '@govhub/dapi';
 import { bytesEqual, hash160, hexToBytes, wipe } from './bytes.ts';
 import { parsePrivateKey, publicKeyOf, type Network } from './keys.ts';
-import { CREATE_KEYS } from './layout.ts';
+import { CREATE_KEYS, createRequiredCredits, CREDITS_PER_DUFF } from './layout.ts';
 import type { AssetLockProofInput, PlatformPort, SigningKey } from './platform.ts';
 import type { SeedWallet } from './seed.ts';
 import { identityIdFromOutpoint, locateCredit } from './tx.ts';
-import { classifyRegistrationError, minedHeight, redact, sleep, waitForChainLockedHeight } from './funding.ts';
+import { classifyRegistrationError, LockTooSmallError, minedHeight, redact, sleep, waitForChainLockedHeight } from './funding.ts';
 
 export interface Voucher {
   txid: string;
@@ -74,6 +74,9 @@ export async function redeemVoucher(o: RedeemOptions): Promise<{ identityId: str
       throw new VoucherError('This voucher has already been used.');
     };
     if (await existing()) return { identityId, creditDuffs, proofKind: 'chain' };
+    // Too small to start processing: permanent, so it is said now rather than after a chain-lock wait.
+    const required = createRequiredCredits(CREATE_KEYS.length);
+    if (creditDuffs * CREDITS_PER_DUFF < required) throw new LockTooSmallError('create', creditDuffs * CREDITS_PER_DUFF, required);
     for (const k of CREATE_KEYS) keys.push({ ...k, privateKey: wallet.identityKey(o.identityIndex, k.id).privateKey });
     const create = async (proof: AssetLockProofInput) => {
       signal?.throwIfAborted();
@@ -82,6 +85,7 @@ export async function redeemVoucher(o: RedeemOptions): Promise<{ identityId: str
       } catch (e) {
         const outcome = classifyRegistrationError(e);
         if (outcome === 'key-conflict') throw new VoucherError('These keys already belong to another identity. Sign in with this recovery phrase instead.');
+        if (outcome === 'too-small') throw LockTooSmallError.fromRefusal('create', creditDuffs * CREDITS_PER_DUFF, required, e);
         // 'used' only says the outpoint is consumed: success only if the identity it made is this seed's (existing() throws otherwise).
         // A just-made identity can lag a block behind on the node read, so a 'used' answer is re-checked a few times.
         for (let i = 0; i < (outcome === 'used' ? 5 : 1); i++) {
@@ -98,7 +102,7 @@ export async function redeemVoucher(o: RedeemOptions): Promise<{ identityId: str
         await create({ kind: 'instant', tx: claim.raw, isLock: voucher.isLock, creditIndex });
         proofKind = 'instant';
       } catch (e) {
-        if (e instanceof VoucherError) throw e;
+        if (e instanceof VoucherError || e instanceof LockTooSmallError) throw e;
         o.onUpdate?.(`IS-lock proof refused (${redact(String((e as Error)?.message ?? e)).slice(0, 120)}); using a chain-lock proof`);
       }
     }

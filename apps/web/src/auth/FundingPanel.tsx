@@ -1,7 +1,8 @@
 // Funding screen: QR for the one-time deposit address, live status, IS-lock, done. The address is only shown once the DAPI
 // deposit watcher is subscribed (runFunding calls onUpdate after the streams are live), because IS-locks are never replayed.
-import { runFunding, type FundingView, type SeedWallet, type Session } from '@govhub/auth';
-import { useEffect, useRef, useState } from 'react';
+// A create whose lock is too small for Platform (LockTooSmallError, permanent) is offered as a top-up of an existing identity instead.
+import { identifierBytes, LockTooSmallError, runFunding, type FundingView, type SeedWallet, type Session } from '@govhub/auth';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useAuth } from './context.tsx';
 import { Qr } from './Qr.tsx';
 import { errorText, formatDuffs } from './runtime.ts';
@@ -29,8 +30,12 @@ const ORDER: FundingView['state'][] = ['awaiting-deposit', 'locking', 'locked', 
 export function FundingPanel(p: FundingPanelProps) {
   const { dapi, platform, store } = useAuth();
   const [view, setView] = useState<FundingView | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [attempt, setAttempt] = useState(0);
+  /** The existing identity a too-small create lock is being added to. */
+  const [recoverInto, setRecoverInto] = useState<string | null>(null);
+  const [recovered, setRecovered] = useState<string | null>(null);
+  const [recoverError, setRecoverError] = useState<string | null>(null);
   const done = useRef(p.onDone);
   done.current = p.onDone;
 
@@ -41,22 +46,49 @@ export function FundingPanel(p: FundingPanelProps) {
       const port = await platform();
       const r = await runFunding({
         wallet: p.wallet, dapi: dapi(), platform: port, store, kind: p.kind, identityIndex: p.identityIndex, topUp: p.topUp, session: p.session,
-        signal: ac.signal, onUpdate: (v) => !ac.signal.aborted && setView(v),
+        recoverInto: recoverInto ?? undefined, signal: ac.signal, onUpdate: (v) => !ac.signal.aborted && setView(v),
       });
-      if (!ac.signal.aborted) done.current(r.identityId);
-    })().catch((e) => !ac.signal.aborted && setError(errorText(e)));
+      if (ac.signal.aborted) return;
+      // a recovery is saved in the record: a later resume (also without recoverInto) finishes it
+      if (r.record.recoveredInto) setRecovered(r.identityId);
+      else done.current(r.identityId);
+    })().catch((e) => {
+      if (ac.signal.aborted) return;
+      if (recoverInto && !(e instanceof LockTooSmallError)) {
+        // e.g. no such identity: back to the choice, with the reason
+        setRecoverError(errorText(e));
+        setRecoverInto(null);
+      } else setError(e);
+    });
     return () => ac.abort();
     // The funding is keyed by what it funds; a new attempt is an explicit retry.
-  }, [p.kind, p.identityIndex, p.topUp?.identityId, p.topUp?.index, attempt]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [p.kind, p.identityIndex, p.topUp?.identityId, p.topUp?.index, attempt, recoverInto]); // eslint-disable-line react-hooks/exhaustive-deps
   const retry = () => setAttempt((a) => a + 1);
+  const errorBox = error ? (
+    error instanceof LockTooSmallError ? (
+      <TooSmall error={error} offerTopUp={p.kind === 'create' && error.canTopUp} problem={recoverError} onTopUp={(id) => (setRecoverError(null), setRecoverInto(id))} />
+    ) : (
+      <ErrorBox text={errorText(error)} retry={retry} />
+    )
+  ) : null;
 
-  if (!view) {
+  if (recovered) {
     return (
-      <div className="funding" data-state="connecting">
-        {error ? <ErrorBox text={error} retry={retry} /> : <p className="muted"><span className="spinner" aria-hidden="true" /> Connecting to the Dash network…</p>}
+      <div className="funding" data-state="recovered">
+        <p className="notice" role="status" data-testid="recovered">
+          Done: the payment was added to identity <span className="break">{recovered}</span>. Sign in with that identity to use it.
+        </p>
       </div>
     );
   }
+  if (!view) {
+    return (
+      <div className="funding" data-state="connecting">
+        {errorBox ?? <p className="muted"><span className="spinner" aria-hidden="true" /> Connecting to the Dash network…</p>}
+      </div>
+    );
+  }
+  const seenDuffs = view.receivedDuffs + view.pendingDuffs;
   const at = ORDER.indexOf(view.state);
   const status = (id: (typeof STEPS)[number]['id']): 'done' | 'now' | 'todo' => {
     if (id === 'is') return view.isLocked ? 'done' : view.state === 'locked' ? 'now' : at > ORDER.indexOf('locked') ? 'done' : 'todo';
@@ -69,9 +101,16 @@ export function FundingPanel(p: FundingPanelProps) {
         <div className="deposit">
           <Qr text={view.uri} label={`Dash payment request to ${view.address}`} />
           <div className="deposit-text">
-            <p>
-              Send at least <b>{formatDuffs(view.minDuffs)}</b> to this one-time address. Any Dash wallet works.
-            </p>
+            {seenDuffs > 0n && view.remainingDuffs > 0n ? (
+              <p data-testid="underpaid">
+                Received <b>{formatDuffs(seenDuffs)}</b>, still need <b>{formatDuffs(view.remainingDuffs)}</b>. Send the rest to the same address; the QR code asks
+                for just that.
+              </p>
+            ) : (
+              <p>
+                Send at least <b>{formatDuffs(view.minDuffs)}</b> to this one-time address. Any Dash wallet works.
+              </p>
+            )}
             <p className="address" data-testid="deposit-address">
               {view.address}
             </p>
@@ -83,7 +122,6 @@ export function FundingPanel(p: FundingPanelProps) {
                 Open in wallet
               </a>
             </div>
-            {view.receivedDuffs > 0n && <p className="notice">Received {formatDuffs(view.receivedDuffs)} so far.</p>}
             {view.pendingDuffs > 0n && (
               <p className="muted small" data-testid="pending-deposit">
                 {formatDuffs(view.pendingDuffs)} seen; it counts once InstantSend locks it or it is in a block.
@@ -115,7 +153,50 @@ export function FundingPanel(p: FundingPanelProps) {
           {view.identityId && p.kind === 'create' && <> · identity {view.identityId}</>}
         </p>
       )}
-      {error && <ErrorBox text={error} retry={retry} />}
+      {errorBox}
+    </div>
+  );
+}
+
+/** A lock Platform can never register (permanent: no retry). A create's lock can still top up an existing identity. */
+function TooSmall({ error, offerTopUp, problem, onTopUp }: { error: LockTooSmallError; offerTopUp: boolean; problem: string | null; onTopUp(identityId: string): void }) {
+  const [open, setOpen] = useState(!!problem);
+  const [id, setId] = useState('');
+  const [bad, setBad] = useState(false);
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    const v = id.trim();
+    try {
+      identifierBytes(v);
+    } catch {
+      return setBad(true);
+    }
+    onTopUp(v);
+  };
+  return (
+    <div className="auth-error" role="alert" data-testid="lock-too-small">
+      <p>{error.message}</p>
+      {offerTopUp &&
+        (open ? (
+          <form className="form" onSubmit={submit}>
+            <label>
+              Identity to top up
+              <input value={id} onChange={(e) => (setId(e.target.value), setBad(false))} placeholder="identity id (base58)" spellCheck={false} autoComplete="off" data-testid="recover-identity" />
+            </label>
+            {bad && <p className="error small">That is not an identity id.</p>}
+            {problem && !bad && <p className="error small">{problem}</p>}
+            <p className="muted small">Anyone can top up any identity: check the id. The whole amount goes to that identity's balance.</p>
+            <div className="form-actions">
+              <button type="submit" className="btn btn-primary" disabled={!id.trim()}>
+                Top up this identity
+              </button>
+            </div>
+          </form>
+        ) : (
+          <button type="button" className="btn" onClick={() => setOpen(true)}>
+            Use these funds to top up an existing identity
+          </button>
+        ))}
     </div>
   );
 }

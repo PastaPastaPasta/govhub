@@ -5,14 +5,17 @@ import { parseTx, type Dapi, type WatchHandlers } from '@govhub/dapi';
 import { describe, expect, it } from 'vitest';
 import { bytesToHex, hash160, hexToBytes } from '../src/bytes.ts';
 import {
-  classifyRegistrationError, discardFunding, fundingRecordKey, nextTopUpIndex, pendingFundings, pickInputs, runFunding, sessionTopUpKey, type FundingRecord, type FundingStore, type FundingView,
+  classifyRegistrationError, discardFunding, FundingError, fundingRecordKey, LockTooSmallError, nextTopUpIndex, pendingFundings, pickInputs, runFunding, sessionTopUpKey, stillNeededDuffs,
+  type FundingRecord, type FundingStore, type FundingView,
 } from '../src/funding.ts';
 import { addressOf, publicKeyOf, wifOf } from '../src/keys.ts';
-import { MIN_CREATE_LOCK_DUFFS } from '../src/layout.ts';
+import {
+  CREATE_KEYS, createRequiredCredits, MIN_CREATE_DEPOSIT_DUFFS, MIN_CREATE_LOCK_DUFFS, MIN_TOPUP_DEPOSIT_DUFFS, MIN_TOPUP_LOCK_DUFFS, topUpRequiredCredits,
+} from '../src/layout.ts';
 import type { AssetLockProofInput, PlatformPort } from '../src/platform.ts';
 import { registrationFundingPath, SeedWallet } from '../src/seed.ts';
 import { makeSession } from '../src/signin.ts';
-import { AssetLockError, buildAssetLock, buildPayment, identityIdFromOutpoint } from '../src/tx.ts';
+import { AssetLockError, buildAssetLock, buildPayment, estimateAssetLockFee, identityIdFromOutpoint } from '../src/tx.ts';
 
 const PHRASE = 'legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth title';
 const PHRASE_B = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
@@ -440,5 +443,183 @@ describe('pickInputs', () => {
     expect(pickInputs(dust, 1n, 1n)).toBeNull();
     const many = Array.from({ length: 150 }, (_, i) => ({ txid: String(i), value: '5000' }));
     expect(pickInputs(many, BigInt(MIN_CREATE_LOCK_DUFFS), 201_000n)).toHaveLength(100);
+  });
+});
+
+// D-006: Platform's real floor (PV13 v4.1.1 = PV14 v5.0.0-rc.8): 2,000,000 base + 200,000 duffs x 1000 + 3 keys x 6,500,000.
+describe('D-006: the create minimum is what Platform needs for the 3-key identity', () => {
+  it('derives 221,500,000 credits (the number testnet refused a 209,646-duff lock with) and asks a depositor for more', () => {
+    expect(CREATE_KEYS).toHaveLength(3);
+    expect(createRequiredCredits(3)).toBe(221_500_000n);
+    expect(topUpRequiredCredits()).toBe(50_500_000n);
+    expect(MIN_CREATE_LOCK_DUFFS).toBe(221_500);
+    expect(MIN_TOPUP_LOCK_DUFFS).toBe(50_500);
+    // a single payment of the advertised amount locks at least the floor after the Core fee, with room for more payments
+    expect(MIN_CREATE_DEPOSIT_DUFFS).toBe(224_000);
+    expect(MIN_TOPUP_DEPOSIT_DUFFS).toBe(53_000);
+    for (const [deposit, floor] of [[MIN_CREATE_DEPOSIT_DUFFS, MIN_CREATE_LOCK_DUFFS], [MIN_TOPUP_DEPOSIT_DUFFS, MIN_TOPUP_LOCK_DUFFS]] as const)
+      expect(BigInt(deposit) - estimateAssetLockFee(10)).toBeGreaterThanOrEqual(BigInt(floor));
+  });
+
+  it('classifies "needs N credits to start processing" as permanent', () => {
+    // as evo-sdk rc.8 threw it on testnet (a WasmSdkError: not an Error, code -1)
+    const s3 = { name: 'ProtocolError', code: -1, message: 'Failed to create identity: Protocol error: Asset lock transaction [hex] output 0 only has 209646000 credits left out of 209646000 initial credits on the asset lock but needs 221500000 credits to start processing' };
+    expect(classifyRegistrationError(s3)).toBe('too-small');
+    expect(classifyRegistrationError({ code: 10530, message: 'x' })).toBe('too-small');
+    expect(classifyRegistrationError(new Error('IdentityAssetLockTransactionOutPointNotEnoughBalanceError'))).toBe('too-small');
+  });
+});
+
+/** A create record whose lock (built under the old 200,000-duff floor) holds `lockDuffs`, IS-locked and broadcast, as S3's s3-G left it. */
+function stuckRecord(lockDuffs: bigint): FundingRecord {
+  const fk = SeedWallet.fromPhrase(PHRASE, 'testnet').derive(registrationFundingPath('testnet', 0));
+  const h = hash160(fk.publicKey);
+  const dep = { txid: 'dd'.repeat(32), vout: 0, value: (lockDuffs + estimateAssetLockFee(1)).toString(), confirmed: true };
+  const b = buildAssetLock({ utxos: [{ txid: dep.txid, vout: 0, value: BigInt(dep.value) }], fundingKey: fk.privateKey, creditPubKeyHash: h });
+  expect(b.lockDuffs).toBe(lockDuffs);
+  return {
+    v: 2, key: keyFor(PHRASE), kind: 'create', network: 'testnet', identityIndex: 0, identityId: identityIdFromOutpoint(b.txid, b.creditIndex), address: addressOf(fk.publicKey, 'testnet'),
+    watchFromHeight: 990, deposits: [dep], lock: { raw: bytesToHex(b.raw), txid: b.txid, creditIndex: b.creditIndex, burnVout: b.burnVout, lockDuffs: b.lockDuffs.toString(), feeDuffs: b.feeDuffs.toString() },
+    isLock: '01' + 'ab'.repeat(100), proofKind: 'instant', state: 'registering', createdAt: 1, updatedAt: 1,
+  };
+}
+
+/** A Platform with one existing identity whose balance a top-up raises by the lock's credits. */
+function topUpPlatform(target: string, balance: bigint) {
+  const base = fakePlatform();
+  const topUps: Array<{ identityId: string; proof: AssetLockProofInput; keyHash: string }> = [];
+  const balances = new Map([[target, balance]]);
+  const p: PlatformPort & { topUps: typeof topUps; calls: string[] } = {
+    ...base,
+    calls: base.calls,
+    topUps,
+    balance: async (id) => balances.get(id) ?? null,
+    identityKeys: async (id) => (balances.has(id) ? [] : null),
+    topUpIdentity: async ({ identityId, proof, assetLockKey }) => {
+      topUps.push({ identityId, proof, keyHash: bytesToHex(hash160(publicKeyOf(assetLockKey))) });
+      balances.set(identityId, balances.get(identityId)! + 209_646_000n);
+    },
+  };
+  return p;
+}
+
+describe('D-006: a lock too small to create an identity', () => {
+  const S3_REFUSAL = { name: 'ProtocolError', code: -1, message: 'Failed to create identity: Protocol error: Asset lock transaction [hex] output 0 only has 1000000000 credits left out of 1000000000 initial credits on the asset lock but needs 1500000000 credits to start processing' };
+
+  it('Platform refusing it is final: no chain-lock wait, no second proof, a LockTooSmallError with Platform\'s number', async () => {
+    // never mined: a chain-lock wait would hang the test
+    const s: Script = { events: [], deliverIsLock: true, mined: 0 };
+    const dapi = fakeDapi(s);
+    const platform = fakePlatform({ failWith: S3_REFUSAL });
+    const t0 = Date.now();
+    const e = await runFunding({
+      wallet: SeedWallet.fromPhrase(PHRASE, 'testnet'), dapi: dapi as unknown as Dapi, platform, store: memStore(), kind: 'create', identityIndex: 0, isLockWaitMs: 2000, pollMs: 10,
+      onUpdate: (v) => v.state === 'awaiting-deposit' && !v.receivedDuffs && !v.pendingDuffs && dapi.pay(payTo(v.address, 1_000_000n)),
+    }).catch((x) => x);
+    expect(e).toBeInstanceOf(LockTooSmallError);
+    expect(e).toBeInstanceOf(FundingError);
+    expect((e as LockTooSmallError).requiredCredits).toBe(1_500_000_000n);
+    expect((e as LockTooSmallError).canTopUp).toBe(true);
+    expect(platform.calls).toEqual(['instant']);
+    expect(Date.now() - t0).toBeLessThan(5000);
+  });
+
+  it('a stored lock below the floor is refused before anything is sent, and says it can still top up', async () => {
+    const store = memStore();
+    store.save(stuckRecord(209_646n));
+    const platform = fakePlatform();
+    const e = await runFunding({ wallet: SeedWallet.fromPhrase(PHRASE, 'testnet'), dapi: fakeDapi({ events: [], deliverIsLock: false, mined: 0 }) as unknown as Dapi, platform, store, kind: 'create', identityIndex: 0 }).catch((x) => x);
+    expect(e).toBeInstanceOf(LockTooSmallError);
+    expect((e as LockTooSmallError).lockCredits).toBe(209_646_000n);
+    expect((e as LockTooSmallError).requiredCredits).toBe(221_500_000n);
+    expect((e as Error).message).toMatch(/0\.00209646 DASH.*0\.002215 DASH.*top up an account that already exists/);
+    expect(platform.calls).toEqual([]);
+  });
+
+  it('recoverInto spends the stored lock with its own key as a top-up of an existing identity, once', async () => {
+    const target = '8GqCCpTFpgPREMUTqHESkuDMvkrfwBEd45fVeLUEYKYL';
+    const store = memStore();
+    const rec0 = stuckRecord(209_646n);
+    store.save(rec0);
+    const platform = topUpPlatform(target, 7n);
+    const dapi = fakeDapi({ events: [], deliverIsLock: false, mined: 0 });
+    const opts = { wallet: SeedWallet.fromPhrase(PHRASE, 'testnet'), dapi: dapi as unknown as Dapi, platform, store, kind: 'create' as const, identityIndex: 0 };
+    // an unknown identity is refused, and nothing is sent
+    const missing = await runFunding({ ...opts, recoverInto: 'EzZz'.repeat(11) }).catch((x) => x);
+    expect(missing).toBeInstanceOf(FundingError);
+    expect((missing as Error).message).toMatch(/no identity/);
+    expect(platform.topUps).toHaveLength(0);
+    expect(store.m.get(keyFor(PHRASE))!.recoveredInto).toBeUndefined();
+
+    const r = await runFunding({ ...opts, recoverInto: target });
+    expect(r.identityId).toBe(target);
+    expect(platform.topUps).toHaveLength(1);
+    expect(platform.topUps[0]!.identityId).toBe(target);
+    expect(platform.topUps[0]!.proof.kind).toBe('instant');
+    expect(platform.topUps[0]!.keyHash).toBe(bytesToHex(hash160(SeedWallet.fromPhrase(PHRASE, 'testnet').derive(registrationFundingPath('testnet', 0)).publicKey)));
+    expect(platform.calls).toEqual([]); // never a create
+    const rec = store.m.get(keyFor(PHRASE))!;
+    expect(rec).toMatchObject({ state: 'done', recoveredInto: target, balanceBefore: '7' });
+    expect(pendingFundings(store, 'testnet')).toEqual([]);
+    // the same lock is never pointed at a second identity
+    store.save({ ...rec, state: 'registering' });
+    await expect(runFunding({ ...opts, recoverInto: 'other' })).rejects.toThrow(/already being added to identity/);
+  });
+
+  it('recoverInto is refused before a lock exists', async () => {
+    const store = memStore();
+    const ac = new AbortController();
+    const e = await runFunding({
+      wallet: SeedWallet.fromPhrase(PHRASE, 'testnet'), dapi: fakeDapi({ events: [], deliverIsLock: false, mined: 0 }) as unknown as Dapi, platform: fakePlatform(), store, kind: 'create', identityIndex: 0, signal: ac.signal,
+      onUpdate: () => ac.abort(),
+    }).catch((x) => x);
+    expect(e).not.toBeInstanceOf(LockTooSmallError);
+    await expect(
+      runFunding({ wallet: SeedWallet.fromPhrase(PHRASE, 'testnet'), dapi: fakeDapi({ events: [], deliverIsLock: false, mined: 0 }) as unknown as Dapi, platform: fakePlatform(), store, kind: 'create', identityIndex: 0, recoverInto: 'x' }),
+    ).rejects.toThrow(/no unused asset lock/);
+  });
+});
+
+describe('D-032: an underpayment asks only for what is missing', () => {
+  it('received 0.001 of 0.00224: the view and the QR ask for 0.00124, and paying that finishes', async () => {
+    const s: Script = { events: [], deliverIsLock: true, mined: 0 };
+    const dapi = fakeDapi(s);
+    const views: FundingView[] = [];
+    let step = 0;
+    const r = await runFunding({
+      wallet: SeedWallet.fromPhrase(PHRASE, 'testnet'), dapi: dapi as unknown as Dapi, platform: fakePlatform(), store: memStore(), kind: 'create', identityIndex: 0, isLockWaitMs: 2000,
+      onUpdate: (v) => {
+        views.push(v);
+        if (v.state !== 'awaiting-deposit') return;
+        if (step === 0) {
+          step = 1;
+          expect(v.remainingDuffs).toBe(224_000n);
+          expect(v.uri).toBe(`dash:${v.address}?amount=0.00224`);
+          dapi.pay(payTo(v.address, 100_000n));
+        } else if (step === 1 && v.receivedDuffs === 100_000n) {
+          step = 2;
+          expect(v.remainingDuffs).toBe(124_000n);
+          expect(v.uri).toBe(`dash:${v.address}?amount=0.00124`);
+          dapi.pay(payTo(v.address, v.remainingDuffs));
+        }
+      },
+    });
+    expect(step).toBe(2);
+    expect(r.record.state).toBe('done');
+    expect(BigInt(r.record.lock!.lockDuffs)).toBeGreaterThanOrEqual(BigInt(MIN_CREATE_LOCK_DUFFS));
+  });
+
+  it('stillNeededDuffs: the minimum, the rest of it, the fee of one more input, never dust', () => {
+    const min = BigInt(MIN_CREATE_DEPOSIT_DUFFS);
+    const floor = BigInt(MIN_CREATE_LOCK_DUFFS);
+    expect(stillNeededDuffs([], floor, min)).toBe(min);
+    expect(stillNeededDuffs([{ value: '100000' }], floor, min)).toBe(124_000n);
+    expect(stillNeededDuffs([{ value: '224000' }], floor, min)).toBe(0n);
+    // enough in total but many inputs eat it in fees: one more payment covering the floor plus the bigger fee
+    const many = Array.from({ length: 20 }, () => ({ value: '11200' }));
+    const need = stillNeededDuffs(many, floor, min);
+    expect(pickInputs([...many, { value: need.toString() }], floor, min)).not.toBeNull();
+    expect(pickInputs([...many, { value: (need - 1n).toString() }], floor, min)).toBeNull();
+    expect(stillNeededDuffs([{ value: '223990' }], floor, min)).toBeGreaterThan(estimateAssetLockFee(2) - estimateAssetLockFee(1));
   });
 });

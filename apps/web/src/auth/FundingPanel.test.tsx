@@ -1,0 +1,97 @@
+// @vitest-environment happy-dom
+// D-032: an underpayment says what came in and what is still needed, and the wallet link / QR ask for just that.
+// D-006: a lock too small for Platform is final (no "Try again"), and a create's lock can top up an existing identity instead.
+import { LockTooSmallError, type FundingView } from '@govhub/auth';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { button, click, flush, render, type } from '../test/render.tsx';
+
+const runs: Array<Record<string, unknown>> = [];
+let script: (o: { onUpdate(v: FundingView): void; recoverInto?: string }) => Promise<{ identityId: string; record: { recoveredInto?: string } }>;
+vi.mock('@govhub/auth', async (orig) => ({
+  ...(await orig<typeof import('@govhub/auth')>()),
+  runFunding: (o: never) => (runs.push(o), script(o)),
+}));
+vi.mock('./context.tsx', () => ({ useAuth: () => ({ dapi: () => ({}), platform: async () => ({}), store: {} }) }));
+const { FundingPanel } = await import('./FundingPanel.tsx');
+
+const ADDRESS = 'yiKBLWNurnxpqgcQhr7r1uUxWd1nGzsN2e';
+const TARGET = '8GqCCpTFpgPREMUTqHESkuDMvkrfwBEd45fVeLUEYKYL';
+const view = (v: Partial<FundingView>): FundingView => ({
+  state: 'awaiting-deposit', address: ADDRESS, uri: `dash:${ADDRESS}?amount=0.00224`, minDuffs: 224_000, remainingDuffs: 224_000n, receivedDuffs: 0n, pendingDuffs: 0n, lateDuffs: 0n,
+  depositTxids: [], isLocked: false, ...v,
+});
+const never = () => new Promise<never>(() => {});
+
+beforeEach(() => void (runs.length = 0));
+
+describe('D-032: underpayment', () => {
+  it('shows "received X, still need Y" and the wallet link asks for Y only', async () => {
+    script = async (o) => {
+      o.onUpdate(view({ receivedDuffs: 100_000n, remainingDuffs: 124_000n, uri: `dash:${ADDRESS}?amount=0.00124` }));
+      return never();
+    };
+    const r = await render(<FundingPanel kind="create" wallet={null} identityIndex={0} onDone={() => {}} />);
+    await flush();
+    expect(r.el.querySelector('[data-testid="underpaid"]')!.textContent).toMatch(/Received 0\.001 DASH, still need 0\.00124 DASH/);
+    expect(r.el.querySelector<HTMLAnchorElement>('a[href^="dash:"]')!.getAttribute('href')).toBe(`dash:${ADDRESS}?amount=0.00124`);
+    expect(r.el.textContent).not.toMatch(/Send at least/);
+    await r.unmount();
+  });
+
+  it('asks for the minimum before anything arrived', async () => {
+    script = async (o) => (o.onUpdate(view({})), never());
+    const r = await render(<FundingPanel kind="create" wallet={null} identityIndex={0} onDone={() => {}} />);
+    await flush();
+    expect(r.el.textContent).toMatch(/Send at least 0\.00224 DASH/);
+    expect(r.el.querySelector('[data-testid="underpaid"]')).toBeNull();
+    await r.unmount();
+  });
+});
+
+describe('D-006: lock too small', () => {
+  it('is final: no "Try again", no "Retry continues"; the lock tops up an existing identity instead', async () => {
+    const onDone = vi.fn();
+    script = async (o) => {
+      o.onUpdate(view({ state: 'registering', remainingDuffs: 0n, lockTxid: 'd3'.repeat(32) }));
+      if (!o.recoverInto) throw new LockTooSmallError('create', 209_646_000n, 221_500_000n);
+      if (o.recoverInto !== TARGET) throw new Error(`There is no identity ${o.recoverInto} on Dash Platform (testnet).`);
+      return { identityId: TARGET, record: { recoveredInto: TARGET } };
+    };
+    const r = await render(<FundingPanel kind="create" wallet={null} identityIndex={0} onDone={onDone} />);
+    await flush();
+    const box = r.el.querySelector('[data-testid="lock-too-small"]')!;
+    expect(box.textContent).toMatch(/0\.00209646 DASH.*0\.002215 DASH/);
+    expect(r.el.textContent).not.toMatch(/Try again|Retrying continues/);
+    await click(button(r.el, /Use these funds to top up an existing identity/));
+    const input = r.el.querySelector<HTMLInputElement>('[data-testid="recover-identity"]')!;
+    await type(input, 'not an id');
+    await click(button(r.el, /Top up this identity/));
+    expect(r.el.textContent).toMatch(/not an identity id/);
+    expect(runs).toHaveLength(1);
+    // an id Platform does not know: back to the choice with the reason, nothing tied to it
+    const unknown = '3o9H4W5zi6SweXxu8QgJ9HaqGeGmky4onLuE8Y2SyZt4';
+    await type(input, unknown);
+    await click(button(r.el, /Top up this identity/));
+    await flush();
+    expect(runs.map((x) => x.recoverInto)).toEqual([undefined, unknown, undefined]);
+    expect(r.el.textContent).toContain(`There is no identity ${unknown}`);
+    await type(r.el.querySelector<HTMLInputElement>('[data-testid="recover-identity"]')!, TARGET);
+    await click(button(r.el, /Top up this identity/));
+    await flush();
+    expect(runs.at(-1)!.recoverInto).toBe(TARGET);
+    expect(r.el.querySelector('[data-testid="recovered"]')!.textContent).toContain(TARGET);
+    expect(onDone).not.toHaveBeenCalled(); // never signs in as the identity that was never created
+    await r.unmount();
+  });
+
+  it('a top-up lock too small offers nothing but the reason', async () => {
+    script = async () => {
+      throw new LockTooSmallError('topup', 50_000_000n, 50_500_000n);
+    };
+    const r = await render(<FundingPanel kind="topup" wallet={null} identityIndex={0} topUp={{ identityId: TARGET, index: 0 }} onDone={() => {}} />);
+    await flush();
+    expect(r.el.querySelector('[data-testid="lock-too-small"]')).not.toBeNull();
+    expect(r.el.querySelectorAll('button')).toHaveLength(0);
+    await r.unmount();
+  });
+});
