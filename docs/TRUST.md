@@ -51,7 +51,10 @@ drawer and from `/about/verification`.
   and the proposal, packed tally set, tally and cycle documents. The app does not prove those keys against its own verified chain. The service is
   not replaceable in Settings. This is the largest gap between the "can't lie" goal and the code (section 6.6).
 - **Badge issuers** vouch for "MN owner" chips on their own word (section 6.3).
-- **Relays** decide when, and whether, your vote reaches the network (section 6.2).
+- **The starter issuer and the faucet** are run by the same team. A starter token is blind-signed, but the two can still match
+  a masternode or proposal to the account it funded by request time or IP (section 6.4).
+- **Relays** decide when, and whether, your vote reaches the network, and whether a proposal you paid for is submitted
+  (section 6.2).
 - **Whoever serves the app** decides what code runs. There is no reproducible build or published hash yet (section 2.1).
 
 Surprising findings, all detailed below:
@@ -175,8 +178,12 @@ Your keys never leave the browser:
 - Masternode voting keys sign votes in the browser (`apps/web/src/voting/plan.ts:152-167`; `packages/verify/src/vote.ts:111`).
   A relay gets only the signed vote.
 - Platform identity keys sign state transitions in the browser through evo-sdk (`packages/auth/src/evo.ts`).
+- One-time keys derived from your phrase or sign-in key (account funding, top-ups, proposal fee deposits) sign asset locks,
+  proposal collaterals and Recover sweeps in the browser (`packages/auth/src/tx.ts`; 6.10). A secret typed into Recover stays in
+  memory and is wiped when you leave the tool (`apps/web/src/auth/Recover.tsx:50-61`).
 
-Anyone with your voting key can vote as your masternode. Anyone with your recovery phrase controls your identity. The same-tab
+Anyone with your voting key can vote as your masternode. Anyone with your recovery phrase controls your identity, and any
+funds still at its one-time deposit keys. The same-tab
 and cross-tab handling of those secrets is covered in section 8.
 
 ### 2.7 Identifiers pinned in the build
@@ -346,6 +353,7 @@ that the content is true.
 | Reaction scores | Counted in the browser from Platform-proven reactions (`apps/web/src/ui/Votes.tsx:1-3`). | 6.6. Anyone can create identities, so scores are not sybil-resistant. | — |
 | Identity balance | `identities.balanceWithProof` (`packages/auth/src/evo.ts:499-500`). | 6.6. | — |
 | Starter credit (voucher) | The voucher transaction from DAPI. Platform validates the asset lock when it creates the identity (`packages/auth/src/voucher.ts`). | Faucet: can refuse, can spend the voucher first, and knows which identity it funds (6.4). | "This voucher has already been used". |
+| Starter credit (blind starter token) | The token's signature against the starter issuer's per-epoch key, proved from Platform; the faucet's payment watched on chain; the identity created with your keys (6.4). | Starter issuer: can refuse or mint extra tokens. Faucet: can refuse or run out. Together, by time or IP, they can link the masternode or proposal to the funded account. | The faucet's refusal reason. |
 | USD price | CoinGecko, reported (`repo.ts:342-354`). Fetched only when the Core network is mainnet (Dev profile included). | CoinGecko: any number. | Marked reported. |
 
 ## 6. Backend by backend
@@ -478,7 +486,35 @@ own node.
 - The aim is that your masternodes' votes do not appear on chain in one burst.
 - The relay still learns the plan in advance: which masternodes submitted together, from which IP, and how they voted (7).
 
-**Proposal submission.** The relay also offers `POST /v1/proposals/submit`, but the web app on `main` does not call it.
+**Proposal submission (the "New proposal" wizard).**
+
+- **In the browser.** The wizard builds `dataHex` and checks it against Core's proposal rules (`checkNewProposal`,
+  `packages/verify/src/newproposal.ts:251-286`), then fixes `time` and the governance hash (`lockProposal`,
+  `newproposal.ts:300-304`). It saves the draft locally and asks for a backup file before payment (`apps/web/src/proposal/draft.ts`;
+  `PayStep.tsx`). The backup holds the full proposal and the `gobject prepare` and `gobject submit` commands, and no keys.
+- **The fee.** You pay to a one-time deposit address derived from your sign-in key or seed (`packages/auth/src/proposal.ts:49-68`).
+  The browser builds and signs the collateral: an `OP_RETURN` of the hash burning 1 DASH, plus change to a refund address
+  (`buildProposalCollateral`, `packages/auth/src/tx.ts:263-295`). It checks that collateral with `checkCollateralTx`, and
+  broadcasts it over DAPI, never through a relay (`proposal.ts:347-392`). You can also pay with your own Dash Core's
+  `gobject prepare` and paste the txid.
+- **The relay holds it.** Right after the broadcast, the browser hands `{network, time, dataHex, collateralTxid}` to a relay
+  (`POST /v1/proposals`, `apps/web/src/proposal/relay.ts`). The relay checks the data and the collateral against its own Core,
+  then runs `gobject submit` itself once its Core counts 6 confirmations (`services/relay/src/proposer.ts:180-211`). It
+  refuses a submit result whose hash differs. A relay without this endpoint gets `POST /v1/proposals/submit` after the browser's
+  own count reaches 6 (`submission.ts:88-93`).
+- **What the browser checks.** It checks the collateral it fetched over DAPI with `checkCollateralTx`, and counts confirmations
+  against its verified chain (`apps/web/src/proposal/services.ts:110-133`). After "submitted", it looks for the proposal on the
+  first bridge ("Seen by the network") and on Platform ("On govhub").
+- **What a relay can do.** It can refuse, delay, or never submit. "Waiting" and "submitted" are its word. While it reports
+  "waiting", the browser asks no other relay, and after "submitted" it never re-submits (`submission.ts:39,112-121`). Both
+  deployed profiles list one relay.
+- **What it can't do.** It can't alter the proposal: the collateral burns to its hash. To submit different content it would
+  have to pay its own 1 DASH collateral.
+- **Your way around it.** Run the `gobject submit` command from the backup on your own Dash Core node. "I submitted it" in the
+  page is not checked; it only records what you say (`SubmitStep.tsx:126-143`).
+- **Privacy.** The relay learns your IP and the poll timing (about every 45 s while the page is open), and the full proposal.
+  A govhub URL contains your identity id. It stores no IP, rounds times to the hour, and deletes finished records after 7 days
+  (`services/relay/src/db.ts:131-150`; `services/relay/README.md`).
 
 ### 6.3 Badge issuers (`services/issuer`)
 
@@ -549,26 +585,47 @@ the epoch requested, in timing, and in a crowd-size check. The issuer endpoint i
 
 ### 6.4 Faucet and starter credit
 
-**How it works on `main`.**
+There are two ways to get starter credit for a new account: a voucher link, and a blind starter token.
 
-- The app never calls the faucet. A voucher is a `dashpay://invite?...` link the user pastes (`registry.ts:81`;
-  `packages/auth/src/voucher.ts:1-41`).
-- The app fetches the voucher transaction over DAPI and creates the identity with the user's own keys. The voucher key signs
-  only as the asset-lock key (`voucher.ts:60-116`; `packages/auth/src/evo.ts:515`).
-- The faucet service (faucet.dashhq.org) is not in this repository. Its limits and logs are not verified by the app.
+**Voucher links.**
 
-**What the faucet can do:**
+- A voucher is a `dashpay://invite?...` link the user pastes (`registry.ts:81`; `packages/auth/src/voucher.ts:1-41`). The app
+  fetches the voucher transaction over DAPI and creates the identity with the user's own keys. The voucher key signs only as the
+  asset-lock key (`voucher.ts:60-116`; `packages/auth/src/evo.ts`).
+- The faucet can refuse or run out. It can spend the voucher first: the link carries the voucher's private key, which the
+  faucet made; the app then says "This voucher has already been used" (`voucher.ts:74,95`). It knows which identity its
+  voucher funded, since the identity id is derived from the voucher's outpoint (`voucher.ts:64`), which it created.
 
-- **Refuse or run out.**
-- **Spend the voucher first.** The link carries the voucher's private key, which the faucet made. It can use the asset lock
-  itself; the app then says "This voucher has already been used" (`voucher.ts:74,95`).
-- **Link the voucher to your identity.** The identity id is derived from the voucher's outpoint (`voucher.ts:64`), which the
-  faucet created. So the faucet knows which identity its voucher funded, and can join that with whatever it recorded when it
-  handed the voucher out. What it records is not determinable from this repository.
+**Blind starter tokens** (`apps/web/src/starter/`; `packages/badge/src/starter.ts`; `services/issuer/src/starter.ts`;
+`services/issuer/README.md`). One starter per masternode and per proposal, for life.
 
-**What it can't do:** control the identity, whose keys are yours.
+- **Getting a token.** A masternode proves itself with a signature by its voting key; a proposal with a signature by its
+  payment address (P2PKH only), signed in Dash Core (`starter.ts:117-123`). A masternode must not be PoSe-banned, and must have
+  had the same collateral at the epoch start; a proposal may have ended at most 30 days ago (`starter.ts:133-140`). The issuer
+  blind-signs (RFC 9474, like badges) a message binding the hash of the new account's one-time funding key
+  (`packages/badge/src/starter.ts:11-15`). The browser blinds only against the starter identity's per-epoch key that it reads,
+  proved, from Platform, and checks the signature it gets back (`apps/web/src/starter/client.ts:93-106,315-320`).
+- **Redeeming it.** The browser sends the faucet `{network, epoch, address, msgPrefix, sig}` and nothing about the masternode
+  or proposal (`apps/web/src/badge/workerOps.ts:57-58`). The faucet pays plain DASH to that one-time address. The browser
+  builds the asset lock and creates the identity with its own keys (`packages/auth/src/funding.ts`). A token is bound to that
+  address, so nobody who sees it can redeem it for another one.
+- **The starter issuer** learns which masternode or proposal asked, and when, but not the funding address, which is blinded.
+  It can refuse, and since it holds the signing key it can issue extra tokens: there is no public count for starters. It keeps
+  `(kind, subject, collateral)` for life, so it holds the list of masternodes and proposals that took a starter; the epoch and
+  blinded-message hash are cleared when the epoch's window closes (`services/issuer/src/starter-db.ts`).
+- **The faucet** learns the funding address, the epoch and the token, not the masternode or proposal. Chain data then shows
+  which identity the deposit funded. It can refuse, run out, or pay without a valid token. Whether it verifies tokens, refuses
+  double redemptions and keeps no logs is its word; its code (`dash-faucet-cf`) is not in this repository.
+- **Timing and IP.** The same team runs the starter issuer and the faucet, and both see your IP. "Redeem now" is the default,
+  and lets them match the two requests by time. "Redeem later" waits a random 15 minutes to 6 hours, which removes the timing
+  link but not the IP; the page says so and suggests Tor or a VPN (`apps/web/src/starter/StarterPanel.tsx:66-73,282-292`).
+  There is no privacy mode or crowd-size check for starters. Anyone can see that the faucet paid the account, which marks it as
+  some masternode's or proposal owner's account.
+- **Where.** The starter issuer is pinned in code, for testnet Platform only (Testnet and Dev profiles); mainnet has none
+  (`apps/web/src/starter/config.ts:16-35`). On Dev it checks testnet masternodes and proposals.
 
-Blind starter tokens, which would remove the link, are not on `main` (section 9).
+**What neither can do:** control the identity, whose keys are yours; or, for a starter token, link it cryptographically to the
+masternode or proposal (the issuer signs blind).
 
 ### 6.5 DAPI evonodes (Core data)
 
@@ -682,6 +739,30 @@ configuration yet.
 - **Dash's quorum list service** (`quorums.<network>.networks.dash.org`) serves the DAPI node list (claimed, replaceable),
   the Platform quorum keys and node list (trusted, 6.6), and on testnet a quorum-proof relay (untrusted, 6.7).
 
+### 6.10 Recover (Settings, "Recover")
+
+The Recover tool finds money stuck at govhub's one-time keys and lets you send it on (`apps/web/src/auth/Recover.tsx`;
+`packages/auth/src/recovery.ts`; [`docs/RECOVERY.md`](RECOVERY.md)).
+
+- **What it finds.** Unspent payments to the account-funding, top-up and proposal-fee deposit keys of your phrase or pasted
+  key, and asset locks paying them that Platform does not prove fully used (`recovery.ts:442-462`). A payment can be swept to an
+  address you type, or used to create or top up an identity. An asset lock can only create or top up an identity
+  (`recovery.ts:512,585`). Proposal-fee deposits can only be swept.
+- **Who it talks to.** DAPI nodes and Platform, nothing else: no bridge, relay, issuer or faucet.
+- **What it checks.** Each transaction's bytes must hash to a txid that a merkleblock from the scan proves into its block
+  header, and up to two other nodes must not contradict it (`recovery.ts:293-354`). The scan must cover every block it asked
+  for (`recovery.ts:312-316`). Lock status is a proved Platform read (`evo.ts:506-515`), rechecked before use. The sweep is
+  built and signed in the browser, and the node must return its txid (`recovery.ts:590-605`).
+- **What it doesn't check.** The block headers are a node's word: they are not tied to the chain verified in section 3, and
+  have no proof-of-work check. The heights it shows are reported.
+- **What nodes can do.** Withhold a payment or lock, so the scan says nothing is stuck. Hide a spend, so a spent payment shows
+  as unspent; the network then refuses the sweep ("already spent… Scan again"). Fabricating a payment or lock gets nowhere: the
+  sweep is refused, and Platform refuses a fake lock. Scanning again, on other nodes, is the only remedy.
+- **What Platform (6.6) can do.** A false "used" status drops a lock from the list.
+- **What they learn.** The scan nodes get your IP and one bloom filter covering every one-time key of the pass, which links
+  those keys to each other. Other nodes see the txids it cross-checks. The broadcast node sees the sweep: destination and
+  amount. Platform sees the key hashes it looks up and the lock outpoints.
+
 ## 7. Privacy
 
 Privacy is separate from correctness: a backend that can't lie can still learn things.
@@ -690,11 +771,12 @@ Privacy is separate from correctness: a backend that can't lie can still learn t
 |---|---|
 | Web host (GitHub Pages, Cloudflare) | Your IP, the pages you load, and when. |
 | Bridge | Your IP, and which proposals' votes and lists you fetch. This includes the vote-confirmation polling for proposals you voted on. Up to two other configured bridges (normally failover only) are also asked for a proposal's vote set right after the first bridge reports your vote, so they too can link your IP, by timing, to that proposal and your masternode. |
-| Relay | Your IP, the timing, which masternodes submit together, and **how each one voted** before the vote is public (`services/relay/README.md`, "Threat model and privacy": public unlinkability only). |
+| Relay | Your IP, the timing, which masternodes submit together, and **how each one voted** before the vote is public (`services/relay/README.md`, "Threat model and privacy": public unlinkability only). For a proposal you submit: your IP and poll timing, linked to the full proposal and its collateral (6.2). |
 | Badge issuer | Which masternode asked, when, and from which IP. In Standard mode, likely which identity received the badge, by timing (6.3). |
-| Faucet | Which identity its voucher funded (6.4). |
-| DAPI evonodes | Your IP. The bloom filter of a funding address you watch. The transactions you look up (proposal collaterals). |
-| Platform nodes | Your IP. Every document, identity and name you read. The state transitions you sign. |
+| Faucet | Which identity its voucher funded. For a starter token: your IP, and the funding address, which chain data ties to your new identity; not the masternode or proposal (6.4). |
+| Starter issuer | Which masternode or proposal asked for a starter, when, and from which IP. Run by the same team as the faucet, so "Redeem now" lets the two be matched by time, and the same IP at both always can (6.4). |
+| DAPI evonodes | Your IP. The bloom filter of a funding or proposal-deposit address you watch; in Recover, one filter covering all your one-time keys, which links them. The transactions you look up and broadcast (proposal collaterals, Recover sweeps). |
+| Platform nodes | Your IP. Every document, identity and name you read. The state transitions you sign. In Recover, the key hashes it looks up and the asset-lock outpoints it checks (6.10). |
 | Quorum list service | Your IP, when the app starts. On testnet, also each quorum-proof request during verification. |
 | CoinGecko | Your IP, whenever the Core network is mainnet (Dev profile included). |
 
@@ -708,7 +790,9 @@ privacy").
   when the epoch's window closes. The other tables hold per-epoch counts and settings (`services/issuer/src/db.ts:59-74`,
   `epochs.ts`). Logs are lifecycle, errors and hourly aggregate
   counters. `services/issuer/test/logging.test.ts` runs a full issuance with an IP and user-agent header and fails if either,
-  or the proTxHash or outpoint, appears in any output.
+  or the proTxHash or outpoint, appears in any output. It does the same for a masternode and a proposal starter (proTxHash,
+  collateral, govHash, payment address), and checks that the starter store is one table of exactly `(kind, subject,
+  collateral, epoch, blinded_hash)`.
 - **Relay.**
   - Votes have no IP column.
   - The receive time is rounded to the hour (`services/relay/src/relay.ts:251`).
@@ -793,13 +877,14 @@ privacy").
       (`worker.ts:225`). On the quorum-proof path a testnet proposal reaches "Verified" with every voter's key proven.
 13. **The chain shield's wording.** It says Platform reads are checked "against the quorum signature"
     (`apps/web/src/ui/trust/ChainShield.tsx:133`), but not that the quorum keys come from the quorum service (6.6).
+14. **Recover's scan is not anchored** (6.10). Its block headers are a node's word, so nodes can hide stuck funds or a spend
+    from it. It can't be made to send your money anywhere you didn't type.
+15. **A relay can sit on a paid proposal** (6.2). While it says "waiting", no other relay is asked; the backup's `gobject submit`
+    command on your own node is the way around it.
 
 ## 9. Planned work (not on main)
 
-This work is in progress and not on `main`. Everything above describes `main`.
-
-- **`starter-tokens`:** blind starter tokens for masternode and proposal owners. Once merged, a faucet could fund an identity
-  without learning which one, which removes the link in 6.4. It could still refuse.
+Everything above describes `main`. No trust-relevant work is pending outside it as of this revision.
 
 ## 10. Self-hosting and replacing backends
 

@@ -26,6 +26,10 @@ const POINTS: Array<[string, string]> = [
     'Comments, profiles, badges, block lists and the list of proposals are read from Dash Platform with proofs. The keys those proofs are checked against come from Dash’s public quorum service, which the app trusts today instead of proving.',
   ],
   [
+    'Starter credit is blind, but not unlinkable.',
+    'The starter issuer checks your masternode or proposal and signs a token it can’t see; the faucet pays your new account without learning which masternode or proposal it was for. The same team runs both, so redeeming at once, or from the same IP, still lets them match the two. “Redeem later” removes the timing link.',
+  ],
+  [
     '“MN · vouched by X” is X’s word.',
     'A badge issuer could vouch for someone who runs no masternode. You choose which issuers to trust in Settings. Blind signatures stop an issuer from linking a badge to a masternode, unless it matches them by timing (Standard mode).',
   ],
