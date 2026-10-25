@@ -18,7 +18,8 @@ const nonceErr = (what: string) => err(`Identity x is trying to set an invalid i
 type Doc = { id: string; type: string; revision: bigint; properties: Record<string, unknown> };
 type State = { height: bigint; nonce: bigint; docs: Map<string, Doc>; keys: Map<number, Uint8Array>; revision: bigint };
 type Tx = { kind: 'create' | 'replace' | 'delete'; id: string; type: string; nonce: bigint; revision?: bigint; properties?: Record<string, unknown>; pv?: number };
-type Send = { before?: unknown; after?: unknown } | void;
+/** `hang`: executes, then the result stream stays silent for that many real ms before answering (`after` then rejects it). */
+type Send = { before?: unknown; after?: unknown; hang?: number } | void;
 
 function chain(o: {
   version?: number;
@@ -45,7 +46,7 @@ function chain(o: {
     if (r && typeof r === 'object') throw r.error;
     return history[Math.max(0, history.length - 1 - (r ?? 0))]!;
   };
-  const log = { sends: [] as unknown[], signs: 0, updates: 0, refreshes: 0 };
+  const log = { sends: [] as unknown[], signs: 0, updates: 0, refreshes: 0, answered: 0 };
 
   const apply = (tx: Tx) => {
     const s = clone(tip());
@@ -179,6 +180,10 @@ function chain(o: {
         log.sends.push(st);
         if (script.before) throw script.before;
         apply(st.tx);
+        if (script.hang) {
+          await new Promise((r) => setTimeout(r, script.hang));
+          log.answered++;
+        }
         if (script.after) throw script.after;
       },
     },
@@ -298,6 +303,34 @@ describe('writeDocument: creates', () => {
     await expect(write(later, create())).rejects.toMatchObject({ message: expect.stringMatching(/unique index/) });
     expect(later.reads.doc).toBeGreaterThanOrEqual(5);
     expect(later.tip().docs.size).toBe(0);
+  });
+});
+
+describe('writeDocument: a silent result stream (D-041)', () => {
+  it('a create is done once a proved read shows it, without waiting for broadcastAndWait to answer', async () => {
+    const c = chain({ send: () => ({ hang: 400 }) });
+    const r = await write(c, create());
+    expect(c.log.answered).toBe(0); // returned before the wait answered
+    expect(c.tip().docs.has(r.id)).toBe(true);
+    expect(c.log.sends).toHaveLength(1);
+  });
+
+  it('the same for a replace and a delete; a wait that then times out changes nothing', async () => {
+    const rep = chain({ docs: [stored()], send: () => ({ hang: 400, after: timeout() }) });
+    await expect(write(rep, { action: 'replace', contractId: contract, type: 'profile', id: docId, revision: 3, data: { displayName: 'new' } })).resolves.toEqual({ id: docId, revision: 4 });
+    expect(rep.log.answered).toBe(0);
+    const del = chain({ docs: [stored()], send: () => ({ hang: 400, after: timeout() }) });
+    await expect(write(del, { action: 'delete', contractId: contract, type: 'profile', id: docId })).resolves.toEqual({ id: docId });
+    expect(del.log.answered).toBe(0);
+    expect(del.tip().docs.has(docId)).toBe(false);
+    await new Promise((r) => setTimeout(r, 450)); // the late timeouts are absorbed, not unhandled
+  });
+
+  it('a write that has not executed is not reported done by the reads: the wait still decides', async () => {
+    const c = chain({ send: () => ({ before: undefined, hang: 50 }), read: (k) => (k === 'doc' ? 1 : 0) }); // reads lag one block behind
+    const r = await write(c, create());
+    expect(c.log.answered).toBe(1);
+    expect(c.tip().docs.has(r.id)).toBe(true);
   });
 });
 

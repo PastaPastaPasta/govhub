@@ -105,6 +105,12 @@ const READS = 5;
 const PRE_READS = 4;
 const sendBackoff = (i: number) => Math.min(2500 * (i + 1), 10_000);
 const readBackoff = (i: number) => Math.min(1000 * 2 ** i, 8000);
+/**
+ * Proved reads alongside a broadcastAndWait that has not answered: the first after 2 s (a write usually executes by then), then every
+ * 1.5 s, at most PROVE_READS of them (about 40 s, past the result stream's 30 s timeout); after that the wait alone decides.
+ */
+const proveDelay = (i: number) => (i === 0 ? 2000 : 1500);
+const PROVE_READS = 25;
 
 export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, opts: EvoPlatformOptions = {}): PlatformPort {
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
@@ -394,13 +400,41 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
     let last: unknown;
     const unconfirmed = () => new Error(plan.unconfirmed?.() ?? `Platform did not confirm this write (${errText(last)}). It may still appear; reload before trying again.`);
 
+    /**
+     * broadcastAndWait, settled early by proved state. A node's result stream can stay silent until its timeout (about 30 s) although
+     * the transition executed in about 2 s (govhub QA D-041), so proved reads run alongside the wait and the write is done as soon as
+     * one shows it. True when a proved read settled it; otherwise it resolves or throws as broadcastAndWait does.
+     */
+    const broadcastOrProved = (wait: Promise<unknown>): Promise<boolean> => {
+      let answered = false;
+      const waited = wait.then(
+        () => ((answered = true), false),
+        (e: unknown) => {
+          answered = true;
+          throw e;
+        },
+      );
+      const proved = (async () => {
+        await Promise.resolve(); // a wait that answers at once (tests, refusals) never starts the reads
+        for (let i = 0; i < PROVE_READS && !answered; i++) {
+          await sleep(proveDelay(i));
+          if (!answered && (await tryCheck()).state === 'done') return true;
+        }
+        return new Promise<boolean>(() => {}); // the wait answered: it decides
+      })();
+      return Promise.race([waited, proved]);
+    };
+
     let nonce = (first.hit.raw & NONCE_VALUE) + 1n;
     let st = sign(nonce);
     let sent = false; // an earlier send of ours may have executed
+    let inFlight: Promise<unknown> | null = null; // the SDK may still hold `st` after a proved read settled the write
     try {
       for (let i = 0; i < MAX_SENDS && (i === 0 || now() < deadline); i++) {
         try {
-          await sdk.stateTransitions.broadcastAndWait(st);
+          const wait = sdk.stateTransitions.broadcastAndWait(st);
+          inFlight = wait;
+          await broadcastOrProved(wait);
           return plan.result();
         } catch (e) {
           last = e;
@@ -444,7 +478,9 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
       if (await settled()) return plan.result();
       throw unconfirmed();
     } finally {
-      free(st);
+      const last = st;
+      if (inFlight) inFlight.then(() => free(last), () => free(last));
+      else free(last);
     }
   }
 
