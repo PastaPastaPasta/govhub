@@ -226,8 +226,9 @@ export function buildSweep(o: { utxos: readonly Utxo[]; key: Uint8Array; to: { t
   if (!o.utxos.length) throw new Error('nothing to send');
   if (o.utxos.length > 600) throw new Error('too many payments for one transaction');
   const total = o.utxos.reduce((a, u) => a + u.value, 0n);
-  const script = o.to.type === 'p2sh' ? p2shScript(o.to.hash160) : p2pkhScript(o.to.hash160);
-  const fee = estimateSweepFee(o.utxos.length, o.to.type === 'p2sh', o.feePerByte);
+  const p2sh = o.to.type === 'p2sh';
+  const script = p2sh ? p2shScript(o.to.hash160) : p2pkhScript(o.to.hash160);
+  const fee = estimateSweepFee(o.utxos.length, p2sh, o.feePerByte);
   const sent = total - fee;
   if (sent < DUST_DUFFS) throw new Error(`${total} duffs cannot pay the ${fee} duff fee and leave more than dust (${DUST_DUFFS} duffs)`);
   const raw = signAll(

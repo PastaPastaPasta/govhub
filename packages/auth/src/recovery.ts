@@ -21,7 +21,8 @@ import { BloomFilter, classifyScript, parseMerkleBlock, parseTx, type Dapi, type
 import { decodeAddress, type Network as AnyNetwork } from '@govhub/verify';
 import { bytesEqual, bytesToHex, hash160, hexToBytes, wipe } from './bytes.ts';
 import {
-  classifyRegistrationError, FundingError, fundingRecordKey, runFunding, sessionTopUpKey, tipHeight, withRecordLock, type FundingRecord, type FundingStore, type FundingView,
+  classifyRegistrationError, FundingError, fundingRecordKey, identityIndexTaken, runFunding, sessionTopUpKey, tipHeight, withRecordLock,
+  type FundingRecord, type FundingStore, type FundingView,
 } from './funding.ts';
 import { addressOf, wifOf, type Network } from './keys.ts';
 import { CREATE_KEYS, createRequiredCredits, CREDITS_PER_DUFF, MIN_CREATE_LOCK_DUFFS, MIN_TOPUP_LOCK_DUFFS, topUpRequiredCredits } from './layout.ts';
@@ -221,18 +222,20 @@ interface LaneKey {
   address: string;
 }
 
+const errText = (e: unknown) => (e && typeof e === 'object' && 'message' in e ? String((e as { message: unknown }).message) : String(e));
+const errCode = (e: unknown): number | undefined => {
+  const c = (e as { code?: unknown } | null)?.code;
+  return typeof c === 'number' ? c : undefined;
+};
+/** The network refused a transaction's inputs: already spent (or not known to that node). */
+const inputsRejected = (e: unknown) => /missing-?inputs|bad-txns-inputs-missingorspent|txn-mempool-conflict|inputs.*(spent|missing)/i.test(errText(e));
+
 export class RecoveryError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'RecoveryError';
   }
 }
-
-const errCode = (e: unknown): number | undefined => {
-  const c = (e as { code?: unknown } | null)?.code;
-  return typeof c === 'number' ? c : undefined;
-};
-const errText = (e: unknown) => (e && typeof e === 'object' && 'message' in e ? String((e as { message: unknown }).message) : String(e));
 
 function laneKey(lane: KeyLane, index: number, network: Network): LaneKey {
   const k = lane.derive(index);
@@ -349,6 +352,16 @@ async function secondOpinion(dapi: Dapi, tx: Tx, replayNodes: ReadonlySet<string
   return unknown ? null : undefined;
 }
 
+/** Platform's proved word on a lock; 'unknown' when the query fails (`log` hears why). */
+async function lockStatus(platform: PlatformPort, txid: string, creditIndex: number, log?: (m: string) => void): Promise<RecoveryLock['status']> {
+  try {
+    return await platform.assetLockStatus(txid, creditIndex);
+  } catch (e) {
+    log?.(`asset lock status ${txid}: ${errText(e)}`);
+    return 'unknown';
+  }
+}
+
 /**
  * Scans the chain for everything govhub's one-time keys of this secret received: unspent payments and asset locks Platform has not
  * (fully) used. Needs nothing from this browser's storage.
@@ -398,8 +411,7 @@ export async function scanForFunds(o: ScanOptions): Promise<RecoveryScan> {
     }
     return fresh;
   };
-  /** Whether any proven transaction pays the key, spends from it, or credits it in an asset lock. */
-  const touched = (k: LaneKey) => [...txs.values()].some((tx) => paysKey(tx, k.h160) || spendsFrom(tx, k.pub) || creditsKey(tx, k.h160));
+  const touched = (k: LaneKey) => [...txs.values()].some((tx) => touches(tx, k));
 
   for (let pass = 0, fresh = grow(); fresh.length; pass++, fresh = grow()) {
     if (pass >= 8 || keys.length > 100 + 40 * lanes.length) throw new RecoveryError('These keys have more history than the Recover tool scans in one go. Contact the govhub developers.');
@@ -415,7 +427,7 @@ export async function scanForFunds(o: ScanOptions): Promise<RecoveryScan> {
 
   // ---- what is still there ----
   report({ phase: 'check', note: 'checking what was found' });
-  const relevant = [...txs.values()].filter((tx) => keys.some((k) => paysKey(tx, k.h160) || spendsFrom(tx, k.pub) || creditsKey(tx, k.h160)));
+  const relevant = [...txs.values()].filter((tx) => keys.some((k) => touches(tx, k)));
   const heights = new Map<string, number | undefined>();
   for (const tx of relevant) {
     const h = await secondOpinion(dapi, tx, replayNodes, signal);
@@ -433,21 +445,14 @@ export async function scanForFunds(o: ScanOptions): Promise<RecoveryScan> {
     const base = { family: k.lane.family, label: k.lane.label, index: k.index, path: k.lane.path(k.index), address: k.address, keyHash: bytesToHex(k.h160), funding: k.lane.funding(k.index) };
     const payments: RecoveryDeposit[] = kept.flatMap((tx) =>
       tx.outputs.flatMap((out, vout) => {
-        const c = classifyScript(out.script);
-        return c.type === 'p2pkh' && bytesEqual(c.hash, k.h160) && !spent.has(`${tx.txid}:${vout}`) ? [{ txid: tx.txid, vout, duffs: out.value, height: heights.get(tx.txid) }] : [];
+        return paysTo(out.script, k.h160) && !spent.has(`${tx.txid}:${vout}`) ? [{ txid: tx.txid, vout, duffs: out.value, height: heights.get(tx.txid) }] : [];
       }),
     );
     if (payments.length) items.push({ ...base, id: k.address, type: 'payments', payments, duffs: payments.reduce((a, p) => a + p.duffs, 0n) });
     for (const tx of kept) {
       if (!creditsKey(tx, k.h160)) continue;
       const c = locateCredit(tx, k.h160);
-      let status: RecoveryLock['status'];
-      try {
-        status = await platform.assetLockStatus(tx.txid, c.creditIndex);
-      } catch (e) {
-        o.log?.(`asset lock status ${tx.txid}: ${errText(e)}`);
-        status = 'unknown';
-      }
+      const status = await lockStatus(platform, tx.txid, c.creditIndex, o.log);
       if (status === 'used') {
         usedLocks++;
         continue;
@@ -461,11 +466,11 @@ export async function scanForFunds(o: ScanOptions): Promise<RecoveryScan> {
   return { network, fromHeight, toHeight: reached, keysScanned: keys.length, identities, items, usedLocks, provenDuffs, dropped };
 }
 
-const paysKey = (tx: Tx, h160: Uint8Array) =>
-  tx.outputs.some((out) => {
-    const c = classifyScript(out.script);
-    return c.type === 'p2pkh' && bytesEqual(c.hash, h160);
-  });
+function paysTo(script: Uint8Array, h160: Uint8Array): boolean {
+  const c = classifyScript(script);
+  return c.type === 'p2pkh' && bytesEqual(c.hash, h160);
+}
+const paysKey = (tx: Tx, h160: Uint8Array) => tx.outputs.some((out) => paysTo(out.script, h160));
 /** A P2PKH spend pushes `<sig> <pubkey>`: the last 33 bytes of the scriptSig are the key. */
 const spendsFrom = (tx: Tx, pub: Uint8Array) => tx.inputs.some((i) => i.script.length > 34 && i.script[i.script.length - 34] === 33 && bytesEqual(i.script.subarray(i.script.length - 33), pub));
 function creditsKey(tx: Tx, h160: Uint8Array): boolean {
@@ -477,6 +482,8 @@ function creditsKey(tx: Tx, h160: Uint8Array): boolean {
     return false;
   }
 }
+/** Whether a proven transaction pays the key, spends from it, or credits it in an asset lock. */
+const touches = (tx: Tx, k: LaneKey) => paysKey(tx, k.h160) || spendsFrom(tx, k.pub) || creditsKey(tx, k.h160);
 
 // ---- what an item can do ---------------------------------------------------------------------------------------------------
 
@@ -513,12 +520,11 @@ export function itemOptions(item: RecoveryItem, scan: Pick<RecoveryScan, 'identi
   let topUp: ItemOptions['topUp'] = null;
   if (!fu) notes.push('This key is not a funding key: its payments can only be sent to an address.');
   else if (usable) {
-    const bigEnoughFor = (k: 'create' | 'topup') => credit * CREDITS_PER_DUFF >= (k === 'create' ? createRequiredCredits(CREATE_KEYS.length) : topUpRequiredCredits());
-    const canTopUp = bigEnoughFor('topup');
+    const canTopUp = credit * CREDITS_PER_DUFF >= topUpRequiredCredits();
     if (fu.kind === 'create') {
       if (scan.identities.some((f) => f.identityIndex === fu.identityIndex)) notes.push(`Identity #${fu.identityIndex} of this phrase already exists, so this cannot create it again.`);
       else if (isLock && item.lock!.status === 'partial') notes.push('Platform has used part of this lock, so how much is left is unknown: it can top up an identity (Platform refuses it, for free, if too little is left).');
-      else if (bigEnoughFor('create')) create = fu.identityIndex;
+      else if (credit * CREDITS_PER_DUFF >= createRequiredCredits(CREATE_KEYS.length)) create = fu.identityIndex;
       else if (canTopUp) notes.push(`Creating an account needs ${dashText(MIN_CREATE_LOCK_DUFFS)} locked; this is enough to top up an identity instead.`);
       if (canTopUp) topUp = 'any';
     } else if (canTopUp) topUp = fu.identityId;
@@ -593,7 +599,7 @@ export async function sweepItem(o: {
     try {
       await dapi.broadcastTransaction(built.raw, { signal: o.signal });
     } catch (e) {
-      if (/missing-?inputs|bad-txns-inputs-missingorspent|txn-mempool-conflict|inputs.*(spent|missing)/i.test(errText(e)))
+      if (inputsRejected(e))
         throw new RecoveryError('The network says these payments were already spent (by another device, or a funding in progress). Scan again to see what is left.');
       throw e;
     }
@@ -645,15 +651,12 @@ export async function fundWithItem(o: {
   if (fu.kind === 'create' && !secret.wallet) throw new RecoveryError('An account setup needs its recovery phrase.');
   if ('create' in target) {
     // the identity may have been made since the scan (another device): a create would then be refused as a key conflict
-    const k0 = secret.wallet!.identityKey(fu.identityIndex, 0);
-    wipe(k0.privateKey);
-    if ((await platform.identityByUniqueKeyHash(hash160(k0.publicKey))) !== null)
+    if (await identityIndexTaken(secret.wallet ?? null, platform, fu.identityIndex))
       throw new RecoveryError(`Identity #${fu.identityIndex} of this phrase exists now (made since the scan, or on another device). Sign in with the phrase, or use this to top up an identity.`);
   }
   if (item.lock) {
     // checked again right before use: another device may have used it since the scan
-    const st = await platform.assetLockStatus(item.lock.txid, item.lock.creditIndex).catch(() => 'unknown' as const);
-    if (st === 'used') throw new RecoveryError('Dash Platform has already used this asset lock (since the scan, or from another device). Scan again.');
+    if ((await lockStatus(platform, item.lock.txid, item.lock.creditIndex)) === 'used') throw new RecoveryError('Dash Platform has already used this asset lock (since the scan, or from another device). Scan again.');
   }
   const kind = fu.kind;
   const key = fundingRecordKey(network, kind, hexToBytes(item.keyHash));
@@ -678,7 +681,7 @@ export async function fundWithItem(o: {
     createdAt: now,
     updatedAt: now,
   };
-  if (item.lock && !restore.lock!.raw) throw new RecoveryError('The asset lock transaction is missing; scan again.');
+  if (item.lock && !item.lock.raw) throw new RecoveryError('The asset lock transaction is missing; scan again.');
   try {
     return await runFunding({
       wallet: secret.wallet ?? null,

@@ -402,23 +402,25 @@ export async function runFunding(o: FundingOptions): Promise<{ identityId: strin
   const key = fundingRecordKey(network, kind, hash160(fk.publicKey));
   try {
     return await withRecordLock(key, () => {
-      if (o.restore) {
-        if (o.restore.key !== key || o.restore.network !== network || o.restore.kind !== kind) throw new FundingError('the recovered record belongs to another key');
-        // A lock this browser has in flight (maybe with its IS-lock, which the chain no longer shows) is never replaced: when it is the
-        // lock the user picked it is resumed as saved; anything else at this address waits until that funding is finished.
-        const saved = o.store.load(key);
-        if (saved && saved.state !== 'done' && saved.lock) {
-          if (saved.lock.txid !== o.restore.lock?.txid)
-            throw new FundingError('This browser is in the middle of a funding at this address. Continue it (sign in, or Top up), or wait until it finishes, then scan again.');
-          if (saved.recoveredInto && saved.recoveredInto !== o.recoverInto)
-            throw new FundingError(`This payment is already being added to identity ${saved.recoveredInto}.`);
-        } else o.store.save(o.restore);
-      }
+      if (o.restore) applyRestore(o, o.restore, key);
       return fund(o, fk, key);
     });
   } finally {
     wipe(fk.privateKey);
   }
+}
+
+/** Replaces the stored record with the one the Recover tool rebuilt from the chain, unless this browser has a lock in flight at the address. */
+function applyRestore(o: FundingOptions, restore: FundingRecord, key: string): void {
+  if (restore.key !== key || restore.network !== o.platform.network || restore.kind !== o.kind) throw new FundingError('the recovered record belongs to another key');
+  // A lock this browser has in flight (maybe with its IS-lock, which the chain no longer shows) is never replaced: when it is the
+  // lock the user picked it is resumed as saved; anything else at this address waits until that funding is finished.
+  const saved = o.store.load(key);
+  if (saved && saved.state !== 'done' && saved.lock) {
+    if (saved.lock.txid !== restore.lock?.txid)
+      throw new FundingError('This browser is in the middle of a funding at this address. Continue it (sign in, or Top up), or wait until it finishes, then scan again.');
+    if (saved.recoveredInto && saved.recoveredInto !== o.recoverInto) throw new FundingError(`This payment is already being added to identity ${saved.recoveredInto}.`);
+  } else o.store.save(restore);
 }
 
 async function fund(o: FundingOptions, fk: { privateKey: Uint8Array; publicKey: Uint8Array }, key: string): Promise<{ identityId: string; record: FundingRecord }> {
@@ -505,13 +507,13 @@ async function fund(o: FundingOptions, fk: { privateKey: Uint8Array; publicKey: 
     const same = (a: { txid: string; vout: number }) => (b: { txid: string; vout: number }) => a.txid === b.txid && a.vout === b.vout;
     /** Payment outpoint -> the transaction spending it; acted on once that transaction is IS-locked or mined (a node's claim alone is not enough). */
     const spentBy = new Map<string, string>();
-    const dropSpent = (txid: string): boolean => {
+    const dropSpent = (txid: string) => {
       const gone = (d: { txid: string; vout: number }) => spentBy.get(`${d.txid}:${d.vout}`) === txid;
       const before = rec.deposits.length + (rec.lateDeposits?.length ?? 0);
       // the deposits a built lock spends are its business (a conflicting spend makes the broadcast fail)
       if (!rec.lock) rec.deposits = rec.deposits.filter((d) => !gone(d));
       if (rec.lateDeposits) rec.lateDeposits = rec.lateDeposits.filter((d) => !gone(d));
-      return rec.deposits.length + (rec.lateDeposits?.length ?? 0) !== before;
+      if (rec.deposits.length + (rec.lateDeposits?.length ?? 0) !== before) update(`a payment to this address was spent by ${txid.slice(0, 12)}…; it no longer counts`);
     };
     const confirm = (txid: string) => {
       let changed = false;
@@ -520,7 +522,7 @@ async function fund(o: FundingOptions, fk: { privateKey: Uint8Array; publicKey: 
         update(`payment ${txid.slice(0, 12)}… confirmed`);
         wake();
       }
-      if (dropSpent(txid)) update(`a payment to this address was spent by ${txid.slice(0, 12)}…; it no longer counts`);
+      dropSpent(txid);
     };
     if (rec.state !== 'done') {
       const w = await dapi.watchAddressForDeposit(
@@ -529,7 +531,7 @@ async function fund(o: FundingOptions, fk: { privateKey: Uint8Array; publicKey: 
           onTx: ({ tx }) => {
             if (tx.txid === rec.lock?.txid) return;
             for (const i of tx.inputs) spentBy.set(`${i.prevTxid}:${i.vout}`, tx.txid);
-            if (lockedTxids.has(tx.txid) && dropSpent(tx.txid)) update(`a payment to this address was spent by ${tx.txid.slice(0, 12)}…; it no longer counts`);
+            if (lockedTxids.has(tx.txid)) dropSpent(tx.txid);
             // P2PKH outputs to the one-time key only (the watcher also matches P2SH with the same hash).
             const outs = tx.outputs.flatMap((out, vout) => {
               const c = classifyScript(out.script);
@@ -730,7 +732,7 @@ async function fund(o: FundingOptions, fk: { privateKey: Uint8Array; publicKey: 
 }
 
 /** Whether the identity index's MASTER key (key 0) is registered: a create there would be refused as a key conflict. */
-async function identityIndexTaken(wallet: SeedWallet | null, platform: PlatformPort, identityIndex: number): Promise<boolean> {
+export async function identityIndexTaken(wallet: SeedWallet | null, platform: PlatformPort, identityIndex: number): Promise<boolean> {
   if (!wallet) return false;
   const k = wallet.identityKey(identityIndex, 0);
   wipe(k.privateKey);

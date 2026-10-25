@@ -16,9 +16,9 @@ import { FundingPanel } from './FundingPanel.tsx';
 import { PasskeySignIn, Passkeys } from './Passkeys.tsx';
 import { RecoverLink } from './RecoverLink.tsx';
 import { SecretField } from './SecretField.tsx';
-
-export { SecretField };
 import { errorText, formatDuffs } from './runtime.ts';
+
+export { SecretField }; // moved to its own file (the Recover tool uses it too); tests import it from here
 
 const TITLES: Record<SheetView, string> = {
   choose: 'Sign in or create an account',
@@ -132,12 +132,12 @@ function stuckDuffs(r: FundingRecord): bigint {
 
 function RecoverableNotice({ records }: { records: FundingRecord[] }) {
   const { closeSheet } = useAuth();
-  const total = records.reduce((a, r) => a + stuckDuffs(r), 0n);
-  if (!total) return null;
+  const stuck = records.map(stuckDuffs).filter((d) => d > 0n);
+  if (!stuck.length) return null;
   return (
     <div className="notice-box" role="status" data-testid="recoverable">
       <p>
-        <b>{formatDuffs(total)}</b> is waiting at {records.filter((r) => stuckDuffs(r) > 0n).length === 1 ? 'a deposit address' : 'deposit addresses'} from an earlier
+        <b>{formatDuffs(stuck.reduce((a, d) => a + d, 0n))}</b> is waiting at {stuck.length === 1 ? 'a deposit address' : 'deposit addresses'} from an earlier
         payment (paid after an account setup or top-up, or too small for it).
       </p>
       <RecoverLink onClick={closeSheet}>Recover funds</RecoverLink>

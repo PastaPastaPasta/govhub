@@ -4,7 +4,7 @@
 import {
   BLOCKS_PER_DAY, estimateSweepFee, exportItemWif, findKeyIdentities, fundWithItem, identifierBytes, isValidPhrase, itemOptions, makeSession, normalizePhrase, parseDashAddress,
   parsePrivateKey, PhraseError, RECOVERY_START_HEIGHT, scanForFunds, SeedWallet, sweepItem, tipHeight, wipe,
-  type FundingView, type RecoveryItem, type RecoveryScan, type RecoverySecret, type ScanProgress,
+  type FundingView, type ItemOptions, type Network, type RecoveryItem, type RecoveryScan, type RecoverySecret, type RecoveryTarget, type ScanProgress,
 } from '@govhub/auth';
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
@@ -17,6 +17,13 @@ type Start = 'default' | 'month' | 'year' | 'custom';
 type Held = { secret: RecoverySecret; owned: boolean };
 
 const short = (s: string) => `${s.slice(0, 10)}…`;
+
+/** Wipes what a Held secret was derived from (never the signed-in session's own secrets: those are not `owned`). */
+function release(h: Held): void {
+  if (!h.owned) return;
+  h.secret.wallet?.wipe();
+  h.secret.session?.end();
+}
 
 export function RecoverFunds() {
   const { session, network, platform, dapi } = useAuth();
@@ -43,10 +50,7 @@ export function RecoverFunds() {
   const forget = () => {
     const h = held.current;
     held.current = null;
-    if (h?.owned) {
-      h.secret.wallet?.wipe();
-      h.secret.session?.end();
-    }
+    if (h) release(h);
   };
   useEffect(
     () => () => {
@@ -92,10 +96,7 @@ export function RecoverFunds() {
         const h = await secretFor();
         if (c.signal.aborted) {
           // stopped while the key was being looked up: this one was never held, so wipe it here
-          if (h.owned) {
-            h.secret.wallet?.wipe();
-            h.secret.session?.end();
-          }
+          release(h);
           return;
         }
         held.current = h;
@@ -222,12 +223,10 @@ export function RecoverFunds() {
 }
 
 function ScanStatus({ p }: { p: ScanProgress }) {
-  const text =
-    p.phase === 'identities'
-      ? 'Looking up your identities on Dash Platform…'
-      : p.phase === 'scan'
-        ? `Replaying blocks: ${p.done.toLocaleString('en-US')} of ${p.total.toLocaleString('en-US')} (${p.keys} one-time addresses)`
-        : 'Checking what was found with a second node and Dash Platform…';
+  let text: string;
+  if (p.phase === 'identities') text = 'Looking up your identities on Dash Platform…';
+  else if (p.phase === 'scan') text = `Replaying blocks: ${p.done.toLocaleString('en-US')} of ${p.total.toLocaleString('en-US')} (${p.keys} one-time addresses)`;
+  else text = 'Checking what was found with a second node and Dash Platform…';
   return (
     <div className="recover-progress" aria-live="polite" data-testid="recover-progress">
       <p className="muted small">
@@ -332,7 +331,7 @@ function ItemCard({ item, scan, secret, onBusy }: { item: RecoveryItem; scan: Re
         </>
       );
     });
-  const fund = (target: { create: true } | { topUp: string }) =>
+  const fund = (target: RecoveryTarget) =>
     run(async (signal) => {
       const r = await fundWithItem({ item, scan, secret, target, dapi: dapi(), platform: await platform(), store, signal, onUpdate: setView });
       return 'create' in target ? (
@@ -404,9 +403,11 @@ const STATE_TEXT: Record<FundingView['state'], string> = {
   done: 'Done',
 };
 
-function UseOnPlatform({ opts, scan, busy, onFund }: { opts: ReturnType<typeof itemOptions>; scan: RecoveryScan; busy: boolean; onFund(t: { create: true } | { topUp: string }): void }) {
+function UseOnPlatform({ opts, scan, busy, onFund }: { opts: ItemOptions; scan: RecoveryScan; busy: boolean; onFund(t: RecoveryTarget): void }) {
   const [id, setId] = useState('');
   const [bad, setBad] = useState(false);
+  /** The one identity a top-up key was for. */
+  const own = opts.topUp !== 'any' ? opts.topUp : null;
   const submit = (e: FormEvent) => {
     e.preventDefault();
     try {
@@ -423,9 +424,9 @@ function UseOnPlatform({ opts, scan, busy, onFund }: { opts: ReturnType<typeof i
           Create account #{opts.create} with it
         </button>
       )}
-      {typeof opts.topUp === 'string' && opts.topUp !== 'any' && (
-        <button type="button" className="btn" disabled={busy} onClick={() => onFund({ topUp: opts.topUp as string })} data-testid="recover-topup-own">
-          Top up {short(opts.topUp)}
+      {own && (
+        <button type="button" className="btn" disabled={busy} onClick={() => onFund({ topUp: own })} data-testid="recover-topup-own">
+          Top up {short(own)}
         </button>
       )}
       {opts.topUp === 'any' &&
@@ -450,7 +451,7 @@ function UseOnPlatform({ opts, scan, busy, onFund }: { opts: ReturnType<typeof i
   );
 }
 
-function SweepForm({ item, network, busy, onSweep }: { item: RecoveryItem; network: 'mainnet' | 'testnet'; busy: boolean; onSweep(to: string): void }) {
+function SweepForm({ item, network, busy, onSweep }: { item: RecoveryItem; network: Network; busy: boolean; onSweep(to: string): void }) {
   const [open, setOpen] = useState(false);
   const [to, setTo] = useState('');
   const { problem, p2sh } = useMemo(() => {

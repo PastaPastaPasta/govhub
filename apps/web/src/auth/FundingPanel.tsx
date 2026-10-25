@@ -5,7 +5,7 @@
 import {
   discoverIdentities, identifierBytes, KeyConflictError, LockTooSmallError, nextCreateIndex, runFunding, type FoundIdentity, type FundingView, type SeedWallet, type Session,
 } from '@govhub/auth';
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useAuth } from './context.tsx';
 import { useLeaveWarning } from './leaveWarning.ts';
 import { Qr } from './Qr.tsx';
@@ -94,15 +94,12 @@ export function FundingPanel(p: FundingPanelProps) {
     setLastTarget(identityId);
     setRecoverInto(identityId);
   };
-  const errorBox = error ? (
-    error instanceof LockTooSmallError ? (
-      <TooSmall error={error} offerTopUp={p.kind === 'create' && error.canTopUp} wallet={p.wallet} problem={recoverError} initialId={lastTarget} onTopUp={startRecovery} onPayAgain={payAgain} />
-    ) : error instanceof KeyConflictError && p.kind === 'create' ? (
-      <TooSmall error={error} offerTopUp wallet={p.wallet} problem={recoverError} initialId={lastTarget} onTopUp={startRecovery} />
-    ) : (
-      <ErrorBox text={(recoverError ? `${recoverError} ` : '') + errorText(error)} retry={retry} onRecover={closeSheet} />
-    )
-  ) : null;
+  let errorBox: ReactNode = null;
+  if (error instanceof LockTooSmallError)
+    errorBox = <TooSmall error={error} offerTopUp={p.kind === 'create' && error.canTopUp} wallet={p.wallet} problem={recoverError} initialId={lastTarget} onTopUp={startRecovery} onPayAgain={payAgain} />;
+  else if (error instanceof KeyConflictError && p.kind === 'create')
+    errorBox = <TooSmall error={error} offerTopUp wallet={p.wallet} problem={recoverError} initialId={lastTarget} onTopUp={startRecovery} />;
+  else if (error) errorBox = <ErrorBox text={(recoverError ? `${recoverError} ` : '') + errorText(error)} retry={retry} onRecover={closeSheet} />;
 
   if (fresh !== null) return <FundingPanel key={fresh} {...p} identityIndex={fresh} />;
   if (recovered) {
