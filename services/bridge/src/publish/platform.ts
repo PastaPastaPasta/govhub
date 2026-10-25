@@ -65,6 +65,8 @@ export class PlatformClient {
   private signer: any;
   private identityKey: any;
   private connected = false;
+  /** The contract's document schemas, from the proved read at connect: which gov shape is deployed (see hasDocType/hasProperty). */
+  schemas: Record<string, { properties?: Record<string, unknown> }> = {};
 
   constructor(network: PlatformNetwork, contractId: string) {
     this.network = network;
@@ -81,8 +83,10 @@ export class PlatformClient {
     await this.sdk.connect();
     this.connected = true;
     // the version ratchets up from proven metadata: run one proved read so writes use the network's real version
-    await this.sdk.contracts.fetch(this.contractId);
-    log.info('platform connected', { network: this.network, protocolVersion: this.sdk.version(), contractId: this.contractId });
+    const contract = await this.sdk.contracts.fetch(this.contractId);
+    if (!contract) throw new Error(`gov contract ${this.contractId} not found on ${this.network}`);
+    this.schemas = contract.schemas;
+    log.info('platform connected', { network: this.network, protocolVersion: this.sdk.version(), contractId: this.contractId, docTypes: Object.keys(this.schemas) });
   }
 
   /** Loads the bridge identity and its document-signing key. The key must be AUTHENTICATION / HIGH (gov docs require HIGH). */
@@ -97,6 +101,16 @@ export class PlatformClient {
     if (key.wif) signer.addKeyFromWif(key.wif);
     else signer.addKey(this.w.PrivateKey.fromHex(key.privateKeyHex!, this.network));
     this.signer = signer;
+  }
+
+  /** Whether the deployed contract has this document type (`talliesSet`: mainnet gov.json, or a testnet contract after its update). */
+  hasDocType(type: string): boolean {
+    return Object.hasOwn(this.schemas, type);
+  }
+
+  /** Whether the deployed type has this property (`proposal.url`: the old, unslimmed testnet shape). */
+  hasProperty(type: string, prop: string): boolean {
+    return Object.hasOwn(this.schemas[type]?.properties ?? {}, prop);
   }
 
   get protocolVersion(): number {

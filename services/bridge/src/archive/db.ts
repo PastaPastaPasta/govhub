@@ -171,6 +171,17 @@ CREATE TABLE IF NOT EXISTS platform_docs (
   published_at INTEGER NOT NULL,
   PRIMARY KEY (contract_id, doc_type, doc_key)
 );
+-- Every entry of the packed talliesSet documents as last published (one row per contract/proposal): the source of the final
+-- per-proposal tally document written once when the proposal leaves the active set (finalized_at set then; cleared if it comes back).
+CREATE TABLE IF NOT EXISTS tally_set_entries (
+  contract_id TEXT NOT NULL,
+  gov_hash TEXT NOT NULL,
+  as_of_height INTEGER NOT NULL,
+  entry_json TEXT NOT NULL,
+  published_at INTEGER NOT NULL,
+  finalized_at INTEGER,
+  PRIMARY KEY (contract_id, gov_hash)
+);
 CREATE TABLE IF NOT EXISTS publish_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   at INTEGER NOT NULL,
@@ -319,6 +330,15 @@ export interface TallyRow {
   core_match: number | null;
   mismatch: string | null;
   counted_votes: string | null;
+}
+
+export interface TallySetEntryRow {
+  contract_id: string;
+  gov_hash: string;
+  as_of_height: number;
+  entry_json: string;
+  published_at: number;
+  finalized_at: number | null;
 }
 
 export interface PlatformDocRow {

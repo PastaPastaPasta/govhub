@@ -1,18 +1,25 @@
-// Publishes `proposal`, `tally` and `cycle` documents to the gov contract. Idempotent and restart-safe:
+// Publishes `proposal`, `talliesSet` (or per-proposal `tally`), and `cycle` documents to the gov contract. Idempotent and restart-safe:
 //  - the archive (platform_docs) remembers every published document id / revision / content;
-//  - without a local record the document is looked up on Platform by its unique index first (G1 / G5b / G6b);
+//  - without a local record the document is looked up on Platform by its unique index first (G1 / G5b / G6b / G8b);
 //  - after a failed create the unique index is re-queried before retrying, so a create that landed is never duplicated.
 // Query shapes follow packages/contracts-v1/README.md (PV13 rules: base64 byteArray values, equality on the unique index).
+//
+// The deployed contract decides the shapes (PlatformClient reads its schemas at connect):
+//  - `talliesSet` present (mainnet gov.json, testnet after its update): every active tally goes into ONE packed document (pages of
+//    161), replaced at most every TALLY_PUBLISH_INTERVAL_S and only when an entry changed; a proposal that leaves the active set
+//    gets its final tally once, as a per-proposal `tally` document (rank 0, not in the next budget), for the Past list.
+//    Otherwise (an older testnet contract): one `tally` per proposal, as before.
+//  - `proposal.url` absent (mainnet gov.json): the slim proposal; url, payment address/amount and start are in dataHex only.
 import { createHash } from 'node:crypto';
-import { bytesToHex } from '@govhub/verify';
-import type { DB, GovObjectRow, PlatformDocRow } from '../archive/db.ts';
+import { bytesToHex, paginateTallySet, tallySetFields, type TallySetEntry } from '@govhub/verify';
+import type { DB, GovObjectRow, PlatformDocRow, TallySetEntryRow } from '../archive/db.ts';
 import type { BridgeConfig } from '../config.ts';
 import { errText, log, nowS } from '../log.ts';
 import { proposalView } from '../proposal.ts';
 import type { ComputedTally, CoreComparison, TallyRun } from '../tally.ts';
 import { displayHashB64, displayHashBytes, type PlatformClient, type PlatformDoc } from './platform.ts';
 
-export type DocType = 'proposal' | 'tally' | 'cycle';
+export type DocType = 'proposal' | 'tally' | 'talliesSet' | 'cycle';
 
 export interface PublishSummary {
   created: number;
@@ -34,33 +41,74 @@ function canonical(props: Record<string, unknown>, omit: string[] = []): string 
 const contentHash = (s: string) => createHash('sha256').update(s).digest('hex');
 
 /** Fields that change without anything meaningful changing; ignored for "did it change?". */
-const VOLATILE: Record<DocType, string[]> = { proposal: [], tally: ['asOfHeight'], cycle: ['estTime'] };
+const VOLATILE: Record<DocType, string[]> = { proposal: [], tally: ['asOfHeight'], talliesSet: ['asOfHeight'], cycle: ['estTime'] };
 
-export function proposalProps(row: GovObjectRow): { props: Record<string, unknown> } | { error: string } {
+/**
+ * The `proposal` document of an archived object. `slim` (mainnet gov.json) stores only the hashed fields, the indexed name and
+ * endEpoch and the collateral; the full shape (older testnet contracts) also duplicates url, payment address/amount and start.
+ */
+export function proposalProps(row: GovObjectRow, opts: { slim: boolean }): { props: Record<string, unknown> } | { error: string } {
   const v = proposalView(row.data_hex);
   if (!v) return { error: 'proposal data does not parse' };
-  const amount = v.paymentAmountDuffs ?? Math.round(v.paymentAmount * 1e8);
   if (!/^[-_a-zA-Z0-9]{1,40}$/.test(v.name)) return { error: 'name does not fit the contract pattern' };
+  if (v.endEpoch < 0 || row.time < 0) return { error: 'negative value' };
+  if (row.data_hex.length > 1024) return { error: 'dataHex longer than 1024' };
+  const props: Record<string, unknown> = {
+    govHash: displayHashBytes(row.hash),
+    parentHash: displayHashBytes(row.parent_hash),
+    revision: BigInt(row.revision),
+    time: BigInt(row.time),
+    dataHex: row.data_hex,
+    name: v.name,
+    endEpoch: BigInt(v.endEpoch),
+    collateralTxid: displayHashBytes(row.collateral_hash),
+    collateralHeight: BigInt(row.collateral_height ?? 0),
+  };
+  if (opts.slim) return { props };
+  const amount = v.paymentAmountDuffs ?? Math.round(v.paymentAmount * 1e8);
   if (v.url.length < 1 || v.url.length > 512) return { error: 'url length out of contract bounds' };
   if (v.paymentAddress.length < 26 || v.paymentAddress.length > 64) return { error: 'paymentAddress length out of contract bounds' };
-  if (v.startEpoch < 0 || v.endEpoch < 0 || amount < 0 || row.time < 0) return { error: 'negative value' };
-  if (row.data_hex.length > 1024) return { error: 'dataHex longer than 1024' };
+  if (v.startEpoch < 0 || amount < 0) return { error: 'negative value' };
+  return { props: { ...props, url: v.url, paymentAddress: v.paymentAddress, paymentAmount: BigInt(amount), startEpoch: BigInt(v.startEpoch) } };
+}
+
+/** One proposal's entry in the packed tally set. */
+export function tallySetEntry(t: ComputedTally): TallySetEntry {
   return {
-    props: {
-      govHash: displayHashBytes(row.hash),
-      parentHash: displayHashBytes(row.parent_hash),
-      revision: BigInt(row.revision),
-      time: BigInt(row.time),
-      dataHex: row.data_hex,
-      name: v.name,
-      url: v.url,
-      paymentAddress: v.paymentAddress,
-      paymentAmount: BigInt(amount),
-      startEpoch: BigInt(v.startEpoch),
-      endEpoch: BigInt(v.endEpoch),
-      collateralTxid: displayHashBytes(row.collateral_hash),
-      collateralHeight: BigInt(row.collateral_height ?? 0),
-    },
+    govHash: t.govHash,
+    yesWeighted: t.weighted.yes,
+    noWeighted: t.weighted.no,
+    abstainWeighted: t.weighted.abstain,
+    yesCount: t.unweighted.yes,
+    noCount: t.unweighted.no,
+    abstainCount: t.unweighted.abstain,
+    voteSetHash: t.voteSetHash,
+    rank: t.rank,
+    inNextBudget: t.inNextBudget,
+    margin: Math.max(-2147483648, Math.min(2147483647, t.margin)),
+  };
+}
+
+/** A `talliesSet` page document. */
+export function tallySetProps(page: number, asOfHeight: number, entries: readonly TallySetEntry[]): Record<string, unknown> {
+  return { page: BigInt(page), asOfHeight: BigInt(asOfHeight), ...tallySetFields(entries) };
+}
+
+/** The final per-proposal `tally` of a proposal that left the active set: its last packed entry, rank 0, not in the next budget. */
+export function finalTallyProps(e: TallySetEntry, asOfHeight: number): Record<string, unknown> {
+  return {
+    govHash: displayHashBytes(e.govHash),
+    asOfHeight: BigInt(asOfHeight),
+    yesWeighted: BigInt(e.yesWeighted),
+    noWeighted: BigInt(e.noWeighted),
+    abstainWeighted: BigInt(e.abstainWeighted),
+    yesCount: BigInt(e.yesCount),
+    noCount: BigInt(e.noCount),
+    abstainCount: BigInt(e.abstainCount),
+    voteSetHash: displayHashBytes(e.voteSetHash),
+    rank: 0n,
+    inNextBudget: false,
+    margin: BigInt(e.margin),
   };
 }
 
@@ -171,7 +219,7 @@ export class Publisher {
 
   /** The document behind a unique index on Platform (proved read), or null. */
   async lookup(type: DocType, key: string): Promise<PlatformDoc | null> {
-    const where = type === 'cycle' ? [['superblockHeight', '==', Number(key)]] : [['govHash', '==', displayHashB64(key)]];
+    const where = type === 'cycle' ? [['superblockHeight', '==', Number(key)]] : type === 'talliesSet' ? [['page', '==', Number(key)]] : [['govHash', '==', displayHashB64(key)]];
     const docs = await this.platform.query(type, { where, limit: 2 });
     if (docs.length > 1) log.error('unique index returned more than one document', { type, key });
     return docs[0] ?? null;
@@ -239,6 +287,36 @@ export class Publisher {
     }
   }
 
+  /**
+   * The packed tally set: every publishable active tally, one `talliesSet` document per 161 (page 0 holds them all on mainnet).
+   * A page is replaced only when an entry changed and at most every `minIntervalSec`; a page no longer needed is emptied once.
+   * Every entry that went out is remembered (tally_set_entries) as the source of the proposal's final tally.
+   */
+  private async publishTallySet(height: number, tallies: readonly ComputedTally[], minIntervalSec: number, count: (r: string) => void, failed: () => void): Promise<void> {
+    const pages = paginateTallySet(tallies.map(tallySetEntry));
+    const known = this.db.prepare("SELECT doc_key FROM platform_docs WHERE contract_id = ? AND doc_type = 'talliesSet'").all(this.platform.contractId) as Array<{ doc_key: string }>;
+    const last = Math.max(pages.length - 1, ...known.map((r) => Number(r.doc_key)));
+    for (let page = 0; page <= last; page++) {
+      const entries = pages[page] ?? [];
+      try {
+        const r = await this.upsert('talliesSet', String(page), tallySetProps(page, height, entries), { minIntervalSec });
+        count(r);
+        if (r !== 'created' && r !== 'replaced') continue;
+        const put = this.db.prepare(
+          `INSERT INTO tally_set_entries(contract_id, gov_hash, as_of_height, entry_json, published_at, finalized_at) VALUES (?, ?, ?, ?, ?, NULL)
+           ON CONFLICT(contract_id, gov_hash) DO UPDATE SET as_of_height = excluded.as_of_height, entry_json = excluded.entry_json,
+             published_at = excluded.published_at, finalized_at = NULL`,
+        );
+        this.db.transaction(() => {
+          for (const e of entries) put.run(this.platform.contractId, e.govHash, height, JSON.stringify(e), nowS());
+        })();
+      } catch (e) {
+        failed();
+        log.error('tally set publish failed', { page, entries: entries.length, error: errText(e) });
+      }
+    }
+  }
+
   /** Proposals that may be published: hash, data and collateral verified, collateral buried >= minCollateralConfs. */
   publishableProposals(tipHeight: number): { ok: GovObjectRow[]; skipped: Array<{ key: string; reason: string }> } {
     const rows = this.db.prepare('SELECT * FROM gov_objects WHERE type = 1 ORDER BY first_seen_time').all() as GovObjectRow[];
@@ -261,6 +339,7 @@ export class Publisher {
     } catch (e) {
       log.warn('balance read failed', { error: errText(e) });
     }
+    // 'unchanged' and 'throttled' both count as unchanged
     const count = (r: string) => {
       if (r === 'created') s.created++;
       else if (r === 'replaced') s.replaced++;
@@ -270,10 +349,11 @@ export class Publisher {
     const limit = this.cfg.publish.maxConcurrentWrites;
 
     // 1. proposals (immutable)
+    const slim = !this.platform.hasProperty('proposal', 'url');
     const { ok, skipped } = this.publishableProposals(run.height);
     for (const x of skipped) s.skipped.push({ type: 'proposal', ...x });
     await pool(ok, limit, async (row) => {
-      const p = proposalProps(row);
+      const p = proposalProps(row, { slim });
       if ('error' in p) {
         s.skipped.push({ type: 'proposal', key: row.hash, reason: p.error });
         return;
@@ -288,41 +368,52 @@ export class Publisher {
 
     // 2. tallies, only for proposals that are on Platform and only when they agree with Core (unless configured otherwise)
     const tallyInterval = opts.force ? 0 : this.cfg.publish.tallyIntervalSec;
-    const tallies = run.tallies.filter((t) => this.record('proposal', t.govHash));
     // Fail closed: a tally goes out only if Core was asked and agreed, and the threshold (margin, inNextBudget) agrees too.
     const thresholdOk = run.threshold === run.coreThreshold;
     if (!thresholdOk && !this.cfg.publish.publishOnMismatch) log.error('tallies held back: funding threshold differs from Core', { bridge: run.threshold, core: run.coreThreshold });
-    await pool(tallies, limit, async (t) => {
+    const tallies = run.tallies.filter((t) => {
+      if (!this.record('proposal', t.govHash)) return false;
       const cmp = comparisons.get(t.govHash);
-      if ((!cmp || !cmp.match || !thresholdOk) && !this.cfg.publish.publishOnMismatch) {
-        s.held++;
-        if (cmp && !cmp.match) log.error('tally held back: bridge tally disagrees with Core', { hash: t.govHash, core: cmp.core, bridge: cmp.bridge, missingSigned: cmp.missingSigned.length, extra: cmp.extra.length });
-        else if (!cmp) log.warn('tally held back: no Core comparison', { hash: t.govHash });
-        return;
-      }
-      try {
-        const r = await this.upsert('tally', t.govHash, tallyProps(t), { minIntervalSec: tallyInterval });
-        if (r === 'throttled') s.unchanged++;
-        else count(r);
-      } catch (e) {
-        s.failed++;
-        log.error('tally publish failed', { hash: t.govHash, error: errText(e) });
-      }
+      if ((cmp?.match && thresholdOk) || this.cfg.publish.publishOnMismatch) return true;
+      s.held++;
+      if (cmp && !cmp.match) log.error('tally held back: bridge tally disagrees with Core', { hash: t.govHash, core: cmp.core, bridge: cmp.bridge, missingSigned: cmp.missingSigned.length, extra: cmp.extra.length });
+      else if (!cmp) log.warn('tally held back: no Core comparison', { hash: t.govHash });
+      return false;
     });
+    if (this.platform.hasDocType('talliesSet')) await this.publishTallySet(run.height, tallies, tallyInterval, count, () => s.failed++);
+    else {
+      await pool(tallies, limit, async (t) => {
+        try {
+          count(await this.upsert('tally', t.govHash, tallyProps(t), { minIntervalSec: tallyInterval }));
+        } catch (e) {
+          s.failed++;
+          log.error('tally publish failed', { hash: t.govHash, error: errText(e) });
+        }
+      });
+    }
 
-    // 2b. proposals that left the active set keep their last tally document; retire it once (rank 0, not in the next budget)
-    // so Platform does not show a stale "will be funded"
+    // 2b. proposals that left the active set: their final tally stays on Platform as a per-proposal `tally` document (rank 0, not in
+    // the next budget, so Platform does not show a stale "will be funded"), written once. Packed era: from the proposal's last
+    // published entry; a per-proposal document from before (older contracts) is retired the same way.
     const active = new Set(run.tallies.map((t) => t.govHash));
-    const stale = (this.db.prepare("SELECT * FROM platform_docs WHERE contract_id = ? AND doc_type = 'tally'").all(this.platform.contractId) as PlatformDocRow[]).filter((r) => !active.has(r.doc_key));
-    for (const r of stale) {
+    const finals = new Map<string, Record<string, unknown>>();
+    for (const r of this.db.prepare('SELECT * FROM tally_set_entries WHERE contract_id = ? AND finalized_at IS NULL').all(this.platform.contractId) as TallySetEntryRow[]) {
+      if (!active.has(r.gov_hash)) finals.set(r.gov_hash, finalTallyProps(JSON.parse(r.entry_json) as TallySetEntry, r.as_of_height));
+    }
+    for (const r of this.db.prepare("SELECT * FROM platform_docs WHERE contract_id = ? AND doc_type = 'tally'").all(this.platform.contractId) as PlatformDocRow[]) {
+      if (active.has(r.doc_key) || finals.has(r.doc_key) || this.db.prepare('SELECT 1 FROM tally_set_entries WHERE contract_id = ? AND gov_hash = ?').get(this.platform.contractId, r.doc_key)) continue;
       const props = retiredTallyProps(r);
-      if (!props) continue;
+      if (props) finals.set(r.doc_key, props);
+    }
+    for (const [hash, props] of finals) {
       try {
-        const res = await this.upsert('tally', r.doc_key, props, { minIntervalSec: tallyInterval });
-        if (res === 'replaced') s.replaced++;
+        const res = await this.upsert('tally', hash, props, { minIntervalSec: tallyInterval });
+        if (res === 'throttled') continue;
+        count(res);
+        this.db.prepare('UPDATE tally_set_entries SET finalized_at = ? WHERE contract_id = ? AND gov_hash = ?').run(nowS(), this.platform.contractId, hash);
       } catch (e) {
         s.failed++;
-        log.error('retiring tally failed', { hash: r.doc_key, error: errText(e) });
+        log.error('final tally failed', { hash, error: errText(e) });
       }
     }
 
