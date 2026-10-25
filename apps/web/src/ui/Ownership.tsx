@@ -2,13 +2,14 @@
 // (the exact string to sign in Dash Core, dash-cli, DMT or a hardware wallet, then paste the signature), and the
 // owner's proposalPost shown in place of the raw fields, with its editor for the owner.
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { CLAIM_METHOD, COSTS, packPostBody, postCost, PostTooLargeError, POST_MAX_COMPRESSED, unpackPostBody, type ProposalPost } from '@govhub/forum';
+import { CLAIM_METHOD, COSTS, packPostBody, postCost, PostTooLargeError, POST_MAX_COMPRESSED, unpackPostBody, type Profile, type ProposalPost } from '@govhub/forum';
 import { CLAIM_METHOD_LABEL, checkClaimSignature, claimMessage, decodeAddress, decodeSignature, hexToBytes, p2pkhAddress, verifyClaims, type ClaimVerdict } from '@govhub/verify';
+import { claimWarning, rejectedChip } from '../lib/social.ts';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { attestorsFor } from '../config/registry.ts';
 import type { Proposal } from '../data/types.ts';
-import { errText, formatCredits, formatInt, shortAddress } from '../lib/format.ts';
+import { errText, formatCredits, formatInt, shortAddress, shortHash } from '../lib/format.ts';
 import type { CollateralVerdict } from '../verify/collateral.ts';
 import { HiddenToggle, plural } from './HiddenToggle.tsx';
 import { AuthorName, Avatar } from './Identity.tsx';
@@ -65,30 +66,64 @@ export function useOwnership(p: Proposal, collateral: CollateralVerdict | null):
 
 /** How the owner proved it, in a few words (CLAIM_METHOD_LABEL has the full name). */
 const OWNER_HOW: Record<1 | 2 | 3 | 4, string> = {
-  1: 'named in the proposal URL',
+  1: 'named in the proposal URL and accepted',
   2: 'signed with the payment address',
   3: 'signed with the collateral key',
   4: 'vouched for by the hosting team',
 };
 
-/** Who owns the proposal: the verified owner's name and how they proved it, or "Unclaimed proposal". */
-export function OwnerValue({ p, own }: { p: Proposal; own: Ownership }) {
-  const { forum, moderation } = useForum();
-  const [profile, setProfile] = useState<Awaited<ReturnType<typeof forum.reader.profiles>> | null>(null);
-  const o = own.verdict?.owner ?? null;
-  const blocked = !!o && moderation.index.identityHidden(o.identityId);
+/** Profile and DPNS name of one identity, for the owner line. */
+function useIdentityNames(id: string | null) {
+  const { forum } = useForum();
+  const [state, setState] = useState<{ id: string; profile: Profile | undefined; dpns: string | undefined } | null>(null);
   useEffect(() => {
-    if (!o) return;
+    if (!id) return;
     let live = true;
-    forum.reader.profiles([o.identityId]).then((m) => live && setProfile(m), () => {});
+    Promise.all([forum.reader.profiles([id]).catch(() => new Map<string, Profile>()), forum.names([id]).catch(() => new Map<string, string>())]).then(([p, n]) => {
+      if (live) setState({ id, profile: p.get(id), dpns: n.get(id) });
+    });
     return () => {
       live = false;
     };
-  }, [forum, o]);
+  }, [forum, id]);
+  return state?.id === id ? state : null;
+}
+
+/**
+ * Who owns the proposal: the verified owner's name and how they proved it, or "Unclaimed proposal". An identity the proposal URL
+ * names but that has not accepted is shown as named by the creator, never as the verified owner (naming is not consent).
+ */
+export function OwnerValue({ p, own }: { p: Proposal; own: Ownership }) {
+  const { moderation } = useForum();
+  const o = own.verdict?.owner ?? null;
+  const n = own.verdict?.named;
+  const named = n && !n.accepted && n.identityId !== o?.identityId ? n : null; // already the owner by signature: nothing to add
+  const ownerNames = useIdentityNames(o?.identityId ?? null);
+  const namedNames = useIdentityNames(named?.identityId ?? null);
+  const who = (id: string, n: ReturnType<typeof useIdentityNames>, size = 20) => {
+    const blocked = moderation.index.identityHidden(id);
+    const profile = blocked ? undefined : n?.profile;
+    return (
+      <>
+        <Avatar id={id} profile={profile} size={size} />
+        <AuthorName id={id} profile={profile} dpns={blocked ? undefined : n?.dpns} />
+        {blocked && <span className="muted small">(on a block list: name and avatar hidden)</span>}
+      </>
+    );
+  };
+  const namedNote = named && (
+    <span className="owner-named muted small" data-testid="owner-named" data-named={named.identityId}>
+      {who(named.identityId, namedNames, 16)}
+      <span title={`The hashed proposal URL ${named.url} names this identity. It becomes the verified owner only once it accepts, by publishing its own claim.`}>
+        Named by the proposal's creator, not verified until they accept
+      </span>
+    </span>
+  );
   if (own.loading || !o) {
     return (
       <span className="owner-value owner-none" data-testid="owner-none">
         <span>{own.loading ? 'Checking who owns it…' : 'Unclaimed proposal'}</span>
+        {namedNote}
         <span className="muted small">
           pays <span className="mono-ish break" title={p.paymentAddress}>{shortAddress(p.paymentAddress)}</span>
         </span>
@@ -97,32 +132,46 @@ export function OwnerValue({ p, own }: { p: Proposal; own: Ownership }) {
   }
   return (
     <span className="owner-value" data-testid="owner" data-owner={o.identityId} data-method={o.method}>
-      <Avatar id={o.identityId} profile={blocked ? undefined : profile?.get(o.identityId)} size={20} />
-      <AuthorName id={o.identityId} profile={blocked ? undefined : profile?.get(o.identityId)} />
-      {blocked && <span className="muted small">(on a block list: name and avatar hidden)</span>}
+      {who(o.identityId, ownerNames)}
       <span className="muted small" title={`Claim checked in this browser: ${CLAIM_METHOD_LABEL[o.method]}`}>
         owner, {OWNER_HOW[o.method]}
       </span>
+      {namedNote}
     </span>
   );
 }
 
-/** Claims that failed verification: hidden by default, like blocked comments, with the reason once shown. */
+/**
+ * The claims that do not decide ownership, hidden by default like blocked comments: valid ones outranked by the owner's (labelled
+ * so, never as failures), ones that failed verification, and ones never checked (the spam budget), each with its reason.
+ */
 export function RejectedClaims({ own }: { own: Ownership }) {
   const [shown, setShown] = useState(false);
   const rejected = own.verdict?.rejected ?? [];
-  if (rejected.length === 0) return null;
-  const n = plural(rejected.length, 'claim');
+  const outranked = own.verdict?.valid.slice(1) ?? [];
+  const total = rejected.length + outranked.length;
+  if (total === 0) return null;
+  const n = plural(total, 'other claim');
   return (
     <div className="rejected-claims small" data-testid="rejected-claims">
-      <HiddenToggle count={rejected.length} shown={shown} onToggle={() => setShown((v) => !v)} show={`Show ${n} that failed verification`} hide={`Hide ${n} that failed verification`} testId="toggle-rejected-claims" />
+      <HiddenToggle count={total} shown={shown} onToggle={() => setShown((v) => !v)} show={`Show ${n}`} hide={`Hide ${n}`} testId="toggle-rejected-claims" />
       {shown && (
         <ul className="invalid-note">
-          {rejected.map((r) => (
-            <li key={r.docId}>
-              <span className="chip chip-bad">Failed verification</span> <span className="mono-ish">{r.ownerId.slice(0, 8)}…</span> ({CLAIM_METHOD_LABEL[r.method as keyof typeof CLAIM_METHOD_LABEL] ?? `method ${r.method}`}): {r.reason}
+          {outranked.map((c) => (
+            <li key={c.docId ?? `${c.method}:${c.identityId}`} data-testid="claim-outranked">
+              <span className="chip">Valid, outranked</span> <span className="mono-ish">{shortHash(c.identityId, 4)}</span> ({CLAIM_METHOD_LABEL[c.method]}): {c.detail}; the owner's claim ranks higher
+              (claims rank by method, then by age).
             </li>
           ))}
+          {rejected.map((r) => {
+            const chip = rejectedChip(r.reason);
+            return (
+              <li key={r.docId} data-testid={chip.bad ? 'claim-failed' : 'claim-unchecked'}>
+                <span className={`chip ${chip.bad ? 'chip-bad' : ''}`}>{chip.text}</span> <span className="mono-ish">{shortHash(r.ownerId, 4)}</span> (
+                {CLAIM_METHOD_LABEL[r.method as keyof typeof CLAIM_METHOD_LABEL] ?? `method ${r.method}`}): {r.reason}
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
@@ -141,17 +190,25 @@ export function ClaimPanel({ p, own, collateral }: { p: Proposal; own: Ownership
   const [sig, setSig] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [ackFor, setAckFor] = useState<string | null>(null); // the warning the reader chose to publish through
   const o = own.verdict?.owner;
+  const named = own.verdict?.named ?? null;
+  if (o?.method === 1) return null; // the named identity accepted: nothing can outrank it
+  const poor = balance !== null && balance < BigInt(COSTS.claim);
+  if (session && named && !named.accepted && named.identityId === session.identityId) return <AcceptNaming p={p} own={own} poor={poor} />;
   if (o && session && o.identityId === session.identityId) return null;
-  if (o?.method === 1) return null; // the hashed URL already names the owner; nothing can outrank it
 
   const address = method === 2 ? p.paymentAddress : inputAddr || inputAddrs[0] || '';
   const message = session ? claimMessage(network, p.govHash, session.identityId) : '';
   const sigOk = !!session && !!address && sig.trim() !== '' && checkClaimSignature(address, sig.trim(), network, p.govHash, session.identityId);
+  // Warn before paying for a claim that cannot win (D-036): the reader has to confirm it on purpose.
+  const warning = session ? claimWarning(own.verdict, method, session.identityId) : null;
+  const anyway = !!warning && ackFor === warning; // a different warning (another method) asks again
+  const blocked = (!!warning && !anyway) || poor;
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     const bytes = decodeSignature(sig.trim());
-    if (!bytes || !sigOk) return;
+    if (!bytes || !sigOk || blocked) return;
     setBusy(true);
     setMsg(null);
     try {
@@ -173,7 +230,7 @@ export function ClaimPanel({ p, own, collateral }: { p: Proposal; own: Ownership
       <div className="claim-body">
         <p className="small">
           A claim links the proposal to your identity: your comments get the owner label and you can publish the description shown here. The strongest proof wins: an identity
-          embedded in the proposal URL (proposals made with govhub's wizard, <span className="mono-ish">https://{registry.forum.claimPortals[0] ?? 'gov.dashhq.org'}/p/&lt;identity&gt;/&lt;name&gt;</span>),
+          named in the proposal URL that has accepted (proposals made with govhub's wizard, <span className="mono-ish">https://{registry.forum.claimPortals[0] ?? 'gov.dashhq.org'}/p/&lt;identity&gt;/&lt;name&gt;</span>),
           then a signature from the payment address, then from the key that paid the collateral, then an attestation by the hosting team (for P2SH or multisig payouts and lost keys:
           contact them).
         </p>
@@ -234,8 +291,17 @@ export function ClaimPanel({ p, own, collateral }: { p: Proposal; own: Ownership
               <p className="muted small">
                 Publishing the claim costs about {formatCredits(COSTS.claim, true)}; your balance is {balance === null ? '…' : formatCredits(balance)}.
               </p>
+              {poor && <p className="error small">Your balance does not cover the claim. Top up the identity first.</p>}
+              {warning && (
+                <div className="notice-warn small" role="alert" data-testid="claim-warning">
+                  <p>{warning}</p>
+                  <label className="check">
+                    <input type="checkbox" checked={anyway} onChange={(e) => setAckFor(e.target.checked ? warning : null)} data-testid="claim-anyway" /> I understand; publish it anyway
+                  </label>
+                </div>
+              )}
               <div className="form-actions">
-                <button type="submit" className="btn btn-primary" disabled={!sigOk || busy}>
+                <button type="submit" className="btn btn-primary" disabled={!sigOk || busy || blocked}>
                   {busy ? 'Publishing…' : 'Publish claim'}
                 </button>
               </div>
@@ -245,6 +311,43 @@ export function ClaimPanel({ p, own, collateral }: { p: Proposal; own: Ownership
         )}
       </div>
     </details>
+  );
+}
+
+/** The identity the proposal URL names accepts ownership with a method-1 claim (no signature: its proven `$ownerId` is the consent). */
+function AcceptNaming({ p, own, poor }: { p: Proposal; own: Ownership; poor: boolean }) {
+  const { forum, write, balance } = useForum();
+  const { busy, error, run } = useAction();
+  const [done, setDone] = useState(false);
+  const accept = () =>
+    run(async () => {
+      await write(forum.ops.acceptNamedOwnership(p.govHash));
+      setDone(true);
+      own.reload();
+      setTimeout(own.reload, 4000);
+    });
+  return (
+    <section className="claim-panel" data-testid="accept-naming">
+      <p>
+        <b>The proposal URL names your identity.</b> Accept ownership to be shown as the verified owner: your comments get the owner label and you can publish the
+        description shown here. Until you accept, govhub shows you only as named by the proposal's creator.
+      </p>
+      <p className="muted small">
+        Accepting publishes a claim from your identity (no signature needed) and costs about {formatCredits(COSTS.claim, true)}; your balance is{' '}
+        {balance === null ? '…' : formatCredits(balance)}.
+      </p>
+      {poor && <p className="error small">Your balance does not cover it. Top up the identity first.</p>}
+      <p className="form-actions">
+        <button type="button" className="btn btn-primary" disabled={busy || poor || done} onClick={accept} data-testid="accept-naming-button">
+          {busy ? 'Signing and broadcasting…' : done ? 'Accepted. Checking it…' : 'Accept ownership'}
+        </button>
+      </p>
+      {error && (
+        <p className="error small" role="alert">
+          {error}
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -370,9 +473,10 @@ function PostEditor({ govHash, existing, initialBody, onDone }: { govHash: strin
   const compressed = packed && 'chunks' in packed ? packed.chunks.reduce((n, c) => n + c.length, 0) : packed && 'bytes' in packed ? (packed.bytes ?? 0) : 0;
   const previous = existing ? existing.chunks.reduce((n, c) => n + c.length, 0) : undefined;
   const cost = postCost(compressed, previous);
+  const poor = balance !== null && balance < BigInt(cost);
   const save = (e: FormEvent) => {
     e.preventDefault();
-    if (!packed || !('chunks' in packed) || !session) return;
+    if (!packed || !('chunks' in packed) || !session || poor) return;
     const { chunks } = packed;
     return run(async () => {
       const r = await write(forum.ops.proposalPost(govHash, title, chunks, existing ?? undefined));
@@ -403,13 +507,14 @@ function PostEditor({ govHash, existing, initialBody, onDone }: { govHash: strin
           </div>
         </details>
       )}
+      {poor && <p className="error small">Your balance does not cover this description. Top up the identity first.</p>}
       {error && (
         <p className="error" role="alert">
           {error}
         </p>
       )}
       <div className="form-actions">
-        <button type="submit" className="btn btn-primary" disabled={busy || !title.trim() || !packed || !('chunks' in packed)}>
+        <button type="submit" className="btn btn-primary" disabled={busy || poor || !title.trim() || !packed || !('chunks' in packed)}>
           {busy ? 'Signing and broadcasting…' : 'Publish description'}
         </button>
         <button type="button" className="btn btn-quiet" onClick={() => onDone()}>

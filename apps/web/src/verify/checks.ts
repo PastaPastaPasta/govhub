@@ -3,6 +3,7 @@
 //   - in the background: the collateral check in the worker, a few at a time, its result cached per govHash in IndexedDB.
 // A proposal whose collateral check has not finished is "pending" and stays listed, so lists never empty out while checks run.
 import type { Proposal } from '../data/types.ts';
+import { errText } from '../lib/format.ts';
 import { checkContent, verdictFailure, type CollateralVerdict } from './collateral.ts';
 
 export type CheckState =
@@ -146,7 +147,7 @@ export class ProposalChecks {
         .run(p)
         .then(
           (v) => this.record(p, v),
-          (e: unknown) => this.record(p, { ok: false, inconclusive: true, steps: [{ id: 'tx', status: 'fail', label: 'Collateral check', detail: e instanceof Error ? e.message : String(e) }] }),
+          (e: unknown) => this.record(p, { ok: false, inconclusive: true, steps: [{ id: 'tx', status: 'fail', label: 'Collateral check', detail: errText(e) }] }),
         )
         .finally(() => {
           this.running--;

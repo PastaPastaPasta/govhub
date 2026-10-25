@@ -64,6 +64,11 @@ export interface BridgeConfig {
     publishOnMismatch: boolean;
   };
   reconcileIntervalSec: number;
+  /**
+   * After a new vote arrives over ZMQ, the live vote set and tallies are recomputed this many ms later (one run per burst), so
+   * a vote is counted within seconds instead of at the next block. 0 turns it off.
+   */
+  voteRefreshDebounceMs: number;
   /** `{hash}` and `{name}` are substituted; used for the DashCentral-compatible `dw_url`. */
   portalProposalUrl: string;
 }
@@ -159,6 +164,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BridgeConfig {
       publishOnMismatch: bool(env, 'PUBLISH_ON_MISMATCH', false),
     },
     reconcileIntervalSec: int(env, 'RECONCILE_INTERVAL_S', 600, 10),
+    voteRefreshDebounceMs: int(env, 'VOTE_REFRESH_DEBOUNCE_MS', 3000, 0),
     portalProposalUrl: str(env, 'PORTAL_PROPOSAL_URL', 'https://gov.dashhq.org/p/{hash}'),
   };
   if (cfg.publish.enabled) {
@@ -197,5 +203,6 @@ export function describeConfig(c: BridgeConfig): Record<string, unknown> {
     quorumProof: c.quorumProof,
     publish: { ...c.publish, identityKeyFile: c.publish.identityKeyFile ? '(set)' : '' },
     reconcileIntervalSec: c.reconcileIntervalSec,
+    voteRefreshDebounceMs: c.voteRefreshDebounceMs,
   };
 }

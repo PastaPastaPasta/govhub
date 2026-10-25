@@ -35,6 +35,7 @@ MN badge `issuer` is built (profile `issuer`, sections 11.5 and 13.2).
 11. [Publishing the API: Cloudflare Tunnel or Caddy](#11-publishing-the-api-cloudflare-tunnel-or-caddy) (11.3: one tunnel for two stacks)
 12. [Unprivileged LXC (Proxmox)](#12-unprivileged-lxc-proxmox)
 13. [Reference deployment (R730)](#13-reference-deployment-r730)
+14. [The web app: gov.dashhq.org](#14-the-web-app-govdashhqorg)
 
 ## 1. Quick start
 
@@ -533,7 +534,10 @@ testnet bridge in a test). Instead:
 - the **guest** stack (no cloudflared) layers `docker-compose.tunnel-guest.yml`. It adds `tunnel-gateway`, a
   Caddy reverse proxy (read-only filesystem, uid 1000) on the guest's `edge` network and on a new
   `<project>_tunnel` network, under the alias `TUNNEL_ALIAS` (default `<project>-bridge`). It forwards everything
-  to the guest's bridge, which still answers GET/HEAD/OPTIONS only and sets CORS itself.
+  to the guest's bridge, which still answers GET/HEAD/OPTIONS only and sets CORS itself. Its config is
+  `caddy/tunnel-gateway-bridge.Caddyfile`: no access log, and Caddy's default logger (which writes proxy errors with the
+  client address to stdout, kept by Docker) is discarded. Every `caddy/tunnel-gateway-*.Caddyfile` does the same, and the
+  deploy-lint workflow fails if one does not, or if a compose file runs the gateway without one.
 - the **host** stack (with `COMPOSE_PROFILES=tunnel`) layers `docker-compose.tunnel-host.yml`. cloudflared then
   also joins that network as an external network (`TUNNEL_GUEST_NETWORK`, default `govhub-testnet_tunnel`).
 
@@ -584,7 +588,7 @@ only, for rate limits; nothing about clients is stored). Route: `gov-relay.<zone
 A second stack's relay (say testnet next to mainnet) is published through the host stack's tunnel by the guest's
 `tunnel-gateway` (section 11.3), never by joining the shared `tunnel` network itself: layer
 `docker-compose.relay-tunnel-guest.yml` after `docker-compose.tunnel-guest.yml` (with `COMPOSE_PROFILES=relay`). It gives the
-gateway a Caddyfile (`caddy/tunnel-gateway-relay.Caddyfile`) with a second listener, `8788 -> relay:8788` over the guest's
+gateway a Caddyfile (`caddy/tunnel-gateway-relay.Caddyfile`, no logs like the others) with a second listener, `8788 -> relay:8788` over the guest's
 `edge` network, and a second alias `<project>-relay` on `tunnel`. Route: `gov-relay-testnet.<zone> ->
 http://govhub-testnet-relay:8788`. The relay answers browsers itself (CORS, 4 KiB POST bodies, per-IP and per-masternode
 limits, client address from `cf-connecting-ip`, which the gateway passes through).
@@ -878,3 +882,38 @@ curl -s http://127.0.0.1:8789/v1/info | jq '{network, issuingEpochs, height, rea
 
 To add keys: generate and publish them on an offline machine, then copy `epoch-<E>.pem` into
 `/opt/govhub-testnet/deploy/secrets/issuer-keys` (0600, uid 1000), no more than 7 epochs ahead of the one being issued.
+
+## 14. The web app: gov.dashhq.org
+
+The web app is a static build (`apps/web`) deployed by `.github/workflows/pages.yml` to GitHub Pages, with the custom domain
+**gov.dashhq.org** and Cloudflare proxied in front (the dashhq.org pattern). It has its own origin: on the shared
+`pastapastapasta.github.io` origin every other Pages site of the account could read and write govhub's settings, badge trust
+list and IndexedDB caches. The build takes its base path from `actions/configure-pages` (`/` once the custom domain is set,
+`/govhub/` before), and GitHub answers the old `pastapastapasta.github.io/govhub/` URLs with a 301 to the custom domain.
+
+DNS (zone dashhq.org): `gov CNAME pastapastapasta.github.io`. Cutover order:
+
+1. Create the CNAME **DNS only** (grey cloud) and wait until it resolves publicly.
+2. Set the Pages custom domain: `gh api -X PUT repos/PastaPastaPasta/govhub/pages -f cname=gov.dashhq.org`, then re-run the
+   `pages` workflow so the build switches to base `/`.
+3. Wait for GitHub to issue the certificate (`gh api repos/PastaPastaPasta/govhub/pages --jq .https_certificate.state` is
+   `approved`; if it stays `null` for long, clear the cname and set it again), then
+   `gh api -X PUT repos/PastaPastaPasta/govhub/pages -F https_enforced=true`.
+4. Turn the Cloudflare proxy on (orange cloud). The zone's SSL mode must be **Full (strict)** (Flexible loops on GitHub's
+   HTTPS redirect). Keep an eye on `https_certificate.state` at renewal time: GitHub renews the certificate through the proxied
+   record.
+5. Framing headers: GitHub Pages ignores `public/_headers`, so add a Cloudflare response-header Transform Rule for
+   `http.host eq "gov.dashhq.org"` setting `Content-Security-Policy: frame-ancestors 'none'` and `X-Frame-Options: DENY`
+   (also `X-Content-Type-Options: nosniff`). The API token needs **Zone > Transform Rules > Edit** for that. Until then the app
+   renders only an "open in its own tab" notice inside a frame (`app/frame.tsx`).
+
+Expect a few minutes of downtime between steps 2 and 3: GitHub redirects the github.io URLs to gov.dashhq.org at once, while
+the build still in place points its assets at `/govhub/` and the certificate is not issued yet (the app needs HTTPS for
+`crypto.subtle` and WebAuthn). Do the cutover in one sitting. Check that the WASM is served compressed:
+`curl -sI -H 'Accept-Encoding: gzip, br' https://gov.dashhq.org/assets/<wasm_sdk_bg-*.wasm> | grep -i content-encoding`.
+
+Everything the app keeps in the browser (settings, theme, sign-in, keyring, badge state, caches) is per origin, so it does not
+move from the old address. Passkeys are bound to the domain too: a passkey added on `pastapastapasta.github.io` does not work on
+gov.dashhq.org. Users sign in again with their recovery phrase or key (and add a passkey again). Once the custom domain is set,
+every github.io URL redirects, so the old origin's storage can no longer be opened: custom settings have to be exported there
+(Settings > Export, import and share) before the switch and imported on gov.dashhq.org.

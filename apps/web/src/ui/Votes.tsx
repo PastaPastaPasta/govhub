@@ -17,22 +17,25 @@ const hint = (value: 1 | -1, s: Score, signedIn: boolean) => {
   return c.credits < 0 ? `${c.what} about ${formatCredits(-c.credits, true)}` : `${c.what} costs about ${formatCredits(c.credits, true)}`;
 };
 
-export function Votes({ score, onVote, signedIn, label }: { score: Score; onVote(value: 1 | -1): Promise<void>; signedIn: boolean; label: string }) {
+/** `score` undefined: the reactions are not read yet, so the buttons wait (a vote now could not flip or clear an existing one). */
+export function Votes({ score: read, onVote, signedIn, label }: { score: Score | undefined; onVote(value: 1 | -1): Promise<void>; signedIn: boolean; label: string }) {
   const { busy, error, run } = useAction();
+  const pending = !read;
+  const score = read ?? { up: 0, down: 0, net: 0 };
   const mine = score.mine?.value;
   const click = (v: 1 | -1) => run(() => onVote(v));
   return (
-    <span className="votes" role="group" aria-label={label} data-score={score.net}>
-      <button type="button" className={`vote vote-up ${mine === 1 ? 'on' : ''}`} aria-pressed={mine === 1} disabled={busy} onClick={() => click(1)} title={hint(1, score, signedIn)}>
+    <span className="votes" role="group" aria-label={label} data-score={pending ? undefined : score.net} aria-busy={pending || undefined}>
+      <button type="button" className={`vote vote-up ${mine === 1 ? 'on' : ''}`} aria-pressed={mine === 1} disabled={busy || pending} onClick={() => click(1)} title={hint(1, score, signedIn)}>
         <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
           <path d="M6 2 11 9H1z" />
         </svg>
         <span className="visually-hidden">Up-vote ({hint(1, score, signedIn)})</span>
       </button>
       <span className="vote-score" title={`${score.up} up, ${score.down} down (counted here from the reactions on Platform)`}>
-        {formatSigned(score.net)}
+        {pending ? '…' : formatSigned(score.net)}
       </span>
-      <button type="button" className={`vote vote-down ${mine === -1 ? 'on' : ''}`} aria-pressed={mine === -1} disabled={busy} onClick={() => click(-1)} title={hint(-1, score, signedIn)}>
+      <button type="button" className={`vote vote-down ${mine === -1 ? 'on' : ''}`} aria-pressed={mine === -1} disabled={busy || pending} onClick={() => click(-1)} title={hint(-1, score, signedIn)}>
         <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
           <path d="M6 10 1 3h10z" />
         </svg>

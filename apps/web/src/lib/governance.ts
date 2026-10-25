@@ -63,7 +63,11 @@ export function perPayment(params: Pick<GovParams, 'superblockCycle' | 'blockSec
 }
 
 /** The unit an amount is paid per, e.g. "per superblock (~monthly)"; the same words on cards and in the proposal table. */
-export const perSuperblock = (params: Pick<GovParams, 'superblockCycle' | 'blockSeconds'>): string => `per superblock (~${superblockCadence(params)})`;
+export const perSuperblock = (params: Pick<GovParams, 'superblockCycle' | 'blockSeconds'>): string => {
+  const c = superblockCadence(params);
+  // "every ~N days" carries its own tilde
+  return `per superblock (${c.startsWith('every') ? c : `~${c}`})`;
+};
 
 /** GOVERNANCE_FUDGE_WINDOW (signing.cpp:23). */
 export const FUDGE_WINDOW_S = 2 * 3600;

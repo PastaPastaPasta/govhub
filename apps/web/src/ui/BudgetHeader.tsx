@@ -65,7 +65,10 @@ export function BudgetHeader() {
         )}
       </p>
 
-      <div className="strip" role="img" aria-label={`Allocated ${formatDash(allocated)} of ${formatDash(c.budget)} (${formatPercent(allocatedFrac)}) across ${funded.length} proposals`}>
+      {/* The segments are links for the pointer only; an image role around them would be an interactive control nested in an image
+          (axe nested-interactive), so assistive technology gets this sentence and the strip is hidden from it. */}
+      <p className="visually-hidden">{`Allocated ${formatDash(allocated)} of ${formatDash(c.budget)} (${formatPercent(allocatedFrac)}) across ${funded.length} proposals`}</p>
+      <div className="strip" aria-hidden="true">
         {funded.map((r) => (
           <Link
             key={r.p.value.govHash}

@@ -8,6 +8,7 @@ import { ForumProvider } from './app/forum.tsx';
 import { AuthProvider } from './auth/context.tsx';
 import { BadgePage } from './badge/BadgePage.tsx';
 import { BadgeProvider } from './badge/context.tsx';
+import { FramedNotice, isFramed } from './app/frame.tsx';
 import { Layout } from './app/Layout.tsx';
 import { preloadSdk } from './data/platform.ts';
 import { AboutPage } from './pages/AboutPage.tsx';
@@ -43,6 +44,10 @@ function NotFoundPage() {
 }
 
 createRoot(document.getElementById('root')!).render(
+  // inside another page's frame: no app at all (no data, no storage, nothing to click), only a way out
+  isFramed() ? (
+    <FramedNotice />
+  ) : (
   <StrictMode>
     <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '')}>
       <AppProvider>
@@ -72,5 +77,6 @@ createRoot(document.getElementById('root')!).render(
         </ForumProvider>
       </AppProvider>
     </BrowserRouter>
-  </StrictMode>,
+  </StrictMode>
+  ),
 );

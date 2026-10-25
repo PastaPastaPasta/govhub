@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDash, formatDashAmount, formatDate, formatDuration, formatRelative, formatSigned, shortAddress, shortHash, urlHost } from './format.ts';
+import { errText, formatDash, formatDashAmount, formatDate, formatDuration, formatRelative, formatSigned, shortAddress, shortHash, urlHost } from './format.ts';
 
 describe('formatDash', () => {
   it('formats duffs at a sensible precision', () => {
@@ -45,5 +45,24 @@ describe('misc', () => {
     expect(urlHost('https://www.dashcentral.org/p/x')).toBe('www.dashcentral.org');
     expect(urlHost('javascript:alert(1)')).toBeNull();
     expect(urlHost('not a url')).toBeNull();
+  });
+});
+
+describe('D-055: errText', () => {
+  it('reads the message of a WASM error object (not an Error; message is a prototype getter)', () => {
+    class WasmSdkError {
+      get message() {
+        return 'Dapi client error: connection refused';
+      }
+      get code() {
+        return -1;
+      }
+    }
+    expect(String(new WasmSdkError())).toBe('[object Object]');
+    expect(errText(new WasmSdkError())).toBe('Dapi client error: connection refused');
+    expect(errText(new Error('boom'))).toBe('boom');
+    expect(errText('plain')).toBe('plain');
+    expect(errText({ message: 42 })).toBe('[object Object]');
+    expect(errText(null)).toBe('null');
   });
 });

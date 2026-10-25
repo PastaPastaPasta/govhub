@@ -4,6 +4,7 @@ import type { Profile } from '@govhub/forum';
 import { Link } from 'react-router-dom';
 import { useApp } from '../app/context.tsx';
 import { formatDash, formatInt, shortAddress, shortHash } from '../lib/format.ts';
+import { authorLabel, authorText } from '../lib/social.ts';
 import { perPayment, type GovParams, type PaymentSchedule } from '../lib/governance.ts';
 import type { Row } from '../lib/view.ts';
 import type { TrustLevel } from '../verify/aggregate.ts';
@@ -45,10 +46,11 @@ export function ProposalCard({
   return (
     <article className={`prow prow-${failed ? 'invalid' : (row.state?.light ?? 'none')}`} data-govhash={p.govHash} data-check={check?.status} data-testid="proposal-card">
       <div className="prow-main">
-        <h3 className="prow-title">
+        {/* h2: the list's heading is the page's h1 (a skipped level breaks heading navigation) */}
+        <h2 className="prow-title">
           <Link to={href}>{p.name}</Link>
           {mark && <TrustBadge size="s" level={mark.level} reason={mark.reason} testId="card-trust" />}
-        </h3>
+        </h2>
         {failed ? (
           <FailedNote reason={failed} />
         ) : !row.content.ok ? (
@@ -58,7 +60,9 @@ export function ProposalCard({
         ) : urlOwner ? (
           <p className="prow-owner">
             <Avatar id={urlOwner} profile={ownerProfile} size={18} />
-            <span title={`Identity ${urlOwner}, named in the proposal URL`}>{ownerProfile?.displayName ?? shortHash(urlOwner, 5)}</span>
+            <span title={`Identity ${urlOwner}, named in the proposal URL by its creator; the proposal page shows whether it accepted`}>
+              <bdi>{ownerProfile && authorLabel(urlOwner, ownerProfile).name ? authorText(urlOwner, ownerProfile) : shortHash(urlOwner, 5)}</bdi> <span className="muted small">named by the creator</span>
+            </span>
           </p>
         ) : (
           <p className="prow-owner prow-owner-none">

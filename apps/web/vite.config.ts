@@ -1,6 +1,7 @@
 /// <reference types="vitest/config" />
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+import { fileURLToPath } from 'node:url';
 
 /**
  * Strict CSP, injected into the built index.html only (the dev server needs inline scripts for
@@ -11,9 +12,8 @@ import react from '@vitejs/plugin-react';
 export const CSP = [
   "default-src 'self'",
   "script-src 'self' 'wasm-unsafe-eval'",
-  // blob: is evo-sdk's off-main-thread WASM decompress+compile worker (it falls back to the main
-  // thread, janking for seconds). Only scripts already allowed by script-src can create one.
-  "worker-src 'self' blob:",
+  // the verification and badge workers; evo-sdk's WASM is a separate asset now, so its blob: decompress worker is gone
+  "worker-src 'self'",
   "style-src 'self'",
   "img-src 'self' data:",
   "font-src 'self'",
@@ -34,15 +34,29 @@ function cspPlugin(): Plugin {
   };
 }
 
+/**
+ * evo-sdk's published bundle (`dist/evo-sdk.module.js`) inlines wasm-sdk's WASM as base64 of gzip: a 12 MB JS string that the
+ * CDN cannot compress further, is parsed as JS, base64-decoded and gunzipped before it compiles. Its unbundled entry
+ * (`dist/sdk.js`) imports `@dashevo/wasm-sdk/compressed`; pointing that at wasm-sdk's own `raw` entry makes the WASM a separate
+ * `.wasm` asset (its `new URL('wasm_sdk_bg.wasm', import.meta.url)`), served as application/wasm, compressed by the CDN and
+ * compiled while it streams. Same exports, same `init()`.
+ */
+const EVO_SDK_ALIASES = [
+  { find: /^@dashevo\/evo-sdk$/, replacement: fileURLToPath(new URL('sdk.js', import.meta.resolve('@dashevo/evo-sdk'))) },
+  { find: /^@dashevo\/wasm-sdk\/compressed$/, replacement: '@dashevo/wasm-sdk/raw' },
+];
+
 export default defineConfig({
   // GOVHUB_BASE is the URL prefix when served from a sub-path (e.g. GitHub Pages at /govhub/).
   base: process.env.GOVHUB_BASE ?? '/',
   plugins: [react(), cspPlugin()],
+  // not under Vitest (Node): raw init() would fetch the WASM from a file:// URL; no unit test initialises the SDK
+  resolve: { alias: process.env.VITEST ? [] : EVO_SDK_ALIASES },
   worker: { format: 'es' },
   build: {
     target: 'es2022',
-    // evo-sdk is one ~12 MB ESM chunk with the WASM inlined; it is lazy-loaded after first paint.
-    chunkSizeWarningLimit: 14000,
+    // evo-sdk's JS is ~630 KB (its ~26 MB WASM is a separate asset); it is lazy-loaded after first paint.
+    chunkSizeWarningLimit: 2000,
     rollupOptions: {
       onwarn(w, warn) {
         // @scure/base has a harmless misplaced /* @__PURE__ */ comment.
@@ -51,11 +65,13 @@ export default defineConfig({
       },
     },
   },
-  optimizeDeps: { exclude: ['@dashevo/evo-sdk'] },
+  // not pre-bundled: esbuild would drop wasm-sdk's `new URL(..., import.meta.url)` WASM reference
+  optimizeDeps: { exclude: ['@dashevo/evo-sdk', '@dashevo/wasm-sdk'] },
   preview: { port: 4317, strictPort: true },
   server: { port: 5317 },
   test: {
-    include: ['src/**/*.test.ts'],
+    // component tests (*.test.tsx) pick a DOM per file: `// @vitest-environment happy-dom`
+    include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     environment: 'node',
   },
 });

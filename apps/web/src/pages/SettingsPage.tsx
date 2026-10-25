@@ -8,12 +8,14 @@ import {
   customFields,
   defaultRegistry,
   exportRegistry,
+  importSizeError,
   parseRegistry,
   PROFILE_ORDER,
   PROFILES,
   QUORUM_SERVICE,
   profileRegistry,
   resetRegistry,
+  saveErrorText,
   shareLink,
   type BridgeEndpoint,
   type Overridable,
@@ -34,20 +36,51 @@ function Custom({ on }: { on: boolean }) {
   ) : null;
 }
 
-/** The network profile: one action switches Core network, Platform network, contracts, bridge and DAPI nodes together. */
-function ProfileSettings({ onSwitched }: { onSwitched(text: string): void }) {
+type Msg = { kind: 'ok' | 'error'; text: string };
+/** Where on the page a message belongs: next to the buttons that produced it. */
+type Area = 'advanced' | 'share' | 'json';
+
+/** A result shown next to the control that produced it (a message at the top of the page is off-screen from the lower groups). */
+function Message({ msg }: { msg: Msg | null }) {
+  return msg ? (
+    <p className={msg.kind === 'ok' ? 'notice' : 'error'} role={msg.kind === 'ok' ? 'status' : 'alert'}>
+      {msg.text}
+    </p>
+  ) : null;
+}
+
+/**
+ * The network profile: one action switches Core network, Platform network, contracts, bridge and DAPI nodes together, and drops the
+ * old profile's cache. The radios only pick one (arrow keys move through a radio group, so switching on change would switch, and
+ * wipe the cache, at every keypress); the switch happens when the user confirms.
+ */
+function ProfileSettings() {
   const { registry, setRegistry, switchProfile, mode, setMode } = useApp();
+  const [picked, setPicked] = useState(registry.profile);
+  const [msg, setMsg] = useState<Msg | null>(null);
+  useEffect(() => setPicked(registry.profile), [registry.profile]);
+  // the confirm buttons go away once used: focus returns to the radio group instead of falling to <body>
+  const radios = useRef<HTMLFieldSetElement>(null);
+  const backToRadios = () => requestAnimationFrame(() => radios.current?.querySelector<HTMLInputElement>('input:checked')?.focus());
   const custom = customFields(registry);
   const p = PROFILES[registry.profile];
+  const run = (f: () => void, ok: string) => {
+    try {
+      f();
+      setMsg({ kind: 'ok', text: ok });
+    } catch (e) {
+      setMsg({ kind: 'error', text: saveErrorText(e) });
+    }
+  };
   return (
     <section className="form" aria-labelledby="profile-title" id="network">
       <h2 id="profile-title">Network</h2>
       <p className="small muted">Which Dash network govhub shows. Testnet is for trying things; Dev shows real mainnet proposals while govhub is being built.</p>
-      <fieldset className="seg profile-switch">
+      <fieldset className="seg profile-switch" ref={radios}>
         <legend className="visually-hidden">Network profile</legend>
         {PROFILE_ORDER.map((id) => {
           const x = PROFILES[id];
-          const on = registry.profile === id;
+          const on = picked === id;
           return (
             <label key={id} className={[on ? 'on' : '', x.deployed ? '' : 'disabled'].filter(Boolean).join(' ')} title={x.deployed ? x.title : `${x.title}: not yet deployed`}>
               <input
@@ -57,8 +90,8 @@ function ProfileSettings({ onSwitched }: { onSwitched(text: string): void }) {
                 checked={on}
                 disabled={!x.deployed}
                 onChange={() => {
-                  switchProfile(id);
-                  onSwitched(`Switched to ${x.title}. Data reloads.`);
+                  setPicked(id);
+                  setMsg(null);
                 }}
               />
               {x.label}
@@ -67,6 +100,28 @@ function ProfileSettings({ onSwitched }: { onSwitched(text: string): void }) {
           );
         })}
       </fieldset>
+      {picked !== registry.profile && (
+        <div className="form-actions" data-testid="profile-confirm">
+          <button type="button" className="btn btn-primary" onClick={() => {
+              run(() => switchProfile(picked), `Switched to ${PROFILES[picked].title}. Data reloads.`);
+              backToRadios();
+            }}
+          >
+            Switch to {PROFILES[picked].label}
+          </button>
+          <button
+            type="button"
+            className="btn btn-quiet"
+            onClick={() => {
+              setPicked(registry.profile);
+              backToRadios();
+            }}
+          >
+            Stay on {p.label}
+          </button>
+        </div>
+      )}
+      <Message msg={msg} />
       <p className="small" data-testid="profile-description">
         <b>{p.title}.</b> {p.description} Core {registry.coreNetwork}, Platform {registry.platformNetwork}
         {registry.govContractId ? '' : ', no governance contract yet'}.
@@ -77,10 +132,7 @@ function ProfileSettings({ onSwitched }: { onSwitched(text: string): void }) {
           <button
             type="button"
             className="linkish"
-            onClick={() => {
-              setRegistry(profileRegistry(registry.profile));
-              onSwitched(`Overrides removed: back to the ${p.label} profile's settings.`);
-            }}
+            onClick={() => run(() => setRegistry(profileRegistry(registry.profile)), `Overrides removed: back to the ${p.label} profile's settings.`)}
           >
             Use the profile's settings
           </button>
@@ -131,7 +183,7 @@ function BlockListSettings() {
         <legend>Lists you follow</legend>
         <label className="check">
           <input type="checkbox" checked={!defaultOff} onChange={(e) => setDefaultOff(!e.target.checked)} /> The default list, {registry.forum.moderationName}{' '}
-          <span className="mono-ish small">{registry.forum.moderationIdentityId}</span>
+          <span className="mono-ish small break">{registry.forum.moderationIdentityId}</span>
         </label>
         <label>
           Other lists: the identity ids of their owners, one per line
@@ -168,7 +220,10 @@ export function SettingsPage() {
   const { registry, setRegistry } = useApp();
   const [draft, setDraft] = useState<Registry>(registry);
   const [json, setJson] = useState('');
-  const [msg, setMsg] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
+  // one message per area, rendered next to the buttons that produced it
+  const [msg, setMsg] = useState<(Msg & { area: Area }) | null>(null);
+  const say = (area: Area, kind: Msg['kind'], text: string) => setMsg({ area, kind, text });
+  const at = (area: Area) => (msg?.area === area ? msg : null);
   const fileRef = useRef<HTMLInputElement>(null);
   const [portalsText, setPortalsText] = useState(registry.forum.claimPortals.join(' '));
   const [advanced, setAdvanced] = useState(() => customFields(registry).size > 0);
@@ -189,18 +244,26 @@ export function SettingsPage() {
   const set = <K extends keyof Registry>(k: K, v: Registry[K]) => setDraft((d) => ({ ...d, [k]: v }));
   const setBridge = (i: number, patch: Partial<BridgeEndpoint>) => set('bridges', draft.bridges.map((b, j) => (j === i ? { ...b, ...patch } : b)));
 
-  const apply = (r: Registry, okText: string) => {
+  const apply = (area: Area, r: unknown, okText: string) => {
     const { registry: parsed, errors } = parseRegistry(r);
-    if (errors.length) return setMsg({ kind: 'error', text: errors.join('. ') });
-    setRegistry(parsed);
-    setMsg({ kind: 'ok', text: okText });
-  };
-  const importText = (text: string) => {
+    if (errors.length) return say(area, 'error', errors.join('. '));
     try {
-      apply(JSON.parse(text) as Registry, 'Imported and saved.');
+      setRegistry(parsed);
     } catch (e) {
-      setMsg({ kind: 'error', text: `Not valid JSON: ${(e as Error).message}` });
+      return say(area, 'error', saveErrorText(e));
     }
+    say(area, 'ok', okText);
+  };
+  const importText = (area: Area, text: string) => {
+    const tooLarge = importSizeError(new Blob([text]).size);
+    if (tooLarge) return say(area, 'error', tooLarge);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch (e) {
+      return say(area, 'error', `Not valid JSON: ${(e as Error).message}`);
+    }
+    apply(area, parsed, 'Imported and saved.');
   };
   const download = () => {
     const url = URL.createObjectURL(new Blob([exportRegistry(registry)], { type: 'application/json' }));
@@ -216,12 +279,7 @@ export function SettingsPage() {
       <h1 id="settings-title">Settings</h1>
       <p className="muted">Settings stay in this browser.</p>
 
-      <ProfileSettings onSwitched={(text) => setMsg({ kind: 'ok', text })} />
-      {msg && (
-        <p className={msg.kind === 'ok' ? 'notice' : 'error'} role={msg.kind === 'ok' ? 'status' : 'alert'}>
-          {msg.text}
-        </p>
-      )}
+      <ProfileSettings />
 
       <section className="form" aria-labelledby="appearance-title">
         <h2 id="appearance-title">Appearance</h2>
@@ -239,7 +297,7 @@ export function SettingsPage() {
           className="form"
           onSubmit={(e) => {
             e.preventDefault();
-            apply(draft, 'Saved. Data reloads with the new endpoints.');
+            apply('advanced', draft, 'Saved. Data reloads with the new endpoints.');
           }}
         >
           <p className="muted small">Each setting starts as the {PROFILES[draft.profile].label} profile's. A setting you change here is marked custom; switching profile replaces them all.</p>
@@ -408,14 +466,19 @@ export function SettingsPage() {
               type="button"
               className="btn btn-quiet"
               onClick={() => {
-                setRegistry(resetRegistry());
+                try {
+                  setRegistry(resetRegistry());
+                } catch (e) {
+                  return say('advanced', 'error', saveErrorText(e));
+                }
                 void cacheClear();
-                setMsg({ kind: 'ok', text: 'Reset to the defaults and cleared the cache.' });
+                say('advanced', 'ok', 'Reset to the defaults and cleared the cache.');
               }}
             >
               Reset to defaults
             </button>
           </div>
+          <Message msg={at('advanced')} />
         </form>
       </details>
 
@@ -453,11 +516,14 @@ export function SettingsPage() {
               type="button"
               className="btn"
               onClick={() => {
-                const link = shareLink(registry, location.origin);
-                void navigator.clipboard?.writeText(link).then(
-                  () => setMsg({ kind: 'ok', text: 'Share link copied. Whoever opens it is asked before anything changes.' }),
-                  () => setJson(link),
-                );
+                // the app's own URL, base path included (e.g. /govhub/ on a project Pages site)
+                const link = shareLink(registry, new URL(import.meta.env.BASE_URL, location.origin).href);
+                const inBox = () => {
+                  setJson(link);
+                  say('share', 'ok', 'The share link is in the box below: copy it from there.');
+                };
+                if (!navigator.clipboard) return inBox(); // no clipboard API (not a secure context)
+                void navigator.clipboard.writeText(link).then(() => say('share', 'ok', 'Share link copied. Whoever opens it is asked before anything changes.'), inBox);
               }}
             >
               Copy share link
@@ -472,20 +538,26 @@ export function SettingsPage() {
               hidden
               onChange={(e) => {
                 const f = e.target.files?.[0];
-                if (f) void f.text().then(importText);
                 e.target.value = '';
+                if (!f) return;
+                // refused before it is read: a huge file would be read into memory and parsed for nothing
+                const tooLarge = importSizeError(f.size);
+                if (tooLarge) return say('share', 'error', tooLarge);
+                void f.text().then((text) => importText('share', text), (err: Error) => say('share', 'error', `The file could not be read: ${err.message}`));
               }}
             />
           </div>
+          <Message msg={at('share')} />
           <label>
             Settings JSON (paste and import, or copy)
             <textarea rows={10} className="code" value={json} onChange={(e) => setJson(e.target.value)} spellCheck={false} placeholder={exportRegistry(defaultRegistry()).slice(0, 120) + '…'} />
           </label>
           <div className="form-actions">
-            <button type="button" className="btn" onClick={() => importText(json)} disabled={!json.trim()}>
+            <button type="button" className="btn" onClick={() => importText('json', json)} disabled={!json.trim()}>
               Import this JSON
             </button>
           </div>
+          <Message msg={at('json')} />
         </section>
       </details>
     </section>

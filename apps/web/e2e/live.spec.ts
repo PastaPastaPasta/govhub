@@ -26,7 +26,7 @@ test('@live reads the gov contract with proofs and verifies a collateral over ma
   // documents on testnet carry a "do not match" chip and are skipped.
   const real = cards.filter({ hasNot: page.locator('.chip-bad, .tag-fail') });
   if ((await real.count()) > 0) {
-    await real.first().locator('h3 a').click();
+    await real.first().locator('h2 a').click();
     const drawer = await openDrawer(page);
     const collateral = drawer.getByTestId('collateral-check');
     await expect(collateral.locator('[data-verdict]')).toBeAttached({ timeout: 90_000 });

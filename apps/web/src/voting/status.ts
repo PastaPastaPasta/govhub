@@ -1,7 +1,7 @@
 // What a watched vote's state means, in plain words, and the five-step tracker shown after signing (signed in your browser ->
 // accepted by a relay -> broadcast to the network -> seen by the network -> counted in the tally). Pure: the vote record and the
 // clock in, words out. Times are formatted by the caller.
-import { formatDuration } from '../lib/format.ts';
+import { errText, formatDuration } from '../lib/format.ts';
 import type { RelayInfo, WatchedVote } from './pending.ts';
 import { DEADLINE_MARGIN_S, deferredWindow, OUTCOME_NAME } from './plan.ts';
 import { relayHost, RelayError, type RelayVoteState } from './relay.ts';
@@ -29,7 +29,7 @@ const relayCodeText = (code: string | null | undefined): string => (code ? (RELA
 /** The relay that knows most about the vote: the one furthest along. */
 export function leadRelay(v: WatchedVote): { relay: string; info: RelayInfo; status?: string } | null {
   if (!v.refs.length) return null;
-  const rank = (s?: string) => ['confirmed', 'broadcast', 'sending', 'held'].indexOf(s ?? '');
+  const rank = (s?: string) => ['confirmed', 'broadcast', 'maybe-broadcast', 'sending', 'held'].indexOf(s ?? '');
   const order = (s?: string) => (rank(s) < 0 ? 99 : rank(s));
   const best = [...v.refs].sort((a, b) => order(v.relayStatus?.[a.relay]) - order(v.relayStatus?.[b.relay]))[0]!;
   return { relay: best.relay, info: v.relayInfo?.[best.relay] ?? {}, ...(v.relayStatus?.[best.relay] ? { status: v.relayStatus[best.relay] } : {}) };
@@ -121,7 +121,7 @@ const LABELS: Record<StepKey, string> = {
 export function trackerSteps(v: WatchedVote, now: number, fmt: TimeFmt): Step[] {
   const lead = leadRelay(v);
   const host = lead ? relayHost(lead.relay) : 'the relay';
-  const leftRelay = v.status === 'broadcast' || v.status === 'confirmed' || ['sending', 'broadcast', 'confirmed'].includes(lead?.status ?? '');
+  const leftRelay = v.status === 'broadcast' || v.status === 'confirmed' || ['sending', 'maybe-broadcast', 'broadcast', 'confirmed'].includes(lead?.status ?? '');
   const reached = (k: StepKey): boolean => {
     switch (k) {
       case 'signed':
@@ -182,7 +182,7 @@ export type SubmitOutcome =
 export function classifySubmitError(e: unknown, relay: string): SubmitOutcome {
   const host = relayHost(relay);
   if (!(e instanceof RelayError) || e.status === undefined) {
-    const msg = e instanceof Error ? e.message : String(e);
+    const msg = errText(e);
     // a request that timed out may have reached the relay; a refused connection or a failed DNS lookup did not
     const maybeReceived = /timeout|timed out|aborted/i.test(msg);
     return { kind: 'retry', text: maybeReceived ? `${host} did not answer in time` : /unreachable/.test(msg) ? `${host} is unreachable` : msg, tryOther: true, ...(maybeReceived ? { maybeReceived } : {}) };
@@ -218,7 +218,8 @@ export function applyRelayState(v: WatchedVote, relay: string, st: RelayVoteStat
   // the bridge decides confirmed / replaced; relays only move a vote along or end it
   if (v.status === 'confirmed' || v.status === 'replaced' || v.status === 'cancelled') return next;
   const all = Object.values(relayStatus);
-  if (all.some((x) => x === 'broadcast' || x === 'confirmed' || x === 'sending')) return { ...next, status: 'broadcast', lastSendError: undefined };
+  // maybe-broadcast: the relay may already have put it in Core, so it is treated as sent (it cannot be cancelled)
+  if (all.some((x) => x === 'broadcast' || x === 'confirmed' || x === 'sending' || x === 'maybe-broadcast')) return { ...next, status: 'broadcast', lastSendError: undefined };
   if (all.some((x) => x === 'held')) return { ...next, status: 'held', lastSendError: undefined };
   if (all.every((x) => x === 'cancelled')) return { ...next, status: 'cancelled' };
   if (all.every((x) => x === 'failed' || x === 'superseded' || x === 'cancelled')) {

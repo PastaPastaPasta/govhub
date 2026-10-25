@@ -90,6 +90,8 @@ describe('view model', () => {
     expect(superblockCadence(GOV_PARAMS.mainnet)).toBe('monthly');
     expect(superblockCadence(GOV_PARAMS.testnet)).toBe('hourly');
     expect(perSuperblock(GOV_PARAMS.testnet)).toBe('per superblock (~hourly)');
+    // D-082: "every ~N days" brings its own tilde
+    expect(perSuperblock({ superblockCycle: Math.round((15 * 86400) / GOV_PARAMS.mainnet.blockSeconds), blockSeconds: GOV_PARAMS.mainnet.blockSeconds })).toBe('per superblock (every ~15 days)');
     const spacing = GOV_PARAMS.mainnet.blockSeconds;
     expect(superblockCadence({ superblockCycle: Math.round(86400 / spacing), blockSeconds: spacing })).toBe('daily');
     expect(superblockCadence({ superblockCycle: Math.round(7 * 86400 / spacing), blockSeconds: spacing })).toBe('weekly');

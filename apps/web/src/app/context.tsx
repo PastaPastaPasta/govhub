@@ -1,11 +1,12 @@
 // App-wide state: endpoint registry, data mode, the data source built from them, theme, and the
 // governance snapshot (cycle, height, active proposals, tallies) shared by the header and lists.
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
-import { loadRegistry, registryScope, saveRegistry, registryForProfile, type ProfileId, type Registry } from '../config/registry.ts';
+import { loadSavedRegistry, registryScope, saveRegistry, registryForProfile, type ProfileId, type Registry } from '../config/registry.ts';
 import { resolveMode, setMode as persistMode, type DataMode } from '../config/mode.ts';
 import { cacheDeleteWhere, cacheGet, cachePut } from '../data/cache.ts';
 import { createSource, type DataSource } from '../data/repo.ts';
 import type { Cycle, Proposal, Sourced, Tally } from '../data/types.ts';
+import { errText } from '../lib/format.ts';
 import type { GovParams } from '../lib/governance.ts';
 import { byRank, deriveRow, partitionByCheck, type Checked, type Row } from '../lib/view.ts';
 import { ProposalChecks, type CheckCache, type StoredCheck } from '../verify/checks.ts';
@@ -39,7 +40,11 @@ export interface ActiveRows {
 
 interface Ctx {
   registry: Registry;
+  /** Saves and applies; throws when the settings cannot be saved (a full storage quota), leaving the current ones in place. */
   setRegistry(r: Registry): void;
+  /** Why the saved settings were not used (they failed validation, so the defaults are shown), until dismissed or replaced. */
+  settingsProblem: string[] | null;
+  dismissSettingsProblem(): void;
   /** One action: the profile's settings replace the current ones, the old profile's document cache is dropped, data reloads. */
   switchProfile(id: ProfileId): void;
   mode: DataMode;
@@ -61,9 +66,6 @@ export function useApp(): Ctx {
   if (!c) throw new Error('useApp outside AppProvider');
   return c;
 }
-
-/** SDK errors are not always `Error`s (evo-sdk throws WASM error objects): use their message when they have one. */
-const errText = (e: unknown) => (e instanceof Error ? e.message : e && typeof e === 'object' && 'message' in e ? String((e as { message: unknown }).message) : String(e));
 
 function useGovSnapshot(source: DataSource, nonce: number): GovSnapshot {
   const [cycle, setCycle] = useState<Load<Sourced<Cycle> | null>>({ loading: true });
@@ -153,7 +155,9 @@ function makeChecks(source: DataSource): ProposalChecks {
 }
 
 export function AppProvider({ children, initialMode }: { children: ReactNode; initialMode?: DataMode }) {
-  const [registry, setRegistryState] = useState<Registry>(() => loadRegistry());
+  const [saved] = useState(() => loadSavedRegistry());
+  const [registry, setRegistryState] = useState<Registry>(saved.registry);
+  const [settingsProblem, setSettingsProblem] = useState<string[] | null>(saved.errors.length ? saved.errors : null);
   const [mode, setModeState] = useState<DataMode>(() => initialMode ?? resolveMode(location.search, sessionStorage, import.meta.env.VITE_GOVHUB_FIXTURES));
   const [theme, setThemeState] = useState<Theme>(() => (localStorage.getItem(THEME_KEY) as Theme | null) ?? 'system');
   const [nonce, setNonce] = useState(0);
@@ -183,7 +187,9 @@ export function AppProvider({ children, initialMode }: { children: ReactNode; in
   const setRegistry = useCallback((r: Registry) => {
     saveRegistry(r);
     setRegistryState(r);
+    setSettingsProblem(null);
   }, []);
+  const dismissSettingsProblem = useCallback(() => setSettingsProblem(null), []);
   const setMode = useCallback((m: DataMode) => {
     persistMode(m);
     setModeState(m);
@@ -197,16 +203,16 @@ export function AppProvider({ children, initialMode }: { children: ReactNode; in
     (id: ProfileId) => {
       if (id === registry.profile) return;
       const old = `${registryScope(registry)}:`;
+      setRegistry(registryForProfile(registry, id)); // first: if it cannot be saved, nothing is switched or dropped
       // Verification results stay (they are keyed by the old scope, so they never leak); the old profile's documents go.
       void cacheDeleteWhere((k) => k.startsWith(old) && !k.includes(':check:'));
-      setRegistry(registryForProfile(registry, id));
     },
     [registry, setRegistry],
   );
 
   const value = useMemo<Ctx>(
-    () => ({ registry, setRegistry, switchProfile, mode, setMode, source, params, theme, setTheme, gov, checks, activeRows, reload }),
-    [registry, setRegistry, switchProfile, mode, setMode, source, params, theme, setTheme, gov, checks, activeRows, reload],
+    () => ({ registry, setRegistry, settingsProblem, dismissSettingsProblem, switchProfile, mode, setMode, source, params, theme, setTheme, gov, checks, activeRows, reload }),
+    [registry, setRegistry, settingsProblem, dismissSettingsProblem, switchProfile, mode, setMode, source, params, theme, setTheme, gov, checks, activeRows, reload],
   );
   return <AppCtx.Provider value={value}>{children}</AppCtx.Provider>;
 }

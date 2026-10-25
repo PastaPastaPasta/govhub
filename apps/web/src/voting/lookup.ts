@@ -8,6 +8,7 @@
 // outpoints stay, labelled. Only when the bridge itself cannot be read is the lookup an error.
 import type { AgreedSml } from '@govhub/dapi';
 import type { BridgeMnList } from '../data/bridge.ts';
+import { errText } from '../lib/format.ts';
 import type { SmlEntry } from '../verify/votes.ts';
 import { matchMasternodes, proveCollaterals, type KeyRef, type OwnedMasternode } from './masternodes.ts';
 
@@ -74,7 +75,6 @@ async function step<T>(name: LookupStep, ms: number, outer: AbortSignal, fn: (si
   }
 }
 
-const msg = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
 export async function lookupMasternodes(
   keys: readonly KeyRef[],
@@ -95,7 +95,7 @@ export async function lookupMasternodes(
       smlNodes = a.agreedBy.length;
     } catch (e) {
       if (o.signal.aborted) throw o.signal.reason;
-      warning = `Could not confirm with DAPI evonodes (${msg(e)}), so this uses the bridge’s list.`;
+      warning = `Could not confirm with DAPI evonodes (${errText(e)}), so this uses the bridge’s list.`;
     }
   }
   const m = matchMasternodes(keys, list.masternodes, sml, deps.network);
@@ -109,6 +109,6 @@ export async function lookupMasternodes(
     return { owned: proved.mns, missing: m.missing, mismatch: proved.mismatch, smlNodes, ...(warning ? { warning } : {}) };
   } catch (e) {
     if (o.signal.aborted) throw o.signal.reason;
-    return { owned: m.owned, missing: m.missing, mismatch: [], smlNodes, warning: warning ?? `Collaterals not proved yet (${msg(e)}); the bridge’s outpoints are used.` };
+    return { owned: m.owned, missing: m.missing, mismatch: [], smlNodes, warning: warning ?? `Collaterals not proved yet (${errText(e)}); the bridge’s outpoints are used.` };
   }
 }

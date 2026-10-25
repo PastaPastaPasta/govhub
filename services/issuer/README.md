@@ -41,6 +41,7 @@ runs `issuer healthcheck` (exit 0 if `GET /healthz` answers).
 | `issuer healthcheck` | exit 0 when the local service answers `/healthz` on `HTTP_PORT` |
 | `issuer keygen --dir D --from E --epochs N [--bits 2048\|3072]` | **offline**: one key per epoch, see "Keys" |
 | `issuer publish-keys --dir D --identity-file critical.json --contract C --network N [--min-ahead 3]` | **offline**: publish the `issuerKey` documents with the CRITICAL key |
+| `issuer revoke --epoch E [--through E2] --from-height H --identity-file critical.json --contract C --network N [--yes]` | **offline**: publish `issuerRevocation` documents with the CRITICAL key (a dry run without `--yes`), see "Revoking a key" |
 | `issuer epoch --network N --height H` | print the epoch schedule around height H (JSON) |
 
 ## What the issuer checks
@@ -172,6 +173,42 @@ Keep the identity's MASTER and CRITICAL keys offline (CRITICAL signs the `issuer
 to the server, and only for `issuerReport` documents. Key files are JSON
 `{"identityId", "keyId", "privateKeyHex" | "wif"}`.
 
+### Revoking a key
+
+If the server is compromised, every epoch key it held (the two being issued and the staged ones) can mint badges. Revoke
+them from the offline machine with the CRITICAL key, like `publish-keys`:
+
+```sh
+issuer revoke --epoch 2742 --through 2744 --from-height 1650000 --identity-file critical.json --contract <badge contract> --network testnet        # dry run
+issuer revoke --epoch 2742 --through 2744 --from-height 1650000 --identity-file critical.json --contract <badge contract> --network testnet --yes
+```
+
+Readers (`packages/badge/src/reader.ts`) void every badge of epoch E created at or after the revocation's
+`effectiveCoreHeight`. Any revocation the issuer published for (issuer, E) counts, whatever its `keyId`, so an epoch with
+no published key can be revoked too (the command uses a zero `keyId`), and any key published for it later is void from
+that height. Pick the height of the compromise or earlier: badges created before it stay valid. The document is
+immutable, cannot be deleted and is unique per (issuer, epoch), so the command prints the plan and publishes only with
+`--yes`. For an epoch that already has a revocation it reports `already revoked` (at or below the height) or `conflict`
+(a later height, which cannot be replaced; exit code 3). A failed publish stops the run with `error` (exit code 1); what
+was published before it is reported, and a re-run reports those epochs as `already revoked`.
+
+**Squatting risk.** Whoever holds the CRITICAL key can publish a revocation for any epoch. A thief can publish one with
+`effectiveCoreHeight = 4294967295` (never in effect) for every epoch: the unique index then blocks the issuer's real
+revocation, and badges minted with stolen epoch keys stay valid. The same thief can also publish `issuerKey` documents
+for epochs that have none yet. Revocations do not help once the CRITICAL key itself is lost; recovery is: disable the
+CRITICAL key with the MASTER key (identity update), revoke what is still free, and have readers drop or replace the
+issuer identity in their trust lists. Keeping the CRITICAL key offline is the protection.
+
+Pre-publishing a no-op revocation (`effectiveCoreHeight = max`) for every future epoch was considered and **not
+adopted**. Under the reader rules it is sound in the narrow sense (a revocation at the maximum height voids nothing), and
+it would stop a thief from squatting those slots or from griefing honest badges with an early height. But the slot is
+unique and immutable, so it would block the issuer's own revocation in exactly the same way: no epoch with a
+pre-published revocation could ever be revoked, including after the likelier event, a server compromise that leaks
+epoch keys while the CRITICAL key is safe. It trades the main use of revocations for protection against a key that is
+kept offline anyway. The web client also treats any revocation for an epoch as final: it refuses new requests for that
+epoch and does not post badges whose key is revoked, whatever the height, so a no-op revocation would stop the epoch's
+badges in this app as well.
+
 ## What is stored and logged (logging policy)
 
 The owner's rule: users may accept that the issuer could learn which masternode a badge belongs to (Standard mode), but
@@ -181,7 +218,7 @@ The owner's rule: users may accept that the issuer could learn which masternode 
 |---|---|
 | Token store (SQLite, `issuer-data`) | only `(epoch, proTxHash, collateral, sha256(blindedMsg))` for one-token-per-MN dedup and idempotent retries, plus per-epoch counts. No request times, IPs, user agents, request strings or signatures. Rows are deleted (`secure_delete`) when the epoch's issuance window closes, at `S(E+1)` plus the margin. Rollback journal, not WAL: a WAL would keep every insert in order until a checkpoint, i.e. the order in which masternodes got tokens. SSD and filesystem remnants are a host property |
 | Application logs (stderr, kept by Docker's json-file driver) | lifecycle and error lines with no MN, outpoint, address or request detail; requests only as hourly aggregate counters. Hono's error handler is replaced and `console` is silenced in `issuer run`, so no library prints a request. `test/logging.test.ts` runs a full flow with `cf-connecting-ip`/user-agent headers at debug level and searches all output for the proTxHash, outpoint, IP and user agent |
-| Rate limits | in memory only (per MN after authentication, a global budget), never persisted |
+| Rate limits | in memory only, never persisted: a global per-second budget, and a count per MN (after authentication) for the current wall-clock minute only. The whole per-MN map is dropped when the minute changes, on the next request or the housekeeping tick, so no request times and no list of masternodes that asked outlive the minute. `test/logging.test.ts` inspects that state too (`TokenService.debugSnapshot()`, tests only) |
 | Tunnel gateway (Caddy, `caddy/tunnel-gateway-issuer.Caddyfile`) | nothing: no access log, and the default logger (which writes proxy errors with the client address) is discarded |
 | cloudflared | `--loglevel fatal`: no per-request lines at all (debug logs every request; info, warn and error log failed origin requests with a time). Watch tunnel health on the metrics port or with `cloudflared tunnel info` |
 | Cloudflare's edge | outside our control: Cloudflare sees request metadata (client IP, time, path). An operator can reduce what it keeps by turning off Logpush, Web Analytics and similar features for the issuer's hostname where the plan allows |
@@ -254,11 +291,15 @@ The badge flow is in `apps/web/src/badge`:
   token request goes out only after half an hour without any Platform write from this browser (every identity state
   transition is recorded at the PlatformPort) and without another request; badge posts wait half an hour after the last
   request, and go before requests. The check and the mark run under a browser-wide Web Lock. A failed request waits a
-  random 1 to 3 hours. During the cooldown every tab asks the user not to post. One scheduler per identity runs across
+  random 1 to 3 hours; the page shows the error, the next try, and a "Retry now" button. During the cooldown every tab asks the user not to post. One scheduler per identity runs across
   tabs (Web Locks), and every save merges into the latest stored jobs under a lock. Jobs are stored per (identity,
   signing key); an entry that does not decrypt is never overwritten.
-- A badge is posted only when the issuer's report for the epoch shows at least the network's minimum number of tokens
-  (testnet 3, mainnet 10): a badge among two or three would stand out.
+- A Private / Extra private badge is posted only when the issuer's report for the epoch before shows at least the network's
+  minimum number of tokens (testnet 5, mainnet 20): a badge among two or three would stand out. The report has one count
+  for all tokens of an epoch, Standard ones included, so it cannot say how many chose a private mode; the minimum is set
+  higher to allow for that, and the page says so. If the issuer served that epoch but published no report, the badge is not
+  posted (readers hide the issuer's badges then anyway). A token request that never reached the issuer (the challenge
+  failed) does not start the half-hour cooldown.
 - One request per issuer per epoch per identity. More would only tell the issuer which MNs belong together.
 - Pending jobs are kept in `localStorage`, encrypted with AES-256-GCM under
   `HKDF-SHA256(identity signing key, salt "govhub-badge-store-v1", info identityId)`, with the identity id as AAD,

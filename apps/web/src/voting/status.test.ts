@@ -169,6 +169,11 @@ describe('tracker', () => {
     expect(states({ ...seen, countedAt: NOW + 40 })).toEqual(['done', 'done', 'done', 'done', 'done']);
     expect(trackerSteps(seen, NOW, fmt)[3]!.detail).toBe('T30, signature verified');
   });
+  it('a relay vote that may already be in Core (maybe-broadcast) counts as sent, never as held or cancellable', () => {
+    const maybe = applyRelayState(vote(), R1, relayState({ status: 'maybe-broadcast', lastError: 'core-error', nextAttemptAt: NOW + 30, holdReason: 'retrying' }));
+    expect(maybe.status).toBe('broadcast');
+    expect(states(maybe)).toEqual(['done', 'done', 'done', 'active', 'todo']);
+  });
   it('a relay that cannot be reached stops at "accepted by relay"; a refusal after the relay took it stops at broadcast', () => {
     expect(states(vote({ lastSendError: 'unreachable', nextSendAt: NOW + 5 }))).toEqual(['done', 'error', 'todo', 'todo', 'todo']);
     const failed = applyRelayState(vote(), R1, relayState({ status: 'failed', lastError: 'obsolete' }));
