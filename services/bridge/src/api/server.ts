@@ -7,7 +7,7 @@ import type { Bridge } from '../bridge.ts';
 import type { GovObjectRow, TallyRow, VoteRow } from '../archive/db.ts';
 import { latestSnapshot, mnAddresses, snapshotAt } from '../mnlist.ts';
 import { proposalView } from '../proposal.ts';
-import { FUDGE_WINDOW_S, type ComputedTally } from '../tally.ts';
+import { FUDGE_WINDOW_S, type ComputedTally, type RecordedVoteSet } from '../tally.ts';
 import { dashCentralBudget, dashCentralProposal } from './dashcentral.ts';
 import { log, nowS } from '../log.ts';
 import { QUORUM_PROOF_EXPOSED_HEADERS, QUORUM_PROOF_PATH, registerQuorumProof } from './quorumproof.ts';
@@ -101,6 +101,29 @@ export function cycleJson(b: Bridge) {
     fundingThreshold: run.threshold,
     governance: b.govInfo,
   };
+}
+
+/** The set behind a stored tally row (vote_sets; `counted_votes` in 0.1.0 dev archives), or null when it is not recorded. */
+function storedSet(b: Bridge, row: TallyRow): RecordedVoteSet | null {
+  const set = b.db.prepare('SELECT vote_hashes FROM vote_sets WHERE gov_hash = ? AND vote_set_hash = ?').get(row.gov_hash, row.vote_set_hash) as { vote_hashes: string } | undefined;
+  const json = set?.vote_hashes ?? row.counted_votes ?? null;
+  if (json === null) return null;
+  return { asOfHeight: row.as_of_height, listHash: row.list_hash, voteSetHash: row.vote_set_hash, weighted: { yes: row.yes_weighted, no: row.no_weighted, abstain: row.abstain_weighted }, voteHashes: JSON.parse(json) as string[] };
+}
+
+/** The newest set with this voteSetHash at or below `maxHeight`: the live tally's, a superseded live one's, or a stored one's. */
+function setByHash(b: Bridge, govHash: string, voteSetHash: string, maxHeight = Number.MAX_SAFE_INTEGER): RecordedVoteSet | null {
+  const found: RecordedVoteSet[] = [];
+  const live = b.lastRun?.tallies.find((t) => t.govHash === govHash && t.voteSetHash === voteSetHash);
+  if (live) found.push({ ...live, voteHashes: live.counted.map((v) => v.hash) });
+  const retired = b.retiredSets.get(govHash, voteSetHash, nowS());
+  if (retired) found.push(retired);
+  const row = b.db
+    .prepare('SELECT * FROM tallies WHERE gov_hash = ? AND vote_set_hash = ? AND as_of_height <= ? ORDER BY as_of_height DESC, id DESC LIMIT 1')
+    .get(govHash, voteSetHash, maxHeight) as TallyRow | undefined;
+  const stored = row ? storedSet(b, row) : null;
+  if (stored) found.push(stored);
+  return found.filter((s) => s.asOfHeight <= maxHeight).sort((x, y) => y.asOfHeight - x.asOfHeight)[0] ?? null;
 }
 
 const byOutpoint = (x: { collateral_txid: string; collateral_n: number }, y: { collateral_txid: string; collateral_n: number }) =>
@@ -218,21 +241,11 @@ export function createApi(b: Bridge, deps: { now?: () => number } = {}): Hono {
       return c.json({ ...base, asOfHeight: t?.asOfHeight ?? null, voteSetHash: t?.voteSetHash ?? null, count: votes.length, votes });
     }
 
-    // the vote set behind the tally in force at a past height (e.g. a published tally document's asOfHeight)
-    const hq = c.req.query('height');
-    if (hq !== undefined) {
-      const h = Number(hq);
-      if (!Number.isInteger(h) || h < 0) return c.json({ error: 'height must be a non-negative integer' }, 400);
-      const maxH = b.lastRun?.height ?? (b.db.prepare('SELECT MAX(as_of_height) h FROM tallies').get() as { h: number | null }).h ?? -1;
-      if (h > maxH) return c.json({ error: `height ${h} is above the latest tally height ${maxH}` }, 404);
-      const row = b.db.prepare('SELECT * FROM tallies WHERE gov_hash = ? AND as_of_height <= ? ORDER BY as_of_height DESC, id DESC LIMIT 1').get(hash, h) as TallyRow | undefined;
-      const set = row ? (b.db.prepare('SELECT vote_hashes FROM vote_sets WHERE gov_hash = ? AND vote_set_hash = ?').get(hash, row.vote_set_hash) as { vote_hashes: string } | undefined) : undefined;
-      const json = set?.vote_hashes ?? row?.counted_votes ?? null;
-      if (!row || json === null) return c.json({ error: 'no recorded vote set for this proposal at or below that height' }, 404);
-      const hashes = JSON.parse(json) as string[];
+    /** A recorded set (vote hashes) as a VoteSet, the weights and proTxHashes from the list it was counted against. */
+    const serveSet = (asOfHeight: number, s: RecordedVoteSet) => {
       const get = b.db.prepare('SELECT * FROM votes WHERE hash = ?');
-      const list = b.ingest.lists.load(row.list_hash);
-      const rows = hashes.map((vh) => get.get(vh) as VoteRow | undefined);
+      const list = b.ingest.lists.load(s.listHash);
+      const rows = s.voteHashes.map((vh) => get.get(vh) as VoteRow | undefined);
       if (rows.some((r) => !r)) return c.json({ error: 'archive inconsistency: a vote of that set is missing' }, 500);
       const votes = (rows as VoteRow[])
         .sort(byOutpoint)
@@ -242,16 +255,45 @@ export function createApi(b: Bridge, deps: { now?: () => number } = {}): Hono {
         });
       return c.json({
         ...base,
-        asOfHeight: h,
-        tallyHeight: row.as_of_height,
-        mnListHash: row.list_hash,
-        voteSetHash: row.vote_set_hash,
-        yesWeighted: row.yes_weighted,
-        noWeighted: row.no_weighted,
-        abstainWeighted: row.abstain_weighted,
+        asOfHeight,
+        tallyHeight: s.asOfHeight,
+        mnListHash: s.listHash,
+        voteSetHash: s.voteSetHash,
+        yesWeighted: s.weighted.yes,
+        noWeighted: s.weighted.no,
+        abstainWeighted: s.weighted.abstain,
         count: votes.length,
         votes,
       });
+    };
+
+    const hq = c.req.query('height');
+    const vq = c.req.query('voteSetHash');
+    let h: number | undefined;
+    if (hq !== undefined) {
+      h = Number(hq);
+      if (!Number.isInteger(h) || h < 0) return c.json({ error: 'height must be a non-negative integer' }, 400);
+      const maxH = b.lastRun?.height ?? (b.db.prepare('SELECT MAX(as_of_height) h FROM tallies').get() as { h: number | null }).h ?? -1;
+      if (h > maxH) return c.json({ error: `height ${h} is above the latest tally height ${maxH}` }, 404);
+    }
+
+    // Exactly the set with that voteSetHash (at or below `height`, if given): the live tally's, a superseded live tally's (kept a while),
+    // or a stored one's. A tally and its votes are fetched at different moments, and the live tally changes at the same height whenever a
+    // vote arrives: asking by hash gets the set behind the tally the client holds, not whatever is current now.
+    if (vq !== undefined) {
+      const vsh = vq.toLowerCase();
+      if (!HASH_RE.test(vsh)) return c.json({ error: 'voteSetHash must be 64 hex chars' }, 400);
+      const s = setByHash(b, hash, vsh, h);
+      if (!s) return c.json({ error: `no vote set with that voteSetHash for this proposal${h === undefined ? '' : ' at or below that height'}` }, 404);
+      return serveSet(h ?? s.asOfHeight, s);
+    }
+
+    // the vote set behind the tally in force at a past height (e.g. a published tally document's asOfHeight)
+    if (h !== undefined) {
+      const row = b.db.prepare('SELECT * FROM tallies WHERE gov_hash = ? AND as_of_height <= ? ORDER BY as_of_height DESC, id DESC LIMIT 1').get(hash, h) as TallyRow | undefined;
+      const s = row ? storedSet(b, row) : null;
+      if (!s) return c.json({ error: 'no recorded vote set for this proposal at or below that height' }, 404);
+      return serveSet(h, s);
     }
 
     // live: the counted set of the latest tally
