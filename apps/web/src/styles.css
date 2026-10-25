@@ -48,6 +48,7 @@
   --accent-wash: #e3f2fc;
   /* Filled controls (primary buttons, step numbers): Dash blue dark enough for white text at AA, and the text on it. */
   --accent-fill: #006cb0;
+  --accent-fill-hover: #005b94;
   --on-accent: #ffffff;
 
   --pass: #167a46;
@@ -79,6 +80,7 @@
   --accent-ink: #5dbdf7;
   --accent-wash: #0d2c43;
   --accent-fill: #1a9cf0;
+  --accent-fill-hover: #48b0f3;
   --on-accent: #04131f;
   --pass: #4fcf8b;
   --pass-fill: #2fb46d;
@@ -108,9 +110,8 @@
     --accent-ink: #5dbdf7;
     --accent-wash: #0d2c43;
     --accent-fill: #1a9cf0;
+    --accent-fill-hover: #48b0f3;
     --on-accent: #04131f;
-  --accent-fill: #1a9cf0;
-  --on-accent: #04131f;
     --pass: #4fcf8b;
     --pass-fill: #2fb46d;
     --warn: #f0be4b;
@@ -598,8 +599,8 @@ details.learn.inline > summary {
   color: var(--on-accent);
 }
 .btn-primary:hover {
-  background: color-mix(in srgb, var(--accent-fill) 84%, #000);
-  border-color: color-mix(in srgb, var(--accent-fill) 84%, #000);
+  background: var(--accent-fill-hover);
+  border-color: var(--accent-fill-hover);
 }
 .btn-quiet {
   border-color: transparent;

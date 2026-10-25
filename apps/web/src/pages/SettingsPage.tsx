@@ -452,7 +452,11 @@ export function SettingsPage() {
               type="button"
               className="btn btn-quiet"
               onClick={() => {
-                setRegistry(resetRegistry());
+                try {
+                  setRegistry(resetRegistry());
+                } catch (e) {
+                  return say('advanced', 'error', saveErrorText(e));
+                }
                 void cacheClear();
                 say('advanced', 'ok', 'Reset to the defaults and cleared the cache.');
               }}
@@ -500,13 +504,12 @@ export function SettingsPage() {
               onClick={() => {
                 // the app's own URL, base path included (e.g. /govhub/ on a project Pages site)
                 const link = shareLink(registry, new URL(import.meta.env.BASE_URL, location.origin).href);
-                void navigator.clipboard?.writeText(link).then(
-                  () => say('share', 'ok', 'Share link copied. Whoever opens it is asked before anything changes.'),
-                  () => {
-                    setJson(link);
-                    say('share', 'ok', 'The share link is in the box below: copy it from there.');
-                  },
-                );
+                const inBox = () => {
+                  setJson(link);
+                  say('share', 'ok', 'The share link is in the box below: copy it from there.');
+                };
+                if (!navigator.clipboard) return inBox(); // no clipboard API (not a secure context)
+                void navigator.clipboard.writeText(link).then(() => say('share', 'ok', 'Share link copied. Whoever opens it is asked before anything changes.'), inBox);
               }}
             >
               Copy share link

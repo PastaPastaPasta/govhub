@@ -205,9 +205,9 @@ export function AppProvider({ children, initialMode }: { children: ReactNode; in
     (id: ProfileId) => {
       if (id === registry.profile) return;
       const old = `${registryScope(registry)}:`;
+      setRegistry(registryForProfile(registry, id)); // first: if it cannot be saved, nothing is switched or dropped
       // Verification results stay (they are keyed by the old scope, so they never leak); the old profile's documents go.
       void cacheDeleteWhere((k) => k.startsWith(old) && !k.includes(':check:'));
-      setRegistry(registryForProfile(registry, id));
     },
     [registry, setRegistry],
   );

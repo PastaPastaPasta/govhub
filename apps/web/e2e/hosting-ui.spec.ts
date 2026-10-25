@@ -63,14 +63,24 @@ test.describe('?config= links', () => {
     await expect(page.getByRole('button', { name: 'Use these settings' })).toHaveCount(0);
   });
 
-  test('D-050: inside a frame a config link is never offered for one click', async ({ page, baseURL }) => {
+  test('D-050: inside a frame govhub renders nothing to click, a config link included', async ({ page, baseURL }) => {
     const cfg = { version: 2, profile: 'dev', overrides: {} };
     await page.setContent(`<iframe src="${baseURL}/settings?fixtures=1&config=${b64({ ...cfg, relays: [] })}" width="1000" height="700"></iframe>`);
     const frame = page.frameLocator('iframe');
-    await expect(frame.getByTestId('config-framed')).toContainText('shown inside another page');
+    await expect(frame.getByTestId('framed-notice')).toContainText('only works in its own tab');
     await expect(frame.getByRole('link', { name: 'Open govhub in its own tab' })).toHaveAttribute('target', '_blank');
-    await expect(frame.getByRole('button', { name: 'Use these settings' })).toHaveCount(0);
+    await expect(frame.getByRole('button')).toHaveCount(0);
     await expect(frame.getByTestId('config-offer')).toHaveCount(0);
+  });
+
+  test('D-050: "Use these settings" arms only after the offer has been on screen for a moment', async ({ page }) => {
+    await gotoFixtures(page, '/settings');
+    const cfg = await exportedSettings(page);
+    cfg.relays = [{ name: 'other', url: 'https://relay.other.example' }];
+    await page.goto(`/settings?config=${b64(cfg)}`);
+    const use = page.getByRole('button', { name: 'Use these settings' });
+    await expect(use).toBeDisabled();
+    await expect(use).toBeEnabled();
   });
 });
 

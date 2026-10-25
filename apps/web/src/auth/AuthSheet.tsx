@@ -34,7 +34,9 @@ export function AuthSheet() {
     const d = ref.current;
     if (!d) return;
     if (sheet && !d.open) {
-      opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      const a = document.activeElement;
+      // <body> is no opener (Safari does not focus a clicked button): the account button is the fallback
+      opener.current = a instanceof HTMLElement && a !== document.body ? a : null;
       d.showModal();
     }
     if (!sheet && d.open) d.close();

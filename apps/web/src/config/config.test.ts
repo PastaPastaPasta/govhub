@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   attestorsFor, configParamUrl, defaultRegistry, exportRegistry, importSizeError, loadRegistry, loadSavedRegistry, MAX_IMPORT_BYTES, parseRegistry, profileRegistry, registryDiff,
-  registryRows, resolveConfigParam, saveErrorText, saveRegistry, shareLink, textToB64url, type Registry,
+  registryRows, fetchConfig, readInlineConfig, saveErrorText, saveRegistry, shareLink, textToB64url, type Registry,
 } from './registry.ts';
 import { resolveMode } from './mode.ts';
 
@@ -104,10 +104,10 @@ describe('endpoint registry', () => {
     const r = { ...defaultRegistry(), relays: [{ name: 'r1', url: 'https://relay.example.org' }] };
     const link = shareLink(r, 'https://gov.dashhq.org');
     const param = new URL(link).searchParams.get('config')!;
-    expect((await resolveConfigParam(param)).registry.relays[0]!.name).toBe('r1');
+    expect(readInlineConfig(param).registry.relays[0]!.name).toBe('r1');
     const fetcher = (async () => new Response(JSON.stringify(r), { status: 200 })) as unknown as typeof fetch;
-    expect((await resolveConfigParam('https://example.org/cfg.json', fetcher)).registry.relays).toHaveLength(1);
-    expect((await resolveConfigParam(textToB64url('{oops'))).errors[0]).toMatch(/could not be read/);
+    expect((await fetchConfig(new URL('https://example.org/cfg.json'), fetcher)).registry.relays).toHaveLength(1);
+    expect(readInlineConfig(textToB64url('{oops')).errors[0]).toMatch(/could not be read/);
   });
 });
 
@@ -157,6 +157,33 @@ describe('hosting and settings fixes (fix-hosting-ui)', () => {
     expect(d[0]!.now).toContain('quorums.mainnet.networks.dash.org');
     expect(d[0]!.offered).toContain('https://evil.example/proofs');
     expect(registryDiff(now, { ...now, bridges: [{ ...now.bridges[0]!, bridgeIdentityId: '24tL6v5jMR1H9dtUoTgbedePsMJtYPk4Q4bo6h8jTdK9' }] }).map((x) => x.label)).toEqual(['Bridges']);
+  });
+
+  it('D-052: a host cannot hide behind user info, a look-alike Unicode name, or a free-text name', () => {
+    const relay = (url: string, name = 'r') => parseRegistry({ ...defaultRegistry(), relays: [{ name, url }] });
+    expect(relay('https://gov-bridge.dashhq.org@evil.example').errors.join()).toMatch(/must not contain a user name or password/);
+    // Cyrillic "о": shown (and connected to) in punycode, so it cannot read like the real host
+    expect(relay('https://g\u043ev-bridge.dashhq.org/').registry.relays[0]!.url).toMatch(/^https:\/\/xn--/);
+    expect(relay('https://Relay.Example.org/').registry.relays[0]!.url).toBe('https://relay.example.org');
+    // bidi overrides and control characters are dropped from names
+    expect(relay('https://r.example', 'a\u202Eb\u0007c').registry.relays[0]!.name).toBe('abc');
+    // two relay lists that read the same are still a change: decided on values, not text
+    const now = { ...defaultRegistry(), relays: [{ name: 'R1', url: 'https://r1' }, { name: 'R2', url: 'https://r2' }] };
+    const offered = { ...now, relays: [{ name: 'R1: https://r1; R2', url: 'https://r2' }] };
+    expect(registryRows(now).find(([k]) => k === 'Relays')![1]).toBe(registryRows(offered).find(([k]) => k === 'Relays')![1]);
+    expect(registryDiff(now, offered).map((d) => d.label)).toEqual(['Relays']);
+    // every boolean is a change too
+    expect(registryDiff(now, { ...now, platform: { ...now.platform, trusted: false } }).map((d) => d.label)).toEqual(['Platform']);
+    expect(registryDiff(now, { ...now, bridges: [{ ...now.bridges[0]!, enabled: false }] }).map((d) => d.label)).toEqual(['Bridges']);
+  });
+
+  it('D-054: a fetched config is capped, time-limited and stays on the host the user agreed to', async () => {
+    const r = defaultRegistry();
+    const answer = (body: string, url = 'https://cfg.example/x.json') =>
+      (async () => Object.defineProperty(new Response(body, { status: 200 }), 'url', { value: url })) as unknown as typeof fetch;
+    expect((await fetchConfig(new URL('https://cfg.example/x.json'), answer(JSON.stringify(r)))).errors).toEqual([]);
+    expect((await fetchConfig(new URL('https://cfg.example/x.json'), answer(JSON.stringify(r), 'https://evil.example/x.json'))).errors[0]).toMatch(/redirected to another host/);
+    expect((await fetchConfig(new URL('https://cfg.example/x.json'), answer(' '.repeat(MAX_IMPORT_BYTES + 1)))).errors[0]).toMatch(/Too large/);
   });
 
   it('D-057: imports over the size cap are refused before parsing; a full storage quota is not called invalid JSON', () => {

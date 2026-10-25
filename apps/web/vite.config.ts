@@ -12,9 +12,8 @@ import { fileURLToPath } from 'node:url';
 export const CSP = [
   "default-src 'self'",
   "script-src 'self' 'wasm-unsafe-eval'",
-  // blob: is evo-sdk's off-main-thread WASM decompress+compile worker (it falls back to the main
-  // thread, janking for seconds). Only scripts already allowed by script-src can create one.
-  "worker-src 'self' blob:",
+  // the verification and badge workers; evo-sdk's WASM is a separate asset now, so its blob: decompress worker is gone
+  "worker-src 'self'",
   "style-src 'self'",
   "img-src 'self' data:",
   "font-src 'self'",
@@ -51,11 +50,12 @@ export default defineConfig({
   // GOVHUB_BASE is the URL prefix when served from a sub-path (e.g. GitHub Pages at /govhub/).
   base: process.env.GOVHUB_BASE ?? '/',
   plugins: [react(), cspPlugin()],
-  resolve: { alias: EVO_SDK_ALIASES },
+  // not under Vitest (Node): raw init() would fetch the WASM from a file:// URL; no unit test initialises the SDK
+  resolve: { alias: process.env.VITEST ? [] : EVO_SDK_ALIASES },
   worker: { format: 'es' },
   build: {
     target: 'es2022',
-    // evo-sdk's JS is ~1.6 MB (its ~26 MB WASM is a separate asset); it is lazy-loaded after first paint.
+    // evo-sdk's JS is ~630 KB (its ~26 MB WASM is a separate asset); it is lazy-loaded after first paint.
     chunkSizeWarningLimit: 2000,
     rollupOptions: {
       onwarn(w, warn) {

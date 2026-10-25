@@ -899,7 +899,14 @@ DNS (zone dashhq.org): `gov CNAME pastapastapasta.github.io`. Cutover order:
 3. Wait for GitHub to issue the certificate (`gh api repos/PastaPastaPasta/govhub/pages --jq .https_certificate.state` is
    `approved`; if it stays `null` for long, clear the cname and set it again), then
    `gh api -X PUT repos/PastaPastaPasta/govhub/pages -F https_enforced=true`.
-4. Turn the Cloudflare proxy on (orange cloud).
+4. Turn the Cloudflare proxy on (orange cloud). The zone's SSL mode must be **Full (strict)** (Flexible loops on GitHub's
+   HTTPS redirect). Keep an eye on `https_certificate.state` at renewal time: GitHub renews the certificate through the proxied
+   record.
+
+Expect a few minutes of downtime between steps 2 and 3: GitHub redirects the github.io URLs to gov.dashhq.org at once, while
+the build still in place points its assets at `/govhub/` and the certificate is not issued yet (the app needs HTTPS for
+`crypto.subtle` and WebAuthn). Do the cutover in one sitting. Check that the WASM is served compressed:
+`curl -sI -H 'Accept-Encoding: gzip, br' https://gov.dashhq.org/assets/<wasm_sdk_bg-*.wasm> | grep -i content-encoding`.
 5. Framing headers: GitHub Pages ignores `public/_headers`, so add a Cloudflare response-header Transform Rule for
    `http.host eq "gov.dashhq.org"` setting `Content-Security-Policy: frame-ancestors 'none'` and `X-Frame-Options: DENY`
    (also `X-Content-Type-Options: nosniff`). The API token needs **Zone > Transform Rules > Edit** for that. Until then the app

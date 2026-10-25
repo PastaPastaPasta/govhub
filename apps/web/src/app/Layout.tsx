@@ -1,6 +1,6 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { configParamUrl, PROFILES, registryDiff, registryRows, resolveConfigParam, saveErrorText, type Registry } from '../config/registry.ts';
+import { configParamUrl, fetchConfig, PROFILES, readInlineConfig, registryDiff, registryRows, saveErrorText, type Registry } from '../config/registry.ts';
 import { useAuth } from '../auth/context.tsx';
 import { SessionControl } from '../ui/SignIn.tsx';
 import { ChainShield } from '../ui/trust/ChainShield.tsx';
@@ -22,20 +22,36 @@ function LazyAuthSheet() {
 }
 
 /**
- * Whether govhub is shown inside another page's frame. GitHub Pages cannot send frame-ancestors / X-Frame-Options, so a page
- * could frame a `?config=` link and trick a click on "Use these settings"; such a link is then only offered in its own tab.
+ * A click that lands on a button the moment it appears may have been aimed at something else (a page that opened govhub in a popup
+ * can time a double click). The button arms only after the banner has been on screen for a moment, and disarms whenever the
+ * window loses focus or visibility.
  */
-function isFramed(): boolean {
-  try {
-    return window.top !== window.self;
-  } catch {
-    return true; // a cross-origin parent can make even the comparison throw
-  }
+function useArmed(ms = 750): boolean {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const rearm = () => {
+      setArmed(false);
+      clearTimeout(t);
+      if (document.visibilityState === 'visible' && document.hasFocus()) t = setTimeout(() => setArmed(true), ms);
+    };
+    rearm();
+    const events = ['focus', 'blur', 'visibilitychange'] as const;
+    for (const e of events) (e === 'visibilitychange' ? document : window).addEventListener(e, rearm);
+    return () => {
+      clearTimeout(t);
+      for (const e of events) (e === 'visibilitychange' ? document : window).removeEventListener(e, rearm);
+    };
+  }, [ms]);
+  return armed;
 }
+
+type Offer = { param: string; registry: Registry; errors: string[] };
 
 /**
  * `?config=` in the URL: show what it would change and let the user apply or dismiss it. Inline (base64url) settings are read at
- * once; a URL is fetched only after the user agrees, since the request alone tells that host who opened the link.
+ * once, without the network; a URL is fetched only after the user agrees, since the request alone tells that host who opened the
+ * link. (Inside a frame the app does not render at all: app/frame.tsx.)
  */
 function ConfigOffer() {
   const { registry, setRegistry } = useApp();
@@ -43,40 +59,32 @@ function ConfigOffer() {
   const nav = useNavigate();
   const param = new URLSearchParams(loc.search).get('config');
   const url = param ? configParamUrl(param) : null;
-  const [framed] = useState(isFramed);
-  const [offer, setOffer] = useState<{ param: string; registry: Registry; errors: string[] } | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [offer, setOffer] = useState<Offer | null>(null);
+  // the value being fetched: a response for any other value (the link changed meanwhile) is dropped
+  const [loading, setLoading] = useState<string | null>(null);
+  const latest = useRef<string | null>(null);
+  latest.current = param;
   const [saveError, setSaveError] = useState<string | null>(null);
-  const load = (p: string) => {
-    setLoading(true);
-    resolveConfigParam(p)
-      .then((o) => setOffer({ param: p, ...o }))
-      .finally(() => setLoading(false));
-  };
+  const armed = useArmed();
   useEffect(() => {
     setSaveError(null);
-    if (param && !framed && !configParamUrl(param)) load(param);
-  }, [param, framed]);
+    if (param && !configParamUrl(param)) setOffer({ param, ...readInlineConfig(param) });
+  }, [param]);
   if (!param) return null;
+  const load = (p: string, u: URL) => {
+    setLoading(p);
+    void fetchConfig(u).then((o) => {
+      if (latest.current !== p) return;
+      setOffer({ param: p, ...o });
+      setLoading(null);
+    });
+  };
   const clear = () => {
     const sp = new URLSearchParams(loc.search);
     sp.delete('config');
     nav({ pathname: loc.pathname, search: sp.toString() }, { replace: true });
     setOffer(null);
   };
-  if (framed) {
-    return (
-      <div className="banner banner-config" role="alert" data-testid="config-framed">
-        <p>
-          <b>This link carries endpoint settings, but govhub is shown inside another page here.</b> Settings are never changed from inside a frame.{' '}
-          <a href={location.href} target="_blank" rel="noopener noreferrer">
-            Open govhub in its own tab
-          </a>{' '}
-          to review them.
-        </p>
-      </div>
-    );
-  }
   const current = offer?.param === param ? offer : null;
   if (!current) {
     if (!url) return null; // inline settings: shown once read (no network)
@@ -87,8 +95,8 @@ function ConfigOffer() {
           before anything changes; the request tells {url.host} that you opened this link.
         </p>
         <div className="banner-actions">
-          <button type="button" className="btn" disabled={loading} onClick={() => load(param)}>
-            {loading ? `Loading from ${url.host}…` : `Load settings from ${url.host}`}
+          <button type="button" className="btn" disabled={loading === param} onClick={() => load(param, url)}>
+            {loading === param ? `Loading from ${url.host}…` : `Load settings from ${url.host}`}
           </button>
           <button type="button" className="btn btn-quiet" onClick={clear}>
             Ignore this link
@@ -146,6 +154,7 @@ function ConfigOffer() {
           <button
             type="button"
             className="btn btn-primary"
+            disabled={!armed}
             onClick={() => {
               try {
                 setRegistry(current.registry);
