@@ -146,7 +146,7 @@ test('@live-auth create, fund, sign in with phrase, passkey and top up on testne
   await page.getByRole('button', { name: 'I wrote it down' }).click();
   for (const i of await page.locator('[data-testid^="quiz-"]').all()) await i.fill(phrase2[Number((await i.getAttribute('data-testid'))!.slice(5)) - 1]!);
   await page.getByRole('button', { name: 'Continue' }).click();
-  await page.getByRole('button', { name: /Redeem a voucher/ }).click();
+  await page.getByRole('button', { name: /I have a voucher link/ }).click();
   await page.getByPlaceholder(/dashpay:\/\/invite/).fill(voucher.link);
   const tV = Date.now();
   await page.getByRole('button', { name: 'Redeem' }).click();
