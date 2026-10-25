@@ -1,31 +1,56 @@
-// Publisher idempotency, throttling, restart safety and the mismatch hold, against an in-memory fake of the Platform client.
+// Publisher idempotency, throttling, restart safety and the mismatch hold, against an in-memory fake of the Platform client, for the
+// three gov shapes a bridge meets: the legacy testnet contract (full proposal, per-proposal tallies), the testnet contract after
+// its update (full proposal + talliesSet) and mainnet gov.json (slim proposal + talliesSet).
+import govMainnet from '@govhub/contracts-v1/gov.json' with { type: 'json' };
+import govTestnet from '@govhub/contracts-v1/gov-testnet.json' with { type: 'json' };
+import { decodeTallySet, TALLY_SET_MAX_ENTRIES } from '@govhub/verify';
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config.ts';
 import { PlatformClient, type PlatformDoc, type QueryOptions } from '../src/publish/platform.ts';
-import { Publisher } from '../src/publish/publisher.ts';
-import type { CoreComparison } from '../src/tally.ts';
+import { MAX_FINALS_PER_RUN, Publisher, tallySetEntry, tallySetProps } from '../src/publish/publisher.ts';
+import { createApi } from '../src/api/server.ts';
+import { storeTally, type ComputedTally, type CoreComparison } from '../src/tally.ts';
 import { fixtureBridge } from './world.ts';
 
+type Schemas = Record<string, { properties?: Record<string, unknown> }>;
+const LEGACY: Schemas = Object.fromEntries(Object.entries(govTestnet).filter(([t]) => t !== 'talliesSet'));
+const TESTNET: Schemas = govTestnet;
+const MAINNET: Schemas = govMainnet;
+
 class FakePlatform {
+  schemas: Schemas;
+  constructor(schemas: Schemas) {
+    this.schemas = schemas;
+  }
+  hasDocType = PlatformClient.prototype.hasDocType;
+  hasProperty = PlatformClient.prototype.hasProperty;
   contractId = 'GovContract1111111111111111111111111111111';
   identityId = 'Bridge11111111111111111111111111111111111111';
-  docs = new Map<string, { type: string; id: string; revision: number; data: Record<string, unknown> }>();
+  docs = new Map<string, { type: string; id: string; revision: number; data: Record<string, unknown>; owner?: string }>();
   writes: Array<{ op: string; type: string; key: string; revision: number }> = [];
   failNextCreateAfterLanding = false;
   private n = 0;
   balanceCredits = 10_000_000_000n;
 
   private key(type: string, data: Record<string, unknown>): string {
-    return type === 'cycle' ? String(data.superblockHeight) : Buffer.from(data.govHash as Uint8Array).toString('hex');
+    return type === 'cycle' ? String(data.superblockHeight) : type === 'talliesSet' ? String(data.page) : Buffer.from(data.govHash as Uint8Array).toString('hex');
   }
   async balance(): Promise<bigint> {
     return this.balanceCredits;
   }
   async query(type: string, q: QueryOptions): Promise<PlatformDoc[]> {
-    const [field, , value] = q.where![0]!;
-    const key = field === 'superblockHeight' ? String(value) : Buffer.from(String(value), 'base64').toString('hex');
+    const [field, op, value] = q.where![0]!;
+    if (op === '>=') {
+      // G8: every talliesSet page, page order
+      return [...this.docs.values()].filter((d) => d.type === type).sort((a, b) => Number(a.data.page) - Number(b.data.page)).map((d) => ({ id: d.id, revision: d.revision, data: { $ownerId: d.owner ?? this.identityId, ...this.json(d.data) } }));
+    }
+    const key = field === 'superblockHeight' || field === 'page' ? String(value) : Buffer.from(String(value), 'base64').toString('hex');
     const d = this.docs.get(`${type}:${key}`);
     return d ? [{ id: d.id, revision: d.revision, data: d.data }] : [];
+  }
+  /** What a proved read renders: byte arrays base64, integers as numbers. */
+  private json(data: Record<string, unknown>): Record<string, unknown> {
+    return Object.fromEntries(Object.entries(data).map(([k, v]) => [k, v instanceof Uint8Array ? Buffer.from(v).toString('base64') : typeof v === 'bigint' ? Number(v) : v]));
   }
   async create(type: string, props: Record<string, unknown>): Promise<{ id: string }> {
     const key = this.key(type, props);
@@ -61,10 +86,10 @@ function agreeing(b: Awaited<ReturnType<typeof fixtureBridge>>): Map<string, Cor
   );
 }
 
-async function setup(env: Record<string, string> = {}) {
+async function setup(env: Record<string, string> = {}, schemas: Schemas = LEGACY) {
   const b = await fixtureBridge();
   const cfg = loadConfig({ GOV_CONTRACT_ID: 'x', BRIDGE_IDENTITY_KEY_FILE: '/dev/null', MIN_COLLATERAL_CONFS: '6', ...env });
-  const fake = new FakePlatform();
+  const fake = new FakePlatform(schemas);
   const pub = new Publisher(b.db, fake as unknown as PlatformClient, cfg);
   // the fixture MN list is a subset, so align Core's threshold with it; every tally "agreed with Core"
   b.lastRun!.coreThreshold = b.lastRun!.threshold;
@@ -72,7 +97,7 @@ async function setup(env: Record<string, string> = {}) {
   return { b, fake, pub, cfg, matchAll, cycles: () => b.cycles(b.lastRun!) };
 }
 
-describe('publisher', () => {
+describe('publisher, legacy contract (no talliesSet: one tally per proposal)', () => {
   it('publishes proposals, tallies and cycles once; a second pass writes nothing', async () => {
     const { b, fake, pub, matchAll, cycles } = await setup();
     const s1 = await pub.publish(b.lastRun!, matchAll, cycles());
@@ -89,6 +114,7 @@ describe('publisher', () => {
     await pub.publish(b.lastRun!, matchAll, cycles());
     const t = b.lastRun!.tallies[0]!;
     t.weighted.yes += 4;
+    t.asOfHeight += 1;
     const throttled = await pub.publish(b.lastRun!, matchAll, cycles());
     expect(throttled.replaced).toBe(0);
     const forced = await pub.publish(b.lastRun!, matchAll, cycles(), { force: true });
@@ -96,6 +122,9 @@ describe('publisher', () => {
     expect(fake.writes.at(-1)).toMatchObject({ op: 'replace', type: 'tally', key: t.govHash, revision: 2 });
     // asOfHeight alone is not a change
     t.asOfHeight += 1;
+    expect((await pub.publish(b.lastRun!, matchAll, cycles(), { force: true })).replaced).toBe(0);
+    // a change at the very height already published is not throttled: readers recount that document against the new record
+    t.asOfHeight -= 1;
     expect((await pub.publish(b.lastRun!, matchAll, cycles(), { force: true })).replaced).toBe(0);
   });
 
@@ -157,5 +186,278 @@ describe('publisher', () => {
   it('only publishes proposals whose collateral has enough confirmations', async () => {
     const { b, pub } = await setup({ MIN_COLLATERAL_CONFS: '100000000' });
     expect(pub.publishableProposals(b.lastRun!.height).ok.length).toBe(0);
+  });
+});
+
+/** The entries of talliesSet page `page` on the fake Platform. */
+const packed = (fake: FakePlatform, page = 0) => {
+  const d = fake.docs.get(`talliesSet:${page}`)!;
+  return { d, entries: decodeTallySet([d.data.b0 as Uint8Array, d.data.b1 as Uint8Array | undefined, d.data.b2 as Uint8Array | undefined]) };
+};
+
+describe('publisher, mainnet gov.json (slim proposal + talliesSet)', () => {
+  it('publishes slim proposals, ONE packed tally document for every tally, and cycles; a second pass writes nothing', async () => {
+    const { b, fake, pub, matchAll, cycles } = await setup({}, MAINNET);
+    const s1 = await pub.publish(b.lastRun!, matchAll, cycles());
+    const n = b.lastRun!.tallies.length;
+    expect(n).toBeGreaterThan(5);
+    expect(s1.created).toBe(28 + 1 + 2);
+    expect(s1.failed).toBe(0);
+    expect(fake.writes.filter((w) => w.type === 'tally')).toEqual([]);
+    const { d, entries } = packed(fake);
+    expect(d.data.asOfHeight).toBe(BigInt(b.lastRun!.height));
+    expect(entries.map((e) => e.govHash).sort()).toEqual(b.lastRun!.tallies.map((t) => t.govHash).sort());
+    const t = b.lastRun!.tallies[0]!;
+    expect(entries.find((e) => e.govHash === t.govHash)).toEqual({
+      govHash: t.govHash, yesWeighted: t.weighted.yes, noWeighted: t.weighted.no, abstainWeighted: t.weighted.abstain, yesCount: t.unweighted.yes,
+      noCount: t.unweighted.no, abstainCount: t.unweighted.abstain, voteSetHash: t.voteSetHash, rank: t.rank, inNextBudget: t.inNextBudget, margin: t.margin,
+    });
+    // slim: the duplicated fields are not sent (the contract would reject them)
+    const p = [...fake.docs.values()].find((x) => x.type === 'proposal')!;
+    expect(Object.keys(p.data).sort()).toEqual(['collateralHeight', 'collateralTxid', 'dataHex', 'endEpoch', 'govHash', 'name', 'parentHash', 'revision', 'time']);
+    const s2 = await pub.publish(b.lastRun!, matchAll, cycles());
+    expect([s2.created, s2.replaced]).toEqual([0, 0]);
+  });
+
+  it('one changed tally replaces the packed document once (revision + 1), throttled; a new height alone is no change', async () => {
+    const { b, fake, pub, matchAll, cycles } = await setup({ TALLY_PUBLISH_INTERVAL_S: '3600' }, MAINNET);
+    await pub.publish(b.lastRun!, matchAll, cycles());
+    const t = b.lastRun!.tallies[0]!;
+    t.weighted.yes += 4;
+    b.lastRun!.height += 3;
+    expect((await pub.publish(b.lastRun!, matchAll, cycles())).replaced).toBe(0);
+    const before = fake.writes.length;
+    const forced = await pub.publish(b.lastRun!, matchAll, cycles(), { force: true });
+    expect(forced.replaced).toBe(1);
+    expect(fake.writes.slice(before)).toEqual([{ op: 'replace', type: 'talliesSet', key: '0', revision: 2 }]);
+    const { d, entries } = packed(fake);
+    expect(d.data.asOfHeight).toBe(BigInt(b.lastRun!.height));
+    expect(entries.find((e) => e.govHash === t.govHash)!.yesWeighted).toBe(t.weighted.yes);
+    b.lastRun!.height += 1;
+    expect((await pub.publish(b.lastRun!, matchAll, cycles(), { force: true })).replaced).toBe(0);
+  });
+
+  it('fails closed: a held tally is left out of the set, never sent with numbers Core disagrees with', async () => {
+    const { b, fake, pub, matchAll, cycles } = await setup({}, MAINNET);
+    const t0 = b.lastRun!.tallies[0]!;
+    const cmp = new Map(matchAll);
+    cmp.set(t0.govHash, { ...cmp.get(t0.govHash)!, match: false });
+    const s = await pub.publish(b.lastRun!, cmp, cycles());
+    expect(s.held).toBe(1);
+    expect(packed(fake).entries.map((e) => e.govHash)).not.toContain(t0.govHash);
+    expect(packed(fake).entries).toHaveLength(b.lastRun!.tallies.length - 1);
+  });
+
+  it('a proposal that left the active set gets its final tally once, as a per-proposal tally (its last packed entry, rank 0)', async () => {
+    const { b, fake, pub, matchAll, cycles } = await setup({ TALLY_PUBLISH_INTERVAL_S: '0' }, MAINNET);
+    await pub.publish(b.lastRun!, matchAll, cycles());
+    const publishedAt = b.lastRun!.height;
+    const gone = b.lastRun!.tallies.shift()!;
+    const entry = packed(fake).entries.find((e) => e.govHash === gone.govHash)!;
+    b.lastRun!.height += 10;
+    const s = await pub.publish(b.lastRun!, matchAll, cycles());
+    expect(s.created).toBe(1);
+    const d = fake.docs.get(`tally:${gone.govHash}`)!;
+    expect(d.revision).toBe(1);
+    expect(d.data).toMatchObject({ asOfHeight: BigInt(publishedAt), yesWeighted: BigInt(entry.yesWeighted), noWeighted: BigInt(entry.noWeighted), rank: 0n, inNextBudget: false, margin: BigInt(entry.margin) });
+    expect(Buffer.from(d.data.voteSetHash as Uint8Array).toString('hex')).toBe(entry.voteSetHash);
+    // the packed set no longer carries it
+    expect(packed(fake).entries.map((e) => e.govHash)).not.toContain(gone.govHash);
+    const before = fake.writes.length;
+    await pub.publish(b.lastRun!, matchAll, cycles());
+    expect(fake.writes.length).toBe(before);
+  });
+
+  it('a final tally that failed is retried on the next run, after the packed set dropped the entry', async () => {
+    const { b, fake, pub, matchAll, cycles } = await setup({ TALLY_PUBLISH_INTERVAL_S: '0' }, MAINNET);
+    await pub.publish(b.lastRun!, matchAll, cycles());
+    const gone = b.lastRun!.tallies.shift()!;
+    const create = fake.create.bind(fake);
+    fake.create = async (type, props) => (type === 'tally' ? Promise.reject(new Error('invalid state transition [code 10000]')) : create(type, props));
+    expect((await pub.publish(b.lastRun!, matchAll, cycles())).failed).toBe(1);
+    expect(fake.docs.has(`tally:${gone.govHash}`)).toBe(false);
+    fake.create = create;
+    expect((await pub.publish(b.lastRun!, matchAll, cycles())).created).toBe(1);
+    expect(fake.docs.get(`tally:${gone.govHash}`)!.data.rank).toBe(0n);
+  });
+
+  it('is restart-safe: adopts the packed document already on Platform', async () => {
+    const { b, fake, matchAll, cycles, cfg } = await setup({}, MAINNET);
+    await new Publisher(b.db, fake as unknown as PlatformClient, cfg).publish(b.lastRun!, matchAll, cycles());
+    const b2 = await fixtureBridge();
+    b2.lastRun!.coreThreshold = b2.lastRun!.threshold;
+    const before = fake.writes.length;
+    const s = await new Publisher(b2.db, fake as unknown as PlatformClient, cfg).publish(b2.lastRun!, matchAll, b2.cycles(b2.lastRun!));
+    expect(s.created).toBe(0);
+    // the adopted page already says what this run would write: it is not written again
+    expect(fake.writes.slice(before).filter((w) => w.type === 'talliesSet')).toEqual([]);
+    b2.lastRun!.tallies[0]!.weighted.yes += 4;
+    b2.lastRun!.height += 1;
+    await new Publisher(b2.db, fake as unknown as PlatformClient, cfg).publish(b2.lastRun!, matchAll, b2.cycles(b2.lastRun!));
+    expect(fake.writes.slice(before).filter((w) => w.type === 'talliesSet')).toEqual([{ op: 'replace', type: 'talliesSet', key: '0', revision: 2 }]);
+  });
+
+  it('more than 161 tallies spill into page 1; when they shrink again, page 1 is emptied once', async () => {
+    const { b, fake, pub, matchAll, cycles } = await setup({ TALLY_PUBLISH_INTERVAL_S: '0', PUBLISH_ON_MISMATCH: '1' }, MAINNET);
+    const real = b.lastRun!.tallies;
+    // synthetic tallies for proposals the archive "published" (the publisher only packs proposals it has a record of)
+    const extra: ComputedTally[] = Array.from({ length: TALLY_SET_MAX_ENTRIES + 10 - real.length }, (_, i) => ({ ...real[0]!, govHash: (i + 1).toString(16).padStart(64, 'e') }));
+    for (const t of extra) b.db.prepare("INSERT INTO platform_docs VALUES (?, 'proposal', ?, 'x', 1, 'h', '[]', 0)").run(fake.contractId, t.govHash);
+    b.lastRun!.tallies = [...real, ...extra];
+    await pub.publish(b.lastRun!, matchAll, cycles());
+    expect([packed(fake, 0).entries.length, packed(fake, 1).entries.length]).toEqual([TALLY_SET_MAX_ENTRIES, 10]);
+    b.lastRun!.tallies = real;
+    await pub.publish(b.lastRun!, matchAll, cycles());
+    expect([packed(fake, 0).entries.length, packed(fake, 1).entries.length]).toEqual([real.length, 0]);
+    const before = fake.writes.filter((w) => w.type === 'talliesSet').length;
+    await pub.publish(b.lastRun!, matchAll, cycles());
+    expect(fake.writes.filter((w) => w.type === 'talliesSet').length).toBe(before);
+  });
+});
+
+describe('publisher, mainnet gov.json: holds, restarts, and what readers recount against', () => {
+  const setPage = (fake: FakePlatform) => packed(fake).entries.map((e) => e.govHash).sort();
+
+  it('after a publish: a threshold that differs or a missing Core comparison leaves the set as it is; a Core disagreement drops only that entry', async () => {
+    const { b, fake, pub, matchAll, cycles } = await setup({ TALLY_PUBLISH_INTERVAL_S: '0' }, MAINNET);
+    await pub.publish(b.lastRun!, matchAll, cycles());
+    const all = setPage(fake);
+    const [t0, t1] = b.lastRun!.tallies;
+    t1!.weighted.yes += 4;
+    b.lastRun!.height += 1;
+    // threshold differs: nothing is replaced (every margin and inNextBudget would be suspect)
+    b.lastRun!.coreThreshold = b.lastRun!.threshold + 1;
+    expect((await pub.publish(b.lastRun!, matchAll, cycles())).replaced).toBe(0);
+    expect(setPage(fake)).toEqual(all);
+    b.lastRun!.coreThreshold = b.lastRun!.threshold;
+    // one comparison missing (an RPC error): nothing is replaced either
+    const noCmp = new Map(matchAll);
+    noCmp.delete(t0!.govHash);
+    expect((await pub.publish(b.lastRun!, noCmp, cycles())).replaced).toBe(0);
+    expect(packed(fake).d.revision).toBe(1);
+    // Core disagrees about one: the set goes out without it
+    const mismatch = new Map(matchAll);
+    mismatch.set(t0!.govHash, { ...mismatch.get(t0!.govHash)!, match: false });
+    expect((await pub.publish(b.lastRun!, mismatch, cycles())).replaced).toBe(1);
+    expect(setPage(fake)).toEqual(all.filter((h) => h !== t0!.govHash));
+  });
+
+  it('a change at the height already published is replaced at once, despite the throttle', async () => {
+    const { b, fake, pub, matchAll, cycles } = await setup({ TALLY_PUBLISH_INTERVAL_S: '3600' }, MAINNET);
+    await pub.publish(b.lastRun!, matchAll, cycles());
+    b.lastRun!.tallies[0]!.weighted.yes += 4; // a second stored run at the same block, with a vote more
+    expect((await pub.publish(b.lastRun!, matchAll, cycles())).replaced).toBe(1);
+    expect(packed(fake).d.revision).toBe(2);
+  });
+
+  it('a fresh archive adopts every page on Platform: stale pages are emptied, and a proposal that ended meanwhile still gets its final tally', async () => {
+    const { b, fake, pub, matchAll, cycles, cfg } = await setup({ TALLY_PUBLISH_INTERVAL_S: '0', PUBLISH_ON_MISMATCH: '1' }, MAINNET);
+    const real = b.lastRun!.tallies;
+    const extra: ComputedTally[] = Array.from({ length: TALLY_SET_MAX_ENTRIES + 5 - real.length }, (_, i) => ({ ...real[0]!, govHash: (i + 1).toString(16).padStart(64, 'e') }));
+    for (const t of extra) b.db.prepare("INSERT INTO platform_docs VALUES (?, 'proposal', ?, 'x', 1, 'h', '[]', 0)").run(fake.contractId, t.govHash);
+    b.lastRun!.tallies = [...real, ...extra];
+    await pub.publish(b.lastRun!, matchAll, cycles());
+    const publishedAt = b.lastRun!.height;
+    const ended = real[real.length - 1]!;
+    const entry = [...packed(fake, 0).entries, ...packed(fake, 1).entries].find((e) => e.govHash === ended.govHash)!;
+    // the archive is lost; meanwhile the extra proposals and one real one ended
+    const b2 = await fixtureBridge();
+    b2.lastRun!.coreThreshold = b2.lastRun!.threshold;
+    b2.lastRun!.tallies = b2.lastRun!.tallies.filter((t) => t.govHash !== ended.govHash);
+    b2.lastRun!.height += 50;
+    const s = await new Publisher(b2.db, fake as unknown as PlatformClient, cfg).publish(b2.lastRun!, matchAll, b2.cycles(b2.lastRun!));
+    expect(s.failed).toBe(0);
+    expect([packed(fake, 0).entries.length, packed(fake, 1).entries.length]).toEqual([real.length - 1, 0]);
+    const d = fake.docs.get(`tally:${ended.govHash}`)!;
+    expect(d.data).toMatchObject({ asOfHeight: BigInt(publishedAt), yesWeighted: BigInt(entry.yesWeighted), rank: 0n, inNextBudget: false });
+  });
+
+  it('regression (testnet burst 2026-10-25): adopted pages full of entries for unknown proposals produce zero final tallies', async () => {
+    const { b, fake, pub, matchAll, cycles } = await setup({ TALLY_PUBLISH_INTERVAL_S: '0' }, MAINNET);
+    // pages a measurement script left on the contract: 192 entries, no proposal behind any of them
+    const synthetic = (n: number, salt: string) => Array.from({ length: n }, (_, i) => ({ ...tallySetEntry(b.lastRun!.tallies[0]!), govHash: (i + 1).toString(16).padStart(62, salt) + '00' }));
+    for (const [page, entries] of [[1, synthetic(31, 'a')], [2, synthetic(161, 'b')]] as const) fake.docs.set(`talliesSet:${page}`, { type: 'talliesSet', id: `set${page}`, revision: 4, data: tallySetProps(page, 1_579_000, entries) });
+    const s = await pub.publish(b.lastRun!, matchAll, cycles());
+    expect(s.failed).toBe(0);
+    expect(fake.writes.filter((w) => w.type === 'tally')).toEqual([]);
+    expect(b.db.prepare('SELECT COUNT(*) n FROM tally_set_entries WHERE gov_hash LIKE ?').get('%00')).toEqual({ n: 0 });
+    // the stale pages are emptied once, page 0 holds the real tallies
+    expect([packed(fake, 1).entries.length, packed(fake, 2).entries.length]).toEqual([0, 0]);
+    expect(packed(fake, 0).entries).toHaveLength(b.lastRun!.tallies.length);
+  });
+
+  it('a page another identity owns is never adopted; final tallies per run are capped', async () => {
+    const { b, fake, pub, matchAll, cycles } = await setup({ TALLY_PUBLISH_INTERVAL_S: '0' }, MAINNET);
+    fake.docs.set('talliesSet:3', { type: 'talliesSet', id: 'foreign', revision: 1, owner: 'Someone1111111111111111111111111111111111111', data: tallySetProps(3, 5, b.lastRun!.tallies.map(tallySetEntry)) });
+    await pub.publish(b.lastRun!, matchAll, cycles());
+    expect(fake.writes.filter((w) => w.key === '3')).toEqual([]);
+    // every real proposal ends at once: at most MAX_FINALS_PER_RUN finals a run, the rest on the next runs
+    const n = b.lastRun!.tallies.length;
+    b.lastRun!.tallies = [];
+    expect((await pub.publish(b.lastRun!, matchAll, cycles())).created).toBe(MAX_FINALS_PER_RUN);
+    await pub.publish(b.lastRun!, matchAll, cycles());
+    await pub.publish(b.lastRun!, matchAll, cycles());
+    expect(fake.writes.filter((w) => w.type === 'tally' && w.op === 'create')).toHaveLength(n);
+  });
+
+  it('a re-stamped entry: asked for the votes at the new height, the bridge serves the record in force, which is that entry', async () => {
+    const { b, fake, pub, matchAll, cycles } = await setup({ TALLY_PUBLISH_INTERVAL_S: '0' }, MAINNET);
+    const run = b.lastRun!;
+    for (const t of run.tallies) storeTally(b.db, t, matchAll.get(t.govHash)!);
+    await pub.publish(run, matchAll, cycles());
+    const h1 = run.height;
+    // the next block: only Y changes (a stored record at h2 for Y alone), and the set is replaced at h2
+    const [x, y] = run.tallies as [ComputedTally, ComputedTally];
+    run.height += 7;
+    for (const t of run.tallies) t.asOfHeight = run.height;
+    y.weighted.no += 1;
+    y.unweighted.no += 1;
+    storeTally(b.db, x, matchAll.get(x.govHash)!);
+    storeTally(b.db, y, matchAll.get(y.govHash)!);
+    await pub.publish(run, matchAll, cycles());
+    const { d, entries } = packed(fake);
+    expect(d.data.asOfHeight).toBe(BigInt(run.height));
+    const api = createApi(b);
+    for (const t of [x, y]) {
+      const e = entries.find((z) => z.govHash === t.govHash)!;
+      const r = (await (await api.request(`/v1/proposals/${t.govHash}/votes?height=${run.height}`)).json()) as any;
+      expect(r.tallyHeight).toBe(t === x ? h1 : run.height);
+      expect([r.voteSetHash, r.yesWeighted, r.noWeighted, r.abstainWeighted]).toEqual([e.voteSetHash, e.yesWeighted, e.noWeighted, e.abstainWeighted]);
+    }
+  });
+
+  it('Bridge.publishOnce publishes only a stored run, never a live vote refresh', async () => {
+    const { b, fake, pub } = await setup({}, MAINNET);
+    b.publisher = pub;
+    b.core.blockchainSynced = b.core.governanceSynced = true;
+    b.lastRun!.persisted = false;
+    expect(await b.publishOnce()).toBeNull();
+    expect(fake.writes).toEqual([]);
+    b.lastRun!.persisted = true;
+    b.lastComparisons = new Map(b.lastRun!.tallies.map((t) => [t.govHash, { govHash: t.govHash, match: true, core: { yes: 0, no: 0, abstain: 0, absoluteYes: 0 }, bridge: { yes: 0, no: 0, abstain: 0, absoluteYes: 0 }, missingSigned: [], extra: [] }]));
+    expect((await b.publishOnce())!.created).toBeGreaterThan(0);
+  });
+});
+
+describe('publisher, testnet gov after its update (full proposal + talliesSet)', () => {
+  it('keeps the full proposal shape, packs the tallies, and retires a pre-update per-proposal tally with the packed values when it ends', async () => {
+    const legacy = await setup({ TALLY_PUBLISH_INTERVAL_S: '0' }, LEGACY);
+    await legacy.pub.publish(legacy.b.lastRun!, legacy.matchAll, legacy.cycles());
+    // the contract update adds talliesSet; the same archive and Platform state carry over
+    legacy.fake.schemas = TESTNET;
+    const { b, fake, pub, matchAll, cycles } = legacy;
+    const t = b.lastRun!.tallies[0]!;
+    t.weighted.yes += 8;
+    b.lastRun!.height += 5;
+    await pub.publish(b.lastRun!, matchAll, cycles());
+    expect(packed(fake).entries.find((e) => e.govHash === t.govHash)!.yesWeighted).toBe(t.weighted.yes);
+    // the per-proposal document of an active proposal is left alone (the reader takes the newer of the two)
+    expect(fake.docs.get(`tally:${t.govHash}`)!.revision).toBe(1);
+    const p = [...fake.docs.values()].find((x) => x.type === 'proposal')!;
+    expect(p.data).toHaveProperty('url');
+    b.lastRun!.tallies.shift();
+    await pub.publish(b.lastRun!, matchAll, cycles());
+    const d = fake.docs.get(`tally:${t.govHash}`)!;
+    expect([d.revision, d.data.yesWeighted, d.data.asOfHeight, d.data.rank]).toEqual([2, BigInt(t.weighted.yes), BigInt(b.lastRun!.height), 0n]);
   });
 });

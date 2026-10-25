@@ -2,7 +2,7 @@
 
 The only govhub component that talks to Dash Core. It archives every governance object and every **signed** vote
 Core relays, verifies them, recomputes the tallies with Core's own rules (and checks them against Core), publishes
-`proposal` / `tally` / `cycle` documents to the Platform `gov` contract, and serves a read-only HTTP API
+`proposal` / `talliesSet` / `tally` / `cycle` documents to the Platform `gov` contract, and serves a read-only HTTP API
 (plus a DashCentral-compatible subset). PLAN.md §1, §2, §3.1 `gov`, §6.2.
 
 ```
@@ -16,7 +16,8 @@ Core relays, verifies them, recomputes the tallies with Core's own rules (and ch
  tally ── latest vote per MN, weights 1/4, Core's budget fill ──► compare with Core (FundingResult + current vote set)
    │                                                                   │ mismatch → held + logged
    ▼                                                                   ▼
- publisher (evo-sdk 5.0.0-rc.8) ──► Platform gov contract: proposal (once), tally (replace, throttled), cycle
+ publisher (evo-sdk 5.0.0-rc.8) ──► Platform gov contract: proposal (once), talliesSet (all active tallies in one document,
+                                     replace throttled), tally (final, once per ended proposal), cycle
  HTTP API (hono) ──► /v1/*, /api/v1/* (DashCentral)          OpenAPI 3.1: openapi.json
 ```
 
@@ -69,7 +70,7 @@ Environment variables plus mounted secret files. An empty value means the defaul
 | `PUBLISH` | `1` | `0` = archive, verify and serve only: no Platform access, `GOV_CONTRACT_ID` and the key file are not needed (the file may be absent) |
 | `GOV_CONTRACT_ID` | | required when `PUBLISH=1` |
 | `BRIDGE_IDENTITY_KEY_FILE` | | required when `PUBLISH=1`: `{"identityId": "<base58>", "keyId": 2, "privateKeyHex": "<64 hex>"}` (or `"wif"`), an AUTHENTICATION/HIGH key of the identity that owns the gov contract |
-| `TALLY_PUBLISH_INTERVAL_S` | `3600` | minimum time between replaces of one tally document (first create is immediate) |
+| `TALLY_PUBLISH_INTERVAL_S` | `3600` | minimum time between replaces of a `talliesSet` page (or, on a contract without `talliesSet`, of one `tally` document); the first create is immediate |
 | `CYCLE_PUBLISH_INTERVAL_S` | `3600` | same for cycle documents |
 | `MIN_COLLATERAL_CONFS` | `6` | a proposal is published only when its collateral is this deep (archiving is never gated) |
 | `PLATFORM_MAX_CONCURRENT_WRITES` | `4` | capped at 12 (DIP-30 nonce window, see the evo-sdk notes) |
@@ -131,6 +132,7 @@ behind a tunnel or proxy.
 | `budget_snapshots`, `superblocks` | `getgovernanceinfo` + `getsuperblockbudget`; per past superblock what its coinbase actually paid against the winning trigger |
 | `tallies`, `vote_sets` | every distinct tally with its Core comparison; each distinct counted vote set once, keyed by `voteSetHash` |
 | `platform_docs`, `publish_log` | what was published (id, revision, content) and every write attempt |
+| `tally_set_entries` | each proposal's entry as last published in `talliesSet`, the source of its final `tally`; `finalized_at` once that is written |
 | `events`, `bad_messages` | ZMQ gaps, mismatches, invalid signatures; unparseable ZMQ bodies verbatim |
 
 **At ingest** (`src/ingest.ts`):
@@ -191,13 +193,23 @@ accepted: object.cpp:476-478) and on disk in `governance.dat`. So:
 
 ## Publishing
 
-`proposal` (immutable): once hash, data and collateral verify and the collateral has `MIN_COLLATERAL_CONFS`. `tally`
-(one per proposal): created on first sight, then replaced when anything but `asOfHeight` changes, at most once per
-`TALLY_PUBLISH_INTERVAL_S`; when its proposal leaves the active set the last tally is retired once (`rank` 0,
-`inNextBudget` false) so Platform does not keep showing "will be funded". `cycle` (per superblock height): the next superblock (live, replaced as it fills, `estTime`
+The shapes follow the deployed contract, whose schemas the publisher reads when it connects (restart the bridge after a
+contract update): mainnet `gov.json` (slim `proposal`, `talliesSet`), the testnet contracts after their 2026-10-25 update
+(full `proposal`, `talliesSet`), or an older contract without `talliesSet` (one `tally` per proposal, as before).
+
+`proposal` (immutable): once hash, data and collateral verify and the collateral has `MIN_COLLATERAL_CONFS`; slim where
+the contract is (url, payment address/amount and start are only in `dataHex`). `talliesSet` page 0 (more pages past 161
+proposals): every publishable tally packed into one document (format v1, packages/contracts-v1 README), created on first
+sight, then replaced when an entry changes (not for `asOfHeight` alone), at most once per `TALLY_PUBLISH_INTERVAL_S` (unless
+the record stored at the page's own height changed); a tally Core disagrees with is left out, and a threshold mismatch or a
+missing Core comparison leaves the whole set as it is that run. Only a stored run is published, never a live vote refresh
+(`TallyRun.persisted`). Final tallies: only for proposals on Platform, at most `MAX_FINALS_PER_RUN` (10) a run. A fresh
+archive adopts only `talliesSet` pages its own identity owns, and remembers only entries of proposals it knows. When a proposal leaves the active set its final tally (its last published entry, `rank` 0,
+`inNextBudget` false) is written once as a per-proposal `tally` for the Past list; a `tally` from before the update is
+replaced the same way. `cycle` (per superblock height): the next superblock (live, replaced as it fills, `estTime`
 ignored for change detection) and the last one with `paid` = trigger payments found in its coinbase. Hashes are stored in
 RPC/display byte order (contracts-v1 README). Restart-safe: without a local record the document is looked up on its
-unique index (G1/G5b/G6b, base64 `where` values, PV13 query rules) and adopted; a failed create re-queries before
+unique index (G1/G5b/G8b/G6b, base64 `where` values, PV13 query rules) and adopted; a failed create re-queries before
 retrying, so a write that landed is never duplicated. Writes run at most `PLATFORM_MAX_CONCURRENT_WRITES` at a time and
 retry lagging-node / nonce errors (refreshing the SDK nonce cache on "nonce already present in past"). Document ids:
 PV13 `sha256d(contractId‖ownerId‖type‖entropy)`, PV14 derived by the SDK.
@@ -239,7 +251,13 @@ The bridge cannot publish into someone else's contract, and all its documents ar
 one command: `backfill`, `run` (bounded by `BRIDGE_RUN_SECONDS`), `exec <cmd>`. Secrets stay in `~/.local/share/govhub-dev`
 (RPC password, key file made by `scripts/dev-keyfile.ts`). `scripts/dev-ct164-resync.sh` is the one-time governance re-sync
 (above). `scripts/readback.ts` reads every published document back from Platform **with proofs** and checks it against the
-archive (gov hash recomputed from the document, collateral re-checked, tallies matched to Core-matched archive rows).
+archive (gov hash recomputed from the document, collateral re-checked, tallies and every packed entry matched to Core-matched archive rows).
+`scripts/testnet-cost-pass.ts` (register | measure | update) measured the fee of every bridge write before and after the
+2026-10-25 cost pass and added `talliesSet` to the testnet gov contracts (`scripts/results/testnet-cost-pass.json`).
+`scripts/publish-tally-set.ts` publishes `talliesSet` page 0 once from a running bridge's HTTP API with the publisher's code
+(for a contract that just gained the type while its bridge runs an older version; the next version adopts it).
+`scripts/fixture-publish.ts` runs `Bridge.publishOnce` on the recorded fixtures against a real testnet contract (e.g. the
+mainnet-shape rehearsal contract) and keeps the archive for `readback.ts`.
 `scripts/record-fixtures.ts` regenerates `test/fixtures` from the archive and Core. `scripts/record-testnet-votes.ts` records a
 testnet archive's signed votes, with Core's voting addresses, as `packages/verify/test/fixtures/testnet-votes.json` (the vectors for the
 testnet vote scheme; deploy/README.md section 13.1).

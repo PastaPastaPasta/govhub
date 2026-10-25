@@ -138,6 +138,11 @@ export function activeProposals(db: DB, now: number): GovObjectRow[] {
 
 export interface TallyRun {
   height: number;
+  /**
+   * Whether these tallies were stored (the `tallies` rows readers recount published tallies against). Only a stored run may be
+   * published; a live vote refresh is not stored.
+   */
+  persisted: boolean;
   listHash: string;
   now: number;
   threshold: number;
@@ -177,6 +182,7 @@ export function computeAll(
   tallies.sort((a, b2) => a.rank - b2.rank);
   return {
     height,
+    persisted: false,
     listHash: list.list.listHash,
     now,
     threshold,

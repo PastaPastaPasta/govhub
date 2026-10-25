@@ -33,8 +33,10 @@ exports.) Packages are installed twice under aliases: `evo4`/`dpp4` = 4.1.1, `ev
 
 ### 1.1 Contracts (`npm run validate`)
 
-All four contracts pass on all six engine/version combinations. Cells show the size of the
-`DataContractCreate` state transition.
+All four contracts pass on all six engine/version combinations, and so does `gov-testnet.json` (what the testnet gov
+contracts hold after their 2026-10-25 update; packages/contracts-v1 README). Cells show the size of the
+`DataContractCreate` state transition. Re-run 2026-10-25 after the pre-mainnet cost pass (slim `proposal`, `talliesSet`,
+no `proposalDraft`).
 
 Two engines are used because **the evo-sdk `new DataContract({ fullValidation: true })` does NOT run the
 meta-schema or the index limits** (it accepted an indexed string with `maxLength: 100`, a `refersTo` keyword at
@@ -44,9 +46,10 @@ that is what `npm run validate` treats as authoritative; evo-sdk (the engine the
 
 | contract | wasm-dpp 4.1.1 @PV13 | wasm-dpp rc.8 @PV13 | wasm-dpp rc.8 @PV14 | evo-sdk 4.1.1 @PV13 | evo-sdk rc.8 @PV13 | evo-sdk rc.8 @PV14 |
 |---|---|---|---|---|---|---|
-| gov | PASS (4267 B) | PASS (4267 B) | PASS (4270 B) | PASS (4266 B) | PASS (4266 B) | PASS (4269 B) |
-| forum | PASS (5959 B) | PASS (5959 B) | PASS (5962 B) | PASS (5958 B) | PASS (5958 B) | PASS (5961 B) |
-| badge | PASS (2530 B) | PASS (2530 B) | PASS (2533 B) | PASS (2529 B) | PASS (2529 B) | PASS (2532 B) |
+| gov | PASS (4562 B) | PASS (4562 B) | PASS (4565 B) | PASS (4561 B) | PASS (4561 B) | PASS (4564 B) |
+| gov-testnet | PASS (4886 B) | PASS (4886 B) | PASS (4889 B) | PASS (4885 B) | PASS (4885 B) | PASS (4888 B) |
+| forum | PASS (5897 B) | PASS (5897 B) | PASS (5900 B) | PASS (5896 B) | PASS (5896 B) | PASS (5899 B) |
+| badge | PASS (2532 B) | PASS (2532 B) | PASS (2535 B) | PASS (2531 B) | PASS (2531 B) | PASS (2534 B) |
 | mod | PASS (720 B) | PASS (720 B) | PASS (723 B) | PASS (719 B) | PASS (719 B) | PASS (722 B) |
 
 Negative controls (all behave as expected on wasm-dpp): indexed string `maxLength` 100 (rejected,
@@ -61,7 +64,7 @@ doctype `immutable`); the `vault` type here is its PV13 translation.
 
 ### 1.2 Documents (`npm run validate:docs`)
 
-For each of the 19 types a MAX document (every field at its bound), a MIN document (required fields only), one
+For each of the 25 types (20 in the four mainnet contracts, 5 in `gov-testnet.json`) a MAX document (every field at its bound), a MIN document (required fields only), one
 over-limit variant per bounded field (must be rejected), and a batch-state-transition round trip with full validation, on
 wasm-dpp 4.1.1@PV13, rc.8@PV13 and rc.8@PV14: **all pass**. Largest transition: `forum.proposalPost` with
 `b0+b1+b2` = 15,360 B, 16,795 B (limit 20,480). (`$createdAtCoreBlockHeight` cannot be set through the legacy

@@ -8,8 +8,8 @@ import { HttpBridge, type Bridge } from './bridge.ts';
 import { cacheGet, cachePut } from './cache.ts';
 import { createWebDapi, dapiConfig } from './dapi.ts';
 import { loadFixtures } from './fixtures.ts';
-import { docToCycle, docToProposal, docToTally, queryDocs } from './platform.ts';
-import { activeProposals, latestCycles, pastProposals, proposalByHash, proposalsByName, talliesFor, PAGE } from './queries.ts';
+import { docToCycle, docToProposal, docToTally, docToTallySet, govDocTypes, queryDocs } from './platform.ts';
+import { activeProposals, latestCycles, pastProposals, proposalByHash, proposalsByName, talliesFor, tallySetPages, PAGE } from './queries.ts';
 import type { BridgeDescriptor, DapiDescriptor } from '../verify/protocol.ts';
 import type { CoreNetwork, Cycle, Proposal, Provenance, Sourced, Tally } from './types.ts';
 
@@ -42,7 +42,10 @@ export interface DataSource {
   pastPage(cursor?: string): Promise<Page>;
   proposal(govHash: string): Promise<Sourced<Proposal> | null>;
   byName(name: string): Promise<Sourced<Proposal>[]>;
-  /** Platform tallies (proof) for these proposals. */
+  /**
+   * Platform tallies (proof) for these proposals: the packed `talliesSet` entry (active proposals) or the per-proposal `tally`
+   * document (ended proposals, and every tally on older testnet contracts), whichever is newer; the packed one on a tie.
+   */
   tallies(govHashes: readonly string[]): Promise<Map<string, Sourced<Tally>>>;
   /** Live tallies from the first reachable bridge (reported). Empty without a bridge. */
   bridgeTallies(): Promise<Map<string, Sourced<Tally>>>;
@@ -281,14 +284,41 @@ export function liveSource(registry: Registry): DataSource {
     },
 
     async tallies(hashes) {
-      const out = new Map<string, Sourced<Tally>>();
-      const uniq = [...new Set(hashes)];
-      for (let i = 0; i < uniq.length; i += PAGE) {
-        const r = await queryDocs(registry, talliesFor(uniq.slice(i, i + PAGE)));
-        for (const d of r.docs) {
-          const t = docToTally(d);
-          out.set(t.govHash, { value: t, prov: proof(r.height, `tally as of Core block ${formatInt(t.asOfHeight)}`) });
+      const want = new Set(hashes.map((h) => h.toLowerCase()));
+      if (!want.size) return new Map();
+      const uniq = [...want];
+      const packed = async (): Promise<Sourced<Tally>[]> => {
+        if (!(await govDocTypes(registry)).has('talliesSet')) return [];
+        const r = await queryDocs(registry, tallySetPages());
+        return r.docs.flatMap((d) => {
+          try {
+            const set = docToTallySet(d);
+            const prov = proof(r.height, `tally as of Core block ${formatInt(set.asOfHeight)}, packed tally set page ${set.page}`);
+            return set.tallies.map((t) => ({ value: t, prov }));
+          } catch (e) {
+            // a page that does not decode carries no tally at all: its proposals read as "no tally published"
+            console.warn('talliesSet page does not decode', e);
+            return [];
+          }
+        });
+      };
+      const single = async (): Promise<Sourced<Tally>[]> => {
+        const found: Sourced<Tally>[] = [];
+        for (let i = 0; i < uniq.length; i += PAGE) {
+          const r = await queryDocs(registry, talliesFor(uniq.slice(i, i + PAGE)));
+          for (const t of r.docs.map(docToTally)) found.push({ value: t, prov: proof(r.height, `tally as of Core block ${formatInt(t.asOfHeight)}`) });
         }
+        return found;
+      };
+      const [fromSet, fromDocs] = await Promise.all([packed(), single()]);
+      const out = new Map<string, Sourced<Tally>>();
+      // On a tie the packed entry wins, except over a proposal's final tally (rank 0, not in the next budget): the bridge writes that
+      // when the proposal leaves the active set, possibly before its next (throttled) replace of the set drops the entry.
+      const final = (t: Tally) => t.rank === 0 && !t.inNextBudget;
+      for (const t of [...fromSet, ...fromDocs]) {
+        const cur = out.get(t.value.govHash);
+        if (!want.has(t.value.govHash)) continue;
+        if (!cur || t.value.asOfHeight > cur.value.asOfHeight || (t.value.asOfHeight === cur.value.asOfHeight && final(t.value) && !final(cur.value))) out.set(t.value.govHash, t);
       }
       return out;
     },

@@ -1,0 +1,414 @@
+{
+  "network": "testnet",
+  "note": "testnet runs protocol 14: fees approximate PV13, they do not match it exactly",
+  "ops": [
+    {
+      "label": "register gov.json (mainnet definition: 5 types, 7 indexes)",
+      "payer": "dev owner",
+      "op": "contract create",
+      "credits": "27209975130",
+      "dash": "0.27209975",
+      "ms": 5394
+    },
+    {
+      "label": "proposal create, full shape (old), #1",
+      "payer": "dev owner",
+      "op": "create",
+      "type": "proposal",
+      "shape": "full",
+      "dataHexChars": 468,
+      "credits": "65809940",
+      "dash": "0.00065810",
+      "ms": 2479
+    },
+    {
+      "label": "proposal create, slim shape (mainnet), #1",
+      "payer": "dev owner",
+      "op": "create",
+      "type": "proposal",
+      "shape": "slim",
+      "dataHexChars": 468,
+      "credits": "74213920",
+      "dash": "0.00074214",
+      "ms": 2537
+    },
+    {
+      "label": "proposal create, full shape (old), #2",
+      "payer": "dev owner",
+      "op": "create",
+      "type": "proposal",
+      "shape": "full",
+      "dataHexChars": 468,
+      "credits": "66469320",
+      "dash": "0.00066469",
+      "ms": 1738
+    },
+    {
+      "label": "proposal create, slim shape (mainnet), #2",
+      "payer": "dev owner",
+      "op": "create",
+      "type": "proposal",
+      "shape": "slim",
+      "dataHexChars": 468,
+      "credits": "60820080",
+      "dash": "0.00060820",
+      "ms": 2612
+    },
+    {
+      "label": "proposal delete (synthetic, dev gov), #1",
+      "payer": "dev owner",
+      "op": "delete",
+      "type": "proposal",
+      "credits": "-42541045",
+      "dash": "-0.00042541",
+      "ms": 2015
+    },
+    {
+      "label": "proposal delete (synthetic, dev gov), #2",
+      "payer": "dev owner",
+      "op": "delete",
+      "type": "proposal",
+      "credits": "-42147705",
+      "dash": "-0.00042148",
+      "ms": 2099
+    },
+    {
+      "label": "tally create (per proposal; = final tally at end)",
+      "payer": "dev owner",
+      "op": "create",
+      "type": "tally",
+      "credits": "24989200",
+      "dash": "0.00024989",
+      "ms": 2001
+    },
+    {
+      "label": "tally replace (one proposal changed), #1",
+      "payer": "dev owner",
+      "op": "replace",
+      "type": "tally",
+      "credits": "2475040",
+      "dash": "0.00002475",
+      "ms": 1909
+    },
+    {
+      "label": "tally replace (one proposal changed), #2",
+      "payer": "dev owner",
+      "op": "replace",
+      "type": "tally",
+      "credits": "2475040",
+      "dash": "0.00002475",
+      "ms": 1730
+    },
+    {
+      "label": "tally replace (one proposal changed), #3",
+      "payer": "dev owner",
+      "op": "replace",
+      "type": "tally",
+      "credits": "2475040",
+      "dash": "0.00002475",
+      "ms": 1921
+    },
+    {
+      "label": "talliesSet create, 6 entries",
+      "payer": "dev owner",
+      "op": "create",
+      "type": "talliesSet",
+      "entries": 6,
+      "packedBytes": 573,
+      "credits": "36566760",
+      "dash": "0.00036567",
+      "ms": 1830
+    },
+    {
+      "label": "talliesSet replace, 6 entries, one changed, #1",
+      "payer": "dev owner",
+      "op": "replace",
+      "type": "talliesSet",
+      "entries": 6,
+      "packedBytes": 573,
+      "credits": "2726140",
+      "dash": "0.00002726",
+      "ms": 2008
+    },
+    {
+      "label": "talliesSet replace, 6 entries, one changed, #2",
+      "payer": "dev owner",
+      "op": "replace",
+      "type": "talliesSet",
+      "entries": 6,
+      "packedBytes": 573,
+      "credits": "2726140",
+      "dash": "0.00002726",
+      "ms": 2166
+    },
+    {
+      "label": "talliesSet replace, 6 entries, one changed, #3",
+      "payer": "dev owner",
+      "op": "replace",
+      "type": "talliesSet",
+      "entries": 6,
+      "packedBytes": 573,
+      "credits": "2726140",
+      "dash": "0.00002726",
+      "ms": 1953
+    },
+    {
+      "label": "talliesSet create, 30 entries",
+      "payer": "dev owner",
+      "op": "create",
+      "type": "talliesSet",
+      "entries": 30,
+      "packedBytes": 2853,
+      "credits": "99488240",
+      "dash": "0.00099488",
+      "ms": 2280
+    },
+    {
+      "label": "talliesSet replace, 30 entries, one changed, #1",
+      "payer": "dev owner",
+      "op": "replace",
+      "type": "talliesSet",
+      "entries": 30,
+      "packedBytes": 2853,
+      "credits": "4249220",
+      "dash": "0.00004249",
+      "ms": 1919
+    },
+    {
+      "label": "talliesSet replace, 30 entries, one changed, #2",
+      "payer": "dev owner",
+      "op": "replace",
+      "type": "talliesSet",
+      "entries": 30,
+      "packedBytes": 2853,
+      "credits": "4249220",
+      "dash": "0.00004249",
+      "ms": 2002
+    },
+    {
+      "label": "talliesSet replace, 30 entries, one changed, #3",
+      "payer": "dev owner",
+      "op": "replace",
+      "type": "talliesSet",
+      "entries": 30,
+      "packedBytes": 2853,
+      "credits": "4249220",
+      "dash": "0.00004249",
+      "ms": 2028
+    },
+    {
+      "label": "talliesSet replace, 30 -> 31 entries (a proposal joined)",
+      "payer": "dev owner",
+      "op": "replace",
+      "type": "talliesSet",
+      "entries": 31,
+      "packedBytes": 2948,
+      "credits": "6853020",
+      "dash": "0.00006853",
+      "ms": 1872
+    },
+    {
+      "label": "talliesSet create, 161 entries",
+      "payer": "dev owner",
+      "op": "create",
+      "type": "talliesSet",
+      "entries": 161,
+      "packedBytes": 15298,
+      "credits": "442151140",
+      "dash": "0.00442151",
+      "ms": 2049
+    },
+    {
+      "label": "talliesSet replace, 161 entries, one changed, #1",
+      "payer": "dev owner",
+      "op": "replace",
+      "type": "talliesSet",
+      "entries": 161,
+      "packedBytes": 15298,
+      "credits": "11228280",
+      "dash": "0.00011228",
+      "ms": 2291
+    },
+    {
+      "label": "talliesSet replace, 161 entries, one changed, #2",
+      "payer": "dev owner",
+      "op": "replace",
+      "type": "talliesSet",
+      "entries": 161,
+      "packedBytes": 15298,
+      "credits": "11228280",
+      "dash": "0.00011228",
+      "ms": 2397
+    },
+    {
+      "label": "proposal create, full shape (old), #3",
+      "payer": "dev owner",
+      "op": "create",
+      "type": "proposal",
+      "shape": "full",
+      "dataHexChars": 468,
+      "credits": "66285140",
+      "dash": "0.00066285",
+      "ms": 2423
+    },
+    {
+      "label": "proposal create, slim shape (mainnet), #3",
+      "payer": "dev owner",
+      "op": "create",
+      "type": "proposal",
+      "shape": "slim",
+      "dataHexChars": 468,
+      "credits": "61376980",
+      "dash": "0.00061377",
+      "ms": 4313
+    },
+    {
+      "label": "proposal create, full shape (old), #4",
+      "payer": "dev owner",
+      "op": "create",
+      "type": "proposal",
+      "shape": "full",
+      "dataHexChars": 468,
+      "credits": "66027720",
+      "dash": "0.00066028",
+      "ms": 1882
+    },
+    {
+      "label": "proposal create, slim shape (mainnet), #4",
+      "payer": "dev owner",
+      "op": "create",
+      "type": "proposal",
+      "shape": "slim",
+      "dataHexChars": 468,
+      "credits": "61383300",
+      "dash": "0.00061383",
+      "ms": 1784
+    },
+    {
+      "label": "proposal delete (synthetic, dev gov), #3",
+      "payer": "dev owner",
+      "op": "delete",
+      "type": "proposal",
+      "credits": "-42153305",
+      "dash": "-0.00042153",
+      "ms": 1964
+    },
+    {
+      "label": "proposal delete (synthetic, dev gov), #4",
+      "payer": "dev owner",
+      "op": "delete",
+      "type": "proposal",
+      "credits": "-42594745",
+      "dash": "-0.00042595",
+      "ms": 1683
+    },
+    {
+      "label": "DataContractUpdate dev gov: + talliesSet",
+      "payer": "dev owner",
+      "op": "contract update",
+      "contractId": "3ueAfbVe8LvCxYWk7bKvXxc5uHe7E1TDJHzN3k3ZDehZ",
+      "credits": "27029627310",
+      "dash": "0.27029627",
+      "ms": 2110
+    },
+    {
+      "label": "DataContractUpdate testnet gov: + talliesSet",
+      "payer": "testnet bridge",
+      "op": "contract update",
+      "contractId": "5gMnJLDpcoMaQCQNqmHtBiSqCxRCmroXFAffPNdJ2NJC",
+      "credits": "27029630350",
+      "dash": "0.27029630",
+      "ms": 4591
+    }
+  ],
+  "rehearsal": {
+    "contractId": "8Ura2Pf3kcAGFYga6gjWGSa7fx9uQmWrQbuzUrqaxygg",
+    "definition": "packages/contracts-v1/gov.json (mainnet)",
+    "owner": "9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv",
+    "schemasIdentical": true
+  },
+  "docIds": {
+    "fullProposal1": "9rJKedguPQ93wjcomVS1pgpXqJ1DwafGsUBPhQZU8XfJ",
+    "slimProposal1": "HdBVSX2Cxb7rDFZZexSztAFqmZpouFVcmCXYtwRUasUZ",
+    "fullProposal2": "HEfMwMCbAyiqQgHvTQ6ob5S8SjixSDDySxvYyKWzyvyf",
+    "slimProposal2": "DZJaXr1iwkXoqAeECbURAHgm5Bu6N7XUikiAiq1S3P6Z",
+    "tally": "5XWm6Hp29Mu6hKY6wLgSfyAg1b4MYMKedmzKUJ2kMkWV",
+    "set6": "7214H26WKtCetHM4zN3Qy5WE6ESeRiFb14wj15VWEJSP",
+    "set30": "7p8AtZE1PKraCq3ZvEEVJaqdiGQRXrHuwboLRncFZghd",
+    "set161": "BNghSwxrysCqPZUoqEC6K6hPAdJHjsvodUTaAKhpqZT3",
+    "fullProposal3": "HFQRMAmjdxJokxrdA8AuoxCt5VA3yvhNajzPQZiypTeF",
+    "slimProposal3": "7h4sK83kuTMGsfBPAVP4EjcYVN8Ho9pCSqjnYxnX66RA",
+    "fullProposal4": "91sNS5NfPDg6xaJmF2AVqxLnDXP4gmRoXqEnmq3yeApq",
+    "slimProposal4": "8v52govkVBE4C8iB6m7FLBbCPmQH9EKmopVeMuKE23tt"
+  },
+  "updates": {
+    "dev gov": {
+      "contractId": "3ueAfbVe8LvCxYWk7bKvXxc5uHe7E1TDJHzN3k3ZDehZ",
+      "owner": "9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv",
+      "signedWithKeyId": 1,
+      "stateTransitionHash": "697f61459056e9d2a7bc4d55bf02381c01ca9c0b4a2adbc169acc7a17d48cc92",
+      "before": {
+        "version": 1,
+        "types": [
+          "claimAttestation",
+          "cycle",
+          "proposal",
+          "tally"
+        ],
+        "height": "644397"
+      },
+      "versionAfter": 2,
+      "typesAfter": [
+        "claimAttestation",
+        "cycle",
+        "proposal",
+        "talliesSet",
+        "tally"
+      ],
+      "provedAtHeight": "644398",
+      "talliesSetIdentical": true,
+      "feeCredits": "27029627310",
+      "feeDash": "0.27029627"
+    },
+    "testnet gov": {
+      "contractId": "5gMnJLDpcoMaQCQNqmHtBiSqCxRCmroXFAffPNdJ2NJC",
+      "owner": "24tL6v5jMR1H9dtUoTgbedePsMJtYPk4Q4bo6h8jTdK9",
+      "signedWithKeyId": 1,
+      "stateTransitionHash": "59b11b268b179981e428ffc05a670be3563732845107a8622b2ac217622c4dc6",
+      "before": {
+        "version": 1,
+        "types": [
+          "claimAttestation",
+          "cycle",
+          "proposal",
+          "tally"
+        ],
+        "height": "644398"
+      },
+      "versionAfter": 2,
+      "typesAfter": [
+        "claimAttestation",
+        "cycle",
+        "proposal",
+        "talliesSet",
+        "tally"
+      ],
+      "provedAtHeight": "644399",
+      "talliesSetIdentical": true,
+      "feeCredits": "27029630350",
+      "feeDash": "0.27029630"
+    }
+  },
+  "funding": {
+    "note": "the dev owner had 0.164 tDASH; the rehearsal registration and the dev contract update need ~0.55",
+    "qaWalletToSpikeWallet": {
+      "txid": "331ab87721aef1a83cf710d5217a0dfefabdf279e3908d77f1a99632a4ddbfaa",
+      "duffs": 60000000
+    },
+    "topUpDevOwner": {
+      "assetLockTxid": "55bd47f7da19fbf23e7a403557032608a33ee5e91cf756a13489cff57431bdfb",
+      "lockedCredits": "58999500000",
+      "feeCredits": "8003680"
+    }
+  }
+}

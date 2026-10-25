@@ -26,7 +26,8 @@ import loadDpp5 from 'dpp5';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const contractsDir = join(here, '../../../packages/contracts-v1');
-const NAMES = ['gov', 'forum', 'badge', 'mod'] as const;
+// gov.json is the mainnet definition; gov-testnet.json is what the deployed testnet gov contracts hold (packages/contracts-v1/README.md)
+const NAMES = ['gov', 'gov-testnet', 'forum', 'badge', 'mod'] as const;
 const OWNER_BYTES = Uint8Array.from(Buffer.from('11'.repeat(32), 'hex'));
 // DPNS contract id: any valid 32-byte identifier works as a dummy owner for the evo-sdk engine.
 const OWNER_B58 = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
@@ -155,7 +156,7 @@ async function main() {
       if (!r.ok) failures++;
       const cell = r.ok ? `PASS (${r.docTypes} types, create-ST ${r.stBytes} B)` : `FAIL: ${r.error}`;
       cells.push(r.ok ? `PASS (${r.stBytes} B)` : 'FAIL');
-      console.log(`  ${n.padEnd(6)} ${e.label.padEnd(28)} ${cell}`);
+      console.log(`  ${n.padEnd(11)} ${e.label.padEnd(28)} ${cell}`);
     }
     rows.push(`| ${n} | ${cells.join(' | ')} |`);
   }

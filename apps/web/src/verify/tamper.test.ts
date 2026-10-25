@@ -6,7 +6,10 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { installRecordedDapi, RECORDED_NODE } from '../data/dapiRecorded.ts';
 import { lookupCollateral, secondOpinion } from '../data/dapi.ts';
 import { FixtureBridge, loadFixtures, type FixtureSnapshot } from '../data/fixtures.ts';
+import { docToTallySet } from '../data/platform.ts';
 import { createSource } from '../data/repo.ts';
+import { tallySetFields } from '@govhub/verify';
+import { base64 } from '@scure/base';
 import { profileRegistry } from '../config/registry.ts';
 import type { Proposal, Tally } from '../data/types.ts';
 import { GOV_PARAMS } from '../lib/governance.ts';
@@ -199,6 +202,98 @@ describe('D-007 / D-002: a tampered tally or vote set reads as a mismatch, never
     expect(c).toMatchObject({ status: 'error', mismatch: true });
     // shown the bridge's own (matching) live tally instead, it is still not the proven record
     expect(comp(d, { name: BRIDGE_TARGET, tally: lie }).status).not.toBe('proven');
+  });
+});
+
+describe('packed talliesSet: a tampered, missing or re-dated entry is never verified', () => {
+  // Same recorded proposal and votes as D-007; the shown tally now comes out of a packed talliesSet document.
+  const bridge = new FixtureBridge();
+  let p: Proposal;
+  let tally: Tally;
+  let base: Parameters<typeof verifyVotes>[0];
+  let others: Tally[];
+  beforeAll(async () => {
+    p = byName('dash-intents');
+    tally = snap.tallies.get(p.govHash)!;
+    others = [...snap.tallies.values()].filter((t) => t.govHash !== p.govHash).slice(0, 5);
+    const votes = (await bridge.votes(p.govHash, { height: tally.asOfHeight })).votes;
+    const mns = (await bridge.mnlist(tally.asOfHeight)).masternodes;
+    const sml = new Map(mns.map((m) => [m.proTxHash, { votingAddress: m.votingAddress, isValid: true, nType: m.type === 'evo' ? 1 : 0, typeProven: true }]));
+    const proReg = new Map(mns.map((m) => [m.proTxHash.toLowerCase(), { type: m.type === 'evo' ? 1 : 0, collateral: { txid: m.collateralTxid, index: m.collateralIndex } }]));
+    base = { govHash: p.govHash, votes, masternodes: mns, network: 'mainnet', now: snap.now, targets: [], sml, proReg };
+  }, 30_000);
+  /** The talliesSet page the bridge would publish at `asOfHeight` (proved-read JSON), with this proposal and five others. */
+  const page = (asOfHeight: number, entries: Tally[]) => {
+    const f = tallySetFields(entries.map(({ asOfHeight: _a, ...e }) => e));
+    return { page: 0, asOfHeight, ...Object.fromEntries(Object.entries(f).map(([k, v]) => [k, base64.encode(v!)])) } as Record<string, unknown>;
+  };
+  /** What the page shows for the proposal, read through the real decoder. */
+  const shownFrom = (doc: Record<string, unknown>) => docToTallySet(doc).tallies.find((t) => t.govHash === p.govHash) ?? null;
+  /** The worker's recount: the votes the bridge serves when asked for `asked`, from its record at `votesAsOf`. */
+  const recount = (shown: Tally, votes = base.votes, votesAsOf = tally.asOfHeight, asked: number | null = shown.asOfHeight): VotesDone => ({
+    id: 1, kind: 'votes', bridge: 'fixture',
+    runs: [{ result: verifyVotes({ ...base, votes, targets: [{ name: PLATFORM_TARGET, tally: shown }] }), votesAsOf, asked, mnlistHeight: votesAsOf, listMatches: null }],
+    sml: { height: 1, blockHash: 'x', node: 'n', validWeighted: 1, weak: null },
+  });
+  const comp = (shown: Tally | null, d: VotesDone | null) => votesComponent({ shown: shown && { name: PLATFORM_TARGET, tally: shown }, talliesLoading: false, bridge: true, result: d, error: null });
+
+  it('baseline: the untampered packed entry recounts to "proven", like the per-proposal tally', () => {
+    const shown = shownFrom(page(tally.asOfHeight, [tally, ...others]))!;
+    expect(shown).toEqual(tally);
+    expect(comp(shown, recount(shown)).status).toBe('proven');
+    // re-stamped by a later replace (another entry changed): the bridge serves the record in force at that height, still proven
+    const later = shownFrom(page(tally.asOfHeight + 30, [tally, ...others]))!;
+    expect(comp(later, recount(later, base.votes, tally.asOfHeight, later.asOfHeight)).status).toBe('proven');
+  });
+
+  it('altered entry: a count or the voteSetHash changed inside the packed bytes is a mismatch, never proven', () => {
+    const doc = page(tally.asOfHeight, [tally, ...others]);
+    const set = docToTallySet(doc).tallies;
+    const i = set.findIndex((t) => t.govHash === p.govHash);
+    for (const [off, label] of [[64, 'Yes (weighted)'], [32, 'voteSetHash']] as const) {
+      const bytes = base64.decode(doc.b0 as string);
+      const at = 3 + i * 95 + off + 3;
+      bytes[at] = bytes[at]! ^ 0x10;
+      const shown = shownFrom({ ...doc, b0: base64.encode(bytes) })!;
+      const c = comp(shown, recount(shown));
+      expect(c).toMatchObject({ status: 'error', mismatch: true });
+      expect(c.status === 'error' && c.reason).toContain(label === 'voteSetHash' ? 'Mismatch' : label);
+      expect(voteVerdict(recount(shown).runs).level).toBe('mismatch');
+    }
+  });
+
+  it('missing entry: a set without the proposal shows no Platform tally, which is never proven', () => {
+    expect(shownFrom(page(tally.asOfHeight, others))).toBeNull();
+    const c = comp(null, null);
+    expect(c.status).toBe('reported');
+    expect(c.status === 'reported' && c.reason).toMatch(/No vote tally has been published/);
+    // and a truncated set does not decode at all, so it cannot supply a tally either
+    const doc = page(tally.asOfHeight, [tally, ...others]);
+    expect(() => docToTallySet({ ...doc, b0: base64.encode(base64.decode(doc.b0 as string).slice(0, -95)) })).toThrow(/bytes for 6 entries/);
+  });
+
+  it('wrong asOfHeight: a set dated before the votes it counts recounts against the older record and mismatches', () => {
+    // the bridge's record in force at the earlier height holds fewer votes (here: the set without five of its no votes)
+    const earlier = base.votes.filter((v) => v.outcome !== 2).concat(base.votes.filter((v) => v.outcome === 2).slice(5));
+    const shown = shownFrom(page(tally.asOfHeight - 40, [tally, ...others]))!;
+    const d = recount(shown, earlier, tally.asOfHeight - 48, shown.asOfHeight);
+    expect(comp(shown, d)).toMatchObject({ status: 'error', mismatch: true });
+  });
+
+  it('wrong asOfHeight: dated where the bridge has no record, the live set it falls back to proves nothing once the votes changed', () => {
+    const shown = shownFrom(page(tally.asOfHeight + 5000, [tally, ...others]))!;
+    const changed = base.votes.filter((v) => v.outcome !== 2).concat(base.votes.filter((v) => v.outcome === 2).slice(5));
+    // 404 at that height: the worker falls back to the live set (asked = null), whose recount differs from the entry
+    expect(comp(shown, recount(shown, changed, tally.asOfHeight + 10, null)).status).toBe('reported');
+    expect(voteVerdict(recount(shown, changed, tally.asOfHeight + 10, null).runs).level).toBe('different-height');
+    // (the same live set, unchanged: the entry is a true statement about those exact votes, whose voteSetHash it carries)
+    expect(comp(shown, recount(shown, base.votes, tally.asOfHeight, null)).status).toBe('proven');
+  });
+
+  it('wrong asOfHeight: a recount of the votes at another height than the entry claims does not cover it', () => {
+    const shown = shownFrom(page(tally.asOfHeight + 5000, [tally, ...others]))!;
+    const atReal: VotesDone = { ...recount(shown), runs: recount(shown).runs.map((r) => ({ ...r, result: { ...r.result, targets: r.result.targets.map((t) => ({ ...t, asOfHeight: tally.asOfHeight })) } })) };
+    expect(comp(shown, atReal).status).toBe('reported');
   });
 });
 

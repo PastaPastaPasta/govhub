@@ -1,5 +1,6 @@
 // Every Platform query the app sends, as builders named after the shape IDs in
 // packages/contracts-v1/README.md. queries.test.ts runs each through the PV13 linter.
+import { TALLY_SET_MAX_PAGES } from '@govhub/verify';
 import govSchemas from '@govhub/contracts-v1/gov.json';
 import { hexToB64 } from '../lib/bytes.ts';
 import { assertQuery, type ContractSchemas, type DocQuery } from '@govhub/contracts-v1/queryLint';
@@ -41,6 +42,13 @@ export const talliesFor = (govHashesHex: readonly string[]): DocQuery =>
 /** G5b: one tally. */
 export const tallyByHash = (govHashHex: string): DocQuery =>
   checked({ documentTypeName: 'tally', where: [['govHash', '==', hexToB64(govHashHex)]] });
+
+/** G8: every page of the packed tally set, page 0 first (161 proposals a page; the bridge writes at most TALLY_SET_MAX_PAGES). */
+export const tallySetPages = (): DocQuery =>
+  checked({ documentTypeName: 'talliesSet', where: [['page', '>=', 0]], orderBy: [['page', 'asc']], limit: TALLY_SET_MAX_PAGES });
+
+/** G8b: one page of the packed tally set (the bridge's lookup). */
+export const tallySetPage = (page: number): DocQuery => checked({ documentTypeName: 'talliesSet', where: [['page', '==', page]] });
 
 /** G6: latest cycles, highest superblock first. */
 export const latestCycles = (limit = 3): DocQuery =>

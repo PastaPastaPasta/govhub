@@ -30,15 +30,52 @@ PV14, so its fees approximate PV13 rather than match it exactly. Mainnet was use
 | Largest `proposalPost` (15 KB) | 0.0049 |
 | Register `gov` / `forum` / `badge` / `mod` | 0.24 / 0.433 / 0.221 / 0.141 (≈ 1.04 total) |
 
+### Pre-mainnet cost pass (2026-10-25, testnet PV14)
+
+Measured with the bridge's own document builders (`services/bridge/scripts/testnet-cost-pass.ts`,
+`results/testnet-cost-pass.json`; 1 DASH = 1e11 credits). Before: one `tally` per proposal, full `proposal`. After:
+every active tally in one `talliesSet` document, slim `proposal`, a final `tally` once per ended proposal.
+
+| Bridge write | Before (credits) | After (credits) |
+|---|---|---|
+| Hourly tally refresh, 6 active proposals changed | 6 x 2,475,040 = 14,850,240 | 2,726,140 (one `talliesSet` replace) |
+| Hourly tally refresh, 30 active proposals changed | 30 x 2,475,040 = 74,251,200 | 4,249,220 |
+| Hourly tally refresh, 161 proposals (one full document) | 161 x 2,475,040 = 398,481,440 | 11,228,280 |
+| A proposal joins the active set | 24,989,200 (`tally` create) | +2,603,800 on that hour's replace (95 bytes more) |
+| A proposal ends | 2,475,040 (retire replace) | 24,989,200 (final `tally` create, once) |
+| `proposal` create | 66,150,000 (mean of 4) | 61,200,000 (mean of #2..#4; #1 in a fresh contract: 74,213,920) |
+| Register `gov` | 0.24195 DASH (4 types, 6 indexes; testnet gov `5gMnJ…` registration on 2026-10-24, `contractFeeCredits` 24,195,056,280) | 0.27210 DASH (5 types, 7 indexes) |
+| Register `forum` | 0.433 DASH (with `proposalDraft`) | ~0.423 DASH (formula 0.42 + storage, with `keyring`, without `proposalDraft`) |
+
+On the real testnet contracts (same day): `talliesSet` create 0.00036408 DASH with 6 entries (testnet gov) and
+0.00096300 with 29 (dev gov, mainnet data); a replace 2,567,120 and 3,595,340 credits. Adding `talliesSet` to an
+existing contract cost 0.27029627 DASH per contract (a contract update pays the registration fee of the whole
+updated contract).
+
 ## Mainnet budget (estimate from the numbers above)
 
 | Item | DASH |
 |---|---|
 | Phase 0 mainnet check: identity plus a small contract with the tricky query shapes (`reaction`, `mnBadge`, `comment`) and a few writes. This replaces the planned local dashmate 4.1.1 network, because it tests the real PV13 query planner. | ~0.3 one-time |
-| Launch: register the four v1 contracts, plus bridge, moderation and issuer identities | ~1.1 one-time |
-| Bridge operations: ~30 proposals per cycle, plus tallies refreshed hourly on change | ~0.6 per month (~0.15 if tallies refresh every 6 h) |
+| Launch: register the four v1 contracts (0.272 + 0.423 + 0.221 + 0.141), plus bridge, moderation and issuer identities | ~1.1 one-time |
+| Bridge operations: ~30 active proposals, tallies refreshed hourly on change, ~150 new proposals a year | **~0.51 per year** (was ~6.6 per year before the cost pass; see below) |
 | Issuer keys (one doc per epoch) | negligible |
 | Starter vouchers | 0.003 each, from the faucet treasury |
+
+Annual bridge cost with 30 active proposals, every one changing every hour (the worst case of "hourly on change"),
+~150 new proposals a year (an upper estimate: the 28 mainnet proposals of the fixture snapshot last ~4 months by median,
+~2 by harmonic mean, which gives ~90 to ~170 a year at 30 active; the proposal lines scale with it and are small):
+
+| Item | Before (DASH/yr) | After (DASH/yr) |
+|---|---|---|
+| Tally refresh | 30 x 8,760 x 2,475,040 = 6.504 | 8,760 x 4,249,220 = 0.372 |
+| Proposals joining / ending | 150 x (24,989,200 + 2,475,040) = 0.041 | 150 x (2,603,800 + 24,989,200) = 0.041 |
+| `proposal` documents | 150 x 66,150,000 = 0.099 | 150 x 61,200,000 = 0.092 |
+| **Total** | **~6.64** | **~0.51** |
+
+Fewer changes per hour cut "before" roughly in proportion (10 changing proposals: ~2.2) but hardly change "after":
+the packed document is replaced once whenever any entry changed. A 6-hour interval divides the tally line by 6.
+`cycle` documents are the same before and after and left out.
 
 ## Decisions made in phase 0
 - Every hash on Platform is in RPC/display order. Only the collateral OP_RETURN uses raw order.
