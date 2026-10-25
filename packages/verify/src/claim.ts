@@ -1,6 +1,9 @@
 // Proposal ownership claims (PLAN §6.3). The highest-ranked valid method wins:
 //   1. URL-embedded: the proposal URL is https://<portal>/p/<identityId>/<name>; the URL is part of the data the
-//      governance hash commits to, so whoever paid the collateral named the owner. Trustless.
+//      governance hash commits to, so whoever paid the collateral named that identity. Naming is not consent: the
+//      named identity is only the owner once it accepts, by publishing its own `claim` document with method 1 for
+//      this govHash (its Platform-proven `$ownerId` is the acceptance; `sig` is required by the schema and ignored).
+//      Until then it is reported as `named`, never as the owner.
 //   2. Payment-address signature: `signmessage <paymentAddress> "govhub-claim|<net>|<govHash>|<identityId>"`.
 //   3. Collateral-input signature: the same message signed by the key that spent an input of the collateral tx.
 //   4. A `claimAttestation` by the hosting team (P2SH payouts, multisig, lost keys). Trusted, and labelled so.
@@ -25,7 +28,11 @@ export type ClaimMethodId = (typeof CLAIM_METHODS)[keyof typeof CLAIM_METHODS];
 
 /** Upper bound on signature recoveries per proposal (each claim document costs its author ~0.00036 DASH). */
 export const MAX_SIGNATURE_CHECKS = 50;
-/** Retries one identity gets per method (a typo then a correct signature must still work). */
+/**
+ * Signature checks one identity gets on a proposal, across all methods (a typo then a correct signature must still work).
+ * Only checks that cost a recovery count, here and against MAX_SIGNATURE_CHECKS: unknown methods, wrong lengths and
+ * methods that cannot apply are rejected for free.
+ */
 export const MAX_TRIES_PER_IDENTITY = 3;
 
 export const CLAIM_METHOD_LABEL: Record<ClaimMethodId, string> = {
@@ -143,7 +150,7 @@ export interface ClaimInput {
 export interface ValidClaim {
   identityId: string;
   method: ClaimMethodId;
-  /** the claim/attestation document, absent for method 1 */
+  /** the claim/attestation document (for method 1: the named identity's acceptance) */
   docId?: string;
   createdAt?: number;
   detail: string;
@@ -156,11 +163,20 @@ export interface RejectedClaim {
   reason: string;
 }
 
+export interface NamedIdentity {
+  identityId: string;
+  /** the named identity published its method-1 acceptance: it is then the owner (nothing outranks method 1) */
+  accepted: boolean;
+  url: string;
+}
+
 export interface ClaimVerdict {
   /** the winning claim, or null */
   owner: ValidClaim | null;
-  /** every valid claim, best first (lower-ranked ones are superseded by `owner`) */
+  /** every valid claim, best first (all but the first are valid but outranked by `owner`) */
   valid: ValidClaim[];
+  /** the identity the hashed proposal URL names, accepted or not; null when the URL names none */
+  named: NamedIdentity | null;
   rejected: RejectedClaim[];
   /** false when dataHex does not hash to govHash: methods 1-3 are then unusable */
   dataCommitted: boolean;
@@ -180,68 +196,70 @@ export function verifyClaims(input: ClaimInput): ClaimVerdict {
   }
   const fields = committed ? parseProposalData(input.dataHex).fields : null;
   const paymentAddress = fields?.paymentAddress ?? null;
-
-  if (fields) {
-    const id = urlClaimIdentity(fields.url, fields.name, input.portals);
-    if (id) valid.push({ identityId: id, method: 1, detail: `the hashed proposal URL ${fields.url} names this identity` });
-  }
+  const urlId = fields ? urlClaimIdentity(fields.url, fields.name, input.portals) : null;
+  let accepted = false;
 
   const p2pkh = paymentAddress ? decodeAddress(paymentAddress, input.network)?.type === 'p2pkh' : false;
   const inputs = input.collateralInputKeys ? new Set(input.collateralInputKeys.map((k) => k.toLowerCase())) : null;
-  // Claim documents are cheap to spam and each costs a public-key recovery, so: oldest first, per
-  // (identity, method) a few tries, nothing after the first valid claim of a method (a later one can never outrank it), and at
-  // most MAX_SIGNATURE_CHECKS recoveries; whatever is skipped is reported, never silently trusted.
+  // Claim documents are cheap to spam and a signature check costs a public-key recovery, so: oldest first, at most
+  // MAX_TRIES_PER_IDENTITY recoveries per identity across all methods, and at most MAX_SIGNATURE_CHECKS in total. Claims that
+  // need no recovery (method 1, unknown methods, malformed or inapplicable ones) are settled for free and use no budget.
+  // Every valid claim is reported (later ones as valid but outranked); whatever is skipped is reported, never silently trusted.
   const perIdentity = new Map<string, number>();
-  const won = new Set<number>();
   let checks = 0;
   const ordered = [...input.claims].sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
   for (const c of ordered) {
     const reject = (reason: string) => rejected.push({ docId: c.id, ownerId: c.ownerId, method: c.method, reason });
-    const k = `${c.ownerId}:${c.method}`;
-    const tries = (perIdentity.get(k) ?? 0) + 1;
-    perIdentity.set(k, tries);
-    if (tries > MAX_TRIES_PER_IDENTITY) {
-      reject(`not checked: more than ${MAX_TRIES_PER_IDENTITY} claims by this identity with this method`);
-      continue;
-    }
-    if (won.has(c.method)) {
-      reject('not checked: an earlier claim with this method is already valid');
-      continue;
-    }
-    if (fields && checks >= MAX_SIGNATURE_CHECKS) {
-      reject(`not checked: more than ${MAX_SIGNATURE_CHECKS} claims on this proposal`);
-      continue;
-    }
-    if (fields) checks++;
-    const before = valid.length;
-    checkOne(c, reject);
-    if (valid.length > before) won.add(c.method);
-  }
-  function checkOne(c: ClaimDoc, reject: (reason: string) => void): void {
     if (!fields) {
       reject('the proposal data does not match its hash');
-      return;
+      continue;
+    }
+    if (c.method === CLAIM_METHODS.url) {
+      if (!urlId) reject('the proposal URL does not name an identity');
+      else if (c.ownerId !== urlId) reject('the proposal URL names a different identity');
+      else if (accepted) reject('a repeat: this identity already accepted');
+      else {
+        accepted = true;
+        valid.push({ identityId: c.ownerId, method: 1, docId: c.id, createdAt: c.createdAt, detail: `the hashed proposal URL ${fields.url} names this identity, and it accepted` });
+      }
+      continue;
+    }
+    if (c.method !== CLAIM_METHODS.paymentAddress && c.method !== CLAIM_METHODS.collateralInput) {
+      reject(`unknown claim method ${c.method}`);
+      continue;
     }
     if (c.sig.length !== 65) {
       reject('signature is not 65 bytes');
-      return;
+      continue;
     }
+    if (c.method === CLAIM_METHODS.paymentAddress && !p2pkh) {
+      reject(`the payment address ${paymentAddress} is not a P2PKH address on ${input.network}, so it cannot sign`);
+      continue;
+    }
+    if (c.method === CLAIM_METHODS.collateralInput && !inputs) {
+      reject('the collateral transaction has not been verified here');
+      continue;
+    }
+    const tries = (perIdentity.get(c.ownerId) ?? 0) + 1;
+    if (tries > MAX_TRIES_PER_IDENTITY) {
+      reject(`not checked: more than ${MAX_TRIES_PER_IDENTITY} signature claims by this identity`);
+      continue;
+    }
+    if (checks >= MAX_SIGNATURE_CHECKS) {
+      reject(`not checked: more than ${MAX_SIGNATURE_CHECKS} signature claims on this proposal`);
+      continue;
+    }
+    perIdentity.set(c.ownerId, tries);
+    checks++;
     const msg = claimMessage(input.network, input.govHash, c.ownerId);
     if (c.method === CLAIM_METHODS.paymentAddress) {
-      if (!p2pkh) reject(`the payment address ${paymentAddress} is not a P2PKH address on ${input.network}, so it cannot sign`);
-      else if (!verifyMessage(paymentAddress!, c.sig, msg, input.network)) reject(`signature does not verify for ${paymentAddress}`);
+      if (!verifyMessage(paymentAddress!, c.sig, msg, input.network)) reject(`signature does not verify for ${paymentAddress}`);
       else valid.push({ identityId: c.ownerId, method: 2, docId: c.id, createdAt: c.createdAt, detail: `signed by the payment address ${paymentAddress}` });
-    } else if (c.method === CLAIM_METHODS.collateralInput) {
-      if (!inputs) {
-        reject('the collateral transaction has not been verified here');
-        return;
-      }
+    } else {
       const signer = recoverMessageSigner(c.sig, msg, input.network);
       if (!signer) reject('signature is malformed');
-      else if (!inputs.has(bytesToHex(signer.keyId))) reject(`signer ${signer.address} did not sign an input of the collateral transaction`);
+      else if (!inputs!.has(bytesToHex(signer.keyId))) reject(`signer ${signer.address} did not sign an input of the collateral transaction`);
       else valid.push({ identityId: c.ownerId, method: 3, docId: c.id, createdAt: c.createdAt, detail: `signed by ${signer.address}, which spent an input of the collateral` });
-    } else {
-      reject(`unknown claim method ${c.method}`);
     }
   }
 
@@ -253,7 +271,16 @@ export function verifyClaims(input: ClaimInput): ClaimVerdict {
   }
 
   valid.sort(rankOrder);
-  return { owner: valid[0] ?? null, valid, rejected, dataCommitted: committed, paymentAddress };
+  const named = urlId && fields ? { identityId: urlId, accepted, url: fields.url } : null;
+  return { owner: valid[0] ?? null, valid, named, rejected, dataCommitted: committed, paymentAddress };
+}
+
+/**
+ * Whether a claim published now with `method` could become the owner: claims rank by method, then by age, so a new one
+ * wins only with a strictly stronger method than the current owner's. The UI warns before a claim that cannot.
+ */
+export function canOutrank(owner: Pick<ValidClaim, 'method'> | null, method: ClaimMethodId): boolean {
+  return !owner || method < owner.method;
 }
 
 /** True when `sig` (base64 or bytes) is a valid claim signature by `address` for this identity: the UI's pre-check. */
