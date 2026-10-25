@@ -103,20 +103,19 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
   const filteredCount = useMemo(() => comments.filter((c) => !reasonsOf(c).length && !passesFilter(c, filter, { owner, badged })).length, [comments, reasonsOf, filter, owner, badged]);
   const [unfiltered, setUnfiltered] = useState(false);
   // The deep-linked comment always gets at least its placeholder.
-  const visible = useMemo(() => visibleSubtrees(roots, (c) => c.id === focus || shown(c, { reasonsOf, showHidden, revealed, filter, owner, badged })), [roots, reasonsOf, showHidden, revealed, filter, owner, badged, focus]);
+  const showOpts = useMemo(() => ({ reasonsOf, showHidden, revealed, filter, owner, badged }), [reasonsOf, showHidden, revealed, filter, owner, badged]);
+  const visible = useMemo(() => visibleSubtrees(roots, (c) => c.id === focus || shown(c, showOpts)), [roots, showOpts, focus]);
   // Fail closed: nothing renders before the block lists are read, and a list that failed collapses the thread until
   // the reader chooses to see it without that list.
   const gated = !moderation.ready || (!!moderation.error && !unfiltered);
   // Only the newest threads render (a flood cannot bury new comments or make the page read every reaction); older ones on request.
   const win = useMemo(() => windowRoots(roots, visible, limit, focus), [roots, visible, limit, focus]);
+  // Scores are read for comments rendered in full (not placeholders: hidden parents, or a deep-linked comment a list hides).
   const targets = useMemo(() => {
     if (gated) return [];
-    const ids = flatten(win.roots)
-      .map((n) => n.comment)
-      .filter((c) => visible.get(c.id) && shown(c, { reasonsOf, showHidden, revealed, filter, owner, badged }))
-      .map((c) => c.id);
+    const ids = flatten(win.roots).flatMap((n) => (shown(n.comment, showOpts) ? [n.comment.id] : []));
     return ids.slice(-MAX_SCORED).map((commentId) => ({ commentId }));
-  }, [gated, win, visible, reasonsOf, showHidden, revealed, filter, owner, badged]);
+  }, [gated, win, showOpts]);
   const reactions = useReactions(targets);
   const focusMissing = !!focus && !!thread.data && !gated && !comments.some((c) => c.id === focus);
 
@@ -194,16 +193,6 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
   };
 
   const count = comments.length;
-  const loadedLists = moderation.lists.map((l) => l.name).join(', ');
-  const listNote = moderation.subs.defaultOff
-    ? ' The default block list is off (Settings).'
-    : !moderation.ready
-      ? ' Reading the block lists…'
-      : loadedLists
-        ? ` Spam is hidden by ${loadedLists}.`
-        : moderation.error
-          ? ' The block lists could not be read.'
-          : '';
   return (
     <section aria-labelledby="discussion-title" className="discussion" data-testid="discussion">
       <div className="discussion-head">
@@ -234,7 +223,7 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
             Show all {formatInt(filteredCount)} other {filteredCount === 1 ? 'comment' : 'comments'}
           </button>
         )}
-        {listNote}
+        {listNote(moderation)}
       </p>
 
       {session ? (
@@ -298,6 +287,15 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
       )}
     </section>
   );
+}
+
+/** The filter note's last sentence: which lists hide spam, or that they are still being read or could not be read. */
+function listNote(m: ReturnType<typeof useForum>['moderation']): string {
+  if (m.subs.defaultOff) return ' The default block list is off (Settings).';
+  if (!m.ready) return ' Reading the block lists…';
+  const loaded = m.lists.map((l) => l.name).join(', ');
+  if (loaded) return ` Spam is hidden by ${loaded}.`;
+  return m.error ? ' The block lists could not be read.' : '';
 }
 
 interface NodeCtx {

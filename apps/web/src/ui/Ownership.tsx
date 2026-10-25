@@ -75,12 +75,12 @@ const OWNER_HOW: Record<1 | 2 | 3 | 4, string> = {
 /** Profile and DPNS name of one identity, for the owner line. */
 function useIdentityNames(id: string | null) {
   const { forum } = useForum();
-  const [state, setState] = useState<{ id: string; profile?: Profile; dpns?: string } | null>(null);
+  const [state, setState] = useState<{ id: string; profile: Profile | undefined; dpns: string | undefined } | null>(null);
   useEffect(() => {
     if (!id) return;
     let live = true;
     Promise.all([forum.reader.profiles([id]).catch(() => new Map<string, Profile>()), forum.names([id]).catch(() => new Map<string, string>())]).then(([p, n]) => {
-      if (live) setState({ id, ...(p.get(id) ? { profile: p.get(id)! } : {}), ...(n.get(id) ? { dpns: n.get(id)! } : {}) });
+      if (live) setState({ id, profile: p.get(id), dpns: n.get(id) });
     });
     return () => {
       live = false;
@@ -99,9 +99,8 @@ export function OwnerValue({ p, own }: { p: Proposal; own: Ownership }) {
   const named = own.verdict?.named && !own.verdict.named.accepted ? own.verdict.named : null;
   const ownerNames = useIdentityNames(o?.identityId ?? null);
   const namedNames = useIdentityNames(named?.identityId ?? null);
-  const hidden = (id: string) => moderation.index.identityHidden(id);
   const who = (id: string, n: ReturnType<typeof useIdentityNames>, size = 20) => {
-    const blocked = hidden(id);
+    const blocked = moderation.index.identityHidden(id);
     const profile = blocked ? undefined : n?.profile;
     return (
       <>

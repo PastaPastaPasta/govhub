@@ -56,7 +56,7 @@ export function ProposalCard({
           <p className="prow-owner">
             <Avatar id={urlOwner} profile={ownerProfile} size={18} />
             <span title={`Identity ${urlOwner}, named in the proposal URL by its creator; the proposal page shows whether it accepted`}>
-              <bdi>{authorLabel(urlOwner, ownerProfile).name ? authorText(urlOwner, ownerProfile) : shortHash(urlOwner, 5)}</bdi> <span className="muted small">named by the creator</span>
+              <bdi>{ownerProfile && authorLabel(urlOwner, ownerProfile).name ? authorText(urlOwner, ownerProfile) : shortHash(urlOwner, 5)}</bdi> <span className="muted small">named by the creator</span>
             </span>
           </p>
         ) : (

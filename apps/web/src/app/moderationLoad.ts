@@ -1,7 +1,7 @@
 // Reading the moderation lists a reader applies (PLAN §9): the subscriptions (the user's blockSubs document when signed in,
 // else this browser's), then every list they name plus the user's own. Every read has a deadline: a node that never answers
 // counts as a list that could not be read (fail closed, with "Show the comments anyway"), never as "Applying block lists…" forever.
-import { isIdentifier, type Block, type BlockList, type BlockSubs } from '@govhub/forum';
+import { isIdentifier, type BlockList, type ForumReader } from '@govhub/forum';
 import { shortHash } from '../lib/format.ts';
 import { withDeadline } from '../lib/social.ts';
 
@@ -14,7 +14,7 @@ export interface Subscriptions {
 }
 
 /** How long one list (all its pages) or the subscriptions document may take. */
-export const LIST_DEADLINE_MS = 20_000;
+const LIST_DEADLINE_MS = 20_000;
 
 const SUBS_KEY = 'govhub.blockSubs.v1';
 
@@ -30,10 +30,7 @@ export function loadLocalSubs(storage: Pick<Storage, 'getItem'> | undefined = gl
 
 export const saveLocalSubs = (s: Subscriptions) => localStorage.setItem(SUBS_KEY, JSON.stringify({ defaultOff: s.defaultOff, lists: s.lists }));
 
-export interface ListReader {
-  blocks(contract: 'forum' | 'mod', ownerId: string): Promise<Block[]>;
-  blockSubs(ownerId: string): Promise<BlockSubs | null>;
-}
+export type ListReader = Pick<ForumReader, 'blocks' | 'blockSubs'>;
 
 export interface ModerationRead {
   lists: BlockList[];

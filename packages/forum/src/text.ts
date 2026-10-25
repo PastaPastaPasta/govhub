@@ -8,10 +8,12 @@ export const BIDI_CONTROLS = /[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/g;
 export const stripBidi = (s: string): string => s.replace(BIDI_CONTROLS, '');
 
 /** Format (Cf: zero-width, bidi, tags, soft hyphen) and control (Cc) characters, plus letters that render as blank. */
-const INVISIBLE_CLASS = '[\\p{Cf}\\p{Cc}\\u034F\\u115F\\u1160\\u17B4\\u17B5\\u180E\\u2800\\u3164\\uFFA0]';
+/** Letters and marks that render as nothing (combining grapheme joiner, Hangul and Khmer fillers, Mongolian separator, braille blank). */
+const BLANK_LETTERS = '\\u034F\\u115F\\u1160\\u17B4\\u17B5\\u180E\\u2800\\u3164\\uFFA0';
+const INVISIBLE_CLASS = `[\\p{Cf}\\p{Cc}${BLANK_LETTERS}]`;
 const INVISIBLE = new RegExp(INVISIBLE_CLASS, 'gu');
 const HAS_INVISIBLE = new RegExp(INVISIBLE_CLASS, 'u');
-const BLANK = /[\p{Cf}\p{Cc}\p{Z}\s\u034F\u115F\u1160\u17B4\u17B5\u180E\u2800\u3164\uFFA0\uFE00-\uFE0F]/gu;
+const BLANK = new RegExp(`[\\p{Cf}\\p{Cc}\\p{Z}\\s${BLANK_LETTERS}\\uFE00-\\uFE0F]`, 'gu');
 
 /** True when nothing visible is left: whitespace, zero-width, bidi and other format characters only. */
 export const isBlank = (s: string): boolean => s.replace(BLANK, '') === '';

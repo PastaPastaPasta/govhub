@@ -97,8 +97,26 @@ function decodeEntities(s: string): string {
   );
 }
 
-const plainText = (nodes: readonly MdInline[]): string =>
-  nodes.map((n) => (n.t === 'text' || n.t === 'code' ? n.v : n.t === 'strong' || n.t === 'em' || n.t === 'del' || n.t === 'link' ? plainText(n.c) : n.t === 'image' ? n.alt : '')).join('');
+function plainText(nodes: readonly MdInline[]): string {
+  return nodes
+    .map((n) => {
+      switch (n.t) {
+        case 'text':
+        case 'code':
+          return n.v;
+        case 'strong':
+        case 'em':
+        case 'del':
+        case 'link':
+          return plainText(n.c);
+        case 'image':
+          return n.alt;
+        default:
+          return '';
+      }
+    })
+    .join('');
+}
 
 /** Text that is, as a whole, a URL or a bare domain: `https://dash.org/x`, `dash.org`, `www.dash.org/path`. */
 const URL_LIKE = /^(?:[a-z][a-z0-9+.-]*:\/\/)?(?:[^\s/?#@]*@)?((?:[^\s/?#@:.]+\.)+(?:\p{L}{2,63}|xn--[a-z0-9-]+))\.?(?::\d{1,5})?(?:[/?#]\S*)?$/iu;

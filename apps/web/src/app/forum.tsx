@@ -10,8 +10,6 @@ import type { Session } from '../session/session.ts';
 import { useApp } from './context.tsx';
 import { failedText, loadLocalSubs, readModeration, saveLocalSubs, type Subscriptions } from './moderationLoad.ts';
 
-export { loadLocalSubs, type Subscriptions } from './moderationLoad.ts';
-
 interface ModerationState {
   index: HideIndex;
   lists: BlockList[];

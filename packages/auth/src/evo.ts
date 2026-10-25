@@ -407,20 +407,14 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
      */
     const broadcastOrProved = (wait: Promise<unknown>): Promise<boolean> => {
       let answered = false;
-      const waited = wait.then(
-        () => ((answered = true), false),
-        (e: unknown) => {
-          answered = true;
-          throw e;
-        },
-      );
+      const waited = wait.finally(() => (answered = true)).then(() => false);
       const proved = (async () => {
         await Promise.resolve(); // a wait that answers at once (tests, refusals) never starts the reads
         for (let i = 0; i < PROVE_READS && !answered; i++) {
           await sleep(proveDelay(i));
           if (!answered && (await tryCheck()).state === 'done') return true;
         }
-        return new Promise<boolean>(() => {}); // the wait answered: it decides
+        return new Promise<boolean>(() => {}); // never settles: `waited` alone decides the race
       })();
       return Promise.race([waited, proved]);
     };
@@ -428,12 +422,12 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
     let nonce = (first.hit.raw & NONCE_VALUE) + 1n;
     let st = sign(nonce);
     let sent = false; // an earlier send of ours may have executed
-    let inFlight: Promise<unknown> | null = null; // the SDK may still hold `st` after a proved read settled the write
+    let held: Promise<unknown> | null = null; // the SDK may still hold `st` after a proved read settled the write
     try {
       for (let i = 0; i < MAX_SENDS && (i === 0 || now() < deadline); i++) {
         try {
           const wait = sdk.stateTransitions.broadcastAndWait(st);
-          inFlight = wait;
+          held = wait;
           await broadcastOrProved(wait);
           return plan.result();
         } catch (e) {
@@ -478,9 +472,9 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
       if (await settled()) return plan.result();
       throw unconfirmed();
     } finally {
-      const last = st;
-      if (inFlight) inFlight.then(() => free(last), () => free(last));
-      else free(last);
+      const signed = st;
+      if (held) held.then(() => free(signed), () => free(signed));
+      else free(signed);
     }
   }
 
