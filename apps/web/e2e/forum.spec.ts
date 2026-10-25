@@ -1,7 +1,7 @@
 // Social features end to end in fixture mode: the sample discussion lives in an in-memory store that runs the same
 // linted queries and DocumentOps as Platform, and sign-in picks a sample identity.
 import { expect, test, type Page } from '@playwright/test';
-import { cspViolations, gotoFixtures, watchPage } from './helpers.ts';
+import { cspViolations, gotoFixtures, openGroup, watchPage } from './helpers.ts';
 
 async function signInAs(page: Page, who: RegExp) {
   await page.getByTestId('session-button').click();
@@ -41,7 +41,7 @@ test.describe('discussion (fixtures)', () => {
     await expect(spam).toHaveCount(0);
 
     // Filter: owner + MN owners (no badges yet, no owner) hides everyone; "show all" is one click.
-    await d.getByText('Proposal owner + MN owners').click();
+    await d.getByText('Owner and masternodes').click();
     await expect(d.locator('li.comment:not(.comment-placeholder)')).toHaveCount(0);
     await d.getByTestId('show-all').click();
     await expect(d.locator('li.comment:not(.comment-placeholder)')).toHaveCount(5);
@@ -148,12 +148,11 @@ test.describe('discussion (fixtures)', () => {
     const owner = page.getByTestId('owner');
     await expect(owner).toHaveAttribute('data-method', '4');
     await expect(owner).toContainText('Dash Growth team');
-    await expect(owner).toContainText('attestation by the hosting team');
+    await expect(owner).toContainText('vouched for by the hosting team');
     await expect(comment(page, 'Cost per funded wallet').locator('.chip-owner')).toHaveText('proposal owner');
     const post = page.getByTestId('owner-post');
     await expect(post.getByRole('heading', { name: 'Dash growth, Q4 2026' })).toBeVisible();
     await expect(post.locator('table td', { hasText: '420' })).toBeVisible();
-    await expect(page.locator('details.raw-collapsed > summary')).toHaveText(/Raw proposal data/);
 
     await signInAs(page, /Dash Growth team/);
     await post.getByRole('button', { name: 'Edit the description' }).click();
@@ -181,11 +180,12 @@ test.describe('discussion (fixtures)', () => {
 
   test('list cards count comments without the hidden ones; the default list can be turned off', async ({ page }) => {
     await gotoFixtures(page, '/');
-    await expect(page.locator('article.card', { hasText: 'DCG-Operations-Aug-Nov-26' }).getByTestId('card-comments')).toHaveText(/2$/);
+    await expect(page.locator('article.prow', { hasText: 'DCG-Operations-Aug-Nov-26' }).getByTestId('card-comments')).toHaveText(/2$/);
     await page.locator('.sentinel').scrollIntoViewIfNeeded();
-    await expect(page.locator('article.card', { hasText: 'OrchardPay' }).getByTestId('card-comments')).toHaveText(/5$/);
+    await expect(page.locator('article.prow', { hasText: 'OrchardPay' }).getByTestId('card-comments')).toHaveText(/5$/);
 
     await page.getByRole('link', { name: 'Settings' }).click();
+    await openGroup(page, 'Hidden comments');
     const lists = page.getByRole('region', { name: 'Block lists' });
     await expect(lists).toContainText('govhub moderation: 1 block');
     await lists.getByLabel(/The default list/).uncheck();

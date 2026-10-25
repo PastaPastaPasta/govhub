@@ -55,6 +55,13 @@ export function superblockCadence(params: Pick<GovParams, 'superblockCycle' | 'b
   return hours < 48 ? every(Math.round(hours), 'hour') : every(Math.round(hours / 24), 'day');
 }
 
+/** "per month" (mainnet) or "per hour" (testnet); otherwise "per payment (every ~N days)". Amounts are paid once per superblock. */
+export function perPayment(params: Pick<GovParams, 'superblockCycle' | 'blockSeconds'>): string {
+  const c = superblockCadence(params);
+  const unit = { hourly: 'hour', daily: 'day', weekly: 'week', monthly: 'month' }[c];
+  return unit ? `per ${unit}` : `per payment (${c})`;
+}
+
 /** The unit an amount is paid per, e.g. "per superblock (~monthly)"; the same words on cards and in the proposal table. */
 export const perSuperblock = (params: Pick<GovParams, 'superblockCycle' | 'blockSeconds'>): string => `per superblock (~${superblockCadence(params)})`;
 

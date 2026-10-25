@@ -7,8 +7,8 @@ import { CLAIM_METHOD_LABEL, checkClaimSignature, claimMessage, decodeAddress, d
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { attestorsFor } from '../config/registry.ts';
-import type { Proposal, Provenance } from '../data/types.ts';
-import { errText, formatCredits, formatInt } from '../lib/format.ts';
+import type { Proposal } from '../data/types.ts';
+import { errText, formatCredits, formatInt, shortAddress } from '../lib/format.ts';
 import type { CollateralVerdict } from '../verify/collateral.ts';
 import { HiddenToggle, plural } from './HiddenToggle.tsx';
 import { AuthorName, Avatar } from './Identity.tsx';
@@ -63,14 +63,15 @@ export function useOwnership(p: Proposal, collateral: CollateralVerdict | null):
   return { verdict, loading: docs === null, error, reload };
 }
 
-export function ownerProvenance(o: ClaimVerdict['owner'], fixture: boolean): Provenance | null {
-  if (!o) return null;
-  if (fixture) return { kind: 'fixture', source: 'fixture discussion', detail: o.detail };
-  if (o.method === 4) return { kind: 'proof', source: 'hosting team attestation', detail: `${o.detail}. Trusted: the team vouches for it; nothing here checks a key` };
-  return { kind: 'verified', source: 'claim check in this browser', detail: o.detail };
-}
+/** How the owner proved it, in a few words (CLAIM_METHOD_LABEL has the full name). */
+const OWNER_HOW: Record<1 | 2 | 3 | 4, string> = {
+  1: 'named in the proposal URL',
+  2: 'signed with the payment address',
+  3: 'signed with the collateral key',
+  4: 'vouched for by the hosting team',
+};
 
-/** The "Owner" value of the details table. */
+/** Who owns the proposal: the verified owner's name and how they proved it, or "Unclaimed proposal". */
 export function OwnerValue({ p, own }: { p: Proposal; own: Ownership }) {
   const { forum, moderation } = useForum();
   const [profile, setProfile] = useState<Awaited<ReturnType<typeof forum.reader.profiles>> | null>(null);
@@ -84,21 +85,24 @@ export function OwnerValue({ p, own }: { p: Proposal; own: Ownership }) {
       live = false;
     };
   }, [forum, o]);
-  if (own.loading) return <>Checking claims… Pays to <span className="mono-ish break">{p.paymentAddress}</span></>;
-  if (!o) {
+  if (own.loading || !o) {
     return (
-      <>
-        Not claimed yet. Pays to <span className="mono-ish break">{p.paymentAddress}</span>
-      </>
+      <span className="owner-value owner-none" data-testid="owner-none">
+        <span>{own.loading ? 'Checking who owns it…' : 'Unclaimed proposal'}</span>
+        <span className="muted small">
+          pays <span className="mono-ish break" title={p.paymentAddress}>{shortAddress(p.paymentAddress)}</span>
+        </span>
+      </span>
     );
   }
   return (
     <span className="owner-value" data-testid="owner" data-owner={o.identityId} data-method={o.method}>
       <Avatar id={o.identityId} profile={blocked ? undefined : profile?.get(o.identityId)} size={20} />
       <AuthorName id={o.identityId} profile={blocked ? undefined : profile?.get(o.identityId)} />
-      <span className="chip chip-owner">owner</span>
       {blocked && <span className="muted small">(on a block list: name and avatar hidden)</span>}
-      <span className="muted small">by {CLAIM_METHOD_LABEL[o.method]}</span>
+      <span className="muted small" title={`Claim checked in this browser: ${CLAIM_METHOD_LABEL[o.method]}`}>
+        owner, {OWNER_HOW[o.method]}
+      </span>
     </span>
   );
 }

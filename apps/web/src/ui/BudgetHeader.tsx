@@ -1,11 +1,10 @@
-// DashCentral budget header: next superblock ETA, voting deadline, budget total vs allocated,
-// active proposal count. The budget strip shows each proposal in the next budget as a segment.
+// The landing summary: when the next payout is, how much of the budget is promised, and what it takes to pass. The strip shows
+// each proposal in the next budget as a segment of the treasury.
 import { Link } from 'react-router-dom';
 import { useApp } from '../app/context.tsx';
-import { formatDash, formatDashAmount, formatDateTime, formatDuration, formatInt, formatPercent } from '../lib/format.ts';
-import { fundingThreshold, votingDeadlineTime } from '../lib/governance.ts';
+import { formatDash, formatDashAmount, formatDate, formatDuration, formatInt, formatPercent } from '../lib/format.ts';
+import { fundingThreshold, superblockCadence, votingDeadlineTime } from '../lib/governance.ts';
 import { budgetView, countNames, proposalHref } from '../lib/view.ts';
-import { ProvMark } from './Provenance.tsx';
 
 export function BudgetHeader() {
   const { gov, source, params, activeRows } = useApp();
@@ -17,15 +16,15 @@ export function BudgetHeader() {
   if (gov.cycle.loading && !cycle) {
     return (
       <section className="budget budget-loading" aria-busy="true" aria-label="Budget">
-        <p className="budget-line muted">Loading the budget cycle…</p>
+        <p className="budget-line muted">Loading the budget…</p>
       </section>
     );
   }
   if (!cycle) {
     return (
       <section className="budget" aria-label="Budget">
-        <p className="budget-line">No budget cycle has been published yet.</p>
-        <p className="muted small">{gov.cycle.error ? `Platform read failed: ${gov.cycle.error}` : 'The bridge publishes a cycle document for every superblock. Add a bridge in Settings to see live numbers.'}</p>
+        <p className="budget-line">No budget has been published yet.</p>
+        <p className="muted small">{gov.cycle.error ? `Platform read failed: ${gov.cycle.error}` : 'The bridge publishes one for every payout. Add a bridge in Settings to see live numbers.'}</p>
       </section>
     );
   }
@@ -34,42 +33,35 @@ export function BudgetHeader() {
   const untilSb = c.estTime - now;
   const deadline = votingDeadlineTime(c, params);
   const untilDeadline = deadline - now;
-  // Proposals that failed verification are not counted: not allocated, not in the budget, not active.
+  // Proposals that failed verification are not in the strip; the allocation is the cycle document's own figure.
   const { funded, fundedSum, allocated, active } = budgetView(
     activeRows.shown.map((r) => r.item),
-    activeRows.failed.map((r) => r.item),
     c,
   );
   const names = countNames(activeRows.shown.map((r) => r.item.p.value));
   const allocatedFrac = c.budget ? Math.min(1, allocated / c.budget) : 0;
-  const height = gov.height.data;
-  const blocksLeft = height ? c.superblockHeight - height.value : null;
+  const available = Math.max(0, c.budget - allocated);
+  const threshold = fundingThreshold(c.validWeighted, params);
+  const height = gov.height.data?.value;
 
   return (
     <section className="budget" aria-labelledby="budget-title">
       <h2 id="budget-title" className="budget-line">
-        Superblock <span className="num">{formatInt(c.superblockHeight)}</span> pays{' '}
         {untilSb > 0 ? (
           <>
-            in <span className="num">{formatDuration(untilSb)}</span>
+            Next payout in <span className="num">{formatDuration(untilSb)}</span>
           </>
         ) : (
-          <>any moment now</>
+          'The next payout is due any moment'
         )}
-        <ProvMark prov={cycle.prov} />
       </h2>
       <p className="budget-sub">
         {untilDeadline > 0 ? (
           <>
-            Voting closes in <b>{formatDuration(untilDeadline)}</b>, around {formatDateTime(deadline)} (block {formatInt(c.votingDeadlineHeight)}).
+            Masternodes can vote for another <b>{formatDuration(untilDeadline)}</b>, until {formatDate(deadline)}.
           </>
         ) : (
-          <>Voting for this superblock has closed (block {formatInt(c.votingDeadlineHeight)}).</>
-        )}{' '}
-        {blocksLeft !== null && blocksLeft > 0 && (
-          <>
-            {formatInt(blocksLeft)} blocks to go at height {formatInt(height!.value)} <ProvMark prov={height!.prov} />
-          </>
+          'Voting for this payout has closed.'
         )}
       </p>
 
@@ -90,39 +82,53 @@ export function BudgetHeader() {
         <span className="strip-free" style={{ flexGrow: Math.max(0, c.budget - Math.max(allocated, fundedSum)) }} />
       </div>
 
+      <p className="budget-compact">
+        <b>{formatDashAmount(available)} DASH</b> still available; <b>{formatInt(funded.length)}</b> of {formatInt(active)} proposals in the budget
+      </p>
       <dl className="budget-facts">
         <div>
           <dt>Allocated</dt>
           <dd>
-            <span className="num">{formatDashAmount(allocated)}</span> of {formatDash(c.budget)} <span className="muted">({formatPercent(allocatedFrac)})</span>
-            {gov.usd && (
-              <span className="muted">
-                {' '}
-                about ${formatInt(Math.round((c.budget / 1e8) * gov.usd.value))} total <ProvMark prov={gov.usd.prov} />
-              </span>
-            )}
+            <span className="num">{formatDashAmount(allocated)}</span> of {formatDash(c.budget)}
+            {gov.usd && <span className="muted"> (about ${formatInt(Math.round((c.budget / 1e8) * gov.usd.value))})</span>}
           </dd>
         </div>
         <div>
           <dt>Still available</dt>
           <dd>
-            <span className="num">{formatDashAmount(Math.max(0, c.budget - allocated))}</span> DASH
+            <span className="num">{formatDashAmount(available)}</span> DASH
           </dd>
         </div>
         <div>
-          <dt>In the next budget</dt>
+          <dt>In the budget</dt>
           <dd>
-            <span className="num">{formatInt(funded.length)}</span> of {formatInt(active)} active proposals
+            <span className="num">{formatInt(funded.length)}</span> of {formatInt(active)} proposals
           </dd>
         </div>
         <div>
-          <dt>Passing threshold</dt>
+          <dt>To pass</dt>
           <dd>
-            <span className="num">{formatInt(fundingThreshold(c.validWeighted, params))}</span> net yes{' '}
-            <span className="muted">(10% of {formatInt(c.validWeighted)} weighted MNs)</span>
+            <span className="num">{formatInt(threshold)}</span> net yes votes
           </dd>
         </div>
       </dl>
+      <details className="learn">
+        <summary>How funding works</summary>
+        <p className="strip-legend small muted">
+          <span className="legend-item">
+            <span className="key key-seg" /> each blue segment is a proposal in the next budget
+          </span>
+          <span className="legend-item">
+            <span className="key key-free" /> still available
+          </span>
+        </p>
+        <p className="small">
+          The treasury pays out {superblockCadence(params)}, in a special block (a superblock; this one is block {formatInt(c.superblockHeight)}
+          {height ? `, the chain is at ${formatInt(height)}` : ''}). A proposal is paid if its yes votes minus its no votes reach 10% of all masternode
+          weight ({formatInt(threshold)} of {formatInt(c.validWeighted)}; evonodes count 4 times). Passing proposals are paid best first until the budget of{' '}
+          {formatDash(c.budget)} runs out. Votes count until {formatDate(deadline)}, a few days before the payout.
+        </p>
+      </details>
     </section>
   );
 }

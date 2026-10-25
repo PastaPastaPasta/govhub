@@ -10,6 +10,7 @@ import { BadgePage } from './badge/BadgePage.tsx';
 import { BadgeProvider } from './badge/context.tsx';
 import { Layout } from './app/Layout.tsx';
 import { preloadSdk } from './data/platform.ts';
+import { AboutPage } from './pages/AboutPage.tsx';
 import { ActivePage } from './pages/ActivePage.tsx';
 import { PastPage } from './pages/PastPage.tsx';
 import { ProposalByHash, ProposalByName } from './pages/ProposalPage.tsx';
@@ -32,7 +33,7 @@ function SdkWarmup() {
 
 function NotFoundPage() {
   return (
-    <section className="list-section">
+    <section className="page-narrow">
       <h1>Page not found</h1>
       <p>
         <Link to="/">Back to active proposals</Link>
@@ -61,6 +62,7 @@ createRoot(document.getElementById('root')!).render(
                 <Route path="masternodes" element={<MasternodesPage />} />
                 <Route path="votes" element={<MyVotesPage />} />
                 <Route path="badge" element={<BadgePage />} />
+                <Route path="about/verification" element={<AboutPage />} />
                 <Route path="*" element={<NotFoundPage />} />
               </Route>
             </Routes>

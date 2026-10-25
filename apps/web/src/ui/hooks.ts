@@ -1,26 +1,30 @@
-import { useEffect, useRef, useState, type DependencyList } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type DependencyList } from 'react';
 import { useApp, type Load } from '../app/context.tsx';
 import type { Proposal } from '../data/types.ts';
 import type { ChainReport } from '../verify/chain.ts';
 import { runVerification } from '../verify/client.ts';
 import type { CollateralVerdict } from '../verify/collateral.ts';
 
-/** Runs `fn` whenever deps change; ignores results from superseded runs. */
+/**
+ * Runs `fn` whenever deps change; ignores results from superseded runs, and never returns a previous run's data (not even in the
+ * render before the new run's effect starts): a page built from it never shows, or checks, the old data source's documents.
+ */
 export function useAsync<T>(fn: () => Promise<T>, deps: DependencyList): Load<T> {
-  const [state, setState] = useState<Load<T>>({ loading: true });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const run = useMemo(() => ({}), deps);
+  const [state, setState] = useState<{ run: object; load: Load<T> } | null>(null);
   useEffect(() => {
     let live = true;
-    setState({ loading: true });
     fn().then(
-      (data) => live && setState({ data, loading: false }),
-      (e: unknown) => live && setState({ error: e instanceof Error ? e.message : String(e), loading: false }),
+      (data) => live && setState({ run, load: { data, loading: false } }),
+      (e: unknown) => live && setState({ run, load: { error: e instanceof Error ? e.message : String(e), loading: false } }),
     );
     return () => {
       live = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
-  return state;
+  }, [run]);
+  return state && state.run === run ? state.load : { loading: true };
 }
 
 /**
@@ -28,8 +32,8 @@ export function useAsync<T>(fn: () => Promise<T>, deps: DependencyList): Load<T>
  * `onExhausted` when everything loaded so far is visible (to fetch the next page). The observer is
  * re-attached after every reveal, so a sentinel that stays in view keeps loading.
  */
-export function useReveal(total: number, step = 12, onExhausted?: () => void) {
-  const [count, setCount] = useState(step);
+export function useReveal(total: number, step = 12, onExhausted?: () => void, initial = step) {
+  const [count, setCount] = useState(initial);
   const ref = useRef<HTMLDivElement | null>(null);
   const exhausted = useRef(onExhausted);
   exhausted.current = onExhausted;
@@ -50,17 +54,31 @@ export function useReveal(total: number, step = 12, onExhausted?: () => void) {
   return { count: Math.min(count, total), sentinel: ref, more: count < total };
 }
 
-/** Runs the collateral check in the verification worker whenever the proposal changes. */
-export function useCollateralCheck(p: Proposal | undefined) {
+/**
+ * A result of an async run, tagged with the run it belongs to: a result is only ever returned for the run (proposal, source, Re-check
+ * nonce...) that produced it, never for a newer one in the render before the newer run's effect has reset the state.
+ */
+export function useRunResult<T>(run: object): [T | null, (r: T) => void, () => void] {
+  const [held, setHeld] = useState<{ run: object; value: T } | null>(null);
+  const set = useCallback((value: T) => setHeld({ run, value }), [run]);
+  const clear = useCallback(() => setHeld(null), []);
+  return [held && held.run === run ? held.value : null, set, clear];
+}
+
+/** Runs the collateral check in the verification worker whenever the proposal changes (or `nonce` does: "Re-check"). */
+export function useCollateralCheck(p: Proposal | undefined, nonce = 0) {
   const { source } = useApp();
-  const [verdict, setVerdict] = useState<CollateralVerdict | null>(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- a new identity per run
+  const run = useMemo(() => ({}), [p, source, nonce]);
+  const [verdict, setVerdict, clearVerdict] = useRunResult<CollateralVerdict>(run);
+  const [error, setError, clearError] = useRunResult<string>(run);
   const [progress, setProgress] = useState('');
-  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     if (!p) return;
     let live = true;
-    setVerdict(null);
-    setError(null);
+    clearVerdict();
+    clearError();
+    setProgress('');
     runVerification({ kind: 'collateral', proposal: p, dapi: source.dapiDescriptor() }, (m) => live && setProgress(m)).then(
       (r) => live && setVerdict(r.verdict),
       (e: Error) => live && setError(e.message),
@@ -68,7 +86,7 @@ export function useCollateralCheck(p: Proposal | undefined) {
     return () => {
       live = false;
     };
-  }, [p, source]);
+  }, [p, source, nonce, setVerdict, setError, clearVerdict, clearError]);
   return { verdict, progress, error };
 }
 
@@ -78,21 +96,23 @@ export type CollateralCheck = ReturnType<typeof useCollateralCheck>;
  * Chain facts for the proposal page (threshold, superblock schedule and budget, payments), once the collateral check has placed the
  * collateral in the verified chain. Live DAPI only: recorded data has no header chain.
  */
-export function useChainReport(p: Proposal | undefined, verdict: CollateralVerdict | null) {
+export function useChainReport(p: Proposal | undefined, verdict: CollateralVerdict | null, nonce = 0) {
   const { source, gov } = useApp();
-  const [report, setReport] = useState<ChainReport | null>(null);
-  const [progress, setProgress] = useState('');
-  const [error, setError] = useState<string | null>(null);
   // only for a proposal whose content and collateral checked out: payments are matched by its committed address and amount
   const from = verdict?.ok && verdict.chain?.anchored ? verdict.chain.height : null;
   const live = source.dapiDescriptor().kind === 'live';
   // payments to the same address and amount may belong to another proposal: wait for the active list, then add past ones
   const activeReady = !gov.active.loading;
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- a new identity per run
+  const run = useMemo(() => ({}), [p, source, from, live, activeReady, nonce]);
+  const [report, setReport, clearReport] = useRunResult<ChainReport>(run);
+  const [error, setError, clearError] = useRunResult<string>(run);
+  const [progress, setProgress] = useState('');
   useEffect(() => {
     if (!p || !live || from === null || !activeReady) return;
     let on = true;
-    setReport(null);
-    setError(null);
+    clearReport();
+    clearError();
     void (async () => {
       const { others, complete } = await listedProposals(source, gov.active, p);
       const twins = others.filter((o) => o.govHash !== p.govHash).map(({ govHash, paymentAddress, paymentAmount, startEpoch, endEpoch }) => ({ govHash, paymentAddress, paymentAmount, startEpoch, endEpoch }));
@@ -105,9 +125,9 @@ export function useChainReport(p: Proposal | undefined, verdict: CollateralVerdi
       on = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reruns when the active list has loaded, not on every refresh of it
-  }, [p, source, from, live, activeReady]);
+  }, [p, source, from, live, activeReady, nonce]);
   const unavailable = !live
-    ? 'needs live DAPI nodes (recorded data has no header chain)'
+    ? "demo data can't be checked against the live chain"
     : verdict && from === null
       ? (!verdict.ok ? 'the collateral check did not pass' : (verdict.anchorError ?? 'the collateral could not be placed in the verified chain'))
       : null;

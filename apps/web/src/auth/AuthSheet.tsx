@@ -16,8 +16,8 @@ import { PasskeySignIn, Passkeys } from './Passkeys.tsx';
 import { errorText } from './runtime.ts';
 
 const TITLES: Record<SheetView, string> = {
-  choose: 'Sign in to govhub',
-  create: 'Create a Dash identity',
+  choose: 'Sign in or create an account',
+  create: 'Create an account',
   phrase: 'Sign in with a recovery phrase',
   key: 'Sign in with a key',
   passkey: 'Sign in with a passkey',
@@ -85,8 +85,8 @@ function SampleIdentities() {
   return (
     <div className="notice-box">
       <p>
-        <b>Fixture mode:</b> sign in to a sample identity. Writes go into this tab's sample data and cost pretend credits from a 0.003 DASH starter. A
-        real identity can sign in below, but it cannot post while the fixture snapshot is shown.
+        <b>Demo:</b> sign in as a sample person. What you post stays in this tab and costs pretend credit. A real account can sign in below, but can't post
+        while demo data is shown.
       </p>
       <div className="signin-picks">
         <button type="button" className="btn" onClick={() => pick(FIXTURE_IDS.alice, 'fixture identity')}>
@@ -108,19 +108,30 @@ function Choose() {
   const { mode } = useApp();
   const [, rerender] = useState(0);
   const pending = pendingFundings(store, network).filter((r) => r.kind === 'create');
-  const options: Array<{ v: SheetView; title: string; text: string }> = [
-    { v: 'create', title: 'Create a new identity', text: 'A new recovery phrase that DashPay, Dash Evo Tool and Yappr can restore. Fund it with DASH or a faucet voucher.' },
-    { v: 'phrase', title: 'I have a recovery phrase', text: 'govhub, DashPay or Dash Evo Tool: 12 or 24 words.' },
-    { v: 'passkey', title: 'Use a passkey', text: 'If you added one on another device or browser.' },
-    { v: 'key', title: 'Paste a key', text: 'An identity authentication key (HIGH or CRITICAL), WIF or hex.' },
+  const main: Array<{ v: SheetView; title: string; text: string }> = [
+    { v: 'create', title: 'Create an account', text: 'Free to start: a voucher from the Dash faucet pays for your account and your first comments.' },
+    { v: 'phrase', title: 'I have a recovery phrase', text: 'The 12 or 24 words from govhub, DashPay or Dash Evo Tool.' },
   ];
+  const other: Array<{ v: SheetView; title: string; text: string }> = [
+    { v: 'passkey', title: 'Use a passkey', text: 'If you saved one on this device or another.' },
+    { v: 'key', title: 'Paste a key', text: 'For developers: a private key of your identity.' },
+  ];
+  const choice = (o: (typeof main)[number], big: boolean) => (
+    <li key={o.v}>
+      <button type="button" className={`choice${big ? ' choice-l' : ''}`} onClick={() => openSheet(o.v)}>
+        <b>{o.title}</b>
+        <span className="muted small">{o.text}</span>
+      </button>
+    </li>
+  );
   return (
     <div className="sheet-choose">
+      <p className="lede">Reading is free and needs no account. Sign in to comment, react, or vote with your masternodes.</p>
       {mode === 'fixtures' && <SampleIdentities />}
       {pending.length > 0 && (
         <div className="notice-box" role="status">
           <p>
-            <b>{pending.length === 1 ? 'An identity setup is' : `${pending.length} identity setups are`} in progress.</b> Enter the recovery phrase to continue one.
+            <b>{pending.length === 1 ? 'An account setup is' : `${pending.length} account setups are`} in progress.</b> Enter its recovery phrase to continue.
           </p>
           <ul className="pending-list">
             {pending.map((r) => (
@@ -149,17 +160,17 @@ function Choose() {
           </button>
         </div>
       )}
-      <ul className="choices">
-        {options.map((o) => (
-          <li key={o.v}>
-            <button type="button" className="choice" onClick={() => openSheet(o.v)}>
-              <b>{o.title}</b>
-              <span className="muted small">{o.text}</span>
-            </button>
-          </li>
-        ))}
-      </ul>
-      <p className="muted small">Your keys stay in this browser. govhub has no account server; Platform holds your identity.</p>
+      <ul className="choices">{main.map((o) => choice(o, true))}</ul>
+      <p className="small muted choices-more">Other ways to sign in</p>
+      <ul className="choices choices-s">{other.map((o) => choice(o, false))}</ul>
+      <details className="learn">
+        <summary>What is an account here?</summary>
+        <p className="small">
+          Your account is a Dash Platform identity. Comments and reactions are stored on Dash Platform and paid for with a little credit from your account’s
+          balance (about 0.0005 DASH a comment). Your recovery phrase is the account: other Dash wallets (DashPay, Dash Evo Tool) can restore it. It stays in
+          this browser; govhub has no account server and can’t reset it for you.
+        </p>
+      </details>
     </div>
   );
 }
@@ -186,8 +197,14 @@ function CreateFlow() {
   if (step === 'show') {
     return (
       <div className="create">
+        <ol className="steps-bar" aria-label="Creating an account">
+          <li aria-current="step">Save your phrase</li>
+          <li>Check it</li>
+          <li>Add credit</li>
+        </ol>
         <p>
-          This is your <b>recovery phrase</b>. It is the only way to get your identity back. Write the words down in order and keep them offline. Anyone who has them controls your identity.
+          These words are your <b>recovery phrase</b>. They <i>are</i> your account: write them down in order and keep them somewhere safe, offline. Anyone who
+          has them can use your account, and nobody, govhub included, can recover it if you lose them.
         </p>
         <ol className="words" data-testid="phrase-words">
           {list.map((w, i) => (
@@ -231,7 +248,12 @@ function Quiz({ words, onPass, onBack }: { words: string[]; onPass(): void; onBa
   };
   return (
     <form className="form quiz" onSubmit={submit}>
-      <p>Check that you have it: type these words from your phrase.</p>
+      <ol className="steps-bar" aria-label="Creating an account">
+        <li>Save your phrase</li>
+        <li aria-current="step">Check it</li>
+        <li>Add credit</li>
+      </ol>
+      <p>Type these words from your written copy, to be sure you have it.</p>
       <div className="row3">
         {positions.map((p, i) => (
           <label key={p}>
@@ -263,6 +285,8 @@ function Quiz({ words, onPass, onBack }: { words: string[]; onPass(): void; onBa
 /** Funding choice for a new identity at `identityIndex` of `phrase`: pay with DASH (QR) or redeem a faucet voucher. */
 function FundNewIdentity({ phrase, identityIndex, resume }: { phrase: string; identityIndex: number; resume?: boolean }) {
   const { network, signIn, closeSheet, platform } = useAuth();
+  const { registry } = useApp();
+  const faucetHost = (registry.faucet?.url ?? 'https://faucet.dashhq.org').replace(/^https?:\/\//, '');
   const [wallet, setWallet] = useState<SeedWallet | null>(null);
   const [how, setHow] = useState<'choose' | 'dash' | 'voucher'>(resume ? 'dash' : 'choose');
   const [error, setError] = useState<string | null>(null);
@@ -291,18 +315,26 @@ function FundNewIdentity({ phrase, identityIndex, resume }: { phrase: string; id
   if (how === 'choose') {
     return (
       <div className="fund-choice">
-        <p>Your identity needs Platform credits to exist. Creating it costs about 0.0011 DASH; the rest stays as credit for posting.</p>
+        <ol className="steps-bar" aria-label="Creating an account">
+          <li>Save your phrase</li>
+          <li>Check it</li>
+          <li aria-current="step">Add credit</li>
+        </ol>
+        <p>
+          Accounts live on Dash Platform, which needs a little credit to store them: about 0.0011 DASH for the account, and the rest stays in its balance for your
+          comments.
+        </p>
         <ul className="choices">
           <li>
-            <button type="button" className="choice" onClick={() => setHow('dash')}>
-              <b>Pay with DASH</b>
-              <span className="muted small">Scan a QR code with any Dash wallet. 0.002 DASH minimum; 0.01 gives room for many posts.</span>
+            <button type="button" className="choice choice-l" onClick={() => setHow('voucher')}>
+              <b>Redeem a voucher</b>
+              <span className="muted small">Free: get a starter voucher link from the Dash faucet ({faucetHost}) and paste it here. It covers the account and a few comments.</span>
             </button>
           </li>
           <li>
-            <button type="button" className="choice" onClick={() => setHow('voucher')}>
-              <b>Redeem a voucher</b>
-              <span className="muted small">Paste a starter voucher link from the faucet.</span>
+            <button type="button" className="choice choice-l" onClick={() => setHow('dash')}>
+              <b>Pay with DASH</b>
+              <span className="muted small">Scan a QR code with any Dash wallet. 0.002 DASH at least; 0.01 DASH leaves room for many comments.</span>
             </button>
           </li>
         </ul>
@@ -424,7 +456,7 @@ function PhraseSignIn() {
   if (state && state.found.length === 0) {
     return (
       <div>
-        <p>No identity on Platform ({network}) uses this phrase yet. You can create one now.</p>
+        <p>This phrase has no account on Dash Platform ({network}) yet. You can create one now.</p>
         <FundNewIdentity phrase={state.phrase} identityIndex={0} />
       </div>
     );
@@ -432,7 +464,7 @@ function PhraseSignIn() {
   if (state) {
     return (
       <div>
-        <p>This phrase has {state.found.length} identities. Which one?</p>
+        <p>This phrase has {state.found.length} accounts. Which one?</p>
         <ul className="choices">
           {state.found.map((f) => (
             <li key={f.identityId}>
@@ -453,7 +485,7 @@ function PhraseSignIn() {
         Recovery phrase (12 or 24 words)
         <textarea rows={3} value={text} onChange={(e) => setText(e.target.value)} spellCheck={false} autoComplete="off" autoCapitalize="none" data-testid="phrase-input" disabled={busy} />
       </label>
-      <p className="muted small">The phrase never leaves this browser. govhub looks up your identity by a public key hash only.</p>
+      <p className="muted small">The phrase never leaves this browser. govhub finds your account by a public key fingerprint only.</p>
       {error && <p className="error" role="alert">{error}</p>}
       <div className="form-actions">
         <button type="submit" className="btn btn-primary" disabled={busy || !text.trim()}>

@@ -1,19 +1,25 @@
-// The "can't lie" panel: the collateral check and the chain facts run automatically in the worker; vote verification and the
-// funding order run on demand (they download every signed vote and the MN list from a bridge).
-import { useState } from 'react';
+// "How do we know?": every check behind a proposal's trust badge, each with its plain result and, one click further, the per-step
+// detail (basis, trust root, timings); "Check the votes yourself" (the recount tables, voteSetHash, Dash Core commands); the
+// proposal's raw data and hashes; and what no check here can detect. Everything runs automatically (ui/trust/useProposalTrust.ts).
+import { parseProposalData } from '@govhub/verify';
+import { useMemo, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { useApp } from '../app/context.tsx';
-import type { Cycle, Proposal } from '../data/types.ts';
-import { formatDash, formatInt, formatRelative, shortHash } from '../lib/format.ts';
-import type { ChainReport } from '../verify/chain.ts';
-import { runVerification } from '../verify/client.ts';
-import type { StepBasis, StepStatus } from '../verify/collateral.ts';
-import { budgetFact } from '../verify/facts.ts';
-import type { RankingDone, VotesDone } from '../verify/protocol.ts';
-import { voteVerdict, type VoteLevel } from '../verify/verdict.ts';
-import type { VoteRun, VoteTarget } from '../verify/votes.ts';
-import type { ChainCheck, CollateralCheck } from './hooks.ts';
-import { ProvGlyph } from './Provenance.tsx';
+import { useApp } from '../../app/context.tsx';
+import type { Cycle, Proposal, Sourced } from '../../data/types.ts';
+import { formatDash, formatDateTime, formatInt, formatRelative, shortHash } from '../../lib/format.ts';
+import { CHECK_LABEL, LEVEL_LABEL, VERIFIED_LINE, type CheckId, type Component } from '../../verify/aggregate.ts';
+import type { ChainReport } from '../../verify/chain.ts';
+import { checkContent, type CollateralVerdict, type StepBasis, type StepStatus } from '../../verify/collateral.ts';
+import { budgetFact } from '../../verify/facts.ts';
+import type { RankingDone, VotesDone } from '../../verify/protocol.ts';
+import { voteVerdict, type VoteLevel } from '../../verify/verdict.ts';
+import type { VoteRun } from '../../verify/votes.ts';
+import { Drawer } from '../Drawer.tsx';
+import type { ChainCheck, CollateralCheck } from '../hooks.ts';
+import { ProvGlyph } from '../Provenance.tsx';
+import { CopyButton } from '../vote/common.tsx';
+import { ShieldIcon } from './TrustBadge.tsx';
+import type { ProposalTrust } from './useProposalTrust.ts';
 
 /** One checked fact: the collateral steps and the chain facts share this shape. */
 interface Row {
@@ -160,7 +166,6 @@ function ChainBlock({ chain, cycle, nowS }: { chain: ChainCheck; cycle: Cycle | 
   const { report, progress, error, unavailable } = chain;
   return (
     <div className="verify-block" aria-live="polite" data-testid="chain-check">
-      <h3>Chain facts</h3>
       {report ? (
         <>
           <p className={`verdict ${report.anchor.weak ? 'verdict-partial' : 'verdict-ok'}`} data-chain={report.anchor.weak ? 'weak' : 'verified'} data-ms={JSON.stringify(report.anchor.ms)} data-headers={JSON.stringify(report.anchor.headers)}>
@@ -180,11 +185,53 @@ function ChainBlock({ chain, cycle, nowS }: { chain: ChainCheck; cycle: Cycle | 
           Chain facts are not verified here: {unavailable}. Threshold, schedule and payments are as the bridge reports them.
         </p>
       ) : (
-        <p className="verdict verdict-pending" aria-busy="true">
-          <span className="spinner" aria-hidden="true" /> {progress || 'Verifying the chain'}…
-        </p>
+        <Pending text={progress || 'Verifying the chain'} />
       )}
     </div>
+  );
+}
+
+const COLLATERAL_STYLE = {
+  ok: { className: 'verdict-ok', glyph: 'verified', text: 'Content matches the on-chain collateral' },
+  inconclusive: { className: 'verdict-partial', glyph: 'reported', text: "Couldn't fetch the collateral from the network" },
+  fail: { className: 'verdict-fail', glyph: 'mismatch', text: 'Content does not match the on-chain collateral' },
+} as const;
+
+function collateralKind(v: CollateralVerdict): keyof typeof COLLATERAL_STYLE {
+  if (v.ok) return 'ok';
+  // an inconclusive lookup (DAPI down, or a node whose answer did not check out) says nothing about the proposal
+  return v.inconclusive ? 'inconclusive' : 'fail';
+}
+
+function CollateralBlock({ check }: { check: CollateralCheck }) {
+  const { verdict, progress, error } = check;
+  const kind = verdict && collateralKind(verdict);
+  return (
+    <div className="verify-block" data-testid="collateral-check">
+      {kind ? (
+        <p className={`verdict ${COLLATERAL_STYLE[kind].className}`} data-verdict={kind}>
+          <ProvGlyph kind={COLLATERAL_STYLE[kind].glyph} />
+          {COLLATERAL_STYLE[kind].text}
+        </p>
+      ) : error ? (
+        <p className="verdict verdict-fail">
+          <ProvGlyph kind="mismatch" /> Collateral check could not run: {error}
+        </p>
+      ) : (
+        <Pending text={progress || 'Checking the collateral'} />
+      )}
+      {verdict && <Steps steps={verdict.steps} />}
+      {verdict?.anchorError && <p className="small muted">The chain could not be anchored: {verdict.anchorError}</p>}
+    </div>
+  );
+}
+
+/** A check that has not answered yet. */
+function Pending({ text }: { text: string }) {
+  return (
+    <p className="verdict verdict-pending" aria-busy="true">
+      <span className="spinner" aria-hidden="true" /> {text}…
+    </p>
   );
 }
 
@@ -257,7 +304,7 @@ function verdictText(level: VoteLevel, verified: number, total: number, matched:
       if (smlUnconfirmed > 0) return `Recount matches the ${matched}: ${sigs}, but ${formatInt(smlUnconfirmed)} voters are not confirmed by the proven masternode list and their registrations (a masternode may have left or changed its key since the tally, or the bridge reports it wrongly)`;
       return `Recount matches the ${matched}: ${sigs}, but the voting keys are only as the bridge reports them. Check them against the proven masternode list for a verified result`;
     case 'different-height':
-      return `Recount differs from the published tallies, which are older than the votes (${sigs}). Expected between tally updates`;
+      return `Not compared: the votes the bridge served are for another block than the published tallies (${sigs}), so this recount neither confirms nor contradicts them. Re-check later`;
     case 'mismatch':
       return `Tally mismatch: the recount from ${formatInt(verified)} valid votes differs from a tally at the same height`;
     case 'no-tally':
@@ -340,8 +387,11 @@ function RunResult({ run, bridge, sml }: { run: VoteRun; bridge: string; sml: Vo
 }
 
 /** The recounts, what they concluded about each published tally, and what they could not check. */
-function VotesResult({ done, fixtures }: { done: VotesDone; fixtures: boolean }) {
-  const vv = voteVerdict(done.runs);
+function VotesResult({ done, fixtures, proven }: { done: VotesDone; fixtures: boolean; proven: boolean }) {
+  const found = voteVerdict(done.runs);
+  // The headline never says "verified" where the badge's vote check does not (another tally than the shown one, a weak list, a stale tally).
+  const downgraded = found.level === 'verified' && !proven;
+  const vv = downgraded ? { ...found, level: 'keys-reported' as const } : found;
   const style = VERDICT_STYLE[vv.level];
   // The run that decided the headline: the one holding the matching tally, else the first.
   const lead =
@@ -352,7 +402,9 @@ function VotesResult({ done, fixtures }: { done: VotesDone; fixtures: boolean })
     <div className="votes-result" data-votes={vv.level}>
       <p className={`verdict ${style.className}`}>
         <ProvGlyph kind={style.glyph} />
-        {verdictText(vv.level, lead.result.verified, lead.result.total, vv.matched?.name, done.origin, fixtures, lead.result.smlUnconfirmed, done.sml?.weak ?? null)}
+        {downgraded
+          ? `Recount matches the ${vv.matched?.name}: ${formatInt(lead.result.verified)} of ${formatInt(lead.result.total)} signatures check out, keys proven; the vote check above says why that doesn't make the shown tally verified`
+          : verdictText(vv.level, lead.result.verified, lead.result.total, vv.matched?.name, done.origin, fixtures, lead.result.smlUnconfirmed, done.sml?.weak ?? null)}
       </p>
       {done.runs.map((run, i) => (
         <RunResult key={i} run={run} bridge={done.bridge} sml={done.sml} />
@@ -361,146 +413,205 @@ function VotesResult({ done, fixtures }: { done: VotesDone; fixtures: boolean })
   );
 }
 
-export function VerificationPanel({
-  proposal,
-  collateral,
-  chain,
-  cycle,
-  targets,
-  onVotes,
-  onRanking,
-}: {
-  proposal: Proposal;
-  collateral: CollateralCheck;
-  chain: ChainCheck;
-  cycle: Cycle | null;
-  /** Published tallies to compare the recount with. */
-  targets: VoteTarget[];
-  onVotes(r: VotesDone | null): void;
-  onRanking(r: RankingDone | null): void;
-}) {
-  const { source, mode, gov, checks } = useApp();
-  const bridge = source.bridgeDescriptor();
-  const [sml, setSml] = useState(true);
-  const [votes, setVotes] = useState<{ running: boolean; progress?: string; result?: VotesDone; error?: string }>({ running: false });
-  const [ranking, setRanking] = useState<{ running: boolean; progress?: string; result?: RankingDone; error?: string }>({ running: false });
-  const { verdict, progress, error } = collateral;
-  // Proposals that failed verification (hash or collateral) are not governance objects Core holds: they cannot be ranked.
-  const active = (gov.active.data ?? []).map((x) => x.value).filter((p) => checks.state(p).status !== 'failed');
+const STATE_GLYPH: Record<Component['state']['status'], 'verified' | 'reported' | 'mismatch' | 'fixture'> = {
+  proven: 'verified', reported: 'reported', error: 'reported', failed: 'mismatch', pending: 'fixture',
+};
 
-  const verifyRanking = () => {
-    if (!bridge) return;
-    setRanking({ running: true, progress: 'Starting' });
-    onRanking(null);
-    runVerification({ kind: 'ranking', proposals: active, bridge, dapi: source.dapiDescriptor(), network: source.coreNetwork, now: source.now() }, (m) => setRanking((v) => ({ ...v, progress: m }))).then(
-      (result) => {
-        setRanking({ running: false, result });
-        onRanking(result);
-      },
-      (e: Error) => setRanking({ running: false, error: e.message }),
-    );
-  };
+function checkLine(s: Component['state']): string {
+  switch (s.status) {
+    case 'proven':
+      return s.summary;
+    case 'pending':
+      return `${s.note ?? 'Checking'}…`;
+    default:
+      return s.reason;
+  }
+}
 
-  const verifyVotes = () => {
-    if (!bridge) return;
-    setVotes({ running: true, progress: 'Starting' });
-    onVotes(null);
-    runVerification(
-      {
-        kind: 'votes',
-        govHash: proposal.govHash,
-        targets,
-        bridge,
-        dapi: source.dapiDescriptor(),
-        network: source.coreNetwork,
-        now: source.now(),
-        crossCheckSml: sml && mode === 'live',
-      },
-      (m) => setVotes((v) => ({ ...v, progress: m })),
-    ).then(
-      (result) => {
-        setVotes({ running: false, result });
-        onVotes(result);
-      },
-      (e: Error) => setVotes({ running: false, error: e.message }),
-    );
-  };
-
+function CheckRow({ c, children }: { c: Component; children?: ReactNode }) {
+  const s = c.state;
+  const line = checkLine(s);
   return (
-    <section className="verify" aria-labelledby="verify-title">
-      <h2 id="verify-title">Verification</h2>
-      <p className="muted small">These checks run in your browser, in a background worker, against Core data fetched from DAPI evonodes.</p>
-
-      <div className="verify-block" aria-live="polite" data-testid="collateral-check">
-        {verdict ? (
-          <p className={`verdict ${verdict.ok ? 'verdict-ok' : 'verdict-fail'}`} data-verdict={verdict.ok ? 'ok' : 'fail'}>
-            <ProvGlyph kind={verdict.ok ? 'verified' : 'mismatch'} />
-            {verdict.ok ? 'Content matches the on-chain collateral' : 'Content does not match the on-chain collateral'}
-          </p>
-        ) : error ? (
-          <p className="verdict verdict-fail">
-            <ProvGlyph kind="mismatch" /> Collateral check could not run: {error}
-          </p>
-        ) : (
-          <p className="verdict verdict-pending" aria-busy="true">
-            <span className="spinner" aria-hidden="true" /> {progress || 'Checking the collateral'}…
-          </p>
-        )}
-        {verdict && <Steps steps={verdict.steps} />}
-      </div>
-
-      <ChainBlock chain={chain} cycle={cycle} nowS={source.now()} />
-
-      <div className="verify-block" aria-live="polite" data-testid="votes-check">
-        <h3>Votes</h3>
-        {!bridge ? (
-          <p className="muted">
-            Signed votes come from a bridge, because DAPI has no governance calls. <Link to="/settings">Add a bridge in Settings</Link> to verify this tally.
-          </p>
-        ) : (
-          <>
-            <p className="muted small">
-              Downloads every signed vote from {bridge.kind === 'fixture' ? 'the fixture bridge' : bridge.name}, checks each signature against the masternode voting key, recounts the weighted tally and compares it with the Platform tally document. The vote set is requested at the block that tally is as of, so the two are comparable exactly.
-            </p>
-            <div className="verify-actions">
-              <button type="button" className="btn btn-primary" onClick={verifyVotes} disabled={votes.running}>
-                {votes.running ? 'Verifying…' : votes.result ? 'Verify again' : 'Verify votes'}
-              </button>
-              {mode === 'live' && (
-                <label className="check">
-                  <input type="checkbox" checked={sml} onChange={(e) => setSml(e.target.checked)} /> Check voting keys against the proven masternode list and each voter's registration (needed for a verified result)
-                </label>
-              )}
-            </div>
-          </>
-        )}
-        {votes.running && (
-          <p className="verdict verdict-pending" aria-busy="true">
-            <span className="spinner" aria-hidden="true" /> {votes.progress}…
-          </p>
-        )}
-        {votes.error && <p className="error">Vote verification failed: {votes.error}</p>}
-        {votes.result && <VotesResult done={votes.result} fixtures={mode === 'fixtures'} />}
-      </div>
-
-      {bridge && mode === 'live' && (
-        <div className="verify-block" aria-live="polite" data-testid="ranking-check">
-          <h3>Funding order</h3>
-          <p className="muted small">Recounts the live votes of every active proposal ({active.length}) and ranks them the way Core builds the next superblock, against the proven threshold and budget.</p>
-          <div className="verify-actions">
-            <button type="button" className="btn" onClick={verifyRanking} disabled={ranking.running || active.length === 0}>
-              {ranking.running ? 'Recounting…' : ranking.result ? 'Recount again' : 'Verify funding order'}
-            </button>
-          </div>
-          {ranking.running && (
-            <p className="verdict verdict-pending" aria-busy="true">
-              <span className="spinner" aria-hidden="true" /> {ranking.progress}…
-            </p>
-          )}
-          {ranking.error && <p className="error">Funding order failed: {ranking.error}</p>}
-          {ranking.result && <RankingBlock done={ranking.result} govHash={proposal.govHash} />}
+    <li className={`check-row check-${s.status}`} data-check={c.id} data-state={s.status}>
+      <div className="check-line">
+        {s.status === 'pending' ? <span className="spinner" aria-hidden="true" /> : <ProvGlyph kind={STATE_GLYPH[s.status]} />}
+        <div>
+          <p className="check-label">{CHECK_LABEL[c.id]}</p>
+          <p className="check-text">{line}</p>
         </div>
+      </div>
+      {children && (
+        <details className="check-more">
+          <summary>Details</summary>
+          {children}
+        </details>
       )}
-    </section>
+    </li>
+  );
+}
+
+/** Copyable commands and links for checking the tally without this page. */
+function YourselfCommands({ govHash, bridgeBase }: { govHash: string; bridgeBase: string | null }) {
+  const cmds: Array<[string, string]> = [
+    ['Every current vote, with signatures', `dash-cli gobject getcurrentvotes ${govHash}`],
+    ['The tally Core computes (FundingResult)', `dash-cli gobject get ${govHash}`],
+  ];
+  return (
+    <div className="yourself">
+      <p className="small muted">With your own Dash Core node:</p>
+      <ul className="cmds">
+        {cmds.map(([what, cmd]) => (
+          <li key={cmd}>
+            <span className="small">{what}</span>
+            <span className="cmd">
+              <code className="break">{cmd}</code>
+              <CopyButton text={cmd} label={`Copy: ${what}`} />
+            </span>
+          </li>
+        ))}
+      </ul>
+      {bridgeBase && (
+        <p className="small">
+          The signed votes this recount used, as JSON:{' '}
+          <a href={`${bridgeBase}/v1/proposals/${govHash}/votes`} target="_blank" rel="noopener noreferrer">
+            {bridgeBase.replace(/^https?:\/\//, '')}/v1/proposals/…/votes
+          </a>
+        </p>
+      )}
+    </div>
+  );
+}
+
+function RawData({ p, sp }: { p: Proposal; sp: Sourced<Proposal> }) {
+  const parsed = useMemo(() => parseProposalData(p.dataHex), [p.dataHex]);
+  const json = useMemo(() => {
+    try {
+      return JSON.stringify(JSON.parse(parsed.text), null, 2);
+    } catch {
+      return parsed.text; // Core's parser is more lenient than JSON.parse; show the bytes as they are
+    }
+  }, [parsed.text]);
+  const rows: Array<[string, string]> = [
+    ['Governance hash', p.govHash],
+    ['Collateral', `${p.collateralTxid} at block ${formatInt(p.collateralHeight)}`],
+    ['Submitted', formatDateTime(p.time)],
+    ['Payment address', p.paymentAddress],
+    ...(p.docId ? [['Platform document', `${p.docId} (${sp.prov.source})`] as [string, string]] : []),
+  ];
+  return (
+    <div data-testid="raw-data">
+      <dl className="kv">
+        {rows.map(([k, v]) => (
+          <div key={k}>
+            <dt>{k}</dt>
+            <dd className="mono-ish break">{v}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="small muted">Exactly what the governance hash commits to ({formatInt(parsed.dataBytes)} bytes). The URL is the owner's own page; govhub doesn't host or check its content.</p>
+      <pre className="code">{json}</pre>
+      <details>
+        <summary>dataHex</summary>
+        <pre className="code break">{p.dataHex}</pre>
+      </details>
+    </div>
+  );
+}
+
+/** What the funding row says while there is no ranking to show: its progress, why it failed, or why it may not run at all. */
+function rankingNote(ranking: ProposalTrust['ranking']): string {
+  if (ranking?.running) return `${ranking.progress || 'Ranking every active proposal'}…`;
+  if (ranking?.error) return `The funding order couldn't be recounted: ${ranking.error}`;
+  return "A proposal that is not passing on the recounted votes and the proven threshold is not funded; one that is passing is ranked against every active proposal, by Core's rules. The ranking leaves out proposals that failed verification, as Core does, and can't include a proposal the bridge never published.";
+}
+
+const byId = (cs: readonly Component[], id: CheckId) => cs.find((c) => c.id === id)!;
+
+export function VerificationDrawer({ sp, trust, cycle, open, onClose }: { sp: Sourced<Proposal>; trust: ProposalTrust; cycle: Cycle | null; open: boolean; onClose(): void }) {
+  const { source, mode } = useApp();
+  const p = sp.value;
+  const a = trust.aggregate;
+  const bridge = source.bridgeDescriptor();
+  const bridgeBase = bridge?.kind === 'http' ? bridge.base : null;
+  const contentSteps = useMemo(() => checkContent(p).steps, [p]);
+  return (
+    <Drawer open={open} onClose={onClose} title="How do we know?" testId="verify-drawer">
+      <section className={`drawer-verdict trust-${a.level}`} aria-live="polite" data-testid="drawer-verdict" data-trust={a.level}>
+        <ShieldIcon level={a.level} size={32} />
+        <div>
+          <p className="drawer-verdict-title">{LEVEL_LABEL[a.level]}</p>
+          <p className="drawer-verdict-line">{a.level === 'verified' ? VERIFIED_LINE : a.reason}</p>
+        </div>
+        <button type="button" className="btn btn-s" onClick={trust.recheck} data-testid="recheck">
+          Re-check
+        </button>
+      </section>
+      <p className="small muted">
+        Your browser ran these checks itself, against the Dash chain. A tick means nothing rests on a server's word.
+      </p>
+
+      <ol className="checks" data-testid="checks">
+        <CheckRow c={byId(a.components, 'content')}>
+          <Steps steps={contentSteps} />
+        </CheckRow>
+        <CheckRow c={byId(a.components, 'collateral')}>
+          <CollateralBlock check={trust.collateral} />
+        </CheckRow>
+        <CheckRow c={byId(a.components, 'chain')}>
+          <ChainBlock chain={trust.chain} cycle={cycle} nowS={source.now()} />
+        </CheckRow>
+        <CheckRow c={byId(a.components, 'votes')} />
+        <CheckRow c={byId(a.components, 'funding')}>
+          {trust.ranking?.result ? (
+            <div data-testid="ranking-check">
+              <RankingBlock done={trust.ranking.result} govHash={p.govHash} />
+            </div>
+          ) : (
+            <>
+              <p className="small muted">{rankingNote(trust.ranking)}</p>
+              {trust.rankNow && (
+                <button type="button" className="btn btn-s" onClick={trust.rankNow} data-testid="rank-now">
+                  Rank every active proposal
+                </button>
+              )}
+            </>
+          )}
+        </CheckRow>
+      </ol>
+
+      <details className="drawer-section" data-testid="votes-check" open={a.level === 'failed' && byId(a.components, 'votes').state.status === 'failed'}>
+        <summary>Check the votes yourself</summary>
+        {!bridge ? (
+          <p className="muted small">
+            Signed votes come from a bridge, because DAPI has no governance calls. <Link to="/settings">Add a bridge in Settings</Link> to recount them.
+          </p>
+        ) : trust.votes.result ? (
+          <VotesResult done={trust.votes.result} fixtures={mode === 'fixtures'} proven={byId(a.components, 'votes').state.status === 'proven'} />
+        ) : trust.votes.error ? (
+          <p className="error small">The votes couldn't be recounted: {trust.votes.error}</p>
+        ) : (
+          <Pending text={trust.votes.progress || 'Waiting for the collateral check'} />
+        )}
+        <YourselfCommands govHash={p.govHash} bridgeBase={bridgeBase} />
+      </details>
+
+      <details className="drawer-section">
+        <summary>Proposal data and hashes</summary>
+        <RawData p={p} sp={sp} />
+      </details>
+
+      <section className="drawer-note" aria-labelledby="cant-title">
+        <h3 id="cant-title">What this can't detect</h3>
+        <p className="small">
+          A bridge can withhold. The recount proves the votes it was given, so votes the bridge didn't serve can't be detected, and neither can a proposal it never
+          published. Use more than one bridge in Settings, or compare with your own Dash Core node using the commands above.
+        </p>
+      </section>
+      <p className="small">
+        <Link to="/about/verification" onClick={onClose}>
+          About verification: what each state means
+        </Link>
+      </p>
+    </Drawer>
   );
 }

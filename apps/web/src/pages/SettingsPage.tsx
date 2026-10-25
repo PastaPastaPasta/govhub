@@ -21,6 +21,7 @@ import {
 } from '../config/registry.ts';
 import { cacheClear } from '../data/cache.ts';
 import { BadgeSettings } from '../badge/BadgeSettings.tsx';
+import { ThemeSwitch } from '../ui/SignIn.tsx';
 
 const lines = (s: string) => s.split(/[\s,]+/).map((x) => x.trim()).filter(Boolean);
 
@@ -35,12 +36,13 @@ function Custom({ on }: { on: boolean }) {
 
 /** The network profile: one action switches Core network, Platform network, contracts, bridge and DAPI nodes together. */
 function ProfileSettings({ onSwitched }: { onSwitched(text: string): void }) {
-  const { registry, setRegistry, switchProfile } = useApp();
+  const { registry, setRegistry, switchProfile, mode, setMode } = useApp();
   const custom = customFields(registry);
   const p = PROFILES[registry.profile];
   return (
-    <section className="form" aria-labelledby="profile-title">
+    <section className="form" aria-labelledby="profile-title" id="network">
       <h2 id="profile-title">Network</h2>
+      <p className="small muted">Which Dash network govhub shows. Testnet is for trying things; Dev shows real mainnet proposals while govhub is being built.</p>
       <fieldset className="seg profile-switch">
         <legend className="visually-hidden">Network profile</legend>
         {PROFILE_ORDER.map((id) => {
@@ -67,14 +69,7 @@ function ProfileSettings({ onSwitched }: { onSwitched(text: string): void }) {
       </fieldset>
       <p className="small" data-testid="profile-description">
         <b>{p.title}.</b> {p.description} Core {registry.coreNetwork}, Platform {registry.platformNetwork}
-        {registry.govContractId ? (
-          <>
-            , governance contract <span className="mono-ish break">{registry.govContractId}</span>
-          </>
-        ) : (
-          <>, no governance contract yet</>
-        )}
-        .
+        {registry.govContractId ? '' : ', no governance contract yet'}.
       </p>
       {custom.size > 0 && (
         <p className="small">
@@ -91,6 +86,9 @@ function ProfileSettings({ onSwitched }: { onSwitched(text: string): void }) {
           </button>
         </p>
       )}
+      <label className="check">
+        <input type="checkbox" checked={mode === 'fixtures'} onChange={(e) => setMode(e.target.checked ? 'fixtures' : 'live')} /> Show demo data (a recorded mainnet snapshot) instead, in this tab
+      </label>
     </section>
   );
 }
@@ -167,7 +165,7 @@ function BlockListSettings() {
 }
 
 export function SettingsPage() {
-  const { registry, setRegistry, mode, setMode } = useApp();
+  const { registry, setRegistry } = useApp();
   const [draft, setDraft] = useState<Registry>(registry);
   const [json, setJson] = useState('');
   const [msg, setMsg] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
@@ -179,6 +177,12 @@ export function SettingsPage() {
     setPortalsText(registry.forum.claimPortals.join(' '));
     if (customFields(registry).size > 0) setAdvanced(true);
   }, [registry]);
+  // /settings#network (from the header's chain status): React Router does not scroll to fragments by itself
+  useEffect(() => {
+    const el = location.hash ? document.getElementById(location.hash.slice(1)) : null;
+    el?.closest('details')?.setAttribute('open', '');
+    el?.scrollIntoView();
+  }, []);
   const custom = customFields(draft);
   const isCustom = (...ks: Overridable[]) => ks.some((k) => custom.has(k));
 
@@ -208,30 +212,36 @@ export function SettingsPage() {
   };
 
   return (
-    <section className="settings list-section" aria-labelledby="settings-title">
+    <section className="settings page-narrow" aria-labelledby="settings-title">
       <h1 id="settings-title">Settings</h1>
-      <p className="muted">Every backend govhub uses can be replaced. Settings stay in this browser.</p>
+      <p className="muted">Settings stay in this browser.</p>
 
       <ProfileSettings onSwitched={(text) => setMsg({ kind: 'ok', text })} />
+      {msg && (
+        <p className={msg.kind === 'ok' ? 'notice' : 'error'} role={msg.kind === 'ok' ? 'status' : 'alert'}>
+          {msg.text}
+        </p>
+      )}
 
-      <form
-        className="form"
-        onSubmit={(e) => {
-          e.preventDefault();
-          apply(draft, 'Saved. Data reloads with the new endpoints.');
-        }}
-      >
-        <fieldset>
-          <legend>Data</legend>
-          <label className="check">
-            <input type="checkbox" checked={mode === 'fixtures'} onChange={(e) => setMode(e.target.checked ? 'fixtures' : 'live')} /> Use the fixture snapshot instead of live data (this tab only)
-          </label>
-        </fieldset>
+      <section className="form" aria-labelledby="appearance-title">
+        <h2 id="appearance-title">Appearance</h2>
+        <ThemeSwitch />
+      </section>
 
-        <details className="advanced" open={advanced} onToggle={(e) => setAdvanced((e.target as HTMLDetailsElement).open)}>
-          <summary>
-            Advanced: individual overrides <Custom on={custom.size > 0} />
-          </summary>
+      <details className="group" open={advanced} onToggle={(e) => setAdvanced((e.target as HTMLDetailsElement).open)}>
+        <summary>
+          <span className="group-title">
+            Advanced: choose your own servers <Custom on={custom.size > 0} />
+          </span>
+          <span className="small muted">Every server govhub uses can be replaced; each network starts with govhub's own.</span>
+        </summary>
+        <form
+          className="form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            apply(draft, 'Saved. Data reloads with the new endpoints.');
+          }}
+        >
           <p className="muted small">Each setting starts as the {PROFILES[draft.profile].label} profile's. A setting you change here is marked custom; switching profile replaces them all.</p>
           <fieldset>
             <legend>
@@ -386,84 +396,98 @@ export function SettingsPage() {
               />
             </label>
           </fieldset>
-        </details>
 
-        <div className="form-actions">
-          <button type="submit" className="btn btn-primary">
-            Save settings
-          </button>
-          <button type="button" className="btn" onClick={() => setDraft(registry)}>
-            Discard changes
-          </button>
-          <button
-            type="button"
-            className="btn btn-quiet"
-            onClick={() => {
-              setRegistry(resetRegistry());
-              void cacheClear();
-              setMsg({ kind: 'ok', text: 'Reset to the defaults and cleared the cache.' });
-            }}
-          >
-            Reset to defaults
-          </button>
-        </div>
-        {msg && (
-          <p className={msg.kind === 'ok' ? 'notice' : 'error'} role={msg.kind === 'ok' ? 'status' : 'alert'}>
-            {msg.text}
-          </p>
-        )}
-      </form>
+          <div className="form-actions">
+            <button type="submit" className="btn btn-primary">
+              Save settings
+            </button>
+            <button type="button" className="btn" onClick={() => setDraft(registry)}>
+              Discard changes
+            </button>
+            <button
+              type="button"
+              className="btn btn-quiet"
+              onClick={() => {
+                setRegistry(resetRegistry());
+                void cacheClear();
+                setMsg({ kind: 'ok', text: 'Reset to the defaults and cleared the cache.' });
+              }}
+            >
+              Reset to defaults
+            </button>
+          </div>
+        </form>
+      </details>
 
-      <BlockListSettings />
+      <details className="group">
+        <summary>
+          <span className="group-title">Hidden comments</span>
+          <span className="small muted">The block lists that hide spam and abuse in discussions.</span>
+        </summary>
+        <BlockListSettings />
+      </details>
 
-      <BadgeSettings />
-      <section className="form" aria-labelledby="share-title">
-        <h2 id="share-title">Export, import and share</h2>
-        <div className="form-actions">
-          <button type="button" className="btn" onClick={download}>
-            Download JSON
-          </button>
-          <button type="button" className="btn" onClick={() => setJson(exportRegistry(registry))}>
-            Show JSON
-          </button>
-          <button
-            type="button"
-            className="btn"
-            onClick={() => {
-              const link = shareLink(registry, location.origin);
-              void navigator.clipboard?.writeText(link).then(
-                () => setMsg({ kind: 'ok', text: 'Share link copied. Whoever opens it is asked before anything changes.' }),
-                () => setJson(link),
-              );
-            }}
-          >
-            Copy share link
-          </button>
-          <button type="button" className="btn" onClick={() => fileRef.current?.click()}>
-            Import file
-          </button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="application/json,.json"
-            hidden
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void f.text().then(importText);
-              e.target.value = '';
-            }}
-          />
-        </div>
-        <label>
-          Settings JSON (paste and import, or copy)
-          <textarea rows={10} className="code" value={json} onChange={(e) => setJson(e.target.value)} spellCheck={false} placeholder={exportRegistry(defaultRegistry()).slice(0, 120) + '…'} />
-        </label>
-        <div className="form-actions">
-          <button type="button" className="btn" onClick={() => importText(json)} disabled={!json.trim()}>
-            Import this JSON
-          </button>
-        </div>
-      </section>
+      <details className="group">
+        <summary>
+          <span className="group-title">Masternode badges</span>
+          <span className="small muted">Who may vouch that a commenter owns a masternode, and how private your own badge is.</span>
+        </summary>
+        <BadgeSettings />
+      </details>
+
+      <details className="group">
+        <summary>
+          <span className="group-title">Export, import and share</span>
+          <span className="small muted">Move these settings to another browser, or share them as a link.</span>
+        </summary>
+        <section className="form" aria-labelledby="share-title">
+          <h2 id="share-title">Export, import and share</h2>
+          <div className="form-actions">
+            <button type="button" className="btn" onClick={download}>
+              Download JSON
+            </button>
+            <button type="button" className="btn" onClick={() => setJson(exportRegistry(registry))}>
+              Show JSON
+            </button>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                const link = shareLink(registry, location.origin);
+                void navigator.clipboard?.writeText(link).then(
+                  () => setMsg({ kind: 'ok', text: 'Share link copied. Whoever opens it is asked before anything changes.' }),
+                  () => setJson(link),
+                );
+              }}
+            >
+              Copy share link
+            </button>
+            <button type="button" className="btn" onClick={() => fileRef.current?.click()}>
+              Import file
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="application/json,.json"
+              hidden
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void f.text().then(importText);
+                e.target.value = '';
+              }}
+            />
+          </div>
+          <label>
+            Settings JSON (paste and import, or copy)
+            <textarea rows={10} className="code" value={json} onChange={(e) => setJson(e.target.value)} spellCheck={false} placeholder={exportRegistry(defaultRegistry()).slice(0, 120) + '…'} />
+          </label>
+          <div className="form-actions">
+            <button type="button" className="btn" onClick={() => importText(json)} disabled={!json.trim()}>
+              Import this JSON
+            </button>
+          </div>
+        </section>
+      </details>
     </section>
   );
 }

@@ -27,7 +27,6 @@ import { Composer } from './Composer.tsx';
 import { HiddenToggle } from './HiddenToggle.tsx';
 import { AuthorName, Avatar } from './Identity.tsx';
 import { Markdown } from './Markdown.tsx';
-import { ProvMark } from './Provenance.tsx';
 import { openSignIn } from './SignIn.tsx';
 import { useReactions } from './useReactions.ts';
 import { MnBadges } from '../badge/BadgeChip.tsx';
@@ -182,14 +181,14 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
     <section aria-labelledby="discussion-title" className="discussion" data-testid="discussion">
       <div className="discussion-head">
         <h2 id="discussion-title">
-          Discussion {thread.data && <span className="count">{formatInt(count - hiddenCount)}</span>} {thread.data && <ProvMark prov={thread.data.prov} />}
+          Discussion {thread.data && <span className="count">{formatInt(count - hiddenCount)}</span>}
         </h2>
         <div className="discussion-tools">
           <fieldset className="seg" aria-label="Which comments to show">
             <legend className="visually-hidden">Comment view</legend>
             <label className={filter === 'recommended' ? 'on' : ''} title="Authors with an MN badge from an issuer you trust (Settings), plus the proposal owner on their own proposal">
               <input type="radio" name="comment-filter" checked={filter === 'recommended'} onChange={() => setFilter('recommended')} />
-              Proposal owner + MN owners
+              Owner and masternodes
             </label>
             <label className={filter === 'all' ? 'on' : ''}>
               <input type="radio" name="comment-filter" checked={filter === 'all'} onChange={() => setFilter('all')} />
@@ -201,16 +200,14 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
       </div>
       <p className="muted small filter-note">
         {filter === 'all'
-          ? BADGES_LIVE
-            ? 'Showing everyone.'
-            : 'Showing everyone. No MN badges from your trusted issuers are live yet, so the recommended view would show only the proposal owner.'
-          : `Showing the proposal owner${BADGES_LIVE ? ' and MN-badge holders' : ' (no MN badges from your trusted issuers are live yet)'}.`}{' '}
+          ? 'Showing everyone.'
+          : `Showing the proposal owner${BADGES_LIVE ? ' and masternode owners' : ' (no masternode badges are live yet)'}.`}{' '}
         {filter === 'recommended' && filteredCount > 0 && (
           <button type="button" className="linkish" onClick={() => setFilter('all')} data-testid="show-all">
             Show all {formatInt(filteredCount)} other {filteredCount === 1 ? 'comment' : 'comments'}
           </button>
         )}
-        {moderation.subs.defaultOff ? ' The default block list is off (Settings).' : ` Block lists: ${moderation.lists.map((l) => l.name).join(', ') || 'loading…'}.`}
+        {moderation.subs.defaultOff ? ' The default block list is off (Settings).' : ` Spam is hidden by ${moderation.lists.map((l) => l.name).join(', ') || '…'}.`}
       </p>
 
       {session ? (
@@ -220,7 +217,7 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
           <button type="button" className="btn" onClick={openSignIn}>
             Sign in to comment
           </button>{' '}
-          <span className="muted small">Comments are Platform documents paid from your identity's credits (about {formatCredits(56_000_000, true)} for 280 characters).</span>
+          <span className="muted small">Posting costs about {formatCredits(56_000_000, true)} from your account's balance.</span>
         </p>
       )}
 

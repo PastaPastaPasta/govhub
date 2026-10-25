@@ -2,7 +2,7 @@
 // No live backend: fixture mode, or live mode with every non-local request aborted.
 import { expect, test, type BrowserContext } from '@playwright/test';
 import { TESTNET_GOV_CONTRACT_ID } from '../src/config/registry.ts';
-import { cspViolations, gotoFixtures, watchPage } from './helpers.ts';
+import { cspViolations, gotoFixtures, openDrawer, openGroup, watchPage } from './helpers.ts';
 
 const offline = (context: BrowserContext) => context.route(/^https?:\/\/(?!localhost[:/]|127\.0\.0\.1[:/])/, (r) => r.abort());
 
@@ -10,26 +10,26 @@ test.describe('failed verification is hidden (fixtures)', () => {
   test('lists, budget header and active count leave out the two invalid proposals; the toggle reveals them', async ({ page }) => {
     const errors = await watchPage(page);
     await gotoFixtures(page);
-    const cards = page.locator('article.card');
+    const cards = page.locator('article.prow');
     await page.locator('.sentinel').scrollIntoViewIfNeeded();
     // The tampered one fails at once (no network); the one without a collateral fails once the worker has asked DAPI.
     const toggle = page.getByTestId('toggle-failed');
     await expect(toggle).toHaveText('Show 2 proposals that failed verification');
     await expect(cards).toHaveCount(28);
-    await expect(page.locator('article.card[data-check="pending"]')).toHaveCount(0, { timeout: 30_000 });
-    await expect(page.locator('.budget-facts')).toContainText('of 28 active proposals');
+    await expect(page.locator('article.prow[data-check="pending"]')).toHaveCount(0, { timeout: 30_000 });
+    await expect(page.locator('.budget-facts')).toContainText('of 28 proposals');
     await expect(page.getByRole('link', { name: /^Active/ }).locator('.count')).toHaveText('28');
-    await expect(page.locator('article.card', { hasText: 'govhub-fixture' })).toHaveCount(0);
+    await expect(page.locator('article.prow', { hasText: 'govhub-fixture' })).toHaveCount(0);
 
     await toggle.click();
     await expect(toggle).toHaveText('Hide 2 proposals that failed verification');
     await expect(cards).toHaveCount(30);
-    const tampered = page.locator('article.card.card-invalid', { hasText: 'govhub-fixture-tampered' });
+    const tampered = page.locator('article.prow.prow-invalid', { hasText: 'govhub-fixture-tampered' });
     await expect(tampered.getByTestId('invalid-reason')).toContainText('Displayed fields: differ from the hashed data: url');
-    const missing = page.locator('article.card.card-invalid', { hasText: 'govhub-fixture-no-collateral' });
+    const missing = page.locator('article.prow.prow-invalid', { hasText: 'govhub-fixture-no-collateral' });
     await expect(missing.getByTestId('invalid-reason')).toContainText('not on the chain');
     // Revealing them changes nothing in the counts.
-    await expect(page.locator('.budget-facts')).toContainText('of 28 active proposals');
+    await expect(page.locator('.budget-facts')).toContainText('of 28 proposals');
 
     await toggle.click();
     await expect(cards).toHaveCount(28);
@@ -45,13 +45,18 @@ test.describe('failed verification is hidden (fixtures)', () => {
     await expect(page.locator('a.ext')).toHaveCount(0);
 
     await gotoFixtures(page, '/p/govhub-fixture-no-collateral');
-    await expect(page.getByTestId('collateral-check').locator('[data-verdict]')).toHaveAttribute('data-verdict', 'fail');
+    await expect(page.getByTestId('invalid-banner')).toBeVisible();
+    const drawer = await openDrawer(page);
+    await expect(drawer.getByTestId('collateral-check').locator('[data-verdict]')).toHaveAttribute('data-verdict', 'fail');
+    await expect(drawer.locator('[data-check="collateral"]')).toHaveAttribute('data-state', 'failed');
+    await page.keyboard.press('Escape');
     await expect(page.getByTestId('invalid-banner')).toContainText('This proposal failed verification: Collateral transaction: not on the chain');
   });
 
   test('a real proposal shows no banner', async ({ page }) => {
     await gotoFixtures(page, '/p/OrchardPay');
-    await expect(page.getByTestId('collateral-check').locator('[data-verdict]')).toHaveAttribute('data-verdict', 'ok');
+    const drawer = await openDrawer(page);
+    await expect(drawer.getByTestId('collateral-check').locator('[data-verdict]')).toHaveAttribute('data-verdict', 'ok');
     await expect(page.getByTestId('invalid-banner')).toHaveCount(0);
   });
 });
@@ -75,6 +80,7 @@ test.describe('network profiles', () => {
     // Saved as the profile with no overrides (rebuilt from the profile on load).
     const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('govhub.registry.v2') ?? 'null'));
     expect(saved).toEqual({ version: 2, profile: 'testnet', overrides: {} });
+    await openGroup(page, 'Export, import and share');
     await page.getByRole('button', { name: 'Show JSON' }).click();
     const json = JSON.parse(await page.getByLabel('Settings JSON (paste and import, or copy)').inputValue());
     expect(json).toMatchObject({ version: 2, profile: 'testnet', coreNetwork: 'testnet', platformNetwork: 'testnet', govContractId: TESTNET_GOV_CONTRACT_ID });
@@ -85,7 +91,7 @@ test.describe('network profiles', () => {
       // No testnet contract yet: nothing is read and nothing from another network is shown.
       await page.goto('/');
       await expect(page.getByTestId('backend-notice')).toContainText('Testnet backend is being set up');
-      await expect(page.locator('article.card')).toHaveCount(0);
+      await expect(page.locator('article.prow')).toHaveCount(0);
       await page.getByTestId('backend-notice').getByRole('button', { name: 'Switch to Dev' }).click();
       await expect(label).toContainText('Dev: mainnet data on testnet Platform');
       await expect(page.getByTestId('backend-notice')).toHaveCount(0);
@@ -96,7 +102,7 @@ test.describe('network profiles', () => {
   test('an override is marked custom; "Use the profile\'s settings" removes it', async ({ page, context }) => {
     await offline(context);
     await page.goto('/settings?fixtures=1');
-    await page.getByText('Advanced: individual overrides').click();
+    await page.getByText('Advanced: choose your own servers').click();
     await page.getByLabel('Price feed URL (JSON with dash.usd; empty turns it off)').fill('https://price.example.org/dash');
     await page.getByRole('button', { name: 'Save settings' }).click();
     await expect(page.getByTestId('profile-label').locator('.chip-custom')).toBeVisible();

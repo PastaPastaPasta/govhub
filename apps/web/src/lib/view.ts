@@ -32,7 +32,12 @@ function contentCheck(p: Proposal): Row['content'] {
   return problem ? { ok: false, problem } : { ok: true };
 }
 
-export function pickTally(platform: Sourced<Tally> | null | undefined, bridge: Sourced<Tally> | null | undefined): Sourced<Tally> | null {
+/**
+ * The tally to show: the fresher of the two (lists), or with `prefer: 'platform'` the Platform document whenever there is one (the
+ * proposal page: its recount is checked against the proven record, never against the bridge's own live tally).
+ */
+export function pickTally(platform: Sourced<Tally> | null | undefined, bridge: Sourced<Tally> | null | undefined, prefer: 'fresher' | 'platform' = 'fresher'): Sourced<Tally> | null {
+  if (prefer === 'platform' && platform) return platform;
   if (bridge && (!platform || bridge.value.asOfHeight > platform.value.asOfHeight)) return bridge;
   return platform ?? null;
 }
@@ -50,10 +55,11 @@ export function deriveRow(
   cycle: Sourced<Cycle> | null,
   params: GovParams,
   nowS: number,
+  prefer: 'fresher' | 'platform' = 'fresher',
 ): Row {
   const platformTally = platform.get(p.value.govHash) ?? null;
   const bridgeTally = bridge.get(p.value.govHash) ?? null;
-  const tally = pickTally(platformTally, bridgeTally);
+  const tally = pickTally(platformTally, bridgeTally, prefer);
   const threshold = thresholdOf(cycle, params);
   const absYes = tally ? absoluteYes(tally.value) : null;
   return {
@@ -112,16 +118,15 @@ export interface BudgetView {
   funded: Row[];
   /** duffs: what `funded` asks for */
   fundedSum: number;
-  /** duffs: the cycle's allocation without what hidden (failed) proposals claim to be allocated */
+  /** duffs: the cycle document's allocation, as published (never a sum over cards, whose flags a source could set) */
   allocated: number;
   /** shown active proposals */
   active: number;
 }
 
-/** The budget header's numbers. Proposals that failed verification count for nothing: not allocated, not in the budget, not active. */
-export function budgetView(shown: readonly Row[], failed: readonly Row[], cycle: Pick<Cycle, 'allocated'>): BudgetView {
+/** The budget header's numbers. Proposals that failed verification are not in the budget strip and not active. */
+export function budgetView(shown: readonly Row[], cycle: Pick<Cycle, 'allocated'>): BudgetView {
   const funded = shown.filter((r) => r.tally?.value.inNextBudget);
   const fundedSum = funded.reduce((sum, r) => sum + r.p.value.paymentAmount, 0);
-  const hiddenFunded = failed.filter((r) => r.tally?.value.inNextBudget).reduce((sum, r) => sum + r.p.value.paymentAmount, 0);
-  return { funded, fundedSum, allocated: Math.max(0, cycle.allocated - hiddenFunded), active: shown.length };
+  return { funded, fundedSum, allocated: cycle.allocated, active: shown.length };
 }

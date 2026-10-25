@@ -46,7 +46,7 @@ const BURST = Array.from({ length: 18 }, (_, i) => {
   return { x: Math.round(Math.cos(a) * r), y: Math.round(Math.sin(a) * r), d: (i % 5) * 40, s: i % 4 === 0 ? 'b' : i % 3 === 0 ? 'c' : 'a' };
 });
 
-export function VoteSuccess({ vote, name, proposalName }: { vote: WatchedVote; name: string; proposalName: string }) {
+export function VoteSuccess({ vote, name, proposalName, onRecount }: { vote: WatchedVote; name: string; proposalName: string; onRecount?: () => void }) {
   const k = useKeyring();
   const [proof, setProof] = useState<VoteProof | null>(null);
   const [checking, setChecking] = useState(false);
@@ -77,7 +77,6 @@ export function VoteSuccess({ vote, name, proposalName }: { vote: WatchedVote; n
       setChecking(false);
     }
   };
-  const recount = typeof document !== 'undefined' ? document.getElementById('verify-title') : null;
   return (
     <section ref={ref} tabIndex={-1} className="vwin" role="status" data-testid="vote-success" aria-labelledby={`win-${vote.voteHash}`}>
       <div className="vwin-mark" aria-hidden="true">
@@ -106,63 +105,66 @@ export function VoteSuccess({ vote, name, proposalName }: { vote: WatchedVote; n
             <span className="spinner" aria-hidden="true" /> Recounting the tally with your vote…
           </p>
         )}
-        <div className="vwin-actions">
-          <button type="button" className="btn btn-s btn-primary" onClick={() => void check()} disabled={checking} data-testid="vote-verify">
-            {checking ? 'Checking…' : proof ? 'Check again' : 'Verify this vote'}
-          </button>
-          <span className="vwin-copy">
-            Signed vote <CopyButton text={signed} label="Copy the signed vote and its voteraw command" />
-          </span>
-          <span className="vwin-copy">
-            Core command <CopyButton text={coreCmd} label="Copy the gobject getcurrentvotes command" />
-          </span>
-          {k.bridgeBase && (
-            <a className="small" href={`${k.bridgeBase}/v1/proposals/${vote.govHash}/votes`} target="_blank" rel="noopener noreferrer">
-              Open in the bridge API
-            </a>
-          )}
-          {recount && (
-            <button type="button" className="btn btn-s btn-quiet" onClick={() => recount.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'start' })}>
-              See the full recount
+        <details className="vwin-yourself" data-testid="vote-yourself">
+          <summary>Check it yourself</summary>
+          <div className="vwin-actions">
+            <button type="button" className="btn btn-s btn-primary" onClick={() => void check()} disabled={checking} data-testid="vote-verify">
+              {checking ? 'Checking…' : proof ? 'Check again' : 'Verify this vote'}
             </button>
-          )}
-        </div>
-        {proofError && <p className="error small">{proofError}</p>}
-        {proof && (
-          <div className="vproof" data-testid="vote-proof">
-            <dl className="vproof-vote">
-              <div>
-                <dt>Masternode collateral</dt>
-                <dd className="mono-ish break">
-                  {vote.collateralTxid}:{vote.collateralIndex}
-                </dd>
-              </div>
-              <div>
-                <dt>Vote</dt>
-                <dd>
-                  {word}, signed for {new Date(vote.time * 1000).toLocaleString()}
-                </dd>
-              </div>
-              <div>
-                <dt>Signature</dt>
-                <dd className="mono-ish break">{vote.sig}</dd>
-              </div>
-            </dl>
-            <ul className="vproof-checks">
-              {proof.checks.map((c) => (
-                <li key={c.label} className={c.ok === true ? 'ok' : c.ok === false ? 'bad' : 'unknown'}>
-                  <span aria-hidden="true">{c.ok === true ? '✓' : c.ok === false ? '✗' : '?'}</span>
-                  <span>
-                    <b>{c.label}</b> <span className="muted">{c.detail}</span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-            <p className="small muted">
-              Anyone running Dash Core can confirm it with <code>{coreCmd.slice(0, 40)}…</code> (copy the full command above).
-            </p>
+            <span className="vwin-copy">
+              Signed vote <CopyButton text={signed} label="Copy the signed vote and its voteraw command" />
+            </span>
+            <span className="vwin-copy">
+              Core command <CopyButton text={coreCmd} label="Copy the gobject getcurrentvotes command" />
+            </span>
+            {k.bridgeBase && (
+              <a className="small" href={`${k.bridgeBase}/v1/proposals/${vote.govHash}/votes`} target="_blank" rel="noopener noreferrer">
+                Open in the bridge API
+              </a>
+            )}
+            {onRecount && (
+              <button type="button" className="btn btn-s btn-quiet" onClick={onRecount}>
+                See the full recount
+              </button>
+            )}
           </div>
-        )}
+          {proofError && <p className="error small">{proofError}</p>}
+          {proof && (
+            <div className="vproof" data-testid="vote-proof">
+              <dl className="vproof-vote">
+                <div>
+                  <dt>Masternode collateral</dt>
+                  <dd className="mono-ish break">
+                    {vote.collateralTxid}:{vote.collateralIndex}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Vote</dt>
+                  <dd>
+                    {word}, signed for {new Date(vote.time * 1000).toLocaleString()}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Signature</dt>
+                  <dd className="mono-ish break">{vote.sig}</dd>
+                </div>
+              </dl>
+              <ul className="vproof-checks">
+                {proof.checks.map((c) => (
+                  <li key={c.label} className={c.ok === true ? 'ok' : c.ok === false ? 'bad' : 'unknown'}>
+                    <span aria-hidden="true">{c.ok === true ? '✓' : c.ok === false ? '✗' : '?'}</span>
+                    <span>
+                      <b>{c.label}</b> <span className="muted">{c.detail}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <p className="small muted">
+                Anyone running Dash Core can confirm it with <code>{coreCmd.slice(0, 40)}…</code> (copy the full command above).
+              </p>
+            </div>
+          )}
+        </details>
       </div>
       <button type="button" className="vwin-close" aria-label="Dismiss" onClick={() => k.dismissCelebration(vote.voteHash)}>
         ×

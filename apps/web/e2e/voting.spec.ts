@@ -21,9 +21,16 @@ async function openPanel(page: Page, sim: string) {
   return panel;
 }
 
+/** The masternode list is folded under "With all 3 of your masternodes"; opens it. */
+async function openMns(page: Page) {
+  const mns = page.getByTestId('mn-vote-panel').getByTestId('vote-mns');
+  if ((await mns.getAttribute('open')) === null) await mns.locator('summary').click();
+}
+
 /** Selects only the first masternode and votes `outcome` with it. */
 async function voteWithFirst(page: Page, outcome: 'Yes' | 'No' | 'Abstain') {
   const panel = page.getByTestId('mn-vote-panel');
+  await openMns(page);
   await panel.getByRole('checkbox', { name: 'All masternodes' }).uncheck();
   await panel.getByTestId('vote-mn-row').first().getByRole('checkbox').check();
   await panel.getByTestId('vote-choice').getByRole('radio', { name: outcome }).click();
@@ -43,8 +50,8 @@ test.describe('keyring page (fixtures, demo keyring)', () => {
     await expect(groups.nth(0).getByTestId('key-count')).toHaveText('controls 2 masternodes');
     await expect(groups.nth(1).getByTestId('key-count')).toHaveText('controls 1 masternode');
     await expect(groups.nth(1).getByTestId('mn-row')).toContainText('Evonode ×4');
-    await expect(page.getByTestId('mn-row').first()).toContainText('Valid');
-    await expect(page.getByTestId('mn-row').first().getByRole('button', { name: 'Copy proTxHash' })).toBeVisible();
+    await expect(page.getByTestId('mn-row').first()).toContainText('Can vote');
+    await expect(page.getByTestId('mn-row').first().getByRole('button', { name: 'Copy masternode ID' })).toBeVisible();
     await expect(page.getByTestId('votes-empty')).toBeVisible();
     await expect(page.locator('#addkey-warn')).toHaveText(/Only the voting key/);
     await expect(page.getByTestId('voting-key-input')).toHaveAttribute('aria-describedby', 'addkey-warn');
@@ -73,6 +80,9 @@ test.describe('vote panel (fixtures)', () => {
     await expect(panel.getByTestId('vote-choice').getByRole('radio', { name: 'No' })).toBeFocused();
     await expect(send).toBeEnabled();
     await expect(send).toHaveText(/^Vote No with [1-3] masternodes?$/);
+    // the masternodes are one line, folded: "With all 3 of your masternodes"
+    await expect(panel.getByTestId('vote-mns').locator('summary')).toContainText('With all 3 of your masternodes');
+    await openMns(page);
     await panel.getByRole('checkbox', { name: 'All masternodes' }).uncheck();
     await expect(send).toBeDisabled();
     await expect(send).toHaveText('Select at least one masternode');
@@ -81,12 +91,13 @@ test.describe('vote panel (fixtures)', () => {
     const why = panel.getByTestId('vote-deferred-why');
     if (await panel.getByTestId('vote-deferred').isDisabled()) await expect(why).toHaveText(/Voting (closes in|for this superblock has closed)|not known yet/);
     else await expect(why).toHaveText(/random time before the deadline/);
-    // the trust paragraph is a disclosure
-    await expect(panel.locator('details.vhow')).not.toHaveAttribute('open', '');
+    // timing is an option, folded
+    await expect(panel.locator('details.vwhen')).not.toHaveAttribute('open', '');
   });
 
   test('a vote equal to the current one warns and needs a confirmation', async ({ page }) => {
     const panel = await openPanel(page, 'manual');
+    await openMns(page);
     const row = panel.getByTestId('vote-mn-row').first();
     await expect(row.getByTestId('current-vote')).not.toContainText('…');
     const current = (await row.getByTestId('current-vote').locator('.vout').innerText()).trim();
@@ -128,7 +139,8 @@ test.describe('vote panel (fixtures)', () => {
     await expect(tracker).toHaveAttribute('data-counted', 'yes', { timeout: 15_000 });
     await expect(step('counted')).toHaveAttribute('data-state', 'done');
     await expect(win.getByTestId('tally-abstain')).toBeVisible();
-    // check it yourself: the vote re-verified here
+    // check it yourself: folded, then the vote re-verified here
+    await win.getByTestId('vote-yourself').locator('summary').click();
     await win.getByTestId('vote-verify').click();
     const proof = win.getByTestId('vote-proof');
     await expect(proof.locator('li.ok')).toHaveCount(3);
@@ -182,6 +194,7 @@ test.describe('vote panel (fixtures)', () => {
     const tracker = await voteWithFirst(page, 'Abstain');
     await expect(tracker).toHaveAttribute('data-status', 'held');
     await expect(tracker.getByTestId('vote-tracker-line')).toContainText(/Core allows one vote change per hour per masternode; relay-(one|two)\.example sends this at \d{1,2}:\d{2}/);
+    await openMns(page);
     await expect(page.getByTestId('mn-vote-panel').getByTestId('pending-vote').first()).toContainText('Held by relay');
     await tracker.getByTestId('vote-cancel').click();
     await expect(page.getByTestId('vote-tracker')).toHaveCount(0);
@@ -191,7 +204,7 @@ test.describe('vote panel (fixtures)', () => {
     await openPanel(page, 'manual');
     await voteWithFirst(page, 'No');
     await expect(page.getByTestId('vote-tracker').first()).toHaveAttribute('data-status', 'held');
-    await page.getByRole('link', { name: 'Masternodes', exact: true }).click();
+    await page.getByRole('link', { name: 'My masternodes', exact: true }).click();
     const rows = page.getByTestId('watched-row');
     await expect(rows).toHaveCount(1);
     await expect(rows.first()).toHaveAttribute('data-status', 'held');
