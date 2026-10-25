@@ -1,7 +1,9 @@
 // Reactions on a set of targets (a proposal, or the comments on screen): read with F6 (paged, 4 targets in flight),
 // scored client-side, and voted on through the session with local updates so the UI does not wait for a node
-// that lags behind the write.
-import { useCallback, useEffect, useMemo, useState } from 'react';
+// that lags behind the write. Each target is read once per data source: a growing set (more comments shown) reads only the
+// new targets. F6 stays one query per target: no PV13 index takes an `in` over targets for every author (`in` must be on an
+// index's last property; byTarget ends in $createdAt, and byOwnerTarget needs one $ownerId).
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { idToHex, mapLimit, REACTION_KIND, score, targetB64, type Reaction, type Score } from '@govhub/forum';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
@@ -18,17 +20,28 @@ export function useReactions(targets: readonly Target[]) {
   const [byKey, setByKey] = useState(new Map<string, Reaction[]>());
   const [error, setError] = useState<string | null>(null);
   const keys = targets.map(keyOf).join(',');
+  /** targets read (or being read) from this data source */
+  const requested = useRef<{ forum: typeof forum; keys: Set<string> }>({ forum, keys: new Set() });
 
   useEffect(() => {
-    let live = true;
+    if (requested.current.forum !== forum) {
+      requested.current = { forum, keys: new Set() };
+      setByKey(new Map());
+    }
+    const asked = requested.current;
+    const todo = targets.filter((t) => !asked.keys.has(keyOf(t)));
+    if (todo.length === 0) return;
+    for (const t of todo) asked.keys.add(keyOf(t));
     setError(null);
-    mapLimit(targets, 4, async (t) => [keyOf(t), await forum.reader.reactions(targetB64(t))] as const).then(
-      (pairs) => live && setByKey(new Map(pairs)),
-      (e: unknown) => live && setError(errText(e)),
+    mapLimit(todo, 4, async (t) => [keyOf(t), await forum.reader.reactions(targetB64(t))] as const).then(
+      (pairs) => {
+        if (requested.current === asked) setByKey((m) => new Map([...m, ...pairs]));
+      },
+      (e: unknown) => {
+        for (const t of todo) asked.keys.delete(keyOf(t)); // read again next time
+        if (requested.current === asked) setError(errText(e));
+      },
     );
-    return () => {
-      live = false;
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [forum, keys]);
 

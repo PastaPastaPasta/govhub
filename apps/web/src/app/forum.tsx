@@ -1,35 +1,16 @@
 // Social state shared by every page: the forum data source, the signed-in Session (and its balance), and the
 // moderation lists the reader subscribes to, merged into one hide index.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { buildHideIndex, EMPTY_HIDE_INDEX, isIdentifier, type BlockList, type DocumentOp, type DocumentResult, type HideIndex } from '@govhub/forum';
+import { buildHideIndex, EMPTY_HIDE_INDEX, type BlockList, type DocumentOp, type DocumentResult, type HideIndex } from '@govhub/forum';
 import { createForum, fixtureForum, type ForumSource } from '../data/forum.ts';
 import { seedFixtureForum } from '../data/fixtureForum.ts';
 import { loadFixtures } from '../data/fixtures.ts';
-import { errText, shortHash } from '../lib/format.ts';
+import { errText } from '../lib/format.ts';
 import type { Session } from '../session/session.ts';
 import { useApp } from './context.tsx';
+import { failedText, loadLocalSubs, readModeration, saveLocalSubs, type Subscriptions } from './moderationLoad.ts';
 
-/** Which lists the reader applies (PLAN §9): the default list unless turned off, plus subscribed list owners. */
-export interface Subscriptions {
-  defaultOff: boolean;
-  lists: string[];
-  /** where these came from: this browser, or the user's `blockSubs` document (id + revision for replacing it) */
-  doc?: { id: string; revision: number };
-}
-
-const SUBS_KEY = 'govhub.blockSubs.v1';
-
-export function loadLocalSubs(storage: Pick<Storage, 'getItem'> | undefined = globalThis.localStorage): Subscriptions {
-  try {
-    const v = JSON.parse(storage?.getItem(SUBS_KEY) ?? 'null') as { defaultOff?: unknown; lists?: unknown } | null;
-    const lists = Array.isArray(v?.lists) ? v.lists.filter(isIdentifier).slice(0, 160) : [];
-    return { defaultOff: v?.defaultOff === true, lists: [...new Set(lists)] };
-  } catch {
-    return { defaultOff: false, lists: [] };
-  }
-}
-
-const saveLocalSubs = (s: Subscriptions) => localStorage.setItem(SUBS_KEY, JSON.stringify({ defaultOff: s.defaultOff, lists: s.lists }));
+export { loadLocalSubs, type Subscriptions } from './moderationLoad.ts';
 
 interface ModerationState {
   index: HideIndex;
@@ -118,21 +99,11 @@ export function ForumProvider({ children }: { children: ReactNode }) {
     const { reader } = forum;
     const mod = registry.forum;
     setModeration((m) => ({ ...m, loading: true }));
-    (async () => {
-      let subs = loadLocalSubs();
-      if (session) {
-        const doc = await reader.blockSubs(session.identityId).catch(() => null);
-        if (doc) subs = { defaultOff: doc.defaultOff, lists: doc.lists, doc: { id: doc.id, revision: doc.revision } };
-      }
-      const wanted: Array<Promise<BlockList>> = [];
-      if (!subs.defaultOff) wanted.push(reader.blocks('mod', mod.moderationIdentityId).then((blocks) => ({ source: 'default', ownerId: mod.moderationIdentityId, name: mod.moderationName, blocks })));
-      for (const owner of subs.lists) wanted.push(reader.blocks('forum', owner).then((blocks) => ({ source: 'subscription', ownerId: owner, name: `list ${shortHash(owner, 4)}`, blocks })));
-      if (session) wanted.push(reader.blocks('forum', session.identityId).then((blocks) => ({ source: 'mine', ownerId: session.identityId, name: 'your blocks', blocks })));
-      const settled = await Promise.allSettled(wanted);
-      const lists = settled.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
-      const failed = settled.filter((r) => r.status === 'rejected').length;
-      if (live) setModeration({ index: buildHideIndex(lists), lists, subs, loading: false, ready: true, ...(failed ? { error: `${failed} block list(s) could not be read` } : {}) });
-    })().catch((e: unknown) => live && setModeration((m) => ({ ...m, loading: false, ready: true, error: errText(e) })));
+    readModeration(reader, { identityId: session?.identityId ?? null, moderationIdentityId: mod.moderationIdentityId, moderationName: mod.moderationName, localSubs: loadLocalSubs() })
+      .then(({ lists, subs, failed }) => {
+        if (live) setModeration({ index: buildHideIndex(lists), lists, subs, loading: false, ready: true, ...(failed.length ? { error: failedText(failed) } : {}) });
+      })
+      .catch((e: unknown) => live && setModeration((m) => ({ ...m, loading: false, ready: true, error: errText(e) })));
     return () => {
       live = false;
     };

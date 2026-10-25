@@ -2293,9 +2293,14 @@ li[data-status='now'] > .fund-dot {
   font-weight: 640;
   overflow-wrap: anywhere;
 }
-.author-dpns {
+.author-alias {
   font-size: 0.8125rem;
-  color: var(--accent-ink);
+  color: var(--ink-2);
+}
+/* A self-chosen name that imitates a govhub label: quoted, plain weight, so it cannot pass for a chip. */
+.author-quoted {
+  font-weight: 450;
+  font-style: italic;
 }
 .author-id {
   font-size: 0.75rem;
@@ -2600,6 +2605,12 @@ li[data-status='now'] > .fund-dot {
 }
 .md-h2 {
   font-size: 1.0625rem;
+}
+/* The real host of a link whose text names another one. */
+.md-realhost {
+  color: var(--ink-2);
+  font-size: 0.875em;
+  white-space: nowrap;
 }
 .md-badlink {
   color: var(--ink-2);

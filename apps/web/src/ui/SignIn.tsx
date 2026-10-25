@@ -2,7 +2,7 @@
 // key; sample identities in fixture mode). Signed in: identity, balance, profile editing, top-up and passkeys, and sign-out.
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { COSTS, type Profile } from '@govhub/forum';
+import { cleanName, COSTS, nameProblem, type Profile } from '@govhub/forum';
 import { useApp, type Theme } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { OPEN_SIGNIN_EVENT, useAuth } from '../auth/context.tsx';
@@ -56,7 +56,7 @@ export function SessionControl() {
       return;
     }
     let live = true;
-    forum.reader.profiles([session.identityId]).then((m) => live && setName(m.get(session.identityId)?.displayName ?? null), () => {});
+    forum.reader.profiles([session.identityId]).then((m) => live && setName(cleanName(m.get(session.identityId)?.displayName ?? '') || null), () => {});
     return () => {
       live = false;
     };
@@ -158,8 +158,11 @@ function SessionPanel({ onDone, onSaved }: { onDone(): void; onSaved(name: strin
     };
   }, [forum, session]);
   if (!session) return null;
+  // Invisible or text-direction characters and badge text are refused (D-035): they let a name pass for another or for a label.
+  const problem = name.trim() ? nameProblem(name) : null;
   const save = async (e: FormEvent) => {
     e.preventDefault();
+    if (problem) return;
     setBusy(true);
     setMsg(null);
     try {
@@ -179,8 +182,13 @@ function SessionPanel({ onDone, onSaved }: { onDone(): void; onSaved(name: strin
       <p className="small muted">Your name and picture next to your comments. Anyone can read them; they're stored on Dash Platform.</p>
       <label>
         Display name
-        <input value={name} onChange={(e) => setName(e.target.value)} maxLength={64} required />
+        <input value={name} onChange={(e) => setName(e.target.value)} maxLength={64} required aria-describedby="name-problem" />
       </label>
+      {problem && (
+        <p className="error small" id="name-problem" data-testid="name-problem">
+          {problem}
+        </p>
+      )}
       <label>
         Picture <span className="small muted">(a small data: image; others see a pattern from your identity otherwise, and web images are never loaded)</span>
         <input value={avatar} onChange={(e) => setAvatar(e.target.value)} maxLength={512} spellCheck={false} />
@@ -188,7 +196,7 @@ function SessionPanel({ onDone, onSaved }: { onDone(): void; onSaved(name: strin
       <p className="muted small">Saving costs about {formatCredits(profile ? COSTS.profileReplace : COSTS.profileCreate, true)} from your balance.</p>
       {msg && <p className={msg.ok ? 'notice' : 'error'}>{msg.text}</p>}
       <div className="form-actions">
-        <button type="submit" className="btn btn-primary" disabled={busy || profile === undefined || !name.trim()}>
+        <button type="submit" className="btn btn-primary" disabled={busy || profile === undefined || !name.trim() || !!problem}>
           {busy ? 'Saving…' : profile ? 'Save profile' : 'Create profile'}
         </button>
         <button type="button" className="btn btn-quiet" onClick={onDone}>
