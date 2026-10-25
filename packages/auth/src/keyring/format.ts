@@ -23,11 +23,16 @@
 //   PENDING content: 16 keyringId (must equal the KEYS document's: a PENDING document sealed by someone else is ignored)
 //                    u8 nRelays    { u8 urlLen | url (UTF-8, <= 120 B) }
 //                    u16 nVotes    { 32 collateralTxid (display) | u32 index | 32 govHash (display) | u8 outcome | i64 time | 65 sig |
-//                                    i64 releaseAt | u8 nRefs (0..2) { u8 relayIndex | 16 relayVoteId } }
+//                                    i64 releaseAt | u8 nRefs (0..2) { u8 relayIndex | 16 relayVoteId } | u8 network }
+//                    The trailing u8 network (0 unknown, 1 mainnet, 2 testnet) is content version 2: the Dev and Testnet profiles share
+//                    one keyring (same Platform network) but vote on different Core networks, so each vote says which one it is for.
+//                    Version-1 documents (no tag) still decode, with the network unknown.
 import { bytesEqual, bytesToHex, hexToBytes } from '../bytes.ts';
 import { isValidPrivateKey } from '../keys.ts';
 
 export const KEYRING_FORMAT_VERSION = 1;
+/** PENDING plaintext version: 2 adds the Core network of each vote (1 is still read). */
+export const PENDING_CONTENT_VERSION = 2;
 export const KeyringKind = { KEYS: 0, PENDING: 1 } as const;
 export type KeyringKind = (typeof KeyringKind)[keyof typeof KeyringKind];
 
@@ -50,6 +55,8 @@ export const MAX_REFS_PER_VOTE = 2;
 export const KEYS_CAPS = { 1: { keys: 32, labels: 24 }, 2: { keys: 96, labels: 80 } } as const;
 export const PENDING_CAPS = { 1: { votes: 16 }, 2: { votes: 60 } } as const;
 export const DEFAULT_IDLE_LOCK_MINUTES = 15;
+/** The generation is a u32 on the wire. */
+export const MAX_GENERATION = 0xffffffff;
 
 export class KeyringFormatError extends Error {
   constructor(message: string) {
@@ -106,7 +113,13 @@ export interface RelayRef {
   id: string;
 }
 
+export type PendingNetwork = 'mainnet' | 'testnet';
+const NETWORK_CODE: Record<PendingNetwork, number> = { mainnet: 1, testnet: 2 };
+const NETWORK_OF: Record<number, PendingNetwork> = { 1: 'mainnet', 2: 'testnet' };
+
 export interface PendingVote {
+  /** the Core network the vote is signed for; absent on version-1 documents */
+  network?: PendingNetwork;
   collateralTxid: string;
   collateralIndex: number;
   govHash: string;
@@ -243,8 +256,8 @@ class Reader {
 const HEX64 = /^[0-9a-f]{64}$/;
 const isTime = (t: number) => Number.isSafeInteger(t) && t >= 0;
 
-function header(w: Writer, kind: KeyringKind) {
-  w.u8(KEYRING_FORMAT_VERSION);
+function header(w: Writer, kind: KeyringKind, version = KEYRING_FORMAT_VERSION) {
+  w.u8(version);
   w.u8(kind);
   w.u16(0); // content length, patched below
 }
@@ -303,10 +316,10 @@ export function encodeKeys(c: KeysContent): { bucket: 1 | 2; plaintext: Uint8Arr
   }
 }
 
-function open(pt: Uint8Array, bucket: number, kind: KeyringKind): Reader {
+function open(pt: Uint8Array, bucket: number, kind: KeyringKind, versions: readonly number[] = [KEYRING_FORMAT_VERSION]): Reader {
   need(pt.length === plaintextLength(bucket), 'keyring plaintext has the wrong length for its bucket');
-  need(pt[0] === KEYRING_FORMAT_VERSION, 'unknown keyring format version');
   need(pt[1] === kind, 'keyring content is of another kind');
+  need(versions.includes(pt[0]!), 'unknown keyring format version');
   const len = (pt[2]! << 8) | pt[3]!;
   need(4 + len <= pt.length, 'keyring content length out of range');
   need(pt.subarray(4 + len).every((b) => b === 0), "the keyring's padding is not zero");
@@ -360,7 +373,7 @@ export function encodePending(c: PendingContent): { bucket: 1 | 2; plaintext: Ui
   const bucket = pendingBucket(c);
   const relays = relayTable(c);
   const w = new Writer(plaintextLength(bucket));
-  header(w, KeyringKind.PENDING);
+  header(w, KeyringKind.PENDING, PENDING_CONTENT_VERSION);
   need(c.keyringId.length === KEYRING_ID_LENGTH, 'keyring id must be 16 bytes');
   w.bytes(c.keyringId);
   w.u8(relays.length);
@@ -385,12 +398,15 @@ export function encodePending(c: PendingContent): { bucket: 1 | 2; plaintext: Ui
       w.u8(relays.indexOf(ref.relay));
       w.bytes(hexToBytes(ref.id));
     }
+    need(v.network === undefined || v.network in NETWORK_CODE, 'pending vote: unknown network');
+    w.u8(v.network ? NETWORK_CODE[v.network] : 0);
   }
   return { bucket, plaintext: finish(w) };
 }
 
 export function decodePending(pt: Uint8Array, bucket: number): PendingContent {
-  const r = open(pt, bucket, KeyringKind.PENDING);
+  const r = open(pt, bucket, KeyringKind.PENDING, [KEYRING_FORMAT_VERSION, PENDING_CONTENT_VERSION]);
+  const tagged = pt[0] === PENDING_CONTENT_VERSION;
   const keyringId = r.bytes(KEYRING_ID_LENGTH);
   const relays: string[] = [];
   const nr = r.u8();
@@ -417,6 +433,11 @@ export function decodePending(pt: Uint8Array, bucket: number): PendingContent {
       const idx = r.u8();
       need(idx < relays.length, 'relay index out of range');
       v.refs.push({ relay: relays[idx]!, id: bytesToHex(r.bytes(16)) });
+    }
+    if (tagged) {
+      const code = r.u8();
+      need(code === 0 || code in NETWORK_OF, 'pending vote: unknown network');
+      if (code) v.network = NETWORK_OF[code]!;
     }
     votes.push(v);
   }

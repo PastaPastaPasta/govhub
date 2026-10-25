@@ -25,6 +25,7 @@ import {
   encodePending,
   KEYRING_ID_LENGTH,
   KeyringKind,
+  MAX_GENERATION,
   MAX_UNLOCKERS,
   UnlockerType,
   wipeKeysContent,
@@ -193,12 +194,14 @@ export function removeUnlocker(k: OpenedKeyring, recipientKey: Uint8Array): void
 export async function saveKeys(ctx: KeyringContext, s: Session, k: OpenedKeyring): Promise<void> {
   assertLive(s);
   if (s.identityId !== k.ownerId) throw new KeyringError('This keyring belongs to another identity.');
-  k.content.generation += 1;
+  // saturates at the u32 maximum: a keyring planted at 2^32-1 must stay writable (the user then re-saves it at the maximum)
+  const before = k.content.generation;
+  k.content.generation = Math.min(before + 1, MAX_GENERATION);
   let encoded: ReturnType<typeof encodeKeys>;
   try {
     encoded = encodeKeys(k.content);
   } catch (e) {
-    k.content.generation -= 1;
+    k.content.generation = before;
     throw e;
   }
   const { bucket, plaintext } = encoded;
@@ -207,7 +210,7 @@ export async function saveKeys(ctx: KeyringContext, s: Session, k: OpenedKeyring
     const r = await ctx.store.put({ ownerId: k.ownerId, key: signingKeyOf(s), kind: KeyringKind.KEYS, sealed, existing: k.keysDoc });
     k.keysDoc = { id: r.id, ownerId: k.ownerId, revision: r.revision, kind: KeyringKind.KEYS, sealed };
   } catch (e) {
-    k.content.generation -= 1;
+    k.content.generation = before;
     throw e;
   } finally {
     plaintext.fill(0);
