@@ -3,7 +3,7 @@
   "info": {
     "title": "govhub relay API",
     "version": "0.1.0",
-    "description": "A queue in front of a dashd. Accepts fully signed masternode governance FUNDING votes and broadcasts them with `voteraw`, immediately or at a client-chosen release time (deferred / randomized voting), and submits proposals whose collateral is already confirmed. The relay holds no accounts, keeps no IP addresses at rest and only a coarse receive hour per vote. Its operator can see the IP and timing of every request: public unlinkability only. Votes are signed by the client with the masternode VOTING key (`signVote` in @govhub/verify); the relay never sees a key. The id returned by POST /v1/votes, not the vote hash, is the handle for status and cancel. CORS is open (origin *, GET/POST/OPTIONS, header content-type). Every response carries `X-Content-Type-Options: nosniff`. Every POST body is limited to 4096 bytes (413). Errors are `{error, code}` with a stable `code`.",
+    "description": "A queue in front of a dashd. Accepts fully signed masternode governance FUNDING votes and broadcasts them with `voteraw`, immediately or at a client-chosen release time (deferred / randomized voting), and submits proposals: at once when the collateral is already confirmed (POST /v1/proposals/submit), or held until it is and then submitted by the relay itself (POST /v1/proposals). The relay holds no accounts, keeps no IP addresses at rest and only a coarse receive hour per vote. Its operator can see the IP and timing of every request: public unlinkability only. Votes are signed by the client with the masternode VOTING key (`signVote` in @govhub/verify); the relay never sees a key. The id returned by POST /v1/votes, not the vote hash, is the handle for status and cancel. CORS is open (origin *, GET/POST/OPTIONS, header content-type). Every response carries `X-Content-Type-Options: nosniff`. Every POST body is limited to 4096 bytes (413). Errors are `{error, code}` with a stable `code`.",
     "license": { "name": "MIT" }
   },
   "servers": [{ "url": "http://127.0.0.1:8788" }],
@@ -66,7 +66,7 @@
     "/v1/proposals/submit": {
       "post": {
         "summary": "Submit a proposal to Core (`gobject submit`)",
-        "description": "501 `disabled` when the relay runs with PROPOSAL_SUBMIT=0. Everything is verified again before Core is asked: the proposal data (`validateProposalData`, `bad-proposal`), the gov hash, and the collateral transaction fetched from Core (`checkCollateralTx` against that hash and the named txid, `bad-collateral`). A collateral with fewer than MIN_COLLATERAL_CONFS confirmations is 425 `collateral-unconfirmed` with the current `confirmations`. Core's refusal is 409 `core-rejected` carrying Core's message (proposal data is public).",
+        "description": "Stateless; still supported (see POST /v1/proposals for a relay that waits for the confirmations itself). 501 `disabled` when the relay runs with PROPOSAL_SUBMIT=0. Everything is verified again before Core is asked: the proposal data (`validateProposalData`, `bad-proposal`), the gov hash, and the collateral transaction fetched from Core (`checkCollateralTx` against that hash and the named txid, `bad-collateral`). A collateral with fewer than MIN_COLLATERAL_CONFS confirmations is 425 `collateral-unconfirmed` with the current `confirmations`. Core's refusal is 409 `core-rejected` carrying Core's message (proposal data is public).",
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProposalRequest" } } } },
         "responses": {
           "200": { "description": "submitted", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProposalReceipt" } } } },
@@ -78,6 +78,37 @@
           "429": { "$ref": "#/components/responses/RateLimited" },
           "501": { "$ref": "#/components/responses/Error" },
           "503": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/proposals": {
+      "post": {
+        "summary": "Hold a proposal until its collateral is confirmed, then submit it (`gobject submit`)",
+        "description": "For clients that cannot stay online until the collateral has MIN_COLLATERAL_CONFS (default 6) confirmations: the relay stores the proposal and submits it itself once Core's `getrawtransaction <txid> true` counts enough confirmations (it never submits earlier: Core would keep a 1-5 confirmation object only in memory). Same body as /v1/proposals/submit, validated identically, in this order: 501 `disabled` (PROPOSAL_SUBMIT=0), `bad-request` (not a JSON object), `wrong-network`, `bad-request` (unknown keys, types), `bad-proposal` (`validateProposalData` with the current time, i.e. Core's ValidateProposal including end_epoch in the future). Then a proposal already stored under the same (gov hash, collateral txid) returns 200 with its record in any state, without asking Core (this is how a client recovers the `id` after a timeout). Then the limits: 409 `too-many-collaterals` (at most 3 records per gov hash, any state) and 503 `relay-full` (MAX_HELD_PROPOSALS waiting and submitting records). Then the collateral is fetched from Core: 404 `unknown-collateral` if Core does not know the transaction (retry: it may not have propagated yet), 503 `core-unavailable`, 400 `bad-collateral` (with `failure`) unless `checkCollateralTx` passes against the computed gov hash and the named txid (P2PKH/unspendable outputs only, an OP_RETURN of the hash worth >= 1 DASH). A collateral still in the mempool is fine. A new record is 202: `waiting`, or, when the collateral already has enough confirmations, the outcome of a `gobject submit` made within the request (`submitted`, `failed`, or `waiting` with a retry). The returned `id` (16 random bytes) is the only handle: there is no lookup by gov hash.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProposalRequest" } } } },
+        "responses": {
+          "200": { "description": "this proposal with this collateral is already stored; its current record", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProposalStatusView" } } } },
+          "202": { "description": "accepted and held (or submitted at once)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProposalStatusView" } } } },
+          "400": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "409": { "$ref": "#/components/responses/Error" },
+          "413": { "$ref": "#/components/responses/Error" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "501": { "$ref": "#/components/responses/Error" },
+          "503": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/proposals/{id}": {
+      "get": {
+        "summary": "Status of a held proposal",
+        "description": "501 `disabled` when the relay runs with PROPOSAL_SUBMIT=0. Records in a final state (`submitted`, `failed`) are deleted RETENTION_DAYS after they finished; the id is then unknown (404 `not-found`).",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "$ref": "#/components/schemas/ProposalId" } }],
+        "responses": {
+          "200": { "description": "proposal status", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProposalStatusView" } } } },
+          "400": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "501": { "$ref": "#/components/responses/Error" }
         }
       }
     }
@@ -131,7 +162,8 @@
               "unknown-collateral",
               "bad-collateral",
               "collateral-unconfirmed",
-              "core-rejected"
+              "core-rejected",
+              "too-many-collaterals"
             ]
           }
         }
@@ -204,7 +236,7 @@
       },
       "Status": {
         "type": "object",
-        "required": ["service", "version", "network", "core", "held", "proposalSubmit"],
+        "required": ["service", "version", "network", "core", "held", "proposalSubmit", "proposalHold"],
         "properties": {
           "service": { "type": "string", "enum": ["govhub-relay"] },
           "version": { "type": "string" },
@@ -215,7 +247,8 @@
             "properties": { "reachable": { "type": "boolean" }, "height": { "type": ["integer", "null"] } }
           },
           "held": { "type": "integer", "description": "votes currently held" },
-          "proposalSubmit": { "type": "boolean" }
+          "proposalSubmit": { "type": "boolean", "description": "false: PROPOSAL_SUBMIT=0, every proposal endpoint answers 501" },
+          "proposalHold": { "type": "boolean", "enum": [true], "description": "this relay has POST /v1/proposals and GET /v1/proposals/{id} (held submission); absent on older relays" }
         }
       },
       "ProposalRequest": {
@@ -237,6 +270,34 @@
         "properties": {
           "govHash": { "$ref": "#/components/schemas/Hash", "description": "computed by the relay with governanceObjectHash" },
           "result": { "description": "what `gobject submit` returned (the hash)" }
+        }
+      },
+      "ProposalId": { "type": "string", "pattern": "^[0-9a-f]{32}$", "description": "16 random bytes; the handle for GET /v1/proposals/{id} (deliberately not the gov hash)" },
+      "ProposalStatus": {
+        "type": "string",
+        "enum": ["waiting", "submitting", "submitted", "failed"],
+        "description": "`waiting`: the collateral has fewer than `minConfirmations` confirmations, or a retry is pending (`lastError`, `nextAttemptAt`). `submitting`: `gobject submit` is in flight (seconds). `submitted` (Core accepted it) and `failed` are final. Clients must treat unknown statuses as non-final."
+      },
+      "ProposalStatusView": {
+        "type": "object",
+        "required": ["id", "govHash", "collateralTxid", "status", "confirmations", "minConfirmations", "attempts", "lastError", "nextAttemptAt", "submittedAt", "finishedAt"],
+        "properties": {
+          "id": { "$ref": "#/components/schemas/ProposalId" },
+          "govHash": { "$ref": "#/components/schemas/Hash" },
+          "collateralTxid": { "$ref": "#/components/schemas/Hash" },
+          "status": { "$ref": "#/components/schemas/ProposalStatus" },
+          "confirmations": { "type": "integer", "minimum": 0, "description": "the collateral's confirmations when the relay last asked Core" },
+          "minConfirmations": { "type": "integer", "description": "MIN_COLLATERAL_CONFS: the relay submits at this depth" },
+          "attempts": { "type": "integer", "description": "`gobject submit` calls" },
+          "lastError": {
+            "type": ["string", "null"],
+            "enum": ["core-error", "core-syncing", "collateral-missing", "collateral-reorg", "expired", "unconfirmed", "bad-collateral", "core-rejected", "core-hash-mismatch", null],
+            "description": "a short code. While waiting: `core-error` (Core did not answer; retried 30 s doubling to 10 min), `core-syncing` (Core is not synced with the masternode network yet, retried the same way), `collateral-missing` (Core does not know the collateral right now), `collateral-reorg` (Core refused the collateral and it has fewer confirmations again). When failed: `expired` (end_epoch passed), `collateral-missing` (unknown to Core for PROPOSAL_MISSING_S), `unconfirmed` (not deep enough within PROPOSAL_MAX_WAIT_S), `bad-collateral`, `core-rejected` (see `coreMessage`), `core-hash-mismatch` (`gobject submit` returned another hash)"
+          },
+          "coreMessage": { "type": "string", "maxLength": 200, "description": "only with `lastError` `core-rejected`: Core's refusal, trimmed to 200 characters" },
+          "nextAttemptAt": { "type": ["integer", "null"], "description": "waiting: when the relay looks at it next (unix s); null in every other state" },
+          "submittedAt": { "type": ["integer", "null"] },
+          "finishedAt": { "type": ["integer", "null"], "description": "when it became `submitted` or `failed`" }
         }
       }
     }

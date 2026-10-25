@@ -27,6 +27,7 @@ import {
 import { addressOf, wifOf, type Network } from './keys.ts';
 import { CREATE_KEYS, createRequiredCredits, CREDITS_PER_DUFF, MIN_CREATE_LOCK_DUFFS, MIN_TOPUP_LOCK_DUFFS, topUpRequiredCredits } from './layout.ts';
 import type { AssetLockStatus, PlatformPort } from './platform.ts';
+import { proposalFeeFamily } from './proposal.ts';
 import { IDENTITY_GAP_LIMIT, registrationFundingPath, topUpFundingPath, type SeedWallet } from './seed.ts';
 import { assertLive, discoverIdentities, type FoundIdentity, type Session } from './signin.ts';
 import { buildSweep, DUST_DUFFS, estimateAssetLockFee, estimateSweepFee, identityIdFromOutpoint, locateCredit, type Utxo } from './tx.ts';
@@ -117,7 +118,7 @@ export const keyTopUpFamily: KeyFamily = ({ secret }) => {
  * The families scanned by default. Another one-time key family (a fee payment from a later feature, say) plugs in by appending to this
  * list in the call to scanForFunds: its lanes are scanned, and their payments can be swept (and used on Platform if it says how).
  */
-export const DEFAULT_KEY_FAMILIES: readonly KeyFamily[] = [createFamily, topUpFamily, keyTopUpFamily];
+export const DEFAULT_KEY_FAMILIES: readonly KeyFamily[] = [createFamily, topUpFamily, keyTopUpFamily, proposalFeeFamily];
 
 // ---- default start heights -------------------------------------------------------------------------------------------------
 

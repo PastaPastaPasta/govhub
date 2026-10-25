@@ -396,7 +396,7 @@ describe.each(SCHEMES)('votes API (%s)', (network) => {
       await w.submit(mn, { govHash: gov, time: T0 + 1800 });
       const up = await w.get('/v1/status');
       expect(up.status).toBe(200);
-      expect(up.body).toEqual({ service: 'govhub-relay', version: '0.1.0', network, core: { reachable: true, height: w.core.height }, held: 1, proposalSubmit: true });
+      expect(up.body).toEqual({ service: 'govhub-relay', version: '0.1.0', network, core: { reachable: true, height: w.core.height }, held: 1, proposalSubmit: true, proposalHold: true });
       w.core.down = true;
       w.clock.advance(10);
       const down = await w.get('/v1/status');

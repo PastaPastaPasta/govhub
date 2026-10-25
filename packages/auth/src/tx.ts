@@ -4,7 +4,7 @@
 // src/evo/assetlocktx.h (CAssetLockPayload: u8 version, vector<CTxOut> creditOutputs), src/evo/assetlocktx.cpp CheckAssetLockTx.
 import { secp256k1 } from '@noble/curves/secp256k1.js';
 import { parseTx, type Tx } from '@govhub/dapi';
-import { compactSize, i64le } from '@govhub/verify';
+import { checkCollateralTx, collateralScript, compactSize, GOVERNANCE_PROPOSAL_FEE_DUFFS, i64le, isP2PKH } from '@govhub/verify';
 import { bytesEqual, concatBytes, hash160, hexToBytes, reversed, sha256d, toBase58, u32le } from './bytes.ts';
 import { publicKeyOf } from './keys.ts';
 
@@ -238,26 +238,60 @@ export function buildSweep(o: { utxos: readonly Utxo[]; key: Uint8Array; to: { t
   return { raw, txid: parseTx(raw).txid, sentDuffs: sent, feeDuffs: fee };
 }
 
+/** The Core fee of a collateral spending `inputs` P2PKH outputs: the 34-byte OP_RETURN output and, with `change`, a 25-byte P2PKH one. */
+export function estimateCollateralFee(inputs: number, change: boolean, feePerByte = FEE_PER_BYTE): bigint {
+  return BigInt(estimateSize(inputs, change ? [34, 25] : [34], 0)) * feePerByte;
+}
+
+export interface BuiltCollateral {
+  raw: Uint8Array;
+  txid: string;
+  /** Index of the change output, or null when the change was below dust and went to the fee. */
+  changeVout: number | null;
+  changeDuffs: bigint;
+  feeDuffs: bigint;
+  burnDuffs: bigint;
+}
+
 /**
  * A governance proposal collateral (PLAN 6.1): `OP_RETURN <32-byte gov hash, RAW byte order>` worth `burnDuffs` (Core: >= 1 DASH,
- * GOVERNANCE_PROPOSAL_FEE_TX) plus P2PKH change to `key`. Every output is P2PKH or unspendable, as IsCollateralValid requires.
+ * GOVERNANCE_PROPOSAL_FEE_TX) plus P2PKH change, to `changeScript` (the user's refund address) or else back to `key`. Every output is
+ * P2PKH or unspendable, as IsCollateralValid requires (governance/object.cpp:834-843), so a P2SH change script is refused. Change below
+ * P2PKH dust is left to the fee instead of making a non-standard output. The result is checked with @govhub/verify's
+ * `checkCollateralTx` before it is returned: bytes Core would refuse are never handed out to be broadcast.
  */
-export function buildProposalCollateral(o: { utxos: readonly Utxo[]; key: Uint8Array; govHashRaw: Uint8Array; burnDuffs?: bigint; feePerByte?: bigint }): { raw: Uint8Array; txid: string; changeVout: number | null } {
+export function buildProposalCollateral(o: {
+  utxos: readonly Utxo[];
+  key: Uint8Array;
+  govHashRaw: Uint8Array;
+  burnDuffs?: bigint;
+  feePerByte?: bigint;
+  /** P2PKH script for the change (refund); default: the funding key's own address. */
+  changeScript?: Uint8Array;
+}): BuiltCollateral {
   if (o.govHashRaw.length !== 32) throw new Error('the governance hash must be 32 bytes');
-  const burn = o.burnDuffs ?? 100_000_000n;
-  if (burn < 100_000_000n) throw new Error('Core requires at least 1 DASH of collateral');
+  if (!o.utxos.length) throw new Error('no funds to spend');
+  const burn = o.burnDuffs ?? GOVERNANCE_PROPOSAL_FEE_DUFFS;
+  if (burn < GOVERNANCE_PROPOSAL_FEE_DUFFS) throw new Error('Core requires at least 1 DASH of collateral');
+  const changeScript = o.changeScript ?? p2pkhScript(hash160(publicKeyOf(o.key)));
+  if (!isP2PKH(changeScript)) throw new Error('the change of a proposal collateral must go to a P2PKH address (Core refuses any other output type)');
   const total = o.utxos.reduce((a, u) => a + u.value, 0n);
-  const own = p2pkhScript(hash160(publicKeyOf(o.key)));
-  const outputs: TxOutput[] = [{ value: burn, script: concatBytes(Uint8Array.of(0x6a, 0x20), o.govHashRaw) }];
-  const fee = BigInt(estimateSize(o.utxos.length, [34, own.length], 0)) * (o.feePerByte ?? FEE_PER_BYTE);
-  const change = total - burn - fee;
-  if (change < 0n) throw new Error('insufficient funds');
-  const changeVout = change >= 1000n ? outputs.push({ value: change, script: own }) - 1 : null;
+  const opReturn = collateralScript(o.govHashRaw);
+  const feeWith = estimateCollateralFee(o.utxos.length, true, o.feePerByte);
+  const feeWithout = estimateCollateralFee(o.utxos.length, false, o.feePerByte);
+  if (total < burn + feeWithout) throw new Error(`insufficient funds: ${total} duffs cannot cover the ${burn} duff burn and a ${feeWithout} duff fee`);
+  const change = total - burn - feeWith;
+  const outputs: TxOutput[] = [{ value: burn, script: opReturn }];
+  const changeVout = change >= DUST_DUFFS ? outputs.push({ value: change, script: changeScript }) - 1 : null;
   const raw = signAll(
     { version: 2, type: 0, inputs: o.utxos.map((u) => ({ txid: u.txid, vout: u.vout, scriptSig: new Uint8Array(0), sequence: 0xffffffff })), outputs, lockTime: 0, extraPayload: null },
     o.key,
   );
-  return { raw, txid: parseTx(raw).txid, changeVout };
+  const txid = parseTx(raw).txid;
+  const check = checkCollateralTx(raw, o.govHashRaw, { expectedTxid: txid });
+  if (!check.valid) throw new Error(`built an invalid collateral (${check.failure}): refusing to use it`);
+  const changeDuffs = changeVout === null ? 0n : change;
+  return { raw, txid, changeVout, changeDuffs, feeDuffs: total - burn - changeDuffs, burnDuffs: burn };
 }
 
 export class AssetLockError extends Error {

@@ -8,6 +8,7 @@ export * from './platform.ts';
 export * from './signin.ts';
 export * from './funding.ts';
 export * from './recovery.ts';
+export * from './proposal.ts';
 export * from './voucher.ts';
 export * from './central.ts';
 export * from './vault/bundle.ts';

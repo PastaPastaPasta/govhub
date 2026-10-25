@@ -20,7 +20,10 @@ import { TrustPage } from './pages/TrustPage.tsx';
 import { MasternodesPage } from './pages/MasternodesPage.tsx';
 import { MyVotesPage } from './pages/MyVotesPage.tsx';
 import { KeyringProvider } from './voting/KeyringContext.tsx';
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
+
+// The wizard brings key derivation and transaction building (@govhub/auth): loaded when it is opened.
+const NewProposalPage = lazy(() => import('./pages/NewProposalPage.tsx').then((m) => ({ default: m.NewProposalPage })));
 
 /** Starts downloading evo-sdk (big WASM chunk) once the first paint is done, in live mode only. */
 function SdkWarmup() {
@@ -64,6 +67,14 @@ createRoot(document.getElementById('root')!).render(
                 <Route path="p/h/:hash" element={<ProposalByHash />} />
                 <Route path="p/:name" element={<ProposalByName />} />
                 <Route path="p/:identity/:name" element={<ProposalByName />} />
+                <Route
+                  path="create"
+                  element={
+                    <Suspense fallback={<p className="page-narrow muted">Loading…</p>}>
+                      <NewProposalPage />
+                    </Suspense>
+                  }
+                />
                 <Route path="settings" element={<SettingsPage />} />
                 <Route path="masternodes" element={<MasternodesPage />} />
                 <Route path="votes" element={<MyVotesPage />} />

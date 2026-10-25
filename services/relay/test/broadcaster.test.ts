@@ -407,7 +407,7 @@ describe('scheduler and purge', () => {
     expect(w.store.db.prepare('SELECT COUNT(*) n FROM last_broadcast').get()).toEqual({ n: 1 });
 
     w.clock.advance(3 * 3600);
-    expect(w.broadcaster.tickPurge()).toEqual({ votes: 0, lastBroadcast: 1 });
+    expect(w.broadcaster.tickPurge()).toEqual({ votes: 0, lastBroadcast: 1, proposals: 0 });
 
     w.clock.t = T0 + 6 * 86400;
     const recent = await w.submit(mn, { govHash: g[3], time: w.clock.t + 1800 });

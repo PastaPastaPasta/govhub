@@ -19,7 +19,8 @@ import { createApp } from '../src/api/server.ts';
 import { Broadcaster } from '../src/broadcaster.ts';
 import { loadConfig, type RelayConfig } from '../src/config.ts';
 import { CoreRpcError, type CoreClient } from '../src/core/rpc.ts';
-import { openDb, Store, type VoteRow } from '../src/db.ts';
+import { openDb, Store, type ProposalRow, type VoteRow } from '../src/db.ts';
+import type { Proposer } from '../src/proposer.ts';
 import { Relay } from '../src/relay.ts';
 
 export const T0 = 1_800_000_000;
@@ -77,7 +78,11 @@ export class FakeCore implements CoreClient {
   /** awaited inside voteraw before it answers (lets a test act while a vote is `sending`) */
   voterawGate: Promise<void> | null = null;
   submitError: unknown = null;
+  /** thrown by the next `gobject submit` calls, in order, before submitError / submitResult apply */
+  submitErrors: unknown[] = [];
   submitResult: unknown = null;
+  /** awaited inside `gobject submit` before it answers (lets a test act while a proposal is `submitting`) */
+  submitGate: Promise<void> | null = null;
   private readonly clock: FakeClock;
 
   constructor(clock: FakeClock) {
@@ -95,6 +100,7 @@ export class FakeCore implements CoreClient {
   async call<T = unknown>(method: string, params: unknown[] = []): Promise<T> {
     this.calls.push({ method, params });
     if (this.down) throw new Error('fetch failed: ECONNREFUSED');
+    if (method === 'gobject' && params[0] === 'submit' && this.submitGate) await this.submitGate;
     return this.handle(method, params) as T;
   }
 
@@ -141,6 +147,8 @@ export class FakeCore implements CoreClient {
       return out;
     }
     if (sub === 'submit') {
+      const queued = this.submitErrors.shift();
+      if (queued) throw queued;
       if (this.submitError) throw this.submitError;
       return this.submitResult;
     }
@@ -302,5 +310,14 @@ export class World {
 
   row(id: string): VoteRow {
     return this.store.get(id)!;
+  }
+
+  /** The held-proposal worker (owned by the relay). */
+  get proposer(): Proposer {
+    return this.relay.proposer;
+  }
+
+  proposalRow(id: string): ProposalRow {
+    return this.store.getProposal(id)!;
   }
 }

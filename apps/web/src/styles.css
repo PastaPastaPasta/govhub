@@ -316,6 +316,12 @@ a:hover {
   color: var(--ink);
   background: var(--sunk);
 }
+/* "New proposal" is "New" where the three links would not fit on one line */
+@media (max-width: 420px) {
+  .nav-more {
+    display: none;
+  }
+}
 .topbar-end {
   margin-inline-start: auto;
   display: flex;

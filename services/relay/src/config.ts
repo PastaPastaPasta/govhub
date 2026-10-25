@@ -27,8 +27,17 @@ export interface RelayConfig {
   maxPastS: number;
   /** Held (and in-flight) votes over all masternodes; more is 503 `relay-full`. */
   maxHeldTotal: number;
+  /** Gates both proposal endpoints (`/v1/proposals/submit` and the held `/v1/proposals`). */
   proposalSubmit: boolean;
   minCollateralConfs: number;
+  /** Held proposals waiting (or being submitted) over all hashes; more is 503 `relay-full`. */
+  maxHeldProposals: number;
+  /** How often a waiting proposal's collateral is looked at again. */
+  proposalCheckS: number;
+  /** A held proposal whose collateral has not reached minCollateralConfs this long after the hour it was received fails (`unconfirmed`). */
+  proposalMaxWaitS: number;
+  /** A held proposal whose collateral Core no longer knows (double-spent, dropped) for this long fails (`collateral-missing`). */
+  proposalMissingS: number;
   retentionDays: number;
   confirmTimeoutS: number;
   mnListTtlS: number;
@@ -98,6 +107,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RelayConfig {
     maxHeldTotal: int(env, 'MAX_HELD_TOTAL', 100_000, 1),
     proposalSubmit: bool(env, 'PROPOSAL_SUBMIT', true),
     minCollateralConfs: int(env, 'MIN_COLLATERAL_CONFS', 6, 1),
+    maxHeldProposals: int(env, 'MAX_HELD_PROPOSALS', 500, 1),
+    proposalCheckS: int(env, 'PROPOSAL_CHECK_S', 30, 1),
+    proposalMaxWaitS: int(env, 'PROPOSAL_MAX_WAIT_S', 259_200, 1),
+    proposalMissingS: int(env, 'PROPOSAL_MISSING_S', 21_600, 1),
     retentionDays: int(env, 'RETENTION_DAYS', 7, 1),
     confirmTimeoutS: int(env, 'CONFIRM_TIMEOUT_S', 600, 1),
     mnListTtlS: int(env, 'MN_LIST_TTL_S', 60, 1),
@@ -122,6 +135,10 @@ export function describeConfig(c: RelayConfig): Record<string, unknown> {
     maxHeldTotal: c.maxHeldTotal,
     proposalSubmit: c.proposalSubmit,
     minCollateralConfs: c.minCollateralConfs,
+    maxHeldProposals: c.maxHeldProposals,
+    proposalCheckS: c.proposalCheckS,
+    proposalMaxWaitS: c.proposalMaxWaitS,
+    proposalMissingS: c.proposalMissingS,
     retentionDays: c.retentionDays,
     confirmTimeoutS: c.confirmTimeoutS,
     mnListTtlS: c.mnListTtlS,
