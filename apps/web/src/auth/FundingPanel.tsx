@@ -19,6 +19,8 @@ export interface FundingPanelProps {
   topUp?: { identityId: string; index: number };
   /** Seedless top-ups: the key-paste session whose key derives the one-time key. */
   session?: Session;
+  /** create: true funds from the hardened account-setup key used until 2026-10-25 (a starter bound to it); unset: runFunding picks. */
+  legacy?: boolean;
   /** `identityIndex`: where the identity was made (a new payment after a too-small one moves to a later index). */
   onDone(identityId: string, identityIndex: number): void;
   /**
@@ -75,7 +77,7 @@ export function FundingPanel(p: FundingPanelProps) {
     (async () => {
       const port = await platform();
       const r = await runFunding({
-        wallet: p.wallet, dapi: dapi(), platform: port, store, kind: p.kind, identityIndex: p.identityIndex, topUp: p.topUp, session: p.session,
+        wallet: p.wallet, dapi: dapi(), platform: port, store, kind: p.kind, identityIndex: p.identityIndex, topUp: p.topUp, session: p.session, legacy: p.legacy,
         recoverInto: recoverInto ?? undefined, signal: ac.signal, onUpdate,
       });
       if (ac.signal.aborted) return;

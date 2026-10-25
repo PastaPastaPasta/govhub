@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // The starter in the sign-in sheet: offered next to "Pay with DASH" where the network has a starter issuer (disabled elsewhere), the
 // privacy note, the "already used" answer, the keyring masternode picker, and redeeming only once the funding watcher is live.
-import { generatePhrase, SeedWallet } from '@govhub/auth';
+import { generatePhrase, hash160, legacyRegistrationFundingPath, SeedWallet } from '@govhub/auth';
 import { bytesToBase64, epochStart, parseStarterRequest, toHex } from '@govhub/badge';
 import { signMessageWif } from '@govhub/verify';
 import { secp256k1 } from '@noble/curves/secp256k1.js';
@@ -11,7 +11,7 @@ import type { FundingPanelProps } from '../auth/FundingPanel.tsx';
 import { button, click, flush, render, type } from '../test/render.tsx';
 import type { StarterDeps } from './client.ts';
 import { fundingTarget } from './client.ts';
-import { loadPendingFor, loadStarterFor, saveStarterFor, type StoredStarter } from './store.ts';
+import { forgetStarterFor, loadPendingFor, loadStarterFor, saveStarter, saveStarterFor, starterOnLegacyKey, type StoredStarter } from './store.ts';
 import { E, P, PRO, rnd, setup, votingKey } from './testkit.ts';
 
 const h = vi.hoisted(() => ({
@@ -507,6 +507,44 @@ describe('redeem later and resume', () => {
       await Promise.resolve(h.funding.at(-1)!.onDone('x'.repeat(44), 0)).catch(() => {});
     });
     expect(localStorage.length).toBe(0);
+    await r.unmount();
+  });
+
+  it('a token issued for the hardened account-setup key (before 2026-10-25) is not stranded: the setup finishes with that key', async () => {
+    const s = setup();
+    h.live = s.deps;
+    const phrase = generatePhrase(12);
+    const w = SeedWallet.fromPhrase(phrase, 'testnet');
+    // what a browser saved before the change: the token sealed under (and bound to) m/9'/1'/5'/1'/0'
+    const old = w.derive(legacyRegistrationFundingPath('testnet', 0));
+    const oldAddress = fundingTarget(w, 0, true).address;
+    await saveStarter(localStorage, old.privateKey, 'testnet', hash160(old.publicKey), stored(Date.now() - 1));
+    expect(starterOnLegacyKey(localStorage, w, 0)).toBe(true);
+    expect(oldAddress).not.toBe(fundingTarget(w, 0).address);
+    expect(await loadStarterFor(localStorage, w, 0)).not.toBeNull();
+    const r = await render(<FundNewIdentity phrase={phrase} identityIndex={0} resume />);
+    await until(() => h.funding.length, 'the funding panel');
+    const fp = h.funding.at(-1)!;
+    // the funding run watches the legacy address, and the faucet is asked to pay exactly that address
+    expect(fp).toMatchObject({ kind: 'create', identityIndex: 0, legacy: true });
+    await act(async () => fp.onAwaitingDeposit!(oldAddress));
+    await until(() => s.seen.redeem.length, 'the faucet call');
+    expect(s.seen.redeem).toEqual([expect.objectContaining({ address: oldAddress })]);
+    await r.unmount();
+    // funded: the token is forgotten, under either key
+    forgetStarterFor(localStorage, w, 0);
+    expect(localStorage.length).toBe(0);
+  });
+
+  it('a new setup uses the key-wallet path and never the legacy key', async () => {
+    h.live = setup().deps;
+    const phrase = generatePhrase(12);
+    const w = SeedWallet.fromPhrase(phrase, 'testnet');
+    await saveStarterFor(localStorage, w, 0, stored(Date.now() - 1));
+    expect(starterOnLegacyKey(localStorage, w, 0)).toBe(false);
+    const r = await render(<FundNewIdentity phrase={phrase} identityIndex={0} resume />);
+    await until(() => h.funding.length, 'the funding panel');
+    expect(h.funding.at(-1)!.legacy).toBeUndefined();
     await r.unmount();
   });
 

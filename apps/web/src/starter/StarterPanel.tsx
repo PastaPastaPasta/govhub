@@ -27,7 +27,7 @@ import {
 } from './client.ts';
 import { starterConfig } from './config.ts';
 import { liveStarterDeps } from './live.ts';
-import { starterSealer, type StarterSealer, type StoredStarter } from './store.ts';
+import { starterOnLegacyKey, starterSealer, type StarterSealer, type StoredStarter } from './store.ts';
 
 export interface StarterPanelProps {
   wallet: SeedWallet;
@@ -80,7 +80,9 @@ export function StarterPanel(p: StarterPanelProps) {
   const { network, store } = useAuth();
   const cfg = useMemo(() => starterConfig(registry), [registry]);
   const deps = useMemo(() => p.deps ?? (cfg ? liveStarterDeps(registry, cfg) : null), [p.deps, cfg, registry]);
-  const target = useMemo(() => fundingTarget(p.wallet, p.identityIndex), [p.wallet, p.identityIndex]);
+  // a setup whose token or request was made for the hardened key used until 2026-10-25 finishes with that key (the token is bound to it)
+  const legacy = useMemo(() => starterOnLegacyKey(localStorage, p.wallet, p.identityIndex), [p.wallet, p.identityIndex]);
+  const target = useMemo(() => fundingTarget(p.wallet, p.identityIndex, legacy), [p.wallet, p.identityIndex, legacy]);
   const [entry, setEntry] = useState<StoredStarter | null>(p.resume ?? null);
   // a resumed setup the faucet already paid goes straight to the funding watcher, whatever the due time said
   const [phase, setPhase] = useState<Phase>(() => {
@@ -198,7 +200,7 @@ export function StarterPanel(p: StarterPanelProps) {
           </button>
         </div>
       )}
-      {phase === 'funding' && entry && <Redeem deps={deps} token={entry.token} expected={target.address} wallet={p.wallet} identityIndex={p.identityIndex} onDone={done} onExpired={forget} />}
+      {phase === 'funding' && entry && <Redeem deps={deps} token={entry.token} expected={target.address} legacy={legacy} wallet={p.wallet} identityIndex={p.identityIndex} onDone={done} onExpired={forget} />}
     </div>
   );
 }
@@ -633,7 +635,7 @@ function ProposalProof(p: ProofProps & { setError(e: unknown): void }) {
 
 type RedeemState = { s: 'idle' } | { s: 'asking' } | { s: 'paid'; r: Redeemed } | { s: 'error'; e: unknown };
 
-function Redeem(p: { deps: StarterDeps; token: StarterToken; expected: string; wallet: SeedWallet; identityIndex: number; onDone(id: string, index: number): void; onExpired(): void }) {
+function Redeem(p: { deps: StarterDeps; token: StarterToken; expected: string; legacy: boolean; wallet: SeedWallet; identityIndex: number; onDone(id: string, index: number): void; onExpired(): void }) {
   const [st, setSt] = useState<RedeemState>({ s: 'idle' });
   const [payInstead, setPayInstead] = useState(false);
   // a retry of the watcher fires again while a call may still run: only the newest answer counts
@@ -666,7 +668,7 @@ function Redeem(p: { deps: StarterDeps; token: StarterToken; expected: string; w
     if (confirm(msg)) setPayInstead(true);
   };
   const deposit = payInstead ? undefined : <StarterDeposit st={st} onRetry={() => run(expected)} onPayInstead={payWithDash} />;
-  return <FundingPanel kind="create" wallet={p.wallet} identityIndex={p.identityIndex} onDone={p.onDone} onAwaitingDeposit={run} deposit={deposit} />;
+  return <FundingPanel kind="create" wallet={p.wallet} identityIndex={p.identityIndex} legacy={p.legacy || undefined} onDone={p.onDone} onAwaitingDeposit={run} deposit={deposit} />;
 }
 
 function StarterDeposit({ st, onRetry, onPayInstead }: { st: RedeemState; onRetry(): void; onPayInstead(): void }) {
