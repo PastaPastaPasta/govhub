@@ -236,7 +236,7 @@ The accounts service never sees plaintext.
 - The accounts service runs on Cloudflare Workers with Durable Objects (the faucet pattern) and
   is replaceable (§1.1).
 
-### 4.3 Free starter identity (faucet voucher)
+### 4.3 Free identity (faucet voucher)
 
 - **A new treasury** in `dash-faucet-cf`: a separate Durable Object, route and amount.
 - **What it hands out:** pre-minted, ChainLocked asset-lock vouchers at **~0.003 DASH**, which is

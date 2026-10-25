@@ -169,14 +169,6 @@ services:
       ISSUER_CHALLENGE_TTL_S: ${ISSUER_CHALLENGE_TTL_S:-}
       ISSUER_MAX_TOKEN_RPS: ${ISSUER_MAX_TOKEN_RPS:-}
       ISSUER_LOG_LEVEL: ${ISSUER_LOG_LEVEL:-}
-      # Starter tokens (services/issuer/README.md "Starter tokens"): off unless STARTER_ISSUER_IDENTITY_ID is set. Own identity,
-      # own key directory, own store in its own volume (starter-data: lifetime dedup; back it up RARELY, see deploy/README.md 11.5).
-      STARTER_ISSUER_IDENTITY_ID: ${STARTER_ISSUER_IDENTITY_ID:-}
-      STARTER_KEY_DIR: /starter-keys
-      STARTER_DB_PATH: /data-starter/starter.sqlite
-      STARTER_MAX_STAGED_KEYS: ${STARTER_MAX_STAGED_KEYS:-1}
-      STARTER_CHALLENGE_TTL_S: ${STARTER_CHALLENGE_TTL_S:-}
-      STARTER_PROPOSAL_GRACE_DAYS: ${STARTER_PROPOSAL_GRACE_DAYS:-}
     secrets:
       - core_rpc_password
       - issuer_hmac_secret
@@ -184,13 +176,8 @@ services:
     volumes:
       # Token store: per-MN rows only for the open issuance window (deleted after it), per-epoch counts. Never backed up.
       - issuer-data:/data
-      # Starter store (lifetime dedup keys only). Its own volume so it can be backed up on its own schedule (rarely: once per
-      # epoch, latest copy only) while issuer-data never is. Exclude both from automatic snapshots.
-      - starter-data:/data-starter
       # Private keys, epoch-<E>.pem (0600, uid 1000). Writable: the service destroys keys of closed epochs.
       - ${SECRETS_DIR:-./secrets}/issuer-keys:/keys
-      # Starter keys (epoch-<E>.pem of the starter identity), same rules; empty when the starter is off.
-      - ${SECRETS_DIR:-./secrets}/starter-keys:/starter-keys
     networks:
       - default
       - edge
@@ -342,7 +329,6 @@ volumes:
   bridge-data:
   relay-data:
   issuer-data:
-  starter-data:
   caddy-data:
   caddy-config:
 

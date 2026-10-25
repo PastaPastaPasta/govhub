@@ -7,8 +7,9 @@ can't do: run Dash Core, hold signed votes until their release time, store centr
 envelopes, and vouch for masternode (MN) owners.
 
 The earlier revisions are kept as `PLAN-r2.md`. r3 drops the DashCentral mirror and sponsored
-posting, uses the existing faucet for initial credit, and replaces the ZK badge with
-blind-signature issuers. Anything marked *estimate* is measured in phase 0.
+posting, and replaces the ZK badge with blind-signature issuers. (r3 first planned initial credit from
+the existing faucet; the owner reversed that on 2026-10-25, see §4.3.) Anything marked *estimate* is
+measured in phase 0.
 
 ## Decisions (user, 2026-10-23)
 
@@ -26,9 +27,9 @@ blind-signature issuers. Anything marked *estimate* is measured in phase 0.
 
 **Login and money**
 - Login is a standard Dash seed that other wallets can restore.
-- **No free posting, ever.** Users get initial credit only, from **our existing faucet with its
-  existing rate limits**, about 0.003 DASH: enough for an identity and a few documents. After
-  that, users top up with real DASH.
+- **No free posting, ever, and no starter credit (owner, 2026-10-25).** Everyone funds their own
+  identity with DASH: about 0.003 DASH is enough for an identity and a few documents, and they top
+  up with real DASH after that. See §4.3.
 
 **Proposals and comments**
 - Recreate proposal.dash.org's proposal creation on DAPI.
@@ -42,8 +43,6 @@ blind-signature issuers. Anything marked *estimate* is measured in phase 0.
   signatures. Badges show who vouched. Longer epochs are allowed.
 - **No external audit.** Review is done by agents.
 - We own the bridge, moderation, and issuer keys. Funding votes only.
-
-The faucet's vout bug is being fixed separately.
 
 ---
 
@@ -73,7 +72,7 @@ The full report is in [`PHASE0.md`](PHASE0.md).
 - **Identities are created with 3 keys** (MASTER, CRITICAL, HIGH: 0.00106 DASH). The 6-key layout
   costs 0.00182. TRANSFER and the DashPay ENC/DEC keys are added later only when needed: the same
   derivation paths, key id = index, so wallets still restore it.
-- **A 0.003 DASH starter covers that identity plus about 3 short comments.** A first reaction costs
+- **0.003 DASH of funding covers that identity plus about 3 short comments.** A first reaction costs
   about as much as a comment (0.0005 DASH), and flipping one costs 0.00003.
 
 **Queries and schemas**
@@ -116,7 +115,6 @@ The full report is in [`PHASE0.md`](PHASE0.md).
    ├─(pluggable) relay(s):  voteraw at release time, gobject submit, held Platform votes
    ├─(pluggable) badge issuer(s): blind-sign MN badge tokens (separate origin)
    ├─(pluggable) accounts (central login): encrypted envelopes only
-   └─ faucet.dashhq.org (existing dash-faucet-cf): starter vouchers, existing limits
 
  bridge = dashd (txindex, zmq) + daemon → `gov` contract docs (bridge identity)
  relay  = queue in front of a dashd (may share the bridge's node)
@@ -134,7 +132,7 @@ source endpoint and whether it was verified. The registry covers:
 - relays
 - badge issuers, as a trust list (§8)
 - the accounts service
-- the faucet
+- the faucet (where a pasted voucher link comes from; it is not a source of credit)
 - moderation lists
 - the price feed
 - the frontend origin, with reproducible builds and an IPFS CID
@@ -275,15 +273,18 @@ keepsHistory types that can be deleted, no `-` in names, and the 5.0 rc.7/rc.8 w
 - Password-wrapped envelopes never go on Platform. Envelopes are padded to a fixed size, so the
   server can't count a user's MNs.
 
-### 4.3 Starter credit (existing faucet)
+### 4.3 No starter credit (owner decision, 2026-10-25)
 
-- faucet.dashhq.org, which we own, issues a pre-minted, ChainLocked asset-lock voucher.
-  - The amount is about **0.003 DASH**, enough for an identity plus a few documents.
-  - It's a portal-specific amount or route, protected by the faucet's **existing limits**
-    (Turnstile and the edge rate limit).
-- The browser creates the identity **with its own keys** using a chain-lock proof. The voucher
-  only funds the identity; the operator never controls it.
-- Anyone can claim one, central-login or Platform-login.
+- **Everyone funds their own identity.** Govhub gives no initial credit, to anyone. Sign-up funds
+  an account by one means: pay about 0.003 DASH from any Dash wallet to a one-time address (§4.4's
+  DAPI flow), and the browser creates the identity with its own keys.
+- This replaces the earlier plan (r3 up to 2026-10-24), which had the existing faucet hand out
+  pre-minted 0.003 DASH asset-lock vouchers, and the blind-signed "starter" token for masternode
+  and proposal owners that was built on it (PR #25, testnet only, never on mainnet). Both were
+  removed: no starter issuer, no `/v1/starter/*` routes, no starter store, keys or settings. The
+  badge issuer is unchanged.
+- A `dashpay://invite` voucher link that someone else gives you can still be redeemed from the
+  sign-in sheet ("I have a voucher link"); govhub itself operates and promotes no credit.
 - No sponsorship. When the credit runs out, the user tops up.
 
 ### 4.4 Top-up with external DASH (DAPI only)
@@ -467,8 +468,8 @@ issues in the first draft. The protocol below includes all of the fixes.
 - Post the badge at a uniformly random time in [S(E), S(E)+W], through a random DAPI node the
   issuer doesn't operate.
 - Warn (or refuse, where possible) when the identity is funded from wallets tied to MNs or has
-  credit transfers from MN identities. Faucet vouchers are fine, because the faucet never checks
-  MN status.
+  credit transfers from MN identities. A voucher link someone gives you is fine, because the faucet never
+  checks MN status.
 
 ### 8.6 Reader rules
 
@@ -628,7 +629,7 @@ Quality gates, since there is no external audit:
 |---|---|---|
 | 0 | Spikes:<br>• evo-sdk 5.x reads and writes on **mainnet PV13** (throwaway contract)<br>• v1 contracts on local dashmate 4.1.1<br>• **measured** costs for identity (3 vs 6 keys), comment, reaction, replace<br>• gov-hash vector vs `gobject check`<br>• DAPI flows in a real browser<br>• 0.003 voucher → identity<br>• Android seed restore<br>• `blindrsa-ts` in the browser and against the Node issuer | Go/no-go table |
 | 1 | Read-only:<br>• bridge (archive and publish)<br>• `gov` v1 on mainnet<br>• budget and proposal pages<br>• collateral and vote verification<br>• endpoint registry | Matches the live network for a full cycle |
-| 2 | Social:<br>• `forum` and `mod` v1<br>• seed, key and passkey login<br>• faucet voucher onboarding and DAPI top-up<br>• comments, reactions, claims, proposal editor, block lists | Moderation drill |
+| 2 | Social:<br>• `forum` and `mod` v1<br>• seed, key and passkey login<br>• DAPI funding (pay a QR address) and DAPI top-up<br>• comments, reactions, claims, proposal editor, block lists | Moderation drill |
 | 3 | Voting and proposals:<br>• accounts service<br>• immediate and offline-sign voting through relays<br>• proposal-creation wizard with relay auto-submit<br>• DashCentral-compatible API | Live mainnet vote and proposal from the browser |
 | 4 | Badges:<br>• `badge` contract<br>• issuer service with offline keys<br>• badge-client<br>• default "MN-only" filter switches on once the first epoch's badges are live | Adversarial review closed |
 | 5 | Deferred voting, EvoVote contest voting, audit CLI | 5-MN randomized schedule lands |
@@ -641,7 +642,6 @@ badges.
 ## 13. Risks
 
 - **RC SDK on mainnet:** gated by phase 0. Pin 5.0 final when it's tagged.
-- **Faucet:** relies on its existing limits (accepted). Its vout bug is being fixed separately.
 - **No external audit:** mitigated by standard primitives (RFC 9474), test vectors, and agent
   reviews. A future ZK full-set proof (see PLAN-r2 §8) is shelved, because an unaudited custom
   circuit is too risky.

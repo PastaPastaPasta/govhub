@@ -3012,8 +3012,3 @@ details.advanced[open] > summary {
   font-size: 0.875rem;
   z-index: 20;
 }
-/* the free starter: its steps, then the proof forms or the funding panel */
-.starter {
-  display: grid;
-  gap: 0.75rem;
-}

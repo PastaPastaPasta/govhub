@@ -14,7 +14,7 @@ PV14, so its fees approximate PV13 rather than match it exactly. Mainnet was use
 | Browser vote signing matches Core | **GO** (mainnet scheme). Testnet scheme still open | Byte-identical to Core `signmessage`; Core `verifymessage` accepts |
 | Every Core flow over DAPI from a browser | **GO** | `spikes/dapi-browser`: 41/41 checks from a real origin against mainnet, including streams, IS-locks, the SML and ChainLock BLS |
 | Blind-RSA badge works end to end | **GO** | `spikes/blindrsa`: RFC 9474 vectors pass; issuer 0.3 ms per signature, reader 0.02 ms per verify |
-| A 0.003 DASH starter is enough | **GO, but tight** | 3-key identity costs 0.00106, leaving about 3 short comments |
+| 0.003 DASH of funding is enough | **GO, but tight** | 3-key identity costs 0.00106, leaving about 3 short comments |
 | Seed restores in other wallets | Open | Restore on a real Android device |
 
 ## Measured costs (testnet, PV14)
@@ -60,7 +60,6 @@ updated contract).
 | Launch: register the four v1 contracts (0.272 + 0.423 + 0.221 + 0.141), plus bridge, moderation and issuer identities | ~1.1 one-time |
 | Bridge operations: ~30 active proposals, tallies refreshed hourly on change, ~150 new proposals a year | **~0.51 per year** (was ~6.6 per year before the cost pass; see below) |
 | Issuer keys (one doc per epoch) | negligible |
-| Starter vouchers | 0.003 each, from the faucet treasury |
 
 Annual bridge cost with 30 active proposals, every one changing every hour (the worst case of "hourly on change"),
 ~150 new proposals a year (an upper estimate: the 28 mainnet proposals of the fixture snapshot last ~4 months by median,
@@ -119,5 +118,5 @@ the packed document is replaced once whenever any entry changed. A 6-hour interv
    `signVote` and by the web app's voting code were accepted by testnet Core (`voteraw`, directly and through the relay); see
    services/relay/README.md "Live testnet run".
 2. Android seed restore. Needs a device, so this is for the user.
-3. A faucet route for 0.003 vouchers at the portal's amount. This lives in dash-faucet-cf, alongside
-   its separate vout fix.
+3. ~~A faucet route for 0.003 vouchers at the portal's amount.~~ Dropped (2026-10-25): govhub gives no
+   starter credit; everyone funds their own identity (PLAN.md section 4.3).

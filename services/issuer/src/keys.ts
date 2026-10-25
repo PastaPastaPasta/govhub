@@ -13,21 +13,13 @@ import { join } from 'node:path';
 import { deriveKeyId, toHex, bytesToBase64, base64ToBytes } from '@govhub/badge';
 import { generateIssuerKey } from './signer.ts';
 
-/** What a key directory's keys sign: MN badges, or starter tokens (a separate identity and directory, never the same keys). */
-export type KeyPurpose = 'badge' | 'starter';
-export const isKeyPurpose = (v: unknown): v is KeyPurpose => v === 'badge' || v === 'starter';
-
 export interface ManifestEntry {
   epoch: number;
-  /** absent in manifests from before starter keys existed: badge */
-  purpose?: KeyPurpose;
   bits: 2048 | 3072;
   /** base64 of the rsaEncryption SPKI DER */
   spki: string;
   /** hex SHA256(spki) */
   keyId: string;
-  /** the identity `publish-keys` publishes this directory under, stamped on the first publish; absent before that */
-  identityId?: string;
 }
 
 const KEY_FILE = /^epoch-(\d{1,10})\.pem$/;
@@ -47,43 +39,18 @@ export function readManifest(dir: string): ManifestEntry[] {
   return m;
 }
 
-const purposeOf = (m: ManifestEntry): KeyPurpose => m.purpose ?? 'badge';
-
-/** Throws unless every key in the manifest has `purpose`: one directory never mixes badge and starter keys. */
-export function assertPurpose(manifest: readonly ManifestEntry[], purpose: KeyPurpose): void {
-  const other = manifest.find((m) => purposeOf(m) !== purpose);
-  if (other) throw new Error(`this key directory holds ${purposeOf(other)} keys (epoch ${other.epoch}), not ${purpose} keys: use a separate directory and identity per purpose`);
-}
-
-/**
- * Binds the directory to the identity publishing it: refuses when any key was already published (stamped) under another identity,
- * then stamps every entry. One key directory is one identity's keys, so the same RSA keys can never be published as both a badge
- * and a starter issuerKey (keys are separated by identity and purpose; the issuer also refuses a shared key at run time).
- */
-export function bindPublisher(dir: string, identityId: string): ManifestEntry[] {
-  const manifest = readManifest(dir);
-  const other = manifest.find((m) => m.identityId !== undefined && m.identityId !== identityId);
-  if (other) throw new Error(`this key directory was published under identity ${other.identityId} (epoch ${other.epoch}), not ${identityId}: each identity needs its own keys`);
-  if (manifest.some((m) => m.identityId === undefined)) {
-    for (const m of manifest) m.identityId = identityId;
-    writePrivate(join(dir, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
-  }
-  return manifest;
-}
-
 /** Generates keys for epochs from..from+count-1 that the directory does not have yet. Returns the new entries. */
-export async function keygen(dir: string, from: number, count: number, bits: 2048 | 3072, purpose: KeyPurpose = 'badge'): Promise<ManifestEntry[]> {
+export async function keygen(dir: string, from: number, count: number, bits: 2048 | 3072): Promise<ManifestEntry[]> {
   if (!Number.isInteger(from) || from < 1 || !Number.isInteger(count) || count < 1 || count > 1000) throw new Error('bad epoch range');
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   chmodSync(dir, 0o700);
   const manifest = readManifest(dir);
-  assertPurpose(manifest, purpose);
   const added: ManifestEntry[] = [];
   for (let e = from; e < from + count; e++) {
     if (manifest.some((m) => m.epoch === e) || existsSync(join(dir, keyFileName(e)))) continue;
     const kp = generateIssuerKey(bits);
     writePrivate(join(dir, keyFileName(e)), kp.privateKey.export({ type: 'pkcs8', format: 'pem' }) as string);
-    const entry: ManifestEntry = { epoch: e, ...(purpose === 'badge' ? {} : { purpose }), bits, spki: bytesToBase64(kp.spki), keyId: toHex(await deriveKeyId(kp.spki)) };
+    const entry: ManifestEntry = { epoch: e, bits, spki: bytesToBase64(kp.spki), keyId: toHex(await deriveKeyId(kp.spki)) };
     manifest.push(entry);
     added.push(entry);
   }

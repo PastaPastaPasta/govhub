@@ -48,7 +48,7 @@ buckets), `seal.ts` (encryption), `keyring.ts` (load / open / save, unlockers), 
 
 Live (testnet, `scripts/testnet-forum-keyring.ts`, results in `scripts/results/testnet-forum-keyring.json`): the contract update,
 then create / replace / shrink and a pending document, read back with proofs and opened. Fees: create 0.0016 DASH, pending create
-0.0015, a same-bucket replace is cheap; a 0.003 starter identity can afford the keyring but not also the pending backup, so the web
+0.0015, a same-bucket replace is cheap; an identity funded with only 0.003 can afford the keyring but not also the pending backup, so the web
 app makes the backup opt-in.
 
 ## Findings

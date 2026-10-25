@@ -51,8 +51,6 @@ drawer and from `/about/verification`.
   and the proposal, packed tally set, tally and cycle documents. The app does not prove those keys against its own verified chain. The service is
   not replaceable in Settings. This is the largest gap between the "can't lie" goal and the code (section 6.6).
 - **Badge issuers** vouch for "MN owner" chips on their own word (section 6.3).
-- **The starter issuer and the faucet** are run by the same team. A starter token is blind-signed, but the two can still match
-  a masternode or proposal to the account it funded by request time or IP (section 6.4).
 - **Relays** decide when, and whether, your vote reaches the network, and whether a proposal you paid for is submitted
   (section 6.2).
 - **Whoever serves the app** decides what code runs. There is no reproducible build or published hash yet (section 2.1).
@@ -352,8 +350,7 @@ that the content is true.
 | Hidden comments and authors | Block lists read with Platform proofs (`apps/web/src/app/moderationLoad.ts:42-69`). | The list owner decides what is hidden; 6.6. | "Show hidden" toggle; lists can be turned off. |
 | Reaction scores | Counted in the browser from Platform-proven reactions (`apps/web/src/ui/Votes.tsx:1-3`). | 6.6. Anyone can create identities, so scores are not sybil-resistant. | — |
 | Identity balance | `identities.balanceWithProof` (`packages/auth/src/evo.ts:499-500`). | 6.6. | — |
-| Starter credit (voucher) | The voucher transaction from DAPI. Platform validates the asset lock when it creates the identity (`packages/auth/src/voucher.ts`). | Faucet: can refuse, can spend the voucher first, and knows which identity it funds (6.4). | "This voucher has already been used". |
-| Starter credit (blind starter token) | The token's signature against the starter issuer's per-epoch key, proved from Platform; the faucet's payment watched on chain; the identity created with your keys (6.4). | Starter issuer: can refuse or mint extra tokens. Faucet: can refuse or run out. Together, by time or IP, they can link the masternode or proposal to the funded account. | The faucet's refusal reason. |
+| Voucher link | The voucher transaction from DAPI. Platform validates the asset lock when it creates the identity (`packages/auth/src/voucher.ts`). | Faucet: can refuse, can spend the voucher first, and knows which identity it funds (6.4). | "This voucher has already been used". |
 | USD price | CoinGecko, reported (`repo.ts:342-354`). Fetched only when the Core network is mainnet (Dev profile included). | CoinGecko: any number. | Marked reported. |
 
 ## 6. Backend by backend
@@ -589,11 +586,10 @@ check cannot stop a dashd that fakes the masternode list itself: the issuer trus
 - Settings lists each issuer's epochs as valid, flagged or without a valid key (`apps/web/src/badge/BadgeSettings.tsx`).
 - Badge documents themselves are immutable and undeletable (`packages/contracts-v1/badge.json`).
 
-### 6.4 Faucet and starter credit
+### 6.4 Voucher links
 
-There are two ways to get starter credit for a new account: a voucher link, and a blind starter token.
-
-**Voucher links.**
+Govhub does not give anyone free credit: everyone pays for their own account with DASH. The one exception is a
+voucher link that someone else gives you.
 
 - A voucher is a `dashpay://invite?...` link the user pastes (`registry.ts:81`; `packages/auth/src/voucher.ts:1-41`). The app
   fetches the voucher transaction over DAPI and creates the identity with the user's own keys. The voucher key signs only as the
@@ -602,36 +598,7 @@ There are two ways to get starter credit for a new account: a voucher link, and 
   faucet made; the app then says "This voucher has already been used" (`voucher.ts:74,95`). It knows which identity its
   voucher funded, since the identity id is derived from the voucher's outpoint (`voucher.ts:64`), which it created.
 
-**Blind starter tokens** (`apps/web/src/starter/`; `packages/badge/src/starter.ts`; `services/issuer/src/starter.ts`;
-`services/issuer/README.md`). One starter per masternode and per proposal, for life.
-
-- **Getting a token.** A masternode proves itself with a signature by its voting key; a proposal with a signature by its
-  payment address (P2PKH only), signed in Dash Core (`starter.ts:117-123`). A masternode must not be PoSe-banned, and must have
-  had the same collateral at the epoch start; a proposal may have ended at most 30 days ago (`starter.ts:133-140`). The issuer
-  blind-signs (RFC 9474, like badges) a message binding the hash of the new account's one-time funding key
-  (`packages/badge/src/starter.ts:11-15`). The browser blinds only against the starter identity's per-epoch key that it reads,
-  proved, from Platform, and checks the signature it gets back (`apps/web/src/starter/client.ts:96-109,318-323`).
-- **Redeeming it.** The browser sends the faucet `{network, epoch, address, msgPrefix, sig}` and nothing about the masternode
-  or proposal (`apps/web/src/badge/workerOps.ts:57-58`). The faucet pays plain DASH to that one-time address. The browser
-  builds the asset lock and creates the identity with its own keys (`packages/auth/src/funding.ts`). A token is bound to that
-  address, so nobody who sees it can redeem it for another one.
-- **The starter issuer** learns which masternode or proposal asked, and when, but not the funding address, which is blinded.
-  It can refuse, and since it holds the signing key it can issue extra tokens: there is no public count for starters. It keeps
-  `(kind, subject, collateral)` for life, so it holds the list of masternodes and proposals that took a starter; the epoch and
-  blinded-message hash are cleared when the epoch's window closes (`services/issuer/src/starter-db.ts`).
-- **The faucet** learns the funding address, the epoch and the token, not the masternode or proposal. Chain data then shows
-  which identity the deposit funded. It can refuse, run out, or pay without a valid token. Whether it verifies tokens, refuses
-  double redemptions and keeps no logs is its word; its code (`dash-faucet-cf`) is not in this repository.
-- **Timing and IP.** The same team runs the starter issuer and the faucet, and both see your IP. "Redeem now" is the default,
-  and lets them match the two requests by time. "Redeem later" waits a random 15 minutes to 6 hours, which removes the timing
-  link but not the IP; the page says so and suggests Tor or a VPN (`apps/web/src/starter/StarterPanel.tsx:66-73,284-294`).
-  There is no privacy mode or crowd-size check for starters. Anyone can see that the faucet paid the account, which marks it as
-  some masternode's or proposal owner's account.
-- **Where.** The starter issuer is pinned in code, for testnet Platform only (Testnet and Dev profiles); mainnet has none
-  (`apps/web/src/starter/config.ts:16-35`). On Dev it checks testnet masternodes and proposals.
-
-**What neither can do:** control the identity, whose keys are yours; or, for a starter token, link it cryptographically to the
-masternode or proposal (the issuer signs blind).
+**What the faucet cannot do:** control the identity, whose keys are yours.
 
 ### 6.5 DAPI evonodes (Core data)
 
@@ -780,8 +747,7 @@ Privacy is separate from correctness: a backend that can't lie can still learn t
 | Bridge | Your IP, and which proposals' votes and lists you fetch. This includes the vote-confirmation polling for proposals you voted on. Up to two other configured bridges (normally failover only) are also asked for a proposal's vote set right after the first bridge reports your vote, so they too can link your IP, by timing, to that proposal and your masternode. |
 | Relay | Your IP, the timing, which masternodes submit together, and **how each one voted** before the vote is public (`services/relay/README.md`, "Threat model and privacy": public unlinkability only). For a proposal you submit: your IP and poll timing, linked to the full proposal and its collateral (6.2). |
 | Badge issuer | Which masternode asked, when, and from which IP. In Standard mode, likely which identity received the badge, by timing (6.3). |
-| Faucet | Which identity its voucher funded. For a starter token: your IP, and the funding address, which chain data ties to your new identity; not the masternode or proposal (6.4). |
-| Starter issuer | Which masternode or proposal asked for a starter, when, and from which IP. Run by the same team as the faucet, so "Redeem now" lets the two be matched by time, and the same IP at both always can (6.4). |
+| Faucet | Which identity its voucher funded (6.4). |
 | DAPI evonodes | Your IP. The bloom filter of a funding or proposal-deposit address you watch; in Recover, one filter covering all your one-time keys, which links them. The transactions you look up and broadcast (proposal collaterals, Recover sweeps). |
 | Platform nodes | Your IP. Every document, identity and name you read. The state transitions you sign. In Recover, the key hashes it looks up and the asset-lock outpoints it checks (6.10). |
 | Quorum list service | Your IP, when the app starts. On testnet, also each quorum-proof request during verification. |
@@ -797,9 +763,7 @@ privacy").
   when the epoch's window closes. The other tables hold per-epoch counts and settings (`services/issuer/src/db.ts:59-74`,
   `epochs.ts`). Logs are lifecycle, errors and hourly aggregate
   counters. `services/issuer/test/logging.test.ts` runs a full issuance with an IP and user-agent header and fails if either,
-  or the proTxHash or outpoint, appears in any output. It does the same for a masternode and a proposal starter (proTxHash,
-  collateral, govHash, payment address), and checks that the starter store is one table of exactly `(kind, subject,
-  collateral, epoch, blinded_hash)`.
+  or the proTxHash or outpoint, appears in any output.
 - **Relay.**
   - Votes have no IP column.
   - The receive time is rounded to the hour (`services/relay/src/relay.ts:251`).

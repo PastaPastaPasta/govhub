@@ -1,20 +1,15 @@
-// Logging policy (README "What is stored and logged", "Starter tokens"): nothing that could link a request to a masternode or a
-// proposal reaches stdout or stderr (which Docker's json-file driver keeps) or the stores: no proTxHash, collateral outpoint,
-// govHash, payment address, IP address, user agent or per-request timestamp. This runs full request flows, failures included, and
-// searches everything that was written.
+// Logging policy (README "What is stored and logged"): nothing that could link a request to a masternode reaches stdout or stderr
+// (which Docker's json-file driver keeps) or the token store: no proTxHash, collateral outpoint, IP address, user agent or
+// per-request timestamp. This runs a full request flow, failures included, and searches everything that was written.
 import Database from 'better-sqlite3';
 import { existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { bytesToId } from '@govhub/badge';
 import { log } from '../src/log.ts';
 import { openTokenStore } from '../src/db.ts';
-import { ProposalCache } from '../src/core.ts';
 import { createApp } from '../src/server.ts';
-import { openStarterStore } from '../src/starter-db.ts';
-import { StarterManager } from '../src/starter-epochs.ts';
-import { clientRequest, E, fakeMn, fakeProposal, mnSubject, NET, P, proposalSubject, rnd, starterRequest, starterWorld, votingKey, world } from './helpers.ts';
+import { clientRequest, E, fakeMn, P, votingKey, world } from './helpers.ts';
 
 const IP = '203.0.113.77';
 const UA = 'Mozilla/5.0 (badge-log-test)';
@@ -98,66 +93,5 @@ describe('no linkable logs', () => {
     const db2 = new Database(path, { readonly: true });
     expect((db2.prepare('SELECT COUNT(*) AS n FROM tokens').get() as { n: number }).n).toBe(0);
     db2.close();
-  });
-  it('a full starter flow (MN and proposal) writes nothing that names the masternode, its collateral, the proposal, its payment address or the client', async () => {
-    vi.useFakeTimers({ toFake: ['Date'], now: Date.UTC(2027, 0, 1, 12, 0, 5) });
-    const path = join(mkdtempSync(join(tmpdir(), 'starter-log-')), 'starter.sqlite');
-    const w = await world();
-    const sw = await starterWorld({ store: openStarterStore(path) });
-    const mn = sw.core.add(fakeMn());
-    const p = sw.core.addProposal(fakeProposal());
-    // the housekeeping tick too (proposal refresh, key loading problems, clearing)
-    const proposals = new ProposalCache(sw.core);
-    const manager = new StarterManager({ network: NET, params: P, contractId: bytesToId(rnd(32)), issuerId: sw.issuerId, keyDir: mkdtempSync(join(tmpdir(), 'starter-keys-')), maxStagedKeys: 1, core: sw.core, proposals, store: sw.store, platform: () => null });
-    await manager.tick();
-    const counters = new Map<string, number>();
-    const app = createApp({
-      network: 'testnet',
-      params: P,
-      issuerId: w.issuerId,
-      contractId: '2aYj4Dkix7xXBUTZFCDBjpcqqLi9Tg5oUwBgHUJBNGCU',
-      service: w.service,
-      epochs: { status: { height: 1, issuingEpochs: [E - 1, E], keyIds: {}, ready: true, problem: null } },
-      challengeTtlSec: 600,
-      counters,
-      starter: { issuerId: sw.issuerId, service: sw.service, manager, challengeTtlSec: 1800 },
-    });
-    const headers = { 'content-type': 'application/json', 'cf-connecting-ip': IP, 'x-forwarded-for': IP, 'user-agent': UA };
-    const post = (path: string, body: unknown) => app.fetch(new Request(`http://issuer${path}`, { method: 'POST', headers, body: typeof body === 'string' ? body : JSON.stringify(body) }));
-    await post('/v1/starter/challenge', {});
-    await app.fetch(new Request('http://issuer/v1/starter/info', { headers }));
-    for (const subject of [mnSubject(mn), proposalSubject(p)]) {
-      expect((await post('/v1/starter/token', (await starterRequest(sw, subject)).body)).status).toBe(200);
-      expect((await post('/v1/starter/token', (await starterRequest(sw, subject)).body)).status).toBe(409); // duplicate
-      expect((await post('/v1/starter/token', (await starterRequest(sw, subject, { signWith: votingKey().priv })).body)).status).toBe(403); // wrong key
-    }
-    expect((await post('/v1/starter/token', '{junk')).status).toBe(400);
-    expect((await post('/v1/starter/token', { request: 'govhub-starter-req:v1|testnet|' + mn.proTxHash, signature: 'x', blindedMsg: 'y' })).status).toBe(400);
-    expect((await post('/v1/starter/token', { request: 'x'.repeat(5000) })).status).toBe(413);
-    log.info('requests in the last hour', { ...Object.fromEntries(counters), starterStatus: manager.status });
-    sw.store.close();
-
-    const all = out.join('\n');
-    const [txid, index] = mn.now!.collateral.split(':');
-    for (const needle of [mn.proTxHash, txid!, `${txid}:${index}`, p.govHash, p.paymentAddress, IP, UA]) expect(all, needle).not.toContain(needle);
-    expect(all).toContain('requests in the last hour');
-    expect(counters.get('starter-issued')).toBe(2);
-
-    // the store: exactly the dedup keys and the retry columns, no time, IP or client columns, no WAL or journal left behind
-    expect(existsSync(`${path}-wal`)).toBe(false);
-    expect(existsSync(`${path}-journal`)).toBe(false);
-    const db = new Database(path, { readonly: true });
-    expect(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all()).toEqual([{ name: 'starters' }]);
-    expect((db.prepare('PRAGMA table_info(starters)').all() as Array<{ name: string }>).map((c) => c.name)).toEqual(['kind', 'subject', 'collateral', 'epoch', 'blinded_hash']);
-    db.close();
-
-    // the per-subject limiter holds the subjects for the current minute only
-    const memory = () => JSON.stringify(sw.service.debugSnapshot());
-    expect(memory()).toContain(p.govHash);
-    vi.setSystemTime(Date.now() + 60_000);
-    sw.service.prune();
-    expect(memory()).not.toContain(p.govHash);
-    expect(memory()).not.toContain(mn.proTxHash);
-    expect(sw.service.debugSnapshot().perSubject).toEqual([]);
   });
 });

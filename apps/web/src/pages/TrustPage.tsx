@@ -27,7 +27,7 @@ const POINTS: Array<[string, string]> = [
   ],
   [
     '“MN · vouched by X” is X’s word.',
-    'A badge issuer could vouch for someone who runs no masternode. You choose which issuers to trust in Settings. Blind signatures stop an issuer from linking a badge to a masternode, unless it matches them by timing (Standard mode). Starter credit works the same way: the faucet doesn’t learn which masternode or proposal it pays for, but the team runs both sides, so redeeming at once, or from the same IP, still lets them match the two.',
+    'A badge issuer could vouch for someone who runs no masternode. You choose which issuers to trust in Settings. Blind signatures stop an issuer from linking a badge to a masternode, unless it matches them by timing (Standard mode).',
   ],
   [
     'Moderation hides, it doesn’t delete.',
