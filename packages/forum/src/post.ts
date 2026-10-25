@@ -15,6 +15,13 @@ export class PostTooLargeError extends Error {
   }
 }
 
+/** A body readers would refuse: it inflates past POST_MAX_INFLATED, however well it compresses. */
+export class PostTooLongError extends Error {
+  constructor(readonly bytes: number) {
+    super(`the body is ${bytes.toLocaleString('en-US')} bytes; readers show at most ${POST_MAX_INFLATED.toLocaleString('en-US')} bytes (256 KiB)`);
+  }
+}
+
 async function pipe(input: Uint8Array, stream: CompressionStream | DecompressionStream, max = Infinity): Promise<Uint8Array> {
   const reader = new Blob([input as BlobPart]).stream().pipeThrough(stream).getReader();
   const parts: Uint8Array[] = [];
@@ -50,8 +57,11 @@ export function splitChunks(compressed: Uint8Array): Uint8Array[] {
   return out;
 }
 
+/** Throws PostTooLongError for a body readers would refuse to inflate, PostTooLargeError past 3 chunks. */
 export async function packPostBody(markdown: string): Promise<Uint8Array[]> {
-  return splitChunks(await deflate(new TextEncoder().encode(markdown)));
+  const bytes = new TextEncoder().encode(markdown);
+  if (bytes.length > POST_MAX_INFLATED) throw new PostTooLongError(bytes.length);
+  return splitChunks(await deflate(bytes));
 }
 
 /** Joins and inflates b0..b2. Throws on a malformed stream, a chunk layout no writer produces, or a bomb. */
