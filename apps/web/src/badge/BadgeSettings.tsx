@@ -46,15 +46,18 @@ function useAudits(): Audits {
   return state;
 }
 
-/** The reader's problem text for an epoch with no issuerKey at all (anything else means a key that is there but not usable: revoked, malformed, rule-breaking). */
-const MISSING = 'no issuerKey for this epoch';
+/**
+ * A key that is there but must not be trusted (revoked, or not the issuer's / not well-formed), as opposed to one that is missing or
+ * not usable for this period yet (for example published after the reader's deadline): those read as "not issuing yet".
+ */
+const INVALID_KEY = /revoked|mismatch|not the trusted issuer|variant|keyId|spki|malformed|revocation/i;
 
 /** Whether the issuer issues badges now, in plain words; a revoked or invalid key is named, never hidden. */
 export function issuingText(av: KeyAvailability, p: EpochParams): string {
   const std = av.modes.find((m) => m.mode === 'standard');
   const priv = av.modes.find((m) => m.mode === 'private');
   if (std?.ok) return `Issuing now (epoch ${std.epoch})`;
-  if (std?.problem && std.problem !== MISSING) return `Not issuing: its key for epoch ${std.epoch} is not valid (${std.problem})`;
+  if (std?.problem && INVALID_KEY.test(std.problem)) return `Not issuing: its key for epoch ${std.epoch} is not valid (${std.problem})`;
   const privNow = priv?.ok ? '; Private requests work now' : '';
   if (av.firstKeyEpoch !== null) return `Not issuing yet: Standard starts at ${eta(epochStart(p, av.firstKeyEpoch), av.height)}${privNow}`;
   return 'Not issuing yet: its key for this period is not on Platform yet';

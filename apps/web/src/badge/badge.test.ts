@@ -605,6 +605,9 @@ describe('QA fixes (D-044 .. D-047)', () => {
     expect(issuingText(av, P)).toBe(`Not issuing yet: Standard starts at block ${epochStart(P, E).toLocaleString('en-US')} (in about ${Math.round(((epochStart(P, E) - h) * 157.5) / 3600)} hours); Private requests work now`);
     // a key that is there but unusable is named, not passed off as "not published yet"
     expect(issuingText({ ...av, modes: [{ mode: 'standard', epoch: E - 1, ok: false, problem: 'the issuer revoked this key' }] }, P)).toBe(`Not issuing: its key for epoch ${E - 1} is not valid (the issuer revoked this key)`);
+    // a key for this period that the reader's timing rule does not accept yet reads as "not issuing yet", as on testnet for epoch 2741
+    const late = { ...av, modes: [{ mode: 'standard' as const, epoch: E - 1, ok: false, problem: 'issuerKey published too late (must precede S(E-1))' }] };
+    expect(issuingText(late, P)).toMatch(/^Not issuing yet: Standard starts at block /);
     // the unified flow: Standard is scheduled for epoch E, from its first block
     const { readiness } = await import('./flow.ts');
     expect(readiness(av, 'standard', P)).toEqual({ kind: 'later', epoch: E, from: epochStart(P, E) });
