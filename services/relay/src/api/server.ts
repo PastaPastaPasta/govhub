@@ -14,7 +14,7 @@ export const MAX_BODY_BYTES = 4096;
 /** Allowed methods per path; null = not a relay path. (GET also answers HEAD, hono does that.) */
 function allowedMethods(path: string): string[] | null {
   if (path === '/v1/votes' || path === '/v1/votes/cancel' || path === '/v1/proposals/submit') return ['POST', 'OPTIONS'];
-  if (path === '/v1/status' || /^\/v1\/votes\/[^/]+$/.test(path) || /^\/v1\/votes\/by-hash\/[^/]+$/.test(path)) return ['GET', 'HEAD', 'OPTIONS'];
+  if (path === '/v1/status' || /^\/v1\/votes\/[^/]+$/.test(path)) return ['GET', 'HEAD', 'OPTIONS'];
   return null;
 }
 
@@ -85,9 +85,6 @@ export function createApp(relay: Relay): Hono {
   });
 
   app.post('/v1/votes/cancel', ipGuard, sizeGuard, async (c) => c.json(await relay.cancelVote(await readJson(c))));
-
-  // By hash: the IP limit applies (a vote hash can be computed by anyone who guesses a vote, so lookups are not free)
-  app.get('/v1/votes/by-hash/:voteHash', ipGuard, (c) => c.json(relay.getVoteByHash(c.req.param('voteHash'))));
 
   app.get('/v1/votes/:id', (c) => c.json(relay.getVote(c.req.param('id'))));
 
