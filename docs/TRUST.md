@@ -33,8 +33,10 @@ drawer and from `/about/verification`.
 - Its collateral burns at least 1 DASH to that hash. The collateral sits in a final (ChainLocked) block of a chain the browser
   verified itself, with at least 6 confirmations and at the published height.
 - The masternode list, and from it the funding threshold, is proven by a block's coinbase in that chain.
-- Every signed vote behind a tally recovers to the voting key that the proven list assigns to that masternode. The recount equals
-  the published tally field for field, including the `voteSetHash`.
+- The vote count. A vote is counted only when its masternode is in the proven list, its registration (ProRegTx) proves the
+  vote's collateral and the masternode's type, and its signature recovers to the voting key the proven list assigns. Any other
+  vote is shown as excluded, with a count and a reason, and stops "Verified". The count equals the published tally field for
+  field, including the `voteSetHash`.
 - Whether the proposal passes, its place in the next budget (a recount and ranking of every listed proposal), and the payments it
   received, read from superblock coinbases of the verified chain.
 - The "Verified" badge appears only when all five checks are proven (section 4).
@@ -46,7 +48,7 @@ drawer and from `/about/verification`.
   not compared (section 6.1).
 - **Everything read from Dash Platform** rests on quorum public keys that evo-sdk downloads from Dash's quorum list service
   (`quorums.<network>.networks.dash.org`). This covers comments, profiles, block lists, badges, ownership claims, balances,
-  and proposal, tally and cycle documents. The app does not prove those keys against its own verified chain. The service is
+  and the proposal, packed tally set, tally and cycle documents. The app does not prove those keys against its own verified chain. The service is
   not replaceable in Settings. This is the largest gap between the "can't lie" goal and the code (section 6.6).
 - **Badge issuers** vouch for "MN owner" chips on their own word (section 6.3).
 - **Relays** decide when, and whether, your vote reaches the network (section 6.2).
@@ -54,16 +56,17 @@ drawer and from `/about/verification`.
 
 Surprising findings, all detailed below:
 
-- **The default profile anchors on proof of work, not ChainLocks.** The default is Dev: mainnet Core data on testnet
-  Platform. Its only quorum-proof source, the Dev bridge, runs Dash Core 23.1.8, which has no `getquorumproofchain` and answers
-  501. Chain facts there rest on the header checkpoint and mainnet proof of work, which still counts as "Verified"
-  (`apps/web/src/config/registry.ts:167`).
+- **The default profile rests on one proof source.** The default is Dev: mainnet Core data on testnet Platform. Its only
+  quorum-proof source is the Dev bridge, which runs Dash Core 24.0.0-rc.4 and serves `/v1/quorum-proof`, so chain facts rest on
+  ChainLocks proven from the quorum checkpoint. If that bridge can't serve a proof (it is unreachable, or a Core without
+  `getquorumproofchain` answers 501), chain facts fall back to the header checkpoint and mainnet proof of work, which still counts
+  as "Verified" (`apps/web/src/config/registry.ts:167`; section 3).
 - **The Dev bridge identity also runs the default block list.** Both deployed profiles use the Dev bridge identity as their
   moderation identity. On Dev it also owns the gov contract (`registry.ts:104,115,165`).
-- **"Confirmed" for your own vote means the bridge's vote set contains your exact signed vote.** A relay and a bridge run by
-  the same operator could show "confirmed" for a vote that never reached Dash Core (section 6.2).
-- **Two DAPI nodes can fail a real proposal.** When every node asked (at least two) answers NOT_FOUND for the collateral
-  transaction, the proposal is marked "Failed verification", in the lists and on its own page (section 6.5).
+- **"Confirmed" for your own vote is the bridge's report.** It means the first bridge's vote set contains your exact signed
+  vote, and the app says so ("the bridge reports the network counted it"). It names any other bridge or relay you configured
+  that agrees. A relay and a bridge run by the same operator could still show it for a vote that never reached Dash Core
+  (section 6.2).
 - **Proposal lists use the bridge's numbers.** List cards may show the bridge's live tally instead of the Platform one.
   Their "in next budget" flag is the tally's own field, not a recount. Only the proposal page replaces these with proven values
   (section 5).
@@ -144,7 +147,7 @@ forging past these floors at about two real blocks of work per hour since the pi
 - **Mainnet:** proof of work is accepted as secure. Facts proven this way can reach "Verified".
 - **Testnet:** difficulty is too low to stop a forger (`POW_SECURE`, `headerchain.ts:41`). The chain is flagged `weak`, and
   every fact that rests on it is shown as "reported", never "Verified" (`packages/dapi/src/anchor.ts:283`;
-  `apps/web/src/verify/aggregate.ts:125,152,210,254`).
+  `apps/web/src/verify/aggregate.ts:127,154,216,259`).
 
 The app uses this path whenever no quorum-proof source returns a valid, fresh proof and no saved ChainLock is fresh enough
 (section 3).
@@ -233,39 +236,59 @@ quorums from that proven SML.
 | Profile | Core / Platform | Quorum-proof sources | What chain facts rest on today |
 |---|---|---|---|
 | Testnet | testnet / testnet | testnet bridge, then `quorums.testnet.networks.dash.org/proofs` | ChainLocks from the quorum checkpoint. If both sources fail: testnet proof of work, labelled "not secure". |
-| Dev (default, `registry.ts:191`) | mainnet / testnet | Dev bridge only. Its dashd 23.1.8 answers 501 (`registry.ts:167`). The mainnet quorum list server was removed: it answered 403 and sent no CORS headers (`registry.ts:91-98`). | Mainnet proof of work from the header checkpoint. This counts as "Verified". |
+| Dev (default, `registry.ts:191`) | mainnet / testnet | Dev bridge only. Its dashd runs 24.0.0-rc.4 and serves quorum proofs (`registry.ts:167`). The mainnet quorum list server was removed: it answered 403 and sent no CORS headers (`registry.ts:91-98`). | ChainLocks from the quorum checkpoint. If the bridge can't serve a proof (unreachable, or a Core without `getquorumproofchain` answering 501): mainnet proof of work from the header checkpoint, which counts as "Verified". |
 | Mainnet | mainnet / mainnet | none (not deployed, `registry.ts:172-185`) | n/a |
 
 ## 4. What the "Verified" badge requires
 
-One badge per proposal, computed by `aggregate()` in `apps/web/src/verify/aggregate.ts:67-86`. "Verified" needs each of the
-five `REQUIRED` checks (`aggregate.ts:12`) present exactly once, and each `proven`. The precedence is: any failure, then
+One badge per proposal, computed by `aggregate()` in `apps/web/src/verify/aggregate.ts:68-87`. "Verified" needs each of the
+five `REQUIRED` checks (`aggregate.ts:13`) present exactly once, and each `proven`. The precedence is: any failure, then
 anything still running, then any error, then anything only reported. Fixture data is always "Demo data". The five checks:
 
-1. **Proposal text** (`contentComponent`, `aggregate.ts:91`). The governance hash recomputes from
+1. **Proposal text** (`contentComponent`, `aggregate.ts:92`). The governance hash recomputes from
    `(parentHash, revision, time, dataHex)`, and every displayed field equals the one parsed from `dataHex`
-   (`checkContent`, `apps/web/src/verify/collateral.ts:105-135`). This runs synchronously, with no network.
-2. **Submission fee** (`collateralComponent`, `aggregate.ts:103-143`). All of these are needed:
+   (`checkContent`, `apps/web/src/verify/collateral.ts:111-141`). This runs synchronously, with no network. Slim `proposal`
+   documents (mainnet `gov.json`) store only the hashed fields plus name and end date; the URL, payment address, amount and
+   start are parsed from `dataHex` (`docToProposal`, `apps/web/src/data/platform.ts`).
+2. **Submission fee** (`collateralComponent`, `aggregate.ts:104-145`). All of these are needed:
    - steps `hash`, `fields`, `tx`, `block`, `collateral`, `confirmations`, `chainlock` and `height` are all `ok`;
    - the chain steps rest on the anchored chain (basis `verified`);
    - the chain is not `weak`;
    - no second-node cross-check was needed;
    - the chain height equals the published `collateralHeight`.
 
-   The per-transaction ChainLock fallback is never enough on its own (`aggregate.ts:123-124`). That fallback is a ChainLock
+   The per-transaction ChainLock fallback is never enough on its own (`aggregate.ts:125-126`). That fallback is a ChainLock
    checked against a masternode list that two of three DAPI nodes agree on.
-3. **Chain and masternode list** (`chainComponent`, `aggregate.ts:147-155`). The anchored chain is not `weak`, and the funding
+
+   "Failed" is kept for cryptographic contradictions (`verdictFailure`, `collateral.ts:100-106`): the published fields against
+   the governance hash, the real collateral (bytes that hash to its txid) not burning at least 1 DASH to that hash, or a
+   collateral height the verified chain contradicts. When every DAPI node asked (two or more) answers NOT_FOUND, the check is
+   "Couldn't verify (the nodes didn't return the fee transaction)": nodes can't prove that a transaction doesn't exist
+   (`collateral.ts:196-202`; `aggregate.ts:114`).
+3. **Chain and masternode list** (`chainComponent`, `aggregate.ts:149-157`). The anchored chain is not `weak`, and the funding
    threshold is `verified`. "Verified" here means every SML entry was read, and the type of every valid version-1 entry (which
    the SML hash does not cover) is proven from its ProRegTx (`threshold`, `apps/web/src/verify/chain.ts`).
-4. **Vote count** (`votesComponent`, `aggregate.ts:171-218`). All of these are needed:
-   - The shown tally is the **Platform** tally document. A bridge-only live tally is never proven (`aggregate.ts:199`).
-   - A recount of the bridge-served votes at that tally's height matches every field (`verifyVotes`, `apps/web/src/verify/votes.ts:124-233`).
-   - Each counted vote's key and type match the proven SML. Its collateral outpoint and type match the masternode's
-     hash-checked ProRegTx. No vote in the set was dropped as bad (`keysFrom === 'sml'`, `votes.ts:224`).
+4. **Vote count** (`votesComponent`, `aggregate.ts:173-223`). All of these are needed:
+   - The shown tally is the **Platform** one: the active proposal's entry in the bridge's packed `talliesSet` document, or the
+     per-proposal `tally` document (the final tally of an ended proposal, and every tally on older testnet contracts), whichever
+     is newer (`tallies`, `apps/web/src/data/repo.ts:286-321`; `docToTallySet`, `platform.ts:152`). A packed entry is a tally as of
+     its page's `asOfHeight`. A bridge-only live tally is never proven (`aggregate.ts:202`).
+   - The browser counts a vote only when its masternode is in the proven SML, the masternode's hash-checked ProRegTx proves the
+     vote's collateral outpoint and the type (weight), and the signature recovers to the voting key the **proven SML** assigns,
+     never the bridge's key (`verifyVotes`, `apps/web/src/verify/votes.ts:160-287`). Every other vote is excluded and counted by
+     reason: bad signature, an outpoint not in the bridge's list, a duplicated masternode, not in the proven list, not signed by
+     the proven key, collateral or type not proven by the ProRegTx (`PROBLEM_TEXT`, `votes.ts`).
+   - That count matches the tally in every field, including the `voteSetHash`.
+   - Nothing was excluded, and the bridge's own masternode list agrees with the proven key and type of every counted voter
+     (`keysFrom === 'sml'`, `votes.ts:276`).
    - The tally is not stale: at most 576 blocks behind the verified tip, and not superseded by a different newer live tally
-     (`aggregate.ts:166,205-208`).
-   - A recount that contradicts a tally at the same height is a "mismatch" error, never a pass (`aggregate.ts:190-197`).
-5. **Funding** (`fundingComponent`, `aggregate.ts:237-275`). The chain and vote checks must be proven. Then:
+     (`aggregate.ts:168,212-215`).
+
+   When the tally only matches with the excluded votes added back (every vote the bridge served whose signature recovers to the
+   key the bridge lists), the check is "Partly verified" and says how many votes were excluded and why (`aggregate.ts:208`). When
+   it matches neither count at the same height, it is a "mismatch" error, never a pass (`contradicts`,
+   `apps/web/src/verify/verdict.ts:19`; `aggregate.ts:193-200`).
+5. **Funding** (`fundingComponent`, `aggregate.ts:242-280`). The chain and vote checks must be proven. Then:
    - Ended proposals: the payment scan read every superblock in the payment window from the verified chain. If a payment
      could equally belong to another listed proposal (same address, same amount, its window too), the result is not proven.
    - Active proposals below the threshold: "not passing" is proven.
@@ -273,9 +296,9 @@ anything still running, then any error, then anything only reported. Fixture dat
      by Core's rules against the proven threshold and budget. A proposal whose payment depends on Core's superblock-time
      estimate is not proven. One unproven recount makes the whole order unproven (`rankRecounts`, `apps/web/src/verify/ranking.ts:55-61`).
    - Funding is also not proven when the payment history could not be fully read: superblocks unread or left for later, not
-     every listed proposal read, or a weak chain (`aggregate.ts:251-256`).
+     every listed proposal read, or a weak chain (`aggregate.ts:256-261`).
 
-The badge never reads a tally's `rank` or `inNextBudget` fields (`provenFunded`, `aggregate.ts:282-287`).
+The badge never reads a tally's `rank` or `inNextBudget` fields (`provenFunded`, `aggregate.ts:287-292`).
 
 **What "Verified" does not cover:**
 
@@ -294,26 +317,26 @@ that the content is true.
 
 | Fact shown in the UI | How it is proven | Who could lie, and what they could do | What you would see |
 |---|---|---|---|
-| Proposal text, name, URL, amount, address, dates | Governance hash recomputed; fields parsed from `dataHex` (`collateral.ts:105-135`). The collateral must burn to that hash. | Bridge (publisher), or Platform reads (6.6): a changed field breaks the hash. A rewritten proposal with a matching new hash has no collateral, so the collateral check fails. While that check is pending or inconclusive the proposal stays listed (`view.ts:102-105`). | "Failed verification"; the proposal is hidden from lists. |
+| Proposal text, name, URL, amount, address, dates | Governance hash recomputed; fields parsed from `dataHex` (`collateral.ts:111-141`). The collateral must burn to that hash. | Bridge (publisher), or Platform reads (6.6): a changed field breaks the hash. A rewritten proposal with a matching new hash needs a collateral that burns to the new hash: naming the old one fails the check (it burns to the old hash); naming one the nodes don't return is "Couldn't verify". While that check is pending or inconclusive the proposal stays listed (`view.ts:102-105`). | "Failed verification" (hidden from lists), or "Couldn't verify". |
 | The list of active and past proposals | Platform proof of the query result (`apps/web/src/data/repo.ts:232-269`). | Bridge: can omit, or delete its documents (`gov.json` `canBeDeleted: true`). A lying quorum service (6.6) could forge an incomplete result. | Nothing. A missing proposal is not detected. |
 | Proposals marked "not yet published on Platform" | Bridge `/v1/proposals`, labelled reported (`repo.ts:256-259`). Content is checked like any other proposal. | Bridge: can't fake one without a real collateral. | Reported mark; the same content and collateral checks. |
-| Proposal collateral: fee, block, confirmations, height | Tx bytes hash to the txid; it burns at least 1 DASH to the hash; merkle-proven into a block of the anchored chain; at least 6 confirmations from the verified tip; ChainLock verified (`apps/web/src/verify/collateral.ts`; `worker.ts:114-154`). | DAPI nodes: can withhold or answer slowly, and can't forge a collateral. But if every node asked (at least two) answers NOT_FOUND, the proposal fails (`worker.ts:74-79`; `collateral.ts:196`; `aggregate.ts:110-111`). Without an anchored chain, the result is "reported". | "Couldn't verify", "Partly verified" or "Failed verification", with the reason. |
-| A proposal hidden as "failed verification" in lists | Background "light" check: a node's answer plus a second node's, no block proof (`apps/web/src/app/context.tsx:138-153`). | DAPI: two nodes answering NOT_FOUND count as "not on chain" (`worker.ts:74-79`). That hides a real proposal from lists, and the full check on its page fails the same way. Altered bytes or low confirmations from one node never hide one (`verdictFailure`, `collateral.ts:92-99`). | Hidden behind "Show N proposals that failed verification". |
+| Proposal collateral: fee, block, confirmations, height | Tx bytes hash to the txid; it burns at least 1 DASH to the hash; merkle-proven into a block of the anchored chain; at least 6 confirmations from the verified tip; ChainLock verified (`apps/web/src/verify/collateral.ts`; `worker.ts:96-136`). | DAPI nodes: can withhold or answer slowly, and can't forge a collateral. Every node asked answering NOT_FOUND is "Couldn't verify (the nodes didn't return the fee transaction)", never a failure (`collateral.ts:196-202`; `aggregate.ts:114`). Without an anchored chain, the result is "reported". | "Couldn't verify" or "Partly verified", with the reason. "Failed verification" only for a contradiction the browser proves (section 4, check 2). |
+| A proposal hidden as "failed verification" in lists | Background "light" check: a node's answer plus a second node's, no block proof (`apps/web/src/app/context.tsx:138-153`). Hidden only for a cryptographic contradiction: content against the hash, or the real collateral not burning to it (`verdictFailure`, `collateral.ts:100-106`). Results are cached per proposal (`checks.ts:88`). | Bridge (publisher): a proposal whose collateral the nodes don't return stays listed, marked "Couldn't verify". DAPI: NOT_FOUND, altered bytes or low confirmations never hide a proposal. | Hidden behind "Show N proposals that failed verification". |
 | Funding threshold and masternode count (proposal page) | Proven SML, version-1 types from ProRegTxs (`chain.ts`, `threshold`). | DAPI: can withhold. | Reported until proven. |
 | Funding threshold, budget, allocated (lists, budget header) | Bridge-published `cycle` document (Platform proof), or bridge `/v1/cycle` if Platform fails (`repo.ts:214-230`). | Bridge: can publish wrong values. The proposal page compares the budget with the proven limit ("the bridge reports ...", `apps/web/src/verify/facts.ts:100-105`). | Lists: nothing. Proposal page: a differing figure. |
 | Superblock height, voting deadline, budget limit | Consensus rules at the verified tip (`chain.ts`, `scheduleAndBudget`). Dates are estimates at 2.62 min per block. | DAPI: can withhold newer blocks, so the tip is up to an hour stale (2.4). The heights themselves are computed, not reported. | — |
-| Tally numbers on list cards | The fresher of the Platform tally (proof) and the bridge's live tally (reported) (`pickTally`, `apps/web/src/lib/view.ts:39-43`). | Bridge: it publishes both. Its Platform tally carries the "Platform proof" mark, which only shows who published it. A live tally with a higher `asOfHeight` wins (`view.ts:41`). | A provenance mark. No recount on lists. |
+| Tally numbers on list cards | The fresher of the Platform tally (proof: the packed `talliesSet` entry, or the per-proposal `tally` document) and the bridge's live tally (reported) (`pickTally`, `apps/web/src/lib/view.ts:39-43`). | Bridge: it publishes both. Its Platform tally carries the "Platform proof" mark, which only shows who published it. A live tally with a higher `asOfHeight` wins (`view.ts:41`). | A provenance mark. No recount on lists. |
 | "Passing", "in next budget" on list cards | Computed from the shown tally; uses the tally's own `inNextBudget` field (`view.ts:72`). | Bridge: sets that flag. | Nothing on lists. The proposal page shows the proven result once verified. |
-| Tally on the proposal page | Platform tally document (`docToTally`, `platform.ts:101`), recounted from signed votes (section 4, check 4). | Bridge: can withhold votes, or serve an older vote of a masternode in place of its newer one. It can't alter a signed vote. It can add a vote from a masternode it made up, or misstate a key or weight, but the check flags that. On testnet the voting keys are never proven (`worker.ts:221`). | Nothing for withholding. Otherwise a recount mismatch, or "Partly verified". |
-| The vote set ("Check the votes yourself") | Each signature recovered against the voting key; the key and type checked against the proven SML; the outpoint checked against the ProRegTx (`votes.ts:159-206`). Duplicate masternodes in the bridge's list are refused (`votes.ts:132-152`). A vote whose key or type the proven data doesn't confirm is still counted with the bridge's key, but flagged (`votes.ts:177-205`). | Bridge: can omit. | Counts of bad, unknown or unconfirmed votes. |
-| Funded / rank (proposal page) | Funding order recount (`worker.ts:229-257`; `ranking.ts`). | Bridge: can omit votes, or omit whole proposals from the ranking set (`facts.ts:112`). The result can still be "verified". | Nothing for omission. |
+| Tally on the proposal page | Platform tally: the packed `talliesSet` entry or the per-proposal `tally` document, whichever is newer (`tallies`, `repo.ts:286-321`; `docToTallySet` and `docToTally`, `platform.ts:134-157`), recounted from signed votes (section 4, check 4). | Bridge: can withhold votes, or serve an older vote of a masternode in place of its newer one. It can't alter a signed vote. A vote from a masternode it made up, or one not signed by the proven key, is excluded from the count; a tally that counts it is "Partly verified". A misstated key or type in its list is caught too. Testnet keys are proven like mainnet's on the quorum-proof path, and "not secure" only on testnet proof of work (`worker.ts:203`). | Nothing for withholding. Otherwise a recount mismatch, or "Partly verified" with the excluded votes. |
+| The vote set ("Check the votes yourself") | Each counted vote: its masternode in the proven SML, its outpoint and type proven by the ProRegTx, its signature recovered to the voting key the proven SML assigns (`verifyVotes`, `votes.ts:160-287`). Duplicate masternodes in the bridge's list are refused (`votes.ts:168-182`). Anything else is excluded, never counted. | Bridge: can omit. | "N votes excluded", by reason, and a "Counted here" column with the browser's own count. |
+| Funded / rank (proposal page) | Funding order recount (`worker.ts:211-241`; `ranking.ts`). | Bridge: can omit votes, or omit whole proposals from the ranking set (`facts.ts:112`). The result can still be "verified". | Nothing for omission. |
 | Payments made | Superblock coinbases of the verified chain (`chain.ts`, `payments`). | DAPI: can withhold blocks, which leaves "unread" superblocks. A proposal missing from Platform with the same address and amount can't be ruled out (`facts.ts:79`). | A lower bound, "not exact". |
 | Payments remaining | Estimate only (`facts.ts:93-94`). | — | Marked estimate. |
 | Best block height (header) | One synced DAPI node's word, or the bridge's (`repo.ts:301-310`). | DAPI or bridge. | Marked reported. |
 | The chain shield ("Chain verified to block N") | The anchored chain (section 3). | Proof sources and DAPI: can force the proof-of-work fallback by failing. | What it "rests on" changes; on testnet, "not secure". |
 | Your masternodes (keyring) | Voting key matched in an SML that DAPI nodes agree on: the first two identical answers win (`packages/dapi/src/agreed-sml.ts:40-66`). The collateral outpoint comes from the bridge and is proven by the ProRegTx (`apps/web/src/voting/masternodes.ts:1-6`). | Two agreeing DAPI nodes, or the bridge. | Labelled "bridge" when only the bridge says so. |
 | Your vote: held / broadcast | The relay's status answers. | Relay: can lie. | — |
-| Your vote: confirmed / counted | The first configured bridge's vote set contains a vote whose signature recovers to your key, with the same time and outcome (`KeyringContext.tsx:1326-1348`; `bridgeVerdict`, `apps/web/src/voting/pending.ts:263-275`). "Counted": a recount of that set includes it (`KeyringContext.tsx:1360-1381`). | Bridge, or a bridge and relay together: could show "confirmed" for a vote that never reached Dash Core. | Compare with your own node (the drawer gives the `dash-cli` commands). |
+| Your vote: "the bridge reports it on the network" / "counted" | The first configured bridge's vote set contains a vote whose signature recovers to your key, with the same time and outcome (`KeyringContext.tsx`; `bridgeVerdict`, `apps/web/src/voting/pending.ts`). "Counted": a recount of that set includes it. The copy says it is the bridge's report (`describeVote`, `apps/web/src/voting/status.ts`). It names agreement from other sources you configured: other bridges whose vote sets have the same signed vote (up to two are asked), and relays that report their Dash Core node lists it (`corroboration`, `status.ts:75`). | Bridge, or a bridge and relay together: could show it for a vote that never reached Dash Core. A second bridge or relay run by the same operator agrees just as easily. | With no agreeing source, "That is the bridge's word". Compare with your own node (the drawer gives the `dash-cli` commands). |
 | Proposal owner | `verifyClaims` (`packages/verify/src/claim.ts`). Methods, highest rank first: (1) the identity named in the hashed URL, accepted by its own claim; (2) a signature from the payment address; (3) a signature from a collateral input key; (4) an attestation by the hosting team. | Method 4 is the hosting team's word, and labelled so. Methods 1-3 rest on Platform proofs of `$ownerId` (6.6) plus signatures checked here. | "owner, vouched for by the hosting team" for method 4 (`apps/web/src/ui/Ownership.tsx:72`). |
 | Comment author | The document's `$ownerId` under a Platform proof. Platform only accepts documents signed by the owner's key. | 6.6. Display names are self-chosen and never trusted for identity (`apps/web/src/ui/Identity.tsx:1-3`). | — |
 | DPNS name | `dpns.usernameWithProof` (`apps/web/src/data/forum.ts:44`). | 6.6. | — |
@@ -330,8 +353,11 @@ that the content is true.
 
 **What it does.**
 
-- It reads governance objects, signed votes, blocks and ChainLocks from its Dash Core node. It publishes `proposal`, `tally`
-  and `cycle` documents into a `gov` contract it owns (`services/bridge/src/publish/publisher.ts`).
+- It reads governance objects, signed votes, blocks and ChainLocks from its Dash Core node. It publishes `proposal`, `cycle`
+  and tally documents into a `gov` contract it owns (`services/bridge/src/publish/publisher.ts`). The tallies of active proposals
+  go into one packed `talliesSet` document (paged), whose entries all carry the page's `asOfHeight`; an ended proposal gets one
+  final per-proposal `tally` document. `proposal` documents are slim on mainnet `gov.json`: the app re-derives the URL, payment
+  address, amount and start from `dataHex`.
 - Every `gov` type is `creationRestrictionMode: 1` (owner only) and `canBeDeleted: true` (`packages/contracts-v1/gov.json`).
 - It publishes a proposal only after its own checks: hash, data rules, collateral, and 6 confirmations
   (`publisher.ts:243-255`).
@@ -360,33 +386,36 @@ that the content is true.
 - **Publish a wrong tally.** The recount detects it, as long as the bridge also serves the vote set for that height. If the
   set is the bridge's own (it serves both), a wrong tally only "matches" a vote set that omits or substitutes votes. That is
   the withholding above, not a forged vote.
-- **Report a wrong masternode list.** Detected: weight and key must match the proven SML, and the outpoint the ProRegTx
-  (`votes.ts:179-203`). A masternode that has left or changed its key since the tally's height looks the same as a lie. The
-  result is then "Partly verified", not a pass (`votes.ts:180-182`).
+- **Report a wrong masternode list.** Detected: the browser counts each vote with the key and type the proven SML and the
+  ProRegTx give, never the bridge's. A bridge list that disagrees with them makes the result "Partly verified" (`listDiffers`,
+  `votes.ts:253`). A masternode that has left or changed its key since the tally's height looks the same as a lie: its vote is
+  excluded and the result is "Partly verified", not a pass (`votes.ts:230-250`).
 - **Publish wrong `cycle` figures** (budget, allocated, valid count). Lists and the budget header use them unproven. The
   proposal page proves the threshold and budget limit itself.
 - **Set `rank` and `inNextBudget` on tallies.** Lists show them. The proposal page never uses them for "Verified".
-- **Add a vote from a masternode it made up, or misstate a key or type.** The vote is still counted with the bridge's key, but
-  the check notes it, and the result can't pass (`votes.ts:177-205`). On testnet, where voting keys are never proven, it only
-  drops the result to "Partly verified" as testnet always is (`worker.ts:221`).
+- **Add a vote from a masternode it made up.** The vote is excluded from the count, shown as "1 vote excluded (masternode not
+  in the proven masternode list)", and the result can't pass (`votes.ts:232-235`). A tally that counts it is "Partly verified",
+  never verified. Its made-up registration is never looked up, so it can't make the recount fail either (`proRegFor`,
+  `worker.ts:84-97`). The same holds on testnet: voting keys there are proven from the SML like mainnet's (section 8, item 12).
 - **Make "confirmed" appear for your vote** (6.2).
 
 **What it can't do:**
 
 - Alter a proposal or invent one without a real collateral.
 - Forge a vote signature.
-- Give a vote more weight than its masternode type allows, or count a masternode twice, without the check flagging it.
-  Duplicates are refused.
+- Give a vote more weight than its masternode type allows, or count a masternode twice: the weight is the proven type's, and
+  duplicates are refused.
 - Make a wrong tally pass the recount while serving the honest vote set for that height.
 
-**Failover, not comparison.** Settings may list several bridges, but no two are ever compared or merged:
+**Failover, not comparison.** Settings may list several bridges, but their data is never compared or merged:
 
 - The page's reads (proposals, live tallies, cycle) use the first bridge whose status checks out, and move on to the next if
   a call fails (`firstBridge`, `repo.ts:182-193`).
 - The verification worker uses one bridge: the first one whose status checked out, fixed for the session, or bridge 0 before
   any status check (`bridgeDescriptor`, `repo.ts:326-330`). It does not fail over.
 - The keyring (your masternodes, vote confirmation) always uses the first configured bridge, with no status check and no
-  failover (`KeyringContext.tsx:323`; `VotePanel.tsx:416`).
+  failover (`KeyringContext.tsx:325`; `VotePanel.tsx:416`). The one exception: once the first bridge reports your vote, up to
+  two other configured bridges are asked whether their vote sets have it too, and the status names those that agree (6.2).
 
 To catch omission, compare by hand: put another bridge first in Settings, or run the drawer's `dash-cli` commands against
 your own node. PLAN.md's "multiple bridges" defence against omission is not built.
@@ -424,11 +453,16 @@ your own node. PLAN.md's "multiple bridges" defence against omission is not buil
   (`pickRebroadcastRelay`, `pending.ts:286-289`). With one relay, it is the same relay.
 - **Your own copy.** The browser keeps the signed votes, encrypted under the keyring (`pending.ts:1-12`).
 
-**Confirmation rests on the bridge.**
+**Confirmation rests on the bridge, and says so.**
 
-- "Confirmed" means the bridge's vote set contains a vote, signature-checked here, with the same time and outcome as yours.
-- "Counted" means a recount of that set includes it.
-- The relay's own status never sets "confirmed" (`status.ts:233`).
+- "The bridge reports it on the network" (internally `confirmed`) means the first bridge's vote set contains a vote,
+  signature-checked here, with the same time and outcome as yours.
+- "The bridge reports the network counted it" means a recount of that set includes it.
+- The relay's own status never sets these (`applyRelayState`, `status.ts:246`).
+- The status line names any other source that agrees (`corroboration`, `apps/web/src/voting/status.ts:75`): another configured
+  bridge whose vote set has the same signed vote (checked here; up to two are asked, `KeyringContext.tsx`), or a relay whose
+  status is `confirmed`, which means the relay saw the vote in its own Dash Core node's `gobject getcurrentvotes`. With none,
+  it says "That is the bridge's word". Nothing new is queried beyond the bridges and relays you configured.
 
 The bridge used is always the first configured one (6.1). This catches a lying relay only when that bridge is independent of
 the relay. The relay is a compose profile of the bridge's own stack, sharing its dashd (`deploy/README.md` section 11.4), and the
@@ -548,14 +582,13 @@ The node list comes from the quorum service's `/masternodes`, or from your own l
   - The best height shown in the header.
   - Confirmations and ChainLock flags on the fallback path (always labelled reported).
   - InstantSend locks, which are parsed but never verified (`packages/dapi/README.md`, "Trust notes").
-  - Whether a transaction exists: when every node asked (at least two) answers NOT_FOUND, a real proposal is marked "Failed
-    verification", in the lists and on its page (section 5).
+  - Whether a transaction exists. Nodes answering NOT_FOUND can make a real proposal's fee check "Couldn't verify", in the
+    lists and on its page, but never "Failed verification" and never hidden (section 4, check 2).
 - **See your funding address.** Deposit watching sends a bloom filter for it (`packages/auth/src/funding.ts`).
 
 **What nodes can't do:** forge a header chain past the pinned checkpoint, a masternode list that hashes to a proven
-coinbase, or a transaction that hashes to the requested txid. (Denying that a transaction exists is a different matter: see
-above.) On testnet's proof-of-work path they can forge a chain, which is
-why it is labelled "not secure".
+coinbase, or a transaction that hashes to the requested txid. (Denying that a transaction exists only gets "Couldn't verify":
+see above.) On testnet's proof-of-work path they can forge a chain, which is why it is labelled "not secure".
 
 **Agreement facts.** The keyring's "your masternodes" lookup uses an SML that the first two agreeing nodes return, not the
 anchored one (`apps/web/src/voting/masternodes.ts:3-6`). So does the collateral fallback ChainLock. Neither ever counts toward
@@ -683,9 +716,19 @@ privacy").
   - The per-IP rate limiter keys on an HMAC with a per-process salt, in memory only (`services/relay/src/ratelimit.ts:12-31`).
   - `services/relay/test/privacy.test.ts` checks that the SQLite files hold no trace of the client address.
   - Held votes stay until released, so while held the relay database does link a masternode's planned vote to its release time.
+- **Bridge.** `services/bridge/test/logging.test.ts` drives every API endpoint and error path (404, 400, 405, 413, 429, a
+  Core failure, a failing archive) at the most verbose log level, with a distinctive client IP, user agent and requested
+  govHash and height. It fails if any of them reaches stdout or stderr, if a log line pairs a govHash with an identity or a
+  client, or if the quorum-proof rate limiter holds the IP in the clear (it keys on a salted HMAC, in memory:
+  `services/bridge/src/api/quorumproof.ts:132`). The API's error handler logs the route pattern, never the requested path
+  (`services/bridge/src/api/server.ts:126`).
 - **Tunnel gateways.** When two stacks share one tunnel, a Caddy gateway sits in front of the guest's bridge, relay or issuer.
   Each gateway writes no access log and discards Caddy's default logger (`deploy/caddy/tunnel-gateway-*.Caddyfile`).
   `.github/workflows/deploy-lint.yml` fails CI otherwise. In a single stack, cloudflared reaches the services directly.
+- **Public Caddy proxy** (`deploy/caddy/Caddyfile`, the alternative to the tunnel). No access log, and Caddy's default logger
+  is discarded, like the gateways. One more logger writes only certificate-management namespaces (ACME obtain and renew,
+  certificate cache maintenance) to stderr, so a failing certificate stays visible; those carry host names, not client
+  addresses. deploy-lint fails CI on an access log, a default logger that is not discarded, or any other namespace.
 - **cloudflared** runs with `--loglevel fatal` (`deploy/docker-compose.yml`).
 - **Browser requests** to the bridge, relays, issuers, price feed and proof sources omit credentials and the referrer
   (`credentials: 'omit'`, `referrerPolicy: 'no-referrer'`). DAPI requests and the node-list fetch do not set these options
@@ -694,11 +737,6 @@ privacy").
 
 **Not enforced:**
 
-- **The bridge.** Its logger states no IP rule, and it has no privacy test. Its quorum-proof rate limiter keys on a salted
-  HMAC of the client IP, in memory (`services/bridge/src/api/quorumproof.ts:132`). `clientip.ts:2` states the IP is never
-  stored or logged. The API logs only on error paths (`services/bridge/src/api/server.ts:126`).
-- **The public Caddy proxy profile** (`deploy/caddy/Caddyfile`, the alternative to the tunnel) has no explicit log discard.
-  The lint checks its syntax, not its logging.
 - **Docker** keeps json-file logs of every service (20 MB x 5).
 - **Production settings** (Cloudflare Logpush, Web Analytics, edge logs, host snapshots). These are outside the code and not
   verified by the app.
@@ -711,15 +749,18 @@ privacy").
 3. **Proof-of-work fallback.**
    - When no quorum-proof source answers, mainnet chain facts rest on the header checkpoint and proof of work (2.3), and still
      show "Verified".
-   - Today this is the default Dev profile's normal state (section 3).
+   - The default Dev profile has one proof source, the Dev bridge (Dash Core 24.0.0-rc.4). If it can't serve a proof, Dev falls
+     back (section 3).
    - On testnet the fallback is labelled "not secure".
    - The chain shield's "Rests on" line says which root was used. The badge itself does not.
 4. **"Unverified" facts are labelled, not hidden.**
    - Reported values (bridge live tallies, best height, USD price, node-reported confirmations) carry a "reported" mark.
    - Platform-proven values carry a "Platform proof" mark. That mark means "this owner published it", not "it is true" (6.6).
    - Lists and the budget header show bridge-published figures with no recount (section 5).
-5. **NOT_FOUND counts as proof of absence.** If every DAPI node asked (at least two) answers NOT_FOUND for a collateral, a
-   real proposal is marked "Failed verification" (6.5). It stays reachable behind the toggle.
+5. **A fee transaction the nodes don't return is only "Couldn't verify".** Nodes can't prove that a transaction doesn't exist,
+   so a proposal whose collateral every node asked answers NOT_FOUND for stays listed, marked "Couldn't verify" (6.5). A
+   publisher can therefore list a proposal with no real collateral; it never shows as verified, and the bridge's own publisher
+   checks the collateral before publishing (6.1).
 6. **Tab sharing over BroadcastChannel.**
    - The sign-in is passed between open tabs of the same origin, in memory: a seed's entropy, or the sign-in key
      (`apps/web/src/session/tabShare.ts`, PR #21).
@@ -727,14 +768,27 @@ privacy").
      for your identity key.
    - Sharing is turned off when the app is served from a sub-path, such as a shared GitHub Pages origin.
    - The masternode keyring and passkey outputs stay in their own tab.
-7. **The "confirmed" vote status rests on the bridge** (6.2).
+7. **The "confirmed" vote status rests on the bridge,** and the status says so. Other bridges and relays you configured are named
+   when they agree; a second source run by the same operator is no more independent (6.2).
 8. **Freshness of Platform reads is not checked** (6.6). Freshness of Core facts depends on the local clock (2.4).
 9. **Checkpoint trust includes retired quorums** (2.2). Only the final ChainLock's quorum selection is checked.
 10. **InstantSend locks are never verified** (`packages/dapi/README.md`). Funding flows use them for speed. Platform validates
     the asset-lock proof itself when it accepts the identity.
 11. **No build integrity** (2.1).
-12. **The SML used for vote keys is the current one,** not the one at the tally's height. A masternode that changed its key or
-    left since then makes the result "Partly verified" (`votes.ts:180-182`).
+12. **The SML used for vote keys is the current one,** not the one at the tally's height.
+    - A masternode that changed its key or left since then has its vote excluded from the count, and the result is "Partly
+      verified" (`votes.ts:230-250`). (Core drops such a masternode's votes too, once its list changes, so a live tally is
+      unaffected; an older Platform tally, up to 576 blocks behind, may still count them.)
+    - The list at the tally's height can't be proven today: DAPI streams only the tip's list, and the bridge's `/v1/mnlist`
+      lacks the entry fields (confirmed hash, operator key, addresses) needed to hash a list against that block's coinbase.
+    - A masternode registered after the tally's height, and in the list now, is counted if the bridge serves its vote in the
+      older set.
+    - **Testnet voting keys are proven like mainnet's.** The SML entry hash covers `keyIDVoting` (`smlEntryBytes`,
+      `packages/dapi/src/smlproof.ts:154`), and testnet votes are checked with testnet's own signature scheme: Core verifies
+      the binary `GetSignatureHash()` there, not the "DarkCoin Signed Message" string (`voteSchemeFor`,
+      `packages/verify/src/vote.ts:36`; tested on votes signed by Dash Core, `packages/verify/test/testnet-votes.test.ts`). The
+      keys are unproven only when the chain rests on testnet proof of work, which marks every chain fact "not secure"
+      (`worker.ts:203`). On the quorum-proof path a testnet proposal reaches "Verified" with every voter's key proven.
 13. **The chain shield's wording.** It says Platform reads are checked "against the quorum signature"
     (`apps/web/src/ui/trust/ChainShield.tsx:133`), but not that the quorum keys come from the quorum service (6.6).
 
@@ -742,9 +796,6 @@ privacy").
 
 This work is in progress and not on `main`. Everything above describes `main`.
 
-- **`pre-mainnet-cost-pass`:** the bridge publishes one packed `talliesSet` document instead of one `tally` document per
-  proposal, and proposals get slimmer. The trust model for tallies stays the same: a bridge-published record, checked by
-  recount. The rows above that cite `docToTally` and the `tally` type will change shape.
 - **`starter-tokens`:** blind starter tokens for masternode and proposal owners. Once merged, a faucet could fund an identity
   without learning which one, which removes the link in 6.4. It could still refuse.
 - **`verify-cache-reuse`:** a pinned table of block-hash checkpoints, so deep proposal checks don't download every header. That

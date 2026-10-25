@@ -7,15 +7,15 @@ export const TRUST_DOC_URL = 'https://github.com/PastaPastaPasta/govhub/blob/mai
 const POINTS: Array<[string, string]> = [
   [
     'Proposals can’t be altered.',
-    'Your browser recomputes each proposal’s fingerprint from its text and finds the fee on the Dash chain that names it. A changed name, amount, address or date fails the check.',
+    'Your browser recomputes each proposal’s fingerprint from its text and finds the fee on the Dash chain that names it. A changed name, amount, address or date fails the check. If the nodes don’t return the fee transaction, the proposal shows “Couldn’t verify”, not “Failed”: nodes can’t prove a transaction doesn’t exist.',
   ],
   [
     'Votes can’t be forged, but they can be left out.',
-    'Every vote is signed by a masternode’s voting key and recounted in your browser. A server can’t change a signed vote, and a vote it can’t tie to a real masternode is flagged. But it can leave votes or whole proposals out, or show an older vote instead of a newer one, and nothing here detects that. Compare with another bridge or your own Dash Core node.',
+    'Every vote is signed by a masternode’s voting key and recounted in your browser. Only votes from masternodes in the masternode list your browser proved, signed with the voting key that list gives them, are counted; any other vote is shown as excluded, with the reason. A server can’t change a signed vote. But it can leave votes or whole proposals out, or show an older vote instead of a newer one, and nothing here detects that. Compare with another bridge or your own Dash Core node.',
   ],
   [
     'Your vote can be delayed, not changed.',
-    'A relay holds your signed vote until it sends it. It can hold it back or drop it, and it sees your IP address, the time and how you voted, but it can’t change the vote. “Confirmed” means the bridge shows your exact signed vote; check your own node if it matters.',
+    'A relay holds your signed vote until it sends it. It can hold it back or drop it, and it sees your IP address, the time and how you voted, but it can’t change the vote. Once sent, the status says what the bridge reports (“the bridge reports the network counted it”), and names any other bridge or relay you configured that agrees. Check your own node if it matters.',
   ],
   [
     'The chain is checked from checkpoints built into this app.',
