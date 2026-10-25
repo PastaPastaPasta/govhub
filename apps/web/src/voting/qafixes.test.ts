@@ -8,10 +8,10 @@ import type { BridgeMasternode } from '../data/bridge.ts';
 import { assertCanWrite, KEYRING_WRITE_CREDITS, topUpFromError, TopUpError } from './funds.ts';
 import { castKeys, keyCopy, KeyringLock } from './gate.ts';
 import { clearStash, stashPasskeyUnlock, takeStash } from './stash.ts';
-import { keyRole, matchMasternodes, parseVotingKey, PROTX_FETCH, proveCollaterals, type OwnedMasternode } from './masternodes.ts';
+import { keyRole, matchMasternodes, parseVotingKey, PROTX_FETCH, proveCollaterals, votingAddressOf, votingKeyId, ZeroedKeyError, type OwnedMasternode } from './masternodes.ts';
 import { isOpen, isTracked, loadWatchedSealed, maybeCounts, mergeWatched, needsRebroadcast, WITHDRAWN_WATCH_S, pendingBackup, saveWatchedSealed, toPending, fromPending, type WatchedVote } from './pending.ts';
 import { mnId, offlineSigningRequest, offlineVoteTime, signPlanned, voteFields, voterawCommand } from './plan.ts';
-import { parseRelayState, RelayError, type RelayVoteState } from './relay.ts';
+import { cancelSignature, parseRelayState, RelayError, type RelayVoteState } from './relay.ts';
 import type { RelayPort } from './sim.ts';
 import { applyRelayState, describeVote, everLeft, relaySummary, VOTE_NOW_DELAY_TEXT } from './status.ts';
 import { withdrawVote, type WithdrawDeps } from './withdraw.ts';
@@ -417,5 +417,17 @@ describe('D-070 / D-071: what "Vote now" says', () => {
     expect(relaySummary([R1], {}).text).toBe('Signed in your browser and sent through relay-one.example.');
     expect(VOTE_NOW_DELAY_TEXT).not.toMatch(/minute or two/);
     expect(VOTE_NOW_DELAY_TEXT).toMatch(/few minutes/);
+  });
+});
+
+describe('a wiped voting key', () => {
+  it('is refused by every helper that takes a private key, with a typed error (not noble deep inside)', () => {
+    const wiped = new Uint8Array(32);
+    expect(() => votingKeyId(wiped, true)).toThrow(ZeroedKeyError);
+    expect(() => votingAddressOf(wiped, true, 'mainnet')).toThrow(ZeroedKeyError);
+    expect(() => signPlanned({ mn, govHash: gov, outcome: 1, time: NOW, releaseAt: NOW, notes: [] }, wiped, true, 'testnet')).toThrow(ZeroedKeyError);
+    expect(() => cancelSignature(wiped, true, 'testnet', 'dd'.repeat(32))).toThrow(ZeroedKeyError);
+    // a live key still works
+    expect(votingKeyId(priv, true)).toMatch(/^[0-9a-f]{40}$/);
   });
 });

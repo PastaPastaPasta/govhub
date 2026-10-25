@@ -50,7 +50,7 @@ test.describe('?config= links', () => {
     await expect(diff.locator('dt')).toHaveText(['Bridges', 'Quorum proof sources']);
     await expect(diff).toContainText('https://proofs.attacker.example/proofs');
     await expect(diff).toContainText('24tL6v5jMR1H9dtUoTgbedePsMJtYPk4Q4bo6h8jTdK9');
-    await expect(diff).toContainText('quorums.mainnet.networks.dash.org'); // what it replaces
+    await expect(diff).toContainText('gov-bridge.dashhq.org'); // what it replaces (the Dev profile's only proof source)
     // the unchanged settings are listed too (folded)
     await expect(page.locator('.config-unchanged')).toContainText('https://quorums.mainnet.networks.dash.org/masternodes');
     await page.getByRole('button', { name: 'Use these settings' }).click();

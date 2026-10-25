@@ -88,11 +88,16 @@ export const QUORUM_SERVICE: Record<CoreNetwork, string> = {
   testnet: 'https://quorums.testnet.networks.dash.org/masternodes',
 };
 
-/** The public quorum list servers' proof relays (dashpay/quorum-list-server #15). Testnet serves proofs; mainnet answered 403 (2026-10-24). */
-export const QUORUM_PROOF_SERVICE: Record<CoreNetwork, ProofSourceEndpoint> = {
-  mainnet: { name: 'quorums.mainnet.networks.dash.org', url: 'https://quorums.mainnet.networks.dash.org/proofs', kind: 'quorum-list' },
+/**
+ * The public quorum list servers' proof relays (dashpay/quorum-list-server #15). Only testnet has one: mainnet answered 403 (2026-10-24)
+ * and sends no CORS headers, so a browser logged a CORS error on every page load before falling back to the bridge. Add it back here
+ * once it answers a cross-origin POST.
+ */
+export const QUORUM_PROOF_SERVICE: Partial<Record<CoreNetwork, ProofSourceEndpoint>> = {
   testnet: { name: 'quorums.testnet.networks.dash.org', url: 'https://quorums.testnet.networks.dash.org/proofs', kind: 'quorum-list' },
 };
+
+const publicProofSources = (network: CoreNetwork): ProofSourceEndpoint[] => (QUORUM_PROOF_SERVICE[network] ? [{ ...QUORUM_PROOF_SERVICE[network]! }] : []);
 
 /** Dev profile `gov` contract: MAINNET Core proposals published on testnet Platform (phase 0/1; owner = the Dev bridge identity). */
 export const DEV_GOV_CONTRACT_ID = '3ueAfbVe8LvCxYWk7bKvXxc5uHe7E1TDJHzN3k3ZDehZ';
@@ -228,7 +233,7 @@ export function profileRegistry(id: ProfileId): Registry {
     govContractId: p.govContractId,
     bridges: profileBridges(p),
     relays: p.relays.map((r) => ({ ...r })),
-    quorumProofs: [...p.proofBridges.map((url): ProofSourceEndpoint => ({ name: url.replace(/^[a-z]+:\/\//i, ''), url, kind: 'bridge' })), { ...QUORUM_PROOF_SERVICE[p.coreNetwork] }],
+    quorumProofs: [...p.proofBridges.map((url): ProofSourceEndpoint => ({ name: url.replace(/^[a-z]+:\/\//i, ''), url, kind: 'bridge' })), ...publicProofSources(p.coreNetwork)],
     priceFeed: { ...PRICE_FEED },
     accounts: null,
     faucet: { ...DEFAULT_FAUCET },
@@ -436,7 +441,7 @@ export function parseRegistry(input: unknown): { registry: Registry; errors: str
   // Core network changed from the profile's while the proof sources stayed the profile's defaults: use that network's public source
   // (the profile's bridge serves the other network). A proof for the wrong network would only fail and fall back to proof of work.
   if (registry.coreNetwork !== d.coreNetwork && JSON.stringify(registry.quorumProofs) === JSON.stringify(d.quorumProofs)) {
-    registry.quorumProofs = [{ ...QUORUM_PROOF_SERVICE[registry.coreNetwork] }];
+    registry.quorumProofs = publicProofSources(registry.coreNetwork);
   }
   // A profile's contract holds that profile's networks' data: read under other networks it would be computed with the wrong rules.
   for (const p of Object.values(PROFILES)) {

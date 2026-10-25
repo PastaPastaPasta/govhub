@@ -39,6 +39,22 @@ async function voteWithFirst(page: Page, outcome: 'Yes' | 'No' | 'Abstain') {
 }
 
 test.describe('keyring page (fixtures, demo keyring)', () => {
+  test('switching network profile with the keyring open throws no page error', async ({ page }) => {
+    // the keyring zeroes its keys the moment the profile changes; the page must not derive from a private key in a render after that
+    const errors = await watchPage(page);
+    await gotoFixtures(page, '/masternodes');
+    await signIn(page);
+    await expect(page.getByTestId('key-group')).toHaveCount(2);
+    await page.getByRole('link', { name: 'Settings', exact: true }).click();
+    await page.locator('.profile-switch label', { hasText: 'Testnet' }).click();
+    await page.getByRole('button', { name: 'Switch to Testnet' }).click();
+    await expect(page.getByTestId('profile-label')).toContainText('Testnet');
+    // back on the page after the switch (it ended the demo session): still no error
+    await page.getByRole('link', { name: 'My masternodes', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'My masternodes' })).toBeVisible();
+    expect(errors).toEqual([]);
+  });
+
   test('masternodes grouped by voting key, empty votes, add-key warning, privacy collapsed', async ({ page }) => {
     const errors = await watchPage(page);
     await gotoFixtures(page, '/masternodes');

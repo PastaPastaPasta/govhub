@@ -10,7 +10,7 @@ import { CopyButton, HashCopy, useLabels, useNow } from '../ui/vote/common.tsx';
 import { VotesList } from '../ui/vote/VotesList.tsx';
 import { useKeyring } from '../voting/KeyringContext.tsx';
 import { STEP_NAME } from '../voting/lookup.ts';
-import { votingAddressOf, votingKeyId, type OwnedMasternode } from '../voting/masternodes.ts';
+import { votingAddressOfInfo, type OwnedMasternode } from '../voting/masternodes.ts';
 import '../voting/voting.css';
 
 const IDLE_CHOICES = [5, 15, 30, 60, 240];
@@ -147,8 +147,7 @@ function AddKey() {
     }
   };
   // what the new key found, once the lookup that includes it is done
-  const ring = k.keyring;
-  const idx = added && ring ? ring.content.keys.findIndex((x) => votingKeyId(x.privateKey, x.compressed) === added.keyId) : -1;
+  const idx = added ? k.keyInfos.findIndex((x) => x.keyId === added.keyId) : -1;
   const ready = added && idx >= 0 && k.mns.forKeys.includes(added.keyId) && k.mns.phase !== 'loading';
   const found = ready ? k.mns.owned.filter((m) => m.keyIndex === idx).length : 0;
   const adding = k.busy === 'Adding the voting key';
@@ -262,7 +261,6 @@ function LookupProgress() {
 
 function Masternodes() {
   const k = useKeyring();
-  const ring = k.keyring!;
   const labels = useLabels();
   const [confirmRemove, setConfirmRemove] = useState<number | null>(null);
   const loading = k.mns.phase === 'loading';
@@ -272,7 +270,7 @@ function Masternodes() {
       <header className="kr-card-head">
         <h2 id="mns-title">Your masternodes</h2>
         {k.mns.phase === 'ready' && <span className="small muted">{total} found</span>}
-        <button type="button" className="btn btn-s btn-quiet kr-refresh" onClick={k.refreshMasternodes} disabled={loading || !ring.content.keys.length}>
+        <button type="button" className="btn btn-s btn-quiet kr-refresh" onClick={k.refreshMasternodes} disabled={loading || !k.keyInfos.length}>
           Refresh
         </button>
       </header>
@@ -297,14 +295,14 @@ function Masternodes() {
       )}
       {!!k.mns.missing.length && <p className="vwarn small">{k.mns.missing.length} masternode(s) for your keys are in the masternode list but not in the bridge’s list yet; they can vote once the bridge catches up.</p>}
       {!!k.mns.mismatch.length && <p className="kr-alert small">The bridge named a wrong collateral for {k.mns.mismatch.length} masternode(s); they are hidden.</p>}
-      {!ring.content.keys.length ? (
+      {!k.keyInfos.length ? (
         <div className="vempty-line" data-testid="mn-empty">
           <p>No voting keys yet. Add one and its masternodes show up here.</p>
         </div>
       ) : (
         <div className="kr-keys" data-testid="key-list">
-          {ring.content.keys.map((key, i) => {
-            const address = votingAddressOf(key.privateKey, key.compressed, k.coreNetwork);
+          {k.keyInfos.map((key, i) => {
+            const address = votingAddressOfInfo(key, k.coreNetwork);
             const mine = k.mns.owned.filter((m) => m.keyIndex === i);
             const known = k.mns.phase === 'ready' || (loading && mine.length > 0);
             return (

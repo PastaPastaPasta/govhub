@@ -1,6 +1,7 @@
 // Client for govhub relays (services/relay/openapi.json). A relay sees the IP and timing of each request (threat model: public
 // unlinkability only, PLAN §5.2), never a key: it gets fully signed votes and signed cancels.
 import { relayCancelMessage, signMessage, type Network } from '@govhub/verify';
+import { assertUsableKey } from './masternodes.ts';
 import { OUTCOME_NAME, type SignedVoteRecord } from './plan.ts';
 
 /** `maybe-broadcast`: waiting to be re-sent, but an earlier attempt may already be in Core; it cannot be cancelled. */
@@ -170,4 +171,7 @@ export class RelayClient {
 }
 
 /** The cancel signature for one held vote: Dash `signmessage` with the voting key (the same scheme on mainnet and testnet). */
-export const cancelSignature = (privKey: Uint8Array, compressed: boolean, network: Network, voteHash: string): string => signMessage(privKey, relayCancelMessage(network, voteHash), { compressed });
+export const cancelSignature = (privKey: Uint8Array, compressed: boolean, network: Network, voteHash: string): string => {
+  assertUsableKey(privKey);
+  return signMessage(privKey, relayCancelMessage(network, voteHash), { compressed });
+};
