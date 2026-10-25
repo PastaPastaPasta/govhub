@@ -803,7 +803,20 @@ button.trust-m:hover {
 .drawer-body {
   padding: var(--s-4) var(--s-5) var(--s-6);
   display: grid;
+  /* not the implicit auto column: that takes the min-content of its widest child, so one long unbroken URL in the proposal data
+     stretched the whole drawer past the screen and pushed the close button off it */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--s-4);
+  min-inline-size: 0;
+}
+.drawer-body > * {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+.drawer-body pre,
+.drawer-body code,
+.drawer-body dd {
+  overflow-wrap: anywhere;
 }
 .drawer-head {
   display: flex;
