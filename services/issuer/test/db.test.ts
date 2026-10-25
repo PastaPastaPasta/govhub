@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { openTokenStore } from '../src/db.ts';
-import { rnd } from './helpers.ts';
+import { openTokenStore, type TokenStore } from '../src/db.ts';
+import { legacyClose, rnd, tmpDb } from './helpers.ts';
 
 const sig = () => rnd(256);
+
+const take = (s: TokenStore, epoch: number, p: string) => s.reserve({ epoch, windowFrom: 0, proTxHash: p, collateral: p, blindedHash: rnd(32) }, sig);
 
 describe('token store', () => {
   it('a database from before the start guard keeps issuing (it has epochs but no meta table)', async () => {
@@ -66,5 +68,48 @@ describe('token store', () => {
     s.markReported(7, 'doc');
     expect(s.unreported()).toEqual([]);
     expect(s.reserve({ epoch: 8, windowFrom: 10, proTxHash: 'a', collateral: 'a', blindedHash: rnd(32) }, sig).kind).toBe('signed');
+  });
+
+  it('reopens epochs an older rule closed above the close mark, newest first, while none had a token or a report', () => {
+    const path = tmpDb();
+    let s = openTokenStore(path);
+    s.markStarted(0);
+    take(s, 3, 'a');
+    s.openEpoch(4);
+    s.openEpoch(6);
+    s.close();
+    legacyClose(path, 4);
+    legacyClose(path, 8); // 5 and 7 have no row: closed by the watermark only
+    s = openTokenStore(path);
+    expect(s.reopenAboveCloseMark()).toEqual([]); // no close mark yet: nothing is reopened
+    s.closeThrough(2);
+    s.markReported(4, 'doc');
+    // 8 and 6 never had a token: reopened; 4 is reported: it stays closed, and so does everything below it
+    expect(s.reopenAboveCloseMark()).toEqual([8, 6]);
+    expect(s.closedThrough()).toBe(4);
+    expect(take(s, 5, 'b').kind).toBe('signed');
+    expect(take(s, 4, 'c')).toEqual({ kind: 'closed' });
+    expect(s.issued(3)).toBe(1);
+  });
+
+  it('never reopens an epoch whose token rows were deleted, nor one closeThrough closed', () => {
+    const path = tmpDb();
+    let s = openTokenStore(path);
+    s.markStarted(0);
+    s.closeThrough(1);
+    take(s, 5, 'b');
+    s.openEpoch(6);
+    s.close();
+    legacyClose(path, 6);
+    s = openTokenStore(path);
+    // 6 had no token: reopened; 5's rows are gone: closed for good, and the 'b' token cannot be issued twice
+    expect(s.reopenAboveCloseMark()).toEqual([6]);
+    expect(s.closedThrough()).toBe(5);
+    expect(s.issued(5)).toBe(1);
+    expect(take(s, 5, 'b')).toEqual({ kind: 'closed' });
+    // closed by closeThrough (the tip passed its window), with no token: a lower tip later does not reopen it
+    s.closeThrough(9);
+    expect(s.reopenAboveCloseMark()).toEqual([]);
+    expect(s.closedThrough()).toBe(9);
   });
 });

@@ -1,5 +1,8 @@
+import Database from 'better-sqlite3';
 import { createPrivateKey, randomBytes, type KeyObject } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { secp256k1 } from '@noble/curves/secp256k1.js';
 import { bigIntToBytes, bindIssuerKey, blind, buildTokenRequestFor, bytesToBase64, bytesToId, EPOCH_PARAMS, epochStart, finalize, fromHex, idToBytes, importIssuerKey, prepareBadge, toHex, verifyBadgeSignature, type IssuerKey } from '@govhub/badge';
@@ -11,6 +14,17 @@ import { TokenService } from '../src/service.ts';
 import { BlindSigner, generateIssuerKey } from '../src/signer.ts';
 
 export const rnd = (n: number) => new Uint8Array(randomBytes(n));
+
+export const tmpDb = () => join(mkdtempSync(join(tmpdir(), 'issuer-db-')), 'db.sqlite');
+
+/** closeThrough as versions before the close mark ran it (on a closed store file): closed flags and deleted rows, no mark. */
+export function legacyClose(path: string, epoch: number): void {
+  const db = new Database(path);
+  db.prepare('INSERT OR IGNORE INTO epochs (epoch) VALUES (?)').run(epoch);
+  db.prepare('UPDATE epochs SET closed = 1 WHERE epoch <= ?').run(epoch);
+  db.prepare('DELETE FROM tokens WHERE epoch <= ?').run(epoch);
+  db.close();
+}
 
 export function loadVector(name = 'RSABSSA-SHA384-PSS-Randomized'): Record<string, string> {
   const all = JSON.parse(readFileSync(fileURLToPath(new URL('./vectors/rfc9474-appendix-a.json', import.meta.url)), 'utf8')) as Array<{ name: string; fields: Record<string, string> }>;
