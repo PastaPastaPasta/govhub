@@ -446,7 +446,8 @@ issues in the first draft. The protocol below includes all of the fixes.
 6. Keep minimal logs and no IPs. Delete records after epoch E+1.
 7. Generate keys offline. Publish `issuerKey` docs **at least 3 epochs ahead**, so a later
    compromise can't claim those slots. The server only holds the current key, and each key is
-   destroyed after its window.
+   destroyed after its window. A key can still be published late, up to S(E+1) − margin (§8.9),
+   so a new issuer serves Standard mode in its first epoch.
 8. Publish `issuerReport` each epoch, so readers can check that badges ≤ tokens issued ≤ eligible MNs.
 
 ### 8.5 Client rules
@@ -472,8 +473,9 @@ issues in the first draft. The protocol below includes all of the fixes.
 
 - Proved queries only, and only issuers on the local trust list. Unknown issuers show as
   "unverified issuer" or are hidden.
-- The key must be the unique `issuerKey` for (issuer, E), created before S(E−1), and not revoked
-  before the badge's height.
+- The key must be the unique `issuerKey` for (issuer, E), created before S(E+1) − margin (§8.9; it
+  was S(E−1)), not revoked before the badge's height, and not newer than the badge (the badge's
+  `$createdAtCoreBlockHeight` is at least the key's).
 - The badge's height must be inside the display window. The signature must have modulus length,
   s < N, and pass RSABSSA verify. The message is rebuilt with `$ownerId`, so copying a badge to
   another identity fails.
@@ -516,14 +518,65 @@ force it. If people accept us learning that's ok. Just we keep no logs for stuff
   - **Extra private**: as Private, with the badge posted at a random time across the first half of E+1.
 - **Issuance window:** tokens for E are minted during E-1 **and** during E (`[S(E-1), S(E+1))`); the issuer accepts the
   current or the next epoch. Dedup stays one token per (proTxHash, E) and per (collateral, E), whichever mode asked.
-- **Reader rules:** unchanged: a badge for E is valid if created at or after S(E) and shown during [S(E), S(E+1)+W]; one
-  issuerKey per (issuer, E), created before S(E-1).
+- **Reader rules:** a badge for E is valid if created at or after S(E) and shown during [S(E), S(E+1)+W]; one
+  issuerKey per (issuer, E), created before S(E+1)-margin (§8.9, relaxed from S(E-1)), and no badge older than its key.
 - **Audit:** E's issuerReport can only be final once E's issuance window has closed, so it is published, and counts, in
   [S(E+1), S(E+1)+W]. Badges ≤ tokensIssued is checked then; an issuer flagged for E-1 is also hidden for E (its report for E
   arrives only as E ends).
 - **No linkable logs:** the issuer stores only the dedup rows (epoch, proTxHash, collateral, H(blindedMsg)), deleted when the
   epoch's window closes; no request times, IPs or user agents anywhere (DB, application logs, the tunnel gateway, cloudflared
   at loglevel fatal). Cloudflare's edge is outside our control (`services/issuer/README.md`, "Logging policy").
+
+### 8.9 Late key publication (2026-10-25)
+
+The key rule "the `issuerKey` for E is created before S(E−1)" is relaxed to **created before S(E+1) − margin**
+(`keyDeadline`), and readers gain a check: **a badge is never older than its key** (the badge's `$createdAtCoreBlockHeight`
+is at least the key's; Drive's core heights only grow). Keys published under the old rule stay valid: the new rule accepts a
+superset. No contract change.
+
+Why the old rule added nothing:
+- Key tagging is blocked by the slot, not by timing: one `issuerKey` per (issuer, E) (unique index), immutable and
+  non-deletable. A client blinds only after a proved read of that key, so every token for E is signed by the one key,
+  whenever it was published. A proof can be stale but not forged, and a stale proof shows the same key or none.
+- The private modes ask during E−1, so they need E's key then. An issuer that publishes ahead (§8.4 rule 7) has it; a key
+  that appears after S(E) − margin means Private and Extra private are not offered for E. Every private token still exists
+  before any private badge.
+
+The bound is S(E+1) − margin, the end of the last Standard request window for E: from there clients ask for E+1, so a later
+key could serve no honest request. It also keeps every key before E's `issuerReport` (created from S(E+1)), so the report
+covers every token the key could have signed.
+
+Also checked, not a reason for the old rule:
+- **Issuance window** `[S(E−1), S(E+1))`: unchanged; tokens for E are minted from the later of S(E−1) and the key's
+  publication.
+- **Crowd check** (`minAnonymitySet`): it reads E−1's report, and E−1 "has no key" (the first-epoch case, posted without
+  the check) is final at S(E) − margin, before any private badge for E is posted.
+- **Revocation:** unchanged; a revocation published before a late key voids it from its height on.
+- **Reports and audit:** unchanged. Badges older than their key are void; both heights are immutable, so this cannot shrink
+  a count after the fact.
+- **Display windows:** unchanged.
+- **Timing:** no client can ask before the key exists, and a client that sees "no key" sends nothing, so there is nothing
+  to compare before and after.
+- **A DAPI node hiding the key** (a stale proof of absence) or **partitions** between clients that saw "no key" and "key":
+  the worst is a delay, as under the old rule. No client can be given a different key.
+
+What it costs:
+- A thief with the CRITICAL key can also fill an empty slot for the current or the next epoch (before: from E+2 on).
+  Publishing ahead closes those slots, as before.
+- If E's key lands after S(E) − margin, every badge for E is a Standard badge, so E's badges reveal their mode. Standard
+  badges posted outside the private posting windows already do.
+- If E's key lands during E−1, the private requests for E fit between the key and S(E) − margin, so E's private crowd can be
+  smaller than when the key was there all along. The crowd check reads E−1's report, which also counts every Standard
+  token, so it was only a stand-in before and is a weaker one in that case. Accepted: an issuer that publishes ahead is
+  unaffected. The stricter option, offering Private only for keys created before S(E−1), would be one check in the web
+  client.
+
+Issuer: a token store that started inside E's window may issue for E if it is older than E's key by the margin, because no
+token for E can exist before the key. The store records the higher of dashd's tip and Platform's core height as its start.
+Once a valid key is on Platform, the epoch is reported, with 0 tokens if the server never signed. The service cannot publish keys itself: `issuerKey` needs the CRITICAL key, which stays
+offline (§8.4 rule 7, contract `signatureSecurityLevelRequirement: 1`). `issuer publish-keys` publishes the current epoch's
+key while it can still land, adopts a slot that already holds our SPKI, and reports any other key as a conflict. The running
+service checks Platform every tick and starts signing at the next tick after the key lands.
 
 ---
 
