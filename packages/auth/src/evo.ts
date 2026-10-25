@@ -9,7 +9,7 @@
 //  - A broadcast through a lagging node can fail with 40101 / nonce errors right after a write: handled by the writer below.
 //  - WASM errors are not Error instances: read `.message`, `.code` (consensus code, -1 otherwise) and `.name` (the kind).
 import type * as Evo from '@dashevo/evo-sdk';
-import { bytesEqual, bytesToHex, fromBase64, identifierBytes, randomBytes, toBase64 } from './bytes.ts';
+import { bytesEqual, bytesToHex, concatBytes, fromBase64, hexToBytes, identifierBytes, randomBytes, reversed, toBase64, u32le } from './bytes.ts';
 import { publicKeyOf as evoPub, type IdentityKeyInfo, type Network } from './keys.ts';
 import type { AssetLockProofInput, DocValue, DocumentWrite, DocumentWritten, PlatformPort, SigningKey, VaultEntryDoc } from './platform.ts';
 
@@ -19,6 +19,9 @@ type Sdk = InstanceType<EvoModule['EvoSDK']>;
 const PURPOSE = ['authentication', 'encryption', 'decryption', 'transfer', 'system', 'voting', 'owner'] as const;
 const LEVEL = ['master', 'critical', 'high', 'medium'] as const;
 const KTYPE = ['ecdsa_secp256k1', 'bls12_381', 'ecdsa_hash160', 'bip13_script_hash', 'eddsa_25519_hash160'] as const;
+
+/** rs-drive `RootTree::SpentAssetLockTransactions`: the root subtree of consumed asset-lock outpoints. */
+const SPENT_ASSET_LOCKS = 72;
 
 const errText = (e: unknown): string => (e && typeof e === 'object' && 'message' in e ? String((e as { message: unknown }).message) : String(e));
 const errCode = (e: unknown): number => (e && typeof e === 'object' && typeof (e as { code?: unknown }).code === 'number' ? (e as { code: number }).code : -1);
@@ -499,6 +502,16 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
     async balance(id) {
       const r = await sdk.identities.balanceWithProof(id);
       return r.data ?? null;
+    },
+    async assetLockStatus(txid, creditIndex) {
+      // rs-drive RootTree::SpentAssetLockTransactions (72), keyed by the 36-byte outpoint; a fully consumed lock is an empty item,
+      // a partly consumed one stores what is left (StoredAssetLockInfo). Proved: an absent key is a proved absence.
+      const outpoint = concatBytes(reversed(hexToBytes(txid)), u32le(creditIndex));
+      const r = await sdk.system.pathElementsWithProof([Uint8Array.of(SPENT_ASSET_LOCKS)], [outpoint]);
+      const e = (r.data as Array<{ key?: Uint8Array; elementType?: string | null; valueBytes?: Uint8Array | null }>).find((x) => !x.key || bytesEqual(Uint8Array.from(x.key), outpoint));
+      if (!e?.elementType) return 'unused';
+      if (e.elementType !== 'item') throw new Error(`unexpected ${e.elementType} in the spent asset lock tree`);
+      return e.valueBytes?.length ? 'partial' : 'used';
     },
     async coreChainLockedHeight() {
       const r = await sdk.system.totalCreditsInPlatformWithProof();

@@ -1,7 +1,8 @@
 // Funding an identity from external DASH, all over DAPI (PLAN 4.4, Dash Bridge's flow without Insight):
 //   1. a one-time key at the DIP-13 funding path (registration m/9'/c'/5'/1'/i', top-up m/9'/c'/5'/2'/i'/n)
 //   2. watchAddressForDeposit subscribes BEFORE the address is shown (IS-locks are never replayed); a deposit counts once it is
-//      IS-locked or merkle-proven in a block, P2PKH outputs only; the watcher stays open until the end so late payments are reported
+//      IS-locked or merkle-proven in a block, P2PKH outputs only; the watcher stays open until the end so late payments are reported;
+//      a payment that a confirmed transaction spends (swept from another device, an earlier lock) stops counting
 //   3. type-8 asset lock spending the deposits (refused below Platform's minimum or above 100 inputs), its bytes persisted before
 //      broadcast; a second watcher on the lock's txid and inputs is open BEFORE the broadcast and its IS-lock bytes are persisted on
 //      arrival; a lock whose inputs the network rejects (spent / missing) is dropped and rebuilt from the deposits that still count
@@ -145,6 +146,11 @@ export interface FundingOptions {
    * small to create an identity (LockTooSmallError): a top-up needs far less. Refused before the lock exists.
    */
   recoverInto?: string;
+  /**
+   * The Recover tool (recovery.ts): this record, rebuilt from the chain, replaces the stored one before the run starts (inside the
+   * record's Web Lock). With it `recoverInto` may also spend deposits before any lock exists, or a lock large enough to create.
+   */
+  restore?: FundingRecord;
   minDepositDuffs?: number;
   /** How long to wait for the asset lock's IS-lock before switching to the chain-lock proof. Default 60 s. */
   isLockWaitMs?: number;
@@ -200,6 +206,20 @@ export class LockTooSmallError extends FundingError {
       return n ? BigInt(n) : fallback;
     };
     return new LockTooSmallError(kind, stated(CREDITS_LEFT, lockCredits), stated(NEEDS_CREDITS, required), recoverable);
+  }
+}
+
+/**
+ * A create whose identity keys are already registered (this phrase made the identity at that index elsewhere, e.g. on another device).
+ * Permanent for a create; the lock can still top up an existing identity (runFunding's `recoverInto`).
+ */
+export class KeyConflictError extends FundingError {
+  constructor() {
+    super(
+      'These account keys are already registered to another identity: this recovery phrase already has that account, probably made on another device. ' +
+        'Sign in with the phrase instead. This payment can still top up an existing identity (here, or later in Settings, Recover funds).',
+    );
+    this.name = 'KeyConflictError';
   }
 }
 
@@ -352,8 +372,11 @@ export function stillNeededDuffs(deposits: ReadonlyArray<{ value: string }>, min
   return need.reduce((a, b) => (b > a ? b : a));
 }
 
-/** Runs `fn` holding an exclusive Web Lock named for the record, when the platform has Web Locks (browsers; not Node 22). */
-async function withRecordLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+/**
+ * Runs `fn` holding an exclusive Web Lock named for the record, when the platform has Web Locks (browsers; not Node 22). The Recover
+ * tool's sweep takes the same lock, so it never races a funding of the same address in another tab.
+ */
+export async function withRecordLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
   const locks = (globalThis.navigator as { locks?: { request(n: string, o: { ifAvailable: boolean }, cb: (l: unknown) => Promise<T>): Promise<T> } } | undefined)?.locks;
   if (!locks) return fn();
   return locks.request(`govhub.funding.${key}`, { ifAvailable: true }, async (l) => {
@@ -378,7 +401,16 @@ export async function runFunding(o: FundingOptions): Promise<{ identityId: strin
     : sessionTopUpKey(o.session!.privateKey, o.topUp!.identityId, o.topUp!.index);
   const key = fundingRecordKey(network, kind, hash160(fk.publicKey));
   try {
-    return await withRecordLock(key, () => fund(o, fk, key));
+    return await withRecordLock(key, () => {
+      if (o.restore) {
+        if (o.restore.key !== key || o.restore.network !== network || o.restore.kind !== kind) throw new FundingError('the recovered record belongs to another key');
+        // A lock this browser has in flight (maybe with its IS-lock, which the chain no longer shows) is resumed, not replaced.
+        const saved = o.store.load(key);
+        const inFlight = saved && saved.state !== 'done' && saved.lock && (!o.restore.lock || saved.lock.txid === o.restore.lock.txid);
+        if (!inFlight) o.store.save(o.restore);
+      }
+      return fund(o, fk, key);
+    });
   } finally {
     wipe(fk.privateKey);
   }
@@ -387,8 +419,6 @@ export async function runFunding(o: FundingOptions): Promise<{ identityId: strin
 async function fund(o: FundingOptions, fk: { privateKey: Uint8Array; publicKey: Uint8Array }, key: string): Promise<{ identityId: string; record: FundingRecord }> {
   const { wallet, dapi, platform, store, kind, identityIndex, signal } = o;
   const network = platform.network;
-  const minDuffs = o.minDepositDuffs ?? (kind === 'create' ? MIN_CREATE_DEPOSIT_DUFFS : MIN_TOPUP_DEPOSIT_DUFFS);
-  const minLock = BigInt(kind === 'create' ? MIN_CREATE_LOCK_DUFFS : MIN_TOPUP_LOCK_DUFFS);
   const h160 = hash160(fk.publicKey);
   const address = addressOf(fk.publicKey, network);
   const log = o.log ?? (() => {});
@@ -403,8 +433,12 @@ async function fund(o: FundingOptions, fk: { privateKey: Uint8Array; publicKey: 
   if (o.recoverInto && rec.recoveredInto !== o.recoverInto) {
     if (kind !== 'create') throw new FundingError('only an account setup can be used for a top-up instead');
     if (rec.recoveredInto) throw new FundingError(`This payment is already being added to identity ${rec.recoveredInto}.`);
-    if (!rec.lock || rec.state !== 'registering') throw new FundingError('There is no unused asset lock to use for a top-up.');
-    if (!lockTooSmall(rec)) throw new FundingError('This payment is large enough to create the account; it is not used for a top-up.');
+    // Before the lock exists only from the Recover tool (the user chose a top-up for these deposits); a lock in flight never.
+    if (rec.lock ? rec.state !== 'registering' : !o.restore) throw new FundingError('There is no unused asset lock to use for a top-up.');
+    // A lock large enough to create is only diverted when the user chose it in the Recover tool, or when it can never create (the
+    // identity index is taken: KeyConflictError).
+    if (rec.lock && !o.restore && !lockTooSmall(rec) && !(await identityIndexTaken(wallet, platform, identityIndex)))
+      throw new FundingError('This payment is large enough to create the account; it is not used for a top-up.');
     if (rec.identityId && (await platform.identityKeys(rec.identityId)) !== null) throw new FundingError('This payment already created its account.');
     // Checked before it is saved: a mistyped id must not tie the lock to an identity that does not exist (a proved read).
     if ((await platform.identityKeys(o.recoverInto)) === null) throw new FundingError(`There is no identity ${o.recoverInto} on Dash Platform (${network}).`);
@@ -412,6 +446,10 @@ async function fund(o: FundingOptions, fk: { privateKey: Uint8Array; publicKey: 
     rec.proofKind = rec.balanceBefore = undefined; // nothing has been submitted for the top-up yet
     save();
   }
+  // A create spent as a top-up only needs a top-up's minimum.
+  const target: FundingKind = rec.recoveredInto ? 'topup' : kind;
+  const minDuffs = o.minDepositDuffs ?? (target === 'create' ? MIN_CREATE_DEPOSIT_DUFFS : MIN_TOPUP_DEPOSIT_DUFFS);
+  const minLock = BigInt(target === 'create' ? MIN_CREATE_LOCK_DUFFS : MIN_TOPUP_LOCK_DUFFS);
   const sum = (l: ReadonlyArray<{ value: string }>) => l.reduce((a, d) => a + BigInt(d.value), 0n);
   const counted = () => rec.deposits.filter((d) => d.confirmed);
   const view = (note?: string): FundingView => {
@@ -460,6 +498,16 @@ async function fund(o: FundingOptions, fk: { privateKey: Uint8Array; publicKey: 
     const lockedTxids = new Set<string>();
     let wake: () => void = () => {};
     const same = (a: { txid: string; vout: number }) => (b: { txid: string; vout: number }) => a.txid === b.txid && a.vout === b.vout;
+    /** Payment outpoint -> the transaction spending it; acted on once that transaction is IS-locked or mined (a node's claim alone is not enough). */
+    const spentBy = new Map<string, string>();
+    const dropSpent = (txid: string): boolean => {
+      const gone = (d: { txid: string; vout: number }) => spentBy.get(`${d.txid}:${d.vout}`) === txid;
+      const before = rec.deposits.length + (rec.lateDeposits?.length ?? 0);
+      // the deposits a built lock spends are its business (a conflicting spend makes the broadcast fail)
+      if (!rec.lock) rec.deposits = rec.deposits.filter((d) => !gone(d));
+      if (rec.lateDeposits) rec.lateDeposits = rec.lateDeposits.filter((d) => !gone(d));
+      return rec.deposits.length + (rec.lateDeposits?.length ?? 0) !== before;
+    };
     const confirm = (txid: string) => {
       let changed = false;
       for (const d of rec.deposits) if (d.txid === txid && !d.confirmed) changed = d.confirmed = true;
@@ -467,6 +515,7 @@ async function fund(o: FundingOptions, fk: { privateKey: Uint8Array; publicKey: 
         update(`payment ${txid.slice(0, 12)}… confirmed`);
         wake();
       }
+      if (dropSpent(txid)) update(`a payment to this address was spent by ${txid.slice(0, 12)}…; it no longer counts`);
     };
     if (rec.state !== 'done') {
       const w = await dapi.watchAddressForDeposit(
@@ -474,6 +523,8 @@ async function fund(o: FundingOptions, fk: { privateKey: Uint8Array; publicKey: 
         {
           onTx: ({ tx }) => {
             if (tx.txid === rec.lock?.txid) return;
+            for (const i of tx.inputs) spentBy.set(`${i.prevTxid}:${i.vout}`, tx.txid);
+            if (lockedTxids.has(tx.txid) && dropSpent(tx.txid)) update(`a payment to this address was spent by ${tx.txid.slice(0, 12)}…; it no longer counts`);
             // P2PKH outputs to the one-time key only (the watcher also matches P2SH with the same hash).
             const outs = tx.outputs.flatMap((out, vout) => {
               const c = classifyScript(out.script);
@@ -617,8 +668,7 @@ async function fund(o: FundingOptions, fk: { privateKey: Uint8Array; publicKey: 
           else await platform.topUpIdentity({ identityId, proof, assetLockKey: fk.privateKey });
         };
         const refused = (e: unknown, outcome: RegistrationOutcome): never => {
-          if (outcome === 'key-conflict')
-            throw new FundingError('One of these keys is already registered to another identity. Sign in with this recovery phrase instead; the locked funds can be claimed by that identity with support.');
+          if (outcome === 'key-conflict') throw new KeyConflictError();
           if (outcome === 'too-small') throw LockTooSmallError.fromRefusal(mode, lockCredits, required, e);
           throw new FundingError(`Platform refused the registration: ${redact(errText(e))}`);
         };
@@ -672,6 +722,14 @@ async function fund(o: FundingOptions, fk: { privateKey: Uint8Array; publicKey: 
   } finally {
     for (const w of watchers) w.cancel();
   }
+}
+
+/** Whether the identity index's MASTER key (key 0) is registered: a create there would be refused as a key conflict. */
+async function identityIndexTaken(wallet: SeedWallet | null, platform: PlatformPort, identityIndex: number): Promise<boolean> {
+  if (!wallet) return false;
+  const k = wallet.identityKey(identityIndex, 0);
+  wipe(k.privateKey);
+  return (await platform.identityByUniqueKeyHash(hash160(k.publicKey))) !== null;
 }
 
 /** Whether the registration has landed: the identity exists (create), or its balance grew past the recorded one (top-up). */

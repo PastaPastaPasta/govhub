@@ -3,7 +3,7 @@ import { parseTx } from '@govhub/dapi';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { bytesToHex, concatBytes, hash160, hexToBytes, reversed, sha256d, toBase58, u32le } from '../src/bytes.ts';
 import { publicKeyOf } from '../src/keys.ts';
-import { AssetLockError, BURN_SCRIPT, buildAssetLock, buildPayment, identityIdFromOutpoint, locateCredit, p2pkhScript, parseAssetLockPayload } from '../src/tx.ts';
+import { AssetLockError, BURN_SCRIPT, buildAssetLock, buildPayment, buildSweep, DUST_DUFFS, estimateSweepFee, identityIdFromOutpoint, locateCredit, p2pkhScript, p2shScript, parseAssetLockPayload } from '../src/tx.ts';
 
 const key = hexToBytes('11'.repeat(32));
 const other = hexToBytes('22'.repeat(32));
@@ -110,5 +110,33 @@ describe('payment (test tooling)', () => {
     expect(tx.outputs[0]!.value).toBe(250_000n);
     expect(p.changeVout).toBe(1);
     checkSignatures(p.raw, publicKeyOf(key));
+  });
+});
+
+describe('sweep (Recover tool)', () => {
+  it('spends every payment of the key into one output, fee = 1 duff/byte, signatures valid', () => {
+    const utxos = [utxo, { txid: 'cd'.repeat(32), vout: 0, value: 25_000n }];
+    const to = hash160(publicKeyOf(other));
+    const b = buildSweep({ utxos, key, to: { type: 'p2pkh', hash160: to } });
+    const tx = parseTx(b.raw);
+    expect(tx.txid).toBe(b.txid);
+    expect(tx.type).toBe(0);
+    expect(tx.inputs.map((i) => `${i.prevTxid}:${i.vout}`)).toEqual(utxos.map((u) => `${u.txid}:${u.vout}`));
+    expect(tx.outputs).toEqual([{ value: b.sentDuffs, script: p2pkhScript(to) }]);
+    expect(b.sentDuffs + b.feeDuffs).toBe(1_025_000n);
+    expect(b.feeDuffs).toBe(estimateSweepFee(2));
+    expect(b.feeDuffs).toBeGreaterThanOrEqual(BigInt(b.raw.length));
+    expect(b.feeDuffs).toBeLessThan(BigInt(b.raw.length) + 5n);
+    checkSignatures(b.raw, publicKeyOf(key));
+  });
+
+  it('pays a P2SH address with its own script, and refuses to leave dust', () => {
+    const b = buildSweep({ utxos: [utxo], key, to: { type: 'p2sh', hash160: h } });
+    expect(parseTx(b.raw).outputs[0]!.script).toEqual(p2shScript(h));
+    expect(b.feeDuffs).toBe(estimateSweepFee(1, true));
+    const fee = estimateSweepFee(1);
+    expect(() => buildSweep({ utxos: [{ ...utxo, value: fee + DUST_DUFFS - 1n }], key, to: { type: 'p2pkh', hash160: h } })).toThrow(/dust/);
+    expect(buildSweep({ utxos: [{ ...utxo, value: fee + DUST_DUFFS }], key, to: { type: 'p2pkh', hash160: h } }).sentDuffs).toBe(DUST_DUFFS);
+    expect(() => buildSweep({ utxos: [], key, to: { type: 'p2pkh', hash160: h } })).toThrow(/nothing/);
   });
 });

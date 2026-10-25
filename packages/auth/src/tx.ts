@@ -202,6 +202,41 @@ export function buildPayment(o: { utxos: readonly Utxo[]; key: Uint8Array; to: A
   return { raw, txid: parseTx(raw).txid, changeVout };
 }
 
+/** OP_HASH160 <20 bytes> OP_EQUAL. */
+export const p2shScript = (h160: Uint8Array): Uint8Array => {
+  if (h160.length !== 20) throw new Error('hash160 must be 20 bytes');
+  return concatBytes(Uint8Array.of(0xa9, 0x14), h160, Uint8Array.of(0x87));
+};
+
+/**
+ * Core's dust threshold for a P2PKH output at the default dust relay fee (3000 duffs/kB × (34 + 148) bytes, policy.cpp GetDustThreshold):
+ * a smaller output is non-standard and no node relays it.
+ */
+export const DUST_DUFFS = 546n;
+
+/** The Core fee of a sweep spending `inputs` P2PKH outputs into one output (what buildSweep charges). */
+export const estimateSweepFee = (inputs: number, toP2sh = false, feePerByte = FEE_PER_BYTE): bigint =>
+  BigInt(estimateSize(inputs, [toP2sh ? 23 : 25], 0)) * feePerByte;
+
+/**
+ * Sends everything in `utxos` (all P2PKH outputs of `key`) to one address, less the fee: the Recover tool's sweep. Refuses when what is
+ * left after the fee would be dust (no node would relay it) or there are more inputs than a standard transaction should carry.
+ */
+export function buildSweep(o: { utxos: readonly Utxo[]; key: Uint8Array; to: { type: 'p2pkh' | 'p2sh'; hash160: Uint8Array }; feePerByte?: bigint }): { raw: Uint8Array; txid: string; sentDuffs: bigint; feeDuffs: bigint } {
+  if (!o.utxos.length) throw new Error('nothing to send');
+  if (o.utxos.length > 600) throw new Error('too many payments for one transaction');
+  const total = o.utxos.reduce((a, u) => a + u.value, 0n);
+  const script = o.to.type === 'p2sh' ? p2shScript(o.to.hash160) : p2pkhScript(o.to.hash160);
+  const fee = estimateSweepFee(o.utxos.length, o.to.type === 'p2sh', o.feePerByte);
+  const sent = total - fee;
+  if (sent < DUST_DUFFS) throw new Error(`${total} duffs cannot pay the ${fee} duff fee and leave more than dust (${DUST_DUFFS} duffs)`);
+  const raw = signAll(
+    { version: 2, type: 0, inputs: o.utxos.map((u) => ({ txid: u.txid, vout: u.vout, scriptSig: new Uint8Array(0), sequence: 0xffffffff })), outputs: [{ value: sent, script }], lockTime: 0, extraPayload: null },
+    o.key,
+  );
+  return { raw, txid: parseTx(raw).txid, sentDuffs: sent, feeDuffs: fee };
+}
+
 /**
  * A governance proposal collateral (PLAN 6.1): `OP_RETURN <32-byte gov hash, RAW byte order>` worth `burnDuffs` (Core: >= 1 DASH,
  * GOVERNANCE_PROPOSAL_FEE_TX) plus P2PKH change to `key`. Every output is P2PKH or unspendable, as IsCollateralValid requires.

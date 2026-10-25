@@ -7,6 +7,8 @@ export interface SigningKey extends KeySpec {
   privateKey: Uint8Array;
 }
 
+export type AssetLockStatus = 'unused' | 'used' | 'partial';
+
 export type AssetLockProofInput =
   | { kind: 'instant'; tx: Uint8Array; isLock: Uint8Array; creditIndex: number }
   | { kind: 'chain'; txid: string; creditIndex: number; coreChainLockedHeight: number };
@@ -57,6 +59,12 @@ export interface PlatformPort {
   balance(identityId: string): Promise<bigint | null>;
   /** Platform's view of Core: the newest ChainLocked height Platform has seen (what a chain asset-lock proof may reference). */
   coreChainLockedHeight(): Promise<number>;
+  /**
+   * What Platform's state says about an asset lock's credit output (`txid` display order, `creditIndex` into the payload's credit
+   * outputs: the outpoint every asset-lock proof names), proved from Drive's spent-asset-lock tree. 'unused': no entry (proved absent);
+   * 'used': fully consumed; 'partial': Platform keeps what is left of it (a refused transition paid its fee from the lock).
+   */
+  assetLockStatus(txid: string, creditIndex: number): Promise<AssetLockStatus>;
   createIdentity(o: { proof: AssetLockProofInput; assetLockKey: Uint8Array; keys: readonly SigningKey[] }): Promise<void>;
   topUpIdentity(o: { identityId: string; proof: AssetLockProofInput; assetLockKey: Uint8Array }): Promise<void>;
   /** IdentityUpdate adding `keys`, signed by the MASTER key (each new key also signs its own registration). */

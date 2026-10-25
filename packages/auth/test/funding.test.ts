@@ -5,7 +5,7 @@ import { parseTx, type Dapi, type WatchHandlers } from '@govhub/dapi';
 import { describe, expect, it } from 'vitest';
 import { bytesToHex, hash160, hexToBytes } from '../src/bytes.ts';
 import {
-  classifyRegistrationError, discardFunding, FundingError, fundingRecordKey, LockTooSmallError, lockTooSmall, nextCreateIndex, nextTopUpIndex, pendingFundings, pickInputs, runFunding,
+  classifyRegistrationError, discardFunding, FundingError, KeyConflictError, fundingRecordKey, LockTooSmallError, lockTooSmall, nextCreateIndex, nextTopUpIndex, pendingFundings, pickInputs, runFunding,
   sessionTopUpKey, stillNeededDuffs,
   type FundingRecord, type FundingStore, type FundingView,
 } from '../src/funding.ts';
@@ -37,6 +37,8 @@ interface Script {
   lookupFails?: boolean;
   /** Deliver the lock's IS-lock even when its broadcast is refused (another node relayed it). */
   isLockOnRefusal?: boolean;
+  /** Transactions nodes already know (mined at `mined`). */
+  known?: string[];
 }
 
 /** A DAPI whose deposit watcher reports payments (IS-locked unless told otherwise) and which IS-locks whatever is broadcast. */
@@ -44,7 +46,7 @@ function fakeDapi(s: Script) {
   const deposits: WatchHandlers[] = [];
   const locks: WatchHandlers[] = [];
   let broadcast: Uint8Array | null = null;
-  const known = new Set<string>();
+  const known = new Set<string>(s.known ?? []);
   const isLock = (h: WatchHandlers, txid: string) => void h.onIsLock({ lock: { txid } as never, bytes: hexToBytes('01' + 'ab'.repeat(100)), known: true, node: 'n' });
   return {
     network: 'testnet',
@@ -108,6 +110,7 @@ function fakePlatform(o: { refuseInstant?: boolean; onRefuse?: () => void; failW
     identityKeys: async (id) => (created.has(id) ? [] : null),
     balance: async (id) => (created.has(id) ? 1n : null),
     coreChainLockedHeight: async () => 2000,
+    assetLockStatus: async () => 'unused',
     createIdentity: async ({ proof }) => {
       p.calls.push(proof.kind);
       if (o.failWith) throw o.failWith;
@@ -330,7 +333,7 @@ describe('runFunding (create)', () => {
         wallet: SeedWallet.fromPhrase(PHRASE, 'testnet'), dapi: dapi as unknown as Dapi, platform: fakePlatform({ failWith: conflict }), store, kind: 'create', identityIndex: 0, isLockWaitMs: 500, pollMs: 10,
         onUpdate: (v) => v.state === 'awaiting-deposit' && !v.receivedDuffs && !v.pendingDuffs && dapi.pay(payTo(v.address, 1_000_000n)),
       }),
-    ).rejects.toThrow(/already registered to another identity/);
+    ).rejects.toBeInstanceOf(KeyConflictError);
     expect(classifyRegistrationError(Object.assign(new Error('x'), { code: 10504 }))).toBe('used');
     expect(classifyRegistrationError(new Error('IdentityAlreadyExistsError: identity exists'))).toBe('used');
     expect(classifyRegistrationError(new Error('connection already closed'))).toBe('other');
@@ -685,6 +688,53 @@ describe('D-006 review: recovery edge cases', () => {
     expect(store.m.get(small.key)!.recoveredInto).toBeUndefined();
   });
 
+  it('a lock whose identity index is taken (KeyConflictError) can top up an existing identity; a free index still refuses', async () => {
+    const store = memStore();
+    store.save(stuckRecord(300_000n));
+    const p = topUpPlatform(target, 1n);
+    p.identityByUniqueKeyHash = async () => 'someone'; // the phrase's identity #0 exists (made on another device)
+    const r = await runFunding({ wallet: w(), dapi: dapi(), platform: p, store, kind: 'create', identityIndex: 0, recoverInto: target });
+    expect(r.identityId).toBe(target);
+    expect(p.topUps).toHaveLength(1);
+  });
+
+  it('restore (the Recover tool) replaces a stale record, but resumes a lock this browser has in flight', async () => {
+    const store = memStore();
+    const s0 = stuckRecord(300_000n);
+    // stale: a finished record for the key; the chain says the lock is unused -> replaced, registered with the chain proof
+    store.save({ ...s0, state: 'done', lock: undefined, isLock: undefined });
+    const restore: FundingRecord = { ...s0, isLock: undefined, proofKind: undefined, createdAt: 2, updatedAt: 2 };
+    const p = fakePlatform();
+    const r = await runFunding({ wallet: w(), dapi: fakeDapi({ events: [], deliverIsLock: false, mined: 1500, known: [s0.lock!.txid] }) as unknown as Dapi, platform: p, store, kind: 'create', identityIndex: 0, restore, pollMs: 10 });
+    expect(r.identityId).toBe(s0.identityId);
+    expect(p.calls).toEqual(['chain']);
+    // in flight with its IS-lock: kept, so the instant proof is used
+    const store2 = memStore();
+    store2.save(s0);
+    const p2 = fakePlatform();
+    await runFunding({ wallet: w(), dapi: dapi(), platform: p2, store: store2, kind: 'create', identityIndex: 0, restore: { ...restore, lock: undefined, state: 'awaiting-deposit' } });
+    expect(p2.calls).toEqual(['instant']);
+    // a record for another key is refused
+    await expect(runFunding({ wallet: w(), dapi: dapi(), platform: p2, store: memStore(), kind: 'create', identityIndex: 1, restore })).rejects.toThrow(/another key/);
+  });
+
+  it('restore lets the Recover tool turn an account setup\'s payments into a top-up before any lock (top-up minimum)', async () => {
+    const store = memStore();
+    const fk = w().derive(registrationFundingPath('testnet', 0));
+    const restore: FundingRecord = {
+      v: 2, key: keyFor(PHRASE), kind: 'create', network: 'testnet', identityIndex: 0, address: addressOf(fk.publicKey, 'testnet'), watchFromHeight: 990,
+      deposits: [{ txid: 'ee'.repeat(32), vout: 0, value: '100000', confirmed: true }], state: 'awaiting-deposit', createdAt: 1, updatedAt: 1,
+    };
+    const s: Script = { events: [], deliverIsLock: true, mined: 0 };
+    const p = topUpPlatform(target, 1n);
+    const r = await runFunding({ wallet: w(), dapi: fakeDapi(s) as unknown as Dapi, platform: p, store, kind: 'create', identityIndex: 0, recoverInto: target, restore, isLockWaitMs: 2000 });
+    expect(r.identityId).toBe(target);
+    expect(p.topUps).toHaveLength(1);
+    expect(p.calls).toEqual([]);
+    // without the Recover tool, still refused before a lock exists
+    await expect(runFunding({ wallet: w(), dapi: dapi(), platform: p, store: memStore(), kind: 'create', identityIndex: 0, recoverInto: target })).rejects.toThrow(/no unused asset lock/);
+  });
+
   it('a record saved in "locking" without a lock under an older floor waits for more instead of failing', async () => {
     const store = memStore();
     const s0 = stuckRecord(209_646n);
@@ -732,5 +782,38 @@ describe('D-006 review: recovery edge cases', () => {
     expect(e.lockCredits).toBe(100_000_000n);
     expect(new LockTooSmallError('create', 209_646_000n, 221_500_000n, false).canTopUp).toBe(false);
     expect(new LockTooSmallError('create', 209_646_000n, 221_500_000n, false).message).not.toMatch(/top up/);
+  });
+});
+
+describe('payments spent elsewhere', () => {
+  it('a payment swept from another device (a confirmed spend) stops counting; an unconfirmed claim of a spend changes nothing', async () => {
+    const s: Script = { events: [], deliverIsLock: true, mined: 0 };
+    const dapi = fakeDapi(s);
+    const views: FundingView[] = [];
+    const ac = new AbortController();
+    const fk = SeedWallet.fromPhrase(PHRASE, 'testnet').derive(registrationFundingPath('testnet', 0));
+    let step = 0;
+    await runFunding({
+      wallet: SeedWallet.fromPhrase(PHRASE, 'testnet'), dapi: dapi as unknown as Dapi, platform: fakePlatform(), store: memStore(), kind: 'create', identityIndex: 0, signal: ac.signal,
+      onUpdate: (v) => {
+        views.push(v);
+        if (v.state !== 'awaiting-deposit') return;
+        if (step === 0) {
+          step = 1;
+          const dep = parseTx(payTo(v.address, 100_000n));
+          dapi.pay(dep.raw);
+          const sweep = buildPayment({ utxos: [{ txid: dep.txid, vout: 0, value: 100_000n }], key: fk.privateKey, to: [{ pubKeyHash: hash160(publicKeyOf(funderKey)), duffs: 99_500n }] }).raw; // no change output
+          setTimeout(() => {
+            dapi.pay(sweep, { lock: false }); // seen, not confirmed: still counted
+            setTimeout(() => dapi.confirm(parseTx(sweep).txid), 20); // mined: gone
+            setTimeout(() => ac.abort(), 60);
+          }, 20);
+        }
+      },
+    }).catch(() => {});
+    const received = views.map((v) => v.receivedDuffs);
+    expect(received).toContain(100_000n);
+    expect(views.at(-1)!.receivedDuffs).toBe(0n);
+    expect(views.some((v) => /spent by/.test(v.note ?? ''))).toBe(true);
   });
 });
