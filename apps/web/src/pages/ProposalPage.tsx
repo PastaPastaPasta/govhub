@@ -238,7 +238,7 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
             <h2 id="about-title">About this proposal</h2>
             {ownerId && (
               <ErrorBoundary what="owner's description">
-                <OwnerPost govHash={p.govHash} ownerId={ownerId} post={post} />
+                <OwnerPost govHash={p.govHash} ownerId={ownerId} post={post} trustLevel={trust.aggregate.level} />
               </ErrorBoundary>
             )}
             {!(post.state?.post && post.state.body !== null) && (

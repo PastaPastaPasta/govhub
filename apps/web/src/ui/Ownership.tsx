@@ -10,6 +10,7 @@ import { useForum } from '../app/forum.tsx';
 import { attestorsFor } from '../config/registry.ts';
 import type { Proposal } from '../data/types.ts';
 import { errText, formatCredits, formatInt, shortAddress, shortHash } from '../lib/format.ts';
+import type { TrustLevel } from '../verify/aggregate.ts';
 import type { CollateralVerdict } from '../verify/collateral.ts';
 import { HiddenToggle, plural } from './HiddenToggle.tsx';
 import { AuthorName, Avatar } from './Identity.tsx';
@@ -376,7 +377,13 @@ export function useOwnerPost(govHash: string, ownerId: string | null) {
   return { state, reload: () => setNonce((n) => n + 1), set: setState };
 }
 
-export function OwnerPost({ govHash, ownerId, post }: { govHash: string; ownerId: string; post: ReturnType<typeof useOwnerPost> }) {
+/**
+ * Whether a page whose overall check came out as `level` may call the claimant "the verified proposal owner": not next to "Couldn't verify",
+ * "Failed verification" or a check still running.
+ */
+export const ownerVerified = (level: TrustLevel): boolean => level === 'verified' || level === 'partial' || level === 'demo';
+
+export function OwnerPost({ govHash, ownerId, post, trustLevel = 'verified' }: { govHash: string; ownerId: string; post: ReturnType<typeof useOwnerPost>; trustLevel?: TrustLevel }) {
   const { session, moderation } = useForum();
   const [editing, setEditing] = useState(false);
   const [reveal, setReveal] = useState(false);
@@ -421,7 +428,11 @@ export function OwnerPost({ govHash, ownerId, post }: { govHash: string; ownerId
       {s.post && s.body !== null && !editing && (
         <>
           <h2 id="post-title">{s.post.title}</h2>
-          <p className="muted small">Written by the verified proposal owner; stored on Platform. govhub does not check what it says.</p>
+          <p className="muted small" data-testid="owner-post-byline">
+            {ownerVerified(trustLevel)
+              ? 'Written by the verified proposal owner; stored on Platform. govhub does not check what it says.'
+              : "Written by the identity that claimed this proposal; stored on Platform. The proposal itself isn't fully verified here, and govhub does not check what the description says."}
+          </p>
           <Markdown text={s.body} />
         </>
       )}
