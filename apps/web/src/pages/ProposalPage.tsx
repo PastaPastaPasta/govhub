@@ -270,12 +270,6 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
                   {formatDate(p.startEpoch)} to {formatDate(p.endEpoch)}
                 </dd>
               </div>
-              {active && deadline && (
-                <div>
-                  <dt>Votes close</dt>
-                  <dd>{deadline.text}</dd>
-                </div>
-              )}
               {host && (
                 <div>
                   <dt>Website</dt>

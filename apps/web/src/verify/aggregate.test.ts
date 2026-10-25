@@ -159,7 +159,7 @@ describe('collateral: only an anchored, final, height-matching collateral is pro
     expect(v.steps.find((s) => s.id === 'chainlock')!.basis).toBe('verified'); // the step itself says verified...
     const c = collateralComponent({ verdict: v, error: null, publishedHeight: p.collateralHeight });
     expect(c.status).toBe('reported'); // ...the aggregate does not take it
-    expect(c.status === 'reported' && c.reason).toContain("isn't tied to the chain");
+    expect(c.status === 'reported' && c.reason).toContain("couldn't be traced to the chain");
   });
 
   it('a published collateral height that differs from the chain, or none at all: partly verified', async () => {
@@ -290,7 +290,7 @@ describe('votes', () => {
   it('keys only as the bridge reports them (no proven list or no registrations): partly verified', () => {
     const c = comp(done(verifyVotes({ ...base, sml: null, proReg: null })));
     expect(c.status).toBe('reported');
-    expect(c.status === 'reported' && c.reason).toContain('bridge');
+    expect(c.status === 'reported' && c.reason).toContain('bridge lists');
     expect(comp(done(verifyVotes({ ...base, proReg: null }))).status).toBe('reported');
     expect(provenNetYes(done(verifyVotes({ ...base, sml: null })), { name: PLATFORM_TARGET, tally })).toBeNull();
   });

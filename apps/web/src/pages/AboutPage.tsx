@@ -15,11 +15,11 @@ const STATES: Array<[TrustLevel, string]> = [
 ];
 
 const CHECKS: Array<[string, string]> = [
-  ['The content', 'The proposal’s fingerprint (its governance hash) is recomputed from the published text, and every field shown, from the name to the amount and dates, is the one it covers.'],
-  ['The collateral', 'Every proposal burns a fee on the Dash chain that names that fingerprint. Your browser fetches that transaction, checks it, and proves it sits in a final block of the chain it verified itself from a checkpoint built into govhub, at the published height.'],
+  ['The proposal text', 'The proposal’s fingerprint (its governance hash) is recomputed from the published text, and every field shown, from the name to the amount and dates, is the one it covers.'],
+  ['The submission fee', 'Every proposal burns a fee on the Dash chain that names that fingerprint. Your browser fetches that transaction, checks it, and proves it sits in a final block of the chain it verified itself from a checkpoint built into govhub, at the published height.'],
   ['The chain and the masternode list', 'The list of masternodes, and so the number of votes a proposal needs, is proven by the chain too.'],
-  ['The votes', 'Every signed vote behind the tally is checked against the masternode’s voting key and recounted. The result must equal the tally recorded on Dash Platform, down to its fingerprint of the whole vote set.'],
-  ['The funding status', '“Passing” or “needs more votes” follows from the recount and the proven threshold. Whether a passing proposal fits in the next budget comes from recounting and ranking every active proposal the way Dash Core does.'],
+  ['The vote count', 'Every signed vote behind the tally is checked against the masternode’s voting key and recounted. The result must equal the tally recorded on Dash Platform, down to its fingerprint of the whole vote set.'],
+  ['Funding', '“Passing” or “needs more votes” follows from the recount and the proven threshold. Whether a passing proposal fits in the next budget comes from recounting and ranking every active proposal the way Dash Core does.'],
 ];
 
 const GLYPHS: Array<[ProvenanceKind, string, string]> = [

@@ -50,8 +50,8 @@ test.describe('keyring page (fixtures, demo keyring)', () => {
     await expect(groups.nth(0).getByTestId('key-count')).toHaveText('controls 2 masternodes');
     await expect(groups.nth(1).getByTestId('key-count')).toHaveText('controls 1 masternode');
     await expect(groups.nth(1).getByTestId('mn-row')).toContainText('Evonode ×4');
-    await expect(page.getByTestId('mn-row').first()).toContainText('Valid');
-    await expect(page.getByTestId('mn-row').first().getByRole('button', { name: 'Copy proTxHash' })).toBeVisible();
+    await expect(page.getByTestId('mn-row').first()).toContainText('Can vote');
+    await expect(page.getByTestId('mn-row').first().getByRole('button', { name: 'Copy masternode ID' })).toBeVisible();
     await expect(page.getByTestId('votes-empty')).toBeVisible();
     await expect(page.locator('#addkey-warn')).toHaveText(/Only the voting key/);
     await expect(page.getByTestId('voting-key-input')).toHaveAttribute('aria-describedby', 'addkey-warn');

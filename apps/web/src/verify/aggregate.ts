@@ -110,7 +110,7 @@ export function collateralComponent(i: { verdict: CollateralVerdict | null; erro
   }
   const c = v.chain;
   // Only the anchored path counts: the fallback (merkle proof + a ChainLock checked against a node-agreed list) is not proven here.
-  if (!c?.anchored) return { status: 'reported', reason: "The collateral's block isn't tied to the chain this browser verified" };
+  if (!c?.anchored) return { status: 'reported', reason: "Not fully checked: the fee's block couldn't be traced to the chain your browser verified" };
   if (c.anchored.weak || c.weak) return { status: 'reported', reason: `Testnet: the chain is only protected by proof of work, which is too weak there` };
   if (v.steps.some((s) => s.id === 'crosscheck')) return { status: 'reported', reason: "The collateral's block rests on what nodes report" };
   for (const id of COLLATERAL_STEPS) {
@@ -135,7 +135,7 @@ export function collateralComponent(i: { verdict: CollateralVerdict | null; erro
 
 export function chainComponent(i: { report: ChainReport | null; error: string | null; unavailable: string | null; progress?: string }): ComponentState {
   if (i.error) return { status: 'error', reason: `The chain couldn't be verified: ${i.error}` };
-  if (i.unavailable) return { status: 'reported', reason: `Chain facts not verified: ${i.unavailable}` };
+  if (i.unavailable) return { status: 'reported', reason: `Not checked: ${i.unavailable}` };
   const r = i.report;
   if (!r) return { status: 'pending', note: i.progress || 'Verifying the chain' };
   if (r.anchor.weak) return { status: 'reported', reason: 'Testnet: the chain is only protected by proof of work, which is too weak there' };
@@ -178,7 +178,7 @@ export function votesComponent(i: {
     if (r.smlUnconfirmed > 0) return { status: 'reported', reason: `Votes not fully recounted: ${r.smlUnconfirmed.toLocaleString('en-US')} voters couldn't be matched to the proven masternode list` };
     const dropped = Object.values(r.problems).reduce((a, b) => a + b, 0);
     if (dropped > 0) return { status: 'reported', reason: `Votes not fully recounted: ${dropped.toLocaleString('en-US')} votes in the bridge's set didn't check out` };
-    return { status: 'reported', reason: 'Votes not fully recounted: voting keys only as the bridge reports them' };
+    return { status: 'reported', reason: "Not fully checked: the voters' keys are as the bridge lists them" };
   }
   return { status: 'proven', summary: `${r.verified.toLocaleString('en-US')} signed votes recounted; they match the published tally exactly` };
 }
@@ -211,7 +211,7 @@ export function fundingComponent(i: {
 }): ComponentState {
   const up = [i.chain, i.votes];
   if (up.some((s) => s.status === 'pending')) return { status: 'pending', note: 'Waiting for the chain facts and the vote recount' };
-  if (up.some((s) => s.status !== 'proven') || !i.report) return { status: 'reported', reason: 'The funding status follows from facts that are not all proven' };
+  if (up.some((s) => s.status !== 'proven') || !i.report) return { status: 'reported', reason: 'Not fully checked: it depends on the checks above' };
   const p = i.report.payments;
   if (p && (p.unread.length || p.ambiguous.length || p.othersComplete === false)) return { status: 'reported', reason: "The proposal's payment history couldn't be fully proven" };
   const active = i.proposal.endEpoch > i.nowS;

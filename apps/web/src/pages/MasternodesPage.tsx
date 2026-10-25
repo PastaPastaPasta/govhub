@@ -19,7 +19,7 @@ const IDLE_CHOICES = [5, 15, 30, 60, 240];
 function statusLine(k: ReturnType<typeof useKeyring>): string {
   const ring = k.keyring!;
   const mins = ring.content.idleLockMinutes;
-  if (k.demo) return 'Demo keyring · fixture data and pretend relays, nothing reaches the network';
+  if (k.demo) return 'Demo keyring: sample masternodes, and votes aren’t sent';
   if (k.memoryOnly) return `Unlocked · memory only, nothing is saved · wiped after ${mins} idle min`;
   const seeds = ring.content.unlockers.filter((u) => u.type === UnlockerType.SEED).length;
   const passkeys = ring.content.unlockers.length - seeds;
@@ -151,7 +151,7 @@ function AddKey() {
       <h2 id="addkey-title">Add a voting key</h2>
       <form className="kr-form" onSubmit={submit} aria-label="Add a voting key">
         <label className="kr-field">
-          <span>Voting key ({k.coreNetwork} WIF)</span>
+          <span>Voting private key ({k.coreNetwork}, as Dash Core shows it)</span>
           <input type="password" value={wif} onChange={(e) => setWif(e.target.value)} autoComplete="off" spellCheck={false} data-testid="voting-key-input" aria-describedby="addkey-warn" />
         </label>
         <p className="kr-inline-warn small" id="addkey-warn">
@@ -214,13 +214,13 @@ function MnCard({ m, label }: { m: OwnedMasternode; label: string }) {
       <div className="kr-mn-top">
         <NodeLabel pro={m.proTxHash} value={label} />
         <span className="chip kr-type">{m.type === 'evo' ? 'Evonode ×4' : 'Regular'}</span>
-        {m.valid ? <span className="chip chip-funded">Valid</span> : <span className="chip chip-bad">PoSe-banned: cannot vote</span>}
+        {m.valid ? <span className={`chip ${m.provenance.key === 'sml' ? 'chip-funded' : 'chip-neutral'}`}>Can vote</span> : <span className="chip chip-bad">PoSe-banned: cannot vote</span>}
       </div>
       <dl className="kr-mn-facts">
         <div>
-          <dt>proTxHash</dt>
+          <dt>Masternode ID</dt>
           <dd>
-            <HashCopy value={m.proTxHash} label="proTxHash" />
+            <HashCopy value={m.proTxHash} label="masternode ID" />
           </dd>
         </div>
         <div>
@@ -233,7 +233,7 @@ function MnCard({ m, label }: { m: OwnedMasternode; label: string }) {
           ? 'Confirmed: its key matches the masternode list, and its registration proves the rest.'
           : m.provenance.key === 'sml'
             ? 'Key matches the masternode list; its registration is not checked yet.'
-            : 'Not confirmed yet: as the bridge lists it.'}
+            : 'Not confirmed against the masternode list yet.'}
       </p>
     </li>
   );

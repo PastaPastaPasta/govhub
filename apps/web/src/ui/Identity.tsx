@@ -43,9 +43,11 @@ export function AuthorName({ id, profile, dpns }: { id: string; profile?: Profil
     <span className="author">
       <b className="author-name">{profile?.displayName ?? dpns ?? shortHash(id, 5)}</b>
       {dpns && profile && <span className="author-dpns">{dpns}</span>}
-      <span className="author-id mono-ish" title={id}>
-        {shortHash(id, 4)}
-      </span>
+      {(profile?.displayName ?? dpns) && (
+        <span className="author-id mono-ish" title={id}>
+          {shortHash(id, 4)}
+        </span>
+      )}
     </span>
   );
 }

@@ -114,7 +114,7 @@ function Choose() {
   ];
   const other: Array<{ v: SheetView; title: string; text: string }> = [
     { v: 'passkey', title: 'Use a passkey', text: 'If you saved one on this device or another.' },
-    { v: 'key', title: 'Paste a key', text: 'Advanced: an identity key (HIGH or CRITICAL), WIF or hex.' },
+    { v: 'key', title: 'Paste a key', text: 'For developers: a private key of your identity.' },
   ];
   const choice = (o: (typeof main)[number], big: boolean) => (
     <li key={o.v}>

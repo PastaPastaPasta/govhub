@@ -36,7 +36,7 @@ function Custom({ on }: { on: boolean }) {
 
 /** The network profile: one action switches Core network, Platform network, contracts, bridge and DAPI nodes together. */
 function ProfileSettings({ onSwitched }: { onSwitched(text: string): void }) {
-  const { registry, setRegistry, switchProfile } = useApp();
+  const { registry, setRegistry, switchProfile, mode, setMode } = useApp();
   const custom = customFields(registry);
   const p = PROFILES[registry.profile];
   return (
@@ -69,14 +69,7 @@ function ProfileSettings({ onSwitched }: { onSwitched(text: string): void }) {
       </fieldset>
       <p className="small" data-testid="profile-description">
         <b>{p.title}.</b> {p.description} Core {registry.coreNetwork}, Platform {registry.platformNetwork}
-        {registry.govContractId ? (
-          <>
-            , governance contract <span className="mono-ish break">{registry.govContractId}</span>
-          </>
-        ) : (
-          <>, no governance contract yet</>
-        )}
-        .
+        {registry.govContractId ? '' : ', no governance contract yet'}.
       </p>
       {custom.size > 0 && (
         <p className="small">
@@ -93,6 +86,9 @@ function ProfileSettings({ onSwitched }: { onSwitched(text: string): void }) {
           </button>
         </p>
       )}
+      <label className="check">
+        <input type="checkbox" checked={mode === 'fixtures'} onChange={(e) => setMode(e.target.checked ? 'fixtures' : 'live')} /> Show demo data (a recorded mainnet snapshot) instead, in this tab
+      </label>
     </section>
   );
 }
@@ -230,9 +226,6 @@ export function SettingsPage() {
       <section className="form" aria-labelledby="appearance-title">
         <h2 id="appearance-title">Appearance</h2>
         <ThemeSwitch />
-        <label className="check">
-          <input type="checkbox" checked={mode === 'fixtures'} onChange={(e) => setMode(e.target.checked ? 'fixtures' : 'live')} /> Show demo data (a recorded mainnet snapshot) instead of live data, in this tab
-        </label>
       </section>
 
       <details className="group" open={advanced} onToggle={(e) => setAdvanced((e.target as HTMLDetailsElement).open)}>

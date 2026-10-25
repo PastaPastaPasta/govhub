@@ -103,7 +103,7 @@ test.describe('fixture mode', () => {
     await expect(table.locator('tr', { hasText: 'voteSetHash' }).locator('.visually-hidden').last()).toHaveText('matches');
     // A bridge match on bridge-supplied keys is not "verified".
     await expect(drawer.locator('[data-check="votes"]')).toHaveAttribute('data-state', 'reported');
-    await expect(drawer.locator('[data-check="votes"]')).toContainText('voting keys only as the bridge reports them');
+    await expect(drawer.locator('[data-check="votes"]')).toContainText("the voters' keys are as the bridge lists them");
     expect(errors).toEqual([]);
   });
 

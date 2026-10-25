@@ -81,8 +81,8 @@ export function BudgetHeader() {
         <span className="strip-free" style={{ flexGrow: Math.max(0, c.budget - Math.max(allocated, fundedSum)) }} />
       </div>
 
-      <p className="strip-legend small muted" aria-hidden="true">
-        <span className="key key-seg" /> in the next budget, one block per proposal <span className="key key-free" /> still available
+      <p className="budget-compact">
+        <b>{formatDashAmount(Math.max(0, c.budget - allocated))} DASH</b> still available; <b>{formatInt(funded.length)}</b> of {formatInt(active)} proposals in the budget
       </p>
       <dl className="budget-facts">
         <div>
@@ -113,6 +113,14 @@ export function BudgetHeader() {
       </dl>
       <details className="learn">
         <summary>How funding works</summary>
+        <p className="strip-legend small muted">
+          <span className="legend-item">
+            <span className="key key-seg" /> each blue segment is a proposal in the next budget
+          </span>
+          <span className="legend-item">
+            <span className="key key-free" /> still available
+          </span>
+        </p>
         <p className="small">
           The treasury pays out {superblockCadence(params)}, in a special block (a superblock; this one is block {formatInt(c.superblockHeight)}
           {height ? `, the chain is at ${formatInt(height)}` : ''}). A proposal is paid if its yes votes minus its no votes reach 10% of all masternode

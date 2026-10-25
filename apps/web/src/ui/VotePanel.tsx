@@ -363,7 +363,9 @@ export function VoteComposer({ proposals, onVerify }: { proposals: Proposal[]; o
           <p className="vgo-sum small muted" data-testid="vote-summary">
             {mode === 'deferred' && latestRelease
               ? `Signed here, released at random times before ${fmtTime(latestRelease)}.`
-              : `Signed in your browser and sent to the network through ${k.relays.length === 1 ? relayHost(k.relays[0]!) : `${k.relays.length} relays`}.`}
+              : k.demo
+                ? 'Signed in your browser. In demo mode nothing is sent.'
+                : `Signed in your browser and sent to the network through ${k.relays.length === 1 ? relayHost(k.relays[0]!) : `${k.relays.length} relays`}.`}
           </p>
         )}
         {disabledHint && disabledHint.replace(/\.$/, '') !== buttonText && (

@@ -108,7 +108,7 @@ export function useChainReport(p: Proposal | undefined, verdict: CollateralVerdi
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reruns when the active list has loaded, not on every refresh of it
   }, [p, source, from, live, activeReady, nonce]);
   const unavailable = !live
-    ? 'needs live DAPI nodes (recorded data has no header chain)'
+    ? "demo data can't be checked against the live chain"
     : verdict && from === null
       ? (!verdict.ok ? 'the collateral check did not pass' : (verdict.anchorError ?? 'the collateral could not be placed in the verified chain'))
       : null;

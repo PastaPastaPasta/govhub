@@ -91,6 +91,8 @@ export function ChainShield() {
         </section>
         <p className="small">{p.description}</p>
         {a && (
+          <details className="learn">
+            <summary>What the chain check rests on</summary>
           <dl className="kv">
             <div>
               <dt>Rests on</dt>
@@ -119,6 +121,7 @@ export function ChainShield() {
               </dd>
             </div>
           </dl>
+          </details>
         )}
         <p className="small muted">
           Proposals, tallies and comments are read from Dash Platform{registry.platform.trusted ? ' with proofs: evo-sdk checks every answer against the quorum signature' : ' in untrusted mode'}. Each proposal page checks the rest
