@@ -1,4 +1,7 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type BrowserContext, type Page } from '@playwright/test';
+
+/** Aborts every request that leaves this machine: live mode with no backend. */
+export const offline = (context: BrowserContext) => context.route(/^https?:\/\/(?!localhost[:/]|127\.0\.0\.1[:/])/, (r) => r.abort());
 
 /** Collects page errors and CSP violations; read the violations with cspViolations(). */
 export async function watchPage(page: Page): Promise<string[]> {

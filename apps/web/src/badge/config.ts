@@ -22,8 +22,10 @@ export interface BadgeNetworkConfig {
   contractId: string;
   defaultIssuers: readonly TrustedIssuer[];
   /**
-   * A badge is posted only if the issuer reported at least this many tokens for the epoch (review R1): a badge among two or three
-   * stands out. Testnet's value suits a demo with a handful of test masternodes.
+   * A Private / Extra private badge is posted only if the issuer reported at least this many tokens for the epoch before (review R1):
+   * a badge among two or three stands out. The issuerReport has one count per epoch, Standard and private tokens together, so it
+   * cannot say how many chose a private mode (SR-23); the minimum is set higher to leave room for the Standard tokens in it.
+   * Testnet's value suits a demo with a handful of test masternodes.
    */
   minAnonymitySet: number;
   /**
@@ -43,12 +45,12 @@ export const BADGE_NETWORKS: Readonly<Record<CoreNetwork, BadgeNetworkConfig>> =
   testnet: {
     contractId: '2aYj4Dkix7xXBUTZFCDBjpcqqLi9Tg5oUwBgHUJBNGCU',
     defaultIssuers: [{ name: 'govhub', identityId: 'H62hSf5TpKbUSMov85GMhPQahZDbqsTipeoBsYPgveUH', url: 'https://gov-issuer-testnet.dashhq.org', enabled: true }],
-    minAnonymitySet: 3,
+    minAnonymitySet: 5,
     // testnet has about 150 masternodes (2026-10)
     maxPlausibleTokens: 500,
   },
   // mainnet has about 2,400 masternodes (2026-10); the bound needs updating if that grows a lot
-  mainnet: { contractId: '', defaultIssuers: [], minAnonymitySet: 10, maxPlausibleTokens: 4_000 },
+  mainnet: { contractId: '', defaultIssuers: [], minAnonymitySet: 20, maxPlausibleTokens: 4_000 },
 };
 
 const KEY = (net: CoreNetwork) => `govhub.badge.trust.v1.${net}`;

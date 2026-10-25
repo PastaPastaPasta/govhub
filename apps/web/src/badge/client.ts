@@ -23,6 +23,7 @@ import {
   displayWindow,
   epochStart,
   epochLength,
+  epochOf,
   EPOCH_PARAMS,
   fromHex,
   idToBytes,
@@ -31,6 +32,7 @@ import {
   pickRequestHeight,
   prepareBadge,
   privateRequestWindow,
+  PRIVACY_MODES,
   requestableEpoch,
   toHex,
   type BadgeNetwork,
@@ -126,19 +128,73 @@ export function requestWindow(p: EpochParams, epoch: number, mode: PrivacyMode):
   return mode === 'standard' ? { from: epochStart(p, epoch), to: epochStart(p, epoch + 1) - p.boundaryMarginBlocks } : privateRequestWindow(p, epoch);
 }
 
+/** The epoch a new request in `mode` asks for at `coreHeight` (null: no issuance window is open). */
+export function jobEpoch(p: EpochParams, coreHeight: number, mode: PrivacyMode, immediate = false): number | null {
+  const epoch = requestableEpoch(p, coreHeight, mode);
+  if (epoch === null || mode === 'standard' || immediate) return epoch;
+  // Private modes: with little of the window left the request would go out in this same visit, so ask for the next epoch (H1).
+  const w = privateRequestWindow(p, epoch);
+  return w.to - Math.max(coreHeight, w.from) < epochLength(p) / 4 ? epoch + 1 : epoch;
+}
+
+/** Whether the issuer has a usable key for the epoch a mode would ask for, checked before the user pastes anything (D-044). */
+export interface ModeKeyCheck {
+  mode: PrivacyMode;
+  epoch: number;
+  ok: boolean;
+  /** why not, in the reader's words; null when ok */
+  problem: string | null;
+}
+
+export interface KeyAvailability {
+  height: number;
+  modes: ModeKeyCheck[];
+  /** the first epoch, from the current one on (up to 3 ahead), with a usable key; null when none of them has one */
+  firstKeyEpoch: number | null;
+}
+
+/** Proved issuerKey lookups only (the reader's); nothing goes to the issuer. */
+export async function checkKeyAvailability(issuerKey: ClientDeps['issuerKey'], issuer: TrustedIssuer, net: BadgeNetwork, height: number): Promise<KeyAvailability> {
+  const p = EPOCH_PARAMS[net];
+  const usable = new Map<number, string | null>();
+  const look = async (epoch: number): Promise<string | null> => {
+    if (!usable.has(epoch)) {
+      const { key, problem } = await issuerKey(issuer, epoch);
+      usable.set(epoch, !key ? (problem ?? 'no valid key') : key.revokedFrom !== null ? 'the issuer revoked this key' : null);
+    }
+    return usable.get(epoch)!;
+  };
+  const modes: ModeKeyCheck[] = [];
+  for (const mode of PRIVACY_MODES) {
+    const epoch = jobEpoch(p, height, mode);
+    if (epoch === null) continue;
+    const problem = await look(epoch);
+    modes.push({ mode, epoch, ok: problem === null, problem });
+  }
+  let firstKeyEpoch: number | null = null;
+  for (let e = Math.max(1, epochOf(p, height)); e <= epochOf(p, height) + 3; e++) {
+    if ((await look(e)) === null) {
+      firstKeyEpoch = e;
+      break;
+    }
+  }
+  return { height, modes, firstKeyEpoch };
+}
+
+function noKeyMessage(issuer: Pick<TrustedIssuer, 'name'>, epoch: number, mode: PrivacyMode, problem: string | null): string {
+  const why = problem ? ` (${problem})` : '';
+  if (mode === 'standard') return `Standard mode needs ${issuer.name}’s key for the current epoch, ${epoch}, and there is none on Platform${why}. Standard works once the issuer’s first key’s epoch starts; Private may work now: it asks for a token for the next epoch.`;
+  return `${issuer.name} has no valid key for epoch ${epoch} on Platform${why}, so a ${mode === 'extra' ? 'Extra private' : 'Private'} request cannot be made yet.`;
+}
+
 export async function createJob(d: ClientDeps, jobs: readonly BadgeJob[], voting: string | VotingSigner, proTxHashHex: string, coreHeight: number, o: RequestOptions): Promise<BadgeJob> {
   const proTxHash = proTxHashHex.trim().toLowerCase();
   if (!/^[0-9a-f]{64}$/.test(proTxHash)) throw new BadgeRequestError('The proTxHash must be 64 hex characters.');
   if (typeof voting === 'string' && !voting.trim()) throw new BadgeRequestError('Paste the MN voting key (WIF).');
   const p = EPOCH_PARAMS[d.net];
   const mode = o.mode ?? 'standard';
-  let epoch = requestableEpoch(p, coreHeight, mode);
+  const epoch = jobEpoch(p, coreHeight, mode, o.immediate);
   if (epoch === null) throw new BadgeRequestError('No issuance window is open.');
-  // Private modes: with little of the window left the request would go out in this same visit, so ask for the next epoch (H1).
-  if (mode !== 'standard' && !o.immediate) {
-    const w = privateRequestWindow(p, epoch);
-    if (w.to - Math.max(coreHeight, w.from) < epochLength(p) / 4) epoch++;
-  }
   if (jobs.some((j) => j.issuer.identityId === o.issuer.identityId && j.epoch === epoch && j.state !== 'expired' && j.state !== 'failed'))
     throw new BadgeRequestError(`You already have a badge request with ${o.issuer.name} for epoch ${epoch}. One badge per issuer is all an identity can show; asking with more MNs would only tell the issuer they belong together.`);
   const wif = typeof voting === 'string' ? voting.trim() : null;
@@ -150,7 +206,7 @@ export async function createJob(d: ClientDeps, jobs: readonly BadgeJob[], voting
     }
   }
   const { key, problem } = await d.issuerKey(o.issuer, epoch);
-  if (!key) throw new BadgeRequestError(`${o.issuer.name} has no valid key for epoch ${epoch} on Platform (${problem}).`);
+  if (!key) throw new BadgeRequestError(noKeyMessage(o.issuer, epoch, mode, problem));
   if (key.revokedFrom !== null) throw new BadgeRequestError(`${o.issuer.name} revoked its key for epoch ${epoch}.`);
   const prepared = prepareBadge(key.key, idToBytes(d.ownerId));
   const spki = bytesToBase64(key.key.spki);
@@ -185,6 +241,26 @@ export async function createJob(d: ClientDeps, jobs: readonly BadgeJob[], voting
 /** A failed attempt waits a random 1 to 3 hours, so one unreachable issuer does not take every quiet half hour. */
 function backoff(j: BadgeJob, note: string): BadgeJob {
   return { ...j, note, retryAt: Date.now() + 3_600_000 + Math.floor(Math.random() * 7_200_000) };
+}
+
+const hostOf = (url: string): string => {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+};
+
+/**
+ * What went wrong reaching an issuer, in words, with the browser's own message: fetch() says only "Failed to fetch" (Chromium),
+ * "Load failed" (WebKit) or "NetworkError…" (Firefox) for DNS failures, refused connections, TLS errors and CORS refusals alike.
+ */
+export function issuerErrorText(issuerUrl: string, e: unknown): string {
+  const raw = (e instanceof Error ? e.message : String(e)).slice(0, 200);
+  const host = hostOf(issuerUrl);
+  if (/failed to fetch|load failed|networkerror|network request failed/i.test(raw)) return `${host} could not be reached (no answer: the issuer may be down, or blocked by your network; the browser said “${raw}”)`;
+  if (/timeout|timed out|aborted/i.test(raw)) return `${host} did not answer in time (“${raw}”)`;
+  return `${host}: ${raw}`;
 }
 
 /** Errors the issuer answers that end a job (the rest are retried while the window is open). */
@@ -245,7 +321,7 @@ export async function step(d: ClientDeps, job: BadgeJob, height: number): Promis
       const done = wipe({ ...j, state: 'token', sig, note: undefined });
       return { ...done, postAt: pickPostHeight(p, j.epoch, height, j.mode) };
     } catch (e) {
-      return backoff(j, `Could not reach the issuer (${(e as Error).message}); trying again later.`);
+      return backoff(j, `Could not reach the issuer: ${issuerErrorText(j.issuer.url, e)}.`);
     }
   }
   if (j.state === 'token') {
@@ -265,6 +341,10 @@ export async function step(d: ClientDeps, job: BadgeJob, height: number): Promis
         if (await d.issuerFlagged(j.issuer, j.epoch - 1)) return wipe({ ...j, state: 'expired', note: `${j.issuer.name} failed the audit for epoch ${j.epoch - 1}, so readers hide its badges for epoch ${j.epoch}: the badge is not posted.` });
         const tokens = await d.reportedTokens(j.issuer, j.epoch - 1);
         if (tokens === null && height <= epochStart(p, j.epoch) + p.graceBlocks) return { ...backoff(j, `Waiting for ${j.issuer.name}'s token count for epoch ${j.epoch - 1} before posting.`), postAt };
+        // No count after its window although the issuer served E-1: readers flag the issuer for E-1 and hide its E badges, so
+        // there is nothing to gain and no crowd size to check. Decided here, not only by the (cached) audit above (SR-34).
+        if (tokens === null && (await d.issuerKey({ ...j.issuer, enabled: true }, j.epoch - 1)).key)
+          return wipe({ ...j, state: 'expired', note: `${j.issuer.name} published no token count for epoch ${j.epoch - 1}, so the size of the crowd cannot be checked and readers hide its badges for epoch ${j.epoch}: the badge is not posted.` });
         if (tokens !== null && tokens < d.minAnonymitySet)
           return wipe({ ...j, state: 'expired', note: `Only ${tokens} token${tokens === 1 ? ' was' : 's were'} issued in epoch ${j.epoch - 1}: a badge among so few would stand out, so it is not posted. Next time, more masternodes may take part (or use Standard mode).` });
       }

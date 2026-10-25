@@ -42,6 +42,12 @@ function Header() {
         ) : (
           <p className="kr-state muted">Vote with your masternodes from any proposal. Only the voting key is needed.</p>
         )}
+        <p className="small">
+          <Link to="/badge" data-testid="mn-badge-link">
+            Get an MN badge
+          </Link>
+          : show “MN · vouched by …” next to your name in discussions, without revealing which masternode.
+        </p>
       </div>
       {open && (
         <div className="kr-head-actions">

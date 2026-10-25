@@ -154,4 +154,10 @@ export const localPasskeys = {
     l.add(credentialIdB64);
     storage.setItem(this.key(identityId), JSON.stringify([...l]));
   },
+  /** Forgets a removed passkey; the entry goes once it lists none. */
+  remove(storage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>, identityId: string, credentialIdB64: string): void {
+    const l = this.list(storage, identityId).filter((x) => x !== credentialIdB64);
+    if (l.length) storage.setItem(this.key(identityId), JSON.stringify(l));
+    else storage.removeItem(this.key(identityId));
+  },
 };

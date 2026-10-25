@@ -14,8 +14,13 @@ export interface VoteVerdict {
   matched?: TargetResult;
 }
 
-/** A recount of a vote set that is not the one behind the tally says nothing about that tally: votes move on between updates. */
-const comparable = (run: VoteRun, t: TargetResult): boolean => t.asOfHeight === run.votesAsOf;
+/**
+ * Whether a recount is of the vote set behind tally `t`: the bridge served its tally record at that very height, or the record in
+ * force at it (the newest at or below it) when asked for that height. Any other recount says nothing about `t`: votes move on between
+ * updates. A comparable recount that differs from `t` is a contradiction between the votes served and the published tally.
+ */
+export const comparable = (run: Pick<VoteRun, 'votesAsOf' | 'asked'>, t: Pick<TargetResult, 'asOfHeight'>): boolean =>
+  t.asOfHeight === run.votesAsOf || (run.asked === t.asOfHeight && run.votesAsOf <= t.asOfHeight);
 
 export function voteVerdict(runs: readonly VoteRun[]): VoteVerdict {
   const pairs = runs.flatMap((run) => run.result.targets.map((t) => ({ run, t })));

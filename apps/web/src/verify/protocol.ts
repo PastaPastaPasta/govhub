@@ -1,7 +1,7 @@
 // Messages between the page and the verification worker. Everything is structured-clone safe.
 import type { DapiConfig } from '../data/dapi.ts';
 import type { CoreNetwork, Proposal } from '../data/types.ts';
-import type { AnchorSummary, ChainReport } from './chain.ts';
+import type { AnchorSummary, ChainReport, PaymentsFact } from './chain.ts';
 import type { CollateralVerdict } from './collateral.ts';
 import type { RankingResult } from './ranking.ts';
 import type { VoteRun, VoteTarget } from './votes.ts';
@@ -23,9 +23,11 @@ export interface SmlUsed {
 export type WorkerRequest =
   /** `light`: the node's word for the transaction plus a second node's, without the block proof (background checks of whole lists). */
   | { id: number; kind: 'collateral'; proposal: Proposal; dapi: DapiDescriptor; light?: boolean }
-  /** Chain facts for the page: threshold, schedule, budget, payments. `from`: the collateral's verified height. */
+  /** Chain facts for the page: anchor, threshold, schedule and budget (posted first). `from`: the collateral's verified height. */
+  | { id: number; kind: 'chain'; from: number; dapi: DapiDescriptor; network: CoreNetwork; now: number }
+  /** The proposal's payments, read from the superblocks of its payment window in the verified chain (bounded per run, cached). */
   | {
-      id: number; kind: 'chain'; proposal: Proposal; from: number; dapi: DapiDescriptor; network: CoreNetwork; now: number;
+      id: number; kind: 'payments'; proposal: Proposal; from: number; dapi: DapiDescriptor; network: CoreNetwork; now: number;
       /** Other listed proposals: a payment to the same address and amount inside their window is ambiguous. */
       others: Array<Pick<Proposal, 'govHash' | 'paymentAddress' | 'paymentAmount' | 'startEpoch' | 'endEpoch'>>;
       /** Every listed proposal (active and past) could be read: otherwise a twin may have been missed. */
@@ -51,6 +53,7 @@ export type WorkerResponse =
   | { id: number; kind: 'progress'; message: string }
   | { id: number; kind: 'collateral'; verdict: CollateralVerdict }
   | { id: number; kind: 'chain'; report: ChainReport }
+  | { id: number; kind: 'payments'; payments: PaymentsFact }
   | { id: number; kind: 'anchor'; anchor: AnchorSummary }
   | {
       id: number;

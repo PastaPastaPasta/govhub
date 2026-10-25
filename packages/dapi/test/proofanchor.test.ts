@@ -113,7 +113,14 @@ describe('testnet anchorChain on a quorum proof', () => {
     expect(src.asked).toEqual([f.checkpoint.blockHash, f.target.blockHash]);
     expect(b.stats).toMatchObject({ cachedHeaders: a.chain.hi - a.chain.lo + 1, fetchedHeaders: 0 });
     expect(b.trust).toMatchObject({ kind: 'quorum-proof', source: SAVED_SOURCE, from: { height: f.target.height }, links: 0 });
+    // a source that cannot serve from the saved state is said so (not "no newer one exists")
+    expect(b.trust).toMatchObject({ newerUnavailable: 'bridge.test: HTTP 404' });
     expect(b.chainLock).toMatchObject({ height: f.target.height, blockHash: f.target.blockHash });
+
+    // D-065: a source that fails (HTTP 502) is said to have failed, named once, not hidden behind "no newer one available"
+    const down = source('quorums.test', { fail: new ProofSourceError('quorums.test: HTTP 502', 502) });
+    const c = await dapiFor([N(1), N(2), N(3)]).anchorChain({ ...base, proofSources: [down], proofStore });
+    expect(c.trust).toMatchObject({ kind: 'quorum-proof', source: SAVED_SOURCE, newerUnavailable: 'quorums.test: HTTP 502' });
 
     // once the saved ChainLock is over an hour old it cannot serve: the pin is asked again
     src.asked.length = 0;

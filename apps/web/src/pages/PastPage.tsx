@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { Link } from 'react-router-dom';
 import { useApp } from '../app/context.tsx';
 import type { Proposal, Sourced, Tally } from '../data/types.ts';
-import { formatDash, formatDate, formatInt, formatSigned } from '../lib/format.ts';
+import { errText, formatDash, formatDate, formatInt, formatSigned } from '../lib/format.ts';
 import { absoluteYes } from '../lib/governance.ts';
 import { countNames, partitionByCheck, proposalHref } from '../lib/view.ts';
 import { isFailed } from '../verify/checks.ts';
@@ -40,7 +40,7 @@ export function PastPage() {
           if (g === gen.current) setTallies((prev) => new Map([...prev, ...t]));
         }
       } catch (e) {
-        if (g === gen.current) setState({ loading: false, done: true, error: e instanceof Error ? e.message : String(e) });
+        if (g === gen.current) setState({ loading: false, done: true, error: errText(e) });
       } finally {
         if (inFlight.current === g) inFlight.current = null;
       }

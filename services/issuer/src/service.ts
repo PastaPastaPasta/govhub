@@ -106,8 +106,13 @@ function b64(v: unknown, what: string, max: number): Uint8Array {
 export class TokenService {
   readonly #d: TokenServiceDeps;
   readonly #issuerBytes: Uint8Array;
-  /** proTxHash -> request times (ms) in the last minute; memory only */
-  readonly #perMn = new Map<string, number[]>();
+  /**
+   * Per-MN request counts for the current wall-clock minute only (memory only). The whole map is dropped as soon as the minute
+   * changes (on every call and on the housekeeping tick), so the issuer never holds which masternodes asked, or when, beyond the
+   * current minute.
+   */
+  #perMn = new Map<string, number>();
+  #minute = -1;
   #second = 0;
   #inSecond = 0;
 
@@ -123,6 +128,7 @@ export class TokenService {
 
   async issue(input: TokenInput): Promise<{ blindSig: Uint8Array; epoch: number; retry: boolean }> {
     const d = this.#d;
+    this.prune();
     // 1. shape
     if (typeof input.request !== 'string') throw new IssueError('bad-request', 'request must be a string');
     const sig = b64(input.signature, 'signature', 100);
@@ -203,14 +209,31 @@ export class TokenService {
     if (++this.#inSecond > (this.#d.maxRecoveriesPerSec ?? 2000)) throw new IssueError('unavailable', 'busy, retry later');
   }
 
-  /** A few requests per MN per minute, counted only after authentication (memory only, nothing about the requester). */
+  /** Drops the per-MN counts once their minute is over. Called on every request and by the housekeeping tick. */
+  prune(now = Date.now()): void {
+    const minute = Math.floor(now / 60_000);
+    if (minute === this.#minute) return;
+    this.#minute = minute;
+    this.#perMn = new Map();
+  }
+
+  /**
+   * Tests only: everything the rate limiter holds in memory right now. The issuer's no-linkable-logs test inspects it; nothing
+   * in the service reads it.
+   */
+  debugSnapshot(): { minute: number; perMn: Array<[string, number]> } {
+    return { minute: this.#minute, perMn: [...this.#perMn] };
+  }
+
+  /**
+   * A few requests per MN per wall-clock minute, counted only after authentication (memory only, nothing about the requester).
+   * A fixed window: up to twice the limit can pass around a minute boundary, which is fine for a backstop.
+   */
   #limit(proTxHash: string): void {
-    const now = Date.now();
+    this.prune();
     const max = this.#d.perMnPerMinute ?? 6;
-    const recent = (this.#perMn.get(proTxHash) ?? []).filter((t) => now - t < 60_000);
-    if (recent.length >= max) throw new IssueError('unavailable', 'too many requests for this masternode; wait a minute');
-    recent.push(now);
-    this.#perMn.set(proTxHash, recent);
-    if (this.#perMn.size > 10_000) for (const [k, v] of this.#perMn) if (!v.some((t) => now - t < 60_000)) this.#perMn.delete(k);
+    const n = this.#perMn.get(proTxHash) ?? 0;
+    if (n >= max) throw new IssueError('unavailable', 'too many requests for this masternode; wait a minute');
+    this.#perMn.set(proTxHash, n + 1);
   }
 }

@@ -140,7 +140,7 @@ export function useProposalTrust(p: Proposal, row: Row, talliesLoading: boolean)
       shown, live: row.bridgeTally?.value ?? null, tip: chain.report?.anchor.tip ?? null, talliesLoading, bridge: !!bridge, result: votes.result, error: votes.error, progress: votes.progress,
     });
     const fund = fundingComponent({
-      proposal: p, nowS, chain: ch, votes: vt, report: chain.report, netYes,
+      proposal: p, nowS, chain: ch, votes: vt, report: chain.report, payments: chain.payments, netYes,
       ranking: wantRanking ? (bridge ? { result: ranking.result, error: ranking.error, progress: ranking.progress } : { result: null, error: 'no bridge is configured' }) : null,
     });
     const agg = aggregate(

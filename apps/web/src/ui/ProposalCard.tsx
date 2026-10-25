@@ -4,8 +4,10 @@ import type { Profile } from '@govhub/forum';
 import { Link } from 'react-router-dom';
 import { useApp } from '../app/context.tsx';
 import { formatDash, formatInt, shortAddress, shortHash } from '../lib/format.ts';
+import { authorLabel, authorText } from '../lib/social.ts';
 import { perPayment, type GovParams, type PaymentSchedule } from '../lib/governance.ts';
 import type { Row } from '../lib/view.ts';
+import type { TrustLevel } from '../verify/aggregate.ts';
 import type { CheckState } from '../verify/checks.ts';
 import { FundingMeter } from './FundingMeter.tsx';
 import { FailedNote } from './HiddenToggle.tsx';
@@ -33,18 +35,22 @@ export function ProposalCard({
   const t = row.tally?.value;
   const failed = check?.status === 'failed' ? check.reason : null;
   const trust = useCachedTrust(trustScope(source), p, t ?? null);
-  const mark = !failed && trust && trust.level !== 'error' ? trust : null;
-  // Proven data decides once the cached result is "verified" for this very tally; otherwise it is the tally's own flag.
-  const inBudget = mark?.level === 'verified' && mark.funded !== null ? mark.funded : t?.inNextBudget;
+  // An inconclusive check (the page's, or the list's background collateral check) shows as "Couldn't verify", never like a pass.
+  const mark: { level: TrustLevel; reason: string | null } | null = failed
+    ? null
+    : (trust ?? (check?.status === 'inconclusive' ? { level: 'error', reason: `The collateral couldn't be checked: ${check.reason}` } : null));
+  // Under a "Verified" mark only proven data decides "in the next budget" (none: no tag); otherwise it is the tally's own flag.
+  const inBudget = trust && mark?.level === 'verified' ? (trust.funded ?? undefined) : t?.inNextBudget;
   const ask = askText(p.paymentAmount, row.schedule, params);
   const left = paymentsLeft(row.schedule);
   return (
     <article className={`prow prow-${failed ? 'invalid' : (row.state?.light ?? 'none')}`} data-govhash={p.govHash} data-check={check?.status} data-testid="proposal-card">
       <div className="prow-main">
-        <h3 className="prow-title">
+        {/* h2: the list's heading is the page's h1 (a skipped level breaks heading navigation) */}
+        <h2 className="prow-title">
           <Link to={href}>{p.name}</Link>
           {mark && <TrustBadge size="s" level={mark.level} reason={mark.reason} testId="card-trust" />}
-        </h3>
+        </h2>
         {failed ? (
           <FailedNote reason={failed} />
         ) : !row.content.ok ? (
@@ -54,7 +60,9 @@ export function ProposalCard({
         ) : urlOwner ? (
           <p className="prow-owner">
             <Avatar id={urlOwner} profile={ownerProfile} size={18} />
-            <span title={`Identity ${urlOwner}, named in the proposal URL`}>{ownerProfile?.displayName ?? shortHash(urlOwner, 5)}</span>
+            <span title={`Identity ${urlOwner}, named in the proposal URL by its creator; the proposal page shows whether it accepted`}>
+              <bdi>{ownerProfile && authorLabel(urlOwner, ownerProfile).name ? authorText(urlOwner, ownerProfile) : shortHash(urlOwner, 5)}</bdi> <span className="muted small">named by the creator</span>
+            </span>
           </p>
         ) : (
           <p className="prow-owner prow-owner-none">

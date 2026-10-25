@@ -3,7 +3,8 @@
 import { relayCancelMessage, signMessage, type Network } from '@govhub/verify';
 import { OUTCOME_NAME, type SignedVoteRecord } from './plan.ts';
 
-export type RelayVoteStatus = 'held' | 'sending' | 'broadcast' | 'confirmed' | 'failed' | 'cancelled' | 'superseded';
+/** `maybe-broadcast`: waiting to be re-sent, but an earlier attempt may already be in Core; it cannot be cancelled. */
+export type RelayVoteStatus = 'held' | 'maybe-broadcast' | 'sending' | 'broadcast' | 'confirmed' | 'failed' | 'cancelled' | 'superseded';
 /** Why a relay still holds a vote (relays from before this field leave it null). */
 export type HoldReason = 'release-time' | 'one-change-per-hour' | 'core-time-limit' | 'retrying';
 
@@ -38,7 +39,7 @@ export class RelayError extends Error {
     message: string,
     readonly status?: number,
     readonly code?: string,
-    /** For 409 answers: the vote's state at that relay (`not-held`: sending, broadcast, confirmed, failed, cancelled, superseded). */
+    /** For 409 answers: the vote's state at that relay (`not-held`: sending, broadcast, confirmed, failed, cancelled, superseded; `maybe-broadcast`). */
     readonly voteStatus?: string,
     /** Retry-After of a 429, in seconds */
     readonly retryAfterS?: number,
@@ -48,7 +49,7 @@ export class RelayError extends Error {
   }
 }
 
-const STATUSES = new Set<RelayVoteStatus>(['held', 'sending', 'broadcast', 'confirmed', 'failed', 'cancelled', 'superseded']);
+const STATUSES = new Set<RelayVoteStatus>(['held', 'maybe-broadcast', 'sending', 'broadcast', 'confirmed', 'failed', 'cancelled', 'superseded']);
 const HOLD_REASONS = new Set<HoldReason>(['release-time', 'one-change-per-hour', 'core-time-limit', 'retrying']);
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const numOrNull = (v: unknown): number | null => (typeof v === 'number' && Number.isSafeInteger(v) ? v : null);

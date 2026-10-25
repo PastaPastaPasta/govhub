@@ -7,7 +7,7 @@ import {
   BUNDLE_LENGTH, BundleFormat, decodeBundle, encodeBundle, entryAad, hpkeInfo, openEntry, prfInput, recipientFromPrf, SEALED_LENGTH, sealEntry, VaultCryptoError,
   type VaultBundle,
 } from '../src/vault/bundle.ts';
-import { openVault, storeInVault } from '../src/vault/service.ts';
+import { localPasskeys, openVault, storeInVault } from '../src/vault/service.ts';
 import { parseUserHandle, userHandleFor } from '../src/vault/webauthn.ts';
 import { FakePlatform } from './fake-platform.ts';
 
@@ -184,5 +184,22 @@ describe('vault service: the chain check', () => {
     await expect(openVault(ctx, { ...assertion(), userHandle: null })).rejects.toThrow(/govhub passkey/);
     expect(parseUserHandle(userHandleFor(ownerId, contractId), contractId).identityId).toBe(ownerId);
     expect(identifierBytes(ownerId)).toHaveLength(32);
+  });
+});
+
+describe('D-073: localPasskeys', () => {
+  it('remove forgets one credential and drops the entry once none is left', () => {
+    const m = new Map<string, string>();
+    const storage = { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), removeItem: (k: string) => void m.delete(k) };
+    localPasskeys.add(storage, 'id1', 'credA');
+    localPasskeys.add(storage, 'id1', 'credB');
+    localPasskeys.add(storage, 'id2', 'credA');
+    localPasskeys.remove(storage, 'id1', 'credA');
+    expect(localPasskeys.list(storage, 'id1')).toEqual(['credB']);
+    expect(localPasskeys.list(storage, 'id2')).toEqual(['credA']);
+    localPasskeys.remove(storage, 'id1', 'credB');
+    expect(m.has(localPasskeys.key('id1'))).toBe(false);
+    localPasskeys.remove(storage, 'id1', 'unknown');
+    expect(m.has(localPasskeys.key('id1'))).toBe(false);
   });
 });

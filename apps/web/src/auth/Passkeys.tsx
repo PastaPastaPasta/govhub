@@ -138,7 +138,9 @@ export function Passkeys() {
     try {
       await removePasskey(await ctx(), session, entry);
       setEntries((l) => l?.filter((x) => x !== entry) ?? null);
-      if (mine.has(toBase64(entry.credentialId))) await forgetPasskey(rpId(), entry.credentialId);
+      const id = toBase64(entry.credentialId);
+      localPasskeys.remove(localStorage, session.identityId, id);
+      if (mine.has(id)) await forgetPasskey(rpId(), entry.credentialId);
       refreshBalance();
     } catch (e) {
       setError(errorText(e));

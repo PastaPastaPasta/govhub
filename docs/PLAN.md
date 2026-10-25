@@ -375,7 +375,7 @@ The bridge takes the ZMQ raw objects and votes and reconciles them with
 
 ### 6.3 Claims (highest-ranked method wins)
 
-1. **URL-embedded:** the URL is committed in the collateral hash, so the claim is trustless.
+1. **URL-embedded:** the URL is committed in the collateral hash, so the naming is trustless. Naming is not consent: the named identity becomes the owner only once it accepts, by publishing its own `claim` document with method 1 for that govHash (its `$ownerId` is the acceptance; no signature). Until then it shows as "Named by the proposal's creator", not verified.
 2. A signature from the payment address.
 3. A signature from the collateral input key.
 4. A hosting-team `claimAttestation`, for P2SH, multisig, or lost keys.
@@ -511,7 +511,8 @@ force it. If people accept us learning that's ok. Just we keep no logs for stuff
     issuer could link the masternode to the identity by timing; the UI says so. No forced waiting of any kind.
   - **Private**: §8.5 as written: a token for E+1 at a random time during E, posted at a random time in [S(E+1), S(E+1)+W],
     kept 30 minutes apart from the browser's other Platform writes, and not posted if the issuer reported fewer than k tokens
-    (testnet 3, mainnet 10) for the epoch before (E+1's own report comes too late, see below).
+    (testnet 5, mainnet 20; raised from 3 and 10 because the report counts Standard tokens too) for the epoch before (E+1's own
+    report comes too late, see below).
   - **Extra private**: as Private, with the badge posted at a random time across the first half of E+1.
 - **Issuance window:** tokens for E are minted during E-1 **and** during E (`[S(E-1), S(E+1))`); the issuer accepts the
   current or the next epoch. Dedup stays one token per (proTxHash, E) and per (collateral, E), whichever mode asked.

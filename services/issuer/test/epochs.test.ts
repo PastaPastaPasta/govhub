@@ -27,9 +27,11 @@ async function setup(epochs: number[], o: { lateDoc?: boolean; maxStaged?: numbe
   const platform: IssuerPlatform = {
     issuerKey: async (_i, e) => docs.get(e) ?? null,
     issuerReport: async () => null,
+    issuerRevocation: async () => null,
     coreHeight: async () => ctl.platformHeight ?? core.tip,
     publishIssuerKey: async () => 'x',
     publishIssuerReport: async (_k, r) => (reports.push(r), `report-${r.epoch}`),
+    publishIssuerRevocation: async () => 'x',
   };
   const store = openTokenStore(':memory:');
   store.markStarted(0);

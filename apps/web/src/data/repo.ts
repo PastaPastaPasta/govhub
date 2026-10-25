@@ -33,7 +33,7 @@ export interface DataSource {
   readonly notice: string | null;
   /** Chain parameters of `coreNetwork`, until `params()` answers. */
   readonly defaultParams: GovParams;
-  /** Governance parameters as a bridge on `coreNetwork` reports them (getgovernanceinfo); the chain parameters without one. */
+  /** Governance parameters of `coreNetwork`: its consensus constants (a bridge's getgovernanceinfo is not used). */
   params(): Promise<Sourced<GovParams>>;
   /** unix seconds; frozen in fixture mode */
   now(): number;
@@ -205,15 +205,10 @@ export function liveSource(registry: Registry): DataSource {
     defaultParams,
     now: nowSeconds,
 
+    // Consensus constants of the profile's Core network (chainparams.cpp), never a bridge's getgovernanceinfo: a lying bridge must not
+    // set the superblock cycle, maturity window or minimum quorum the page computes thresholds and schedules with.
     async params() {
-      const b = await firstBridge(async (x) => {
-        const p = await x.params();
-        if (!p) throw new Error('no governance info');
-        return p;
-      });
-      return b
-        ? { value: b.value, prov: reported(b.bridge, `getgovernanceinfo on ${registry.coreNetwork}: superblock every ${formatInt(b.value.superblockCycle)} blocks`) }
-        : chainParams(registry.coreNetwork, 'no bridge reported getgovernanceinfo');
+      return chainParams(registry.coreNetwork, 'consensus constants (chainparams.cpp), not a bridge report');
     },
 
     async cycle(onStale) {
@@ -316,7 +311,8 @@ export function liveSource(registry: Registry): DataSource {
 
     async usdPrice() {
       const pf = registry.priceFeed;
-      if (!pf?.url) return null;
+      // testnet DASH has no price: a USD figure next to a testnet budget would be made up
+      if (!pf?.url || registry.coreNetwork === 'testnet') return null;
       try {
         const res = await fetch(pf.url, { credentials: 'omit', referrerPolicy: 'no-referrer', signal: AbortSignal.timeout(8000) });
         const j = (await res.json()) as { dash?: { usd?: unknown } };

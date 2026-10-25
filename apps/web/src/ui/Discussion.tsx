@@ -6,6 +6,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import {
   BLOCK_KIND,
   buildThreads,
+  flatten,
   COMMENT_FMT,
   commentRetractRefund,
   COSTS,
@@ -23,6 +24,7 @@ import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import type { Provenance } from '../data/types.ts';
 import { errText, formatAgoMs, formatCredits, formatInt } from '../lib/format.ts';
+import { authorText, windowRoots } from '../lib/social.ts';
 import { Composer } from './Composer.tsx';
 import { HiddenToggle } from './HiddenToggle.tsx';
 import { AuthorName, Avatar } from './Identity.tsx';
@@ -35,6 +37,10 @@ import { Votes } from './Votes.tsx';
 
 /** Replies deeper than this are not indented further (the thread line still shows). */
 const MAX_INDENT = 6;
+/** Comments rendered at first (whole threads, newest first) and per "show older"; only rendered comments have reactions read. */
+const RENDER_PAGE = 200;
+/** Comments whose reactions are read (one F6 query each) per page shown: one huge thread renders more, and the rest wait. */
+const SCORED_PER_PAGE = 400;
 
 interface ThreadData {
   comments: Comment[];
@@ -89,8 +95,8 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
   // filter would hide the linked comment.
   const filter = chosenFilter ?? (focus ? 'all' : defaultFilter(BADGES_LIVE));
   const roots = useMemo(() => buildThreads(comments), [comments]);
-  const targets = useMemo(() => comments.map((c) => ({ commentId: c.id })), [comments]);
-  const reactions = useReactions(targets);
+  const [limit, setLimit] = useState(RENDER_PAGE);
+  const [extraScored, setExtraScored] = useState(0); // "read more scores" inside one thread too large for the window
   const isModerator = session?.identityId === registry.forum.moderationIdentityId;
 
   const reasonsOf = useCallback((c: Comment) => moderation.index.reasons(c), [moderation.index]);
@@ -98,7 +104,23 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
   const filteredCount = useMemo(() => comments.filter((c) => !reasonsOf(c).length && !passesFilter(c, filter, { owner, badged })).length, [comments, reasonsOf, filter, owner, badged]);
   const [unfiltered, setUnfiltered] = useState(false);
   // The deep-linked comment always gets at least its placeholder.
-  const visible = useMemo(() => visibleSubtrees(roots, (c) => c.id === focus || shown(c, { reasonsOf, showHidden, revealed, filter, owner, badged })), [roots, reasonsOf, showHidden, revealed, filter, owner, badged, focus]);
+  const showOpts = useMemo(() => ({ reasonsOf, showHidden, revealed, filter, owner, badged }), [reasonsOf, showHidden, revealed, filter, owner, badged]);
+  const visible = useMemo(() => visibleSubtrees(roots, (c) => c.id === focus || shown(c, showOpts)), [roots, showOpts, focus]);
+  // Fail closed: nothing renders before the block lists are read, and a list that failed collapses the thread until
+  // the reader chooses to see it without that list.
+  const gated = !moderation.ready || (!!moderation.error && !unfiltered);
+  // Only the newest threads render (a flood cannot bury new comments or make the page read every reaction); older ones on request.
+  const win = useMemo(() => windowRoots(roots, visible, limit, focus), [roots, visible, limit, focus]);
+  // Scores are read for comments rendered in full (not placeholders: hidden parents, or a deep-linked comment a list hides).
+  const scoring = useMemo(() => {
+    if (gated) return { targets: [], unscored: 0 };
+    const ids = flatten(win.roots).flatMap((n) => (shown(n.comment, showOpts) ? [n.comment.id] : []));
+    const cap = SCORED_PER_PAGE * (limit / RENDER_PAGE) + extraScored;
+    return { targets: ids.slice(-cap).map((commentId) => ({ commentId })), unscored: Math.max(0, ids.length - cap) };
+  }, [gated, win, showOpts, limit, extraScored]);
+  const targets = scoring.targets;
+  const reactions = useReactions(targets);
+  const focusMissing = !!focus && !!thread.data && !gated && !comments.some((c) => c.id === focus);
 
   // A deep link widens the view if the filter hides its comment and scrolls to it. A comment a block list hides stays
   // behind its placeholder: a shared link must not bypass the lists (one click on the placeholder reveals it).
@@ -174,14 +196,11 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
   };
 
   const count = comments.length;
-  // Fail closed: nothing renders before the block lists are read, and a list that failed collapses the thread until
-  // the reader chooses to see it without that list.
-  const gated = !moderation.ready || (!!moderation.error && !unfiltered);
   return (
     <section aria-labelledby="discussion-title" className="discussion" data-testid="discussion">
       <div className="discussion-head">
         <h2 id="discussion-title">
-          Discussion {thread.data && <span className="count">{formatInt(count - hiddenCount)}</span>}
+          Discussion {thread.data && <span className="count">{formatInt(count - hiddenCount)}{thread.data.truncated ? '+' : ''}</span>}
         </h2>
         <div className="discussion-tools">
           <fieldset className="seg" aria-label="Which comments to show">
@@ -207,7 +226,7 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
             Show all {formatInt(filteredCount)} other {filteredCount === 1 ? 'comment' : 'comments'}
           </button>
         )}
-        {moderation.subs.defaultOff ? ' The default block list is off (Settings).' : ` Spam is hidden by ${moderation.lists.map((l) => l.name).join(', ') || '…'}.`}
+        {listNote(moderation)}
       </p>
 
       {session ? (
@@ -228,7 +247,17 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
         </p>
       )}
       {thread.data && count === 0 && <p className="muted">No comments yet.</p>}
-      {thread.data?.truncated && <p className="error small">This proposal has more comments than one read returns (10,000); the oldest are shown.</p>}
+      {thread.data?.truncated && (
+        <p className="notice-warn small" data-testid="thread-truncated">
+          This proposal has more comments than one read returns (10,000): the newest are shown, the oldest are not.
+        </p>
+      )}
+      {focusMissing && (
+        <p className="notice-warn small" role="status" data-testid="focus-missing">
+          The linked comment isn't in this discussion: it may have been retracted, or this node doesn't have it yet.{' '}
+          <Link to={{ search: '' }}>Show the whole discussion</Link>
+        </p>
+      )}
       {reactions.error && <p className="error small">Scores could not be read: {reactions.error}</p>}
       {!moderation.ready && thread.data && count > 0 && (
         <p className="muted" aria-busy="true">
@@ -245,15 +274,38 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
           )}
         </p>
       )}
+      {!gated && scoring.unscored > 0 && (
+        <p className="center">
+          <button type="button" className="btn btn-quiet" onClick={() => setExtraScored((n) => n + SCORED_PER_PAGE)} data-testid="read-more-scores">
+            Read the scores of {formatInt(scoring.unscored)} older {scoring.unscored === 1 ? 'comment' : 'comments'} (their votes wait until then)
+          </button>
+        </p>
+      )}
+      {!gated && win.older > 0 && (
+        <p className="center">
+          <button type="button" className="btn btn-quiet" onClick={() => setLimit((l) => l + RENDER_PAGE)} data-testid="show-older">
+            Show older comments ({formatInt(win.older)} more)
+          </button>
+        </p>
+      )}
       {!gated && (
         <ol className="thread">
-          {roots.map((n) => (
+          {win.roots.map((n) => (
             <CommentNode key={n.comment.id} node={n} ctx={ctx} />
           ))}
         </ol>
       )}
     </section>
   );
+}
+
+/** The filter note's last sentence: which lists hide spam, or that they are still being read or could not be read. */
+function listNote(m: ReturnType<typeof useForum>['moderation']): string {
+  if (m.subs.defaultOff) return ' The default block list is off (Settings).';
+  if (!m.ready) return ' Reading the block lists…';
+  const loaded = m.lists.map((l) => l.name).join(', ');
+  if (loaded) return ` Spam is hidden by ${loaded}.`;
+  return m.error ? ' The block lists could not be read.' : '';
 }
 
 interface NodeCtx {
@@ -300,7 +352,7 @@ function CommentNode({ node, ctx }: { node: ThreadNode; ctx: NodeCtx }) {
   const isShown = shown(c, ctx);
   const isOwner = ctx.owner !== null && c.ownerId === ctx.owner;
   const mine = ctx.session === c.ownerId;
-  const score = ctx.scores.get(c.id) ?? { up: 0, down: 0, net: 0 };
+  const score = ctx.scores.get(c.id);
   const myBlock = reasons.find((r) => r.source === 'mine');
   const modBlock = reasons.find((r) => r.source === 'default');
   const run = (label: string, f: () => Promise<void>) => async () => {
@@ -343,7 +395,7 @@ function CommentNode({ node, ctx }: { node: ThreadNode; ctx: NodeCtx }) {
   const profile = ctx.profiles.get(c.ownerId);
   return (
     <li className={`comment ${ctx.focus === c.id ? 'comment-focus' : ''} ${reasons.length ? 'comment-hidden' : ''} ${isOwner ? 'comment-owner' : ''}`} id={`comment-${c.id}`} data-comment-id={c.id}>
-      <article aria-label={`Comment by ${profile?.displayName ?? c.ownerId}`}>
+      <article aria-label={`Comment by ${authorText(c.ownerId, profile, ctx.names.get(c.ownerId))}`}>
         <header className="comment-head">
           <Avatar id={c.ownerId} profile={profile} />
           <AuthorName id={c.ownerId} profile={profile} dpns={ctx.names.get(c.ownerId)} />

@@ -115,7 +115,7 @@ describe('voteraw outcomes', () => {
     expect(w.row(id)).toMatchObject({ status: 'broadcast', last_error: null, fail_n: 0 });
   });
 
-  it('transport errors: backoff 30 s, 60 s, 120 s, then success', async () => {
+  it('transport errors: backoff 30 s, 60 s, 120 s, then success; an unanswered voteraw leaves the vote maybe-broadcast', async () => {
     const w = world();
     const mn = w.mn();
     const gov = w.proposal();
@@ -123,7 +123,8 @@ describe('voteraw outcomes', () => {
     w.core.voterawErrors.push(new Error('fetch failed'), new Error('HTTP 502 bad gateway'), new CoreRpcError('voteraw', -28, 'Loading block index...'));
 
     await w.broadcaster.tickBroadcast();
-    expect(w.row(id)).toMatchObject({ status: 'held', last_error: 'core-error', next_attempt_at: T0 + 30, attempts: 1 });
+    // no answer: Core may have it, so it waits as maybe-broadcast (never cancellable again), not as held
+    expect(w.row(id)).toMatchObject({ status: 'maybe-broadcast', maybe_sent: 1, last_error: 'core-error', next_attempt_at: T0 + 30, attempts: 1 });
     await w.broadcaster.tickBroadcast(); // not due yet
     expect(w.core.count('voteraw')).toBe(1);
     w.clock.advance(30);
@@ -147,7 +148,7 @@ describe('voteraw outcomes', () => {
     for (let i = 1; i <= 49; i++) {
       await w.broadcaster.tickBroadcast();
       const r = w.row(id);
-      expect(r.status).toBe('held');
+      expect(r.status).toBe('maybe-broadcast');
       expect(r.attempts).toBe(i);
       gaps.push(r.next_attempt_at - w.clock.t);
       w.clock.t = r.next_attempt_at;
@@ -319,7 +320,7 @@ describe('confirmer', () => {
     for (let n = 1; n <= 3; n++) {
       w.clock.t = w.row(id).broadcast_at! + 600;
       await w.broadcaster.tickConfirm();
-      expect(w.row(id)).toMatchObject({ status: 'held', rebroadcasts: n });
+      expect(w.row(id)).toMatchObject({ status: 'maybe-broadcast', rebroadcasts: n });
       await w.broadcaster.tickBroadcast();
       expect(w.row(id)).toMatchObject({ status: 'broadcast', attempts: n + 1, broadcast_at: w.clock.t });
     }
@@ -344,7 +345,7 @@ describe('confirmer', () => {
     expect(w.row(id)).toMatchObject({ status: 'confirmed', rebroadcasts: 1 });
   });
 
-  it('a vote waiting for a re-broadcast can still be cancelled or replaced', async () => {
+  it('a vote waiting for a re-broadcast cannot be cancelled (it may be on the network) but can be replaced', async () => {
     const w = world();
     const mn = w.mn();
     const gov = w.proposal();
@@ -353,8 +354,19 @@ describe('confirmer', () => {
     await w.broadcaster.tickBroadcast();
     w.clock.advance(600);
     await w.broadcaster.tickConfirm();
-    expect(w.row(id).status).toBe('held');
-    expect((await w.post('/v1/votes/cancel', w.cancelBody(mn, id, voteHash))).status).toBe(200);
+    expect(w.row(id).status).toBe('maybe-broadcast');
+    const c = await w.post('/v1/votes/cancel', w.cancelBody(mn, id, voteHash));
+    expect(c.status).toBe(409);
+    expect(c.body).toMatchObject({ code: 'maybe-broadcast', status: 'maybe-broadcast', reason: expect.stringMatching(/cannot be cancelled/) });
+    expect(w.row(id).status).toBe('maybe-broadcast'); // never reported or stored as cancelled
+    expect((await w.get(`/v1/votes/${id}`)).body).toMatchObject({ status: 'maybe-broadcast', holdReason: 'retrying', nextAttemptAt: w.clock.t });
+    // a newer vote replaces it: the older one is never sent again
+    w.core.blackhole = false;
+    w.clock.advance(3700);
+    const newer = await w.submit(mn, { govHash: gov, time: w.clock.t, outcome: 'no' });
+    await w.broadcaster.tickBroadcast();
+    expect(w.row(id).status).toBe('superseded');
+    expect(w.row(newer.id).status).toBe('broadcast');
   });
 });
 

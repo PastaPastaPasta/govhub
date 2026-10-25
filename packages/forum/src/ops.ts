@@ -5,6 +5,7 @@ import { BLOCK_KIND, CLAIM_METHOD, COMMENT_FMT, COMMENT_MAX_BYTES, REACTION_KIND
 import { hexToBytes, idToBytes, isHash64, isIdentifier } from './encoding.ts';
 import { packLists } from './convert.ts';
 import { SCHEMAS } from './queries.ts';
+import { isBlank, nameProblem } from './text.ts';
 
 /**
  * A document field value. Byte arrays and identifiers are Uint8Array (the signer hands them to the SDK as bytes),
@@ -56,7 +57,7 @@ export function forumOps(contracts: ForumContracts, now: () => number = Date.now
   return {
     comment(govHash: string, body: string, opts: { parentId?: string; fmt?: number } = {}): DocumentOp {
       const n = new TextEncoder().encode(body).length;
-      if (body.trim().length === 0) throw new Error('comment is empty');
+      if (isBlank(body)) throw new Error('comment is empty');
       if (n > COMMENT_MAX_BYTES) throw new Error(`comment is ${n} bytes; the limit is ${COMMENT_MAX_BYTES}`);
       if (body.length > 5000) throw new Error('comment is longer than 5,000 characters');
       if (opts.parentId !== undefined && !isIdentifier(opts.parentId)) throw new Error('parentId must be a document id');
@@ -77,6 +78,8 @@ export function forumOps(contracts: ForumContracts, now: () => number = Date.now
     profile(fields: { displayName: string; about?: string; avatarUrl?: string }, existing?: { id: string; revision: number }): DocumentOp {
       const displayName = fields.displayName.trim();
       if (displayName.length < 1 || displayName.length > 64) throw new Error('display name must be 1..64 characters');
+      const problem = nameProblem(displayName);
+      if (problem) throw new Error(problem);
       const data: DocData = { displayName };
       const about = fields.about?.trim();
       const avatarUrl = fields.avatarUrl?.trim();
@@ -88,6 +91,13 @@ export function forumOps(contracts: ForumContracts, now: () => number = Date.now
     claim(govHash: string, method: typeof CLAIM_METHOD.paymentAddress | typeof CLAIM_METHOD.collateralInput, sig: Uint8Array): DocumentOp {
       if (sig.length !== 65) throw new Error('a claim signature is 65 bytes');
       return create('forum', 'claim', { govHash: hash(govHash), method, sig });
+    },
+    /**
+     * The identity a proposal URL names accepts ownership: a method-1 claim whose proven `$ownerId` is the acceptance. The schema
+     * requires a 65-byte `sig`; method 1 carries zeros and the verifier ignores them.
+     */
+    acceptNamedOwnership(govHash: string): DocumentOp {
+      return create('forum', 'claim', { govHash: hash(govHash), method: CLAIM_METHOD.url, sig: new Uint8Array(65) });
     },
     retractClaim: (id: string) => del('forum', 'claim', id),
 

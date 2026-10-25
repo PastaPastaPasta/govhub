@@ -30,9 +30,11 @@ services:
       # Caddy writes its autosaved config and state under these; /tmp is the only writable path.
       XDG_CONFIG_HOME: /tmp
       XDG_DATA_HOME: /tmp
-    # Plain HTTP on 8787 (a port-only --from disables automatic HTTPS). The bridge answers GET/HEAD/OPTIONS only and
-    # sets the CORS headers itself (README section 8), so the gateway only forwards.
-    command: ["caddy", "reverse-proxy", "--from", ":8787", "--to", "bridge:8787"]
+    # Plain HTTP on 8787 (caddy/tunnel-gateway-bridge.Caddyfile). The bridge answers GET/HEAD/OPTIONS only and sets the CORS
+    # headers itself (README section 8), so the gateway only forwards, and it writes no logs (no client addresses on proxy errors).
+    command: ["caddy", "run", "--adapter", "caddyfile", "--config", "/etc/caddy/Caddyfile"]
+    volumes:
+      - ./caddy/tunnel-gateway-bridge.Caddyfile:/etc/caddy/Caddyfile:ro
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8787/v1/status"]
       interval: 30s

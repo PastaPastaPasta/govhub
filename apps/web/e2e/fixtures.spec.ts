@@ -4,7 +4,7 @@ import { expect, test } from '@playwright/test';
 import { cspViolations, gotoFixtures, openDrawer, openGroup, watchPage } from './helpers.ts';
 
 test.describe('fixture mode', () => {
-  test('list -> proposal -> collateral verified -> votes verified', async ({ page }) => {
+  test('list -> proposal -> collateral and votes checked, never shown as verified (demo data)', async ({ page }) => {
     const errors = await watchPage(page);
     await gotoFixtures(page);
 
@@ -43,8 +43,10 @@ test.describe('fixture mode', () => {
     // Every check runs on its own; the detail is in the drawer.
     const drawer = await openDrawer(page);
     const collateral = drawer.getByTestId('collateral-check');
-    await expect(collateral.locator('[data-verdict]')).toHaveAttribute('data-verdict', 'ok');
-    await expect(collateral).toContainText('Content matches the on-chain collateral');
+    // Demo data: the collateral matches the recorded transaction, but nothing in the drawer is drawn as verified (D-021).
+    await expect(collateral.locator('[data-verdict]')).toHaveAttribute('data-verdict', 'demo');
+    await expect(collateral).toContainText('Content matches the recorded collateral transaction (demo data');
+    await expect(drawer.locator('.glyph-verified')).toHaveCount(0);
     for (const step of ['hash', 'fields', 'tx', 'collateral', 'confirmations', 'chainlock']) {
       await expect(collateral.locator(`[data-step="${step}"]`)).toHaveAttribute('data-status', 'ok');
     }
@@ -59,7 +61,8 @@ test.describe('fixture mode', () => {
     await expect(drawer.getByTestId('chain-check').locator('[data-chain]')).toHaveAttribute('data-chain', 'unavailable');
     await expect(drawer.locator('[data-check="chain"]')).toHaveAttribute('data-state', 'reported');
     await expect(collateral.locator('[data-step="block"]')).toHaveCount(0);
-    await expect(collateral.locator('[data-step="hash"]')).toHaveAttribute('data-basis', 'verified');
+    await expect(collateral.locator('[data-step="hash"]')).toHaveAttribute('data-status', 'ok');
+    await expect(collateral.locator('[data-step="hash"] .glyph-fixture')).toHaveCount(1);
 
     // The vote recount runs on its own, against the fixture bridge.
     const votes = drawer.getByTestId('votes-check');
@@ -70,6 +73,10 @@ test.describe('fixture mode', () => {
     // Keys as the fixture bridge reports them: not proven.
     await expect(drawer.locator('[data-check="votes"]')).toHaveAttribute('data-state', 'reported');
     await expect(drawer.getByTestId('drawer-verdict')).toHaveAttribute('data-trust', 'demo');
+    // with every check settled, still nothing in the drawer is drawn as verified (rows, compare table, headlines)
+    await votes.locator(':scope > summary').click();
+    await expect(votes.locator('table.compare')).toBeVisible();
+    await expect(drawer.locator('.glyph-verified')).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(drawer).toBeHidden();
 
@@ -86,7 +93,7 @@ test.describe('fixture mode', () => {
     await expect(page.getByTestId('p-votes')).toContainText('475 no');
     await expect(page.getByTestId('p-voters')).toHaveAttribute('title', /^298 yes, 160 no, 2 abstain; counted at block /);
     const drawer = await openDrawer(page);
-    await expect(drawer.getByTestId('collateral-check').locator('[data-verdict]')).toHaveAttribute('data-verdict', 'ok');
+    await expect(drawer.getByTestId('collateral-check').locator('[data-verdict]')).toHaveAttribute('data-verdict', 'demo');
 
     const votes = drawer.getByTestId('votes-check');
     await expect(votes.locator('[data-votes]')).toHaveAttribute('data-votes', 'keys-reported', { timeout: 30_000 });
@@ -146,13 +153,13 @@ test.describe('fixture mode', () => {
     await expect(page).toHaveURL(/\/p\/h\/[0-9a-f]{64}$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Dash-Mass-Organic-Content-Attraction' })).toBeVisible();
     const drawer = await openDrawer(page);
-    await expect(drawer.getByTestId('collateral-check').locator('[data-verdict]')).toHaveAttribute('data-verdict', 'ok');
+    await expect(drawer.getByTestId('collateral-check').locator('[data-verdict]')).toHaveAttribute('data-verdict', 'demo');
   });
 
   test('cards of duplicate names link to the hash route', async ({ page }) => {
     await gotoFixtures(page);
     await page.locator('.sentinel').scrollIntoViewIfNeeded();
-    const dupLinks = page.locator('article.prow h3 a', { hasText: 'Dash-Mass-Organic-Content-Attraction' });
+    const dupLinks = page.locator('article.prow h2 a', { hasText: 'Dash-Mass-Organic-Content-Attraction' });
     await expect(dupLinks).toHaveCount(2);
     for (const href of await dupLinks.evaluateAll((as) => as.map((a) => a.getAttribute('href')))) expect(href).toMatch(/^\/p\/h\/[0-9a-f]{64}$/);
   });

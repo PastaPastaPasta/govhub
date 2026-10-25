@@ -154,6 +154,11 @@ export type AnchorTrust =
     /** ChainLock quorum handoffs in the proof, and its size. */
     links: number;
     proofBytes: number;
+    /**
+     * Set when the ChainLock this browser saved was used because no source served a newer proof: why each source failed (an HTTP
+     * 502 is not "no newer one exists").
+     */
+    newerUnavailable?: string;
   }
   | {
     /** Headers with proof of work and difficulty from the pinned header checkpoint (see headerchain.ts). */

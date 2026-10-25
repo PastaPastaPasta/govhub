@@ -32,11 +32,13 @@ describe('no linkable logs', () => {
     for (const m of ['log', 'info', 'warn', 'error', 'debug'] as const) vi.spyOn(console, m).mockImplementation((...a: unknown[]) => void out.push(a.map(String).join(' ')));
   });
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
     log.setLevel('error');
   });
 
-  it('a full request flow writes nothing that names the masternode, its collateral or the client', async () => {
+  it('a full request flow writes nothing that names the masternode, its collateral or the client, and keeps nothing past the minute', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.UTC(2027, 0, 1, 12, 0, 5) });
     const w = await world();
     const counters = new Map<string, number>();
     const app = createApp({ network: 'testnet', params: P, issuerId: w.issuerId, contractId: '2aYj4Dkix7xXBUTZFCDBjpcqqLi9Tg5oUwBgHUJBNGCU', service: w.service, epochs: { status: { height: 1, issuingEpochs: [E - 1, E], keyIds: {}, ready: true, problem: null } }, challengeTtlSec: 600, counters });
@@ -57,6 +59,21 @@ describe('no linkable logs', () => {
     for (const needle of [mn.proTxHash, txid!, `${txid}:${index}`, IP, UA]) expect(all, needle).not.toContain(needle);
     expect(all).toContain('requests in the last hour'); // the aggregate line is there
     expect(counters.get('issued')).toBe(1);
+
+    // In memory: the rate limiter may count this masternode only for the current minute (review SR-16). Once the minute is over the
+    // count is gone, whether or not another request comes (the housekeeping tick prunes too).
+    const memory = () => JSON.stringify(w.service.debugSnapshot());
+    expect(memory()).toContain(mn.proTxHash); // the check would find it while it is there
+    vi.setSystemTime(Date.now() + 60_000);
+    w.service.prune();
+    expect(memory()).not.toContain(mn.proTxHash);
+    expect(w.service.debugSnapshot().perMn).toEqual([]);
+    // and a later request by another masternode drops it as well, without the tick
+    expect((await post('/v1/token', (await clientRequest(w, mn)).body)).status).toBe(409);
+    vi.setSystemTime(Date.now() + 60_000);
+    const other = w.core.add(fakeMn());
+    expect((await post('/v1/token', (await clientRequest(w, other)).body)).status).toBe(200);
+    expect(w.service.debugSnapshot().perMn.map(([k]) => k)).toEqual([other.proTxHash]);
   });
 
   it('the token store has no time, address or client columns, and drops the rows of closed epochs', () => {

@@ -1,6 +1,6 @@
 // Renders @govhub/forum's safe markdown tree as React elements. No HTML strings, no dangerouslySetInnerHTML:
-// every string is a text node. Links open in a new tab without referrer or opener, marked as user content;
-// images are links to the image (never loaded).
+// every string is a text node. Links open in a new tab without referrer or opener, marked as user content; a link whose
+// text names another host shows the real one after it; images are links to the image (never loaded).
 import { useMemo, type ReactNode } from 'react';
 import { parseMarkdown, parsePlain, type MdBlock, type MdInline } from '@govhub/forum';
 import { urlHost } from '../lib/format.ts';
@@ -36,6 +36,7 @@ function Inline({ nodes }: { nodes: MdInline[] }): ReactNode {
         return n.href ? (
           <a key={i} href={n.href} target="_blank" rel="noopener noreferrer nofollow ugc" className="md-link" title={n.href}>
             <Inline nodes={n.c} />
+            {n.realHost && <span className="md-realhost" data-testid="link-real-host"> (→ {n.realHost})</span>}
           </a>
         ) : (
           <span key={i} className="md-badlink" title="link removed: only http(s) links are allowed">

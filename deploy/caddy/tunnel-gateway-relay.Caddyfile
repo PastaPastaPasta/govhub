@@ -2,10 +2,16 @@
 # network forwards to the bridge (8787) and the relay (8788). Plain HTTP; TLS ends at Cloudflare. The bridge and the relay set
 # their own CORS headers and enforce their own method and body limits; the gateway only forwards (the relay reads the client
 # address from cf-connecting-ip, which passes through unchanged).
+# No logs at all: there is no access log (no `log` directive), and the default logger, which writes handler and proxy errors
+# with the request (client address, headers) to stdout that Docker keeps, is discarded. deploy-lint checks this for every
+# tunnel-gateway-*.Caddyfile.
 {
 	admin off
 	auto_https off
 	persist_config off
+	log default {
+		output discard
+	}
 }
 
 :8787 {

@@ -2,7 +2,7 @@
 // query comes from queries.ts, so it has passed the PV13 lint before it is sent.
 import type { DocQuery } from '@govhub/contracts-v1/queryLint';
 import { convertAll, toAttestation, toBlock, toBlockSubs, toClaim, toComment, toPost, toProfile, toReaction, type RawDoc } from './convert.ts';
-import { attestationsOf, blocksOf, blockSubsOf, claimsOf, commentsOf, commentsSince, myReactionsOn, PAGE, postOf, profilesOf, reactionsOn, type ContractQuery } from './queries.ts';
+import { attestationsOf, blocksOf, blockSubsOf, claimsOf, commentsNewestOf, commentsSince, myReactionsOn, PAGE, postOf, profilesOf, reactionsOn, type ContractQuery } from './queries.ts';
 import type { Block, BlockSubs, Claim, ClaimAttestation, Comment, ContractKey, Profile, ProposalPost, Reaction } from './types.ts';
 
 export interface DocPage {
@@ -63,10 +63,13 @@ export class ForumReader {
     return this.reader.query(contract, q);
   }
 
-  /** Every comment on a proposal (F2, paged by 100), oldest first. */
-  async comments(govHash: string): Promise<{ comments: Comment[]; height: number | null; truncated: boolean }> {
-    const r = await pageAll(this.reader, (c) => commentsOf(govHash, c));
-    return { comments: convertAll(r.docs, toComment).filter((x) => x.govHash === govHash), height: r.height, truncated: r.truncated };
+  /**
+   * A proposal's comments, read newest first (F2c, paged by 100) so a flood can only push the oldest out of the read, never
+   * hide new ones; `truncated` when more than `maxPages` pages exist. Returned oldest first, for threading.
+   */
+  async comments(govHash: string, maxPages = MAX_PAGES): Promise<{ comments: Comment[]; height: number | null; truncated: boolean }> {
+    const r = await pageAll(this.reader, (c) => commentsNewestOf(govHash, c), maxPages);
+    return { comments: convertAll(r.docs, toComment).filter((x) => x.govHash === govHash).reverse(), height: r.height, truncated: r.truncated };
   }
 
   /** Comments created after `sinceMs` (F2d), for incremental counts. */

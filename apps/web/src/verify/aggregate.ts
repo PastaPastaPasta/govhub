@@ -6,7 +6,7 @@ import type { Proposal, Tally } from '../data/types.ts';
 import type { ChainReport } from './chain.ts';
 import { verdictFailure, type CollateralVerdict, type Step } from './collateral.ts';
 import type { RankingDone, VotesDone } from './protocol.ts';
-import { PLATFORM_TARGET } from './verdict.ts';
+import { comparable, PLATFORM_TARGET } from './verdict.ts';
 
 export type CheckId = 'content' | 'collateral' | 'chain' | 'votes' | 'funding';
 export const REQUIRED: readonly CheckId[] = ['content', 'collateral', 'chain', 'votes', 'funding'];
@@ -26,8 +26,11 @@ export type ComponentState =
   | { status: 'proven'; summary: string }
   /** Completed, but some of it rests on someone's word (a node, the bridge, weak proof of work). */
   | { status: 'reported'; reason: string }
-  /** Could not complete (network, timeouts). Says nothing about the proposal. */
-  | { status: 'error'; reason: string }
+  /**
+   * Could not complete (network, timeouts), or sources contradict each other (`mismatch`: e.g. the signed votes a bridge served and a
+   * tally published for the same block). Says nothing about the proposal itself, so it is never "failed"; never "verified" either.
+   */
+  | { status: 'error'; reason: string; mismatch?: true }
   /** A check ran and contradicted the data. */
   | { status: 'failed'; reason: string };
 
@@ -101,11 +104,19 @@ export function collateralComponent(i: { verdict: CollateralVerdict | null; erro
   if (i.error) return { status: 'error', reason: `The collateral check couldn't run: ${i.error}` };
   const v = i.verdict;
   if (!v) return { status: 'pending', note: i.progress || 'Checking the collateral' };
+  // A published height the verified chain contradicts is a fact about the published data; an unproven one is one node's word.
+  const height = v.steps.find((s) => s.id === 'height' && s.status === 'fail' && s.basis === 'verified');
+  if (height) return { status: 'failed', reason: `The published collateral height is wrong: ${height.detail}` };
   const definite = verdictFailure(v);
   if (definite) return { status: 'failed', reason: `The proposal doesn't match its on-chain collateral (${definite})` };
-  if (v.inconclusive) return { status: 'error', reason: "The network couldn't be reached to fetch the collateral" };
+  // the reason names what happened: an unreachable network, a node whose answer did not check out, a height only a node contradicts
+  if (v.inconclusive) {
+    const tx = v.steps.find((s) => s.id === 'tx' && s.status === 'fail');
+    return { status: 'error', reason: `The collateral couldn't be fetched and checked${tx ? ` (${tx.detail})` : ''}` };
+  }
   if (!v.ok) {
     const bad = v.steps.find((s) => s.status === 'fail');
+    if (bad?.id === 'height') return { status: 'error', reason: `The published collateral height differs from the block a node names; the chain could not be verified to settle it (${bad.detail})` };
     return { status: 'error', reason: `Nodes gave answers about the collateral that couldn't be confirmed${bad ? ` (${bad.label}: ${bad.detail})` : ''}` };
   }
   const c = v.chain;
@@ -176,7 +187,14 @@ export function votesComponent(i: {
   if (!d) return { status: 'pending', note: i.progress || 'Recounting the signed votes' };
   const pairs = d.runs.flatMap((run) => run.result.targets.map((t) => ({ run, t })));
   // A tally at the very block of the votes it was recounted from, and different: whoever published it, or served the votes, is wrong.
-  if (pairs.some(({ run, t }) => t.asOfHeight === run.votesAsOf && !t.matches)) return { status: 'error', reason: "The recounted votes don't match a tally published for the same block" };
+  const contradicted = pairs.find(({ run, t }) => comparable(run, t) && !t.matches);
+  if (contradicted) {
+    const fields = contradicted.t.compare.filter((c) => !c.ok).map((c) => c.field).join(', ');
+    return {
+      status: 'error', mismatch: true,
+      reason: `Mismatch: the signed votes the bridge served contradict the ${contradicted.t.name} for block ${contradicted.t.asOfHeight.toLocaleString('en-US')}${fields ? ` (${fields})` : ''}. Either the tally or the bridge's vote archive is wrong, so the tally isn't verified`,
+    };
+  }
   // The Platform tally document is the proven record of the tally; the bridge's own live tally proves nothing about it.
   if (i.shown.name !== PLATFORM_TARGET) return { status: 'reported', reason: "The tally isn't on Platform yet, so the recount can't be checked against the proven record" };
   const hit = pairs.find(({ t }) => t.name === PLATFORM_TARGET && t.asOfHeight === i.shown!.tally.asOfHeight);
@@ -222,13 +240,19 @@ export function fundingComponent(i: {
   chain: ComponentState;
   votes: ComponentState;
   report: ChainReport | null;
+  /** The payments scan (it follows the chain facts): still running, or why it could not. */
+  payments?: { pending: boolean; error: string | null; progress?: string };
   netYes: number | null;
   ranking: { result: RankingDone | null; error: string | null; progress?: string } | null;
 }): ComponentState {
   const up = [i.chain, i.votes];
   if (up.some((s) => s.status === 'pending')) return { status: 'pending', note: 'Waiting for the chain facts and the vote recount' };
   if (up.some((s) => s.status !== 'proven') || !i.report) return { status: 'reported', reason: 'Not fully checked: it depends on the checks above' };
+  if (i.payments?.pending) return { status: 'pending', note: i.payments.progress || "Reading this proposal's superblock payments" };
   const p = i.report.payments;
+  if (i.payments?.error) return { status: 'reported', reason: `The proposal's payments couldn't be read: ${i.payments.error}` };
+  if (p?.anchor?.weak) return { status: 'reported', reason: "Testnet: the proposal's payments were read from a chain only proof of work protects" };
+  if (p?.skipped) return { status: 'reported', reason: `The proposal's payment history isn't fully read yet: ${p.skipped.toLocaleString('en-US')} superblocks of its window are left for the next visit` };
   if (p && (p.unread.length || p.ambiguous.length || p.othersComplete === false)) return { status: 'reported', reason: "The proposal's payment history couldn't be fully proven" };
   const active = i.proposal.endEpoch > i.nowS;
   if (!active) {

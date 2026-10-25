@@ -1,10 +1,9 @@
 // Network profiles (one-action switch, header label, v1 migration, "being set up") and the failed-verification hide rules.
 // No live backend: fixture mode, or live mode with every non-local request aborted.
-import { expect, test, type BrowserContext } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { TESTNET_GOV_CONTRACT_ID } from '../src/config/registry.ts';
-import { cspViolations, gotoFixtures, openDrawer, openGroup, watchPage } from './helpers.ts';
+import { cspViolations, gotoFixtures, offline, openDrawer, openGroup, watchPage } from './helpers.ts';
 
-const offline = (context: BrowserContext) => context.route(/^https?:\/\/(?!localhost[:/]|127\.0\.0\.1[:/])/, (r) => r.abort());
 
 test.describe('failed verification is hidden (fixtures)', () => {
   test('lists, budget header and active count leave out the two invalid proposals; the toggle reveals them', async ({ page }) => {
@@ -56,7 +55,7 @@ test.describe('failed verification is hidden (fixtures)', () => {
   test('a real proposal shows no banner', async ({ page }) => {
     await gotoFixtures(page, '/p/OrchardPay');
     const drawer = await openDrawer(page);
-    await expect(drawer.getByTestId('collateral-check').locator('[data-verdict]')).toHaveAttribute('data-verdict', 'ok');
+    await expect(drawer.getByTestId('collateral-check').locator('[data-verdict]')).toHaveAttribute('data-verdict', 'demo');
     await expect(page.getByTestId('invalid-banner')).toHaveCount(0);
   });
 });
@@ -74,6 +73,9 @@ test.describe('network profiles', () => {
 
     await page.locator('.profile-switch label', { hasText: 'Testnet' }).click();
     await expect(page.getByRole('radio', { name: 'Testnet' })).toBeChecked();
+    // picking is not switching: the switch waits for the confirmation (D-058)
+    await expect(label).toContainText('Dev: mainnet data on testnet Platform');
+    await page.getByRole('button', { name: 'Switch to Testnet' }).click();
     await expect(label).toContainText('Testnet');
     await expect(label).not.toContainText('Dev');
     await expect(page.getByTestId('profile-description')).toContainText('Core testnet, Platform testnet');

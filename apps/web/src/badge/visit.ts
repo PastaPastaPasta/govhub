@@ -10,7 +10,7 @@ const WRITE_KEY = 'govhub.badge.lastWriteMs';
 const PRIVATE_KEY = 'govhub.badge.lastPrivateRequestMs';
 export const COOLDOWN_MS = 30 * 60_000;
 
-type Store = Pick<Storage, 'getItem' | 'setItem'> | undefined;
+type Store = (Pick<Storage, 'getItem' | 'setItem'> & Partial<Pick<Storage, 'removeItem'>>) | undefined;
 /** `localStorage` itself throws (SecurityError) when site data is blocked: resolve it inside a try. */
 function local(): Store {
   try {
@@ -47,17 +47,44 @@ export function noteIdentityWrite(storage: Store = local(), now = Date.now()): v
   emit();
 }
 
-/** Called before anything is sent to an issuer (challenge included). */
+/**
+ * Called before a token request (the one that names the masternode) is sent to an issuer. A challenge alone names nothing, so a
+ * request that failed at the challenge (issuer unreachable) starts no cooldown.
+ */
 export function noteRequestSent(storage: Store = local(), now = Date.now()): void {
   write(storage, REQUEST_KEY, now);
   emit();
 }
 
-/** A Private/Extra request: Standard jobs in this browser wait for its cooldown too, so they cannot undo its separation. */
-export function notePrivateRequest(storage: Store = local(), now = Date.now()): void {
-  write(storage, PRIVATE_KEY, now);
-  write(storage, REQUEST_KEY, now);
+/**
+ * A Private/Extra request: Standard jobs in this browser wait for its cooldown too, so they cannot undo its separation. Marked
+ * before the attempt (under the activity lock, so two tabs cannot both pass mayRequest). Returns an undo for an attempt that sent
+ * no token request (the issuer was unreachable): it restores the previous marks, unless something newer was marked meanwhile.
+ */
+export function notePrivateRequest(storage: Store = local(), now = Date.now()): () => void {
+  const keys = [PRIVATE_KEY, REQUEST_KEY];
+  const prev = keys.map((k) => {
+    try {
+      return storage?.getItem(k) ?? null;
+    } catch {
+      return null;
+    }
+  });
+  for (const k of keys) write(storage, k, now);
   emit();
+  return () => {
+    keys.forEach((k, i) => {
+      try {
+        if (storage?.getItem(k) !== String(now)) return; // newer mark: keep it
+        const old = prev[i];
+        if (old === null || old === undefined) storage?.removeItem?.(k);
+        else storage?.setItem(k, old);
+      } catch {
+        /* blocked storage: the read side fails closed */
+      }
+    });
+    emit();
+  };
 }
 
 /** Standard jobs never wait for anything of their own, only for a Private request's cooldown in this browser (review M1). */

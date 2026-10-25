@@ -1,7 +1,7 @@
 // Comment editor: markdown with a live preview, the UTF-8 byte budget (5,000 B), the fee estimate and the balance
 // it will be paid from, shown before anything is signed.
 import { useState, type FormEvent } from 'react';
-import { commentCost, COMMENT_MAX_BYTES } from '@govhub/forum';
+import { commentCost, COMMENT_MAX_BYTES, isBlank } from '@govhub/forum';
 import { useForum } from '../app/forum.tsx';
 import { formatCredits, formatInt } from '../lib/format.ts';
 import { Markdown } from './Markdown.tsx';
@@ -18,6 +18,7 @@ export function Composer({ onSubmit, onCancel, label, autoFocus = false }: { onS
   const cost = commentCost(bytes);
   const over = bytes > COMMENT_MAX_BYTES;
   const poor = balance !== null && balance < BigInt(cost);
+  const blank = isBlank(body); // zero-width, bidi and other invisible characters alone are not a comment
   const submit = (e: FormEvent) => {
     e.preventDefault();
     return run(async () => {
@@ -32,7 +33,7 @@ export function Composer({ onSubmit, onCancel, label, autoFocus = false }: { onS
         <button type="button" className={`btn btn-quiet ${preview ? '' : 'on'}`} aria-pressed={!preview} onClick={() => setPreview(false)}>
           Write
         </button>
-        <button type="button" className={`btn btn-quiet ${preview ? 'on' : ''}`} aria-pressed={preview} onClick={() => setPreview(true)} disabled={!body.trim()}>
+        <button type="button" className={`btn btn-quiet ${preview ? 'on' : ''}`} aria-pressed={preview} onClick={() => setPreview(true)} disabled={blank}>
           Preview
         </button>
       </div>
@@ -53,7 +54,7 @@ export function Composer({ onSubmit, onCancel, label, autoFocus = false }: { onS
               Cancel
             </button>
           )}
-          <button type="submit" className="btn btn-primary" disabled={busy || !body.trim() || over || poor}>
+          <button type="submit" className="btn btn-primary" disabled={busy || blank || over || poor}>
             {busy ? 'Signing and broadcasting…' : label}
           </button>
         </div>

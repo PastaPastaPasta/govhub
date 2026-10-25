@@ -2,10 +2,11 @@
 // signed-in views reached from the account menu (top-up, passkeys). Secrets are held in component state only while a view needs
 // them; the session takes ownership of the seed when sign-in completes, and closing the sheet drops the rest.
 import {
-  addressOf, discardFunding, discoverIdentities, generatePhrase, isValidPhrase, localPasskeys, nextTopUpIndex, normalizePhrase, parseVoucher, pendingFundings, PhraseError,
-  redeemVoucher, registrationFundingPath, SeedWallet, signInWithKey, signInWithSeed, toBase64, wipe, type FoundIdentity, type FundingRecord, type PhraseLength,
+  addressOf, discardFunding, discoverIdentities, generatePhrase, lockTooSmall, nextCreateIndex, isValidPhrase, localPasskeys, MIN_CREATE_DEPOSIT_DUFFS, MIN_TOPUP_DEPOSIT_DUFFS, nextTopUpIndex, normalizePhrase,
+  parseVoucher, pendingFundings, PhraseError, redeemVoucher, registrationFundingPath, SeedWallet, signInWithKey, signInWithSeed, toBase64, wipe, type FoundIdentity, type FundingRecord,
+  type PhraseLength,
 } from '@govhub/auth';
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type FormEvent } from 'react';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { FIXTURE_IDS } from '../data/fixtureForum.ts';
@@ -13,7 +14,7 @@ import { fixtureSession } from '../session/fixture.ts';
 import { useAuth, type SheetView } from './context.tsx';
 import { FundingPanel } from './FundingPanel.tsx';
 import { PasskeySignIn, Passkeys } from './Passkeys.tsx';
-import { errorText } from './runtime.ts';
+import { errorText, formatDuffs } from './runtime.ts';
 
 const TITLES: Record<SheetView, string> = {
   choose: 'Sign in or create an account',
@@ -28,14 +29,27 @@ const TITLES: Record<SheetView, string> = {
 export function AuthSheet() {
   const { sheet, closeSheet } = useAuth();
   const ref = useRef<HTMLDialogElement>(null);
+  // What had focus when the sheet opened: focus goes back there when it closes (or to the account button, if that control is gone).
+  const opener = useRef<HTMLElement | null>(null);
   useEffect(() => {
     const d = ref.current;
     if (!d) return;
-    if (sheet && !d.open) d.showModal();
+    if (sheet && !d.open) {
+      const a = document.activeElement;
+      // <body> is no opener (Safari does not focus a clicked button): the account button is the fallback
+      opener.current = a instanceof HTMLElement && a !== document.body ? a : null;
+      d.showModal();
+    }
     if (!sheet && d.open) d.close();
   }, [sheet]);
+  const onClose = () => {
+    closeSheet();
+    const back = opener.current?.isConnected && opener.current.getClientRects().length ? opener.current : document.getElementById('session-button');
+    opener.current = null;
+    back?.focus();
+  };
   return (
-    <dialog ref={ref} className="sheet" aria-labelledby="sheet-title" onClose={closeSheet} onCancel={closeSheet}>
+    <dialog ref={ref} className="sheet" aria-labelledby="sheet-title" onClose={onClose} onCancel={closeSheet}>
       {sheet && (
         <div className="sheet-body">
           <header className="sheet-head">
@@ -188,11 +202,13 @@ function quizPositions(n: number): number[] {
   return [...out].sort((a, b) => a - b);
 }
 
-function CreateFlow() {
+export function CreateFlow() {
   const [words, setWords] = useState<PhraseLength>(12);
   const [phrase, setPhrase] = useState(() => generatePhrase(12));
   const [step, setStep] = useState<'show' | 'quiz' | 'fund'>('show');
-  const list = phrase.split(' ');
+  const list = useMemo(() => phrase.split(' '), [phrase]);
+  // Drawn once per phrase: a re-render (the app loading around the sheet) or going back to the phrase never moves them.
+  const positions = useMemo(() => quizPositions(list.length), [list]);
 
   if (step === 'show') {
     return (
@@ -232,12 +248,11 @@ function CreateFlow() {
       </div>
     );
   }
-  if (step === 'quiz') return <Quiz words={list} onBack={() => setStep('show')} onPass={() => setStep('fund')} />;
+  if (step === 'quiz') return <Quiz words={list} positions={positions} onBack={() => setStep('show')} onPass={() => setStep('fund')} />;
   return <FundNewIdentity phrase={phrase} identityIndex={0} />;
 }
 
-function Quiz({ words, onPass, onBack }: { words: string[]; onPass(): void; onBack(): void }) {
-  const positions = useMemo(() => quizPositions(words.length), [words]);
+function Quiz({ words, positions, onPass, onBack }: { words: string[]; positions: number[]; onPass(): void; onBack(): void }) {
   const [answers, setAnswers] = useState<string[]>(['', '', '']);
   const [wrong, setWrong] = useState(false);
   const submit = (e: FormEvent) => {
@@ -300,10 +315,11 @@ function FundNewIdentity({ phrase, identityIndex, resume }: { phrase: string; id
     };
   }, [phrase, network]);
 
-  const finish = async (identityId: string) => {
+  // `index`: a new account paid for after a too-small payment lives at a later index
+  const finish = async (identityId: string, index = identityIndex) => {
     if (!wallet) return;
     try {
-      const s = await signInWithSeed(wallet, { identityIndex, identityId }, await platform());
+      const s = await signInWithSeed(wallet, { identityIndex: index, identityId }, await platform());
       owned.current = true;
       signIn(s);
       closeSheet();
@@ -334,7 +350,7 @@ function FundNewIdentity({ phrase, identityIndex, resume }: { phrase: string; id
           <li>
             <button type="button" className="choice choice-l" onClick={() => setHow('dash')}>
               <b>Pay with DASH</b>
-              <span className="muted small">Scan a QR code with any Dash wallet. 0.002 DASH at least; 0.01 DASH leaves room for many comments.</span>
+              <span className="muted small">Scan a QR code with any Dash wallet. {formatDuffs(MIN_CREATE_DEPOSIT_DUFFS)} at least; 0.01 DASH leaves room for many comments.</span>
             </button>
           </li>
         </ul>
@@ -377,10 +393,7 @@ function VoucherRedeem({ wallet, identityIndex, onDone }: { wallet: SeedWallet; 
   };
   return (
     <form className="form" onSubmit={submit}>
-      <label>
-        Voucher link
-        <textarea rows={3} value={text} onChange={(e) => setText(e.target.value)} placeholder="dashpay://invite?assetlocktx=…&pk=…" spellCheck={false} autoComplete="off" disabled={busy} />
-      </label>
+      <SecretField label="Voucher link" what="the voucher link" value={text} onChange={setText} placeholder="dashpay://invite?assetlocktx=…&pk=…" testId="voucher-input" disabled={busy} />
       <p className="muted small">The voucher only pays for the identity. Its keys are the ones from your recovery phrase; the faucet never controls it.</p>
       {note && busy && (
         <p className="muted small" aria-live="polite">
@@ -397,6 +410,44 @@ function VoucherRedeem({ wallet, identityIndex, onDone }: { wallet: SeedWallet; 
   );
 }
 
+// ---- secret fields ---------------------------------------------------------------------------------------------------------
+
+/** Masking a textarea needs -webkit-text-security; where it is missing a password input stands in while hidden. */
+const TEXT_SECURITY = typeof CSS !== 'undefined' && !!CSS.supports?.('-webkit-text-security', 'disc');
+
+/** A password input drops line breaks from a paste ("word\nword" becomes "wordword"): paste them as spaces instead. */
+function pasteOneLine(set: (v: string) => void) {
+  return (e: ClipboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    const el = e.currentTarget;
+    const t = e.clipboardData.getData('text').replace(/\s+/g, ' ');
+    set(el.value.slice(0, el.selectionStart ?? el.value.length) + t + el.value.slice(el.selectionEnd ?? el.value.length));
+  };
+}
+
+/** A recovery phrase or voucher link: masked until "Show" (shoulder surfing, screen sharing, screenshots). */
+export function SecretField(p: { label: string; what: string; value: string; onChange(v: string): void; testId: string; placeholder?: string; disabled?: boolean }) {
+  const [shown, setShown] = useState(false);
+  const common = {
+    value: p.value, placeholder: p.placeholder, disabled: p.disabled, spellCheck: false, autoComplete: 'off', autoCapitalize: 'none', autoCorrect: 'off', 'data-testid': p.testId, 'data-masked': !shown,
+  };
+  return (
+    <div className="secret-field">
+      <label>
+        {p.label}
+        {shown || TEXT_SECURITY ? (
+          <textarea rows={3} className={shown ? undefined : 'masked'} {...common} onChange={(e) => p.onChange(e.target.value)} />
+        ) : (
+          <input type="password" {...common} onChange={(e) => p.onChange(e.target.value)} onPaste={pasteOneLine(p.onChange)} />
+        )}
+      </label>
+      <button type="button" className="btn btn-quiet" aria-pressed={shown} aria-label={`${shown ? 'Hide' : 'Show'} ${p.what}`} onClick={() => setShown((v) => !v)}>
+        {shown ? 'Hide' : 'Show'}
+      </button>
+    </div>
+  );
+}
+
 // ---- existing phrase -------------------------------------------------------------------------------------------------------
 
 function PhraseSignIn() {
@@ -404,7 +455,7 @@ function PhraseSignIn() {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [state, setState] = useState<{ phrase: string; found: FoundIdentity[]; resume?: FundingRecord } | null>(null);
+  const [state, setState] = useState<{ phrase: string; found: FoundIdentity[]; resume?: FundingRecord; createIndex?: number } | null>(null);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -417,9 +468,10 @@ function PhraseSignIn() {
     try {
       // An unfinished identity setup of this phrase (hidden ones included: a payment made while no tab watched is only found by
       // replaying their address). One that already holds money continues first; an unpaid one only when the phrase has no identity.
-      const resume = store
+      // A setup paid again after a too-small payment comes before the too-small one.
+      const mine = store
         .list()
-        .find((r) => {
+        .filter((r) => {
           if (r.network !== network || r.kind !== 'create' || r.state === 'done') return false;
           const d = wallet.derive(registrationFundingPath(network, r.identityIndex));
           try {
@@ -428,6 +480,8 @@ function PhraseSignIn() {
             d.privateKey.fill(0); // only the address was needed
           }
         });
+      const paid = (r: FundingRecord) => r.deposits.length > 0 || !!r.lock;
+      const resume = mine.find((r) => paid(r) && !lockTooSmall(r)) ?? mine.find(paid) ?? mine[0];
       if (resume && (resume.deposits.length || resume.lock)) return setState({ phrase, found: [], resume });
       const port = await platform();
       const found = await discoverIdentities(wallet, port);
@@ -438,7 +492,8 @@ function PhraseSignIn() {
         closeSheet();
         return;
       }
-      setState({ phrase, found });
+      // a new identity skips an index whose payment was used to top up another identity
+      setState({ phrase, found, createIndex: found.length ? undefined : nextCreateIndex(store, wallet) });
     } catch (err) {
       setError(errorText(err));
     } finally {
@@ -465,7 +520,7 @@ function PhraseSignIn() {
     return (
       <div>
         <p>This phrase has no account on Dash Platform ({network}) yet. You can create one now.</p>
-        <FundNewIdentity phrase={state.phrase} identityIndex={0} />
+        <FundNewIdentity phrase={state.phrase} identityIndex={state.createIndex ?? 0} />
       </div>
     );
   }
@@ -489,10 +544,7 @@ function PhraseSignIn() {
   }
   return (
     <form className="form" onSubmit={submit}>
-      <label>
-        Recovery phrase (12 or 24 words)
-        <textarea rows={3} value={text} onChange={(e) => setText(e.target.value)} spellCheck={false} autoComplete="off" autoCapitalize="none" data-testid="phrase-input" disabled={busy} />
-      </label>
+      <SecretField label="Recovery phrase (12 or 24 words)" what="the recovery phrase" value={text} onChange={setText} testId="phrase-input" disabled={busy} />
       <p className="muted small">The phrase never leaves this browser. govhub finds your account by a public key fingerprint only.</p>
       {error && <p className="error" role="alert">{error}</p>}
       <div className="form-actions">
@@ -584,7 +636,7 @@ function TopUp() {
   }
   return (
     <div>
-      <p>Add Platform credits with DASH from any wallet. 0.00051 DASH minimum; about 0.00008 DASH of it pays for the top-up itself.</p>
+      <p>Add Platform credits with DASH from any wallet. {formatDuffs(MIN_TOPUP_DEPOSIT_DUFFS)} minimum; about 0.00008 DASH of it pays for the top-up itself.</p>
       <FundingPanel
         kind="topup"
         wallet={session.wallet}

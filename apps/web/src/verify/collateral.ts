@@ -11,8 +11,11 @@ import type { CoreNetwork, Proposal } from '../data/types.ts';
  * everything else (confirmations, the IS-lock flag, and the ChainLock flag when `chainLocked` is 'claimed') is a node's word.
  */
 export type TxLookup = Pick<VerifiedTransaction, 'raw' | 'height' | 'confirmations' | 'chainLocked' | 'instantLocked' | 'proof' | 'node'> & {
-  /** A second node's answer for the same txid, asked only when the block inclusion is not proven. */
-  second?: { node: string; height: number; sameBytes: boolean } | null;
+  /**
+   * A second node's answer for the same txid, asked only when the block inclusion is not proven. `notFound`: that node answered
+   * NOT_FOUND, which contradicts the first node (a missing answer is null instead).
+   */
+  second?: { node: string; height: number; sameBytes: boolean; notFound?: boolean } | null;
 };
 
 export type StepStatus = 'ok' | 'fail' | 'warn' | 'skip';
@@ -34,7 +37,7 @@ export interface ChainFacts {
   /** The tx was proven into a block by its merkle root. */
   merkle: boolean;
   chainLocked: TxLookup['chainLocked'];
-  /** Confirmations proven by the ChainLock (a lower bound), when that proves the 6 Core needs; else null. */
+  /** Confirmations proven from the verified chain's tip (a lower bound), when that proves the 6 Core needs; else null. */
   provenConfirmations: number | null;
   /** Blocks from the collateral's block up to the verified ChainLock, whatever their number. */
   lockDepth: number | null;
@@ -72,8 +75,11 @@ export interface CollateralVerdict {
 /** A failed lookup: `notFound` when several distinct DAPI nodes answered NOT_FOUND (the collateral is not on this chain). */
 export type LookupError = { error: string; notFound?: boolean };
 
-/** Steps whose failure can be a fact about the proposal itself, when it does not rest on one node's word (`basis: 'reported'`). */
-const DEFINITE: readonly Step['id'][] = ['hash', 'fields', 'tx', 'collateral', 'confirmations'];
+/**
+ * Steps whose failure can be a fact about the proposal itself, when it does not rest on one node's word (`basis: 'reported'`). The
+ * published collateral height counts only when the verified chain contradicts it (its basis is then 'verified').
+ */
+const DEFINITE: readonly Step['id'][] = ['hash', 'fields', 'tx', 'collateral', 'confirmations', 'height'];
 
 /**
  * Why a verdict means the proposal failed verification, or null when it passed or the check could not conclude. Only facts count:
@@ -126,15 +132,65 @@ export function checkContent(p: ProposalCore): { steps: Step[]; govHashComputed?
   return { steps, ...(computed ? { govHashComputed: computed } : {}) };
 }
 
+const num = (n: number) => n.toLocaleString('en-US');
+
+/** What the fallback per-transaction ChainLock rests on (it is "reported", never "verified"). */
+export const AGREED_LIST = 'its BLS signature checks against a masternode list DAPI nodes agree on, not one proven from the chain verified here';
+
+/** A second node's answer, for a block not tied to the verified chain. NOT_FOUND contradicts the first node; no answer only warns. */
+function crosscheckStep(sec: TxLookup['second'], height: number): Step {
+  const step = { id: 'crosscheck', label: 'Second node' } as const;
+  if (!sec) return { ...step, status: 'warn', basis: 'reported', detail: 'no second DAPI node answered; the block and confirmations rest on one node' };
+  // a disagreement between nodes is a node's word against another's: "couldn't verify", never a fact about the proposal
+  if (sec.notFound) return { ...step, status: 'fail', basis: 'reported', detail: `${sec.node} disagrees: it answers NOT_FOUND, as if the transaction were not on its chain` };
+  if (sec.sameBytes && sec.height === height) return { ...step, status: 'ok', basis: 'reported', detail: `${sec.node} returns the same transaction in the same block` };
+  return { ...step, status: 'fail', basis: 'reported', detail: `${sec.node} disagrees: ${sec.sameBytes ? `block ${sec.height} vs ${height}` : 'different transaction bytes'}` };
+}
+
+/** The ChainLock step: final under a lock in the verified chain; the fallback lock and node claims are "reported". */
+function chainlockStep(
+  lookup: TxLookup,
+  c: { anc: TxLookup['proof']['anchor']; cl: TxLookup['proof']['chainLock']; fallbackLock: boolean; chainBasis: StepBasis; word: string; weak: string | null },
+): Step {
+  const step = { id: 'chainlock', label: 'ChainLock' } as const;
+  const notes = lookup.proof.notes.length ? { more: lookup.proof.notes.join('; ') } : {};
+  const quorum = (l: NonNullable<typeof c.cl>) => (l.exact ? 'signed by the quorum Core selects' : "signed by a quorum of the proven masternode list (Core's exact choice could not be reproduced)");
+  const { anc, cl } = c;
+  if (cl && anc && lookup.chainLocked === 'verified') {
+    return {
+      ...step, status: 'ok', basis: c.chainBasis,
+      detail: c.weak ? `covered by the ChainLock on block ${num(cl.height)}, on a chain proof of work does not secure here` : `final: covered by the BLS-verified ChainLock on block ${num(cl.height)}`,
+      more: `${quorum(cl)}; ${num(cl.verifiedConfirmations)} ${c.word} headers from the block to the locked one`,
+    };
+  }
+  if (cl && c.fallbackLock) {
+    return {
+      ...step, status: 'ok', basis: 'reported', detail: `a ChainLock on block ${num(cl.height)} covers it, but the chain could not be verified here`,
+      more: `${AGREED_LIST}; ${quorum(cl)}; ${num(cl.verifiedConfirmations)} headers from the block to the locked one`,
+    };
+  }
+  if (anc) return { ...step, status: 'warn', basis: c.chainBasis, detail: `not final yet: the block is newer than the newest ${c.word} ChainLock (block ${num(anc.chainLockHeight)})`, ...notes };
+  if (lookup.chainLocked === 'claimed') {
+    // "proof failed" (as opposed to "block too old" or "no verifier") means the machinery ran and something did not check out
+    const failed = lookup.proof.notes.some((n) => /chainlock proof failed/i.test(n));
+    return { ...step, status: failed ? 'warn' : 'ok', basis: 'reported', detail: `a node reports it ChainLocked; ${failed ? 'checking the signature FAILED' : 'the signature was not checked'}`, ...notes };
+  }
+  return { ...step, status: 'warn', basis: 'reported', detail: 'a node reports no ChainLock yet', ...notes };
+}
+
 /** Full verdict from the content checks plus the DAPI transaction lookup (or its error). */
 export function verifyCollateral(p: ProposalCore, lookup: TxLookup | LookupError, network: CoreNetwork): CollateralVerdict {
   const { steps, govHashComputed } = checkContent(p);
   if ('error' in lookup) {
-    steps.push({ id: 'tx', status: 'fail', label: 'Collateral transaction', detail: lookup.notFound ? `not on the chain: every DAPI node asked answered NOT_FOUND (${lookup.error})` : `not fetched: ${lookup.error}` });
+    // an unreachable network says nothing about the proposal: that failure is "reported" (couldn't verify), not a mismatch
+    steps.push(
+      lookup.notFound
+        ? { id: 'tx', status: 'fail', label: 'Collateral transaction', detail: `not on the chain: every DAPI node asked answered NOT_FOUND (${lookup.error})` }
+        : { id: 'tx', status: 'fail', basis: 'reported', label: 'Collateral transaction', detail: `not fetched: ${lookup.error}` },
+    );
     return { ok: false, steps, ...(govHashComputed ? { govHashComputed } : {}), ...(lookup.notFound ? {} : { inconclusive: true }) };
   }
   const { proof } = lookup;
-  const num = (n: number) => n.toLocaleString('en-US');
   steps.push({ id: 'tx', status: 'ok', label: 'Collateral transaction', detail: `${lookup.raw.length} bytes from DAPI node ${lookup.node}` });
   // A merkle proof only shows the transaction is in the block a node named. "anchored": that block is the one at its height in the chain
   // this browser verified from a pinned checkpoint (hash links down from a ChainLock proven from the quorum checkpoint, or work and
@@ -142,27 +198,25 @@ export function verifyCollateral(p: ProposalCore, lookup: TxLookup | LookupError
   const anc = proof.anchor;
   const cl = proof.chainLock;
   const locked = lookup.chainLocked === 'verified' && cl !== null;
+  // Only the chain this browser verified from a pinned checkpoint proves anything. The fallback per-transaction ChainLock (when the
+  // chain could not be anchored) checks the lock's BLS signature against a masternode list that DAPI nodes merely agree on (2 of 3):
+  // consistent, not proven, on every network.
+  const fallbackLock = locked && !anc;
   const proven = !!anc || locked;
+  // Where the chain rests on proof of work that protects nothing (testnet) the chain facts are consistent, not secure: they stay
+  // "reported", and their text says "checked", not "verified". An anchored chain says itself (`weak` is null on the quorum-proof path).
+  const weak = anc ? anc.weak : network === 'mainnet' ? null : `${network} difficulty is too low for proof of work to stop a malicious node from forging the chain`;
+  // only the anchored chain off weak proof of work is "verified"; everything else is "reported"
+  const chainBasis: StepBasis = anc && !weak ? 'verified' : 'reported';
+  const word = weak ? 'checked' : 'verified';
   if (proof.merkle) {
     const checks = `the whole block was fetched, its merkle root recomputed from every txid and the coinbase height matches${proof.blockHash === 'verified' ? '; the header hashes (X11) to the block hash' : ''}`;
-    steps.push(
-      anc
-        ? { id: 'block', status: 'ok', basis: 'verified', label: 'Block inclusion', detail: `in block ${num(lookup.height)} of the chain verified in this browser`, more: `${checks}; its hash is the verified hash at that height` }
-        : locked
-          ? { id: 'block', status: 'ok', basis: 'verified', label: 'Block inclusion', detail: `in block ${num(lookup.height)}, which a verified ChainLock covers`, more: checks }
-          : { id: 'block', status: 'ok', basis: 'reported', label: 'Block inclusion', detail: `in block ${num(lookup.height)} as a node names it; nothing ties that block to the chain`, more: checks },
-    );
+    const block = { id: 'block', status: 'ok', label: 'Block inclusion' } as const;
+    if (anc) steps.push({ ...block, basis: chainBasis, detail: `in block ${num(lookup.height)} of the chain ${word} in this browser`, more: `${checks}; its hash is the ${word} hash at that height` });
+    else if (locked) steps.push({ ...block, basis: 'reported', detail: `in block ${num(lookup.height)}, which a ChainLock covers; the chain could not be verified here`, more: `${checks}; ${AGREED_LIST}` });
+    else steps.push({ ...block, basis: 'reported', detail: `in block ${num(lookup.height)} as a node names it; nothing ties that block to the chain`, more: checks });
   }
-  if (!proven) {
-    const sec = lookup.second;
-    steps.push(
-      !sec
-        ? { id: 'crosscheck', status: 'warn', basis: 'reported', label: 'Second node', detail: 'no second DAPI node answered; the block and confirmations rest on one node' }
-        : sec.sameBytes && sec.height === lookup.height
-          ? { id: 'crosscheck', status: 'ok', basis: 'reported', label: 'Second node', detail: `${sec.node} returns the same transaction in the same block` }
-          : { id: 'crosscheck', status: 'fail', label: 'Second node', detail: `${sec.node} disagrees: ${sec.sameBytes ? `block ${sec.height} vs ${lookup.height}` : 'different transaction bytes'}` },
-    );
-  }
+  if (!proven) steps.push(crosscheckStep(lookup.second, lookup.height));
 
   let inputKeys: string[] | undefined;
   if (govHashComputed) {
@@ -180,13 +234,13 @@ export function verifyCollateral(p: ProposalCore, lookup: TxLookup | LookupError
   }
 
   // Confirmations: from the verified tip when anchored (a lower bound: a node can withhold newer blocks, not invent them), else the
-  // ChainLock's depth, else the node's word.
+  // fallback ChainLock's depth (reported: see fallbackLock), else the node's word.
   const provenConf = anc ? anc.confirmations : locked && cl ? cl.verifiedConfirmations : null;
   if (provenConf !== null && provenConf >= GOVERNANCE_FEE_CONFIRMATIONS) {
     steps.push({
-      id: 'confirmations', status: 'ok', basis: 'verified', label: 'Confirmations',
-      detail: `at least ${num(provenConf)} (Core needs ${GOVERNANCE_FEE_CONFIRMATIONS})`,
-      more: anc ? `verified tip ${num(anc.tip)} - block ${num(lookup.height)} + 1; the node claims ${num(lookup.confirmations)}` : `headers from the block up to the verified ChainLock; the node claims ${num(lookup.confirmations)}`,
+      id: 'confirmations', status: 'ok', basis: chainBasis, label: 'Confirmations',
+      detail: `at least ${num(provenConf)} (Core needs ${GOVERNANCE_FEE_CONFIRMATIONS})${anc ? '' : ', counted to a ChainLock the chain does not prove'}`,
+      more: anc ? `${word} tip ${num(anc.tip)} - block ${num(lookup.height)} + 1; the node claims ${num(lookup.confirmations)}` : `headers from the block up to the ChainLock; ${AGREED_LIST}; the node claims ${num(lookup.confirmations)}`,
     });
   } else {
     // A proven count below 6 is only a lower bound (newer blocks may be withheld): the node's number stands, labelled as such.
@@ -196,50 +250,29 @@ export function verifyCollateral(p: ProposalCore, lookup: TxLookup | LookupError
       ...(provenConf !== null ? { more: `only ${num(provenConf)} proven so far` } : {}),
     });
   }
-  const notes = proof.notes.length ? proof.notes.join('; ') : undefined;
-  // "proof failed" (as opposed to "block too old" or "no verifier") means the machinery ran and something did not check out.
-  const proofFailed = proof.notes.some((n) => /chainlock proof failed/i.test(n));
-  const quorum = (c: NonNullable<typeof cl>) => (c.exact ? 'signed by the quorum Core selects' : "signed by a quorum of the proven masternode list (Core's exact choice could not be reproduced)");
-  steps.push(
-    locked && cl
-      ? {
-          id: 'chainlock', status: 'ok', basis: 'verified', label: 'ChainLock',
-          detail: `final: covered by the BLS-verified ChainLock on block ${num(cl.height)}`,
-          more: `${quorum(cl)}; ${num(cl.verifiedConfirmations)} verified headers from the block to the locked one`,
-        }
-      : anc
-        ? { id: 'chainlock', status: 'warn', basis: 'verified', label: 'ChainLock', detail: `not final yet: the block is newer than the newest verified ChainLock (block ${num(anc.chainLockHeight)})`, ...(notes ? { more: notes } : {}) }
-        : lookup.chainLocked === 'claimed'
-          ? { id: 'chainlock', status: proofFailed ? 'warn' : 'ok', basis: 'reported', label: 'ChainLock', detail: `a node reports it ChainLocked; ${proofFailed ? 'checking the signature FAILED' : 'the signature was not checked'}`, ...(notes ? { more: notes } : {}) }
-          : { id: 'chainlock', status: 'warn', basis: 'reported', label: 'ChainLock', detail: 'a node reports no ChainLock yet', ...(notes ? { more: notes } : {}) },
-  );
+  steps.push(chainlockStep(lookup, { anc, cl, fallbackLock, chainBasis, word, weak }));
   if (p.collateralHeight) {
+    // A published height the chain contradicts is a failure (the mark is the chain's): the page must not show it as checked.
     const same = lookup.height === p.collateralHeight;
+    const where = anc ? ` (the coinbase of the ${word} block commits to it)` : '';
     steps.push({
       id: 'height',
-      status: same ? 'ok' : 'warn',
-      basis: proven ? 'verified' : 'reported',
+      status: same ? 'ok' : 'fail',
+      basis: chainBasis,
       label: 'Collateral height',
-      detail: same ? `block ${num(lookup.height)}${proven ? ' (the coinbase of the verified block commits to it)' : ''}` : `chain says ${num(lookup.height)}, published ${num(p.collateralHeight)}`,
+      detail: same ? `block ${num(lookup.height)}${where}` : `published as block ${num(p.collateralHeight)}, but the ${anc ? `${word} chain has it in` : 'node names'} block ${num(lookup.height)}`,
     });
   }
-  // Where the chain rests on proof of work that protects nothing (testnet) the chain facts are consistent, not secure: they stay
-  // "reported". That includes the fallback per-transaction ChainLock proof used when the chain could not be anchored, which is never
-  // "verified" off mainnet. An anchored chain says itself (`weak` is null on the quorum-proof path, on every network).
-  const weak = anc ? anc.weak : network === 'mainnet' ? null : `${network} difficulty is too low for proof of work to stop a malicious node from forging the chain`;
   if (weak) {
     for (const st of steps) {
-      if (st.basis === 'verified' && (['block', 'confirmations', 'chainlock', 'height'] as const).includes(st.id as 'block')) {
-        st.basis = 'reported';
-        st.more = `${st.more ? `${st.more}; ` : ''}not secure: ${weak}`;
-      }
+      if ((['block', 'confirmations', 'chainlock', 'height'] as const).includes(st.id as 'block')) st.more = `${st.more ? `${st.more}; ` : ''}not secure: ${weak}`;
     }
   }
   const critical: Step['id'][] = ['hash', 'fields', 'tx', 'collateral', 'confirmations'];
   const ok = steps.filter((s) => critical.includes(s.id)).every((s) => s.status === 'ok') && !steps.some((s) => s.status === 'fail');
   const chain: ChainFacts = {
     height: lookup.height, merkle: proof.merkle, chainLocked: lookup.chainLocked, confirmations: lookup.confirmations,
-    provenConfirmations: provenConf !== null && provenConf >= GOVERNANCE_FEE_CONFIRMATIONS ? provenConf : null,
+    provenConfirmations: anc && !weak && provenConf !== null && provenConf >= GOVERNANCE_FEE_CONFIRMATIONS ? provenConf : null,
     lockDepth: locked && cl ? cl.verifiedConfirmations : null,
     ...(weak ? { weak } : {}),
     ...(anc ? { anchored: { tip: anc.tip, confirmations: anc.confirmations, chainLockHeight: anc.chainLockHeight, final: locked, weak: anc.weak, ...(anc.trust ? { trust: anc.trust } : {}) } } : {}),

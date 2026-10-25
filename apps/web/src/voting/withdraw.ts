@@ -70,6 +70,7 @@ export async function withdrawVote(v0: WatchedVote, d: WithdrawDeps): Promise<{ 
   const unsure = !!v.maybeAt?.length;
   if (!v.refs.length) return { result: r0.inCore ? 'sent' : unsure ? 'unknown' : 'gone', vote: v };
   let sent = r0.inCore;
+  let maybe = false;
   let firstError: unknown = null;
   // every relay is tried even when one fails, so one unreachable relay never leaves the others holding the vote
   for (const r of v.refs) {
@@ -78,10 +79,12 @@ export async function withdrawVote(v0: WatchedVote, d: WithdrawDeps): Promise<{ 
       await port.cancel(r.id, sig);
     } catch (e) {
       if (e instanceof RelayError && e.status === 404) continue; // it never held it
-      // 409 not-held: sending / broadcast / confirmed mean the vote went (or is going) out; failed, superseded and cancelled are
-      // final, but may still have been sent once (the relay's maybeSent, read below)
+      // 409 not-held: sending / broadcast / confirmed mean the vote went (or is going) out; maybe-broadcast (the relay refuses to
+      // cancel a vote that may already be in Core) means it may count; failed, superseded and cancelled are final, but may still
+      // have been sent once (the relay's maybeSent, read below)
       if (e instanceof RelayError && e.status === 409) {
-        if (['sending', 'broadcast', 'confirmed'].includes(e.voteStatus ?? '')) sent = true;
+        if (e.code === 'maybe-broadcast' || e.voteStatus === 'maybe-broadcast') maybe = true;
+        else if (['sending', 'broadcast', 'confirmed'].includes(e.voteStatus ?? '')) sent = true;
       } else {
         firstError ??= e;
         continue;
@@ -95,6 +98,6 @@ export async function withdrawVote(v0: WatchedVote, d: WithdrawDeps): Promise<{ 
   if (sent) return { result: 'sent', vote: v };
   if (unsure) return { result: 'unknown', vote: v };
   // what each relay says now (maybeSent), with the relay statuses seen before the cancel
-  if (everLeft({ status: v0.status, relayStatus: v0.relayStatus, relayInfo: v.relayInfo })) return { result: 'maybe', vote: v };
+  if (maybe || everLeft({ status: v0.status, relayStatus: v0.relayStatus, relayInfo: v.relayInfo })) return { result: 'maybe', vote: v };
   return { result: 'cancelled', vote: v };
 }
