@@ -165,6 +165,7 @@ describe('watched votes', () => {
   });
   it('parses relay answers strictly', () => {
     expect(parseRelayState({ id: 'ab'.repeat(16), voteHash: 'cd'.repeat(32), status: 'held', releaseAt: 5 }).status).toBe('held');
+    expect(parseRelayState({ id: 'ab'.repeat(16), voteHash: 'cd'.repeat(32), status: 'maybe-broadcast', releaseAt: 5 }).status).toBe('maybe-broadcast');
     expect(() => parseRelayState({ id: 'x', voteHash: 'cd'.repeat(32), status: 'held' })).toThrow();
     expect(() => parseRelayState({ id: 'ab'.repeat(16), voteHash: 'cd'.repeat(32), status: 'pwned' })).toThrow();
   });

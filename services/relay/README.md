@@ -33,10 +33,17 @@ What the relay does to keep that exposure small:
 - no IP column anywhere. The per-IP limiter is in memory only and keyed by `HMAC-SHA256(random per-process salt, ip)`;
 - each vote keeps only the hour it was received (`received_hour`, rounded down), not the second. The release and the signed
   time are the client's own and are needed to broadcast;
-- finished votes are deleted `RETENTION_DAYS` after they finished (default 7).
+- finished votes are deleted `RETENTION_DAYS` after they finished (default 7);
+- the database keeps neither the order votes arrived in nor deleted rows: the tables are `WITHOUT ROWID` (a rowid table
+  numbers rows in arrival order; here they sit in the order of their random id), the journal is a rollback journal
+  (`journal_mode = DELETE`, removed after each transaction; a WAL would keep every committed page in order until a
+  checkpoint), and `secure_delete` zeroes purged rows. A database from an earlier version is rebuilt on start-up (rows copied in
+  id order, then `VACUUM`), and its `-wal` file goes away.
 
 The id returned by `POST /v1/votes` (16 random bytes), not the vote hash, is the handle for status and cancel. A signed vote
-is public once broadcast, so a vote hash is not a secret; cancelling needs the voting key regardless.
+is public once broadcast, so a vote hash is not a secret; cancelling needs the voting key regardless. A client whose
+`POST /v1/votes` timed out can look its vote up by hash (`GET /v1/votes/by-hash/:voteHash`); that lookup is rate-limited per
+IP like the POSTs, because anyone who guesses a held vote (masternode, proposal, outcome, time) can compute its hash.
 
 ### Abuse resistance
 
@@ -99,7 +106,7 @@ Environment variables; an empty value means the default.
 | `CORE_RPC_PASSWORD_FILE` | | file holding the RPC password |
 | `CORE_RPC_PASSWORD` | | the password itself, for local development only |
 | `CORE_RPC_TIMEOUT_MS` | `30000` | per attempt |
-| `DB_PATH` | `./data/relay.sqlite` | SQLite file (WAL); the image uses `/data/relay.sqlite` |
+| `DB_PATH` | `./data/relay.sqlite` | SQLite file (rollback journal, `secure_delete`, no WAL); the image uses `/data/relay.sqlite` |
 | `HTTP_HOST` | `127.0.0.1` | the image sets `0.0.0.0` |
 | `HTTP_PORT` | `8788` | |
 | `RELEASE_MARGIN_S` | `60` | default release is `max(now, time - RELEASE_MARGIN_S)` |
@@ -126,8 +133,9 @@ has `X-Content-Type-Options: nosniff`, every POST body is limited to 4096 bytes 
 | | |
 |---|---|
 | `POST /v1/votes` | submit a signed funding vote → 202 `{id, voteHash, status: "held", releaseAt}` (200 with the stored record if this exact vote is already known) |
-| `POST /v1/votes/cancel` | `{id, sig}` → 200 `{id, status: "cancelled"}`; 409 `not-held` once it left the held state |
+| `POST /v1/votes/cancel` | `{id, sig}` → 200 `{id, status: "cancelled"}`; 409 `maybe-broadcast` (with a `reason` to show) when an earlier attempt may have reached Core; 409 `not-held` once it left the held state otherwise |
 | `GET /v1/votes/:id` | `{id, voteHash, status, releaseAt, broadcastAt, confirmedAt, attempts, lastError, nextAttemptAt, holdReason, sameAsCurrent}` |
+| `GET /v1/votes/by-hash/:voteHash` | the same record by vote hash (for a client whose POST timed out); 404 `unknown-vote`; rate-limited per IP |
 | `GET /v1/status` | `{service, version, network, core: {reachable, height}, held, proposalSubmit}`, 200 whenever the process serves |
 | `POST /v1/proposals/submit` | `{network, parentHash: "0", revision: 1, time, dataHex, collateralTxid}` → `{govHash, result}` |
 
@@ -185,9 +193,11 @@ From Dash Core `governance/object.cpp` `ProcessVote`, `governance/vote.cpp` `IsV
                      │  ▲                     │                       │  │
       cancel (signed)│  │ retry / too often   │ Core refuses for      │  │ the MN has a later funding vote
                      ▼  └─────────────────────┘ good: failed          │  ▼
-                 cancelled                                            │  superseded
-        a later vote for the same key replaces a held one: superseded │
-                                  not visible after CONFIRM_TIMEOUT_S: back to held (max 3x), then failed (unconfirmed)
+                 cancelled                    │ no answer (timeout,   │  superseded
+        a later vote for the same key         │ crash mid-call)       │
+        replaces a held one: superseded       ▼                       │ not visible after CONFIRM_TIMEOUT_S (max 3x,
+                                       maybe-broadcast ◄──────────────┘ then failed: unconfirmed)
+                                       (retried like held; never cancellable, never held again)
 ```
 
 - `held`: waiting for `releaseAt`, or for a retry. `holdReason` says why in one word (`release-time`, `one-change-per-hour`,
@@ -201,9 +211,14 @@ From Dash Core `governance/object.cpp` `ProcessVote`, `governance/vote.cpp` `IsV
   the current vote can change before the release. Clients should warn before sending one.
 - `sending`: `voteraw` is in flight (seconds). The broadcaster sets it with a conditional `held -> sending` UPDATE just before
   the call, so a cancel can no longer race with it: cancelling a `sending` vote is 409 `not-held` with `status: "sending"`.
-  When Core answers, the row moves on with `WHERE status = 'sending'` updates: `broadcast`, back to `held` (retry, `lastError`
-  as below) or `failed`. A row left in `sending` by a crash goes back to `held`, due immediately, at start-up (if Core did get
-  the vote, it answers "already known" and the vote becomes `broadcast`). Clients must accept `sending` as a transient status.
+  When Core answers, the row moves on with `WHERE status = 'sending'` updates: `broadcast`, back to `held` (Core answered with
+  "wait" or an error, `lastError` as below) or `failed`. Without an answer (transport error, timeout) it goes to
+  `maybe-broadcast`, and so does a row left in `sending` by a crash, due immediately at start-up (if Core did get the vote, it
+  answers "already known" and the vote becomes `broadcast`). Clients must accept `sending` as a transient status.
+- `maybe-broadcast`: waiting to be sent again, like `held` (same `holdReason`, `nextAttemptAt`, retries and limits), but an
+  earlier attempt may already have reached Core: voteraw got no answer, the relay restarted mid-call, or the vote was broadcast
+  and never showed up (`not-visible`, re-broadcast). A vote never goes from here back to `held`, and a cancel is refused with
+  409 `maybe-broadcast` and a `reason` the client can show, so no client reports "cancelled" for a vote that may count.
 - `broadcast`: `voteraw` answered "Voted successfully", or Core said it already has the vote (empty "Error voting : " /
   "Already known valid vote"; the confirmer then decides `confirmed`, `superseded` or a re-broadcast). The confirmer checks `gobject getcurrentvotes <govHash> <txid> <n>` every 30 s.
 - `confirmed`, `superseded`, `cancelled`, `failed` are final (a final state is never overwritten). `failed` carries `lastError`: `obsolete`, `mn-gone`, `mn-banned`,

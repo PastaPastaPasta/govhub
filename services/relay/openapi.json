@@ -37,14 +37,14 @@
     "/v1/votes/cancel": {
       "post": {
         "summary": "Cancel a held vote",
-        "description": "`sig` is the masternode's CURRENT voting key signing (Dash `signmessage`, DarkCoin message magic, the same scheme on every network) the text `govhub-relay-cancel-v1\\n<network>\\n<vote hash, lowercase display hex>` (relayCancelMessage in @govhub/verify). A held vote becomes `cancelled`; cancelling a cancelled vote is a no-op 200. Any other state is 409 `not-held` with the vote's `status`; `sending` (voteraw in flight) is one of them.",
+        "description": "`sig` is the masternode's CURRENT voting key signing (Dash `signmessage`, DarkCoin message magic, the same scheme on every network) the text `govhub-relay-cancel-v1\\n<network>\\n<vote hash, lowercase display hex>` (relayCancelMessage in @govhub/verify). A held vote becomes `cancelled`; cancelling a cancelled vote is a no-op 200. A `maybe-broadcast` vote is 409 `maybe-broadcast` with a `reason` the client can show: Core may already have it, so it cannot be taken back. Any other state is 409 `not-held` with the vote's `status`; `sending` (voteraw in flight) is one of them.",
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CancelRequest" } } } },
         "responses": {
           "200": { "description": "cancelled", "content": { "application/json": { "schema": { "type": "object", "required": ["id", "status"], "additionalProperties": false, "properties": { "id": { "$ref": "#/components/schemas/VoteId" }, "status": { "type": "string", "enum": ["cancelled"] } } } } } },
           "400": { "$ref": "#/components/responses/Error" },
           "403": { "$ref": "#/components/responses/Error" },
           "404": { "$ref": "#/components/responses/Error" },
-          "409": { "description": "`not-held`: the vote already left the held state", "content": { "application/json": { "schema": { "allOf": [{ "$ref": "#/components/schemas/Error" }, { "type": "object", "properties": { "status": { "$ref": "#/components/schemas/VoteStatus" } } }] } } } },
+          "409": { "description": "`not-held`: the vote already left the held state. `maybe-broadcast`: an earlier attempt may have reached Core, so the vote cannot be cancelled; `reason` says so in plain words", "content": { "application/json": { "schema": { "allOf": [{ "$ref": "#/components/schemas/Error" }, { "type": "object", "properties": { "status": { "$ref": "#/components/schemas/VoteStatus" }, "reason": { "type": "string", "description": "`maybe-broadcast` only: a sentence for the user" } } }] } } } },
           "413": { "$ref": "#/components/responses/Error" },
           "429": { "$ref": "#/components/responses/RateLimited" },
           "503": { "$ref": "#/components/responses/Error" }
@@ -60,6 +60,19 @@
           "200": { "description": "vote status", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/VoteStatusView" } } } },
           "400": { "$ref": "#/components/responses/Error" },
           "404": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/votes/by-hash/{voteHash}": {
+      "get": {
+        "summary": "Status of a submitted vote, by its vote hash",
+        "description": "For a client whose POST /v1/votes got no answer (a timeout), so it never learned the relay id: the same view as GET /v1/votes/{id}, the relay `id` included. 404 `unknown-vote` when this relay holds no vote with this hash (it never received it, or purged it RETENTION_DAYS after it finished). Rate-limited per client like the POSTs: anyone who can guess a vote can compute its hash.",
+        "parameters": [{ "name": "voteHash", "in": "path", "required": true, "schema": { "$ref": "#/components/schemas/Hash" } }],
+        "responses": {
+          "200": { "description": "vote status", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/VoteStatusView" } } } },
+          "400": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
         }
       }
     },
@@ -120,6 +133,8 @@
               "relay-full",
               "unknown-id",
               "not-held",
+              "maybe-broadcast",
+              "unknown-vote",
               "too-large",
               "not-found",
               "method-not-allowed",
@@ -137,7 +152,7 @@
       },
       "Hash": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "lowercase hex in display (RPC) byte order; uppercase is accepted in requests" },
       "VoteId": { "type": "string", "pattern": "^[0-9a-f]{32}$", "description": "16 random bytes; the handle for status and cancel" },
-      "VoteStatus": { "type": "string", "enum": ["held", "sending", "broadcast", "confirmed", "failed", "cancelled", "superseded"], "description": "`sending`: `voteraw` is in flight right now (a few seconds at most); the vote cannot be cancelled and ends as `broadcast`, back as `held` (retry) or `failed`. Clients must treat unknown statuses as non-final." },
+      "VoteStatus": { "type": "string", "enum": ["held", "maybe-broadcast", "sending", "broadcast", "confirmed", "failed", "cancelled", "superseded"], "description": "`sending`: `voteraw` is in flight right now (a few seconds at most); the vote cannot be cancelled and ends as `broadcast`, back as `held` / `maybe-broadcast` (retry) or `failed`. `maybe-broadcast`: waiting to be sent again like `held`, but an earlier attempt may already have reached Core (voteraw got no answer, the relay restarted mid-call, or a broadcast vote never showed up and is re-sent); it can never be cancelled and never goes back to `held`. Clients must treat unknown statuses as non-final." },
       "VoteRequest": {
         "type": "object",
         "required": ["network", "collateralTxid", "collateralIndex", "govHash", "signal", "outcome", "time", "sig"],
@@ -184,11 +199,11 @@
           "broadcastAt": { "type": ["integer", "null"], "description": "when Core last accepted the vote from this relay" },
           "confirmedAt": { "type": ["integer", "null"], "description": "when the vote was seen in `gobject getcurrentvotes`" },
           "attempts": { "type": "integer", "description": "voteraw calls that were answered (not counting `too-often` waits)" },
-          "nextAttemptAt": { "type": ["integer", "null"], "description": "held votes: the earliest time (unix s) the relay sends it; null in every other state" },
+          "nextAttemptAt": { "type": ["integer", "null"], "description": "held and maybe-broadcast votes: the earliest time (unix s) the relay sends it; null in every other state" },
           "holdReason": {
             "type": ["string", "null"],
             "enum": ["release-time", "one-change-per-hour", "core-time-limit", "retrying", null],
-            "description": "held votes: why it waits. `release-time`: the client-chosen release; `one-change-per-hour`: Core accepts one change per masternode, proposal and signal per hour; `core-time-limit`: Core refuses votes timed more than 1 h ahead; `retrying`: after an error (see `lastError`). null in every other state"
+            "description": "held and maybe-broadcast votes: why it waits. `release-time`: the client-chosen release; `one-change-per-hour`: Core accepts one change per masternode, proposal and signal per hour; `core-time-limit`: Core refuses votes timed more than 1 h ahead; `retrying`: after an error (see `lastError`). null in every other state"
           },
           "sameAsCurrent": {
             "type": ["boolean", "null"],

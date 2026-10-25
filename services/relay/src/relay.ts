@@ -65,7 +65,7 @@ export interface VoteStatusView {
   confirmedAt: number | null;
   attempts: number;
   lastError: string | null;
-  /** held votes: when the relay tries next (unix s) and why it waits; null otherwise */
+  /** held and maybe-broadcast votes: when the relay tries next (unix s) and why it waits; null otherwise */
   nextAttemptAt: number | null;
   holdReason: HoldReason | null;
   /**
@@ -76,8 +76,10 @@ export interface VoteStatusView {
   sameAsCurrent: boolean | null;
 }
 
+const WAITING = new Set<string>(['held', 'maybe-broadcast']);
+
 export function holdReason(row: Pick<VoteRow, 'status' | 'last_error' | 'release_at' | 'next_attempt_at' | 'time'>, now: number): HoldReason | null {
-  if (row.status !== 'held') return null;
+  if (!WAITING.has(row.status)) return null;
   if (row.last_error === HOLD_CODE.tooOften || row.last_error === HOLD_CODE.hourRule) return 'one-change-per-hour';
   if (row.last_error === HOLD_CODE.futureLimit) return 'core-time-limit';
   if (row.last_error) return 'retrying';
@@ -269,6 +271,14 @@ export class Relay {
     if (this.store.cancelHeld(row.id, this.clock())) return { id: row.id, status: 'cancelled' };
     const now = this.store.get(row.id)!;
     if (now.status === 'cancelled') return { id: row.id, status: 'cancelled' };
+    // An earlier attempt may have reached Core: cancelling here would not take it back from the network, so it is refused
+    // and the client must not report the vote as cancelled.
+    if (now.status === 'maybe-broadcast') {
+      throw new RelayError(409, 'maybe-broadcast', 'the relay already tried to send this vote and Dash Core may have it, so it can no longer be cancelled', {
+        status: now.status,
+        reason: 'This relay already sent the vote to Dash Core once and is not sure it arrived. It may already count, so it cannot be cancelled. To change it, cast a new vote.',
+      });
+    }
     // `sending` = voteraw is in flight right now: too late to take it back
     throw new RelayError(409, 'not-held', `the vote is ${now.status}, only held votes can be cancelled`, { status: now.status });
   }
@@ -279,6 +289,23 @@ export class Relay {
     if (!ID_RE.test(id)) throw badRequest('id must be 32 lowercase hex characters');
     const row = this.store.get(id);
     if (!row) throw new RelayError(404, 'unknown-id', 'unknown vote id');
+    return this.view(row);
+  }
+
+  // ---- GET /v1/votes/by-hash/:voteHash ----
+
+  /**
+   * The relay's record of a vote by its governance vote hash: for a client whose POST /v1/votes timed out, so it never learned the
+   * relay id. Same answer as GET /v1/votes/:id (the id included); 404 when this relay does not hold it.
+   */
+  getVoteByHash(voteHash: string): VoteStatusView {
+    if (!HEX64.test(voteHash)) throw badRequest('voteHash must be 64 hex characters');
+    const row = this.store.getByVoteHash(voteHash.toLowerCase());
+    if (!row) throw new RelayError(404, 'unknown-vote', 'this relay holds no vote with this hash');
+    return this.view(row);
+  }
+
+  private view(row: VoteRow): VoteStatusView {
     const reason = holdReason(row, this.clock());
     return {
       id: row.id,
@@ -289,7 +316,7 @@ export class Relay {
       confirmedAt: row.confirmed_at,
       attempts: row.attempts,
       lastError: row.last_error,
-      nextAttemptAt: row.status === 'held' ? Math.max(row.next_attempt_at, row.release_at) : null,
+      nextAttemptAt: WAITING.has(row.status) ? Math.max(row.next_attempt_at, row.release_at) : null,
       holdReason: reason,
       sameAsCurrent: (row.same_as_current ?? null) === null ? null : row.same_as_current === 1,
     };
