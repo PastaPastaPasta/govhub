@@ -1,6 +1,6 @@
 // Topbar identity control. Signed out: opens the sign-in sheet (auth/AuthSheet.tsx: new identity, recovery phrase, passkey, pasted
 // key; sample identities in fixture mode). Signed in: identity, balance, profile editing, top-up and passkeys, and sign-out.
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { COSTS, type Profile } from '@govhub/forum';
 import { useApp, type Theme } from '../app/context.tsx';
@@ -20,12 +20,14 @@ const THEMES: Array<{ id: Theme; label: string }> = [
 
 export function ThemeSwitch() {
   const { theme, setTheme } = useApp();
+  // the menu and Settings can both show one: each needs its own radio group
+  const group = useId();
   return (
     <fieldset className="seg theme-switch">
       <legend className="visually-hidden">Theme</legend>
       {THEMES.map((t) => (
         <label key={t.id} className={theme === t.id ? 'on' : ''}>
-          <input type="radio" name="theme" value={t.id} checked={theme === t.id} onChange={() => setTheme(t.id)} />
+          <input type="radio" name={group} value={t.id} checked={theme === t.id} onChange={() => setTheme(t.id)} />
           {t.label}
         </label>
       ))}
@@ -94,7 +96,7 @@ export function SessionControl() {
           </button>
         </>
       )}
-      <div ref={menu} id="account-menu" popover="auto" className="menu" aria-label="Account and settings">
+      <div ref={menu} id="account-menu" popover="auto" className="account-menu" aria-label="Account and settings">
         {session && (
           <div className="menu-id">
             <p className="menu-name">{name ?? 'Your identity'}</p>
@@ -125,13 +127,13 @@ export function SessionControl() {
         {session && item('Sign out', signOut)}
       </div>
       <dialog ref={dialog} className="dialog" aria-labelledby="session-title" onClick={(e) => e.target === dialog.current && close()}>
-        <div className="dialog-body">{session && <SessionPanel onDone={close} />}</div>
+        <div className="dialog-body">{session && <SessionPanel onDone={close} onSaved={setName} />}</div>
       </dialog>
     </div>
   );
 }
 
-function SessionPanel({ onDone }: { onDone(): void }) {
+function SessionPanel({ onDone, onSaved }: { onDone(): void; onSaved(name: string): void }) {
   const { forum, session, write } = useForum();
   const [profile, setProfile] = useState<Profile | null | undefined>(undefined);
   const [name, setName] = useState('');
@@ -163,6 +165,7 @@ function SessionPanel({ onDone }: { onDone(): void }) {
     try {
       const r = await write(forum.ops.profile({ displayName: name, ...(profile?.about ? { about: profile.about } : {}), avatarUrl: avatar }, profile ?? undefined));
       setProfile({ id: r.id, ownerId: session.identityId, revision: r.revision ?? 1, displayName: name.trim(), ...(avatar.trim() ? { avatarUrl: avatar.trim() } : {}) });
+      onSaved(name.trim());
       setMsg({ ok: true, text: 'Profile saved on Platform.' });
     } catch (err) {
       setMsg({ ok: false, text: errText(err) });

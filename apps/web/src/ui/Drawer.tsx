@@ -16,7 +16,11 @@ export function Drawer({ open, onClose, title, children, testId, wide = false }:
       className={`drawer${wide ? ' drawer-wide' : ''}`}
       aria-labelledby={testId ? `${testId}-title` : undefined}
       onClose={onClose}
-      onClick={(e) => e.target === ref.current && onClose()}
+      onClick={(e) => {
+        // only a click on the backdrop: outside the sheet's box (a click on the dialog's own empty space is inside it)
+        const r = ref.current?.getBoundingClientRect();
+        if (e.target === ref.current && r && (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom)) onClose();
+      }}
       data-testid={testId}
     >
       {open && (

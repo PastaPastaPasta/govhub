@@ -389,7 +389,7 @@ a:hover {
 }
 
 /* Menus float: the one place (with sheets) that casts a shadow. */
-.menu {
+.account-menu {
   position: fixed;
   inset: 3.875rem max(var(--s-4), calc((100vw - var(--page)) / 2 + var(--s-5))) auto auto;
   margin: 0;
@@ -401,7 +401,7 @@ a:hover {
   color: var(--ink);
   box-shadow: var(--float-shadow);
 }
-.menu:popover-open {
+.account-menu:popover-open {
   display: grid;
   gap: 2px;
 }
