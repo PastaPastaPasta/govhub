@@ -17,6 +17,12 @@ vi.mock('../voting/KeyringContext.tsx', () => ({ useKeyring: () => hold.ctx }));
 vi.mock('../auth/context.tsx', () => ({ useAuth: () => ({ openSheet: () => {} }) }));
 vi.mock('../ui/vote/VotesList.tsx', () => ({ VotesList: () => null }));
 vi.mock('../ui/SignIn.tsx', () => ({ openSignIn: () => {} }));
+vi.mock('../app/context.tsx', () => ({ useApp: () => ({ registry: { platformNetwork: 'testnet' }, mode: 'fixtures' }) }));
+vi.mock('../app/forum.tsx', () => ({ useForum: () => ({ session: null }) }));
+vi.mock('../badge/context.tsx', () => ({
+  useBadgeCtx: () => ({ contractId: '', trust: [], reader: null, jobs: [], coreHeight: null, privacy: 'standard', setPrivacy: () => {}, requestBadge: async () => ({}), removeJob: () => {}, retryJob: () => {} }),
+  useBadges: () => ({ byOwner: new Map(), live: false, loading: false }),
+}));
 
 const { MasternodesPage } = await import('./MasternodesPage.tsx');
 

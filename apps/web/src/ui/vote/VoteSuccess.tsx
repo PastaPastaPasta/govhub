@@ -46,6 +46,22 @@ const BURST = Array.from({ length: 18 }, (_, i) => {
   return { x: Math.round(Math.cos(a) * r), y: Math.round(Math.sin(a) * r), d: (i % 5) * 40, s: i % 4 === 0 ? 'b' : i % 3 === 0 ? 'c' : 'a' };
 });
 
+/** The check that draws itself, with its burst (also the MN badge's success card). */
+export function WinMark() {
+  return (
+    <div className="vwin-mark" aria-hidden="true">
+      <span className="vwin-ring" />
+      {BURST.map((b, i) => (
+        <span key={i} className={`vwin-bit vwin-bit-${b.s}`} style={{ ['--x' as string]: `${b.x}px`, ['--y' as string]: `${b.y}px`, ['--d' as string]: `${b.d}ms` }} />
+      ))}
+      <svg viewBox="0 0 52 52" className="vwin-check">
+        <circle cx="26" cy="26" r="24" className="vwin-circle" />
+        <path d="M15 27l7.5 7.5L38 19" className="vwin-tick" />
+      </svg>
+    </div>
+  );
+}
+
 export function VoteSuccess({ vote, name, proposalName, onRecount }: { vote: WatchedVote; name: string; proposalName: string; onRecount?: () => void }) {
   const k = useKeyring();
   const [proof, setProof] = useState<VoteProof | null>(null);
@@ -79,16 +95,7 @@ export function VoteSuccess({ vote, name, proposalName, onRecount }: { vote: Wat
   };
   return (
     <section ref={ref} tabIndex={-1} className="vwin" role="status" data-testid="vote-success" aria-labelledby={`win-${vote.voteHash}`}>
-      <div className="vwin-mark" aria-hidden="true">
-        <span className="vwin-ring" />
-        {BURST.map((b, i) => (
-          <span key={i} className={`vwin-bit vwin-bit-${b.s}`} style={{ ['--x' as string]: `${b.x}px`, ['--y' as string]: `${b.y}px`, ['--d' as string]: `${b.d}ms` }} />
-        ))}
-        <svg viewBox="0 0 52 52" className="vwin-check">
-          <circle cx="26" cy="26" r="24" className="vwin-circle" />
-          <path d="M15 27l7.5 7.5L38 19" className="vwin-tick" />
-        </svg>
-      </div>
+      <WinMark />
       <div className="vwin-body">
         <h3 id={`win-${vote.voteHash}`}>Your vote is on the network</h3>
         <p className="vwin-sub">

@@ -2,27 +2,43 @@
 // current epoch is audited: verified badges against the issuer's own issuerReport.
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { displayEpochsAt, EPOCH_PARAMS } from '@govhub/badge';
+import { displayEpochsAt, EPOCH_PARAMS, epochStart, type EpochParams } from '@govhub/badge';
 import { useApp } from '../app/context.tsx';
 import { errText, formatInt } from '../lib/format.ts';
 import { BadgeLeaks } from './BadgeLeaks.tsx';
+import { checkKeyAvailability, type KeyAvailability } from './client.ts';
 import { isDefaultIssuer, parseTrustList, type TrustedIssuer } from './config.ts';
 import { useBadgeCtx } from './context.tsx';
+import { eta } from './flow.ts';
 import type { IssuerEpochAudit } from './reader.ts';
 
-function useAudits(): { audits: IssuerEpochAudit[]; error: string | null } {
+interface Audits {
+  audits: IssuerEpochAudit[];
+  /** per issuer id: which epochs it has keys for (proved issuerKey reads) */
+  keys: Map<string, KeyAvailability>;
+  error: string | null;
+}
+
+const NO_AUDITS: Audits = { audits: [], keys: new Map(), error: null };
+
+function useAudits(): Audits {
   const { reader, trust } = useBadgeCtx();
   const { registry } = useApp();
-  const [state, setState] = useState<{ audits: IssuerEpochAudit[]; error: string | null }>({ audits: [], error: null });
+  const [state, setState] = useState<Audits>(NO_AUDITS);
   useEffect(() => {
-    if (!reader) return setState({ audits: [], error: null });
+    if (!reader) return setState(NO_AUDITS);
     let live = true;
     (async () => {
       const h = await reader.coreHeight();
+      const net = registry.platformNetwork;
       const out: IssuerEpochAudit[] = [];
-      for (const i of trust.filter((t) => t.enabled)) for (const e of displayEpochsAt(EPOCH_PARAMS[registry.platformNetwork], h)) out.push(await reader.audit(i, e, h));
-      if (live) setState({ audits: out, error: null });
-    })().catch((e: unknown) => live && setState({ audits: [], error: errText(e) }));
+      const keys = new Map<string, KeyAvailability>();
+      for (const i of trust.filter((t) => t.enabled)) {
+        keys.set(i.identityId, await checkKeyAvailability((x, e) => reader.key(x, e), i, net, h));
+        for (const e of displayEpochsAt(EPOCH_PARAMS[net], h)) out.push(await reader.audit(i, e, h));
+      }
+      if (live) setState({ audits: out, keys, error: null });
+    })().catch((e: unknown) => live && setState({ ...NO_AUDITS, error: errText(e) }));
     return () => {
       live = false;
     };
@@ -30,8 +46,25 @@ function useAudits(): { audits: IssuerEpochAudit[]; error: string | null } {
   return state;
 }
 
+/**
+ * A key that is there but must not be trusted (revoked, or not the issuer's / not well-formed), as opposed to one that is missing or
+ * not usable for this period yet (for example published after the reader's deadline): those read as "not issuing yet".
+ */
+const INVALID_KEY = /revoked|more than one|mismatch|not the trusted issuer|variant|keyId|spki|malformed|revocation/i;
+
+/** Whether the issuer issues badges now, in plain words; a revoked or invalid key is named, never hidden. */
+export function issuingText(av: KeyAvailability, p: EpochParams): string {
+  const std = av.modes.find((m) => m.mode === 'standard');
+  const priv = av.modes.find((m) => m.mode === 'private');
+  if (std?.ok) return `Issuing now (epoch ${std.epoch})`;
+  if (std?.problem && INVALID_KEY.test(std.problem)) return `Not issuing: its key for epoch ${std.epoch} is not valid (${std.problem})`;
+  const privNow = priv?.ok ? '; Private requests work now' : '';
+  if (av.firstKeyEpoch !== null) return `Not issuing yet: Standard starts at ${eta(epochStart(p, av.firstKeyEpoch), av.height)}${privNow}`;
+  return 'Not issuing yet: its key for this period is not on Platform yet';
+}
+
+/** An epoch's badges and report; epochs without a key are covered by issuingText. */
 function auditText(a: IssuerEpochAudit): string {
-  if (a.keyProblem) return `epoch ${a.epoch}: no valid key (${a.keyProblem})`;
   const rep = a.tokensIssued === null ? 'no issuerReport yet' : `${formatInt(a.tokensIssued)} tokens reported`;
   return `epoch ${a.epoch}: ${formatInt(a.badges)}${a.complete ? '' : '+ (audit incomplete)'} valid badges, ${rep}${a.flagged ? `: FLAGGED, badges hidden (${a.flagReason})` : ''}`;
 }
@@ -40,7 +73,7 @@ export function BadgeSettings() {
   const { registry } = useApp();
   const { trust, setTrust, resetTrust, contractId } = useBadgeCtx();
   const net = registry.platformNetwork;
-  const { audits, error } = useAudits();
+  const { audits, keys, error } = useAudits();
   const [draft, setDraft] = useState({ name: '', identityId: '', url: '' });
   const [msg, setMsg] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
 
@@ -57,7 +90,7 @@ export function BadgeSettings() {
       <p className="muted small">
         Badges show “MN · vouched by &lt;issuer&gt;” only for issuers on this list; badges from others are ignored. Anyone can run an issuer. The default list, pinned in this app’s open
         source, has only ours. {contractId ? <>Badge contract: <span className="mono-ish">{contractId}</span>.</> : 'Badges are not deployed on this Platform network yet.'}{' '}
-        <Link to="/badge">Get an MN badge</Link>.
+        <Link to="/masternodes#mn-badge">Get an MN badge</Link> (or <Link to="/badge">request one by hand</Link>).
       </p>
       <ul className="badge-trust">
         {trust.map((t, i) => (
@@ -69,8 +102,13 @@ export function BadgeSettings() {
             <div className="small muted">
               <span className="mono-ish">{t.identityId}</span> · {t.url}
             </div>
+            {keys.get(t.identityId) && (
+              <div className="small" data-testid="badge-issuing">
+                {issuingText(keys.get(t.identityId)!, EPOCH_PARAMS[net])}
+              </div>
+            )}
             {audits
-              .filter((a) => a.issuer.identityId === t.identityId)
+              .filter((a) => a.issuer.identityId === t.identityId && !a.keyProblem)
               .map((a) => (
                 <div key={a.epoch} className={`small ${a.flagged ? 'error' : 'muted'}`} data-testid="badge-audit">
                   {auditText(a)}

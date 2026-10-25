@@ -33,15 +33,16 @@ export interface BadgeCtx {
    * Starts a badge request for the signed-in identity: `voting` is the MN voting key as WIF (stored encrypted with the job), or a
    * signer (the keyring), which must be registered with registerVotingSigner when the request runs. Resolves once the request is
    * scheduled; it is sent later, at a random height in the issuance window, in a visit without public writes of this identity.
+   * `epoch`: a later epoch, when the issuer's first key is for that one (RequestOptions.epoch).
    */
-  requestBadge(voting: string | VotingSigner, proTxHash: string, opts?: { issuer?: TrustedIssuer; keepKey?: boolean; mode?: PrivacyMode }): Promise<BadgeJob>;
+  requestBadge(voting: string | VotingSigner, proTxHash: string, opts?: { issuer?: TrustedIssuer; keepKey?: boolean; mode?: PrivacyMode; epoch?: number }): Promise<BadgeJob>;
   /** the user's privacy mode for new requests (remembered per identity in this browser); default 'standard' */
   privacy: PrivacyMode;
   setPrivacy(mode: PrivacyMode): void;
   /** The keyring registers a signer for an MN while it is unlocked; call the returned function to unregister. */
   registerVotingSigner(proTxHash: string, signer: VotingSigner): () => void;
-  /** Deletes a job and everything stored with it (blinding state, an encrypted voting key): Remove, and Cancel for pending ones. */
-  removeJob(id: string): void;
+  /** Deletes a job and everything stored with it (blinding state, an encrypted voting key): Remove, and Cancel for pending ones. Resolves once saved. */
+  removeJob(id: string): Promise<void>;
   /** Clears a job's backoff and wakes the scheduler (Retry now). Private jobs still wait for their quiet half hour. */
   retryJob(id: string): void;
 }
@@ -355,7 +356,7 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
       const issuer = opts.issuer ?? trust.find((t) => t.enabled);
       if (!issuer) throw new Error('Your trust list has no enabled issuer.');
       const height = await reader.coreHeight();
-      const job = await createJob(deps, jobsRef.current, voting, proTxHash, height, { issuer, mode: opts.mode ?? privacy, ...(opts.keepKey !== undefined ? { keepKey: opts.keepKey } : {}) });
+      const job = await createJob(deps, jobsRef.current, voting, proTxHash, height, { issuer, mode: opts.mode ?? privacy, ...(opts.keepKey !== undefined ? { keepKey: opts.keepKey } : {}), ...(opts.epoch !== undefined ? { epoch: opts.epoch } : {}) });
       await commit((latest) => {
         if (latest.some((j) => j.issuer.identityId === job.issuer.identityId && j.epoch === job.epoch && (j.state === 'scheduled' || j.state === 'token' || j.state === 'posted'))) throw new Error('Another tab already requested this badge.');
         return [...latest, job];
@@ -374,7 +375,11 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const removeJob = useCallback((id: string) => void commitRef.current?.((latest) => latest.filter((j) => j.id !== id)).catch(() => undefined), []);
+  const removeJob = useCallback(async (id: string) => {
+    const commit = commitRef.current;
+    if (!commit) throw new Error('Your badge requests are not loaded in this tab (sign in again).');
+    await commit((latest) => latest.filter((j) => j.id !== id));
+  }, []);
   const retryJob = useCallback(
     (id: string) =>
       void commitRef.current?.((latest) => latest.map((j) => (j.id === id && isActive(j) ? { ...j, retryAt: undefined } : j))).then(

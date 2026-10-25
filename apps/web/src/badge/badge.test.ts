@@ -234,6 +234,27 @@ describe('badge client', () => {
     expect((await step(t.deps, job, h)).state).toBe('scheduled');
   });
 
+  it('issuer not ready: a Standard request is scheduled for its first key\'s epoch, sent from that epoch\'s start, and the voting key is wiped once sent', async () => {
+    const t = setup();
+    await t.platform.addKey(E); // none for E-1, the current epoch
+    const h = epochStart(P, E - 1) + 50;
+    const v = votingKey();
+    await expect(createJob(t.deps, [], v.wif, proTx(), h, { issuer, mode: 'standard' })).rejects.toThrow(/current epoch/);
+    const job = await createJob(t.deps, [], v.wif, proTx(), h, { issuer, mode: 'standard', epoch: E });
+    expect(job).toMatchObject({ mode: 'standard', epoch: E, requestAt: epochStart(P, E), state: 'scheduled', keepKey: false, signer: { kind: 'wif', wif: v.wif } });
+    expect(await step(t.deps, job, h)).toEqual(job); // nothing happens before S(E)
+    await expect(createJob(t.deps, [job], votingKey().wif, proTx(), h, { issuer, mode: 'standard', epoch: E })).rejects.toThrow(/already have a badge request/);
+    // out of reach, or earlier than the mode asks for now
+    await expect(createJob(t.deps, [], v.wif, proTx(), h, { issuer, mode: 'standard', epoch: E + 3 })).rejects.toThrow(/cannot be requested now/);
+    await expect(createJob(t.deps, [], v.wif, proTx(), h, { issuer, mode: 'standard', epoch: E - 2 })).rejects.toThrow(/cannot be requested now/);
+    const tok = await step(t.deps, job, epochStart(P, E));
+    expect(tok.state).toBe('token');
+    expect(tok.signer).toEqual({ kind: 'external' }); // the voting key is gone once the request is sent
+    expect(JSON.stringify(tok)).not.toContain(v.wif);
+    const posted = await step(t.deps, tok, epochStart(P, E));
+    expect(posted).toMatchObject({ state: 'posted', proTxHash: '' });
+  });
+
   it('a badge among too few tokens is not posted, and the MN link is forgotten', async () => {
     const t = setup();
     await t.platform.addKey(E);
@@ -573,16 +594,32 @@ describe('QA fixes (D-044 .. D-047)', () => {
     const err = await createJob(t.deps, [], votingKey().wif, proTx(), h, { issuer, mode: 'standard' }).catch((e: Error) => e.message);
     expect(err).toMatch(new RegExp(`current epoch, ${E - 1}`));
     expect(err).toMatch(/Private may work now/);
-    const { availabilityText } = await import('./BadgePage.tsx');
+    const { availabilityText } = await import('./flow.ts');
     const text = availabilityText(av, 'test', P)!;
     expect(text).toMatch(/Standard is not available yet/);
     expect(text).toMatch(new RegExp(`first key is for epoch ${E}`));
     expect(text).toMatch(/Private works now/);
     expect(text).toMatch(/posted without that check/); // the first key epoch has no earlier count (no crowd check)
+    // Settings says it plainly, no reader jargon
+    const { issuingText } = await import('./BadgeSettings.tsx');
+    expect(issuingText(av, P)).toBe(`Not issuing yet: Standard starts at block ${epochStart(P, E).toLocaleString('en-US')} (in about ${Math.round(((epochStart(P, E) - h) * 157.5) / 3600)} hours); Private requests work now`);
+    // a key that is there but unusable is named, not passed off as "not published yet"
+    expect(issuingText({ ...av, modes: [{ mode: 'standard', epoch: E - 1, ok: false, problem: 'the issuer revoked this key' }] }, P)).toBe(`Not issuing: its key for epoch ${E - 1} is not valid (the issuer revoked this key)`);
+    // a key for this period that the reader's timing rule does not accept yet reads as "not issuing yet", as on testnet for epoch 2741
+    const late = { ...av, modes: [{ mode: 'standard' as const, epoch: E - 1, ok: false, problem: 'issuerKey published too late (must precede S(E-1))' }] };
+    expect(issuingText(late, P)).toMatch(/^Not issuing yet: Standard starts at block /);
+    // the unified flow: Standard is scheduled for epoch E, from its first block
+    const { readiness } = await import('./flow.ts');
+    expect(readiness(av, 'standard', P)).toEqual({ kind: 'later', epoch: E, from: epochStart(P, E) });
+    expect(readiness(av, 'private', P)).toEqual({ kind: 'now', epoch: E });
     // no key at all in reach
     const none = await checkKeyAvailability(setup().deps.issuerKey, issuer, 'testnet', h);
     expect(none.firstKeyEpoch).toBeNull();
     expect(none.modes.every((m) => !m.ok)).toBe(true);
+    expect(issuingText(none, P)).toBe('Not issuing yet: its key for this period is not on Platform yet');
+    expect(readiness(none, 'standard', P)).toEqual({ kind: 'blocked', noKeys: true });
+    const now = await checkKeyAvailability(t.deps.issuerKey, issuer, 'testnet', epochStart(P, E) + 5);
+    expect(issuingText(now, P)).toBe(`Issuing now (epoch ${E})`);
   });
 
   it('D-046: an unreachable issuer gives the host and the browser error, and a backoff; no token request was sent', async () => {
