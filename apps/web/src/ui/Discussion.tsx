@@ -27,7 +27,6 @@ import { Composer } from './Composer.tsx';
 import { HiddenToggle } from './HiddenToggle.tsx';
 import { AuthorName, Avatar } from './Identity.tsx';
 import { Markdown } from './Markdown.tsx';
-import { ProvMark } from './Provenance.tsx';
 import { openSignIn } from './SignIn.tsx';
 import { useReactions } from './useReactions.ts';
 import { MnBadges } from '../badge/BadgeChip.tsx';
@@ -182,7 +181,7 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
     <section aria-labelledby="discussion-title" className="discussion" data-testid="discussion">
       <div className="discussion-head">
         <h2 id="discussion-title">
-          Discussion {thread.data && <span className="count">{formatInt(count - hiddenCount)}</span>} {thread.data && <ProvMark prov={thread.data.prov} />}
+          Discussion {thread.data && <span className="count">{formatInt(count - hiddenCount)}</span>}
         </h2>
         <div className="discussion-tools">
           <fieldset className="seg" aria-label="Which comments to show">

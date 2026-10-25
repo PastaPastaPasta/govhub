@@ -189,16 +189,16 @@ describe('hide rules in the lists and the budget header', () => {
     expect(failed.map((x) => x.item.name)).toEqual(['govhub-fixture-tampered']);
   });
 
-  it('hidden proposals count for nothing: not allocated, not in the next budget, not active', () => {
+  it('hidden proposals are not in the budget strip and not active; the allocation is the cycle document\'s, never a sum of card flags', () => {
     const tallies = new Map([
       [real.govHash, tally(real.govHash, true)],
       [tampered.govHash, tally(tampered.govHash, true)],
     ]);
     const row = (p: Proposal) => deriveRow(sp(p), tallies, new Map(), null, GOV_PARAMS.mainnet, snap.now);
     const allocated = real.paymentAmount + tampered.paymentAmount;
-    const b = budgetView([row(real)], [row(tampered)], { allocated });
+    const b = budgetView([row(real)], { allocated });
     expect(b.funded.map((r) => r.p.value.name)).toEqual([real.name]);
-    expect(b.allocated).toBe(real.paymentAmount);
+    expect(b.allocated).toBe(allocated);
     expect(b.fundedSum).toBe(real.paymentAmount);
     expect(b.active).toBe(1);
   });

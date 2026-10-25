@@ -10,7 +10,7 @@ import { countNames, partitionByCheck, proposalHref } from '../lib/view.ts';
 import { isFailed } from '../verify/checks.ts';
 import { FailedNote, FailedProposalsToggle } from '../ui/HiddenToggle.tsx';
 import { useReveal } from '../ui/hooks.ts';
-import { ProvMark } from '../ui/Provenance.tsx';
+import { ProposalTabs } from '../ui/ProposalTabs.tsx';
 
 export function PastPage() {
   const { source, checks } = useApp();
@@ -74,8 +74,11 @@ export function PastPage() {
   return (
     <section aria-labelledby="past-title" className="list-section">
       <div className="list-head">
-        <h1 id="past-title">Past proposals</h1>
-        <p className="muted">Proposals whose payment window has ended, most recent first.</p>
+        <h1 id="past-title" className="visually-hidden">
+          Past proposals
+        </h1>
+        <ProposalTabs />
+        <p className="small muted">Proposals whose payments have ended, most recent first.</p>
       </div>
       {state.error && <p className="error">Platform could not be read: {state.error}</p>}
       {!state.loading && !state.error && items.length === 0 && <p className="empty">No past proposals published yet.</p>}
@@ -91,7 +94,6 @@ export function PastPage() {
               <th scope="col" className="r">
                 Net yes
               </th>
-              <th scope="col">Source</th>
             </tr>
           </thead>
           <tbody>
@@ -108,10 +110,6 @@ export function PastPage() {
                   <td>{formatDate(p.endEpoch)}</td>
                   <td className="r">{formatDash(p.paymentAmount)}</td>
                   <td className="r">{t ? formatSigned(absoluteYes(t.value)) : '–'}</td>
-                  <td>
-                    <ProvMark prov={it.prov} />
-                    {t && <ProvMark prov={t.prov} />}
-                  </td>
                 </tr>
               );
             })}
@@ -120,7 +118,7 @@ export function PastPage() {
       )}
       <div ref={sentinel} className="sentinel" aria-hidden="true" />
       {state.loading && <p className="muted small center">Loading…</p>}
-      {state.done && rows.length > 0 && <p className="muted small center">{formatInt(parts.shown.length)} past proposals, that is all of them.</p>}
+      {state.done && rows.length > 0 && <p className="muted small center">That's all {formatInt(parts.shown.length)} past proposals.</p>}
       {state.done && failed > 0 && <FailedProposalsToggle count={failed} shown={showFailed} onToggle={() => setShowFailed((v) => !v)} />}
     </section>
   );

@@ -28,8 +28,8 @@ export function useAsync<T>(fn: () => Promise<T>, deps: DependencyList): Load<T>
  * `onExhausted` when everything loaded so far is visible (to fetch the next page). The observer is
  * re-attached after every reveal, so a sentinel that stays in view keeps loading.
  */
-export function useReveal(total: number, step = 12, onExhausted?: () => void) {
-  const [count, setCount] = useState(step);
+export function useReveal(total: number, step = 12, onExhausted?: () => void, initial = step) {
+  const [count, setCount] = useState(initial);
   const ref = useRef<HTMLDivElement | null>(null);
   const exhausted = useRef(onExhausted);
   exhausted.current = onExhausted;
@@ -50,8 +50,8 @@ export function useReveal(total: number, step = 12, onExhausted?: () => void) {
   return { count: Math.min(count, total), sentinel: ref, more: count < total };
 }
 
-/** Runs the collateral check in the verification worker whenever the proposal changes. */
-export function useCollateralCheck(p: Proposal | undefined) {
+/** Runs the collateral check in the verification worker whenever the proposal changes (or `nonce` does: "Re-check"). */
+export function useCollateralCheck(p: Proposal | undefined, nonce = 0) {
   const { source } = useApp();
   const [verdict, setVerdict] = useState<CollateralVerdict | null>(null);
   const [progress, setProgress] = useState('');
@@ -61,6 +61,7 @@ export function useCollateralCheck(p: Proposal | undefined) {
     let live = true;
     setVerdict(null);
     setError(null);
+    setProgress('');
     runVerification({ kind: 'collateral', proposal: p, dapi: source.dapiDescriptor() }, (m) => live && setProgress(m)).then(
       (r) => live && setVerdict(r.verdict),
       (e: Error) => live && setError(e.message),
@@ -68,7 +69,7 @@ export function useCollateralCheck(p: Proposal | undefined) {
     return () => {
       live = false;
     };
-  }, [p, source]);
+  }, [p, source, nonce]);
   return { verdict, progress, error };
 }
 
@@ -78,7 +79,7 @@ export type CollateralCheck = ReturnType<typeof useCollateralCheck>;
  * Chain facts for the proposal page (threshold, superblock schedule and budget, payments), once the collateral check has placed the
  * collateral in the verified chain. Live DAPI only: recorded data has no header chain.
  */
-export function useChainReport(p: Proposal | undefined, verdict: CollateralVerdict | null) {
+export function useChainReport(p: Proposal | undefined, verdict: CollateralVerdict | null, nonce = 0) {
   const { source, gov } = useApp();
   const [report, setReport] = useState<ChainReport | null>(null);
   const [progress, setProgress] = useState('');
@@ -105,7 +106,7 @@ export function useChainReport(p: Proposal | undefined, verdict: CollateralVerdi
       on = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reruns when the active list has loaded, not on every refresh of it
-  }, [p, source, from, live, activeReady]);
+  }, [p, source, from, live, activeReady, nonce]);
   const unavailable = !live
     ? 'needs live DAPI nodes (recorded data has no header chain)'
     : verdict && from === null

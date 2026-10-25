@@ -98,7 +98,7 @@ function trackedFor(watched: readonly WatchedVote[], govHashes: ReadonlySet<stri
     .sort((a, b) => (b.signedAt ?? b.time) - (a.signedAt ?? a.time));
 }
 
-export function VoteComposer({ proposals, compact = false }: { proposals: Proposal[]; compact?: boolean }) {
+export function VoteComposer({ proposals, onVerify }: { proposals: Proposal[]; onVerify?: () => void }) {
   const k = useKeyring();
   const deadline = useDeadline();
   const labels = useLabels();
@@ -228,79 +228,79 @@ export function VoteComposer({ proposals, compact = false }: { proposals: Propos
     setSelected(s);
   };
 
+  // what the chosen masternodes have on the network now, in one line
+  const nowLine = (govHash: string) => {
+    const tally = { Yes: 0, No: 0, Abstain: 0, 'not voted': 0 };
+    for (const m of chosen) {
+      const o = current.get(currentKey(m, govHash))?.outcome;
+      tally[o === 1 ? 'Yes' : o === 2 ? 'No' : o === 3 ? 'Abstain' : 'not voted']++;
+    }
+    return Object.entries(tally)
+      .filter(([, n]) => n)
+      .map(([k, n]) => `${n} ${k}`)
+      .join(', ');
+  };
+  const mnsSummary = chosen.length === usable.length ? `With ${usable.length === 1 ? 'your masternode' : `all ${usable.length} of your masternodes`}` : `With ${chosen.length} of ${usable.length} masternodes`;
+
   return (
     <div className="vcomp" data-testid="vote-composer">
-      <fieldset className="vcomp-mns">
-        <legend className="vcomp-legend">
-          Masternodes
-          <span className="muted small">
-            {' '}
-            {chosen.length} of {usable.length} selected
-          </span>
-        </legend>
+      {multi ? (
+        <ul className="vprops">
+          {proposals.map((p) => (
+            <li key={p.govHash} className="vprop" data-testid="vote-proposal-row">
+              <div className="vprop-name">
+                <Link to={`/p/h/${p.govHash}`}>{p.name}</Link>
+                <span className="small muted">{loading ? 'reading current votes…' : `Now: ${nowLine(p.govHash) || 'no masternodes selected'}`}</span>
+              </div>
+              <OutcomePicker size="s" clearable label={`Vote on ${p.name}`} value={choice[p.govHash] ?? 0} onChange={(o) => setChoice({ ...choice, [p.govHash]: o })} testId="vote-choice" />
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <OutcomePicker label="Your vote" value={single} onChange={(o) => setChoice({ [proposals[0]!.govHash]: o })} testId="vote-choice" />
+      )}
+
+      <details className="vcomp-mns" data-testid="vote-mns">
+        <summary>
+          <span>{mnsSummary}</span>
+          {!multi && <span className="small muted">{loading ? 'reading their votes…' : `now ${nowLine(proposals[0]!.govHash) || 'none selected'}`}</span>}
+          <span className="vcomp-change">Change</span>
+        </summary>
         {usable.length > 1 && (
           <label className="check vcomp-all">
             <input type="checkbox" checked={chosen.length === usable.length} onChange={(e) => setSelected(e.target.checked ? null : new Set())} /> All masternodes
           </label>
         )}
         <ul className="vmn-list">
-          {usable.map((m) => (
-            <li key={m.proTxHash} className={`vmn${sel(m) ? ' vmn-on' : ''}`} data-testid="vote-mn-row">
-              <label className="vmn-pick">
-                <input type="checkbox" checked={sel(m)} onChange={(e) => toggle(m, e.target.checked)} aria-label={`Vote with ${mnName(m, labels)}`} />
-                <span className="vmn-name">{mnName(m, labels)}</span>
-                {m.type === 'evo' && <span className="chip vmn-evo">Evonode ×4</span>}
-              </label>
-              {!multi &&
-                (() => {
-                  const g = proposals[0]!.govHash;
-                  const cur = current.get(currentKey(m, g));
-                  const pend = pendingFor(k.watched, m, g);
-                  const v = pend ? describeVote(pend, now, fmtTime) : null;
-                  return (
-                    <div className="vmn-state">
-                      <span className="vmn-cur" data-testid="current-vote">
-                        <span className="vmn-k">On the network</span> {loading ? <span className="muted">…</span> : <OutcomeChip outcome={cur?.outcome} />}
-                      </span>
-                      {pend && v && (
-                        <span className="vmn-pend" data-testid="pending-vote">
-                          <span className="vmn-k">Your vote</span> <OutcomeChip outcome={pend.outcome} muted /> <Badge tone={v.tone}>{v.badge}</Badge>
-                        </span>
-                      )}
-                    </div>
-                  );
-                })()}
-            </li>
-          ))}
-        </ul>
-      </fieldset>
-
-      {multi ? (
-        <ul className="vprops">
-          {proposals.map((p) => {
-            const tally = { yes: 0, no: 0, abstain: 0, none: 0 };
-            for (const m of chosen) {
-              const o = current.get(currentKey(m, p.govHash))?.outcome;
-              if (o === 1) tally.yes++;
-              else if (o === 2) tally.no++;
-              else if (o === 3) tally.abstain++;
-              else tally.none++;
-            }
-            const sum = [tally.yes && `${tally.yes} Yes`, tally.no && `${tally.no} No`, tally.abstain && `${tally.abstain} Abstain`, tally.none && `${tally.none} not voted`].filter(Boolean).join(', ');
+          {usable.map((m) => {
+            const g = proposals[0]!.govHash;
+            const cur = current.get(currentKey(m, g));
+            const pend = !multi ? pendingFor(k.watched, m, g) : undefined;
+            const v = pend ? describeVote(pend, now, fmtTime) : null;
             return (
-              <li key={p.govHash} className="vprop" data-testid="vote-proposal-row">
-                <div className="vprop-name">
-                  <Link to={`/p/h/${p.govHash}`}>{p.name}</Link>
-                  <span className="small muted">{loading ? 'reading current votes…' : `Now: ${sum || 'no masternodes selected'}`}</span>
-                </div>
-                <OutcomePicker size="s" clearable label={`Vote on ${p.name}`} value={choice[p.govHash] ?? 0} onChange={(o) => setChoice({ ...choice, [p.govHash]: o })} testId="vote-choice" />
+              <li key={m.proTxHash} className={`vmn${sel(m) ? ' vmn-on' : ''}`} data-testid="vote-mn-row">
+                <label className="vmn-pick">
+                  <input type="checkbox" checked={sel(m)} onChange={(e) => toggle(m, e.target.checked)} aria-label={`Vote with ${mnName(m, labels)}`} />
+                  <span className="vmn-name">{mnName(m, labels)}</span>
+                  {m.type === 'evo' && <span className="chip vmn-evo">Evonode ×4</span>}
+                </label>
+                {!multi && (
+                  <div className="vmn-state">
+                    <span className="vmn-cur" data-testid="current-vote">
+                      <span className="vmn-k">Now</span> {loading ? <span className="muted">…</span> : <OutcomeChip outcome={cur?.outcome} />}
+                    </span>
+                    {pend && v && (
+                      <span className="vmn-pend" data-testid="pending-vote">
+                        <span className="vmn-k">Sent</span> <OutcomeChip outcome={pend.outcome} muted /> <Badge tone={v.tone}>{v.badge}</Badge>
+                      </span>
+                    )}
+                  </div>
+                )}
               </li>
             );
           })}
         </ul>
-      ) : (
-        <OutcomePicker label="Your vote" value={single} onChange={(o) => setChoice({ [proposals[0]!.govHash]: o })} testId="vote-choice" />
-      )}
+      </details>
 
       {repeats.length > 0 && (
         <div className="vwarn" role="note" data-testid="vote-same-warning">
@@ -317,26 +317,30 @@ export function VoteComposer({ proposals, compact = false }: { proposals: Propos
         </div>
       )}
 
-      <fieldset className="vwhen">
-        <legend className="vcomp-legend">When</legend>
-        <div className="vwhen-opts">
+      <details className="vwhen">
+        <summary>
+          <span>{mode === 'deferred' ? 'Spread out over time' : 'Send now'}</span>
+          <span className="vcomp-change">Options</span>
+        </summary>
+        <fieldset className="vwhen-opts">
+          <legend className="visually-hidden">When to send</legend>
           <label className={`vwhen-opt${mode === 'now' ? ' on' : ''}`}>
             <input type="radio" name="vote-when" checked={mode === 'now'} onChange={() => setMode('now')} />
             <span>
               <b>Now</b>
-              <span className="small muted">Sent at once; the network shows it within a minute or two.</span>
+              <span className="small muted">The network shows it within a minute or two.</span>
             </span>
           </label>
           <label className={`vwhen-opt${mode === 'deferred' ? ' on' : ''}${unavailable ? ' off' : ''}`}>
             <input type="radio" name="vote-when" checked={mode === 'deferred'} onChange={() => setMode('deferred')} disabled={!!unavailable} data-testid="vote-deferred" aria-describedby="vote-deferred-why" />
             <span>
-              <b>Spread out</b>
+              <b>Spread out (more private)</b>
               <span className="small muted" id="vote-deferred-why" data-testid="vote-deferred-why">
                 {unavailable ?? 'Each masternode at its own random time before the deadline, so they are not seen voting together.'}
               </span>
             </span>
           </label>
-        </div>
+        </fieldset>
         {mode === 'deferred' && window && (
           <div className="vwhen-more">
             <label>
@@ -349,19 +353,19 @@ export function VoteComposer({ proposals, compact = false }: { proposals: Propos
             <p className="small muted">The relay you use still sees which votes came from you, and when.</p>
           </div>
         )}
-      </fieldset>
+      </details>
 
       <div className="vgo">
-        {toSend.length > 0 && !blocked && (
-          <p className="vgo-sum" data-testid="vote-summary">
-            {mode === 'deferred' && latestRelease
-              ? `Sign ${toSend.length} vote${toSend.length === 1 ? '' : 's'}, released at random times before ${fmtTime(latestRelease)}.`
-              : `Sign ${toSend.length} vote${toSend.length === 1 ? '' : 's'} and send ${toSend.length === 1 ? 'it' : 'them'} through ${k.relays.length === 1 ? relayHost(k.relays[0]!) : `${k.relays.length} relays`} now.`}
-          </p>
-        )}
-        <button type="button" className="btn btn-primary vgo-btn" disabled={blocked || !toSend.length} onClick={go} data-testid="vote-send" aria-describedby={disabledHint && disabledHint.replace(/\.$/, '') !== buttonText ? 'vote-send-hint' : undefined}>
+        <button type="button" className="btn btn-primary btn-l vgo-btn" disabled={blocked || !toSend.length} onClick={go} data-testid="vote-send" aria-describedby={disabledHint && disabledHint.replace(/\.$/, '') !== buttonText ? 'vote-send-hint' : undefined}>
           {buttonText}
         </button>
+        {toSend.length > 0 && !blocked && (
+          <p className="vgo-sum small muted" data-testid="vote-summary">
+            {mode === 'deferred' && latestRelease
+              ? `Signed here, released at random times before ${fmtTime(latestRelease)}.`
+              : `Signed here and sent through ${k.relays.length === 1 ? relayHost(k.relays[0]!) : `${k.relays.length} relays`}.`}
+          </p>
+        )}
         {disabledHint && disabledHint.replace(/\.$/, '') !== buttonText && (
           <p className={`small ${currentError ? 'error' : 'muted'}`} id="vote-send-hint" data-testid="vote-send-hint">
             {currentError ? `Your current votes could not be read from the bridge (${currentError}); voting waits until they can.` : disabledHint}
@@ -375,25 +379,15 @@ export function VoteComposer({ proposals, compact = false }: { proposals: Propos
       </div>
 
       {wins.map((w) => (
-        <VoteSuccess key={w.voteHash} vote={w} name={mnName(w, labels)} proposalName={byHash.get(w.govHash)?.name ?? shortHash(w.govHash, 6)} />
+        <VoteSuccess key={w.voteHash} vote={w} name={mnName(w, labels)} proposalName={byHash.get(w.govHash)?.name ?? shortHash(w.govHash, 6)} {...(onVerify ? { onRecount: onVerify } : {})} />
       ))}
       {tracked.length > 0 && (
         <section className="vtracks" aria-label="Your votes on their way" data-testid="vote-tracks">
           {tracked.slice(0, 8).map((w) => (
-            <VoteTracker key={w.voteHash} vote={w} name={`${mnName(w, labels)}${multi ? ` · ${byHash.get(w.govHash)?.name ?? ''}` : ''}`} />
+            <VoteTracker key={w.voteHash} vote={w} name={`${mnName(w, labels)}${multi ? `, ${byHash.get(w.govHash)?.name ?? ''}` : ''}`} />
           ))}
         </section>
       )}
-
-      <details className="vhow">
-        <summary>How is this verified?</summary>
-        <ul className="small">
-          <li>“On the network” is each masternode’s current vote in the bridge’s live vote set, shown only when its signature checks out against your voting key here. A bridge cannot invent or alter it (it could still hold back a newer one).</li>
-          <li>“Seen by the network” means the same: your exact signed vote is that current vote. “Counted” means a recount of the tally’s vote set includes it and matches the set the bridge published.</li>
-          {!compact && <li>The verification panel on each proposal page recounts every vote against the proven masternode list.</li>}
-          {compact && <li>The verification panel below recounts every vote against the proven masternode list.</li>}
-        </ul>
-      </details>
     </div>
   );
 }
@@ -475,20 +469,20 @@ export function OfflineSign({ proposal }: { proposal: Proposal }) {
   );
 }
 
-export function ProposalVotePanel({ proposal }: { proposal: Proposal }) {
+export function ProposalVotePanel({ proposal, onVerify }: { proposal: Proposal; onVerify?: () => void }) {
   const k = useKeyring();
   return (
-    <section aria-labelledby="mnvote-title" className="mnvote" data-testid="mn-vote-panel">
+    <section id="vote" aria-labelledby="mnvote-title" className="panel mnvote" data-testid="mn-vote-panel">
       <header className="mnvote-head">
-        <h2 id="mnvote-title">Vote with your masternodes</h2>
-        {k.demo && k.status === 'open' && <span className="chip chip-fixture">Demo: pretend relays</span>}
+        <h2 id="mnvote-title">Your vote</h2>
+        {k.demo && k.status === 'open' && <span className="tag tag-demo">Demo: pretend relays</span>}
       </header>
       {k.error && k.status === 'open' && (
         <p className="error small" role="alert">
           {k.error}
         </p>
       )}
-      <VoteComposer proposals={[proposal]} compact />
+      <VoteComposer proposals={[proposal]} {...(onVerify ? { onVerify } : {})} />
       <OfflineSign proposal={proposal} />
     </section>
   );

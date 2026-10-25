@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Proposal, Sourced, Tally } from '../data/types.ts';
-import { paymentText } from '../ui/ProposalCard.tsx';
-import { GOV_PARAMS, parseGovParams, perSuperblock, superblockCadence } from './governance.ts';
+import { askText, paymentsLeft } from '../ui/ProposalCard.tsx';
+import { GOV_PARAMS, parseGovParams, perPayment, perSuperblock, superblockCadence } from './governance.ts';
 import { byRank, countNames, deriveRow, pickTally, proposalHref, weakest } from './view.ts';
 
 const prov = { kind: 'proof', source: 'test' } as const;
@@ -64,14 +64,26 @@ describe('view model', () => {
     expect(proposalHref(c, names)).toBe('/p/other');
   });
 
-  it('payment text says per superblock, with the cadence of the network\'s cycle', () => {
+  it('asks read "per month" on mainnet and "per hour" on testnet, with the payments left', () => {
     const main = GOV_PARAMS.mainnet;
     const test = GOV_PARAMS.testnet;
-    expect(paymentText(200e8, { total: 5, remaining: 2, oneTime: false }, main)).toBe('200 DASH per superblock (~monthly), 2 of 5 remaining');
-    expect(paymentText(200e8, { total: 5, remaining: 0, oneTime: false }, main)).toBe('200 DASH per superblock (~monthly), ended');
-    expect(paymentText(200e8, { total: 5, remaining: 2, oneTime: false }, test)).toBe('200 DASH per superblock (~hourly), 2 of 5 remaining');
-    expect(paymentText(1e8, { total: 1, remaining: 1, oneTime: true }, test)).toBe('1 DASH one-time');
-    expect(paymentText(1e8, null, test)).toBe('1 DASH per payment');
+    expect(askText(200e8, { total: 5, remaining: 2, oneTime: false }, main)).toEqual({ amount: '200 DASH', per: 'per month' });
+    expect(askText(200e8, { total: 5, remaining: 2, oneTime: false }, test)).toEqual({ amount: '200 DASH', per: 'per hour' });
+    expect(askText(1e8, { total: 1, remaining: 1, oneTime: true }, test)).toEqual({ amount: '1 DASH', per: 'once' });
+    expect(paymentsLeft({ total: 5, remaining: 2, oneTime: false })).toBe('2 of 5 payments left');
+    expect(paymentsLeft({ total: 5, remaining: 0, oneTime: false })).toBe('no payments left');
+    expect(paymentsLeft({ total: 1, remaining: 1, oneTime: true })).toBe('one payment');
+    expect(paymentsLeft(null)).toBeNull();
+    expect(perPayment({ superblockCycle: Math.round((3 * 86400) / main.blockSeconds), blockSeconds: main.blockSeconds })).toBe('per payment (every ~3 days)');
+  });
+
+  it('the proposal page prefers the Platform tally; lists show the fresher one', () => {
+    const p = proposal('aa', 'x');
+    const plat = new Map([['aa', tally('aa', { asOfHeight: 10 })]]);
+    const br = new Map([['aa', tally('aa', { asOfHeight: 12 })]]);
+    expect(deriveRow(p, plat, br, null, GOV_PARAMS.mainnet, 0).tally!.value.asOfHeight).toBe(12);
+    expect(deriveRow(p, plat, br, null, GOV_PARAMS.mainnet, 0, 'platform').tally!.value.asOfHeight).toBe(10);
+    expect(deriveRow(p, new Map(), br, null, GOV_PARAMS.mainnet, 0, 'platform').tally!.value.asOfHeight).toBe(12);
   });
 
   it('cadence is derived from the superblock cycle and block spacing', () => {
