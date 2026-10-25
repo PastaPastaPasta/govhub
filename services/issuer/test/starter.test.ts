@@ -13,7 +13,7 @@ import type { IssuerPlatform } from '../src/platform.ts';
 import { IssueError, RecoveryBudget } from '../src/service.ts';
 import { openStarterStore } from '../src/starter-db.ts';
 import { StarterManager } from '../src/starter-epochs.ts';
-import { E, FakeCore, fakeMn, keysFrom, fakeProposal, finishStarter, mnSubject, NET, NOW_SEC, P, proposalSubject, rnd, starterRequest, starterService, starterWorld, votingKey, type StarterWorld } from './helpers.ts';
+import { E, FakeCore, fakeMn, TIP, keysFrom, fakeProposal, finishStarter, mnSubject, NET, NOW_SEC, P, proposalSubject, rnd, starterRequest, starterService, starterWorld, votingKey, type StarterWorld } from './helpers.ts';
 
 async function expectError(p: Promise<unknown>, code: string) {
   try {
@@ -350,6 +350,9 @@ async function manager(epochs: number[], o: { owner?: string; lateDoc?: boolean;
   for (const m of manifest) docs.set(`${owner}:${m.epoch}`, await doc(manifestSpki(m), m.epoch));
   const revocations = new Map<string, IssuerRevocationDoc>();
   const reads: string[] = [];
+  const core = new FakeCore();
+  // Platform's chain-locked core height: follows the dashd tip unless set (null); 'down' throws
+  const ph: { v: number | null | 'down' } = { v: null };
   const platform: IssuerPlatform = {
     issuerKey: async (i, e) => {
       if (o.badgeDown && i === BADGE) throw new Error('platform timeout');
@@ -362,16 +365,18 @@ async function manager(epochs: number[], o: { owner?: string; lateDoc?: boolean;
     },
     issuerRevocation: async (i, e) => revocations.get(`${i}:${e}`) ?? null,
     issuerReport: async () => null,
-    coreHeight: async () => 0,
+    coreHeight: async () => {
+      if (ph.v === 'down') throw new Error('platform timeout');
+      return ph.v ?? core.tip;
+    },
     publishIssuerKey: async () => 'x',
     publishIssuerReport: async () => 'x',
     publishIssuerRevocation: async () => 'x',
   };
-  const core = new FakeCore();
   const proposals = new ProposalCache(core);
   const store = openStarterStore(':memory:');
   const m = new StarterManager({ network: NET, params: P, contractId: bytesToId(rnd(32)), issuerId: STARTER, keyDir: dir, maxStagedKeys: o.maxStaged ?? 1, core, proposals, store, platform: () => platform, other: () => ({ label: 'badge', issuerId: BADGE, activeKeyIds: o.badgeKeyIds ?? (() => []) }) });
-  return { dir, manifest, docs, doc, revocations, reads, core, proposals, store, m };
+  return { dir, manifest, docs, doc, revocations, reads, core, proposals, store, m, ph };
 }
 
 describe('starter key manager', () => {
@@ -496,6 +501,30 @@ describe('starter key manager', () => {
     expect(t.m.keys().map((k) => k.epoch)).not.toContain(E);
   });
 
+  it('a tip Platform does not confirm (garbage-high, or Platform down) destroys no starter key and clears no retry data; both resume once it agrees', async () => {
+    const t = await manager([E, E + 1]);
+    await t.m.tick();
+    const retry = { kind: 'mn' as const, subject: 'aa', collateral: 'c:0', epoch: E, blindedHash: rnd(32) };
+    expect(t.store.reserve(retry, () => rnd(256))).toMatchObject({ kind: 'signed', retry: false });
+    const rollOver = epochStart(P, E + 1) + P.boundaryMarginBlocks;
+    for (const [tip, ph] of [[rollOver, TIP], [epochStart(P, E + 40), TIP], [rollOver, 'down']] as const) {
+      t.core.tip = tip;
+      t.ph.v = ph;
+      await t.m.tick();
+      expect(existsSync(join(t.dir, keyFileName(E)))).toBe(true);
+      expect(existsSync(join(t.dir, keyFileName(E + 1)))).toBe(true);
+      expect(t.store.reserve(retry, () => rnd(256))).toMatchObject({ kind: 'signed', retry: true }); // retry data kept
+      expect(t.m.status.problem).toMatch(ph === 'down' ? /Platform's core height is not available/ : /dashd tip leads Platform's chain-locked core height by more than 6 blocks/);
+    }
+    t.core.tip = rollOver;
+    t.ph.v = null;
+    await t.m.tick();
+    expect(existsSync(join(t.dir, keyFileName(E)))).toBe(false);
+    expect(t.store.reserve(retry, () => rnd(256))).toEqual({ kind: 'conflict', reason: 'subject' }); // cleared: no longer a retry
+    expect(t.m.status.problem ?? '').not.toMatch(/Platform's core height|dashd tip leads/);
+    expect(t.m.activeKey(E + 1)?.epoch).toBe(E + 1);
+  });
+
   it('a revoked epoch is no longer signed for or listed', async () => {
     const t = await manager([E]);
     await t.m.tick();
@@ -524,7 +553,7 @@ function platformOf(t: Awaited<ReturnType<typeof manager>>): IssuerPlatform {
     issuerKeysFrom: keysFrom(async (i, e) => t.docs.get(`${i}:${e}`) ?? null),
     issuerRevocation: async () => null,
     issuerReport: async () => null,
-    coreHeight: async () => 0,
+    coreHeight: async () => t.core.tip,
     publishIssuerKey: async () => 'x',
     publishIssuerReport: async () => 'x',
     publishIssuerRevocation: async () => 'x',

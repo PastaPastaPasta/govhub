@@ -110,7 +110,7 @@ the bridge's origin.
 | Endpoint | |
 |---|---|
 | `GET /healthz` | `{"ok": true}` |
-| `GET /v1/info` | variant, network, issuer and contract ids, epoch parameters, dashd height, issuing epochs (current, next), `keyIds` per epoch, `ready`, challenge TTL. **Advisory only**: clients derive epoch and `keyId` from proved Platform data and the core height |
+| `GET /v1/info` | variant, network, issuer and contract ids, epoch parameters, dashd height, issuing epochs (current, next), `keyIds` per epoch, `ready`, `problem` (why issuance is partly unavailable, or why the irreversible housekeeping waits, see "Tip check"; `null` if none), challenge TTL. **Advisory only**: clients derive epoch and `keyId` from proved Platform data and the core height |
 | `POST /v1/challenge` | `{nonce, expiresAt}` (`nonce` is hex) |
 | `POST /v1/token` | body `{request, signature, blindedMsg}` (signature and blindedMsg in base64) returns `{blindSig, epoch}` (`blindSig` in base64) |
 
@@ -144,6 +144,54 @@ while the dashd tip is in `[S(E-1), S(E+1))`. It therefore holds the keys of bot
 from the boundaries, because Platform's chain-locked height lags the dashd tip. The full table, the display
 window and the delay a new badge sees (testnet up to ~27 hours, mainnet up to ~32 days) are in
 `packages/badge/README.md`. Testnet epochs are 576 blocks (about a day) on purpose.
+
+### Tip check
+
+The housekeeping tick (`ISSUER_TICK_S`) takes epochs from the dashd tip. A dashd that says it is synced can still return a tip far
+above the network's (a bug, a bad peer set, a tampered node). Without a check, that would close the live epochs (their dedup rows
+deleted, so they can never be reopened) and destroy their signing keys. Before any **irreversible** step, the tick therefore reads
+Platform's proved chain-locked core height (the metadata of a proved read through the same SDK as the `issuerKey` reads,
+`IssuerPlatform.coreHeight`). The step runs only if the tip leads that height by at most `ISSUER_MAX_TIP_LEAD` blocks
+(`checkTip` in `src/epochs.ts`).
+
+- **Guarded:** destroying the keys of closed windows (badge and starter), closing badge epochs (`closeThrough`: token rows deleted,
+  the epoch marked closed), clearing the starter retry columns of closed windows, and recording the token store's first height
+  (`markStarted`). That height is permanent, and a garbage-high one would refuse every epoch below it.
+- **Bound:** the default is twice the network's `boundaryMarginBlocks` (mainnet 16 blocks, testnet and devnet 6, regtest 0).
+  Proved metadata is never above the real chain, so an accepted tip is at most that many blocks above the real one. A window E
+  closes at `S(E+1) + margin` at the tip, so it can close only once the real tip is past `S(E+1) - margin`. By then every client
+  whose height has got that far has stopped asking for E (`requestableEpoch`, `privateRequestWindow`). Platform's height trails the tip by a few blocks. On
+  testnet on 2026-10-25 the lead went from 0 to 3 within minutes as blocks came in. A bound of `margin` would therefore skip ticks
+  now and then for no reason. Above `2 * margin`, closing can cut into the end of a window that clients still use: raise it
+  only to ride out a Platform that lags for long.
+- **When they disagree, or Platform's height is unavailable** (no connection, a failed read, a height of 0), the tick skips
+  those steps and does everything else. It logs one warning when this starts (tip, Platform height and bound, or the error;
+  nothing about any masternode) and one line when it ends. Until it ends, `problem` in `/v1/info` (and `/v1/starter/info`) says
+  so. The check holds no state: the steps run at the first tick where the two agree, and nothing is lost meanwhile, because
+  closing and key destruction only catch up. While it waits, an old key stays on disk, rows of a closed window stay in the store,
+  and that epoch's `issuerReport` waits too (it needs the epoch closed). The report also needs Platform's height past `S(E+1)`,
+  so a stalled Platform delays it anyway. Once Platform's height is within the bound of the tip, the epoch closes, and the report
+  follows as soon as Platform's height reaches `S(E+1)` (the same tick, or a few blocks later). A dashd that **stays** wrong
+  holds closing, and so the report, for as long as it is wrong. Past the report window of W blocks (mainnet 2016, about 3.5 days;
+  testnet 72, about 3 hours) the report is late and readers flag the issuer for that epoch. That is recoverable, unlike a destroyed
+  key, but it needs the operator to fix dashd: watch for the warning and `problem`. A tip **below** Platform's (dashd behind)
+  passes: it only delays those steps.
+- **Issuance does not pause** on a disagreeing tip, and is unchanged as long as the existing checks pass:
+  - Issuing is reversible in the sense that matters. Every token is still one per masternode and epoch, counted in the report,
+    and the dedup rows stay, since closing is what deletes them.
+  - A garbage-high tip moves the issuing epochs away from the loaded keys. The real epochs then answer `no signing key is ready`,
+    and a far-future epoch has no key file and no `issuerKey`, nor a dashd snapshot at `S(E-1)`. So such a tip already stops
+    issuance by itself.
+  - Pausing on Platform would turn a Platform stall (or one lagging DAPI node) into an issuance outage, while loaded keys keep
+    signing today when Platform is down.
+  - A dashd that lies on purpose can fake the masternode list too, and no tip check fixes that: the issuer trusts its own dashd
+    for authentication (PLAN §8.4 rules 2-3).
+- **Not tip-driven, so unchanged:** `issuerReport` publishing is gated by Platform's own core height reaching `S(E+1)` (and by
+  the epoch being closed, which is now guarded). Reopening epochs closed by an older rule depends only on the store's close mark
+  and is not destructive. `openEpoch` (marks an epoch served, so that a report is due) runs only for an epoch with a proved
+  `issuerKey`. `publish-keys` and `revoke` are operator commands on the offline machine that read Platform's height, not dashd's.
+- Devnet and regtest read the testnet Platform (see `NETWORK`), whose height is far above theirs, so on those networks the check
+  always passes and protects nothing.
 
 ## Keys
 
@@ -191,8 +239,8 @@ On the server:
   SPKI (logged as a `CONFLICT`: the slot cannot be fixed). The file must not be readable by group or others. A missing
   key is looked up again on every tick (`ISSUER_TICK_S`), so the issuer starts signing within one tick of the key
   landing on Platform.
-- Once the issuance window of an epoch has closed (`S(E+1)` plus the margin), its key is destroyed: overwritten with zeros,
-  fsynced, unlinked. On ZFS, btrfs and SSDs old blocks may survive; that is a property of the host, not of this code.
+- Once the issuance window of an epoch has closed (`S(E+1)` plus the margin), and Platform's core height confirms the tip ("Tip
+  check"), its key is destroyed: overwritten with zeros, fsynced, unlinked. On ZFS, btrfs and SSDs old blocks may survive; that is a property of the host, not of this code.
 
 **A missing current-epoch key** (a new issuer, or keys that ran out). Standard mode asks for the current epoch, so it
 works as soon as that epoch's key is on Platform; it does not wait for the next epoch. The service cannot publish the
@@ -269,7 +317,8 @@ which identity. Format, request string and epoch helpers: `packages/badge/src/st
 (`STARTER_ISSUER_IDENTITY_ID`, used for nothing else), so a starter key can never pass as a badge key. One key per epoch, under the
 badge epoch schedule and the same rules as badge keys (see "Keys"): generated offline, published with the starter identity's CRITICAL
 key before `keyDeadline(E) = S(E+1) - margin` (publish ahead anyway: only a key published before `S(E-1)` serves the whole issuance window), `STARTER_KEY_DIR` holds the current and next epoch plus at most `STARTER_MAX_STAGED_KEYS` later ones, a key is
-used only if it matches the proved `issuerKey`, and it is destroyed once its window has closed.
+used only if it matches the proved `issuerKey`, and it is destroyed once its window has closed (at a tip Platform's core height
+confirms: "Tip check").
 
 One rule is stricter than for badges: a starter key for the **current** epoch is used only if it was published **before that
 epoch began** (`starterKeyUsable` in `packages/badge/src/starter.ts`; the issuer answers `wrong-key` otherwise, and clients skip
@@ -343,7 +392,7 @@ epoch after issuance. It is advisory for clients and authoritative for the fauce
 
 | Layer | What it keeps |
 |---|---|
-| Starter store (`STARTER_DB_PATH`, its own SQLite file) | one `WITHOUT ROWID` table `starters(kind, subject, collateral, epoch, blinded_hash)`, `PRIMARY KEY (kind, subject)`, `UNIQUE (collateral)` (NULL for proposals). The dedup keys (kind, proTxHash or govHash, collateral outpoint) are kept **for life**. `epoch` and `sha256(blindedMsg)` exist only for idempotent retries: they are cleared (set to NULL, `secure_delete`) by the housekeeping tick once the epoch's window has closed (`S(E+1)` plus the margin). No timestamps, IPs, user agents, request strings, signatures or per-time counts. Rollback journal, not WAL, as in the token store |
+| Starter store (`STARTER_DB_PATH`, its own SQLite file) | one `WITHOUT ROWID` table `starters(kind, subject, collateral, epoch, blinded_hash)`, `PRIMARY KEY (kind, subject)`, `UNIQUE (collateral)` (NULL for proposals). The dedup keys (kind, proTxHash or govHash, collateral outpoint) are kept **for life**. `epoch` and `sha256(blindedMsg)` exist only for idempotent retries: they are cleared (set to NULL, `secure_delete`) by the housekeeping tick once the epoch's window has closed (`S(E+1)` plus the margin, at a tip Platform's core height confirms: "Tip check"). No timestamps, IPs, user agents, request strings, signatures or per-time counts. Rollback journal, not WAL, as in the token store |
 | Logs | as for badges: no proTxHash, outpoint, govHash, payment address, IP or user agent; hourly aggregate counters only, prefixed `starter-` (`starter-issued`, `starter-retry`, `starter-<error code>`) |
 | Rate limits | the per-subject counts of the current wall-clock minute only, dropped when the minute changes (`StarterService.debugSnapshot()` for the tests) |
 
@@ -391,7 +440,7 @@ The owner's rule: users may accept that the issuer could learn which masternode 
 | Cloudflare's edge | outside our control: Cloudflare sees request metadata (client IP, time, path). An operator can reduce what it keeps by turning off Logpush, Web Analytics and similar features for the issuer's hostname where the plan allows |
 
 - SQLite runs with `secure_delete`, `synchronous = FULL` and a rollback journal (`journal_mode = DELETE`).
-- Once an epoch's issuance window has closed (plus the margin), its rows are deleted. Only the per-epoch count stays, and the epoch is marked closed, so late
+- Once an epoch's issuance window has closed (plus the margin, at a tip Platform's core height confirms: "Tip check"), its rows are deleted. Only the per-epoch count stays, and the epoch is marked closed, so late
   requests for it get `wrong-epoch`. Keep `/data` and the key directory out of host backups and snapshots.
 - An epoch closed above the highest epoch this version ever closed (a store carried over from code before the current/next
   rule, which closed E at `S(E)`) is reopened at the next tick, with a warning in the log, if no token was ever issued for it
@@ -433,6 +482,7 @@ Environment variables plus secret files. An empty value means the default. Secre
 | `ISSUER_REPORT_KEY_FILE` | | **required**: the identity's HIGH key file for `issuerReport` (readers flag an issuer without reports, clients post no badge without one). Must belong to `ISSUER_IDENTITY_ID` |
 | `ISSUER_MAX_TOKEN_RPS` | `2000` | requests per second allowed into signature recovery (per-MN limits apply after authentication) |
 | `ISSUER_TICK_S` | `30` | seconds between epoch housekeeping runs (min 1) |
+| `ISSUER_MAX_TIP_LEAD` | `2 * boundaryMarginBlocks` (mainnet 16, testnet/devnet 6, regtest 0) | blocks the dashd tip may lead Platform's proved chain-locked core height before closing epochs, destroying keys and recording the store's start height wait (badge and starter). See "Tip check" |
 | `ISSUER_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `STARTER_ISSUER_IDENTITY_ID` | | enables starter tokens: base58 id of the **starter** identity (must differ from `ISSUER_IDENTITY_ID`). Unset: `/v1/starter/*` answer 404 |
 | `STARTER_KEY_DIR` | `./starter-keys` | the starter identity's `epoch-<E>.pem` files; the image sets `/starter-keys` |
@@ -527,8 +577,9 @@ none. Ids and the deployment are in `deploy/README.md` section 13.2.
 `npm test -w @govhub/issuer` runs offline against fakes of Core and Platform, on the RFC 9474 vectors in `test/vectors`:
 the signer (including a simulated faulty CRT signature, which must be refused), challenges, the token store, the
 order of checks and every error code, the HTTP layer, the epoch manager (key loading, late keys, staged-key limit, key
-destruction, row deletion, reports), and `publish-keys` (late keys, adoption, conflicts). `test/starter.test.ts` covers starter
+destruction, row deletion, reports, and the tip check: a garbage-high tip or an unavailable Platform destroys and closes nothing,
+an agreeing tip up to the bound behaves as before, recovery once they agree), and `publish-keys` (late keys, adoption, conflicts). `test/starter.test.ts` covers starter
 tokens: the order of checks and every error code for both kinds, lifetime dedup and retries, the store, the proposal list parser,
 the starter key manager (only the starter identity's proved key, late or mismatched keys, roll-over, the redeem key list,
-revocations) and the config; a full browser-to-faucet flow (`prepareStarter`, blind, finalize, `verifyStarterToken`) runs in the
+revocations, the tip check) and the config; a full browser-to-faucet flow (`prepareStarter`, blind, finalize, `verifyStarterToken`) runs in the
 service and HTTP tests.

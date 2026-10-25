@@ -40,7 +40,7 @@ export async function runService(): Promise<void> {
   // Badge and starter keys must never be the same RSA key (blind signatures are separated by key only): each side refuses the other's.
   let starter: (StarterDeps & { manager: StarterManager; service: StarterService; store: StarterStore }) | null = null;
   const starterSide = () => (starter ? { label: 'starter', issuerId: starter.issuerId, activeKeyIds: () => starter?.manager.activeKeyIds() ?? [] } : null);
-  const epochs = new EpochManager({ params, issuerId: cfg.issuerId, keyDir: cfg.keyDir, maxStagedKeys: cfg.maxStagedKeys, core, lists, store, platform: () => platform, reportKey, other: starterSide });
+  const epochs = new EpochManager({ params, issuerId: cfg.issuerId, keyDir: cfg.keyDir, maxStagedKeys: cfg.maxStagedKeys, core, lists, store, platform: () => platform, reportKey, other: starterSide, maxTipLead: cfg.maxTipLead });
   const challenges = new Challenges(cfg.hmacSecret, `${cfg.network}|${cfg.issuerId}`, cfg.challengeTtlSec);
   if (!cfg.hmacSecret) log.warn('ISSUER_HMAC_SECRET_FILE not set: challenges are invalidated by a restart');
   const nowSec = () => Math.floor(Date.now() / 1000);
@@ -52,7 +52,7 @@ export async function runService(): Promise<void> {
     const sc = cfg.starter;
     const sStore = openStarterStore(sc.dbPath);
     const proposals = new ProposalCache(core);
-    const manager = new StarterManager({ network: cfg.network, params, contractId: cfg.contractId, issuerId: sc.issuerId, keyDir: sc.keyDir, maxStagedKeys: sc.maxStagedKeys, core, proposals, store: sStore, platform: () => platform, other: () => ({ label: 'badge', issuerId: cfg.issuerId, activeKeyIds: () => epochs.activeKeyIds() }) });
+    const manager = new StarterManager({ network: cfg.network, params, contractId: cfg.contractId, issuerId: sc.issuerId, keyDir: sc.keyDir, maxStagedKeys: sc.maxStagedKeys, core, proposals, store: sStore, platform: () => platform, other: () => ({ label: 'badge', issuerId: cfg.issuerId, activeKeyIds: () => epochs.activeKeyIds() }), maxTipLead: cfg.maxTipLead });
     // the same secret as the badge challenges, its own domain: a badge challenge is useless here and the reverse
     const sChallenges = new Challenges(cfg.hmacSecret, `starter|${cfg.network}|${sc.issuerId}`, sc.challengeTtlSec);
     const sService = new StarterService({ network: cfg.network, params, issuerId: sc.issuerId, core, lists, proposals, store: sStore, challenges: sChallenges, activeKey: (e) => manager.activeKey(e), nowSec, proposalGraceDays: sc.proposalGraceDays, budget });
@@ -91,7 +91,7 @@ export async function runService(): Promise<void> {
   }, 3_600_000);
 
   const server = serve({ fetch: app.fetch, hostname: cfg.http.host, port: cfg.http.port });
-  log.info('issuer listening', { host: cfg.http.host, port: cfg.http.port, network: cfg.network, issuerId: cfg.issuerId, contractId: cfg.contractId, status: epochs.status, starter: starter ? { issuerId: starter.issuerId, status: starter.manager.status } : 'off' });
+  log.info('issuer listening', { host: cfg.http.host, port: cfg.http.port, network: cfg.network, maxTipLead: cfg.maxTipLead, issuerId: cfg.issuerId, contractId: cfg.contractId, status: epochs.status, starter: starter ? { issuerId: starter.issuerId, status: starter.manager.status } : 'off' });
   const stop = () => {
     clearInterval(timer);
     clearInterval(stats);

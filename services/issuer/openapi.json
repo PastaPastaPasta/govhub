@@ -85,6 +85,13 @@
                     "ready": {
                       "type": "boolean"
                     },
+                    "problem": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "why issuance is (partly) unavailable, or why the irreversible housekeeping (closing epochs, destroying keys) waits because Platform's chain-locked core height does not confirm the dashd tip; null when there is none"
+                    },
                     "challengeTtlSec": {
                       "type": "integer"
                     },
@@ -328,7 +335,7 @@
                         "string",
                         "null"
                       ],
-                      "description": "why starter issuance is (partly) unavailable, e.g. a starter key that is also a badge key (refused), or null"
+                      "description": "why starter issuance is (partly) unavailable, e.g. a starter key that is also a badge key (refused), or why the irreversible housekeeping waits for Platform to confirm the dashd tip; or null"
                     },
                     "challengeTtlSec": {
                       "type": "integer",
