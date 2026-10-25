@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 // Verification worker: all hashing, signature recovery, DAPI fetches, the anchored chain (headers, masternode list, ChainLock)
 // and the vote recounts run here so the page stays responsive.
-import { AllNodesFailedError, bridgeProofSource, createDapi, GrpcError, quorumListProofSource, type AnchoredChain, type Dapi, type ProofSource, type StoredLinkedChain } from '@govhub/dapi';
+import { AllNodesFailedError, bridgeProofSource, createDapi, GrpcError, quorumListProofSource, type AnchoredChain, type Dapi, type ProofSource, type StoredLinkedChain, type StoredPinned } from '@govhub/dapi';
 import { installRecordedDapi, RECORDED_NODE } from '../data/dapiRecorded.ts';
 import { createWebDapi, lookupCollateral } from '../data/dapi.ts';
 import { BridgeError, type Bridge, type BridgeMnList, type BridgeVotes } from '../data/bridge.ts';
@@ -41,6 +41,23 @@ async function dapiFor(d: DapiDescriptor): Promise<Dapi> {
   return c;
 }
 
+/**
+ * The bridge's masternode list at a height (~1.4 MB on mainnet), kept for this session: every proposal recounted at the same tally
+ * height reads the same snapshot. Untrusted either way (the recount checks each key against the proven list); a snapshot at a height
+ * does not change, and the memo is bounded in age and size.
+ */
+const MNLIST_TTL_MS = 10 * 60_000;
+const mnlists = new Map<string, { at: number; list: Promise<BridgeMnList> }>();
+function mnlistAt(bridge: Bridge, scope: string, height: number): Promise<BridgeMnList> {
+  const key = `${scope}|${height}`, hit = mnlists.get(key);
+  if (hit && Date.now() - hit.at < MNLIST_TTL_MS) return hit.list;
+  const list = bridge.mnlist(height);
+  mnlists.set(key, { at: Date.now(), list });
+  list.catch(() => mnlists.get(key)?.list === list && mnlists.delete(key));
+  while (mnlists.size > 4) mnlists.delete(mnlists.keys().next().value!);
+  return list;
+}
+
 /** Targets grouped by the Core height their tally is as of: each group is recounted from the vote set behind that height. */
 function byHeight(targets: readonly VoteTarget[]): Array<{ height: number | null; targets: VoteTarget[] }> {
   if (targets.length === 0) return [{ height: null, targets: [] }];
@@ -71,6 +88,7 @@ function anchor(dapi: Dapi, progress: (m: string) => void, from?: number): Promi
     store: headerStore('chain'),
     proofSources: proofSources.get(dapi) ?? [],
     proofStore: headerStore<StoredLinkedChain>('qchain'),
+    pinStore: headerStore<StoredPinned>('pins'),
     onProgress: progress,
   });
 }
@@ -119,7 +137,7 @@ async function handle(req: WorkerRequest): Promise<void> {
       progress(verify ? 'Fetching the collateral transaction and proving it into a block' : 'Fetching the collateral transaction');
       lookup = await lookupCollateral(dapi, req.proposal.collateralTxid, { verify, onProgress: progress, ...(a ? { anchor: a } : {}) });
       // the published height was too high (or missing): anchor down to the real block and look again
-      if (a && !lookup.proof.anchor && lookup.proof.merkle && lookup.height > 0 && lookup.height < a.chain.lo) {
+      if (a && !lookup.proof.anchor && lookup.proof.merkle && lookup.height > 0 && lookup.height < a.chain.lo && !a.chain.hashAt(lookup.height)) {
         try {
           a = await anchor(dapi, progress, lookup.height);
           lookup = await lookupCollateral(dapi, req.proposal.collateralTxid, { verify, onProgress: progress, anchor: a });
@@ -158,7 +176,7 @@ async function handle(req: WorkerRequest): Promise<void> {
     const dapi = await dapiFor(req.dapi);
     const a = await anchor(dapi, progress, req.from);
     progress('Reading superblock coinbases for this proposal\'s payments');
-    const pay = await payments(dapi, a, req.proposal, req.others, req.network, req.from, req.now, { cache: superblockCache(req.network), progress });
+    const pay = await payments(dapi, a, req.proposal, req.others, req.network, req.from, req.now, { cache: superblockCache(req.network), progress, reach: (h) => anchor(dapi, progress, h) });
     post({ id: req.id, kind: 'payments', payments: { ...pay, othersComplete: req.othersComplete, anchor: { tip: a.tip, weak: a.weak } } });
     return;
   }
@@ -195,7 +213,7 @@ async function handle(req: WorkerRequest): Promise<void> {
     }
     origin = votes.origin ?? origin;
     progress(`Fetching the masternode list at block ${votes.tallyHeight.toLocaleString('en-US')}`);
-    const mnlist = await bridge.mnlist(votes.tallyHeight);
+    const mnlist = await mnlistAt(bridge, JSON.stringify(req.bridge), votes.tallyHeight);
     const proReg = dapi ? await proRegFor(dapi, req.network, votes, mnlist, progress) : null;
     progress(`Checking ${votes.votes.length} signatures`);
     const result = verifyVotes({ govHash: req.govHash, votes: votes.votes, masternodes: mnlist.masternodes, network: req.network, now: req.now, targets: g.targets, sml: sml?.entries ?? null, proReg });
@@ -214,7 +232,6 @@ async function ranking(req: Extract<WorkerRequest, { kind: 'ranking' }>, bridge:
   const a = await anchor(dapi, progress);
   const { entries } = smlEntries(a);
   const th = await threshold(dapi, a, req.network, proRegCache(req.network), progress);
-  const lists = new Map<number, Promise<BridgeMnList>>();
   const recounts: RecountedProposal[] = [];
   // Each recount must reproduce the tally the bridge published for that height, like the per-proposal check ("Tally verified").
   const published = await bridge.tallies();
@@ -223,8 +240,7 @@ async function ranking(req: Extract<WorkerRequest, { kind: 'ranking' }>, bridge:
     const base = { govHash: p.govHash, name: p.name, amount: p.paymentAmount, startEpoch: p.startEpoch, endEpoch: p.endEpoch };
     try {
       const votes = await bridge.votes(p.govHash);
-      if (!lists.has(votes.tallyHeight)) lists.set(votes.tallyHeight, bridge.mnlist(votes.tallyHeight));
-      const list = await lists.get(votes.tallyHeight)!;
+      const list = await mnlistAt(bridge, JSON.stringify(req.bridge), votes.tallyHeight);
       const proReg = await proRegFor(dapi, req.network, votes, list, progress);
       const tally = published.find((t) => t.govHash === p.govHash && t.asOfHeight === votes.tallyHeight);
       const r = verifyVotes({ govHash: p.govHash, votes: votes.votes, masternodes: list.masternodes, network: req.network, now: req.now, targets: tally ? [{ name: BRIDGE_TARGET, tally }] : [], sml: entries, proReg });

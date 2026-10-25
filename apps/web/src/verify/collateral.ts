@@ -53,6 +53,8 @@ export interface ChainFacts {
     tip: number; confirmations: number; chainLockHeight: number; final: boolean;
     /** proof of work does not protect it (testnet, proof-of-work path only) */ weak: string | null;
     /** what the verified chain rests on: ChainLocks proven from the quorum checkpoint, or proof of work */ trust?: 'quorum-proof' | 'proof-of-work';
+    /** the block's hash links up to this block whose hash the build pins (below the quorum checkpoint), not to the ChainLock directly */
+    pinned?: { height: number; hash: string };
   };
 }
 
@@ -147,6 +149,11 @@ function crosscheckStep(sec: TxLookup['second'], height: number): Step {
   return { ...step, status: 'fail', basis: 'reported', detail: `${sec.node} disagrees: ${sec.sameBytes ? `block ${sec.height} vs ${height}` : 'different transaction bytes'}` };
 }
 
+/** How a block below the downloaded run is tied to the chain: its hash is pinned, or its header links up to one that is. */
+const PINNED = 'whose hash this build pins (the quorum checkpoint or one of its ancestors, derived from it by hash links)';
+const pinnedNote = (pin: { height: number }, height: number) =>
+  pin.height === height ? `block ${num(height)}, ${PINNED}` : `linked by X11 header hashes up to block ${num(pin.height)}, ${PINNED}`;
+
 /** The ChainLock step: final under a lock in the verified chain; the fallback lock and node claims are "reported". */
 function chainlockStep(
   lookup: TxLookup,
@@ -160,7 +167,9 @@ function chainlockStep(
     return {
       ...step, status: 'ok', basis: c.chainBasis,
       detail: c.weak ? `covered by the ChainLock on block ${num(cl.height)}, on a chain proof of work does not secure here` : `final: covered by the BLS-verified ChainLock on block ${num(cl.height)}`,
-      more: `${quorum(cl)}; ${num(cl.verifiedConfirmations)} ${c.word} headers from the block to the locked one`,
+      more: anc.pinned
+        ? `${quorum(cl)}; ${num(cl.verifiedConfirmations)} blocks from the block to the locked one; the block is ${pinnedNote(anc.pinned, lookup.height)}`
+        : `${quorum(cl)}; ${num(cl.verifiedConfirmations)} ${c.word} headers from the block to the locked one`,
     };
   }
   if (cl && c.fallbackLock) {
@@ -212,7 +221,7 @@ export function verifyCollateral(p: ProposalCore, lookup: TxLookup | LookupError
   if (proof.merkle) {
     const checks = `the whole block was fetched, its merkle root recomputed from every txid and the coinbase height matches${proof.blockHash === 'verified' ? '; the header hashes (X11) to the block hash' : ''}`;
     const block = { id: 'block', status: 'ok', label: 'Block inclusion' } as const;
-    if (anc) steps.push({ ...block, basis: chainBasis, detail: `in block ${num(lookup.height)} of the chain ${word} in this browser`, more: `${checks}; its hash is the ${word} hash at that height` });
+    if (anc) steps.push({ ...block, basis: chainBasis, detail: `in block ${num(lookup.height)} of the chain ${word} in this browser`, more: `${checks}; its hash is the ${word} hash at that height${anc.pinned ? `: ${pinnedNote(anc.pinned, lookup.height)}` : ''}` });
     else if (locked) steps.push({ ...block, basis: 'reported', detail: `in block ${num(lookup.height)}, which a ChainLock covers; the chain could not be verified here`, more: `${checks}; ${AGREED_LIST}` });
     else steps.push({ ...block, basis: 'reported', detail: `in block ${num(lookup.height)} as a node names it; nothing ties that block to the chain`, more: checks });
   }
@@ -275,7 +284,7 @@ export function verifyCollateral(p: ProposalCore, lookup: TxLookup | LookupError
     provenConfirmations: anc && !weak && provenConf !== null && provenConf >= GOVERNANCE_FEE_CONFIRMATIONS ? provenConf : null,
     lockDepth: locked && cl ? cl.verifiedConfirmations : null,
     ...(weak ? { weak } : {}),
-    ...(anc ? { anchored: { tip: anc.tip, confirmations: anc.confirmations, chainLockHeight: anc.chainLockHeight, final: locked, weak: anc.weak, ...(anc.trust ? { trust: anc.trust } : {}) } } : {}),
+    ...(anc ? { anchored: { tip: anc.tip, confirmations: anc.confirmations, chainLockHeight: anc.chainLockHeight, final: locked, weak: anc.weak, ...(anc.trust ? { trust: anc.trust } : {}), ...(anc.pinned ? { pinned: anc.pinned } : {}) } } : {}),
   };
   return { ok, steps, chain, ...(govHashComputed ? { govHashComputed } : {}), ...(ok && inputKeys ? { inputKeys } : {}) };
 }

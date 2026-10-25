@@ -116,17 +116,21 @@ function trustRow(a: Anchor): Row {
 function chainRow(a: Anchor): Row {
   const hashes = `${n(a.tip - a.lo + 1)} block hashes from ${n(a.lo)}`;
   const fetched = `${n(a.headers.cached)} came from this browser's cache, ${n(a.headers.fetched)} were downloaded (${(a.ms.total! / 1000).toFixed(1)} s)`;
+  // older blocks (a collateral, superblocks) below that run: short runs of headers linked up to a pinned hash, not the whole way down
+  const pins = a.pinned
+    ? `; blocks below ${n(a.lo)} (an old collateral, superblocks) are checked against block hashes this build pins below its quorum checkpoint (derived from it by hash links), directly or through a run of headers linked up to one (${n(a.pinned.segments)} runs, ${n(a.pinned.heights)} hashes held in this browser)`
+    : '';
   if (a.trust.kind === 'quorum-proof') {
     return {
       id: 'chain', status: 'ok', label: 'Chain',
       detail: `verified to the ChainLocked block ${n(a.tip)}`,
-      more: `${hashes}, each header's X11 hash linked to the next one's up to the proven ChainLocked block (a ChainLock is final, so no proof of work or difficulty check is needed); ${fetched}`,
+      more: `${hashes}, each header's X11 hash linked to the next one's up to the proven ChainLocked block (a ChainLock is final, so no proof of work or difficulty check is needed); ${fetched}${pins}`,
     };
   }
   return {
     id: 'chain', status: 'ok', label: 'Chain',
     detail: `${a.weak ? 'checked' : 'verified'} from the pinned checkpoint to block ${n(a.tip)}`,
-    more: `${hashes}: hash links down to the checkpoint at ${n(a.checkpoint)}, and above it every header's proof of work, difficulty (Dark Gravity Wave) and timestamp checked like Core does; ${fetched}`,
+    more: `${hashes}: hash links down to the checkpoint at ${n(a.checkpoint)}, and above it every header's proof of work, difficulty (Dark Gravity Wave) and timestamp checked like Core does; ${fetched}${pins}`,
   };
 }
 

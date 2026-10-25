@@ -1,0 +1,426 @@
+{
+  "about": "scripts/measure-verify-cache.mjs --gap 65: one browser profile, in-app navigation, 65 s on each page. before = live gov.dashhq.org (main 266b294); after = this branch built and served by vite preview, same mainnet DAPI, bridge and proof source.",
+  "before": {
+    "base": "https://gov.dashhq.org",
+    "ranAt": "2026-10-25T17:29:24.250Z",
+    "results": [
+      {
+        "step": "recent",
+        "proposal": "Optional-Content-Control",
+        "collateralHeight": 2560804,
+        "tCollateralMs": 16750,
+        "tChainMs": 51180,
+        "verdict": "ok",
+        "chain": "verified",
+        "headerDownloads": [
+          "1,189"
+        ],
+        "anchor": {
+          "cachedHeaders": 0,
+          "fetchedHeaders": 1189,
+          "ms": {
+            "cache": 5,
+            "proof": 208,
+            "smlProof": 7883,
+            "sml": 7891,
+            "headers": 2215,
+            "chainlock": 22,
+            "total": 10341
+          }
+        },
+        "workerKbTotal": 5264,
+        "workerKbByPath": {
+          "dapi subscribeToMasternodeList": 1585,
+          "gov-bridge.dashhq.org/v1/mnlist/2561255": 1371,
+          "gov-bridge.dashhq.org/v1/mnlist/2560851": 1371,
+          "dapi getTransaction": 625,
+          "quorums.mainnet.networks.dash.org/masternodes": 147,
+          "dapi subscribeToBlockHeadersWithChainLocks": 95,
+          "dapi getBlock": 50,
+          "gov-bridge.dashhq.org/v1/proposals/:hash/votes": 20
+        },
+        "db": {
+          "qchain:mainnet": {
+            "lo": 2560096,
+            "hi": 2561284,
+            "mb": 0.04
+          }
+        }
+      },
+      {
+        "step": "old",
+        "proposal": "GEG-PPP-30M-Film-On-Chain",
+        "collateralHeight": 2448904,
+        "tCollateralMs": 25254,
+        "tChainMs": 25257,
+        "verdict": "ok",
+        "chain": "verified",
+        "headerDownloads": [
+          "111,192",
+          "1"
+        ],
+        "anchor": {
+          "cachedHeaders": 1189,
+          "fetchedHeaders": 111193,
+          "ms": {
+            "cache": 1,
+            "proof": 400,
+            "smlProof": 78,
+            "sml": 90,
+            "headers": 22587,
+            "chainlock": 11,
+            "total": 23090
+          }
+        },
+        "workerKbTotal": 13248,
+        "workerKbByPath": {
+          "dapi subscribeToBlockHeadersWithChainLocks": 10223,
+          "gov-bridge.dashhq.org/v1/mnlist/2560810": 1371,
+          "dapi subscribeToMasternodeList": 1329,
+          "dapi getBlock": 147,
+          "gov-bridge.dashhq.org/v1/proposals/:hash/votes": 114,
+          "dapi getTransaction": 63
+        },
+        "db": {
+          "qchain:mainnet": {
+            "lo": 2448904,
+            "hi": 2561285,
+            "mb": 3.6
+          }
+        }
+      },
+      {
+        "step": "old",
+        "proposal": "GEG-PPP-30M-Film-On-Chain",
+        "collateralHeight": 2448904,
+        "tCollateralMs": 42,
+        "tChainMs": 47,
+        "verdict": "ok",
+        "chain": "verified",
+        "headerDownloads": [],
+        "anchor": "reused in memory",
+        "workerKbTotal": 1486,
+        "workerKbByPath": {
+          "gov-bridge.dashhq.org/v1/mnlist/2561255": 1371,
+          "gov-bridge.dashhq.org/v1/proposals/:hash/votes": 114,
+          "dapi getTransaction": 1
+        },
+        "db": {
+          "qchain:mainnet": {
+            "lo": 2448904,
+            "hi": 2561285,
+            "mb": 3.6
+          }
+        }
+      },
+      {
+        "step": "older",
+        "proposal": "Dash-Italia-Management-2026",
+        "collateralHeight": 2409375,
+        "tCollateralMs": 31665,
+        "tChainMs": 31699,
+        "verdict": "ok",
+        "chain": "verified",
+        "headerDownloads": [
+          "39,529",
+          "2"
+        ],
+        "anchor": {
+          "cachedHeaders": 112382,
+          "fetchedHeaders": 39531,
+          "ms": {
+            "cache": 9,
+            "proof": 276,
+            "smlProof": 10666,
+            "sml": 13356,
+            "headers": 16445,
+            "chainlock": 14,
+            "total": 30101
+          }
+        },
+        "workerKbTotal": 8103,
+        "workerKbByPath": {
+          "dapi subscribeToBlockHeadersWithChainLocks": 4196,
+          "dapi subscribeToMasternodeList": 2193,
+          "gov-bridge.dashhq.org/v1/mnlist/2560723": 1371,
+          "gov-bridge.dashhq.org/v1/proposals/:hash/votes": 225,
+          "dapi getBlock": 67,
+          "dapi getTransaction": 51
+        },
+        "db": {
+          "qchain:mainnet": {
+            "lo": 2409375,
+            "hi": 2561287,
+            "mb": 4.86
+          }
+        }
+      },
+      {
+        "step": "reload",
+        "proposal": "Dash-Italia-Management-2026",
+        "collateralHeight": 2409375,
+        "tCollateralMs": 4824,
+        "tChainMs": 4826,
+        "verdict": "ok",
+        "chain": "verified",
+        "headerDownloads": [],
+        "anchor": {
+          "cachedHeaders": 151913,
+          "fetchedHeaders": 0,
+          "ms": {
+            "cache": 5,
+            "proof": 65,
+            "smlProof": 1173,
+            "sml": 1503,
+            "headers": 0,
+            "chainlock": 26,
+            "total": 1599
+          }
+        },
+        "workerKbTotal": 10454,
+        "workerKbByPath": {
+          "gov-bridge.dashhq.org/v1/proposals/:hash/votes": 4843,
+          "gov-bridge.dashhq.org/v1/mnlist/2561256": 1371,
+          "gov-bridge.dashhq.org/v1/mnlist/2561287": 1371,
+          "gov-bridge.dashhq.org/v1/mnlist/2560723": 1371,
+          "dapi subscribeToMasternodeList": 1329,
+          "quorums.mainnet.networks.dash.org/masternodes": 147,
+          "gov-bridge.dashhq.org/v1/tallies": 17,
+          "dapi getBlock": 4,
+          "dapi getTransaction": 0,
+          "dapi subscribeToBlockHeadersWithChainLocks": 0
+        },
+        "db": {
+          "qchain:mainnet": {
+            "lo": 2409375,
+            "hi": 2561287,
+            "mb": 4.86
+          }
+        }
+      }
+    ]
+  },
+  "after": {
+    "base": "http://localhost:4399",
+    "ranAt": "2026-10-25T17:44:08.969Z",
+    "results": [
+      {
+        "step": "recent",
+        "proposal": "Optional-Content-Control",
+        "collateralHeight": 2560804,
+        "tCollateralMs": 6422,
+        "tChainMs": 36844,
+        "verdict": "ok",
+        "chain": "verified",
+        "headerDownloads": [
+          "1,189"
+        ],
+        "anchor": {
+          "cachedHeaders": 0,
+          "fetchedHeaders": 1189,
+          "ms": {
+            "cache": 0,
+            "proof": 205,
+            "smlProof": 1744,
+            "sml": 1762,
+            "headers": 853,
+            "chainlock": 30,
+            "total": 2850
+          }
+        },
+        "workerKbTotal": 5007,
+        "workerKbByPath": {
+          "gov-bridge.dashhq.org/v1/mnlist/2561255": 1371,
+          "gov-bridge.dashhq.org/v1/mnlist/2560851": 1371,
+          "dapi subscribeToMasternodeList": 1329,
+          "dapi getTransaction": 625,
+          "quorums.mainnet.networks.dash.org/masternodes": 146,
+          "dapi subscribeToBlockHeadersWithChainLocks": 95,
+          "dapi getBlock": 50,
+          "gov-bridge.dashhq.org/v1/proposals/:hash/votes": 20
+        },
+        "db": {
+          "qchain:mainnet": {
+            "lo": 2560105,
+            "hi": 2561293,
+            "mb": 0.04
+          }
+        }
+      },
+      {
+        "step": "old",
+        "proposal": "GEG-PPP-30M-Film-On-Chain",
+        "collateralHeight": 2448904,
+        "tCollateralMs": 6148,
+        "tChainMs": 6150,
+        "verdict": "ok",
+        "chain": "verified",
+        "headerDownloads": [
+          "1,097",
+          "1,241"
+        ],
+        "anchor": {
+          "cachedHeaders": 1189,
+          "fetchedHeaders": 1097,
+          "ms": {
+            "cache": 0,
+            "proof": 62,
+            "smlReused": 1,
+            "sml": 674,
+            "headers": 0,
+            "chainlock": 8,
+            "total": 745
+          }
+        },
+        "workerKbTotal": 1998,
+        "workerKbByPath": {
+          "gov-bridge.dashhq.org/v1/mnlist/2560810": 1371,
+          "gov-bridge.dashhq.org/v1/proposals/:hash/votes": 229,
+          "dapi subscribeToBlockHeadersWithChainLocks": 188,
+          "dapi getBlock": 147,
+          "dapi getTransaction": 64
+        },
+        "db": {
+          "pins:mainnet": {
+            "mb": 0.04,
+            "segments": [
+              "2448904..2450000"
+            ]
+          },
+          "qchain:mainnet": {
+            "lo": 2558864,
+            "hi": 2561293,
+            "mb": 0.08
+          }
+        }
+      },
+      {
+        "step": "old",
+        "proposal": "GEG-PPP-30M-Film-On-Chain",
+        "collateralHeight": 2448904,
+        "tCollateralMs": 14,
+        "tChainMs": 16,
+        "verdict": "ok",
+        "chain": "verified",
+        "headerDownloads": [],
+        "anchor": "reused in memory",
+        "workerKbTotal": 0,
+        "workerKbByPath": {},
+        "db": {
+          "pins:mainnet": {
+            "mb": 0.04,
+            "segments": [
+              "2448904..2450000"
+            ]
+          },
+          "qchain:mainnet": {
+            "lo": 2558864,
+            "hi": 2561293,
+            "mb": 0.08
+          }
+        }
+      },
+      {
+        "step": "older",
+        "proposal": "Dash-Italia-Management-2026",
+        "collateralHeight": 2409375,
+        "tCollateralMs": 3702,
+        "tChainMs": 3704,
+        "verdict": "ok",
+        "chain": "verified",
+        "headerDownloads": [
+          "2",
+          "626"
+        ],
+        "anchor": {
+          "cachedHeaders": 2430,
+          "fetchedHeaders": 628,
+          "ms": {
+            "cache": 3,
+            "proof": 312,
+            "smlReused": 1,
+            "sml": 379,
+            "headers": 391,
+            "chainlock": 11,
+            "total": 1096
+          }
+        },
+        "workerKbTotal": 5749,
+        "workerKbByPath": {
+          "gov-bridge.dashhq.org/v1/proposals/:hash/votes": 1406,
+          "gov-bridge.dashhq.org/v1/mnlist/2561256": 1371,
+          "gov-bridge.dashhq.org/v1/mnlist/2561295": 1371,
+          "gov-bridge.dashhq.org/v1/mnlist/2560723": 1371,
+          "dapi getTransaction": 95,
+          "dapi getBlock": 67,
+          "dapi subscribeToBlockHeadersWithChainLocks": 51,
+          "gov-bridge.dashhq.org/v1/tallies": 17
+        },
+        "db": {
+          "pins:mainnet": {
+            "mb": 0.06,
+            "segments": [
+              "2448904..2450000",
+              "2409375..2410000"
+            ]
+          },
+          "qchain:mainnet": {
+            "lo": 2558864,
+            "hi": 2561295,
+            "mb": 0.08
+          }
+        }
+      },
+      {
+        "step": "reload",
+        "proposal": "Dash-Italia-Management-2026",
+        "collateralHeight": 2409375,
+        "tCollateralMs": 7695,
+        "tChainMs": 7698,
+        "verdict": "ok",
+        "chain": "verified",
+        "headerDownloads": [],
+        "anchor": {
+          "cachedHeaders": 2432,
+          "fetchedHeaders": 0,
+          "ms": {
+            "cache": 1,
+            "proof": 68,
+            "smlProof": 2966,
+            "sml": 3653,
+            "headers": 1,
+            "chainlock": 23,
+            "total": 3746
+          }
+        },
+        "workerKbTotal": 10453,
+        "workerKbByPath": {
+          "gov-bridge.dashhq.org/v1/proposals/:hash/votes": 4843,
+          "gov-bridge.dashhq.org/v1/mnlist/2561256": 1371,
+          "gov-bridge.dashhq.org/v1/mnlist/2561295": 1371,
+          "gov-bridge.dashhq.org/v1/mnlist/2560723": 1371,
+          "dapi subscribeToMasternodeList": 1329,
+          "quorums.mainnet.networks.dash.org/masternodes": 146,
+          "gov-bridge.dashhq.org/v1/tallies": 17,
+          "dapi getBlock": 4,
+          "dapi getTransaction": 0,
+          "dapi subscribeToBlockHeadersWithChainLocks": 0
+        },
+        "db": {
+          "pins:mainnet": {
+            "mb": 0.06,
+            "segments": [
+              "2448904..2450000",
+              "2409375..2410000"
+            ]
+          },
+          "qchain:mainnet": {
+            "lo": 2558864,
+            "hi": 2561295,
+            "mb": 0.08
+          }
+        }
+      }
+    ]
+  }
+}
