@@ -40,7 +40,7 @@ describe('issuer HTTP API', () => {
     expect(pre.status).toBe(204);
     expect(pre.headers.get('access-control-allow-methods')).toContain('POST');
     const info = await (await a.fetch(new Request('http://x/v1/info'))).json();
-    expect(info).toMatchObject({ variant: 'RSABSSA-SHA384-PSS-Randomized', network: 'testnet', issuingEpochs: [E - 1, E], ready: true });
+    expect(info).toMatchObject({ variant: 'RSABSSA-SHA384-PSS-Randomized', network: 'testnet', issuingEpochs: [E - 1, E], ready: true, problem: null });
     expect((await a.fetch(new Request('http://x/nope'))).status).toBe(404);
     expect((await a.fetch(post('/v1/token', '{not json'))).status).toBe(400);
     expect((await a.fetch(post('/v1/token', { request: 'x'.repeat(5000) }))).status).toBe(413);

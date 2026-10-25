@@ -9,7 +9,8 @@
 // count would only tell how many masternodes and proposal owners took part, and readers have nothing to audit it against.
 import { acceptIssuerKey, idToBytes, starterRedeemEpochs, type BadgeNetwork, type EpochParams, type IssuerKeyDoc } from '@govhub/badge';
 import type { CoreView, ProposalCache } from './core.ts';
-import { closableThrough, EpochKeys, keyConflict, readCore, type EpochStatus, type OtherIssuer } from './epochs.ts';
+import { defaultMaxTipLead } from './config.ts';
+import { closableThrough, EpochKeys, keyConflict, readCore, TipGuard, type EpochStatus, type OtherIssuer } from './epochs.ts';
 import { errText, log } from './log.ts';
 import type { IssuerPlatform } from './platform.ts';
 import type { ActiveKey } from './service.ts';
@@ -31,6 +32,8 @@ export interface StarterManagerDeps {
   platform: () => IssuerPlatform | null;
   /** the badge identity of this server: a starter key equal to one of its keys is neither loaded nor listed (keyConflict) */
   other?: () => OtherIssuer | null;
+  /** blocks the dashd tip may lead Platform's core height before the irreversible steps wait (checkTip); default defaultMaxTipLead */
+  maxTipLead?: number;
 }
 
 export interface StarterPublicKey {
@@ -48,14 +51,21 @@ export class StarterManager {
   readonly #loaded = new Map<number, IssuerKeyDoc>();
   /** the redeemable keys, by epoch; only epochs in the redeem window */
   readonly #published = new Map<number, StarterPublicKey>();
-  /** epochs with an issuerRevocation of the starter identity: never signed for or listed again (a revocation is immutable) */
+  /**
+   * epochs with an issuerRevocation of the starter identity: never signed for or listed again (a revocation is immutable). Never
+   * pruned (a few epochs at most): pruning by a garbage-high tip would forget one, and the next tick would load its key again
+   */
   readonly #revoked = new Set<number>();
   /** epochs whose issuerKey failed the reader rules, with the reason last logged (warn once per change, not every tick) */
   readonly #refused = new Map<number, string>();
+  readonly #guard: TipGuard;
   #status: EpochStatus = { height: null, issuingEpochs: [], keyIds: {}, ready: false, problem: 'starting' };
+  /** the issuance problems last logged (the tip guard logs its own) */
+  #logged: string | null = null;
 
   constructor(deps: StarterManagerDeps) {
     this.#d = deps;
+    this.#guard = new TipGuard('starter housekeeping', deps.maxTipLead ?? defaultMaxTipLead(deps.params));
     this.#issuerBytes = idToBytes(deps.issuerId);
     this.#contractBytes = idToBytes(deps.contractId);
     // No canSign check: unlike the badge token store (one row per MN per epoch, refused when the store is newer than the epoch's
@@ -97,20 +107,27 @@ export class StarterManager {
       log.warn('proposal list refresh failed', { error: errText(e) });
     }
 
-    this.#keys.destroyClosed(height, current);
     for (const e of this.#loaded.keys()) if (e < current) this.#loaded.delete(e);
-    // The retry columns of closed windows are cleared; the dedup keys stay for life.
-    const closable = closableThrough(d.params, height);
-    if (closable >= 1) {
-      const n = d.store.closeThrough(closable);
-      if (n) log.info('cleared starter retry data of closed epochs', { throughEpoch: closable, rows: n });
+    const tip = await this.#guard.check(d.platform(), height);
+    if ('platformHeight' in tip) {
+      this.#keys.destroyClosed(height, current);
+      // The retry columns of closed windows are cleared; the dedup keys stay for life.
+      const closable = closableThrough(d.params, height);
+      if (closable >= 1) {
+        const n = d.store.closeThrough(closable);
+        if (n) log.info('cleared starter retry data of closed epochs', { throughEpoch: closable, rows: n });
+      }
     }
 
     const problems = await this.#keys.refresh(current, next);
     await this.#refreshPublished(height, problems).catch((e) => problems.push(`starter key list: ${errText(e)}`));
     for (const e of [current, next]) if (this.#revoked.has(e)) problems.push(`the starter key of epoch ${e} is revoked`);
-    const problem = problems.length ? problems.join('; ') : null;
-    if (problem && problem !== this.#status.problem) log.error('starter issuance (partly) unavailable', { epochs: [current, next], problem });
+    const keyProblem = problems.join('; ') || null;
+    if (keyProblem && keyProblem !== this.#logged) log.error('starter issuance (partly) unavailable', { epochs: [current, next], problem: keyProblem });
+    this.#logged = keyProblem;
+    // issuance goes on while the irreversible steps wait (README "Tip check")
+    if ('problem' in tip) problems.unshift(tip.problem);
+    const problem = problems.join('; ') || null;
     const keyIds = Object.fromEntries(Object.entries(this.#keys.keyIds()).filter(([e]) => !this.#revoked.has(Number(e))));
     this.#status = { height, issuingEpochs: [current, next], keyIds, ready: this.#keys.ready && Object.keys(keyIds).length > 0, problem };
   }
@@ -126,7 +143,6 @@ export class StarterManager {
     const d = this.#d;
     const want = starterRedeemEpochs(d.params, height);
     for (const e of [...this.#published.keys()]) if (!want.includes(e)) this.#published.delete(e);
-    for (const e of [...this.#revoked]) if (e < want[0]!) this.#revoked.delete(e);
     for (const e of [...this.#refused.keys()]) if (!want.includes(e)) this.#refused.delete(e);
     const platform = d.platform();
     if (!platform) {

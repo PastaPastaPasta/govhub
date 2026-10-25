@@ -574,6 +574,12 @@ the epoch requested, in timing, and in a crowd-size check. The issuer endpoint i
 - Readers show at most one chip per identity per issuer, and never add up across issuers.
 - Nothing stops one masternode from getting a badge from every issuer, for several identities.
 
+**The issuer's own dashd.** The issuer takes epochs from its own Dash Core's tip. The govhub issuer does not let that tip alone
+close an epoch, which deletes its dedup rows, or destroy an epoch's signing key. Both wait until Platform's proved chain-locked
+core height confirms the tip, within twice the boundary margin by default. Otherwise the issuer skips them, logs a warning and
+reports the problem in `/v1/info` (`services/issuer/src/epochs.ts`, `checkTip`; `services/issuer/README.md`, "Tip check"). That
+check cannot stop a dashd that fakes the masternode list itself: the issuer trusts its own node to authenticate masternodes.
+
 **Revocations and reports.**
 
 - An issuer revokes an epoch with an `issuerRevocation` document signed by its CRITICAL key. Readers void that epoch's badges

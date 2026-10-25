@@ -1,8 +1,9 @@
 // Epoch housekeeping, run on a timer: which key may sign, destroying keys and token rows of closed windows, and the per-epoch
-// issuerReport. Every step works from the dashd tip; the issuerKey check reads Platform with proofs. EpochKeys (the key part) is
-// shared with the starter issuer (starter-epochs.ts).
+// issuerReport. Every step works from the dashd tip; the issuerKey check reads Platform with proofs. The irreversible steps (key
+// destruction, closing epochs, the store's start height) also need Platform's chain-locked core height to confirm the tip
+// (checkTip). EpochKeys (the key part) is shared with the starter issuer (starter-epochs.ts).
 import { deriveKeyId, epochOf, epochStart, equalBytes, issuingEpochsAt, keyDeadline, reportWindow, toHex, VARIANT, type EpochParams, type IssuerKeyDoc } from '@govhub/badge';
-import type { IdentityKeyFile } from './config.ts';
+import { defaultMaxTipLead, type IdentityKeyFile } from './config.ts';
 import type { CoreView, MnLists } from './core.ts';
 import { storeWindowFrom, type TokenStore } from './db.ts';
 import { destroyKey, keyEpochs, loadKey } from './keys.ts';
@@ -213,6 +214,8 @@ export interface EpochManagerDeps {
   reportKey: IdentityKeyFile | null;
   /** the starter identity, when this server also issues starters: its keys are never loaded as badge keys */
   other?: () => OtherIssuer | null;
+  /** blocks the dashd tip may lead Platform's core height before the irreversible steps wait (checkTip); default defaultMaxTipLead */
+  maxTipLead?: number;
 }
 
 export interface EpochStatus {
@@ -252,6 +255,58 @@ export async function readCore(
   return { height, current, next };
 }
 
+/** Platform's chain-locked core height when it confirms the dashd tip, else why the irreversible steps wait this tick (detail: log fields). */
+export type TipCheck = { platformHeight: number } | { problem: string; detail: Record<string, unknown> };
+
+/**
+ * Whether the dashd tip may drive this tick's irreversible steps (destroying keys, closing epochs, recording the token store's start
+ * height). A dashd that says it is synced can still return a tip far above the network's, which would close live windows and
+ * destroy their keys for good, so the tip must not lead Platform's proved chain-locked core height by more than `maxLead` blocks.
+ * A proved height is never above the real chain, so an accepted tip is at most `maxLead` above the real one; with the default
+ * (defaultMaxTipLead) key destruction then runs only once the real tip is past S(E+1) - margin, where every client whose height is at
+ * least that has stopped asking for E. A tip below Platform's (dashd behind) only delays the steps, so it passes. Stateless: the steps
+ * run again at the first tick where the two agree.
+ */
+export async function checkTip(platform: IssuerPlatform | null, tip: number, maxLead: number): Promise<TipCheck> {
+  const waits = 'closing epochs and destroying keys wait';
+  const noHeight = (error: string): TipCheck => ({ problem: `Platform's core height is not available, so the dashd tip is unconfirmed: ${waits}`, detail: { error } });
+  if (!platform) return noHeight('Platform is not reachable');
+  let ph: number;
+  try {
+    ph = await platform.coreHeight();
+  } catch (e) {
+    return noHeight(errText(e));
+  }
+  if (!Number.isSafeInteger(ph) || ph <= 0) return noHeight(`no core height (${String(ph)})`);
+  if (!Number.isSafeInteger(tip) || tip < 0) return { problem: `the dashd tip is not a height (${String(tip)}): ${waits}`, detail: { tip: String(tip) } };
+  if (tip - ph > maxLead) return { problem: `the dashd tip leads Platform's chain-locked core height by more than ${maxLead} blocks: ${waits} until they agree`, detail: { tip, platformCoreHeight: ph, maxLead } };
+  return { platformHeight: ph };
+}
+
+/** checkTip, logged once per change (held or resumed), not every tick. Its problem text has no heights, so /v1/info stays stable. */
+export class TipGuard {
+  readonly #label: string;
+  readonly #maxLead: number;
+  #held: string | null = null;
+
+  constructor(label: string, maxLead: number) {
+    this.#label = label;
+    this.#maxLead = maxLead;
+  }
+
+  async check(platform: IssuerPlatform | null, tip: number): Promise<TipCheck> {
+    const r = await checkTip(platform, tip, this.#maxLead);
+    if ('problem' in r) {
+      if (r.problem !== this.#held) log.warn(`${this.#label}: ${r.problem}`, { tip, ...r.detail });
+      this.#held = r.problem;
+    } else {
+      if (this.#held) log.info(`${this.#label}: the dashd tip agrees with Platform again: closing epochs and destroying keys resume`, { tip, platformCoreHeight: r.platformHeight });
+      this.#held = null;
+    }
+    return r;
+  }
+}
+
 /**
  * The newest epoch whose issuance window [S(E-1), S(E+1)) ended at least `margin` blocks before `height`: closing it and
  * everything before it can never cut off a window that is still open at the tip (0: nothing to close).
@@ -261,10 +316,14 @@ export const closableThrough = (p: EpochParams, height: number): number => Math.
 export class EpochManager {
   readonly #d: EpochManagerDeps;
   readonly #keys: EpochKeys;
+  readonly #guard: TipGuard;
   #status: EpochStatus = { height: null, issuingEpochs: [], keyIds: {}, ready: false, problem: 'starting' };
+  /** the issuance problems last logged (the tip guard logs its own) */
+  #logged: string | null = null;
 
   constructor(deps: EpochManagerDeps) {
     this.#d = deps;
+    this.#guard = new TipGuard('badge housekeeping', deps.maxTipLead ?? defaultMaxTipLead(deps.params));
     this.#keys = new EpochKeys({ params: deps.params, issuerId: deps.issuerId, keyDir: deps.keyDir, maxStagedKeys: deps.maxStagedKeys, platform: deps.platform, label: 'signing key',
       // Readers accept a published key, so readers expect E's report: the epoch is opened (a report with 0 tokens if this server
       // never signs), since a missing one would flag the issuer for E and hide its badges for E+1.
@@ -301,11 +360,12 @@ export class EpochManager {
       return;
     }
     const { height, current, next } = core;
-    if (d.store.startedHeight() === null) {
+    const tip = await this.#guard.check(d.platform(), height);
+    if (d.store.startedHeight() === null && 'platformHeight' in tip) {
       // Platform's core height can lead this dashd's tip: start from the higher one, so a key published before the store started
-      // never looks newer than it (storeWindowFrom). Without a Platform height, wait: nothing is issued without Platform anyway.
-      const ph = await d.platform()?.coreHeight().catch(() => null);
-      if (Number.isSafeInteger(ph) && ph! > 0) d.store.markStarted(Math.max(height, ph!));
+      // never looks newer than it (storeWindowFrom). The start is permanent (a garbage-high one would refuse every epoch below it),
+      // so it waits for a tip Platform confirms (nothing is issued without Platform anyway).
+      d.store.markStarted(Math.max(height, tip.platformHeight));
     }
     try {
       // a token for E needs the MN valid at S(E-1): S(current-1) and S(current)
@@ -314,12 +374,14 @@ export class EpochManager {
       log.warn('masternode list refresh failed', { error: errText(e) });
     }
 
-    this.#keys.destroyClosed(height, current);
-    // Token rows of closed windows are deleted; only the per-epoch count stays.
-    const closable = closableThrough(d.params, height);
-    if (closable >= 1) {
-      const n = d.store.closeThrough(closable);
-      if (n) log.info('deleted token records of closed epochs', { throughEpoch: closable, rows: n });
+    if ('platformHeight' in tip) {
+      this.#keys.destroyClosed(height, current);
+      // Token rows of closed windows are deleted; only the per-epoch count stays.
+      const closable = closableThrough(d.params, height);
+      if (closable >= 1) {
+        const n = d.store.closeThrough(closable);
+        if (n) log.info('deleted token records of closed epochs', { throughEpoch: closable, rows: n });
+      }
     }
     // An epoch closed while its window is still open (a store carried over from code that closed E at S(E), before tokens for E
     // could be issued during E) is reopened if no token was ever issued for it, so a key published later can still sign.
@@ -333,10 +395,13 @@ export class EpochManager {
         ? `the token store is closed through epoch ${closedThrough}, although epoch ${e}'s issuance window is open; it is not reopened because epoch ${closedThrough} had tokens (their rows are deleted) or a recorded issuerReport, or was closed at a higher tip`
         : null,
     );
-    const problem = problems.length ? problems.join('; ') : null;
+    const keyProblem = problems.join('; ') || null;
     // once per change, not every tick
-    if (problem && problem !== this.#status.problem) log.error('issuance (partly) unavailable', { epochs: [current, next], problem });
-    this.#status = { height, issuingEpochs: [current, next], keyIds: this.#keys.keyIds(), ready: this.#keys.ready, problem };
+    if (keyProblem && keyProblem !== this.#logged) log.error('issuance (partly) unavailable', { epochs: [current, next], problem: keyProblem });
+    this.#logged = keyProblem;
+    // issuance goes on while the irreversible steps wait (README "Tip check")
+    if ('problem' in tip) problems.unshift(tip.problem);
+    this.#status = { height, issuingEpochs: [current, next], keyIds: this.#keys.keyIds(), ready: this.#keys.ready, problem: problems.join('; ') || null };
 
     await this.#report().catch((e) => log.warn('issuerReport failed', { error: errText(e) }));
   }

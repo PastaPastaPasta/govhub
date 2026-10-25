@@ -90,6 +90,7 @@ export function createApp(d: ServerDeps): Hono {
       issuingEpochs: s.issuingEpochs,
       keyIds: s.keyIds,
       ready: s.ready,
+      problem: s.problem,
       challengeTtlSec: d.challengeTtlSec,
       note: 'Advisory only: clients derive the epoch and keyId from proved Platform data and the core height, never from this.',
     });

@@ -2,7 +2,7 @@
 // documented in README.md. Secrets (RPC password, HMAC secret, identity key) are only read from files.
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { idToBytes, isNetwork, type BadgeNetwork } from '@govhub/badge';
+import { EPOCH_PARAMS, idToBytes, isNetwork, type BadgeNetwork, type EpochParams } from '@govhub/badge';
 
 export type PlatformNetwork = 'mainnet' | 'testnet';
 
@@ -29,6 +29,11 @@ export interface IssuerConfig {
   maxTokenRequestsPerSec: number;
   /** Seconds between chain polls (epoch roll-over, key loading, record deletion, reports). */
   tickSec: number;
+  /**
+   * Blocks the dashd tip may lead Platform's proved chain-locked core height before the irreversible housekeeping steps (key
+   * destruction, closing epochs, the store's start height) wait. Default: twice the network's boundaryMarginBlocks (README "Tip check").
+   */
+  maxTipLead: number;
   /** Starter tokens (README "Starter tokens"); null unless STARTER_ISSUER_IDENTITY_ID is set. */
   starter: StarterConfig | null;
 }
@@ -49,6 +54,12 @@ export interface StarterConfig {
   /** a proposal whose end_epoch is more than this many days in the past gets no starter */
   proposalGraceDays: number;
 }
+
+/**
+ * Twice the boundary margin (mainnet 16 blocks, testnet 6): Platform's height trails the tip by a few blocks (testnet, 2026-10-25: up
+ * to 3), and checkTip's bound then still closes E only after clients stopped asking for it. README "Tip check".
+ */
+export const defaultMaxTipLead = (p: EpochParams): number => 2 * p.boundaryMarginBlocks;
 
 function str(env: NodeJS.ProcessEnv, key: string, def: string): string {
   const v = env[key];
@@ -113,6 +124,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): IssuerConfig {
     reportKeyFile: str(env, 'ISSUER_REPORT_KEY_FILE', ''),
     maxTokenRequestsPerSec: int(env, 'ISSUER_MAX_TOKEN_RPS', 2000, 1),
     tickSec: int(env, 'ISSUER_TICK_S', 30, 1),
+    maxTipLead: int(env, 'ISSUER_MAX_TIP_LEAD', defaultMaxTipLead(EPOCH_PARAMS[network])),
     starter: loadStarterConfig(env, issuerId, keyDir, dbPath),
   };
 }
