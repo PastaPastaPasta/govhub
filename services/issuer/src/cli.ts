@@ -123,7 +123,8 @@ async function main(): Promise<void> {
         const back = r.status === 'published' ? await platform.issuerRevocation(key.identityId, r.epoch) : null;
         console.log(JSON.stringify(r.status === 'published' ? { ...r, visible: !!back } : r));
       }
-      process.exit(results.some((r) => r.status === 'conflict') ? 3 : 0);
+      // 1: a publish failed (re-run: published epochs report `already revoked`); 3: a slot holds a later revocation
+      process.exit(results.some((r) => r.status === 'error') ? 1 : results.some((r) => r.status === 'conflict') ? 3 : 0);
       return;
     }
     case 'epoch': {

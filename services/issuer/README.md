@@ -169,6 +169,10 @@ On the server:
 - Once the issuance window of an epoch has closed (`S(E+1)` plus the margin), its key is destroyed: overwritten with zeros,
   fsynced, unlinked. On ZFS, btrfs and SSDs old blocks may survive; that is a property of the host, not of this code.
 
+Keep the identity's MASTER and CRITICAL keys offline (CRITICAL signs the `issuerKey` documents). Only the HIGH key goes
+to the server, and only for `issuerReport` documents. Key files are JSON
+`{"identityId", "keyId", "privateKeyHex" | "wif"}`.
+
 ### Revoking a key
 
 If the server is compromised, every epoch key it held (the two being issued and the staged ones) can mint badges. Revoke
@@ -185,7 +189,8 @@ no published key can be revoked too (the command uses a zero `keyId`), and any k
 that height. Pick the height of the compromise or earlier: badges created before it stay valid. The document is
 immutable, cannot be deleted and is unique per (issuer, epoch), so the command prints the plan and publishes only with
 `--yes`. For an epoch that already has a revocation it reports `already revoked` (at or below the height) or `conflict`
-(a later height, which cannot be replaced; exit code 3).
+(a later height, which cannot be replaced; exit code 3). A failed publish stops the run with `error` (exit code 1); what
+was published before it is reported, and a re-run reports those epochs as `already revoked`.
 
 **Squatting risk.** Whoever holds the CRITICAL key can publish a revocation for any epoch. A thief can publish one with
 `effectiveCoreHeight = 4294967295` (never in effect) for every epoch: the unique index then blocks the issuer's real
@@ -200,11 +205,9 @@ it would stop a thief from squatting those slots or from griefing honest badges 
 unique and immutable, so it would block the issuer's own revocation in exactly the same way: no epoch with a
 pre-published revocation could ever be revoked, including after the likelier event, a server compromise that leaks
 epoch keys while the CRITICAL key is safe. It trades the main use of revocations for protection against a key that is
-kept offline anyway.
-
-Keep the identity's MASTER and CRITICAL keys offline (CRITICAL signs the `issuerKey` documents). Only the HIGH key goes
-to the server, and only for `issuerReport` documents. Key files are JSON
-`{"identityId", "keyId", "privateKeyHex" | "wif"}`.
+kept offline anyway. The web client also treats any revocation for an epoch as final: it refuses new requests for that
+epoch and does not post badges whose key is revoked, whatever the height, so a no-op revocation would stop the epoch's
+badges in this app as well.
 
 ## What is stored and logged (logging policy)
 

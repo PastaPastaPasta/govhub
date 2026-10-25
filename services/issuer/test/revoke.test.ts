@@ -67,6 +67,21 @@ describe('issuer revoke', () => {
     expect(f.published).toHaveLength(1);
   });
 
+  it('a failed publish stops the run but keeps the epochs already published in the report', async () => {
+    const f = await fakePlatform();
+    const publish = f.platform.publishIssuerRevocation;
+    f.platform.publishIssuerRevocation = async (k, o) => (o.epoch === E + 1 ? Promise.reject(new Error('nonce already present')) : publish(k, o));
+    const res = await revokeEpochs(f.platform, KEY, { epochs: parseEpochRange(E, E + 2), fromHeight: 1000, publish: true });
+    expect(res.map((r) => [r.epoch, r.status])).toEqual([
+      [E, 'published'],
+      [E + 1, 'error'],
+    ]);
+    expect(res[1]!.note).toMatch(/nonce already present/);
+    f.platform.publishIssuerRevocation = publish;
+    const again = await revokeEpochs(f.platform, KEY, { epochs: parseEpochRange(E, E + 2), fromHeight: 1000, publish: true });
+    expect(again.map((r) => r.status)).toEqual(['already revoked', 'published', 'published']);
+  });
+
   it('validates the epoch range and the height', async () => {
     expect(parseEpochRange(E, undefined)).toEqual([E]);
     expect(() => parseEpochRange(E, E - 1)).toThrow(/--through/);

@@ -23,7 +23,9 @@ export type RevokeStatus =
   /** this epoch already has a revocation at or below the height: it already voids at least what was asked */
   | 'already revoked'
   /** a revocation with a LATER height occupies the slot (published earlier by the issuer, or by someone holding its CRITICAL key) */
-  | 'conflict';
+  | 'conflict'
+  /** publishing failed (Platform error): the run stops here; later epochs were not tried */
+  | 'error';
 
 export interface RevokeResult {
   epoch: number;
@@ -73,7 +75,14 @@ export async function revokeEpochs(platform: Pick<IssuerPlatform, 'issuerKey' | 
       out.push({ epoch, status: 'would publish', keyId: toHex(keyId), effectiveCoreHeight: o.fromHeight, ...(note ? { note } : {}) });
       continue;
     }
-    const id = await platform.publishIssuerRevocation(key, { epoch, keyId, effectiveCoreHeight: o.fromHeight });
+    let id: string;
+    try {
+      id = await platform.publishIssuerRevocation(key, { epoch, keyId, effectiveCoreHeight: o.fromHeight });
+    } catch (e) {
+      // keep what was already published in the report; stop (the next epochs may hit the same failure)
+      out.push({ epoch, status: 'error', keyId: toHex(keyId), effectiveCoreHeight: o.fromHeight, note: `publishing failed: ${e instanceof Error ? e.message : String(e)}` });
+      break;
+    }
     out.push({ epoch, status: 'published', keyId: toHex(keyId), effectiveCoreHeight: o.fromHeight, id, ...(note ? { note } : {}) });
   }
   return out;
