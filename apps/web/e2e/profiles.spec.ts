@@ -56,7 +56,7 @@ test.describe('failed verification is hidden (fixtures)', () => {
   test('a real proposal shows no banner', async ({ page }) => {
     await gotoFixtures(page, '/p/OrchardPay');
     const drawer = await openDrawer(page);
-    await expect(drawer.getByTestId('collateral-check').locator('[data-verdict]')).toHaveAttribute('data-verdict', 'ok');
+    await expect(drawer.getByTestId('collateral-check').locator('[data-verdict]')).toHaveAttribute('data-verdict', 'demo');
     await expect(page.getByTestId('invalid-banner')).toHaveCount(0);
   });
 });

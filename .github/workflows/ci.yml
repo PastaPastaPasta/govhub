@@ -17,3 +17,18 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+  e2e:
+    # Headless Chromium against the built app (vite preview): fixture mode, and the tamper suite, which replays a recorded Testnet
+    # session offline with lying bridge and DAPI answers. Live suites (@live, GOVHUB_LIVE=1) are opt-in and do not run here.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+        working-directory: apps/web
+      - run: npx playwright test
+        working-directory: apps/web
