@@ -122,7 +122,8 @@ export interface World {
 }
 
 let cachedKey: { priv: KeyObject; spki: Uint8Array } | undefined;
-export async function world(o: { keyReady?: boolean } = {}): Promise<World> {
+/** keyCreatedAt: the issuerKey's $createdAtCoreBlockHeight (default 1); startedAt: the token store's first height (default 0). */
+export async function world(o: { keyReady?: boolean; keyCreatedAt?: number; startedAt?: number } = {}): Promise<World> {
   cachedKey ??= (() => {
     const k = generateIssuerKey(2048);
     return { priv: k.privateKey, spki: k.spki };
@@ -130,7 +131,7 @@ export async function world(o: { keyReady?: boolean } = {}): Promise<World> {
   const issuerId = bytesToId(rnd(32));
   const core = new FakeCore();
   const store = openTokenStore(':memory:');
-  store.markStarted(0);
+  store.markStarted(o.startedAt ?? 0);
   const challenges = new Challenges(rnd(32), `${NET}|${issuerId}`, 600);
   const signer = new BlindSigner(cachedKey.priv);
   const key = await importIssuerKey(cachedKey.spki);
@@ -143,7 +144,7 @@ export async function world(o: { keyReady?: boolean } = {}): Promise<World> {
     lists: core.liveLists(),
     store,
     challenges,
-    activeKey: (e) => (o.keyReady === false || e !== E ? null : { epoch: E, keyId: key.keyId, signer }),
+    activeKey: (e) => (o.keyReady === false || e !== E ? null : { epoch: E, keyId: key.keyId, signer, keyCreatedAt: o.keyCreatedAt ?? 1 }),
     nowSec: () => now.sec,
   });
   return { issuerId, contractId: rnd(32), core, store, challenges, signer, key, service, now };

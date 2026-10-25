@@ -13,7 +13,7 @@ import { E, FakeCore, P, rnd } from './helpers.ts';
 
 const ISSUER = 'H62hSf5TpKbUSMov85GMhPQahZDbqsTipeoBsYPgveUH';
 
-async function setup(epochs: number[], o: { lateDoc?: boolean; maxStaged?: number } = {}) {
+async function setup(epochs: number[], o: { lateDoc?: boolean; maxStaged?: number; startedAt?: number } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'issuer-keys-'));
   const manifest = await keygen(dir, Math.min(...epochs), Math.max(...epochs) - Math.min(...epochs) + 1, 2048);
   const docs = new Map<number, IssuerKeyDoc>();
@@ -34,7 +34,7 @@ async function setup(epochs: number[], o: { lateDoc?: boolean; maxStaged?: numbe
     publishIssuerRevocation: async () => 'x',
   };
   const store = openTokenStore(':memory:');
-  store.markStarted(0);
+  store.markStarted(o.startedAt ?? 0);
   const m = new EpochManager({ params: P, issuerId: ISSUER, keyDir: dir, maxStagedKeys: o.maxStaged ?? 1, core, lists: new MnLists(core), store, platform: () => platform, reportKey: { identityId: ISSUER, keyId: 2, privateKeyHex: '11'.repeat(32) } });
   return {
     dir, docs, core, store, m, reports,
@@ -61,7 +61,7 @@ describe('epoch manager', () => {
     a.docs.get(E)!.keyId = await sha256(a.docs.get(E)!.spki);
     await a.m.tick();
     expect(a.m.status.ready).toBe(false);
-    expect(a.m.status.problem).toMatch(/published SPKI/);
+    expect(a.m.status.problem).toMatch(/CONFLICT: the key file of epoch .* does not match the published SPKI/);
     const b = await setup([E], { lateDoc: true });
     await b.m.tick();
     expect(b.m.status.problem).toMatch(/too late/);
@@ -69,6 +69,60 @@ describe('epoch manager', () => {
     c.docs.clear();
     await c.m.tick();
     expect(c.m.status.problem).toMatch(/no issuerKey/);
+  });
+
+  it('a current-epoch key published mid-epoch (after the old S(E-1) deadline) is picked up at the next tick', async () => {
+    const t = await setup([E - 1, E]);
+    const doc = t.docs.get(E - 1)!;
+    t.docs.delete(E - 1);
+    await t.m.tick();
+    expect(t.m.activeKey(E - 1)).toBeNull();
+    expect(t.m.status.problem).toMatch(new RegExp(`no issuerKey document for epoch ${E - 1} on Platform yet: publish it`));
+    // published now, inside E-1 (the current epoch at TIP): after S(E-2), before S(E) - margin
+    t.docs.set(E - 1, { ...doc, createdAtCoreBlockHeight: t.core.tip - 2 });
+    await t.m.tick();
+    expect(t.m.activeKey(E - 1)).toMatchObject({ epoch: E - 1, keyCreatedAt: t.core.tip - 2 });
+    expect(t.m.status).toMatchObject({ ready: true, problem: null });
+    // at the bound it is too late
+    const late = await setup([E - 1, E]);
+    late.docs.get(E - 1)!.createdAtCoreBlockHeight = keyDeadline(P, E - 1);
+    await late.m.tick();
+    expect(late.m.activeKey(E - 1)).toBeNull();
+    expect(late.m.status.problem).toMatch(/too late/);
+  });
+
+  it('a published key without a key file still opens the epoch, so it is reported (0 tokens) instead of flagged', async () => {
+    const t = await setup([E]);
+    const { rmSync } = await import('node:fs');
+    rmSync(join(t.dir, keyFileName(E)));
+    await t.m.tick();
+    expect(t.m.status.problem).toMatch(new RegExp(`no key file for epoch ${E}, although an issuerKey is published`));
+    t.core.tip = epochStart(P, E + 1) + P.boundaryMarginBlocks;
+    await t.m.tick();
+    expect(t.reports).toContainEqual({ epoch: E, tokensIssued: 0 });
+  });
+
+  it('the store start is the higher of the dashd tip and Platform\'s core height, and waits for Platform', async () => {
+    const t = await setup([E]);
+    const fresh = openTokenStore(':memory:');
+    let ph: number | null = null;
+    const platform: IssuerPlatform = { issuerKey: async () => null, issuerReport: async () => null, issuerRevocation: async () => null, coreHeight: async () => { if (ph === null) throw new Error('down'); return ph; }, publishIssuerKey: async () => 'x', publishIssuerReport: async () => 'x', publishIssuerRevocation: async () => 'x' };
+    const m = new EpochManager({ params: P, issuerId: ISSUER, keyDir: t.dir, maxStagedKeys: 1, core: t.core, lists: new MnLists(t.core), store: fresh, platform: () => platform, reportKey: null });
+    await m.tick();
+    expect(fresh.startedHeight()).toBeNull(); // no Platform height yet
+    ph = t.core.tip + 2; // Platform ahead of this dashd
+    await m.tick();
+    expect(fresh.startedHeight()).toBe(t.core.tip + 2);
+  });
+
+  it('a token store younger than a published key does not use it, and says so', async () => {
+    // started inside E-1's window, after E-1's key (created at 1), but before E's window opens at S(E-1)
+    const started = epochStart(P, E - 1) - 10;
+    const u = await setup([E - 1, E], { startedAt: started });
+    await u.m.tick();
+    expect(u.m.activeKey(E - 1)).toBeNull();
+    expect(u.m.status.problem).toMatch(new RegExp(`token store started at height ${started}, after epoch ${E - 1}'s window opened`));
+    expect(u.m.activeKey(E)?.epoch).toBe(E);
   });
 
   it('refuses to issue while more later keys are staged than allowed', async () => {

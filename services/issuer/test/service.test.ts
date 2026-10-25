@@ -161,11 +161,11 @@ describe('token issuance', () => {
     const w = await world();
     const mn = w.core.add(fakeMn());
     const { TokenService } = await import('../src/service.ts');
-    const svc = new TokenService({ network: 'testnet', params: P, issuerId: w.issuerId, core: w.core, lists: w.core.liveLists(), store: w.store, challenges: w.challenges, activeKey: () => ({ epoch: E, keyId: w.key.keyId, signer: w.signer }), nowSec: () => w.now.sec, maxRecoveriesPerSec: 1 });
+    const svc = new TokenService({ network: 'testnet', params: P, issuerId: w.issuerId, core: w.core, lists: w.core.liveLists(), store: w.store, challenges: w.challenges, activeKey: () => ({ epoch: E, keyId: w.key.keyId, signer: w.signer, keyCreatedAt: 1 }), nowSec: () => w.now.sec, maxRecoveriesPerSec: 1 });
     for (let i = 0; i < 5; i++) await expectError(svc.issue({ ...(await clientRequest(w, mn)).body, request: 'junk' } as never), 'bad-request');
     await svc.issue((await clientRequest(w, mn)).body as never); // junk did not use the budget
     const lists = w.core.liveLists();
-    const stale = new TokenService({ network: 'testnet', params: P, issuerId: w.issuerId, core: { tipHeight: async () => w.core.tip + 6 }, lists: { get now() { return lists.now; }, snapshot: lists.snapshot }, store: w.store, challenges: w.challenges, activeKey: () => ({ epoch: E, keyId: w.key.keyId, signer: w.signer }), nowSec: () => w.now.sec });
+    const stale = new TokenService({ network: 'testnet', params: P, issuerId: w.issuerId, core: { tipHeight: async () => w.core.tip + 6 }, lists: { get now() { return lists.now; }, snapshot: lists.snapshot }, store: w.store, challenges: w.challenges, activeKey: () => ({ epoch: E, keyId: w.key.keyId, signer: w.signer, keyCreatedAt: 1 }), nowSec: () => w.now.sec });
     const other = w.core.add(fakeMn());
     expect((await expectError(stale.issue((await clientRequest(w, other)).body as never), 'unavailable')).message).toMatch(/out of date/);
   });
@@ -184,7 +184,7 @@ describe('token issuance', () => {
     const lists = w.core.liveLists();
     const stale = { get now() { return { height: epochStart(P, E + 1) - 1, list: lists.now!.list }; }, snapshot: lists.snapshot };
     const { TokenService } = await import('../src/service.ts');
-    const svc = new TokenService({ network: 'testnet', params: P, issuerId: w.issuerId, core: { tipHeight: async () => epochStart(P, E + 1) }, lists: stale, store: w.store, challenges: w.challenges, activeKey: () => ({ epoch: E, keyId: w.key.keyId, signer: w.signer }), nowSec: () => w.now.sec });
+    const svc = new TokenService({ network: 'testnet', params: P, issuerId: w.issuerId, core: { tipHeight: async () => epochStart(P, E + 1) }, lists: stale, store: w.store, challenges: w.challenges, activeKey: () => ({ epoch: E, keyId: w.key.keyId, signer: w.signer, keyCreatedAt: 1 }), nowSec: () => w.now.sec });
     const err = await expectError(svc.issue(r.body as never), 'wrong-epoch');
     expect(err.issuingEpoch).toBe(E + 1);
   });
@@ -261,6 +261,23 @@ describe('token issuance', () => {
     const r = await clientRequest(w2, mn2);
     w2.core.down = true;
     await expectError(issue(w2, r.body), 'unavailable');
+  });
+
+  it('a token store that started inside the window issues for E only if the key was published after it (late key)', async () => {
+    const S1 = epochStart(P, E - 1);
+    const m = P.boundaryMarginBlocks;
+    // a new issuer: store started at S(E-1)+50, the key published later (beyond the margin): no token for E can predate the store
+    const late = await world({ startedAt: S1 + 50, keyCreatedAt: S1 + 51 + m });
+    expect((await issue(late, (await clientRequest(late, late.core.add(fakeMn()))).body)).epoch).toBe(E);
+    // the key landed within the margin of the store's start (Platform's height can run ahead of dashd): refused
+    const close = await world({ startedAt: S1 + 50, keyCreatedAt: S1 + 50 + m });
+    expect((await expectError(issue(close, (await clientRequest(close, close.core.add(fakeMn()))).body), 'unavailable')).message).toMatch(/token store started/);
+    // a lost database: the key was out before the store started, tokens may have been issued that it does not know
+    const lost = await world({ startedAt: S1 + 50, keyCreatedAt: S1 - 5 });
+    await expectError(issue(lost, (await clientRequest(lost, lost.core.add(fakeMn()))).body), 'unavailable');
+    // the same after a LATE key: published at S(E-1)+20, the database lost and restarted at S(E-1)+50
+    const lostLate = await world({ startedAt: S1 + 50, keyCreatedAt: S1 + 20 });
+    expect((await expectError(issue(lostLate, (await clientRequest(lostLate, lostLate.core.add(fakeMn()))).body), 'unavailable')).message).toMatch(/token store started/);
   });
 
   it('a closed epoch issues nothing more', async () => {

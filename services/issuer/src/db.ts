@@ -7,7 +7,14 @@
 import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { equalBytes } from '@govhub/badge';
+import { epochStart, equalBytes, type EpochParams } from '@govhub/badge';
+
+/**
+ * The height the store must have started at or before to issue for `epoch` (ReserveInput.windowFrom): S(E-1), or, for a key
+ * published later, just before the key (no client asks before it reads the proved key), less the margin by which Platform's core
+ * height can lead dashd's tip.
+ */
+export const storeWindowFrom = (p: EpochParams, epoch: number, keyCreatedAt: number): number => Math.max(epochStart(p, epoch - 1), keyCreatedAt - p.boundaryMarginBlocks - 1);
 
 export interface ReserveInput {
   epoch: number;
@@ -33,6 +40,8 @@ export interface TokenStore {
   reserve(o: ReserveInput, sign: () => Uint8Array): ReserveOutcome;
   /** Records the core height the store first ran at (kept across restarts; a lost database starts again). */
   markStarted(height: number): void;
+  /** The height markStarted recorded first, or null before that. */
+  startedHeight(): number | null;
   /** Marks the epoch as served by this server (it had the key), so a zero count is still reported. */
   openEpoch(epoch: number): void;
   /** Deletes the token rows of every epoch <= `epoch` and marks them closed. */
@@ -112,6 +121,7 @@ export function openTokenStore(path: string): TokenStore {
     reserve: (o, sign) => reserve.immediate(o, sign),
     openEpoch: (epoch) => void q.open.run(epoch),
     markStarted: (height) => void q.started.run(height),
+    startedHeight: () => q.startedAt.get()?.value ?? null,
     closeThrough: (epoch) => {
       return db.transaction(() => {
         const deleted = q.del.run(epoch).changes;

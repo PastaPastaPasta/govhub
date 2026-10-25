@@ -4,15 +4,17 @@
 //   issuer keygen --dir D --from E --epochs N [--bits 2048|3072]
 //                                                 OFFLINE: one RSA key per epoch E..E+N-1 (epoch-<E>.pem 0600 + manifest.json)
 //   issuer publish-keys --dir D --identity-file critical.json --contract C --network N [--min-ahead 3]
-//                                                 OFFLINE: publish the manifest's issuerKey documents (CRITICAL key)
+//                                                 OFFLINE: publish the manifest's issuerKey documents (CRITICAL key), the current
+//                                                 epoch's too while it can land before S(E+1) - margin (src/publish.ts)
 //   issuer revoke --epoch E [--through E2] --from-height H --identity-file critical.json --contract C --network N [--yes]
 //                                                 OFFLINE: publish issuerRevocation documents (CRITICAL key); a dry run without --yes
 //   issuer epoch --network N --height H           print the epoch schedule around height H
 import { parseArgs } from 'node:util';
-import { EPOCH_PARAMS, epochOf, epochStart, fromHex, isNetwork, keyDeadline, toHex, type BadgeNetwork } from '@govhub/badge';
+import { EPOCH_PARAMS, epochOf, epochStart, isNetwork, keyDeadline, type BadgeNetwork } from '@govhub/badge';
 import { readIdentityKeyFile } from './config.ts';
-import { keygen, manifestSpki, readManifest } from './keys.ts';
+import { keygen, readManifest } from './keys.ts';
 import { errText } from './log.ts';
+import { publishExitCode, publishKeys } from './publish.ts';
 import { parseEpochRange, revokeEpochs } from './revoke.ts';
 
 const [cmd, ...rest] = process.argv.slice(2);
@@ -64,34 +66,20 @@ async function main(): Promise<void> {
       const platform = await connectPlatform(network === 'mainnet' ? 'mainnet' : 'testnet', values.contract);
       const manifest = readManifest(values.dir);
       if (!manifest.length) throw new Error(`no manifest.json in ${values.dir}; run keygen first`);
-      let height = await platform.coreHeight();
+      const height = await platform.coreHeight();
       const issuing = epochOf(p, height); // the current epoch is issued too (Standard mode)
       console.error(`platform core height ${height}: issuing for epoch ${issuing}`);
-      for (const m of manifest) {
-        const existing = await platform.issuerKey(key.identityId, m.epoch);
-        if (existing) {
-          const same = toHex(existing.keyId) === m.keyId;
-          console.log(JSON.stringify({ epoch: m.epoch, status: same ? 'already published' : 'CONFLICT: a different key is published for this epoch', keyId: m.keyId }));
-          continue;
-        }
-        height = await platform.coreHeight();
-        // Readers accept a key only if it was created before S(E-1); leave a few blocks for the write to land.
-        if (height + p.boundaryMarginBlocks >= keyDeadline(p, m.epoch)) {
-          console.log(JSON.stringify({ epoch: m.epoch, status: 'skipped: too late (must be on Platform before S(E-1))', deadline: keyDeadline(p, m.epoch), height }));
-          continue;
-        }
-        const spki = manifestSpki(m);
-        const id = await platform.publishIssuerKey(key, { epoch: m.epoch, spki, keyId: fromHex(m.keyId) });
-        const back = await platform.issuerKey(key.identityId, m.epoch);
-        console.log(JSON.stringify({ epoch: m.epoch, status: back ? 'published' : 'published (not yet visible)', id, keyId: m.keyId, createdAtCoreBlockHeight: back?.createdAtCoreBlockHeight, deadline: keyDeadline(p, m.epoch) }));
-      }
+      const results = await publishKeys(platform, key, manifest, p);
+      for (const r of results) console.log(JSON.stringify(r));
       const minAhead = num(values['min-ahead'], '--min-ahead');
-      // Consecutive epochs after the issuing one that already have a key (the issuing epoch itself may predate this issuer).
+      // Consecutive epochs after the issuing one that already have a key.
       let ahead = 0;
       for (let e = issuing + 1; await platform.issuerKey(key.identityId, e); e++) ahead++;
-      const now = (await platform.issuerKey(key.identityId, issuing)) ? 'has a key' : 'has NO key (tokens cannot be issued until the next epoch)';
+      const now = (await platform.issuerKey(key.identityId, issuing))
+        ? 'has a key'
+        : `has NO key: Standard mode is unavailable until one lands before height ${keyDeadline(p, issuing)}. If manifest.json lacks it, run \`issuer keygen --dir ${values.dir} --from ${issuing} --epochs 1\`, publish again, and copy epoch-${issuing}.pem to the server`;
       console.error(`issuing epoch ${issuing} ${now}; ${ahead} consecutive later epoch(s) have keys (${ahead >= minAhead ? 'ok' : `FEWER than ${minAhead}: publish more`})`);
-      process.exit(0);
+      process.exit(publishExitCode(results));
       return;
     }
     case 'revoke': {
@@ -132,7 +120,7 @@ async function main(): Promise<void> {
       const p = EPOCH_PARAMS[net(values.network)];
       const h = num(values.height, '--height');
       const e = epochOf(p, h);
-      console.log(JSON.stringify({ height: h, epoch: e, S: epochStart(p, e), next: epochStart(p, e + 1), issuingFor: [e, e + 1], keyDeadlineForNext: keyDeadline(p, e + 1), params: p }));
+      console.log(JSON.stringify({ height: h, epoch: e, S: epochStart(p, e), next: epochStart(p, e + 1), issuingFor: [e, e + 1], keyDeadline: keyDeadline(p, e), keyDeadlineForNext: keyDeadline(p, e + 1), params: p }));
       return;
     }
     default:
