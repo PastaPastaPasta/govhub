@@ -147,7 +147,7 @@ describe('collateral: only an anchored, final, height-matching collateral is pro
     expect(collateralComponent({ verdict: agree, error: null, publishedHeight: p.collateralHeight }).status).toBe('reported');
   });
 
-  it('the fallback per-transaction ChainLock proof (verified basis on mainnet, but not anchored): partly verified', async () => {
+  it('the fallback per-transaction ChainLock proof (not anchored; its list is only node-agreed): partly verified, every chain step reported', async () => {
     const p = byName('OrchardPay');
     const tx = await recorded(p.collateralTxid);
     const fallback: TxLookup = {
@@ -156,21 +156,29 @@ describe('collateral: only an anchored, final, height-matching collateral is pro
     };
     const v = verifyCollateral(p, fallback, 'mainnet');
     expect(v.ok).toBe(true);
-    expect(v.steps.find((s) => s.id === 'chainlock')!.basis).toBe('verified'); // the step itself says verified...
+    // D-010: the lock's signature checks against a masternode list DAPI nodes agree on (2 of 3), even on mainnet: no step says verified
+    for (const id of ['block', 'confirmations', 'chainlock', 'height']) expect(v.steps.find((s) => s.id === id)!.basis, id).toBe('reported');
+    expect(v.steps.map((s) => s.detail).join(' ')).not.toMatch(/BLS-verified|chain verified in this browser/);
     const c = collateralComponent({ verdict: v, error: null, publishedHeight: p.collateralHeight });
-    expect(c.status).toBe('reported'); // ...the aggregate does not take it
+    expect(c.status).toBe('reported');
     expect(c.status === 'reported' && c.reason).toContain("couldn't be traced to the chain");
   });
 
-  it('a published collateral height that differs from the chain, or none at all: partly verified', async () => {
+  it('a published collateral height the verified chain contradicts fails; one only a node contradicts cannot be verified; none at all: partly verified', async () => {
     const p = byName('OrchardPay');
     const tx = await recorded(p.collateralTxid);
     const wrong = { ...p, collateralHeight: p.collateralHeight + 1 };
+    // D-011: a height mismatch is a failure, never a mark next to a contradicted height
     const v = verifyCollateral(wrong, anchoredTx(tx), 'mainnet');
-    expect(v.ok).toBe(true); // a height difference is only a warning in the verdict
+    expect(v.ok).toBe(false);
+    expect(v.steps.find((s) => s.id === 'height')).toMatchObject({ status: 'fail', basis: 'verified' });
     const c = collateralComponent({ verdict: v, error: null, publishedHeight: wrong.collateralHeight });
-    expect(c.status).toBe('reported');
-    expect(c.status === 'reported' && c.reason).toContain('height');
+    expect(c.status).toBe('failed');
+    expect(c.status === 'failed' && c.reason).toContain('height');
+    // on a node's word only (no anchored chain) the contradiction is "couldn't verify", not a failure of the proposal
+    const unproven = verifyCollateral(wrong, tx, 'mainnet');
+    expect(unproven.steps.find((s) => s.id === 'height')).toMatchObject({ status: 'fail', basis: 'reported' });
+    expect(collateralComponent({ verdict: unproven, error: null, publishedHeight: wrong.collateralHeight }).status).toBe('error');
     const none = { ...p, collateralHeight: 0 };
     expect(collateralComponent({ verdict: verifyCollateral(none, anchoredTx(tx), 'mainnet'), error: null, publishedHeight: 0 }).status).toBe('reported');
   });

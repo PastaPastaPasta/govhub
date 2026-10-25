@@ -3,7 +3,7 @@
 // proposal received, read from superblock coinbases of the verified chain. Runs in the verification worker.
 import type { AnchorTrust, AnchoredChain, Dapi, ProRegCache } from '@govhub/dapi';
 import {
-  findPayment, fundingThreshold, GOV_CHAIN_PARAMS, superblockPaymentsLimit, superblockSchedule, superblocksBetween, type SuperblockSchedule,
+  bytesToHex, findPayment, fundingThreshold, GOV_CHAIN_PARAMS, hexToBytes, superblockPaymentsLimit, superblockSchedule, superblocksBetween, type SuperblockSchedule,
 } from '@govhub/verify';
 import type { CoreNetwork, Proposal } from '../data/types.ts';
 
@@ -51,6 +51,11 @@ export interface PaymentsFact {
   ambiguous: Array<{ height: number; with: string }>;
   /** Superblocks that could not be read (the count above is then a lower bound). */
   unread: Array<{ height: number; error: string }>;
+  /**
+   * Superblocks in the payment window left for a later visit: one run reads at most MAX_SUPERBLOCK_READS blocks (newest first; what
+   * it read is cached), so the check finishes in bounded time. The count above is then a lower bound too.
+   */
+  skipped?: number;
   /** Later superblocks whose estimated time falls inside the proposal window (Core's estimate: now + blocks * 2.62 min). */
   remainingEstimate: number;
 }
@@ -125,28 +130,106 @@ const WINDOW_SLACK_S = 86_400;
 type Payee = Pick<Proposal, 'paymentAddress' | 'paymentAmount' | 'startEpoch' | 'endEpoch'>;
 const inWindow = (p: Payee, t: number) => t >= p.startEpoch - FUDGE_S - WINDOW_SLACK_S && t <= p.endEpoch + FUDGE_S + WINDOW_SLACK_S;
 
-/** Superblocks from the collateral's block to the verified tip, each fetched as a proven block of the chain, checked for this proposal's payment. */
+/** A superblock's coinbase as this browser read it from a block of the verified chain (cached: it never changes for that block hash). */
+export interface SuperblockCoinbase {
+  blockHash: string;
+  time: number;
+  /** Coinbase outputs: script hex and value in duffs (decimal string). */
+  outputs: Array<{ script: string; value: string }>;
+}
+
+/** Superblock coinbases read before, per network and height; an entry counts only for the block hash the verified chain has there. */
+export interface SuperblockCache {
+  get(network: CoreNetwork, height: number): Promise<SuperblockCoinbase | undefined>;
+  put(network: CoreNetwork, height: number, value: SuperblockCoinbase): Promise<void>;
+}
+
+/** Block reads per payments run (testnet has a superblock an hour: a long-running proposal spans thousands). */
+export const MAX_SUPERBLOCK_READS = 100;
+
+/**
+ * Superblocks of the proposal's payment window, from the collateral's block to the verified tip, each read from a proven block of the
+ * chain (or this browser's cache of one) and checked for this proposal's payment. The window's edges are found by binary search over
+ * superblock times, so superblocks before the start or after the end are never scanned; inside it at most `maxReads` blocks are
+ * fetched per run, newest first, and the rest are counted as `skipped`.
+ */
 export async function payments(
   dapi: Dapi, a: AnchoredChain, p: Payee, others: ReadonlyArray<Payee & { govHash: string }>, network: CoreNetwork, from: number, nowS: number,
+  o: { cache?: SuperblockCache; maxReads?: number; progress?: (m: string) => void } = {},
 ): Promise<PaymentsFact> {
   const out: PaymentsFact = { checked: [], paid: [], ambiguous: [], unread: [], remainingEstimate: 0 };
-  const twins = others.filter((o) => o.paymentAddress === p.paymentAddress && o.paymentAmount === p.paymentAmount);
-  for (const h of superblocksBetween(Math.max(from, a.chain.lo), a.tip, network)) {
-    try {
-      const { block } = await dapi.getAnchoredBlock(a, h);
-      const time = block.header.time;
-      if (time > p.endEpoch + FUDGE_S + WINDOW_SLACK_S) break;
-      if (!inWindow(p, time)) continue;
-      out.checked.push(h);
-      const i = findPayment(block.txs[0]!.outputs, p.paymentAddress, BigInt(p.paymentAmount), network);
-      if (i < 0) continue;
-      const twin = twins.find((o) => inWindow(o, time));
-      if (twin) out.ambiguous.push({ height: h, with: twin.govHash });
-      else out.paid.push({ height: h, output: i, time });
-    } catch (e) {
-      out.unread.push({ height: h, error: (e as Error).message });
+  const twins = others.filter((x) => x.paymentAddress === p.paymentAddress && x.paymentAmount === p.paymentAmount);
+  const sbs = superblocksBetween(Math.max(from, a.chain.lo), a.tip, network);
+  const maxReads = o.maxReads ?? MAX_SUPERBLOCK_READS;
+  let reads = 0;
+  const memo = new Map<number, SuperblockCoinbase | Error>();
+  const cached = async (h: number): Promise<SuperblockCoinbase | null> => {
+    const hash = o.cache ? a.chain.hashHexAt(h) : null;
+    const c = hash ? await o.cache!.get(network, h).catch(() => undefined) : undefined;
+    return c && c.blockHash === hash ? c : null;
+  };
+  const read = async (h: number): Promise<SuperblockCoinbase | Error> => {
+    const m = memo.get(h);
+    if (m) return m;
+    let v: SuperblockCoinbase | Error | null = await cached(h);
+    if (!v) {
+      reads++;
+      try {
+        const { block } = await dapi.getAnchoredBlock(a, h);
+        v = { blockHash: a.chain.hashHexAt?.(h) ?? '', time: block.header.time, outputs: block.txs[0]!.outputs.map((x) => ({ script: bytesToHex(x.script), value: x.value.toString() })) };
+        if (o.cache && v.blockHash) void o.cache.put(network, h, v).catch(() => {});
+      } catch (e) {
+        v = e instanceof Error ? e : new Error(String(e));
+      }
     }
+    memo.set(h, v);
+    return v;
+  };
+  // The window's edges: the first superblock at or after its start, the last at or before its end (block times are close to
+  // monotonic; the day of slack covers the rest). A superblock that cannot be read leaves that edge where it is (more is read, not less).
+  const wStart = p.startEpoch - FUDGE_S - WINDOW_SLACK_S, wEnd = p.endEpoch + FUDGE_S + WINDOW_SLACK_S;
+  /** The first index whose superblock is not `before` the edge; on a read error, `widen` ('lo' or 'hi') picks the side that reads more. */
+  const edge = async (before: (t: number) => boolean, widen: 'lo' | 'hi'): Promise<number> => {
+    let lo = 0, hi = sbs.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      const v = await read(sbs[mid]!);
+      if (v instanceof Error) return widen === 'lo' ? lo : hi;
+      if (before(v.time)) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  };
+  const first = await edge((t) => t < wStart, 'lo');
+  const last = (await edge((t) => t <= wEnd, 'hi')) - 1;
+  // the edge search is bounded on its own (2 log2 n reads); the cap is for the window
+  reads = 0;
+  for (let i = last, n = 0; i >= first; i--, n++) {
+    const h = sbs[i]!;
+    if (!memo.has(h) && reads >= maxReads && !(await cached(h))) {
+      out.skipped = (out.skipped ?? 0) + 1;
+      continue;
+    }
+    if (n % 25 === 0) o.progress?.(`Reading superblock ${h.toLocaleString('en-US')} for this proposal's payments (${(last - i + 1).toLocaleString('en-US')} of ${(last - first + 1).toLocaleString('en-US')})`);
+    const v = await read(h);
+    if (v instanceof Error) {
+      out.unread.push({ height: h, error: v.message });
+      continue;
+    }
+    if (!inWindow(p, v.time)) continue;
+    out.checked.push(h);
+    const outputs = v.outputs.map((x) => ({ script: hexToBytes(x.script), value: BigInt(x.value) }));
+    const idx = findPayment(outputs, p.paymentAddress, BigInt(p.paymentAmount), network);
+    if (idx < 0) continue;
+    const twin = twins.find((x) => inWindow(x, v.time));
+    if (twin) out.ambiguous.push({ height: h, with: twin.govHash });
+    else out.paid.push({ height: h, output: idx, time: v.time });
   }
+  // newest first above; reported oldest first
+  out.checked.reverse();
+  out.paid.reverse();
+  out.ambiguous.reverse();
+  out.unread.reverse();
   const { next } = superblockSchedule(a.tip, network);
   for (let h = next; ; h += GOV_CHAIN_PARAMS[network].superblockCycle) {
     const est = nowS + (h - a.tip) * EST_BLOCK_SECONDS;

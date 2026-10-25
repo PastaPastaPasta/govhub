@@ -26,16 +26,12 @@ export function collateralStatus(c: ChainFacts): { text: string; prov: Provenanc
       prov: a.weak ? { kind: 'reported', source, detail: `${detail}; not secure: ${a.weak}` } : { kind: 'verified', source, detail },
     };
   }
+  // The fallback per-transaction ChainLock: its signature checks against a masternode list DAPI nodes agree on (2 of 3), which
+  // nothing here proves. Consistent, not verified, on every network.
   if (c.chainLocked === 'verified' && c.lockDepth !== null) {
-    if (c.weak) {
-      return {
-        text: `ChainLocked; at least ${formatInt(c.lockDepth)} confirmations`,
-        prov: { kind: 'reported', source, detail: `a ChainLock covers the block through headers, but the chain could not be verified here; not secure: ${c.weak}` },
-      };
-    }
     return {
-      text: `final (ChainLocked); at least ${formatInt(c.lockDepth)} confirmations`,
-      prov: { kind: 'verified', source, detail: 'a BLS-valid ChainLock covers the block through verified headers' },
+      text: `ChainLocked; at least ${formatInt(c.lockDepth)} confirmations`,
+      prov: { kind: 'reported', source, detail: `a ChainLock covers the block through headers, but the chain could not be verified here: the lock's signature was checked against a masternode list DAPI nodes agree on${c.weak ? `; not secure: ${c.weak}` : ''}` },
     };
   }
   const conf = formatInt(c.confirmations);
@@ -49,8 +45,9 @@ export function collateralStatus(c: ChainFacts): { text: string; prov: Provenanc
 export function collateralHeightProv(c: ChainFacts | undefined, published: number, fallback: Provenance): Provenance {
   if (!c || c.height !== published) return fallback;
   if (c.anchored?.weak) return { kind: 'reported', source: SOURCE, detail: `the block's coinbase commits to this height and the block is in the checked chain; not secure: ${c.anchored.weak}` };
-  if (c.chainLocked === 'verified' && c.weak) return { kind: 'reported', source: SOURCE, detail: `the block's coinbase commits to this height; not secure: ${c.weak}` };
-  if (c.anchored || c.chainLocked === 'verified') return verified("the block's coinbase commits to this height and the block is in the verified chain");
+  if (c.anchored) return verified("the block's coinbase commits to this height and the block is in the verified chain");
+  // the fallback ChainLock rests on a masternode list nodes agree on: not proven
+  if (c.chainLocked === 'verified') return { kind: 'reported', source: SOURCE, detail: `the block's coinbase commits to this height; a ChainLock covers it, checked against a masternode list DAPI nodes agree on${c.weak ? `; not secure: ${c.weak}` : ''}` };
   return fallback;
 }
 
@@ -82,12 +79,13 @@ export function paymentsFact(r: ChainReport | null): { made: { text: string; pro
   const how = `${p.paid.length ? `paid in superblock${p.paid.length > 1 ? 's' : ''} ${heights}` : 'no payment found'}: each superblock in the payment window, from the collateral's block to the verified tip (${formatInt(p.checked.length)} checked), was read from its coinbase in the verified chain, and no other proposal listed on Platform pays the same address the same amount in that window (one missing from Platform could not be ruled out)`;
   const doubt = [
     ...(p.unread.length ? [`${p.unread.length} superblocks could not be read`] : []),
+    ...(p.skipped ? [`${formatInt(p.skipped)} superblocks of the window are not read yet`] : []),
     ...(p.ambiguous.length ? [`${p.ambiguous.length} matching payments could equally be for another proposal with the same address and amount`] : []),
     ...(p.othersComplete === false ? ['not every listed proposal could be read to rule out another with the same address and amount'] : []),
   ];
   return {
     made: {
-      text: `${formatInt(p.paid.length)}${p.unread.length || p.ambiguous.length ? ' or more' : ''}`,
+      text: `${formatInt(p.paid.length)}${p.unread.length || p.ambiguous.length || p.skipped ? ' or more' : ''}`,
       prov: doubt.length ? { kind: 'reported', source: 'superblock coinbases', detail: `${how}; not exact: ${doubt.join('; ')}` } : chainProv(r, how),
     },
     remaining: {

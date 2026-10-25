@@ -35,9 +35,12 @@ export class ChainLockConflictError extends VerificationError {
 
 /** The proof path could not be completed; the caller falls back to proof of work and reports `message`. */
 export class ProofUnavailableError extends Error {
-  constructor(message: string) {
+  /** The sources that failed (unreachable, HTTP errors, bad or stale proofs), as opposed to answering that nothing newer exists yet. */
+  readonly failures: string[];
+  constructor(message: string, failures: string[] = []) {
     super(message);
     this.name = 'ProofUnavailableError';
+    this.failures = failures;
   }
 }
 
@@ -83,6 +86,7 @@ const cannotServe = (e: unknown): boolean =>
  */
 async function fetchProof(sources: readonly ProofSource[], from: ProofState, minHeight: number, ctx: ProofContext): Promise<Got> {
   const reasons: string[] = [];
+  const failures: string[] = [];
   for (const source of sources) {
     if ((ctx.down.get(source.name) ?? 0) > Date.now()) {
       reasons.push(`${source.name}: skipped (failed recently)`);
@@ -98,16 +102,20 @@ async function fetchProof(sources: readonly ProofSource[], from: ProofState, min
       const time = parseHeader(proof.chainLock.header).time;
       if (time < ctx.clock() - FRESH_S) {
         reasons.push(`${source.name}: its newest ChainLock (block ${proof.state.height}) is ${Math.round((ctx.clock() - time) / 60)} minutes old`);
+        failures.push(reasons.at(-1)!);
         continue;
       }
       return { proof, source, bytes: bytes.length, time };
     } catch (e) {
       if (ctx.signal?.aborted) throw ctx.signal.reason;
-      reasons.push(`${source.name}: ${(e as Error).message}`);
+      // source errors already name their source ("<name>: HTTP 502"): do not name it twice
+      const message = (e as Error).message;
+      reasons.push(message.startsWith(`${source.name}:`) ? message : `${source.name}: ${message}`);
+      if (!(e instanceof ProofSourceError && e.code === 'not-yet')) failures.push(reasons.at(-1)!);
       if (cannotServe(e)) ctx.down.set(source.name, Date.now() + SOURCE_DOWN_MS);
     }
   }
-  throw new ProofUnavailableError(reasons.join('; ') || 'no quorum proof source');
+  throw new ProofUnavailableError(reasons.join('; ') || 'no quorum proof source', failures);
 }
 
 /** The ChainLock this browser proved and saved, while it is fresh: what to anchor on when no source has a newer one yet. */
@@ -173,10 +181,13 @@ export async function anchorByProof(
   t = Date.now();
   progress('Fetching a ChainLock proof from the quorum checkpoint');
   const reasons: string[] = [];
+  /** Sources that failed (not merely "nothing newer yet"): said when the saved ChainLock has to serve instead. */
+  const sourceFailures: string[] = [];
   // a failed fetch is no proof (null, with its reason noted when asked), unless the caller gave up
   const orNull = (p: Promise<Got>, failures?: string[]) => p.catch((e: unknown) => {
     if (o.signal?.aborted) throw e;
     failures?.push((e as Error).message);
+    if (failures && e instanceof ProofUnavailableError) sourceFailures.push(...e.failures);
     return null;
   });
   const attempt = (from: ProofState) => orNull(fetchProof(sources, from, 0, ctx), reasons);
@@ -276,6 +287,7 @@ export async function anchorByProof(
       source: got.source?.name ?? SAVED_SOURCE,
       links: got.proof.links,
       proofBytes: got.bytes,
+      ...(got.source === null && sourceFailures.length ? { newerUnavailable: sourceFailures.join('; ') } : {}),
     },
     chain: linked, tip: linked.hi, weak: null,
     chainLock: { height: top.height, blockHash: target.blockHash, quorumHash: check.quorumHash, exact: check.exact && !named, time: got.time },

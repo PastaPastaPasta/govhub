@@ -12,7 +12,7 @@ import { verifyCollateral } from './collateral.ts';
 import type { DapiDescriptor, SmlUsed, WorkerRequest, WorkerResponse } from './protocol.ts';
 import { rankRecounts, type RecountedProposal } from './ranking.ts';
 import { BRIDGE_TARGET } from './verdict.ts';
-import { headerStore, proRegCache } from './stores.ts';
+import { headerStore, proRegCache, superblockCache } from './stores.ts';
 import { loadVerifiers } from './verifiers.ts';
 import { verifyVotes, type ProReg, type SmlEntry, type VoteRun, type VoteTarget } from './votes.ts';
 
@@ -147,9 +147,18 @@ async function handle(req: WorkerRequest): Promise<void> {
     const a = await anchor(dapi, progress, req.from || undefined);
     progress('Computing the funding threshold from the proven masternode list');
     const th = await threshold(dapi, a, req.network, proRegCache(req.network), progress);
+    // the payments follow in their own request: these facts do not wait for a superblock scan
+    post({ id: req.id, kind: 'chain', report: { network: req.network, anchor: summarize(a), ...scheduleAndBudget(a, req.network, req.now), threshold: th, payments: null } });
+    return;
+  }
+
+  if (req.kind === 'payments') {
+    if (req.dapi.kind !== 'live') throw new Error('payments need live DAPI nodes (recorded data has no header chain)');
+    const dapi = await dapiFor(req.dapi);
+    const a = await anchor(dapi, progress, req.from);
     progress('Reading superblock coinbases for this proposal\'s payments');
-    const pay = req.from ? { ...(await payments(dapi, a, req.proposal, req.others, req.network, req.from, req.now)), othersComplete: req.othersComplete } : null;
-    post({ id: req.id, kind: 'chain', report: { network: req.network, anchor: summarize(a), ...scheduleAndBudget(a, req.network, req.now), threshold: th, payments: pay } });
+    const pay = await payments(dapi, a, req.proposal, req.others, req.network, req.from, req.now, { cache: superblockCache(), progress });
+    post({ id: req.id, kind: 'payments', payments: { ...pay, othersComplete: req.othersComplete } });
     return;
   }
 
@@ -173,6 +182,7 @@ async function handle(req: WorkerRequest): Promise<void> {
     const names = g.targets.map((t) => t.name).join(' and ') || 'the live tally';
     progress(`Fetching the signed votes behind the ${names}${g.height ? ` (block ${g.height.toLocaleString('en-US')})` : ''} from ${bridge.name}`);
     let votes: BridgeVotes;
+    let asked = g.height;
     try {
       votes = await bridge.votes(req.govHash, g.height === null ? {} : { height: g.height });
     } catch (e) {
@@ -180,6 +190,7 @@ async function handle(req: WorkerRequest): Promise<void> {
       // Anything else (unreachable, HTTP 500, malformed JSON) is a failure, not a reason to compare something else.
       if (g.height === null || !(e instanceof BridgeError) || e.status !== 404) throw e;
       votes = await bridge.votes(req.govHash);
+      asked = null;
     }
     origin = votes.origin ?? origin;
     progress(`Fetching the masternode list at block ${votes.tallyHeight.toLocaleString('en-US')}`);
@@ -190,7 +201,7 @@ async function handle(req: WorkerRequest): Promise<void> {
     // keys checked against a list on a chain proof of work does not protect (testnet): a match is not "verified"
     if (sml?.used.weak) result.keysFrom = 'bridge';
     // votesAsOf is the height of the tally whose set was actually served (<= the requested height), not the height echoed back.
-    runs.push({ result, votesAsOf: votes.tallyHeight, mnlistHeight: mnlist.height, listMatches: votes.mnListHash && mnlist.listHash ? votes.mnListHash === mnlist.listHash : null });
+    runs.push({ result, votesAsOf: votes.tallyHeight, asked, mnlistHeight: mnlist.height, listMatches: votes.mnListHash && mnlist.listHash ? votes.mnListHash === mnlist.listHash : null });
   }
   post({ id: req.id, kind: 'votes', bridge: bridge.name, runs, ...(origin ? { origin } : {}), sml: sml ? sml.used : null });
 }

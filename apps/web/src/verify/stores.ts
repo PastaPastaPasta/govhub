@@ -1,20 +1,24 @@
-// IndexedDB stores for the verification worker: the verified header run per network (@govhub/dapi HeaderStore) and proven
-// ProRegTx facts (ProRegCache). Both hold only what this browser verified; a missing or broken database just means "cold".
+// IndexedDB stores for the verification worker: the verified header run per network (@govhub/dapi HeaderStore), proven
+// ProRegTx facts (ProRegCache) and superblock coinbases read from the verified chain (SuperblockCache). All hold only what this
+// browser verified; a missing or broken database just means "cold".
 import type { HeaderStore, Network, ProRegCache, ProRegInfo, StoredChain } from '@govhub/dapi';
+import type { SuperblockCache, SuperblockCoinbase } from './chain.ts';
 
 const DB = 'govhub-verify';
 const CHAINS = 'chains';
 const PROREG = 'proreg';
+const SUPERBLOCKS = 'superblocks';
+/** At most this many cached superblock coinbases (testnet has one an hour); past it the store starts over. */
+export const MAX_CACHED_SUPERBLOCKS = 20_000;
 
 let dbp: Promise<IDBDatabase | null> | null = null;
 
 function db(): Promise<IDBDatabase | null> {
   dbp ??= new Promise((resolve) => {
     if (typeof indexedDB === 'undefined') return resolve(null);
-    const req = indexedDB.open(DB, 1);
+    const req = indexedDB.open(DB, 2);
     req.onupgradeneeded = () => {
-      req.result.createObjectStore(CHAINS);
-      req.result.createObjectStore(PROREG);
+      for (const name of [CHAINS, PROREG, SUPERBLOCKS]) if (!req.result.objectStoreNames.contains(name)) req.result.createObjectStore(name);
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => resolve(null);
@@ -71,6 +75,23 @@ export function proRegCache(network: string): ProRegCache {
       await run(PROREG, 'readwrite', (s) => {
         for (const [h, v] of entries) s.put(v, `${network}:${h}`);
       });
+    },
+  };
+}
+
+/**
+ * Superblock coinbases by network and height. An entry is used only for the block hash the verified chain has at that height
+ * (verify/chain.ts), so a reorganised or forged entry is never read as a fact. Bounded: past MAX_CACHED_SUPERBLOCKS it is cleared.
+ */
+export function superblockCache(): SuperblockCache {
+  let puts = 0;
+  return {
+    get: (network, height) => run<SuperblockCoinbase>(SUPERBLOCKS, 'readonly', (s) => s.get(`${network}:${height}`)),
+    async put(network, height, value) {
+      if (puts++ % 100 === 0 && ((await run<number>(SUPERBLOCKS, 'readonly', (s) => s.count())) ?? 0) >= MAX_CACHED_SUPERBLOCKS) {
+        await run(SUPERBLOCKS, 'readwrite', (s) => void s.clear());
+      }
+      await run(SUPERBLOCKS, 'readwrite', (s) => void s.put(value, `${network}:${height}`));
     },
   };
 }

@@ -97,18 +97,19 @@ describe('what is verified and what is node-reported (ChainLock, confirmations, 
     expect(v.chain).toMatchObject({ merkle: false, chainLocked: 'claimed', provenConfirmations: null });
   });
 
-  it('proven: block inclusion, height, ChainLock and a confirmation floor are "verified"', async () => {
+  it('the per-transaction ChainLock (chain not anchored) is consistent, not proven: every chain step "reported", even on mainnet', async () => {
     const p = byName('OrchardPay');
     const v = verifyCollateral(p, proven(await recorded(p.collateralTxid)), 'mainnet');
     expect(v.ok).toBe(true);
-    expect(stepOf(v, 'block')).toMatchObject({ status: 'ok', basis: 'verified' });
+    expect(stepOf(v, 'block')).toMatchObject({ status: 'ok', basis: 'reported' });
     expect(v.steps.some((s) => s.id === 'crosscheck')).toBe(false);
-    expect(stepOf(v, 'chainlock')).toMatchObject({ status: 'ok', basis: 'verified' });
-    expect(stepOf(v, 'chainlock').detail).toContain('BLS-verified ChainLock');
-    expect(stepOf(v, 'confirmations')).toMatchObject({ status: 'ok', basis: 'verified' });
+    expect(stepOf(v, 'chainlock')).toMatchObject({ status: 'ok', basis: 'reported' });
+    expect(stepOf(v, 'chainlock').detail).toContain('the chain could not be verified here');
+    expect(stepOf(v, 'chainlock').more).toContain('masternode list DAPI nodes agree on');
+    expect(stepOf(v, 'confirmations')).toMatchObject({ status: 'ok', basis: 'reported' });
     expect(stepOf(v, 'confirmations').detail).toContain('at least 759');
-    expect(stepOf(v, 'height').basis).toBe('verified');
-    expect(v.chain).toMatchObject({ merkle: true, chainLocked: 'verified', provenConfirmations: 759, confirmations: 760 });
+    expect(stepOf(v, 'height').basis).toBe('reported');
+    expect(v.chain).toMatchObject({ merkle: true, chainLocked: 'verified', provenConfirmations: null, confirmations: 760 });
   });
 
   it('a block proof without a ChainLock proof keeps confirmations and the lock as node claims', async () => {
@@ -137,7 +138,7 @@ describe('what is verified and what is node-reported (ChainLock, confirmations, 
   it('a verified ChainLock that is too shallow does not vouch for the 6 confirmations', async () => {
     const p = byName('OrchardPay');
     const v = verifyCollateral(p, proven(await recorded(p.collateralTxid), { verifiedConfirmations: 2 }), 'mainnet');
-    expect(stepOf(v, 'chainlock').basis).toBe('verified');
+    expect(stepOf(v, 'chainlock').basis).toBe('reported');
     expect(stepOf(v, 'confirmations')).toMatchObject({ status: 'ok', basis: 'reported' });
     expect(v.chain).toMatchObject({ provenConfirmations: null, lockDepth: 2 });
   });
@@ -213,11 +214,12 @@ describe('what is verified and what is node-reported (ChainLock, confirmations, 
     expect(status.prov.kind).toBe('reported');
     expect(status.prov.detail).toContain('not secure');
     expect(collateralHeightProv(test.chain!, test.chain!.height, { kind: 'fixture', source: 'x' }).kind).toBe('reported');
-    // the same proof on mainnet keeps its mark
+    // D-010: the same proof on mainnet is no better (its masternode list is only node-agreed): reported there too
     const main = verifyCollateral(p, fallback, 'mainnet');
-    expect(stepOf(main, 'chainlock').basis).toBe('verified');
+    for (const id of ['block', 'confirmations', 'chainlock', 'height']) expect(stepOf(main, id).basis, id).toBe('reported');
     expect(main.chain!.weak).toBeUndefined();
-    expect(collateralStatus(main.chain!).prov.kind).toBe('verified');
+    expect(collateralStatus(main.chain!).prov.kind).toBe('reported');
+    expect(collateralHeightProv(main.chain!, main.chain!.height, { kind: 'fixture', source: 'x' }).kind).toBe('reported');
   });
 
   it('lookupCollateral keeps the helper\'s proof, and falls back to the node\'s claim (saying why) when the proof fails', async () => {
