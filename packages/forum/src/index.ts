@@ -9,5 +9,6 @@ export * from './post.ts';
 export * from './queries.ts';
 export * from './reader.ts';
 export * from './score.ts';
+export * from './text.ts';
 export * from './thread.ts';
 export * from './types.ts';

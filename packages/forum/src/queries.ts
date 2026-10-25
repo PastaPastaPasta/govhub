@@ -48,6 +48,13 @@ export const profilesOf = (ownerIds: readonly string[]): ContractQuery =>
 export const commentsOf = (govHash: string, startAfter?: string): ContractQuery =>
   checked('forum', paged({ documentTypeName: 'comment', where: [['govHash', '==', hexToB64(govHash)]], orderBy: [['govHash', 'asc'], ['$createdAt', 'asc']], limit: PAGE }, startAfter));
 
+/** F2c (+F3p paging): a proposal's comments, newest first (the `$createdAt > 0` range makes desc work on PV13, rule 7). */
+export const commentsNewestOf = (govHash: string, startAfter?: string): ContractQuery =>
+  checked(
+    'forum',
+    paged({ documentTypeName: 'comment', where: [['govHash', '==', hexToB64(govHash)], ['$createdAt', '>', 0]], orderBy: [['govHash', 'desc'], ['$createdAt', 'desc']], limit: PAGE }, startAfter),
+  );
+
 /** F2d: a proposal's comments created after `sinceMs` (block time), oldest first. */
 export const commentsSince = (govHash: string, sinceMs: number, startAfter?: string): ContractQuery =>
   checked(

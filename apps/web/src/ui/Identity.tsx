@@ -5,6 +5,7 @@ import { useMemo } from 'react';
 import { sha256 } from '@noble/hashes/sha2.js';
 import type { Profile } from '@govhub/forum';
 import { shortHash, urlHost } from '../lib/format.ts';
+import { authorLabel } from '../lib/social.ts';
 
 const DATA_IMAGE = /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+=*$/;
 
@@ -38,14 +39,33 @@ export function Avatar({ id, profile, size = 28 }: { id: string; profile?: Profi
   );
 }
 
+/**
+ * The author's names: the DPNS name first when there is one, the self-chosen display name cleaned of invisible characters (and
+ * quoted when it imitates a govhub label such as "owner" or a check mark), each isolated with <bdi>, and the short identity id
+ * next to any name, so a look-alike name never stands alone.
+ */
 export function AuthorName({ id, profile, dpns }: { id: string; profile?: Profile | undefined; dpns?: string | undefined }) {
+  const a = authorLabel(id, profile, dpns);
+  const name = a.name && (
+    <bdi className={a.quoted ? 'author-quoted' : undefined} title={a.quoted ? 'Self-chosen name; it is not a govhub label' : 'Self-chosen name'}>
+      {a.quoted ? `“${a.name}”` : a.name}
+    </bdi>
+  );
   return (
     <span className="author">
-      <b className="author-name">{profile?.displayName ?? dpns ?? shortHash(id, 5)}</b>
-      {dpns && profile && <span className="author-dpns">{dpns}</span>}
-      {(profile?.displayName ?? dpns) && (
+      <b className="author-name">
+        {a.dpns ? (
+          <bdi className="author-dpns-name" title="DPNS username, proven by Platform">
+            {a.dpns}
+          </bdi>
+        ) : (
+          (name ?? shortHash(id, 5))
+        )}
+      </b>
+      {a.dpns && name && <span className="author-alias">{name}</span>}
+      {(a.dpns || a.name) && (
         <span className="author-id mono-ish" title={id}>
-          {shortHash(id, 4)}
+          {a.shortId}
         </span>
       )}
     </span>

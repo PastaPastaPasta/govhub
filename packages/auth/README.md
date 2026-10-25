@@ -97,6 +97,10 @@ Each write is a batch transition built and signed once per nonce (`DocumentCreat
 | a local SDK error (`InvalidArgument`, `SerializationError`, ...) | never re-sent; done if proved reads show the write, else "it may still appear" (it can follow an execution) |
 | a proved read shows a replace can no longer apply (another revision or other data) | fail with that message |
 
+While `broadcastAndWait` has not answered, proved reads of the end state run alongside it (after 2 s, then every 1.5 s, at most
+25): a node's result stream can stay silent until its 30 s timeout although the write executed in about 2 s, and the write is
+done as soon as a read proves it. The transition is freed only once the SDK's wait has answered.
+
 No new send starts after 2 minutes (document writes and `addKeys`); the settle reads still run, and the final error says
 whether the write may still appear. Only a consensus refusal of a first send is final without a read: a local SDK error
 (`SerializationError`, ...) can be raised after the transition executed (result conversion in `broadcastAndWait`), so it is

@@ -92,10 +92,11 @@ function CommunityVote({ govHash }: { govHash: string }) {
   const { session } = useForum();
   const targets = useMemo(() => [{ govHash }], [govHash]);
   const { scores, vote, error } = useReactions(targets);
-  const s = scores.get(govHash) ?? { up: 0, down: 0, net: 0 };
+  const read = scores.get(govHash);
+  const s = read ?? { up: 0, down: 0, net: 0 };
   return (
     <div className="community-vote" data-testid="community-vote">
-      <Votes score={s} signedIn={!!session} label="Community vote on this proposal" onVote={(v) => (session ? vote({ govHash }, v) : (openSignIn(), Promise.resolve()))} />
+      <Votes score={read} signedIn={!!session} label="Community vote on this proposal" onVote={(v) => (session ? vote({ govHash }, v) : (openSignIn(), Promise.resolve()))} />
       <span className="small muted">
         {s.up} up, {s.down} down
       </span>

@@ -5,15 +5,19 @@
 //   - links keep only absolute http(s) URLs (no javascript:, data:, relative or protocol-relative targets);
 //   - images are never loaded: they become a labelled link to the image (the CSP also blocks remote images);
 //   - nesting is capped, so a pathological input cannot blow the renderer's stack.
+//   - bidi controls are removed from every rendered string, including ones that character references decode to, so text
+//     cannot be reordered on screen (an RLO turns "invoice\u202Etxt.exe" into "invoiceexe.txt");
+//   - a link whose text looks like a URL or domain other than its target's host carries `realHost`, shown next to it.
 import { Lexer, type Token, type Tokens } from 'marked';
+import { stripBidi } from './text.ts';
 
 export type MdInline =
   | { t: 'text'; v: string }
   | { t: 'strong' | 'em' | 'del'; c: MdInline[] }
   | { t: 'code'; v: string }
   | { t: 'br' }
-  /** href null = the URL was not allowed; the text is shown without a link */
-  | { t: 'link'; href: string | null; c: MdInline[] }
+  /** href null = the URL was not allowed; the text is shown without a link. `realHost`: the text names another host */
+  | { t: 'link'; href: string | null; c: MdInline[]; realHost?: string }
   | { t: 'image'; href: string | null; alt: string };
 
 export type MdBlock =
@@ -54,16 +58,96 @@ export function safeHref(href: string | undefined | null): string | null {
   }
 }
 
-const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
-/** marked leaves character references in text; show them as the characters they name (text only, never markup). */
+/** HTML named character references in common use (the full HTML list is 2,000+; others stay as typed). */
+const ENTITIES = new Map<string, string>(
+  (
+    'amp:38 lt:60 gt:62 quot:34 apos:39 nbsp:160 iexcl:161 cent:162 pound:163 curren:164 yen:165 brvbar:166 sect:167 uml:168 copy:169 ordf:170 ' +
+    'laquo:171 not:172 shy:173 reg:174 macr:175 deg:176 plusmn:177 sup2:178 sup3:179 acute:180 micro:181 para:182 middot:183 cedil:184 sup1:185 ' +
+    'ordm:186 raquo:187 frac14:188 frac12:189 frac34:190 iquest:191 times:215 divide:247 szlig:223 agrave:224 aacute:225 acirc:226 atilde:227 ' +
+    'auml:228 aring:229 aelig:230 ccedil:231 egrave:232 eacute:233 ecirc:234 euml:235 igrave:236 iacute:237 icirc:238 iuml:239 ntilde:241 ' +
+    'ograve:242 oacute:243 ocirc:244 otilde:245 ouml:246 oslash:248 ugrave:249 uacute:250 ucirc:251 uuml:252 yacute:253 yuml:255 ' +
+    'Agrave:192 Aacute:193 Acirc:194 Atilde:195 Auml:196 Aring:197 AElig:198 Ccedil:199 Egrave:200 Eacute:201 Ecirc:202 Euml:203 Igrave:204 ' +
+    'Iacute:205 Icirc:206 Iuml:207 Ntilde:209 Ograve:210 Oacute:211 Ocirc:212 Otilde:213 Ouml:214 Oslash:216 Ugrave:217 Uacute:218 Ucirc:219 ' +
+    'Uuml:220 Yacute:221 euro:8364 hellip:8230 ndash:8211 mdash:8212 lsquo:8216 rsquo:8217 sbquo:8218 ldquo:8220 rdquo:8221 bdquo:8222 ' +
+    'bull:8226 prime:8242 Prime:8243 dagger:8224 Dagger:8225 permil:8240 lsaquo:8249 rsaquo:8250 trade:8482 larr:8592 uarr:8593 rarr:8594 ' +
+    'darr:8595 harr:8596 lArr:8656 rArr:8658 hArr:8660 minus:8722 le:8804 ge:8805 ne:8800 asymp:8776 infin:8734 sum:8721 radic:8730 ' +
+    'alpha:945 beta:946 gamma:947 delta:948 epsilon:949 lambda:955 mu:956 pi:960 sigma:963 tau:964 phi:966 omega:969 Delta:916 Sigma:931 ' +
+    'Omega:937 spades:9824 clubs:9827 hearts:9829 diams:9830 check:10003 star:9734 starf:9733 ensp:8194 emsp:8195 thinsp:8201 zwnj:8204 ' +
+    'zwj:8205 lrm:8206 rlm:8207'
+  )
+    .split(' ')
+    .map((e) => {
+      const [name, cp] = e.split(':') as [string, string];
+      return [name, String.fromCodePoint(Number(cp))] as const;
+    }),
+);
+/**
+ * marked leaves character references in text; show them as the characters they name (text only, never markup). Bidi
+ * controls they decode to (&#x202E;, &rlm;) are dropped like typed ones.
+ */
 function decodeEntities(s: string): string {
-  return s.replace(/&(#x[0-9a-f]{1,6}|#\d{1,7}|[a-z]+);/gi, (m, e: string) => {
-    if (e[0] === '#') {
-      const cp = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
-      return cp > 0 && cp <= 0x10ffff && !(cp >= 0xd800 && cp <= 0xdfff) ? String.fromCodePoint(cp) : m;
+  return stripBidi(
+    s.replace(/&(#x[0-9a-f]{1,6}|#\d{1,7}|[a-z][a-z0-9]{0,31});/gi, (m, e: string) => {
+      if (e[0] === '#') {
+        const cp = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
+        return cp > 0 && cp <= 0x10ffff && !(cp >= 0xd800 && cp <= 0xdfff) ? String.fromCodePoint(cp) : m;
+      }
+      return ENTITIES.get(e) ?? ENTITIES.get(e.toLowerCase()) ?? m; // a Map: `&constructor;` is not a prototype key
+    }),
+  );
+}
+
+function plainText(nodes: readonly MdInline[]): string {
+  return nodes
+    .map((n) => {
+      switch (n.t) {
+        case 'text':
+        case 'code':
+          return n.v;
+        case 'strong':
+        case 'em':
+        case 'del':
+        case 'link':
+          return plainText(n.c);
+        case 'image':
+          return n.alt;
+        default:
+          return '';
+      }
+    })
+    .join('');
+}
+
+/** A word that is a URL or a bare domain: `https://dash.org/x`, `dash.org`, `www.dash.org/path`. */
+const URL_LIKE = /^(?:[a-z][a-z0-9+.-]*:\/\/)?(?:[^\s/?#@]*@)?((?:[^\s/?#@:.]+\.)+(?:\p{L}{2,63}|xn--[a-z0-9-]+))\.?(?::\d{1,5})?(?:[/?#]\S*)?$/iu;
+/** Brackets, quotes and sentence punctuation around a word in prose. */
+const WRAP = /^[([{<"'\u00AB\u2018\u201C]+|[)\]}>"'\u00BB\u2019\u201D.,;:!?]+$/gu;
+const hostKey = (h: string) => h.toLowerCase().replace(/\.$/, '').replace(/^www\./, '');
+
+/**
+ * The target's real host, to show next to a link (`dash.org (→ evil.example)`), or null. Shown when a word of the link text is a
+ * URL or domain naming another host (`[dash.org](https://evil.example)`, `[Visit dash.org](...)`), and always for an
+ * internationalised target host, in its punycode form, since its letters can imitate another name.
+ */
+export function linkRealHost(text: string, href: string | null): string | null {
+  if (!href) return null;
+  let target: string;
+  try {
+    target = new URL(href).hostname;
+  } catch {
+    return null;
+  }
+  if (target.split('.').some((label) => label.startsWith('xn--'))) return target;
+  for (const word of text.split(/\s+/)) {
+    const m = URL_LIKE.exec(word.replace(WRAP, ''));
+    if (!m) continue;
+    try {
+      if (hostKey(new URL(`http://${m[1]}`).hostname) !== hostKey(target)) return target;
+    } catch {
+      /* not a host after all */
     }
-    return ENTITIES[e.toLowerCase()] ?? m;
-  });
+  }
+  return null;
 }
 
 function pushText(out: MdInline[], v: string) {
@@ -104,7 +188,9 @@ function inline(tokens: readonly Token[] | undefined, depth: number): MdInline[]
       case 'link': {
         const t = tok as Tokens.Link;
         const c = depth >= MAX_DEPTH ? [{ t: 'text' as const, v: t.text }] : inline(t.tokens, depth + 1).filter((x) => x.t !== 'link');
-        out.push({ t: 'link', href: safeHref(t.href), c });
+        const href = safeHref(t.href);
+        const realHost = linkRealHost(plainText(c), href);
+        out.push({ t: 'link', href, c, ...(realHost ? { realHost } : {}) });
         break;
       }
       case 'image': {
@@ -182,7 +268,7 @@ function blocks(tokens: readonly Token[], depth: number): MdBlock[] {
  * the stack (e.g. thousands of nested emphasis markers) is shown as plain text instead.
  */
 export function parseMarkdown(src: string): MdBlock[] {
-  const text = (src.length > MAX_INPUT ? src.slice(0, MAX_INPUT) : src).replace(/^((?:[ \t]*>){8})(?:[ \t]*>)+/gm, '$1');
+  const text = stripBidi(src.length > MAX_INPUT ? src.slice(0, MAX_INPUT) : src).replace(/^((?:[ \t]*>){8})(?:[ \t]*>)+/gm, '$1');
   if (tooCostly(text)) return parsePlain(text);
   try {
     return blocks(Lexer.lex(text, { gfm: true, breaks: true }), 0);
@@ -194,7 +280,7 @@ export function parseMarkdown(src: string): MdBlock[] {
 
 /** Plain-text comments (`fmt` 0): paragraphs split on blank lines, line breaks kept, no markup at all. */
 export function parsePlain(src: string): MdBlock[] {
-  return src
+  return stripBidi(src)
     .split(/\n{2,}/)
     .filter((p) => p.trim())
     .map((p) => {

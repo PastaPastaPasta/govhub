@@ -375,7 +375,7 @@ The bridge takes the ZMQ raw objects and votes and reconciles them with
 
 ### 6.3 Claims (highest-ranked method wins)
 
-1. **URL-embedded:** the URL is committed in the collateral hash, so the claim is trustless.
+1. **URL-embedded:** the URL is committed in the collateral hash, so the naming is trustless. Naming is not consent: the named identity becomes the owner only once it accepts, by publishing its own `claim` document with method 1 for that govHash (its `$ownerId` is the acceptance; no signature). Until then it shows as "Named by the proposal's creator", not verified.
 2. A signature from the payment address.
 3. A signature from the collateral input key.
 4. A hosting-team `claimAttestation`, for P2SH, multisig, or lost keys.

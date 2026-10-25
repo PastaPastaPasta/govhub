@@ -3,6 +3,7 @@ import { base64 } from '@scure/base';
 import {
   buildProposalDataHex,
   bytesToHex,
+  canOutrank,
   checkClaimSignature,
   claimMessage,
   decodeAddress,
@@ -160,21 +161,46 @@ describe('method 3: collateral input key', () => {
 
 describe('method 1: identity in the hashed URL', () => {
   const { I1, I2 } = fx.identities;
-  it('names the owner, and outranks a valid method-3 claim by someone else', () => {
-    const v = verifyClaims(input('url-embedded', { collateralInputKeys: keysOf('url-embedded'), claims: [claim(I2, 3, S('collateral-url-embedded').sigBase64)] }));
+  const accept = (ownerId: string, createdAt?: number) => claim(ownerId, 1, base64.encode(new Uint8Array(65)), createdAt);
+  it('naming is not consent: the named identity is reported as named, not as the owner, until it accepts', () => {
+    const v = verifyClaims(input('url-embedded'));
+    expect(v.owner).toBeNull();
+    expect(v.named).toMatchObject({ identityId: I1, accepted: false });
+    // A valid claim by someone else is the owner meanwhile.
+    const w = verifyClaims(input('url-embedded', { collateralInputKeys: keysOf('url-embedded'), claims: [claim(I2, 3, S('collateral-url-embedded').sigBase64)] }));
+    expect(w.owner).toMatchObject({ identityId: I2, method: 3 });
+    expect(w.named).toMatchObject({ identityId: I1, accepted: false });
+  });
+
+  it('once the named identity publishes its method-1 acceptance it owns the proposal, outranking an earlier method-3 claim', () => {
+    const v = verifyClaims(input('url-embedded', { collateralInputKeys: keysOf('url-embedded'), claims: [claim(I2, 3, S('collateral-url-embedded').sigBase64, 10), accept(I1, 20)] }));
     expect(v.owner).toMatchObject({ identityId: I1, method: 1 });
+    expect(v.named).toMatchObject({ identityId: I1, accepted: true });
     expect(v.valid.map((c) => [c.identityId, c.method])).toEqual([
       [I1, 1],
       [I2, 3],
     ]);
   });
 
+  it('a method-1 claim by anyone but the named identity is rejected, and so is one on a proposal whose URL names nobody', () => {
+    const v = verifyClaims(input('url-embedded', { claims: [accept(I2)] }));
+    expect(v.owner).toBeNull();
+    expect(v.named).toMatchObject({ identityId: I1, accepted: false });
+    expect(v.rejected[0]!.reason).toMatch(/names a different identity/);
+    const w = verifyClaims(input('pay-p2pkh', { claims: [accept(I1)] }));
+    expect(w.owner).toBeNull();
+    expect(w.named).toBeNull();
+    expect(w.rejected[0]!.reason).toMatch(/does not name an identity/);
+  });
+
   it('needs the name segment to be the proposal name', () => {
-    expect(verifyClaims(input('url-wrong-name')).owner).toBeNull();
+    const v = verifyClaims(input('url-wrong-name', { claims: [accept(I1)] }));
+    expect(v.owner).toBeNull();
+    expect(v.named).toBeNull();
   });
 
   it('needs a configured portal host', () => {
-    expect(verifyClaims(input('url-embedded', { portals: ['example.org'] })).owner).toBeNull();
+    expect(verifyClaims(input('url-embedded', { portals: ['example.org'], claims: [accept(I1)] })).owner).toBeNull();
   });
 
   it('urlClaimIdentity is strict', () => {
@@ -245,13 +271,22 @@ describe('ranking within a method', () => {
       portals: PORTALS,
     });
     expect(v.owner).toMatchObject({ identityId: ida, method: 2, createdAt: 1000 });
-    // y (a malformed earlier try by the same identity) does not lock it out; the later valid claim by idb is not even checked.
-    expect(v.valid).toHaveLength(1);
+    // y (a malformed earlier try by the same identity) does not lock it out; the later valid claim by idb is valid but outranked,
+    // never listed as a failure.
+    expect(v.valid.map((c) => [c.identityId, c.createdAt])).toEqual([
+      [ida, 1000],
+      [idb, 2000],
+    ]);
     expect(v.rejected.map((r) => [r.docId, r.reason.slice(0, 11)]).sort()).toEqual([
-      ['doc' + (n - 1), 'not checked'],
       ['x', 'unknown cla'],
       ['y', 'signature i'],
     ]);
+    // The claim panel's warning: a new claim with the owner's method (or a weaker one) cannot win.
+    expect(canOutrank(v.owner, 2)).toBe(false);
+    expect(canOutrank(v.owner, 3)).toBe(false);
+    expect(canOutrank({ method: 3 }, 2)).toBe(true);
+    expect(canOutrank({ method: 4 }, 3)).toBe(true);
+    expect(canOutrank(null, 3)).toBe(true);
   });
 
   it('claim spam is bounded: per-identity tries and a total signature budget, skipped claims reported', () => {
@@ -262,9 +297,28 @@ describe('ranking within a method', () => {
     const t = performance.now();
     const v = verifyClaims(input('pay-p2pkh', { claims }));
     expect(performance.now() - t).toBeLessThan(2000);
-    expect(v.rejected.filter((r) => r.reason.startsWith('not checked: more than 3 claims by this identity'))).toHaveLength(8); // 7 junk + the real one, all by I1
-    expect(v.rejected.filter((r) => r.reason.startsWith('not checked: more than 50 claims'))).not.toHaveLength(0);
+    expect(v.rejected.filter((r) => r.reason.startsWith('not checked: more than 3 signature claims by this identity'))).toHaveLength(8); // 7 junk + the real one, all by I1
+    expect(v.rejected.filter((r) => r.reason.startsWith('not checked: more than 50 signature claims'))).not.toHaveLength(0);
     expect(v.owner).toBeNull(); // the real claim came after the budget ran out: reported, not trusted
     expect(v.rejected.at(-1)).toMatchObject({ ownerId: fx.identities.I1, reason: expect.stringContaining('more than 3') });
+  });
+
+  it('claims that need no signature check (unknown methods, wrong lengths, methods that cannot apply) use no budget', () => {
+    const owners = Array.from({ length: 120 }, (_, i) => fx.identities.I2.slice(0, 40) + String(i).padStart(4, 'x'));
+    const junk = owners.flatMap((o, i): ClaimDoc[] => [
+      { id: `u${i}`, ownerId: o, method: 7 + (i % 200), sig: new Uint8Array(65), createdAt: i },
+      { id: `s${i}`, ownerId: o, method: 2, sig: new Uint8Array(10), createdAt: i },
+      { id: `c${i}`, ownerId: o, method: 3, sig: new Uint8Array(65).fill(1), createdAt: i }, // the collateral was not verified: method 3 cannot apply
+    ]);
+    const v = verifyClaims(input('pay-p2pkh', { claims: [...junk, claim(fx.identities.I1, 2, S('pay-p2pkh-valid').sigBase64, 5000)] }));
+    expect(v.owner).toMatchObject({ identityId: fx.identities.I1, method: 2 });
+    expect(v.rejected.filter((r) => r.reason.startsWith('not checked'))).toEqual([]);
+  });
+
+  it('the per-identity cap counts signature checks across methods, so switching methods buys no extra checks', () => {
+    const I1 = fx.identities.I1;
+    const junk = (id: string, method: number, at: number): ClaimDoc => ({ id, ownerId: I1, method, sig: new Uint8Array(65).fill(at), createdAt: at });
+    const v = verifyClaims(input('pay-p2pkh', { collateralInputKeys: keysOf('pay-p2pkh'), claims: [junk('a', 2, 1), junk('b', 3, 2), junk('c', 2, 3), junk('d', 3, 4)] }));
+    expect(v.rejected.filter((r) => r.reason.startsWith('not checked: more than 3 signature claims by this identity')).map((r) => r.docId)).toEqual(['d']);
   });
 });
