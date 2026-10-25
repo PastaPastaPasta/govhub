@@ -1,8 +1,8 @@
 // Recovering DASH that got stuck at govhub's one-time funding addresses, from the chain alone: no localStorage, any device.
 //
-//   1. Key lanes: each key family (account setup, top-up, key-paste top-up, and whatever plugs in later through `families`) turns the
-//      recovery phrase or a pasted key into lanes of one-time keys, index 0, 1, ... Only public keys are needed to scan; the private key
-//      of one index is derived when the user acts on it, and wiped right after.
+//   1. Key lanes: each key family (account setup, the hardened account setup used until 2026-10-25, top-up, key-paste top-up, and
+//      whatever plugs in later through `families`) turns the recovery phrase or a pasted key into lanes of one-time keys, index 0, 1, ...
+//      Only public keys are needed to scan; the private key of one index is derived when the user acts on it, and wiped right after.
 //   2. Scan: one bloom filter with every lane key's hash160 AND public key (a spend's scriptSig pushes the public key, so spends match
 //      even where a node does not update the filter), replayed over DAPI from `fromHeight` to the tip in chunks, one node per chunk
 //      (another one when a chunk fails). DAPI has no address or UTXO lookup: this replay is the only way to see an address's history.
@@ -28,7 +28,7 @@ import { addressOf, wifOf, type Network } from './keys.ts';
 import { CREATE_KEYS, createRequiredCredits, CREDITS_PER_DUFF, MIN_CREATE_LOCK_DUFFS, MIN_TOPUP_LOCK_DUFFS, topUpRequiredCredits } from './layout.ts';
 import type { AssetLockStatus, PlatformPort } from './platform.ts';
 import { proposalFeeFamily } from './proposal.ts';
-import { IDENTITY_GAP_LIMIT, registrationFundingPath, topUpFundingPath, type SeedWallet } from './seed.ts';
+import { IDENTITY_GAP_LIMIT, legacyRegistrationFundingPath, registrationFundingPath, topUpFundingPath, type SeedWallet } from './seed.ts';
 import { assertLive, discoverIdentities, type FoundIdentity, type Session } from './signin.ts';
 import { buildSweep, DUST_DUFFS, estimateAssetLockFee, estimateSweepFee, identityIdFromOutpoint, locateCredit, type Utxo } from './tx.ts';
 
@@ -39,13 +39,14 @@ export type RecoverySecret = { wallet: SeedWallet; session?: undefined } | { wal
 
 /** How a lane's funds can go to Platform through runFunding (absent: sweep only). */
 export type LaneFunding =
-  | { kind: 'create'; identityIndex: number }
+  /** `legacy`: the key is the hardened account-setup key govhub used until 2026-10-25 (legacyRegistrationFundingPath). */
+  | { kind: 'create'; identityIndex: number; legacy?: boolean }
   /** `session`: the one-time key comes from the session key (sessionTopUpKey), not the phrase. */
   | { kind: 'topup'; identityIndex: number; identityId: string; session: boolean };
 
 /** One branch of one-time keys, index 0, 1, ... */
 export interface KeyLane {
-  /** Key family id ('create', 'topup', 'key-topup', or a plugged-in family's). */
+  /** Key family id ('create', 'create-legacy', 'topup', 'key-topup', or a plugged-in family's). */
   family: string;
   /** For people: "Account setup", "Top-up of 4Ytq…". */
   label: string;
@@ -67,22 +68,34 @@ export type KeyFamily = (ctx: { secret: RecoverySecret; network: Network; identi
 /** Top-ups of one identity skip no index (an unfinished one is continued first), so a short gap is plenty. */
 export const TOPUP_GAP_LIMIT = 5;
 
-/** Account setups: m/9'/coin'/5'/1'/i' (DIP-13 registration funding), up to the identity gap limit past the last identity. */
-export const createFamily: KeyFamily = ({ secret, network, identities }) => {
-  const w = secret.wallet;
-  if (!w) return [];
-  return [
-    {
-      family: 'create',
-      label: 'Account setup',
-      gap: IDENTITY_GAP_LIMIT,
-      minIndexes: identities.length ? Math.max(...identities.map((i) => i.identityIndex)) + 1 : 0,
-      derive: (i) => w.derive(registrationFundingPath(network, i)),
-      path: (i) => registrationFundingPath(network, i),
-      funding: (i) => ({ kind: 'create', identityIndex: i }),
-    },
-  ];
-};
+/** One account-setup lane per phrase, up to the identity gap limit past the last identity. */
+const setupFamily =
+  (family: string, label: string, legacy: boolean): KeyFamily =>
+  ({ secret, network, identities }) => {
+    const w = secret.wallet;
+    if (!w) return [];
+    const pathOf = legacy ? legacyRegistrationFundingPath : registrationFundingPath;
+    return [
+      {
+        family,
+        label,
+        gap: IDENTITY_GAP_LIMIT,
+        minIndexes: identities.length ? Math.max(...identities.map((i) => i.identityIndex)) + 1 : 0,
+        derive: (i) => w.derive(pathOf(network, i)),
+        path: (i) => pathOf(network, i),
+        funding: (i) => ({ kind: 'create', identityIndex: i, legacy }),
+      },
+    ];
+  };
+
+/** Account setups: m/9'/coin'/5'/1'/i (DIP-13 registration funding, key-wallet's IdentityRegistration pool). */
+export const createFamily: KeyFamily = setupFamily('create', 'Account setup', false);
+
+/**
+ * Account setups made before 2026-10-25 at the hardened m/9'/coin'/5'/1'/i' (and the phase-0 mainnet run). Scan-only: no new funding
+ * goes there, but what was paid there can still be swept, finish its account or top up an identity.
+ */
+export const legacyCreateFamily: KeyFamily = setupFamily('create-legacy', 'Account setup (before 2026-10-25)', true);
 
 /** Top-ups with the phrase: m/9'/coin'/5'/2'/i'/n for every identity the phrase has. */
 export const topUpFamily: KeyFamily = ({ secret, network, identities }) => {
@@ -118,7 +131,7 @@ export const keyTopUpFamily: KeyFamily = ({ secret }) => {
  * The families scanned by default. Another one-time key family (a fee payment from a later feature, say) plugs in by appending to this
  * list in the call to scanForFunds: its lanes are scanned, and their payments can be swept (and used on Platform if it says how).
  */
-export const DEFAULT_KEY_FAMILIES: readonly KeyFamily[] = [createFamily, topUpFamily, keyTopUpFamily, proposalFeeFamily];
+export const DEFAULT_KEY_FAMILIES: readonly KeyFamily[] = [createFamily, legacyCreateFamily, topUpFamily, keyTopUpFamily, proposalFeeFamily];
 
 // ---- default start heights -------------------------------------------------------------------------------------------------
 
@@ -126,7 +139,7 @@ export const DEFAULT_KEY_FAMILIES: readonly KeyFamily[] = [createFamily, topUpFa
  * Where a scan starts unless the user picks an older height: just before govhub could first take a payment on that network. Testnet:
  * the funding flow landed on 2026-10-24 (its first live records start at 1,578,338); 1,577,000 is two days earlier. Mainnet: govhub has
  * taken no mainnet payment yet; 2,560,000 is 2026-10-23, before this tool existed. Starting earlier only costs time, never safety, and
- * finds older funding of the same DIP-13 paths by other wallets (DashPay and Dash Evo Tool use the account-setup path too).
+ * finds older funding of the same DIP-13 paths by other wallets (rs-platform-wallet, Dash Evo Tool and dashj fund registrations there too).
  */
 export const RECOVERY_START_HEIGHT: Record<Network, number> = { testnet: 1_577_000, mainnet: 2_560_000 };
 /** Core aims for one block every 2.5 minutes. */
@@ -693,6 +706,7 @@ export async function fundWithItem(o: {
       kind,
       identityIndex: fu.identityIndex,
       topUp: kind === 'topup' ? { identityId: fu.identityId, index: item.index } : undefined,
+      legacy: fu.kind === 'create' ? !!fu.legacy : undefined,
       recoverInto: 'topUp' in target && kind === 'create' ? target.topUp : undefined,
       restore,
       signal: o.signal,

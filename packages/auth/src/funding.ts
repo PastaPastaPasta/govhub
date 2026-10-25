@@ -1,5 +1,6 @@
 // Funding an identity from external DASH, all over DAPI (PLAN 4.4, Dash Bridge's flow without Insight):
-//   1. a one-time key at the DIP-13 funding path (registration m/9'/c'/5'/1'/i', top-up m/9'/c'/5'/2'/i'/n)
+//   1. a one-time key at the DIP-13 funding path (registration m/9'/c'/5'/1'/i, top-up m/9'/c'/5'/2'/i'/n: key-wallet's pools; an
+//      unfinished registration begun at the hardened m/9'/c'/5'/1'/i' govhub used until 2026-10-25 finishes there, createFundingPath)
 //   2. watchAddressForDeposit subscribes BEFORE the address is shown (IS-locks are never replayed); a deposit counts once it is
 //      IS-locked or merkle-proven in a block, P2PKH outputs only; the watcher stays open until the end so late payments are reported;
 //      a payment that a confirmed transaction spends (swept from another device, an earlier lock) stops counting
@@ -20,7 +21,7 @@ import {
   CREATE_KEYS, createRequiredCredits, CREDITS_PER_DUFF, MIN_CREATE_DEPOSIT_DUFFS, MIN_CREATE_LOCK_DUFFS, MIN_TOPUP_DEPOSIT_DUFFS, MIN_TOPUP_LOCK_DUFFS, topUpRequiredCredits,
 } from './layout.ts';
 import type { AssetLockProofInput, PlatformPort, SigningKey } from './platform.ts';
-import { IDENTITY_GAP_LIMIT, registrationFundingPath, topUpFundingPath, type SeedWallet } from './seed.ts';
+import { IDENTITY_GAP_LIMIT, legacyRegistrationFundingPath, registrationFundingPath, topUpFundingPath, type SeedWallet } from './seed.ts';
 import { assertLive, type Session } from './signin.ts';
 import { buildAssetLock, estimateAssetLockFee, identityIdFromOutpoint, MAX_ASSET_LOCK_INPUTS, type Utxo } from './tx.ts';
 
@@ -104,6 +105,29 @@ export function storageFundingStore(storage: Pick<Storage, 'getItem' | 'setItem'
 /** Records are keyed by the funding key's hash160, so two seeds (or two sessions) in one browser never share a record. */
 export const fundingRecordKey = (network: Network, kind: FundingKind, keyHash160: Uint8Array): string => `${network}.${kind}.${bytesToHex(keyHash160)}`;
 
+/**
+ * The account-setup key path of identity `identityIndex`. New fundings use key-wallet's `m/9'/c'/5'/1'/i` (registrationFundingPath).
+ * The hardened `m/9'/c'/5'/1'/i'` govhub used until 2026-10-25 is used only when `legacy` is true (the Recover tool's legacy lane) or,
+ * with `legacy` unset, when this browser began that index there and has not finished it (hidden ones included: continuing replays
+ * their address) and holds nothing at that index under today's key: such a funding finishes at the address it showed.
+ */
+export function createFundingPath(store: FundingStore, wallet: SeedWallet, identityIndex: number, legacy?: boolean): string {
+  const old = legacyRegistrationFundingPath(wallet.network, identityIndex);
+  const now = registrationFundingPath(wallet.network, identityIndex);
+  if (legacy === undefined) {
+    const r = createRecordAt(store, wallet, old);
+    legacy = !!r && r.state !== 'done' && !createRecordAt(store, wallet, now);
+  }
+  return legacy ? old : now;
+}
+
+/** The stored account-setup record of the key at `path`, if any. */
+function createRecordAt(store: FundingStore, wallet: SeedWallet, path: string): FundingRecord | null {
+  const k = wallet.derive(path);
+  wipe(k.privateKey);
+  return store.load(fundingRecordKey(wallet.network, 'create', hash160(k.publicKey)));
+}
+
 export interface FundingView {
   state: FundingState;
   address: string;
@@ -136,6 +160,8 @@ export interface FundingOptions {
   identityIndex: number;
   /** topup only. */
   topUp?: { identityId: string; index: number };
+  /** create only: true funds from the hardened key govhub used until 2026-10-25, false from today's; unset picks (createFundingPath). */
+  legacy?: boolean;
   /**
    * Top-up without a seed (key-paste sessions): the one-time key comes from `sessionTopUpKey(session key)` instead of the DIP-13 path,
    * so a reload resumes once the same key is pasted again. Refused once the session has ended.
@@ -397,7 +423,7 @@ export async function runFunding(o: FundingOptions): Promise<{ identityId: strin
   if (o.session) assertLive(o.session);
   if (!wallet && !(kind === 'topup' && o.session)) throw new FundingError('funding needs the recovery phrase (or, for a top-up, the signed-in key)');
   const fk = wallet
-    ? wallet.derive(kind === 'create' ? registrationFundingPath(network, identityIndex) : topUpFundingPath(network, identityIndex, o.topUp!.index))
+    ? wallet.derive(kind === 'create' ? createFundingPath(o.store, wallet, identityIndex, o.legacy) : topUpFundingPath(network, identityIndex, o.topUp!.index))
     : sessionTopUpKey(o.session!.privateKey, o.topUp!.identityId, o.topUp!.index);
   const key = fundingRecordKey(network, kind, hash160(fk.publicKey));
   try {
@@ -798,9 +824,7 @@ export function nextTopUpIndex(store: FundingStore, network: Network, identityId
  */
 export function nextCreateIndex(store: FundingStore, wallet: SeedWallet): number {
   for (let i = 0; i < IDENTITY_GAP_LIMIT; i++) {
-    const fk = wallet.derive(registrationFundingPath(wallet.network, i));
-    wipe(fk.privateKey);
-    const r = store.load(fundingRecordKey(wallet.network, 'create', hash160(fk.publicKey)));
+    const r = createRecordAt(store, wallet, createFundingPath(store, wallet, i));
     if (!r || !(r.recoveredInto || (r.state === 'registering' && lockTooSmall(r)))) return i;
   }
   throw new FundingError(`This recovery phrase has ${IDENTITY_GAP_LIMIT} unusable account setups in a row; use another phrase.`);

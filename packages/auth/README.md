@@ -19,7 +19,7 @@ same rule) and `@govhub/auth/webauthn` (browser only).
 
 | Area | Module | Notes |
 |---|---|---|
-| Seed | `seed.ts` | BIP39 English, 12 or 24 words, **no passphrase**. DIP-13 identity keys `m/9'/c'/5'/0'/0'/identity'/key'` (c = 5 mainnet, 1 testnet), registration funding `m/9'/c'/5'/1'/identity'`, top-up funding `m/9'/c'/5'/2'/identity'/n` (key-wallet `IdentityTopUp`). `SeedWallet` keeps the BIP32 root and the entropy, never the phrase string. |
+| Seed | `seed.ts` | BIP39 English, 12 or 24 words, **no passphrase**. DIP-13 identity keys `m/9'/c'/5'/0'/0'/identity'/key'` (c = 5 mainnet, 1 testnet), registration funding `m/9'/c'/5'/1'/identity` (key-wallet `IdentityRegistration` pool; the hardened `…/1'/identity'` used until 2026-10-25 is scan-only, `legacyRegistrationFundingPath`), top-up funding `m/9'/c'/5'/2'/identity'/n` (key-wallet `IdentityTopUp`). `SeedWallet` keeps the BIP32 root and the entropy, never the phrase string. |
 | Key layout | `layout.ts` | Created with 0 AUTH/MASTER, 1 AUTH/CRITICAL, 2 AUTH/HIGH (ECDSA_SECP256K1, id = index). `addLaterKeys` adds 3 TRANSFER/CRITICAL and 4/5 ENC/DEC MEDIUM bound to DashPay `contactRequest` with one MASTER-signed IdentityUpdate. |
 | Sign-in | `signin.ts` | Discovery by the key-0 hash, identity index 0.. with a gap of 5 (DashPay iOS, rs-platform-wallet, Yappr). The session key is the identity's HIGH authentication key, else CRITICAL, never MASTER; key indexes 0..11 are probed (Evo Tool), so seeds whose key ids differ from their indexes work. Key paste: WIF or hex, only the public key hash is sent. Sessions hold the key in memory; `end()` wipes it. |
 | Funding | `funding.ts`, `tx.ts` | One-time key at the funding path; `watchAddressForDeposit` subscribes **before** the address is shown; type-8 asset lock spending the deposit (1 duff/byte); a second watcher on the lock's txid and inputs opens **before** the broadcast and its IS-lock bytes are persisted on arrival; instant proof, else a chain proof at Platform's `coreChainLockedHeight`; `identities.create` / `topUp`; a proved read confirms. Progress (`FundingRecord`) holds public data only, so a reload resumes once the same seed (or, for seedless top-ups, the same pasted key) is unlocked again. |
@@ -61,8 +61,10 @@ app makes the backup opt-in.
 2. **Testnet evonodes report `isSynced: false`** (status ERROR) in `getBlockchainStatus` while serving current blocks (2026-10-24,
    just after V24). `@govhub/dapi`'s `getBestBlockHeight()` refuses them, so funding takes the tip from `getBestBlockHeight` RPC (a
    claim, used only as a stream start a few blocks back).
-3. The DIP-13 top-up path's last index is unhardened in key-wallet (`AddressPoolType::Absent`); the registration path here keeps
-   the hardened `.../1'/identity'` the phase-0 mainnet run used. Both are cross-checked against key-wallet in the tests.
+3. The DIP-13 funding paths' last index is unhardened in key-wallet (`AddressPoolType::Absent`), for registration and top-up alike.
+   Until 2026-10-25 the registration path here was the hardened `.../1'/identity'` (also the phase-0 mainnet run's); it is now
+   `.../1'/identity`, what rs-platform-wallet funds from, and the old one is a scan-only Recover lane. `test/derivation.test.ts` pins
+   rs-platform-wallet's own outputs for the BIP39 test phrase (docs/RECOVERY.md, "Derivation paths", has the per-wallet table).
 4. `Document.toJSON` needs a platform version argument in rc.8; byte fields come back base64.
 5. **Nonce cache refresh (rc.8 source, tag v5.0.0-rc.8).** `sdk.wasm.refreshIdentityNonce(identifier)` (wasm-sdk `src/sdk.rs`
    118-121 -> rs-sdk `Sdk::refresh_identity_nonce`, `src/sdk.rs` 754-755 -> `NonceCache::refresh`, `src/internal_cache/mod.rs`

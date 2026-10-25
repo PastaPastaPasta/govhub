@@ -23,7 +23,7 @@ vi.mock('./context.tsx', () => {
 });
 const { RecoverFunds } = await import('./Recover.tsx');
 
-const base = { family: 'create', label: 'Account setup', path: "m/9'/1'/5'/1'/1'", keyHash: '00'.repeat(20), funding: { kind: 'create' as const, identityIndex: 1 } };
+const base = { family: 'create', label: 'Account setup', path: "m/9'/1'/5'/1'/1", keyHash: '00'.repeat(20), funding: { kind: 'create' as const, identityIndex: 1 } };
 const payments: RecoveryItem = {
   ...base, id: 'yPay', type: 'payments', index: 1, address: 'yPayAddress', payments: [{ txid: 'cd'.repeat(32), vout: 0, duffs: 50_000n, height: 1_579_000 }], duffs: 50_000n,
 };

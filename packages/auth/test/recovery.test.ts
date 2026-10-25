@@ -10,7 +10,7 @@ import type { AssetLockProofInput } from '../src/platform.ts';
 import {
   DEFAULT_KEY_FAMILIES, exportItemWif, forgetSpent, itemOptions, parseDashAddress, replayProven, RecoveryError, scanForFunds, sweepItem, fundWithItem, type KeyFamily, type RecoveryScan,
 } from '../src/recovery.ts';
-import { registrationFundingPath, SeedWallet, topUpFundingPath } from '../src/seed.ts';
+import { legacyRegistrationFundingPath, registrationFundingPath, SeedWallet, topUpFundingPath } from '../src/seed.ts';
 import { makeSession } from '../src/signin.ts';
 import { buildAssetLock, buildPayment, buildProposalCollateral, identityIdFromOutpoint, p2pkhScript } from '../src/tx.ts';
 import { proposalDepositKey, proposalFeeFamily, sessionProposalDepositKey } from '../src/proposal.ts';
@@ -23,6 +23,8 @@ const BASE = 1_000_000;
 const wallet = () => SeedWallet.fromPhrase(PHRASE, NET);
 const pub = (path: string) => wallet().derive(path).publicKey;
 const createPub = (i: number) => pub(registrationFundingPath(NET, i));
+/** The hardened account-setup key govhub used until 2026-10-25. */
+const legacyPub = (i: number) => pub(legacyRegistrationFundingPath(NET, i));
 const topUpPub = (i: number, n: number) => pub(topUpFundingPath(NET, i, n));
 
 const funder = hexToBytes('44'.repeat(32));
@@ -183,7 +185,8 @@ describe('scan: discovery across the gap limits', () => {
   it('covers every index within the gap limit of a used one (with lookahead), and stops after a full gap of unused ones', async () => {
     // identity #0 exists. Create lane: needs 0..5 (index 0 + gap 5), takes 0..10; 3 and 7 used -> needs 0..12, takes 0..17; 13 used
     // (5 unused before it, within the gap of 7) -> needs 0..18, takes 0..23; 25 lies past a full gap of unused ones: never found.
-    // Top-ups of #0: take 0..9; 4 and 8 used -> need 0..13, take 0..18; 30 never.
+    // Top-ups of #0: take 0..9; 4 and 8 used -> need 0..13, take 0..18; 30 never. The legacy (hardened) account-setup lane, empty
+    // here: needs 0..5, takes 0..10.
     const c: Chain = {
       blocks: [
         [pay(createPub(3), 100_000n)],
@@ -198,7 +201,7 @@ describe('scan: discovery across the gap limits', () => {
     const found = r.items.map((i) => `${i.family}:${i.index}:${i.duffs}`).sort();
     expect(found).toEqual(['create:13:300000', 'create:3:100000', 'create:7:200000', 'topup:4:60000', 'topup:8:70000']);
     expect(r.identities.map((i) => i.identityIndex)).toEqual([0]);
-    expect(r.keysScanned).toBe(24 + 19 + 60); // + proposal fee deposits: 0..19 always, with lookahead
+    expect(r.keysScanned).toBe(24 + 19 + 11 + 60); // + proposal fee deposits: 0..19 always, with lookahead
     expect(r.provenDuffs).toBe(730_000n);
     expect(r.items.every((i) => i.type === 'payments' && i.payments.every((p) => p.height! >= BASE))).toBe(true);
   });
@@ -276,6 +279,69 @@ describe('scan: proposal fee deposits (the creation wizard)', () => {
     const r = await scanForFunds({ secret: { session }, dapi: fakeDapi({ blocks: [[pay(k.publicKey, 2_000_000n)]] }), platform: new FakePlatform(NET), fromHeight: BASE });
     expect(r.items.map((i) => `${i.family}:${i.index}`)).toEqual(['proposal-fee-key:11']);
     expect(r.items[0]!.address).toBe(addressOf(k.publicKey, NET));
+  });
+});
+
+describe('legacy account setups (hardened m/9\'/1\'/5\'/1\'/i\', used until 2026-10-25)', () => {
+  it('are scanned next to the current ones, and each lane only claims its own key', async () => {
+    const c: Chain = { blocks: [[pay(legacyPub(0), 50_000n), pay(createPub(0), 60_000n)], [pay(legacyPub(1), 70_000n)]] };
+    const r = await scan(fakeDapi(c), new FakePlatform(NET));
+    const found = r.items.map((i) => `${i.family}:${i.index}:${i.duffs}:${i.path}`).sort();
+    expect(found).toEqual([
+      "create-legacy:0:50000:m/9'/1'/5'/1'/0'",
+      "create-legacy:1:70000:m/9'/1'/5'/1'/1'",
+      "create:0:60000:m/9'/1'/5'/1'/0",
+    ]);
+    expect(r.items.find((i) => i.family === 'create-legacy')!.funding).toEqual({ kind: 'create', identityIndex: 0, legacy: true });
+    expect(r.items.find((i) => i.family === 'create')!.funding).toEqual({ kind: 'create', identityIndex: 0, legacy: false });
+  });
+
+  it('can be swept and exported with the legacy key', async () => {
+    const c: Chain = { blocks: [[pay(legacyPub(1), 80_000n)]] };
+    const dapi = fakeDapi(c);
+    const r = await scan(dapi, platformWithIdentity0());
+    const item = r.items[0]!;
+    expect(item.address).toBe(addressOf(legacyPub(1), NET));
+    expect(exportItemWif({ item, scan: r, secret: { wallet: wallet() } })).toBe(wifOf(wallet().derive(legacyRegistrationFundingPath(NET, 1)).privateKey, NET));
+    const out = await sweepItem({ item, scan: r, secret: { wallet: wallet() }, to: addressOf(publicKeyOf(hexToBytes('77'.repeat(32))), NET), dapi });
+    expect(out.sentDuffs + out.feeDuffs).toBe(80_000n);
+    // the sweep's input is signed by the legacy key
+    expect(bytesToHex(parseTx(c.broadcasts![0]!).inputs[0]!.script.slice(-33))).toBe(bytesToHex(legacyPub(1)));
+  });
+
+  it("finish creating the account from an unused legacy lock, and that identity's keys are the usual ones", async () => {
+    const w = wallet();
+    const k = w.derive(legacyRegistrationFundingPath(NET, 1));
+    const d = pay(k.publicKey, 250_000n);
+    const lock = parseTx(buildAssetLock({ utxos: [{ txid: d.txid, vout: 0, value: 250_000n }], fundingKey: k.privateKey, creditPubKeyHash: hash160(k.publicKey) }).raw);
+    const dapi = fakeDapi({ blocks: [[d], [lock]] });
+    const platform = platformWithIdentity0();
+    const r = await scan(dapi, platform);
+    const item = r.items.find((i) => i.type === 'lock')!;
+    expect(item.family).toBe('create-legacy');
+    expect(itemOptions(item, r).create).toBe(1);
+    const store = memStore();
+    const out = await fundWithItem({ item, scan: r, secret: { wallet: wallet() }, target: { create: true }, dapi, platform, store });
+    expect(out.identityId).toBe(identityIdFromOutpoint(lock.txid, 0));
+    expect(out.record.key).toBe(fundingRecordKey(NET, 'create', hash160(k.publicKey)));
+    expect(out.record.address).toBe(addressOf(k.publicKey, NET));
+    expect(store.m.get(out.record.key)!.state).toBe('done');
+  });
+
+  it('a lock at the current path is never funded from the legacy key, even with an unfinished legacy record at that index', async () => {
+    const w = wallet();
+    const k = w.derive(registrationFundingPath(NET, 1));
+    const d = pay(k.publicKey, 250_000n);
+    const lock = parseTx(buildAssetLock({ utxos: [{ txid: d.txid, vout: 0, value: 250_000n }], fundingKey: k.privateKey, creditPubKeyHash: hash160(k.publicKey) }).raw);
+    const dapi = fakeDapi({ blocks: [[d], [lock]] });
+    const platform = platformWithIdentity0();
+    const r = await scan(dapi, platform);
+    const item = r.items.find((i) => i.type === 'lock')!;
+    const store = memStore();
+    const old = w.derive(legacyRegistrationFundingPath(NET, 1)).publicKey;
+    store.save({ v: 2, key: fundingRecordKey(NET, 'create', hash160(old)), kind: 'create', network: NET, identityIndex: 1, address: addressOf(old, NET), deposits: [], state: 'awaiting-deposit', createdAt: 0, updatedAt: 0 });
+    const out = await fundWithItem({ item, scan: r, secret: { wallet: wallet() }, target: { create: true }, dapi, platform, store });
+    expect(out.record.address).toBe(addressOf(k.publicKey, NET));
   });
 });
 

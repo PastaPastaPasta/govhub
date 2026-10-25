@@ -249,7 +249,8 @@ keepsHistory types that can be deleted, no `-` in names, and the 5.0 rc.7/rc.8 w
 ### 4.1 One standard Dash seed
 
 - **Seed:** BIP39 with **no passphrase** and identity index 0, derived along DIP-13 paths
-  `m/9'/5'/5'/0'/0'/0'/id'` (testnet uses coin type 1').
+  `m/9'/5'/5'/0'/0'/0'/id'` (testnet uses coin type 1'). The account's funding key is `m/9'/5'/5'/1'/0` (not hardened, as
+  rs-platform-wallet; docs/RECOVERY.md, "Derivation paths").
 - **Key layout** (DashPay iOS's layout; key id = key index):
   - 0: AUTH / MASTER
   - 1: AUTH / CRITICAL

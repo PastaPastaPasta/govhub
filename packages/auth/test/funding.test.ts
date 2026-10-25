@@ -5,7 +5,7 @@ import { parseTx, type Dapi, type WatchHandlers } from '@govhub/dapi';
 import { describe, expect, it } from 'vitest';
 import { bytesToHex, hash160, hexToBytes } from '../src/bytes.ts';
 import {
-  classifyRegistrationError, discardFunding, FundingError, KeyConflictError, fundingRecordKey, LockTooSmallError, lockTooSmall, nextCreateIndex, nextTopUpIndex, pendingFundings, pickInputs, runFunding,
+  classifyRegistrationError, createFundingPath, discardFunding, FundingError, KeyConflictError, fundingRecordKey, LockTooSmallError, lockTooSmall, nextCreateIndex, nextTopUpIndex, pendingFundings, pickInputs, runFunding,
   sessionTopUpKey, stillNeededDuffs,
   type FundingRecord, type FundingStore, type FundingView,
 } from '../src/funding.ts';
@@ -14,7 +14,7 @@ import {
   CREATE_KEYS, createRequiredCredits, MIN_CREATE_DEPOSIT_DUFFS, MIN_CREATE_LOCK_DUFFS, MIN_TOPUP_DEPOSIT_DUFFS, MIN_TOPUP_LOCK_DUFFS, topUpRequiredCredits,
 } from '../src/layout.ts';
 import type { AssetLockProofInput, PlatformPort } from '../src/platform.ts';
-import { registrationFundingPath, SeedWallet, topUpFundingPath } from '../src/seed.ts';
+import { legacyRegistrationFundingPath, registrationFundingPath, SeedWallet, topUpFundingPath } from '../src/seed.ts';
 import { makeSession } from '../src/signin.ts';
 import { AssetLockError, buildAssetLock, buildPayment, estimateAssetLockFee, identityIdFromOutpoint } from '../src/tx.ts';
 
@@ -791,6 +791,89 @@ describe('D-006 review: recovery edge cases', () => {
     expect(e.lockCredits).toBe(100_000_000n);
     expect(new LockTooSmallError('create', 209_646_000n, 221_500_000n, false).canTopUp).toBe(false);
     expect(new LockTooSmallError('create', 209_646_000n, 221_500_000n, false).message).not.toMatch(/top up/);
+  });
+});
+
+describe('account-setup key: key-wallet path, and the hardened one used until 2026-10-25', () => {
+  const w = () => SeedWallet.fromPhrase(PHRASE_B, 'testnet');
+  const legacyKey = () => w().derive(legacyRegistrationFundingPath('testnet', 0));
+  /** An unfinished create at the legacy address of identity #0, as a browser saved it before the change. */
+  const legacyRecord = (patch: Partial<FundingRecord> = {}): FundingRecord => ({
+    v: 2, key: fundingRecordKey('testnet', 'create', hash160(legacyKey().publicKey)), kind: 'create', network: 'testnet', identityIndex: 0,
+    address: addressOf(legacyKey().publicKey, 'testnet'), watchFromHeight: 990, deposits: [], state: 'awaiting-deposit', createdAt: 1, updatedAt: 1, ...patch,
+  });
+  /** The address runFunding shows first, then stops. */
+  const firstAddress = async (store: FundingStore, legacy?: boolean) => {
+    const ac = new AbortController();
+    let address = '';
+    await runFunding({
+      wallet: w(), dapi: fakeDapi({ events: [], deliverIsLock: true, mined: 0 }) as unknown as Dapi, platform: fakePlatform(), store, kind: 'create', identityIndex: 0, legacy, signal: ac.signal,
+      onUpdate: (v) => {
+        if (v.state === 'awaiting-deposit' && !address) {
+          address = v.address;
+          ac.abort();
+        }
+      },
+    }).catch(() => {});
+    return address;
+  };
+
+  it("a new account setup pays rs-platform-wallet's next registration address (IdentityRegistration pool index 0)", async () => {
+    expect(await firstAddress(memStore())).toBe('yM5Wg7qxSi4sMiZuwrx37FxRdacdCyraaB');
+  });
+
+  it('an unfinished funding this browser began at the legacy address finishes there (end to end)', async () => {
+    const store = memStore();
+    store.save(legacyRecord());
+    expect(createFundingPath(store, w(), 0)).toBe("m/9'/1'/5'/1'/0'");
+    const s: Script = { events: [], deliverIsLock: true, mined: 0 };
+    const dapi = fakeDapi(s);
+    const platform = fakePlatform();
+    let paid = false;
+    const r = await runFunding({
+      wallet: w(), dapi: dapi as unknown as Dapi, platform, store, kind: 'create', identityIndex: 0, isLockWaitMs: 2000,
+      onUpdate: (v) => {
+        if (v.state !== 'awaiting-deposit' || paid) return;
+        paid = true;
+        expect(v.address).toBe('yR8PUe4jSZ37A4HUtFwtLfe9WhB7braYG2');
+        dapi.pay(buildPayment({ utxos: [{ txid: 'ce'.repeat(32), vout: 0, value: 10_000_000n }], key: funderKey, to: [{ pubKeyHash: hash160(legacyKey().publicKey), duffs: 1_000_000n }] }).raw);
+      },
+    });
+    expect(r.record.key).toBe(legacyRecord().key);
+    expect(r.record.state).toBe('done');
+    expect(r.identityId).toBe(identityIdFromOutpoint(r.record.lock!.txid, 0));
+  });
+
+  it('a finished legacy record, a record under today\'s key at that index, or an explicit choice leave fundings on the key-wallet path', async () => {
+    const done = memStore();
+    done.save(legacyRecord({ state: 'done' }));
+    expect(createFundingPath(done, w(), 0)).toBe("m/9'/1'/5'/1'/0");
+    // e.g. the Recover tool finished a payment at today's address of that index
+    const both = memStore();
+    both.save(legacyRecord());
+    const now = w().derive(registrationFundingPath('testnet', 0)).publicKey;
+    both.save({ ...legacyRecord(), key: fundingRecordKey('testnet', 'create', hash160(now)), address: addressOf(now, 'testnet') });
+    expect(createFundingPath(both, w(), 0)).toBe("m/9'/1'/5'/1'/0");
+    const store = memStore();
+    store.save(legacyRecord());
+    expect(await firstAddress(store, false)).toBe('yM5Wg7qxSi4sMiZuwrx37FxRdacdCyraaB');
+    expect(await firstAddress(memStore(), true)).toBe('yR8PUe4jSZ37A4HUtFwtLfe9WhB7braYG2');
+  });
+
+  it('a hidden (discarded) legacy setup is still replayed at its address when the phrase continues, as the hide dialog promises', () => {
+    const store = memStore();
+    store.save(legacyRecord({ discarded: true }));
+    expect(createFundingPath(store, w(), 0)).toBe("m/9'/1'/5'/1'/0'");
+    expect(nextCreateIndex(store, w())).toBe(0);
+  });
+
+  it('nextCreateIndex skips an index whose legacy lock is too small, as before', () => {
+    const store = memStore();
+    const fk = legacyKey();
+    const dep = { txid: 'dd'.repeat(32), vout: 0, value: (209_646n + estimateAssetLockFee(1)).toString(), confirmed: true };
+    const b = buildAssetLock({ utxos: [{ txid: dep.txid, vout: 0, value: BigInt(dep.value) }], fundingKey: fk.privateKey, creditPubKeyHash: hash160(fk.publicKey) });
+    store.save(legacyRecord({ deposits: [dep], lock: { raw: bytesToHex(b.raw), txid: b.txid, creditIndex: b.creditIndex, burnVout: b.burnVout, lockDuffs: b.lockDuffs.toString(), feeDuffs: b.feeDuffs.toString() }, state: 'registering' }));
+    expect(nextCreateIndex(store, w())).toBe(1);
   });
 });
 

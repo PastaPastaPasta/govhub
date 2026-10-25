@@ -19,6 +19,8 @@ export interface FundingPanelProps {
   topUp?: { identityId: string; index: number };
   /** Seedless top-ups: the key-paste session whose key derives the one-time key. */
   session?: Session;
+  /** create: true funds from the hardened account-setup key used until 2026-10-25 (a starter bound to it); unset: runFunding picks. */
+  legacy?: boolean;
   /** `identityIndex`: where the identity was made (a new payment after a too-small one moves to a later index). */
   onDone(identityId: string, identityIndex: number): void;
   /**
@@ -75,7 +77,7 @@ export function FundingPanel(p: FundingPanelProps) {
     (async () => {
       const port = await platform();
       const r = await runFunding({
-        wallet: p.wallet, dapi: dapi(), platform: port, store, kind: p.kind, identityIndex: p.identityIndex, topUp: p.topUp, session: p.session,
+        wallet: p.wallet, dapi: dapi(), platform: port, store, kind: p.kind, identityIndex: p.identityIndex, topUp: p.topUp, session: p.session, legacy: p.legacy,
         recoverInto: recoverInto ?? undefined, signal: ac.signal, onUpdate,
       });
       if (ac.signal.aborted) return;
@@ -119,8 +121,9 @@ export function FundingPanel(p: FundingPanelProps) {
     errorBox = <TooSmall error={error} offerTopUp wallet={p.wallet} problem={recoverError} initialId={lastTarget} onTopUp={startRecovery} />;
   else if (error) errorBox = <ErrorBox text={(recoverError ? `${recoverError} ` : '') + errorText(error)} retry={retry} onRecover={closeSheet} />;
 
-  // a new payment at another index: another address, which a starter token (bound to the first one) cannot pay
-  if (fresh !== null) return <FundingPanel key={fresh} {...p} identityIndex={fresh} onAwaitingDeposit={undefined} deposit={undefined} />;
+  // a new payment at another index: another address, which a starter token (bound to the first one) cannot pay. Not `legacy` either:
+  // runFunding picks the key (today's, unless this browser began that index on the old one)
+  if (fresh !== null) return <FundingPanel key={fresh} {...p} identityIndex={fresh} legacy={undefined} onAwaitingDeposit={undefined} deposit={undefined} />;
   if (recovered) {
     return (
       <div className="funding" data-state="recovered">

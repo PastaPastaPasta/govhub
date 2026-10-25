@@ -5,10 +5,12 @@ exports[`seed keys > pins the mainnet and testnet key layouts of the test phrase
   "mainnet/0": "03de6e4f0a455c1f089e51c53ed937b172d46e5cec4a98e2d9977ea4638129d252",
   "mainnet/1": "02725184a963a31b362742455e4b1bd36b8b56b0d667f1f6c24688ed3d9b0e13e9",
   "mainnet/2": "0224fec3be710f5b8375faefd255efd97f1414bf571f4e7d6627e27aa179428a95",
-  "mainnet/funding": "XeGkvY8UbQpf8PgbGM9R8JWGSNiK1x5D6h",
+  "mainnet/funding": "Xb5hE8RDrAQXBkDYkAg1efNdkGhUxURj2M",
+  "mainnet/legacy-funding": "XeGkvY8UbQpf8PgbGM9R8JWGSNiK1x5D6h",
   "testnet/0": "03a00f4853081aeb8c9debe37267303fa133bd7f6678bfb3299dfa001bfd0341db",
   "testnet/1": "03280859fd14d1b8a7a75d918dd0a1bf922be5af7eff9aafa26f446ea5f16da616",
   "testnet/2": "02cb109b54e542efbb86f3e5ba1d6a2da97d02cc4de0c706c23ab8ddb53ff7fe3e",
-  "testnet/funding": "yR8PUe4jSZ37A4HUtFwtLfe9WhB7braYG2",
+  "testnet/funding": "yM5Wg7qxSi4sMiZuwrx37FxRdacdCyraaB",
+  "testnet/legacy-funding": "yR8PUe4jSZ37A4HUtFwtLfe9WhB7braYG2",
 }
 `;

@@ -10,7 +10,7 @@
 //      back and checked here against the payment address before it is sent).
 //   4. the issuer's blind signature is finalized in the worker (which verifies it) and checked once more against the message.
 //   5. redeem: the faucet gets {network, epoch, address, msgPrefix, sig}, nothing about the masternode or proposal.
-import { addressOf, hash160, registrationFundingPath, wipe, type Network, type SeedWallet } from '@govhub/auth';
+import { addressOf, hash160, legacyRegistrationFundingPath, registrationFundingPath, wipe, type Network, type SeedWallet } from '@govhub/auth';
 import {
   base64ToBytes, BLOCK_SECONDS, buildStarterRequestFor, bytesToBase64, epochStart, EPOCH_PARAMS, fromHex, idToBytes, importIssuerKey, isStarterKind, prepareStarter, randomBelow, starterKeyUsable, starterRequestEpochs, toHex,
   verifyStarterToken,
@@ -79,9 +79,12 @@ export interface StarterToken {
   validUntil: number;
 }
 
-/** The new account's one-time funding key (DIP-13 registration path): its hash160 and P2PKH address. The private key is wiped. */
-export function fundingTarget(wallet: SeedWallet, identityIndex: number): { pubKeyHash: Uint8Array; address: string } {
-  const k = wallet.derive(registrationFundingPath(wallet.network, identityIndex));
+/**
+ * The new account's one-time funding key (DIP-13 registration path; `legacy`: the hardened one used until 2026-10-25, for a setup whose
+ * starter was issued to it, store.ts starterOnLegacyKey): its hash160 and P2PKH address. The private key is wiped.
+ */
+export function fundingTarget(wallet: SeedWallet, identityIndex: number, legacy = false): { pubKeyHash: Uint8Array; address: string } {
+  const k = wallet.derive((legacy ? legacyRegistrationFundingPath : registrationFundingPath)(wallet.network, identityIndex));
   try {
     return { pubKeyHash: hash160(k.publicKey), address: addressOf(k.publicKey, wallet.network) };
   } finally {

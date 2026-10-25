@@ -109,22 +109,54 @@ testnet. The phrase is BIP39 English with **no passphrase**.
 
 | Key | Path / rule | Used for |
 |---|---|---|
-| Account setup (registration funding) | `m/9'/coin'/5'/1'/i'`: identity index `i`, hardened | The deposit address and asset lock of a new identity at index `i` (its auth keys are `m/9'/coin'/5'/0'/0'/i'/k'`) |
+| Account setup (registration funding) | `m/9'/coin'/5'/1'/i`: identity index `i`, **not hardened** (key-wallet's `IdentityRegistration` pool, DIP-13) | The deposit address and asset lock of a new identity at index `i` (its auth keys are `m/9'/coin'/5'/0'/0'/i'/k'`) |
+| Account setup before 2026-10-25 (legacy, scan-only) | `m/9'/coin'/5'/1'/i'`: identity index `i`, hardened | What govhub used until 2026-10-25 (and the phase-0 mainnet run). No new funding goes here. Recover scans it (`legacyCreateFamily`, lane "Account setup (before 2026-10-25)"); what is there can be swept, finish its account or top up an identity. A browser that began a setup on this key and has not finished it (hidden ones included), with nothing at that index under today's key, or that holds a starter token or request made for it, finishes with it (`createFundingPath`, `starterOnLegacyKey`). |
 | Top-up | `m/9'/coin'/5'/2'/i'/n`: identity index `i` hardened, top-up `n` not hardened (key-wallet `IdentityTopUp { registration_index }`, DIP-13) | The n-th top-up of identity `i` |
 | Top-up with a pasted key | `HMAC-SHA256(key = the 32-byte signed-in private key, msg = "govhub/topup/v1" ‖ identity id (32 bytes) ‖ u32be(n) ‖ u8(ctr))`, `ctr` = 0, then 1, … until the result is a valid private key | The n-th top-up while signed in with a pasted key (no phrase). Only govhub derives it. |
 | Proposal fee deposit | `m/9'/coin'/100'/0'/n`: DIP-9 feature `100'` (unregistered, govhub's own), branch `0'`, index `n` **not hardened** (DIP-13's convention for funding keys) | The one-time address a proposal fee is paid to from the browser (the creation wizard). The wizard picks a free `n` among 0..19 at random; Recover always scans 0..19 plus a gap of 20 (`proposalFeeFamily`). |
 | Proposal fee deposit with a pasted key | `HMAC-SHA256(key = the signed-in private key, msg = "govhub/proposal-collateral/v1" ‖ identity id (32 bytes) ‖ u32be(n) ‖ u8(ctr))`, as the top-up rule | The same, while signed in with a pasted key (no phrase). Only govhub derives it. |
 
-> **Note for maintainers (pre-mainnet decision).** DIP-13 lists the registration funding level as a plain `identity index`
-> (`m / 9' / coin' / 5' / 1' / identity index`; [dips@a4d46dd dip-0013.md](https://github.com/dashpay/dips/blob/a4d46dd/dip-0013.md)).
-> key-wallet, the library behind Dash Evo Tool and the iOS develop branch, derives it non-hardened:
->
-> - its registration pool is `AddressPoolType::Absent`, which uses `from_normal_idx(index)`;
-> - see `key-wallet/src/managed_account/address_pool.rs` and `managed_account_type.rs` at rust-dashcore e4208c9.
->
-> govhub's `registrationFundingPath` hardens it (`…/1'/i'`), so wallets that scan registration funding keys never derive govhub's
-> account-setup keys. The top-up path matches. Changing it moves every account-setup address. Testnet records and funds at the old
-> addresses would then need a legacy lane in the Recover tool. Decide before mainnet.
+**Identity keys and the account-setup key are the same as in the modern Dash wallets.** Identity authentication keys were already
+the same everywhere; on 2026-10-25 the account-setup key moved from the hardened `…/1'/i'` to `…/1'/i`, the address rs-platform-wallet
+funds a registration from. What each implementation derives (checked in source):
+
+| Key family | govhub | rs-platform-wallet / key-wallet | Dash Evo Tool | DashSync (iOS, legacy) | dashj / Dash Wallet Android |
+|---|---|---|---|---|---|
+| Registration funding | `5'/1'/i` | `5'/1'/n`: next unused address of the `IdentityRegistration` pool (`AddressPoolType::Absent`, normal children, gap 5) | the same, through platform-wallet's asset-lock manager | `5'/1'/n`, `n` normal | `5'/1'/n`, `n` normal, lookahead 5 |
+| Top-up funding | `5'/2'/i'/n` | `5'/2'/i'/n` (`IdentityTopUp { registration_index }`); `5'/2'/n` for a top-up bound to no identity | the same | `5'/2'/n` (no identity level) | `5'/2'/n` (no identity level) |
+| Invitation funding | none (vouchers carry their own key) | `5'/3'/n` | the same | `5'/3'/n` | `5'/3'/n` |
+| Identity keys | `5'/0'/0'/i'/k'`, key id = `k` | the same; key id = key index | the same | the same | the same (`…/0'/0'/0'/k'`) |
+| Keys made with the identity | 0 AUTH/MASTER, 1 AUTH/CRITICAL, 2 AUTH/HIGH (3 TRANSFER/CRITICAL, 4/5 ENCRYPTION/DECRYPTION MEDIUM added later) | 0 MASTER, 1 CRITICAL, 2 HIGH, 3 TRANSFER/CRITICAL (+ 4/5 DashPay ENCRYPTION/DECRYPTION in the iOS app) | 0 MASTER, 1 CRITICAL, 2 HIGH, 3 TRANSFER/CRITICAL, 4/5 ENCRYPTION/DECRYPTION (`ECDSA_HASH160` for 0..3) | one key, 0 MASTER | outside dashj |
+| Identity discovery | key 0 of identity indexes, gap 5 | key 0, gap 5 | key indexes 0..11, gap 5 | key 0 of 5 indexes past the last | key 0 of identity 0 only |
+
+All paths start `m/9'/coin'/`. Sources (paths relative to each repo):
+
+- rs-platform-wallet (dashpay/platform `371a3b3961c`, key-wallet at rust-dashcore `40268cc`):
+  - funding: `packages/rs-platform-wallet/src/wallet/asset_lock/build.rs:392-517` (`peek_next_funding_address`: the next unused
+    address of the account's pool) and `:569-699` (`ensure_identity_topup_account`);
+  - pools: key-wallet `src/managed_account/managed_account_type.rs:593-647` (`AddressPoolType::Absent`), `src/managed_account/address_pool.rs:500-502`
+    (`from_normal_idx`), `src/account/account_type.rs:419-468`, `src/gap_limit.rs:46` (`DEFAULT_SPECIAL_GAP_LIMIT = 5`);
+  - identity keys: `src/wallet/identity/network/identity_handle.rs:52-115` (gap 5, key 0, path), `packages/rs-platform-wallet-ffi/src/identity_derive_and_persist.rs:345-359` (key layout);
+  - key-wallet's `DerivationPath::identity_registration_path` (`src/bip32.rs:1085`) hardens the index, but no wallet funds from it: its
+    non-hardened twin is the pool's shape.
+- Dash Evo Tool `7f2593ab`: `src/wallet_backend/payments.rs:809-885` (registration and top-up funding through platform-wallet's
+  `create_funded_asset_lock_proof`), `src/backend_task/identity/mod.rs:589-690` (key layout), `src/backend_task/identity/discover_identities.rs:17`
+  and `src/model/identity_discovery.rs:18`. Its display-only address book (`src/model/wallet/mod.rs:1463-1482`) still lists the
+  hardened `…/1'/i'`; no funds path reads it.
+- DashSync `c0bcaf09`: `DashSync/shared/Models/Derivation Paths/DSCreditFundingDerivationPath.m:38-54`, `DSSimpleIndexedDerivationPath.m:182-183`,
+  `Identity/DSBlockchainIdentity.m:1203-1205`, `Managers/Chain Managers/DSIdentitiesManager.m:585-595`. dashwallet-ios `develop` no
+  longer uses DashSync: it runs rs-platform-wallet through the swift-sdk.
+- dashj `0732897`: `core/src/main/java/org/bitcoinj/wallet/DerivationPathFactory.java:42-106`, `AuthenticationKeyChain.java:86-94, 330-336`.
+
+So a govhub phrase restored in Dash Evo Tool or the iOS develop wallet finds the same identities (identity key 0) and, from now on,
+sees govhub's account-setup addresses in its registration pool. govhub's index is the identity index, always within the pool's gap of 5.
+Top-ups match rs-platform-wallet and Evo Tool; DashSync and dashj have no per-identity top-up level, so they never derive govhub's
+top-up keys (nor key-wallet's per-identity ones).
+
+One consequence of sharing the path: rs-platform-wallet takes the next unused pool address, while govhub uses the identity index. A
+phrase used in both can see govhub's identity `j` funded at an address the other wallet already used for another identity (address
+reuse), and Recover's "Account setup" lane may list another wallet's unused lock at index `j` as "finish account #j". Both are the
+same seed's keys: nothing is lost, and Platform refuses a lock that is used twice.
 
 ## What other wallets see
 
@@ -136,6 +168,7 @@ Checked in source at these commits, read without running them:
 - dashwallet-ios fe19bd3
 - Dash Core 6dedab5
 - Dash Evo Tool 4c38d4c, with rust-dashcore e4208c9 and platform 9f7ed16
+- the funding-path rows below again on 2026-10-25: Dash Evo Tool 7f2593ab, platform 371a3b3961c (rust-dashcore 40268cc)
 
 What they show:
 
@@ -144,9 +177,11 @@ What they show:
     spendable.
   - Dash Core's wallet derives the DIP-9 funding paths only on demand for Platform signing, and never scans them.
   - key-wallet (Dash Evo Tool) puts identity funding addresses in its filter, but checks ordinary payments only against fund accounts.
-- **Asset locks crediting govhub's keys:** only key-wallet based wallets (Dash Evo Tool) match type-8 locks to identity funding keys.
-  They do so only for keys in their pools: the non-hardened registration path (so not govhub's account setups, see the note above)
-  and top-up accounts they provisioned. Treat any other wallet showing a govhub lock as an exception.
+- **Asset locks crediting govhub's keys:** key-wallet based wallets (Dash Evo Tool, the iOS develop wallet) match type-8 locks to
+  identity funding keys in their pools: the registration pool, which now holds govhub's account-setup keys, and the top-up accounts
+  they provisioned. Account setups made before 2026-10-25 used the hardened `…/1'/i'`, which no other wallet funds from or scans
+  (Evo Tool lists it in a display-only address book): for those, use Recover. dashj also matches locks against its funding chains (`AuthenticationGroupExtension.java:722-740`), registration keys
+  included. Treat any other wallet showing a govhub lock as an exception.
 - **Exporting the one-time key** (the Recover tool's advanced option, WIF) is the way to use another wallet. Before it shows the key,
   the tool warns that anyone holding the WIF can take the payments at that address and use an unused asset lock that credits it. The
   key controls nothing else: it is not an identity key.

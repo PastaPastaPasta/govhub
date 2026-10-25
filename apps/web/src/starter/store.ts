@@ -10,7 +10,7 @@
 // blinded message again (the issuer re-signs it) instead of a new one it would refuse as already used. Trying another masternode or
 // proposal never replaces a request for a different one. All are removed once a token is saved: every request is bound to this
 // account's funding key, so once the account is funded none of them can fund anything else.
-import { hash160, registrationFundingPath, wipe, type Network, type SeedWallet } from '@govhub/auth';
+import { hash160, legacyRegistrationFundingPath, registrationFundingPath, wipe, type Network, type SeedWallet } from '@govhub/auth';
 import { bytesToBase64, toHex } from '@govhub/badge';
 import { fromStoredPending, fundingTarget, toStoredPending, type PendingStarter, type StarterToken, type StoredPending } from './client.ts';
 
@@ -95,9 +95,22 @@ export function pendingStarterKeys(storage: Pick<Storage, 'key' | 'length'>, net
   return [...out];
 }
 
-/** The seed's funding key for `identityIndex`, for `fn` only (wiped after). */
-async function withFundingKey<T>(wallet: SeedWallet, identityIndex: number, fn: (priv: Uint8Array, pubKeyHash: Uint8Array) => Promise<T>): Promise<T> {
-  const k = wallet.derive(registrationFundingPath(wallet.network, identityIndex));
+/**
+ * Whether account setup `identityIndex` keeps its starter token or request under the hardened account-setup key govhub used until
+ * 2026-10-25, and nothing under today's key. A token is bound to its key's pubKeyHash, so such a setup finishes with that old key
+ * (its address, sealer and funding run) instead of stranding the token.
+ */
+export function starterOnLegacyKey(storage: Pick<Storage, 'getItem'>, wallet: SeedWallet, identityIndex: number): boolean {
+  const kept = (legacy: boolean) => {
+    const hex = toHex(fundingTarget(wallet, identityIndex, legacy).pubKeyHash);
+    return storage.getItem(starterStorageKey(wallet.network, hex)) !== null || storage.getItem(pendingStorageKey(wallet.network, hex)) !== null;
+  };
+  return !kept(false) && kept(true);
+}
+
+/** The seed's funding key for `identityIndex` (the legacy one where starterOnLegacyKey says so), for `fn` only (wiped after). */
+async function withFundingKey<T>(storage: Pick<Storage, 'getItem'>, wallet: SeedWallet, identityIndex: number, fn: (priv: Uint8Array, pubKeyHash: Uint8Array) => Promise<T>): Promise<T> {
+  const k = wallet.derive((starterOnLegacyKey(storage, wallet, identityIndex) ? legacyRegistrationFundingPath : registrationFundingPath)(wallet.network, identityIndex));
   try {
     return await fn(k.privateKey, hash160(k.publicKey));
   } finally {
@@ -106,7 +119,7 @@ async function withFundingKey<T>(wallet: SeedWallet, identityIndex: number, fn: 
 }
 
 export const saveStarterFor = (storage: Store, wallet: SeedWallet, identityIndex: number, entry: StoredStarter): Promise<void> =>
-  withFundingKey(wallet, identityIndex, (priv, h) => saveStarter(storage, priv, wallet.network, h, entry));
+  withFundingKey(storage, wallet, identityIndex, (priv, h) => saveStarter(storage, priv, wallet.network, h, entry));
 
 export interface StarterSealer {
   /** saves the token (and drops the requests: the account it is bound to is now funded) */
@@ -143,7 +156,7 @@ async function updatePending(storage: Store, name: string, key: CryptoKey, f: (l
  * that arrives after the sheet closed (and the wallet was wiped) is still kept.
  */
 export const starterSealer = (storage: Store, wallet: SeedWallet, identityIndex: number): Promise<StarterSealer> =>
-  withFundingKey(wallet, identityIndex, async (priv, h) => {
+  withFundingKey(storage, wallet, identityIndex, async (priv, h) => {
     const hex = toHex(h);
     const name = starterStorageKey(wallet.network, hex);
     const req = pendingStorageKey(wallet.network, hex);
@@ -161,11 +174,11 @@ export const starterSealer = (storage: Store, wallet: SeedWallet, identityIndex:
 
 /** The stored starter of this account setup; null when there is none or it does not open. */
 export const loadStarterFor = (storage: Store, wallet: SeedWallet, identityIndex: number): Promise<StoredStarter | null> =>
-  withFundingKey(wallet, identityIndex, (priv, h) => loadStarter(storage, priv, wallet.network, h)).catch(() => null);
+  withFundingKey(storage, wallet, identityIndex, (priv, h) => loadStarter(storage, priv, wallet.network, h)).catch(() => null);
 
 /** The unanswered starter requests of this account setup, oldest first; empty when there are none or they do not open. */
 export const loadPendingFor = (storage: Store, wallet: SeedWallet, identityIndex: number): Promise<PendingStarter[]> =>
-  withFundingKey(wallet, identityIndex, async (priv, h) => {
+  withFundingKey(storage, wallet, identityIndex, async (priv, h) => {
     const list = asList(await open(storage, pendingStorageKey(wallet.network, toHex(h)), () => storeKey(priv, wallet.network, h)));
     const out: PendingStarter[] = [];
     for (const x of list) {
@@ -180,10 +193,11 @@ export const loadPendingFor = (storage: Store, wallet: SeedWallet, identityIndex
 
 /** Drops the stored request for one (kind, subject) of this account setup (e.g. its epoch's issuance has closed). */
 export const forgetPendingFor = (storage: Store, wallet: SeedWallet, identityIndex: number, kind: PendingStarter['kind'], subject: string): Promise<void> =>
-  withFundingKey(wallet, identityIndex, async (priv, h) =>
+  withFundingKey(storage, wallet, identityIndex, async (priv, h) =>
     updatePending(storage, pendingStorageKey(wallet.network, toHex(h)), await storeKey(priv, wallet.network, h), (l) => l.filter((x) => !sameSubject(x, kind, subject))),
   ).catch(() => {});
 
+/** Forgets this setup's token and requests, under today's key and the legacy one (the account is funded: neither funds anything else). */
 export function forgetStarterFor(storage: Store, wallet: SeedWallet, identityIndex: number): void {
-  forgetStarter(storage, wallet.network, toHex(fundingTarget(wallet, identityIndex).pubKeyHash));
+  for (const legacy of [false, true]) forgetStarter(storage, wallet.network, toHex(fundingTarget(wallet, identityIndex, legacy).pubKeyHash));
 }

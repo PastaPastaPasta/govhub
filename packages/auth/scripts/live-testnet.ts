@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { createDapi } from '@govhub/dapi';
 import {
   addLaterKeys, bytesToHex, CREDITS_PER_DUFF, discoverIdentities, generatePhrase, hash160, openVault, parseVoucher,
-  randomBytes, redeemVoucher, runFunding, SeedWallet, signInWithKey, signInWithSeed, storeInVault, wifOf,
+  randomBytes, redeemVoucher, registrationFundingPath, runFunding, SeedWallet, signInWithKey, signInWithSeed, storeInVault, topUpFundingPath, wifOf,
   type FundingRecord, type FundingStore, type PlatformPort,
 } from '../src/index.ts';
 import { createEvoPlatform } from '../src/evo.ts';
@@ -91,7 +91,7 @@ if (steps.has('create')) {
       if (v.state === 'awaiting-deposit' && !paid) {
         paid = true;
         // the watcher is live: now "scan the QR" (pay the address)
-        void pay(hash160(wallet.derive(`m/9'/1'/5'/1'/0'`).publicKey), 2_000_000n).catch((e) => log(`pay failed: ${redactErr(e)}`));
+        void pay(hash160(wallet.derive(registrationFundingPath(NET, 0)).publicKey), 2_000_000n).catch((e) => log(`pay failed: ${redactErr(e)}`));
       }
     },
   });
@@ -140,7 +140,7 @@ if (steps.has('topup')) {
       log(`topup: ${v.state}${v.note ? ` (${v.note})` : ''}`);
       if (v.state === 'awaiting-deposit' && !paid) {
         paid = true;
-        void pay(hash160(wallet.derive(`m/9'/1'/5'/2'/${found.identityIndex}'/${index}`).publicKey), 100_000n).catch((e) => log(`pay failed: ${redactErr(e)}`));
+        void pay(hash160(wallet.derive(topUpFundingPath(NET, found.identityIndex, index)).publicKey), 100_000n).catch((e) => log(`pay failed: ${redactErr(e)}`));
       }
     },
   });

@@ -121,6 +121,21 @@ describe('D-006: lock too small', () => {
     await r.unmount();
   });
 
+  it('"Pay again" after a legacy-bound (starter) setup lets runFunding pick the key: a new index never starts on the old hardened key', async () => {
+    script = async (o) => {
+      if (o.identityIndex === 0) throw new LockTooSmallError('create', 209_646_000n, 221_500_000n);
+      return { identityId: 'NEW', record: { identityIndex: o.identityIndex } };
+    };
+    const r = await render(<FundingPanel kind="create" wallet={{} as never} identityIndex={0} legacy onDone={() => {}} />);
+    await flush();
+    expect(runs.at(-1)!.legacy).toBe(true);
+    await click(r.el.querySelector<HTMLButtonElement>('[data-testid="pay-again"]')!);
+    await flush();
+    expect(runs.at(-1)).toMatchObject({ identityIndex: 2, kind: 'create' });
+    expect(runs.at(-1)!.legacy).toBeUndefined();
+    await r.unmount();
+  });
+
   it("offers this phrase's own identities as one-click targets", async () => {
     script = async (o) => {
       if (!o.recoverInto) throw new LockTooSmallError('create', 209_646_000n, 221_500_000n);
