@@ -118,6 +118,7 @@ export function storeMnAddresses(db: DB, raw: ProTxEntry[], height: number): voi
   db.transaction(() => {
     for (const e of raw) up.run(e.proTxHash, str(e.collateralAddress), str(e.state?.payoutAddress), height);
   })();
+  addressCache.delete(db); // a re-snapshot of the same height (reorg) can change them without changing the cache stamp
 }
 
 type MnAddresses = Map<string, { collateralAddress?: string; payoutAddress?: string }>;

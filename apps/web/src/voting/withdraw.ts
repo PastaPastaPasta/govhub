@@ -62,11 +62,13 @@ export async function reconcileMaybe(v: WatchedVote, d: WithdrawDeps): Promise<{
 }
 
 export async function withdrawVote(v0: WatchedVote, d: WithdrawDeps): Promise<{ result: WithdrawResult; vote: WatchedVote }> {
+  // signed before any await: a sign-out meanwhile wipes the key, and a relay that only got the vote through the re-post must
+  // still get its cancel
+  const sig = d.cancelSig(v0);
   const r0 = await reconcileMaybe(v0, d);
   let v = r0.vote;
   const unsure = !!v.maybeAt?.length;
   if (!v.refs.length) return { result: r0.inCore ? 'sent' : unsure ? 'unknown' : 'gone', vote: v };
-  const sig = d.cancelSig(v);
   let sent = r0.inCore;
   let firstError: unknown = null;
   // every relay is tried even when one fails, so one unreachable relay never leaves the others holding the vote

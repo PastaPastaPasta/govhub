@@ -390,16 +390,21 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       if (!identityId) return true;
       // the watched votes: sealed to this keyring on this device (D-027), a plain list left by an earlier version, and the
       // Platform backup (this Core network's only, D-016/D-028)
-      let list = watchedRef.current;
-      const known = new Set(list.map((x) => x.voteHash));
+      // one record per vote: the one further along wins (finished > confirmed > broadcast > held > queued), ties keep the first
+      const rank = (v: WatchedVote) => ({ queued: 0, held: 1, broadcast: 2, confirmed: 3 } as Record<string, number>)[v.status] ?? 4;
+      const byHash = new Map<string, WatchedVote>();
       const add = (more: WatchedVote[]) => {
-        for (const v of more) if (!known.has(v.voteHash)) (known.add(v.voteHash), (list = [...list, v]));
+        for (const v of more) {
+          const o = byHash.get(v.voteHash);
+          if (!o || rank(v) > rank(o)) byHash.set(v.voteHash, v);
+        }
       };
       if (!memory) {
         const { key, scope } = keepVotesSealedTo(k)!;
         add(loadWatchedSealed(localStorage, coreNetwork, identityId, scope, key));
-        add(loadWatched(localStorage, coreNetwork, identityId).map((v) => ({ ...v, network: v.network ?? coreNetwork })));
       }
+      add(watchedRef.current);
+      if (!memory) add(loadWatched(localStorage, coreNetwork, identityId).map((v) => ({ ...v, network: v.network ?? coreNetwork })));
       const keyIds = new Set(k.content.keys.map((x) => votingKeyId(x.privateKey, x.compressed)));
       add(
         k.pending.votes.flatMap((p) => {
@@ -411,7 +416,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
           return signer && keyIds.has(bytesToHex(signer.keyId)) ? [{ ...r, network: coreNetwork }] : [];
         }),
       );
-      const next = pruneWatched(list, nowS());
+      const next = pruneWatched([...byHash.values()], nowS());
       if (!memory) {
         persistWatched(next);
         removePlainWatched(localStorage, coreNetwork, identityId);
@@ -1168,6 +1173,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         // copied now: a lock while the relays answer must not leave the cancel unsigned (and lose the relay ids learned)
         const key = keyCopy(liveKey(pre));
         let r: WithdrawResult;
+        let casting = false; // set by this call (a cast running meanwhile keeps its own flag)
         try {
           // a send of this vote may be on its way (watchdog): wait for its answer, then decide on the latest record
           await inflightRef.current.get(voteHash)?.catch(() => {});
@@ -1178,10 +1184,10 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
             updateWatched((list) => list.map((x) => (x.voteHash === voteHash ? { ...x, status: 'cancelled' } : x)), t);
             return;
           }
-          castingRef.current = true;
+          castingRef.current = casting = true;
           r = await withdraw(v, key, t, 'cancelled');
         } finally {
-          castingRef.current = false;
+          if (casting) castingRef.current = false;
           key?.wipe();
         }
         if (r === 'unknown')

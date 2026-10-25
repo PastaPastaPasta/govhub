@@ -465,7 +465,7 @@ export function OfflineSign({ proposal }: { proposal: Proposal }) {
         </button>
       </div>
       {err && <p className="error small">{err}</p>}
-      {mns && (k.status !== 'open' || k.memoryOnly) && <p className="muted small">Your saved keyring is not open, so this browser follows a vote sent from here only until the tab closes (the relay still holds and sends it).</p>}
+      {mns && (k.status !== 'open' || k.memoryOnly) && <p className="muted small">Your saved keyring is not open: unless it was opened earlier in this session, this browser follows a vote sent from here only until the tab closes (the relay still holds and sends it).</p>}
       {mns && !mns.length && <p className="muted small">No valid masternode votes with that address.</p>}
       {mns?.map((m) => {
         const vote = { mn: m, govHash: proposal.govHash, outcome, time: m.time };
