@@ -1,5 +1,6 @@
-# Cloudflare Pages response headers. A <meta> CSP cannot set frame-ancestors, so framing (and
-# clickjacking the "Use these settings" button of a ?config= link) is blocked here.
+# Response headers for hosts that read a _headers file (Cloudflare Pages, Netlify). GitHub Pages ignores it: at
+# gov.dashhq.org the same framing headers need a Cloudflare response-header Transform Rule on the proxied zone; the app itself
+# refuses to offer a ?config= link inside a frame (app/Layout.tsx isFramed). A <meta> CSP cannot set frame-ancestors.
 /*
   Content-Security-Policy: frame-ancestors 'none'
   X-Frame-Options: DENY
