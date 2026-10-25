@@ -1887,6 +1887,18 @@ details summary {
 .form textarea.code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
+/* Secret fields (recovery phrase, voucher link): masked until "Show". */
+.secret-field {
+  display: grid;
+  gap: 0.25rem;
+  justify-items: start;
+}
+.secret-field label {
+  inline-size: 100%;
+}
+.form textarea.masked {
+  -webkit-text-security: disc;
+}
 .row2 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
