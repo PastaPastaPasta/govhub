@@ -86,6 +86,14 @@ CREATE TABLE IF NOT EXISTS mn_list_entries (
   PRIMARY KEY (list_hash, pro_tx_hash)
 );
 CREATE INDEX IF NOT EXISTS mn_list_entries_collateral ON mn_list_entries(list_hash, collateral_txid, collateral_n);
+-- Core's collateral and current payout address per masternode, from the latest snapshot that listed it. Served with /v1/mnlist so a
+-- client can refuse a pasted collateral or payout key; not part of the content-addressed lists (they do not change the list hash).
+CREATE TABLE IF NOT EXISTS mn_addresses (
+  pro_tx_hash TEXT PRIMARY KEY,
+  collateral_address TEXT,
+  payout_address TEXT,
+  height INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS mn_snapshots (
   height INTEGER PRIMARY KEY,
   block_hash TEXT NOT NULL,

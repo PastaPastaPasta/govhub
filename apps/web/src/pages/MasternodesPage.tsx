@@ -116,7 +116,7 @@ function Create() {
           <button type="button" className="btn btn-primary" onClick={() => void k.createKeyring(false).catch(() => {})} disabled={!canSave || !!k.busy} data-testid="create-keyring">
             Save encrypted on Platform
           </button>
-          <p className="small muted">Encrypted in this browser to your recovery phrase (and passkeys you add). Back on any device when you sign in. About 0.0016 DASH in credits the first time.</p>
+          <p className="small muted">Encrypted in this browser to your recovery phrase (and passkeys you add). Back on any device when you sign in. About 0.003 DASH in credits for each save.</p>
         </div>
         <div>
           <button type="button" className="btn" onClick={() => void k.createKeyring(true).catch(() => {})} disabled={!!k.busy} data-testid="memory-keyring">
@@ -447,6 +447,7 @@ function Privacy() {
 
 export function MasternodesPage() {
   const k = useKeyring();
+  const { openSheet } = useAuth();
   return (
     <section className="kr-page" aria-labelledby="mn-page-title">
       <Header />
@@ -456,9 +457,14 @@ export function MasternodesPage() {
         </p>
       )}
       {k.error && (
-        <p className="kr-alert" role="alert" data-testid="keyring-error">
-          {k.error}
-        </p>
+        <div className="kr-alert" role="alert" data-testid="keyring-error">
+          <p>{k.error}</p>
+          {k.needsTopUp && (
+            <button type="button" className="btn btn-s" onClick={() => openSheet('topup')} data-testid="keyring-topup">
+              Top up
+            </button>
+          )}
+        </div>
       )}
       {k.status === 'signed-out' && (
         <section className="kr-card kr-gate">

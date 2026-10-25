@@ -3,7 +3,9 @@
 // the tab. It drives the same provider code as live mode, so the tracker, the celebration and the error states can be seen and tested.
 //
 // `?votesim=` picks a scenario: `auto` (default; each stage ~1.5 s), `manual` (stages move only on window.__voteSim.advance()),
-// `down` (both relays unreachable until window.__voteSim.up()), `hour` (the relay holds the vote for Core's one-change-per-hour rule).
+// `down` (both relays unreachable until window.__voteSim.up()), `hour` (the relay holds the vote for Core's one-change-per-hour rule),
+// `lost` (a relay keeps a vote but the answer to its first submission times out, like a slow relay; posting it again answers with
+// the receipt; votes move only on advance()).
 import { countVotes, normalizeMnId, p2pkhAddress, hash160 } from '@govhub/verify';
 import { secp256k1 } from '@noble/curves/secp256k1.js';
 import type { Bridge, BridgeMnList, BridgeVote, BridgeVotes } from '../data/bridge.ts';
@@ -12,7 +14,7 @@ import { fixtureMnKey } from '../data/fixtureVotes.ts';
 import type { SignedVoteRecord } from './plan.ts';
 import { RelayError, type RelayHealth, type RelayVoteState, type RelayVoteStatus } from './relay.ts';
 
-export type SimScenario = 'auto' | 'manual' | 'down' | 'hour';
+export type SimScenario = 'auto' | 'manual' | 'down' | 'hour' | 'lost';
 export const SIM_RELAYS = ['https://relay-one.example', 'https://relay-two.example'];
 
 export interface RelayPort {
@@ -93,7 +95,7 @@ export class VoteSim {
   private state(s: SimVote): SimVote {
     if (s.status !== 'held' && s.status !== 'broadcast') return s;
     const t = nowS();
-    if (this.scenario === 'manual') {
+    if (this.scenario === 'manual' || this.scenario === 'lost') {
       if (s.stage >= 1 && s.status === 'held') Object.assign(s, { status: 'broadcast', broadcastAt: t });
       if (s.stage >= 2 && s.status === 'broadcast') s.status = 'confirmed';
       return s;
@@ -119,6 +121,7 @@ export class VoteSim {
       nextAttemptAt: held ? Math.max(x.v.releaseAt, x.holdUntil ?? 0) : null,
       holdReason: held ? (x.holdUntil ? 'one-change-per-hour' : 'release-time') : null,
       sameAsCurrent: false,
+      maybeSent: x.broadcastAt !== null,
     };
   }
 
@@ -132,6 +135,7 @@ export class VoteSim {
         if (known) return this.view(known);
         const s: SimVote = { id: hex(16), relay: url, v, status: 'held', acceptedAt: Date.now() / 1000, stage: 0, holdUntil: this.scenario === 'hour' ? nowS() + 1800 : null, broadcastAt: null };
         this.votes.set(s.id, s);
+        if (this.scenario === 'lost') throw new RelayError(`relay ${url} unreachable: signal timed out`);
         return this.view(s);
       },
       status: async (id) => {
@@ -177,7 +181,7 @@ export class VoteSim {
 /** Reads `?votesim=` once per tab (kept in sessionStorage like `?fixtures=`). */
 export function simScenario(search: string, session: Pick<Storage, 'getItem' | 'setItem'> | undefined = globalThis.sessionStorage): SimScenario {
   const p = new URLSearchParams(search).get('votesim');
-  const ok = (x: string | null): x is SimScenario => x === 'auto' || x === 'manual' || x === 'down' || x === 'hour';
+  const ok = (x: string | null): x is SimScenario => x === 'auto' || x === 'manual' || x === 'down' || x === 'hour' || x === 'lost';
   if (ok(p)) session?.setItem('govhub.votesim', p);
   const s = session?.getItem('govhub.votesim') ?? null;
   return ok(s) ? s : 'auto';

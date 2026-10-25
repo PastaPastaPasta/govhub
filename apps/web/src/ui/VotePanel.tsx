@@ -1,22 +1,21 @@
 // Masternode voting UI (PLAN §5.1-5.2). One proposal (the proposal page's panel) or many (/votes): pick Yes / No / Abstain for the
 // selected masternodes, sign in the browser, send through the relays now or each masternode at its own random time before the
 // deadline, then follow every vote until the network counts it. Also offline signing (the exact text for `signmessage`).
-import { bytesEqual, decodeAddress, governanceVoteHash, recoverVoteSigner, type Network } from '@govhub/verify';
+import { bytesEqual, decodeAddress, governanceVoteHash, recoverVoteSigner, verifyVoteSignature, VOTE_MAX_FUTURE_S, type Network } from '@govhub/verify';
 import { useEffect, useState, type KeyboardEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useApp } from '../app/context.tsx';
 import { errorText } from '../auth/runtime.ts';
 import { enabledBridges } from '../config/registry.ts';
-import { HttpBridge, type BridgeMasternode } from '../data/bridge.ts';
+import { BridgeError, HttpBridge, type BridgeMasternode } from '../data/bridge.ts';
 import type { Proposal } from '../data/types.ts';
 import { shortHash } from '../lib/format.ts';
 import { votingDeadlineTime } from '../lib/governance.ts';
 import { useKeyring } from '../voting/KeyringContext.tsx';
 import type { OwnedMasternode } from '../voting/masternodes.ts';
 import { isOpen, type WatchedVote } from '../voting/pending.ts';
-import { currentKey, deferredWindow, mnId, offlineSigningRequest, OUTCOME_NAME, type CurrentVote, type Intent, type Outcome } from '../voting/plan.ts';
-import { relayHost } from '../voting/relay.ts';
-import { deferredUnavailable, describeVote, voteButtonText } from '../voting/status.ts';
+import { currentKey, deferredWindow, mnId, offlineSigningRequest, offlineVoteTime, OUTCOME_NAME, voterawCommand, type CurrentVote, type Intent, type Outcome } from '../voting/plan.ts';
+import { deferredUnavailable, describeVote, relaySummary, VOTE_NOW_DELAY_TEXT, voteButtonText } from '../voting/status.ts';
 import { Badge, fmtTime, mnName, OUTCOME_LABEL, OutcomeChip, useLabels } from './vote/common.tsx';
 import { VoteSuccess } from './vote/VoteSuccess.tsx';
 import { VoteTracker } from './vote/VoteTracker.tsx';
@@ -193,6 +192,7 @@ export function VoteComposer({ proposals, onVerify }: { proposals: Proposal[]; o
           : loading
             ? 'Reading your current votes…'
             : null;
+  const relays = relaySummary(k.relays, k.relayHealth);
   const latestRelease = mode === 'deferred' && window ? Math.min(window.latest, withinH ? now + Number(withinH) * 3600 : Infinity) : null;
   const buttonText = k.busy?.startsWith('Signing')
     ? `${k.busy}…`
@@ -330,7 +330,7 @@ export function VoteComposer({ proposals, onVerify }: { proposals: Proposal[]; o
             <input type="radio" name="vote-when" checked={mode === 'now'} onChange={() => setMode('now')} />
             <span>
               <b>Now</b>
-              <span className="small muted">The network shows it within a minute or two.</span>
+              <span className="small muted">{VOTE_NOW_DELAY_TEXT}</span>
             </span>
           </label>
           <label className={`vwhen-opt${mode === 'deferred' ? ' on' : ''}${unavailable ? ' off' : ''}`}>
@@ -362,12 +362,8 @@ export function VoteComposer({ proposals, onVerify }: { proposals: Proposal[]; o
           {buttonText}
         </button>
         {toSend.length > 0 && !blocked && (
-          <p className="vgo-sum small muted" data-testid="vote-summary">
-            {mode === 'deferred' && latestRelease
-              ? `Signed here, released at random times before ${fmtTime(latestRelease)}.`
-              : k.demo
-                ? 'Signed in your browser. In demo mode nothing is sent.'
-                : `Signed in your browser and sent to the network through ${k.relays.length === 1 ? relayHost(k.relays[0]!) : `${k.relays.length} relays`}.`}
+          <p className={`vgo-sum small ${relays.warn && mode !== 'deferred' && !k.demo ? 'vwarn' : 'muted'}`} data-testid="vote-summary">
+            {mode === 'deferred' && latestRelease ? `Signed here, released at random times before ${fmtTime(latestRelease)}.` : k.demo ? 'Signed in your browser. In demo mode nothing is sent.' : relays.text}
           </p>
         )}
         {hint && (
@@ -396,76 +392,113 @@ export function VoteComposer({ proposals, onVerify }: { proposals: Proposal[]; o
   );
 }
 
-/** Offline signing: the exact text to sign elsewhere (mainnet), or why that is impossible (testnet). No key enters the page. */
+/**
+ * Offline signing: what to sign elsewhere, timed when the user asks (and shown), after the masternode's current vote by Core's
+ * one-change-per-hour rule. Mainnet: the exact text for `signmessage`. Testnet: the vote hash (Core checks a signature over the binary
+ * hash, which `signmessage` cannot make) and the `voteraw` command, for custom tooling. Either way a signature can be pasted back and
+ * is checked here before it is sent. No key enters the page.
+ */
 export function OfflineSign({ proposal }: { proposal: Proposal }) {
   const k = useKeyring();
   const { registry } = useApp();
   const network: Network = k.coreNetwork;
   const [address, setAddress] = useState('');
   const [outcome, setOutcome] = useState<Outcome>(1);
-  const [mns, setMns] = useState<BridgeMasternode[] | null>(null);
+  const [mns, setMns] = useState<Array<BridgeMasternode & { time: number; releaseAt: number; hourRule: boolean }> | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [sigs, setSigs] = useState<Record<string, string>>({});
-  const [time] = useState(() => Math.floor(Date.now() / 1000));
   const find = async () => {
     setErr(null);
     setMns(null);
+    setSigs({});
     const d = decodeAddress(address.trim(), network);
     if (!d || d.type !== 'p2pkh') return setErr(`Enter a ${network} voting address.`);
     const b = enabledBridges(registry)[0];
     if (!b) return setErr('No bridge configured.');
     try {
-      const list = await new HttpBridge(b.name, b.httpBase).mnlist();
-      setMns(list.masternodes.filter((m) => m.votingAddress === address.trim() && m.valid));
+      const bridge = new HttpBridge(b.name, b.httpBase);
+      const list = (await bridge.mnlist()).masternodes.filter((m) => m.votingAddress === address.trim() && m.valid);
+      // the masternodes' current votes on this proposal (the bridge's set; 404 = none yet): Core's one-change-per-hour rule
+      const votes = list.length ? await bridge.votes(proposal.govHash).catch((e) => (e instanceof BridgeError && e.status === 404 ? null : Promise.reject(e))) : null;
+      const now = Math.floor(Date.now() / 1000);
+      setMns(
+        list.map((m) => {
+          // the latest of: the bridge's votes this address signed (checked here), and ours that went out or may have
+          const fromBridge = (votes?.votes ?? []).filter((v) => v.signal === 1 && mnId(v) === mnId(m) && v.time <= now + VOTE_MAX_FUTURE_S && verifyVoteSignature(v.sig, { collateralTxid: v.collateralTxid, collateralIndex: v.collateralIndex, govHashDisplay: proposal.govHash, signal: 1, outcome: v.outcome, time: v.time }, d.hash160, network));
+          const ours = k.watched.filter((w) => w.govHash === proposal.govHash && mnId(w) === mnId(m) && (w.status === 'broadcast' || w.status === 'held' || w.status === 'confirmed' || (w.status === 'queued' && !!w.maybeAt?.length)));
+          const cur = [...fromBridge, ...ours].sort((a, b) => b.time - a.time)[0];
+          return { ...m, ...offlineVoteTime(now, cur) };
+        }),
+      );
     } catch (e) {
       setErr(errorText(e));
     }
   };
-  const submit = async (m: BridgeMasternode) => {
+  const submit = async (m: BridgeMasternode & { time: number; releaseAt: number }) => {
     const sig = (sigs[m.proTxHash] ?? '').trim();
-    const fields = { collateralTxid: m.collateralTxid, collateralIndex: m.collateralIndex, govHashDisplay: proposal.govHash, signal: 1, outcome, time };
+    const fields = { collateralTxid: m.collateralTxid.toLowerCase(), collateralIndex: m.collateralIndex, govHashDisplay: proposal.govHash, signal: 1, outcome, time: m.time };
     const signer = recoverVoteSigner(sig, fields, network);
-    const d = decodeAddress(address.trim(), network)!;
-    if (!signer || !bytesEqual(signer.keyId, d.hash160)) return setErr('That signature is not by this voting address over this text.');
-    await k.submitSigned({ proTxHash: m.proTxHash, collateralTxid: m.collateralTxid, collateralIndex: m.collateralIndex, govHash: proposal.govHash, outcome, time, releaseAt: time, sig, voteHash: governanceVoteHash(fields) }).catch(() => {});
+    const d = decodeAddress(address.trim(), network);
+    if (!signer || !d || !bytesEqual(signer.keyId, d.hash160)) return setErr(`That signature is not by this voting address over this ${network === 'testnet' ? 'vote hash' : 'text'}.`);
+    setErr(null);
+    await k.submitSigned({ proTxHash: m.proTxHash, collateralTxid: fields.collateralTxid, collateralIndex: m.collateralIndex, govHash: proposal.govHash, outcome, time: m.time, releaseAt: m.releaseAt, sig, voteHash: governanceVoteHash(fields), network }).catch(() => {});
   };
   return (
     <details className="vote-offline">
       <summary>Sign offline instead (Dash Core, hardware wallet)</summary>
       {network === 'testnet' ? (
         <p className="notice-box small" data-testid="offline-testnet">
-          Not possible on testnet: testnet Core checks votes against the binary vote hash, not a signed message, and <code>signmessage</code> (Dash Core, DMT, hardware wallets) can only sign messages. Use a voting key in the keyring instead; the hash to sign is shown for custom tooling.
+          On testnet, Core checks a signature over the binary vote hash, which <code>signmessage</code> (Dash Core, DMT, hardware wallets) cannot make. Sign the hash below with your own tooling and paste the signature back, or broadcast it yourself with the <code>voteraw</code> command shown.
         </p>
       ) : (
         <p className="small muted">Paste your voting address, sign each line below with <code>signmessage &lt;address&gt; "&lt;text&gt;"</code>, and paste the signature back. The key never enters this page.</p>
       )}
       <div className="form-actions">
-        <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="voting address" aria-label="Voting address" className="mono-ish vinput" />
-        <select value={outcome} onChange={(e) => setOutcome(Number(e.target.value) as Outcome)} aria-label="Vote" className="vinput">
+        <input value={address} onChange={(e) => (setAddress(e.target.value), setMns(null))} placeholder="voting address" aria-label="Voting address" className="mono-ish vinput" />
+        <select value={outcome} onChange={(e) => (setOutcome(Number(e.target.value) as Outcome), setMns(null))} aria-label="Vote" className="vinput">
           <option value={1}>Yes</option>
           <option value={2}>No</option>
           <option value={3}>Abstain</option>
         </select>
         <button type="button" className="btn" onClick={find}>
-          Show what to sign
+          {mns ? 'Time it again' : 'Show what to sign'}
         </button>
       </div>
       {err && <p className="error small">{err}</p>}
+      {mns && (k.status !== 'open' || k.memoryOnly) && <p className="muted small">Your saved keyring is not open: unless it was opened earlier in this session, this browser follows a vote sent from here only until the tab closes (the relay still holds and sends it).</p>}
       {mns && !mns.length && <p className="muted small">No valid masternode votes with that address.</p>}
       {mns?.map((m) => {
-        const req = offlineSigningRequest({ mn: m, govHash: proposal.govHash, outcome, time }, network);
+        const vote = { mn: m, govHash: proposal.govHash, outcome, time: m.time };
+        const req = offlineSigningRequest(vote, network);
+        const held = k.watched.filter((w) => isOpen(w) && w.status !== 'broadcast' && !w.restored && w.govHash === proposal.govHash && mnId(w) === mnId(m));
         return (
           <div key={m.proTxHash} className="vote-offline-row" data-testid="offline-row">
             <div className="small">Masternode {shortHash(m.proTxHash, 6)}</div>
-            {req.message ? <pre className="code">{req.message}</pre> : <pre className="code">vote signature hash (internal byte order): {req.hashHex}</pre>}
-            {req.message && (
-              <div className="form-actions">
-                <input value={sigs[m.proTxHash] ?? ''} onChange={(e) => setSigs({ ...sigs, [m.proTxHash]: e.target.value })} placeholder="signature (base64)" aria-label="Signature" className="mono-ish vinput" />
-                <button type="button" className="btn" onClick={() => void submit(m)} disabled={!k.relays.length}>
-                  Send
-                </button>
+            <p className="small muted" data-testid="offline-time">
+              Vote time (nTime) {m.time} ({fmtTime(m.time)}), set when you asked{m.hourRule ? ': Core allows one change per hour after this masternode’s current vote, so the relay holds it until then' : ''}. Sign and send it soon; if it has been a while, time it again.
+            </p>
+            {held.length > 0 && (
+              <div className="vwarn small" data-testid="offline-held">
+                <p>A vote of this masternode on this proposal that you signed here is still on its way. It could be released after this one and replace it: cancel it first.</p>
+                {held.map((w) => (
+                  <button key={w.voteHash} type="button" className="btn btn-s" onClick={() => void k.cancel(w.voteHash).catch(() => {})} disabled={!!k.busy}>
+                    Cancel the {OUTCOME_NAME[w.outcome]} vote
+                  </button>
+                ))}
               </div>
             )}
+            {req.message ? <pre className="code">{req.message}</pre> : <pre className="code" data-testid="offline-hash">vote signature hash (internal byte order): {req.hashHex}</pre>}
+            {network === 'testnet' && (
+              <pre className="code small" data-testid="offline-voteraw">
+                {voterawCommand(vote)}
+              </pre>
+            )}
+            <div className="form-actions">
+              <input value={sigs[m.proTxHash] ?? ''} onChange={(e) => setSigs({ ...sigs, [m.proTxHash]: e.target.value })} placeholder="signature (base64)" aria-label="Signature" className="mono-ish vinput" data-testid="offline-sig" />
+              <button type="button" className="btn" onClick={() => void submit(m)} disabled={!k.relays.length || held.length > 0}>
+                Send
+              </button>
+            </div>
           </div>
         );
       })}

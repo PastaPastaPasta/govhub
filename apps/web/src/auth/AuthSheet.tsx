@@ -471,7 +471,15 @@ function PhraseSignIn() {
       // A setup paid again after a too-small payment comes before the too-small one.
       const mine = store
         .list()
-        .filter((r) => r.network === network && r.kind === 'create' && r.state !== 'done' && r.address === addressOf(wallet.derive(registrationFundingPath(network, r.identityIndex)).publicKey, network));
+        .filter((r) => {
+          if (r.network !== network || r.kind !== 'create' || r.state === 'done') return false;
+          const d = wallet.derive(registrationFundingPath(network, r.identityIndex));
+          try {
+            return r.address === addressOf(d.publicKey, network);
+          } finally {
+            d.privateKey.fill(0); // only the address was needed
+          }
+        });
       const paid = (r: FundingRecord) => r.deposits.length > 0 || !!r.lock;
       const resume = mine.find((r) => paid(r) && !lockTooSmall(r)) ?? mine.find(paid) ?? mine[0];
       if (resume && (resume.deposits.length || resume.lock)) return setState({ phrase, found: [], resume });

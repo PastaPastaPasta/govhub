@@ -175,3 +175,18 @@ export function offlineSigningRequest(p: Pick<PlannedVote, 'mn' | 'govHash' | 'o
   if (scheme === 'message') return { scheme, message: voteSignatureString(f), hashHex: '', voteHash: governanceVoteHash(f) };
   return { scheme, hashHex: bytesToHex(voteSignatureHash(f)), voteHash: governanceVoteHash(f) };
 }
+
+/**
+ * Offline signing at the moment the user asks (not when the panel opened): the nTime is now, or the first time Core's one-change-
+ * per-hour rule allows after the masternode's current vote on this proposal; `releaseAt` as for an immediate vote.
+ */
+export function offlineVoteTime(now: number, current: CurrentVote | undefined): { time: number; releaseAt: number; hourRule: boolean } {
+  const e = earliestTime(now, current);
+  return { time: e.time, releaseAt: e.time > now ? e.time - 60 : now, hourRule: e.time > now + 1 };
+}
+
+/** The Dash Core command that broadcasts a vote signed elsewhere (`voteraw`), with the signature or a placeholder. */
+export function voterawCommand(p: Pick<PlannedVote, 'mn' | 'govHash' | 'outcome' | 'time'>, sigBase64 = '<signature-base64>'): string {
+  const f = voteFields(p);
+  return `voteraw ${f.collateralTxid} ${f.collateralIndex} ${f.govHashDisplay} funding ${OUTCOME_NAME[p.outcome]} ${f.time} ${sigBase64}`;
+}

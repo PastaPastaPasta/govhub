@@ -26,6 +26,7 @@ const relayState = (over: Partial<RelayVoteState> = {}): RelayVoteState => ({
   nextAttemptAt: NOW,
   holdReason: 'release-time',
   sameAsCurrent: false,
+  maybeSent: null,
   ...over,
 });
 

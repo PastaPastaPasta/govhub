@@ -19,6 +19,8 @@ export interface RelayVoteState {
   nextAttemptAt: number | null;
   holdReason: HoldReason | null;
   sameAsCurrent: boolean | null;
+  /** the relay may have handed it to Core at some point (even if it is failed or superseded now); null: a relay without the field */
+  maybeSent: boolean | null;
 }
 
 /** GET /v1/status: is the relay up, and can it reach Core. */
@@ -69,6 +71,7 @@ export function parseRelayState(raw: unknown): RelayVoteState {
     nextAttemptAt: numOrNull(raw.nextAttemptAt),
     holdReason: typeof raw.holdReason === 'string' && HOLD_REASONS.has(raw.holdReason as HoldReason) ? (raw.holdReason as HoldReason) : null,
     sameAsCurrent: typeof raw.sameAsCurrent === 'boolean' ? raw.sameAsCurrent : null,
+    maybeSent: typeof raw.maybeSent === 'boolean' ? raw.maybeSent : null,
   };
 }
 

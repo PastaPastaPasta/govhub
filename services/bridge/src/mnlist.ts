@@ -105,7 +105,39 @@ export async function snapshotMnList(db: DB, rpc: CoreRpc, network: Network, hei
   const [raw, blockHash] = await Promise.all([rpc.protxListRegistered(height), rpc.getBlockHash(height)]);
   const list = reduceProTxList(raw, network);
   storeMnList(db, list, height, blockHash);
+  storeMnAddresses(db, raw, height);
   return list;
+}
+
+/** Records each masternode's `collateralAddress` and `state.payoutAddress` as of `height` (an older snapshot never overwrites them). */
+export function storeMnAddresses(db: DB, raw: ProTxEntry[], height: number): void {
+  const str = (v: unknown) => (typeof v === 'string' && v ? v : null);
+  const up = db.prepare(
+    'INSERT INTO mn_addresses(pro_tx_hash, collateral_address, payout_address, height) VALUES (?, ?, ?, ?) ON CONFLICT(pro_tx_hash) DO UPDATE SET collateral_address = excluded.collateral_address, payout_address = excluded.payout_address, height = excluded.height WHERE excluded.height >= mn_addresses.height',
+  );
+  db.transaction(() => {
+    for (const e of raw) up.run(e.proTxHash, str(e.collateralAddress), str(e.state?.payoutAddress), height);
+  })();
+  addressCache.delete(db); // a re-snapshot of the same height (reorg) can change them without changing the cache stamp
+}
+
+type MnAddresses = Map<string, { collateralAddress?: string; payoutAddress?: string }>;
+const addressCache = new WeakMap<DB, { stamp: string; map: MnAddresses }>();
+
+/** The latest known collateral and payout address per proTxHash (re-read only after a snapshot changed them). */
+export function mnAddresses(db: DB): MnAddresses {
+  const st = db.prepare('SELECT MAX(height) AS h, COUNT(*) AS n FROM mn_addresses').get() as { h: number | null; n: number };
+  const stamp = `${st.h}:${st.n}`;
+  const hit = addressCache.get(db);
+  if (hit?.stamp === stamp) return hit.map;
+  const map = readMnAddresses(db);
+  addressCache.set(db, { stamp, map });
+  return map;
+}
+
+function readMnAddresses(db: DB): MnAddresses {
+  const rows = db.prepare('SELECT pro_tx_hash, collateral_address, payout_address FROM mn_addresses').all() as Array<{ pro_tx_hash: string; collateral_address: string | null; payout_address: string | null }>;
+  return new Map(rows.map((r) => [r.pro_tx_hash, { ...(r.collateral_address ? { collateralAddress: r.collateral_address } : {}), ...(r.payout_address ? { payoutAddress: r.payout_address } : {}) }]));
 }
 
 export interface SnapshotRef {

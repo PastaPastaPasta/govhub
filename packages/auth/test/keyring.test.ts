@@ -14,9 +14,11 @@ import {
   KEYS_CAPS,
   KeyringFormatError,
   KeyringKind,
+  MAX_GENERATION,
   MAX_LABEL_BYTES,
   normalizeLabel,
   PENDING_CAPS,
+  PENDING_CONTENT_VERSION,
   plaintextLength,
   UnlockerType,
   type KeysContent,
@@ -26,6 +28,7 @@ import {
 import { KeyringLockedError, openKeyring, sealKeyring, seedUnlocker, SLOT_COUNT, SLOT_LENGTH, WRAPS_LENGTH } from '../src/keyring/seal.ts';
 import { addUnlocker, emptyKeyring, loadKeyring, passkeyUnlockKey, removeUnlocker, savePending, saveKeys, seedUnlockKey, type KeyringDoc, type KeyringStore } from '../src/keyring/keyring.ts';
 import { keyringDocFromJson, keyringQuery } from '../src/keyring/evo-store.ts';
+import { localRecordKey, openLocalRecord, sealLocalRecord } from '../src/keyring/local.ts';
 
 const PHRASE = 'legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth title';
 const contract = randomBytes(32);
@@ -323,5 +326,53 @@ describe('evo store glue', () => {
     expect(t.properties.wraps!.minItems! <= WRAPS_LENGTH && WRAPS_LENGTH <= t.properties.wraps!.maxItems!).toBe(true);
     for (const c of ['c0', 'c1', 'c2']) expect(t.properties[c]!.maxItems! >= CHUNK_LENGTH).toBe(true);
     expect(t.required).toEqual(['kind', 'version', 'bucket', 'wraps', 'c0']);
+  });
+});
+
+describe('QA fixes (fix-keyring-votes)', () => {
+  it('D-028: pending votes carry their Core network (content v2); a v1 document still decodes, untagged', () => {
+    const votes = [{ ...vote(1), network: 'mainnet' as const }, { ...vote(2), network: 'testnet' as const }, vote(3)];
+    for (const n of [PENDING_CAPS[1].votes, PENDING_CAPS[2].votes]) {
+      const many = Array.from({ length: n }, (_, i) => ({ ...vote(i, ['https://r1.example/' + 'x'.repeat(100), 'https://r2.example/' + 'y'.repeat(100), 'https://r3.example/' + 'z'.repeat(100), 'https://r4.example/' + 'w'.repeat(100)].slice(i % 3, (i % 3) + 2)), network: 'testnet' as const }));
+      const { bucket, plaintext } = encodePending({ keyringId: RID, votes: many });
+      expect(decodePending(plaintext, bucket).votes.every((v) => v.network === 'testnet')).toBe(true);
+    }
+    const { bucket, plaintext } = encodePending({ keyringId: RID, votes });
+    expect(plaintext[0]).toBe(PENDING_CONTENT_VERSION);
+    expect(decodePending(plaintext, bucket).votes.map((v) => v.network)).toEqual(['mainnet', 'testnet', undefined]);
+    // a version-1 document (written before the tag): same layout without the trailing byte per vote
+    const v1 = encodePending({ keyringId: RID, votes: [vote(4)] }).plaintext;
+    const legacy = new Uint8Array(v1.length);
+    const len = ((v1[2]! << 8) | v1[3]!) - 1;
+    legacy.set(v1.subarray(0, 4 + len));
+    legacy[0] = 1;
+    legacy[2] = len >> 8;
+    legacy[3] = len & 0xff;
+    const back = decodePending(legacy, 1);
+    expect(back.votes.length).toBe(1);
+    expect(back.votes[0]!.network).toBeUndefined();
+    expect(() => encodePending({ keyringId: RID, votes: [{ ...vote(1), network: 'regtest' as never }] })).toThrow(/network/);
+  });
+
+  it('D-069: a keyring planted at generation 2^32-1 can still be saved (the generation saturates)', async () => {
+    const ctx = { store: new MemStore(), contractId };
+    const s = seedSession();
+    const k = emptyKeyring(ownerId, []);
+    addUnlocker(k, seedUnlockKey(s)!);
+    k.content.generation = MAX_GENERATION;
+    await saveKeys(ctx, s, k);
+    await saveKeys(ctx, s, k);
+    expect(k.content.generation).toBe(MAX_GENERATION);
+    expect((await loadKeyring(ctx, ownerId, seedUnlockKey(s)!))!.content.generation).toBe(MAX_GENERATION);
+  });
+
+  it('D-027: local records are sealed to a key derived from the keyring id, bound to their scope', () => {
+    const key = localRecordKey(RID, 'votes|testnet|testnet|A');
+    const blob = sealLocalRecord(key, 'votes|testnet|testnet|A', new TextEncoder().encode('[{"voteHash":"x"}]'));
+    expect(blob).not.toMatch(/voteHash/);
+    expect(new TextDecoder().decode(openLocalRecord(key, 'votes|testnet|testnet|A', blob)!)).toBe('[{"voteHash":"x"}]');
+    expect(openLocalRecord(key, 'votes|mainnet|testnet|A', blob)).toBeNull();
+    expect(openLocalRecord(localRecordKey(randomBytes(16), 'votes|testnet|testnet|A'), 'votes|testnet|testnet|A', blob)).toBeNull();
+    expect(openLocalRecord(key, 'votes|testnet|testnet|A', 'garbage')).toBeNull();
   });
 });

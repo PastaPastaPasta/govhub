@@ -4,6 +4,7 @@
 import {
   identifierBytes, listPasskeys, localPasskeys, openVault, prfInput, removePasskey, storeInVault, toBase64, waitForEntry, wipe, type VaultEntryDoc,
 } from '@govhub/auth';
+import { bytesEqual } from '@govhub/verify';
 import { createPasskey, forgetPasskey, getPasskeyPrf, PasskeyError, prfSupport, PRF_UNAVAILABLE_MESSAGE, userHandleFor } from '@govhub/auth/webauthn';
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from './context.tsx';
@@ -105,7 +106,8 @@ export function Passkeys() {
     try {
       const a = await getPasskeyPrf({ rpId: rpId(), prfInput: pi, allow: [created.credentialId] });
       prf = a.prfOutput;
-      if (created.prf && toBase64(created.prf) !== toBase64(prf)) throw new PasskeyError('This passkey gave two different keys. It cannot be used.', 'failed');
+      // compared as bytes: a base64 string copy of the PRF output could never be wiped
+      if (created.prf && !bytesEqual(created.prf, prf)) throw new PasskeyError('This passkey gave two different keys. It cannot be used.', 'failed');
       setStep('saving');
       const c = await ctx();
       const recipient = await storeInVault(c, session, a);

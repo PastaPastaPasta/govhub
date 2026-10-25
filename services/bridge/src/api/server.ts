@@ -4,7 +4,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { Bridge } from '../bridge.ts';
 import type { GovObjectRow, TallyRow, VoteRow } from '../archive/db.ts';
-import { latestSnapshot, snapshotAt } from '../mnlist.ts';
+import { latestSnapshot, mnAddresses, snapshotAt } from '../mnlist.ts';
 import { proposalView } from '../proposal.ts';
 import { FUDGE_WINDOW_S, type ComputedTally } from '../tally.ts';
 import { dashCentralBudget, dashCentralProposal } from './dashcentral.ts';
@@ -298,6 +298,8 @@ export function createApi(b: Bridge, deps: { now?: () => number } = {}): Hono {
     }
     if (!snap) return { status: 404 as const, body: { error: 'no masternode list snapshot at or below that height' } };
     const l = b.ingest.lists.load(snap.listHash)!;
+    // the latest known collateral and payout addresses (not part of the list), so a client can refuse a pasted collateral or payout key
+    const addrs = mnAddresses(b.db);
     return {
       status: 200 as const,
       body: {
@@ -315,6 +317,7 @@ export function createApi(b: Bridge, deps: { now?: () => number } = {}): Hono {
           type: e.type === 'Evo' ? 'evo' : e.type === 'Regular' ? 'regular' : e.type,
           weight: e.weight,
           votingAddress: e.votingAddress,
+          ...addrs.get(e.proTxHash),
           keyIdVoting: e.votingKeyId,
           valid: e.isValid,
           poseBanHeight: e.poseBanHeight,

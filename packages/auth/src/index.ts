@@ -14,5 +14,6 @@ export * from './vault/service.ts';
 export * from './keyring/format.ts';
 export * from './keyring/seal.ts';
 export * from './keyring/keyring.ts';
+export * from './keyring/local.ts';
 export { deriveKeyPair, openBase, sealBase } from './vault/hpke.ts';
 export { bytesToHex, fromBase64, hash160, hexToBytes, identifierBytes, randomBytes, toBase58, toBase64, wipe } from './bytes.ts';
