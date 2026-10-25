@@ -36,7 +36,7 @@ function Header() {
         <h1 id="mn-page-title">My masternodes</h1>
         {open ? (
           <p className="kr-state" data-testid="keyring-status">
-            <span className="vdot vdot-on" aria-hidden="true" />
+            <span className={`vdot${k.demo ? '' : ' vdot-on'}`} aria-hidden="true" />
             {statusLine(k)}
           </p>
         ) : (
@@ -229,8 +229,11 @@ function MnCard({ m, label }: { m: OwnedMasternode; label: string }) {
         </div>
       </dl>
       <p className="kr-mn-proof small muted">
-        {m.provenance.key === 'sml' ? 'Key checked against the masternode list DAPI evonodes agree on' : 'Key from the bridge’s list only'}
-        {m.provenance.collateral === 'protx' ? '; collateral proved from its registration.' : '; collateral from the bridge, not proved yet.'}
+        {m.provenance.key === 'sml' && m.provenance.collateral === 'protx'
+          ? 'Confirmed: its key matches the masternode list, and its registration proves the rest.'
+          : m.provenance.key === 'sml'
+            ? 'Key matches the masternode list; its registration is not checked yet.'
+            : 'Not confirmed yet: as the bridge lists it.'}
       </p>
     </li>
   );

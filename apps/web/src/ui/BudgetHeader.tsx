@@ -81,6 +81,9 @@ export function BudgetHeader() {
         <span className="strip-free" style={{ flexGrow: Math.max(0, c.budget - Math.max(allocated, fundedSum)) }} />
       </div>
 
+      <p className="strip-legend small muted" aria-hidden="true">
+        <span className="key key-seg" /> in the next budget, one block per proposal <span className="key key-free" /> still available
+      </p>
       <dl className="budget-facts">
         <div>
           <dt>Allocated</dt>

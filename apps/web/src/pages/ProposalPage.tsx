@@ -104,18 +104,10 @@ function CommunityVote({ govHash }: { govHash: string }) {
   );
 }
 
-/** "Vote" for someone whose keyring has masternodes; a quiet pointer for everyone else. */
+/** Masternode owners without an open keyring get a pointer; with one, the vote panel right below is the call to action. */
 function VoteCta({ active }: { active: boolean }) {
   const k = useKeyring();
-  if (!active) return null;
-  const usable = k.status === 'open' ? k.mns.owned.filter((m) => m.valid).length : 0;
-  if (usable > 0) {
-    return (
-      <a className="btn btn-primary btn-l" href="#vote" data-testid="vote-cta-hero">
-        Vote on this proposal
-      </a>
-    );
-  }
+  if (!active || k.status === 'open') return null;
   return (
     <p className="small muted">
       Own a masternode? <Link to="/masternodes">Add your voting key</Link> to vote here.
@@ -200,7 +192,9 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
             {active && t && (
               <p className="p-status">
                 {inBudget ? <span className="tag tag-pass">In the next budget</span> : state?.passing ? <span className="tag tag-warn">Passing, but the next budget is full</span> : null}
-                {untilDeadline !== null && <span className="muted">{untilDeadline > 0 ? `Voting closes in ${formatDuration(untilDeadline)}` : 'Voting for this payout has closed'}</span>}
+                {untilDeadline !== null && (
+                  <span className="muted">{untilDeadline > 0 ? `Voting closes in ${formatDuration(untilDeadline)}` : 'Voting for this payout has closed; new votes count toward the next one'}</span>
+                )}
               </p>
             )}
             {t && (
@@ -214,8 +208,8 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
                 <span>
                   <b>{formatInt(t.abstainWeighted)}</b> abstain
                 </span>
-                <span className="muted small">
-                  from {formatInt(t.yesCount + t.noCount + t.abstainCount)} masternodes ({formatInt(t.yesCount)} yes, {formatInt(t.noCount)} no, {formatInt(t.abstainCount)} abstain)
+                <span className="muted small" data-testid="p-voters" title={`${formatInt(t.yesCount)} yes, ${formatInt(t.noCount)} no, ${formatInt(t.abstainCount)} abstain`}>
+                  {formatInt(t.yesCount + t.noCount + t.abstainCount)} masternodes voted; evonodes count 4 times
                 </span>
               </p>
             )}
@@ -262,28 +256,13 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
           <section className="panel">
             <h2 className="panel-title">Summary</h2>
             <dl className="kv" data-testid="summary">
-              <div>
-                <dt>Payment</dt>
-                <dd>
-                  {formatDash(p.paymentAmount)} {sched?.oneTime ? 'once' : perPayment(params)}
-                </dd>
-              </div>
-              {paid ? (
+              {paid && (
                 <div>
                   <dt>Paid so far</dt>
                   <dd>
                     {paid.made.text}, {paid.remaining.text}
                   </dd>
                 </div>
-              ) : (
-                sched && (
-                  <div>
-                    <dt>Payments</dt>
-                    <dd>
-                      {formatInt(sched.total)} in total, {formatInt(sched.remaining)} left
-                    </dd>
-                  </div>
-                )
               )}
               <div>
                 <dt>Runs</dt>
@@ -293,14 +272,8 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
               </div>
               {active && deadline && (
                 <div>
-                  <dt>Voting deadline</dt>
+                  <dt>Votes close</dt>
                   <dd>{deadline.text}</dd>
-                </div>
-              )}
-              {threshold && (
-                <div>
-                  <dt>Needs</dt>
-                  <dd>{formatInt(threshold.value)} net yes votes</dd>
                 </div>
               )}
               {host && (

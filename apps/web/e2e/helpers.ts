@@ -27,3 +27,10 @@ export async function openDrawer(page: Page) {
   await expect(page.getByTestId('verify-drawer')).toBeVisible();
   return page.getByTestId('verify-drawer');
 }
+
+/** Opens one of the folded Settings groups ("Export, import and share", "Hidden comments", ...). */
+export async function openGroup(page: Page, title: string) {
+  const g = page.locator('details.group', { has: page.locator('.group-title', { hasText: title }) });
+  if ((await g.getAttribute('open')) === null) await g.locator(':scope > summary').click();
+  return g;
+}

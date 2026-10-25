@@ -85,8 +85,8 @@ function SampleIdentities() {
   return (
     <div className="notice-box">
       <p>
-        <b>Fixture mode:</b> sign in to a sample identity. Writes go into this tab's sample data and cost pretend credits from a 0.003 DASH starter. A
-        real identity can sign in below, but it cannot post while the fixture snapshot is shown.
+        <b>Demo:</b> sign in as a sample person. What you post stays in this tab and costs pretend credit. A real account can sign in below, but can't post
+        while demo data is shown.
       </p>
       <div className="signin-picks">
         <button type="button" className="btn" onClick={() => pick(FIXTURE_IDS.alice, 'fixture identity')}>

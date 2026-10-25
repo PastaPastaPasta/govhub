@@ -122,7 +122,7 @@ export function VotesList({ title = 'Votes', showWins = true }: { title?: string
           ))}
         </div>
       )}
-      <p className="small muted vfoot">Votes stay in this browser until the network counts them; one a relay does not deliver is re-sent through another. A cancelled vote relies on the relay keeping its word, so to change your mind for sure, also cast the new vote: it is timed later and wins.</p>
+      <p className="small muted vfoot">Each vote stays in this browser until the network has counted it. If a relay doesn't deliver it, another one gets it. Cancelling a held vote relies on the relay; to be sure you change your mind, cast the new vote too: the later vote wins.</p>
     </section>
   );
 }

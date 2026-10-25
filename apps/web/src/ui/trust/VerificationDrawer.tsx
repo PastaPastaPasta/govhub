@@ -484,7 +484,9 @@ export function VerificationDrawer({ sp, trust, cycle, open, onClose }: { sp: So
           {running ? 'Checking…' : 'Re-check'}
         </button>
       </section>
-      <p className="small muted">Your browser runs these checks itself, in a background worker, against data from Dash Platform, DAPI evonodes and {bridge?.kind === 'http' ? bridge.name : 'the bridge'}. It takes no server's word for anything marked proven.</p>
+      <p className="small muted">
+        Your browser ran these checks itself, against the Dash chain. A tick means nothing rests on a server's word.
+      </p>
 
       <ol className="checks" data-testid="checks">
         <CheckRow c={byId(a.components, 'content')}>

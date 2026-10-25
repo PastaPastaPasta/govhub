@@ -71,8 +71,8 @@ describe('view model', () => {
     expect(askText(200e8, { total: 5, remaining: 2, oneTime: false }, test)).toEqual({ amount: '200 DASH', per: 'per hour' });
     expect(askText(1e8, { total: 1, remaining: 1, oneTime: true }, test)).toEqual({ amount: '1 DASH', per: 'once' });
     expect(paymentsLeft({ total: 5, remaining: 2, oneTime: false })).toBe('2 of 5 payments left');
-    expect(paymentsLeft({ total: 5, remaining: 0, oneTime: false })).toBe('no payments left');
-    expect(paymentsLeft({ total: 1, remaining: 1, oneTime: true })).toBe('one payment');
+    expect(paymentsLeft({ total: 5, remaining: 0, oneTime: false })).toBe('final payment made');
+    expect(paymentsLeft({ total: 1, remaining: 1, oneTime: true })).toBe('one-time payment');
     expect(paymentsLeft(null)).toBeNull();
     expect(perPayment({ superblockCycle: Math.round((3 * 86400) / main.blockSeconds), blockSeconds: main.blockSeconds })).toBe('per payment (every ~3 days)');
   });

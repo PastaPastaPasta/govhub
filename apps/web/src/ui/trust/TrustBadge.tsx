@@ -12,6 +12,7 @@ export function ShieldIcon({ level, size = 18 }: { level: TrustLevel; size?: num
       {level === 'error' && <path d="M12 7.6v5.2M12 16.2v.3" className="shield-mark" />}
       {level === 'failed' && <path d="m9.2 9.2 5.6 5.6m0-5.6-5.6 5.6" className="shield-mark" />}
       {level === 'checking' && <path d="M12 7a5 5 0 0 1 5 5" className="shield-arc" />}
+      {level === 'demo' && <path d="M10.2 7.4h3.6M10.9 7.4v3.3l-2.6 4.4a.9.9 0 0 0 .8 1.4h5.8a.9.9 0 0 0 .8-1.4l-2.6-4.4V7.4" className="shield-mark shield-thin" />}
     </svg>
   );
 }

@@ -16,9 +16,9 @@ import { TrustBadge } from './trust/TrustBadge.tsx';
 /** "1 of 4 payments left", "one payment", "ended". */
 export function paymentsLeft(s: PaymentSchedule | null): string | null {
   if (!s) return null;
-  if (s.oneTime) return s.remaining === 0 ? 'one payment, done' : 'one payment';
+  if (s.oneTime) return 'one-time payment';
   if (s.total === 0) return 'no payout in its window';
-  return s.remaining === 0 ? 'no payments left' : `${formatInt(s.remaining)} of ${formatInt(s.total)} payments left`;
+  return s.remaining === 0 ? 'final payment made' : `${formatInt(s.remaining)} of ${formatInt(s.total)} payments left`;
 }
 
 export function askText(amountDuffs: number, s: PaymentSchedule | null, params: GovParams): { amount: string; per: string } {

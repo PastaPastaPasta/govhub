@@ -12,11 +12,11 @@ export type CheckId = 'content' | 'collateral' | 'chain' | 'votes' | 'funding';
 export const REQUIRED: readonly CheckId[] = ['content', 'collateral', 'chain', 'votes', 'funding'];
 
 export const CHECK_LABEL: Record<CheckId, string> = {
-  content: 'Proposal content',
-  collateral: 'Collateral',
+  content: 'Proposal text',
+  collateral: 'Submission fee',
   chain: 'Chain and masternode list',
-  votes: 'Votes',
-  funding: 'Funding status',
+  votes: 'Vote count',
+  funding: 'Funding',
 };
 
 export type ComponentState =
@@ -88,7 +88,7 @@ export function aggregate(components: readonly Component[], o: { demo?: boolean 
 export function contentComponent(failure: string | null): ComponentState {
   return failure
     ? { status: 'failed', reason: `The published proposal doesn't match what its hash commits to (${failure})` }
-    : { status: 'proven', summary: 'The governance hash recomputes from the published data, and every field shown is the hashed one' };
+    : { status: 'proven', summary: 'Exactly what was submitted to the network: every field shown matches its governance hash' };
 }
 
 // ---- 2. collateral ------------------------------------------------------------------------------------------------------------
@@ -128,7 +128,7 @@ export function collateralComponent(i: { verdict: CollateralVerdict | null; erro
   if (!i.publishedHeight || c.height !== i.publishedHeight) {
     return { status: 'reported', reason: `The published collateral height (${i.publishedHeight || 'none'}) differs from the chain's (${c.height})` };
   }
-  return { status: 'proven', summary: `Burns 1 DASH to the proposal's hash in block ${c.height.toLocaleString('en-US')} of the verified chain, ChainLocked and final` };
+  return { status: 'proven', summary: `The proposal's fee is in a final block of the verified chain (block ${c.height.toLocaleString('en-US')})` };
 }
 
 // ---- 3. chain -----------------------------------------------------------------------------------------------------------------
@@ -140,8 +140,7 @@ export function chainComponent(i: { report: ChainReport | null; error: string | 
   if (!r) return { status: 'pending', note: i.progress || 'Verifying the chain' };
   if (r.anchor.weak) return { status: 'reported', reason: 'Testnet: the chain is only protected by proof of work, which is too weak there' };
   if (r.threshold.status !== 'verified') return { status: 'reported', reason: `The funding threshold isn't fully proven (${r.threshold.reason ?? 'reported'})` };
-  const how = r.anchor.trust.kind === 'quorum-proof' ? 'ChainLocks proven from the pinned quorum checkpoint' : 'the pinned checkpoint and proof of work';
-  return { status: 'proven', summary: `Chain verified to block ${r.anchor.tip.toLocaleString('en-US')} from ${how}; masternode list and threshold proven` };
+  return { status: 'proven', summary: `Verified to block ${r.anchor.tip.toLocaleString('en-US')}; the masternode list and the votes needed to pass are proven` };
 }
 
 // ---- 4. votes -----------------------------------------------------------------------------------------------------------------
@@ -181,7 +180,7 @@ export function votesComponent(i: {
     if (dropped > 0) return { status: 'reported', reason: `Votes not fully recounted: ${dropped.toLocaleString('en-US')} votes in the bridge's set didn't check out` };
     return { status: 'reported', reason: 'Votes not fully recounted: voting keys only as the bridge reports them' };
   }
-  return { status: 'proven', summary: `${r.verified.toLocaleString('en-US')} signed votes recounted against the proven masternode list; they reproduce the Platform tally and its voteSetHash` };
+  return { status: 'proven', summary: `${r.verified.toLocaleString('en-US')} signed votes recounted; they match the published tally exactly` };
 }
 
 // ---- 5. funding ---------------------------------------------------------------------------------------------------------------

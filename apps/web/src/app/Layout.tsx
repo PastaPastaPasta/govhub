@@ -97,14 +97,9 @@ function ModeBanner() {
     return (
       <div className="banner banner-fixture" role="status">
         <div className="banner-text">
-          <b>Demo data.</b> A recorded mainnet snapshot (block 2,560,391, Oct 23, 2026), with sample voters. Nothing here is live.{' '}
-          <details className="learn inline">
-            <summary>What's in it</summary>
-            28 real mainnet proposals as Core saw them, with recorded DAPI answers, real recorded votes for three proposals and synthetic voters for the
-            rest, plus two synthetic proposals that fail verification.
-          </details>
+          <b>Demo data.</b> <span className="banner-more">A recorded mainnet snapshot from Oct 23, 2026, with sample voters.</span> Nothing here is live.
         </div>
-        <button type="button" className="btn btn-s" onClick={() => setMode('live')}>
+        <button type="button" className="btn btn-s" onClick={() => setMode('live')} title="28 real mainnet proposals as Core saw them at block 2,560,391, with recorded DAPI answers, real recorded votes for three proposals and sample voters for the rest, plus two made-up proposals that fail verification">
           Switch to live data
         </button>
       </div>

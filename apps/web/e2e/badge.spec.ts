@@ -1,6 +1,6 @@
 // MN badge pages without the network: the badge page and the Settings trust list render, explain the leaks, and keep the CSP.
 import { expect, test } from '@playwright/test';
-import { cspViolations, gotoFixtures, watchPage } from './helpers.ts';
+import { cspViolations, gotoFixtures, openGroup, watchPage } from './helpers.ts';
 
 test.describe('MN badge (fixtures)', () => {
   test('badge page explains what leaks and asks for live data', async ({ page }) => {
@@ -17,6 +17,7 @@ test.describe('MN badge (fixtures)', () => {
   test('settings show the default trust list and validate new issuers', async ({ page }) => {
     const errors = await watchPage(page);
     await gotoFixtures(page, '/settings');
+    await openGroup(page, 'Masternode badges');
     const s = page.locator('#badge-trust');
     await expect(s.getByText('govhub', { exact: true })).toBeVisible();
     await expect(s.getByText('H62hSf5TpKbUSMov85GMhPQahZDbqsTipeoBsYPgveUH')).toBeVisible();

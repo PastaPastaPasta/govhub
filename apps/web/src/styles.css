@@ -54,6 +54,7 @@
   --fail: #b8352b;
   --fail-fill: #d9493d;
   --slate: #56697b;
+  --track: #e1e8ee;
 
   --float-shadow: 0 12px 40px rgb(13 34 49 / 0.18), 0 2px 6px rgb(13 34 49 / 0.08);
 
@@ -79,6 +80,7 @@
   --fail: #ff8075;
   --fail-fill: #e0564a;
   --slate: #9db0c2;
+  --track: #29435a;
   --float-shadow: 0 12px 40px rgb(0 0 0 / 0.5), 0 2px 6px rgb(0 0 0 / 0.3);
   color-scheme: dark;
 }
@@ -103,6 +105,7 @@
     --fail: #ff8075;
     --fail-fill: #e0564a;
     --slate: #9db0c2;
+    --track: #29435a;
     --float-shadow: 0 12px 40px rgb(0 0 0 / 0.5), 0 2px 6px rgb(0 0 0 / 0.3);
     color-scheme: dark;
   }
@@ -439,6 +442,7 @@ a:hover {
 .page-narrow {
   max-inline-size: 48rem;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--s-4);
   align-content: start;
 }
@@ -460,6 +464,21 @@ a:hover {
 .banner p,
 .banner-text {
   max-inline-size: 90ch;
+}
+@media (max-width: 640px) {
+  .banner {
+    padding: var(--s-2) var(--s-3);
+    gap: var(--s-2);
+  }
+  .banner-more {
+    display: none;
+  }
+  .budget-line {
+    font-size: var(--t-xl);
+  }
+  .budget {
+    gap: var(--s-2);
+  }
 }
 .banner-fixture {
   border: 1px solid color-mix(in srgb, var(--warn-fill) 45%, var(--line));
@@ -543,8 +562,11 @@ details.learn.inline > summary {
 .btn:hover {
   border-color: var(--ink-3);
 }
-.btn:disabled {
-  opacity: 0.55;
+.btn:disabled,
+.btn-primary:disabled {
+  background: var(--sunk);
+  border-color: var(--line);
+  color: var(--ink-3);
   cursor: default;
 }
 .btn-primary {
@@ -696,8 +718,8 @@ button.trust-m:hover {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.shield-demo .shield-outline {
-  stroke-dasharray: 2.5 2;
+.shield-thin {
+  stroke-width: 1.5;
 }
 .shield-arc {
   fill: none;
@@ -794,9 +816,8 @@ button.trust-m:hover {
   gap: var(--s-3);
   padding: var(--s-4);
   border-radius: var(--radius-l);
-  border: 1px solid color-mix(in srgb, var(--trust) 35%, var(--line));
-  background: color-mix(in srgb, var(--trust) 7%, var(--surface));
-  --trust: var(--slate);
+  border: 1px solid color-mix(in srgb, var(--trust, var(--slate)) 35%, var(--line));
+  background: color-mix(in srgb, var(--trust, var(--slate)) 8%, var(--surface));
 }
 .drawer-verdict-title {
   font-weight: 700;
@@ -983,6 +1004,27 @@ button.trust-m:hover {
 }
 .budget-line .num {
   font-weight: 760;
+  color: var(--accent-ink);
+}
+.strip-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+  margin-block-start: calc(-1 * var(--s-1));
+}
+.key {
+  display: inline-block;
+  inline-size: 0.75rem;
+  block-size: 0.5rem;
+  border-radius: 2px;
+}
+.key-seg {
+  background: var(--accent);
+}
+.key-free {
+  margin-inline-start: var(--s-3);
+  background: repeating-linear-gradient(135deg, var(--track) 0 2px, var(--line-strong) 2px 3px);
 }
 .budget-sub {
   color: var(--ink-2);
@@ -997,7 +1039,7 @@ button.trust-m:hover {
   block-size: 0.875rem;
   border-radius: 999px;
   overflow: hidden;
-  background: var(--sunk);
+  background: var(--track);
   gap: 2px;
   margin-block: var(--s-2);
 }
@@ -1038,7 +1080,7 @@ button.trust-m:hover {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .budget-line {
-    font-size: var(--t-2xl);
+    font-size: var(--t-xl);
   }
 }
 .budget-loading {
@@ -1272,7 +1314,7 @@ button.trust-m:hover {
   position: relative;
   block-size: 0.5rem;
   border-radius: 999px;
-  background: var(--sunk);
+  background: var(--track);
 }
 .meter-m .meter-track {
   block-size: 0.625rem;
@@ -1361,6 +1403,7 @@ table {
 /* ---- proposal page ------------------------------------------------------------------------ */
 .proposal {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--s-5);
 }
 .crumbs {
@@ -1425,6 +1468,7 @@ table {
 .p-main,
 .p-side {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--s-5);
   min-inline-size: 0;
 }
@@ -1452,6 +1496,9 @@ table {
 }
 .panel-title {
   font-size: var(--t-m);
+}
+.p-side .kv > div {
+  grid-template-columns: 6.5rem minmax(0, 1fr);
 }
 .p-ask {
   gap: var(--s-3);
@@ -1713,6 +1760,42 @@ details summary {
   padding-block-start: var(--s-5);
   border-block-start: 1px solid var(--line);
 }
+/* Settings groups: one line each until opened. */
+.group {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l);
+  background: var(--surface);
+  padding: var(--s-3) var(--s-4);
+}
+.group > summary {
+  display: grid;
+  gap: 2px;
+  list-style: none;
+  padding-inline-start: 1.25rem;
+  position: relative;
+}
+.group > summary::-webkit-details-marker {
+  display: none;
+}
+.group > summary::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block-start: 0.55em;
+  border: 5px solid transparent;
+  border-inline-start: 6px solid var(--ink-2);
+}
+.group[open] > summary::before {
+  transform: rotate(90deg);
+  transform-origin: 3px 5px;
+}
+.group-title {
+  font-weight: 650;
+}
+.group > .form,
+.group > section.form {
+  margin-block-start: var(--s-3);
+}
 .form fieldset {
   border: 1px solid var(--line);
   border-radius: var(--radius-l);
@@ -1848,7 +1931,11 @@ details summary {
   grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
 }
 .choices-more {
-  margin-block-end: calc(-1 * var(--s-2));
+  margin-block-start: var(--s-1);
+}
+.sheet-choose {
+  display: grid;
+  gap: var(--s-3);
 }
 /* "Save your phrase › Check it › Add credit": a real sequence, so it is numbered. */
 .steps-bar {
@@ -1895,9 +1982,8 @@ details summary {
   cursor: default;
 }
 .notice-box {
-  border: 1px solid var(--line-strong);
-  border-inline-start: 3px solid var(--accent);
-  border-radius: var(--radius-s);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
+  border-radius: var(--radius-l);
   background: var(--accent-wash);
   padding: 0.625rem 0.75rem;
   display: grid;
@@ -2120,9 +2206,10 @@ li[data-status='now'] > .fund-dot {
 .signin-picks {
   display: grid;
   gap: 0.5rem;
+  justify-self: stretch;
 }
 .signin-picks .btn {
-  text-align: start;
+  justify-content: flex-start;
 }
 
 .avatar {
@@ -2311,7 +2398,16 @@ li[data-status='now'] > .fund-dot {
 }
 .thread {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.75rem;
+}
+.discussion {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-3);
+}
+.comment-body {
+  overflow-wrap: anywhere;
 }
 .replies {
   margin-block-start: 0.5rem;
@@ -2319,6 +2415,7 @@ li[data-status='now'] > .fund-dot {
   padding-inline-start: 0.875rem;
   border-inline-start: 2px solid var(--line);
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.5rem;
 }
 .replies-flat {
@@ -2327,7 +2424,7 @@ li[data-status='now'] > .fund-dot {
 .comment > article {
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: var(--radius-s);
+  border-radius: var(--radius-l);
   padding: 0.625rem 0.875rem;
 }
 .comment-owner > article {

@@ -183,7 +183,9 @@ export function SettingsPage() {
   }, [registry]);
   // /settings#network (from the header's chain status): React Router does not scroll to fragments by itself
   useEffect(() => {
-    if (location.hash) document.getElementById(location.hash.slice(1))?.scrollIntoView();
+    const el = location.hash ? document.getElementById(location.hash.slice(1)) : null;
+    el?.closest('details')?.setAttribute('open', '');
+    el?.scrollIntoView();
   }, []);
   const custom = customFields(draft);
   const isCustom = (...ks: Overridable[]) => ks.some((k) => custom.has(k));
@@ -219,6 +221,11 @@ export function SettingsPage() {
       <p className="muted">Settings stay in this browser.</p>
 
       <ProfileSettings onSwitched={(text) => setMsg({ kind: 'ok', text })} />
+      {msg && (
+        <p className={msg.kind === 'ok' ? 'notice' : 'error'} role={msg.kind === 'ok' ? 'status' : 'alert'}>
+          {msg.text}
+        </p>
+      )}
 
       <section className="form" aria-labelledby="appearance-title">
         <h2 id="appearance-title">Appearance</h2>
@@ -228,19 +235,20 @@ export function SettingsPage() {
         </label>
       </section>
 
-      <form
-        className="form"
-        onSubmit={(e) => {
-          e.preventDefault();
-          apply(draft, 'Saved. Data reloads with the new endpoints.');
-        }}
-      >
-        <h2 className="form-title">Servers</h2>
-        <p className="muted small">Every server govhub uses can be replaced. Each network starts with govhub's own.</p>
-        <details className="advanced" open={advanced} onToggle={(e) => setAdvanced((e.target as HTMLDetailsElement).open)}>
-          <summary>
+      <details className="group" open={advanced} onToggle={(e) => setAdvanced((e.target as HTMLDetailsElement).open)}>
+        <summary>
+          <span className="group-title">
             Advanced: choose your own servers <Custom on={custom.size > 0} />
-          </summary>
+          </span>
+          <span className="small muted">Every server govhub uses can be replaced; each network starts with govhub's own.</span>
+        </summary>
+        <form
+          className="form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            apply(draft, 'Saved. Data reloads with the new endpoints.');
+          }}
+        >
           <p className="muted small">Each setting starts as the {PROFILES[draft.profile].label} profile's. A setting you change here is marked custom; switching profile replaces them all.</p>
           <fieldset>
             <legend>
@@ -395,7 +403,6 @@ export function SettingsPage() {
               />
             </label>
           </fieldset>
-        </details>
 
         <div className="form-actions">
           <button type="submit" className="btn btn-primary">
@@ -416,16 +423,30 @@ export function SettingsPage() {
             Reset to defaults
           </button>
         </div>
-        {msg && (
-          <p className={msg.kind === 'ok' ? 'notice' : 'error'} role={msg.kind === 'ok' ? 'status' : 'alert'}>
-            {msg.text}
-          </p>
-        )}
-      </form>
+        </form>
+      </details>
 
-      <BlockListSettings />
+      <details className="group">
+        <summary>
+          <span className="group-title">Hidden comments</span>
+          <span className="small muted">The block lists that hide spam and abuse in discussions.</span>
+        </summary>
+        <BlockListSettings />
+      </details>
 
-      <BadgeSettings />
+      <details className="group">
+        <summary>
+          <span className="group-title">Masternode badges</span>
+          <span className="small muted">Who may vouch that a commenter owns a masternode, and how private your own badge is.</span>
+        </summary>
+        <BadgeSettings />
+      </details>
+
+      <details className="group">
+        <summary>
+          <span className="group-title">Export, import and share</span>
+          <span className="small muted">Move these settings to another browser, or share them as a link.</span>
+        </summary>
       <section className="form" aria-labelledby="share-title">
         <h2 id="share-title">Export, import and share</h2>
         <div className="form-actions">
@@ -473,6 +494,7 @@ export function SettingsPage() {
           </button>
         </div>
       </section>
+      </details>
     </section>
   );
 }

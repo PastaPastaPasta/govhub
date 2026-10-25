@@ -363,7 +363,7 @@ export function VoteComposer({ proposals, onVerify }: { proposals: Proposal[]; o
           <p className="vgo-sum small muted" data-testid="vote-summary">
             {mode === 'deferred' && latestRelease
               ? `Signed here, released at random times before ${fmtTime(latestRelease)}.`
-              : `Signed here and sent through ${k.relays.length === 1 ? relayHost(k.relays[0]!) : `${k.relays.length} relays`}.`}
+              : `Signed in your browser and sent to the network through ${k.relays.length === 1 ? relayHost(k.relays[0]!) : `${k.relays.length} relays`}.`}
           </p>
         )}
         {disabledHint && disabledHint.replace(/\.$/, '') !== buttonText && (
@@ -427,7 +427,7 @@ export function OfflineSign({ proposal }: { proposal: Proposal }) {
   };
   return (
     <details className="vote-offline">
-      <summary>Sign offline (Dash Core, DMT, hardware wallet)</summary>
+      <summary>Sign offline instead (Dash Core, hardware wallet)</summary>
       {network === 'testnet' ? (
         <p className="notice-box small" data-testid="offline-testnet">
           Not possible on testnet: testnet Core checks votes against the binary vote hash, not a signed message, and <code>signmessage</code> (Dash Core, DMT, hardware wallets) can only sign messages. Use a voting key in the keyring instead; the hash to sign is shown for custom tooling.
@@ -475,7 +475,7 @@ export function ProposalVotePanel({ proposal, onVerify }: { proposal: Proposal; 
     <section id="vote" aria-labelledby="mnvote-title" className="panel mnvote" data-testid="mn-vote-panel">
       <header className="mnvote-head">
         <h2 id="mnvote-title">Your vote</h2>
-        {k.demo && k.status === 'open' && <span className="tag tag-demo">Demo: pretend relays</span>}
+        {k.demo && k.status === 'open' && <span className="tag tag-demo">Demo: votes aren't sent</span>}
       </header>
       {k.error && k.status === 'open' && (
         <p className="error small" role="alert">

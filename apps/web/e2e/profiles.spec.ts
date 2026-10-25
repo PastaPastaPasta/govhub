@@ -2,7 +2,7 @@
 // No live backend: fixture mode, or live mode with every non-local request aborted.
 import { expect, test, type BrowserContext } from '@playwright/test';
 import { TESTNET_GOV_CONTRACT_ID } from '../src/config/registry.ts';
-import { cspViolations, gotoFixtures, openDrawer, watchPage } from './helpers.ts';
+import { cspViolations, gotoFixtures, openDrawer, openGroup, watchPage } from './helpers.ts';
 
 const offline = (context: BrowserContext) => context.route(/^https?:\/\/(?!localhost[:/]|127\.0\.0\.1[:/])/, (r) => r.abort());
 
@@ -80,6 +80,7 @@ test.describe('network profiles', () => {
     // Saved as the profile with no overrides (rebuilt from the profile on load).
     const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('govhub.registry.v2') ?? 'null'));
     expect(saved).toEqual({ version: 2, profile: 'testnet', overrides: {} });
+    await openGroup(page, 'Export, import and share');
     await page.getByRole('button', { name: 'Show JSON' }).click();
     const json = JSON.parse(await page.getByLabel('Settings JSON (paste and import, or copy)').inputValue());
     expect(json).toMatchObject({ version: 2, profile: 'testnet', coreNetwork: 'testnet', platformNetwork: 'testnet', govContractId: TESTNET_GOV_CONTRACT_ID });

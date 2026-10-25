@@ -1,7 +1,7 @@
 // End-to-end in fixture mode: the mainnet snapshot, recorded mainnet DAPI responses replayed
 // through the real grpc-web client inside the verification worker, synthetic signed votes.
 import { expect, test } from '@playwright/test';
-import { cspViolations, gotoFixtures, openDrawer, watchPage } from './helpers.ts';
+import { cspViolations, gotoFixtures, openDrawer, openGroup, watchPage } from './helpers.ts';
 
 test.describe('fixture mode', () => {
   test('list -> proposal -> collateral verified -> votes verified', async ({ page }) => {
@@ -31,7 +31,8 @@ test.describe('fixture mode', () => {
     await page.getByRole('link', { name: 'OrchardPay', exact: true }).click();
     await expect(page).toHaveURL(/\/p\/OrchardPay$/);
     await expect(page.getByRole('heading', { level: 1, name: 'OrchardPay' })).toBeVisible();
-    await expect(page.getByTestId('p-votes')).toContainText('from 228 masternodes (197 yes, 22 no, 9 abstain)');
+    await expect(page.getByTestId('p-votes')).toContainText('197 yes22 no9 abstain');
+    await expect(page.getByTestId('p-voters')).toHaveText('228 masternodes voted; evonodes count 4 times');
 
     // Fixture data is "Demo data", never "Verified", whatever the checks find.
     const badge = page.getByTestId('trust-badge');
@@ -83,7 +84,7 @@ test.describe('fixture mode', () => {
     // Evonodes weigh 4: 298 yes masternodes are 673 weighted votes.
     await expect(page.getByTestId('p-votes')).toContainText('673 yes');
     await expect(page.getByTestId('p-votes')).toContainText('475 no');
-    await expect(page.getByTestId('p-votes')).toContainText('(298 yes, 160 no, 2 abstain)');
+    await expect(page.getByTestId('p-voters')).toHaveAttribute('title', '298 yes, 160 no, 2 abstain');
     const drawer = await openDrawer(page);
     await expect(drawer.getByTestId('collateral-check').locator('[data-verdict]')).toHaveAttribute('data-verdict', 'ok');
 
@@ -162,6 +163,7 @@ test.describe('fixture mode', () => {
 test.describe('settings', () => {
   test('export, import, validation, reset', async ({ page }) => {
     await gotoFixtures(page, '/settings');
+    await openGroup(page, 'Export, import and share');
     await page.getByRole('button', { name: 'Show JSON' }).click();
     const ta = page.getByLabel('Settings JSON (paste and import, or copy)');
     const json = JSON.parse(await ta.inputValue());

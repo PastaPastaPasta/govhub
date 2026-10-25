@@ -1,7 +1,7 @@
 // Social features end to end in fixture mode: the sample discussion lives in an in-memory store that runs the same
 // linted queries and DocumentOps as Platform, and sign-in picks a sample identity.
 import { expect, test, type Page } from '@playwright/test';
-import { cspViolations, gotoFixtures, watchPage } from './helpers.ts';
+import { cspViolations, gotoFixtures, openGroup, watchPage } from './helpers.ts';
 
 async function signInAs(page: Page, who: RegExp) {
   await page.getByTestId('session-button').click();
@@ -41,7 +41,7 @@ test.describe('discussion (fixtures)', () => {
     await expect(spam).toHaveCount(0);
 
     // Filter: owner + MN owners (no badges yet, no owner) hides everyone; "show all" is one click.
-    await d.getByText('Proposal owner + MN owners').click();
+    await d.getByText('Owner and masternodes').click();
     await expect(d.locator('li.comment:not(.comment-placeholder)')).toHaveCount(0);
     await d.getByTestId('show-all').click();
     await expect(d.locator('li.comment:not(.comment-placeholder)')).toHaveCount(5);
@@ -185,6 +185,7 @@ test.describe('discussion (fixtures)', () => {
     await expect(page.locator('article.prow', { hasText: 'OrchardPay' }).getByTestId('card-comments')).toHaveText(/5$/);
 
     await page.getByRole('link', { name: 'Settings' }).click();
+    await openGroup(page, 'Hidden comments');
     const lists = page.getByRole('region', { name: 'Block lists' });
     await expect(lists).toContainText('govhub moderation: 1 block');
     await lists.getByLabel(/The default list/).uncheck();

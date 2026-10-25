@@ -81,7 +81,11 @@ export function PastPage() {
         <p className="small muted">Proposals whose payments have ended, most recent first.</p>
       </div>
       {state.error && <p className="error">Platform could not be read: {state.error}</p>}
-      {!state.loading && !state.error && items.length === 0 && <p className="empty">No past proposals published yet.</p>}
+      {!state.loading && !state.error && items.length === 0 && (
+        <p className="empty">
+          No past proposals published yet. Proposals move here once their last payment date has passed. <Link to="/">See the active ones</Link>
+        </p>
+      )}
       {rows.length > 0 && (
         <table className="past">
           <thead>
