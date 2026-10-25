@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { bytesToHex, randomBytes, toBase58 } from '../src/bytes.ts';
+import { bytesToHex, hash160, randomBytes, toBase58 } from '../src/bytes.ts';
 import { KeyInputError, KeyPurpose, KeyType, parsePrivateKey, SecurityLevel, wifOf } from '../src/keys.ts';
-import { SeedWallet } from '../src/seed.ts';
+import { legacyRegistrationFundingPath, registrationFundingPath, SeedWallet } from '../src/seed.ts';
+import { buildAssetLock, identityIdFromOutpoint } from '../src/tx.ts';
 import { discoverIdentities, findKeyIdentities, pickSeedKey, signInWithKey, signInWithKeyBytes, signInWithSeed, SignInError } from '../src/signin.ts';
 import { FakePlatform } from './fake-platform.ts';
 
@@ -28,6 +29,25 @@ describe('seed discovery', () => {
       { identityIndex: 3, identityId: i3 },
     ]);
     expect(fp.lookups).toBe(4 + 5); // indexes 0..8: two hits, then five misses after index 3
+  });
+
+  it('finds an identity whose account setup was funded at the hardened path used until 2026-10-25 (testnet)', async () => {
+    // The identity id is sha256d(lock txid || credit index) and discovery looks up identity key 0: neither depends on the funding path.
+    const w = SeedWallet.fromPhrase(PHRASE, 'testnet');
+    const lockOf = (path: string) => {
+      const fk = w.derive(path);
+      const b = buildAssetLock({ utxos: [{ txid: 'ab'.repeat(32), vout: 0, value: 300_000n }], fundingKey: fk.privateKey, creditPubKeyHash: hash160(fk.publicKey) });
+      return identityIdFromOutpoint(b.txid, b.creditIndex);
+    };
+    const legacyId = lockOf(legacyRegistrationFundingPath('testnet', 0));
+    expect(legacyId).not.toBe(lockOf(registrationFundingPath('testnet', 0)));
+    const fp = new FakePlatform();
+    fp.addIdentity(legacyId, [0, 1, 2].map((k) => ({ id: k, purpose: P, securityLevel: [A.MASTER, A.CRITICAL, A.HIGH][k]!, priv: w.identityKey(0, k).privateKey })));
+    expect(await discoverIdentities(w, fp)).toEqual([{ identityIndex: 0, identityId: legacyId }]);
+    const s = await signInWithSeed(w, { identityIndex: 0, identityId: legacyId }, fp);
+    expect(s.identityId).toBe(legacyId);
+    expect(s.keyId).toBe(2);
+    s.end();
   });
 
   it('signs in with the HIGH key, never MASTER', async () => {

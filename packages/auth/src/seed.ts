@@ -46,10 +46,21 @@ function normal(i: number): string {
 export const identityKeyPath = (n: Network, identityIndex: number, keyIndex: number): string =>
   `m/9'/${coinType(n)}'/5'/0'/0'/${hardened(identityIndex)}/${hardened(keyIndex)}`;
 
-/** `m/9'/coin'/5'/1'/identity'`: the one-time key that funds the registration of identity `identityIndex` (DIP-13 registration funding). */
-export const registrationFundingPath = (n: Network, identityIndex: number): string => `m/9'/${coinType(n)}'/5'/1'/${hardened(identityIndex)}`;
+/**
+ * `m/9'/coin'/5'/1'/identity`: the one-time key that funds the registration of identity `identityIndex` (DIP-13 registration funding).
+ * The last index is NOT hardened: key-wallet's `IdentityRegistration` account is an `AddressPoolType::Absent` pool (normal children),
+ * which is what rs-platform-wallet funds registrations from and what Dash Evo Tool and the iOS develop wallet scan.
+ */
+export const registrationFundingPath = (n: Network, identityIndex: number): string => `m/9'/${coinType(n)}'/5'/1'/${normal(identityIndex)}`;
 
-/** `m/9'/coin'/5'/2'/registration'/n`: the n-th top-up funding key of identity `identityIndex` (key-wallet `IdentityTopUp { registration_index }`). */
+/**
+ * `m/9'/coin'/5'/1'/identity'`: the hardened registration funding key govhub used until 2026-10-25 (and the phase-0 mainnet run).
+ * Scan-only: no new funding uses it. The Recover tool scans it, and an unfinished funding this browser began there finishes there.
+ */
+export const legacyRegistrationFundingPath = (n: Network, identityIndex: number): string =>
+  `m/9'/${coinType(n)}'/5'/1'/${hardened(identityIndex)}`;
+
+/** `m/9'/coin'/5'/2'/registration'/n`: the n-th top-up funding key of identity `identityIndex` (key-wallet `IdentityTopUp { registration_index }`, an `Absent` pool). */
 export const topUpFundingPath = (n: Network, identityIndex: number, topUpIndex: number): string =>
   `m/9'/${coinType(n)}'/5'/2'/${hardened(identityIndex)}/${normal(topUpIndex)}`;
 

@@ -3,7 +3,7 @@
 // them; the session takes ownership of the seed when sign-in completes, and closing the sheet drops the rest.
 import {
   addressOf, discardFunding, discoverIdentities, generatePhrase, lockTooSmall, nextCreateIndex, isValidPhrase, localPasskeys, MIN_CREATE_DEPOSIT_DUFFS, MIN_TOPUP_DEPOSIT_DUFFS, nextTopUpIndex, normalizePhrase,
-  parseVoucher, pendingFundings, PhraseError, redeemVoucher, registrationFundingPath, SeedWallet, signInWithKey, signInWithSeed, toBase64, wipe, type FoundIdentity, type FundingRecord,
+  createFundingPath, parseVoucher, pendingFundings, PhraseError, redeemVoucher, SeedWallet, signInWithKey, signInWithSeed, toBase64, wipe, type FoundIdentity, type FundingRecord,
   type PhraseLength,
 } from '@govhub/auth';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
@@ -596,7 +596,8 @@ function PhraseSignIn() {
         .list()
         .filter((r) => {
           if (r.network !== network || r.kind !== 'create' || r.state === 'done') return false;
-          const d = wallet.derive(registrationFundingPath(network, r.identityIndex));
+          // the key a resume would fund from (the hardened pre-2026-10-25 one for a funding begun there)
+          const d = wallet.derive(createFundingPath(store, wallet, r.identityIndex));
           try {
             return r.address === addressOf(d.publicKey, network);
           } finally {
