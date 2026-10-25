@@ -440,7 +440,7 @@
   color: var(--accent-ink);
 }
 .vbadge-ok {
-  background: color-mix(in srgb, var(--pass-fill) 16%, var(--surface));
+  background: color-mix(in srgb, var(--pass-fill) 12%, var(--surface));
   color: var(--pass);
 }
 .vbadge-bad {
@@ -865,8 +865,9 @@
   color: #fff;
 }
 .vstep-done .vstep-dot {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--accent-fill);
+  border-color: var(--accent-fill);
+  color: var(--on-accent);
 }
 .vstep-active .vstep-dot {
   border-color: var(--accent);

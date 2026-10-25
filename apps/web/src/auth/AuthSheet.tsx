@@ -28,14 +28,25 @@ const TITLES: Record<SheetView, string> = {
 export function AuthSheet() {
   const { sheet, closeSheet } = useAuth();
   const ref = useRef<HTMLDialogElement>(null);
+  // What had focus when the sheet opened: focus goes back there when it closes (or to the account button, if that control is gone).
+  const opener = useRef<HTMLElement | null>(null);
   useEffect(() => {
     const d = ref.current;
     if (!d) return;
-    if (sheet && !d.open) d.showModal();
+    if (sheet && !d.open) {
+      opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      d.showModal();
+    }
     if (!sheet && d.open) d.close();
   }, [sheet]);
+  const onClose = () => {
+    closeSheet();
+    const back = opener.current?.isConnected && opener.current.getClientRects().length ? opener.current : document.querySelector<HTMLElement>('[data-testid="session-button"]');
+    opener.current = null;
+    back?.focus();
+  };
   return (
-    <dialog ref={ref} className="sheet" aria-labelledby="sheet-title" onClose={closeSheet} onCancel={closeSheet}>
+    <dialog ref={ref} className="sheet" aria-labelledby="sheet-title" onClose={onClose} onCancel={closeSheet}>
       {sheet && (
         <div className="sheet-body">
           <header className="sheet-head">
