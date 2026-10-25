@@ -18,9 +18,13 @@ const cred = (id: Uint8Array, prf: Uint8Array | null) => ({
 });
 
 const stored: unknown[] = [];
+let listFails = 0;
 vi.mock('@govhub/auth', async (orig) => ({
   ...(await orig<typeof import('@govhub/auth')>()),
-  listPasskeys: async () => existing,
+  listPasskeys: async () => {
+    if (listFails-- > 0) throw new Error('Platform is busy');
+    return existing;
+  },
   storeInVault: vi.fn(async (_c: unknown, _s: unknown, a: { credentialId: Uint8Array }) => (stored.push(a.credentialId), bytes(5, 32))),
   waitForEntry: vi.fn(async () => ({})),
 }));
@@ -52,6 +56,7 @@ async function mount() {
 beforeEach(() => {
   vi.clearAllMocks();
   stored.length = 0;
+  listFails = 0;
   localStorage.clear();
   keyring.busy = null;
   keyring.needsConfirm = false;
@@ -189,6 +194,28 @@ describe('keyring: add a passkey', () => {
     const r = await mount();
     expect(button(r.el, /^Add a passkey$/).disabled).toBe(true);
     expect(button(r.el, /Use a passkey I already have/).disabled).toBe(true);
+    await r.unmount();
+  });
+
+  it('waits for the passkey list, and loads it again on request', async () => {
+    listFails = 1;
+    const r = await mount();
+    expect(button(r.el, /^Add a passkey$/).disabled).toBe(true);
+    expect(r.el.querySelector('[role="alert"]')?.textContent).toMatch(/Platform is busy/);
+    await click(button(r.el, /Try again/));
+    await flush();
+    expect(button(r.el, /^Add a passkey$/).disabled).toBe(false);
+    expect(r.el.querySelector('[role="alert"]')).toBeNull();
+    await r.unmount();
+  });
+
+  it('will not start a second prompt while one is open', async () => {
+    create.mockReturnValue(new Promise(() => {}));
+    const r = await mount();
+    const b = button(r.el, /^Add a passkey$/);
+    await click(b);
+    await click(b);
+    expect(create).toHaveBeenCalledTimes(1);
     await r.unmount();
   });
 

@@ -2,7 +2,7 @@
 // D-073: removing a passkey also forgets it in this browser (localStorage govhub.passkeys.<identity>).
 // Adding one: create, confirm with a get restricted to it, store the vault entry, hand an open keyring the unlocker.
 import { localPasskeys, toBase64, type VaultEntryDoc } from '@govhub/auth';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { button, click, flush, render } from '../test/render.tsx';
 
 const ID = '8GqCCpTFpgPREMUTqHESkuDMvkrfwBEd45fVeLUEYKYL';
@@ -28,6 +28,11 @@ const { Passkeys } = await import('./Passkeys.tsx');
 const { createPasskey, getPasskeyPrf } = await import('@govhub/auth/webauthn');
 const { storeInVault } = await import('@govhub/auth');
 const { stashPasskeyUnlock } = await import('../voting/stash.ts');
+
+beforeEach(() => {
+  removed.length = 0;
+  localStorage.clear();
+});
 
 describe('D-073: remove a passkey', () => {
   it('drops its local marker, and the key once none is left', async () => {
@@ -56,7 +61,7 @@ describe('add a passkey', () => {
     await flush();
     await click(button(r.el, /^Add a passkey$/));
     await flush();
-    expect(vi.mocked(createPasskey).mock.calls[0]![0].exclude).toEqual([]);
+    expect(vi.mocked(createPasskey).mock.calls[0]![0].exclude).toEqual([cred(1), cred(2)]);
     await click(button(r.el, /Confirm with the passkey/));
     await flush();
     expect(vi.mocked(getPasskeyPrf).mock.calls[0]![0].allow).toEqual([cred(7)]);

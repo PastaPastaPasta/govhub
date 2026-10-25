@@ -7,7 +7,7 @@ import { useKeyring } from '../../voting/KeyringContext.tsx';
 
 export function AddPasskey() {
   const k = useKeyring();
-  const { support, step, error, create, confirm, entries } = usePasskeyCreate({
+  const { support, step, error, create, confirm, entries, reload, setError } = usePasskeyCreate({
     onSaved: (prf) =>
       k.addPasskeyUnlockerFrom(prf).catch((e) => {
         throw new Error(`${errorText(e)} The passkey itself is saved: "Use a passkey I already have" adds it to this keyring.`);
@@ -48,6 +48,11 @@ export function AddPasskey() {
         <p className="error small" role="alert">
           {error}
         </p>
+      )}
+      {!entries && error && (
+        <button type="button" className="btn btn-s btn-quiet" onClick={() => (setError(null), reload())}>
+          Try again
+        </button>
       )}
       {!working && (
         <button type="button" className="btn btn-s btn-quiet" onClick={() => void k.addPasskeyUnlocker().catch(() => {})} disabled={!!k.busy} data-testid="existing-passkey">

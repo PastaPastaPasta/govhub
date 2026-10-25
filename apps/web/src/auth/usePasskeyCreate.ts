@@ -33,7 +33,13 @@ export function usePasskeyCreate({ onSaved }: { onSaved?(prfOutput: Uint8Array, 
   const [entries, setEntries] = useState<VaultEntryDoc[] | null>(null);
   // the latest callback, not the one from the render of the click: the save below can take a while
   const saved = useRef(onSaved);
-  saved.current = onSaved;
+  useEffect(() => {
+    saved.current = onSaved;
+    // a card that is gone (the keyring locked or changed meanwhile) must not add the unlocker from stale closures
+    return () => void (saved.current = undefined);
+  }, [onSaved]);
+  // a second click while a ceremony runs would open a second prompt (and `confirm` pay for a second vault write)
+  const inflight = useRef(false);
   useEffect(() => () => wipe(created?.prf), [created]);
 
   const ctx = useCallback(async () => ({ platform: await platform(), contractId: forumContractId }), [platform, forumContractId]);
@@ -48,7 +54,8 @@ export function usePasskeyCreate({ onSaved }: { onSaved?(prfOutput: Uint8Array, 
   const pi = prfInput(identifierBytes(forumContractId));
 
   const create = async () => {
-    if (!session) return;
+    if (!session || inflight.current) return;
+    inflight.current = true;
     setError(null);
     try {
       const c = await createPasskey({
@@ -59,12 +66,15 @@ export function usePasskeyCreate({ onSaved }: { onSaved?(prfOutput: Uint8Array, 
       setStep('confirm');
     } catch (e) {
       if (!isCancelled(e)) setError(errorText(e));
+    } finally {
+      inflight.current = false;
     }
   };
 
   // A second ceremony restricted to the new passkey: the PRF it gives is what the entry is sealed to (and must equal the create-time one).
   const confirm = async () => {
-    if (!created || !session) return;
+    if (!created || !session || inflight.current) return;
+    inflight.current = true;
     setError(null);
     let prf: Uint8Array | null = null;
     try {
@@ -100,8 +110,9 @@ export function usePasskeyCreate({ onSaved }: { onSaved?(prfOutput: Uint8Array, 
       }
     } finally {
       wipe(prf);
+      inflight.current = false;
     }
   };
 
-  return { support, step, error, setError, create, confirm, entries, setEntries, ctx };
+  return { support, step, error, setError, create, confirm, entries, setEntries, reload, ctx };
 }
