@@ -4,7 +4,7 @@
 import { AllNodesFailedError, bridgeProofSource, createDapi, GrpcError, quorumListProofSource, type AnchoredChain, type Dapi, type ProofSource, type StoredLinkedChain, type StoredPinned } from '@govhub/dapi';
 import { installRecordedDapi, RECORDED_NODE } from '../data/dapiRecorded.ts';
 import { createWebDapi, lookupCollateral } from '../data/dapi.ts';
-import { BridgeError, type Bridge, type BridgeMnList, type BridgeVotes } from '../data/bridge.ts';
+import type { Bridge, BridgeMnList, BridgeVotes } from '../data/bridge.ts';
 import { makeBridge } from '../data/bridgeFactory.ts';
 import type { CoreNetwork } from '../data/types.ts';
 import { errText } from '../lib/format.ts';
@@ -12,10 +12,11 @@ import { claimedWeight, payments, scheduleAndBudget, summarize, threshold, EST_B
 import { verifyCollateral } from './collateral.ts';
 import type { DapiDescriptor, SmlUsed, WorkerRequest, WorkerResponse } from './protocol.ts';
 import { rankRecounts, type RecountedProposal } from './ranking.ts';
-import { BRIDGE_TARGET } from './verdict.ts';
+import { BRIDGE_TARGET, comparable, otherSnapshot } from './verdict.ts';
 import { headerStore, proRegCache, superblockCache } from './stores.ts';
 import { loadVerifiers } from './verifiers.ts';
-import { problemCounts, verifyVotes, type ProReg, type SmlEntry, type VoteRun, type VoteTarget } from './votes.ts';
+import { recountSnapshots, snapshotOf, voteSetFor } from './snapshot.ts';
+import { problemCounts, verifyVotes, type ProReg, type SmlEntry } from './votes.ts';
 
 declare const self: DedicatedWorkerGlobalScope;
 const post = (m: WorkerResponse) => self.postMessage(m);
@@ -56,14 +57,6 @@ function mnlistAt(bridge: Bridge, scope: string, height: number): Promise<Bridge
   list.catch(() => mnlists.get(key)?.list === list && mnlists.delete(key));
   while (mnlists.size > 4) mnlists.delete(mnlists.keys().next().value!);
   return list;
-}
-
-/** Targets grouped by the Core height their tally is as of: each group is recounted from the vote set behind that height. */
-function byHeight(targets: readonly VoteTarget[]): Array<{ height: number | null; targets: VoteTarget[] }> {
-  if (targets.length === 0) return [{ height: null, targets: [] }];
-  const groups = new Map<number, VoteTarget[]>();
-  for (const t of targets) groups.set(t.tally.asOfHeight, [...(groups.get(t.tally.asOfHeight) ?? []), t]);
-  return [...groups].map(([height, ts]) => ({ height, targets: ts }));
 }
 
 const NOT_FOUND = 5;
@@ -199,33 +192,18 @@ async function handle(req: WorkerRequest): Promise<void> {
     sml = smlEntries(await anchor(dapi, progress));
   }
 
-  const runs: VoteRun[] = [];
   let origin: BridgeVotes['origin'];
-  for (const g of byHeight(req.targets)) {
-    const names = g.targets.map((t) => t.name).join(' and ') || 'the live tally';
-    progress(`Fetching the signed votes behind the ${names}${g.height ? ` (block ${g.height.toLocaleString('en-US')})` : ''} from ${bridge.name}`);
-    let votes: BridgeVotes;
-    let asked = g.height;
-    try {
-      votes = await bridge.votes(req.govHash, g.height === null ? {} : { height: g.height });
-    } catch (e) {
-      // A bridge that no longer holds the set for that height (404) still serves its live set; the verdict then says "different height".
-      // Anything else (unreachable, HTTP 500, malformed JSON) is a failure, not a reason to compare something else.
-      if (g.height === null || !(e instanceof BridgeError) || e.status !== 404) throw e;
-      votes = await bridge.votes(req.govHash);
-      asked = null;
-    }
+  const runs = await recountSnapshots(bridge, req.govHash, req.targets, progress, async (votes, targets) => {
     origin = votes.origin ?? origin;
     progress(`Fetching the masternode list at block ${votes.tallyHeight.toLocaleString('en-US')}`);
     const mnlist = await mnlistAt(bridge, JSON.stringify(req.bridge), votes.tallyHeight);
     const proReg = dapi && sml ? await proRegFor(dapi, req.network, votes, mnlist, sml.entries, progress) : null;
     progress(`Checking ${votes.votes.length} signatures`);
-    const result = verifyVotes({ govHash: req.govHash, votes: votes.votes, masternodes: mnlist.masternodes, network: req.network, now: req.now, targets: g.targets, sml: sml?.entries ?? null, proReg });
+    const result = verifyVotes({ govHash: req.govHash, votes: votes.votes, masternodes: mnlist.masternodes, network: req.network, now: req.now, targets, sml: sml?.entries ?? null, proReg });
     // keys checked against a list on a chain proof of work does not protect (testnet): a match is not "verified"
     if (sml?.used.weak) result.keysFrom = 'bridge';
-    // votesAsOf is the height of the tally whose set was actually served (<= the requested height), not the height echoed back.
-    runs.push({ result, votesAsOf: votes.tallyHeight, asked, mnlistHeight: mnlist.height, listMatches: votes.mnListHash && mnlist.listHash ? votes.mnListHash === mnlist.listHash : null });
-  }
+    return { result, mnlistHeight: mnlist.height, listMatches: votes.mnListHash && mnlist.listHash ? votes.mnListHash === mnlist.listHash : null };
+  });
   post({ id: req.id, kind: 'votes', bridge: bridge.name, runs, ...(origin ? { origin } : {}), sml: sml ? sml.used : null });
 }
 
@@ -243,15 +221,20 @@ async function ranking(req: Extract<WorkerRequest, { kind: 'ranking' }>, bridge:
     progress(`Recounting ${p.name} (${i + 1} of ${req.proposals.length})`);
     const base = { govHash: p.govHash, name: p.name, amount: p.paymentAmount, startEpoch: p.startEpoch, endEpoch: p.endEpoch };
     try {
-      const votes = await bridge.votes(p.govHash);
+      // The live set first (what the live tallies are of), by hash when a vote arrived since the tallies were read.
+      const own = published.find((t) => t.govHash === p.govHash);
+      const want = own ? snapshotOf(own) : null;
+      const { votes, asked } = await voteSetFor(bridge, p.govHash, want, ['live', 'hash']);
+      const run = { votesAsOf: votes.tallyHeight, asked, servedVoteSetHash: votes.voteSetHash };
+      const tally = want && comparable(run, want) ? own : undefined;
       const list = await mnlistAt(bridge, JSON.stringify(req.bridge), votes.tallyHeight);
       const proReg = await proRegFor(dapi, req.network, votes, list, entries, progress);
-      const tally = published.find((t) => t.govHash === p.govHash && t.asOfHeight === votes.tallyHeight);
       const r = verifyVotes({ govHash: p.govHash, votes: votes.votes, masternodes: list.masternodes, network: req.network, now: req.now, targets: tally ? [{ name: BRIDGE_TARGET, tally }] : [], sml: entries, proReg });
       const matches = !!tally && r.targets[0]!.matches;
       const bad = problemCounts(r.problems).map(([k, n]) => `${n} ${k.replace(/-/g, ' ')}`);
       const unproven = bad.length ? `not every vote proven (${bad.join(', ')})` : `the bridge's masternode list differs from the proven one for ${r.listDiffers} voters`;
-      const problem = a.weak ? `not secure: ${a.weak}` : r.keysFrom !== 'sml' ? unproven : !tally ? `no published tally at block ${votes.tallyHeight}` : !matches ? 'the recount differs from the published tally' : null;
+      const missing = want && otherSnapshot(run, want) ? "the bridge served another vote set than its tally's (usually a vote arrived while recounting); re-check" : `no published tally at block ${votes.tallyHeight}`;
+      const problem = a.weak ? `not secure: ${a.weak}` : r.keysFrom !== 'sml' ? unproven : !tally ? missing : !matches ? 'the recount differs from the published tally' : null;
       recounts.push({ ...base, absYes: r.weighted.yes - r.weighted.no, proven: problem === null, ...(problem ? { problem } : {}) });
     } catch (e) {
       recounts.push({ ...base, absYes: 0, proven: false, problem: `not recounted: ${(e as Error).message}` });

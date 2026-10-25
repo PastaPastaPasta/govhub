@@ -6,7 +6,7 @@ import type { Proposal, Tally } from '../data/types.ts';
 import type { ChainReport } from './chain.ts';
 import { ABSENT, verdictFailure, type CollateralVerdict, type Step } from './collateral.ts';
 import type { RankingDone, VotesDone } from './protocol.ts';
-import { contradicts, PLATFORM_TARGET } from './verdict.ts';
+import { contradicts, isTally, otherSnapshot, PLATFORM_TARGET } from './verdict.ts';
 import { excludedText } from './votes.ts';
 
 export type CheckId = 'content' | 'collateral' | 'chain' | 'votes' | 'funding';
@@ -198,9 +198,19 @@ export function votesComponent(i: {
       reason: `Mismatch: the signed votes the bridge served contradict the ${contradicted.t.name} for block ${contradicted.t.asOfHeight.toLocaleString('en-US')}${fields ? ` (${fields})` : ''}. Either the tally or the bridge's vote archive is wrong, so the tally isn't verified`,
     };
   }
+  const shown = i.shown;
+  const hit = pairs.find(({ t }) => isTally(t, shown));
+  // For the shown tally's block the bridge served another vote set than the tally's, even asked by its hash, and its votes don't
+  // reproduce the tally: a vote arrived while checking (the live tally changes at the same height), or the bridge doesn't serve that
+  // set. Not a mismatch: by the bridge's own label those aren't the tally's votes.
+  if (hit && !hit.t.matches && !hit.t.servedMatches && otherSnapshot(hit.run, hit.t)) {
+    return {
+      status: 'error',
+      reason: `Couldn't verify yet: for block ${hit.t.asOfHeight.toLocaleString('en-US')} the bridge served another vote set than the one behind the ${hit.t.name} (usually a vote arrived while checking; if this persists, the bridge isn't serving that tally's votes). Re-check in a moment`,
+    };
+  }
   // The Platform tally document is the proven record of the tally; the bridge's own live tally proves nothing about it.
-  if (i.shown.name !== PLATFORM_TARGET) return { status: 'reported', reason: "The tally isn't on Platform yet, so the recount can't be checked against the proven record" };
-  const hit = pairs.find(({ t }) => t.name === PLATFORM_TARGET && t.asOfHeight === i.shown!.tally.asOfHeight);
+  if (shown.name !== PLATFORM_TARGET) return { status: 'reported', reason: "The tally isn't on Platform yet, so the recount can't be checked against the proven record" };
   if (!hit) return { status: 'reported', reason: 'The tally changed while the votes were recounted; re-check to recount it' };
   const r = hit.run.result;
   // The tally counts votes this browser couldn't prove: the count here leaves them out, so it can't confirm the tally.
@@ -228,7 +238,7 @@ export function votesComponent(i: {
 export function provenNetYes(result: VotesDone | null, shown: ShownTally | null): number | null {
   if (!result || !shown || shown.name !== PLATFORM_TARGET) return null;
   for (const run of result.runs) {
-    const t = run.result.targets.find((x) => x.name === PLATFORM_TARGET && x.asOfHeight === shown.tally.asOfHeight);
+    const t = run.result.targets.find((x) => isTally(x, shown));
     if (t?.matches && run.result.keysFrom === 'sml') return run.result.weighted.yes - run.result.weighted.no;
   }
   return null;

@@ -44,6 +44,11 @@ export interface BridgeVotes {
   origin?: 'recorded' | 'synthetic';
 }
 
+export interface VotesQuery {
+  height?: number;
+  voteSetHash?: string;
+}
+
 export interface BridgeMasternode {
   proTxHash: string;
   collateralTxid: string;
@@ -70,8 +75,11 @@ export interface Bridge {
   status(): Promise<BridgeStatus>;
   proposals(): Promise<Proposal[]>;
   proposal(govHash: string): Promise<Proposal | null>;
-  /** The counted vote set behind the tally in force at `height` (`?height=`), or behind the live tally. */
-  votes(govHash: string, opts?: { height?: number }): Promise<BridgeVotes>;
+  /**
+   * The counted vote set behind the tally in force at `height` (`?height=`), or behind the live tally. With `voteSetHash`, exactly the set
+   * with that hash (at or below `height`): bridges from before that parameter ignore it, so the caller checks the answer's voteSetHash.
+   */
+  votes(govHash: string, opts?: VotesQuery): Promise<BridgeVotes>;
   tallies(): Promise<Tally[]>;
   cycle(): Promise<Cycle | null>;
   /** Governance parameters of the bridge's Core network (`getgovernanceinfo` in `/v1/cycle`), null when not reported. */
@@ -260,10 +268,16 @@ export class HttpBridge implements Bridge {
     const o = await this.get(`/v1/proposals/${encodeURIComponent(govHash)}`);
     return o === null ? null : parseProposal(o);
   }
-  async votes(govHash: string, opts: { height?: number } = {}): Promise<BridgeVotes> {
-    const q = opts.height === undefined ? '' : `?height=${encodeURIComponent(String(opts.height))}`;
+  async votes(govHash: string, opts: VotesQuery = {}): Promise<BridgeVotes> {
+    const params = new URLSearchParams();
+    if (opts.height !== undefined) params.set('height', String(opts.height));
+    if (opts.voteSetHash !== undefined) params.set('voteSetHash', opts.voteSetHash);
+    const q = params.size ? `?${params}` : '';
     const o = await this.get(`/v1/proposals/${encodeURIComponent(govHash)}/votes${q}`);
-    if (o === null) throw new BridgeError(opts.height === undefined ? 'the bridge has no vote set for this proposal' : `the bridge has no vote set at or below block ${opts.height}`, 404);
+    if (o === null) {
+      const what = opts.voteSetHash === undefined ? 'vote set' : `vote set ${opts.voteSetHash.slice(0, 12)}…`;
+      throw new BridgeError(opts.height === undefined ? `the bridge has no ${what} for this proposal` : `the bridge has no ${what} at or below block ${opts.height}`, 404);
+    }
     return parseVotes(o, { govHash, ...(opts.height === undefined ? {} : { height: opts.height }) });
   }
   async tallies(): Promise<Tally[]> {
