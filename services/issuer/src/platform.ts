@@ -1,7 +1,7 @@
 // The issuer's Platform access (evo-sdk 5.0.0-rc.8): proved reads of its own `badge` documents, and document writes through
 // @govhub/auth's single document writer (nonce handling and settle-by-proved-read). Byte-array `where` values are base64.
 import { createEvoPlatform } from '@govhub/auth/evo';
-import { BADGE_TYPES, issuerKeyData, issuerReportData, parseIssuerKeyDoc, parseIssuerReportDoc, type IssuerKeyDoc, type IssuerReport } from '@govhub/badge';
+import { BADGE_TYPES, issuerKeyData, issuerReportData, issuerRevocationData, parseIssuerKeyDoc, parseIssuerReportDoc, parseIssuerRevocationDoc, type IssuerKeyDoc, type IssuerReport, type IssuerRevocationDoc } from '@govhub/badge';
 import type { IdentityKeyFile, PlatformNetwork } from './config.ts';
 import { errText } from './log.ts';
 
@@ -14,12 +14,16 @@ const SECURITY = { critical: 1, high: 2 } as const;
 export interface IssuerPlatform {
   /** Proved: the issuerKey of `issuerId` for `epoch` (B1), or null. */
   issuerKey(issuerId: string, epoch: number): Promise<IssuerKeyDoc | null>;
+  /** Proved: the issuerRevocation of `issuerId` for `epoch` (B2), or null. */
+  issuerRevocation(issuerId: string, epoch: number): Promise<IssuerRevocationDoc | null>;
   /** Proved: the issuerReport for `epoch` (B3), or null. */
   issuerReport(issuerId: string, epoch: number): Promise<IssuerReport | null>;
   /** Platform's view of Core (proved metadata): the newest chain-locked core height. */
   coreHeight(): Promise<number>;
   publishIssuerKey(key: IdentityKeyFile, o: { epoch: number; spki: Uint8Array; keyId: Uint8Array }): Promise<string>;
   publishIssuerReport(key: IdentityKeyFile, o: { epoch: number; tokensIssued: number }): Promise<string>;
+  /** CRITICAL key: badges of `epoch` created at or after `effectiveCoreHeight` become void for readers. Immutable and unique per epoch. */
+  publishIssuerRevocation(key: IdentityKeyFile, o: { epoch: number; keyId: Uint8Array; effectiveCoreHeight: number }): Promise<string>;
 }
 
 export async function connectPlatform(network: PlatformNetwork, contractId: string): Promise<IssuerPlatform> {
@@ -63,6 +67,7 @@ export async function connectPlatform(network: PlatformNetwork, contractId: stri
 
   const platform: IssuerPlatform = {
     issuerKey: (issuerId, epoch) => one(BADGE_TYPES.issuerKey, issuerId, epoch, parseIssuerKeyDoc),
+    issuerRevocation: (issuerId, epoch) => one(BADGE_TYPES.issuerRevocation, issuerId, epoch, parseIssuerRevocationDoc),
     issuerReport: (issuerId, epoch) => one(BADGE_TYPES.issuerReport, issuerId, epoch, parseIssuerReportDoc),
     async coreHeight() {
       const r = await sdk.contracts.fetchWithProof(contractId);
@@ -70,6 +75,7 @@ export async function connectPlatform(network: PlatformNetwork, contractId: stri
     },
     publishIssuerKey: (k, o) => create(k, SECURITY.critical, BADGE_TYPES.issuerKey, issuerKeyData(o)),
     publishIssuerReport: (k, o) => create(k, SECURITY.high, BADGE_TYPES.issuerReport, issuerReportData(o)),
+    publishIssuerRevocation: (k, o) => create(k, SECURITY.critical, BADGE_TYPES.issuerRevocation, issuerRevocationData(o)),
   };
   return platform;
 }

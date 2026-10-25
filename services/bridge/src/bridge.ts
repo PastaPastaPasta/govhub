@@ -38,14 +38,21 @@ export class Bridge {
   lastReconcileAt = 0;
   lastTallyAt = 0;
   lastPublish: (PublishSummary & { at: number }) | null = null;
+  /** when tallies were last stored (the block path); the 5-minute fallback refresh counts from here */
+  private lastStoredAt = 0;
   private stopping = false;
-  private tickRunning = false;
+  /** the refresh in progress (block path or live vote refresh): they never overlap */
+  private busy: Promise<unknown> | null = null;
+  private voteTimer: ReturnType<typeof setTimeout> | null = null;
+  /** a live refresh is waiting for the lock: further votes join it instead of queueing another */
+  private liveQueued = false;
 
   constructor(cfg: BridgeConfig, db?: DB) {
     this.cfg = cfg;
     this.db = db ?? openArchive(cfg.dbPath);
     this.rpc = new CoreRpc({ url: cfg.core.rpcUrl, user: cfg.core.rpcUser, password: cfg.core.rpcPassword, timeoutMs: cfg.core.rpcTimeoutMs, retries: cfg.core.rpcRetries });
     this.ingest = new Ingestor(this.db, this.rpc, cfg.coreNetwork);
+    if (cfg.voteRefreshDebounceMs > 0) this.ingest.onNewVote = () => this.scheduleVoteRefresh();
     setMeta(this.db, 'core_network', cfg.coreNetwork);
   }
 
@@ -138,30 +145,93 @@ export class Bridge {
         log.warn('superblock bookkeeping failed', { height: info.lastsuperblock, error: errText(e) });
       }
     }
+    const run = await this.tally({ compare: opts.compare ?? true, persist: true });
+    if (run) this.lastStoredAt = nowS();
+    return run;
+  }
+
+  /**
+   * Live vote refresh (D-071): a vote seen over ZMQ is counted within seconds, not at the next block. Recomputes the vote sets
+   * and tallies at the current height (verifying the new votes against the MN list in force, which has not changed while the
+   * tip is the same block) and compares them with Core, in memory only: /v1/proposals/:hash/votes and the live tallies change,
+   * the stored tallies (?height=, the published documents) stay per block. Does nothing before the first block refresh, or
+   * when the tip moved (the block path runs then).
+   */
+  async refreshVotes(): Promise<TallyRun | null> {
+    if (!this.lastRun || !this.govInfo) return null;
+    // a new block is known: the block path recomputes everything anyway
+    if (this.ingest.height !== this.lastRun.height) return null;
+    if (!(await this.ingest.freshenSnapshot())) return null;
+    await this.ingest.verifyAllPending();
+    return this.tally({ compare: true, persist: false });
+  }
+
+  /**
+   * Schedules refreshVotes after the debounce; votes arriving meanwhile join the same run. At most one live refresh waits for the
+   * lock and one runs: while one is queued (the block path holds the lock), new votes join it.
+   */
+  scheduleVoteRefresh(): void {
+    if (this.voteTimer || this.liveQueued || this.stopping) return;
+    this.voteTimer = setTimeout(() => {
+      this.voteTimer = null;
+      this.liveQueued = true;
+      this.exclusive(() => {
+        this.liveQueued = false; // votes from now on need another run (this one may already have read the archive)
+        return this.refreshVotes();
+      }).catch((e) => log.warn('live vote refresh failed', { error: errText(e) }));
+    }, this.cfg.voteRefreshDebounceMs);
+    this.voteTimer.unref?.();
+  }
+
+  /** Runs `fn` when no other refresh runs (block path and live vote refresh share the archive and lastRun). */
+  async exclusive<T>(fn: () => Promise<T>): Promise<T> {
+    while (this.busy) await this.busy.catch(() => undefined);
+    const p = fn();
+    this.busy = p;
+    try {
+      return await p;
+    } finally {
+      if (this.busy === p) this.busy = null;
+    }
+  }
+
+  /**
+   * Tallies from the latest snapshot and the Core comparison; `persist` stores them and records mismatch events. A live run
+   * (no persist) asks Core only about proposals whose vote set changed since the last run and keeps the other comparisons.
+   */
+  private async tally(opts: { compare: boolean; persist: boolean }): Promise<TallyRun | null> {
+    const info = this.govInfo!;
     const snap = latestSnapshot(this.db);
     if (!snap) return null;
     const list = this.ingest.lists.load(snap.listHash)!;
-    const run = computeAll(this.db, list, snap.height, info, nextBudgetDuffs, nowS());
-    if (run.threshold !== run.coreThreshold) {
+    const run = computeAll(this.db, list, snap.height, info, this.nextBudgetDuffs, nowS());
+    if (opts.persist && run.threshold !== run.coreThreshold) {
       recordEvent(this.db, 'threshold-mismatch', { bridge: run.threshold, core: run.coreThreshold, validWeighted: run.validWeighted, height: run.height });
       log.error('funding threshold differs from getgovernanceinfo', { bridge: run.threshold, core: run.coreThreshold });
     }
-    if (opts.compare ?? true) {
+    if (opts.compare) {
       const cmps = new Map<string, CoreComparison>();
       let mismatches = 0;
+      const prev = opts.persist ? null : new Map((this.lastRun?.tallies ?? []).map((x) => [x.govHash, x.voteSetHash]));
       for (const t of run.tallies) {
+        const kept = prev?.get(t.govHash) === t.voteSetHash ? this.lastComparisons.get(t.govHash) : undefined;
+        if (kept) {
+          cmps.set(t.govHash, kept);
+          if (!kept.match) mismatches++;
+          continue;
+        }
         try {
           const [obj, cur] = await Promise.all([this.rpc.gobjectGet(t.govHash), this.rpc.gobjectCurrentVotes(t.govHash)]);
           const c = compareWithCore(t, obj.FundingResult, coreCurrentFundingVotes(cur));
           cmps.set(t.govHash, c);
-          storeTally(this.db, t, c);
+          if (opts.persist) storeTally(this.db, t, c);
           if (!c.match) mismatches++;
         } catch (e) {
-          storeTally(this.db, t, null);
+          if (opts.persist) storeTally(this.db, t, null);
           log.warn('core comparison failed', { hash: t.govHash, error: errText(e) });
         }
       }
-      if (mismatches) {
+      if (mismatches && opts.persist) {
         recordEvent(this.db, 'tally-mismatch', { height: run.height, mismatches, proposals: run.tallies.length });
         log.error('TALLY MISMATCH: bridge tallies disagree with Core', {
           mismatches,
@@ -243,22 +313,19 @@ export class Bridge {
     let delay = 5000;
     while (!this.stopping) {
       try {
-        if (!this.tickRunning) {
-          this.tickRunning = true;
-          const due = this.ingest.height !== lastHeight || nowS() - this.lastTallyAt >= 300;
-          if (due) {
+        const due = this.ingest.height !== lastHeight || nowS() - this.lastStoredAt >= 300;
+        if (due) {
+          await this.exclusive(async () => {
             const run = await this.refresh();
             lastHeight = this.ingest.height;
             if (run && this.publisher) await this.publishOnce();
-          }
-          delay = 5000;
+          });
         }
+        delay = 5000;
       } catch (e) {
         log.error('bridge cycle failed (will retry)', { error: errText(e), retryInMs: delay });
         await sleep(delay);
         delay = Math.min(delay * 2, 120_000);
-      } finally {
-        this.tickRunning = false;
       }
       // the ZMQ hashblock handler advances ingest.height; poll RPC too in case ZMQ is down
       await sleep(15_000);
@@ -272,6 +339,8 @@ export class Bridge {
 
   async stop(): Promise<void> {
     this.stopping = true;
+    if (this.voteTimer) clearTimeout(this.voteTimer);
+    this.voteTimer = null;
     await this.zmq?.stop();
   }
 

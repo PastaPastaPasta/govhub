@@ -7,7 +7,9 @@
 //  - one accepted change per (masternode, object, signal) per hour, measured on Core's receive time -> keep >= 1 h + 30 s apart;
 //  - a vote older than the masternode's current one is "Obsolete" -> terminal;
 //  - a vote Core already has answers with an empty message ("Error voting : ") -> not an error, the confirmer decides.
-// A vote is `sending` while voteraw is in flight, so a cancel cannot race with it.
+// A vote is `sending` while voteraw is in flight, so a cancel cannot race with it. Once an attempt may have reached Core (no answer:
+// transport error or timeout, a crash mid-call, or a broadcast vote that never showed up and is sent again), the vote waits as
+// `maybe-broadcast` instead of `held`, for good: it is retried like a held vote, but a cancel is refused (it could not be taken back).
 // Logs never contain outpoints, vote hashes or Core's raw messages: only the relay id and a short error code.
 import { VOTE_MAX_FUTURE_S, VOTE_UPDATE_MIN_S, voteRawParams, type VoteFields } from '@govhub/verify';
 import type { RelayConfig } from './config.ts';
@@ -115,7 +117,7 @@ export class Broadcaster {
 
   private async attempt(id: string): Promise<void> {
     const row = this.store.get(id);
-    if (!row || row.status !== 'held') return;
+    if (!row || (row.status !== 'held' && row.status !== 'maybe-broadcast')) return;
     let now = this.clock();
 
     // a newer vote for the same key was queued while this one was in flight (and this one went back to held): never send the older
@@ -167,10 +169,10 @@ export class Broadcaster {
         this.store.markSent(row, now);
         return;
       }
-      this.coreError(row, now); // an answer we do not understand: treat like a Core error
+      this.coreError(row, now, true); // an answer we do not understand: Core may have taken the vote
     } finally {
-      // whatever went wrong above, a row must not stay `sending` until the next restart
-      if (this.store.get(id)?.status === 'sending') this.coreError(row, this.clock());
+      // whatever went wrong above, a row must not stay `sending` until the next restart (and voteraw may have gone out)
+      if (this.store.get(id)?.status === 'sending') this.coreError(row, this.clock(), true);
     }
   }
 
@@ -198,12 +200,16 @@ export class Broadcaster {
         return;
       }
     }
-    this.coreError(row, now);
+    // no answer at all (transport error, timeout): the call may have reached Core and the answer got lost
+    this.coreError(row, now, msg === null);
   }
 
-  /** Transport error, HTTP 5xx or an unrecognised Core error: back off 30 s, 60 s, ... up to 30 min; give up after 50 attempts. */
-  private coreError(row: VoteRow, now: number): void {
-    const failN = this.store.retryLater(row.id, now + backoff(30, 1800, row.fail_n), 'core-error');
+  /**
+   * Transport error, HTTP 5xx or an unrecognised Core error: back off 30 s, 60 s, ... up to 30 min; give up after 50 attempts.
+   * `maybeSent`: voteraw went out and got no answer we can rely on, so the vote waits as maybe-broadcast from now on.
+   */
+  private coreError(row: VoteRow, now: number, maybeSent = false): void {
+    const failN = this.store.retryLater(row.id, now + backoff(30, 1800, row.fail_n), 'core-error', maybeSent);
     log.warn('voteraw failed', { id: row.id, code: 'core-error', failN });
     if (failN >= MAX_ERROR_ATTEMPTS) this.fail(row, now, 'core-error');
   }

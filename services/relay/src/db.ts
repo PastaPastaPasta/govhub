@@ -1,8 +1,17 @@
-// SQLite store (better-sqlite3, WAL). Privacy by construction: no IP column, no request log table, and the receive time is kept
-// only as the hour it fell in. Release/signed times are client-chosen and needed to broadcast.
+// SQLite store (better-sqlite3). Privacy by construction: no IP column, no request log table, and the receive time is kept only as
+// the hour it fell in. Release/signed times are client-chosen and needed to broadcast.
+// Neither the file nor its journal keeps the order votes arrived in, or rows that were deleted (review SR-36), as in the issuer's
+// token store: tables are WITHOUT ROWID, so rows sit in the order of their random id (a rowid table numbers them in arrival
+// order); a rollback journal instead of a WAL (a WAL keeps every committed page in order until a checkpoint, and is removed
+// after each transaction here); and secure_delete zeroes the content of purged rows.
 import Database from 'better-sqlite3';
 
-export type VoteStatus = 'held' | 'sending' | 'broadcast' | 'confirmed' | 'failed' | 'cancelled' | 'superseded';
+/**
+ * `maybe-broadcast`: waiting to be sent again, but an earlier attempt may already have reached Core (voteraw timed out or the
+ * process died mid-call, or a broadcast vote never showed up and is re-sent). It is due like `held` but can never be cancelled:
+ * a cancel could not take it back from the network.
+ */
+export type VoteStatus = 'held' | 'maybe-broadcast' | 'sending' | 'broadcast' | 'confirmed' | 'failed' | 'cancelled' | 'superseded';
 export const FINAL_STATUSES = ['confirmed', 'failed', 'cancelled', 'superseded'] as const;
 
 export interface VoteRow {
@@ -34,9 +43,11 @@ export interface VoteRow {
    * timestamp); 0: a different or no current vote; null: Core could not be asked.
    */
   same_as_current: number | null;
+  /** 1 once any attempt may have reached Core: from then on the vote waits as `maybe-broadcast`, never as `held` */
+  maybe_sent: number;
 }
 
-export type NewVote = Omit<VoteRow, 'status' | 'attempts' | 'broadcast_at' | 'confirmed_at' | 'last_error' | 'finished_at' | 'fail_n' | 'rebroadcasts' | 'next_attempt_at' | 'same_as_current'> & {
+export type NewVote = Omit<VoteRow, 'status' | 'attempts' | 'broadcast_at' | 'confirmed_at' | 'last_error' | 'finished_at' | 'fail_n' | 'rebroadcasts' | 'next_attempt_at' | 'same_as_current' | 'maybe_sent'> & {
   same_as_current?: number | null;
 };
 
@@ -47,9 +58,9 @@ export interface VoteKey {
   signal: number;
 }
 
-const SCHEMA = `
+const VOTES_TABLE = `
 CREATE TABLE IF NOT EXISTS votes (
-  id TEXT PRIMARY KEY,
+  id TEXT PRIMARY KEY NOT NULL,
   vote_hash TEXT NOT NULL UNIQUE,
   collateral_txid TEXT NOT NULL,
   collateral_n INTEGER NOT NULL,
@@ -69,10 +80,10 @@ CREATE TABLE IF NOT EXISTS votes (
   finished_at INTEGER,
   fail_n INTEGER NOT NULL DEFAULT 0,
   rebroadcasts INTEGER NOT NULL DEFAULT 0,
-  same_as_current INTEGER
-);
-CREATE INDEX IF NOT EXISTS votes_due ON votes (status, next_attempt_at);
-CREATE INDEX IF NOT EXISTS votes_key ON votes (collateral_txid, collateral_n, gov_hash, signal);
+  same_as_current INTEGER,
+  maybe_sent INTEGER NOT NULL DEFAULT 0
+) WITHOUT ROWID`;
+const LAST_TABLE = `
 CREATE TABLE IF NOT EXISTS last_broadcast (
   collateral_txid TEXT NOT NULL,
   collateral_n INTEGER NOT NULL,
@@ -80,18 +91,57 @@ CREATE TABLE IF NOT EXISTS last_broadcast (
   signal INTEGER NOT NULL,
   at INTEGER NOT NULL,
   PRIMARY KEY (collateral_txid, collateral_n, gov_hash, signal)
-);
+) WITHOUT ROWID`;
+const INDEXES = `
+CREATE INDEX IF NOT EXISTS votes_due ON votes (status, next_attempt_at);
+CREATE INDEX IF NOT EXISTS votes_key ON votes (collateral_txid, collateral_n, gov_hash, signal);
 `;
+
+/** The CREATE statement of `table` as stored, or null. */
+const tableSql = (db: Database.Database, table: string): string | null => (db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) as { sql: string } | undefined)?.sql ?? null;
+
+/**
+ * Databases from before WITHOUT ROWID (they kept the arrival order in the rowid): copy every row into the new table in id order,
+ * drop the old one, and VACUUM so no page of it is left in the file. Held votes that were already sent once (re-broadcast after
+ * not showing up, or retried after a Core error that may have been a lost answer) become `maybe-broadcast`.
+ */
+function migrate(db: Database.Database): boolean {
+  let changed = false;
+  for (const [table, create] of [
+    ['votes', VOTES_TABLE],
+    ['last_broadcast', LAST_TABLE],
+  ] as const) {
+    const sql = tableSql(db, table);
+    if (sql === null || /WITHOUT\s+ROWID/i.test(sql)) continue;
+    db.transaction(() => {
+      const oldCols = new Set((db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((c) => c.name));
+      db.exec(`ALTER TABLE ${table} RENAME TO ${table}_old`);
+      if (table === 'votes') db.exec('DROP INDEX IF EXISTS votes_due; DROP INDEX IF EXISTS votes_key;');
+      db.exec(create);
+      const cols = (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((c) => c.name).filter((c) => oldCols.has(c));
+      const list = cols.join(', ');
+      db.exec(`INSERT INTO ${table} (${list}) SELECT ${list} FROM ${table}_old ORDER BY ${table === 'votes' ? 'id' : 'collateral_txid, collateral_n, gov_hash, signal'}`);
+      db.exec(`DROP TABLE ${table}_old`);
+      if (table === 'votes') db.exec(`UPDATE votes SET maybe_sent = 1, status = 'maybe-broadcast' WHERE status = 'held' AND (rebroadcasts > 0 OR last_error IN ('core-error', 'not-visible'))`);
+    })();
+    changed = true;
+  }
+  return changed;
+}
 
 export function openDb(path: string): Database.Database {
   const db = new Database(path);
-  db.pragma('journal_mode = WAL');
-  db.pragma('synchronous = NORMAL');
+  // Rollback journal, not WAL (see the top of this file). Switching an existing WAL database checkpoints and removes its -wal file.
+  const jm = db.pragma('journal_mode = DELETE', { simple: true });
+  if (path !== ':memory:' && jm !== 'delete') throw new Error(`relay db: journal_mode is ${String(jm)}, expected delete (is another process using ${path}?)`);
+  db.pragma('synchronous = FULL');
+  db.pragma('secure_delete = ON');
   db.pragma('busy_timeout = 5000');
-  db.exec(SCHEMA);
-  // columns added after the first release: databases created before them get them here
-  const cols = new Set((db.prepare('PRAGMA table_info(votes)').all() as Array<{ name: string }>).map((c) => c.name));
-  if (!cols.has('same_as_current')) db.exec('ALTER TABLE votes ADD COLUMN same_as_current INTEGER');
+  const migrated = migrate(db);
+  db.exec(VOTES_TABLE);
+  db.exec(LAST_TABLE);
+  db.exec(INDEXES);
+  if (migrated) db.exec('VACUUM');
   return db;
 }
 
@@ -109,30 +159,36 @@ export class Store {
       byId: db.prepare('SELECT * FROM votes WHERE id = ?'),
       byHash: db.prepare('SELECT * FROM votes WHERE vote_hash = ?'),
       // held and in-flight votes of one (masternode, proposal, signal), newest signed time first
-      activeForKey: db.prepare(`SELECT * FROM votes WHERE collateral_txid = ? AND collateral_n = ? AND gov_hash = ? AND signal = ? AND status IN ('held', 'sending') ORDER BY time DESC, id`),
-      // held + sending: a vote in flight still occupies a slot
-      heldForMn: db.prepare(`SELECT COUNT(*) n FROM votes WHERE collateral_txid = ? AND collateral_n = ? AND status IN ('held', 'sending')`),
-      heldAll: db.prepare(`SELECT COUNT(*) n FROM votes WHERE status IN ('held', 'sending')`),
+      activeForKey: db.prepare(`SELECT * FROM votes WHERE collateral_txid = ? AND collateral_n = ? AND gov_hash = ? AND signal = ? AND status IN ('held', 'maybe-broadcast', 'sending') ORDER BY time DESC, id`),
+      // held + maybe-broadcast + sending: a vote waiting to be (re)sent or in flight still occupies a slot
+      heldForMn: db.prepare(`SELECT COUNT(*) n FROM votes WHERE collateral_txid = ? AND collateral_n = ? AND status IN ('held', 'maybe-broadcast', 'sending')`),
+      heldAll: db.prepare(`SELECT COUNT(*) n FROM votes WHERE status IN ('held', 'maybe-broadcast', 'sending')`),
       // next_attempt_at first: a vote that keeps failing moves into the future and cannot starve the others
-      due: db.prepare(`SELECT * FROM votes WHERE status = 'held' AND release_at <= ? AND next_attempt_at <= ? ORDER BY next_attempt_at, release_at, id LIMIT ?`),
+      due: db.prepare(`SELECT * FROM votes WHERE status IN ('held', 'maybe-broadcast') AND release_at <= ? AND next_attempt_at <= ? ORDER BY next_attempt_at, release_at, id LIMIT ?`),
       newerLive: db.prepare(
-        `SELECT 1 FROM votes WHERE collateral_txid = ? AND collateral_n = ? AND gov_hash = ? AND signal = ? AND time > ? AND status IN ('held', 'sending', 'broadcast', 'confirmed') LIMIT 1`,
+        `SELECT 1 FROM votes WHERE collateral_txid = ? AND collateral_n = ? AND gov_hash = ? AND signal = ? AND time > ? AND status IN ('held', 'maybe-broadcast', 'sending', 'broadcast', 'confirmed') LIMIT 1`,
       ),
       broadcast: db.prepare(`SELECT * FROM votes WHERE status = 'broadcast' ORDER BY broadcast_at, id`),
       // never overwrites a final state (a cancel that won the race stays cancelled)
-      finish: db.prepare(`UPDATE votes SET status = ?, finished_at = ?, last_error = ? WHERE id = ? AND status IN ('held', 'sending', 'broadcast')`),
-      markSending: db.prepare(`UPDATE votes SET status = 'sending' WHERE id = ? AND status = 'held'`),
-      recoverSending: db.prepare(`UPDATE votes SET status = 'held', next_attempt_at = ? WHERE status = 'sending'`),
+      finish: db.prepare(`UPDATE votes SET status = ?, finished_at = ?, last_error = ? WHERE id = ? AND status IN ('held', 'maybe-broadcast', 'sending', 'broadcast')`),
+      markSending: db.prepare(`UPDATE votes SET status = 'sending' WHERE id = ? AND status IN ('held', 'maybe-broadcast')`),
+      // a crash mid-voteraw: the call may have reached Core
+      recoverSending: db.prepare(`UPDATE votes SET status = 'maybe-broadcast', maybe_sent = 1, next_attempt_at = ?, last_error = 'core-error' WHERE status = 'sending'`),
+      // only a vote that never left the relay can be cancelled
       cancelHeld: db.prepare(`UPDATE votes SET status = 'cancelled', finished_at = ?, last_error = NULL WHERE id = ? AND status = 'held'`),
       supersedeHeld: db.prepare(`UPDATE votes SET status = 'superseded', finished_at = ?, last_error = NULL WHERE id = ? AND status = 'held'`),
-      // sending -> held again (voteraw answered "wait" or failed transiently); also used on rows that are still held
-      reschedule: db.prepare(`UPDATE votes SET status = 'held', next_attempt_at = ?, last_error = ? WHERE id = ? AND status IN ('held', 'sending')`),
+      // sending -> waiting again (voteraw answered "wait" or failed); also used on rows that are still waiting. @maybe = 1: the
+      // attempt may have reached Core (no answer), so the vote waits as maybe-broadcast from now on.
+      reschedule: db.prepare(
+        `UPDATE votes SET maybe_sent = MAX(maybe_sent, @maybe), status = CASE WHEN maybe_sent = 1 OR @maybe = 1 THEN 'maybe-broadcast' ELSE 'held' END, next_attempt_at = @at, last_error = @code WHERE id = @id AND status IN ('held', 'maybe-broadcast', 'sending')`,
+      ),
       retry: db.prepare(
-        `UPDATE votes SET status = 'held', next_attempt_at = ?, last_error = ?, attempts = attempts + 1, fail_n = fail_n + 1 WHERE id = ? AND status IN ('held', 'sending')`,
+        `UPDATE votes SET maybe_sent = MAX(maybe_sent, @maybe), status = CASE WHEN maybe_sent = 1 OR @maybe = 1 THEN 'maybe-broadcast' ELSE 'held' END, next_attempt_at = @at, last_error = @code, attempts = attempts + 1, fail_n = fail_n + 1 WHERE id = @id AND status IN ('held', 'maybe-broadcast', 'sending')`,
       ),
       sent: db.prepare(`UPDATE votes SET status = 'broadcast', broadcast_at = ?, attempts = attempts + 1, fail_n = 0, last_error = NULL WHERE id = ? AND status = 'sending'`),
       confirm: db.prepare(`UPDATE votes SET status = 'confirmed', confirmed_at = ?, finished_at = ?, last_error = NULL WHERE id = ? AND status = 'broadcast'`),
-      rebroadcast: db.prepare(`UPDATE votes SET status = 'held', next_attempt_at = ?, rebroadcasts = rebroadcasts + 1, last_error = 'not-visible' WHERE id = ? AND status = 'broadcast'`),
+      // it was broadcast once: it may be on the network even though this Core does not show it
+      rebroadcast: db.prepare(`UPDATE votes SET status = 'maybe-broadcast', maybe_sent = 1, next_attempt_at = ?, rebroadcasts = rebroadcasts + 1, last_error = 'not-visible' WHERE id = ? AND status = 'broadcast'`),
       lastBroadcast: db.prepare('SELECT at FROM last_broadcast WHERE collateral_txid = ? AND collateral_n = ? AND gov_hash = ? AND signal = ?'),
       upsertLast: db.prepare(
         `INSERT INTO last_broadcast (collateral_txid, collateral_n, gov_hash, signal, at) VALUES (?, ?, ?, ?, ?)
@@ -176,7 +232,7 @@ export class Store {
     return this.q.broadcast.all() as VoteRow[];
   }
 
-  /** held -> cancelled. False if the vote was not held. */
+  /** held -> cancelled. False if the vote was not held (maybe-broadcast votes are never cancelled). */
   cancelHeld(id: string, now: number): boolean {
     return this.q.cancelHeld.run(now, id).changes > 0;
   }
@@ -184,23 +240,26 @@ export class Store {
     return this.q.supersedeHeld.run(now, id).changes > 0;
   }
   /** Terminal failure (or any other terminal state) with a short error code. */
-  finish(id: string, status: Exclude<VoteStatus, 'held' | 'sending' | 'broadcast'>, now: number, code: string | null): void {
+  finish(id: string, status: Exclude<VoteStatus, 'held' | 'maybe-broadcast' | 'sending' | 'broadcast'>, now: number, code: string | null): void {
     this.q.finish.run(status, now, code, id);
   }
-  /** Not a failure: (sending ->) held, try again at `at` (one-hour rule, future time, ...). */
+  /** Not a failure: (sending ->) waiting, try again at `at` (one-hour rule, future time, ...). */
   reschedule(id: string, at: number, code: string | null): void {
-    this.q.reschedule.run(at, code, id);
+    this.q.reschedule.run({ at, code, id, maybe: 0 });
   }
-  /** A voteraw error that counts towards the retry budget. Returns the new consecutive-error count. */
-  retryLater(id: string, at: number, code: string): number {
-    this.q.retry.run(at, code, id);
+  /**
+   * An error that counts towards the retry budget. Returns the new consecutive-error count. `maybeSent`: the attempt got no answer
+   * (transport error, timeout), so Core may have the vote: it waits as maybe-broadcast and can no longer be cancelled.
+   */
+  retryLater(id: string, at: number, code: string, maybeSent = false): number {
+    this.q.retry.run({ at, code, id, maybe: maybeSent ? 1 : 0 });
     return (this.get(id) as VoteRow).fail_n;
   }
-  /** held -> sending, atomically. False if the vote was not held any more (cancelled, superseded). Call right before voteraw. */
+  /** held / maybe-broadcast -> sending, atomically. False if the vote was not waiting any more (cancelled, superseded). Call right before voteraw. */
   markSending(id: string): boolean {
     return this.q.markSending.run(id).changes > 0;
   }
-  /** Startup: rows left in `sending` by a crash go back to held, due now. Returns how many. */
+  /** Startup: rows left in `sending` by a crash go back to waiting as maybe-broadcast, due now. Returns how many. */
   recoverSending(now: number): number {
     return this.q.recoverSending.run(now).changes;
   }
@@ -213,7 +272,7 @@ export class Store {
   markConfirmed(id: string, now: number): void {
     this.q.confirm.run(now, now, id);
   }
-  /** broadcast -> held again, due immediately. */
+  /** broadcast -> maybe-broadcast, due immediately. */
   markRebroadcast(id: string, now: number): void {
     this.q.rebroadcast.run(now, id);
   }

@@ -75,6 +75,7 @@ Environment variables plus mounted secret files. An empty value means the defaul
 | `PLATFORM_MAX_CONCURRENT_WRITES` | `4` | capped at 12 (DIP-30 nonce window, see the evo-sdk notes) |
 | `PUBLISH_ON_MISMATCH` | `0` | publish a tally even when it disagrees with Core (default: hold it and log) |
 | `RECONCILE_INTERVAL_S` | `600` | `gobject list` reconciliation period (min 10) |
+| `VOTE_REFRESH_DEBOUNCE_MS` | `3000` | after a vote arrives over ZMQ, the live vote set (`/v1/proposals/:hash/votes`) and the live tallies are recomputed this long after it (one run per burst of votes) instead of at the next block; in memory only, the stored tallies and Platform publishing stay per block. `0` turns it off |
 | `PORTAL_PROPOSAL_URL` | `https://gov.dashhq.org/p/{hash}` | DashCentral `dw_url`; `{hash}`, `{name}` substituted |
 | `BRIDGE_LOG_LEVEL` | `info` | JSON lines on stderr |
 | `QUORUM_PROOF` | `1` | `0` disables `/v1/quorum-proof` (404). See "Quorum proof relay" |

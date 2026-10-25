@@ -216,10 +216,12 @@ describe('M5: cancel vs in-flight voteraw', () => {
     expect(w.core.count('voteraw')).toBe(1);
   });
 
-  it('sending -> held when Core says too often or fails transiently, sending -> failed when Core refuses for good', async () => {
+  it('sending -> held when Core answers "wait" or an error, sending -> maybe-broadcast without an answer, sending -> failed when Core refuses for good', async () => {
     const cases: Array<[unknown, Record<string, unknown>]> = [
       [rpcErr('Error voting : CGovernanceObject::ProcessVote -- Masternode voting too often, MN outpoint = x'), { status: 'held', last_error: 'too-often', next_attempt_at: T0 + 3630 }],
-      [new Error('fetch failed: ECONNREFUSED'), { status: 'held', last_error: 'core-error', next_attempt_at: T0 + 30, fail_n: 1 }],
+      [rpcErr('Something Core has never said before'), { status: 'held', last_error: 'core-error', next_attempt_at: T0 + 30, fail_n: 1, maybe_sent: 0 }],
+      // no answer: the vote may be in Core (review SR-07)
+      [new Error('fetch failed: ECONNREFUSED'), { status: 'maybe-broadcast', last_error: 'core-error', next_attempt_at: T0 + 30, fail_n: 1, maybe_sent: 1 }],
       [rpcErr('Failure to verify vote.'), { status: 'failed', last_error: 'bad-signature' }],
     ];
     for (const [err, expected] of cases) {
@@ -249,14 +251,55 @@ describe('M5: cancel vs in-flight voteraw', () => {
     expect(w.row(sub.id).status).toBe('sending'); // never superseded under voteraw's feet
     w.core.voterawErrors.push(new Error('fetch failed: ECONNREFUSED'));
     release();
-    await tick; // the in-flight send fails transiently: back to held next to the newer vote
-    expect(w.row(sub.id).status).toBe('held');
+    await tick; // the in-flight send gets no answer: waiting again (maybe-broadcast) next to the newer vote
+    expect(w.row(sub.id).status).toBe('maybe-broadcast');
     w.clock.advance(31);
     w.core.voterawGate = null;
     await w.broadcaster.tickBroadcast();
     expect(w.row(sub.id).status).toBe('superseded');
     expect(w.row(newer.body.id).status).toBe('broadcast');
     expect(w.core.count('voteraw')).toBe(2); // the failed attempt of the older vote, then the newer one
+  });
+
+  it('SR-07: a cancel racing a broadcast whose answer was lost is refused (409 maybe-broadcast), never reported as cancelled', async () => {
+    const { w, mn, gov, sub, tick, release } = await inFlight();
+    // the cancel arrives while voteraw runs: refused
+    expect((await w.post('/v1/votes/cancel', w.cancelBody(mn, sub.id, sub.voteHash))).body).toMatchObject({ code: 'not-held', status: 'sending' });
+    // Core takes the vote, but the answer is lost (timeout)
+    w.core.voterawErrors.push(new Error('This operation was aborted'));
+    w.core.voterawAcceptsBeforeError = true;
+    release();
+    await tick;
+    expect(w.row(sub.id)).toMatchObject({ status: 'maybe-broadcast', maybe_sent: 1 });
+    expect(w.core.votes.size).toBe(1); // it is in Core
+    // a second cancel (the client retrying) is refused with a reason it can show, also after a restart and a Core error
+    for (let i = 0; i < 2; i++) {
+      const r = await w.post('/v1/votes/cancel', w.cancelBody(mn, sub.id, sub.voteHash));
+      expect(r.status).toBe(409);
+      expect(r.body).toMatchObject({ code: 'maybe-broadcast', status: 'maybe-broadcast' });
+      expect(typeof r.body.reason).toBe('string');
+      w.store.reschedule(sub.id, w.clock.t, 'too-often'); // Core answering "wait" does not make it cancellable again
+      new Broadcaster({ cfg: w.cfg, store: w.store, core: w.core, mns: w.relay.mns, clock: w.clock.now });
+    }
+    expect(w.row(sub.id).status).toBe('maybe-broadcast');
+    // a client whose POST timed out recovers the id and status by re-sending the same signed vote (no lookup by hash)
+    const again = await w.post('/v1/votes', w.voteBody(mn, { govHash: gov }));
+    expect(again.status).toBe(200);
+    expect(again.body).toMatchObject({ id: sub.id, status: 'maybe-broadcast' });
+    expect((await w.get(`/v1/votes/${sub.id}`)).body).toMatchObject({ status: 'maybe-broadcast', maybeSent: true });
+    // decided on the flag, not the status: re-sent right now (`sending`) or failed later, it may still be on the network
+    for (const status of ['sending', 'failed']) {
+      w.store.db.prepare('UPDATE votes SET status = ? WHERE id = ?').run(status, sub.id);
+      expect((await w.post('/v1/votes/cancel', w.cancelBody(mn, sub.id, sub.voteHash))).body).toMatchObject({ code: 'maybe-broadcast', status });
+    }
+    w.store.db.prepare(`UPDATE votes SET status = 'maybe-broadcast' WHERE id = ?`).run(sub.id);
+    // the next attempt: Core says it already has it, the confirmer confirms
+    w.core.voterawGate = null;
+    w.clock.advance(31);
+    await w.broadcaster.tickBroadcast();
+    expect(w.row(sub.id).status).toBe('broadcast');
+    await w.broadcaster.tickConfirm();
+    expect(w.row(sub.id).status).toBe('confirmed');
   });
 
   it('a cancel that wins before the broadcaster claims the vote stops it: nothing is sent', async () => {
@@ -285,7 +328,7 @@ describe('M5: cancel vs in-flight voteraw', () => {
     expect(w.row(id)).toMatchObject({ status: 'cancelled', last_error: null });
   });
 
-  it('start-up puts rows left in `sending` by a crash back to held, due at once', async () => {
+  it('start-up puts rows left in `sending` by a crash back to waiting as maybe-broadcast, due at once', async () => {
     const w = world();
     const mn = w.mn();
     const gov = w.proposal();
@@ -293,7 +336,8 @@ describe('M5: cancel vs in-flight voteraw', () => {
     w.store.db.prepare(`UPDATE votes SET status = 'sending' WHERE id = ?`).run(id);
     w.clock.advance(7);
     const restarted = new Broadcaster({ cfg: w.cfg, store: w.store, core: w.core, mns: w.relay.mns, clock: w.clock.now });
-    expect(w.row(id)).toMatchObject({ status: 'held', next_attempt_at: T0 + 7 });
+    expect(w.row(id)).toMatchObject({ status: 'maybe-broadcast', maybe_sent: 1, next_attempt_at: T0 + 7, last_error: 'core-error' });
+    expect((await w.get(`/v1/votes/${id}`)).body.holdReason).toBe('retrying');
     await restarted.tickBroadcast();
     expect(w.row(id).status).toBe('broadcast');
   });

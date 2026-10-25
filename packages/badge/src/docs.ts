@@ -90,3 +90,5 @@ export const mnBadgeData = (o: { issuerId: Uint8Array; epoch: number; keyId: Uin
 });
 
 export const issuerReportData = (o: { epoch: number; tokensIssued: number }) => ({ epoch: o.epoch, tokensIssued: o.tokensIssued });
+
+export const issuerRevocationData = (o: { epoch: number; keyId: Uint8Array; effectiveCoreHeight: number }) => ({ epoch: o.epoch, keyId: o.keyId, effectiveCoreHeight: o.effectiveCoreHeight });

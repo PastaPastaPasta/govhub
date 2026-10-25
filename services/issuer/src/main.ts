@@ -42,6 +42,7 @@ export async function runService(): Promise<void> {
 
   let running = false;
   const tick = async () => {
+    service.prune(); // drops the per-MN rate-limit counts of a past minute (within one tick of it ending) when no request comes
     if (running) return;
     running = true;
     try {

@@ -511,7 +511,8 @@ force it. If people accept us learning that's ok. Just we keep no logs for stuff
     issuer could link the masternode to the identity by timing; the UI says so. No forced waiting of any kind.
   - **Private**: §8.5 as written: a token for E+1 at a random time during E, posted at a random time in [S(E+1), S(E+1)+W],
     kept 30 minutes apart from the browser's other Platform writes, and not posted if the issuer reported fewer than k tokens
-    (testnet 3, mainnet 10) for the epoch before (E+1's own report comes too late, see below).
+    (testnet 5, mainnet 20; raised from 3 and 10 because the report counts Standard tokens too) for the epoch before (E+1's own
+    report comes too late, see below).
   - **Extra private**: as Private, with the badge posted at a random time across the first half of E+1.
 - **Issuance window:** tokens for E are minted during E-1 **and** during E (`[S(E-1), S(E+1))`); the issuer accepts the
   current or the next epoch. Dedup stays one token per (proTxHash, E) and per (collateral, E), whichever mode asked.

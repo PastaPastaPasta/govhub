@@ -70,6 +70,8 @@ export class FakeCore implements CoreClient {
   voterawErrors: unknown[] = [];
   /** voteraw answers "Voted successfully" but the vote is lost */
   blackhole = false;
+  /** the next queued voteraw error is thrown AFTER Core took the vote (the answer was lost, e.g. a timeout) */
+  voterawAcceptsBeforeError = false;
   /** every `gobject getcurrentvotes` fails with this (a JSON-RPC error or a transport error) */
   currentVotesError: unknown = null;
   /** awaited inside voteraw before it answers (lets a test act while a vote is `sending`) */
@@ -164,6 +166,11 @@ export class FakeCore implements CoreClient {
   private voterawNow(p: unknown[]): string {
     const [txid, n, gov, signalName, outcomeName, time, sig] = p as [string, number, string, string, string, number, string];
     const err = this.voterawErrors.shift();
+    if (err && this.voterawAcceptsBeforeError) {
+      this.voterawAcceptsBeforeError = false;
+      this.voterawNow(p);
+      throw err;
+    }
     if (err) throw err;
     if (!this.gobjects.has(gov)) throw rpcErr('voteraw', -8, 'Governance object not found');
     if (typeof sig !== 'string') throw rpcErr('voteraw', -8, 'Malformed base64 encoding');

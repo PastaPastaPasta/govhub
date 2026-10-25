@@ -1,5 +1,5 @@
 // Token issuance rules (PLAN §8.4) end to end with the real signer and the browser client code, against a fake Core.
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { buildTokenRequestFor, bytesToBase64, bytesToId, epochStart, fromHex, idToBytes, toHex } from '@govhub/badge';
 import { signMessage } from '@govhub/verify';
 import { Challenges } from '../src/challenge.ts';
@@ -131,6 +131,30 @@ describe('token issuance', () => {
     await issue(w, (await clientRequest(w, mn)).body);
     for (let i = 0; i < 5; i++) await expectError(issue(w, (await clientRequest(w, mn)).body), 'already-issued');
     await expectError(issue(w, (await clientRequest(w, mn)).body), 'unavailable');
+  });
+
+  it('the per-MN counts last one wall-clock minute only: nothing about a masternode is held after it', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.UTC(2027, 0, 1, 12, 0, 50) });
+    try {
+      const w = await world();
+      const mns = Array.from({ length: 3 }, () => w.core.add(fakeMn()));
+      for (const mn of mns) await issue(w, (await clientRequest(w, mn)).body);
+      expect(w.service.debugSnapshot().perMn).toHaveLength(3);
+      for (let i = 0; i < 5; i++) await expectError(issue(w, (await clientRequest(w, mns[0]!)).body), 'already-issued');
+      await expectError(issue(w, (await clientRequest(w, mns[0]!)).body), 'unavailable'); // the limit still holds
+      vi.setSystemTime(Date.UTC(2027, 0, 1, 12, 1, 0)); // the next minute
+      w.service.prune();
+      expect(w.service.debugSnapshot().perMn).toEqual([]);
+      // a request that fails before authentication prunes as well
+      vi.setSystemTime(Date.UTC(2027, 0, 1, 12, 1, 30));
+      await issue(w, (await clientRequest(w, mns[1]!)).body).catch(() => undefined);
+      vi.setSystemTime(Date.UTC(2027, 0, 1, 12, 2, 0));
+      await expectError(w.service.issue({ request: 'junk', signature: 'x', blindedMsg: 'x' }), 'bad-request');
+      expect(w.service.debugSnapshot().perMn).toEqual([]);
+      await expectError(issue(w, (await clientRequest(w, mns[0]!)).body), 'already-issued'); // limited again only by the dedup
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('the global budget counts only requests past the cheap checks; a stale list is refused', async () => {
