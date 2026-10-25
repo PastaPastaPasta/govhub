@@ -526,10 +526,16 @@ export function saveRegistry(r: Registry, storage: Pick<Storage, 'setItem'> | un
   storage?.setItem(STORAGE_KEY, JSON.stringify(saved));
 }
 
-export function resetRegistry(storage: Pick<Storage, 'removeItem'> | undefined = globalThis.localStorage): Registry {
+/**
+ * Back to the defaults of `profile` (the one the reader is on): a reset clears the edits, it does not move them to another network.
+ * Without `profile` it is the app's default profile. The kept profile is saved again, or a reload would start on the default.
+ */
+export function resetRegistry(storage: Pick<Storage, 'setItem' | 'removeItem'> | undefined = globalThis.localStorage, profile: ProfileId = DEFAULT_PROFILE): Registry {
   storage?.removeItem(STORAGE_KEY);
   storage?.removeItem(LEGACY_STORAGE_KEY);
-  return defaultRegistry();
+  const r = profileRegistry(profile);
+  if (profile !== DEFAULT_PROFILE) saveRegistry(r, storage);
+  return r;
 }
 
 export const exportRegistry = (r: Registry): string => JSON.stringify(r, null, 2);
@@ -599,12 +605,16 @@ export function registryDiff(current: Registry, offered: Registry): Array<{ labe
   return ROWS.filter(([, value]) => JSON.stringify(value(current)) !== JSON.stringify(value(offered))).map(([label, , text]) => ({ label, now: text(current), offered: text(offered) }));
 }
 
+/** What a `?config=` value that is not base64url JSON says. */
+export const DAMAGED_CONFIG = 'This settings link is damaged (it could not be read). Ask whoever sent it for a new one.';
+
 /** Reads inline (base64url JSON) `?config=` settings. Never touches the network: this is what runs when a link is opened. */
 export function readInlineConfig(value: string): { registry: Registry; errors: string[] } {
   try {
     return parseRegistry(JSON.parse(b64urlToText(value)));
-  } catch (e) {
-    return { registry: defaultRegistry(), errors: [`config could not be read: ${(e as Error).message}`] };
+  } catch {
+    // atob's and JSON.parse's messages ("The string to be decoded is not correctly encoded") mean nothing to the person who clicked a link
+    return { registry: defaultRegistry(), errors: [DAMAGED_CONFIG] };
   }
 }
 

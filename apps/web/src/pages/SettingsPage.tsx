@@ -472,12 +472,12 @@ export function SettingsPage() {
               className="btn btn-quiet"
               onClick={() => {
                 try {
-                  setRegistry(resetRegistry());
+                  setRegistry(resetRegistry(undefined, registry.profile));
                 } catch (e) {
                   return say('advanced', 'error', saveErrorText(e));
                 }
                 void cacheClear();
-                say('advanced', 'ok', 'Reset to the defaults and cleared the cache.');
+                say('advanced', 'ok', `Reset to the ${PROFILES[registry.profile].label} defaults (you are still on ${PROFILES[registry.profile].label}) and cleared the cache.`);
               }}
             >
               Reset to defaults
