@@ -112,6 +112,13 @@ async function measured(label: string, payer: Payer, meta: Record<string, unknow
   return true;
 }
 
+/** Creates a document unless an earlier attempt landed (a create that timed out is looked up on its unique index first). */
+async function createOnce(c: PlatformClient, type: string, props: Record<string, unknown>, opts: { createdAt?: boolean } = {}): Promise<string> {
+  const where = type === 'talliesSet' ? [['page', '==', Number(props.page)]] : [['govHash', '==', Buffer.from(props.govHash as Uint8Array).toString('base64')]];
+  const landed = (await c.query(type, { where, limit: 1 }))[0];
+  return landed ? landed.id : (await c.create(type, props, opts)).id;
+}
+
 const client = async (contractId: string, p: Payer): Promise<PlatformClient> => {
   const c = new PlatformClient('testnet', contractId);
   const k = key(p, 'high');
@@ -170,10 +177,10 @@ if (cmd === 'measure') {
     const slim = proposalProps(proposalRow(), { slim: true });
     if ('error' in full || 'error' in slim) throw new Error('typical proposal does not build');
     await measured(`proposal create, full shape (old), #${i}`, devOwner, { op: 'create', type: 'proposal', shape: 'full', dataHexChars: typical.dataHex.length }, async () => {
-      R.docIds[`fullProposal${i}`] = (await dev.create('proposal', full.props, { createdAt: true })).id;
+      R.docIds[`fullProposal${i}`] = await createOnce(dev, 'proposal', full.props, { createdAt: true });
     });
     await measured(`proposal create, slim shape (mainnet), #${i}`, devOwner, { op: 'create', type: 'proposal', shape: 'slim', dataHexChars: typical.dataHex.length }, async () => {
-      R.docIds[`slimProposal${i}`] = (await reh.create('proposal', slim.props, { createdAt: true })).id;
+      R.docIds[`slimProposal${i}`] = await createOnce(reh, 'proposal', slim.props, { createdAt: true });
     });
   }
   save();
@@ -190,7 +197,7 @@ if (cmd === 'measure') {
   const t = tallyOf(0);
   let rev = 1;
   await measured('tally create (per proposal; = final tally at end)', devOwner, { op: 'create', type: 'tally' }, async () => {
-    R.docIds.tally = (await reh.create('tally', tallyProps(t))).id;
+    R.docIds.tally = await createOnce(reh, 'tally', tallyProps(t));
   });
   for (const i of [1, 2, 3]) {
     t.weighted.yes += 4;
@@ -208,7 +215,7 @@ if (cmd === 'measure') {
     const props = () => tallySetProps(page, height, ts.map(tallySetEntry));
     const bytes = () => TALLY_SET_HEADER_BYTES + ts.length * TALLY_SET_ENTRY_BYTES;
     await measured(`talliesSet create, ${n} entries`, devOwner, { op: 'create', type: 'talliesSet', entries: n, packedBytes: bytes() }, async () => {
-      R.docIds[`set${n}`] = (await reh.create('talliesSet', props())).id;
+      R.docIds[`set${n}`] = await createOnce(reh, 'talliesSet', props());
     });
     for (const i of n === 161 ? [1, 2] : [1, 2, 3]) {
       ts[i]!.weighted.yes += 4;

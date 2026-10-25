@@ -101,7 +101,8 @@ for (const r of recs) {
         else {
           const diff = (
             [['voteSetHash', t.vote_set_hash, e.voteSetHash], ['yesWeighted', t.yes_weighted, e.yesWeighted], ['noWeighted', t.no_weighted, e.noWeighted], ['abstainWeighted', t.abstain_weighted, e.abstainWeighted],
-              ['yesCount', t.yes_count, e.yesCount], ['noCount', t.no_count, e.noCount], ['abstainCount', t.abstain_count, e.abstainCount]] as const
+              ['yesCount', t.yes_count, e.yesCount], ['noCount', t.no_count, e.noCount], ['abstainCount', t.abstain_count, e.abstainCount],
+              ['rank', t.rank, e.rank], ['inNextBudget', t.in_next_budget === 1, e.inNextBudget], ['margin', t.margin, e.margin]] as const
           ).filter(([, a, b]) => a !== b).map(([f]) => f);
           if (diff.length) mism.push(`${at}: differs from the record in force at ${String(j.asOfHeight)} (${diff.join(', ')})`);
           if (t.core_match !== 1) mism.push(`${at}: archived tally did not match Core`);

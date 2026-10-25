@@ -4,7 +4,9 @@
 // document on its first publish. Fail closed like the publisher: an entry goes out only when Core agreed with the bridge AND the
 // bridge's stored record in force at the set's height (what a reader recounts against) has the same vote set and counts.
 //
-//   node scripts/publish-tally-set.ts <bridge base URL> <identity key file | dev-owner> [--dry]
+//   node scripts/publish-tally-set.ts <bridge base URL> <identity key file | dev-owner> [--dry] [--replace]
+//
+// An existing page 0 is left alone unless --replace is given (a one-shot run must not overwrite what a newer bridge wrote).
 //
 // `dev-owner` reads the dev gov owner's HIGH key from ~/.local/share/govhub-phase0/testnet/state.json. Nothing secret is printed.
 // Results (fee, height, entries): appended to scripts/results/publish-tally-set.json.
@@ -22,6 +24,7 @@ import { identityKeyFromArg } from './identity-key-arg.ts';
 const [base, keyArg, ...flags] = process.argv.slice(2);
 if (!base || !keyArg) throw new Error('usage: publish-tally-set.ts <bridge base URL> <identity key file | dev-owner> [--dry]');
 const dry = flags.includes('--dry');
+const replace = flags.includes('--replace');
 const here = dirname(fileURLToPath(import.meta.url));
 const get = async (path: string) => {
   const r = await fetch(`${base.replace(/\/+$/, '')}${path}`, { signal: AbortSignal.timeout(30_000) });
@@ -36,6 +39,9 @@ const status = await get('/v1/status');
 const contractId: string = status.govContractId;
 const t = await get('/v1/tallies');
 const H: number = t.asOfHeight;
+// like the publisher: a funding threshold that differs from Core's makes every margin and inNextBudget suspect
+const cycle = await get('/v1/cycle');
+if (cycle.governance?.fundingthreshold !== t.fundingThreshold) throw new Error(`funding threshold ${t.fundingThreshold} differs from Core's ${cycle.governance?.fundingthreshold}: not publishing`);
 console.log(`bridge ${base}: ${status.network}, contract ${contractId}, ${t.tallies.length} tallies as of block ${H}`);
 
 const platform = new PlatformClient('testnet', contractId);
@@ -59,6 +65,11 @@ for (const x of t.tallies as any[]) {
 console.log(`${entries.length} entries; skipped ${skipped.length}${skipped.length ? `: ${JSON.stringify(skipped)}` : ''}`);
 const props = tallySetProps(0, H, entries.map(tallySetEntry));
 if (dry) process.exit(0);
+const existing = (await platform.query('talliesSet', { where: [['page', '==', 0]], limit: 1 }))[0];
+if (existing && !replace) {
+  console.log(`page 0 exists (doc ${existing.id}, revision ${existing.revision}, asOfHeight ${String(existing.data.asOfHeight)}): not replaced without --replace`);
+  process.exit(0);
+}
 
 const cfg = loadConfig({ GOV_CONTRACT_ID: contractId, BRIDGE_IDENTITY_KEY_FILE: '/dev/null', PLATFORM_NETWORK: 'testnet', CORE_NETWORK: status.network });
 const publisher = new Publisher(openArchive(':memory:'), platform, cfg);
