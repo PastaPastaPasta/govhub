@@ -4,9 +4,10 @@
 // fallback, a height mismatch, testnet proof of work and fixture data can each only lower the level.
 import type { Proposal, Tally } from '../data/types.ts';
 import type { ChainReport } from './chain.ts';
-import { verdictFailure, type CollateralVerdict, type Step } from './collateral.ts';
+import { ABSENT, verdictFailure, type CollateralVerdict, type Step } from './collateral.ts';
 import type { RankingDone, VotesDone } from './protocol.ts';
-import { comparable, PLATFORM_TARGET } from './verdict.ts';
+import { contradicts, PLATFORM_TARGET } from './verdict.ts';
+import { excludedText } from './votes.ts';
 
 export type CheckId = 'content' | 'collateral' | 'chain' | 'votes' | 'funding';
 export const REQUIRED: readonly CheckId[] = ['content', 'collateral', 'chain', 'votes', 'funding'];
@@ -110,6 +111,7 @@ export function collateralComponent(i: { verdict: CollateralVerdict | null; erro
   const definite = verdictFailure(v);
   if (definite) return { status: 'failed', reason: `The proposal doesn't match its on-chain collateral (${definite})` };
   // the reason names what happened: an unreachable network, a node whose answer did not check out, a height only a node contradicts
+  if (v.absent) return { status: 'error', reason: `Couldn't verify the submission fee (${ABSENT}; nodes can't prove a transaction doesn't exist)` };
   if (v.inconclusive) {
     const tx = v.steps.find((s) => s.id === 'tx' && s.status === 'fail');
     return { status: 'error', reason: `The collateral couldn't be fetched and checked${tx ? ` (${tx.detail})` : ''}` };
@@ -186,8 +188,9 @@ export function votesComponent(i: {
   const d = i.result;
   if (!d) return { status: 'pending', note: i.progress || 'Recounting the signed votes' };
   const pairs = d.runs.flatMap((run) => run.result.targets.map((t) => ({ run, t })));
-  // A tally at the very block of the votes it was recounted from, and different: whoever published it, or served the votes, is wrong.
-  const contradicted = pairs.find(({ run, t }) => comparable(run, t) && !t.matches);
+  // A tally at the very block of the votes it was recounted from, and reproduced neither by the count here nor by every vote the bridge
+  // served: whoever published it, or served the votes, is wrong.
+  const contradicted = pairs.find(({ run, t }) => contradicts(run, t));
   if (contradicted) {
     const fields = contradicted.t.compare.filter((c) => !c.ok).map((c) => c.field).join(', ');
     return {
@@ -199,6 +202,10 @@ export function votesComponent(i: {
   if (i.shown.name !== PLATFORM_TARGET) return { status: 'reported', reason: "The tally isn't on Platform yet, so the recount can't be checked against the proven record" };
   const hit = pairs.find(({ t }) => t.name === PLATFORM_TARGET && t.asOfHeight === i.shown!.tally.asOfHeight);
   if (!hit) return { status: 'reported', reason: 'The tally changed while the votes were recounted; re-check to recount it' };
+  const r = hit.run.result;
+  // The tally counts votes this browser couldn't prove: the count here leaves them out, so it can't confirm the tally.
+  const excluded = excludedText(r);
+  if (!hit.t.matches && hit.t.servedMatches) return { status: 'reported', reason: `Votes not fully proven: ${excluded}. The tally counts them, the count here does not` };
   if (!hit.t.matches) return { status: 'reported', reason: "The bridge served the votes of another block than the Platform tally's, so the two can't be compared" };
   // A proven but old record: the votes have moved on (or the publisher stopped), so it says nothing about the funding status now.
   const shownAt = i.shown.tally.asOfHeight;
@@ -206,12 +213,9 @@ export function votesComponent(i: {
     return { status: 'reported', reason: `The tally on Platform is ${(i.live.asOfHeight - shownAt).toLocaleString('en-US')} blocks old and the votes have changed since; re-check once it is republished` };
   }
   if (i.tip != null && i.tip - shownAt > STALE_TALLY_BLOCKS) return { status: 'reported', reason: `The tally on Platform is ${(i.tip - shownAt).toLocaleString('en-US')} blocks old` };
-  const r = hit.run.result;
   if (d.sml?.weak) return { status: 'reported', reason: 'Testnet: voting keys were checked against a list only proof of work protects' };
   if (r.keysFrom !== 'sml') {
-    if (r.smlUnconfirmed > 0) return { status: 'reported', reason: `Votes not fully recounted: ${r.smlUnconfirmed.toLocaleString('en-US')} voters couldn't be matched to the proven masternode list` };
-    const dropped = Object.values(r.problems).reduce((a, b) => a + b, 0);
-    if (dropped > 0) return { status: 'reported', reason: `Votes not fully recounted: ${dropped.toLocaleString('en-US')} votes in the bridge's set didn't check out` };
+    if (excluded) return { status: 'reported', reason: `Votes not fully proven: ${excluded}` };
     return { status: 'reported', reason: "Not fully checked: the voters' keys are as the bridge lists them" };
   }
   return { status: 'proven', summary: `${r.verified.toLocaleString('en-US')} signed votes recounted; they match the published tally exactly` };

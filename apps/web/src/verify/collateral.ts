@@ -68,34 +68,42 @@ export interface CollateralVerdict {
    * (txid matches the proposal's collateral, it burns to the recomputed gov hash, enough confirmations).
    */
   inputKeys?: string[];
-  /** The transaction could not be fetched for reasons that say nothing about the proposal (nodes unreachable, timeouts). */
+  /**
+   * The transaction could not be fetched and checked, for reasons that say nothing about the proposal: nodes unreachable, timeouts,
+   * or nodes answering NOT_FOUND (`absent`).
+   */
   inconclusive?: boolean;
+  /**
+   * Every DAPI node asked (two or more) answered NOT_FOUND. Nodes can't prove that a transaction does not exist (one that lags,
+   * prunes or lies says the same), so this is "couldn't verify", never "failed". Always set together with `inconclusive`.
+   */
+  absent?: true;
   /** Why the verified chain could not be built (the old per-transaction proof was used instead). */
   anchorError?: string;
 }
 
-/** A failed lookup: `notFound` when several distinct DAPI nodes answered NOT_FOUND (the collateral is not on this chain). */
+/** A failed lookup: `notFound` when several distinct DAPI nodes answered NOT_FOUND (they didn't return it: not proof it is missing). */
 export type LookupError = { error: string; notFound?: boolean };
 
 /**
- * Steps whose failure can be a fact about the proposal itself, when it does not rest on one node's word (`basis: 'reported'`). The
- * published collateral height counts only when the verified chain contradicts it (its basis is then 'verified').
+ * Steps whose failure can be a fact about the proposal itself, when it does not rest on nodes' word (`basis: 'reported'`). The
+ * published collateral height counts only when the verified chain contradicts it (its basis is then 'verified'). The transaction
+ * lookup never does: its failures (unreachable, NOT_FOUND) are always 'reported'.
  */
-const DEFINITE: readonly Step['id'][] = ['hash', 'fields', 'tx', 'collateral', 'confirmations', 'height'];
+const DEFINITE: readonly Step['id'][] = ['hash', 'fields', 'collateral', 'confirmations', 'height'];
+const CONTENT: readonly Step['id'][] = ['hash', 'fields'];
 
 /**
- * Why a verdict means the proposal failed verification, or null when it passed or the check could not conclude. Only facts count:
- * the published fields against the gov hash, a collateral missing on several nodes, or the real collateral (bytes that hash to its
- * txid) not burning to the gov hash. Anything a single node could cause (altered bytes, a low confirmation count, a second node
- * disagreeing, an unreachable network) never hides a proposal.
+ * Why a verdict means the proposal failed verification, or null when it passed or the check could not conclude. Only cryptographic
+ * contradictions count: the published fields against the gov hash, or the real collateral (bytes that hash to its txid) not burning
+ * at least the fee to the gov hash. Anything nodes could cause (altered bytes, a low confirmation count, a second node disagreeing,
+ * an unreachable network, or every node asked answering NOT_FOUND) never fails or hides a proposal.
  */
 export function verdictFailure(v: CollateralVerdict): string | null {
-  if (v.ok || v.inconclusive) return null;
-  if (v.steps.some((s) => s.id === 'crosscheck' && s.status === 'fail')) {
-    const content = v.steps.filter((s) => (s.id === 'hash' || s.id === 'fields') && s.status === 'fail');
-    return content.length ? content.map((s) => `${s.label}: ${s.detail}`).join('; ') : null;
-  }
-  const bad = v.steps.filter((s) => s.status === 'fail' && s.basis !== 'reported' && DEFINITE.includes(s.id));
+  if (v.ok) return null;
+  // Without the transaction (inconclusive), or with nodes disagreeing about it, only the content check (no network) can fail.
+  const contentOnly = v.inconclusive || v.steps.some((s) => s.id === 'crosscheck' && s.status === 'fail');
+  const bad = v.steps.filter((s) => s.status === 'fail' && s.basis !== 'reported' && (contentOnly ? CONTENT : DEFINITE).includes(s.id));
   return bad.length ? bad.map((s) => `${s.label}: ${s.detail}`).join('; ') : null;
 }
 
@@ -135,6 +143,9 @@ export function checkContent(p: ProposalCore): { steps: Step[]; govHashComputed?
 }
 
 const num = (n: number) => n.toLocaleString('en-US');
+
+/** What an all-NOT_FOUND lookup establishes: the nodes didn't return the transaction (not that it is missing). */
+export const ABSENT = "the nodes didn't return the fee transaction";
 
 /** What the fallback per-transaction ChainLock rests on (it is "reported", never "verified"). */
 export const AGREED_LIST = 'its BLS signature checks against a masternode list DAPI nodes agree on, not one proven from the chain verified here';
@@ -191,13 +202,13 @@ function chainlockStep(
 export function verifyCollateral(p: ProposalCore, lookup: TxLookup | LookupError, network: CoreNetwork): CollateralVerdict {
   const { steps, govHashComputed } = checkContent(p);
   if ('error' in lookup) {
-    // an unreachable network says nothing about the proposal: that failure is "reported" (couldn't verify), not a mismatch
-    steps.push(
-      lookup.notFound
-        ? { id: 'tx', status: 'fail', label: 'Collateral transaction', detail: `not on the chain: every DAPI node asked answered NOT_FOUND (${lookup.error})` }
-        : { id: 'tx', status: 'fail', basis: 'reported', label: 'Collateral transaction', detail: `not fetched: ${lookup.error}` },
-    );
-    return { ok: false, steps, ...(govHashComputed ? { govHashComputed } : {}), ...(lookup.notFound ? {} : { inconclusive: true }) };
+    // Neither an unreachable network nor nodes answering NOT_FOUND say anything about the proposal: nodes can't prove that a
+    // transaction does not exist, so both are "reported" (couldn't verify), never a failure.
+    steps.push({
+      id: 'tx', status: 'fail', basis: 'reported', label: 'Collateral transaction',
+      detail: lookup.notFound ? `${ABSENT}: every DAPI node asked answered NOT_FOUND, which can't prove it doesn't exist (${lookup.error})` : `not fetched: ${lookup.error}`,
+    });
+    return { ok: false, inconclusive: true, steps, ...(govHashComputed ? { govHashComputed } : {}), ...(lookup.notFound ? { absent: true as const } : {}) };
   }
   const { proof } = lookup;
   steps.push({ id: 'tx', status: 'ok', label: 'Collateral transaction', detail: `${lookup.raw.length} bytes from DAPI node ${lookup.node}` });

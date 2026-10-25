@@ -112,14 +112,15 @@ export function buildSnapshot(raw: RawFixture, recorded: RecordedBridge): Fixtur
     validWeighted: VALID_WEIGHTED,
     paid: 0,
   };
-  return { now, height, proposals, tallies, invalid: invalidProposals(now, height), cycle, recorded };
+  return { now, height, proposals, tallies, invalid: invalidProposals(now, height, proposals[0]!.collateralTxid), cycle, recorded };
 }
 
 /**
- * One proposal whose published URL differs from the hashed data (caught on the page, no network), and one whose collateral
- * transaction does not exist (caught by the collateral check in the worker: the recorded DAPI node answers NOT_FOUND).
+ * One proposal whose published URL differs from the hashed data (caught on the page, no network), and one that names another
+ * proposal's real collateral: its bytes hash to the txid but burn to a different gov hash, a contradiction the collateral check in the
+ * worker proves. (A collateral the nodes don't return is "couldn't verify", never a failure: nodes can't prove absence.)
  */
-function invalidProposals(now: number, height: number): Proposal[] {
+function invalidProposals(now: number, height: number, someoneElsesCollateral: string): Proposal[] {
   const make = (name: string, collateralTxid: string, publishedUrl?: string): Proposal => {
     const fields = { end_epoch: now + 30 * 86400, name, payment_address: 'XdWkmFKNosQvS1iPdof7SVme5Gd2GDsa62', payment_amount: 25, start_epoch: now - 5 * 86400, type: 1, url: `https://example.org/${name}` };
     const dataHex = bytesToHex(new TextEncoder().encode(JSON.stringify(fields)));
@@ -142,7 +143,7 @@ function invalidProposals(now: number, height: number): Proposal[] {
       createdAt: (time + 3600) * 1000,
     };
   };
-  return [make('govhub-fixture-tampered', 'aa'.repeat(32), 'https://phish.example/govhub-fixture-tampered'), make('govhub-fixture-no-collateral', 'ee'.repeat(32))];
+  return [make('govhub-fixture-tampered', 'aa'.repeat(32), 'https://phish.example/govhub-fixture-tampered'), make('govhub-fixture-wrong-collateral', someoneElsesCollateral)];
 }
 
 /** A bridge that answers from the snapshot, including synthetic signed votes and MN list. */

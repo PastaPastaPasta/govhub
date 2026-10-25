@@ -13,7 +13,7 @@ import { checkContent, verdictFailure, type CollateralVerdict, type StepBasis, t
 import { budgetFact } from '../../verify/facts.ts';
 import type { RankingDone, VotesDone } from '../../verify/protocol.ts';
 import { comparable, PLATFORM_TARGET, voteVerdict, type VoteLevel } from '../../verify/verdict.ts';
-import type { VoteRun } from '../../verify/votes.ts';
+import { excludedText, PROBLEM_TEXT, type VoteCheckResult, type VoteProblem, type VoteRun } from '../../verify/votes.ts';
 import { Drawer } from '../Drawer.tsx';
 import type { ChainCheck, CollateralCheck } from '../hooks.ts';
 import { ProvGlyph } from '../Provenance.tsx';
@@ -221,6 +221,7 @@ const COLLATERAL_STYLE = {
   reported: { className: 'verdict-partial', glyph: 'reported', text: "Content matches the collateral transaction, but not every fact about it is proven (see below)" },
   demo: { className: 'verdict-partial', glyph: 'fixture', text: 'Content matches the recorded collateral transaction (demo data, not checked against the chain)' },
   inconclusive: { className: 'verdict-partial', glyph: 'reported', text: "Couldn't fetch the collateral from the network" },
+  absent: { className: 'verdict-partial', glyph: 'reported', text: "Couldn't verify: the nodes didn't return the fee transaction (nodes can't prove that a transaction doesn't exist)" },
   unconfirmed: { className: 'verdict-partial', glyph: 'reported', text: "Nodes' answers about the collateral couldn't be confirmed" },
   height: { className: 'verdict-fail', glyph: 'mismatch', text: 'The published collateral height contradicts the verified chain' },
   fail: { className: 'verdict-fail', glyph: 'mismatch', text: 'Content does not match the on-chain collateral' },
@@ -231,6 +232,7 @@ function collateralKind(v: CollateralVerdict, state: ComponentState, demo: boole
   if (v.steps.some((s) => s.id === 'height' && s.status === 'fail' && s.basis === 'verified')) return 'height';
   if (verdictFailure(v)) return 'fail';
   // an inconclusive lookup (DAPI down) or a node whose answer did not check out says nothing about the proposal
+  if (v.absent) return 'absent';
   if (v.inconclusive) return 'inconclusive';
   if (!v.ok) return 'unconfirmed';
   if (demo) return 'demo';
@@ -322,21 +324,26 @@ function RankingBlock({ done, govHash }: { done: RankingDone; govHash: string })
 const VERDICT_STYLE: Record<VoteLevel, { className: string; glyph: 'verified' | 'mismatch' | 'reported' }> = {
   verified: { className: 'verdict-ok', glyph: 'verified' },
   'keys-reported': { className: 'verdict-partial', glyph: 'reported' },
+  excluded: { className: 'verdict-partial', glyph: 'reported' },
   'different-height': { className: 'verdict-partial', glyph: 'reported' },
   mismatch: { className: 'verdict-fail', glyph: 'mismatch' },
   'no-tally': { className: 'verdict-pending', glyph: 'reported' },
 };
 
-function verdictText(level: VoteLevel, verified: number, total: number, matched: string | undefined, origin: VotesDone['origin'], fixtures: boolean, smlUnconfirmed: number, weak: string | null): string {
-  const sigs = `${formatInt(verified)} of ${formatInt(total)} signatures check out`;
+function verdictText(level: VoteLevel, r: VoteCheckResult, matched: string | undefined, origin: VotesDone['origin'], fixtures: boolean, weak: string | null): string {
+  const { verified, total } = r;
+  const sigs = `${formatInt(verified)} of ${formatInt(total)} votes counted`;
+  const excluded = excludedText(r);
   switch (level) {
     case 'verified':
       return `Tally verified: ${sigs} and the recount matches the ${matched}`;
     case 'keys-reported':
       if (fixtures) return `Recount matches the ${matched}: ${sigs}. Voting keys come from the fixture bridge (${origin === 'recorded' ? 'recorded mainnet votes and masternodes' : 'synthetic voters'})`;
-      if (weak && smlUnconfirmed === 0) return `Recount matches the ${matched}: ${sigs}, keys checked against the masternode list, but not secure: ${weak}`;
-      if (smlUnconfirmed > 0) return `Recount matches the ${matched}: ${sigs}, but ${formatInt(smlUnconfirmed)} voters are not confirmed by the proven masternode list and their registrations (a masternode may have left or changed its key since the tally, or the bridge reports it wrongly)`;
+      if (weak && !excluded) return `Recount matches the ${matched}: ${sigs}, keys checked against the masternode list, but not secure: ${weak}`;
+      if (excluded) return `Recount matches the ${matched}: ${sigs}, but ${excluded}`;
       return `Recount matches the ${matched}: ${sigs}, but the voting keys are only as the bridge reports them. Check them against the proven masternode list for a verified result`;
+    case 'excluded':
+      return `Not verified: ${excluded ?? 'votes were excluded'}. The ${matched} counts them; the count here, without them, differs (a masternode may have left or changed its key since the tally, or the bridge reports one that doesn't exist)`;
     case 'different-height':
       return `Not compared: the votes the bridge served are for another block than the published tallies (${sigs}), so this recount neither confirms nor contradicts them. Re-check later`;
     case 'mismatch':
@@ -349,24 +356,29 @@ function verdictText(level: VoteLevel, verified: number, total: number, matched:
 /** One recount: what it read, what it dropped, and the field-by-field comparison with the tallies of its height. */
 function RunResult({ run, bridge, sml, proven, demo }: { run: VoteRun; bridge: string; sml: VotesDone['sml']; proven: boolean; demo: boolean }) {
   const r = run.result;
-  const problems = Object.entries(r.problems).filter(([, n]) => n > 0);
+  const problems = (Object.entries(r.problems) as Array<[VoteProblem, number]>).filter(([, n]) => n > 0);
   return (
     <div className="vote-run" data-run-height={run.votesAsOf}>
       <p className="muted small">
         {formatInt(r.total)} votes from {bridge} (as of block {formatInt(run.votesAsOf)}), masternode list at block {formatInt(run.mnlistHeight)}
-        {sml && `, voting keys checked against the masternode list ${sml.weak ? 'checked (not secure on this network)' : 'proven'} by block ${formatInt(sml.height)} (${formatInt(r.smlChecked)} checked), collateral and type of ${formatInt(r.collateralProven)} voters proven by their registration transactions`}
+        {sml && `. Counted only where the masternode is in the masternode list ${sml.weak ? 'checked (not secure on this network)' : 'proven'} by block ${formatInt(sml.height)}, the signature recovers to the voting key that list gives it, and its registration transaction proves the collateral and type (${formatInt(r.collateralProven)} of ${formatInt(r.smlChecked)} voters)`}
         {r.rejectedTime > 0 && `, ${r.rejectedTime} dropped for a time Core would reject`}
         {r.otherSignal > 0 && `, ${r.otherSignal} votes on other signals skipped`}. Superseded votes are counted once, latest wins.
         {run.listMatches === false && ' The masternode list served for this height is not the one the bridge built its tally from; a mismatch may come from that.'}
       </p>
       {problems.length > 0 && (
-        <ul className="problems">
-          {problems.map(([k, n]) => (
-            <li key={k}>
-              {formatInt(n)} {k.replace(/-/g, ' ')}
-            </li>
-          ))}
-        </ul>
+        <>
+          <p className="small" data-testid="votes-excluded">
+            {excludedText(r)}. Excluded votes are not in the count below.
+          </p>
+          <ul className="problems">
+            {problems.map(([k, n]) => (
+              <li key={k} data-problem={k}>
+                {formatInt(n)}: {PROBLEM_TEXT[k]}
+              </li>
+            ))}
+          </ul>
+        </>
       )}
       {r.targets.length > 0 && (
         <table className="compare">
@@ -374,7 +386,7 @@ function RunResult({ run, bridge, sml, proven, demo }: { run: VoteRun; bridge: s
             <tr>
               <th scope="col">Field</th>
               <th scope="col" className="r">
-                Recounted
+                Counted here
               </th>
               {r.targets.map((t) => (
                 <th scope="col" className="r" key={t.name}>
@@ -440,7 +452,7 @@ function VotesResult({ done, fixtures, proven }: { done: VotesDone; fixtures: bo
         <ProvGlyph kind={style.glyph} />
         {downgraded
           ? `Recount matches the ${vv.matched?.name}: ${formatInt(lead.result.verified)} of ${formatInt(lead.result.total)} signatures check out, keys proven; the vote check above says why that doesn't make the shown tally verified`
-          : verdictText(vv.level, lead.result.verified, lead.result.total, vv.matched?.name, done.origin, fixtures, lead.result.smlUnconfirmed, done.sml?.weak ?? null)}
+          : verdictText(vv.level, lead.result, vv.matched?.name, done.origin, fixtures, done.sml?.weak ?? null)}
       </p>
       {done.runs.map((run, i) => (
         <RunResult key={i} run={run} bridge={done.bridge} sml={done.sml} proven={proven} demo={fixtures} />

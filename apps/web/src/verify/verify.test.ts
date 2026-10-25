@@ -1,4 +1,6 @@
 import { AllNodesFailedError, createDapi, VerificationError, type Dapi, type VerifiedTransaction } from '@govhub/dapi';
+import { hash160, p2pkhAddress, signVote } from '@govhub/verify';
+import { secp256k1 } from '@noble/curves/secp256k1.js';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { installRecordedDapi, RECORDED_NODE } from '../data/dapiRecorded.ts';
 import { lookupCollateral } from '../data/dapi.ts';
@@ -8,7 +10,7 @@ import { BridgeError, type BridgeMasternode, type BridgeVote } from '../data/bri
 import { BRIDGE_TARGET, PLATFORM_TARGET, tallyProvenance, voteVerdict } from './verdict.ts';
 import { checkContent, verifyCollateral, type TxLookup } from './collateral.ts';
 import { collateralHeightProv, collateralStatus } from './facts.ts';
-import { verifyVotes, type VoteRun } from './votes.ts';
+import { excludedText, verifyVotes, type VoteRun } from './votes.ts';
 
 let snap: FixtureSnapshot;
 beforeAll(async () => {
@@ -282,7 +284,11 @@ describe('vote verification against the fixture bridge (synthetic voters)', () =
 
   it('is verified only with keys confirmed by the proven SML and collateral and type proven by the ProRegTxs', () => {
     const sml = new Map(mns.map((m) => [m.proTxHash, { votingAddress: m.votingAddress, isValid: true, nType: 0, typeProven: true }]));
-    expect(check({ sml }).keysFrom).toBe('bridge'); // keys alone: the outpoint -> masternode mapping is still the bridge's
+    // keys alone: the outpoint -> masternode mapping is still the bridge's, so no vote is counted
+    const keysOnly = check({ sml });
+    expect(keysOnly.keysFrom).toBe('bridge');
+    expect(keysOnly.verified).toBe(0);
+    expect(keysOnly.problems['unproven-registration']).toBe(votes.length);
     const r = check({ sml, proReg: proRegOf(mns) });
     expect(r.keysFrom).toBe('sml');
     expect(r.collateralProven).toBe(r.verified);
@@ -372,25 +378,63 @@ describe('vote verification against the fixture bridge (synthetic voters)', () =
     expect(r.targets[0]!.matches).toBe(true);
   });
 
-  it('SML cross-check flags a voting address the DAPI list disagrees with', () => {
-    const sml = new Map(mns.map((m) => [m.proTxHash, { votingAddress: m.votingAddress, isValid: true, nType: 0, typeProven: true }]));
+  /** The proven list as the bridge states it (every synthetic voter is a regular masternode). */
+  const smlOf = (list: typeof mns) => new Map(list.map((m) => [m.proTxHash, { votingAddress: m.votingAddress, isValid: true, nType: 0, typeProven: true }]));
+
+  it('a vote not signed by the voting key the proven list gives its masternode is excluded, whatever key the bridge lists', () => {
+    const sml = smlOf(mns);
     sml.set(mns[1]!.proTxHash, { votingAddress: mns[2]!.votingAddress, isValid: true, nType: 0, typeProven: true });
-    const r = check({ sml, targets: [] });
-    expect(r.problems['sml-mismatch']).toBe(1);
+    const r = check({ sml, proReg: proRegOf(mns), targets: [] });
+    expect(r.problems['unproven-key']).toBe(1);
+    expect(r.excluded).toBe(1);
+    expect(r.verified).toBe(votes.length - 1);
     expect(r.smlChecked).toBe(votes.length);
+    expect(r.keysFrom).toBe('bridge');
+    expect(r.examples[0]).toMatchObject({ problem: 'unproven-key' });
     expect(voteVerdict([run(r, 0)]).level).toBe('no-tally');
   });
 
-  it('a masternode the (current) DAPI list no longer has keeps its vote in the recount but blocks "verified"', () => {
-    // The SML is today's list, the tally is older: a masternode that left or re-keyed since must not turn an honest tally into a mismatch.
-    const sml = new Map(mns.map((m) => [m.proTxHash, { votingAddress: m.votingAddress, isValid: true, nType: 0, typeProven: true }]));
-    sml.delete(mns[1]!.proTxHash);
-    const r = check({ sml });
-    expect(r.smlUnconfirmed).toBe(1);
-    expect(r.verified).toBe(votes.length);
+  it('the key the proven list assigns is the one checked: a wrong key in the bridge list does not drop a properly signed vote', () => {
+    const lying = mns.map((m, i) => (i === 1 ? { ...m, votingAddress: mns[2]!.votingAddress } : m));
+    const r = check({ masternodes: lying, sml: smlOf(mns), proReg: proRegOf(mns) });
+    expect(r.excluded).toBe(0);
     expect(r.targets[0]!.matches).toBe(true);
+    expect(r.keysFrom).toBe('sml');
+  });
+
+  it('a masternode the proven (current) list does not have: its vote is excluded from the count, shown with a reason, and blocks "verified"', () => {
+    // The SML is today's list, the tally may be older: a masternode that left since is excluded like one the bridge made up. The tally
+    // still counts it, so it differs from the count here; but it equals every vote served, so this is "excluded", never a mismatch.
+    const sml = smlOf(mns);
+    sml.delete(mns[1]!.proTxHash);
+    const r = check({ sml, proReg: proRegOf(mns) });
+    expect(r.problems['not-in-proven-list']).toBe(1);
+    expect(r.excluded).toBe(1);
+    expect(r.verified).toBe(votes.length - 1);
+    expect(r.weighted.yes + r.weighted.no + r.weighted.abstain).toBe(95 + 64 + 23 - 1);
+    expect(r.targets[0]).toMatchObject({ matches: false, servedMatches: true });
     expect(r.keysFrom).toBe('bridge');
-    expect(voteVerdict([run(r, tally.asOfHeight)]).level).toBe('keys-reported');
+    expect(excludedText(r)).toBe('1 vote excluded (1: masternode not in the proven masternode list)');
+    expect(voteVerdict([run(r, tally.asOfHeight)])).toMatchObject({ level: 'excluded' });
+    const prov = tallyProvenance({ name: PLATFORM_TARGET, prov: { kind: 'proof', source: 'Platform' }, tally }, [run(r, tally.asOfHeight)]);
+    expect(prov.kind).toBe('proof');
+    expect(prov.detail).toMatch(/counts votes this browser couldn't prove: 1 vote excluded/);
+  });
+
+  it('a masternode a bridge made up (with a vote signed by its own key) is excluded, and the tally that counts it is not verified', () => {
+    const fake = { proTxHash: 'fa'.repeat(32), collateralTxid: 'fb'.repeat(32), collateralIndex: 0, votingAddress: '', type: 'regular' as const, valid: true };
+    const key = secp256k1.utils.randomSecretKey();
+    fake.votingAddress = p2pkhAddress(hash160(secp256k1.getPublicKey(key, true)), 'mainnet');
+    const fields = { collateralTxid: fake.collateralTxid, collateralIndex: 0, govHashDisplay: p.govHash, signal: 1, outcome: 1, time: snap.now - 100 };
+    const vote = { collateralTxid: fake.collateralTxid, collateralIndex: 0, signal: 1, outcome: 1, time: fields.time, sig: signVote({ privKey: key, vote: fields, network: 'mainnet' }).base64 } as BridgeVote;
+    // the bridge publishes a tally that counts it, consistent with its own list and vote set
+    const served = check({ votes: [...votes, vote], masternodes: [...mns, fake], targets: [] });
+    const inflated = { ...tally, yesWeighted: served.weighted.yes, yesCount: served.unweighted.yes, voteSetHash: served.voteSetHash };
+    const r = check({ votes: [...votes, vote], masternodes: [...mns, fake], sml: smlOf(mns), proReg: proRegOf(mns), targets: [{ name: PLATFORM_TARGET, tally: inflated }] });
+    expect(r.problems['not-in-proven-list']).toBe(1);
+    expect(r.weighted).toEqual({ yes: 95, no: 64, abstain: 23 }); // the made-up vote is not in the count here
+    expect(r.targets[0]).toMatchObject({ matches: false, servedMatches: true });
+    expect(voteVerdict([run(r, tally.asOfHeight)]).level).toBe('excluded');
   });
 
   it('a bridge that maps an outpoint to another masternode, or misstates a type, is caught by the ProRegTx', () => {
@@ -398,13 +442,19 @@ describe('vote verification against the fixture bridge (synthetic voters)', () =
     const reg = proRegOf(mns);
     reg.set(mns[1]!.proTxHash.toLowerCase(), { type: 0, collateral: { txid: 'ab'.repeat(32), index: 0 } });
     const r = check({ sml, proReg: reg });
-    expect(r.smlUnconfirmed).toBe(1);
+    expect(r.problems['unproven-registration']).toBe(1);
     expect(r.keysFrom).toBe('bridge');
+    expect(voteVerdict([run(r, tally.asOfHeight)]).level).toBe('excluded');
+    // the ProRegTx proves masternode 2 an evonode: counted with weight 4, so the bridge's tally (weight 1) contradicts the proven count
     const typed = proRegOf(mns);
     typed.set(mns[2]!.proTxHash.toLowerCase(), { ...typed.get(mns[2]!.proTxHash.toLowerCase())!, type: 1 });
-    expect(check({ sml, proReg: typed }).smlUnconfirmed).toBe(1);
-    // a version-1 entry's type is not in the list's hash: without a ProRegTx it cannot count as proven
-    expect(check({ sml }).smlUnconfirmed).toBe(r.verified);
+    const t = check({ sml, proReg: typed });
+    expect(t.excluded).toBe(0);
+    expect(t.targets[0]).toMatchObject({ matches: false, servedMatches: false });
+    expect(voteVerdict([run(t, tally.asOfHeight)]).level).toBe('mismatch');
+    // the proven list and the ProRegTx disagreeing on the type: excluded
+    const both = new Map(mns.map((m) => [m.proTxHash, { votingAddress: m.votingAddress, isValid: true, nType: 0, typeProven: true }]));
+    expect(check({ sml: both, proReg: typed }).problems['unproven-registration']).toBe(1);
   });
 });
 

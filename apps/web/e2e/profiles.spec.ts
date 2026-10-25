@@ -11,7 +11,7 @@ test.describe('failed verification is hidden (fixtures)', () => {
     await gotoFixtures(page);
     const cards = page.locator('article.prow');
     await page.locator('.sentinel').scrollIntoViewIfNeeded();
-    // The tampered one fails at once (no network); the one without a collateral fails once the worker has asked DAPI.
+    // The tampered one fails at once (no network); the one naming another proposal's collateral fails once the worker has the tx.
     const toggle = page.getByTestId('toggle-failed');
     await expect(toggle).toHaveText('Show 2 proposals that failed verification');
     await expect(cards).toHaveCount(28);
@@ -25,8 +25,8 @@ test.describe('failed verification is hidden (fixtures)', () => {
     await expect(cards).toHaveCount(30);
     const tampered = page.locator('article.prow.prow-invalid', { hasText: 'govhub-fixture-tampered' });
     await expect(tampered.getByTestId('invalid-reason')).toContainText('Displayed fields: differ from the hashed data: url');
-    const missing = page.locator('article.prow.prow-invalid', { hasText: 'govhub-fixture-no-collateral' });
-    await expect(missing.getByTestId('invalid-reason')).toContainText('not on the chain');
+    const wrong = page.locator('article.prow.prow-invalid', { hasText: 'govhub-fixture-wrong-collateral' });
+    await expect(wrong.getByTestId('invalid-reason')).toContainText('OP_RETURN and outputs: no-matching-op-return');
     // Revealing them changes nothing in the counts.
     await expect(page.locator('.budget-facts')).toContainText('of 28 proposals');
 
@@ -43,13 +43,13 @@ test.describe('failed verification is hidden (fixtures)', () => {
     // The published (tampered) URL is not linked.
     await expect(page.locator('a.ext')).toHaveCount(0);
 
-    await gotoFixtures(page, '/p/govhub-fixture-no-collateral');
+    await gotoFixtures(page, '/p/govhub-fixture-wrong-collateral');
     await expect(page.getByTestId('invalid-banner')).toBeVisible();
     const drawer = await openDrawer(page);
     await expect(drawer.getByTestId('collateral-check').locator('[data-verdict]')).toHaveAttribute('data-verdict', 'fail');
     await expect(drawer.locator('[data-check="collateral"]')).toHaveAttribute('data-state', 'failed');
     await page.keyboard.press('Escape');
-    await expect(page.getByTestId('invalid-banner')).toContainText('This proposal failed verification: Collateral transaction: not on the chain');
+    await expect(page.getByTestId('invalid-banner')).toContainText('This proposal failed verification: OP_RETURN and outputs: no-matching-op-return');
   });
 
   test('a real proposal shows no banner', async ({ page }) => {
