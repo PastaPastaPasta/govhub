@@ -10,7 +10,9 @@ import { hashHex, unhex } from '../src/bytes.ts';
 import { Dapi } from '../src/client.ts';
 import { verifyQuorumProof } from '../src/coreproof.ts';
 import type { StoredLinkedChain } from '../src/linkedchain.ts';
-import { SAVED_SOURCE, anchorByProof } from '../src/proofanchor.ts';
+import { MAX_PIN_SPAN, type StoredPinned } from '../src/pinned.ts';
+import type { PinTable } from '../src/quorumpins.ts';
+import { type ProofAnchorState, SAVED_SOURCE, anchorByProof } from '../src/proofanchor.ts';
 import { fetchSml } from '../src/anchor.ts';
 import { num } from '../src/pb.ts';
 import { type ProofSource, ProofSourceError, type ProofState } from '../src/quorumproof.ts';
@@ -34,7 +36,7 @@ const top = f.from + f.headers.length / 80 - 1;
 const header = (h: number) => f.headers.subarray((h - f.from) * 80, (h - f.from + 1) * 80);
 const hashAt = (h: number) => hashHex(hashes.subarray((h - f.from) * 32, (h - f.from + 1) * 32));
 
-interface Lies { headers?: boolean }
+interface Lies { headers?: boolean; /** this height's header is altered in every answer */ flip?: number }
 function node(lies: Lies = {}): FakeNode {
   return {
     unary: {
@@ -49,7 +51,7 @@ function node(lies: Lies = {}): FakeNode {
         const hs: Uint8Array[] = [];
         for (let k = from; k <= last; k++) {
           const x = Uint8Array.from(header(k));
-          if (lies.headers && k === last - 3) x[0]! ^= 1;
+          if ((lies.headers && k === last - 3) || k === lies.flip) x[0]! ^= 1;
           hs.push(x);
         }
         ctl.send(resp.headers(hs));
@@ -152,7 +154,7 @@ describe('testnet anchorChain on a quorum proof', () => {
     const d = dapiFor([N(1), N(2)]);
     const v = await d.crypto();
     const signal = new AbortController().signal;
-    await expect(anchorByProof(d, { down: new Map() }, { ...base, proofSources: [source()], proofStore }, v, x11Many, fetchSml(d, { signal }), signal))
+    await expect(anchorByProof(d, { down: new Map() }, { ...base, proofSources: [source()], proofStore }, v, x11Many, () => fetchSml(d, { signal }), signal))
       .rejects.toThrow(/conflicts with the one this browser verified earlier/);
     expect(proofStore.saved).toBe(before);
     // anchorChain fails closed: a conflict is not a reason to fall back to proof of work
@@ -198,6 +200,143 @@ describe('testnet anchorChain on a quorum proof', () => {
   it('never calls a ChainLock older than an hour current: the proof path gives up and says why', async () => {
     fake = installFakeDapi({ [N(1)]: node(), [N(2)]: node() });
     await expect(dapiFor([N(1), N(2)]).anchorChain({ ...base, now: () => f.now + 2 * 3600, proofSources: [source()] })).rejects.toThrow();
+  });
+});
+
+describe('old blocks through pinned hashes', () => {
+  // the anchor's own run goes down to T - 602 (the ChainLock quorums' base blocks); pins sit below it, as below a real quorum checkpoint
+  const reachLo = f.target.height - 602;
+  const pins = (lie?: number): PinTable => ({
+    network: 'testnet', checkpoint: { height: reachLo - 3, blockHash: hashAt(reachLo - 3) },
+    pins: [reachLo - 7, reachLo - 3].map((h) => [h, h === lie ? hashAt(h - 1) : hashAt(h)] as const),
+  });
+  const headersAsked = () => fake!.calls.filter((c) => c.endsWith('subscribeToBlockHeadersWithChainLocks')).length;
+
+  it('verifies a block below the run with only the headers up to the pin above it, then reuses them', async () => {
+    fake = installFakeDapi({ [N(1)]: node(), [N(2)]: node() });
+    const table = pins(), pinStore = memoryStore<StoredPinned>(), proofStore = memoryStore<StoredLinkedChain>();
+    const o = { ...base, proofSources: [source()], proofStore, pinStore, pins: table };
+    // before (no pins): every header from the block up to the ChainLock
+    const before = await dapiFor([N(1), N(2)]).anchorChain({ ...base, proofSources: [source()], from: reachLo - 9 });
+    expect(before.stats.fetchedHeaders).toBe(f.target.height - (reachLo - 9) + 1);
+
+    const d = dapiFor([N(1), N(2)]);
+    const a = await d.anchorChain({ ...o, from: reachLo - 9 });
+    // the run down from T (603 headers) plus reachLo-9..reachLo-7 (3 headers, linked to the pin at reachLo-7): not the 2 between
+    expect(a.chain.lo).toBe(reachLo);
+    expect(a.stats.fetchedHeaders).toBe(603 + 3);
+    expect(a.stats.pinned).toEqual({ segments: 1, heights: 3, fetched: 3 });
+    expect(a.chain.hashHexAt(reachLo - 9)).toBe(hashAt(reachLo - 9));
+    expect(a.chain.hashHexAt(reachLo - 6)).toBeNull(); // between the pins, not needed, not fetched
+    expect(a.chain.pinOf?.(reachLo - 9)).toEqual({ height: reachLo - 7, hash: hashAt(reachLo - 7) });
+    expect(pinStore.saved?.segments).toEqual([expect.objectContaining({ pin: reachLo - 7, lo: reachLo - 9 })]);
+
+    // the same block again within the minute: nothing at all is fetched
+    const n0 = headersAsked();
+    expect(await d.anchorChain({ ...o, from: reachLo - 9 })).toBe(a);
+    expect(headersAsked()).toBe(n0);
+    // a deeper block under the same pin: only the one header below what is held; no new proof, no new list
+    const asked = fake.calls.length;
+    const b = await d.anchorChain({ ...o, from: reachLo - 10 });
+    expect(b.stats.pinned).toEqual({ segments: 1, heights: 4, fetched: 4 });
+    expect(b.chain.hashHexAt(reachLo - 10)).toBe(hashAt(reachLo - 10));
+    expect(fake.calls.slice(asked).every((c) => c.endsWith('subscribeToBlockHeadersWithChainLocks'))).toBe(true);
+    // a block that is itself pinned: no headers
+    const n1 = headersAsked();
+    expect((await d.anchorChain({ ...o, from: reachLo - 3 })).chain.hashHexAt(reachLo - 3)).toBe(hashAt(reachLo - 3));
+    expect(headersAsked()).toBe(n1);
+
+    // another session (a reload): the saved run and the saved segment serve; no header is downloaded
+    const c = await dapiFor([N(1), N(2)]).anchorChain({ ...o, from: reachLo - 10 });
+    expect(c.stats.fetchedHeaders).toBe(0);
+    expect(c.chain.hashHexAt(reachLo - 10)).toBe(hashAt(reachLo - 10));
+  });
+
+  it('rejects the run when it does not link to the pinned hash, and stores nothing', async () => {
+    fake = installFakeDapi({ [N(1)]: node(), [N(2)]: node(), [N(3)]: node() });
+    const pinStore = memoryStore<StoredPinned>();
+    await expect(dapiFor([N(1), N(2), N(3)]).anchorChain({ ...base, proofSources: [source()], pinStore, pins: pins(reachLo - 7), from: reachLo - 9 }))
+      .rejects.toThrow(/is not the pinned block/);
+    expect(pinStore.saved).toBeNull();
+  });
+
+  it('fails when every node tampers with a header of the run (and passes over one that does)', async () => {
+    fake = installFakeDapi({ [N(1)]: node({ flip: reachLo - 8 }), [N(2)]: node({ flip: reachLo - 8 }) });
+    const pinStore = memoryStore<StoredPinned>();
+    await expect(dapiFor([N(1), N(2)]).anchorChain({ ...base, proofSources: [source()], pinStore, pins: pins(), from: reachLo - 9 })).rejects.toThrow(/no node left|link/);
+    expect(pinStore.saved).toBeNull();
+    fake.restore();
+    fake = installFakeDapi({ [N(1)]: node({ flip: reachLo - 8 }), [N(2)]: node(), [N(3)]: node() });
+    const a = await dapiFor([N(1), N(2), N(3)]).anchorChain({ ...base, proofSources: [source()], pinStore, pins: pins(), from: reachLo - 9 });
+    expect(a.chain.hashHexAt(reachLo - 8)).toBe(hashAt(reachLo - 8));
+  });
+
+  it('fails closed once when a stored run disagrees with the ChainLocked run, drops it, and links it afresh next time', async () => {
+    fake = installFakeDapi({ [N(1)]: node(), [N(2)]: node() });
+    // a pin above the run's bottom (as right after a checkpoint release), and a stored run up to it that overlaps the ChainLocked run
+    const table: PinTable = { network: 'testnet', checkpoint: { height: reachLo + 5, blockHash: hashAt(reachLo + 5) }, pins: [[reachLo - 7, hashAt(reachLo - 7)], [reachLo + 5, hashAt(reachLo + 5)]] };
+    const lo = reachLo - 2, seg = new Uint8Array((reachLo + 5 - lo + 1) * 32);
+    for (let h = lo; h <= reachLo + 5; h++) seg.set(hashes.subarray((h - f.from) * 32, (h - f.from + 1) * 32), (h - lo) * 32);
+    seg[(reachLo + 1 - lo) * 32]! ^= 1; // damaged at a height the ChainLocked run also has
+    const pinStore = memoryStore<StoredPinned>();
+    pinStore.saved = { version: 1, kind: 'pinned', network: 'testnet', checkpoint: reachLo + 5, segments: [{ pin: reachLo + 5, pinHash: hashAt(reachLo + 5), lo, prevOfLo: hashes.slice((lo - 1 - f.from) * 32, (lo - f.from) * 32), hashes: seg }] };
+    const d = dapiFor([N(1), N(2)]);
+    const o = { ...base, proofSources: [source()], pinStore, pins: table, from: lo };
+    await expect(d.anchorChain(o)).rejects.toThrow(/disagree/);
+    expect(pinStore.saved?.segments).toEqual([]);
+    const a = await d.anchorChain(o);
+    expect(a.chain.hashHexAt(lo)).toBe(hashAt(lo));
+    expect(a.chain.hashHexAt(reachLo + 1)).toBe(hashAt(reachLo + 1));
+    expect(pinStore.saved?.segments.map((x) => x.lo)).toEqual([lo]);
+  });
+
+  it('a block below the reach of any pin still walks down from the ChainLock, under the depth limit', async () => {
+    fake = installFakeDapi({ [N(1)]: node(), [N(2)]: node() });
+    const table: PinTable = { network: 'testnet', checkpoint: { height: f.from, blockHash: hashAt(f.from) }, pins: [[f.from, hashAt(f.from)]] };
+    const a = await dapiFor([N(1), N(2)]).anchorChain({ ...base, proofSources: [source()], pins: table, from: f.from + 1 });
+    expect(a.chain.lo).toBe(f.from + 1); // above the highest pin: the contiguous run, as before
+    expect(a.stats.pinned?.fetched).toBe(0);
+    // below every pin's reach: the old depth limit decides, as before
+    await expect(dapiFor([N(1), N(2)]).anchorChain({ ...base, proofSources: [source()], pins: table, from: f.from - MAX_PIN_SPAN - 1, maxStoredHeights: 100 }))
+      .rejects.toThrow(/too old to verify here/);
+  });
+});
+
+describe('the masternode list within one session', () => {
+  it('serves the next anchor again while its block stays within 8 of the new ChainLock, and is proven against the chain again', async () => {
+    fake = installFakeDapi({ [N(1)]: node(), [N(2)]: node() });
+    const d = dapiFor([N(1), N(2)]);
+    const proofStore = memoryStore<StoredLinkedChain>();
+    const a = await d.anchorChain({ ...base, proofSources: [source()], proofStore });
+    const lists = () => fake!.calls.filter((c) => c.endsWith('subscribeToMasternodeList')).length;
+    const n = lists();
+    expect(n).toBeGreaterThan(0);
+    const b = await d.anchorChain({ ...base, proofSources: [source()], proofStore, maxAgeMs: 0 });
+    expect(b).not.toBe(a);
+    expect(lists()).toBe(n);
+    expect(b.stats.ms.smlReused).toBe(1);
+    expect(b.sml.proof).toEqual(a.sml.proof);
+    expect(b.chainLock).toMatchObject({ height: a.chainLock.height, blockHash: a.chainLock.blockHash });
+  });
+
+  it('downloads a new list once the ChainLock is more than 8 blocks above the kept one', async () => {
+    fake = installFakeDapi({ [N(1)]: node(), [N(2)]: node() });
+    const d = dapiFor([N(1), N(2)]);
+    const v = await d.crypto();
+    const signal = new AbortController().signal;
+    const st: ProofAnchorState = { down: new Map() };
+    const o = { ...base, proofSources: [source()] };
+    let downloads = 0;
+    const download = () => { downloads++; return fetchSml(d, { signal }); };
+    await anchorByProof(d, st, o, v, x11Many, download, signal);
+    expect(downloads).toBe(1);
+    await anchorByProof(d, st, o, v, x11Many, download, signal);
+    expect(downloads).toBe(1); // S = T: kept
+    st.sml = { ...st.sml!, proof: { ...st.sml!.proof, height: f.target.height - 9 } };
+    const c = await anchorByProof(d, st, o, v, x11Many, download, signal);
+    expect(downloads).toBe(2);
+    expect(c.sml.proof.height).toBe(f.target.height);
+    expect(c.stats.ms.smlReused).toBeUndefined();
   });
 });
 

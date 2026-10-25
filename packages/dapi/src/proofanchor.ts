@@ -18,7 +18,7 @@ import { VerificationError } from './errors.ts';
 import { LinkedChain, type StoredLinkedChain } from './linkedchain.ts';
 import { type PlatformQuorum, type ProofSource, ProofSourceError, type ProofState, QUORUM_CHECKPOINTS, type VerifiedQuorumProof } from './quorumproof.ts';
 import { parseSmlDecoded } from './sml.ts';
-import { proveSml } from './smlproof.ts';
+import { type SmlProof, proveSml } from './smlproof.ts';
 import type { AnchorOptions, AnchoredChain, Verifiers } from './types.ts';
 import { FRESH_S, MAX_STORED, type RawSml, applyRun, fetchHeaders, fetchSml, now, proveAgainstChain, quorumsWithHeights } from './anchor.ts';
 
@@ -133,9 +133,9 @@ function savedChainLock(stored: StoredLinkedChain, ctx: ProofContext): Got | nul
 }
 
 /** The median Platform quorum of the (unproven) list: only a hint for the quorum list server, which must open some quorum. */
-function platformQuorumOf(network: Network, smlP: Promise<RawSml>): () => Promise<PlatformQuorum | null> {
+function platformQuorumOf(network: Network, list: () => Promise<RawSml>): () => Promise<PlatformQuorum | null> {
   let memo: Promise<PlatformQuorum | null> | undefined;
-  return () => (memo ??= smlP.then((raw) => {
+  return () => (memo ??= list().then((raw) => {
     const type = PLATFORM_LLMQ[network];
     const qs = parseSmlDecoded(raw.decoded).quorums.filter((q) => q.llmqType === type).map((q) => q.quorumHash).sort();
     return qs.length ? { quorumHash: qs[qs.length >> 1]!, llmqType: type } : null;
@@ -145,6 +145,11 @@ function platformQuorumOf(network: Network, smlP: Promise<RawSml>): () => Promis
 export interface ProofAnchorState {
   /** Sources that cannot serve proofs, until when (ms epoch). */
   down: Map<string, number>;
+  /**
+   * The masternode list the last anchor proved against its block S (in this session). It serves the next anchor again, without the
+   * ~1.4 MB download, while that anchor's ChainLock T keeps S within the rule every list must meet: T - 8 <= S <= T.
+   */
+  sml?: { raw: RawSml; proof: SmlProof; /** ms epoch it was proven */ at: number };
 }
 
 /**
@@ -152,7 +157,7 @@ export interface ProofAnchorState {
  * VerificationError when nodes contradict a proof; the caller falls back to proof of work in either case.
  */
 export async function anchorByProof(
-  d: Dapi, st: ProofAnchorState, o: AnchorOptions, v: Verifiers, hash: (h: Uint8Array) => Uint8Array, smlP: Promise<RawSml>, smlSignal: AbortSignal,
+  d: Dapi, st: ProofAnchorState, o: AnchorOptions, v: Verifiers, hash: (h: Uint8Array) => Uint8Array, download: () => Promise<RawSml>, smlSignal: AbortSignal,
 ): Promise<AnchoredChain> {
   const t0 = Date.now(), ms: Record<string, number> = {};
   const lap = (k: string, t: number) => { ms[k] = (ms[k] ?? 0) + Date.now() - t; };
@@ -166,7 +171,8 @@ export async function anchorByProof(
   const clock = o.now ?? now;
   const progress = o.onProgress ?? (() => {});
   const p = CHAINLOCK_PARAMS[d.network];
-  const ctx: ProofContext = { verify: v.verifyQuorumProof, hash, platformQuorum: platformQuorumOf(d.network, smlP), down: st.down, clock, signal: o.signal };
+  const kept = st.sml;
+  const ctx: ProofContext = { verify: v.verifyQuorumProof, hash, platformQuorum: platformQuorumOf(d.network, kept ? () => Promise.resolve(kept.raw) : download), down: st.down, clock, signal: o.signal };
 
   // 1. what this browser already verified: hashes down from an earlier proven ChainLock, and that block's state
   let t = Date.now();
@@ -201,11 +207,14 @@ export async function anchorByProof(
   lap('proof', t);
 
   // 3. the list must be from a block S at or below the proven ChainLock T (reached by linkage) and at most 8 below it: when it is
-  //    newer, ask for a ChainLock at its height; when older (a lagging node), take another node's list once
+  //    newer, ask for a ChainLock at its height; when older (a lagging node), take another node's list once. The list this session
+  //    proved last serves while T keeps it inside that rule (it is proven against the new chain again below); else one is downloaded.
   t = Date.now();
-  let raw = await smlP;
-  let smlProof = proveSml(raw.decoded);
-  ms.smlProof = Date.now() - t;
+  const reuse = !!kept && kept.proof.height <= got.proof.state.height && kept.proof.height >= got.proof.state.height - SIGN_HEIGHT_OFFSET;
+  let raw = reuse ? kept.raw : await download();
+  let smlProof = reuse ? kept.proof : proveSml(raw.decoded);
+  if (reuse) ms.smlReused = 1;
+  else ms.smlProof = Date.now() - t;
   for (let tries = 0, refetched = false; ;) {
     if (got.proof.state.height < smlProof.height) {
       const asked = got.source ? [got.source] : sources;
@@ -269,6 +278,7 @@ export async function anchorByProof(
   const above = async (h: number) => { if (h > linked.hi) throw new VerificationError('sml', `block ${h} is above the proven ChainLock (${linked.hi})`); };
   const sml = await proveAgainstChain(d, linked, raw, hash, above, o, ms, smlProof);
   lap('sml', t);
+  const proven = reuse ? kept : { raw, proof: smlProof, at: Date.now() };
 
   // 6. T's ChainLock against Core's quorum selection over the proven list. The list is itself proven through T, so this is a
   //    consistency check of the selection, not a second root of trust. Every base block should be in the linked run; one a node had
@@ -300,6 +310,7 @@ export async function anchorByProof(
     sml, at: Date.now(),
     stats: { cachedHeaders: cached, fetchedHeaders: fetched, ms: { ...ms, total: Date.now() - t0 } },
   };
+  st.sml = proven;
   if (!keepStored && o.proofStore) {
     // the run ends at the proven ChainLock, or (a source served an older one) still at the saved one, whose state and lock go with it
     const atProven = linked.hi === top.height;

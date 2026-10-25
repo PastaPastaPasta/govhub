@@ -35,6 +35,8 @@ export { CHECKPOINTS, DGW_WINDOW, HeaderChain, POW_SECURE, WORK_FLOOR_FACTOR } f
 export type { Checkpoint, HeaderRun, StoredChain } from './headerchain.ts';
 export { LinkedChain } from './linkedchain.ts';
 export type { StoredLinkedChain, VerifiedChain } from './linkedchain.ts';
+export type { StoredPinned } from './pinned.ts';
+export type { PinTable } from './quorumpins.ts';
 export { MAX_PROOF_BYTES, ProofSourceError, QUORUM_CHECKPOINTS, QuorumProofError, bridgeProofSource, quorumListProofSource } from './quorumproof.ts';
 export type { ProofRequest, ProofSource, ProofState, QuorumProofErrorKind, VerifiedQuorumProof } from './quorumproof.ts';
 export { POW_PARAMS, checkProofOfWork, compactToTarget, darkGravityWave, medianTimePast, nextWorkRequired, targetToCompact } from './pow.ts';

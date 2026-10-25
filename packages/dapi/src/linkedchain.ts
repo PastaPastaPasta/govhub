@@ -18,6 +18,8 @@ export interface VerifiedChain {
   hashHexAt(height: number): string | null;
   /** The verified 80-byte header at `height` if it was fetched in this session. */
   rawAt(height: number): Uint8Array | null;
+  /** For a verified height below `lo`: the pinned block (QUORUM_PINS) its hash links up to. */
+  pinOf?(height: number): { height: number; hash: string } | null;
 }
 
 /** Serializable state of a LinkedChain, for a cache (IndexedDB). */

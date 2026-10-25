@@ -148,8 +148,9 @@ masternode and quorum roots its coinbase commits to.
 2. **List.** The masternode list from DAPI must be from a block S with T - 8 <= S <= T. When the list is newer than T, the same source is asked again
    for a proof with minimum height S, up to 4 times, 2.5 s apart.
 3. **Headers.** From T down to S, to the ChainLock quorums' base blocks (T - 602 on testnet, T - 1,188 on mainnet) and to any older block of
-   interest, by **hash linkage only**: each header's X11 hash is the next one's prevHash, ending at T's hash (`src/linkedchain.ts`). A ChainLock is
-   final, so no work, difficulty or time rule is needed.
+   interest above the quorum checkpoint, by **hash linkage only**: each header's X11 hash is the next one's prevHash, ending at T's hash
+   (`src/linkedchain.ts`). A ChainLock is final, so no work, difficulty or time rule is needed. An older block at or below the checkpoint is reached
+   through a pinned hash instead (next section).
 4. **SML** proven against S's coinbase, exactly as on the proof-of-work path.
 5. **Selection check.** T's signature is checked against the quorum Core's `SelectQuorumForSigning` picks from the proven list (`exact` as below).
    The list is itself proven through T, so this is a consistency check, not a second root of trust: T rests on the proof alone. A quorum base
@@ -189,6 +190,33 @@ Trust assumptions of this path:
 Timings (2026-10-24, testnet, 30-31 KB proof from 1,560,000 with 37-39 links): public quorum list server 1.5 s on a relay cache miss (CT 185's v24 dashd
 7.7 s cold, 0.7 s warm), 62 ms on a hit; verifying 250 ms in Node and in the browser worker, WASM instantiation included. Delta from a stored state:
 1.7 KB, 40-70 ms fetch, 13-22 ms verify. Mainnet (9.6 KB, 10 links from 2,550,000): 80 ms verify. Whole anchor in headless Chromium: 1.1 s cold, 0.9 s warm.
+
+### Old blocks through pinned hashes
+
+A proposal's collateral can be months deep: walking down from the ChainLock meant every header in between (130,649 headers, ~10 MB, for one
+proposal eight months old). `QUORUM_PINS` (`src/quorumpins.ts`) pins block hashes **below** the quorum checkpoint: every 2,000 blocks for 400,000
+blocks, plus every mainnet superblock in that range (a payment check reads their coinbases). A block of interest at or below the checkpoint is
+then verified with the headers from it up to the next pin above it, at most 2,000, which must hash-link to the pinned hash (`src/pinned.ts`).
+Runs are kept (`pinStore`; IndexedDB `pins:<network>` in the web app, newest 100,000 heights) and extended down within their pin's interval, so a
+deeper block under the same pin costs only the headers below what is held; a pinned height itself (a superblock) costs none.
+
+- **No new trust.** Every pin is an ancestor of the pinned quorum checkpoint block, whose hash fixes all of its ancestors through prevHash links;
+  the table only saves the client from walking that linkage itself. `scripts/quorum-pins.mjs` derives it that way: it downloads every header from
+  the lowest pin up to the checkpoint over DAPI (400,001 headers per network), checks the linkage up to the checkpoint's pinned hash
+  (`LinkedChain.fromTop`), reads the pins from that verified run, checks the run against the proof-of-work header checkpoint where it covers it,
+  and cross-checks every pin against two independent sources (mainnet: insight.dash.org and chainz.cryptoid.info; testnet:
+  insight.testnet.networks.dash.org and getBlock by height from DAPI nodes). `--check` re-derives the table and fails on any difference.
+- **What a node can do:** withhold headers (the block stays unverified), never substitute them: a run that does not link to the pin is refused
+  and refetched elsewhere, and a run that disagrees with the ChainLocked run where both have a block fails the anchor closed.
+- **Reach:** a block more than 5,000 blocks below the lowest pin has none in reach and falls back to the walk down from the ChainLock, under the
+  400,000-block limit ("too old to verify here"). Above the checkpoint there are no pins: blocks between it and the ChainLock run are reached by
+  extending that run down, as before, and the run is stored.
+- **Later (not built):** a bridge could serve a newer table; a client should accept only pins at or below its own built-in checkpoint, each
+  checked against linkage to it, so a bridge could add coverage but never trust.
+
+Within one session the masternode list proven by the last anchor serves the next one again (no ~1.4 MB download) while the new ChainLock T keeps
+its block S inside the rule every list must meet, `T - 8 <= S <= T`; it is proven against the new chain again. A result itself is still reused
+for one minute only.
 
 ### Anchored chain
 
