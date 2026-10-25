@@ -543,6 +543,12 @@ describe('QA fixes (D-044 .. D-047)', () => {
     const err = await createJob(t.deps, [], votingKey().wif, proTx(), h, { issuer, mode: 'standard' }).catch((e: Error) => e.message);
     expect(err).toMatch(new RegExp(`current epoch, ${E - 1}`));
     expect(err).toMatch(/Private may work now/);
+    const { availabilityText } = await import('./BadgePage.tsx');
+    const text = availabilityText(av, 'test', P)!;
+    expect(text).toMatch(/Standard is not available yet/);
+    expect(text).toMatch(new RegExp(`first key is for epoch ${E}`));
+    expect(text).toMatch(/Private works now/);
+    expect(text).toMatch(/posted without that check/); // the first key epoch has no earlier count (no crowd check)
     // no key at all in reach
     const none = await checkKeyAvailability(setup().deps.issuerKey, issuer, 'testnet', h);
     expect(none.firstKeyEpoch).toBeNull();

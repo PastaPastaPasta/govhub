@@ -47,7 +47,7 @@ export const MODES: Record<PrivacyMode, { label: string; summary: string }> = {
 };
 
 /** The job only moves while the app is open and the same identity is signed in with the same key (D-081). */
-const ADVANCES_WHEN = 'It moves on only while govhub is open in this browser and you are signed in as this identity with the same sign-in key.';
+const ADVANCES_WHEN = 'A badge request moves on only while govhub is open in this browser and you are signed in as this identity with the same sign-in key.';
 
 function requestedText(job: BadgeJob, p: EpochParams, coreHeight: number | null): string {
   if (job.mode !== 'standard') return `Scheduled: the request for epoch ${job.epoch} goes out at a random time, around ${eta(job.requestAt, coreHeight)}. ${ADVANCES_WHEN}`;
@@ -73,13 +73,18 @@ function modeBlocked(av: KeyAvailability | null, m: PrivacyMode): string | null 
 export function availabilityText(av: KeyAvailability, issuerName: string, p: EpochParams): string | null {
   const std = av.modes.find((m) => m.mode === 'standard');
   const priv = av.modes.find((m) => m.mode === 'private');
-  if (std?.ok && priv?.ok) return null;
+  // the issuer's first key epoch has no earlier token count, so the client posts a private badge for it without the crowd check
+  const noCrowd =
+    priv?.ok && av.firstKeyEpoch === priv.epoch
+      ? ` Epoch ${priv.epoch} is ${issuerName}’s first, so there is no earlier token count to check the crowd against: a Private badge for it is posted without that check and may stand out among few others.`
+      : '';
+  if (std?.ok && priv?.ok) return noCrowd ? noCrowd.trim() : null;
   const first = av.firstKeyEpoch;
   const firstText =
     first === null
       ? `${issuerName} has published no key for the next few epochs.`
       : `${issuerName}’s first key is for epoch ${first}, which starts at ${eta(epochStart(p, first), av.height)}.`;
-  if (std && !std.ok && priv?.ok) return `Standard is not available yet: ${issuerName} has no key for the current epoch, ${std.epoch} (${std.problem}). ${firstText} Private works now: it asks for a token for epoch ${priv.epoch}, and the badge appears early in that epoch.`;
+  if (std && !std.ok && priv?.ok) return `Standard is not available yet: ${issuerName} has no key for the current epoch, ${std.epoch} (${std.problem}). ${firstText} Private works now: it asks for a token for epoch ${priv.epoch}, and the badge appears early in that epoch.${noCrowd}`;
   if (std?.ok && priv && !priv.ok) return `Private and Extra private are not available yet: ${issuerName} has no key for epoch ${priv.epoch} (${priv.problem}). Standard works now.`;
   return `No badge can be requested from ${issuerName} right now: it has no key for epoch ${std?.epoch ?? '?'} or ${priv?.epoch ?? '?'}. ${firstText}`;
 }

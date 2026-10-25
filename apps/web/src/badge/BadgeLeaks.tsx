@@ -42,7 +42,8 @@ export function ModeDetails({ mode, net }: { mode: PrivacyMode; net: CoreNetwork
         The token is for the next epoch, requested at a random time during this one, and the badge is posted at a random time within about the first {span(p.graceBlocks)}{' '}
         of the next epoch, so every private token exists before any of those badges appear. That makes it harder for the issuer to match the badge to your masternode by
         timing, not impossible: the badge hides only among the others who chose a private mode with the same issuer (the issuer knows who they are). The app posts it only
-        if the issuer reported at least {minSet} tokens for the epoch before. That count is the issuer’s own and includes Standard tokens (the report cannot tell them
+        if the issuer reported at least {minSet} tokens for the epoch before; for an issuer’s first epoch there is no earlier count, and the badge is posted without
+        this check. That count is the issuer’s own and includes Standard tokens (the report cannot tell them
         apart), so the private crowd can be smaller than it says. A badge that appears for the first time, or stops, can still be matched to a masternode that started or
         stopped asking at the same time when few others did. A request waits for half an hour without Platform writes from this browser, and posts wait half an hour after
         a request. A badge appears up to about one epoch plus {span(p.graceBlocks)} after you ask (an epoch is about {span(epochLength(p))}).
