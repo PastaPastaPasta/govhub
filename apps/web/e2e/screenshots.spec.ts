@@ -183,6 +183,7 @@ test.describe('extra', () => {
     await context.route(/^https?:\/\/(?!localhost[:/])/, (r) => r.abort());
     await page.goto('/settings?fixtures=0');
     await page.locator('.profile-switch label', { hasText: 'Testnet' }).click();
+    await page.getByRole('button', { name: 'Switch to Testnet' }).click();
     await page.goto('/');
     await expect(page.getByTestId('backend-notice')).toBeVisible();
     await shoot(page, 'testnet-setup-light-desktop', false);

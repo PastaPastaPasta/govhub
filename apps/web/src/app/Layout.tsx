@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { customFields, PROFILES, resolveConfigParam, type Registry } from '../config/registry.ts';
+import { configParamUrl, PROFILES, registryDiff, registryRows, resolveConfigParam, saveErrorText, type Registry } from '../config/registry.ts';
 import { useAuth } from '../auth/context.tsx';
 import { SessionControl } from '../ui/SignIn.tsx';
 import { ChainShield } from '../ui/trust/ChainShield.tsx';
@@ -11,83 +11,179 @@ const AuthSheet = lazy(() => import('../auth/AuthSheet.tsx').then((m) => ({ defa
 
 function LazyAuthSheet() {
   const { sheet } = useAuth();
-  return sheet ? (
+  // Once loaded it stays mounted: unmounting the open <dialog> skipped close(), and focus fell to <body> instead of going back.
+  const [loaded, setLoaded] = useState(false);
+  if (sheet && !loaded) setLoaded(true);
+  return sheet || loaded ? (
     <Suspense fallback={null}>
       <AuthSheet />
     </Suspense>
   ) : null;
 }
 
-/** `?config=` in the URL: show what it would change and let the user apply or dismiss it. */
+/**
+ * Whether govhub is shown inside another page's frame. GitHub Pages cannot send frame-ancestors / X-Frame-Options, so a page
+ * could frame a `?config=` link and trick a click on "Use these settings"; such a link is then only offered in its own tab.
+ */
+export function isFramed(): boolean {
+  try {
+    return window.top !== window.self;
+  } catch {
+    return true; // a cross-origin parent can make even the comparison throw
+  }
+}
+
+/**
+ * `?config=` in the URL: show what it would change and let the user apply or dismiss it. Inline (base64url) settings are read at
+ * once; a URL is fetched only after the user agrees, since the request alone tells that host who opened the link.
+ */
 function ConfigOffer() {
-  const { setRegistry } = useApp();
+  const { registry, setRegistry } = useApp();
   const loc = useLocation();
   const nav = useNavigate();
-  const [offer, setOffer] = useState<{ registry: Registry; errors: string[] } | null>(null);
   const param = new URLSearchParams(loc.search).get('config');
+  const url = param ? configParamUrl(param) : null;
+  const [framed] = useState(isFramed);
+  const [offer, setOffer] = useState<{ param: string; registry: Registry; errors: string[] } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const load = (p: string) => {
+    setLoading(true);
+    resolveConfigParam(p)
+      .then((o) => setOffer({ param: p, ...o }))
+      .finally(() => setLoading(false));
+  };
   useEffect(() => {
-    if (param) resolveConfigParam(param).then(setOffer);
-  }, [param]);
-  if (!param || !offer) return null;
+    setSaveError(null);
+    if (param && !framed && !configParamUrl(param)) load(param);
+  }, [param, framed]);
+  if (!param) return null;
   const clear = () => {
     const sp = new URLSearchParams(loc.search);
     sp.delete('config');
     nav({ pathname: loc.pathname, search: sp.toString() }, { replace: true });
     setOffer(null);
   };
+  if (framed) {
+    return (
+      <div className="banner banner-config" role="alert" data-testid="config-framed">
+        <p>
+          <b>This link carries endpoint settings, but govhub is shown inside another page here.</b> Settings are never changed from inside a frame.{' '}
+          <a href={location.href} target="_blank" rel="noopener noreferrer">
+            Open govhub in its own tab
+          </a>{' '}
+          to review them.
+        </p>
+      </div>
+    );
+  }
+  const current = offer?.param === param ? offer : null;
+  if (!current) {
+    if (!url) return null; // inline settings: shown once read (no network)
+    return (
+      <div className="banner banner-config" role="alertdialog" aria-labelledby="cfg-title" data-testid="config-offer">
+        <p id="cfg-title">
+          <b>This link points to endpoint settings in a file at {url.host}.</b> govhub has not contacted that host. Loading the file shows the settings
+          before anything changes; the request tells {url.host} that you opened this link.
+        </p>
+        <div className="banner-actions">
+          <button type="button" className="btn" disabled={loading} onClick={() => load(param)}>
+            {loading ? `Loading from ${url.host}…` : `Load settings from ${url.host}`}
+          </button>
+          <button type="button" className="btn btn-quiet" onClick={clear}>
+            Ignore this link
+          </button>
+        </div>
+      </div>
+    );
+  }
+  const diff = current.errors.length ? [] : registryDiff(registry, current.registry);
   return (
-    <div className="banner banner-config" role="alertdialog" aria-labelledby="cfg-title">
+    <div className="banner banner-config" role="alertdialog" aria-labelledby="cfg-title" data-testid="config-offer">
       <p id="cfg-title">
         <b>This link carries endpoint settings.</b>{' '}
-        {offer.errors.length ? `They can't be used: ${offer.errors.join('; ')}.` : 'Check every host before using them: a bridge or DAPI node you do not trust can report false numbers.'}
+        {current.errors.length
+          ? `They can't be used: ${current.errors.join('; ')}.`
+          : diff.length
+            ? `Using them changes ${diff.length === 1 ? 'one setting' : `${diff.length} settings`}; everything else stays as it is. Check every host: a bridge or DAPI node you do not trust can report false numbers.`
+            : 'They are the settings you already use: nothing would change.'}
       </p>
-      {!offer.errors.length && <ConfigSummary r={offer.registry} />}
+      {diff.length > 0 && (
+        <dl className="config-summary" data-testid="config-diff">
+          {diff.map((d) => (
+            <div key={d.label}>
+              <dt>{d.label}</dt>
+              <dd className="break">
+                <span className="small muted">Now:</span> {d.now}
+                <br />
+                <span className="small muted">From the link:</span> <b>{d.offered}</b>
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {!current.errors.length && (
+        // every other setting too, hosts included: what the user would be running on, not only what moves
+        <details className="config-unchanged">
+          <summary className="small">{diff.length ? 'Settings that stay the same' : 'The settings'}</summary>
+          <dl className="config-summary">
+            {registryRows(current.registry)
+              .filter(([k]) => !diff.some((d) => d.label === k))
+              .map(([k, v]) => (
+                <div key={k}>
+                  <dt>{k}</dt>
+                  <dd className="break">{v}</dd>
+                </div>
+              ))}
+          </dl>
+        </details>
+      )}
+      {saveError && <p className="error" role="alert">{saveError}</p>}
       <div className="banner-actions">
-        {!offer.errors.length && (
+        {diff.length > 0 && (
           <button
             type="button"
             className="btn btn-primary"
             onClick={() => {
-              setRegistry(offer.registry);
-              clear();
+              try {
+                setRegistry(current.registry);
+                clear();
+              } catch (e) {
+                setSaveError(saveErrorText(e));
+              }
             }}
           >
             Use these settings
           </button>
         )}
         <button type="button" className="btn" onClick={clear}>
-          Keep my settings
+          {diff.length > 0 ? 'Keep my settings' : 'Close'}
         </button>
       </div>
     </div>
   );
 }
 
-function ConfigSummary({ r }: { r: Registry }) {
-  const rows: Array<[string, string]> = [
-    ['Profile', `${PROFILES[r.profile].title}${customFields(r).size ? ' (with custom overrides)' : ''}`],
-    ['Networks', `Core ${r.coreNetwork}, Platform ${r.platformNetwork}`],
-    ['Governance contract', r.govContractId],
-    ['DAPI nodes', r.dapi.source === 'manual' ? r.dapi.nodes.join(', ') : `from ${r.dapi.quorumUrl}`],
-    ['Platform', `${r.platform.trusted ? 'trusted quorum keys' : 'untrusted mode'}${r.platform.addresses.length ? `, nodes ${r.platform.addresses.join(', ')}` : ', SDK default nodes'}`],
-    ['Bridges', r.bridges.map((b) => `${b.name} (${b.httpBase}${b.enabled ? '' : ', off'})`).join(', ') || 'none'],
-    ['Relays', r.relays.map((x) => x.url).join(', ') || 'none'],
-    ['Price feed', r.priceFeed?.url ?? 'none'],
-    ['Accounts service', r.accounts?.url ?? 'none'],
-    ['Faucet', r.faucet?.url ?? 'none'],
-    ['Forum contracts', `forum ${r.forum.contractId}, mod ${r.forum.modContractId}`],
-    ['Default block list', `${r.forum.moderationName} (${r.forum.moderationIdentityId})`],
-    ['Claim portals', r.forum.claimPortals.join(', ') || 'none'],
-  ];
+/** Saved settings that failed validation: the app runs on the defaults, and says so instead of silently showing another profile. */
+function SettingsProblem() {
+  const { settingsProblem, dismissSettingsProblem, registry } = useApp();
+  if (!settingsProblem) return null;
+  const shown = settingsProblem.slice(0, 3).join('; ') + (settingsProblem.length > 3 ? `; and ${settingsProblem.length - 3} more` : '');
   return (
-    <dl className="config-summary">
-      {rows.map(([k, v]) => (
-        <div key={k}>
-          <dt>{k}</dt>
-          <dd className="break">{v}</dd>
-        </div>
-      ))}
-    </dl>
+    <div className="banner banner-empty" role="alert" data-testid="settings-problem">
+      <p>
+        <b>Your saved settings could not be used:</b> {shown}. govhub shows the {PROFILES[registry.profile].label} profile's defaults instead; your saved settings
+        stay in this browser until you save new ones.
+      </p>
+      <div className="banner-actions">
+        <Link className="btn" to="/settings">
+          Open Settings
+        </Link>
+        <button type="button" className="btn btn-quiet" onClick={dismissSettingsProblem}>
+          Dismiss
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -177,6 +273,7 @@ export function Layout() {
       </header>
       <LazyAuthSheet />
       <ConfigOffer />
+      <SettingsProblem />
       <ModeBanner />
       <main id="main" className="main">
         <Outlet />

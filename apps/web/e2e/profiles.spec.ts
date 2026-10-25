@@ -74,6 +74,9 @@ test.describe('network profiles', () => {
 
     await page.locator('.profile-switch label', { hasText: 'Testnet' }).click();
     await expect(page.getByRole('radio', { name: 'Testnet' })).toBeChecked();
+    // picking is not switching: the switch waits for the confirmation (D-058)
+    await expect(label).toContainText('Dev: mainnet data on testnet Platform');
+    await page.getByRole('button', { name: 'Switch to Testnet' }).click();
     await expect(label).toContainText('Testnet');
     await expect(label).not.toContainText('Dev');
     await expect(page.getByTestId('profile-description')).toContainText('Core testnet, Platform testnet');

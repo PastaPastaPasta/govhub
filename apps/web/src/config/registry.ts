@@ -460,23 +460,49 @@ function expand(o: Record<string, unknown>): unknown {
 
 /**
  * Saved settings, or the defaults. Version 1 settings (the legacy key) are migrated once: saved under the new key, the old one
- * removed. Settings that do not validate fall back to the defaults rather than half-applying.
+ * removed. Settings that do not validate fall back to the defaults rather than half-applying, and `errors` says why, so the app
+ * can tell the user instead of silently showing another profile. They stay saved until the user saves new ones.
  */
-export function loadRegistry(storage: Store | undefined = globalThis.localStorage): Registry {
+export function loadSavedRegistry(storage: Store | undefined = globalThis.localStorage): { registry: Registry; errors: string[] } {
+  let raw: string | null | undefined;
+  let legacy: string | null | undefined;
   try {
-    const raw = storage?.getItem(STORAGE_KEY);
-    const legacy = raw ? null : storage?.getItem(LEGACY_STORAGE_KEY);
-    if (!raw && !legacy) return defaultRegistry();
+    raw = storage?.getItem(STORAGE_KEY);
+    legacy = raw ? null : storage?.getItem(LEGACY_STORAGE_KEY);
+  } catch {
+    return { registry: defaultRegistry(), errors: [] }; // storage blocked: nothing was saved that could be wrong
+  }
+  if (!raw && !legacy) return { registry: defaultRegistry(), errors: [] };
+  try {
     const { registry, errors } = parseRegistry(expand(JSON.parse((raw ?? legacy)!) as Record<string, unknown>));
-    if (errors.length) return defaultRegistry();
+    if (errors.length) return { registry: defaultRegistry(), errors };
     if (legacy) {
       saveRegistry(registry, storage);
       storage?.removeItem(LEGACY_STORAGE_KEY);
     }
-    return registry;
-  } catch {
-    return defaultRegistry();
+    return { registry, errors: [] };
+  } catch (e) {
+    return { registry: defaultRegistry(), errors: [`they could not be read (${(e as Error).message})`] };
   }
+}
+
+export const loadRegistry = (storage: Store | undefined = globalThis.localStorage): Registry => loadSavedRegistry(storage).registry;
+
+/** What a failed save says: a full storage quota is not a problem with the settings themselves. */
+export function saveErrorText(e: unknown): string {
+  const name = (e as { name?: unknown } | null)?.name;
+  if (name === 'QuotaExceededError' || name === 'NS_ERROR_DOM_QUOTA_REACHED') return "Not saved: this browser's storage for govhub is full. Clear some site data and try again.";
+  return `Not saved: ${(e as Error)?.message ?? String(e)}`;
+}
+
+/** The largest settings file Import accepts. An export is a few KB; anything near this size is not govhub settings. */
+export const MAX_IMPORT_BYTES = 64 * 1024;
+
+/** Why an import of `bytes` is refused before it is read, or null. */
+export function importSizeError(bytes: number): string | null {
+  if (bytes <= MAX_IMPORT_BYTES) return null;
+  const size = bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.ceil(bytes / 1024)} KB`;
+  return `Too large to be govhub settings: ${size} (the limit is ${MAX_IMPORT_BYTES / 1024} KB). Nothing was imported.`;
 }
 
 export function saveRegistry(r: Registry, storage: Pick<Storage, 'setItem'> | undefined = globalThis.localStorage): void {
@@ -503,14 +529,64 @@ export function textToB64url(s: string): string {
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-/** Share link for a registry: the current origin + `?config=<base64url JSON>`. */
-export function shareLink(r: Registry, origin: string): string {
-  return `${origin}/?config=${textToB64url(JSON.stringify(r))}`;
+/**
+ * Share link for a registry: the app's own URL (origin and base path, e.g. https://gov.dashhq.org/ or
+ * https://example.github.io/govhub/) + `?config=<base64url JSON>`.
+ */
+export function shareLink(r: Registry, appUrl: string): string {
+  return `${appUrl.replace(/\/*$/, '/')}?config=${textToB64url(JSON.stringify(r))}`;
+}
+
+/**
+ * The host a `?config=` value would be fetched from, or null for inline (base64url) settings. Such a file is fetched only after
+ * the user agrees: the request alone tells that host who opened the link, and when.
+ */
+export function configParamUrl(value: string): URL | null {
+  if (!/^https:\/\//.test(value)) return null;
+  try {
+    return new URL(value);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Every setting as [label, text], each host, contract and identity included: what a `?config=` offer is compared by. A setting
+ * missing here could be changed by a link without the user seeing it.
+ */
+export function registryRows(r: Registry): Array<[string, string]> {
+  const list = (xs: string[]) => xs.join('; ') || 'none';
+  return [
+    ['Profile', PROFILES[r.profile].title],
+    ['Networks', `Core ${r.coreNetwork}, Platform ${r.platformNetwork}`],
+    ['Governance contract', r.govContractId || 'none'],
+    // both lists, even the one not in use: switching the source in Settings later would use it
+    ['DAPI nodes', `from ${r.dapi.source === 'manual' ? 'my own nodes' : 'the quorum service'}; quorum service ${r.dapi.quorumUrl || 'none'}; my own nodes ${list(r.dapi.nodes)}`],
+    ['Platform', `${r.platform.trusted ? 'trusted quorum keys' : 'untrusted mode'}, ${r.platform.addresses.length ? `nodes ${list(r.platform.addresses)}` : 'SDK default nodes'}`],
+    ['Bridges', list(r.bridges.map((b) => `${b.name} ${b.httpBase} (contract ${b.govContractId || 'any'}, identity ${b.bridgeIdentityId || 'none'}${b.enabled ? '' : ', off'})`))],
+    ['Relays', list(r.relays.map((x) => `${x.name} ${x.url}`))],
+    ['Quorum proof sources', list(r.quorumProofs.map((q) => `${q.name} ${q.url} (${q.kind})`))],
+    ['Price feed', r.priceFeed ? `${r.priceFeed.name} ${r.priceFeed.url}` : 'none'],
+    ['Accounts service', r.accounts ? `${r.accounts.name} ${r.accounts.url}` : 'none'],
+    ['Faucet', r.faucet ? `${r.faucet.name} ${r.faucet.url}` : 'none'],
+    ['Forum contracts', `forum ${r.forum.contractId || 'none'}, mod ${r.forum.modContractId || 'none'}`],
+    ['Default block list', `${r.forum.moderationName} (${r.forum.moderationIdentityId || 'none'})`],
+    ['Claim portals', list(r.forum.claimPortals)],
+  ];
+}
+
+/** The settings a `?config=` offer would change, each with its current and offered value; the rest stay as they are. */
+export function registryDiff(current: Registry, offered: Registry): Array<{ label: string; now: string; offered: string }> {
+  const now = new Map(registryRows(current));
+  return registryRows(offered)
+    .filter(([k, v]) => now.get(k) !== v)
+    .map(([label, v]) => ({ label, now: now.get(label) ?? 'none', offered: v }));
 }
 
 /**
  * Resolves a `?config=` value: an https URL to fetch, or base64url JSON. The result is NOT applied:
- * the UI asks the user first, because a link could point them at a lying bridge.
+ * the UI asks the user first, because a link could point them at a lying bridge. A URL is resolved only once the user has
+ * agreed to fetch it (configParamUrl).
  */
 export async function resolveConfigParam(value: string, fetcher: typeof fetch = fetch): Promise<{ registry: Registry; errors: string[] }> {
   let json: unknown;
