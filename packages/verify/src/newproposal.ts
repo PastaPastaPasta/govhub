@@ -241,7 +241,30 @@ const FIELD_OF: Array<[RegExp, NewProposalField]> = [
   [/^url/, 'url'],
   [/start_epoch|end_epoch|expired/, 'schedule'],
 ];
-const coreIssue = (message: string): NewProposalIssue => ({ field: FIELD_OF.find(([re]) => re.test(message))?.[1] ?? 'data', message, rule: 'core' });
+const ADDRESS_START: Record<Network, string> = { mainnet: 'X (7 for a multisig address)', testnet: 'y (8 or 9 for a multisig address)', devnet: 'y (8 or 9 for a multisig address)', regtest: 'y (8 or 9 for a multisig address)' };
+
+/** Why `address` cannot be paid on `network`, in words for the person typing it (Core only says "payment_address is invalid"). */
+export function paymentAddressProblem(address: string, network: Network): string {
+  const other: Network = network === 'mainnet' ? 'testnet' : 'mainnet';
+  if (decodeAddress(address, other)) return `This is a ${other} address; ${network} needs an address that starts with ${ADDRESS_START[network]}.`;
+  return `This is not a valid ${network} Dash address (check it for typos). ${network[0]!.toUpperCase()}${network.slice(1)} addresses start with ${ADDRESS_START[network]}.`;
+}
+
+/**
+ * A Core rule message in the wizard's words where the raw text misleads: Core calls a zero amount "negative", and says only "invalid"
+ * for an address from the other network. `address` is what the user typed.
+ */
+function plainCore(message: string, network: Network, address: string): string {
+  if (message === 'payment_amount is negative') return 'The amount must be more than 0.';
+  if (message === 'payment_address is invalid') return paymentAddressProblem(address, network);
+  return message;
+}
+
+const coreIssue = (message: string, i: Pick<NewProposalInput, 'network' | 'paymentAddress'>): NewProposalIssue => ({
+  field: FIELD_OF.find(([re]) => re.test(message))?.[1] ?? 'data',
+  message: plainCore(message, i.network, i.paymentAddress),
+  rule: 'core',
+});
 
 /**
  * Everything that decides whether a new proposal is accepted by `gobject prepare`/`submit` and can be paid. Core's own rules are checked
@@ -260,7 +283,7 @@ export function checkNewProposal(i: NewProposalInput): NewProposalCheck {
     endEpoch: i.endEpoch,
     url: i.url,
   };
-  errors.push(...validateProposal(fields, i.network, { now: i.now }).errors.map(coreIssue));
+  errors.push(...validateProposal(fields, i.network, { now: i.now }).errors.map((m) => coreIssue(m, i)));
   if (i.paymentDuffs > 0n && !amount.payable) {
     errors.push({ field: 'paymentAmount', rule: 'payment', message: `Core's payout code reads this amount as ${amount.text}, not exactly the amount entered: use at most 8 decimals and fewer significant digits` });
   }
@@ -281,7 +304,7 @@ export function checkNewProposal(i: NewProposalInput): NewProposalCheck {
     return { errors: [{ field: 'paymentAmount', rule: 'core', message: m }] };
   }
   const v = validateProposalData(dataHex, i.network, { now: i.now });
-  if (!v.valid) return { errors: v.errors.map(coreIssue) };
+  if (!v.valid) return { errors: v.errors.map((m) => coreIssue(m, i)) };
   return { errors: [], dataHex, fields, dataBytes: dataHex.length / 2 };
 }
 

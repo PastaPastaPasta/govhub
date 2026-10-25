@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildProposalDataHex, checkCollateralTx, checkNewProposal, collateralScript, dashToDuffs, duffsToDash, governanceObjectHash, gobjectPrepareCommand, gobjectSubmitCommand,
   hexToBytes, isCollateralChangeAddress, lockProposal, parsePaymentAmount, parseProposalData, paymentAmountNumber, proposalSchedule, Reader, superblockPaymentsLimit,
-  upcomingSuperblocks, validateProposalData, GOVERNANCE_FUDGE_WINDOW_S, SUPERBLOCK_EST_BLOCK_SECONDS,
+  encodeAddress, paymentAddressProblem, upcomingSuperblocks, validateProposalData, GOVERNANCE_FUDGE_WINDOW_S, SUPERBLOCK_EST_BLOCK_SECONDS,
 } from '../src/index.ts';
 
 // services/bridge/test/fixtures/mainnet-objects.json: 28 raw governance objects as mainnet Core serialized them (ZMQ rawgovernanceobject).
@@ -203,5 +203,30 @@ describe('checkNewProposal', () => {
     expect(isCollateralChangeAddress('XdWkmFKNosQvS1iPdof7SVme5Gd2GDsa62', 'mainnet')).toBe(true);
     expect(isCollateralChangeAddress('7gnwGHt17heGpG9Crfeh4KGpYNFugPhJdh', 'mainnet')).toBe(false);
     expect(isCollateralChangeAddress('XdWkmFKNosQvS1iPdof7SVme5Gd2GDsa62', 'testnet')).toBe(false);
+  });
+});
+
+describe('F7: wizard messages say what is wrong in plain words', () => {
+  const base = () => {
+    const now = 1_800_000_000;
+    return { network: 'testnet' as const, name: 'plain-words', paymentAddress: encodeAddress('p2pkh', new Uint8Array(20).fill(7), 'testnet'), paymentDuffs: 1_000_000_000n, url: 'https://gov.dashhq.org/p/x/plain-words', startEpoch: now, endEpoch: now + 30 * 86400, now };
+  };
+  it('a zero amount must be more than 0, not "negative"', () => {
+    const c = checkNewProposal({ ...base(), paymentDuffs: 0n });
+    const issue = c.errors.find((e) => e.field === 'paymentAmount')!;
+    expect(issue.message).toBe('The amount must be more than 0.');
+    expect(JSON.stringify(c.errors)).not.toMatch(/negative/);
+  });
+  it('a mainnet address on testnet (and the reverse) says which network it belongs to', () => {
+    const main = encodeAddress('p2pkh', new Uint8Array(20).fill(7), 'mainnet');
+    const t = checkNewProposal({ ...base(), paymentAddress: main }).errors.find((e) => e.field === 'paymentAddress')!;
+    expect(t.message).toBe('This is a mainnet address; testnet needs an address that starts with y (8 or 9 for a multisig address).');
+    const m = checkNewProposal({ ...base(), network: 'mainnet', paymentAddress: encodeAddress('p2sh', new Uint8Array(20).fill(7), 'testnet') }).errors.find((e) => e.field === 'paymentAddress')!;
+    expect(m.message).toBe('This is a testnet address; mainnet needs an address that starts with X (7 for a multisig address).');
+  });
+  it('an address that is on neither network is a typo, not a network mix-up', () => {
+    const e = checkNewProposal({ ...base(), paymentAddress: `${encodeAddress('p2pkh', new Uint8Array(20).fill(7), 'testnet').slice(0, -1)}1` }).errors.find((x) => x.field === 'paymentAddress')!;
+    expect(e.message).toMatch(/^This is not a valid testnet Dash address \(check it for typos\)\. Testnet addresses start with y/);
+    expect(paymentAddressProblem('', 'mainnet')).toMatch(/not a valid mainnet/);
   });
 });

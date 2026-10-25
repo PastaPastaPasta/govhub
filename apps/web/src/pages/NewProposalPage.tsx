@@ -6,6 +6,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { formatDateTime, shortHash } from '../lib/format.ts';
+import { superblockPhrase } from '../lib/governance.ts';
 import { CostSummary, DetailsStep, PaymentsStep, ReviewStep, usePlan, type EditProps } from '../proposal/EditSteps.tsx';
 import { BackupError, draftStage, draftStore, mergeDraft, newDraft, readBackup, type DraftInputs, type ProposalDraft } from '../proposal/draft.ts';
 import { PayStep } from '../proposal/PayStep.tsx';
@@ -59,7 +60,7 @@ export function NewProposalPage() {
 const STAGE_TEXT = { edit: 'Being written', pay: 'Fee not paid yet', submit: 'Paid; being submitted', done: 'Live' } as const;
 
 function Start({ drafts, demo, onOpen, onNew, onRestored }: { drafts: ProposalDraft[]; demo: boolean; onOpen(d: ProposalDraft): void; onNew(): void; onRestored(d: ProposalDraft): void }) {
-  const { source } = useApp();
+  const { source, params } = useApp();
   const fileRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const restore = async (f: File) => {
@@ -74,12 +75,12 @@ function Start({ drafts, demo, onOpen, onNew, onRestored }: { drafts: ProposalDr
   return (
     <section className="page-narrow pw" aria-labelledby="pw-title" data-testid="p-start">
       <h1 id="pw-title">Create a proposal</h1>
-      <p className="pw-lede">Ask the Dash treasury to fund your work. Masternodes vote on proposals; those with enough yes votes are paid at each monthly superblock.</p>
+      <p className="pw-lede">Ask the Dash treasury to fund your work. Masternodes vote on proposals; those with enough yes votes are paid at each {superblockPhrase(params)}.</p>
       {demo && <p className="notice-box small">Demo data: payments and the relay are simulated, nothing is sent anywhere.</p>}
       <CostSummary />
       <ol className="pw-overview small">
         <li>Describe it: a short name, the address that gets paid, a link to the full description.</li>
-        <li>Choose the amount and how many monthly payments.</li>
+        <li>Choose the amount and how many payments (one at each superblock).</li>
         <li>Review it against Dash Core's rules.</li>
         <li>Save a backup, then pay the fee from any wallet or from Dash Core.</li>
         <li>govhub submits it once the payment has 6 confirmations (about 15 minutes).</li>
