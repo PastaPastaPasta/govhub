@@ -8,8 +8,8 @@ import { HttpBridge, type Bridge } from './bridge.ts';
 import { cacheGet, cachePut } from './cache.ts';
 import { createWebDapi, dapiConfig } from './dapi.ts';
 import { loadFixtures } from './fixtures.ts';
-import { docToCycle, docToProposal, docToTally, queryDocs } from './platform.ts';
-import { activeProposals, latestCycles, pastProposals, proposalByHash, proposalsByName, talliesFor, PAGE } from './queries.ts';
+import { docToCycle, docToProposal, docToTally, docToTallySet, govDocTypes, queryDocs, type DocsResult } from './platform.ts';
+import { activeProposals, latestCycles, pastProposals, proposalByHash, proposalsByName, talliesFor, tallySetPages, PAGE } from './queries.ts';
 import type { BridgeDescriptor, DapiDescriptor } from '../verify/protocol.ts';
 import type { CoreNetwork, Cycle, Proposal, Provenance, Sourced, Tally } from './types.ts';
 
@@ -42,7 +42,10 @@ export interface DataSource {
   pastPage(cursor?: string): Promise<Page>;
   proposal(govHash: string): Promise<Sourced<Proposal> | null>;
   byName(name: string): Promise<Sourced<Proposal>[]>;
-  /** Platform tallies (proof) for these proposals. */
+  /**
+   * Platform tallies (proof) for these proposals: the packed `talliesSet` entry (active proposals) or the per-proposal `tally`
+   * document (ended proposals, and every tally on older testnet contracts), whichever is newer; the packed one on a tie.
+   */
   tallies(govHashes: readonly string[]): Promise<Map<string, Sourced<Tally>>>;
   /** Live tallies from the first reachable bridge (reported). Empty without a bridge. */
   bridgeTallies(): Promise<Map<string, Sourced<Tally>>>;
@@ -281,14 +284,34 @@ export function liveSource(registry: Registry): DataSource {
     },
 
     async tallies(hashes) {
+      const uniq = [...new Set(hashes.map((h) => h.toLowerCase()))];
+      if (!uniq.length) return new Map();
+      const packed = async (): Promise<Sourced<Tally>[]> => {
+        if (!(await govDocTypes(registry)).has('talliesSet')) return [];
+        const r = await queryDocs(registry, tallySetPages());
+        return r.docs.flatMap((d) => {
+          try {
+            const set = docToTallySet(d);
+            const prov = proof(r.height, `tally as of Core block ${formatInt(set.asOfHeight)}, packed tally set page ${set.page}`);
+            return set.tallies.map((t) => ({ value: t, prov }));
+          } catch (e) {
+            // a page that does not decode carries no tally at all: its proposals read as "no tally published"
+            console.warn('talliesSet page does not decode', e);
+            return [];
+          }
+        });
+      };
+      const single = async (): Promise<Sourced<Tally>[]> => {
+        const pages: DocsResult[] = [];
+        for (let i = 0; i < uniq.length; i += PAGE) pages.push(await queryDocs(registry, talliesFor(uniq.slice(i, i + PAGE))));
+        return pages.flatMap((r) => r.docs.map(docToTally).map((t) => ({ value: t, prov: proof(r.height, `tally as of Core block ${formatInt(t.asOfHeight)}`) })));
+      };
+      const [fromSet, fromDocs] = await Promise.all([packed(), single()]);
+      const want = new Set(uniq);
       const out = new Map<string, Sourced<Tally>>();
-      const uniq = [...new Set(hashes)];
-      for (let i = 0; i < uniq.length; i += PAGE) {
-        const r = await queryDocs(registry, talliesFor(uniq.slice(i, i + PAGE)));
-        for (const d of r.docs) {
-          const t = docToTally(d);
-          out.set(t.govHash, { value: t, prov: proof(r.height, `tally as of Core block ${formatInt(t.asOfHeight)}`) });
-        }
+      for (const t of [...fromSet, ...fromDocs]) {
+        const cur = out.get(t.value.govHash);
+        if (want.has(t.value.govHash) && (!cur || t.value.asOfHeight > cur.value.asOfHeight)) out.set(t.value.govHash, t);
       }
       return out;
     },

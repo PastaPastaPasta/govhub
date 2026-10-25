@@ -1,7 +1,10 @@
 // Platform reads through evo-sdk 5.x, always the proof-verifying variants. The SDK is a ~9 MB
 // gzipped chunk (WASM inlined), so it is imported lazily: preloadSdk() is called after first paint.
+import { decodeTallySet, parseProposalData, TALLY_SET_FIELDS } from '@govhub/verify';
+import { base64 } from '@scure/base';
 import type { Registry } from '../config/registry.ts';
 import { b64ToHex } from '../lib/bytes.ts';
+import { DUFFS_PER_DASH } from '../lib/format.ts';
 import { GOV_SCHEMAS } from './queries.ts';
 import { assertQuery, type ContractSchemas, type DocQuery } from '@govhub/contracts-v1/queryLint';
 import type { Cycle, Proposal, Tally } from './types.ts';
@@ -64,6 +67,26 @@ export async function queryContract(r: Registry, contractId: string, schemas: Co
 /** A gov-contract query. */
 export const queryDocs = (r: Registry, q: DocQuery): Promise<DocsResult> => queryContract(r, r.govContractId, GOV_SCHEMAS, q);
 
+const docTypes = new Map<string, Promise<Set<string>>>();
+
+/**
+ * The document types of the profile's gov contract (proved read, once per contract): `talliesSet` exists on mainnet gov.json and on
+ * a testnet contract after its update, not on older ones, which are then read through per-proposal tallies only.
+ */
+export function govDocTypes(r: Registry): Promise<Set<string>> {
+  const key = JSON.stringify([sdkKey(r), r.govContractId]);
+  let p = docTypes.get(key);
+  if (!p) {
+    p = (async () => {
+      const c = await (await getSdk(r)).contracts.fetch(r.govContractId);
+      return new Set(Object.keys(c?.schemas ?? {}));
+    })();
+    docTypes.set(key, p);
+    p.catch(() => docTypes.delete(key));
+  }
+  return p;
+}
+
 // ---- document JSON -> domain ------------------------------------------------------------------
 const num = (d: Record<string, unknown>, k: string): number => {
   const v = d[k];
@@ -78,18 +101,27 @@ const s = (d: Record<string, unknown>, k: string): string => {
 };
 const hex = (d: Record<string, unknown>, k: string) => b64ToHex(s(d, k));
 
+/**
+ * A `proposal` document. The slim shape (mainnet gov.json) stores only the hashed fields plus the indexed name and endEpoch: url,
+ * payment address and amount and start come from dataHex (Core's parser). The full shape (older testnet contracts) is read as
+ * stored, so the content check still compares every stored field with the hashed data. When dataHex does not parse, the derived
+ * fields are empty and that check fails the proposal.
+ */
 export function docToProposal(d: Record<string, unknown>): Proposal {
+  const dataHex = s(d, 'dataHex');
+  const full = 'url' in d;
+  const f = full ? null : parseProposalData(dataHex).fields;
   return {
     govHash: hex(d, 'govHash'),
     parentHash: hex(d, 'parentHash'),
     revision: num(d, 'revision'),
     time: num(d, 'time'),
-    dataHex: s(d, 'dataHex'),
+    dataHex,
     name: s(d, 'name'),
-    url: s(d, 'url'),
-    paymentAddress: s(d, 'paymentAddress'),
-    paymentAmount: num(d, 'paymentAmount'),
-    startEpoch: num(d, 'startEpoch'),
+    url: full ? s(d, 'url') : (f?.url ?? ''),
+    paymentAddress: full ? s(d, 'paymentAddress') : (f?.paymentAddress ?? ''),
+    paymentAmount: full ? num(d, 'paymentAmount') : f ? Math.round(f.paymentAmount * DUFFS_PER_DASH) : 0,
+    startEpoch: full ? num(d, 'startEpoch') : (f?.startEpoch ?? 0),
     endEpoch: num(d, 'endEpoch'),
     collateralTxid: hex(d, 'collateralTxid'),
     collateralHeight: num(d, 'collateralHeight'),
@@ -113,6 +145,13 @@ export function docToTally(d: Record<string, unknown>): Tally {
     inNextBudget: d.inNextBudget === true,
     margin: num(d, 'margin'),
   };
+}
+
+/** One `talliesSet` page: every entry becomes a Tally at the page's asOfHeight. Throws when the packed bytes do not decode. */
+export function docToTallySet(d: Record<string, unknown>): { page: number; asOfHeight: number; tallies: Tally[] } {
+  const asOfHeight = num(d, 'asOfHeight');
+  const fields = TALLY_SET_FIELDS.map((k) => (d[k] === undefined ? undefined : base64.decode(s(d, k))));
+  return { page: num(d, 'page'), asOfHeight, tallies: decodeTallySet(fields).map((e) => ({ ...e, asOfHeight })) };
 }
 
 export function docToCycle(d: Record<string, unknown>): Cycle {
