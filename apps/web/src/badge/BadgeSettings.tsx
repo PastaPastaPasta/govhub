@@ -50,7 +50,7 @@ function useAudits(): Audits {
  * A key that is there but must not be trusted (revoked, or not the issuer's / not well-formed), as opposed to one that is missing or
  * not usable for this period yet (for example published after the reader's deadline): those read as "not issuing yet".
  */
-const INVALID_KEY = /revoked|mismatch|not the trusted issuer|variant|keyId|spki|malformed|revocation/i;
+const INVALID_KEY = /revoked|more than one|mismatch|not the trusted issuer|variant|keyId|spki|malformed|revocation/i;
 
 /** Whether the issuer issues badges now, in plain words; a revoked or invalid key is named, never hidden. */
 export function issuingText(av: KeyAvailability, p: EpochParams): string {
