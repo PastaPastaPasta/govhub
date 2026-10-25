@@ -439,6 +439,22 @@ describe('vote verification against the fixture bridge (synthetic voters)', () =
     expect(voteVerdict([run(r, tally.asOfHeight)]).level).toBe('excluded');
   });
 
+  it('a type lie in the bridge list cannot be passed off as "excluded votes" by adding one junk vote: still a mismatch', () => {
+    // review finding: ten yes voters listed as evonodes (weight 4), plus one vote from an outpoint not in any list, and a tally
+    // inflated by the type lie. The junk vote is excluded but is not one the tally counts, so it must not explain the difference.
+    const yesVoters = new Set(votes.filter((v) => v.outcome === 1).slice(0, 10).map((v) => `${v.collateralTxid}-${v.collateralIndex}`));
+    const lying = mns.map((m) => (yesVoters.has(`${m.collateralTxid}-${m.collateralIndex}`) ? { ...m, type: 'evo' as const } : m));
+    const junk = { collateralTxid: '00'.repeat(32), collateralIndex: 0, signal: 1, outcome: 1, time: snap.now - 60, sig: 'AAAA' } as BridgeVote;
+    const asListed = check({ masternodes: lying, targets: [] });
+    const inflated = { ...tally, yesWeighted: asListed.weighted.yes };
+    expect(inflated.yesWeighted).toBe(95 + 30);
+    const r = check({ votes: [...votes, junk], masternodes: lying, sml: smlOf(mns), proReg: proRegOf(mns), targets: [{ name: PLATFORM_TARGET, tally: inflated }] });
+    expect(r.excluded).toBe(1);
+    expect(r.listDiffers).toBe(10);
+    expect(r.targets[0]).toMatchObject({ matches: false, servedMatches: false });
+    expect(voteVerdict([run(r, tally.asOfHeight)]).level).toBe('mismatch');
+  });
+
   it('a bridge that maps an outpoint to another masternode, or misstates a type, is caught by the ProRegTx', () => {
     const sml = new Map(mns.map((m) => [m.proTxHash, { votingAddress: m.votingAddress, isValid: true, nType: 0, typeProven: false }]));
     const reg = proRegOf(mns);

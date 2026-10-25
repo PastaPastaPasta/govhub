@@ -152,7 +152,7 @@ describe('no linkable logs (bridge API)', () => {
     expect((await hit('qp core down', call(failApp, `/v1/quorum-proof?checkpoint=${cp(4)}`))).status).toBe(502);
     expect((await hit('qp core down', call(failApp, `/v1/quorum-proof?checkpoint=${cp(5)}&height=${SECRET_HEIGHT}`))).status).toBe(502);
     expect((await hit('qp garbage', call(garbageApp, `/v1/quorum-proof?checkpoint=${cp(5)}`))).status).toBe(502);
-    
+
     // ---- the archive fails mid-request: server.ts logs on its error path
     for (const path of ['/v1/status', `/v1/proposals/${KNOWN_HASH}`, `/v1/proposals/${KNOWN_HASH}/votes`, `/v1/proposals/${KNOWN_HASH}/votes?height=${SECRET_HEIGHT}`, '/v1/proposals?state=all', `/v1/mnlist/${SECRET_HEIGHT}`]) {
       expect((await hit('500', call(brokenApp, path))).status, path).toBe(500);

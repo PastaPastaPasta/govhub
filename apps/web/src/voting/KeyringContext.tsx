@@ -181,8 +181,9 @@ const HEALTH_TTL_MS = 60_000;
 /** Watchdog: fast while something is about to change, slower otherwise; each quiet tick stretches the wait (up to x4). */
 const TICK_FAST_MS = 4000;
 const TICK_SLOW_MS = 20_000;
-/** Other configured bridges asked whether they also show a vote the first bridge reports. */
+/** Other configured bridges asked whether they also show a vote the first bridge reports, and how long each answer may take. */
 const MAX_CORROBORATING_BRIDGES = 2;
+const CORROBORATE_TIMEOUT_MS = 5000;
 /**
  * Deferred batches: random delays (so a relay does not see the batch as one burst) that still respect the same pacing: after the
  * first ten requests, at least IMMEDIATE_PACE_MS apart. Returned in submission order's terms (index i = vote i).
@@ -326,7 +327,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
   const bridge = useMemo<Bridge | null>(() => (sim ? sim.bridge : bridgeEndpoint ? new HttpBridge(bridgeEndpoint.name, bridgeEndpoint.httpBase) : null), [sim, bridgeEndpoint?.name, bridgeEndpoint?.httpBase]);
   // Other configured bridges: asked only whether they show a vote the first bridge reports, so the status can say who else agrees.
   const otherBridgesKey = sim ? '' : JSON.stringify(enabledBridges(registry).slice(1, 1 + MAX_CORROBORATING_BRIDGES).map((b) => [b.name, b.httpBase]));
-  const otherBridges = useMemo<Bridge[]>(() => (otherBridgesKey ? (JSON.parse(otherBridgesKey) as Array<[string, string]>).map(([name, base]) => new HttpBridge(name, base)) : []), [otherBridgesKey]);
+  const otherBridges = useMemo<Bridge[]>(() => (otherBridgesKey ? (JSON.parse(otherBridgesKey) as Array<[string, string]>).map(([name, base]) => new HttpBridge(name, base, CORROBORATE_TIMEOUT_MS)) : []), [otherBridgesKey]);
   const dapi = useMemo(() => (mode === 'live' ? createWebDapi(dapiConfig(registry)) : null), [registry, mode]);
   const lookupDeps = useMemo<LookupDeps | null>(
     () =>
@@ -1360,18 +1361,15 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       // a second bridge run by another operator is the one independent check here short of your own node.)
       const elsewhere = new Map<string, Map<string, CurrentVote>>();
       const confirmedHashes = new Set(open.filter((v) => v.status === 'confirmed' || bridgeVerdict(v, current.get(currentKey(v, v.govHash)), watchedRef.current)?.status === 'confirmed').map((v) => v.govHash));
-      for (const other of otherBridges) {
-        const seen = new Map<string, CurrentVote>();
-        for (const h of confirmedHashes) {
-          if (open.every((v) => v.govHash !== h || v.alsoSeenBy?.includes(other.name))) continue;
-          try {
-            currentIn(await other.votes(h), h, seen);
-          } catch {
-            /* unreachable, or no tally there: no claim either way */
-          }
-        }
-        elsewhere.set(other.name, seen);
-      }
+      await Promise.all(
+        otherBridges.map(async (other) => {
+          const seen = new Map<string, CurrentVote>();
+          elsewhere.set(other.name, seen);
+          const ask = [...confirmedHashes].filter((h) => open.some((v) => v.govHash === h && !v.alsoSeenBy?.includes(other.name)));
+          const sets = await Promise.all(ask.map((h) => other.votes(h).then((vs) => [h, vs] as const, () => null))); // unreachable or no tally there: no claim
+          for (const x of sets) if (x) currentIn(x[1], x[0], seen);
+        }),
+      );
       const updates: WatchedVote[] = [];
       const newlySeen: string[] = [];
       const from = new Map(open.map((v) => [v.voteHash, v]));

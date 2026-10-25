@@ -250,7 +250,7 @@ async function ranking(req: Extract<WorkerRequest, { kind: 'ranking' }>, bridge:
       const r = verifyVotes({ govHash: p.govHash, votes: votes.votes, masternodes: list.masternodes, network: req.network, now: req.now, targets: tally ? [{ name: BRIDGE_TARGET, tally }] : [], sml: entries, proReg });
       const matches = !!tally && r.targets[0]!.matches;
       const bad = Object.entries(r.problems).filter(([, n]) => n > 0).map(([k, n]) => `${n} ${k.replace(/-/g, ' ')}`);
-      const problem = a.weak ? `not secure: ${a.weak}` : r.keysFrom !== 'sml' ? `not every vote proven (${bad.join(', ') || 'keys'})` : !tally ? `no published tally at block ${votes.tallyHeight}` : !matches ? 'the recount differs from the published tally' : null;
+      const problem = a.weak ? `not secure: ${a.weak}` : r.keysFrom !== 'sml' ? (bad.length ? `not every vote proven (${bad.join(', ')})` : `the bridge's masternode list differs from the proven one for ${r.listDiffers} voters`) : !tally ? `no published tally at block ${votes.tallyHeight}` : !matches ? 'the recount differs from the published tally' : null;
       recounts.push({ ...base, absYes: r.weighted.yes - r.weighted.no, proven: problem === null, ...(problem ? { problem } : {}) });
     } catch (e) {
       recounts.push({ ...base, absYes: 0, proven: false, problem: `not recounted: ${(e as Error).message}` });

@@ -54,6 +54,6 @@ export function tallyProvenance(shown: { name: string; prov: Provenance; tally: 
       : more('recount matches, but the voting keys are as the bridge reports them');
   }
   if (!comparable(run, target)) return more(`votes are as of block ${run.votesAsOf}, this tally as of block ${target.asOfHeight}`);
-  if (target.servedMatches) return more(`it counts votes this browser couldn't prove: ${excludedText(r) ?? 'keys as the bridge lists them'}`);
+  if (target.servedMatches) return more(`it counts votes this browser couldn't prove: ${excludedText(r)}`);
   return { kind: 'mismatch', source: src, detail: target.compare.filter((c) => !c.ok).map((c) => c.field).join(', ') };
 }

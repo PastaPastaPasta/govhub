@@ -84,9 +84,10 @@ export interface TargetResult {
   compare: FieldCompare[];
   matches: boolean;
   /**
-   * `matches`, or votes were excluded and the tally equals the count of every vote the bridge served whose signature recovers to the
-   * key the bridge lists, with the bridge's weights (the excluded ones included). Then the difference is exactly what was excluded:
-   * the tally counts votes this browser couldn't prove. When this is false too, the tally and the votes contradict each other.
+   * `matches`, or the tally equals the count made here plus the excluded votes whose signature recovers to the key the bridge lists
+   * (at the bridge's weight), there is at least one such vote, and the bridge's list agrees with the proven key and type of every
+   * counted voter. Then the difference is exactly those excluded votes: the tally counts votes this browser couldn't prove. When
+   * this is false too, the tally and the votes contradict each other.
    */
   servedMatches: boolean;
 }
@@ -182,20 +183,19 @@ export function verifyVotes(input: VoteCheckInput): VoteCheckResult {
     byOutpoint.set(op, { ...mn, keyId: dec && dec.type === 'p2pkh' ? dec.hash160 : null, duplicate });
   }
 
-  // The weight maps cover the whole MN list, PoSe-banned masternodes included (Core's CountMatchingVotes uses GetMNByCollateral, not
+  // Weights cover the whole MN list, PoSe-banned masternodes included (Core's CountMatchingVotes uses GetMNByCollateral, not
   // GetValidMNByCollateral: object.cpp:888, vote.cpp:231). Ambiguous entries get no weight, so their votes are never counted.
-  // `served`: the bridge's list as it states it (to tell a tally that counts unproven votes from one that contradicts its votes).
-  // `proven`: each counted masternode's weight from its proven type.
-  const servedWeights = new Map<string, number>();
-  for (const [op, mn] of byOutpoint) if (!mn.duplicate) servedWeights.set(op, weightOf(mn.type));
-  const provenWeights = new Map<string, number>();
-
-  const served: TallyVote[] = [];
+  // `counted` at the proven weights is the count made here. `explained` adds the excluded votes that verify under the bridge's key,
+  // at the bridge's weight: a tally equal to that counts exactly the votes this browser couldn't prove, and is not a contradiction.
   const counted: TallyVote[] = [];
+  const countedWeights = new Map<string, number>();
+  const explained: TallyVote[] = [];
+  const explainedWeights = new Map<string, number>();
   let smlChecked = 0;
   let otherSignal = 0;
   let collateralProven = 0;
-  let listDiffers = 0;
+  const listDiffers = new Set<string>();
+  let explainedServed = 0;
   for (const v of input.votes) {
     const outpoint = normalizeMnId(`${v.collateralTxid}-${v.collateralIndex}`);
     if (v.signal !== VOTE_SIGNAL.FUNDING) {
@@ -214,14 +214,23 @@ export function verifyVotes(input: VoteCheckInput): VoteCheckResult {
     const fields = { collateralTxid: v.collateralTxid, collateralIndex: v.collateralIndex, govHashDisplay: input.govHash, signal: v.signal, outcome: v.outcome, time: v.time };
     const tv: TallyVote = { mn: outpoint, outcome: v.outcome, time: v.time };
     const servedOk = verifyVoteSignature(v.sig, fields, mn.keyId, input.network);
-    if (servedOk) served.push(tv);
+    const count = (weight: number) => {
+      counted.push(tv);
+      countedWeights.set(outpoint, weight);
+      explained.push(tv);
+      explainedWeights.set(outpoint, weight);
+    };
+    const excludeProven = (problem: VoteProblem, detail: string) => {
+      exclude(outpoint, problem, detail);
+      if (!servedOk) return;
+      explainedServed++;
+      explained.push(tv);
+      explainedWeights.set(outpoint, weightOf(mn.type));
+    };
     if (!input.sml) {
       // No proven list: the count is the bridge's list, labelled so (keysFrom 'bridge').
-      if (!servedOk) exclude(outpoint, 'bad-signature', `does not recover to ${mn.votingAddress}`);
-      else {
-        counted.push(tv);
-        provenWeights.set(outpoint, servedWeights.get(outpoint)!);
-      }
+      if (servedOk) count(weightOf(mn.type));
+      else exclude(outpoint, 'bad-signature', `does not recover to ${mn.votingAddress}`);
       continue;
     }
     // With a proven list, only proven facts count. The list is the CURRENT one (DAPI serves no other), the tally is as of an older
@@ -231,33 +240,32 @@ export function verifyVotes(input: VoteCheckInput): VoteCheckResult {
     const proTx = mn.proTxHash.toLowerCase();
     const e = input.sml.get(proTx);
     if (!e) {
-      exclude(outpoint, 'not-in-proven-list', `proTxHash ${proTx.slice(0, 12)}… is not in the proven masternode list (left since, or made up)`);
+      excludeProven('not-in-proven-list', `proTxHash ${proTx.slice(0, 12)}… is not in the proven masternode list (left since, or made up)`);
       continue;
     }
     const reg = input.proReg?.get(proTx);
     if (!reg || normalizeMnId(`${reg.collateral.txid}-${reg.collateral.index}`) !== outpoint) {
-      exclude(outpoint, 'unproven-registration', reg ? "the outpoint is not this masternode's collateral in its ProRegTx" : 'its registration (ProRegTx) could not be checked');
+      excludeProven('unproven-registration', reg ? "the outpoint is not this masternode's collateral in its ProRegTx" : 'its registration (ProRegTx) could not be checked');
       continue;
     }
     // A version-1 entry's type is not covered by the list's hash; the ProRegTx's always is. Both, where both speak, must agree.
     if (e.typeProven && e.nType !== reg.type) {
-      exclude(outpoint, 'unproven-registration', "the proven list and the ProRegTx disagree on the masternode's type");
+      excludeProven('unproven-registration', "the proven list and the ProRegTx disagree on the masternode's type");
       continue;
     }
     const provenKey = decodeAddress(e.votingAddress, input.network);
     if (!provenKey || provenKey.type !== 'p2pkh' || !verifyVoteSignature(v.sig, fields, provenKey.hash160, input.network)) {
-      exclude(outpoint, servedOk ? 'unproven-key' : 'bad-signature', servedOk ? `signed by ${mn.votingAddress}, but the proven list gives this masternode ${e.votingAddress}` : `does not recover to ${e.votingAddress}`);
+      excludeProven(servedOk ? 'unproven-key' : 'bad-signature', servedOk ? `signed by ${mn.votingAddress}, but the proven list gives this masternode ${e.votingAddress}` : `does not recover to ${e.votingAddress}`);
       continue;
     }
     collateralProven++;
-    if (mn.votingAddress !== e.votingAddress || (mn.type === 'evo') !== (reg.type === 1)) listDiffers++;
-    counted.push(tv);
-    provenWeights.set(outpoint, reg.type === 1 ? EVONODE_WEIGHT : REGULAR_MN_WEIGHT);
+    if (mn.votingAddress !== e.votingAddress || (mn.type === 'evo') !== (reg.type === 1)) listDiffers.add(outpoint);
+    count(reg.type === 1 ? EVONODE_WEIGHT : REGULAR_MN_WEIGHT);
   }
 
   // The same counting function the bridge publishes its tally with (@govhub/verify countVotes).
-  const t = countVotes(counted, provenWeights, { now: input.now });
-  const all = countVotes(served, servedWeights, { now: input.now });
+  const t = countVotes(counted, countedWeights, { now: input.now });
+  const all = explainedServed > 0 && listDiffers.size === 0 ? countVotes(explained, explainedWeights, { now: input.now }) : null;
   const excluded = Object.values(problems).reduce((a, b) => a + b, 0);
   return {
     total: input.votes.length,
@@ -273,14 +281,14 @@ export function verifyVotes(input: VoteCheckInput): VoteCheckResult {
     // Keys, types and collateral of every counted vote proven (the proven list for keys, the ProRegTxs for collateral and type),
     // nothing excluded (an excluded vote is one the tally may count, so the count here could be missing what it stood for), and the
     // bridge's list agreeing with the proven facts (a bridge that misstates them is not one to vouch for).
-    keysFrom: input.sml && input.proReg && excluded === 0 && listDiffers === 0 ? 'sml' : 'bridge',
-    listDiffers,
+    keysFrom: input.sml && input.proReg && excluded === 0 && listDiffers.size === 0 ? 'sml' : 'bridge',
+    listDiffers: listDiffers.size,
     smlChecked,
     collateralProven,
     targets: input.targets.map((target) => {
       const compare = compareWith(target.tally, t.weighted, t.unweighted, t.voteSetHash);
       const matches = compare.every((c) => c.ok);
-      const servedMatches = matches || (excluded > 0 && compareWith(target.tally, all.weighted, all.unweighted, all.voteSetHash).every((c) => c.ok));
+      const servedMatches = matches || (!!all && compareWith(target.tally, all.weighted, all.unweighted, all.voteSetHash).every((c) => c.ok));
       return { name: target.name, asOfHeight: target.tally.asOfHeight, compare, matches, servedMatches };
     }),
   };
