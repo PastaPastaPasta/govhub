@@ -23,17 +23,20 @@ export class KeyringLock {
   }
 }
 
+type MnRef = Pick<OwnedMasternode, 'collateralTxid' | 'collateralIndex'>;
+/** Our masternode with this collateral, if any. */
+export const ownerOf = (owned: readonly OwnedMasternode[], m: MnRef): OwnedMasternode | undefined => owned.find((x) => mnId(x) === mnId(m));
+
 /**
  * Copies of the voting keys one cast needs (D-029): a lock (button or idle) during the cast wipes the keyring's keys, but the cast
  * still cancels the held votes AND signs the new ones with these. `wipe()` as soon as the votes are signed.
  */
 export function castKeys(keys: readonly Pick<VotingKeyEntry, 'privateKey' | 'compressed'>[], owned: readonly OwnedMasternode[]) {
   const copies = keys.map((x) => ({ privateKey: x.privateKey.slice(), compressed: x.compressed }));
-  const ownerOf = (m: { collateralTxid: string; collateralIndex: number }) => owned.find((x) => mnId(x) === mnId(m));
   return {
-    ownerOf,
-    keyOf: (m: { collateralTxid: string; collateralIndex: number }) => {
-      const o = ownerOf(m);
+    ownerOf: (m: MnRef) => ownerOf(owned, m),
+    keyOf: (m: MnRef) => {
+      const o = ownerOf(owned, m);
       return o ? copies[o.keyIndex] : undefined;
     },
     wipe: () => copies.forEach((x) => x.privateKey.fill(0)),

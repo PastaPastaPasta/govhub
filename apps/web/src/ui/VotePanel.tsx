@@ -407,7 +407,6 @@ export function OfflineSign({ proposal }: { proposal: Proposal }) {
   const [mns, setMns] = useState<Array<BridgeMasternode & { time: number; releaseAt: number; hourRule: boolean }> | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [sigs, setSigs] = useState<Record<string, string>>({});
-  const [askedAt, setAskedAt] = useState(0);
   const find = async () => {
     setErr(null);
     setMns(null);
@@ -422,7 +421,6 @@ export function OfflineSign({ proposal }: { proposal: Proposal }) {
       // the masternodes' current votes on this proposal (the bridge's set; 404 = none yet): Core's one-change-per-hour rule
       const votes = list.length ? await bridge.votes(proposal.govHash).catch((e) => (e instanceof BridgeError && e.status === 404 ? null : Promise.reject(e))) : null;
       const now = Math.floor(Date.now() / 1000);
-      setAskedAt(now);
       setMns(
         list.map((m) => {
           const cur = votes?.votes.filter((v) => v.signal === 1 && mnId(v) === mnId(m)).sort((a, b) => b.time - a.time)[0];
@@ -493,7 +491,7 @@ export function OfflineSign({ proposal }: { proposal: Proposal }) {
             )}
             <div className="form-actions">
               <input value={sigs[m.proTxHash] ?? ''} onChange={(e) => setSigs({ ...sigs, [m.proTxHash]: e.target.value })} placeholder="signature (base64)" aria-label="Signature" className="mono-ish vinput" data-testid="offline-sig" />
-              <button type="button" className="btn" onClick={() => void submit(m)} disabled={!k.relays.length || held.length > 0 || !askedAt}>
+              <button type="button" className="btn" onClick={() => void submit(m)} disabled={!k.relays.length || held.length > 0}>
                 Send
               </button>
             </div>

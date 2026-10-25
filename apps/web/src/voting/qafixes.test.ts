@@ -1,6 +1,6 @@
 // Regression tests for the keyring and voting fixes of the QA pass (DEFECT-LEDGER D-004 … D-071, fix group F2).
 import { readFileSync } from 'node:fs';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { localRecordKey, type PendingVote } from '@govhub/auth';
 import { bytesToHex, decodeAddress, encodeWif, hexToBytes, recoverVoteSigner, signVote, voteSignatureHash } from '@govhub/verify';
 import { endSession, onSessionEnd } from '../session/end.ts';
@@ -11,10 +11,10 @@ import { clearStash, stashPasskeyUnlock, takeStash } from './stash.ts';
 import { keyRole, matchMasternodes, parseVotingKey, PROTX_FETCH, proveCollaterals, type OwnedMasternode } from './masternodes.ts';
 import { loadWatchedSealed, mergeWatched, needsRebroadcast, pendingBackup, saveWatchedSealed, toPending, fromPending, type WatchedVote } from './pending.ts';
 import { mnId, offlineSigningRequest, offlineVoteTime, signPlanned, voteFields, voterawCommand } from './plan.ts';
-import { RelayClient, RelayError, type RelayVoteState } from './relay.ts';
+import { parseRelayState, RelayError, type RelayVoteState } from './relay.ts';
 import type { RelayPort } from './sim.ts';
 import { applyRelayState, describeVote, relaySummary, VOTE_NOW_DELAY_TEXT } from './status.ts';
-import { SAFE_RESUBMIT_S, withdrawVote, type WithdrawDeps } from './withdraw.ts';
+import { withdrawVote, type WithdrawDeps } from './withdraw.ts';
 
 const priv = hexToBytes('33'.repeat(32));
 const mn = { proTxHash: 'aa'.repeat(32), collateralTxid: 'bb'.repeat(32), collateralIndex: 3 };
@@ -42,18 +42,21 @@ const state = (v: WatchedVote, over: Partial<RelayVoteState> = {}): RelayVoteSta
   nextAttemptAt: v.releaseAt,
   holdReason: 'release-time',
   sameAsCurrent: false,
+  maybeSent: false,
   ...over,
 });
 
-/** A relay holding votes by hash; `byHash: false` = a relay without the by-hash endpoint. */
-function fakeRelay(o: { byHash?: boolean } = {}) {
+/** A relay holding votes, idempotent by vote hash. `lose`: answers time out (it still stores); `refuse`: it refuses new votes. */
+function fakeRelay(o: { lose?: boolean; refuse?: boolean } = {}) {
   const held = new Map<string, RelayVoteState>();
   const calls: string[] = [];
   const port: RelayPort = {
     submit: async (v) => {
       calls.push('submit');
+      if (o.refuse && !held.has(v.voteHash)) throw new RelayError('the masternode is PoSe-banned', 409, 'mn-banned');
       const st = held.get(v.voteHash) ?? { ...state(v as WatchedVote), id: v.voteHash.slice(0, 32) };
       held.set(v.voteHash, st);
+      if (o.lose) throw new RelayError('relay x unreachable: signal timed out');
       return st;
     },
     status: async (id) => {
@@ -69,21 +72,12 @@ function fakeRelay(o: { byHash?: boolean } = {}) {
       return 'cancelled';
     },
     health: async () => ({ ok: true, checkedAt: 0 }),
-    ...(o.byHash === false
-      ? {}
-      : {
-          byHash: async (h: string) => {
-            calls.push('byHash');
-            return held.get(h) ?? null;
-          },
-        }),
   };
   return { port, held, calls };
 }
-const deps = (relays: Record<string, RelayPort>, now = NOW): WithdrawDeps => ({ relayFor: (u) => relays[u]!, network: 'testnet', cancelSig: () => 'sig', now: () => now });
+const deps = (relays: Record<string, RelayPort>): WithdrawDeps => ({ relayFor: (u) => relays[u]!, network: 'testnet', cancelSig: () => 'sig' });
 
 describe('D-004 / D-025: sign-out wipes synchronously', () => {
-  afterEach(() => vi.restoreAllMocks());
   it('session-end hooks run synchronously, all of them, even when one throws', () => {
     const key = new Uint8Array(32).fill(7);
     const order: string[] = [];
@@ -154,74 +148,64 @@ describe('D-005: a vote a relay may hold is reconciled, not silently dropped', (
     const plain = vote({ signedAt: NOW }, 2, NOW + 900);
     expect(mergeWatched([plain], [yes]).find((x) => x.voteHash === plain.voteHash)!.status).toBe('dropped');
   });
-  it('finds it at the relay by vote hash and cancels it there', async () => {
+  it('posts it again to learn its id at the relay (idempotent by vote hash), then cancels it there', async () => {
     const r = fakeRelay();
     const lost = vote({ maybeAt: [R1], releaseAt: NOW + 900 }, 2, NOW + 900);
     await r.port.submit(lost, 'testnet'); // the relay stored it; its answer never arrived
+    r.calls.length = 0;
     const out = await withdrawVote(lost, deps({ [R1]: r.port }));
     expect(out.result).toBe('cancelled');
+    expect(r.calls.slice(0, 2)).toEqual(['submit', 'cancel']);
     expect(out.vote.refs.map((x) => x.relay)).toEqual([R1]);
     expect(out.vote.maybeAt).toBeUndefined();
     expect(r.held.get(lost.voteHash)!.status).toBe('cancelled');
   });
-  it('a relay that answers "not here" means it never got it ("gone"); no cancel is sent', async () => {
+  it('a relay that never got it takes it now and it is cancelled at once; one that refuses it never held it ("gone")', async () => {
     const r = fakeRelay();
-    const out = await withdrawVote(vote({ maybeAt: [R1] }), deps({ [R1]: r.port }));
-    expect(out.result).toBe('gone');
-    expect(r.calls).toEqual(['byHash']);
+    const v = vote({ maybeAt: [R1] });
+    expect((await withdrawVote(v, deps({ [R1]: r.port }))).result).toBe('cancelled');
+    expect(r.held.get(v.voteHash)!.status).toBe('cancelled');
+    const refusing = fakeRelay({ refuse: true });
+    const g = await withdrawVote(vote({ maybeAt: [R1] }), deps({ [R1]: refusing.port }));
+    expect(g.result).toBe('gone');
+    expect(refusing.calls).toEqual(['submit']);
   });
-  it('without the by-hash endpoint: a vote released far ahead is re-sent for its id and cancelled; one due soon stays unknown', async () => {
-    const far = fakeRelay({ byHash: false });
-    const v = vote({ maybeAt: [R1], releaseAt: NOW + SAFE_RESUBMIT_S + 60 }, 2, NOW + 3600);
-    await far.port.submit(v, 'testnet');
-    far.calls.length = 0;
-    const a = await withdrawVote(v, deps({ [R1]: far.port }));
-    expect(a.result).toBe('cancelled');
-    expect(far.calls.slice(0, 2)).toEqual(['submit', 'cancel']);
-    const soon = fakeRelay({ byHash: false });
-    const b = await withdrawVote(vote({ maybeAt: [R1], releaseAt: NOW + 10 }), deps({ [R1]: soon.port }));
+  it('a relay whose answers keep getting lost leaves it "unknown" (never "dropped"), shown as possibly held', async () => {
+    const r = fakeRelay({ lose: true });
+    const b = await withdrawVote(vote({ maybeAt: [R1] }), deps({ [R1]: r.port }));
     expect(b.result).toBe('unknown');
     expect(b.vote.maybeAt).toEqual([R1]);
-    expect(soon.calls).toEqual([]);
     expect(describeVote({ ...b.vote, restored: true }, NOW, fmt)).toMatchObject({ badge: 'May be at a relay' });
-  });
-  it('RelayClient.byHash: 200 = the record, a relay 404 = not there, the generic route 404 = unsupported', async () => {
-    const v = vote();
-    const answers: Array<[number, unknown]> = [
-      [200, state(v)],
-      [404, { error: 'unknown vote', code: 'unknown-vote' }],
-      [404, { error: 'not found', code: 'not-found' }],
-      [405, {}],
-    ];
-    const urls: string[] = [];
-    vi.stubGlobal('fetch', async (url: string) => {
-      urls.push(url);
-      const [status, body] = answers.shift()!;
-      return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
-    });
-    const c = new RelayClient(R1);
-    expect(await c.byHash(v.voteHash)).toMatchObject({ voteHash: v.voteHash, status: 'held' });
-    expect(await c.byHash(v.voteHash)).toBeNull();
-    expect(await c.byHash(v.voteHash)).toBe('unsupported');
-    expect(await c.byHash(v.voteHash)).toBe('unsupported');
-    expect(urls[0]).toBe(`${R1}/v1/votes/by-hash/${v.voteHash}`);
-    vi.unstubAllGlobals();
   });
 });
 
-describe('D-017: a vote the relay had broadcast is never reported "Cancelled"', () => {
-  it('cancelled after a broadcast the relay moved back to held: "may already count", never re-sent', async () => {
+describe('D-017: a vote the relay may have sent is never reported "Cancelled"', () => {
+  it('an older relay (no maybeSent): cancelled after a broadcast it moved back to held is "may already count", never re-sent', async () => {
     const v = vote({ status: 'held', refs: [{ relay: R1, id: 'ab'.repeat(16) }] });
     const r = fakeRelay();
-    r.held.set(v.voteHash, state(v, { broadcastAt: NOW + 5, lastError: 'not-visible' }));
+    r.held.set(v.voteHash, state(v, { broadcastAt: NOW + 5, lastError: 'not-visible', maybeSent: null }));
     const out = await withdrawVote(v, deps({ [R1]: r.port }));
     expect(out.result).toBe('maybe');
-    const after = applyRelayState(v, R1, state(v, { status: 'cancelled', broadcastAt: NOW + 5 }));
+    const after = applyRelayState(v, R1, state(v, { status: 'cancelled', broadcastAt: NOW + 5, maybeSent: null }));
     expect(after).toMatchObject({ status: 'broadcast', withdrawn: true });
     expect(describeVote(after, NOW, fmt).badge).toBe('May already count');
     expect(needsRebroadcast(after, NOW + 99_999)).toBe(false);
     // never broadcast: a plain cancel
-    expect(applyRelayState(v, R1, state(v, { status: 'cancelled' })).status).toBe('cancelled');
+    expect(applyRelayState(v, R1, state(v, { status: 'cancelled', maybeSent: null })).status).toBe('cancelled');
+  });
+  it('maybeSent=true: a failed or superseded vote is "may already count", not dead; maybeSent=false trusts the relay', async () => {
+    const v = vote({ status: 'held', refs: [{ relay: R1, id: 'ab'.repeat(16) }] });
+    for (const status of ['failed', 'superseded', 'cancelled'] as const) expect(applyRelayState(v, R1, state(v, { status, maybeSent: true }))).toMatchObject({ status: 'broadcast', withdrawn: true });
+    expect(applyRelayState(v, R1, state(v, { status: 'failed', maybeSent: false, broadcastAt: NOW })).status).toBe('failed');
+    const r = fakeRelay();
+    r.held.set(v.voteHash, state(v, { status: 'failed', maybeSent: true }));
+    expect((await withdrawVote(v, deps({ [R1]: r.port }))).result).toBe('maybe');
+  });
+  it('parses maybeSent from the relay view (absent on older relays)', () => {
+    const v = vote();
+    expect(parseRelayState({ ...state(v), maybeSent: true }).maybeSent).toBe(true);
+    const { maybeSent: _m, ...old } = state(v);
+    expect(parseRelayState(old).maybeSent).toBeNull();
   });
 });
 
@@ -329,9 +313,10 @@ describe('D-023: a key is checked against the masternode list before it is saved
 
 describe('D-024: keyring writes check the balance first and say "top up"', () => {
   it('refuses a write the balance cannot pay, and words Platform’s refusal as a top-up hint', () => {
-    expect(() => assertCanWrite(292_473_178n)).toThrow(TopUpError);
-    expect(() => assertCanWrite(KEYRING_WRITE_CREDITS[1])).not.toThrow();
-    expect(() => assertCanWrite(null)).not.toThrow();
+    expect(() => assertCanWrite(292_473_178n, 1)).toThrow(TopUpError);
+    expect(() => assertCanWrite(KEYRING_WRITE_CREDITS[1], 1)).not.toThrow();
+    expect(() => assertCanWrite(KEYRING_WRITE_CREDITS[1], 2)).toThrow(TopUpError);
+    expect(() => assertCanWrite(null, 1)).not.toThrow();
     const e = topUpFromError(new Error('Failed to broadcast: Protocol error: Insufficient identity 8GqC balance 292473178 required 300631920'));
     expect(e).toBeInstanceOf(TopUpError);
     expect((e as Error).message).toMatch(/Top up the identity/);

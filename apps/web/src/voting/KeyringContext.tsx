@@ -45,7 +45,7 @@ import { fixtureMnKey } from '../data/fixtureVotes.ts';
 import { getSdk } from '../data/platform.ts';
 import { onSessionEnd } from '../session/end.ts';
 import { assertCanWrite, topUpFromError, TopUpError } from './funds.ts';
-import { castKeys, KeyringLock } from './gate.ts';
+import { castKeys, KeyringLock, ownerOf } from './gate.ts';
 import { lookupMasternodes, type LookupDeps, type LookupResult, type LookupStep } from './lookup.ts';
 import { keyRole, parseVotingKey, proveCollaterals, votingAddressOf, votingKeyId, type OwnedMasternode } from './masternodes.ts';
 import {
@@ -518,6 +518,16 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, idleMinutes, memoryOnly, demo]);
 
+  /** Shows an error, unless it belongs to a session that ended (nobody's business now). */
+  const report = useCallback(
+    (e: unknown, t: string) => {
+      if (sessionToken() !== t) return;
+      setError(errorText(e));
+      setNeedsTopUp(e instanceof TopUpError);
+    },
+    [sessionToken],
+  );
+
   const run = useCallback(async <T,>(what: string, fn: () => Promise<T>): Promise<T> => {
     const t = sessionToken();
     setBusy(what);
@@ -527,16 +537,12 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       return await fn();
     } catch (e0) {
       const e = topUpFromError(e0);
-      // an error of a session that ended is nobody's business now
-      if (sessionToken() === t) {
-        setError(errorText(e));
-        setNeedsTopUp(e instanceof TopUpError);
-      }
+      report(e, t);
       throw e;
     } finally {
       setBusy(null);
     }
-  }, [sessionToken]);
+  }, [sessionToken, report]);
 
   /** Keyring writes are paid from the identity's credits: refused up front when the balance cannot cover one (D-024). */
   const canWrite = useCallback(
@@ -678,10 +684,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       const { privateKey, compressed } = parsed;
       const refuse = (e: Error): never => {
         privateKey.fill(0);
-        if (sessionToken() === t) {
-          setError(e.message);
-          setNeedsTopUp(e instanceof TopUpError);
-        }
+        report(e, t);
         throw e;
       };
       const id = votingKeyId(privateKey, compressed);
@@ -710,7 +713,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       await edit('Adding the voting key', (d) => d.content.keys.push({ privateKey, compressed, label }), { onFail: () => privateKey.fill(0), after: () => setMnNonce((n) => n + 1) });
       return id;
     },
-    [edit, coreNetwork, memoryOnly, demo, canWrite, checkKey, sessionToken],
+    [edit, coreNetwork, memoryOnly, demo, canWrite, checkKey, sessionToken, report],
   );
 
   const removeKey = useCallback(
@@ -980,9 +983,8 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
 
   /** The keyring's key for a vote's masternode, now (null while locked). */
   const liveKey = (v: Pick<WatchedVote, 'collateralTxid' | 'collateralIndex'>) => {
-    const k = kr.current;
-    const owner = mnsRef.current.owned.find((m) => mnId(m) === mnId(v));
-    return k && owner ? k.content.keys[owner.keyIndex] : undefined;
+    const owner = ownerOf(mnsRef.current.owned, v);
+    return owner ? kr.current?.content.keys[owner.keyIndex] : undefined;
   };
 
   /**
@@ -998,11 +1000,12 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       const sigOf = (v: WatchedVote) => cancelSignature(key.privateKey, key.compressed, coreNetwork, v.voteHash);
       let r: Awaited<ReturnType<typeof withdrawVote>>;
       try {
-        r = await withdrawVote(cur, { relayFor, network: coreNetwork, cancelSig: sigOf, now: nowS });
+        r = await withdrawVote(cur, { relayFor, network: coreNetwork, cancelSig: sigOf });
       } catch (e) {
+        if (!(e instanceof WithdrawError)) throw e;
         // keep the relay ids found on the way, so the next try (or the watchdog) can reach the vote
-        if (e instanceof WithdrawError) updateWatched((list) => list.map((x) => (x.voteHash === w.voteHash ? { ...x, refs: e.vote.refs, relayStatus: e.vote.relayStatus, relayInfo: e.vote.relayInfo } : x)), t);
-        throw e instanceof WithdrawError ? e.reason : e;
+        updateWatched((list) => list.map((x) => (x.voteHash === w.voteHash ? { ...x, refs: e.vote.refs, relayStatus: e.vote.relayStatus, relayInfo: e.vote.relayInfo } : x)), t);
+        throw e.reason;
       }
       const after: Record<WithdrawResult, Partial<WatchedVote>> = {
         cancelled: { status: 'cancelled' },

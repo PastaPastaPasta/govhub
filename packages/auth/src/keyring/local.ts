@@ -10,7 +10,7 @@ import { xchacha20poly1305 } from '@noble/ciphers/chacha.js';
 import { hkdf } from '@noble/hashes/hkdf.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { concatBytes, fromBase64, randomBytes, toBase64 } from '../bytes.ts';
-import { KEYRING_ID_LENGTH, KeyringFormatError, NONCE_LENGTH } from './format.ts';
+import { KEYRING_ID_LENGTH, KeyringFormatError, NONCE_LENGTH, TAG_LENGTH } from './format.ts';
 
 const te = new TextEncoder();
 
@@ -29,7 +29,7 @@ export function sealLocalRecord(key: Uint8Array, scope: string, plaintext: Uint8
 export function openLocalRecord(key: Uint8Array, scope: string, blob: string): Uint8Array | null {
   try {
     const b = fromBase64(blob);
-    if (b.length < NONCE_LENGTH + 16) return null;
+    if (b.length < NONCE_LENGTH + TAG_LENGTH) return null;
     return xchacha20poly1305(key, b.subarray(0, NONCE_LENGTH), te.encode(scope)).decrypt(b.subarray(NONCE_LENGTH));
   } catch {
     return null;

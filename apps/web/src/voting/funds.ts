@@ -10,18 +10,18 @@ export const KEYRING_WRITE_CREDITS: Readonly<Record<1 | 2, bigint>> = { 1: 300_0
 
 export class TopUpError extends Error {
   constructor(
-    readonly balance: bigint | null,
+    readonly balance: bigint,
     readonly required: bigint,
   ) {
     super(
-      `Your identity has ${balance === null ? 'too few credits' : formatCredits(balance)}, and saving the keyring on Platform needs about ${formatCredits(required)}. Top up the identity (menu, Top up), then try again. Nothing was saved.`,
+      `Your identity has ${formatCredits(balance)}, and saving the keyring on Platform needs about ${formatCredits(required)}. Top up the identity (menu, Top up), then try again. Nothing was saved.`,
     );
     this.name = 'TopUpError';
   }
 }
 
 /** Throws a TopUpError when the known balance cannot pay for a keyring write of `bucket` (unknown balance: the write is tried). */
-export function assertCanWrite(balance: bigint | null, bucket: 1 | 2 = 1): void {
+export function assertCanWrite(balance: bigint | null, bucket: 1 | 2): void {
   const need = KEYRING_WRITE_CREDITS[bucket];
   if (balance !== null && balance < need) throw new TopUpError(balance, need);
 }

@@ -29,6 +29,8 @@ export interface RelayInfo {
   lastError?: string | null;
   broadcastAt?: number | null;
   sameAsCurrent?: boolean | null;
+  /** the relay may have handed it to Core at some point (GET /v1/votes/:id `maybeSent`) */
+  maybeSent?: boolean | null;
 }
 
 export interface WatchedVote extends SignedVoteRecord {
@@ -95,6 +97,8 @@ const keyV1 = (network: string, identityId: string | null) => `govhub.votes.v1.$
 const keyV2 = (network: string, identityId: string | null) => `govhub.votes.v2.${network}.${identityId ?? 'anonymous'}`;
 
 const STATUSES = new Set<WatchStatus>(['queued', 'held', 'broadcast', 'confirmed', 'failed', 'replaced', 'dropped', 'cancelled']);
+/** Stored records that look like watched votes (a vote hash and a known status). */
+const reviveWatched = (a: readonly unknown[]): WatchedVote[] => a.filter(isRecord).map((x) => x as unknown as WatchedVote).filter((x) => STATUSES.has(x.status));
 const isRecord = (x: unknown): x is Record<string, unknown> => !!x && typeof x === 'object' && /^[0-9a-f]{64}$/.test(String((x as { voteHash?: unknown }).voteHash));
 
 /**
@@ -147,7 +151,8 @@ export function loadWatched(storage: Pick<Storage, 'getItem'>, network: string, 
       return [];
     }
   };
-  const v2 = read(keyV2(network, identityId))?.map((x) => x as unknown as WatchedVote).filter((x) => STATUSES.has(x.status)) ?? null;
+  const raw2 = read(keyV2(network, identityId));
+  const v2 = raw2 && reviveWatched(raw2);
   const v1 = read(keyV1(network, identityId));
   if (!v1) return v2 ?? [];
   // a tab of the previous version (open across a deploy) may still write v1: its records join v2 instead of being lost
@@ -171,7 +176,7 @@ export function loadWatchedSealed(storage: Pick<Storage, 'getItem'>, network: 'm
   if (!pt) return [];
   try {
     const v = JSON.parse(td.decode(pt));
-    return Array.isArray(v) ? v.filter(isRecord).map((x) => x as unknown as WatchedVote).filter((x) => STATUSES.has(x.status)).map((x) => ({ ...x, network: x.network ?? network })) : [];
+    return Array.isArray(v) ? reviveWatched(v).map((x) => ({ ...x, network: x.network ?? network })) : [];
   } catch {
     return [];
   } finally {

@@ -4,8 +4,8 @@
 //
 // `?votesim=` picks a scenario: `auto` (default; each stage ~1.5 s), `manual` (stages move only on window.__voteSim.advance()),
 // `down` (both relays unreachable until window.__voteSim.up()), `hour` (the relay holds the vote for Core's one-change-per-hour rule),
-// `lost` (a relay keeps every vote submitted to it but each answer times out, like a slow relay; votes move only on advance(), and
-// a vote can be found by its hash).
+// `lost` (a relay keeps a vote but the answer to its first submission times out, like a slow relay; posting it again answers with
+// the receipt; votes move only on advance()).
 import { countVotes, normalizeMnId, p2pkhAddress, hash160 } from '@govhub/verify';
 import { secp256k1 } from '@noble/curves/secp256k1.js';
 import type { Bridge, BridgeMnList, BridgeVote, BridgeVotes } from '../data/bridge.ts';
@@ -21,8 +21,6 @@ export interface RelayPort {
   submit(v: SignedVoteRecord, network: 'mainnet' | 'testnet'): Promise<RelayVoteState>;
   status(id: string): Promise<RelayVoteState | null>;
   cancel(id: string, sig: string): Promise<RelayVoteStatus>;
-  /** GET /v1/votes/by-hash/:voteHash (relay.ts RelayClient.byHash); absent: not offered */
-  byHash?(voteHash: string): Promise<RelayVoteState | null | 'unsupported'>;
   health(network: 'mainnet' | 'testnet'): Promise<RelayHealth>;
 }
 
@@ -123,6 +121,7 @@ export class VoteSim {
       nextAttemptAt: held ? Math.max(x.v.releaseAt, x.holdUntil ?? 0) : null,
       holdReason: held ? (x.holdUntil ? 'one-change-per-hour' : 'release-time') : null,
       sameAsCurrent: false,
+      maybeSent: x.broadcastAt !== null,
     };
   }
 
@@ -133,7 +132,6 @@ export class VoteSim {
         await new Promise((r) => setTimeout(r, 250));
         if (this.down) throw unreachable();
         const known = [...this.votes.values()].find((s) => s.v.voteHash === v.voteHash && s.relay === url);
-        if (known && this.scenario === 'lost') throw new RelayError(`relay ${url} unreachable: signal timed out`);
         if (known) return this.view(known);
         const s: SimVote = { id: hex(16), relay: url, v, status: 'held', acceptedAt: Date.now() / 1000, stage: 0, holdUntil: this.scenario === 'hour' ? nowS() + 1800 : null, broadcastAt: null };
         this.votes.set(s.id, s);
@@ -152,11 +150,6 @@ export class VoteSim {
         if (this.state(s).status !== 'held') throw new RelayError(`the vote is ${s.status}`, 409, 'not-held', s.status);
         s.status = 'cancelled';
         return 'cancelled';
-      },
-      byHash: async (voteHash) => {
-        if (this.down) throw unreachable();
-        const s = [...this.votes.values()].find((x) => x.v.voteHash === voteHash && x.relay === url);
-        return s ? this.view(s) : null;
       },
       health: async () => (this.down ? { ok: false, error: `relay ${url} unreachable: Load failed`, checkedAt: Date.now() } : { ok: true, network: 'mainnet', coreReachable: true, held: [...this.votes.values()].filter((s) => s.relay === url && this.state(s).status === 'held').length, checkedAt: Date.now() }),
     };

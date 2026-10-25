@@ -210,8 +210,8 @@ export function voteButtonText(outcome: 1 | 2 | 3 | 0, count: number, deferred: 
 }
 
 /** Whether a relay ever handed this vote to Core (it may count even if a relay holds or cancelled it now). */
-export function everLeft(v: Pick<WatchedVote, 'status' | 'relayStatus'>, info: WatchedVote['relayInfo'] = {}): boolean {
-  return v.status === 'broadcast' || Object.values(info).some((i) => !!i.broadcastAt || i.lastError === 'not-visible') || Object.values(v.relayStatus ?? {}).some((x) => x === 'sending' || x === 'broadcast' || x === 'confirmed');
+export function everLeft(v: Pick<WatchedVote, 'status' | 'relayStatus' | 'relayInfo'>): boolean {
+  return v.status === 'broadcast' || Object.values(v.relayInfo ?? {}).some((i) => i.maybeSent === true || (i.maybeSent == null && (!!i.broadcastAt || i.lastError === 'not-visible'))) || Object.values(v.relayStatus ?? {}).some((x) => x === 'sending' || x === 'broadcast' || x === 'confirmed');
 }
 
 /** Applies what a relay said about a vote to our record (refs, per-relay status and details, and the vote's own status). */
@@ -220,15 +220,15 @@ export function applyRelayState(v: WatchedVote, relay: string, st: RelayVoteStat
   const relayStatus = { ...v.relayStatus, [relay]: st.status };
   const relayInfo = {
     ...v.relayInfo,
-    [relay]: { releaseAt: st.releaseAt, nextAttemptAt: st.nextAttemptAt, holdReason: st.holdReason, lastError: st.lastError, broadcastAt: st.broadcastAt, sameAsCurrent: st.sameAsCurrent },
+    [relay]: { releaseAt: st.releaseAt, nextAttemptAt: st.nextAttemptAt, holdReason: st.holdReason, lastError: st.lastError, broadcastAt: st.broadcastAt, sameAsCurrent: st.sameAsCurrent, maybeSent: st.maybeSent },
   };
   const next: WatchedVote = { ...v, refs, relayStatus, relayInfo };
   // the bridge decides confirmed / replaced; relays only move a vote along or end it
   if (v.status === 'confirmed' || v.status === 'replaced' || v.status === 'cancelled' || v.withdrawn) return next;
   const all = Object.values(relayStatus);
-  // A relay re-sends a broadcast vote that does not show up by moving it back to `held` (lastError not-visible, broadcastAt kept):
-  // cancelling it then stops the re-sends, but Core may already have it. Never "Cancelled" for such a vote.
-  if (all.every((x) => x === 'cancelled') && everLeft(v, relayInfo)) return { ...next, status: 'broadcast', withdrawn: true };
+  // A vote a relay may have handed to Core (`maybeSent`; on relays without that field: broadcastAt, or a broadcast moved back to
+  // `held` as not-visible) is never "Cancelled", "Failed" or "Replaced" because it is final at the relay now: it may already count.
+  if (all.every((x) => x === 'cancelled' || x === 'failed' || x === 'superseded') && everLeft({ ...v, relayInfo })) return { ...next, status: 'broadcast', withdrawn: true };
   if (all.some((x) => x === 'broadcast' || x === 'confirmed' || x === 'sending')) return { ...next, status: 'broadcast', lastSendError: undefined };
   if (all.some((x) => x === 'held')) return { ...next, status: 'held', lastSendError: undefined };
   if (all.every((x) => x === 'cancelled')) return { ...next, status: 'cancelled' };
@@ -247,7 +247,6 @@ export function deferredUnavailable(deadline: number | null, now: number, networ
   if (deadline <= now) return `Voting for this superblock has closed, so there is no time to spread votes out${hourly}.`;
   return `Voting closes in ${formatDuration(deadline - now)}, too soon to spread votes out (the last ${formatDuration(DEADLINE_MARGIN_S[network])} are kept free)${hourly}.`;
 }
-
 
 /**
  * Where "Vote now" sends (D-070): ONE relay at a time, the others only take over when it fails. `health` is the last check per relay
