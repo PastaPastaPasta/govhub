@@ -1,6 +1,6 @@
 // Epoch housekeeping, run on a timer: which key may sign, destroying keys and token rows of closed windows, and the per-epoch
 // issuerReport. Every step works from the dashd tip; the issuerKey check reads Platform with proofs.
-import { deriveKeyId, epochStart, equalBytes, issuingEpochsAt, keyDeadline, reportWindow, toHex, VARIANT, type EpochParams } from '@govhub/badge';
+import { deriveKeyId, epochOf, epochStart, equalBytes, issuingEpochsAt, keyDeadline, reportWindow, toHex, VARIANT, type EpochParams } from '@govhub/badge';
 import type { IdentityKeyFile } from './config.ts';
 import type { CoreView, MnLists } from './core.ts';
 import { storeWindowFrom, type TokenStore } from './db.ts';
@@ -34,6 +34,12 @@ export interface EpochStatus {
   ready: boolean;
   problem: string | null;
 }
+
+/**
+ * The newest epoch whose issuance window [S(E-1), S(E+1)) ended at least `margin` blocks before `height`: closing it and
+ * everything before it can never cut off a window that is still open at the tip (0: nothing to close).
+ */
+export const closableThrough = (p: EpochParams, height: number): number => Math.max(0, epochOf(p, Math.max(0, height - p.boundaryMarginBlocks)) - 1);
 
 export class EpochManager {
   readonly #d: EpochManagerDeps;
@@ -98,11 +104,16 @@ export class EpochManager {
       }
     }
     // Token rows of closed windows are deleted; only the per-epoch count stays.
-    const closable = height >= epochStart(d.params, current) + margin ? current - 1 : current - 2;
+    const closable = closableThrough(d.params, height);
     if (closable >= 1) {
       const n = d.store.closeThrough(closable);
       if (n) log.info('deleted token records of closed epochs', { throughEpoch: closable, rows: n });
     }
+    // An epoch closed while its window is still open (a store carried over from code that closed E at S(E), before tokens for E
+    // could be issued during E) is reopened if no token was ever issued for it, so a key published later can still sign.
+    const reopened = d.store.reopenAboveCloseMark();
+    if (reopened.length) log.warn('reopened epochs that an older closing rule closed although their issuance window is open (no tokens had been issued)', { epochs: reopened });
+    const closedThrough = d.store.closedThrough();
 
     // the server signs with the keys of the current and the next epoch; staged keys are those after them
     for (const e of [...this.#active.keys()]) if (e !== current && e !== next) this.#active.delete(e);
@@ -112,6 +123,12 @@ export class EpochManager {
     if (this.#blocked) problems.push(`${staged.length} keys for later epochs are on the server (max ${d.maxStagedKeys}): remove them`);
     else
       for (const e of [current, next]) {
+        // the store refuses a closed epoch, so no key is ready for it (and /v1/info does not list it)
+        if (closedThrough !== null && e <= closedThrough) {
+          this.#active.delete(e);
+          problems.push(`the token store is closed through epoch ${closedThrough}, although epoch ${e}'s issuance window is open; it is not reopened because epoch ${closedThrough} had tokens (their rows are deleted) or a recorded issuerReport, or was closed at a higher tip`);
+          continue;
+        }
         if (this.#active.has(e)) continue;
         const p = await this.#load(e);
         if (p) problems.push(p);

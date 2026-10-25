@@ -270,6 +270,11 @@ The owner's rule: users may accept that the issuer could learn which masternode 
 - SQLite runs with `secure_delete`, `synchronous = FULL` and a rollback journal (`journal_mode = DELETE`).
 - Once an epoch's issuance window has closed (plus the margin), its rows are deleted. Only the per-epoch count stays, and the epoch is marked closed, so late
   requests for it get `wrong-epoch`. Keep `/data` and the key directory out of host backups and snapshots.
+- An epoch closed above the highest epoch this version ever closed (a store carried over from code before the current/next
+  rule, which closed E at `S(E)`) is reopened at the next tick, with a warning in the log, if no token was ever issued for it
+  and no report is recorded: closing deleted nothing for it, so dedup is intact. This is one-way: an epoch closed by the
+  current rule is never reopened, even if the tip goes back. An epoch that stays closed while its window is open is not
+  listed in `/v1/info` (`keyIds`, `ready`), and the status problem says why.
 - After the window closes the issuer publishes `issuerReport {epoch, tokensIssued}` with the HIGH key, once per epoch
   it served. Tokens for E can be issued until `S(E+1)` (Standard mode), so the report is published after that, and
   readers accept it only if it was created in `[S(E+1), S(E+1)+W]` and is plausible, and compare it with the

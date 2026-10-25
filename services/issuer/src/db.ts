@@ -44,8 +44,18 @@ export interface TokenStore {
   startedHeight(): number | null;
   /** Marks the epoch as served by this server (it had the key), so a zero count is still reported. */
   openEpoch(epoch: number): void;
-  /** Deletes the token rows of every epoch <= `epoch` and marks them closed. */
+  /** Deletes the token rows of every epoch <= `epoch` and marks them closed; remembers the highest such `epoch` (the close mark). */
   closeThrough(epoch: number): number;
+  /** The newest closed epoch: `reserve` refuses it and every epoch before it. Null if none is closed. */
+  closedThrough(): number | null;
+  /**
+   * Reopens epochs closed above the close mark (so by an older version's closing rule, which closed E at S(E), not by
+   * closeThrough), newest first, while each is safe: no token was ever counted for it (closing deleted no row, so dedup lost
+   * nothing) and no issuerReport is recorded. The first unsafe one and everything below it stay closed. One-way: an epoch
+   * closeThrough closed is never reopened, even if the tip goes back; nothing is reopened before the first closeThrough.
+   * Returns the reopened epochs.
+   */
+  reopenAboveCloseMark(): number[];
   issued(epoch: number): number;
   /** Closed epochs this server served that have not been reported yet. */
   unreported(): number[];
@@ -88,6 +98,8 @@ export function openTokenStore(path: string): TokenStore {
     open: db.prepare<[number]>('INSERT INTO epochs (epoch, served) VALUES (?, 1) ON CONFLICT (epoch) DO UPDATE SET served = 1'),
     mark: db.prepare<[number]>('INSERT OR IGNORE INTO epochs (epoch) VALUES (?)'),
     maxClosed: db.prepare<[], { m: number | null }>('SELECT MAX(epoch) AS m FROM epochs WHERE closed = 1'),
+    closedAbove: db.prepare<[number], { epoch: number }>('SELECT epoch FROM epochs WHERE closed = 1 AND epoch > ? ORDER BY epoch DESC'),
+    reopen: db.prepare<[number]>('UPDATE epochs SET closed = 0 WHERE epoch = ? AND closed = 1 AND issued = 0 AND report_id IS NULL'),
     byMn: db.prepare<[number, string], { blinded_hash: Buffer }>('SELECT blinded_hash FROM tokens WHERE epoch = ? AND pro_tx_hash = ?'),
     byCollateral: db.prepare<[number, string], { pro_tx_hash: string }>('SELECT pro_tx_hash FROM tokens WHERE epoch = ? AND collateral = ?'),
     insert: db.prepare<[number, string, string, Buffer]>('INSERT INTO tokens (epoch, pro_tx_hash, collateral, blinded_hash) VALUES (?, ?, ?, ?)'),
@@ -98,15 +110,19 @@ export function openTokenStore(path: string): TokenStore {
     reported: db.prepare<[string, number]>('UPDATE epochs SET report_id = ? WHERE epoch = ?'),
     started: db.prepare<[number]>("INSERT OR IGNORE INTO meta (key, value) VALUES ('started_height', ?)"),
     startedAt: db.prepare<[], { value: number }>("SELECT value FROM meta WHERE key = 'started_height'"),
+    setCloseMark: db.prepare<[number]>("INSERT INTO meta (key, value) VALUES ('close_mark', ?) ON CONFLICT (key) DO UPDATE SET value = MAX(value, excluded.value)"),
+    closeMark: db.prepare<[], { value: number }>("SELECT value FROM meta WHERE key = 'close_mark'"),
   };
   if (legacy) q.started.run(0);
+
+  const closedThrough = (): number | null => q.maxClosed.get()?.m ?? null;
 
   const reserve = db.transaction((o: ReserveInput, sign: () => Uint8Array): ReserveOutcome => {
     // A store that did not exist for the whole window cannot dedup it (a lost or reset database): refuse until the next epoch.
     const started = q.startedAt.get()?.value;
     if (started === undefined || started > o.windowFrom) return { kind: 'store-too-new' };
-    const closed = q.maxClosed.get()?.m;
-    if (closed !== null && closed !== undefined && o.epoch <= closed) return { kind: 'closed' };
+    const closed = closedThrough();
+    if (closed !== null && o.epoch <= closed) return { kind: 'closed' };
     q.open.run(o.epoch);
     const mine = q.byMn.get(o.epoch, o.proTxHash);
     if (mine) return equalBytes(mine.blinded_hash, o.blindedHash) ? { kind: 'signed', blindSig: sign(), retry: true } : { kind: 'conflict', reason: 'mn' };
@@ -127,9 +143,25 @@ export function openTokenStore(path: string): TokenStore {
         const deleted = q.del.run(epoch).changes;
         q.mark.run(epoch);
         q.closeAll.run(epoch);
+        q.setCloseMark.run(epoch);
         return deleted;
       })();
     },
+    closedThrough,
+    // Safe because reserve inserts every token row together with `issued + 1` in one transaction, and epochs rows are never
+    // deleted: an epoch closed with issued = 0 never had a token row (one without an epochs row never had a request), so
+    // closing deleted nothing for it and reopening restores exactly the state before the close.
+    reopenAboveCloseMark: () =>
+      db.transaction(() => {
+        const reopened: number[] = [];
+        const mark = q.closeMark.get()?.value;
+        if (mark === undefined) return reopened;
+        for (const r of q.closedAbove.all(mark)) {
+          if (q.reopen.run(r.epoch).changes !== 1) break;
+          reopened.push(r.epoch);
+        }
+        return reopened;
+      })(),
     issued: (epoch) => q.epoch.get(epoch)?.issued ?? 0,
     unreported: () => q.unreported.all().map((r) => r.epoch),
     markReported: (epoch, docId) => void q.reported.run(docId, epoch),

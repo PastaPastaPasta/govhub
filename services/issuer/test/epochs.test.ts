@@ -3,17 +3,18 @@ import { existsSync, mkdtempSync, writeFileSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { epochStart, keyDeadline, sha256, VARIANT, type IssuerKeyDoc } from '@govhub/badge';
-import { openTokenStore } from '../src/db.ts';
-import { EpochManager } from '../src/epochs.ts';
+import { epochOf, epochStart, issuanceWindow, keyDeadline, sha256, VARIANT, type IssuerKeyDoc } from '@govhub/badge';
+import { openTokenStore, type TokenStore } from '../src/db.ts';
+import { closableThrough, EpochManager } from '../src/epochs.ts';
 import { keyFileName, keygen, manifestSpki } from '../src/keys.ts';
 import type { IssuerPlatform } from '../src/platform.ts';
 import { MnLists } from '../src/core.ts';
-import { E, FakeCore, P, rnd } from './helpers.ts';
+import { E, FakeCore, legacyClose, P, rnd, tmpDb } from './helpers.ts';
 
+const sign = () => rnd(256);
 const ISSUER = 'H62hSf5TpKbUSMov85GMhPQahZDbqsTipeoBsYPgveUH';
 
-async function setup(epochs: number[], o: { lateDoc?: boolean; maxStaged?: number; startedAt?: number } = {}) {
+async function setup(epochs: number[], o: { lateDoc?: boolean; maxStaged?: number; startedAt?: number; store?: TokenStore } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'issuer-keys-'));
   const manifest = await keygen(dir, Math.min(...epochs), Math.max(...epochs) - Math.min(...epochs) + 1, 2048);
   const docs = new Map<number, IssuerKeyDoc>();
@@ -33,7 +34,7 @@ async function setup(epochs: number[], o: { lateDoc?: boolean; maxStaged?: numbe
     publishIssuerReport: async (_k, r) => (reports.push(r), `report-${r.epoch}`),
     publishIssuerRevocation: async () => 'x',
   };
-  const store = openTokenStore(':memory:');
+  const store = o.store ?? openTokenStore(':memory:');
   store.markStarted(o.startedAt ?? 0);
   const m = new EpochManager({ params: P, issuerId: ISSUER, keyDir: dir, maxStagedKeys: o.maxStaged ?? 1, core, lists: new MnLists(core), store, platform: () => platform, reportKey: { identityId: ISSUER, keyId: 2, privateKeyHex: '11'.repeat(32) } });
   return {
@@ -190,5 +191,83 @@ describe('epoch manager', () => {
     writeFileSync(join(t.dir, keyFileName(E - 5)), 'junk', { mode: 0o600 });
     await t.m.tick();
     expect(existsSync(join(t.dir, keyFileName(E - 5)))).toBe(false);
+  });
+
+  it('closes only epochs whose issuance window ended at least the margin before the tip', () => {
+    for (let h = epochStart(P, E - 2); h < epochStart(P, E + 1); h++) {
+      const c = closableThrough(P, h);
+      expect(issuanceWindow(P, c).to + P.boundaryMarginBlocks).toBeLessThanOrEqual(h);
+      expect(issuanceWindow(P, c + 1).to + P.boundaryMarginBlocks).toBeGreaterThan(h);
+    }
+    expect(closableThrough(P, 0)).toBe(0);
+    expect(closableThrough(P, epochStart(P, 1) + P.boundaryMarginBlocks)).toBe(0);
+  });
+
+  // Testnet, 2026-10-25: the store came from an issuer on code before PR #11, when tokens for E were issued only during E-1 and
+  // the closing rule closed E itself once the tip passed S(E) + margin. Under the current rule (tokens for E during E as well)
+  // that left the current epoch closed; a key for it published late (PR #26) was loaded and listed in /v1/info, but every
+  // request got `closed`.
+  const preIssue11Closable = (h: number) => {
+    const issuing = epochOf(P, h) + 1;
+    return h >= epochStart(P, issuing - 1) + P.boundaryMarginBlocks ? issuing - 1 : issuing - 2;
+  };
+  const LATE_KEY_AT = 1_579_277; // the height the issuerKey for 2741 landed at
+  function carriedOverStore(o: { issuedFor2741?: number } = {}): TokenStore {
+    expect(E - 1).toBe(2741);
+    const path = tmpDb();
+    const old = openTokenStore(path);
+    old.markStarted(0); // a legacy store (epochs table, no meta) gets started_height 0
+    // the old issuer, during epoch 2740: issuing 2741 (tokens counted, if any), closing 2740
+    for (let i = 0; i < (o.issuedFor2741 ?? 0); i++) old.reserve({ epoch: E - 1, windowFrom: 0, proTxHash: `p${i}`, collateral: `c${i}`, blindedHash: rnd(32) }, sign);
+    old.openEpoch(E);
+    old.close();
+    legacyClose(path, preIssue11Closable(epochStart(P, E - 1) - 100));
+    // ... and during epoch 2741, about two hours before the restart
+    const oldTip = LATE_KEY_AT - 55;
+    expect(preIssue11Closable(oldTip)).toBe(E - 1);
+    expect(closableThrough(P, oldTip)).toBe(E - 2); // the current rule never closes 2741 there
+    legacyClose(path, preIssue11Closable(oldTip));
+    const store = openTokenStore(path);
+    expect(store.closedThrough()).toBe(E - 1);
+    return store;
+  }
+
+  it('reopens the current epoch that an older closing rule closed with no tokens issued, so a key published late signs', async () => {
+    const store = carriedOverStore();
+    const t = await setup([E - 1, E], { store });
+    t.core.tip = LATE_KEY_AT;
+    t.docs.get(E - 1)!.createdAtCoreBlockHeight = LATE_KEY_AT;
+    await t.m.tick();
+    expect(store.closedThrough()).toBe(E - 2);
+    expect(t.m.activeKey(E - 1)?.epoch).toBe(E - 1);
+    expect(Object.keys(t.m.status.keyIds).map(Number)).toEqual([E - 1, E]);
+    expect(t.m.status).toMatchObject({ ready: true, problem: null });
+    const windowFrom = epochStart(P, E - 2);
+    expect(store.reserve({ epoch: E - 1, windowFrom, proTxHash: 'a', collateral: 'a', blindedHash: rnd(32) }, sign).kind).toBe('signed');
+    expect(store.reserve({ epoch: E - 1, windowFrom, proTxHash: 'a', collateral: 'a', blindedHash: rnd(32) }, sign)).toEqual({ kind: 'conflict', reason: 'mn' });
+    // the window then closes as usual, with the count reported
+    t.core.tip = epochStart(P, E) + P.boundaryMarginBlocks;
+    await t.m.tick();
+    expect(store.closedThrough()).toBe(E - 1);
+    expect(store.issued(E - 1)).toBe(1);
+    // one-way: a tip that goes back into the window does not reopen it
+    t.core.tip = LATE_KEY_AT;
+    await t.m.tick();
+    expect(store.closedThrough()).toBe(E - 1);
+    expect(t.m.activeKey(E - 1)).toBeNull();
+    expect(t.m.status.problem).toMatch(new RegExp(`closed through epoch ${E - 1}`));
+  });
+
+  it('does not reopen an epoch whose token rows were deleted, and does not report it as issuing', async () => {
+    const store = carriedOverStore({ issuedFor2741: 2 });
+    const t = await setup([E - 1, E], { store });
+    t.core.tip = LATE_KEY_AT;
+    await t.m.tick();
+    expect(store.closedThrough()).toBe(E - 1);
+    expect(store.issued(E - 1)).toBe(2);
+    expect(t.m.activeKey(E - 1)).toBeNull();
+    expect(Object.keys(t.m.status.keyIds).map(Number)).toEqual([E]);
+    expect(t.m.status.ready).toBe(true); // E still issues
+    expect(t.m.status.problem).toMatch(new RegExp(`token store is closed through epoch ${E - 1}, although epoch ${E - 1}'s issuance window is open`));
   });
 });
