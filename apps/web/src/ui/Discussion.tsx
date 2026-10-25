@@ -11,6 +11,7 @@ import {
   commentRetractRefund,
   COSTS,
   defaultFilter,
+  hiddenFromOthers,
   passesFilter,
   type Block,
   type Comment,
@@ -33,7 +34,9 @@ import { openSignIn } from './SignIn.tsx';
 import { useReactions } from './useReactions.ts';
 import { MnBadges } from '../badge/BadgeChip.tsx';
 import { useBadges } from '../badge/context.tsx';
+import { TopUpError } from '../voting/funds.ts';
 import { Votes } from './Votes.tsx';
+import { WriteError } from './WriteError.tsx';
 
 /** Replies deeper than this are not indented further (the thread line still shows). */
 const MAX_INDENT = 6;
@@ -84,6 +87,7 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
   const [chosenFilter, setFilter] = useState<CommentFilter | null>(null);
   const [showHidden, setShowHidden] = useState(false);
   const [revealed, setRevealed] = useState(new Set<string>());
+  const [landed, setLanded] = useState<string | null>(null); // the comment just posted: scrolled to and highlighted, so nobody posts it twice
   const now = source.now();
   const comments = useMemo(() => thread.data?.comments ?? [], [thread.data]);
   // MN badges (PLAN §8.6) from the trusted issuers. Until any badge is live the default view is everyone (PLAN §12).
@@ -98,13 +102,14 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
   const [limit, setLimit] = useState(RENDER_PAGE);
   const [extraScored, setExtraScored] = useState(0); // "read more scores" inside one thread too large for the window
   const isModerator = session?.identityId === registry.forum.moderationIdentityId;
+  const viewer = session?.identityId ?? null; // what the viewer wrote always shows to them, whatever the filter
 
   const reasonsOf = useCallback((c: Comment) => moderation.index.reasons(c), [moderation.index]);
   const hiddenCount = useMemo(() => comments.filter((c) => reasonsOf(c).length > 0).length, [comments, reasonsOf]);
-  const filteredCount = useMemo(() => comments.filter((c) => !reasonsOf(c).length && !passesFilter(c, filter, { owner, badged })).length, [comments, reasonsOf, filter, owner, badged]);
+  const filteredCount = useMemo(() => comments.filter((c) => !reasonsOf(c).length && !passesFilter(c, filter, { owner, badged, viewer })).length, [comments, reasonsOf, filter, owner, badged, viewer]);
   const [unfiltered, setUnfiltered] = useState(false);
   // The deep-linked comment always gets at least its placeholder.
-  const showOpts = useMemo(() => ({ reasonsOf, showHidden, revealed, filter, owner, badged }), [reasonsOf, showHidden, revealed, filter, owner, badged]);
+  const showOpts = useMemo(() => ({ reasonsOf, showHidden, revealed, filter, owner, badged, viewer }), [reasonsOf, showHidden, revealed, filter, owner, badged, viewer]);
   const visible = useMemo(() => visibleSubtrees(roots, (c) => c.id === focus || shown(c, showOpts)), [roots, showOpts, focus]);
   // Fail closed: nothing renders before the block lists are read, and a list that failed collapses the thread until
   // the reader chooses to see it without that list.
@@ -127,10 +132,16 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
   useEffect(() => {
     const c = focus ? comments.find((x) => x.id === focus) : undefined;
     if (!c) return;
-    if (!passesFilter(c, filter, { owner, badged })) setFilter('all');
+    if (!passesFilter(c, filter, { owner, badged, viewer })) setFilter('all');
     requestAnimationFrame(() => document.getElementById(`comment-${focus}`)?.scrollIntoView({ block: 'center' }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focus, comments.length]);
+
+  useEffect(() => {
+    if (!landed) return;
+    const t = requestAnimationFrame(() => document.getElementById(`comment-${landed}`)?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }));
+    return () => cancelAnimationFrame(t);
+  }, [landed]);
 
   const post = useCallback(
     async (body: string, parentId?: string) => {
@@ -140,6 +151,7 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
       const parentAt = comments.find((c) => c.id === parentId)?.createdAt ?? 0;
       const createdAt = Math.max(mode === 'live' ? Date.now() : now * 1000, parentAt + 1);
       thread.add({ id: r.id, ownerId: session.identityId, govHash, body, fmt: COMMENT_FMT.markdown, createdAt, ...(parentId ? { parentId } : {}) });
+      setLanded(r.id);
     },
     [session, write, forum, govHash, thread, now, comments, mode],
   );
@@ -176,10 +188,12 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
     owner,
     filter,
     badged,
+    viewer,
     badges: badges.byOwner,
     showHidden,
     revealed,
     focus,
+    landed,
     profiles: thread.data?.profiles ?? new Map(),
     names: thread.data?.names ?? new Map(),
     reasonsOf,
@@ -313,11 +327,15 @@ interface NodeCtx {
   owner: string | null;
   filter: CommentFilter;
   badged(ownerId: string): boolean;
+  /** the signed-in identity (its own comments always show) */
+  viewer: string | null;
   /** ownerId -> names of the trusted issuers vouching for it */
   badges: Map<string, string[]>;
   showHidden: boolean;
   revealed: Set<string>;
   focus: string | null;
+  /** id of the comment this reader just posted */
+  landed: string | null;
   profiles: Map<string, Profile>;
   names: Map<string, string>;
   reasonsOf(c: Comment): HideReason[];
@@ -334,9 +352,9 @@ interface NodeCtx {
   visible: Map<string, boolean>;
 }
 
-function shown(c: Comment, ctx: Pick<NodeCtx, 'reasonsOf' | 'showHidden' | 'revealed' | 'filter' | 'owner' | 'badged'>): boolean {
+function shown(c: Comment, ctx: Pick<NodeCtx, 'reasonsOf' | 'showHidden' | 'revealed' | 'filter' | 'owner' | 'badged' | 'viewer'>): boolean {
   const hidden = ctx.reasonsOf(c).length > 0 && !ctx.showHidden && !ctx.revealed.has(c.id);
-  return !hidden && passesFilter(c, ctx.filter, { owner: ctx.owner, badged: ctx.badged });
+  return !hidden && passesFilter(c, ctx.filter, { owner: ctx.owner, badged: ctx.badged, viewer: ctx.viewer });
 }
 
 function CommentNode({ node, ctx }: { node: ThreadNode; ctx: NodeCtx }) {
@@ -345,6 +363,7 @@ function CommentNode({ node, ctx }: { node: ThreadNode; ctx: NodeCtx }) {
   const [confirmRetract, setConfirmRetract] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [needsTopUp, setNeedsTopUp] = useState(false);
   const menu = useRef<HTMLDetailsElement>(null);
   // Hidden parents of visible replies leave a placeholder; subtrees with nothing shown are omitted.
   if (!ctx.visible.get(c.id)) return null;
@@ -352,17 +371,21 @@ function CommentNode({ node, ctx }: { node: ThreadNode; ctx: NodeCtx }) {
   const isShown = shown(c, ctx);
   const isOwner = ctx.owner !== null && c.ownerId === ctx.owner;
   const mine = ctx.session === c.ownerId;
+  // The reader's own comment always shows, but the "Owner and masternodes" view would hide it from everyone else: say so.
+  const onlyYou = mine && hiddenFromOthers(c, ctx.filter, { owner: ctx.owner, badged: ctx.badged });
   const score = ctx.scores.get(c.id);
   const myBlock = reasons.find((r) => r.source === 'mine');
   const modBlock = reasons.find((r) => r.source === 'default');
   const run = (label: string, f: () => Promise<void>) => async () => {
     setBusy(label);
     setError(null);
+    setNeedsTopUp(false);
     try {
       await f();
       if (menu.current) menu.current.open = false; // the action is done: close the "Hide…" menu
     } catch (e) {
       setError(errText(e));
+      setNeedsTopUp(e instanceof TopUpError);
     } finally {
       setBusy(null);
     }
@@ -394,7 +417,7 @@ function CommentNode({ node, ctx }: { node: ThreadNode; ctx: NodeCtx }) {
 
   const profile = ctx.profiles.get(c.ownerId);
   return (
-    <li className={`comment ${ctx.focus === c.id ? 'comment-focus' : ''} ${reasons.length ? 'comment-hidden' : ''} ${isOwner ? 'comment-owner' : ''}`} id={`comment-${c.id}`} data-comment-id={c.id}>
+    <li className={`comment ${ctx.focus === c.id ? 'comment-focus' : ''} ${ctx.landed === c.id ? 'comment-new' : ''} ${reasons.length ? 'comment-hidden' : ''} ${isOwner ? 'comment-owner' : ''}`} id={`comment-${c.id}`} data-comment-id={c.id}>
       <article aria-label={`Comment by ${authorText(c.ownerId, profile, ctx.names.get(c.ownerId))}`}>
         <header className="comment-head">
           <Avatar id={c.ownerId} profile={profile} />
@@ -406,6 +429,11 @@ function CommentNode({ node, ctx }: { node: ThreadNode; ctx: NodeCtx }) {
           </Link>
           {node.orphan && <span className="muted small">reply to a comment that is no longer available</span>}
         </header>
+        {onlyYou && (
+          <p className="hidden-note small" data-testid="only-you-note">
+            Only you see this in the “Owner and masternodes” view. Readers on “Everyone” see it too.
+          </p>
+        )}
         {reasons.length > 0 && (
           <p className="hidden-note small">
             Hidden for you: {reasons.map((r) => `${r.kind === 'identity' ? 'author' : 'comment'} on ${r.list}${r.reason ? ` (${r.reason})` : ''}`).join('; ')}
@@ -475,11 +503,7 @@ function CommentNode({ node, ctx }: { node: ThreadNode; ctx: NodeCtx }) {
             </details>
           )}
         </footer>
-        {error && (
-          <p className="error small" role="alert">
-            {error}
-          </p>
-        )}
+        <WriteError error={error} needsTopUp={needsTopUp} />
         {replying && (
           <Composer
             label="Post reply"

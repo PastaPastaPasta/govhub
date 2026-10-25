@@ -25,6 +25,8 @@ import { cacheClear } from '../data/cache.ts';
 import { BadgeSettings } from '../badge/BadgeSettings.tsx';
 import { RecoverFunds } from '../auth/Recover.tsx';
 import { ThemeSwitch } from '../ui/SignIn.tsx';
+import { WriteError } from '../ui/WriteError.tsx';
+import { TopUpError } from '../voting/funds.ts';
 
 const lines = (s: string) => s.split(/[\s,]+/).map((x) => x.trim()).filter(Boolean);
 
@@ -152,7 +154,7 @@ function BlockListSettings() {
   const { moderation, session, setSubs, balance } = useForum();
   const [defaultOff, setDefaultOff] = useState(moderation.subs.defaultOff);
   const [lists, setLists] = useState(moderation.subs.lists.join('\n'));
-  const [msg, setMsg] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
+  const [msg, setMsg] = useState<{ kind: 'ok' | 'error'; text: string; topUp?: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     setDefaultOff(moderation.subs.defaultOff);
@@ -168,7 +170,7 @@ function BlockListSettings() {
       await setSubs({ defaultOff, lists: [...new Set(ids)], ...(moderation.subs.doc ? { doc: moderation.subs.doc } : {}) }, publish);
       setMsg({ kind: 'ok', text: publish ? 'Saved to your blockSubs document on Platform.' : 'Saved in this browser.' });
     } catch (e) {
-      setMsg({ kind: 'error', text: errText(e) });
+      setMsg({ kind: 'error', text: errText(e), topUp: e instanceof TopUpError });
     } finally {
       setBusy(false);
     }
@@ -211,7 +213,7 @@ function BlockListSettings() {
             </button>
           )}
         </div>
-        {msg && <p className={msg.kind === 'ok' ? 'notice' : 'error'}>{msg.text}</p>}
+        {msg && (msg.kind === 'ok' ? <p className="notice">{msg.text}</p> : <WriteError error={msg.text} needsTopUp={msg.topUp} />)}
       </fieldset>
     </section>
   );

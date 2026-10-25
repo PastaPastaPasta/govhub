@@ -2578,6 +2578,28 @@ li[data-status='now'] > .fund-dot {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
+/* The comment this reader just posted: a short highlight, so a form that empties reads as "posted", not "lost". */
+.comment-new > article {
+  animation: comment-landed 2.4s ease-out 1;
+}
+@keyframes comment-landed {
+  from {
+    background: var(--accent-soft, var(--sunk));
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  to {
+    background: transparent;
+    outline-color: transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .comment-new > article {
+    animation: none;
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+}
 .comment-placeholder > p {
   padding: 0.25rem 0.5rem;
   border: 1px dashed var(--line);

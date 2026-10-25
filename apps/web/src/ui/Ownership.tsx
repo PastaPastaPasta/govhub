@@ -15,7 +15,9 @@ import { HiddenToggle, plural } from './HiddenToggle.tsx';
 import { AuthorName, Avatar } from './Identity.tsx';
 import { Markdown } from './Markdown.tsx';
 import { openSignIn } from './SignIn.tsx';
+import { TopUpError, costText, isShort } from '../voting/funds.ts';
 import { useAction } from './useAction.ts';
+import { LowBalance, WriteError } from './WriteError.tsx';
 
 export interface Ownership {
   verdict: ClaimVerdict | null;
@@ -189,12 +191,12 @@ export function ClaimPanel({ p, own, collateral }: { p: Proposal; own: Ownership
   const [inputAddr, setInputAddr] = useState('');
   const [sig, setSig] = useState('');
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string; topUp?: boolean } | null>(null);
   const [ackFor, setAckFor] = useState<string | null>(null); // the warning the reader chose to publish through
   const o = own.verdict?.owner;
   const named = own.verdict?.named ?? null;
   if (o?.method === 1) return null; // the named identity accepted: nothing can outrank it
-  const poor = balance !== null && balance < BigInt(COSTS.claim);
+  const poor = isShort(balance, COSTS.claim);
   if (session && named && !named.accepted && named.identityId === session.identityId) return <AcceptNaming p={p} own={own} poor={poor} />;
   if (o && session && o.identityId === session.identityId) return null;
 
@@ -218,7 +220,7 @@ export function ClaimPanel({ p, own, collateral }: { p: Proposal; own: Ownership
       own.reload();
       setTimeout(own.reload, 4000);
     } catch (err) {
-      setMsg({ ok: false, text: errText(err) });
+      setMsg({ ok: false, text: errText(err), topUp: err instanceof TopUpError });
     } finally {
       setBusy(false);
     }
@@ -289,9 +291,9 @@ export function ClaimPanel({ p, own, collateral }: { p: Proposal; own: Ownership
                 </p>
               )}
               <p className="muted small">
-                Publishing the claim costs about {formatCredits(COSTS.claim, true)}; your balance is {balance === null ? '…' : formatCredits(balance)}.
+                Publishing the claim {costText(COSTS.claim)}; your balance is {balance === null ? '…' : formatCredits(balance)}.
               </p>
-              {poor && <p className="error small">Your balance does not cover the claim. Top up the identity first.</p>}
+              {poor && balance !== null && <LowBalance what="the claim" balance={balance} fee={COSTS.claim} />}
               {warning && (
                 <div className="notice-warn small" role="alert" data-testid="claim-warning">
                   <p>{warning}</p>
@@ -305,7 +307,7 @@ export function ClaimPanel({ p, own, collateral }: { p: Proposal; own: Ownership
                   {busy ? 'Publishing…' : 'Publish claim'}
                 </button>
               </div>
-              {msg && <p className={msg.ok ? 'notice' : 'error'}>{msg.text}</p>}
+              {msg && (msg.ok ? <p className="notice">{msg.text}</p> : <WriteError error={msg.text} needsTopUp={msg.topUp} />)}
             </fieldset>
           </form>
         )}
@@ -317,7 +319,7 @@ export function ClaimPanel({ p, own, collateral }: { p: Proposal; own: Ownership
 /** The identity the proposal URL names accepts ownership with a method-1 claim (no signature: its proven `$ownerId` is the consent). */
 function AcceptNaming({ p, own, poor }: { p: Proposal; own: Ownership; poor: boolean }) {
   const { forum, write, balance } = useForum();
-  const { busy, error, run } = useAction();
+  const { busy, error, needsTopUp, run } = useAction();
   const [done, setDone] = useState(false);
   const accept = () =>
     run(async () => {
@@ -333,20 +335,16 @@ function AcceptNaming({ p, own, poor }: { p: Proposal; own: Ownership; poor: boo
         description shown here. Until you accept, govhub shows you only as named by the proposal's creator.
       </p>
       <p className="muted small">
-        Accepting publishes a claim from your identity (no signature needed) and costs about {formatCredits(COSTS.claim, true)}; your balance is{' '}
+        Accepting publishes a claim from your identity (no signature needed) and {costText(COSTS.claim)}; your balance is{' '}
         {balance === null ? '…' : formatCredits(balance)}.
       </p>
-      {poor && <p className="error small">Your balance does not cover it. Top up the identity first.</p>}
+      {poor && balance !== null && <LowBalance what="the claim" balance={balance} fee={COSTS.claim} />}
       <p className="form-actions">
         <button type="button" className="btn btn-primary" disabled={busy || poor || done} onClick={accept} data-testid="accept-naming-button">
           {busy ? 'Signing and broadcasting…' : done ? 'Accepted. Checking it…' : 'Accept ownership'}
         </button>
       </p>
-      {error && (
-        <p className="error small" role="alert">
-          {error}
-        </p>
-      )}
+      <WriteError error={error} needsTopUp={needsTopUp} />
     </section>
   );
 }
@@ -455,7 +453,7 @@ function PostEditor({ govHash, existing, initialBody, onDone }: { govHash: strin
   const [title, setTitle] = useState(existing?.title ?? '');
   const [body, setBody] = useState(initialBody);
   const [packed, setPacked] = useState<{ chunks: Uint8Array[] } | { error: string; bytes?: number } | null>(null);
-  const { busy, error, run } = useAction();
+  const { busy, error, needsTopUp, run } = useAction();
   useEffect(() => {
     let live = true;
     const t = setTimeout(() => {
@@ -473,7 +471,7 @@ function PostEditor({ govHash, existing, initialBody, onDone }: { govHash: strin
   const compressed = packed && 'chunks' in packed ? packed.chunks.reduce((n, c) => n + c.length, 0) : packed && 'bytes' in packed ? (packed.bytes ?? 0) : 0;
   const previous = existing ? existing.chunks.reduce((n, c) => n + c.length, 0) : undefined;
   const cost = postCost(compressed, previous);
-  const poor = balance !== null && balance < BigInt(cost);
+  const poor = isShort(balance, cost);
   const save = (e: FormEvent) => {
     e.preventDefault();
     if (!packed || !('chunks' in packed) || !session || poor) return;
@@ -497,7 +495,7 @@ function PostEditor({ govHash, existing, initialBody, onDone }: { govHash: strin
       <p className={`small ${packed && 'error' in packed ? 'error' : 'muted'}`} data-testid="post-meta">
         {packed && 'error' in packed
           ? packed.error
-          : `${formatInt(new TextEncoder().encode(body).length)} bytes, ${formatInt(compressed)} of ${formatInt(POST_MAX_COMPRESSED)} bytes after compression (${packed && 'chunks' in packed ? packed.chunks.length : 0} of 3 fields) · costs about ${formatCredits(cost, true)} · your balance ${balance === null ? '…' : formatCredits(balance)}`}
+          : `${formatInt(new TextEncoder().encode(body).length)} bytes, ${formatInt(compressed)} of ${formatInt(POST_MAX_COMPRESSED)} bytes after compression (${packed && 'chunks' in packed ? packed.chunks.length : 0} of 3 fields) · ${costText(cost)} · your balance ${balance === null ? '…' : formatCredits(balance)}`}
       </p>
       {body.trim() && (
         <details>
@@ -507,12 +505,8 @@ function PostEditor({ govHash, existing, initialBody, onDone }: { govHash: strin
           </div>
         </details>
       )}
-      {poor && <p className="error small">Your balance does not cover this description. Top up the identity first.</p>}
-      {error && (
-        <p className="error" role="alert">
-          {error}
-        </p>
-      )}
+      {poor && balance !== null && <LowBalance what="this description" balance={balance} fee={cost} />}
+      <WriteError error={error} needsTopUp={needsTopUp} />
       <div className="form-actions">
         <button type="submit" className="btn btn-primary" disabled={busy || poor || !title.trim() || !packed || !('chunks' in packed)}>
           {busy ? 'Signing and broadcasting…' : 'Publish description'}

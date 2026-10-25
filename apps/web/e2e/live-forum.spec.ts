@@ -80,7 +80,7 @@ test('@live forum on testnet: comment, reply, react, flip, block, unblock, retra
   const stamp = new Date().toISOString();
   const text = `govhub live e2e ${stamp}: comment`;
   await d.getByRole('textbox', { name: 'Post comment' }).fill(`${text} with **markdown**`);
-  await expect(d.getByTestId('composer-meta').first()).toContainText(/costs about 0\.000\d+ DASH · your balance 0\.\d+ DASH/);
+  await expect(d.getByTestId('composer-meta').first()).toContainText(/costs about 0\.000\d+ DASH · needs about 0\.00\d+ DASH available · your balance 0\.\d+ DASH/);
   await d.getByRole('button', { name: 'Post comment' }).click();
   const c1 = comment(page, text);
   await expect(c1).toBeVisible(WRITE);

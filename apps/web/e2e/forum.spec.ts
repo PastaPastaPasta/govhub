@@ -71,7 +71,7 @@ test.describe('discussion (fixtures)', () => {
     // Cost and balance are shown before posting.
     await d.getByRole('textbox', { name: 'Post comment' }).fill('Fixture **comment** from Alice');
     await expect(d.getByTestId('composer-meta').first()).toContainText(/costs about 0\.0004\d DASH/);
-    await expect(d.getByTestId('composer-meta').first()).toContainText('your balance 0.003 DASH');
+    await expect(d.getByTestId('composer-meta').first()).toContainText('your balance 0.03 DASH');
     await d.getByRole('button', { name: 'Post comment' }).click();
     const mine = comment(page, 'Fixture comment from Alice');
     await expect(mine).toBeVisible();
@@ -122,7 +122,7 @@ test.describe('discussion (fixtures)', () => {
 
     // The pretend balance went down.
     await page.getByTestId('session-button').click();
-    await expect(page.getByTestId('session-balance')).not.toHaveText('0.003 DASH');
+    await expect(page.getByTestId('session-balance')).not.toHaveText('0.03 DASH');
     expect(errors).toEqual([]);
   });
 

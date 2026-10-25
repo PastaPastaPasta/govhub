@@ -7,7 +7,9 @@ import { useApp, type Theme } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { OPEN_SIGNIN_EVENT, useAuth } from '../auth/context.tsx';
 import { errText, formatCredits, shortHash } from '../lib/format.ts';
+import { TopUpError } from '../voting/funds.ts';
 import { Avatar } from './Identity.tsx';
+import { WriteError } from './WriteError.tsx';
 
 /** Opens the sign-in sheet from anywhere ("Sign in to comment"). */
 export const openSignIn = () => window.dispatchEvent(new Event(OPEN_SIGNIN_EVENT));
@@ -144,7 +146,7 @@ function SessionPanel({ onDone, onSaved }: { onDone(): void; onSaved(name: strin
   const [name, setName] = useState('');
   const [avatar, setAvatar] = useState('');
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string; topUp?: boolean } | null>(null);
   useEffect(() => {
     if (!session) return;
     let live = true;
@@ -176,7 +178,7 @@ function SessionPanel({ onDone, onSaved }: { onDone(): void; onSaved(name: strin
       onSaved(name.trim());
       setMsg({ ok: true, text: 'Profile saved on Platform.' });
     } catch (err) {
-      setMsg({ ok: false, text: errText(err) });
+      setMsg({ ok: false, text: errText(err), topUp: err instanceof TopUpError });
     } finally {
       setBusy(false);
     }
@@ -199,7 +201,7 @@ function SessionPanel({ onDone, onSaved }: { onDone(): void; onSaved(name: strin
         <input value={avatar} onChange={(e) => setAvatar(e.target.value)} maxLength={512} spellCheck={false} />
       </label>
       <p className="muted small">Saving costs about {formatCredits(profile ? COSTS.profileReplace : COSTS.profileCreate, true)} from your balance.</p>
-      {msg && <p className={msg.ok ? 'notice' : 'error'}>{msg.text}</p>}
+      {msg && (msg.ok ? <p className="notice">{msg.text}</p> : <WriteError error={msg.text} needsTopUp={msg.topUp} onTopUp={onDone} />)}
       <div className="form-actions">
         <button type="submit" className="btn btn-primary" disabled={busy || profile === undefined || !name.trim() || !!problem}>
           {busy ? 'Saving…' : profile ? 'Save profile' : 'Create profile'}
