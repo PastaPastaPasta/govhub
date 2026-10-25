@@ -14,6 +14,7 @@ import { fixtureSession } from '../session/fixture.ts';
 import { useAuth, type SheetView } from './context.tsx';
 import { FundingPanel } from './FundingPanel.tsx';
 import { PasskeySignIn, Passkeys } from './Passkeys.tsx';
+import { RecoverLink } from './Recover.tsx';
 import { errorText, formatDuffs } from './runtime.ts';
 
 const TITLES: Record<SheetView, string> = {
@@ -117,6 +118,30 @@ function SampleIdentities() {
   );
 }
 
+/**
+ * Money this browser knows is waiting at a one-time address: a payment after the lock (any funding, finished ones too) or a lock too
+ * small for what it was made for. The Recover tool sends it anywhere or uses it; it does not need this browser's records.
+ */
+function stuckDuffs(r: FundingRecord): bigint {
+  const late = (r.lateDeposits ?? []).reduce((a, d) => a + BigInt(d.value), 0n);
+  return late + (r.state === 'registering' && lockTooSmall(r) ? BigInt(r.lock!.lockDuffs) : 0n);
+}
+
+function RecoverableNotice({ records }: { records: FundingRecord[] }) {
+  const { closeSheet } = useAuth();
+  const total = records.reduce((a, r) => a + stuckDuffs(r), 0n);
+  if (!total) return null;
+  return (
+    <div className="notice-box" role="status" data-testid="recoverable">
+      <p>
+        <b>{formatDuffs(total)}</b> is waiting at {records.filter((r) => stuckDuffs(r) > 0n).length === 1 ? 'a deposit address' : 'deposit addresses'} from an earlier
+        payment (paid after an account setup or top-up, or too small for it).
+      </p>
+      <RecoverLink onClick={closeSheet}>Recover funds</RecoverLink>
+    </div>
+  );
+}
+
 function Choose() {
   const { openSheet, store, network } = useAuth();
   const { mode } = useApp();
@@ -151,7 +176,9 @@ function Choose() {
             {pending.map((r) => (
               <li key={r.key}>
                 <span className="mono-ish">{r.address}</span>
-                <span className="muted small">{r.deposits.length || r.lock ? 'payment received' : 'no payment yet'}</span>
+                <span className="muted small">
+                  {stuckDuffs(r) > 0n ? `${formatDuffs(stuckDuffs(r))} recoverable` : r.deposits.length || r.lock ? 'payment received' : 'no payment yet'}
+                </span>
                 {!r.deposits.length && !r.lock && (
                   <button
                     type="button"
@@ -174,6 +201,7 @@ function Choose() {
           </button>
         </div>
       )}
+      <RecoverableNotice records={store.list().filter((r) => r.network === network && !r.discarded)} />
       <ul className="choices">{main.map((o) => choice(o, true))}</ul>
       <p className="small muted choices-more">Other ways to sign in</p>
       <ul className="choices choices-s">{other.map((o) => choice(o, false))}</ul>
@@ -636,6 +664,7 @@ function TopUp() {
   }
   return (
     <div>
+      <RecoverableNotice records={store.list().filter((r) => r.network === network && r.kind === 'topup' && r.identityId === session.identityId)} />
       <p>Add Platform credits with DASH from any wallet. {formatDuffs(MIN_TOPUP_DEPOSIT_DUFFS)} minimum; about 0.00008 DASH of it pays for the top-up itself.</p>
       <FundingPanel
         kind="topup"

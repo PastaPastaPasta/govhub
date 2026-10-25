@@ -23,6 +23,7 @@ import {
 } from '../config/registry.ts';
 import { cacheClear } from '../data/cache.ts';
 import { BadgeSettings } from '../badge/BadgeSettings.tsx';
+import { RecoverFunds } from '../auth/Recover.tsx';
 import { ThemeSwitch } from '../ui/SignIn.tsx';
 
 const lines = (s: string) => s.split(/[\s,]+/).map((x) => x.trim()).filter(Boolean);
@@ -285,6 +286,8 @@ export function SettingsPage() {
         <h2 id="appearance-title">Appearance</h2>
         <ThemeSwitch />
       </section>
+
+      <RecoverFunds />
 
       <details className="group" open={advanced} onToggle={(e) => setAdvanced((e.target as HTMLDetailsElement).open)}>
         <summary>
