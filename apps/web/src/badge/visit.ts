@@ -143,7 +143,7 @@ export function quietForMs(storage: Store = local(), now = Date.now()): number {
 
 /** Milliseconds until a token request may go out (0: now): the later of the write and the request cooldowns. Fails closed. */
 export function requestWaitLeft(storage: Store = local(), now = Date.now()): number {
-  return Math.max(0, read(storage, REQUEST_KEY, now) + COOLDOWN_MS - now, read(storage, WRITE_KEY, now) + COOLDOWN_MS - now);
+  return Math.max(0, COOLDOWN_MS - quietForMs(storage, now));
 }
 
 /**

@@ -12,7 +12,10 @@ export type PrivacyMode = 'standard' | 'private';
 export const PRIVACY_MODES: readonly PrivacyMode[] = ['standard', 'private'];
 export const isPrivacyMode = (v: unknown): v is PrivacyMode => typeof v === 'string' && (PRIVACY_MODES as readonly string[]).includes(v);
 /** A stored mode: the retired 'extra' (Extra private) reads as 'private'; anything else unknown as `fallback`. */
-export const parsePrivacyMode = (v: unknown, fallback: PrivacyMode): PrivacyMode => (v === 'extra' ? 'private' : isPrivacyMode(v) ? v : fallback);
+export function parsePrivacyMode(v: unknown, fallback: PrivacyMode): PrivacyMode {
+  if (v === 'extra') return 'private';
+  return isPrivacyMode(v) ? v : fallback;
+}
 
 /** Uniform height in [max(from, now), to); null when nothing of the range is left. */
 export function pickHeight(range: HeightRange, now: number): number | null {

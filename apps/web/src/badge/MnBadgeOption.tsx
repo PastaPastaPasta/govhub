@@ -10,8 +10,8 @@ import { errText, formatInt } from '../lib/format.ts';
 import { WinMark } from '../ui/vote/VoteSuccess.tsx';
 import { BadgeLeaks, span } from './BadgeLeaks.tsx';
 import { MnBadges } from './BadgeChip.tsx';
-import { etaSeconds, type BadgeJob } from './client.ts';
-import { ADVANCES_WHEN, availabilityText, clockTime, eta, fetchWaitText, HELD_HERE, heldText, inTime, lapseText, noCrowdText, registerNowNote, type MnBadge } from './flow.ts';
+import type { BadgeJob } from './client.ts';
+import { ADVANCES_WHEN, availabilityText, clockTime, eta, fetchWaitText, HELD_HERE, heldText, inTime, lapseIn, lapseText, noCrowdText, registerNowNote, type MnBadge } from './flow.ts';
 import { MODES, PrivacyModes } from './PrivacyModes.tsx';
 
 /** "14:05 (in about 2 hours)" */
@@ -163,7 +163,8 @@ export function BadgeProgress({ b, celebrate = false, onAgain }: { b: MnBadge; c
     const unreachable = waiting && /could not reach the issuer/i.test(j.note ?? '');
     const scheduled = s.from > (b.height ?? 0);
     // due, but held back by the spacing after a Platform write or another request from this browser
-    const spacing = !scheduled && j.state === 'scheduled' && b.fetchWait(j) > 0;
+    const fetchWait = j.state === 'scheduled' ? b.fetchWait(j) : 0;
+    const spacing = !scheduled && fetchWait > 0;
     const cancel = (
       <button type="button" className="btn btn-s btn-quiet" onClick={() => void b.cancel(j)} data-testid="mnb-cancel">
         {j.state === 'token' ? 'Cancel: don’t post it' : 'Cancel'}
@@ -207,7 +208,7 @@ export function BadgeProgress({ b, celebrate = false, onAgain }: { b: MnBadge; c
                   {j.mode !== 'standard' && ', at a random time'}.
                 </>
               ) : spacing ? (
-                <>{fetchWaitText(b.fetchWait(j))}</>
+                <>{fetchWaitText(fetchWait)}</>
               ) : j.state === 'token' ? (
                 <>
                   <span className="spinner" aria-hidden="true" /> Token received; posting your badge…
@@ -308,10 +309,11 @@ export function RegisterNow({ issuer, onRegister, children }: { issuer: string; 
 function badgeSummary(b: MnBadge): string {
   const s = b.status;
   if (s.kind === 'shown') return 'shown';
-  if (s.kind === 'held') return s.lapsing ? `will lapse in ${b.height === null ? 'a few days' : inTime(etaSeconds(s.lapseAt, b.height))}` : 'ready, appears with your next post';
+  if (s.kind === 'held') return s.lapsing ? `will lapse in ${lapseIn(s.lapseAt, b.height)}` : 'ready, appears with your next post';
   if (s.kind === 'pending') {
     if (s.from > (b.height ?? 0)) return `pending (from block ${formatInt(s.from)})`;
-    if (s.job.state === 'scheduled' && b.fetchWait(s.job) > 0) return `fetching in ~${Math.max(1, Math.ceil(b.fetchWait(s.job) / 60_000))} min`;
+    const wait = s.job.state === 'scheduled' ? b.fetchWait(s.job) : 0;
+    if (wait > 0) return `fetching in ~${Math.max(1, Math.ceil(wait / 60_000))} min`;
     return 'pending (being issued)';
   }
   return 'not shown';

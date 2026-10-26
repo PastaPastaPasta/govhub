@@ -9,9 +9,9 @@ import { useForum } from '../app/forum.tsx';
 import { errText, formatInt } from '../lib/format.ts';
 import { openSignIn } from '../ui/SignIn.tsx';
 import { BadgeLeaks, PolicyLink } from './BadgeLeaks.tsx';
-import { isActive, isHeld, lapseHeight, lapseNudgeBlocks, requestWindow, type BadgeJob } from './client.ts';
+import { isActive, isHeld, lapseHeight, nearLapse, requestWindow, type BadgeJob } from './client.ts';
 import { useBadgeCtx } from './context.tsx';
-import { ADVANCES_WHEN, availabilityText, clockTime, eta, fetchWaitMs, fetchWaitText, HELD_HERE, heldText, inTime, lapseText, useKeyAvailability } from './flow.ts';
+import { ADVANCES_WHEN, availabilityText, clockTime, eta, fetchWaitMs, fetchWaitText, HELD_HERE, heldText, inTime, lapseText, registerNowResult, useKeyAvailability } from './flow.ts';
 import { RegisterNow } from './MnBadgeOption.tsx';
 import { MODES, modeBlocked, PrivacyModes } from './PrivacyModes.tsx';
 
@@ -43,7 +43,7 @@ function JobRow({ job, now, postWait, onRemove, onCancel, onRetry, onRegister }:
   const active = isActive(job);
   const held = isHeld(job);
   const lapseAt = lapseHeight(p, job.epoch);
-  const lapsing = held && now !== null && lapseAt - now <= lapseNudgeBlocks(p);
+  const lapsing = held && nearLapse(p, job.epoch, now);
   const waiting = active && !held && job.retryAt !== undefined && job.retryAt > Date.now();
   return (
     <li className="badge-job" data-testid="badge-job" data-state={job.state}>
@@ -253,7 +253,7 @@ export function BadgePage() {
                 onRemove={() => void removeJob(j.id).catch(() => undefined)}
                 onCancel={() => void cancel(j)}
                 onRetry={() => retryJob(j.id)}
-                onRegister={() => registerNow(j.id).then(() => null, (e: unknown) => errText(e))}
+                onRegister={() => registerNowResult(registerNow(j.id))}
               />
             ))}
           </ul>

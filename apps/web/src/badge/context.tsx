@@ -79,6 +79,10 @@ function withLock<T>(name: string, fn: () => Promise<T>, opts: { signal?: AbortS
   return locks ? (locks.request(name, opts, fn) as Promise<T>) : fn();
 }
 
+function readVisit(): Pick<BadgeCtx, 'requestWait' | 'postWait' | 'quietSince'> {
+  return { requestWait: requestWaitLeft(), postWait: requestCooldownLeft(), quietSince: lastActivityAt() };
+}
+
 export function BadgeProvider({ children }: { children: ReactNode }) {
   const { registry, mode } = useApp();
   const { session } = useForum();
@@ -98,12 +102,12 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
   const [coreHeight, setCoreHeight] = useState<number | null>(null);
   const [storeError, setStoreError] = useState<string | null>(null);
   // the spacing as it stands, in every tab: when a request may go out, and the cooldown after the last one (for the note)
-  const [visit, setVisit] = useState(() => ({ requestWait: requestWaitLeft(), postWait: requestCooldownLeft(), quietSince: lastActivityAt() }));
+  const [visit, setVisit] = useState(readVisit);
   useEffect(() => {
     let t: ReturnType<typeof setTimeout> | undefined;
     const update = () => {
       clearTimeout(t);
-      const v = { requestWait: requestWaitLeft(), postWait: requestCooldownLeft(), quietSince: lastActivityAt() };
+      const v = readVisit();
       setVisit((old) => (old.requestWait === v.requestWait && old.postWait === v.postWait && old.quietSince === v.quietSince ? old : v));
       const next = Math.min(...[v.requestWait, v.postWait].filter((x) => x > 0));
       if (Number.isFinite(next)) t = setTimeout(update, Math.min(next, 60_000));
@@ -116,8 +120,8 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
   const jobsRef = useRef<BadgeJob[]>([]);
   /** the current effect run's merge-and-save (null while no identity is loaded) */
   const commitRef = useRef<((m: Mutate) => Promise<BadgeJob[]>) | null>(null);
-  /** the current effect run's poster of held Standard tokens (null while no identity is loaded) */
-  const postHeldRef = useRef<Scheduler['postHeld'] | null>(null);
+  /** the current effect run's scheduler (null while no identity is loaded): held Standard tokens are posted through it */
+  const schedRef = useRef<Scheduler | null>(null);
   const wakeRef = useRef<() => void>(() => undefined);
   // the privacy mode, remembered per identity in this browser (not on Platform: it says something about the user)
   const modeKey = `govhub.badge.mode.v1.${session?.identityId ?? '-'}`;
@@ -175,7 +179,7 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
     jobsRef.current = [];
     setJobs([]);
     commitRef.current = null;
-    postHeldRef.current = null;
+    schedRef.current = null;
     if (!deps || !session) return;
     const ownerId = session.identityId;
     const lockBase = `govhub-badge-${net}-${ownerId}`;
@@ -201,10 +205,9 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
         ac.signal.addEventListener('abort', done, { once: true });
       });
 
-    let sched: Scheduler | null = null;
     // this identity is about to write in this tab: its held badge goes along (never delaying the write: not awaited)
     const offWrite = onIdentityWrite((writer) => {
-      if (writer === ownerId) void sched?.postHeld({ force: false }).catch(() => undefined);
+      if (writer === ownerId) void schedRef.current?.postHeld({ force: false }).catch(() => undefined);
     });
     (async () => {
       // one store per (identity, signing key): the store key comes from the key, so another key of the same identity has its own
@@ -232,8 +235,7 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
         lock: (name, fn) => withLock(name, fn, { signal: ac.signal }),
         live: () => live,
       });
-      sched = current;
-      postHeldRef.current = current.postHeld;
+      schedRef.current = current;
       show(loaded);
       // one scheduler per identity in this browser: the other tabs wait for the lock
       await withLock(
@@ -298,9 +300,9 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
     await commit((latest) => latest.filter((j) => j.id !== id));
   }, []);
   const registerNow = useCallback(async (id: string) => {
-    const post = postHeldRef.current;
-    if (!post) throw new Error('Your badge requests are not loaded in this tab (sign in again).');
-    const job = (await post({ id, force: true })).find((j) => j.id === id);
+    const sched = schedRef.current;
+    if (!sched) throw new Error('Your badge requests are not loaded in this tab (sign in again).');
+    const job = (await sched.postHeld({ id, force: true })).find((j) => j.id === id);
     if (job?.state !== 'posted') throw new Error(job?.note ?? 'This badge is no longer waiting to be posted.');
   }, []);
   const retryJob = useCallback(

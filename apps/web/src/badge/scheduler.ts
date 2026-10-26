@@ -78,6 +78,11 @@ export function createScheduler(env: SchedulerEnv): Scheduler {
       return env.deps.worker(call as never);
     }) as ClientDeps['worker'],
   };
+  /** Steps one job and records the result in `updates` when it changed anything. */
+  const advance = async (updates: Map<string, BadgeJob>, j: BadgeJob, height: number, o?: { post?: boolean }): Promise<void> => {
+    const after = await step(deps, j, height, o);
+    if (JSON.stringify(after) !== JSON.stringify(j)) updates.set(j.id, after);
+  };
   /**
    * Saves what a run computed from `snapshot`: an update only lands on a job still exactly as it was read (another tab, a
    * write's badge post or Register now may have moved it meanwhile; the next tick redoes it then), plus new renewal jobs.
@@ -114,8 +119,7 @@ export function createScheduler(env: SchedulerEnv): Scheduler {
       const updates = new Map<string, BadgeJob>();
       for (const j of pick.values()) {
         if (!env.live()) return snapshot;
-        const after = await step(deps, j, height, { post: true });
-        if (JSON.stringify(after) !== JSON.stringify(j)) updates.set(j.id, after);
+        await advance(updates, j, height, { post: true });
       }
       return merge(snapshot, updates, height);
     });
@@ -136,10 +140,7 @@ export function createScheduler(env: SchedulerEnv): Scheduler {
     if (!env.live()) return TICK_MS;
     const updates = new Map<string, BadgeJob>();
     const added: BadgeJob[] = [];
-    const run = async (j: BadgeJob) => {
-      const after = await step(deps, j, height);
-      if (JSON.stringify(after) !== JSON.stringify(j)) updates.set(j.id, after);
-    };
+    const run = (j: BadgeJob) => advance(updates, j, height);
     // windows that closed, lapsed held tokens: no network involved
     for (const j of snapshot.filter((x) => isActive(x) && pastDeadline(p, x, height))) await run(j);
     // due: requests whose height came, Private posts whose height came. A held Standard token is never due here.

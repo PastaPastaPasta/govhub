@@ -234,7 +234,9 @@ export async function createJob(d: ClientDeps, jobs: readonly BadgeJob[], voting
   const preparedMsg = bytesToBase64(prepared.preparedMsg);
   const blinded = await d.worker({ kind: 'blind', spki, preparedMsg });
   // Standard: as soon as the spacing allows (from S(E) for a job made in E's last blocks); Private: a random height
-  const requestAt = mode === 'standard' ? Math.max(coreHeight, epochStart(p, epoch)) : o.immediate ? coreHeight : (pickRequestHeight(p, epoch, coreHeight) ?? coreHeight);
+  let requestAt = coreHeight;
+  if (mode === 'standard') requestAt = Math.max(coreHeight, epochStart(p, epoch));
+  else if (!o.immediate) requestAt = pickRequestHeight(p, epoch, coreHeight) ?? coreHeight;
   return {
     v: 1,
     id: randomId(),
@@ -297,6 +299,9 @@ export const lapseHeight = (p: EpochParams, epoch: number): number => displayWin
  */
 export const lapseNudgeBlocks = (p: EpochParams): number => Math.round(Math.min((3 * 86400) / BLOCK_SECONDS, epochLength(p) / 10));
 
+/** Whether a held token at `epoch` is within lapseNudgeBlocks of its lapse at `height` (false while the height is unknown). */
+export const nearLapse = (p: EpochParams, epoch: number, height: number | null): boolean => height !== null && lapseHeight(p, epoch) - height <= lapseNudgeBlocks(p);
+
 /** A Standard token in hand, waiting for the user's next write (or Register now). */
 export const isHeld = (j: BadgeJob): boolean => j.state === 'token' && j.mode === 'standard';
 
@@ -330,10 +335,7 @@ export async function step(d: ClientDeps, job: BadgeJob, height: number, o: { po
       return wipe({
         ...j,
         state: 'expired',
-        note:
-          j.mode === 'standard'
-            ? 'The epoch ended before the request could be sent: the app was not open during a quiet half hour (no posts, comments or other requests from this browser), or the issuer was unreachable.'
-            : 'The request window closed before the request could be sent: the app was not open during a quiet half hour (no posts, comments or other requests from this browser), or the issuer was unreachable.',
+        note: `${j.mode === 'standard' ? 'The epoch ended' : 'The request window closed'} before the request could be sent: the app was not open during a quiet half hour (no posts, comments or other requests from this browser), or the issuer was unreachable.`,
       });
     if (height < j.requestAt) return j;
     if (!d.trusted(j.issuer.identityId)) return { ...j, note: `${j.issuer.name} is not on your trust list (or is turned off): the request waits.` };

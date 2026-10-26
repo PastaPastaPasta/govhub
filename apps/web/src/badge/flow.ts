@@ -8,7 +8,7 @@ import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { errText, formatInt } from '../lib/format.ts';
 import { assertUsableKey, type OwnedMasternode } from '../voting/masternodes.ts';
-import { checkKeyAvailability, etaSeconds, isActive, isHeld, lapseHeight, lapseNudgeBlocks, type BadgeJob, type KeyAvailability } from './client.ts';
+import { checkKeyAvailability, etaSeconds, isActive, isHeld, lapseHeight, nearLapse, type BadgeJob, type KeyAvailability } from './client.ts';
 import { COOLDOWN_MS } from './visit.ts';
 import { useNow } from '../ui/vote/common.tsx';
 import type { TrustedIssuer } from './config.ts';
@@ -71,7 +71,7 @@ export function availabilityText(av: KeyAvailability, issuerName: string, p: Epo
  *            the badge can appear from `from`, that epoch's first block
  *   blocked  nothing can be scheduled in this mode (no key within reach, or only for an earlier epoch than the mode asks for)
  */
-type Readiness ={ kind: 'now'; epoch: number } | { kind: 'later'; epoch: number; from: number } | { kind: 'blocked'; noKeys: boolean };
+type Readiness = { kind: 'now'; epoch: number } | { kind: 'later'; epoch: number; from: number } | { kind: 'blocked'; noKeys: boolean };
 
 export function readiness(av: KeyAvailability, mode: PrivacyMode, p: EpochParams): Readiness {
   const m = av.modes.find((x) => x.mode === mode);
@@ -109,8 +109,7 @@ function badgeStatus(jobs: readonly BadgeJob[], shownBy: readonly string[], heig
   // the newest held token (an older one is superseded once saved)
   const held = mine.filter(isHeld).sort((a, b) => b.epoch - a.epoch)[0];
   if (held) {
-    const lapseAt = lapseHeight(p, held.epoch);
-    return { kind: 'held', job: held, lapseAt, lapsing: height !== null && lapseAt - height <= lapseNudgeBlocks(p) };
+    return { kind: 'held', job: held, lapseAt: lapseHeight(p, held.epoch), lapsing: nearLapse(p, held.epoch, height) };
   }
   const active = mine.filter(isActive).sort((a, b) => a.epoch - b.epoch)[0];
   if (active) return { kind: 'pending', job: active, from: badgeFrom(active, p) };
@@ -138,12 +137,17 @@ export function heldText(postWaitMs: number): string {
   return `Your MN badge is ready. It will appear the next time you post or react${after}. The longer you wait, the harder it is for anyone to match it to your masternode.`;
 }
 
+/** A Register now call as the error text its UI shows, or null when it posted (what RegisterNow's `onRegister` resolves with). */
+export const registerNowResult = (posting: Promise<void>): Promise<string | null> => posting.then(() => null, (e: unknown) => errText(e));
+
 /** Only in this browser: a write from another device does not carry it. */
 export const HELD_HERE = 'It’s kept in this browser only: posting from another device won’t publish it.';
 
+/** "3 days": how long until a held token lapses at block `lapseAt`. */
+export const lapseIn = (lapseAt: number, height: number | null): string => (height === null ? 'a few days' : inTime(etaSeconds(lapseAt, height)));
+
 /** "Your badge will lapse in 3 days unless registered." */
-export const lapseText = (lapseAt: number, height: number | null): string =>
-  `Your badge will lapse in ${height === null ? 'a few days' : inTime(etaSeconds(lapseAt, height))} unless registered.`;
+export const lapseText = (lapseAt: number, height: number | null): string => `Your badge will lapse in ${lapseIn(lapseAt, height)} unless registered.`;
 
 /** The masternode a badge is asked with: one only (more would tell the issuer they belong together), a valid one, list-confirmed first. */
 export function pickBadgeMn(owned: readonly OwnedMasternode[], keyIndex?: number): OwnedMasternode | undefined {
@@ -158,7 +162,7 @@ export function badgeWif(key: { privateKey: Uint8Array; compressed: boolean } | 
   return encodeWif(key.privateKey, key.compressed, network);
 }
 
-type Availability ={ state: 'checking' } | { state: 'error'; message: string } | { state: 'ready'; av: KeyAvailability };
+type Availability = { state: 'checking' } | { state: 'error'; message: string } | { state: 'ready'; av: KeyAvailability };
 
 /** The issuer's keys per mode, from proved issuerKey reads only (nothing goes to the issuer); checked again when the epoch changes. */
 export function useKeyAvailability(issuer: TrustedIssuer | undefined): (Availability & { retry(): void }) | null {
@@ -264,14 +268,7 @@ export function useMnBadge(): MnBadge {
     },
     cancelled,
     retry: (job) => ctx.retryJob(job.id),
-    registerNow: async (job) => {
-      try {
-        await ctx.registerNow(job.id);
-        return null;
-      } catch (e) {
-        return errText(e);
-      }
-    },
+    registerNow: (job) => registerNowResult(ctx.registerNow(job.id)),
     fetchWait: (job) => fetchWaitMs(job, ctx.quietSince, now),
     postWait: ctx.postWait,
   };
