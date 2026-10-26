@@ -5,7 +5,7 @@
 //   AAD = identityId, a fresh 12-byte IV per save.
 // The plaintext is padded to 16 KiB buckets so the stored size does not tell how many MNs a browser requested badges for.
 // Without a key-holding session (fixture identities) jobs live in memory only.
-import { bytesToBase64 } from '@govhub/badge';
+import { bytesToBase64, parsePrivacyMode } from '@govhub/badge';
 import type { BadgeJob } from './client.ts';
 
 export interface JobStore {
@@ -52,8 +52,7 @@ export function encryptedJobStore(slot: string, identityId: string, key: CryptoK
       const { iv, ct } = JSON.parse(raw) as { iv: string; ct: string };
       const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(iv), additionalData: aad }, key, unb64(ct));
       const jobs = JSON.parse(unpad(new Uint8Array(pt))) as BadgeJob[];
-      // jobs saved before privacy modes existed were made under the private rules
-      return Array.isArray(jobs) ? jobs.filter((j) => j && j.v === 1 && j.ownerId === identityId).map((j) => ({ ...j, mode: j.mode ?? 'private' })) : [];
+      return Array.isArray(jobs) ? jobs.filter((j) => j && j.v === 1 && j.ownerId === identityId).map(migrateJob) : [];
     },
     async save(jobs) {
       if (!jobs.length) return storage.removeItem(jobStorageKey(slot));
@@ -62,6 +61,17 @@ export function encryptedJobStore(slot: string, identityId: string, key: CryptoK
       storage.setItem(jobStorageKey(slot), JSON.stringify({ iv: bytesToBase64(iv), ct: bytesToBase64(ct) }));
     },
   };
+}
+
+/**
+ * Jobs saved before privacy modes existed were made under the private rules; Extra-private jobs (a mode since removed) continue
+ * as Private, and a token's posting height, picked in Extra's wider window, is picked again in Private's (step() does that).
+ */
+export function migrateJob(j: BadgeJob): BadgeJob {
+  const mode = parsePrivacyMode(j.mode, 'private');
+  if ((j.mode as string) !== 'extra') return { ...j, mode };
+  const { postAt: _, ...rest } = j;
+  return { ...rest, mode };
 }
 
 export function memoryJobStore(): JobStore {

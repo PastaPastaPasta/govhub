@@ -28,32 +28,24 @@ export function ModeDetails({ mode, net }: { mode: PrivacyMode; net: CoreNetwork
   if (mode === 'standard') {
     return (
       <>
-        The issuer signs a token for the current epoch and your badge is posted right away. The signature is blind, but the issuer sees your request and could see the
-        badge appear a minute later, so it could tell which masternode the badge belongs to. The operator of the govhub issuer commits to keeping no records or logs that
-        would let it (no request times, addresses or masternode ids beyond the one-per-epoch check, which is deleted when the epoch ends; see its <PolicyLink />). That is a
-        promise you are trusting, not something this app can check; other issuers decide for themselves. Switching to Private later does not undo this for an identity
-        that already used Standard with that issuer: use a new identity.
-      </>
-    );
-  }
-  if (mode === 'private') {
-    return (
-      <>
-        The token is for the next epoch, requested at a random time during this one, and the badge is posted at a random time within about the first {span(p.graceBlocks)}{' '}
-        of the next epoch, so every private token exists before any of those badges appear. That makes it harder for the issuer to match the badge to your masternode by
-        timing, not impossible: the badge hides only among the others who chose a private mode with the same issuer (the issuer knows who they are). The app posts it only
-        if the issuer reported at least {minSet} tokens for the epoch before; for an issuer’s first epoch there is no earlier count, and the badge is posted without
-        this check. That count is the issuer’s own and includes Standard tokens (the report cannot tell them
-        apart), so the private crowd can be smaller than it says. A badge that appears for the first time, or stops, can still be matched to a masternode that started or
-        stopped asking at the same time when few others did. A request waits for half an hour without Platform writes from this browser, and posts wait half an hour after
-        a request. A badge appears up to about one epoch plus {span(p.graceBlocks)} after you ask (an epoch is about {span(epochLength(p))}).
+        The issuer blind-signs a token for the current epoch once nothing has been posted from this browser for half an hour. The token stays in this browser, and the
+        badge is posted together with your next post, comment or reaction after another half hour, so it appears with your own activity, not right after the request.
+        The issuer can then only narrow it down to the masternodes whose tokens are not posted yet; the longer you wait, the more of them there are. <b>Register now</b>{' '}
+        posts it at once, and then the issuer can match it to your masternode by timing. The token is kept in this browser only: posting from another device does not
+        publish it. If nothing is posted before its epoch’s badges stop showing (about {span(p.graceBlocks)} after the epoch ends; an epoch is about{' '}
+        {span(epochLength(p))}), it lapses, and the masternode can ask again only in the next epoch. The govhub issuer’s operator commits to keeping no records that
+        would link a request to a badge (<PolicyLink />); that is a promise, not something this app can check.
       </>
     );
   }
   return (
     <>
-      Like Private, but the badge is posted at a random time across the first half of the next epoch, so its timing is spread wider and harder to match. It can take up to
-      half an epoch longer to appear. The same limits apply: the crowd is only those who chose a private mode with the same issuer.
+      The token is for the next epoch, requested at a random time during this one, and the badge is posted at a random time within about the first {span(p.graceBlocks)} of
+      the next epoch, so every Private token exists before any Private badge appears. The badge hides among the others who chose Private with the same issuer (the
+      issuer knows who they are). It is posted only if the issuer reported at least {minSet} tokens for the epoch before (Standard ones included, so the Private crowd
+      can be smaller); for an issuer’s first epoch there is no earlier count and the badge is posted without this check. A badge that appears for the first time, or
+      stops, can still be matched to a masternode that started or stopped asking at the same time. A badge appears up to about one epoch plus {span(p.graceBlocks)} after
+      you ask (an epoch is about {span(epochLength(p))}).
     </>
   );
 }
@@ -74,10 +66,7 @@ export function BadgeLeaks({ net, open = false }: { net: CoreNetwork; open?: boo
           <b>Private</b>: <ModeDetails mode="private" net={net} />
         </li>
         <li>
-          <b>Extra private</b>: <ModeDetails mode="extra" net={net} />
-        </li>
-        <li>
-          <b>In every mode</b> the issuer learns which masternode asked, when, and from which IP address, and the network nodes this app talks to see the same address when your
+          <b>In every mode</b> requests and badge posts are kept half an hour away from this browser’s other Platform writes. The issuer learns which masternode asked, when, and from which IP address, and the network nodes this app talks to see the same address when your
           identity reads or writes. Use Tor or a VPN if that matters. Cloudflare, in front of our services, sees request metadata at its edge; that is outside our control.
         </li>
         <li>
@@ -92,8 +81,8 @@ export function BadgeLeaks({ net, open = false }: { net: CoreNetwork; open?: boo
           badge names who vouched, and why you choose the issuers you trust.
         </li>
         <li>
-          <b>In this browser:</b> a pending request’s blinding secret, and a pasted voting key until the request is sent (or for good, if you renew automatically), are stored
-          encrypted with a key derived from your identity’s signing key. A request moves on only while this app is open and you are signed in as this identity with the
+          <b>In this browser:</b> a pending request’s blinding secret, a token waiting to be posted, and a pasted voting key until the request is sent (or for good, if you
+          renew automatically), are stored encrypted with a key derived from your identity’s signing key, never on Platform. A request moves on only while this app is open and you are signed in as this identity with the
           same sign-in key; a pending one can be cancelled, which deletes it and its key.
         </li>
       </ul>

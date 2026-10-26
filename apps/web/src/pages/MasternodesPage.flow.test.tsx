@@ -112,8 +112,8 @@ function keyringFake(o: { canSave?: boolean } = {}) {
 }
 
 /** The badge provider fake: an issuer whose first key is for `firstKey`; requestBadge records the call and adds a job. */
-function badgeFake(o: { firstKey?: number; shown?: string[]; jobs?: BadgeJob[] } = {}) {
-  const calls = { request: [] as Array<{ voting: unknown; pro: string; opts: any }>, remove: [] as string[], retry: [] as string[] };
+function badgeFake(o: { firstKey?: number; shown?: string[]; jobs?: BadgeJob[]; requestWait?: number; postWait?: number; height?: number } = {}) {
+  const calls = { request: [] as Array<{ voting: unknown; pro: string; opts: any }>, remove: [] as string[], retry: [] as string[], register: [] as string[] };
   const firstKey = o.firstKey ?? 2741;
   const ctx = {
     contractId: 'contract',
@@ -123,7 +123,13 @@ function badgeFake(o: { firstKey?: number; shown?: string[]; jobs?: BadgeJob[] }
       key: async (_i: unknown, e: number) => (e >= firstKey ? { key: { revokedFrom: null }, problem: null } : { key: null, problem: 'no issuerKey for this epoch' }),
     },
     jobs: o.jobs ?? [],
-    coreHeight: HEIGHT,
+    coreHeight: o.height ?? HEIGHT,
+    requestWait: o.requestWait ?? 0,
+    postWait: o.postWait ?? 0,
+    registerNow: async (id: string) => {
+      calls.register.push(id);
+      h.bd.set({ jobs: h.bd.get().jobs.map((j: BadgeJob) => (j.id === id ? { ...j, state: 'posted' } : j)) });
+    },
     privacy: 'standard',
     setPrivacy: (m: string) => h.bd.set({ privacy: m }),
     shown: new Map(o.shown ? [[IDENTITY, o.shown]] : []),
@@ -417,6 +423,44 @@ describe('a locked keyring (or a pasted-key sign-in)', () => {
   });
 });
 
+describe('deferred Standard in the unified flow (PLAN §8.10)', () => {
+  it('after the keyring save, the request waits about 30 min (said once, plainly); then the badge is held for the next post, with Register now', async () => {
+    keyringFake();
+    const bd = badgeFake({ requestWait: 30 * 60_000 });
+    const el = await start();
+    await pasteAndFind(el);
+    expect(q(el, 'mnb-ready')?.textContent).toContain('Your badge is fetched in the background and appears the next time you post or react.');
+    await click(q(el, 'flow-confirm')!);
+    await flush();
+    const p = q(el, 'mnb-pending')!;
+    expect(p.dataset.state).toBe('fetch-wait');
+    expect(p.textContent).toContain('We’ll fetch your badge in about 30 minutes so the request can’t be matched to your account.');
+    expect(q(el, 'mnb-summary')?.textContent).toBe('fetching in ~30 min');
+    // the token arrives (30 min later): held, not posted
+    await act(async () => h.bd.set({ requestWait: 0, postWait: 29 * 60_000 }));
+    await setJob({ state: 'token', sig: 'held', attempts: 1 });
+    const held = q(el, 'mnb-held')!;
+    expect(held.dataset.state).toBe('ready');
+    expect(held.textContent).toContain('Your MN badge is ready. It will appear the next time you post or react after about');
+    expect(held.textContent).toContain('The longer you wait, the harder it is for anyone to match it to your masternode.');
+    expect(held.textContent).toContain('posting from another device won’t publish it');
+    expect(q(el, 'mnb-register-note')?.textContent).toBe(
+      'Posting now lets govhub’s issuer match your masternode to this account by timing. Waiting until you next post or react hides that better; the longer the gap, the better.',
+    );
+    expect(q(el, 'mnb-lapsing')).toBeNull();
+    expect(q(el, 'mnb-summary')?.textContent).toBe('ready, appears with your next post');
+    await act(async () => h.bd.set({ postWait: 0 }));
+    expect(q(el, 'mnb-held')?.textContent).toContain('It will appear the next time you post or react.');
+    // Register now: posted at once, the success card
+    await click(q(el, 'mnb-register-now')!);
+    await flush();
+    expect(bd.register).toEqual(['j1']);
+    expect(q(el, 'mnb-success')?.textContent).toContain('Your MN badge is live');
+    expect(q(el, 'mnb-summary')?.textContent).toBe('shown');
+  });
+
+});
+
 describe('the keyring card: MN badge row for existing keyrings', () => {
   function openKeyring() {
     const ring = emptyKeyring(IDENTITY, []);
@@ -465,5 +509,41 @@ describe('the keyring card: MN badge row for existing keyrings', () => {
     const el = await start();
     await flush();
     expect(q(el, 'mnb-ready')?.textContent).toContain('Switch it on and your badge will be issued automatically from block 1,579,392');
+  });
+  const heldJob = { id: 'h', issuer: ISSUER, epoch: 2741, mode: 'standard', state: 'token', sig: 'held', requestAt: HEIGHT, attempts: 1, net: 'testnet', signer: { kind: 'external' } } as unknown as BadgeJob;
+
+  it('held: "ready, appears with your next post", the nudge, Register now with its note, and Cancel; switching off cancels too', async () => {
+    openKeyring();
+    const bd = badgeFake({ jobs: [heldJob] });
+    const el = await start();
+    expect(q(el, 'mnb-summary')?.textContent).toBe('ready, appears with your next post');
+    expect((q(el, 'mnb-row-toggle') as HTMLInputElement).checked).toBe(true);
+    expect(q(el, 'mnb-held')?.dataset.state).toBe('ready');
+    expect(q(el, 'mnb-lapsing')).toBeNull();
+    expect(q(el, 'mnb-register-note')?.textContent).toContain('the longer the gap, the better');
+    await click(q(el, 'mnb-row-toggle')!);
+    expect(bd.remove).toEqual(['h']);
+  });
+
+  it('held near its end: "will lapse in N" with Register now; Register now posts it ("shown")', async () => {
+    openKeyring();
+    // epoch 2741's token lapses at S(2742) + 72 - 3 = 1,579,461; 30 blocks before is inside the 58-block nudge
+    const bd = badgeFake({ height: 1_579_431, jobs: [heldJob] });
+    const el = await start();
+    expect(q(el, 'mnb-summary')?.textContent).toBe('will lapse in 1 hour');
+    expect(q(el, 'mnb-lapsing')?.textContent).toBe('Your badge will lapse in 1 hour unless registered.');
+    expect(q(el, 'mnb-held')?.dataset.state).toBe('lapsing');
+    await click(q(el, 'mnb-register-now')!);
+    await flush();
+    expect(bd.register).toEqual(['h']);
+    expect(q(el, 'mnb-summary')?.textContent).toBe('shown');
+  });
+
+  it('fetching: the request waits for the spacing after a write: "fetching in ~N min"', async () => {
+    openKeyring();
+    badgeFake({ requestWait: 12 * 60_000, jobs: [{ ...heldJob, state: 'scheduled', sig: undefined }] as BadgeJob[] });
+    const el = await start();
+    expect(q(el, 'mnb-summary')?.textContent).toBe('fetching in ~12 min');
+    expect(q(el, 'mnb-pending')?.textContent).toContain('We’ll fetch your badge in about 12 minutes');
   });
 });

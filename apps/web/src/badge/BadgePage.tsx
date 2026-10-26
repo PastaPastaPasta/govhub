@@ -1,6 +1,6 @@
-// "Get MN badge" (PLAN §8.5): pick an MN (paste its voting key; the MN keyring calls the same requestBadge with its own signer),
-// choose a privacy mode (Standard: now; Private / Extra private: later, harder to link), and follow the request until the badge is
-// posted.
+// "Get MN badge" (PLAN §8.5, §8.10): pick an MN (paste its voting key; the MN keyring calls the same requestBadge with its own
+// signer), choose a privacy mode (Standard: the token now, the badge with your next post; Private: next epoch, at a random time),
+// and follow the request until the badge is posted (Register now posts a held one at once).
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { EPOCH_PARAMS, epochStart, type EpochParams } from '@govhub/badge';
@@ -9,9 +9,10 @@ import { useForum } from '../app/forum.tsx';
 import { errText, formatInt } from '../lib/format.ts';
 import { openSignIn } from '../ui/SignIn.tsx';
 import { BadgeLeaks, PolicyLink } from './BadgeLeaks.tsx';
-import { isActive, requestWindow, type BadgeJob } from './client.ts';
+import { isActive, isHeld, lapseHeight, lapseNudgeBlocks, requestWindow, type BadgeJob } from './client.ts';
 import { useBadgeCtx } from './context.tsx';
-import { ADVANCES_WHEN, availabilityText, clockTime, eta, inTime, useKeyAvailability } from './flow.ts';
+import { ADVANCES_WHEN, availabilityText, clockTime, eta, fetchWaitText, HELD_HERE, heldText, inTime, lapseText, useKeyAvailability } from './flow.ts';
+import { RegisterNow } from './MnBadgeOption.tsx';
 import { MODES, modeBlocked, PrivacyModes } from './PrivacyModes.tsx';
 
 /** A wall-clock time (ms) as "14:05 (in 1 hour)". */
@@ -21,10 +22,11 @@ function clock(ms: number): string {
   return ms <= now ? `${t} (now)` : `${t} (in ${inTime((ms - now) / 1000)})`;
 }
 
-function requestedText(job: BadgeJob, p: EpochParams, coreHeight: number | null): string {
+function requestedText(job: BadgeJob, p: EpochParams, coreHeight: number | null, requestWait: number): string {
   if (job.mode !== 'standard') return `Scheduled: the request for epoch ${job.epoch} goes out at a random time, around ${eta(job.requestAt, coreHeight)}. ${ADVANCES_WHEN}`;
-  if (job.requestAt > (coreHeight ?? 0)) return `Requested: epoch ${job.epoch} starts at block ${formatInt(epochStart(p, job.epoch))}; the badge is posted then. ${ADVANCES_WHEN}`;
-  return `Requesting now: your badge is posted in a minute or two. ${ADVANCES_WHEN}`;
+  if (job.requestAt > (coreHeight ?? 0)) return `Requested: epoch ${job.epoch} starts at block ${formatInt(epochStart(p, job.epoch))}; your badge is fetched then, and appears the next time you post or react. ${ADVANCES_WHEN}`;
+  if (requestWait > 0) return `${fetchWaitText(requestWait)} It then appears the next time you post or react. ${ADVANCES_WHEN}`;
+  return `Fetching your badge now. It will appear the next time you post or react. ${ADVANCES_WHEN}`;
 }
 
 const STATE: Record<BadgeJob['state'], string> = {
@@ -35,14 +37,17 @@ const STATE: Record<BadgeJob['state'], string> = {
   failed: 'failed',
 };
 
-function JobRow({ job, now, onRemove, onCancel, onRetry }: { job: BadgeJob; now: number | null; onRemove: () => void; onCancel: () => void; onRetry: () => void }) {
+function JobRow({ job, now, postWait, onRemove, onCancel, onRetry, onRegister }: { job: BadgeJob; now: number | null; postWait: number; onRemove: () => void; onCancel: () => void; onRetry: () => void; onRegister: () => Promise<string | null> }) {
   const p = EPOCH_PARAMS[job.net];
   const active = isActive(job);
-  const waiting = active && job.retryAt !== undefined && job.retryAt > Date.now();
+  const held = isHeld(job);
+  const lapseAt = lapseHeight(p, job.epoch);
+  const lapsing = held && now !== null && lapseAt - now <= lapseNudgeBlocks(p);
+  const waiting = active && !held && job.retryAt !== undefined && job.retryAt > Date.now();
   return (
     <li className="badge-job" data-testid="badge-job" data-state={job.state}>
       <div>
-        <b>Epoch {job.epoch}</b> with {job.issuer.name}: <span className={job.state === 'failed' ? 'error' : ''}>{STATE[job.state]}</span>
+        <b>Epoch {job.epoch}</b> with {job.issuer.name}: <span className={job.state === 'failed' ? 'error' : ''}>{held ? 'ready, appears with your next post or reaction' : STATE[job.state]}</span>
       </div>
       <div className="small muted">
         {job.proTxHash ? <>MN <span className="mono-ish">{job.proTxHash.slice(0, 12)}…</span></> : 'masternode forgotten'}
@@ -50,9 +55,17 @@ function JobRow({ job, now, onRemove, onCancel, onRetry }: { job: BadgeJob; now:
         {MODES[job.mode].label}
         {job.state === 'scheduled' && <> · request at {eta(job.requestAt, now)} (window closes at block {formatInt(requestWindow(p, job.epoch, job.mode).to)})</>}
         {job.state === 'token' && job.postAt !== undefined && <> · posting at {eta(job.postAt, now)}</>}
+        {held && <> · lapses at {eta(lapseAt, now)}</>}
         {job.state === 'posted' && <> · shown until block {formatInt(epochStart(p, job.epoch + 1) + p.graceBlocks)}</>}
         {job.signer.kind === 'wif' && job.keepKey && ' · voting key kept (encrypted) for renewal'}
       </div>
+      {held && (
+        <div className="small" data-testid="badge-job-held">
+          <p>{heldText(postWait)}</p>
+          {lapsing && <p className="vwarn">{lapseText(lapseAt, now)}</p>}
+          <p className="muted">{HELD_HERE}</p>
+        </div>
+      )}
       {job.note && (
         <div className="small" data-testid="badge-job-note">
           {job.note}
@@ -63,7 +76,8 @@ function JobRow({ job, now, onRemove, onCancel, onRetry }: { job: BadgeJob; now:
           Next try around {clock(job.retryAt!)}.
         </div>
       )}
-      {active && <div className="small muted">{ADVANCES_WHEN}</div>}
+      {active && !held && <div className="small muted">{ADVANCES_WHEN}</div>}
+      {held && <RegisterNow issuer={job.issuer.name} onRegister={onRegister} />}
       <div className="badge-job-actions">
         {waiting && (
           <button type="button" className="btn btn-s" onClick={onRetry} data-testid="badge-job-retry">
@@ -88,7 +102,7 @@ function JobRow({ job, now, onRemove, onCancel, onRetry }: { job: BadgeJob; now:
 export function BadgePage() {
   const { registry, mode } = useApp();
   const { session } = useForum();
-  const { contractId, trust, jobs, coreHeight, requestBadge, removeJob, retryJob, reader, privacy, setPrivacy } = useBadgeCtx();
+  const { contractId, trust, jobs, coreHeight, requestBadge, removeJob, retryJob, registerNow, requestWait, postWait, reader, privacy, setPrivacy } = useBadgeCtx();
   const net = registry.platformNetwork;
   const p = EPOCH_PARAMS[net];
   const enabled = trust.filter((t) => t.enabled);
@@ -115,7 +129,7 @@ export function BadgePage() {
     try {
       const job = await requestBadge(wif, proTxHash, { ...(issuer ? { issuer } : {}), keepKey, mode: privacy });
       setWif('');
-      setMsg({ kind: 'ok', text: requestedText(job, p, coreHeight), jobId: job.id });
+      setMsg({ kind: 'ok', text: requestedText(job, p, coreHeight, requestWait), jobId: job.id });
     } catch (e) {
       setMsg({ kind: 'error', text: errText(e) });
     } finally {
@@ -133,7 +147,7 @@ export function BadgePage() {
       kind: 'ok',
       text:
         j.state === 'token'
-          ? `Cancelled: the badge for epoch ${j.epoch} is not posted, and the token and any voting key stored with it are deleted from this browser. The issuer already counted the token. (If a post was already on its way at this moment, it may still appear.)`
+          ? `Cancelled: the badge for epoch ${j.epoch} is not posted, and the token and any voting key stored with it are deleted from this browser. The issuer already counted the token, so this masternode can ask again only from the next epoch. (If a post was already on its way at this moment, it may still appear.)`
           : `Cancelled: the request for epoch ${j.epoch} and the voting key stored with it are deleted from this browser. (If the request was already on its way to the issuer at this moment, the issuer may still have counted a token.)`,
     });
   };
@@ -230,7 +244,16 @@ export function BadgePage() {
           <h2>Your badge requests</h2>
           <ul className="badge-jobs">
             {jobs.map((j) => (
-              <JobRow key={j.id} job={j} now={coreHeight} onRemove={() => void removeJob(j.id).catch(() => undefined)} onCancel={() => void cancel(j)} onRetry={() => retryJob(j.id)} />
+              <JobRow
+                key={j.id}
+                job={j}
+                now={coreHeight}
+                postWait={postWait}
+                onRemove={() => void removeJob(j.id).catch(() => undefined)}
+                onCancel={() => void cancel(j)}
+                onRetry={() => retryJob(j.id)}
+                onRegister={() => registerNow(j.id).then(() => null, (e: unknown) => errText(e))}
+              />
             ))}
           </ul>
         </>

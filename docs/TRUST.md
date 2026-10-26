@@ -550,19 +550,28 @@ own node.
 - Copy a badge to another identity, because `$ownerId` is in the signed message.
 - Use a key it did not publish in time.
 
-**Privacy modes.** There are three: Standard, Private and Extra private (`packages/badge/src/schedule.ts:1-10`). They differ in
-the epoch requested, in timing, and in a crowd-size check. The issuer endpoint is the same.
+**Privacy modes.** There are two: Standard and Private (`packages/badge/src/schedule.ts`; Extra private was removed on
+2026-10-25 and continues as Private). They differ in the epoch requested, in timing, and in a crowd-size check. The issuer
+endpoint is the same. Both send a token request only after half an hour without Platform writes or other requests from
+this browser, plus a random 0–15 minutes (`apps/web/src/badge/visit.ts`, `scheduler.ts`).
 
-- **Standard** (the default, `apps/web/src/badge/client.ts:195`) asks for the current epoch and posts the badge at once. The
-  issuer could match the two by timing; its no-logging policy is a promise the app can't check
-  (`apps/web/src/badge/BadgeLeaks.tsx:31-35`).
+- **Standard** (the default) asks for the current epoch and **holds** the token in the browser's encrypted job store, never
+  on Platform. The badge is posted with the identity's next Platform write, once half an hour has passed since the request
+  (`auth/runtime.ts` `markWrites` announces every write; `scheduler.ts` `postHeld`), or at once if the user presses
+  **Register now**. The issuer could still narrow a badge down to the Standard requests made during the user's quiet
+  stretch before that write, using the public write times (PLAN §8.10). With Register now it can match the two by timing.
+  Its no-logging policy is a promise the app can't check (`apps/web/src/badge/BadgeLeaks.tsx`).
+- A held token is kept only in that browser: a write from another device does not publish it. If nothing is posted before
+  its display window ends (S(E+1)+W, less a margin), it lapses. The issuer's per-epoch dedup then means that masternode can
+  ask again only in the next epoch.
 - **Private** asks for the next epoch at a random height, and posts at a random height in the first W blocks of that epoch
-  (about 3.5 days on mainnet; `packages/badge/src/epoch.ts:101-106`). **Extra private** posts in the first half of the epoch.
-- Both private modes post only if the issuer's report for the previous epoch shows enough tokens: 20 on mainnet, 5 on testnet
-  (`apps/web/src/badge/config.ts:48,53`; `client.ts:337-350`). That check is skipped for an issuer's first epoch, which has no
-  earlier report. The crowd is everyone who chose a private mode with the same issuer.
-- The issuer can usually tell the modes apart by the epoch requested: the current one for Standard, the next one for the
-  private modes (`service.ts:148-150`). Near the end of an epoch Standard also asks for the next one (`schedule.ts:53`).
+  (about 3.5 days on mainnet; `packages/badge/src/epoch.ts`, `postingWindow`). It posts only if the issuer's report for the
+  previous epoch shows enough tokens: 20 on mainnet, 5 on testnet (`apps/web/src/badge/config.ts`, `client.ts` `step`).
+  That check is skipped for an issuer's first epoch, which has no earlier report. The crowd is everyone who chose Private
+  with the same issuer.
+- The issuer can usually tell the modes apart by the epoch requested: the current one for Standard, the next one for
+  Private (`service.ts:148-150`). Near the end of an epoch Standard also asks for the next one (`schedule.ts`,
+  `requestableEpoch`).
 
 **Dedup is per issuer only.**
 
@@ -746,7 +755,7 @@ Privacy is separate from correctness: a backend that can't lie can still learn t
 | Web host (GitHub Pages, Cloudflare) | Your IP, the pages you load, and when. |
 | Bridge | Your IP, and which proposals' votes and lists you fetch. This includes the vote-confirmation polling for proposals you voted on. Up to two other configured bridges (normally failover only) are also asked for a proposal's vote set right after the first bridge reports your vote, so they too can link your IP, by timing, to that proposal and your masternode. |
 | Relay | Your IP, the timing, which masternodes submit together, and **how each one voted** before the vote is public (`services/relay/README.md`, "Threat model and privacy": public unlinkability only). For a proposal you submit: your IP and poll timing, linked to the full proposal and its collateral (6.2). |
-| Badge issuer | Which masternode asked, when, and from which IP. In Standard mode, likely which identity received the badge, by timing (6.3). |
+| Badge issuer | Which masternode asked, when, and from which IP. In Standard mode, a short list of identities that could hold the badge, from the public times of their writes; with Register now, likely the identity, by timing (6.3, PLAN §8.10). |
 | Faucet | Which identity its voucher funded (6.4). |
 | DAPI evonodes | Your IP. The bloom filter of a funding or proposal-deposit address you watch; in Recover, one filter covering all your one-time keys, which links them. The transactions you look up and broadcast (proposal collaterals, Recover sweeps). |
 | Platform nodes | Your IP. Every document, identity and name you read. The state transitions you sign. In Recover, the key hashes it looks up and the asset-lock outpoints it checks (6.10). |

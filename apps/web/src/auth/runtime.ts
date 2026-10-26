@@ -5,21 +5,22 @@ import type { Dapi } from '@govhub/dapi';
 import { QUORUM_SERVICE, type Registry } from '../config/registry.ts';
 import { createWebDapi, type DapiConfig } from '../data/dapi.ts';
 import { getSdk } from '../data/platform.ts';
-import { noteIdentityWrite } from '../badge/visit.ts';
+import { beforeIdentityWrite, noteIdentityWrite } from '../badge/visit.ts';
 import { errText } from '../lib/format.ts';
 
 let port: { key: string; value: Promise<PlatformPort> } | null = null;
 
 /**
- * Every state transition of a signed-in identity is public and timestamped: the MN badge keeps its token requests away from them
- * (badge/visit.ts), so each one is recorded before it is sent.
+ * Every state transition of a signed-in identity is public and timestamped: the MN badge keeps its token requests away from them,
+ * and sends a held Standard badge alongside the identity's next one (badge/visit.ts, PLAN §8.10). So each write is announced just
+ * before it is sent, with the identity writing (null: a badge post itself, or a new identity, which carry no held badge).
  */
-function markWrites(p: PlatformPort): PlatformPort {
-  // recorded when the write starts and again when it ends (retries can run long)
+export function markWrites(p: PlatformPort): PlatformPort {
+  // announced when the write starts, marked again when it ends (retries can run long)
   const mark =
-    <A extends unknown[], R>(f: (...a: A) => Promise<R>) =>
+    <A extends unknown[], R>(f: (...a: A) => Promise<R>, who: (...a: A) => string | null) =>
     async (...a: A) => {
-      noteIdentityWrite();
+      beforeIdentityWrite(who(...a));
       try {
         return await f(...a);
       } finally {
@@ -28,11 +29,11 @@ function markWrites(p: PlatformPort): PlatformPort {
     };
   return {
     ...p,
-    createIdentity: mark(p.createIdentity),
-    topUpIdentity: mark(p.topUpIdentity),
-    addKeys: mark(p.addKeys),
-    writeDocument: mark(p.writeDocument),
-    vault: { ...p.vault, put: mark(p.vault.put), remove: mark(p.vault.remove) },
+    createIdentity: mark(p.createIdentity, () => null),
+    topUpIdentity: mark(p.topUpIdentity, (o) => o.identityId),
+    addKeys: mark(p.addKeys, (o) => o.identityId),
+    writeDocument: mark(p.writeDocument, (o) => (o.op.type === 'mnBadge' ? null : o.ownerId)),
+    vault: { ...p.vault, put: mark(p.vault.put, (o) => o.ownerId), remove: mark(p.vault.remove, (o) => o.ownerId) },
   };
 }
 

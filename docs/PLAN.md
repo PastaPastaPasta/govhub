@@ -511,13 +511,15 @@ force it. If people accept us learning that's ok. Just we keep no logs for stuff
 §8.2 and §8.5 as follows (code: `packages/badge` `schedule.ts`/`epoch.ts`, `services/issuer`, `apps/web/src/badge`):
 
 - **Modes, chosen per user** (remembered per identity in the browser):
-  - **Standard** (default): a token for the *current* epoch E, then the badge is posted at once (it shows within minutes). The
-    issuer could link the masternode to the identity by timing; the UI says so. No forced waiting of any kind.
+  - **Standard** (default): a token for the *current* epoch E. Since 2026-10-25 the badge is not posted at once: the token
+    is held in the browser and posted with the identity's next Platform write (§8.10). Before that, it was posted within
+    minutes and the issuer could link the masternode to the identity by timing.
   - **Private**: §8.5 as written: a token for E+1 at a random time during E, posted at a random time in [S(E+1), S(E+1)+W],
     kept 30 minutes apart from the browser's other Platform writes, and not posted if the issuer reported fewer than k tokens
     (testnet 5, mainnet 20; raised from 3 and 10 because the report counts Standard tokens too) for the epoch before (E+1's own
     report comes too late, see below).
-  - **Extra private**: as Private, with the badge posted at a random time across the first half of E+1.
+  - *Extra private* (as Private, posted across the first half of E+1) was removed on 2026-10-25: it complicated the choice for
+    little gain (§8.10). Saved Extra jobs and a remembered Extra choice continue as Private.
 - **Issuance window:** tokens for E are minted during E-1 **and** during E (`[S(E-1), S(E+1))`); the issuer accepts the
   current or the next epoch. Dedup stays one token per (proTxHash, E) and per (collateral, E), whichever mode asked.
 - **Reader rules:** a badge for E is valid if created at or after S(E) and shown during [S(E), S(E+1)+W]; one
@@ -540,9 +542,9 @@ Why the old rule added nothing:
 - Key tagging is blocked by the slot, not by timing: one `issuerKey` per (issuer, E) (unique index), immutable and
   non-deletable. A client blinds only after a proved read of that key, so every token for E is signed by the one key,
   whenever it was published. A proof can be stale but not forged, and a stale proof shows the same key or none.
-- The private modes ask during E−1, so they need E's key then. An issuer that publishes ahead (§8.4 rule 7) has it; a key
-  that appears after S(E) − margin means Private and Extra private are not offered for E. Every private token still exists
-  before any private badge.
+- Private mode asks during E−1, so it needs E's key then. An issuer that publishes ahead (§8.4 rule 7) has it; a key
+  that appears after S(E) − margin means Private is not offered for E. Every private token still exists before any private
+  badge.
 
 The bound is S(E+1) − margin, the end of the last Standard request window for E: from there clients ask for E+1, so a later
 key could serve no honest request. It also keeps every key before E's `issuerReport` (created from S(E+1)), so the report
@@ -579,6 +581,98 @@ Once a valid key is on Platform, the epoch is reported, with 0 tokens if the ser
 offline (§8.4 rule 7, contract `signatureSecurityLevelRequirement: 1`). `issuer publish-keys` publishes the current epoch's
 key while it can still land, adopts a slot that already holds our SPKI, and reports any other key as a conflict. The running
 service checks Platform every tick and starts signing at the next tick after the key lands.
+
+
+### 8.10 Deferred Standard: token now, publish later (owner decision, 2026-10-25)
+
+"Please simplify and kill the extra private option it just over complicates the UX. Also for standard mode, I'd have us just
+defer registering the badge until our next platform operation. A user can choose to 'register now' but in the normal case a
+user would get the blind sig early and then wait until they care to publish it [...] With some gentle nudging that the more
+time the better." Web client only. No protocol, contract or issuer change: the issuer still sees one Standard request for
+the current epoch, and readers still accept a badge for E created in [S(E), S(E+1)+W]. Code: `apps/web/src/badge`
+(`client.ts`, `scheduler.ts`, `visit.ts`, `context.tsx`) and `apps/web/src/auth/runtime.ts`.
+
+**The flow.**
+1. **Request.** Like a Private one, the request waits until nothing was written to Platform from this browser for 30 minutes
+   and no other token request went out for 30 minutes. It then waits a further random 0–15 minutes (`REQUEST_JITTER_MS`),
+   so it does not fall exactly 30 minutes after the identity's last public write. A browser that has been quiet for longer
+   sends it at once. In the unified "Add your masternodes" flow the keyring save is a write, so the request goes out about
+   30–45 minutes later, while the app is open. The UI says so once.
+2. **Hold.** The token is finalized, verified and kept with the job in this browser's encrypted job store (localStorage,
+   AES-GCM under a key derived from the identity's signing key). It is never put in the Platform keyring: saving that is
+   itself a public write and would recreate the timing link. The masternode's proTxHash and the voting key are wiped from the
+   job once the token is in hand (unless the user keeps the key to renew).
+3. **Publish with the next write.** Every Platform write of a signed-in identity goes through `markWrites`
+   (`auth/runtime.ts`), which announces it before it is sent. A held token for that identity is posted alongside, but only if
+   at least 30 minutes have passed since the last token request from this browser (`mayPost`). The user's write is never
+   delayed: the badge post is started, not awaited, and goes out within seconds of the write. A write inside the cooldown
+   does not carry it; a later write will. Badge posts themselves and new identities do not count as triggers. The post is
+   made under the browser-wide activity lock from the latest stored jobs, so two tabs cannot post the same token twice.
+4. **Register now** posts at once, whatever the cooldown, with the note: "Posting now lets govhub's issuer match your
+   masternode to this account by timing. Waiting until you next post or react hides that better; the longer the gap, the
+   better."
+5. **Lapse.** A held token is valid while the badge's height can still be in [S(E), S(E+1)+W]. The client posts it up to
+   S(E+1)+W − margin (`lapseHeight`). Within about 3 days of that on mainnet (1,646 blocks), or a tenth of an epoch on testnet
+   (58 blocks, about 2.5 hours; `lapseNudgeBlocks`), the UI says "Your badge will lapse in N unless registered" and offers
+   Register now. After that the token is deleted.
+6. **Renewal** is unchanged: with the voting key kept, a job for E+1 is made from S(E+1). Its token is held like any other,
+   and once a newer badge is posted or held and current, an older held token is dropped (`supersede`).
+7. **Private** is unchanged: next-epoch token, random request and posting heights, the crowd check. Its posts never ride on
+   user writes. Both modes share one spacing (one request per quiet half hour per browser) and one job per (issuer, epoch),
+   so a held Standard token for E and a Private job for E+1 coexist.
+8. **Fewer warnings.** The "wait N min" note shows only while a request's cooldown runs **and** a held token or an active
+   Private job would lose its separation by a write right now. It is a nudge: "Your MN badge request just went out. If you
+   can, wait about N min before you post or react: the longer the gap, the harder it is to match your badge to your
+   masternode."
+
+**What each party learns.**
+
+| | Immediate Standard (before) | Deferred Standard (now) |
+|---|---|---|
+| Issuer | MN X asked at t (and the IP), and a badge from identity I appeared about a minute later: X ↔ I with near certainty. | MN X asked at t (and the IP). The badge appears at I's first write after t + 30 min. Candidates for that badge are every Standard token for E issued before it and not yet posted, further narrowed by I's public write times (below). |
+| Readers, anyone watching Platform | I has a badge from X's issuer, appearing a minute after nothing in particular. | I has a badge, appearing with I's own comment or reaction. |
+| Platform nodes (DAPI) | The IP of the badge post, at the request time. | The IP of the badge post, with the user's write. |
+| govhub (no logs) | Nothing kept. | Nothing kept; the token is only in the user's browser. |
+
+**How the issuer could still narrow it down.** Platform writes are public and timestamped. The issuer knows every request
+time; it can see every identity's write times. For a badge posted with I's write at t_b, X's request t_X must satisfy:
+no write by I in the 30 minutes before t_X (the request spacing), and no write by I between t_X + 30 min and t_b (else the
+badge would have gone earlier). So t_X falls either in I's idle gap before t_b (minus 30 minutes at each end) or in the
+30 minutes before I's previous write. The badge hides among the Standard requests in those stretches. The longer the user
+waits, the longer the gap and the bigger the crowd: hence the nudge. On a small network with few Standard requests per
+day, this can still be a crowd of one.
+
+**Residual risks.**
+- **IP addresses.** The issuer sees the request IP; the Platform nodes the app talks to see the IP of every write, including
+  the badge post. An issuer operator that also runs evonodes can join the two. Use Tor or a VPN.
+- **A user who writes exactly once, right after the cooldown.** The gap is then about 30 minutes plus the request jitter,
+  and the crowd is whoever asked in that half hour. That is better than one minute, but not much.
+- **Requests a fixed time after a write.** Without jitter, a request held back by a write would go out at the first tick
+  after write + 30 min. That pins it to the identity's last public write (for example the keyring save in the unified flow),
+  linking masternode and identity without any badge at all. The random 0–15 minutes on top widens that to a 15-minute
+  window. It does not remove it: an issuer that sees few requests can still line them up. A wider window, or sending the
+  request in a later visit, would do better at the cost of a longer wait.
+- **The same browser doing many requests.** One request per quiet half hour per browser, across tabs and identities, and
+  one badge per identity per issuer. Several identities in one browser are still tied together by IP and by never asking
+  at the same time.
+- **Multiple devices.** The token lives only in the browser that fetched it. A write from another device neither
+  publishes it nor counts for the spacing. The UI says "It's kept in this browser only: posting from another device won't
+  publish it." Someone who mostly posts from their phone will see the badge lapse unless they post or Register now from
+  this browser.
+- **A lapsed token wastes the slot.** The issuer gives one token per masternode (and per collateral) per epoch. A token that
+  lapses, is cancelled, or is lost with the browser's storage cannot be asked for again that epoch. The masternode can ask
+  again from the next epoch. Clearing site data loses held tokens the same way. A memory-only job store (no signing key in
+  the session) loses them on reload.
+- **Late-epoch tokens have a short shelf life.** A Standard token fetched near the end of E still lapses at S(E+1)+W, so
+  the lapse note can come within days of fetching. Asking for E+1 instead once less than about W of E is left would avoid
+  that; not done here.
+- **Visible lifetime.** A badge shows until S(E+1)+W whenever it was posted. Waiting longer means it shows for less of the
+  epoch, and with renewal off a user who posts rarely may show a badge only briefly.
+- **Badge and comment land together.** Anyone can see that the badge appeared in the same block as I's comment. That says
+  only "I published its badge when it was active", which is the point. It does reveal the client's rule, and so the
+  deferred mode itself.
+- **The cooldown note can still be ignored.** A write right after a request (inside its cooldown) is never blocked. It
+  weakens the separation even though it does not carry the badge.
 
 ---
 

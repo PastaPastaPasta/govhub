@@ -1,20 +1,23 @@
-// Getting an MN badge (PLAN §8.5), as a small state machine per job, in one of three privacy modes (PrivacyMode):
-//   standard  token for the CURRENT epoch, requested and posted at once: the badge shows within minutes, and the issuer could link
-//             the masternode to the identity by timing (we keep no records that would let us)
+// Getting an MN badge (PLAN §8.5, §8.8, §8.10), as a small state machine per job, in one of two privacy modes (PrivacyMode):
+//   standard  token for the CURRENT epoch, fetched as soon as this browser's activity spacing allows (visit.ts), then HELD in this
+//             browser (the encrypted job store, never on Platform) and posted with the identity's next Platform write after the
+//             request's cooldown (context.tsx), or at once when the user asks (Register now). Lapses unposted at the end of its
+//             display window.
 //   private   token for the NEXT epoch at a random height in this epoch, badge at a random height in [S(E), S(E)+W], kept apart
 //             from this browser's other Platform writes; not posted if the issuer's count for the previous epoch is too small
-//   extra     as private, with the badge spread over the first half of the epoch
 //
-//   scheduled --(core height >= requestAt, in the issuance window of E)--> token --(height >= postAt)--> posted
-//        \--> expired (window closed) / failed (refused, or the issuer's answer did not verify: the issuer is flagged)
+//   scheduled --(core height >= requestAt, in the issuance window of E)--> token --(private: height >= postAt;
+//        |                                                                         standard: step(..., { post: true }))--> posted
+//        \--> expired (window closed, lapsed) / failed (refused, or the issuer's answer did not verify: the issuer is flagged)
 //
 // requestBadge(): derives the epoch E itself from Platform's proved core height, takes the issuer's key for E only from the proved
 // issuerKey document (reader rules), builds the badge message for the signed-in identity, blinds it in the worker with fresh
-// CSPRNG r and prefix, and picks a uniformly random request height in what is left of E's issuance window. Nothing is sent yet.
+// CSPRNG r and prefix, and picks the request height (Standard: now or S(E); Private: uniformly random in what is left of E's
+// window). Nothing is sent yet.
 // step(): at the request height, a challenge and the token request (signed with the MN VOTING key: a pasted WIF, or a signer the
-// keyring registered) go to the issuer from the worker; the answer is finalized and verified. At a uniformly random height in
-// [S(E), S(E)+W] the badge document is posted with the identity's own key. One job per (issuer, epoch): an identity can show only
-// one badge per issuer, and asking for more would only tell the issuer which MNs belong together.
+// keyring registered) go to the issuer from the worker; the answer is finalized and verified. The badge document is posted with
+// the identity's own key. One job per (issuer, epoch): an identity can show only one badge per issuer, and asking for more would
+// only tell the issuer which MNs belong together.
 import {
   base64ToBytes,
   BLOCK_SECONDS,
@@ -74,7 +77,9 @@ export interface BadgeJob {
   /** keep the voting key after the request, to renew every epoch */
   keepKey: boolean;
   state: JobState;
+  /** the finalized token (base64), kept until it is posted; Standard: held here until the user's next write or Register now */
   sig?: string;
+  /** Private: the height to post at (Standard has none: it posts with a write) */
   postAt?: number;
   badgeId?: string;
   note?: string;
@@ -131,7 +136,7 @@ export interface RequestOptions {
 /** How far ahead of the epoch a mode asks for now a request may be scheduled (checkKeyAvailability looks as far). */
 const MAX_AHEAD = 3;
 
-/** Where a job's request may go out: Standard during its (current) epoch, the private modes during the epoch before. */
+/** Where a job's request may go out: Standard during its (current) epoch, Private during the epoch before. */
 export function requestWindow(p: EpochParams, epoch: number, mode: PrivacyMode): HeightRange {
   return mode === 'standard' ? { from: epochStart(p, epoch), to: epochStart(p, epoch + 1) - p.boundaryMarginBlocks } : privateRequestWindow(p, epoch);
 }
@@ -140,7 +145,7 @@ export function requestWindow(p: EpochParams, epoch: number, mode: PrivacyMode):
 export function jobEpoch(p: EpochParams, coreHeight: number, mode: PrivacyMode, immediate = false): number | null {
   const epoch = requestableEpoch(p, coreHeight, mode);
   if (epoch === null || mode === 'standard' || immediate) return epoch;
-  // Private modes: with little of the window left the request would go out in this same visit, so ask for the next epoch (H1).
+  // Private: with little of the window left the request would go out in this same visit, so ask for the next epoch (H1).
   const w = privateRequestWindow(p, epoch);
   return w.to - Math.max(coreHeight, w.from) < epochLength(p) / 4 ? epoch + 1 : epoch;
 }
@@ -192,7 +197,7 @@ export async function checkKeyAvailability(issuerKey: ClientDeps['issuerKey'], i
 function noKeyMessage(issuer: Pick<TrustedIssuer, 'name'>, epoch: number, mode: PrivacyMode, problem: string | null): string {
   const why = problem ? ` (${problem})` : '';
   if (mode === 'standard') return `Standard mode needs ${issuer.name}’s key for the current epoch, ${epoch}, and there is none on Platform${why}: the issuer hasn’t published this period’s key yet. Standard works as soon as it does; Private may work now: it asks for a token for the next epoch.`;
-  return `${issuer.name} has no valid key for epoch ${epoch} on Platform${why}, so a ${mode === 'extra' ? 'Extra private' : 'Private'} request cannot be made yet.`;
+  return `${issuer.name} has no valid key for epoch ${epoch} on Platform${why}, so a Private request cannot be made yet.`;
 }
 
 export async function createJob(d: ClientDeps, jobs: readonly BadgeJob[], voting: string | VotingSigner, proTxHashHex: string, coreHeight: number, o: RequestOptions): Promise<BadgeJob> {
@@ -222,7 +227,7 @@ export async function createJob(d: ClientDeps, jobs: readonly BadgeJob[], voting
   const spki = bytesToBase64(key.key.spki);
   const preparedMsg = bytesToBase64(prepared.preparedMsg);
   const blinded = await d.worker({ kind: 'blind', spki, preparedMsg });
-  // Standard: at once (the request window starts at S(E) for a job made in E's last blocks); private: a random height
+  // Standard: as soon as the spacing allows (from S(E) for a job made in E's last blocks); Private: a random height
   const requestAt = mode === 'standard' ? Math.max(coreHeight, epochStart(p, epoch)) : o.immediate ? coreHeight : (pickRequestHeight(p, epoch, coreHeight) ?? coreHeight);
   return {
     v: 1,
@@ -273,6 +278,28 @@ export function issuerErrorText(issuerUrl: string, e: unknown): string {
   return `${host}: ${raw}`;
 }
 
+/**
+ * The last height a held Standard token is posted at: the end of its display window, less the boundary margin (the badge's
+ * $createdAtCoreBlockHeight, set by Drive, can be a few blocks above the height this browser saw). After it the token lapses.
+ */
+export const lapseHeight = (p: EpochParams, epoch: number): number => displayWindow(p, epoch).to - p.boundaryMarginBlocks;
+
+/**
+ * How close to its lapse a held token starts asking the user to register it: about 3 days on mainnet, and as much of an epoch
+ * (about a tenth) on shorter epochs (testnet: 58 blocks, about 2.5 hours).
+ */
+export const lapseNudgeBlocks = (p: EpochParams): number => Math.round(Math.min((3 * 86400) / BLOCK_SECONDS, epochLength(p) / 10));
+
+/** A Standard token in hand, waiting for the user's next write (or Register now). */
+export const isHeld = (j: BadgeJob): boolean => j.state === 'token' && j.mode === 'standard';
+
+/** Whether a job's window has closed at `height` (step() then ends it without any network). */
+export function pastDeadline(p: EpochParams, j: BadgeJob, height: number): boolean {
+  if (j.state === 'scheduled') return height >= requestWindow(p, j.epoch, j.mode).to;
+  if (j.state === 'token') return height > (j.mode === 'standard' ? lapseHeight(p, j.epoch) : displayWindow(p, j.epoch).to);
+  return false;
+}
+
 /** Errors the issuer answers that end a job (the rest are retried while the window is open). */
 const FINAL: Record<string, string> = {
   'already-issued': 'This masternode already got a token from this issuer for this epoch (another browser or an earlier request).',
@@ -284,18 +311,21 @@ const FINAL: Record<string, string> = {
   'bad-request': 'The issuer refused the request',
 };
 
-/** Advances one job given the current core height. Pure apart from the deps; returns the updated job. */
-export async function step(d: ClientDeps, job: BadgeJob, height: number): Promise<BadgeJob> {
+/**
+ * Advances one job given the current core height. Pure apart from the deps; returns the updated job. A held Standard token is
+ * posted only with `post` (the caller's decision: the user's write after the cooldown, or Register now); otherwise it waits.
+ */
+export async function step(d: ClientDeps, job: BadgeJob, height: number, o: { post?: boolean } = {}): Promise<BadgeJob> {
   const p = EPOCH_PARAMS[job.net];
   const j: BadgeJob = { ...job };
   if (j.state === 'scheduled') {
-    if (height >= requestWindow(p, j.epoch, j.mode).to)
+    if (pastDeadline(p, j, height))
       return wipe({
         ...j,
         state: 'expired',
         note:
           j.mode === 'standard'
-            ? 'The epoch ended before the request could be sent (the app was closed, or the issuer was unreachable).'
+            ? 'The epoch ended before the request could be sent: the app was not open during a quiet half hour (no posts, comments or other requests from this browser), or the issuer was unreachable.'
             : 'The request window closed before the request could be sent: the app was not open during a quiet half hour (no posts, comments or other requests from this browser), or the issuer was unreachable.',
       });
     if (height < j.requestAt) return j;
@@ -329,28 +359,39 @@ export async function step(d: ClientDeps, job: BadgeJob, height: number): Promis
         return wipe({ ...j, state: 'failed', issuerFlagged: true, note: `${j.issuer.name} answered with a signature that does not verify. The request is void; consider removing this issuer from your trust list.` });
       }
       const done = wipe({ ...j, state: 'token', sig, note: undefined });
-      return { ...done, postAt: pickPostHeight(p, j.epoch, height, j.mode) };
+      // Standard: held, no height (it goes out with a write); Private: a random height in its posting window
+      return j.mode === 'standard' ? done : { ...done, postAt: pickPostHeight(p, j.epoch, height) };
     } catch (e) {
       return backoff(j, `Could not reach the issuer: ${issuerErrorText(j.issuer.url, e)}.`);
     }
   }
   if (j.state === 'token') {
-    if (height > displayWindow(p, j.epoch).to) return wipe({ ...j, state: 'expired', note: 'The badge was never posted and its display window is over.' });
-    const postAt = j.postAt ?? pickPostHeight(p, j.epoch, height, j.mode);
+    if (pastDeadline(p, j, height))
+      return wipe({
+        ...j,
+        state: 'expired',
+        note:
+          j.mode === 'standard'
+            ? `Your badge for epoch ${j.epoch} lapsed: it was never posted (no post or reaction from this browser before its time ran out). The issuer gives each masternode one token per epoch, so ask again from the next epoch.`
+            : 'The badge was never posted and its display window is over.',
+      });
+    if (j.mode === 'standard' && !o.post) return j;
+    const postAt = j.mode === 'standard' ? height : (j.postAt ?? pickPostHeight(p, j.epoch, height));
     if (height < postAt) return { ...j, postAt };
-    if (!d.trusted(j.issuer.identityId)) return { ...backoff(j, `${j.issuer.name} is not on your trust list (or is turned off): the badge is not posted.`), postAt };
+    const keep = (x: BadgeJob): BadgeJob => (j.mode === 'standard' ? x : { ...x, postAt });
+    if (!d.trusted(j.issuer.identityId)) return keep(backoff(j, `${j.issuer.name} is not on your trust list (or is turned off): the badge is not posted.`));
     try {
       // a key revoked since the token was issued voids the badge for readers: do not post it (N12)
       const { key } = await d.issuerKey({ ...j.issuer, enabled: true }, j.epoch);
       if (!key || key.revokedFrom !== null) return wipe({ ...j, state: 'expired', note: `${j.issuer.name}'s key for epoch ${j.epoch} is no longer valid: the badge is not posted.` });
-      // Private modes: a badge among very few stands out (review R1). Tokens for E can be issued until S(E+1), so E's own report
+      // Private: a badge among very few stands out (review R1). Tokens for E can be issued until S(E+1), so E's own report
       // comes too late; the crowd size is read from the issuer's report for E-1 (published from S(E)). No report yet: wait for
       // it until its window has passed; an issuer that had no key for E-1 (so no report) is posted without the check.
       if (j.mode !== 'standard') {
         // readers hide an issuer flagged on E-1 for E anyway: posting would only expose the user (review M2)
         if (await d.issuerFlagged(j.issuer, j.epoch - 1)) return wipe({ ...j, state: 'expired', note: `${j.issuer.name} failed the audit for epoch ${j.epoch - 1}, so readers hide its badges for epoch ${j.epoch}: the badge is not posted.` });
         const tokens = await d.reportedTokens(j.issuer, j.epoch - 1);
-        if (tokens === null && height <= epochStart(p, j.epoch) + p.graceBlocks) return { ...backoff(j, `Waiting for ${j.issuer.name}'s token count for epoch ${j.epoch - 1} before posting.`), postAt };
+        if (tokens === null && height <= epochStart(p, j.epoch) + p.graceBlocks) return keep(backoff(j, `Waiting for ${j.issuer.name}'s token count for epoch ${j.epoch - 1} before posting.`));
         // No count after its window although the issuer served E-1: readers flag the issuer for E-1 and hide its E badges, so
         // there is nothing to gain and no crowd size to check. Decided here, not only by the (cached) audit above (SR-34).
         if (tokens === null && (await d.issuerKey({ ...j.issuer, enabled: true }, j.epoch - 1)).key)
@@ -362,7 +403,9 @@ export async function step(d: ClientDeps, job: BadgeJob, height: number): Promis
       const id = await d.postBadge(mnBadgeData({ issuerId: idToBytes(j.issuer.identityId), epoch: j.epoch, keyId: fromHex(j.keyId), msgPrefix: base64ToBytes(j.msgPrefix), sig: base64ToBytes(j.sig!) }));
       return wipe({ ...j, state: 'posted', badgeId: id, note: undefined });
     } catch (e) {
-      return { ...backoff(j, `Posting the badge failed (${(e as Error).message}); trying again later.`), postAt };
+      // a held Standard token stays held (it goes with the next write, or Register now); a Private post retries after a backoff
+      if (j.mode === 'standard') return { ...j, note: `Posting the badge failed (${(e as Error).message}); it goes with your next post or reaction, or try Register now again.` };
+      return keep(backoff(j, `Posting the badge failed (${(e as Error).message}); trying again later.`));
     }
   }
   return j;

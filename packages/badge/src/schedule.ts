@@ -1,15 +1,18 @@
-// Client timing (PLAN §8.5), per privacy mode:
-//   standard  token for the CURRENT epoch, requested and posted at once (the issuer could link MN and identity by timing)
+// Client timing (PLAN §8.5, §8.8, §8.10), per privacy mode:
+//   standard  token for the CURRENT epoch, requested as soon as the browser's activity spacing allows; the badge is held in the
+//             browser and posted with the user's next Platform write (or at once, on request). Its posting time is the app's
+//             business (apps/web/src/badge), not a height picked here.
 //   private   token for the NEXT epoch at a uniformly random height in E-1's window; badge at a random height in [S(E), S(E)+W]
-//   extra     as private, but the badge goes out at a random height in the first half of E
 // All randomness is from the CSPRNG.
 
 import { randomBelow } from './bytes.ts';
-import { epochOf, epochStart, extraPostingWindow, postingWindow, privateRequestWindow, type EpochParams, type HeightRange } from './epoch.ts';
+import { epochOf, epochStart, postingWindow, privateRequestWindow, type EpochParams, type HeightRange } from './epoch.ts';
 
-export type PrivacyMode = 'standard' | 'private' | 'extra';
-export const PRIVACY_MODES: readonly PrivacyMode[] = ['standard', 'private', 'extra'];
+export type PrivacyMode = 'standard' | 'private';
+export const PRIVACY_MODES: readonly PrivacyMode[] = ['standard', 'private'];
 export const isPrivacyMode = (v: unknown): v is PrivacyMode => typeof v === 'string' && (PRIVACY_MODES as readonly string[]).includes(v);
+/** A stored mode: the retired 'extra' (Extra private) reads as 'private'; anything else unknown as `fallback`. */
+export const parsePrivacyMode = (v: unknown, fallback: PrivacyMode): PrivacyMode => (v === 'extra' ? 'private' : isPrivacyMode(v) ? v : fallback);
 
 /** Uniform height in [max(from, now), to); null when nothing of the range is left. */
 export function pickHeight(range: HeightRange, now: number): number | null {
@@ -21,22 +24,21 @@ export function pickHeight(range: HeightRange, now: number): number | null {
 /** When a private-mode client sends its request for `epoch` (null: too late for this epoch). */
 export const pickRequestHeight = (p: EpochParams, epoch: number, now: number): number | null => pickHeight(privateRequestWindow(p, epoch), now);
 
-/** The client's posting range for `epoch`: from S(E) + margin to the end of the mode's window (inclusive); Standard uses the private one. */
-export function clientPostingWindow(p: EpochParams, epoch: number, mode: PrivacyMode = 'private'): HeightRange {
-  const w = mode === 'extra' ? extraPostingWindow(p, epoch) : postingWindow(p, epoch);
+/** A Private client's posting range for `epoch`: from S(E) + margin to S(E) + W (inclusive). */
+export function clientPostingWindow(p: EpochParams, epoch: number): HeightRange {
+  const w = postingWindow(p, epoch);
   return { from: w.from + p.boundaryMarginBlocks, to: w.to + 1 };
 }
 
-/** When to post the badge for `epoch`: Standard at once (never before S(E)); the private modes at a random height in their window. */
-export function pickPostHeight(p: EpochParams, epoch: number, now: number, mode: PrivacyMode = 'private'): number {
-  if (mode === 'standard') return Math.max(now, epochStart(p, epoch));
-  const w = clientPostingWindow(p, epoch, mode);
+/** When a Private client posts the badge for `epoch`: a uniformly random height in its posting window. */
+export function pickPostHeight(p: EpochParams, epoch: number, now: number): number {
+  const w = clientPostingWindow(p, epoch);
   return pickHeight(w, now) ?? Math.max(now, w.from);
 }
 
 /**
  * A due action found when the app opens is not run at once (that would tie it to the page load and its IP): it waits a
- * random 30 s to 10 min, or less when the window is about to close. Private modes only.
+ * random 30 s to 10 min, or less when the window is about to close. Private mode only.
  */
 export function resumeDelayMs(maxMs = 600_000): number {
   const min = Math.min(30_000, maxMs);
@@ -45,7 +47,7 @@ export function resumeDelayMs(maxMs = 600_000): number {
 
 /**
  * The epoch a client asks for at `now`:
- *   standard  the current epoch, unless its last `boundaryMarginBlocks` are running (then the next one, posted from its start)
+ *   standard  the current epoch, unless its last `boundaryMarginBlocks` are running (then the next one, from its start)
  *   private   the next epoch whose request window is still open
  */
 export function requestableEpoch(p: EpochParams, now: number, mode: PrivacyMode = 'private'): number | null {
