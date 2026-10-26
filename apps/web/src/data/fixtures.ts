@@ -5,7 +5,7 @@
 import { bytesToHex, governanceObjectHash, parseProposalData } from '@govhub/verify';
 import { DUFFS_PER_DASH } from '../lib/format.ts';
 import { GOV_PARAMS, absoluteYes, fundingThreshold, rankProposals, selectBudget, type GovParams } from '../lib/governance.ts';
-import { BridgeError, type Bridge, type BridgeMnList, type BridgeStatus, type BridgeVotes } from './bridge.ts';
+import { BridgeError, type Bridge, type BridgeMnList, type BridgeStatus, type BridgeVotes, type VotesQuery } from './bridge.ts';
 import { fixtureMasternodes, fixtureMnCount, fixtureSignedVotes, fixtureVoteSetHash } from './fixtureVotes.ts';
 import { loadRecordedBridge, type RecordedBridge } from './recordedBridge.ts';
 import type { Cycle, Proposal, Tally } from './types.ts';
@@ -161,7 +161,7 @@ export class FixtureBridge implements Bridge {
   async proposal(govHash: string): Promise<Proposal | null> {
     return (await this.snap).proposals.find((p) => p.govHash === govHash) ?? null;
   }
-  async votes(govHash: string, opts: { height?: number } = {}): Promise<BridgeVotes> {
+  async votes(govHash: string, opts: VotesQuery = {}): Promise<BridgeVotes> {
     const s = await this.snap;
     const p = s.proposals.find((x) => x.govHash === govHash);
     const t = s.tallies.get(govHash);
@@ -169,6 +169,8 @@ export class FixtureBridge implements Bridge {
     if (!p || !t) return none;
     // Like the real API: the set behind the tally in force at `height`; nothing recorded below the tally's own height.
     if (opts.height !== undefined && opts.height < t.asOfHeight) throw new BridgeError(`the bridge has no vote set at or below block ${opts.height}`, 404);
+    // ...and asked by hash, only the set with that hash (one per proposal here)
+    if (opts.voteSetHash !== undefined && opts.voteSetHash.toLowerCase() !== t.voteSetHash.toLowerCase()) throw new BridgeError('the bridge has no vote set with that hash', 404);
     const asOfHeight = opts.height ?? t.asOfHeight;
     const rec = s.recorded.proposals.get(govHash);
     if (rec) return { govHash, asOfHeight, tallyHeight: t.asOfHeight, mnListHash: s.recorded.listHash, voteSetHash: t.voteSetHash, votes: rec.votes, origin: 'recorded' };

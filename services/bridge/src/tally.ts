@@ -196,6 +196,62 @@ export function computeAll(
   };
 }
 
+// ---------------------------------------------------------------- superseded live vote sets
+
+/** How long a superseded live vote set stays retrievable by its voteSetHash, and how many are kept at most (oldest go first). */
+export const RETIRED_SET_TTL_S = 15 * 60;
+export const RETIRED_SET_MAX = 256;
+
+/** A counted vote set as recorded: the tally it belongs to, and the hashes of its votes (the votes themselves are in the archive). */
+export interface RecordedVoteSet {
+  asOfHeight: number;
+  listHash: string;
+  voteSetHash: string;
+  weighted: ComputedTally['weighted'];
+  voteHashes: string[];
+}
+
+/** A live tally's vote set after a newer run replaced it. */
+export interface RetiredVoteSet extends RecordedVoteSet {
+  govHash: string;
+  retiredAt: number;
+}
+
+/**
+ * The live tally changes at the same height whenever a vote arrives, and only the block path stores tallies: a client that read the live
+ * tally and then asks for its votes may find a newer set. The sets a newer run replaced are kept here for a while, so that client can
+ * still fetch exactly the set behind the tally it holds (`/v1/proposals/{hash}/votes?voteSetHash=`). Memory only, bounded in age and count.
+ */
+export class RetiredVoteSets {
+  private readonly sets = new Map<string, RetiredVoteSet>();
+
+  /** Keeps every tally of `old` whose vote set `next` no longer has. */
+  retire(old: TallyRun, next: TallyRun, now: number): void {
+    const current = new Set(next.tallies.map((t) => `${t.govHash}|${t.voteSetHash}`));
+    for (const t of old.tallies) {
+      const key = `${t.govHash}|${t.voteSetHash}`;
+      if (current.has(key)) continue;
+      // re-inserted (a set can be current again, e.g. a voter banned and revived): it ages from now, at the end of the order
+      this.sets.delete(key);
+      this.sets.set(key, { govHash: t.govHash, voteSetHash: t.voteSetHash, asOfHeight: t.asOfHeight, listHash: t.listHash, weighted: t.weighted, voteHashes: t.counted.map((v) => v.hash), retiredAt: now });
+    }
+    // Map order is insertion order: the oldest first
+    for (const [key, s] of this.sets) {
+      if (this.sets.size <= RETIRED_SET_MAX && now - s.retiredAt <= RETIRED_SET_TTL_S) break;
+      this.sets.delete(key);
+    }
+  }
+
+  get(govHash: string, voteSetHash: string, now: number): RetiredVoteSet | undefined {
+    const s = this.sets.get(`${govHash}|${voteSetHash}`);
+    return s && now - s.retiredAt <= RETIRED_SET_TTL_S ? s : undefined;
+  }
+
+  get size(): number {
+    return this.sets.size;
+  }
+}
+
 // ---------------------------------------------------------------- Core cross-check
 
 export interface CoreComparison {

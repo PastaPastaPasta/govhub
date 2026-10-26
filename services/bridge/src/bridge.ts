@@ -8,7 +8,7 @@ import { errText, log, nowS } from './log.ts';
 import { latestSnapshot, snapshotAt, snapshotMnList } from './mnlist.ts';
 import { PlatformClient } from './publish/platform.ts';
 import { Publisher, type CycleValues, type PublishSummary } from './publish/publisher.ts';
-import { coreCurrentFundingVotes, compareWithCore, computeAll, storeTally, type CoreComparison, type TallyRun } from './tally.ts';
+import { coreCurrentFundingVotes, compareWithCore, computeAll, RetiredVoteSets, storeTally, type CoreComparison, type TallyRun } from './tally.ts';
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -34,6 +34,8 @@ export class Bridge {
   govInfo: GovernanceInfo | null = null;
   nextBudgetDuffs = 0;
   lastRun: TallyRun | null = null;
+  /** Vote sets of live tallies a newer run replaced (`?voteSetHash=` serves them). */
+  readonly retiredSets = new RetiredVoteSets();
   lastComparisons = new Map<string, CoreComparison>();
   lastReconcileAt = 0;
   lastTallyAt = 0;
@@ -242,6 +244,8 @@ export class Bridge {
       }
       this.lastComparisons = cmps;
     }
+    // a client may still hold a tally of the run this one replaces: its vote set stays retrievable by hash for a while
+    if (this.lastRun) this.retiredSets.retire(this.lastRun, run, nowS());
     this.lastRun = run;
     this.lastTallyAt = nowS();
     return run;

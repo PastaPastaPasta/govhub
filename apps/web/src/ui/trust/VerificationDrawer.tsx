@@ -12,7 +12,7 @@ import { isLowerBound, type ChainReport } from '../../verify/chain.ts';
 import { checkContent, verdictFailure, type CollateralVerdict, type StepBasis, type StepStatus } from '../../verify/collateral.ts';
 import { budgetFact } from '../../verify/facts.ts';
 import type { RankingDone, VotesDone } from '../../verify/protocol.ts';
-import { comparable, PLATFORM_TARGET, voteVerdict, type VoteLevel } from '../../verify/verdict.ts';
+import { comparable, otherSnapshot, PLATFORM_TARGET, voteVerdict, type VoteLevel } from '../../verify/verdict.ts';
 import { excludedText, PROBLEM_TEXT, problemCounts, type VoteCheckResult, type VoteRun } from '../../verify/votes.ts';
 import { Drawer } from '../Drawer.tsx';
 import type { ChainCheck, CollateralCheck } from '../hooks.ts';
@@ -326,6 +326,7 @@ const VERDICT_STYLE: Record<VoteLevel, { className: string; glyph: 'verified' | 
   'keys-reported': { className: 'verdict-partial', glyph: 'reported' },
   excluded: { className: 'verdict-partial', glyph: 'reported' },
   'different-height': { className: 'verdict-partial', glyph: 'reported' },
+  changed: { className: 'verdict-pending', glyph: 'reported' },
   mismatch: { className: 'verdict-fail', glyph: 'mismatch' },
   'no-tally': { className: 'verdict-pending', glyph: 'reported' },
 };
@@ -347,6 +348,8 @@ function verdictText(level: VoteLevel, r: VoteCheckResult, matched: string | und
       return `Not verified: ${excluded}. The ${matched} counts them; the count here, without them, differs (a masternode may have left or changed its key since the tally, or the bridge reports one that doesn't exist)`;
     case 'different-height':
       return `Not compared: the votes the bridge served are for another block than the published tallies (${sigs}), so this recount neither confirms nor contradicts them. Re-check later`;
+    case 'changed':
+      return `Not compared yet: for the tally's block the bridge served another vote set (voteSetHash) than the one behind the tally (${sigs}), usually because a vote arrived while checking; if this persists, the bridge isn't serving that tally's votes. This recount neither confirms nor contradicts it. Re-check in a moment`;
     case 'mismatch':
       return `Tally mismatch: the recount from ${formatInt(verified)} valid votes differs from a tally at the same height`;
     case 'no-tally':
@@ -405,11 +408,13 @@ function RunResult({ run, bridge, sml, proven, demo }: { run: VoteRun; bridge: s
                 <td className="r">{typeof c.computed === 'number' ? formatInt(c.computed) : shortHash(c.computed, 6)}</td>
                 {r.targets.map((t) => {
                   const tc = t.compare[i]!;
+                  // a field that differs from a tally this recount is not of (another block or vote set) is not a contradiction
+                  const differs: Glyph = comparable(run, t) ? 'mismatch' : 'reported';
                   // a matching field is "verified" only for the tally the vote check proved; elsewhere it is a match on someone's word
                   const match: Glyph = demo ? 'fixture' : proven && t.name === PLATFORM_TARGET && r.keysFrom === 'sml' ? 'verified' : 'reported';
                   return (
-                    <td key={t.name} className={`r${tc.ok ? '' : ' bad'}`}>
-                      {typeof tc.expected === 'number' ? formatInt(tc.expected) : shortHash(tc.expected || '(none)', 6)} <ProvGlyph kind={tc.ok ? match : 'mismatch'} />
+                    <td key={t.name} className={`r${tc.ok || differs !== 'mismatch' ? '' : ' bad'}`}>
+                      {typeof tc.expected === 'number' ? formatInt(tc.expected) : shortHash(tc.expected || '(none)', 6)} <ProvGlyph kind={tc.ok ? match : differs} />
                       <span className="visually-hidden">{tc.ok ? 'matches' : 'differs'}</span>
                     </td>
                   );
@@ -449,6 +454,7 @@ function VotesResult({ done, fixtures, proven }: { done: VotesDone; fixtures: bo
   const lead =
     done.runs.find((run) => run.result.targets.some((t) => t === vv.matched)) ??
     done.runs.find((run) => run.result.targets.some((t) => !t.matches && comparable(run, t))) ??
+    done.runs.find((run) => run.result.targets.some((t) => otherSnapshot(run, t))) ??
     done.runs[0]!;
   return (
     <div className="votes-result" data-votes={vv.level}>

@@ -182,6 +182,7 @@ test.describe('tamper (replayed Testnet session)', () => {
   // S1-T3.3 (D-002): the lying bridge withholds a vote and serves a live tally that agrees with what it serves
   test('drop-votes-consistent: a withheld vote with a matching bridge tally is not verified', async ({ browser }) => {
     let consistent: any = null;
+    let served: Buffer | null = null;
     const dropVotes = onUrl(votesUrl, json((o) => {
       o.votes = o.votes.slice(1);
       o.count = o.votes.length;
@@ -190,20 +191,78 @@ test.describe('tamper (replayed Testnet session)', () => {
       for (const v of sig) { w[v.outcome]! += v.weight; c[v.outcome]!++; }
       consistent = { yesWeighted: w[1], noWeighted: w[2], abstainWeighted: w[3], yesCount: c[1], noCount: c[2], abstainCount: c[3], voteSetHash: vsh(sig) };
       Object.assign(o, { yesWeighted: w[1], noWeighted: w[2], abstainWeighted: w[3], voteSetHash: consistent.voteSetHash });
+      served = Buffer.from(JSON.stringify(o));
     }));
+    // The Platform tally's set is not what it serves, so the page asks again by hash (and for the live set): the recording holds no such
+    // request (an honest bridge answers the first). The lying bridge serves the same reduced set to every one of them.
+    const sameLie: Tamper = (e) => (votesUrl.test(e.url) && e.status === 0 && served ? { status: 200, headers: { 'content-type': 'application/json' }, body: served } : null);
     const lyingTally = onUrl(talliesUrl, json((o) => {
       const t = o.tallies.find((x: any) => x.govHash === P);
       if (t && consistent) { Object.assign(t, consistent); t.absoluteYes = t.yesWeighted - t.noWeighted; }
     }));
-    const { page, r } = await open(browser, dropVotes, lyingTally);
+    const { page, r } = await open(browser, dropVotes, sameLie, lyingTally);
     const s = await settle(page);
     complete(r);
     expect(s.level).not.toBe('verified');
     expect(s.states.votes).not.toBe('proven');
+    // Whatever it is asked, it serves its own reduced set: the recount of the Platform tally's block is of another vote set by the bridge's
+    // own label, so the check can't settle (error), and it is never shown as a tally verified.
+    expect(s.states.votes).toBe('error');
     await s.drawer.getByTestId('votes-check').locator(':scope > summary').click();
     await expect(s.drawer.getByTestId('votes-check')).not.toContainText('Tally verified');
     // no compare-table cell is drawn as verified: the tally the recount matches is the bridge's own word
     expect(await glyphs(page, '[data-testid="votes-check"] table.compare')).not.toContain('glyph-verified');
+  });
+
+  // QA stream A (honest "Mismatch"): a vote lands between the page reading the tallies and the recount reading the votes. The bridge
+  // then answers `?height=H` with another snapshot (here: the recorded set without its first vote, labelled with its own hash, as the
+  // bridge's stored record of H looked before the vote). Never a mismatch: by hash the page gets the tally's set, or says it changed.
+  const midBlock = (byHash: 'exact' | 'ignored') => {
+    let original: Buffer | null = null;
+    let older: Buffer | null = null;
+    const heightOnly = new RegExp(`${votesUrl.source}\\?height=\\d+$`);
+    const atHeight: Tamper = onUrl(heightOnly, (e) => {
+      original = e.body;
+      const o = JSON.parse(e.body.toString('utf8'));
+      o.votes = o.votes.slice(1);
+      o.count = o.votes.length;
+      o.voteSetHash = vsh(o.votes.filter((v: any) => v.signal === 1));
+      older = Buffer.from(JSON.stringify(o));
+      return { body: older };
+    });
+    // the requests after it (not in the recording: an honest bridge's first answer was the tally's set; live, the deployed bridge's answers
+    // are replaced): a new bridge serves exactly the set asked for, an old one ignores voteSetHash and answers as for ?height= (and its
+    // live set has moved on too)
+    const later: Tamper = (e) =>
+      votesUrl.test(e.url) && !heightOnly.test(e.url) && original
+        ? { status: 200, headers: { 'content-type': 'application/json' }, body: byHash === 'exact' && /voteSetHash=/.test(e.url) ? original : older! }
+        : null;
+    return [atHeight, later];
+  };
+
+  test('mid-block vote, bridge serving the set by hash: the honest proposal still settles on Verified', async ({ browser }) => {
+    const { page, r } = await open(browser, ...midBlock('exact'));
+    const s = await settle(page);
+    complete(r);
+    expect(r.served.some((u) => /voteSetHash=/.test(u))).toBe(true);
+    expect(s.states).toEqual({ content: 'proven', collateral: 'proven', chain: 'proven', votes: 'proven', funding: 'proven' });
+    expect(s.level).toBe('verified');
+  });
+
+  test('mid-block vote, an old bridge (no by-hash lookup): "couldn\'t verify yet", never "Mismatch"', async ({ browser }) => {
+    const { page, r } = await open(browser, ...midBlock('ignored'));
+    const s = await settle(page);
+    complete(r);
+    expect(s.level).not.toBe('verified');
+    expect(s.states.votes).toBe('error');
+    const row = s.drawer.locator('[data-check="votes"]');
+    await expect(row).not.toHaveAttribute('data-mismatch', '');
+    await expect(row.locator('.check-text')).toContainText("Couldn't verify yet: for block");
+    await expect(row.locator('.check-text')).toContainText('usually a vote arrived while checking');
+    await expect(row.locator('.check-text')).not.toContainText('Mismatch');
+    await s.drawer.getByTestId('votes-check').locator(':scope > summary').click();
+    await expect(s.drawer.locator('[data-votes]')).toHaveAttribute('data-votes', 'changed');
+    expect(await glyphs(page, '[data-testid="votes-check"]')).not.toContain('glyph-mismatch');
   });
 
   // S1-T3.5 (D-001, D-066): "in the next budget" never follows the tally's own flag or rank

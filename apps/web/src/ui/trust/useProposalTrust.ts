@@ -11,7 +11,7 @@ import {
 import { contentFailure } from '../../verify/checks.ts';
 import { runVerification } from '../../verify/client.ts';
 import type { RankingDone, VotesDone } from '../../verify/protocol.ts';
-import { BRIDGE_TARGET, PLATFORM_TARGET } from '../../verify/verdict.ts';
+import { BRIDGE_TARGET, otherSnapshot, PLATFORM_TARGET } from '../../verify/verdict.ts';
 import type { VoteTarget } from '../../verify/votes.ts';
 import { useChainReport, useCollateralCheck, type ChainCheck, type CollateralCheck } from '../hooks.ts';
 import { saveTrust, sharedRanking, trustScope } from './store.ts';
@@ -54,7 +54,7 @@ export interface ProposalTrust {
 }
 
 export function useProposalTrust(p: Proposal, row: Row, talliesLoading: boolean): ProposalTrust {
-  const { source, mode, gov, checks } = useApp();
+  const { source, mode, gov, checks, reload } = useApp();
   const [nonce, setNonce] = useState(0);
   const collateral = useCollateralCheck(p, nonce);
   const chain = useChainReport(p, collateral.verdict, nonce);
@@ -73,7 +73,8 @@ export function useProposalTrust(p: Proposal, row: Row, talliesLoading: boolean)
     ],
     [row.platformTally, row.bridgeTally],
   );
-  const targetsKey = targets.map((t) => `${t.name}@${t.tally.asOfHeight}`).join(',');
+  // the vote set too: the live tally changes at the same height whenever a vote arrives, and a recount is of one exact set
+  const targetsKey = targets.map((t) => `${t.name}@${t.tally.asOfHeight}/${t.tally.voteSetHash}`).join(',');
 
   // ---- the vote recount, after the collateral check (so the anchored chain is cached for it)
   const collateralDone = !!collateral.verdict || !!collateral.error;
@@ -162,10 +163,13 @@ export function useProposalTrust(p: Proposal, row: Row, talliesLoading: boolean)
     saveTrust(trustScope(source), p, { level: agg.level, reason: agg.reason, tallyHeight: shown?.tally.asOfHeight ?? null, voteSetHash: shown?.tally.voteSetHash ?? null, funded, at: Date.now() });
   }, [agg.level, agg.reason, source, p, shown, funded]);
 
+  // When the bridge served another vote set than a tally's, recounting the same tally again rarely helps: read the tallies again too.
+  const snapshotMoved = !!votes.result?.runs.some((run) => run.result.targets.some((t) => otherSnapshot(run, t)));
   const recheck = useCallback(() => {
+    if (snapshotMoved) reload();
     setNonce((n) => n + 1);
     setForceRanking((n) => n + 1);
-  }, []);
+  }, [snapshotMoved, reload]);
   const rankNow = useCallback(() => setRankAsked(true), []);
 
   return { aggregate: agg, collateral, chain, votes, ranking: wantRanking ? ranking : null, funded, shown, targets, recheck, rankNow: active && !wantRanking && !!bridge ? rankNow : null };

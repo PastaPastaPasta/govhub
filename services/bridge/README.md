@@ -170,7 +170,10 @@ while Core reports itself unsynced (`mnsync`). `PUBLISH_ON_MISMATCH=1` overrides
 
 **voteSetHash** = govhub-voteset-v1, defined in `@govhub/verify` (`voteSetHash`, packages/verify/README.md section 7):
 SHA-256 of `"govhub-voteset-v1\n"` followed by one line `<txid>-<n>|<outcome>|<time>\n` per counted masternode, sorted by
-the `txid-n` string. `GET /v1/proposals/{hash}/votes?height=<asOfHeight>` returns exactly the set behind a published tally.
+the `txid-n` string. `GET /v1/proposals/{hash}/votes?height=<asOfHeight>&voteSetHash=<voteSetHash>` returns exactly the set
+behind a tally (a published one, or the live one; `?height=` alone gives the stored tally in force at that height). The live tally
+changes at the same height whenever a vote arrives (`VOTE_REFRESH_DEBOUNCE_MS`), so a client recounting a tally it read earlier asks
+by hash: the sets of live tallies a newer run replaced stay retrievable for 15 minutes (memory only, at most 256 of them).
 
 ## Backfill of signed votes
 

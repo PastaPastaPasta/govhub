@@ -85,6 +85,8 @@ export interface FieldCompare {
 export interface TargetResult {
   name: string;
   asOfHeight: number;
+  /** The vote set the tally commits to (its voteSetHash, lowercase). */
+  voteSetHash: string;
   /** The tally against the count made here (proven votes only, when a proven list was given). */
   compare: FieldCompare[];
   matches: boolean;
@@ -137,6 +139,11 @@ export interface VoteRun {
    * fallback when it no longer held that height's set). A tally at that height is then about exactly this set.
    */
   asked?: number | null;
+  /**
+   * The voteSetHash the bridge labelled the served set with (lowercase; null or absent: no label). A label other than a tally's says the
+   * bridge served another snapshot than that tally's (a vote arrived in between): the recount says nothing about that tally then.
+   */
+  servedVoteSetHash?: string | null;
   /** Height of the masternode-list snapshot the weights and keys came from. */
   mnlistHeight: number;
   /** The snapshot is the list the bridge says it built the tally from (null: not stated). A difference explains a mismatch. */
@@ -296,7 +303,7 @@ export function verifyVotes(input: VoteCheckInput): VoteCheckResult {
       const compare = compareWith(target.tally, t.weighted, t.unweighted, t.voteSetHash);
       const matches = compare.every((c) => c.ok);
       const servedMatches = matches || (!!all && compareWith(target.tally, all.weighted, all.unweighted, all.voteSetHash).every((c) => c.ok));
-      return { name: target.name, asOfHeight: target.tally.asOfHeight, compare, matches, servedMatches };
+      return { name: target.name, asOfHeight: target.tally.asOfHeight, voteSetHash: target.tally.voteSetHash.toLowerCase(), compare, matches, servedMatches };
     }),
   };
 }
