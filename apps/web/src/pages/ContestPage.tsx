@@ -83,15 +83,27 @@ function ContestView({ label }: { label: string }) {
   // the end time comes from the open list (one cached query); a decided contest has none
   const open = useAsync(() => src.open().catch(() => []), [src]);
   const endsAt = open.data?.find((c) => c.label === label)?.endsAt ?? null;
-  const s = state.data;
+  // while a closed contest waits for its result it is read again in the background: the page keeps showing the last good read
+  const [fresh, setFresh] = useState<{ key: string; s: ContestState } | null>(null);
+  const [rereads, setRereads] = useState(0);
+  const s = fresh?.key === label && state.data ? fresh.s : state.data;
   const who = useIdentities(s ? s.contenders.map((c) => c.identityId) : []);
   const phase = s ? phaseOf(s, endsAt, nowMs) : null;
-  // closed but not decided: Platform records the result in its next block, so read again shortly
   useEffect(() => {
     if (phase !== 'closing') return;
-    const t = setTimeout(() => setAttempt((n) => n + 1), CLOSING_REREAD_MS);
-    return () => clearTimeout(t);
-  }, [phase, attempt]);
+    let live = true;
+    const t = setTimeout(() => {
+      src.forget(label);
+      src.state(label).then(
+        (x) => live && setFresh({ key: label, s: x }),
+        () => live && setRereads((n) => n + 1), // try again in a while
+      );
+    }, CLOSING_REREAD_MS);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, [phase, src, label, fresh, rereads]);
 
   if (state.loading)
     return (
@@ -99,7 +111,7 @@ function ContestView({ label }: { label: string }) {
         <span className="spinner" aria-hidden="true" /> Reading the contest from Platform…
       </p>
     );
-  if (state.error || !s) return <ReadError error={state.error ?? 'no answer'} what="Platform" lead="The contest could not be read" onRetry={() => setAttempt((n) => n + 1)} />;
+  if (!s) return <ReadError error={state.error ?? 'no answer'} what="Platform" lead="The contest could not be read" onRetry={() => setAttempt((n) => n + 1)} />;
   if (s.contenders.length === 0 && s.total === 0 && !s.outcome) return <Missing label={label}>{`Platform has no record of a vote on this name on ${src.network}.`}</Missing>;
 
   const name = displayName(s, label);

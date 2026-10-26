@@ -47,6 +47,18 @@ describe('liveContests', () => {
     });
   }
 
+  it('keeps paging past a full page of another app\'s contested polls', async () => {
+    const other = (i: number) => ({ toJSON: () => ({ contractId: 'Other', documentTypeName: 'post', indexName: 'byName', indexValues: [`x${i}`] }) });
+    const pages = [
+      Array.from({ length: 100 }, (_, i) => ({ timestampMs: BigInt(NOW + 1000 + i), votePolls: [other(i)] })),
+      [{ timestampMs: BigInt(NOW + 1099), votePolls: [other(99)] }, { timestampMs: BigInt(NOW + 5000), votePolls: [poll('late')] }],
+    ];
+    const q = vi.fn(async () => ({ data: pages.shift() ?? [], metadata: {} }));
+    fake.sdk = { voting: { votePollsByEndDateWithProof: q } };
+    const r = { ...registry, platform: { trusted: true, addresses: [`t${Math.random()}`] } } as Registry;
+    expect((await liveContests(r).open()).map((c) => c.label)).toEqual(['late']);
+  });
+
   it('pages names from the last entry Platform returned', async () => {
     const labels = Array.from({ length: NAMES_PAGE }, (_, i) => `a${String(i).padStart(3, '0')}`);
     const contestedResourcesWithProof = vi.fn(async () => ({ data: [...labels.slice(0, -1), 42], metadata: {} }));

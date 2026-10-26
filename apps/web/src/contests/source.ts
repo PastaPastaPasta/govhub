@@ -116,9 +116,11 @@ export function liveContests(r: Registry): ContestSource {
   async function readOpen(): Promise<OpenContest[]> {
     const sdk = await getSdk(r);
     const out: OpenContest[] = [];
+    // every poll seen, of any contract: the end-date index holds other apps' contested polls too, and they count as progress
     const seen = new Set<string>();
     // Whether Drive's limit counts end times or polls, a full page means "maybe more": the next one starts AT the last end time
     // (polls of one end time may be split across pages; `seen` drops the repeats) and the read stops once a page brings nothing new.
+    // (So a single end time holding a full page of polls or more would cut the list there; Platform has never come close.)
     let start = Date.now();
     for (let page = 0; page < OPEN_MAX_PAGES; page++) {
       const res = await sdk.voting.votePollsByEndDateWithProof({ startTimeMs: start, startTimeIncluded: true, orderAscending: true, limit: OPEN_PAGE });
@@ -132,11 +134,13 @@ export function liveContests(r: Registry): ContestSource {
         for (const poll of Array.from(b.votePolls ?? [])) {
           polls++;
           const p = (poll as { toJSON(): { contractId?: string; documentTypeName?: string; indexName?: string; indexValues?: unknown[] } }).toJSON();
+          const key = JSON.stringify([p.contractId, p.documentTypeName, p.indexName, p.indexValues]);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          added++;
           if (p.contractId !== DPNS_CONTRACT_ID || p.documentTypeName !== DPNS_POLL.documentTypeName || p.indexName !== DPNS_POLL.indexName) continue;
           const [parent, label] = p.indexValues ?? [];
-          if (parent !== PARENT_DOMAIN || typeof label !== 'string' || seen.has(label)) continue;
-          seen.add(label);
-          added++;
+          if (parent !== PARENT_DOMAIN || typeof label !== 'string') continue;
           out.push({ label, endsAt });
         }
       }
@@ -208,7 +212,7 @@ export function liveContests(r: Registry): ContestSource {
       });
       const raw = res.data as unknown[];
       const labels = raw.map(labelOf).filter((l): l is string => !!l);
-      // the cursor is the last entry Platform returned, so an entry that does not read as a label is not asked for again
+      // the next page starts after the last entry Platform returned
       return { labels, next: raw.length < NAMES_PAGE ? null : (labelOf(raw.at(-1)) ?? labels.at(-1) ?? null) };
     },
     state: (label) => stateCache.get(label, () => readState(label)),
