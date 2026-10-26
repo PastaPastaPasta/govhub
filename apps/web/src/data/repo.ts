@@ -11,11 +11,12 @@ import { loadFixtures } from './fixtures.ts';
 import { docToCycle, docToProposal, docToTally, docToTallySet, govDocTypes, queryDocs } from './platform.ts';
 import { activeProposals, latestCycles, pastProposals, proposalByHash, proposalsByName, talliesFor, tallySetPages, PAGE } from './queries.ts';
 import type { BridgeDescriptor, DapiDescriptor } from '../verify/protocol.ts';
+import type { DescStep } from '@govhub/forum';
 import type { CoreNetwork, Cycle, Proposal, Provenance, Sourced, Tally } from './types.ts';
 
 export interface Page {
   items: Sourced<Proposal>[];
-  /** Cursor (last document id) for the next page, when there may be more. */
+  /** Opaque cursor for the next page, when there may be more (the Platform source's is a keyset cursor, see pastPage). */
   next?: string;
 }
 
@@ -131,7 +132,26 @@ interface Proven<T> {
 
 const nowSeconds = (): number => Math.floor(Date.now() / 1000);
 
-/** The chain parameters of a Core network (no bridge asked), with where they come from. */
+/** The Past list's keyset cursor (see pastPage): the next step, and the ids already shown at its key. */
+export interface PastCursor {
+  step: Exclude<DescStep, { op: 'first' }>;
+  ids: string[];
+}
+
+/** Parses a cursor pastPage made; null for anything else (pastPage then returns nothing rather than start over). */
+export function parsePastCursor(cursor: string): PastCursor | null {
+  try {
+    const c = JSON.parse(cursor) as { step?: { op?: unknown; t?: unknown; startAfter?: unknown }; ids?: unknown };
+    const s = c.step;
+    if (!s || !['<=', '<', '=='].includes(s.op as string) || !Number.isSafeInteger(s.t)) return null;
+    if (s.startAfter !== undefined && (s.op !== '==' || typeof s.startAfter !== 'string')) return null;
+    if (!Array.isArray(c.ids) || !c.ids.every((x) => typeof x === 'string')) return null;
+    return { step: s as PastCursor['step'], ids: c.ids as string[] };
+  } catch {
+    return null;
+  }
+}
+
 const chainParams = (network: CoreNetwork, detail?: string): Sourced<GovParams> => ({
   value: GOV_PARAMS[network],
   prov: { kind: 'reported', source: `Dash Core ${network} chain parameters`, ...(detail ? { detail } : {}) },
@@ -146,6 +166,26 @@ export function liveSource(registry: Registry): DataSource {
     source: `Platform ${registry.platformNetwork}`,
     detail: [`gov contract ${contract}`, height ? `Platform height ${formatInt(height)}` : null, extra].filter(Boolean).join(', '),
   });
+  /** One keyset step of the Past list (see pastPage): the new items and the cursor of the next step, if any. */
+  const pastStep = async (at: PastCursor): Promise<{ items: Sourced<Proposal>[]; next?: PastCursor }> => {
+    const r = await queryDocs(registry, pastProposals(at.step));
+    const shown = new Set(at.ids);
+    const all = r.docs.map(docToProposal);
+    const items = all.filter((p) => !p.docId || !shown.has(p.docId)).map((p) => ({ value: p, prov: proof(r.height) }));
+    const full = r.docs.length >= PAGE;
+    const first = all[0];
+    const last = all.at(-1);
+    const { step } = at;
+    if (step.op === '==') {
+      if (full && last?.docId) return { items, next: { step: { op: '==', t: step.t, startAfter: last.docId }, ids: at.ids } };
+      return { items, next: { step: { op: '<', t: step.t }, ids: [] } };
+    }
+    if (!full || !first || !last) return { items };
+    const idsAt = (t: number) => all.flatMap((p) => (p.endEpoch === t && p.docId ? [p.docId] : []));
+    const carried = step.op === '<=' && step.t === last.endEpoch ? at.ids : [];
+    if (first.endEpoch === last.endEpoch) return { items, next: { step: { op: '==', t: last.endEpoch }, ids: [...new Set([...carried, ...idsAt(last.endEpoch)])] } };
+    return { items, next: { step: { op: '<=', t: last.endEpoch }, ids: idsAt(last.endEpoch) } };
+  };
   const bridges: Bridge[] = enabledBridges(registry).map((b) => new HttpBridge(b.name, b.httpBase));
   const scope = registryScope(registry);
   const cacheKey = (k: string) => `${scope}:${k}`;
@@ -265,10 +305,18 @@ export function liveSource(registry: Registry): DataSource {
     },
 
     async pastPage(cursor) {
-      const r = await queryDocs(registry, pastProposals(nowSeconds(), cursor));
-      const items = r.docs.map((d) => ({ value: docToProposal(d), prov: proof(r.height) }));
-      const next = r.docs.length === PAGE ? items.at(-1)?.value.docId : undefined;
-      return next ? { items, next } : { items };
+      // Keyset paging (R8: a desc query cannot carry startAfter on PV13). The cursor is the next step plus the ids already shown at its key:
+      // `endEpoch <= t` re-reads the proposals ending at t and skips those; when a whole page shares one end, that end is swept ascending
+      // (`== t`, startAfter) and the list goes on below it (`< t`). Nothing is lost or repeated, however many proposals share an end.
+      let at: PastCursor | null = cursor ? parsePastCursor(cursor) : { step: { op: '<=', t: nowSeconds() }, ids: [] };
+      // A sweep page can hold only proposals already shown; keep stepping (each step moves on) so a page with a cursor always has
+      // items: the Past page loads the next one only when its rows grow.
+      for (let guard = 0; at && guard < 50; guard++) {
+        const r = await pastStep(at);
+        if (r.items.length || !r.next) return r.next ? { items: r.items, next: JSON.stringify(r.next) } : { items: r.items };
+        at = r.next;
+      }
+      return { items: [] };
     },
 
     async proposal(h) {
@@ -310,7 +358,12 @@ export function liveSource(registry: Registry): DataSource {
         }
         return found;
       };
-      const [fromSet, fromDocs] = await Promise.all([packed(), single()]);
+      // A failed talliesSet read must not take the per-proposal tallies with it: those proposals then read as "no tally published".
+      const packedOrNone = packed().catch((e: unknown) => {
+        console.warn('talliesSet pages could not be read', e);
+        return [] as Sourced<Tally>[];
+      });
+      const [fromSet, fromDocs] = await Promise.all([packedOrNone, single()]);
       const out = new Map<string, Sourced<Tally>>();
       // On a tie the packed entry wins, except over a proposal's final tally (rank 0, not in the next budget): the bridge writes that
       // when the proposal leaves the active set, possibly before its next (throttled) replace of the set drops the entry.

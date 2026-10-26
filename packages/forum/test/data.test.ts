@@ -24,8 +24,10 @@ import {
   postCost,
   COSTS,
   type Comment,
+  type DocReader,
   type ForumContracts,
 } from '../src/index.ts';
+import type { DocQuery } from '@govhub/contracts-v1/queryLint';
 
 const C: ForumContracts = {
   forum: 'HfLWUEWnp4YCQ9Mzp9DexG58WPKvHm7SahMVSuzKSQRw',
@@ -59,7 +61,62 @@ describe('writes and reads through the linted queries', () => {
     expect(r.comments[1]).toMatchObject({ parentId: first.id, ownerId: BOB, fmt: 1 });
     expect(new Set(r.comments.map((c) => c.id)).size).toBe(152);
     const since = await reader.commentsSince(H, r.comments[149]!.createdAt);
-    expect(since.map((c) => c.body)).toEqual(['c148', 'c149']);
+    expect(since.map((c) => c.body)).toEqual(['c147', 'c148', 'c149']); // >= : the boundary time itself is read again
+  });
+
+  it('newest-first paging bounds by time, never startAfter (R8), and loses nothing when one block time spans a page boundary', async () => {
+    let t = 1_792_800_000_000;
+    let n = 0;
+    // 30 comments per block time: page boundaries (every 100) fall inside a block
+    const now = () => (n++ % 30 === 0 ? (t += 1000) : t);
+    const store = new MemoryStore({ contracts: C, owners: { mod: MOD, gov: MOD }, now });
+    const reader = new ForumReader(store);
+    const ops = forumOps(C, now);
+    const sent: DocQuery[] = [];
+    const spy: DocReader = { query: (c, q) => (sent.push(q), store.query(c, q)) };
+    for (let i = 0; i < 250; i++) store.apply(BOB, ops.comment(H, `c${i}`));
+    const r = await new ForumReader(spy).comments(H);
+    expect(r.truncated).toBe(false);
+    expect(r.comments).toHaveLength(250);
+    expect(new Set(r.comments.map((c) => c.id)).size).toBe(250);
+    expect(r.comments.map((c) => c.createdAt)).toEqual([...r.comments.map((c) => c.createdAt)].sort((a, b) => a - b));
+    expect(sent.length).toBeGreaterThan(2);
+    expect(sent.every((q) => q.startAfter === undefined)).toBe(true);
+    expect(sent[1]!.where[1]).toEqual(['$createdAt', '<=', expect.any(Number)]);
+    // commentsSince at a shared block time returns that whole block again (callers skip ids they hold)
+    const last = r.comments.at(-1)!.createdAt;
+    expect((await reader.commentsSince(H, last)).length).toBe(r.comments.filter((c) => c.createdAt === last).length);
+  });
+
+  it('more than a page of comments in one block hides nothing older: that block time is swept ascending, then the read goes on', async () => {
+    let t = 1_792_800_000_000;
+    const now = () => t;
+    const store = new MemoryStore({ contracts: C, owners: { mod: MOD, gov: MOD }, now });
+    const ops = forumOps(C, now);
+    for (let i = 0; i < 5; i++, t += 1000) store.apply(ALICE, ops.comment(H, `old${i}`));
+    for (let i = 0; i < 230; i++) store.apply(BOB, ops.comment(H, `burst${i}`)); // one block time, more than two pages
+    t += 1000;
+    store.apply(ALICE, ops.comment(H, 'newest'));
+    const sent: DocQuery[] = [];
+    const spy: DocReader = { query: (c, q) => (sent.push(q), store.query(c, q)) };
+    const r = await new ForumReader(spy).comments(H);
+    expect(r.truncated).toBe(false);
+    expect(r.comments).toHaveLength(236);
+    expect(new Set(r.comments.map((c) => c.id)).size).toBe(236);
+    expect(r.comments.slice(0, 5).map((c) => c.body)).toEqual(['old0', 'old1', 'old2', 'old3', 'old4']);
+    expect(r.comments.at(-1)!.body).toBe('newest');
+    // desc pages never carry startAfter; only the ascending one-key sweep does
+    for (const q of sent) if (q.orderBy?.some(([, d]) => d === 'desc')) expect(q.startAfter).toBeUndefined();
+    expect(sent.some((q) => q.where.some((w) => w[1] === '==' && w[0] === '$createdAt'))).toBe(true);
+  });
+
+  it('a page cap still bounds the read (truncated)', async () => {
+    const store = new MemoryStore({ contracts: C, owners: { mod: MOD, gov: MOD }, now: () => 1_792_800_000_000 });
+    const ops = forumOps(C, () => 1_792_800_000_000);
+    for (let i = 0; i < 120; i++) store.apply(BOB, ops.comment(H, `c${i}`));
+    const r = await new ForumReader(store).comments(H, 1);
+    expect(r.truncated).toBe(true);
+    expect(r.comments).toHaveLength(100);
   });
 
   it('comment bodies are capped at 5,000 UTF-8 bytes, not characters', () => {

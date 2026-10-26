@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@dashevo/evo-sdk": "5.0.0-rc.8",
+    "@govhub/contracts-v1": "*",
     "@govhub/verify": "*",
     "@hono/node-server": "^1.14.0",
     "@noble/hashes": "^2.0.0",
@@ -21,7 +22,6 @@
     "zeromq": "^6.5.0"
   },
   "devDependencies": {
-    "@govhub/contracts-v1": "*",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.0.0",
     "typescript": "~5.9.2",

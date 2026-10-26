@@ -10,6 +10,9 @@
 //   R6  value encodings: byteArray -> base64 string of the right length, identifier -> base58 string,
 //       integer -> safe integer number, string -> string, boolean -> boolean
 //   R7  desc needs a range (or `in`) on the last ordered property
+//   R8  no `startAfter` with desc: PV13 mainnet answers it, but evo-sdk 5.0.0-rc.8 rejects the proof ("upright op in a
+//       right-to-left walk"), so the read fails. Page a desc list with a range bound instead (`<=` the last key, skipping
+//       the ids already seen at that key); asc + startAfter verifies fine.
 export type WhereOp = '==' | '<' | '<=' | '>' | '>=' | 'in' | 'startsWith';
 export type WhereClause = readonly [string, WhereOp, unknown];
 export type OrderClause = readonly [string, 'asc' | 'desc'];
@@ -217,6 +220,8 @@ export function lintQuery(schemas: ContractSchemas, q: DocQuery): LintResult {
   if (orderBy.some((o) => o[1] === 'desc')) {
     const last = q.where.find((w) => w[0] === lastOrder);
     if (!last || !(RANGE_OPS.has(last[1]) || last[1] === 'in')) errors.push(`desc on PV13 needs a range (or in) on the last ordered property ${lastOrder ?? '?'} (R7)`);
+    // R8
+    if (q.startAfter !== undefined) errors.push('desc cannot page with startAfter: evo-sdk 5.0.0-rc.8 cannot verify the proof PV13 returns; page with a range bound on the ordered property instead (R8)');
   }
 
   return { ok: errors.length === 0, errors, index: chosen.ix.name };

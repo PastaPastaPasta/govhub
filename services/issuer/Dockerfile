@@ -25,13 +25,15 @@ RUN npm ci --omit=dev --workspace @govhub/issuer --include-workspace-root=false 
  && npm cache clean --force
 COPY packages/verify/src packages/verify/src
 COPY packages/badge/src packages/badge/src
+# the PV13 query lint and the schemas it checks the issuer's badge queries and auth's vault query against
+COPY packages/contracts-v1/queryLint.ts packages/contracts-v1/badge.json packages/contracts-v1/forum.json packages/contracts-v1/
 # only the evo-sdk document writer and what it imports (no WebAuthn, no funding code)
 COPY packages/auth/src/evo.ts packages/auth/src/bytes.ts packages/auth/src/keys.ts packages/auth/src/platform.ts packages/auth/src/layout.ts packages/auth/src/
 COPY services/issuer/bin services/issuer/bin
 COPY services/issuer/src services/issuer/src
 COPY services/issuer/openapi.json services/issuer/
 RUN cd services/issuer && node -e "require('better-sqlite3'); console.log('native modules ok')" \
- && node --input-type=module -e "await import('@govhub/auth/evo'); await import('@govhub/badge'); console.log('workspaces ok')"
+ && node --input-type=module -e "await import('@govhub/auth/evo'); await import('@govhub/badge'); await import('@govhub/contracts-v1/queryLint'); console.log('workspaces ok')"
 
 # ---- runtime ----
 FROM node:22.23-slim

@@ -9,6 +9,8 @@
 //  - A broadcast through a lagging node can fail with 40101 / nonce errors right after a write: handled by the writer below.
 //  - WASM errors are not Error instances: read `.message`, `.code` (consensus code, -1 otherwise) and `.name` (the kind).
 import type * as Evo from '@dashevo/evo-sdk';
+import forumSchemas from '@govhub/contracts-v1/forum.json' with { type: 'json' };
+import { assertQuery, type ContractSchemas, type DocQuery } from '@govhub/contracts-v1/queryLint';
 import { bytesEqual, bytesToHex, concatBytes, fromBase64, hexToBytes, identifierBytes, randomBytes, reversed, toBase64, u32le } from './bytes.ts';
 import { publicKeyOf as evoPub, type IdentityKeyInfo, type Network } from './keys.ts';
 import type { AssetLockProofInput, DocValue, DocumentWrite, DocumentWritten, PlatformPort, SigningKey, VaultEntryDoc } from './platform.ts';
@@ -214,6 +216,8 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
     };
   };
   const queryVault = async (contractId: string, where: unknown[], orderBy?: unknown[]): Promise<VaultEntryDoc[]> => {
+    // F13 / F13b through the PV13 lint like every other query (a bad shape is a silent [] on PV13: "no vault entry")
+    assertQuery(forumSchemas as unknown as ContractSchemas, { documentTypeName: 'vault', where: where as DocQuery['where'], ...(orderBy ? { orderBy: orderBy as DocQuery['orderBy'] } : {}), limit: 100 });
     const res = await sdk.documents.queryWithProof({ dataContractId: contractId, documentTypeName: 'vault', where, ...(orderBy ? { orderBy } : {}), limit: 100 } as never);
     return [...res.data.values()].filter((x): x is Evo.Document => !!x).map((x) => toEntry(x.toJSON(w.PlatformVersion.latest() as never) as Record<string, unknown>));
   };

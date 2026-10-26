@@ -187,9 +187,10 @@ describe('D-038: comments are read newest first', () => {
     store.apply('4eYvJ1QzRxFy82CRK3tP5QHmdRcgkG8xdbGBQMqSroif', ops.comment(H, 'the newest real comment'));
     const r = await new ForumReader(store).comments(H, 2);
     expect(r.truncated).toBe(true);
-    expect(r.comments).toHaveLength(200);
+    // keyset paging (R8): page 2 is bounded `<=` page 1's oldest time, so that boundary comment is read twice and counted once
+    expect(r.comments).toHaveLength(199);
     expect(r.comments.at(-1)!.body).toBe('the newest real comment');
-    expect(r.comments[0]!.body).toBe('spam 51');
+    expect(r.comments[0]!.body).toBe('spam 52');
     expect(r.comments.every((c, i) => i === 0 || c.createdAt >= r.comments[i - 1]!.createdAt)).toBe(true);
     const all = await new ForumReader(store).comments(H);
     expect(all.truncated).toBe(false);

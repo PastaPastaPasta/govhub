@@ -2,6 +2,8 @@
 // (PlatformPort.writeDocument, evo.ts). Entry point '@govhub/auth/keyring-evo'; like '@govhub/auth/evo' it never imports the SDK
 // itself (the caller passes the loaded module and a connected EvoSDK).
 import type * as Evo from '@dashevo/evo-sdk';
+import forumSchemas from '@govhub/contracts-v1/forum.json' with { type: 'json' };
+import { assertQuery, type ContractSchemas } from '@govhub/contracts-v1/queryLint';
 import { fromBase64 } from '../bytes.ts';
 import type { DocValue, PlatformPort } from '../platform.ts';
 import type { KeyringDoc, KeyringStore } from './keyring.ts';
@@ -46,7 +48,9 @@ export function createEvoKeyringStore(evo: EvoModule, sdk: Sdk, platform: Platfo
   const version = (evo as unknown as { PlatformVersion: { latest(): unknown } }).PlatformVersion;
   return {
     async get(ownerId, kind) {
-      const res = await sdk.documents.queryWithProof(keyringQuery(contractId, ownerId, kind) as never);
+      const q = keyringQuery(contractId, ownerId, kind);
+      assertQuery(forumSchemas as unknown as ContractSchemas, q); // K1 through the PV13 lint like every other query
+      const res = await sdk.documents.queryWithProof(q as never);
       const docs = [...res.data.values()].filter((x): x is Evo.Document => !!x).map((x) => keyringDocFromJson(x.toJSON(version.latest() as never) as Record<string, unknown>));
       return docs.find((d) => d.ownerId === ownerId && d.kind === kind) ?? null;
     },

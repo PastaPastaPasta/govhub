@@ -19,6 +19,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@govhub/contracts-v1": "*",
     "@govhub/dapi": "*",
     "@govhub/verify": "*",
     "@noble/ciphers": "^2.0.0",

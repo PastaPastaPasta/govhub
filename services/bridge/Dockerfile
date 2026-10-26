@@ -20,11 +20,14 @@ COPY apps/web/package.json apps/web/
 RUN npm ci --omit=dev --workspace @govhub/bridge --include-workspace-root=false --no-audit --no-fund \
  && npm cache clean --force
 COPY packages/verify/src packages/verify/src
+# the PV13 query lint and the gov schema every bridge query is checked against
+COPY packages/contracts-v1/queryLint.ts packages/contracts-v1/gov.json packages/contracts-v1/
 COPY services/bridge/bin services/bridge/bin
 COPY services/bridge/src services/bridge/src
 COPY services/bridge/openapi.json services/bridge/
 # fail the build, not the container, if a native module does not load
-RUN cd services/bridge && node -e "require('better-sqlite3'); require('zeromq'); console.log('native modules ok')"
+RUN cd services/bridge && node -e "require('better-sqlite3'); require('zeromq'); console.log('native modules ok')" \
+ && node --input-type=module -e "await import('./src/publish/platform.ts'); console.log('sources ok')"
 
 # ---- runtime ----
 FROM node:22.23-slim

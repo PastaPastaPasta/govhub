@@ -48,23 +48,42 @@ export const profilesOf = (ownerIds: readonly string[]): ContractQuery =>
 export const commentsOf = (govHash: string, startAfter?: string): ContractQuery =>
   checked('forum', paged({ documentTypeName: 'comment', where: [['govHash', '==', hexToB64(govHash)]], orderBy: [['govHash', 'asc'], ['$createdAt', 'asc']], limit: PAGE }, startAfter));
 
-/** F2c (+F3p paging): a proposal's comments, newest first (the `$createdAt > 0` range makes desc work on PV13, rule 7). */
-export const commentsNewestOf = (govHash: string, startAfter?: string): ContractQuery =>
-  checked(
-    'forum',
-    paged({ documentTypeName: 'comment', where: [['govHash', '==', hexToB64(govHash)], ['$createdAt', '>', 0]], orderBy: [['govHash', 'desc'], ['$createdAt', 'desc']], limit: PAGE }, startAfter),
-  );
+/**
+ * One page of a newest-first read on PV13 (driven by pageDesc in reader.ts). A desc query cannot page with `startAfter` (R8: evo-sdk rc.8
+ * cannot verify that proof on PV13), so pages are bounded on the ordered key instead: the first page, then `key <= t` (re-reads the
+ * documents at t, the reader skips the ones it has), `key < t`, or, when a whole page sits at one key t, an ascending sweep of
+ * `key == t` with `startAfter` (asc + startAfter verifies) so more than a page of documents at one key are all read.
+ */
+export type DescStep = { op: 'first' } | { op: '<=' | '<'; t: number } | { op: '=='; t: number; startAfter?: string };
 
-/** F2d: a proposal's comments created after `sinceMs` (block time), oldest first. */
+/** The where/orderBy of `step` on `key` after the equality prefix `eq`, ordered desc (asc for the `==` sweep). */
+function descShape(eq: readonly [string, '==', unknown], firstOrder: 'asc' | 'desc', key: string, step: DescStep): Pick<DocQuery, 'where' | 'orderBy' | 'startAfter'> {
+  const range = step.op === 'first' ? ([key, '>', 0] as const) : ([key, step.op, step.t] as const);
+  const dir = step.op === '==' ? 'asc' : 'desc';
+  return {
+    where: [eq, range],
+    orderBy: [[eq[0], step.op === '==' ? 'asc' : firstOrder], [key, dir]],
+    ...(step.op === '==' && step.startAfter ? { startAfter: step.startAfter } : {}),
+  };
+}
+
+/** F2c: a proposal's comments, newest first (the `$createdAt` range makes desc work on PV13, rule 7), paged by DescStep. */
+export const commentsNewestOf = (govHash: string, step: DescStep = { op: 'first' }): ContractQuery =>
+  checked('forum', { documentTypeName: 'comment', ...descShape(['govHash', '==', hexToB64(govHash)], 'desc', '$createdAt', step), limit: PAGE });
+
+/**
+ * F2d: a proposal's comments created at or after `sinceMs` (block time), oldest first. `>=`, not `>`: several comments can share
+ * one block time, so the caller passes the newest time it has and skips the ids it already holds.
+ */
 export const commentsSince = (govHash: string, sinceMs: number, startAfter?: string): ContractQuery =>
   checked(
     'forum',
-    paged({ documentTypeName: 'comment', where: [['govHash', '==', hexToB64(govHash)], ['$createdAt', '>', sinceMs]], orderBy: [['govHash', 'asc'], ['$createdAt', 'asc']], limit: PAGE }, startAfter),
+    paged({ documentTypeName: 'comment', where: [['govHash', '==', hexToB64(govHash)], ['$createdAt', '>=', sinceMs]], orderBy: [['govHash', 'asc'], ['$createdAt', 'asc']], limit: PAGE }, startAfter),
   );
 
-/** F3: an author's comments, newest first (the `$createdAt > 0` range makes desc work on PV13, rule 7). */
-export const commentsBy = (ownerId: string, startAfter?: string): ContractQuery =>
-  checked('forum', paged({ documentTypeName: 'comment', where: [['$ownerId', '==', ownerId], ['$createdAt', '>', 0]], orderBy: [['$ownerId', 'asc'], ['$createdAt', 'desc']], limit: PAGE }, startAfter));
+/** F3: an author's comments, newest first, paged like F2c (rules 7 and R8). */
+export const commentsBy = (ownerId: string, step: DescStep = { op: 'first' }): ContractQuery =>
+  checked('forum', { documentTypeName: 'comment', ...descShape(['$ownerId', '==', ownerId], 'asc', '$createdAt', step), limit: PAGE });
 
 // ---- reaction ---------------------------------------------------------------------------------
 /** A reaction target as base64: a comment id (base58). */
