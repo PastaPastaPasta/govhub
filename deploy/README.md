@@ -910,6 +910,49 @@ curl -s http://127.0.0.1:8789/v1/info | jq '{network, issuingEpochs, height, rea
 To add keys: generate and publish them on an offline machine, then copy `epoch-<E>.pem` into
 `/opt/govhub-testnet/deploy/secrets/issuer-keys` (0600, uid 1000), no more than 7 epochs ahead of the one being issued.
 
+### 13.3 Mainnet publisher
+
+The mainnet stack (`/opt/govhub`) runs a second bridge, `bridge-mainnet`, on the same dashd: the same Core mainnet data,
+published into **mainnet** Platform. The first bridge keeps feeding the Dev profile (testnet Platform). The two have separate
+archives, identity key files and image tags (`docker-compose.mainnet-publisher.yml`, the `MAINNET_*` settings in `.env`).
+
+| | |
+|---|---|
+| Compose | `COMPOSE_FILE=docker-compose.yml:docker-compose.tunnel-host.yml:docker-compose.mainnet-publisher.yml` |
+| Publishing | `MAINNET_PUBLISH=1`, `MAINNET_GOV_CONTRACT_ID=BqszMpFvXm11jWeUYRqQu2yREZi7EzgkFfDKZR9dqamq`, identity `7P3ZsJHh61jhvVwaxh1xyNx7wkCqiDdkhw2EpCfTn9J` (`secrets/bridge_identity_mainnet.json`, HIGH key only) |
+| Port | `127.0.0.1:8793` |
+| Public | tunnel `govhub`: `gov-bridge-mainnet.dashhq.org -> http://bridge-mainnet:8787` |
+| Backups | `/opt/govhub-mainnet-backups`, daily: `BACKUP_SERVICE=bridge-mainnet deploy/scripts/backup.sh /opt/govhub-mainnet-backups 30` |
+
+Bring it up archive-only first (`MAINNET_PUBLISH=0`), run the governance resync (section 7) and `bridge verify`, then set
+`MAINNET_PUBLISH=1` and recreate it. The commands of section 13 apply with the service name `bridge-mainnet`; for
+`scripts/readback.ts` use the `govhub_bridge-mainnet-data` volume, `PLATFORM_NETWORK=mainnet`, the contract and identity above
+and the image `govhub-bridge:mainnet`.
+
+Mainnet ids (all from one operations seed, `packages/auth/scripts/mainnet-bootstrap.ts`; the seed and the offline issuer keys
+are the only things to back up off the server):
+
+| Identity | Id | Owns |
+|---|---|---|
+| 0 admin | `AYJDiSameSQMvM6eNqNsHzTF8F7vv3XbVaJZDwNqpBz7` | `forum` `4EcYtwedNjTm4iGmx47GkLX2uNkCUWS4tt1KHhgGkjR3`, `badge` `Acfd9ZKRFdAAxpSab5kb9zP2P5bKQQ4kZVqeBnck3pZi` |
+| 1 bridge | `7P3ZsJHh61jhvVwaxh1xyNx7wkCqiDdkhw2EpCfTn9J` | `gov` `BqszMpFvXm11jWeUYRqQu2yREZi7EzgkFfDKZR9dqamq` |
+| 2 moderation | `96f4TbboxsG4SNx711fvaemSKzsTG72M2pEYLdpPrG2M` | `mod` `65CSJ6tnKFJR6T4C2TMYFsusD7scZqLkpXgjEqpKdu2P` |
+| 3 badge issuer | `9MJV17bn7C9xu1n3nopcZzScTnac3TNUjR17HmpKY4Cr` | `issuerKey` documents for epochs 154 to 167 |
+
+### 13.4 Mainnet issuer (MN badge)
+
+In the mainnet stack's project (`COMPOSE_PROFILES=tunnel,relay,issuer`), next to its dashd.
+
+| | |
+|---|---|
+| Settings | `ISSUER_IDENTITY_ID=9MJV17bn7C9xu1n3nopcZzScTnac3TNUjR17HmpKY4Cr`, `BADGE_CONTRACT_ID=Acfd9ZKRFdAAxpSab5kb9zP2P5bKQQ4kZVqeBnck3pZi`, `ISSUER_MAX_STAGED_KEYS=1` |
+| Port | `ISSUER_PORT=8792` (8789 is the testnet issuer's) |
+| Secrets | `/opt/govhub/deploy/secrets`: `issuer_hmac_secret`, `issuer_report_key.json` (HIGH key) and `issuer-keys/` with only the current epoch's key and the next one. The CRITICAL key and the other `epoch-<E>.pem` stay offline |
+| Public | tunnel `govhub`: `gov-issuer.dashhq.org -> http://issuer:8789` |
+
+Mainnet epochs are 16,616 blocks (one superblock cycle, about a month), so copy the next epoch's key in once a month, and publish
+more keys (`issuer keygen`, `issuer publish-keys`) at least 3 epochs before 167.
+
 ## 14. The web app: gov.dashhq.org
 
 The web app is a static build (`apps/web`) deployed by `.github/workflows/pages.yml` to GitHub Pages, with the custom domain
