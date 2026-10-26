@@ -10,7 +10,7 @@ import { assertQuery, type ContractSchemas, type DocQuery } from '@govhub/contra
 import type { Cycle, Proposal, Tally } from './types.ts';
 
 type EvoModule = typeof import('@dashevo/evo-sdk');
-type Sdk = InstanceType<EvoModule['EvoSDK']>;
+export type Sdk = InstanceType<EvoModule['EvoSDK']>;
 
 let current: { key: string; sdk: Promise<Sdk> } | null = null;
 

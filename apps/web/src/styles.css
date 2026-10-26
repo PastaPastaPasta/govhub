@@ -316,10 +316,29 @@ a:hover {
   color: var(--ink);
   background: var(--sunk);
 }
-/* "New proposal" is "New" where the three links would not fit on one line */
+/* "New proposal" is "New" and "My masternodes" is "Masternodes" where the links would not fit on one line; a narrower phone
+   scrolls the row sideways rather than wrapping it */
+.nav-short {
+  display: none;
+}
 @media (max-width: 420px) {
   .nav-more {
     display: none;
+  }
+  .nav-short {
+    display: inline;
+  }
+  .mainnav {
+    gap: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .mainnav a {
+    padding-inline: 0.5rem;
+  }
+  /* inside the scrolling row an outside ring would be clipped */
+  .mainnav a:focus-visible {
+    outline-offset: -2px;
   }
 }
 .topbar-end {
