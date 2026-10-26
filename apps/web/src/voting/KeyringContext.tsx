@@ -229,6 +229,8 @@ export function pacedRandomDelays(n: number): number[] {
 /** Highest keyring generation this browser has opened or written (public: a counter), to notice a replayed older document. */
 const generationKey = (platformNetwork: string, ownerId: string) => `govhub.keyring.generation.${platformNetwork}.${ownerId}`;
 const NO_KEY_INFOS: readonly VotingKeyInfo[] = [];
+/** `pub` is one of the keyring's unlockers. */
+const hasUnlocker = (k: OpenedKeyring, pub: Uint8Array) => k.content.unlockers.some((u) => bytesEqual(u.recipientKey, pub));
 const EMPTY_MNS: MnState = { phase: 'idle', owned: [], missing: [], mismatch: [], smlNodes: 0, forKeys: '' };
 
 /** Async work whose session ended (sign-out, another identity or network) meanwhile: it stopped and kept nothing. */
@@ -962,18 +964,15 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         if (sessionToken() !== t || kr.current !== k0) refuse(new SessionChangedError());
         if (lockEpoch.current !== epoch) refuse(new LockedMeanwhileError());
         if (cred && !bytesEqual(a.credentialId, cred)) refuse(new Error('That was another passkey. Nothing was added; try again with the passkey you signed in with.'));
-        if (o.signedIn) {
-          // a tab that took the session over does not know this passkey's key: already an unlocker is simply done
-          const key = passkeyUnlockKey(a.prfOutput);
-          const already = k0.content.unlockers.some((u) => bytesEqual(u.recipientKey, key.pair.publicKey));
-          key.wipe();
-          if (already) return setPasskeyOfferKind(null);
-        }
-        await addPasskeyUnlockerFrom(a.prfOutput); // reports its own errors (run)
+        // the sign-in passkey: a tab that took the session over does not know its key, and one already an unlocker is simply done
+        const key = cred ? passkeyUnlockKey(a.prfOutput) : null;
+        const already = !!key && hasUnlocker(k0, key.pair.publicKey);
+        key?.wipe();
+        if (!already) await addPasskeyUnlockerFrom(a.prfOutput); // reports its own errors (run)
       } finally {
         a.prfOutput.fill(0);
       }
-      if (o.signedIn) setPasskeyOfferKind(null);
+      if (cred) setPasskeyOfferKind(null);
     },
     [addPasskeyUnlockerFrom, memoryOnly, registry.forum.contractId, session, sessionToken],
   );
@@ -994,7 +993,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       const s = takeStash(identityId);
       if (!s) return;
       const k = kr.current;
-      if (s.purpose === 'add' && k && !memoryOnly && !k.content.unlockers.some((u) => bytesEqual(u.recipientKey, s.key.pair.publicKey))) {
+      if (s.purpose === 'add' && k && !memoryOnly && !hasUnlocker(k, s.key.pair.publicKey)) {
         void edit('Adding the passkey as an unlocker', (d) => void addUnlocker(d, s.key))
           .catch(() => {})
           .finally(() => s.key.wipe());
@@ -1053,7 +1052,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
             if (!opened(existing, false, t, epoch)) throw new SessionChangedError();
             // the passkey that signed in here, known not to be an unlocker of the keyring merged into: offered too
             const pk = signedInPasskey.current;
-            if (pk?.session === session && !existing.content.unlockers.some((u) => bytesEqual(u.recipientKey, pk.publicKey))) offerAfterSave(session);
+            if (pk?.session === session && !hasUnlocker(existing, pk.publicKey)) offerAfterSave(session);
           } else {
             addUnlocker(k, seed);
             canWrite(k);
@@ -1740,7 +1739,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
   // the offer, while it applies: a saved keyring open here in a passkey session, and that passkey not (known to be) an unlocker yet
   const pk = signedInPasskey.current;
   const passkeyOffer =
-    passkeyOfferKind && status === 'open' && keyring && !memoryOnly && !demo && !needsConfirm && session?.source === 'passkey' && session.credentialId && !(pk?.session === session && keyring.content.unlockers.some((u) => bytesEqual(u.recipientKey, pk.publicKey)))
+    passkeyOfferKind && status === 'open' && keyring && !memoryOnly && !demo && !needsConfirm && session?.source === 'passkey' && session.credentialId && !(pk?.session === session && hasUnlocker(keyring, pk.publicKey))
       ? passkeyOfferKind
       : null;
 

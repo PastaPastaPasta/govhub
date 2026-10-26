@@ -784,7 +784,7 @@ function PasskeyOffer() {
   useEffect(() => {
     if (k.passkeyOffer) setDone(false);
   }, [k.passkeyOffer]);
-  if (done && k.status === 'open')
+  if (done)
     return (
       <p className="kr-offer kr-offer-done small" role="status" data-testid="passkey-offer-done">
         <span>Done. Signing in with your passkey now unlocks your masternodes too.</span>
