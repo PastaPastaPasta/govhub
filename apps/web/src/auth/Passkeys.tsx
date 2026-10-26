@@ -77,20 +77,51 @@ export function Passkeys() {
     }
   };
 
+  const what = session.wallet ? 'recovery phrase' : 'sign-in key';
   return (
     <div className="passkeys">
-      <p>
-        A passkey keeps your {session.wallet ? 'recovery phrase' : 'sign-in key'} encrypted on Platform so you can sign in on any device with that passkey. Only the passkey can open it. Saving
-        costs about 0.0005 DASH of credit.
-      </p>
+      <div className="passkeys-intro">
+        <p>Sign in on any device with a passkey, instead of typing your {what}.</p>
+        <p className="muted small">
+          Your {what} is stored encrypted on Platform, and only the passkey can open it. Adding one costs about 0.0005 DASH from your balance.
+        </p>
+      </div>
       {support === 'no' && <p className="notice-box">{PRF_UNAVAILABLE_MESSAGE}</p>}
-      {step === 'idle' && support !== 'no' && (
-        <div className="form-actions">
-          <button type="button" className="btn btn-primary" onClick={create}>
-            Add a passkey
-          </button>
-        </div>
+
+      <section className="passkeys-box" aria-labelledby="passkeys-mine">
+        <h3 id="passkeys-mine">Your passkeys</h3>
+        {entries === null ? (
+          <p className="muted small passkeys-empty">
+            <span className="spinner" aria-hidden="true" /> Loading…
+          </p>
+        ) : entries.length === 0 ? (
+          <p className="muted small passkeys-empty">No passkeys yet.</p>
+        ) : (
+          <ul className="passkey-list">
+            {entries.map((e) => {
+              const here = mine.has(toBase64(e.credentialId));
+              return (
+                <li key={e.id}>
+                  <div className="passkey-what">
+                    <b>{here ? 'This device' : 'Another device'}</b>
+                    <span className="muted small">
+                      {e.createdAt ? `Added ${new Date(e.createdAt).toLocaleDateString()} · ` : ''}
+                      <span className="mono-ish">{toBase64(e.credentialId).slice(0, 12)}…</span>
+                    </span>
+                  </div>
+                  <button type="button" className="btn btn-quiet btn-s" onClick={() => remove(e)}>
+                    Remove
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+      {entries && entries.some((e) => !mine.has(toBase64(e.credentialId))) && (
+        <p className="muted small">Remove any passkey you don't recognise: anyone who once held one of your keys could have added it.</p>
       )}
+
       {step === 'confirm' && (
         <div className="notice-box">
           <p>Passkey created. Confirm it once more so govhub can lock your key to it.</p>
@@ -106,29 +137,12 @@ export function Passkeys() {
       )}
       {step === 'done' && <p className="notice" data-testid="passkey-saved">Passkey added. You can now sign in with it.</p>}
       {error && <p className="error" role="alert">{error}</p>}
-      <h3>Passkeys for this identity</h3>
-      {entries === null ? (
-        <p className="muted small">Loading…</p>
-      ) : entries.length === 0 ? (
-        <p className="muted small">None yet.</p>
-      ) : (
-        <ul className="passkey-list">
-          {entries.map((e) => (
-            <li key={e.id}>
-              <span className="mono-ish">{toBase64(e.credentialId).slice(0, 12)}…</span>
-              <span className="muted small">
-                {mine.has(toBase64(e.credentialId)) ? 'this device' : 'another device'}
-                {e.createdAt ? ` · added ${new Date(e.createdAt).toLocaleDateString()}` : ''}
-              </span>
-              <button type="button" className="btn btn-quiet" onClick={() => remove(e)}>
-                Remove
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      {entries && entries.some((e) => !mine.has(toBase64(e.credentialId))) && (
-        <p className="muted small">Remove any passkey you don't recognise: anyone who once held one of your keys could have added it.</p>
+      {step === 'idle' && support !== 'no' && (
+        <div className="form-actions passkeys-actions">
+          <button type="button" className="btn btn-primary" onClick={create}>
+            Add a passkey
+          </button>
+        </div>
       )}
     </div>
   );
