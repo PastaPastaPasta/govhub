@@ -496,14 +496,19 @@ own node.
   `gobject prepare` and paste the txid.
 - **The relay holds it.** Right after the broadcast, the browser hands `{network, time, dataHex, collateralTxid}` to a relay
   (`POST /v1/proposals`, `apps/web/src/proposal/relay.ts`). The relay checks the data and the collateral against its own Core,
-  then runs `gobject submit` itself once its Core counts 6 confirmations (`services/relay/src/proposer.ts:180-211`). It
-  refuses a submit result whose hash differs. A relay without this endpoint gets `POST /v1/proposals/submit` after the browser's
-  own count reaches 6 (`submission.ts:88-93`).
+  then runs `gobject submit` itself once its Core reports the collateral in a ChainLocked block (`getrawtransaction`
+  `chainlock: true`, at least 1 confirmation; `services/relay/src/proposer.ts:177-209`). Dash Core has no ChainLock shortcut
+  for proposals: below 6 confirmations it keeps the object postponed, in memory only, relays it to its peers at once, and makes
+  it a full, votable object at 6. So the relay reports `waiting` with `sent: true` until the collateral is 6 deep, then asks
+  `gobject get` and submits again if its Core lost the object in a restart; only then does it report `submitted`
+  (`proposer.ts:210-232`). It refuses a submit result whose hash differs. A relay without this endpoint gets
+  `POST /v1/proposals/submit` once the browser sees the fee ChainLocked (an older relay answers 425 until 6 confirmations;
+  `submission.ts:95-102`).
 - **What the browser checks.** It checks the collateral it fetched over DAPI with `checkCollateralTx`, and counts confirmations
   against its verified chain (`apps/web/src/proposal/services.ts:110-133`). After "submitted", it looks for the proposal on the
   first bridge ("Seen by the network") and on Platform ("On govhub").
 - **What a relay can do.** It can refuse, delay, or never submit. "Waiting" and "submitted" are its word. While it reports
-  "waiting", the browser asks no other relay, and after "submitted" it never re-submits (`submission.ts:39,112-121`). Both
+  "waiting", the browser asks no other relay, and after "submitted" it never re-submits (`submission.ts:46,120-130`). Both
   deployed profiles list one relay.
 - **What it can't do.** It can't alter the proposal: the collateral burns to its hash. To submit different content it would
   have to pay its own 1 DASH collateral.

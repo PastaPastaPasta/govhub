@@ -3,7 +3,8 @@
 //   npx vite-node scripts/testnet-proposal.ts collateral        builds the proposal data, pays the collateral, saves the params
 //   npx vite-node scripts/testnet-proposal.ts status            confirmations of the collateral (DAPI)
 //
-// Submission (`gobject submit`, after 6 confirmations) goes through the relay's POST /v1/proposals/submit, or dash-cli by hand.
+// Submission (`gobject submit`, once the collateral is ChainLocked; live at 6 confirmations) goes through the relay's
+// POST /v1/proposals/submit, or dash-cli by hand.
 // Public data only; the params file is scripts/results/testnet-proposal.json.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -40,7 +41,7 @@ if (cmd === 'collateral') {
   const out = { network: 'testnet', fields, dataHex, parentHash: '0', revision: 1, time, govHash: hash.display, collateralTxid: txid, paidAt: new Date().toISOString() };
   writeFileSync(FILE, JSON.stringify(out, null, 2) + '\n');
   log(`collateral ${txid} for proposal ${hash.display}`);
-  log(`submit after 6 confirmations: gobject submit 0 1 ${time} <dataHex> ${txid}`);
+  log(`submit once the collateral is ChainLocked (live at 6 confirmations): gobject submit 0 1 ${time} <dataHex> ${txid}`);
 } else {
   const p = JSON.parse(readFileSync(FILE, 'utf8'));
   const { value } = await dapi.call((core, s) => core.getTransaction(p.collateralTxid, { signal: s }));

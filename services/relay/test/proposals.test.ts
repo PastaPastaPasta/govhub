@@ -33,7 +33,7 @@ describe('proposal submit', () => {
     const { w, body } = setup();
     const r = await w.post('/v1/proposals/submit', body);
     expect(r.status).toBe(200);
-    expect(r.body).toEqual({ govHash: basic.coreHash, result: basic.coreHash });
+    expect(r.body).toEqual({ govHash: basic.coreHash, result: basic.coreHash, postponed: false });
     expect(w.core.calls.find((c) => c.method === 'gobject')!.params).toEqual(['submit', '0', 1, basic.time, basic.dataHex, basic.txid]);
     expect(w.core.calls.find((c) => c.method === 'getrawtransaction')!.params).toEqual([basic.txid, true]);
   });
@@ -47,11 +47,11 @@ describe('proposal submit', () => {
     expect(r2.body.govHash).toBe(p2sh.coreHash);
   });
 
-  it('waits for MIN_COLLATERAL_CONFS confirmations (425) and never submits early', async () => {
+  it('answers 425 below 6 confirmations without a ChainLock and never submits early', async () => {
     const { w, body } = setup({}, 3);
     const r = await w.post('/v1/proposals/submit', body);
     expect(r.status).toBe(425);
-    expect(r.body).toMatchObject({ code: 'collateral-unconfirmed', confirmations: 3 });
+    expect(r.body).toMatchObject({ code: 'collateral-unconfirmed', confirmations: 3, chainlock: false });
     expect(w.core.count('gobject', 'submit')).toBe(0);
     w.core.rawTxs.get(basic.txid)!.confirmations = 6;
     expect((await w.post('/v1/proposals/submit', body)).status).toBe(200);
@@ -63,6 +63,23 @@ describe('proposal submit', () => {
     const r = await w.post('/v1/proposals/submit', body);
     expect(r.status).toBe(425);
     expect(r.body.confirmations).toBe(0);
+  });
+
+  it('submits at 1 confirmation in a ChainLocked block and says Core postponed it until 6', async () => {
+    const { w, body } = setup({}, 1);
+    w.core.rawTxs.get(basic.txid)!.chainlock = true;
+    const r = await w.post('/v1/proposals/submit', body);
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({ govHash: basic.coreHash, result: basic.coreHash, postponed: true });
+    expect(w.core.postponed.get(basic.coreHash)).toBe(basic.txid);
+  });
+
+  it('with MIN_COLLATERAL_CONFS=6 a ChainLock is not enough: 425 until 6', async () => {
+    const { w, body } = setup({ MIN_COLLATERAL_CONFS: '6' }, 5);
+    w.core.rawTxs.get(basic.txid)!.chainlock = true;
+    expect((await w.post('/v1/proposals/submit', body)).status).toBe(425);
+    w.core.rawTxs.get(basic.txid)!.confirmations = 6;
+    expect((await w.post('/v1/proposals/submit', body)).body).toMatchObject({ postponed: false });
   });
 
   it('is disabled with PROPOSAL_SUBMIT=0 (501) and says so in /v1/status', async () => {

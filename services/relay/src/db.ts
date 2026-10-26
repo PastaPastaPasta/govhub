@@ -59,8 +59,9 @@ export interface VoteKey {
 }
 
 /**
- * Held proposal submissions (POST /v1/proposals). `waiting`: the collateral is not deep enough yet (or a retry is pending);
- * `submitting`: `gobject submit` is in flight; `submitted` and `failed` are final.
+ * Held proposal submissions (POST /v1/proposals). `waiting`: the collateral is not deep enough yet (or a retry is pending), or,
+ * with `sent` = 1, Core took it below 6 confirmations and the relay checks again at 6; `submitting`: `gobject submit` is in flight;
+ * `submitted` (Core has it as a full object) and `failed` are final.
  */
 export type ProposalStatus = 'waiting' | 'submitting' | 'submitted' | 'failed';
 
@@ -88,6 +89,11 @@ export interface ProposalRow {
   received_hour: number;
   submitted_at: number | null;
   finished_at: number | null;
+  /**
+   * 1: `gobject submit` returned the hash while the collateral had fewer than 6 confirmations. Core keeps such an object postponed,
+   * in memory only, until 6; the row stays `waiting` until Core is seen to have it in full (resubmitted if a restart lost it).
+   */
+  sent: number;
 }
 
 export type NewProposal = Pick<ProposalRow, 'id' | 'gov_hash' | 'collateral_txid' | 'time' | 'data_hex' | 'confirmations' | 'next_attempt_at' | 'received_hour'>;
@@ -146,6 +152,7 @@ CREATE TABLE IF NOT EXISTS proposals (
   received_hour INTEGER NOT NULL,
   submitted_at INTEGER,
   finished_at INTEGER,
+  sent INTEGER NOT NULL DEFAULT 0,
   UNIQUE (gov_hash, collateral_txid)
 ) WITHOUT ROWID`;
 const INDEXES = `
@@ -199,6 +206,8 @@ export function openDb(path: string): Database.Database {
   db.exec(LAST_TABLE);
   // new in the held-proposal version: never existed as a rowid table, so a database from before simply gets it here
   db.exec(PROPOSALS_TABLE);
+  // `sent` came with submitting at a ChainLocked confirmation; rows from before were only ever submitted at 6
+  if (!(db.prepare('PRAGMA table_info(proposals)').all() as Array<{ name: string }>).some((c) => c.name === 'sent')) db.exec('ALTER TABLE proposals ADD COLUMN sent INTEGER NOT NULL DEFAULT 0');
   db.exec(INDEXES);
   if (migrated) db.exec('VACUUM');
   return db;
@@ -273,9 +282,19 @@ export class Store {
       ),
       pMarkSubmitting: db.prepare(`UPDATE proposals SET status = 'submitting', confirmations = MAX(0, ?), attempts = attempts + 1, missing_since = NULL WHERE id = ? AND status = 'waiting'`),
       pSubmitted: db.prepare(`UPDATE proposals SET status = 'submitted', submitted_at = ?, finished_at = ?, last_error = NULL, core_message = NULL, fail_n = 0 WHERE id = ? AND status = 'submitting'`),
+      // Core took it below 6 confirmations (postponed): back to waiting, to be looked at again at 6
+      pSent: db.prepare(
+        `UPDATE proposals SET status = 'waiting', sent = 1, next_attempt_at = @at, last_error = NULL, core_message = NULL, fail_n = 0, missing_since = NULL
+         WHERE id = @id AND status = 'submitting'`,
+      ),
+      // a sent row whose collateral reached 6 and which Core has as a full object
+      pLive: db.prepare(
+        `UPDATE proposals SET status = 'submitted', confirmations = @confirmations, submitted_at = @hour, finished_at = @hour, last_error = NULL, core_message = NULL, fail_n = 0, missing_since = NULL
+         WHERE id = @id AND status = 'waiting' AND sent = 1`,
+      ),
       // a row that failed for a reason that can pass (the collateral went missing, or took too long) is held again on a re-POST
       pRequeue: db.prepare(
-        `UPDATE proposals SET status = 'waiting', last_error = NULL, core_message = NULL, finished_at = NULL, fail_n = 0, missing_since = NULL,
+        `UPDATE proposals SET status = 'waiting', last_error = NULL, core_message = NULL, finished_at = NULL, fail_n = 0, missing_since = NULL, sent = 0,
          next_attempt_at = @hour, received_hour = @hour WHERE id = @id AND status = 'failed' AND last_error IN ('collateral-missing', 'unconfirmed')`,
       ),
       // never overwrites a final state
@@ -408,6 +427,14 @@ export class Store {
   /** `hour`: the time rounded down to the hour (the caller rounds; see proposer.ts). */
   markProposalSubmitted(id: string, hour: number): boolean {
     return this.q.pSubmitted.run(hour, hour, id).changes > 0;
+  }
+  /** submitting -> waiting with `sent` = 1: `gobject submit` returned the hash below 6 confirmations; looked at again at `at`. */
+  markProposalSent(id: string, at: number): boolean {
+    return this.q.pSent.run({ id, at }).changes > 0;
+  }
+  /** waiting with `sent` = 1 -> submitted: Core has it as a full object. `hour`: the time rounded down to the hour. */
+  markProposalLive(id: string, hour: number, confirmations: number): boolean {
+    return this.q.pLive.run({ id, hour, confirmations }).changes > 0;
   }
   /** failed (collateral-missing / unconfirmed only) -> waiting, due at once, its wait counted from `hour` again. */
   requeueProposal(id: string, hour: number): boolean {

@@ -2,7 +2,7 @@
 // Every variable is documented in README.md ("Configuration"). The RPC password is only ever read from
 // CORE_RPC_PASSWORD_FILE; CORE_RPC_PASSWORD exists for local development only. An empty value means the default.
 import { readFileSync } from 'node:fs';
-import type { Network } from '@govhub/verify';
+import { GOVERNANCE_FEE_CONFIRMATIONS, type Network } from '@govhub/verify';
 import { validateProxyList } from './clientip.ts';
 
 export type CoreNetwork = Extract<Network, 'mainnet' | 'testnet' | 'regtest' | 'devnet'>;
@@ -29,12 +29,16 @@ export interface RelayConfig {
   maxHeldTotal: number;
   /** Gates both proposal endpoints (`/v1/proposals/submit` and the held `/v1/proposals`). */
   proposalSubmit: boolean;
+  /**
+   * Confirmations (1..6) a held proposal's collateral needs before the relay runs `gobject submit`, always in a ChainLocked block
+   * while below Core's 6. 6 = the old behaviour: submit only once Core takes the object in full.
+   */
   minCollateralConfs: number;
   /** Held proposals waiting (or being submitted) over all hashes; more is 503 `relay-full`. */
   maxHeldProposals: number;
   /** How often a waiting proposal's collateral is looked at again. */
   proposalCheckS: number;
-  /** A held proposal whose collateral has not reached minCollateralConfs this long after the hour it was received fails (`unconfirmed`). */
+  /** A held proposal whose collateral has not reached 6 confirmations this long after the hour it was received fails (`unconfirmed`). */
   proposalMaxWaitS: number;
   /** A held proposal whose collateral Core no longer knows (double-spent, dropped) for this long fails (`collateral-missing`). */
   proposalMissingS: number;
@@ -50,11 +54,13 @@ function str(env: NodeJS.ProcessEnv, key: string, def: string): string {
   return v === undefined || v === '' ? def : v;
 }
 
-function int(env: NodeJS.ProcessEnv, key: string, def: number, min = 0): number {
+function int(env: NodeJS.ProcessEnv, key: string, def: number, min = 0, max = Number.MAX_SAFE_INTEGER): number {
   const raw = env[key];
   if (raw === undefined || raw === '') return def;
   const v = Number(raw);
-  if (!Number.isInteger(v) || v < min) throw new Error(`${key} must be an integer >= ${min}, got ${JSON.stringify(raw)}`);
+  if (!Number.isInteger(v) || v < min || v > max) {
+    throw new Error(`${key} must be an integer >= ${min}${max < Number.MAX_SAFE_INTEGER ? ` and <= ${max}` : ''}, got ${JSON.stringify(raw)}`);
+  }
   return v;
 }
 
@@ -106,7 +112,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RelayConfig {
     maxPastS: int(env, 'MAX_PAST_S', 86_400, 1),
     maxHeldTotal: int(env, 'MAX_HELD_TOTAL', 100_000, 1),
     proposalSubmit: bool(env, 'PROPOSAL_SUBMIT', true),
-    minCollateralConfs: int(env, 'MIN_COLLATERAL_CONFS', 6, 1),
+    // above 6 would only delay a proposal Core already takes in full
+    minCollateralConfs: int(env, 'MIN_COLLATERAL_CONFS', 1, 1, GOVERNANCE_FEE_CONFIRMATIONS),
     maxHeldProposals: int(env, 'MAX_HELD_PROPOSALS', 500, 1),
     proposalCheckS: int(env, 'PROPOSAL_CHECK_S', 30, 1),
     proposalMaxWaitS: int(env, 'PROPOSAL_MAX_WAIT_S', 259_200, 1),

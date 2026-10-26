@@ -2,6 +2,7 @@
 import { randomBytes } from 'node:crypto';
 import {
   bytesEqual,
+  GOVERNANCE_FEE_CONFIRMATIONS,
   governanceObjectHash,
   governanceVoteHash,
   recoverVoteSigner,
@@ -20,7 +21,7 @@ import { rpcMessage, type CoreClient, type GobjectGetResult } from './core/rpc.t
 import { Store, type ProposalRow, type ProposalStatus, type VoteRow } from './db.ts';
 import { log, type Clock } from './log.ts';
 import { MnDirectory, type MnEntry } from './mnlist.ts';
-import { hourOf, lookupCollateral, MAX_PROPOSALS_PER_HASH, PROPOSAL_ERROR, Proposer, storedConfirmations } from './proposer.ts';
+import { hourOf, lookupCollateral, MAX_PROPOSALS_PER_HASH, PROPOSAL_ERROR, Proposer, storedConfirmations, submittable } from './proposer.ts';
 import { RollingHourLimiter } from './ratelimit.ts';
 
 export const SERVICE_VERSION = '0.1.0';
@@ -89,9 +90,15 @@ export interface ProposalStatusView {
   govHash: string;
   collateralTxid: string;
   status: ProposalStatus;
-  /** the collateral's confirmations when the relay last asked Core */
+  /** the collateral's confirmations when the relay last asked Core (at most 6) */
   confirmations: number;
+  /** MIN_COLLATERAL_CONFS: the relay submits at this depth once a ChainLock covers the block (at 6 without one) */
   minConfirmations: number;
+  /**
+   * `gobject submit` returned the hash below 6 confirmations: Core relayed it and makes it a full object (live, votable) at 6. The
+   * row stays `waiting` until the relay sees Core has it in full (and submits again if Core lost it), then it is `submitted`.
+   */
+  sent: boolean;
   /** `gobject submit` calls */
   attempts: number;
   /** a short code (PROPOSAL_ERROR), never Core's text */
@@ -392,17 +399,24 @@ export class Relay {
 
   // ---- POST /v1/proposals/submit (stateless: submits now or answers 425) ----
 
-  async submitProposal(body: unknown): Promise<{ govHash: string; result: unknown }> {
+  /**
+   * `postponed`: submitted below 6 confirmations, so Core relayed it and keeps it postponed until 6 (in memory: this endpoint does
+   * not follow up, POST /v1/proposals does).
+   */
+  async submitProposal(body: unknown): Promise<{ govHash: string; result: unknown; postponed: boolean }> {
     this.proposalsEnabled();
     const p = this.parseProposal(body);
-    const { confirmations } = await this.fetchCollateral(p.txid, p.govHash.raw);
-    if (confirmations < this.cfg.minCollateralConfs) {
-      throw new RelayError(425, 'collateral-unconfirmed', `the collateral needs ${this.cfg.minCollateralConfs} confirmations`, { confirmations });
+    const col = await this.fetchCollateral(p.txid, p.govHash.raw);
+    if (!submittable(col, this.cfg.minCollateralConfs)) {
+      throw new RelayError(425, 'collateral-unconfirmed', `the collateral needs ${this.cfg.minCollateralConfs} confirmation(s) in a ChainLocked block, or ${GOVERNANCE_FEE_CONFIRMATIONS}`, {
+        confirmations: col.confirmations,
+        chainlock: col.chainlock,
+      });
     }
 
     try {
       const result = await this.core.call('gobject', ['submit', '0', 1, p.time, p.dataHex, p.txid]);
-      return { govHash: p.govHash.display, result };
+      return { govHash: p.govHash.display, result, postponed: col.confirmations < GOVERNANCE_FEE_CONFIRMATIONS };
     } catch (e) {
       const m = rpcMessage(e);
       if (m !== null) throw new RelayError(409, 'core-rejected', m);
@@ -410,7 +424,7 @@ export class Relay {
     }
   }
 
-  // ---- POST /v1/proposals (held until the collateral is deep enough, then submitted by the relay) ----
+  // ---- POST /v1/proposals (held until the collateral is ChainLocked, then submitted by the relay and followed to 6) ----
 
   async holdProposal(body: unknown): Promise<{ httpStatus: 200 | 202; view: ProposalStatusView }> {
     this.proposalsEnabled();
@@ -430,7 +444,7 @@ export class Relay {
     this.checkProposalLimits(govHash);
 
     // The main DoS defence: only a real burn of >= 1 DASH to exactly this hash is held (a mempool tx is fine).
-    const { confirmations } = await this.fetchCollateral(p.txid, p.govHash.raw);
+    const col = await this.fetchCollateral(p.txid, p.govHash.raw);
 
     // --- synchronous from here to the insert: the lookup above awaited ---
     const again = this.store.findProposal(govHash, p.txid);
@@ -444,13 +458,13 @@ export class Relay {
       collateral_txid: p.txid,
       time: p.time,
       data_hex: p.dataHex,
-      confirmations: storedConfirmations(confirmations, this.cfg.minCollateralConfs),
+      confirmations: storedConfirmations(col.confirmations),
       // due at once (the worker looks within seconds): a `now + PROPOSAL_CHECK_S` here would keep the exact receive second
       next_attempt_at: receivedHour,
       received_hour: receivedHour,
     });
-    // deep enough already: submit within this request, on the worker's code path
-    if (confirmations >= this.cfg.minCollateralConfs) await this.proposer.submit(this.store.getProposal(id)!, confirmations);
+    // ChainLocked (or 6 deep) already: submit within this request, on the worker's code path
+    if (submittable(col, this.cfg.minCollateralConfs)) await this.proposer.submit(this.store.getProposal(id)!, col.confirmations);
     return { httpStatus: 202, view: this.proposalView(this.store.getProposal(id)!) };
   }
 
@@ -472,6 +486,7 @@ export class Relay {
       status: r.status,
       confirmations: r.confirmations,
       minConfirmations: this.cfg.minCollateralConfs,
+      sent: r.sent === 1,
       attempts: r.attempts,
       lastError: r.last_error,
       ...(r.last_error === PROPOSAL_ERROR.coreRejected && r.core_message !== null ? { coreMessage: r.core_message } : {}),
@@ -504,11 +519,11 @@ export class Relay {
   }
 
   /** The collateral as Core has it, checked against the gov hash and the txid: `unknown-collateral`, `core-unavailable`, `bad-collateral`. */
-  private async fetchCollateral(txid: string, govHashRaw: Uint8Array): Promise<{ confirmations: number }> {
+  private async fetchCollateral(txid: string, govHashRaw: Uint8Array): Promise<{ confirmations: number; chainlock: boolean }> {
     const col = await lookupCollateral(this.core, txid, govHashRaw);
     switch (col.kind) {
       case 'ok':
-        return { confirmations: col.confirmations };
+        return { confirmations: col.confirmations, chainlock: col.chainlock };
       case 'missing':
         throw new RelayError(404, 'unknown-collateral', 'the collateral transaction is unknown to Core');
       case 'down':

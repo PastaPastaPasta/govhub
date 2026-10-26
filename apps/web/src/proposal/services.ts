@@ -163,7 +163,10 @@ const DEMO_SESSION_KEY = hexToBytes('6f'.repeat(32));
 export const demoDepositKey = (identityId: string, index: number): DepositKey => sessionProposalDepositKey(DEMO_SESSION_KEY, identityId, index);
 export const demoDepositSource = (identityId: string, index: number): DepositKeySource => ({ kind: 'session', index, identityId });
 
-/** A pretend chain: a "paid" collateral gains a confirmation every `blockMs`; the relay submits at 6. */
+/** In the demo a block is ChainLocked from this depth. */
+const DEMO_LOCKED_AT = 2;
+
+/** A pretend chain: a "paid" collateral gains a confirmation every `blockMs` (ChainLocked from DEMO_LOCKED_AT); the relay sends it once locked. */
 class DemoChain {
   readonly paidAt = new Map<string, number>();
   constructor(readonly blockMs: number) {}
@@ -188,7 +191,8 @@ class DemoRelay implements ProposalRelayPort {
     if (!h || h.govHash !== govHash) return null;
     const n = this.chain.confirmations(h.txid);
     if (n >= GOVERNANCE_FEE_CONFIRMATIONS && h.submittedAt === null) h.submittedAt = Math.floor(Date.now() / 1000);
-    return { id, govHash, status: h.submittedAt ? 'submitted' : 'waiting', confirmations: n, lastError: null, coreMessage: null, nextAttemptAt: null, submittedAt: h.submittedAt };
+    const sent = n >= DEMO_LOCKED_AT;
+    return { id, govHash, status: h.submittedAt ? 'submitted' : 'waiting', confirmations: n, sent, lastError: null, coreMessage: null, nextAttemptAt: null, submittedAt: h.submittedAt };
   }
   async submitNow(): Promise<never> {
     throw new Error('the demo relay holds proposals');
@@ -208,7 +212,7 @@ export function demoServices(network: CoreNetwork, o: { blockMs?: number; pollMs
     async checkCollateral(lock, txid) {
       if (!chain.paidAt.has(txid)) return reported('not-found', 'the demo only knows payments made in this demo');
       const n = chain.confirmations(txid);
-      return n === 0 ? reported('mempool') : { state: 'mined', height: 1000 + n, confirmations: n, basis: 'verified', final: n >= 2 };
+      return n === 0 ? reported('mempool') : { state: 'mined', height: 1000 + n, confirmations: n, basis: 'verified', final: n >= DEMO_LOCKED_AT };
     },
     async fundCollateral({ record, key, save, signal, onUpdate }) {
       const view = (): CollateralFundingView => ({

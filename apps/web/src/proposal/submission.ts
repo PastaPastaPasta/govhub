@@ -17,6 +17,13 @@ export interface TickResult {
 const MAX_STATUS_FAILURES = 3;
 const statusFailures = new Map<string, number>();
 
+/**
+ * May a relay submit it now: the fee is in a ChainLocked block (Dash Core then relays the proposal and makes it live at 6
+ * confirmations), or 6 deep. A relay checks this itself with its own Core; this only decides when to ask one without holding.
+ */
+export const sendable = (c: CollateralCheck | null): boolean =>
+  !!c && c.state === 'mined' && c.confirmations >= 1 && (c.final || c.confirmations >= GOVERNANCE_FEE_CONFIRMATIONS);
+
 /** A relay outcome that the next relay would not change: the proposal or the collateral itself is refused. */
 const definite = (code: string | null | undefined) => code === 'core-rejected' || code === 'bad-proposal' || code === 'bad-collateral' || code === 'expired';
 
@@ -65,7 +72,7 @@ async function submitThroughRelays(d: ProposalDraft, sub: DraftSubmission, s: Wi
     sub.relays = [...sub.relays.filter((x) => x.base !== r.base), next];
     return next;
   };
-  const enoughConfs = !!check && check.state === 'mined' && check.confirmations >= GOVERNANCE_FEE_CONFIRMATIONS;
+  const live = !!check && check.state === 'mined' && check.confirmations >= GOVERNANCE_FEE_CONFIRMATIONS;
 
   for (const r of relays) {
     const have = receipt(r);
@@ -74,7 +81,7 @@ async function submitThroughRelays(d: ProposalDraft, sub: DraftSubmission, s: Wi
       if (!have || (!have.id && !have.legacy)) {
         const h = await r.hold(body, lock.govHash);
         if (h.kind === 'legacy') put(r, { id: null, legacy: true, status: 'waiting', lastError: null });
-        else put(r, { id: h.state.id, status: h.state.status, lastError: h.state.lastError, coreMessage: h.state.coreMessage });
+        else put(r, { id: h.state.id, status: h.state.status, sent: h.state.sent, lastError: h.state.lastError, coreMessage: h.state.coreMessage });
       }
       const cur = receipt(r)!;
       if (cur.id) {
@@ -83,13 +90,15 @@ async function submitThroughRelays(d: ProposalDraft, sub: DraftSubmission, s: Wi
         if (!st) {
           // the relay lost it (a reset): hand it over again, which is idempotent
           const h = await r.hold(body, lock.govHash);
-          if (h.kind === 'held') put(r, { id: h.state.id, status: h.state.status, lastError: h.state.lastError, coreMessage: h.state.coreMessage });
-        } else put(r, { status: st.status, lastError: st.lastError, coreMessage: st.coreMessage });
-      } else if (cur.legacy && enoughConfs) {
-        // a relay without holding: asked at 6 confirmations (it checks Core's own count and says 425 until then)
+          if (h.kind === 'held') put(r, { id: h.state.id, status: h.state.status, sent: h.state.sent, lastError: h.state.lastError, coreMessage: h.state.coreMessage });
+        } else put(r, { status: st.status, sent: st.sent, lastError: st.lastError, coreMessage: st.coreMessage });
+      } else if (cur.legacy && (cur.sent ? live : sendable(check))) {
+        // a relay without holding: asked once the fee is ChainLocked (it checks its own Core and says 425 until then; an older
+        // relay until 6 confirmations). Taken below 6 (`postponed`, or this page counts fewer than 6: an older relay does not say):
+        // asked once more at 6, which also covers a restart of its Core.
         const res = await r.submitNow(body);
-        if (res.kind === 'submitted') put(r, { status: 'submitted', lastError: null });
-        else put(r, { status: 'waiting', lastError: 'collateral-unconfirmed' });
+        if (res.kind !== 'submitted') put(r, { status: 'waiting', lastError: 'collateral-unconfirmed' });
+        else put(r, res.postponed || !live ? { status: 'waiting', sent: true, lastError: null } : { status: 'submitted', lastError: null });
       }
     } catch (e) {
       const code = (e as { code?: string }).code;

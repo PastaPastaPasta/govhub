@@ -1,8 +1,14 @@
-// POST /v1/proposals (held submission), GET /v1/proposals/:id and the worker that runs `gobject submit` once the collateral has
-// MIN_COLLATERAL_CONFS confirmations. Real regtest fixtures recorded from dashd (packages/verify/test/fixtures).
-import { readFileSync } from 'node:fs';
+// POST /v1/proposals (held submission), GET /v1/proposals/:id and the worker that runs `gobject submit` once the collateral is in a
+// ChainLocked block (or 6 deep) and follows a proposal sent below 6 until Core has it in full. Real regtest fixtures recorded from
+// dashd (packages/verify/test/fixtures).
+import Database from 'better-sqlite3';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { loadConfig } from '../src/config.ts';
 import { CoreRpcError } from '../src/core/rpc.ts';
+import { openDb, Store } from '../src/db.ts';
 import { log } from '../src/log.ts';
 import { MAX_PROPOSALS_PER_HASH, PROPOSAL_ERROR } from '../src/proposer.ts';
 import { Relay } from '../src/relay.ts';
@@ -45,10 +51,12 @@ function setup(env: Record<string, string> = {}, confirmations: number | null = 
   return w;
 }
 
-function setConfs(w: World, txid: string, n: number | null): void {
+/** `chainlock`: a ChainLock covers the block (left as it is when omitted) */
+function setConfs(w: World, txid: string, n: number | null, chainlock?: boolean): void {
   const tx = w.core.rawTxs.get(txid)!;
   if (n === null) delete (tx as { confirmations?: number }).confirmations;
   else tx.confirmations = n;
+  if (chainlock !== undefined) tx.chainlock = chainlock;
 }
 
 async function hold(w: World, p: Fx = basic) {
@@ -66,7 +74,7 @@ async function step(w: World, s: number) {
 const submits = (w: World) => w.core.calls.filter((c) => c.method === 'gobject' && c.params[0] === 'submit');
 
 describe('POST /v1/proposals: accept and hold', () => {
-  it('holds a mempool collateral, keeps waiting at 3 confirmations, submits with the exact params once Core counts 6', async () => {
+  it('holds a mempool collateral, keeps waiting without a ChainLock at 3 and 5 confirmations, submits with the exact params once Core counts 6', async () => {
     const w = setup({}, null);
     const t0 = w.clock.t;
     const r = await w.post('/v1/proposals', bodyOf(basic));
@@ -77,7 +85,8 @@ describe('POST /v1/proposals: accept and hold', () => {
       collateralTxid: basic.txid,
       status: 'waiting',
       confirmations: 0,
-      minConfirmations: 6,
+      minConfirmations: 1,
+      sent: false,
       attempts: 0,
       lastError: null,
       nextAttemptAt: t0,
@@ -370,7 +379,7 @@ describe('held proposal worker', () => {
     expect(w.proposalRow(id).confirmations).toBe(6);
   });
 
-  it('stores a deep collateral\'s confirmations capped at MIN_COLLATERAL_CONFS', async () => {
+  it('stores a deep collateral\'s confirmations capped at 6', async () => {
     const w = setup({}, 500);
     const r = await w.post('/v1/proposals', bodyOf(basic));
     expect(r.body).toMatchObject({ status: 'submitted', confirmations: 6 });
@@ -507,6 +516,193 @@ describe('held proposal worker', () => {
     expect(w.broadcaster.tickPurge().proposals).toBe(1);
     expect((await w.get(`/v1/proposals/${done.id}`)).status).toBe(404);
     expect(w.proposalRow(waiting.id).status).toBe('waiting');
+  });
+});
+
+describe('ChainLocked submission below 6 confirmations', () => {
+  const gets = (w: World) => w.core.calls.filter((c) => c.method === 'gobject' && c.params[0] === 'get');
+
+  it('waits while the block is not ChainLocked, submits at 1 ChainLocked confirmation, and is submitted once Core has it in full at 6', async () => {
+    const w = setup({}, 0);
+    const { id } = await hold(w);
+    setConfs(w, basic.txid, 2, false);
+    await step(w, 30);
+    expect(w.proposalRow(id)).toMatchObject({ status: 'waiting', sent: 0, confirmations: 2, last_error: null });
+    expect(submits(w)).toEqual([]);
+
+    setConfs(w, basic.txid, 2, true);
+    await step(w, 30);
+    expect(submits(w).map((c) => c.params)).toEqual([['submit', '0', 1, basic.time, basic.dataHex, basic.txid]]);
+    expect(w.core.postponed.has(basic.coreHash)).toBe(true);
+    const sent = await w.get(`/v1/proposals/${id}`);
+    expect(sent.body).toMatchObject({ status: 'waiting', sent: true, confirmations: 2, attempts: 1, lastError: null, submittedAt: null, finishedAt: null, nextAttemptAt: nextAt(w.clock.t, 30) });
+
+    // below 6: looked at again on the grid, neither resubmitted nor asked with gobject get
+    for (const n of [3, 4, 5]) {
+      setConfs(w, basic.txid, n, true);
+      await step(w, 30);
+      expect(w.proposalRow(id)).toMatchObject({ status: 'waiting', sent: 1, confirmations: n });
+    }
+    expect(submits(w).length).toBe(1);
+    expect(gets(w)).toEqual([]);
+
+    // 6: Core promoted it (CheckPostponedObjects); one `gobject get`, no second submit
+    setConfs(w, basic.txid, 6, true);
+    await step(w, 30);
+    expect(gets(w).map((c) => c.params)).toEqual([['get', basic.coreHash]]);
+    expect(submits(w).length).toBe(1);
+    expect((await w.get(`/v1/proposals/${id}`)).body).toMatchObject({ status: 'submitted', sent: true, confirmations: 6, attempts: 1, nextAttemptAt: null, submittedAt: hour(w.clock.t), finishedAt: hour(w.clock.t) });
+    await step(w, 3600);
+    expect(w.core.calls.filter((c) => c.method === 'gobject').length).toBe(2);
+  });
+
+  it('submits within the POST when the collateral is already ChainLocked at 1 confirmation', async () => {
+    const w = setup({}, 1);
+    setConfs(w, basic.txid, 1, true);
+    const r = await w.post('/v1/proposals', bodyOf(basic));
+    expect(r.status).toBe(202);
+    expect(r.body).toMatchObject({ status: 'waiting', sent: true, confirmations: 1, attempts: 1, minConfirmations: 1 });
+    expect(submits(w).length).toBe(1);
+  });
+
+  it('submits again at 6 when Core lost the postponed object (dashd restarted)', async () => {
+    const w = setup({}, 1);
+    setConfs(w, basic.txid, 1, true);
+    const { id } = await hold(w);
+    expect(w.proposalRow(id)).toMatchObject({ status: 'waiting', sent: 1 });
+    w.core.restart();
+    setConfs(w, basic.txid, 6, true);
+    await step(w, 30);
+    expect(gets(w).length).toBe(1);
+    expect(submits(w).length).toBe(2);
+    expect(w.core.gobjects.has(basic.coreHash)).toBe(true);
+    expect(w.proposalRow(id)).toMatchObject({ status: 'submitted', sent: 1, attempts: 2, last_error: null, submitted_at: hour(w.clock.t) });
+  });
+
+  it('a lost resubmit answer at 6 is retried and then confirmed', async () => {
+    const w = setup({}, 1);
+    setConfs(w, basic.txid, 1, true);
+    const { id } = await hold(w);
+    w.core.restart();
+    setConfs(w, basic.txid, 7, true);
+    w.core.submitErrors.push(new Error('fetch failed: ETIMEDOUT'));
+    await step(w, 30);
+    expect(w.proposalRow(id)).toMatchObject({ status: 'waiting', sent: 1, last_error: 'core-error', fail_n: 1 });
+    await step(w, 30);
+    expect(w.proposalRow(id)).toMatchObject({ status: 'submitted', attempts: 3 });
+  });
+
+  it('retries when gobject get gets no answer, without submitting again', async () => {
+    const w = setup({}, 1);
+    setConfs(w, basic.txid, 1, true);
+    const { id } = await hold(w);
+    setConfs(w, basic.txid, 6, true);
+    const call = w.core.call.bind(w.core);
+    let fail = true;
+    (w.core as { call: unknown }).call = async (method: string, params: unknown[] = []) => {
+      if (fail && method === 'gobject' && params[0] === 'get') throw new Error('fetch failed: ECONNRESET');
+      return call(method, params);
+    };
+    await step(w, 30);
+    expect(w.proposalRow(id)).toMatchObject({ status: 'waiting', sent: 1, last_error: 'core-error', fail_n: 1 });
+    expect(submits(w).length).toBe(1);
+    fail = false;
+    await step(w, 30);
+    expect(w.proposalRow(id)).toMatchObject({ status: 'submitted', attempts: 1, last_error: null, fail_n: 0 });
+  });
+
+  it('goes back to waiting when Core refuses a ChainLocked collateral that then turns out shallower (a reorg), and submits once it is locked again', async () => {
+    const w = setup({}, 0);
+    const { id } = await hold(w);
+    setConfs(w, basic.txid, 1, true);
+    w.core.submitErrors.push(new CoreRpcError('gobject', -32603, `Governance object is not valid - ${basic.coreHash} - Invalid proposal collateral`));
+    const call = w.core.call.bind(w.core);
+    let reorgOnSubmit = true;
+    (w.core as { call: unknown }).call = async (method: string, params: unknown[] = []) => {
+      if (method === 'gobject' && params[0] === 'submit' && reorgOnSubmit) setConfs(w, basic.txid, 0, false);
+      return call(method, params);
+    };
+    await step(w, 30);
+    expect(w.proposalRow(id)).toMatchObject({ status: 'waiting', sent: 0, last_error: 'collateral-reorg', confirmations: 0, attempts: 1 });
+    reorgOnSubmit = false;
+    setConfs(w, basic.txid, 1, false);
+    await step(w, 30);
+    expect(w.proposalRow(id)).toMatchObject({ status: 'waiting', sent: 0, last_error: null });
+    expect(submits(w).length).toBe(1);
+    setConfs(w, basic.txid, 1, true);
+    await step(w, 30);
+    expect(w.proposalRow(id)).toMatchObject({ status: 'waiting', sent: 1, attempts: 2 });
+  });
+
+  it('a sent row keeps waiting if its collateral is reported shallower again, and does not fail as expired (Core promotes it regardless)', async () => {
+    const w = setup({ PROPOSAL_MAX_WAIT_S: '999999999' }, 2); // the jump past end_epoch must not hit the wait limit
+    setConfs(w, basic.txid, 2, true);
+    const { id } = await hold(w);
+    setConfs(w, basic.txid, 1, false);
+    w.clock.t = END_EPOCH + 60;
+    await w.proposer.tick();
+    expect(w.proposalRow(id)).toMatchObject({ status: 'waiting', sent: 1, confirmations: 1 });
+    expect(submits(w).length).toBe(1);
+    setConfs(w, basic.txid, 6, true);
+    await step(w, 30);
+    expect(w.proposalRow(id)).toMatchObject({ status: 'submitted', attempts: 1 });
+  });
+
+  it('a sent row never fails as unconfirmed: Core and its peers hold it until 6', async () => {
+    const w = setup({}, 1);
+    setConfs(w, basic.txid, 1, true);
+    const { id } = await hold(w);
+    setConfs(w, basic.txid, 3, true);
+    w.clock.t = w.proposalRow(id).received_hour + 259_200 + 60;
+    await w.proposer.tick();
+    expect(w.proposalRow(id)).toMatchObject({ status: 'waiting', sent: 1, confirmations: 3, last_error: null });
+    setConfs(w, basic.txid, 6, true);
+    await step(w, 30);
+    expect(w.proposalRow(id)).toMatchObject({ status: 'submitted', attempts: 1 });
+  });
+
+  it('with MIN_COLLATERAL_CONFS=6 a ChainLock does not make it submit early', async () => {
+    const w = setup({ MIN_COLLATERAL_CONFS: '6' }, 3);
+    setConfs(w, basic.txid, 3, true);
+    const r = await w.post('/v1/proposals', bodyOf(basic));
+    expect(r.body).toMatchObject({ status: 'waiting', sent: false, minConfirmations: 6 });
+    setConfs(w, basic.txid, 5, true);
+    await step(w, 30);
+    expect(submits(w)).toEqual([]);
+    setConfs(w, basic.txid, 6, true);
+    await step(w, 30);
+    expect(w.proposalRow(r.body.id)).toMatchObject({ status: 'submitted', sent: 0 });
+    expect(gets(w)).toEqual([]);
+  });
+
+  it('MIN_COLLATERAL_CONFS defaults to 1 and must be within 1..6', () => {
+    expect(loadConfig({}).minCollateralConfs).toBe(1);
+    expect(loadConfig({ MIN_COLLATERAL_CONFS: '6' }).minCollateralConfs).toBe(6);
+    expect(() => loadConfig({ MIN_COLLATERAL_CONFS: '7' })).toThrow(/MIN_COLLATERAL_CONFS/);
+    expect(() => loadConfig({ MIN_COLLATERAL_CONFS: '0' })).toThrow(/MIN_COLLATERAL_CONFS/);
+  });
+
+  it('a database from before `sent` gets the column on start-up, its rows as not sent', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'relay-sent-migration-'));
+    const path = join(dir, 'relay.sqlite');
+    try {
+      const old = new Database(path);
+      old.exec(`CREATE TABLE proposals (id TEXT PRIMARY KEY NOT NULL, gov_hash TEXT NOT NULL, collateral_txid TEXT NOT NULL, time INTEGER NOT NULL, data_hex TEXT NOT NULL,
+        status TEXT NOT NULL, confirmations INTEGER NOT NULL DEFAULT 0, attempts INTEGER NOT NULL DEFAULT 0, fail_n INTEGER NOT NULL DEFAULT 0, next_attempt_at INTEGER NOT NULL,
+        last_error TEXT, core_message TEXT, missing_since INTEGER, received_hour INTEGER NOT NULL, submitted_at INTEGER, finished_at INTEGER,
+        UNIQUE (gov_hash, collateral_txid)) WITHOUT ROWID`);
+      old.prepare(`INSERT INTO proposals (id, gov_hash, collateral_txid, time, data_hex, status, next_attempt_at, received_hour) VALUES (?, 'g', 't', 1, '00', 'waiting', 0, 0)`).run('ab'.repeat(16));
+      old.close();
+      const store = new Store(openDb(path));
+      expect(store.getProposal('ab'.repeat(16))).toMatchObject({ status: 'waiting', sent: 0 });
+      store.close();
+      // opening again is a no-op
+      const again = new Store(openDb(path));
+      expect(again.getProposal('ab'.repeat(16))!.sent).toBe(0);
+      again.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

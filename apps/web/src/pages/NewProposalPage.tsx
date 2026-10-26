@@ -83,7 +83,7 @@ function Start({ drafts, demo, onOpen, onNew, onRestored }: { drafts: ProposalDr
         <li>Choose the amount and how many payments (one at each superblock).</li>
         <li>Review it against Dash Core's rules.</li>
         <li>Save a backup, then pay the fee from any wallet or from Dash Core.</li>
-        <li>govhub submits it once the payment has 6 confirmations (about 15 minutes).</li>
+        <li>govhub sends it to the network once the payment is ChainLocked (usually within a few minutes). It goes live after 6 confirmations (about 15 minutes).</li>
       </ol>
       {drafts.length > 0 && (
         <section aria-labelledby="pw-drafts-title">
