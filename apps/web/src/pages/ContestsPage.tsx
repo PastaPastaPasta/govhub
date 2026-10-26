@@ -4,7 +4,8 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { ReadError } from '../ui/ReadError.tsx';
 import { useAsync, useReveal } from '../ui/hooks.ts';
 import { errText, formatInt } from '../lib/format.ts';
-import { displayName, normalizeLabel, type ContestState, type OpenContest } from '../contests/model.ts';
+import { contestKey, displayName, normalizeLabel, type ContestState, type OpenContest } from '../contests/model.ts';
+import { useCommentCounts } from '../ui/useCommentCounts.ts';
 import type { ContestSource } from '../contests/source.ts';
 import { ContestCard, type StateEntry } from '../contests/ui.tsx';
 import { useClockMs, useContestSource } from '../contests/useContests.ts';
@@ -105,6 +106,7 @@ export function ContestsPage() {
   const still = useMemo(() => all.filter((c) => c.endsAt > nowMs), [all, nowMs]);
   const openLabels = useMemo(() => new Set(still.map((c) => c.label)), [still]);
   const visible = still.filter((c) => matches(c.label, states.get(c.label), q));
+  const counts = useCommentCounts(useMemo(() => still.map((c) => contestKey(c.label)), [still]));
   const duration = src.network === 'testnet' ? '90 minutes' : 'two weeks';
 
   return (
@@ -140,7 +142,7 @@ export function ContestsPage() {
       ) : (
         <div className="plist" data-testid="open-contests">
           {visible.map((c) => (
-            <ContestCard key={c.label} label={c.label} endsAt={c.endsAt} state={states.get(c.label)} nowMs={nowMs} />
+            <ContestCard key={c.label} label={c.label} endsAt={c.endsAt} state={states.get(c.label)} nowMs={nowMs} comments={counts.get(contestKey(c.label))} />
           ))}
         </div>
       )}
@@ -219,6 +221,7 @@ function EndedList({ src, prefix, openLabels, nowMs }: { src: ContestSource; pre
   });
   const revealed = useMemo(() => labels.slice(0, count), [labels, count]);
   const states = useContestStates(src, revealed);
+  const counts = useCommentCounts(useMemo(() => revealed.map(contestKey), [revealed]));
 
   return (
     <>
@@ -226,7 +229,7 @@ function EndedList({ src, prefix, openLabels, nowMs }: { src: ContestSource; pre
       {revealed.length > 0 && (
         <div className="plist" data-testid="ended-contests">
           {revealed.map((l) => (
-            <ContestCard key={l} label={l} endsAt={null} state={states.get(l)} nowMs={nowMs} />
+            <ContestCard key={l} label={l} endsAt={null} state={states.get(l)} nowMs={nowMs} comments={counts.get(contestKey(l))} />
           ))}
         </div>
       )}

@@ -30,6 +30,8 @@ const FIXTURE_IDS = [
   '9arcaWEfnYQpGmn2UPYmbiZjZN64V8zqvRaqYBhHh2iu',
 ] as const;
 const [A, B, C, E, F, G, I, J, K, L] = FIXTURE_IDS;
+/** The two contenders for TheRoadNotTaken (the fixture forum gives them a discussion). */
+export const ROAD_CONTENDERS = [A, B] as const;
 
 const open = (label: string, endsInMs: number, contenders: Contender[], abstain = 0, lock = 0): FixtureContest => ({ label, endsInMs, contenders, abstain, lock, outcome: null });
 const won = (label: string, agoMs: number, contenders: Contender[], abstain = 0, lock = 0): FixtureContest => ({

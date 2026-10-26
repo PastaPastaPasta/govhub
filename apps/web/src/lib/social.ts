@@ -92,3 +92,17 @@ export function withDeadline<T>(p: Promise<T>, ms: number, what: string): Promis
   });
   return Promise.race([p, late]).finally(() => clearTimeout(timer));
 }
+
+/** Authors the "recommended" view always shows on this page, and how the page names them. */
+export interface Featured {
+  ids: readonly string[];
+  /** the chip on their comments */
+  chip: string;
+  /** the recommended view's name: "<view> and masternodes" */
+  view: string;
+  /** who they are, in a sentence: "the proposal owner" */
+  who: string;
+}
+
+/** A proposal's verified owner (none until the claim check names one). */
+export const proposalOwner = (owner: string | null): Featured => ({ ids: owner ? [owner] : [], chip: 'proposal owner', view: 'Owner', who: 'the proposal owner' });

@@ -2,6 +2,9 @@
 // and 1 (after normalization) starts a masternode vote, open for two weeks (90 minutes on testnet), and other identities may ask for
 // the same name meanwhile. Pure logic here; reads are in source.ts.
 
+import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
+
 /** The DPNS system contract: the same id on mainnet and testnet. */
 export const DPNS_CONTRACT_ID = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
 
@@ -16,6 +19,14 @@ export const PARENT_DOMAIN = 'dash';
 
 /** Platform's limit: a masternode may change its vote on one contest this many times; the last one counts. */
 export const VOTE_CHANGES = 5;
+
+/**
+ * The key a contest's discussion hangs off: forum comments carry a 32-byte `govHash`, and for a contest it is this hash of the
+ * contested resource itself (DPNS contract, document type, index and its values). Domain-separated, so it never equals a
+ * governance hash. The label is unique per contest: an awarded or locked name cannot be contested again.
+ */
+export const contestKey = (label: string): string =>
+  bytesToHex(sha256(utf8ToBytes(['govhub-contest-v1', DPNS_POLL.dataContractId, DPNS_POLL.documentTypeName, DPNS_POLL.indexName, PARENT_DOMAIN, label].join('\n'))));
 
 /** A contest still open for votes, with its end time (ms of Platform block time). */
 export interface OpenContest {

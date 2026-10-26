@@ -4,6 +4,7 @@
 import { act, StrictMode } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { contestKey } from '../contests/model.ts';
 import { fixtureContests, type ContestSource } from '../contests/source.ts';
 import { button, click, flush, render, type } from '../test/render.tsx';
 
@@ -19,6 +20,14 @@ const forum = vi.hoisted(() => ({
   forum: { names: async () => new Map([['eUJLdV1mRNVYAMdHYV3nSiwKu2EBB1jGfVKUuCDeUE2', 'alice.dash']]), reader: { profiles: async () => new Map() } },
 }));
 vi.mock('../app/forum.tsx', () => ({ useForum: () => forum }));
+vi.mock('../ui/useCommentCounts.ts', () => ({ useCommentCounts: (keys: string[]) => new Map(keys.map((k, i) => [k, i])) }));
+const discussion = vi.hoisted(() => ({ props: null as null | { govHash: string; featured: { ids: readonly string[]; chip: string; view: string } } }));
+vi.mock('../ui/Discussion.tsx', () => ({
+  Discussion: (p: NonNullable<typeof discussion.props>) => {
+    discussion.props = p;
+    return <section data-testid="discussion" />;
+  },
+}));
 
 const { ContestsPage } = await import('./ContestsPage.tsx');
 const { ContestPage } = await import('./ContestPage.tsx');
@@ -114,6 +123,9 @@ describe('ContestPage', () => {
     expect(el.textContent).toContain('Abstain');
     expect(el.textContent).toContain('Nobody gets the name.');
     expect(el.textContent).toContain('Read from Dash Platform with proofs, at Platform block 459,350.');
+    // the discussion hangs off the contest itself, with the contenders featured as a proposal's owner is
+    expect(discussion.props!.govHash).toBe(contestKey('ther0adn0ttaken'));
+    expect(discussion.props!.featured).toMatchObject({ ids: ['eUJLdV1mRNVYAMdHYV3nSiwKu2EBB1jGfVKUuCDeUE2', '3Yos9bTgS21oDhEqc99f5Eyvq1axrvznkTLAjhiAXCat'], chip: 'contender', view: 'Contenders' });
   });
 
   it('marks the winner of a decided contest', async () => {

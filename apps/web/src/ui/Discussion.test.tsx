@@ -39,6 +39,7 @@ vi.mock('../badge/context.tsx', () => ({ useBadges: () => badges }));
 vi.mock('../auth/context.tsx', () => ({ useAuth: () => ({ openSheet: () => {} }) }));
 vi.mock('./useReactions.ts', () => ({ useReactions: () => ({ scores: new Map(), vote: async () => {}, error: null }) }));
 const { Discussion } = await import('./Discussion.tsx');
+const { proposalOwner } = await import('../lib/social.ts');
 
 beforeEach(() => {
   stored = [c('c1', BADGED, 'from a masternode owner'), c('c2', PLAIN, 'from someone without a badge'), c('c3', OWNER, 'from the proposal owner')];
@@ -50,7 +51,7 @@ beforeEach(() => {
 const mount = () =>
   render(
     <MemoryRouter>
-      <Discussion govHash={GOV} owner={OWNER} />
+      <Discussion govHash={GOV} featured={proposalOwner(OWNER)} />
     </MemoryRouter>,
   );
 const shownTexts = (el: ParentNode) => [...el.querySelectorAll('li.comment:not(.comment-placeholder) .comment-body')].map((n) => n.textContent!.trim());

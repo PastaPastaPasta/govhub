@@ -2,14 +2,17 @@
 // the vote panel and the discussion. Reads are proof-verified by the SDK; there is nothing else to check.
 import type { Profile } from '@govhub/forum';
 import { EVONODE_WEIGHT } from '@govhub/verify';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
 import { useForum } from '../app/forum.tsx';
 import { AuthorName, Avatar } from '../ui/Identity.tsx';
+import { Discussion } from '../ui/Discussion.tsx';
+import type { Featured } from '../lib/social.ts';
+import { ErrorBoundary } from '../ui/ErrorBoundary.tsx';
 import { ReadError } from '../ui/ReadError.tsx';
 import { useAsync } from '../ui/hooks.ts';
 import { formatDateTime, formatDuration, formatInt } from '../lib/format.ts';
-import { displayName, isContestedLabel, normalizeLabel, percent, phaseOf, registersAs, VOTE_CHANGES, type Contender, type ContestState, type Phase } from '../contests/model.ts';
+import { contestKey, displayName, isContestedLabel, normalizeLabel, percent, phaseOf, registersAs, VOTE_CHANGES, type Contender, type ContestState, type Phase } from '../contests/model.ts';
 import { BallotBar, contenderClass, contestHref } from '../contests/ui.tsx';
 import { useClockMs, useContestSource } from '../contests/useContests.ts';
 
@@ -89,6 +92,9 @@ function ContestView({ label }: { label: string }) {
   const [rereads, setRereads] = useState(0);
   const s = fresh?.key === label && state.data ? fresh.s : state.data;
   const who = useIdentities(s ? s.contenders.map((c) => c.identityId) : []);
+  // the contenders are this discussion's featured authors, as a proposal's owner is on its page
+  const contenderKey = s ? s.contenders.map((c) => c.identityId).join(',') : '';
+  const featured = useMemo<Featured>(() => ({ ids: contenderKey ? contenderKey.split(',') : [], chip: 'contender', view: 'Contenders', who: 'the contenders' }), [contenderKey]);
   const phase = s ? phaseOf(s, endsAt, nowMs) : null;
   useEffect(() => {
     if (phase !== 'closing') return;
@@ -169,6 +175,10 @@ function ContestView({ label }: { label: string }) {
               Each masternode can change its vote up to {VOTE_CHANGES} times; its last vote counts. Evonode votes count {EVONODE_WEIGHT} times.
             </p>
           </section>
+
+          <ErrorBoundary what="discussion">
+            <Discussion govHash={contestKey(label)} featured={featured} />
+          </ErrorBoundary>
         </div>
 
         <aside className="p-side" aria-label="Summary">

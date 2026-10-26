@@ -311,12 +311,12 @@ describe('moderation', () => {
   it('comment filter: everyone until badges are live; "recommended" keeps the owner and badge holders', () => {
     expect(defaultFilter(false)).toBe('all');
     expect(defaultFilter(true)).toBe('recommended');
-    const ctx = { owner: ALICE, badged: (o: string) => o === MOD };
+    const ctx = { featured: [ALICE], badged: (o: string) => o === MOD };
     expect(passesFilter({ ownerId: BOB }, 'all', ctx)).toBe(true);
     expect(passesFilter({ ownerId: BOB }, 'recommended', ctx)).toBe(false);
     expect(passesFilter({ ownerId: ALICE }, 'recommended', ctx)).toBe(true);
     expect(passesFilter({ ownerId: MOD }, 'recommended', ctx)).toBe(true);
-    expect(passesFilter({ ownerId: ALICE }, 'recommended', { owner: null, badged: () => false })).toBe(false);
+    expect(passesFilter({ ownerId: ALICE }, 'recommended', { featured: [], badged: () => false })).toBe(false);
   });
 });
 

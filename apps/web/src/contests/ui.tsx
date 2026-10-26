@@ -63,7 +63,7 @@ export function statusTag(s: ContestState | null, endsAt: number | null, nowMs: 
   return { text: `Closes in ${formatDuration(left)}`, tone: left < 86_400 ? 'soon' : 'open' };
 }
 
-export function ContestCard({ label, endsAt, state, nowMs }: { label: string; endsAt: number | null; state: StateEntry; nowMs: number }) {
+export function ContestCard({ label, endsAt, state, nowMs, comments }: { label: string; endsAt: number | null; state: StateEntry; nowMs: number; comments?: number | undefined }) {
   const s = typeof state === 'object' ? state : null;
   const failed = state === 'error';
   const tag = statusTag(s, endsAt, nowMs);
@@ -99,6 +99,13 @@ export function ContestCard({ label, endsAt, state, nowMs }: { label: string; en
       </div>
       <p className="prow-meta small">
         <span className="muted">{s ? `${formatInt(s.total)} ${s.total === 1 ? 'vote' : 'votes'}` : ''}</span>
+        <Link to={contestHref(label)} className="prow-comments" title={comments === undefined ? 'Counting comments…' : `${comments} ${comments === 1 ? 'comment' : 'comments'} (hidden ones not counted)`} data-testid="card-comments">
+          <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+            <path d="M2 2.5h10v7H6l-3 2.5v-2.5H2z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+          </svg>
+          <span className="visually-hidden">Comments: </span>
+          {comments === undefined ? '–' : formatInt(comments)}
+        </Link>
       </p>
     </article>
   );
