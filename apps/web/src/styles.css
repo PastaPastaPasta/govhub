@@ -678,6 +678,10 @@ details.learn.inline > summary {
   background: color-mix(in srgb, var(--fail-fill) 12%, transparent);
   justify-self: start;
 }
+.tag-info {
+  color: var(--accent-ink);
+  background: color-mix(in srgb, var(--accent-fill) 12%, transparent);
+}
 .tag-done {
   color: var(--ink-2);
   background: color-mix(in srgb, var(--ink-3) 14%, transparent);
@@ -1616,7 +1620,8 @@ table {
 .p-votes-dim b {
   color: var(--ink-3);
 }
-.p-lameduck {
+.p-lameduck,
+.p-startslater {
   display: grid;
   gap: var(--s-2);
 }

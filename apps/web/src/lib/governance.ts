@@ -125,6 +125,26 @@ export interface PaymentSchedule {
   oneTime: boolean;
 }
 
+/**
+ * The superblocks inside a proposal's payment window, as indices relative to `cycle` (k = 0 is the cycle's own superblock):
+ * Core's [start_epoch - 2 h, end_epoch + 2 h] test on each superblock's estimated time (signing.cpp:85-97). Empty when lo > hi.
+ */
+export function windowIndices(p: { startEpoch: number; endEpoch: number }, cycle: Pick<Cycle, 'estTime'>, params: GovParams): { lo: number; hi: number } {
+  const period = params.superblockCycle * params.blockSeconds;
+  return {
+    lo: Math.ceil((p.startEpoch - FUDGE_WINDOW_S - cycle.estTime) / period),
+    hi: Math.floor((p.endEpoch + FUDGE_WINDOW_S - cycle.estTime) / period),
+  };
+}
+
+/** Index (as in `windowIndices`) of the first superblock whose estimated time is after `nowS`: the next payout. */
+export function nextSuperblockIndex(cycle: Pick<Cycle, 'estTime'>, params: GovParams, nowS: number): number {
+  const period = params.superblockCycle * params.blockSeconds;
+  let k = Math.floor((nowS - cycle.estTime) / period);
+  while (superblockTime(cycle, k, params) <= nowS) k++;
+  return k;
+}
+
 /** Superblock-aligned payment count, the way proposal.dash.org and DashCentral present it (estimates). */
 export function paymentSchedule(
   p: { startEpoch: number; endEpoch: number },
@@ -133,8 +153,7 @@ export function paymentSchedule(
   nowS: number,
 ): PaymentSchedule {
   const period = params.superblockCycle * params.blockSeconds;
-  const lo = Math.ceil((p.startEpoch - FUDGE_WINDOW_S - cycle.estTime) / period);
-  const hi = Math.floor((p.endEpoch + FUDGE_WINDOW_S - cycle.estTime) / period);
+  const { lo, hi } = windowIndices(p, cycle, params);
   const total = Math.max(0, hi - lo + 1);
   let remaining = 0;
   for (let k = Math.max(lo, Math.floor((nowS - cycle.estTime) / period)); k <= hi; k++) {

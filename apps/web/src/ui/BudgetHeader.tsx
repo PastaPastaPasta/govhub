@@ -34,10 +34,11 @@ export function BudgetHeader() {
   const deadline = votingDeadlineTime(c, params);
   const untilDeadline = deadline - now;
   // Proposals that failed verification are not in the strip; the allocation is the cycle document's own figure.
-  const { funded, fundedSum, allocated, active } = budgetView(
+  const { funded, fundedSum, allocated, active, later } = budgetView(
     activeRows.shown.map((r) => r.item),
     c,
   );
+  const laterS = later === 1 ? 's' : '';
   // names are counted over the lame ducks too: the cards link by hash when a name is shared with one
   const names = countNames([...activeRows.shown, ...activeRows.lameDucks].map((r) => r.item.p.value));
   const allocatedFrac = c.budget ? Math.min(1, allocated / c.budget) : 0;
@@ -88,6 +89,7 @@ export function BudgetHeader() {
 
       <p className="budget-compact">
         <b>{formatDashAmount(available)} DASH</b> still available; <b>{formatInt(funded.length)}</b> of {formatInt(active)} proposals in the budget
+        {later > 0 && `; plus ${formatInt(later)} that start${laterS} paying later`}
       </p>
       <dl className="budget-facts">
         <div>
@@ -107,6 +109,7 @@ export function BudgetHeader() {
           <dt>In the budget</dt>
           <dd>
             <span className="num">{formatInt(funded.length)}</span> of {formatInt(active)} proposals
+            {later > 0 && <span className="muted"> (plus {formatInt(later)} that start{laterS} paying at a later superblock)</span>}
           </dd>
         </div>
         <div>

@@ -11,6 +11,7 @@ import { ErrorBoundary } from '../ui/ErrorBoundary.tsx';
 import { ReadError } from '../ui/ReadError.tsx';
 import { FundingMeter } from '../ui/FundingMeter.tsx';
 import { LameDuckPageStatus } from '../ui/LameDuck.tsx';
+import { StartsLaterPageStatus } from '../ui/StartsLater.tsx';
 import { ClaimPanel, OwnerPost, OwnerValue, RejectedClaims, useOwnership, useOwnerPost } from '../ui/Ownership.tsx';
 import { openSignIn } from '../ui/SignIn.tsx';
 import { TrustBadge } from '../ui/trust/TrustBadge.tsx';
@@ -156,7 +157,9 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
   const paid = paymentsFact(chain);
   // Proven data decides "in the next budget" once the badge is Verified; until then it is the tally's flag, under a lesser badge.
   const inBudget = trust.funded ?? !!t?.inNextBudget;
-  const state = t && row.absYes !== null && threshold ? passState(row.absYes, threshold.value, inBudget) : null;
+  // Not due until a later superblock, by the schedule: "not in the next budget" is no warning, and the next deadline is not its own.
+  const later = row.startsLater && !trust.funded ? row.startsLater : null;
+  const state = t && row.absYes !== null && threshold ? passState(row.absYes, threshold.value, later ? undefined : inBudget) : null;
   // Nothing left that can pay it: the list's estimate (with its slack) and, once there is one, the verified chain's "N more possible"
   // fact must both say so, so the page never shows "0 more possible" next to a passing bar, nor "1 payment left" above "no more".
   const payments = chain?.payments ?? null;
@@ -213,7 +216,8 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
             ) : (
               <p className="muted">{tallies.loading ? 'Reading the votes…' : t ? 'Waiting for the budget cycle' : 'No votes counted yet'}</p>
             )}
-            {active && !lameDuck && t && (
+            {later && <StartsLaterPageStatus later={later} />}
+            {active && !lameDuck && !later && t && (
               <p className="p-status">
                 {inBudget ? <span className="tag tag-pass">In the next budget</span> : state?.passing ? <span className="tag tag-warn">Passing, but the next budget is full</span> : null}
                 {untilDeadline !== null && (

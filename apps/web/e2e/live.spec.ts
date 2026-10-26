@@ -69,7 +69,9 @@ test('@live Dev profile: spike proposals are hidden, counts and remaining paymen
   const shown = await cards.count();
   const navCount = Number(await page.getByRole('link', { name: /^Active/ }).locator('.count').innerText());
   expect(navCount).toBe(shown);
-  await expect(page.locator('.budget-facts')).toContainText(`of ${shown} proposals`);
+  // proposals that start paying at a later superblock are listed but not counted against the next budget
+  const later = await page.getByTestId('card-starts-later').count();
+  await expect(page.locator('.budget-facts')).toContainText(`of ${shown - later} proposals`);
   const pays = await page.locator('article.prow .prow-ask').allInnerTexts();
   const totals = pays.flatMap((t) => [...t.matchAll(/(\d+) of (\d+) payments left/g)].map((m) => ({ left: Number(m[1]), total: Number(m[2]) })));
   console.log(`live: ${shown} shown; payments ${JSON.stringify(totals)}`);
@@ -86,7 +88,7 @@ test('@live Dev profile: spike proposals are hidden, counts and remaining paymen
   expect(Number(/Show (\d+)/.exec(label)?.[1])).toBeGreaterThanOrEqual(SPIKES.length);
   await toggle.click();
   for (const name of SPIKES) await expect(page.locator('article.prow.prow-invalid', { hasText: name }).getByTestId('invalid-reason')).toContainText('Governance hash');
-  await expect(page.locator('.budget-facts')).toContainText(`of ${shown} proposals`);
+  await expect(page.locator('.budget-facts')).toContainText(`of ${shown - later} proposals`);
   if (process.env.SCREENSHOTS) await page.locator('.list-section').screenshot({ path: 'screenshots/live-failed-shown-light-desktop.png' });
 
   await page.getByRole('link', { name: 'Past', exact: true }).click();

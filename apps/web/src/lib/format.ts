@@ -62,6 +62,11 @@ export function formatDate(unixS: number, locale = 'en-US', timeZone?: string): 
   return new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'short', day: 'numeric', ...(timeZone ? { timeZone } : {}) }).format(unixS * 1000);
 }
 
+/** "Jan 2027": for an estimate too rough for a day. */
+export function formatMonth(unixS: number, locale = 'en-US', timeZone?: string): string {
+  return new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'short', ...(timeZone ? { timeZone } : {}) }).format(unixS * 1000);
+}
+
 export function formatDateTime(unixS: number, locale = 'en-US', timeZone?: string): string {
   return new Intl.DateTimeFormat(locale, {
     year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', ...(timeZone ? { timeZone, timeZoneName: 'short' } : {}),
