@@ -17,8 +17,8 @@ replaceable (PLAN section 1.1), so a third-party bridge is a first-class deploym
                                \-- or caddy (TLS on your own IP, the alternative)
 ```
 
-Slots for `relay` and `accounts` are marked in `docker-compose.yml`. They are not built yet. The
-MN badge `issuer` is built (profile `issuer`, sections 11.5 and 13.2).
+The vote `relay` (profile `relay`, section 11.4) and the MN badge `issuer` (profile `issuer`, sections 11.5 and 13.2) run
+from the same compose file. A slot for `accounts` is marked in `docker-compose.yml`; it is not built yet.
 
 What a backend you run is trusted with, what the app checks behind it, and what it learns about users is in
 [`docs/TRUST.md`](../docs/TRUST.md) (section 6 per service, section 7 for privacy and logging).
@@ -208,8 +208,9 @@ contract without `talliesSet` it writes one `tally` per proposal instead.
 
 The `gov` contract is **owner-only**: every type has `creationRestrictionMode: 1`, so only the
 identity that registered the contract can publish into it. A third-party bridge therefore cannot
-write to ours. It registers its own copy, and the client merges bridges by `govHash` (PLAN
-section 1.1). The `bridgeIdentityId` and contract id you publish are what users put in their
+write to ours. It registers its own copy, and users who want its data switch the app to that contract. The app uses one
+bridge at a time and moves to the next only when one fails; it doesn't merge or compare bridges
+([`docs/self-hosting.md`](../docs/self-hosting.md)). The `bridgeIdentityId` and contract id you publish are what users put in their
 endpoint registry.
 
 1. Take the schema from `packages/contracts-v1/gov.json` (the mainnet definition: slim `proposal`,

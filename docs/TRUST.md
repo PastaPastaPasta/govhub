@@ -241,8 +241,8 @@ quorums from that proven SML.
 | Profile | Core / Platform | Quorum-proof sources | What chain facts rest on today |
 |---|---|---|---|
 | Testnet | testnet / testnet | testnet bridge, then `quorums.testnet.networks.dash.org/proofs` | ChainLocks from the quorum checkpoint. If both sources fail: testnet proof of work, labelled "not secure". |
-| Dev (default, `registry.ts:191`) | mainnet / testnet | Dev bridge only. Its dashd runs 24.0.0-rc.4 and serves quorum proofs (`registry.ts:167`). The mainnet quorum list server was removed: it answered 403 and sent no CORS headers (`registry.ts:91-98`). | ChainLocks from the quorum checkpoint. If the bridge can't serve a proof (unreachable, or a Core without `getquorumproofchain` answering 501): mainnet proof of work from the header checkpoint, which counts as "Verified". |
-| Mainnet | mainnet / mainnet | none (not deployed, `registry.ts:172-185`) | n/a |
+| Dev | mainnet / testnet | Dev bridge only. Its dashd runs 24.0.0-rc.4 and serves quorum proofs (`registry.ts:167`). The mainnet quorum list server was removed: it answered 403 and sent no CORS headers (`registry.ts:91-98`). | ChainLocks from the quorum checkpoint. If the bridge can't serve a proof (unreachable, or a Core without `getquorumproofchain` answering 501): mainnet proof of work from the header checkpoint, which counts as "Verified". |
+| Mainnet (default) | mainnet / mainnet | The mainnet bridge, then the Dev bridge. Both run on the same dashd (24.0.0-rc.4) and serve quorum proofs (`registry.ts`, `PROFILES.mainnet.proofBridges`) | As on Dev: ChainLocks from the quorum checkpoint, or mainnet proof of work if neither bridge serves a proof. |
 
 ## 4. What the "Verified" badge requires
 
@@ -526,8 +526,8 @@ own node.
 
 **What readers check** (`packages/badge/src/reader.ts:71-116`; `apps/web/src/badge/reader.ts`):
 
-- Only issuers on the user's trust list count. The default list holds only the govhub issuer on testnet. Mainnet has no
-  issuer and no badge contract yet (`apps/web/src/badge/config.ts:44-54`).
+- Only issuers on the user's trust list count. The default list holds only the govhub issuer, one per network
+  (`apps/web/src/badge/config.ts`, `BADGE_NETWORKS`): `9MJV17bn…` on mainnet, `H62hSf5T…` on testnet.
 - Each issuer's per-epoch key must be published on Platform before the epoch's snapshot, and bound to that issuer and epoch.
 - The signature must verify over the badge message rebuilt from `$ownerId`.
 - The badge must be in its display window and not revoked.
@@ -689,9 +689,9 @@ Failing has a cost. When every source fails, the app falls back to proof of work
 ### 6.8 Moderation and the default block list
 
 **Who controls it.** The default list is the `mod.block` documents of the moderation identity. Only the `mod` contract's owner
-can create them (`packages/contracts-v1/mod.json`, `creationRestrictionMode: 1`). On both deployed profiles that identity is
-the Dev bridge identity (`registry.ts:104,107-118`), which on Dev also owns the gov contract. PLAN.md calls for a separate moderation identity; mainnet has no forum
-configuration yet.
+can create them (`packages/contracts-v1/mod.json`, `creationRestrictionMode: 1`). On Testnet and Dev that identity is
+the Dev bridge identity (`registry.ts`, `TESTNET_FORUM`), which on Dev also owns the gov contract. Mainnet has its own
+moderation identity, `96f4Tbbo…`, separate from the bridge (`registry.ts`, `MAINNET_FORUM`).
 
 **What the team can do with it.**
 

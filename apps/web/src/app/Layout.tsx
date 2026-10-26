@@ -5,6 +5,7 @@ import { useAuth } from '../auth/context.tsx';
 import { SessionControl } from '../ui/SignIn.tsx';
 import { ChainShield } from '../ui/trust/ChainShield.tsx';
 import { useApp } from './context.tsx';
+import { PRIVACY_DOC_URL } from '../pages/AboutPage.tsx';
 
 // The sign-in sheet (BIP39 wordlist, BIP32, HPKE, tx building) loads when it is first opened.
 const AuthSheet = lazy(() => import('../auth/AuthSheet.tsx').then((m) => ({ default: m.AuthSheet })));
@@ -305,8 +306,11 @@ export function Layout() {
       <footer className="footer">
         <div className="footer-inner">
           <p className="small muted">
-            Checked in your browser against Dash Platform and the Dash chain. <Link to="/about/verification">How it works</Link> ·{' '}
-            <Link to="/settings">Settings</Link> · Open source (MIT)
+            Checked in your browser against Dash Platform and the Dash chain. <Link to="/about">About</Link> ·{' '}
+            <a href={PRIVACY_DOC_URL} target="_blank" rel="noopener noreferrer">
+              Privacy
+            </a>{' '}
+            · <Link to="/settings">Settings</Link> · Open source (MIT)
           </p>
         </div>
       </footer>

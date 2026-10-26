@@ -1,118 +1,120 @@
-// /about/verification: what the trust badge means, in plain words (the rules are verify/aggregate.ts; README has the same list).
+// /about: what govhub is, who it's for, where its data lives, and where to read more. Plain words; the details are on
+// /about/verification, /about/trust and the docs on GitHub (docs/privacy.md, docs/self-hosting.md).
 import { Link } from 'react-router-dom';
-import type { ProvenanceKind } from '../data/types.ts';
-import { LEVEL_LABEL, type TrustLevel } from '../verify/aggregate.ts';
-import { ProvGlyph } from '../ui/Provenance.tsx';
-import { ShieldIcon } from '../ui/trust/TrustBadge.tsx';
+import { TRUST_DOC_URL } from './TrustPage.tsx';
 
-const STATES: Array<[TrustLevel, string]> = [
-  ['verified', 'Every check below was proven in your browser. Nothing rests on a server’s or a node’s word.'],
-  ['checking', 'The checks are still running. The first visit downloads the chain’s headers; later ones reuse them.'],
-  ['partial', 'Every check finished, but something rests on someone’s word. The badge says what, in one line.'],
-  ['error', 'A check couldn’t finish, usually because the network couldn’t be reached. Open the badge and choose Re-check.'],
-  ['failed', 'A check contradicted the data. The proposal is hidden from the lists, and its page says what failed.'],
-  ['demo', 'Recorded sample data for trying govhub. Never “Verified”.'],
-];
+const REPO_URL = 'https://github.com/PastaPastaPasta/govhub';
+export const PRIVACY_DOC_URL = `${REPO_URL}/blob/main/docs/privacy.md`;
+export const SELF_HOSTING_DOC_URL = `${REPO_URL}/blob/main/docs/self-hosting.md`;
 
-const CHECKS: Array<[string, string]> = [
-  ['The proposal text', 'The proposal’s fingerprint (its governance hash) is recomputed from the published text, and every field shown, from the name to the amount and dates, is the one it covers.'],
-  ['The submission fee', 'Every proposal burns a fee on the Dash chain that names that fingerprint. Your browser fetches that transaction, checks it, and proves it sits in a final block of the chain it verified itself from a checkpoint built into govhub, at the published height.'],
-  ['The chain and the masternode list', 'The list of masternodes, and so the number of votes a proposal needs, is proven by the chain too.'],
-  ['The vote count', 'Every signed vote behind the tally is checked against the masternode’s voting key and recounted. The result must equal the tally recorded on Dash Platform, down to its fingerprint of the whole vote set.'],
-  ['Funding', '“Passing” or “needs more votes” follows from the recount and the proven threshold. Whether a passing proposal fits in the next budget comes from recounting and ranking every active proposal the way Dash Core does.'],
-];
-
-const GLYPHS: Array<[ProvenanceKind, string, string]> = [
-  ['verified', 'Proven', 'Checked in your browser against the chain.'],
-  ['reported', 'Reported', 'As a bridge, a node or a feed says. Not checked.'],
-  ['mismatch', 'Failed', 'Checked, and it did not match.'],
-  ['proof', 'Platform proof', 'Read from Dash Platform; evo-sdk checked the proof against the quorum’s signature.'],
-  ['fixture', 'Demo', 'Recorded sample data.'],
-];
+function Ext({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer">
+      {children}
+    </a>
+  );
+}
 
 export function AboutPage() {
   return (
-    <article className="page-narrow about" aria-labelledby="about-v-title">
-      <h1 id="about-v-title">How govhub checks what it shows</h1>
+    <article className="page-narrow about" aria-labelledby="about-title">
+      <h1 id="about-title">About govhub</h1>
       <p className="lede">
-        govhub doesn’t ask you to trust a server. When you open a proposal, your browser checks it against the Dash chain by itself, in the background, and sums the
-        result up in one badge. Click the badge on any proposal to see every check.
+        govhub is a place to follow, discuss and vote on Dash governance proposals. It does what dashcentral.org did, but your browser checks the data itself
+        before showing it as verified.
       </p>
 
-      <h2>The badge</h2>
-      <ul className="about-states">
-        {STATES.map(([level, text]) => (
-          <li key={level}>
-            <span className={`trust trust-${level} trust-m`}>
-              <ShieldIcon level={level} />
-              <span className="trust-word">{LEVEL_LABEL[level]}</span>
-            </span>
-            <p>{text}</p>
-          </li>
-        ))}
+      <h2>Why it exists</h2>
+      <p>
+        Every month the Dash network pays for the proposals that enough masternodes vote for. Most people follow that process on a website, and a website can get
+        things wrong. It could show the wrong vote count, leave a proposal out, or change what a proposal asks for. Few people would notice.
+      </p>
+      <p>
+        With govhub, our website and servers only deliver the data. Your browser checks it against the Dash network, and tells you when it couldn’t.
+      </p>
+
+      <h2>What you can do here</h2>
+      <ul>
+        <li>See every active proposal, how its votes stand, whether it’s passing, and whether it fits in the next budget. Older proposals are under Past.</li>
+        <li>Comment on proposals, reply and react. Proposal owners can post updates, and get an “owner” label once they’ve proven the proposal is theirs.</li>
+        <li>
+          Vote with your masternodes. You add their voting keys once, and can then vote on several proposals together. Votes are signed in your browser, and you
+          can send them straight away or spread them out over time so they don’t all show up at once.
+        </li>
+        <li>Get an “MN” badge next to your name, which shows you run a masternode without saying which one.</li>
+        <li>Submit your own proposal. A step-by-step form helps you write it, pay the 1 DASH fee the network charges, and send it.</li>
       </ul>
-
-      <h2>What “Verified” means</h2>
-      <p>All five of these, proven:</p>
-      <ol className="about-checks">
-        {CHECKS.map(([title, text]) => (
-          <li key={title}>
-            <b>{title}.</b> {text}
-          </li>
-        ))}
-      </ol>
-
-      <details className="learn">
-        <summary>What never counts as proven</summary>
-        <ul className="small">
-          <li>A node’s word about a transaction’s block, confirmations or ChainLock, even when a second node agrees.</li>
-          <li>A ChainLock checked against a masternode list that only nodes agree on, when the chain itself couldn’t be verified.</li>
-          <li>A collateral that no ChainLock covers yet, or whose height differs from the published one.</li>
-          <li>Testnet’s proof of work, which is too weak to stop a forged chain (testnet is verified through quorum proofs instead).</li>
-          <li>Voting keys as the bridge reports them, or a tally that is only the bridge’s own and not on Platform.</li>
-          <li>A tally’s “in the next budget” flag, which whoever publishes it sets.</li>
-        </ul>
-      </details>
-
-      <h2>What it can’t detect</h2>
       <p>
-        A bridge can <b>withhold</b>. The recount proves the votes it was given, so votes the bridge didn’t serve can’t be detected, and neither can a proposal
-        it never published. Comparing with another bridge (Settings) or your own Dash Core node narrows that gap. Who owns a proposal is checked separately, from
-        the owner’s signed claim, and is not part of the badge.
-      </p>
-      <p>
-        <Link to="/about/trust">What we can and can’t lie about</Link>: every server govhub uses, and what each could get wrong or hide.
+        Anyone can read. Commenting, badges and saving your voting keys need an account. You can also vote without one, by signing each vote in Dash Core and
+        pasting the signature in.
       </p>
 
-      <h2>Your own votes</h2>
+      <h2>How the checking works</h2>
       <p>
-        When you vote with your masternodes, govhub follows each vote until the network has it, and checks that the vote the network now holds is yours: the
-        exact signature, against your voting key. “Counted” means a recount of the tally includes it. Open “Check it yourself” on the confirmation to see the
-        signature and the Dash Core command that shows the same.
+        Each proposal has a badge, such as <i>Verified</i> or <i>Partly verified</i>. For <i>Verified</i>, your browser has:
+      </p>
+      <ul>
+        <li>worked out the proposal’s fingerprint from its text, so it can tell if anything in it was changed;</li>
+        <li>found the fee the proposal paid, and checked that the payment really is on the Dash blockchain;</li>
+        <li>checked the signature on every vote against the masternode that cast it, and counted the votes again;</li>
+        <li>used that count to decide whether the proposal passes and whether it fits in the budget.</li>
+      </ul>
+      <p>
+        If any step had to take someone’s word for it, the badge says so. Click the badge on a proposal to see each step. The full explanation is on{' '}
+        <Link to="/about/verification">how govhub checks what it shows</Link>.
+      </p>
+      <p>
+        Checks can’t catch one thing. A server can leave something out: your browser can prove that every vote it was given is real, but not that it was given
+        all of them. <Link to="/about/trust">What we can and can’t lie about</Link> goes through what each of our servers could hide.
       </p>
 
-      <details className="learn">
-        <summary>The marks inside the details</summary>
-        <dl className="glyph-legend">
-          {GLYPHS.map(([kind, name, text]) => (
-            <div key={kind}>
-              <dt>
-                <ProvGlyph kind={kind} /> {name}
-              </dt>
-              <dd>{text}</dd>
-            </div>
-          ))}
-        </dl>
-      </details>
+      <h2>Where the data lives</h2>
+      <p>
+        Proposals and votes are on the Dash network, in the same records Dash Core uses to decide what gets paid. Comments, profiles and badges are only on Dash
+        Platform, a public database run by the Dash network, and each one is signed by the person who posted it. Our servers keep a copy of proposals and votes,
+        and serve it to anyone who asks.
+      </p>
+      <p>
+        Our servers fetch data from the network and pass votes to it. If they went away, proposals, votes and comments would still be on the Dash network, and
+        anyone could run the same software. The one thing at risk is old vote history, which Dash Core discards after a while and our servers keep a copy of.
+      </p>
 
-      <details className="learn">
-        <summary>Where the data comes from</summary>
-        <p className="small">
-          Proposals, tallies, comments and profiles live on Dash Platform, read with proofs. Transactions, blocks, ChainLocks and the masternode list come from
-          DAPI evonodes. Signed votes come from a bridge, a Dash Core node that publishes governance data, because DAPI has no governance calls. Every one of
-          these can be replaced in <Link to="/settings">Settings</Link>.
-        </p>
-      </details>
+      <h2>Your account</h2>
+      <p>
+        A govhub account is a Dash Platform identity, so it isn’t stored by us. You sign in with its recovery phrase, a private key, or a passkey. Your phrase and
+        keys stay in your browser. If you use a passkey, it unlocks an encrypted copy of your keys that is kept on Dash Platform, which only the passkey can open.
+      </p>
+      <p>
+        Creating an account costs a little DASH, sent from any Dash wallet. Each post or change on Platform then costs a small fee, taken from your account’s
+        balance by the network. govhub doesn’t charge anything, and none of that money goes to us.
+      </p>
+
+      <h2>Networks</h2>
+      <p>
+        Settings has a switch for which Dash network you’re looking at. Mainnet is the live network, where votes count and DASH has real value. Testnet is for
+        practice: test DASH is free and worth nothing. Dev is for people working on govhub, and you can ignore it.
+      </p>
+
+      <h2>Using other servers</h2>
+      <p>
+        govhub works with servers that anyone can run: the ones that fetch governance data, send votes to the network, or hand out badges. You can switch to
+        servers you run or trust in <Link to="/settings">Settings</Link>, and share your settings as a link. To run your own, see{' '}
+        <Ext href={SELF_HOSTING_DOC_URL}>running your own govhub servers</Ext>.
+      </p>
+
+      <h2>Privacy</h2>
+      <p>
+        govhub has no ads or analytics, sets no cookies, and never asks for your email address. Our servers see your IP address when you use them, like any
+        website, and don’t store it. Cloudflare, which sits in front of them, has its own policy. Anything you post on Dash Platform is public. What each of our
+        servers sees and keeps is on <Ext href={PRIVACY_DOC_URL}>our privacy page</Ext>. Other people’s servers follow their own rules.
+      </p>
+
+      <h2>Who runs it</h2>
+      <p>
+        govhub is open source under the MIT license. The code, the issue tracker and the history of every change are on <Ext href={REPO_URL}>GitHub</Ext>. This
+        copy at gov.dashhq.org, and the servers it uses unless you change them, are run by the project’s maintainers. If something looks wrong, please{' '}
+        <Ext href={`${REPO_URL}/issues`}>open an issue</Ext>. The technical detail behind this page is in the <Ext href={TRUST_DOC_URL}>trust model</Ext>.
+      </p>
     </article>
   );
 }

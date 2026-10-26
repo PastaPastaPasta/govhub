@@ -410,7 +410,7 @@ export function SettingsPage() {
               Relays and price feed <Custom on={isCustom('relays', 'priceFeed')} />
             </legend>
             <label>
-              Relays (one URL per line; used for voting from phase 3)
+              Relays (one URL per line; each vote goes to one of them)
               <textarea rows={2} value={draft.relays.map((r) => r.url).join('\n')} onChange={(e) => set('relays', lines(e.target.value).map((url, i) => ({ name: `relay ${i + 1}`, url })))} spellCheck={false} />
             </label>
             <label>
