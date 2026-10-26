@@ -2201,6 +2201,14 @@ details summary {
 .deposit-text {
   display: grid;
   gap: 0.5rem;
+  align-content: start;
+}
+.deposit-addr {
+  display: grid;
+  gap: 0.5rem;
+}
+.deposit-addr .form-actions {
+  margin: 0;
 }
 .qr {
   inline-size: 11rem;
@@ -2216,7 +2224,9 @@ details summary {
 .address {
   font-weight: 600;
   font-stretch: 85%;
+  font-feature-settings: 'zero' 1;
   overflow-wrap: anywhere;
+  text-align: center;
   background: var(--sunk);
   padding: 0.375rem 0.5rem;
   border-radius: var(--radius-s);
