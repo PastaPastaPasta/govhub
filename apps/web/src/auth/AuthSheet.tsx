@@ -145,6 +145,19 @@ function RecoverableNotice({ records }: { records: FundingRecord[] }) {
   );
 }
 
+/**
+ * The phrase or key is typed into a web page, so it should never guard real money: one made for govhub, holding only what govhub
+ * needs. Shown wherever a phrase or key is made or entered. Once sign-in with a Dash wallet exists, that is the main path.
+ */
+function SeedWarning({ what = 'phrase' }: { what?: 'phrase' | 'key' }) {
+  return (
+    <p className="seed-warning" role="note" data-testid="seed-warning">
+      <b>Use a {what === 'key' ? 'key from an account' : 'recovery phrase'} just for govhub.</b> You type it into a web page, so never use one that holds
+      real money, or one you couldn’t afford to see leaked.
+    </p>
+  );
+}
+
 function Choose() {
   const { openSheet, store, network } = useAuth();
   const { mode } = useApp();
@@ -152,7 +165,7 @@ function Choose() {
   const pending = pendingFundings(store, network).filter((r) => r.kind === 'create');
   const main: Array<{ v: SheetView; title: string; text: string }> = [
     { v: 'create', title: 'Create an account', text: `Pay a little DASH (${formatDuffs(SUGGESTED_CREATE_DEPOSIT_DUFFS)} is suggested) from any Dash wallet; it covers the account and your first comments.` },
-    { v: 'phrase', title: 'I have a recovery phrase', text: 'The 12 or 24 words from govhub, DashPay or Dash Evo Tool.' },
+    { v: 'phrase', title: 'I have a recovery phrase', text: 'The 12 or 24 words of an account you made for govhub.' },
   ];
   const other: Array<{ v: SheetView; title: string; text: string }> = [
     { v: 'passkey', title: 'Use a passkey', text: 'If you saved one on this device or another.' },
@@ -205,7 +218,21 @@ function Choose() {
         </div>
       )}
       <RecoverableNotice records={store.list().filter((r) => r.network === network && !r.discarded)} />
-      <ul className="choices">{main.map((o) => choice(o, true))}</ul>
+      <ul className="choices">
+        <li>
+          <button type="button" className="choice choice-l" disabled aria-describedby="wallet-soon" data-testid="wallet-signin">
+            <span className="choice-soon">
+              <b>Sign in with a Dash wallet</b>
+              <span className="tag tag-info" id="wallet-soon">
+                Coming soon
+              </span>
+            </span>
+            <span className="muted small">Approve from DashPay or another Dash wallet, with no phrase typed here. This will become the main way to sign in.</span>
+          </button>
+        </li>
+        {main.map((o) => choice(o, true))}
+      </ul>
+      <SeedWarning />
       <p className="small muted choices-more">Other ways to sign in</p>
       <ul className="choices choices-s">{other.map((o) => choice(o, false))}</ul>
       <details className="learn">
@@ -252,6 +279,9 @@ export function CreateFlow() {
         <p>
           These words are your <b>recovery phrase</b>. They <i>are</i> your account: write them down in order and keep them somewhere safe, offline. Anyone who
           has them can use your account, and nobody, govhub included, can recover it if you lose them.
+        </p>
+        <p className="seed-warning" role="note">
+          <b>Keep this phrase for govhub only.</b> Don’t reuse it in a wallet, and don’t keep more DASH in it than govhub needs.
         </p>
         <ol className="words" data-testid="phrase-words">
           {list.map((w, i) => (
@@ -542,6 +572,7 @@ function PhraseSignIn() {
   }
   return (
     <form className="form" onSubmit={submit}>
+      <SeedWarning />
       <SecretField label="Recovery phrase (12 or 24 words)" what="the recovery phrase" value={text} onChange={setText} testId="phrase-input" disabled={busy} />
       <p className="muted small">The phrase never leaves this browser. govhub finds your account by a public key fingerprint only.</p>
       {error && <p className="error" role="alert">{error}</p>}
@@ -579,6 +610,7 @@ function KeySignIn() {
   };
   return (
     <form className="form" onSubmit={submit}>
+      <SeedWarning what="key" />
       <label>
         Private key (WIF or 64 hex characters)
         <input type="password" value={text} onChange={(e) => setText(e.target.value)} autoComplete="off" spellCheck={false} data-testid="key-input" disabled={busy} />

@@ -2495,6 +2495,62 @@ li[data-status='now'] > .fund-dot {
   font-size: 0.75rem;
   color: var(--ink-3);
 }
+.name-info {
+  align-self: center;
+  display: inline-grid;
+  place-items: center;
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+.name-info:hover,
+.name-info:focus-visible {
+  color: var(--accent-ink);
+  background: var(--accent-wash);
+}
+.name-info-pop {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--float-shadow);
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.45;
+}
+.name-info-pop:popover-open {
+  display: grid;
+  gap: 0.5rem;
+}
+.name-info-pop p {
+  margin: 0;
+}
+/* Sign-in: a phrase typed into a web page should never guard real money */
+.seed-warning {
+  margin: 0;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--warn-fill) 45%, var(--line));
+  border-radius: var(--radius-l);
+  background: color-mix(in srgb, var(--warn-fill) 10%, transparent);
+  font-size: 0.875rem;
+}
+.choice-soon {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.choice:disabled:hover {
+  border-color: var(--line);
+}
 .chip-owner {
   color: var(--pass);
   border-radius: var(--radius-s);
