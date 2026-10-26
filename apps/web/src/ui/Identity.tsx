@@ -1,7 +1,7 @@
 // Who wrote something: avatar, display name (self-chosen, so never trusted for identity), the DPNS name when the
 // identity has one (unique, proof-verified), and the short identity id. Avatars from arbitrary URLs are never
 // loaded (privacy and the CSP); only small inline data: images are shown, everything else gets an identicon.
-import { useMemo } from 'react';
+import { useEffect, useId, useMemo, useRef } from 'react';
 import { sha256 } from '@noble/hashes/sha2.js';
 import type { Profile } from '@govhub/forum';
 import { shortHash, urlHost } from '../lib/format.ts';
@@ -68,6 +68,66 @@ export function AuthorName({ id, profile, dpns }: { id: string; profile?: Profil
           {a.shortId}
         </span>
       )}
+      {a.name && <NameInfo name={a.name} dpns={a.dpns} />}
     </span>
+  );
+}
+
+/**
+ * The "i" next to a self-chosen name: what that name is and isn't. A native popover (Esc and a click outside close it), placed
+ * under its button when it opens and closed again on scroll, since it is positioned for the viewport.
+ */
+function NameInfo({ name, dpns }: { name: string; dpns: string | null }) {
+  const id = useId();
+  const btn = useRef<HTMLButtonElement>(null);
+  const pop = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const p = pop.current;
+    const b = btn.current;
+    if (!p || !b) return;
+    const place = (e: Event) => {
+      if ((e as Event & { newState?: string }).newState !== 'open') return;
+      const r = b.getBoundingClientRect();
+      const w = Math.min(304, window.innerWidth - 16);
+      p.style.inlineSize = `${w}px`;
+      p.style.top = `${r.bottom + 6}px`;
+      p.style.left = `${Math.max(8, Math.min(r.left - 12, window.innerWidth - w - 8))}px`;
+    };
+    const close = () => {
+      if (p.matches(':popover-open')) p.hidePopover();
+    };
+    p.addEventListener('beforetoggle', place);
+    window.addEventListener('scroll', close, { passive: true });
+    return () => {
+      p.removeEventListener('beforetoggle', place);
+      window.removeEventListener('scroll', close);
+    };
+  }, []);
+  return (
+    <>
+      <button ref={btn} type="button" className="name-info" popoverTarget={id} aria-label="About this name" data-testid="name-info">
+        <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+          <circle cx="8" cy="8" r="6.75" fill="none" stroke="currentColor" strokeWidth="1.5" />
+          <path d="M8 7.25v4.25" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+          <circle cx="8" cy="4.85" r="1" fill="currentColor" />
+        </svg>
+      </button>
+      <div ref={pop} id={id} popover="auto" className="name-info-pop" role="note">
+        <p>
+          <b>
+            <bdi>“{name}”</bdi> is a name the poster chose.
+          </b>{' '}
+          Anyone can pick any name, and two people can pick the same one. Nobody checks it.
+        </p>
+        {dpns ? (
+          <p>
+            The underlined <bdi>{dpns}</bdi> is their Dash username, which is unique and proven by Dash Platform.
+          </p>
+        ) : (
+          <p>It isn’t a Dash username. The short code next to it is the account’s ID, which is unique.</p>
+        )}
+        <p className="muted">When govhub supports signing in with a Dash wallet, names will come from Dash usernames.</p>
+      </div>
+    </>
   );
 }
