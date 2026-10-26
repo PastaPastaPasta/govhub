@@ -162,33 +162,41 @@ export function FundingPanel(p: FundingPanelProps) {
                 )}
               </>
             )}
-            <p className="address" data-testid="deposit-address">
-              {view.address}
-            </p>
             {network && network !== 'mainnet' && (
               <p className="small" data-testid="deposit-network">
                 This is a <b>{network}</b> address: send {network} DASH only. A mainnet wallet refuses it.
               </p>
             )}
-            <div className="form-actions">
-              <button type="button" className="btn" onClick={() => navigator.clipboard?.writeText(view.address)}>
-                Copy address
-              </button>
-              <a className="btn" href={view.uri}>
-                Open in wallet
-              </a>
-            </div>
-            {view.pendingDuffs > 0n && (
-              <p className="muted small" data-testid="pending-deposit">
-                {formatDuffs(view.pendingDuffs)} seen; it counts once InstantSend locks it or it is in a block.
-              </p>
-            )}
-            <p className="muted small" data-testid="deposit-rules">
+            <p className="muted small">This page is watching the network. Keep it open until it finishes.</p>
+          </div>
+        </div>
+      )}
+      {view.state === 'awaiting-deposit' && (
+        <div className="deposit-addr">
+          <p className="address" data-testid="deposit-address">
+            {view.address}
+          </p>
+          <div className="form-actions">
+            <button type="button" className="btn" onClick={() => navigator.clipboard?.writeText(view.address)}>
+              Copy address
+            </button>
+            <a className="btn" href={view.uri}>
+              Open in wallet
+            </a>
+          </div>
+          {view.pendingDuffs > 0n && (
+            <p className="muted small" data-testid="pending-deposit">
+              {formatDuffs(view.pendingDuffs)} seen; it counts once InstantSend locks it or it is in a block.
+            </p>
+          )}
+          <details className="learn small" data-testid="deposit-rules">
+            <summary>Sent too much, too little, or too late?</summary>
+            <p className="muted">
               What arrives before your payment is locked becomes Platform credits; anything above the minimum stays in your account's balance. A payment that
               arrives after that, or one too small to count, stays at this address: Settings, Recover funds, can send it to any Dash address or add it to an
-              account. This page is watching the network; keep it open until it finishes.
+              account.
             </p>
-          </div>
+          </details>
         </div>
       )}
       <ol className="fund-steps">

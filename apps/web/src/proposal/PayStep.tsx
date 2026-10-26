@@ -321,23 +321,27 @@ function Deposit({ draft, view, error, retry, services }: { draft: ProposalDraft
                 Send at least <b data-testid="p-deposit-amount">{fmt(view.neededDuffs)}</b> to this one-time address. More is fine: the rest comes back to {f.refundAddress}.
               </p>
             )}
-            <p className="address" data-testid="p-deposit-address">
-              {view.address}
-            </p>
-            <div className="form-actions">
-              <button type="button" className="btn btn-s" onClick={() => navigator.clipboard?.writeText(view.address)}>
-                Copy address
-              </button>
-              <a className="btn btn-s" href={view.uri}>
-                Open in wallet
-              </a>
-              {services.simulatePayment && (
-                <button type="button" className="btn btn-s btn-primary" onClick={services.simulatePayment} data-testid="p-demo-pay">
-                  Simulate the payment (demo)
-                </button>
-              )}
-            </div>
             <p className="muted small">Keep this page open until the fee transaction is sent (a few seconds after your payment is confirmed by InstantSend).</p>
+          </div>
+        </div>
+      )}
+      {view && view.state === 'awaiting-deposit' && (
+        <div className="deposit-addr">
+          <p className="address" data-testid="p-deposit-address">
+            {view.address}
+          </p>
+          <div className="form-actions">
+            <button type="button" className="btn btn-s" onClick={() => navigator.clipboard?.writeText(view.address)}>
+              Copy address
+            </button>
+            <a className="btn btn-s" href={view.uri}>
+              Open in wallet
+            </a>
+            {services.simulatePayment && (
+              <button type="button" className="btn btn-s btn-primary" onClick={services.simulatePayment} data-testid="p-demo-pay">
+                Simulate the payment (demo)
+              </button>
+            )}
           </div>
         </div>
       )}
