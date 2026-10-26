@@ -631,18 +631,12 @@ details.learn.inline > summary {
   border: 1px solid currentColor;
   line-height: 1.4;
 }
-.chip-funded {
-  color: var(--pass);
-}
 .chip-fixture {
   color: var(--warn);
 }
 .chip-bad {
   color: var(--fail);
   justify-self: start;
-}
-.chip-neutral {
-  color: var(--ink-2);
 }
 .form .seg {
   justify-self: start;
@@ -3166,22 +3160,54 @@ details.advanced[open] > summary {
 .mnb-privacy[open] > summary {
   margin-block-end: 0.5rem;
 }
-.mnb-row {
-  display: grid;
-  gap: 0.375rem;
-  padding: 0.625rem 0.75rem;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-s);
+/* the keyring page's MN badge card: title and switch, one status line, one sentence, its actions; fine print folded */
+.kr-card.mnb-row {
+  gap: 0.5rem;
+  scroll-margin-block-start: 1rem;
 }
 .mnb-row-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.375rem 0.75rem;
+  gap: 0.375rem 0.625rem;
+}
+.mnb-row-head .mnb-switch {
+  margin-inline-start: auto;
+}
+.mnb-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  font-size: 0.9375rem;
+}
+.mnb-summary::first-letter {
+  text-transform: uppercase;
+}
+.mnb-status[data-state='shown'] .vdot {
+  background: var(--pass-fill);
+}
+.mnb-status[data-state='pending'] .vdot,
+.mnb-status[data-state='held'] .vdot {
+  background: var(--accent);
 }
 .mnb-progress {
   display: grid;
-  gap: 0.375rem;
+  gap: 0.5rem;
+}
+.mnb-row .mnb-privacy > summary,
+.mnb-more > summary {
+  color: var(--ink-2);
+  font-weight: 560;
+  inline-size: fit-content;
+}
+.mnb-row .mnb-privacy > summary:hover,
+.mnb-more > summary:hover {
+  color: var(--accent-ink);
+}
+.mnb-more p {
+  margin: 0.375rem 0 0;
+  color: var(--ink-2);
 }
 .mnb-win {
   padding-inline-end: 0.75rem;

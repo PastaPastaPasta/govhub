@@ -429,8 +429,8 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       const rolledBack = !memory && k.content.generation < seen;
       if (!memory && !rolledBack) localStorage.setItem(gkey, String(k.content.generation));
       setNeedsConfirm(!memory && (k.authenticated !== true || rolledBack));
-      if (rolledBack) setError(`This keyring is older than one this browser opened before (version ${k.content.generation}, seen ${seen}): someone who held a key of this identity may have put back an old copy. Check the unlockers below before saving anything.`);
-      else if (k.authenticated === false) setError('This keyring does not list your recovery phrase as an unlocker. Someone who held a key of this identity may have replaced it: check the unlockers below and remove any you do not recognise before adding keys.');
+      if (rolledBack) setError(`This keyring is older than one this browser opened before (version ${k.content.generation}, seen ${seen}): someone who held a key of this identity may have put back an old copy. Check the unlockers in Keyring settings before saving anything.`);
+      else if (k.authenticated === false) setError('This keyring does not list your recovery phrase as an unlocker. Someone who held a key of this identity may have replaced it: check the unlockers in Keyring settings and remove any you do not recognise before adding keys.');
       if (!identityId) return true;
       // the watched votes: sealed to this keyring on this device (D-027), a plain list left by an earlier version, and the
       // Platform backup (this Core network's only, D-016/D-028)
@@ -675,7 +675,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
   const persist = useCallback(async (target?: OpenedKeyring, unconfirmedOk = false) => {
     const k = target ?? kr.current;
     if (!k || memoryOnly || !session) return;
-    if (needsConfirm && !unconfirmedOk) throw new Error('Check the list of unlockers below and confirm it before saving: this keyring could not be verified as yours.');
+    if (needsConfirm && !unconfirmedOk) throw new Error('Check the list of unlockers in Keyring settings and confirm it before saving: this keyring could not be verified as yours.');
     canWrite(k);
     await saveKeys(await storeCtx(), session, k);
     localStorage.setItem(generationKey(registry.platformNetwork, k.ownerId), String(k.content.generation));

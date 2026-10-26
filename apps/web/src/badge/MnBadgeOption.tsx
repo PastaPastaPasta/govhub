@@ -48,7 +48,11 @@ function ReadinessLine({ b, offer = false }: { b: MnBadge; offer?: boolean }) {
   if (r.kind === 'now')
     return (
       <p className="small" data-testid="mnb-ready" data-state="now">
-        <span className="vdot vdot-on" aria-hidden="true" />{' '}
+        {!offer && (
+          <>
+            <span className="vdot vdot-on" aria-hidden="true" />{' '}
+          </>
+        )}
         {b.privacy === 'standard'
           ? `${name} is issuing now. Your badge is fetched in the background and appears the next time you post or react.`
           : `${name} is issuing now: in ${MODES[b.privacy].label} mode your badge appears at a random time early in epoch ${r.epoch}.`}
@@ -218,11 +222,13 @@ export function BadgeProgress({ b, celebrate = false, onAgain }: { b: MnBadge; c
                   <span className="spinner" aria-hidden="true" /> Fetching your badge from {name}…
                   {j.mode === 'standard' && ' It appears the next time you post or react.'}
                 </>
-              )}{' '}
-              {j.note && <span className="muted">{j.note} </span>}
+              )}
             </p>
-            <p className="small muted">{ADVANCES_WHEN}</p>
             <div className="badge-job-actions">{cancel}</div>
+            <More>
+              {j.note && <p>{j.note}</p>}
+              <p>{ADVANCES_WHEN}</p>
+            </More>
           </>
         )}
       </div>
@@ -264,14 +270,26 @@ function HeldBadge({ b, job, lapseAt, lapsing }: { b: MnBadge; job: BadgeJob; la
           {lapseText(lapseAt, b.height)}
         </p>
       )}
-      <p className="small muted">{HELD_HERE}</p>
-      {job.note && <p className="small muted">{job.note}</p>}
       <RegisterNow issuer={job.issuer.name} onRegister={() => b.registerNow(job)}>
         <button type="button" className="btn btn-s btn-quiet" onClick={() => void b.cancel(job)} data-testid="mnb-cancel">
           Cancel: don’t post it
         </button>
       </RegisterNow>
+      <More>
+        <p>{HELD_HERE}</p>
+        {job.note && <p>{job.note}</p>}
+      </More>
     </div>
+  );
+}
+
+/** The badge card's fine print, folded under "Details". */
+function More({ children }: { children: ReactNode }) {
+  return (
+    <details className="mnb-more small">
+      <summary>Details</summary>
+      {children}
+    </details>
   );
 }
 
@@ -321,10 +339,12 @@ function badgeSummary(b: MnBadge): string {
 }
 
 /**
- * The keyring card's badge row: a switch that asks for the badge now with one of the keyring's masternodes (`request`, null with
- * `why` when it cannot), cancels a pending request when switched off, and cannot remove a posted badge (badges are immutable).
+ * The keyring page's MN badge card, the one place the badge's status shows: a switch that asks for the badge now with one of the
+ * keyring's masternodes (`request`, null with `why` when it cannot), cancels a pending request when switched off, and cannot remove
+ * a posted badge (badges are immutable). One status line, one sentence on what happens next, its actions; the fine print folded.
+ * `celebrate`: the badge was asked for on this page just now (by "Add your masternodes"), so a posted one gets the success card.
  */
-export function KeyringBadgeRow({ b, request, why, hideProgress = false }: { b: MnBadge; request: (() => Promise<BadgeJob>) | null; why: string | null; hideProgress?: boolean }) {
+export function KeyringBadgeRow({ b, request, why, celebrate = false }: { b: MnBadge; request: (() => Promise<BadgeJob>) | null; why: string | null; celebrate?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [asked, setAsked] = useState(false);
@@ -347,9 +367,12 @@ export function KeyringBadgeRow({ b, request, why, hideProgress = false }: { b: 
     if (v) void ask();
     else if (s.kind === 'pending' || s.kind === 'held') void b.cancel(s.job);
   };
+  const won = asked || celebrate;
   return (
-    <div className="mnb-row" id="mn-badge" data-testid="mnb-row" data-state={s.kind}>
+    <section className="kr-card mnb-row" id="mn-badge" data-testid="mnb-row" data-state={s.kind} aria-labelledby="mnb-row-title">
       <div className="mnb-row-head">
+        <h2 id="mnb-row-title">MN badge</h2>
+        {s.kind === 'shown' && <MnBadges issuers={[s.issuer]} />}
         <label className="mnb-switch">
           <input
             type="checkbox"
@@ -357,19 +380,21 @@ export function KeyringBadgeRow({ b, request, why, hideProgress = false }: { b: 
             checked={on}
             onChange={(e) => toggle(e.target.checked)}
             disabled={!b.usable || busy || s.kind === 'shown' || (!on && (!request || !b.canRequest))}
+            aria-label="Show the MN badge next to your name"
+            aria-describedby="mnb-status"
             data-testid="mnb-row-toggle"
           />
-          <span>
-            <b>MN badge:</b> <span data-testid="mnb-summary">{b.usable ? badgeSummary(b) : 'not available here'}</span>
-          </span>
         </label>
-        {s.kind === 'shown' && <MnBadges issuers={[s.issuer]} />}
       </div>
+      <p className="mnb-status" id="mnb-status" data-state={s.kind}>
+        <span className="vdot" aria-hidden="true" />
+        <span className="mnb-summary" data-testid="mnb-summary">{b.usable ? badgeSummary(b) : 'not available here'}</span>
+      </p>
       {!b.usable ? (
         <p className="small muted">{b.unusableText}</p>
       ) : (
         <>
-          {s.kind === 'shown' && (
+          {s.kind === 'shown' && !won && (
             <p className="small muted" data-testid="mnb-immutable">
               A posted badge can’t be removed or switched off: it’s a permanent document on Platform. It stops showing on its own after its epoch ends
               {s.until !== null ? ` (from block ${formatInt(s.until + 1)})` : ''}; ask again then to keep showing one.
@@ -384,7 +409,7 @@ export function KeyringBadgeRow({ b, request, why, hideProgress = false }: { b: 
                 <p className="small muted">{KEY_COPY}</p>
               </>
             ))}
-          {!hideProgress && (s.kind !== 'shown' || asked) && <BadgeProgress b={b} celebrate={asked} {...(request && b.canRequest ? { onAgain: () => void ask() } : {})} />}
+          {(s.kind !== 'shown' || won) && <BadgeProgress b={b} celebrate={won} {...(request && b.canRequest ? { onAgain: () => void ask() } : {})} />}
           {s.kind === 'none' && <PrivacyOptions b={b} name="mnb-row-mode" />}
         </>
       )}
@@ -393,6 +418,6 @@ export function KeyringBadgeRow({ b, request, why, hideProgress = false }: { b: 
           {error}
         </p>
       )}
-    </div>
+    </section>
   );
 }

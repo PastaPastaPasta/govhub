@@ -69,6 +69,9 @@ test.describe('keyring page (fixtures, demo keyring)', () => {
     await expect(page.getByTestId('mn-row').first()).toContainText('Can vote');
     await expect(page.getByTestId('mn-row').first().getByRole('button', { name: 'Copy masternode ID' })).toBeVisible();
     await expect(page.getByTestId('votes-empty')).toBeVisible();
+    // adding a key is a button that opens the form
+    await expect(page.getByTestId('voting-key-input')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Add a voting key' }).click();
     await expect(page.locator('#addkey-warn')).toHaveText(/Only the voting key/);
     await expect(page.getByTestId('voting-key-input')).toHaveAttribute('aria-describedby', 'addkey-warn');
     const privacy = page.locator('details.kr-privacy');
