@@ -68,7 +68,8 @@ function statusLine(phase: Phase, s: ContestState, endsAt: number | null, nowMs:
     return `Ended${at ? ` on ${at}` : ''} with no winner.`;
   }
   if (phase === 'closing') return 'Voting has closed. Platform records the result in its next block.';
-  if (endsAt === null) return 'Open for voting.';
+  // no end time known (the open list could not be read, or does not have it yet): nothing is claimed
+  if (endsAt === null) return 'No result yet.';
   return `Voting closes in ${formatDuration((endsAt - nowMs) / 1000)}, on ${formatDateTime(endsAt / 1000)}.`;
 }
 

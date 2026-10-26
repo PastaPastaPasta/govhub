@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useApp } from '../app/context.tsx';
 import type { Registry } from '../config/registry.ts';
 import { fixtureContests, liveContests, type ContestSource } from './source.ts';
@@ -27,7 +28,8 @@ export function contestsShown(r: Pick<Registry, 'platformNetwork'>, search = glo
 
 export function useContestsShown(): boolean {
   const { registry } = useApp();
-  return useMemo(() => contestsShown(registry), [registry]);
+  const { search } = useLocation();
+  return useMemo(() => contestsShown(registry, search), [registry, search]);
 }
 
 /** The contest source for the current profile and data mode. */
