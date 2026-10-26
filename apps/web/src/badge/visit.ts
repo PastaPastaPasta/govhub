@@ -4,7 +4,9 @@
 //   - a token request goes out only if nothing was written to Platform from this browser for COOLDOWN_MS, and no other request
 //     went out for COOLDOWN_MS (two identities' masternodes are not linked by one session either);
 //   - the scheduler posts a badge (an identity write) only COOLDOWN_MS after the last request.
-// A user's own write right after a request cannot be prevented; every tab shows a note during the cooldown.
+// A user's own write right after a request cannot be prevented; every tab shows a note during a Private or Extra-private request's
+// cooldown. Not after a Standard one: Standard posts straight away, so timing already links the two (its documented trade-off) and
+// waiting would protect nothing.
 const REQUEST_KEY = 'govhub.badge.lastRequestMs';
 const WRITE_KEY = 'govhub.badge.lastWriteMs';
 const PRIVATE_KEY = 'govhub.badge.lastPrivateRequestMs';
@@ -105,10 +107,30 @@ export function requestCooldownLeft(storage: Store = local(), now = Date.now()):
   return Math.max(0, read(storage, REQUEST_KEY, now) + COOLDOWN_MS - now);
 }
 
+/**
+ * Milliseconds left of the cooldown after the last Private or Extra-private request (0 when none is running): the note shows while this
+ * is > 0. A Standard request starts none, since it does not wait for anything and avoiding identity writes would not undo its timing link.
+ * Unreadable storage shows no note (unlike the scheduler's checks, which fail closed): with it blocked no request can have been sent.
+ */
+export function privateCooldownLeft(storage: Store = local(), now = Date.now()): number {
+  try {
+    const at = Math.min(Number(storage?.getItem(PRIVATE_KEY) ?? 0) || 0, now);
+    return Math.max(0, at + COOLDOWN_MS - now);
+  } catch {
+    return 0;
+  }
+}
+
+/** The note shown while `privateCooldownLeft` > 0 (`left` ms). */
+export function privateCooldownNote(left: number): string {
+  const ago = Math.floor((COOLDOWN_MS - left) / 60_000);
+  return `You asked for a Private badge ${ago < 1 ? 'a moment' : `${ago} min`} ago. To keep govhub's issuer from matching that request to this account by timing, avoid posting, commenting or reacting from this browser for ${Math.ceil(left / 60_000)} more min. Standard badges don't need this.`;
+}
+
 /** Changes in this tab, and in other tabs (storage events). */
 export function onVisitChange(l: () => void): () => void {
   listeners.add(l);
-  const onStorage = (e: StorageEvent) => (e.key === REQUEST_KEY || e.key === WRITE_KEY) && l();
+  const onStorage = (e: StorageEvent) => (e.key === REQUEST_KEY || e.key === WRITE_KEY || e.key === PRIVATE_KEY) && l();
   globalThis.addEventListener?.('storage', onStorage);
   return () => {
     listeners.delete(l);

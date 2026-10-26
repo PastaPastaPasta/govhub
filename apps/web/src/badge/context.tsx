@@ -15,7 +15,7 @@ import { createJob, isActive, renewal, requestWindow, step, type BadgeJob, type 
 import { badgeQuery, badgesOfAuthors } from './queries.ts';
 import { createBadgeReader, type BadgeReader } from './reader.ts';
 import { deriveStoreKey, encryptedJobStore, jobStorageKey, memoryJobStore, type JobStore } from './store.ts';
-import { mayPost, mayRequest, mayStandard, noteIdentityWrite, notePrivateRequest, noteRequestSent, onVisitChange, requestCooldownLeft } from './visit.ts';
+import { mayPost, mayRequest, mayStandard, noteIdentityWrite, notePrivateRequest, noteRequestSent, onVisitChange, privateCooldownLeft, privateCooldownNote } from './visit.ts';
 import { badgeWorker } from './workerClient.ts';
 
 export interface BadgeCtx {
@@ -88,13 +88,13 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
   const [jobs, setJobs] = useState<BadgeJob[]>([]);
   const [coreHeight, setCoreHeight] = useState<number | null>(null);
   const [storeError, setStoreError] = useState<string | null>(null);
-  // the note shows in every tab while a request's cooldown runs
-  const [cooldown, setCooldown] = useState(() => requestCooldownLeft());
+  // the note shows in every tab while a Private or Extra-private request's cooldown runs (a Standard request has none)
+  const [cooldown, setCooldown] = useState(() => privateCooldownLeft());
   useEffect(() => {
     let t: ReturnType<typeof setTimeout> | undefined;
     const update = () => {
       clearTimeout(t);
-      const left = requestCooldownLeft();
+      const left = privateCooldownLeft();
       setCooldown(left);
       if (left > 0) t = setTimeout(update, Math.min(left, 60_000));
     };
@@ -398,8 +398,7 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
       {children}
       {cooldown > 0 && (
         <p className="badge-visit-note" role="status" data-testid="badge-visit-note">
-          A masternode badge request went to an issuer from this browser in the last half hour. Posting, commenting or reacting from your identity now could let the issuer
-          link the two; wait {Math.ceil(cooldown / 60_000)} min.
+          {privateCooldownNote(cooldown)}
         </p>
       )}
     </Ctx.Provider>
