@@ -20,17 +20,23 @@ export function AboutPage() {
     <article className="page-narrow about" aria-labelledby="about-title">
       <h1 id="about-title">About govhub</h1>
       <p className="lede">
-        govhub is a place to follow, discuss and vote on Dash governance proposals. It does what dashcentral.org did, but your browser checks the data itself
+        govhub is a place to follow, discuss and vote on Dash governance proposals. It does what dashcentral.org did, but your browser checks the data it’s given
         before showing it as verified.
       </p>
 
       <h2>Why it exists</h2>
       <p>
-        Every month the Dash network pays for the proposals that enough masternodes vote for. Most people follow that process on a website, and a website can get
-        things wrong. It could show the wrong vote count, leave a proposal out, or change what a proposal asks for. Few people would notice.
+        Every month the Dash network pays for the proposals that enough masternodes vote for. Most people follow that process on a website, and have to trust
+        whoever runs it to show the proposals and votes as they really are.
       </p>
       <p>
-        With govhub, our website and servers only deliver the data. Your browser checks it against the Dash network, and tells you when it couldn’t.
+        govhub cuts down how much you have to trust us. Your browser checks each proposal’s text against the fee it paid on the blockchain, so a changed amount,
+        address or date shows up as a failure. It checks the signature on every vote and counts the votes again, so nobody can invent a vote or change one.
+      </p>
+      <p>
+        It can’t notice something that’s missing. Our servers, or anyone else’s, could leave out a proposal, leave out some votes, or show a masternode’s older
+        vote instead of its latest one. Your browser can only count the votes it was given. If that matters to you, compare with a server you run yourself or
+        with your own Dash Core node. <Link to="/about/trust">What we can and can’t lie about</Link> goes through this for each of our servers.
       </p>
 
       <h2>What you can do here</h2>
@@ -60,12 +66,8 @@ export function AboutPage() {
         <li>used that count to decide whether the proposal passes and whether it fits in the budget.</li>
       </ul>
       <p>
-        If any step had to take someone’s word for it, the badge says so. Click the badge on a proposal to see each step. The full explanation is on{' '}
+        <i>Verified</i> covers what your browser was given. It doesn’t mean nothing was left out. If any step had to take someone’s word for it, the badge says so. Click the badge on a proposal to see each step. The full explanation is on{' '}
         <Link to="/about/verification">how govhub checks what it shows</Link>.
-      </p>
-      <p>
-        Checks can’t catch one thing. A server can leave something out: your browser can prove that every vote it was given is real, but not that it was given
-        all of them. <Link to="/about/trust">What we can and can’t lie about</Link> goes through what each of our servers could hide.
       </p>
 
       <h2>Where the data lives</h2>
