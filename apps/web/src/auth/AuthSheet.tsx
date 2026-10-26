@@ -151,7 +151,7 @@ function Choose() {
   const [, rerender] = useState(0);
   const pending = pendingFundings(store, network).filter((r) => r.kind === 'create');
   const main: Array<{ v: SheetView; title: string; text: string }> = [
-    { v: 'create', title: 'Create an account', text: 'Pay a little DASH (about 0.003) from any Dash wallet; it covers the account and your first comments.' },
+    { v: 'create', title: 'Create an account', text: `Pay a little DASH (${formatDuffs(SUGGESTED_CREATE_DEPOSIT_DUFFS)} is suggested) from any Dash wallet; it covers the account and your first comments.` },
     { v: 'phrase', title: 'I have a recovery phrase', text: 'The 12 or 24 words from govhub, DashPay or Dash Evo Tool.' },
   ];
   const other: Array<{ v: SheetView; title: string; text: string }> = [
