@@ -1,4 +1,4 @@
-// The proposal's discussion: every comment (paged by 100 from Platform), threaded here by parentId, with
+// The discussion under a proposal or a username contest: every comment (paged by 100 from Platform), threaded here by parentId, with
 // DashCentral-style indentation, scores, replies, retraction, ?comment= deep links, the comment view filter and
 // block lists that hide (never delete) with a "show hidden (N)" toggle.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -142,7 +142,7 @@ export function Discussion({ govHash, featured }: { govHash: string; featured: F
   const filteredCount = useMemo(() => comments.filter((c) => !reasonsOf(c).length && !passesFilter(c, filter, { featured: featuredIds, badged, viewer })).length, [comments, reasonsOf, filter, featuredIds, badged, viewer]);
   const [unfiltered, setUnfiltered] = useState(false);
   // The deep-linked comment always gets at least its placeholder.
-  const showOpts = useMemo(() => ({ reasonsOf, showHidden, revealed, filter, featured: featuredIds, badged, viewer }), [reasonsOf, showHidden, revealed, filter, featuredIds, badged, viewer]);
+  const showOpts = useMemo(() => ({ reasonsOf, showHidden, revealed, filter, featured, badged, viewer }), [reasonsOf, showHidden, revealed, filter, featured, badged, viewer]);
   const visible = useMemo(() => visibleSubtrees(roots, (c) => c.id === focus || shown(c, showOpts)), [roots, showOpts, focus]);
   // Fail closed: nothing renders before the block lists are read, and a list that failed collapses the thread until
   // the reader chooses to see it without that list.
@@ -252,7 +252,7 @@ export function Discussion({ govHash, featured }: { govHash: string; featured: F
         <div className="discussion-tools">
           <fieldset className="seg" aria-label="Which comments to show">
             <legend className="visually-hidden">Comment view</legend>
-            <label className={filter === 'recommended' ? 'on' : ''} title={`Authors with an MN badge from an issuer you trust (Settings), plus ${featured.who}`}>
+            <label className={filter === 'recommended' ? 'on' : ''} title={`Authors with an MN badge from an issuer you trust (Settings), plus ${featured.whoHere}`}>
               <input type="radio" name="comment-filter" checked={filter === 'recommended'} onChange={() => setFilter('recommended')} />
               {featured.view} and masternodes
             </label>
@@ -296,7 +296,7 @@ export function Discussion({ govHash, featured }: { govHash: string; featured: F
       {thread.data && count === 0 && <p className="muted">No comments yet.</p>}
       {thread.data?.truncated && (
         <p className="notice-warn small" data-testid="thread-truncated">
-          This proposal has more comments than one read returns (10,000): the newest are shown, the oldest are not.
+          This page has more comments than one read returns (10,000): the newest are shown, the oldest are not.
         </p>
       )}
       {focusMissing && (
@@ -385,9 +385,9 @@ interface NodeCtx {
   visible: Map<string, boolean>;
 }
 
-function shown(c: Comment, ctx: Pick<NodeCtx, 'reasonsOf' | 'showHidden' | 'revealed' | 'filter' | 'badged' | 'viewer'> & { featured: readonly string[] }): boolean {
+function shown(c: Comment, ctx: Pick<NodeCtx, 'reasonsOf' | 'showHidden' | 'revealed' | 'filter' | 'featured' | 'badged' | 'viewer'>): boolean {
   const hidden = ctx.reasonsOf(c).length > 0 && !ctx.showHidden && !ctx.revealed.has(c.id);
-  return !hidden && passesFilter(c, ctx.filter, { featured: ctx.featured, badged: ctx.badged, viewer: ctx.viewer });
+  return !hidden && passesFilter(c, ctx.filter, { featured: ctx.featured.ids, badged: ctx.badged, viewer: ctx.viewer });
 }
 
 function CommentNode({ node, ctx }: { node: ThreadNode; ctx: NodeCtx }) {
@@ -401,7 +401,7 @@ function CommentNode({ node, ctx }: { node: ThreadNode; ctx: NodeCtx }) {
   // Hidden parents of visible replies leave a placeholder; subtrees with nothing shown are omitted.
   if (!ctx.visible.get(c.id)) return null;
   const reasons = ctx.reasonsOf(c);
-  const isShown = shown(c, { ...ctx, featured: ctx.featured.ids });
+  const isShown = shown(c, ctx);
   const isOwner = ctx.featured.ids.includes(c.ownerId);
   const mine = ctx.session === c.ownerId;
   // The reader's own comment always shows, but the recommended view ("Owner and masternodes") would hide it from everyone else: say so.

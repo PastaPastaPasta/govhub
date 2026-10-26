@@ -1,6 +1,7 @@
 // Contest pieces shared by the list and the contest page: the ballot bar, status wording and the list card.
 import { Link } from 'react-router-dom';
 import { formatDate, formatDuration, formatInt } from '../lib/format.ts';
+import { CommentsLink } from '../ui/CommentsLink.tsx';
 import { displayName, percent, phaseOf, type ContestState } from './model.ts';
 import './contests.css';
 
@@ -99,13 +100,7 @@ export function ContestCard({ label, endsAt, state, nowMs, comments }: { label: 
       </div>
       <p className="prow-meta small">
         <span className="muted">{s ? `${formatInt(s.total)} ${s.total === 1 ? 'vote' : 'votes'}` : ''}</span>
-        <Link to={contestHref(label)} className="prow-comments" title={comments === undefined ? 'Counting comments…' : `${comments} ${comments === 1 ? 'comment' : 'comments'} (hidden ones not counted)`} data-testid="card-comments">
-          <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-            <path d="M2 2.5h10v7H6l-3 2.5v-2.5H2z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
-          </svg>
-          <span className="visually-hidden">Comments: </span>
-          {comments === undefined ? '–' : formatInt(comments)}
-        </Link>
+        <CommentsLink to={contestHref(label)} count={comments} />
       </p>
     </article>
   );

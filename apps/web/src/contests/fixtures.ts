@@ -30,8 +30,6 @@ const FIXTURE_IDS = [
   '9arcaWEfnYQpGmn2UPYmbiZjZN64V8zqvRaqYBhHh2iu',
 ] as const;
 const [A, B, C, E, F, G, I, J, K, L] = FIXTURE_IDS;
-/** The two contenders for TheRoadNotTaken (the fixture forum gives them a discussion). */
-export const ROAD_CONTENDERS = [A, B] as const;
 
 const open = (label: string, endsInMs: number, contenders: Contender[], abstain = 0, lock = 0): FixtureContest => ({ label, endsInMs, contenders, abstain, lock, outcome: null });
 const won = (label: string, agoMs: number, contenders: Contender[], abstain = 0, lock = 0): FixtureContest => ({
@@ -63,3 +61,6 @@ export const FIXTURE_CONTESTS: FixtureContest[] = [
   { label: 'free-m0ney', endsInMs: null, contenders: [{ identityId: B, votes: 3, requested: 'Free-Money' }], abstain: 1, lock: 240, outcome: { kind: 'locked', agoMs: 75 * D } },
   won('w0r1d', 210 * D, [{ identityId: C, votes: 120, requested: 'World' }]),
 ];
+
+/** The contenders for TheRoadNotTaken, most votes first (the fixture forum gives them a discussion). */
+export const ROAD_CONTENDERS = FIXTURE_CONTESTS.find((c) => c.label === 'ther0adn0ttaken')!.contenders.map((c) => c.identityId);

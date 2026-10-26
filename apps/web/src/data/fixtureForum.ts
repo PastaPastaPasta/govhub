@@ -90,7 +90,7 @@ export async function seedFixtureForum(store: MemoryStore, registry: Registry, n
 
   // A username contest's discussion: both contenders and a reader.
   const road = contestKey('ther0adn0ttaken');
-  const [roadA, roadB] = ROAD_CONTENDERS;
+  const [roadA, roadB] = ROAD_CONTENDERS as [string, string];
   store.seed('forum', 'profile', roadA, { displayName: 'Road', about: 'Same handle on the Dash forum since 2015' });
   const r1 = comment(roadA, road, 'I have used TheRoadNotTaken on the Dash forum since 2015. My profile there links to this identity.', 30);
   comment(alice, road, 'Could you post that link here? Then anyone can check it before they vote.', 26, r1);

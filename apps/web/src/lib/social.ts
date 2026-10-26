@@ -102,7 +102,12 @@ export interface Featured {
   view: string;
   /** who they are, in a sentence: "the proposal owner" */
   who: string;
+  /** the same, for the view's tooltip: "the proposal owner on their own proposal" */
+  whoHere: string;
 }
 
 /** A proposal's verified owner (none until the claim check names one). */
-export const proposalOwner = (owner: string | null): Featured => ({ ids: owner ? [owner] : [], chip: 'proposal owner', view: 'Owner', who: 'the proposal owner' });
+export const proposalOwner = (owner: string | null): Featured => ({ ids: owner ? [owner] : [], chip: 'proposal owner', view: 'Owner', who: 'the proposal owner', whoHere: 'the proposal owner on their own proposal' });
+
+/** A username contest's contenders (from the proved vote state), in a fixed order. */
+export const contenders = (ids: readonly string[]): Featured => ({ ids: [...ids].sort(), chip: 'contender', view: 'Contenders', who: 'the contenders', whoHere: 'the contenders on their own contest' });

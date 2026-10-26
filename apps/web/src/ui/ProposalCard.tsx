@@ -9,6 +9,7 @@ import { perPayment, type GovParams, type PaymentSchedule } from '../lib/governa
 import type { Row } from '../lib/view.ts';
 import type { TrustLevel } from '../verify/aggregate.ts';
 import type { CheckState } from '../verify/checks.ts';
+import { CommentsLink } from './CommentsLink.tsx';
 import { FundingMeter } from './FundingMeter.tsx';
 import { FailedNote } from './HiddenToggle.tsx';
 import { Avatar } from './Identity.tsx';
@@ -121,13 +122,7 @@ export function ProposalCard({
         ) : (
           <span className="muted">No votes yet</span>
         )}
-        <Link to={href} className="prow-comments" title={comments === undefined ? 'Counting comments…' : `${comments} ${comments === 1 ? 'comment' : 'comments'} (hidden ones not counted)`} data-testid="card-comments">
-          <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-            <path d="M2 2.5h10v7H6l-3 2.5v-2.5H2z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
-          </svg>
-          <span className="visually-hidden">Comments: </span>
-          {comments === undefined ? '–' : formatInt(comments)}
-        </Link>
+        <CommentsLink to={href} count={comments} />
       </p>
     </article>
   );

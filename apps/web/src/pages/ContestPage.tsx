@@ -1,5 +1,5 @@
-// /names/<label>: one username contest, laid out like a proposal page: the name, where the vote stands, who wants it, and (later)
-// the vote panel and the discussion. Reads are proof-verified by the SDK; there is nothing else to check.
+// /names/<label>: one username contest, laid out like a proposal page: the name, where the vote stands, who wants it, and the
+// discussion (its contenders featured, as a proposal's owner is). Reads are proof-verified by the SDK; there is nothing else to check.
 import type { Profile } from '@govhub/forum';
 import { EVONODE_WEIGHT } from '@govhub/verify';
 import { useEffect, useMemo, useState } from 'react';
@@ -7,7 +7,7 @@ import { Link, Navigate, useParams } from 'react-router-dom';
 import { useForum } from '../app/forum.tsx';
 import { AuthorName, Avatar } from '../ui/Identity.tsx';
 import { Discussion } from '../ui/Discussion.tsx';
-import type { Featured } from '../lib/social.ts';
+import { contenders } from '../lib/social.ts';
 import { ErrorBoundary } from '../ui/ErrorBoundary.tsx';
 import { ReadError } from '../ui/ReadError.tsx';
 import { useAsync } from '../ui/hooks.ts';
@@ -93,8 +93,8 @@ function ContestView({ label }: { label: string }) {
   const s = fresh?.key === label && state.data ? fresh.s : state.data;
   const who = useIdentities(s ? s.contenders.map((c) => c.identityId) : []);
   // the contenders are this discussion's featured authors, as a proposal's owner is on its page
-  const contenderKey = s ? s.contenders.map((c) => c.identityId).join(',') : '';
-  const featured = useMemo<Featured>(() => ({ ids: contenderKey ? contenderKey.split(',') : [], chip: 'contender', view: 'Contenders', who: 'the contenders' }), [contenderKey]);
+  const contenderKey = s ? s.contenders.map((c) => c.identityId).sort().join(',') : '';
+  const featured = useMemo(() => contenders(contenderKey ? contenderKey.split(',') : []), [contenderKey]);
   const phase = s ? phaseOf(s, endsAt, nowMs) : null;
   useEffect(() => {
     if (phase !== 'closing') return;

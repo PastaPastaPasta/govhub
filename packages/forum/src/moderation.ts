@@ -61,7 +61,7 @@ export const EMPTY_HIDE_INDEX: HideIndex = buildHideIndex([]);
  * The comment views (PLAN §9). "recommended" = MN-badge holders plus the featured authors of the page (the proposal owner on their
  * own proposal, the contenders on a username contest);
  * "all" = everyone. Badges arrive in phase 4: until the first badge epoch is live the reader starts on "all"
- * (PLAN §12 fallback), and choosing "recommended" shows only the owner. `badged` is where badge holders slot in.
+ * (PLAN §12 fallback), and choosing "recommended" shows only the featured authors. `badged` is where badge holders slot in.
  */
 export type CommentFilter = 'recommended' | 'all';
 

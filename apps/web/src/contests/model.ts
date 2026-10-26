@@ -23,7 +23,8 @@ export const VOTE_CHANGES = 5;
 /**
  * The key a contest's discussion hangs off: forum comments carry a 32-byte `govHash`, and for a contest it is this hash of the
  * contested resource itself (DPNS contract, document type, index and its values). Domain-separated, so it never equals a
- * governance hash. The label is unique per contest: an awarded or locked name cannot be contested again.
+ * governance hash. One key per name: an awarded or locked name is not contested again (if a name ever were, its new contest
+ * would share the old discussion).
  */
 export const contestKey = (label: string): string =>
   bytesToHex(sha256(utf8ToBytes(['govhub-contest-v1', DPNS_POLL.dataContractId, DPNS_POLL.documentTypeName, DPNS_POLL.indexName, PARENT_DOMAIN, label].join('\n'))));
