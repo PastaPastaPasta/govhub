@@ -1,5 +1,6 @@
-// Contested DPNS usernames (what vote.dashhq.org showed): a name that more than one identity wants, or that looks like a well-known
-// one, waits two weeks (90 minutes on testnet) while masternodes vote on who gets it. Pure logic here; reads are in source.ts.
+// Contested DPNS usernames (what vote.dashhq.org showed): registering a name of 3 to 19 characters made only of letters, hyphens, 0
+// and 1 (after normalization) starts a masternode vote, open for two weeks (90 minutes on testnet), and other identities may ask for
+// the same name meanwhile. Pure logic here; reads are in source.ts.
 
 /** The DPNS system contract: the same id on mainnet and testnet. */
 export const DPNS_CONTRACT_ID = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
@@ -15,8 +16,6 @@ export const PARENT_DOMAIN = 'dash';
 
 /** Platform's limit: a masternode may change its vote on one contest this many times; the last one counts. */
 export const VOTE_CHANGES = 5;
-/** Vote weight of an evonode (a regular masternode counts once). */
-export const EVONODE_WEIGHT = 4;
 
 /** A contest still open for votes, with its end time (ms of Platform block time). */
 export interface OpenContest {
@@ -65,20 +64,16 @@ export function normalizeLabel(name: string): string {
 export const isContestedLabel = (label: string): boolean => /^[a-z01-]{3,19}$/.test(label);
 
 /** The spelling to show: the leading contender's own, else the normalized label. */
-export function displayName(s: Pick<ContestState, 'contenders' | 'label'> | null | undefined, label: string): string {
+export function displayName(s: Pick<ContestState, 'contenders'> | null | undefined, label: string): string {
   return s?.contenders.find((c) => c.requested)?.requested ?? label;
 }
 
-/** The normalized label to mention under the shown spelling, when they differ by more than letter case ("TheRoadNotTaken" → "theroadn0ttaken"). */
+/** The normalized label to mention under the shown spelling, when they differ by more than letter case ("TheRoadNotTaken" → "ther0adn0ttaken"). */
 export const registersAs = (shown: string, label: string): string | null => (shown.toLowerCase() === label ? null : label);
-
-export function share(votes: number, total: number): number {
-  return total > 0 ? votes / total : 0;
-}
 
 /** Whole percent, "<1%" for a small non-zero share. */
 export function percent(votes: number, total: number): string {
-  const f = share(votes, total);
+  const f = total > 0 ? votes / total : 0;
   if (f === 0) return '0%';
   if (f < 0.01) return '<1%';
   return `${Math.round(f * 100)}%`;

@@ -1,8 +1,11 @@
 // Contest pieces shared by the list and the contest page: the ballot bar, status wording and the list card.
 import { Link } from 'react-router-dom';
 import { formatDate, formatDuration, formatInt } from '../lib/format.ts';
-import { displayName, percent, phaseOf, type ContestState, type Phase } from './model.ts';
+import { displayName, percent, phaseOf, type ContestState } from './model.ts';
 import './contests.css';
+
+/** A contest's state as a list holds it: read, failed, or not read yet. */
+export type StateEntry = ContestState | 'error' | undefined;
 
 export const contestHref = (label: string) => `/names/${encodeURIComponent(label)}`;
 
@@ -23,13 +26,15 @@ export function BallotBar({ state, size = 'm' }: { state: ContestState; size?: '
   );
 }
 
-/** Who is ahead, in a few words, for a card. */
+/** Who is ahead (or how it ended), in a few words, for a card. */
 export function leadText(s: ContestState): string {
   const top = s.contenders[0];
   if (s.outcome) {
-    const w = s.outcome.kind === 'won' ? s.outcome.identityId : null;
-    const got = s.contenders.find((c) => c.identityId === w);
-    if (got) return `Won with ${percent(got.votes, s.total)} of the votes`;
+    if (s.outcome.kind === 'won') {
+      const w = s.outcome.identityId;
+      const got = s.contenders.find((c) => c.identityId === w);
+      return got ? `Won with ${percent(got.votes, s.total)} of the votes` : 'Awarded';
+    }
     if (s.outcome.kind === 'locked') return `Locked by ${percent(s.lock, s.total)} of the votes`;
     return s.total === 0 ? 'No votes' : 'No winner';
   }
@@ -40,41 +45,43 @@ export function leadText(s: ContestState): string {
   return `Leader ${percent(top.votes, s.total)}, next ${percent(s.contenders[1]!.votes, s.total)}`;
 }
 
-/** Short status for a card: "Closes in 3.2 days", "Awarded", "Locked". */
-export function statusTag(phase: Phase, s: ContestState | null, endsAt: number | null, nowMs: number): { text: string; tone: 'open' | 'soon' | 'won' | 'locked' | 'done' } {
-  if (phase === 'decided' && s?.outcome) {
+export type Tone = 'open' | 'soon' | 'won' | 'locked' | 'done';
+
+/**
+ * Short status for a card: "Closes in 3.2 days", "Awarded", "Locked". `endsAt` null means the end time is unknown: in the ended
+ * list (a contest not decided yet, still being finalized or not known to be open) it says only that there is no result yet.
+ */
+export function statusTag(s: ContestState | null, endsAt: number | null, nowMs: number): { text: string; tone: Tone } {
+  if (s?.outcome) {
     if (s.outcome.kind === 'won') return { text: 'Awarded', tone: 'won' };
     if (s.outcome.kind === 'locked') return { text: 'Locked', tone: 'locked' };
     return { text: 'No winner', tone: 'done' };
   }
-  if (phase === 'closing') return { text: 'Voting closed', tone: 'done' };
-  if (endsAt === null) return { text: 'Open', tone: 'open' };
+  if (endsAt === null) return { text: 'No result yet', tone: 'done' };
+  if (phaseOf(s, endsAt, nowMs) === 'closing') return { text: 'Voting closed', tone: 'done' };
   const left = (endsAt - nowMs) / 1000;
   return { text: `Closes in ${formatDuration(left)}`, tone: left < 86_400 ? 'soon' : 'open' };
 }
 
-export function ContestCard({ label, endsAt, state, failed, nowMs }: { label: string; endsAt: number | null; state: ContestState | undefined; failed?: boolean; nowMs: number }) {
-  const s = state ?? null;
-  const phase = phaseOf(s, endsAt, nowMs);
-  const tag = statusTag(phase, s, endsAt, nowMs);
-  const name = displayName(s, label);
-  const href = contestHref(label);
+export function ContestCard({ label, endsAt, state, nowMs }: { label: string; endsAt: number | null; state: StateEntry; nowMs: number }) {
+  const s = typeof state === 'object' ? state : null;
+  const failed = state === 'error';
+  const tag = statusTag(s, endsAt, nowMs);
   return (
     <article className={`prow crow crow-${tag.tone}`} data-label={label} data-testid="contest-card">
       <div className="prow-main">
-        <h2 className="prow-title">
-          <Link to={href}>
-            <bdi>{name}</bdi>
+        {/* h3: the list sits under "Open for voting" or "Ended contests" */}
+        <h3 className="prow-title">
+          <Link to={contestHref(label)}>
+            <bdi>{displayName(s, label)}</bdi>
             <span className="tld">.dash</span>
           </Link>
-        </h2>
-        <p className="small muted">
-          {s ? (s.contenders.length === 1 ? '1 contender' : `${formatInt(s.contenders.length)} contenders`) : failed ? 'Could not be read' : ' '}
-        </p>
+        </h3>
+        <p className="small muted">{s ? (s.contenders.length === 1 ? '1 contender' : `${formatInt(s.contenders.length)} contenders`) : failed ? 'Could not be read' : ' '}</p>
       </div>
       <div className="crow-status">
         <span className={`tag ctag-${tag.tone}`}>{tag.text}</span>
-        {phase === 'decided' && s?.outcome?.at ? <p className="small muted">{formatDate(s.outcome.at / 1000)}</p> : null}
+        {s?.outcome?.at ? <p className="small muted">{formatDate(s.outcome.at / 1000)}</p> : null}
       </div>
       <div className="crow-bar">
         {s ? (
@@ -85,7 +92,9 @@ export function ContestCard({ label, endsAt, state, failed, nowMs }: { label: st
         ) : failed ? (
           <p className="small muted">The tally could not be read</p>
         ) : (
-          <span className="cbar cbar-s cbar-loading" aria-label="Loading the tally" />
+          <span className="cbar cbar-s cbar-loading">
+            <span className="visually-hidden">Loading the tally</span>
+          </span>
         )}
       </div>
       <p className="prow-meta small">

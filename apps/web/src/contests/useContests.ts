@@ -6,10 +6,10 @@ import { fixtureContests, liveContests, type ContestSource } from './source.ts';
 const FLAG = 'govhub.contests';
 
 /**
- * Username contests are shown on the Testnet and Dev profiles, and on Mainnet only with `?contests=1` (kept in this browser;
- * `?contests=0` turns it off) until they launch there.
+ * Username contests are shown on testnet Platform (the Testnet and Dev profiles), and on mainnet Platform only with `?contests=1`
+ * (kept in this browser; `?contests=0` turns it off) until they launch there.
  */
-export function contestsShown(r: Pick<Registry, 'profile'>, search = globalThis.location?.search ?? '', store: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> | undefined = globalThis.localStorage): boolean {
+export function contestsShown(r: Pick<Registry, 'platformNetwork'>, search = globalThis.location?.search ?? '', store: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> | undefined = globalThis.localStorage): boolean {
   const p = new URLSearchParams(search).get('contests');
   try {
     if (p === '1') store?.setItem(FLAG, '1');
@@ -17,7 +17,7 @@ export function contestsShown(r: Pick<Registry, 'profile'>, search = globalThis.
   } catch {
     // storage full or blocked: the flag simply does not stick
   }
-  if (r.profile !== 'mainnet') return true;
+  if (r.platformNetwork !== 'mainnet') return true;
   try {
     return store?.getItem(FLAG) === '1';
   } catch {
@@ -43,7 +43,7 @@ export function useClockMs(): number {
   useEffect(() => {
     const t = setInterval(() => setTick((n) => n + 1), 30_000);
     return () => clearInterval(t);
-  }, [source]);
+  }, []);
   // read on every render: the fixture clock is only set once the snapshot has loaded
   return source.now() * 1000;
 }

@@ -14,8 +14,7 @@ import { preloadSdk } from './data/platform.ts';
 import { AboutPage } from './pages/AboutPage.tsx';
 import { VerificationPage } from './pages/VerificationPage.tsx';
 import { ActivePage } from './pages/ActivePage.tsx';
-import { ContestPage } from './pages/ContestPage.tsx';
-import { ContestsPage } from './pages/ContestsPage.tsx';
+import { ContestsGate } from './contests/Gate.tsx';
 import { PastPage } from './pages/PastPage.tsx';
 import { ProposalByHash, ProposalByName } from './pages/ProposalPage.tsx';
 import { SettingsPage } from './pages/SettingsPage.tsx';
@@ -27,6 +26,9 @@ import { lazy, Suspense, useEffect } from 'react';
 
 // The wizard brings key derivation and transaction building (@govhub/auth): loaded when it is opened.
 const NewProposalPage = lazy(() => import('./pages/NewProposalPage.tsx').then((m) => ({ default: m.NewProposalPage })));
+// Username contests: loaded when /names is opened.
+const ContestsPage = lazy(() => import('./pages/ContestsPage.tsx').then((m) => ({ default: m.ContestsPage })));
+const ContestPage = lazy(() => import('./pages/ContestPage.tsx').then((m) => ({ default: m.ContestPage })));
 
 /** Starts downloading evo-sdk (big WASM chunk) once the first paint is done, in live mode only. */
 function SdkWarmup() {
@@ -78,8 +80,10 @@ createRoot(document.getElementById('root')!).render(
                     </Suspense>
                   }
                 />
-                <Route path="names" element={<ContestsPage />} />
-                <Route path="names/:label" element={<ContestPage />} />
+                <Route path="names" element={<ContestsGate />}>
+                  <Route index element={<Suspense fallback={<p className="page-narrow muted">Loading…</p>}><ContestsPage /></Suspense>} />
+                  <Route path=":label" element={<Suspense fallback={<p className="page-narrow muted">Loading…</p>}><ContestPage /></Suspense>} />
+                </Route>
                 <Route path="settings" element={<SettingsPage />} />
                 <Route path="masternodes" element={<MasternodesPage />} />
                 <Route path="votes" element={<MyVotesPage />} />

@@ -64,14 +64,16 @@ describe('card wording', () => {
   it('says how it ended once decided', () => {
     expect(leadText(state({ contenders: [{ identityId: A, votes: 9 }], abstain: 1, outcome: { kind: 'won', identityId: A, at: 1 } }))).toBe('Won with 90% of the votes');
     expect(leadText(state({ contenders: [{ identityId: A, votes: 1 }], lock: 3, outcome: { kind: 'locked', at: 1 } }))).toBe('Locked by 75% of the votes');
+    expect(leadText(state({ contenders: [{ identityId: B, votes: 1 }], outcome: { kind: 'won', identityId: A, at: 1 } }))).toBe('Awarded');
   });
   it('tags the status, urgent under a day', () => {
     const now = 1_000_000_000;
-    expect(statusTag('open', null, now + 3 * 86_400_000, now)).toEqual({ text: 'Closes in 3 days', tone: 'open' });
-    expect(statusTag('open', null, now + 5 * 3_600_000, now)).toEqual({ text: 'Closes in 5 hours', tone: 'soon' });
-    expect(statusTag('closing', null, now, now).text).toBe('Voting closed');
-    expect(statusTag('decided', state({ outcome: { kind: 'won', identityId: A, at: 1 } }), null, now)).toEqual({ text: 'Awarded', tone: 'won' });
-    expect(statusTag('decided', state({ outcome: { kind: 'locked', at: 1 } }), null, now)).toEqual({ text: 'Locked', tone: 'locked' });
+    expect(statusTag(null, now + 3 * 86_400_000, now)).toEqual({ text: 'Closes in 3 days', tone: 'open' });
+    expect(statusTag(null, now + 5 * 3_600_000, now)).toEqual({ text: 'Closes in 5 hours', tone: 'soon' });
+    expect(statusTag(null, now, now).text).toBe('Voting closed');
+    expect(statusTag(state(), null, now).text).toBe('No result yet');
+    expect(statusTag(state({ outcome: { kind: 'won', identityId: A, at: 1 } }), null, now)).toEqual({ text: 'Awarded', tone: 'won' });
+    expect(statusTag(state({ outcome: { kind: 'locked', at: 1 } }), null, now)).toEqual({ text: 'Locked', tone: 'locked' });
   });
 });
 
@@ -80,15 +82,14 @@ describe('gate', () => {
     const m = new Map<string, string>();
     return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), removeItem: (k: string) => void m.delete(k) };
   };
-  it('shows contests on Testnet and Dev, and on Mainnet only after ?contests=1', () => {
+  it('shows contests on testnet Platform, and on mainnet Platform only after ?contests=1', () => {
     const s = store();
-    expect(contestsShown({ profile: 'testnet' }, '', s)).toBe(true);
-    expect(contestsShown({ profile: 'dev' }, '', s)).toBe(true);
-    expect(contestsShown({ profile: 'mainnet' }, '', s)).toBe(false);
-    expect(contestsShown({ profile: 'mainnet' }, '?contests=1', s)).toBe(true);
-    expect(contestsShown({ profile: 'mainnet' }, '', s)).toBe(true);
-    expect(contestsShown({ profile: 'mainnet' }, '?contests=0', s)).toBe(false);
-    expect(contestsShown({ profile: 'mainnet' }, '', s)).toBe(false);
+    expect(contestsShown({ platformNetwork: 'testnet' }, '', s)).toBe(true);
+    expect(contestsShown({ platformNetwork: 'mainnet' }, '', s)).toBe(false);
+    expect(contestsShown({ platformNetwork: 'mainnet' }, '?contests=1', s)).toBe(true);
+    expect(contestsShown({ platformNetwork: 'mainnet' }, '', s)).toBe(true);
+    expect(contestsShown({ platformNetwork: 'mainnet' }, '?contests=0', s)).toBe(false);
+    expect(contestsShown({ platformNetwork: 'mainnet' }, '', s)).toBe(false);
   });
 });
 

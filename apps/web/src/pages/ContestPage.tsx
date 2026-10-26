@@ -1,47 +1,40 @@
 // /names/<label>: one username contest, laid out like a proposal page: the name, where the vote stands, who wants it, and (later)
 // the vote panel and the discussion. Reads are proof-verified by the SDK; there is nothing else to check.
 import type { Profile } from '@govhub/forum';
-import { useEffect, useMemo, useState } from 'react';
+import { EVONODE_WEIGHT } from '@govhub/verify';
+import { useEffect, useState } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
 import { useForum } from '../app/forum.tsx';
 import { AuthorName, Avatar } from '../ui/Identity.tsx';
 import { ReadError } from '../ui/ReadError.tsx';
 import { useAsync } from '../ui/hooks.ts';
 import { formatDateTime, formatDuration, formatInt } from '../lib/format.ts';
-import { displayName, EVONODE_WEIGHT, isContestedLabel, normalizeLabel, percent, phaseOf, registersAs, VOTE_CHANGES, type Contender, type ContestState, type Phase } from '../contests/model.ts';
-import { BallotBar, contenderClass } from '../contests/ui.tsx';
-import { useClockMs, useContestSource, useContestsShown } from '../contests/useContests.ts';
+import { displayName, isContestedLabel, normalizeLabel, percent, phaseOf, registersAs, VOTE_CHANGES, type Contender, type ContestState, type Phase } from '../contests/model.ts';
+import { BallotBar, contenderClass, contestHref } from '../contests/ui.tsx';
+import { useClockMs, useContestSource } from '../contests/useContests.ts';
 
-export function NotShown() {
-  return (
-    <section className="page-narrow">
-      <h1>Page not found</h1>
-      <p>
-        <Link to="/">Back to active proposals</Link>
-      </p>
-    </section>
-  );
-}
+/** How long after voting closes the page reads the contest again, for the result. */
+const CLOSING_REREAD_MS = 20_000;
 
 export function ContestPage() {
   const { label: raw = '' } = useParams();
-  const shown = useContestsShown();
   const label = normalizeLabel(raw);
-  if (!shown) return <NotShown />;
-  if (label !== raw) return <Navigate replace to={`/names/${encodeURIComponent(label)}`} />;
-  if (!isContestedLabel(label)) return <NoContest label={label} />;
+  if (label !== raw) return <Navigate replace to={contestHref(label)} />;
+  if (!isContestedLabel(label))
+    return (
+      <Missing label={label}>
+        Only names of 3 to 19 letters, hyphens, 0 and 1 (after o becomes 0 and i and l become 1) can be contested.
+      </Missing>
+    );
   return <ContestView label={label} />;
 }
 
-function NoContest({ label, network }: { label: string; network?: string }) {
+function Missing({ label, children }: { label: string; children: string }) {
   return (
     <section className="page-narrow">
       <h1>No contest for {label}.dash</h1>
       <p>
-        {isContestedLabel(label)
-          ? `Platform has no record of a vote on this name${network ? ` on ${network}` : ''}.`
-          : 'Only names of 3 to 19 letters, hyphens, 0 and 1 (after o becomes 0 and i and l become 1) can be contested.'}{' '}
-        <Link to="/names">All contested usernames</Link>
+        {children} <Link to="/names">All contested usernames</Link>
       </p>
     </section>
   );
@@ -91,8 +84,14 @@ function ContestView({ label }: { label: string }) {
   const open = useAsync(() => src.open().catch(() => []), [src]);
   const endsAt = open.data?.find((c) => c.label === label)?.endsAt ?? null;
   const s = state.data;
-  const ids = useMemo(() => (s ? s.contenders.map((c) => c.identityId) : []), [s]);
-  const who = useIdentities(ids);
+  const who = useIdentities(s ? s.contenders.map((c) => c.identityId) : []);
+  const phase = s ? phaseOf(s, endsAt, nowMs) : null;
+  // closed but not decided: Platform records the result in its next block, so read again shortly
+  useEffect(() => {
+    if (phase !== 'closing') return;
+    const t = setTimeout(() => setAttempt((n) => n + 1), CLOSING_REREAD_MS);
+    return () => clearTimeout(t);
+  }, [phase, attempt]);
 
   if (state.loading)
     return (
@@ -101,11 +100,10 @@ function ContestView({ label }: { label: string }) {
       </p>
     );
   if (state.error || !s) return <ReadError error={state.error ?? 'no answer'} what="Platform" lead="The contest could not be read" onRetry={() => setAttempt((n) => n + 1)} />;
-  if (s.contenders.length === 0 && s.total === 0 && !s.outcome) return <NoContest label={label} network={src.network} />;
+  if (s.contenders.length === 0 && s.total === 0 && !s.outcome) return <Missing label={label}>{`Platform has no record of a vote on this name on ${src.network}.`}</Missing>;
 
   const name = displayName(s, label);
   const regAs = registersAs(name, label);
-  const phase = phaseOf(s, endsAt, nowMs);
   const winner = s.outcome?.kind === 'won' ? s.outcome.identityId : null;
 
   return (
@@ -130,7 +128,7 @@ function ContestView({ label }: { label: string }) {
               Votes
             </h2>
             <p className={`c-status c-status-${phase}`} data-testid="contest-status">
-              {statusLine(phase, s, endsAt, nowMs)}
+              {statusLine(phase!, s, endsAt, nowMs)}
             </p>
             <BallotBar state={s} />
             <ol className="c-choices" data-testid="contenders">

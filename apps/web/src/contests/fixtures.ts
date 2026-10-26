@@ -17,7 +17,7 @@ export interface FixtureContest {
 const H = 3_600_000;
 const D = 24 * H;
 
-export const FIXTURE_IDS = [
+const FIXTURE_IDS = [
   'eUJLdV1mRNVYAMdHYV3nSiwKu2EBB1jGfVKUuCDeUE2',
   '3Yos9bTgS21oDhEqc99f5Eyvq1axrvznkTLAjhiAXCat',
   '6Vod1LcUSNriFtUMBut7ZRkSkHMN2Fzv8FQPQEJETcpX',

@@ -336,6 +336,10 @@ a:hover {
   .mainnav a {
     padding-inline: 0.5rem;
   }
+  /* inside the scrolling row an outside ring would be clipped */
+  .mainnav a:focus-visible {
+    outline-offset: -2px;
+  }
 }
 .topbar-end {
   margin-inline-start: auto;

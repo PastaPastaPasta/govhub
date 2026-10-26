@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 // The username contest list and page on the fixture contests: open ones lead, ended ones are not read until their section is opened,
 // a search narrows both, and a contest page shows every choice with its tally.
+import { act, StrictMode } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fixtureContests, type ContestSource } from '../contests/source.ts';
@@ -21,6 +22,7 @@ vi.mock('../app/forum.tsx', () => ({ useForum: () => forum }));
 
 const { ContestsPage } = await import('./ContestsPage.tsx');
 const { ContestPage } = await import('./ContestPage.tsx');
+const { ContestsGate } = await import('../contests/Gate.tsx');
 
 let names: ReturnType<typeof vi.fn>;
 beforeEach(() => {
@@ -30,14 +32,19 @@ beforeEach(() => {
   hold.shown = true;
 });
 
+// StrictMode, as in the app: effects mount, unmount and mount again in development
 const at = (path: string) => (
-  <MemoryRouter initialEntries={[path]}>
-    <Routes>
-      <Route path="/names" element={<ContestsPage />} />
-      <Route path="/names/:label" element={<ContestPage />} />
-      <Route path="/" element={<p>home</p>} />
-    </Routes>
-  </MemoryRouter>
+  <StrictMode>
+    <MemoryRouter initialEntries={[path]}>
+      <Routes>
+        <Route path="/names" element={<ContestsGate />}>
+          <Route index element={<ContestsPage />} />
+          <Route path=":label" element={<ContestPage />} />
+        </Route>
+        <Route path="/" element={<p>home</p>} />
+      </Routes>
+    </MemoryRouter>
+  </StrictMode>
 );
 const cards = (el: ParentNode, scope = '') => [...el.querySelectorAll(`${scope} [data-testid="contest-card"]`)].map((c) => (c as HTMLElement).dataset.label);
 const settle = async () => {
@@ -58,7 +65,8 @@ describe('ContestsPage', () => {
 
     await click(button(el, /Ended contests/));
     await settle();
-    expect(names).toHaveBeenCalledTimes(1);
+    // the first page only (StrictMode asks for it twice in development; the first answer is dropped)
+    expect(names.mock.calls.every(([q]) => JSON.stringify(q) === '{}')).toBe(true);
     expect(cards(el, '[data-testid="ended-contests"]')).toEqual(['a1pha', 'dashpay', 'free-m0ney', 'w0r1d']);
     expect(el.textContent).toContain('Locked by 98% of the votes');
   });
@@ -71,15 +79,23 @@ describe('ContestsPage', () => {
     await type(el.querySelector('[data-testid="names-search"]') as HTMLInputElement, 'Dash');
     expect(el.textContent).toContain('No open contest matches “Dash”.');
     await click(button(el, /Ended contests/));
+    await act(() => new Promise((r) => setTimeout(r, 350)));
     await settle();
     expect(names).toHaveBeenLastCalledWith({ from: 'dash' });
     expect(cards(el, '[data-testid="ended-contests"]')).toEqual(['dashpay']);
   });
 
-  it('is not there when contests are not shown for the profile', async () => {
+  it('is not there, and reads nothing, when contests are not shown for the profile', async () => {
     hold.shown = false;
-    const { el } = await render(at('/names'));
-    expect(el.textContent).toContain('Page not found');
+    const open = vi.spyOn(hold.src, 'open');
+    const state = vi.spyOn(hold.src, 'state');
+    for (const path of ['/names', '/names/sat0sh1']) {
+      const { el } = await render(at(path));
+      await settle();
+      expect(el.textContent).toContain('Page not found');
+    }
+    expect(open).not.toHaveBeenCalled();
+    expect(state).not.toHaveBeenCalled();
   });
 });
 
