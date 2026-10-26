@@ -305,8 +305,8 @@ export function Layout() {
       <footer className="footer">
         <div className="footer-inner">
           <p className="small muted">
-            govhub reads Dash Platform directly and checks proposals against the Dash chain in your browser. <Link to="/about/verification">How verification works</Link>. Every backend
-            can be replaced in <Link to="/settings">Settings</Link>. Open source, MIT.
+            Checked in your browser against Dash Platform and the Dash chain. <Link to="/about/verification">How it works</Link> ·{' '}
+            <Link to="/settings">Settings</Link> · Open source (MIT)
           </p>
         </div>
       </footer>
