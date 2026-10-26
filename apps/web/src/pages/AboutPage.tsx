@@ -6,6 +6,8 @@ import { TRUST_DOC_URL } from './TrustPage.tsx';
 const REPO_URL = 'https://github.com/PastaPastaPasta/govhub';
 export const PRIVACY_DOC_URL = `${REPO_URL}/blob/main/docs/privacy.md`;
 export const SELF_HOSTING_DOC_URL = `${REPO_URL}/blob/main/docs/self-hosting.md`;
+/** The operations wallet (ops seed, m/44'/5'/0'/0/1; deploy/README.md 13.3): it pays the hosted servers' Platform fees. */
+export const DONATION_ADDRESS = 'XcLkMQensjHhr5r9SAUVm4meh2HFKaeAXG';
 
 function Ext({ href, children }: { href: string; children: React.ReactNode }) {
   return (
@@ -110,6 +112,19 @@ export function AboutPage() {
         website, and don’t store it. Cloudflare, which sits in front of them, has its own policy. Anything you post on Dash Platform is public. What each of our
         servers sees and keeps is on <Ext href={PRIVACY_DOC_URL}>our privacy page</Ext>. Other people’s servers follow their own rules.
       </p>
+
+      <h2>Supporting govhub</h2>
+      <p>
+        Running govhub costs money: the Dash network charges our servers to publish proposals and vote counts, and the servers themselves need a machine to run
+        on. <Ext href={`${SELF_HOSTING_DOC_URL}#what-it-costs`}>What it costs</Ext> lists our real numbers. If you’d like to help, donations go to the wallet that
+        pays for it:
+      </p>
+      <p className="donate">
+        <a href={`dash:${DONATION_ADDRESS}`} className="mono-ish" data-testid="donation-address">
+          {DONATION_ADDRESS}
+        </a>
+      </p>
+      <p className="small muted">Like any Dash address, everything sent to it, and everything it spends, is public on the blockchain.</p>
 
       <h2>Who runs it</h2>
       <p>

@@ -25,6 +25,39 @@ The hands-on guide is [`deploy/README.md`](../deploy/README.md).
 One Dash Core node can serve a bridge, a relay and an issuer at the same time. Our own setup runs all of them on one
 machine (deploy/README.md, section 13).
 
+## What it costs
+
+Here is what running govhub's own servers on mainnet has cost so far, from our records. Your numbers will be close if you
+run the same pieces.
+
+**One-time, in DASH** (October 2026):
+
+| What | Cost |
+|---|---|
+| Registering the four contracts (governance, forum, badge, moderation) | 1.057 DASH |
+| Creating four Platform identities (admin, bridge, moderation, badge issuer) | 0.004 DASH |
+| Publishing the badge issuer's keys for 14 months | 0.004 DASH |
+| The bridge's first publish (29 proposals, the vote counts, 2 budget records) | 0.023 DASH |
+
+Contract registration is most of it. Someone running only a publishing bridge needs just the governance contract
+(about 0.27 DASH), and an archive-only bridge or a relay needs none.
+
+**Ongoing, in DASH:**
+
+| What | Cost |
+|---|---|
+| Bridge, publishing vote counts every hour and budget records every 6 hours | about 0.5 DASH a year (an estimate: about 0.001 DASH a day, plus about 0.0009 DASH for each new proposal) |
+| Badge issuer: one report a month, and a new set of keys each year | about 0.01 DASH a year |
+| Relay, archive-only bridge | nothing |
+
+These fees go to the Dash network, not to anyone in particular. If the bridge's balance runs out, it stops publishing
+but keeps everything else running.
+
+**The machine.** All of our servers run on one small Linux machine: 6 CPU cores, 16 GB of RAM and 250 GB of disk, of which
+they use about 3 GB of RAM and 60 GB of disk with both mainnet and testnet running. A rented server of that size, or a
+smaller one with 4 cores, 8 GB of RAM and 150 GB of SSD for mainnet only, is enough. The website itself is hosted for
+free on GitHub Pages, with Cloudflare in front.
+
 ## How the app uses servers you add
 
 You can list several servers of each kind. What the app does with them depends on the kind, and it's not always

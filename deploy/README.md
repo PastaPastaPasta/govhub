@@ -951,6 +951,9 @@ The resync's dashd restart exposed an empty `.dashcore/dash.conf` (created 2026-
 refuses to start when the datadir holds a `dash.conf` other than the one given with `-conf`, so dashd restarted in a loop for
 about 15 minutes until the file was moved aside. If dashd loops on restart, check `docker compose logs dashd` for that error.
 
+Donations: `XcLkMQensjHhr5r9SAUVm4meh2HFKaeAXG`, the operations seed's `m/44'/5'/0'/0/1` (its funding address,
+`XdFXkkAHZhAjbnHzFQgeL5kB2x36DjmAbn`, is `/0/0`), so any BIP44 wallet restored from the seed sees them. Top up the bridge and issuer identities from it.
+
 ### 13.4 Mainnet issuer (MN badge)
 
 In the mainnet stack's project (`COMPOSE_PROFILES=tunnel,relay,issuer`), next to its dashd.
