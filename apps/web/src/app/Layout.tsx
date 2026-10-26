@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useContestsShown } from '../contests/useContests.ts';
 import { configParamUrl, DAMAGED_CONFIG, fetchConfig, PROFILES, readInlineConfig, registryDiff, registryRows, saveErrorText, type Registry } from '../config/registry.ts';
 import { useAuth } from '../auth/context.tsx';
 import { SessionControl } from '../ui/SignIn.tsx';
@@ -263,6 +264,8 @@ export function Layout() {
   const proposals = loc.pathname === '/' || loc.pathname.startsWith('/past') || loc.pathname.startsWith('/p/');
   const masternodes = loc.pathname.startsWith('/masternodes') || loc.pathname.startsWith('/votes');
   const create = loc.pathname.startsWith('/create');
+  const names = loc.pathname.startsWith('/names');
+  const namesShown = useContestsShown();
   return (
     <div className="shell">
       <a className="skip" href="#main">
@@ -283,8 +286,14 @@ export function Layout() {
             <Link to="/" className={proposals ? 'active' : undefined} aria-current={proposals ? 'page' : undefined}>
               Proposals
             </Link>
+            {namesShown && (
+              <Link to="/names" className={names ? 'active' : undefined} aria-current={names ? 'page' : undefined} data-testid="nav-names">
+                Usernames
+              </Link>
+            )}
             <Link to="/masternodes" className={masternodes ? 'active' : undefined} aria-current={masternodes ? 'page' : undefined}>
-              My masternodes
+              <span className="nav-more">My masternodes</span>
+              <span className="nav-short">Masternodes</span>
             </Link>
             <Link to="/create" className={create ? 'active' : undefined} aria-current={create ? 'page' : undefined} data-testid="nav-create">
               New<span className="nav-more"> proposal</span>

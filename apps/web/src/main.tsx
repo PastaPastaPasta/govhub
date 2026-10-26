@@ -14,6 +14,8 @@ import { preloadSdk } from './data/platform.ts';
 import { AboutPage } from './pages/AboutPage.tsx';
 import { VerificationPage } from './pages/VerificationPage.tsx';
 import { ActivePage } from './pages/ActivePage.tsx';
+import { ContestPage } from './pages/ContestPage.tsx';
+import { ContestsPage } from './pages/ContestsPage.tsx';
 import { PastPage } from './pages/PastPage.tsx';
 import { ProposalByHash, ProposalByName } from './pages/ProposalPage.tsx';
 import { SettingsPage } from './pages/SettingsPage.tsx';
@@ -76,6 +78,8 @@ createRoot(document.getElementById('root')!).render(
                     </Suspense>
                   }
                 />
+                <Route path="names" element={<ContestsPage />} />
+                <Route path="names/:label" element={<ContestPage />} />
                 <Route path="settings" element={<SettingsPage />} />
                 <Route path="masternodes" element={<MasternodesPage />} />
                 <Route path="votes" element={<MyVotesPage />} />

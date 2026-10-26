@@ -1,0 +1,236 @@
+/* ---- username contests ------------------------------------------------------------------- */
+:root {
+  --cb-c0: var(--accent);
+  --cb-c1: #1f9d8b;
+  --cb-c2: #8a63d2;
+  --cb-c3: #c47a2c;
+  --cb-abstain: #9fb0bf;
+  --cb-lock: #3d5163;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --cb-c1: #34b8a5;
+    --cb-c2: #a585e6;
+    --cb-c3: #d9944a;
+    --cb-abstain: #5d7387;
+    --cb-lock: #9fb3c6;
+  }
+}
+:root[data-theme='dark'] {
+  --cb-c1: #34b8a5;
+  --cb-c2: #a585e6;
+  --cb-c3: #d9944a;
+  --cb-abstain: #5d7387;
+  --cb-lock: #9fb3c6;
+}
+
+.cb-c0 {
+  background: var(--cb-c0);
+}
+.cb-c1 {
+  background: var(--cb-c1);
+}
+.cb-c2 {
+  background: var(--cb-c2);
+}
+.cb-c3 {
+  background: var(--cb-c3);
+}
+.cb-abstain {
+  background: var(--cb-abstain);
+}
+.cb-lock {
+  background: repeating-linear-gradient(135deg, var(--cb-lock) 0 3px, color-mix(in srgb, var(--cb-lock) 55%, transparent) 3px 6px);
+}
+
+/* the whole vote in one bar; segments are separated by a hairline of surface */
+.cbar {
+  display: flex;
+  gap: 2px;
+  inline-size: 100%;
+  block-size: 0.75rem;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--track);
+}
+.cbar-s {
+  block-size: 0.5rem;
+  max-inline-size: 14rem;
+}
+.cbar > span {
+  min-inline-size: 3px;
+}
+.cbar-loading {
+  display: block;
+  background: linear-gradient(90deg, var(--track), var(--sunk), var(--track));
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cbar-loading {
+    animation: none;
+  }
+}
+
+.tld {
+  color: var(--ink-3);
+  font-weight: 500;
+}
+
+/* list */
+.contests > .list-head {
+  display: grid;
+  justify-items: start;
+  gap: var(--s-2);
+}
+.contests h1 {
+  font-size: var(--t-xl);
+}
+.contests-intro {
+  max-inline-size: var(--measure);
+  margin: 0;
+}
+.contests-search input {
+  font: inherit;
+  font-size: 0.9375rem;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-m);
+  padding: 0.4375rem 0.75rem;
+  inline-size: min(22rem, 100%);
+}
+.contests-search {
+  inline-size: 100%;
+}
+.contests-h2 {
+  font-size: var(--t-m);
+  margin-block: var(--s-4) var(--s-2);
+}
+.crow {
+  grid-template-columns: minmax(0, 1.4fr) minmax(8rem, 0.7fr) minmax(12rem, 1fr);
+  grid-template-areas:
+    'main status bar'
+    'meta meta meta';
+}
+.crow-status {
+  grid-area: status;
+  display: grid;
+  gap: 2px;
+  align-content: start;
+  justify-items: start;
+}
+.crow-bar {
+  grid-area: bar;
+  display: grid;
+  gap: var(--s-2);
+  align-content: start;
+}
+.crow-bar p,
+.crow-status p {
+  margin: 0;
+}
+.crow-soon::before {
+  background: var(--warn-fill);
+}
+.crow-won::before,
+.crow-locked::before,
+.crow-done::before {
+  background: var(--line);
+}
+.ctag-open {
+  color: var(--accent-ink);
+  background: var(--accent-wash);
+}
+.ctag-soon {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn-fill) 16%, transparent);
+}
+.ctag-won {
+  color: var(--pass);
+  background: color-mix(in srgb, var(--pass-fill) 13%, transparent);
+}
+.ctag-locked,
+.ctag-done {
+  color: var(--ink-2);
+  background: color-mix(in srgb, var(--ink-3) 14%, transparent);
+}
+@media (max-width: 760px) {
+  .crow {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'main'
+      'status'
+      'bar'
+      'meta';
+  }
+  .crow .cbar-s {
+    max-inline-size: none;
+  }
+  .crow-status {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 var(--s-3);
+  }
+}
+
+/* contest page */
+.contest .p-title h1 {
+  overflow-wrap: anywhere;
+}
+.c-status {
+  margin: 0;
+  font-weight: 600;
+}
+.c-status-decided {
+  color: var(--ink-2);
+}
+.c-choices {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+}
+.c-choice {
+  display: grid;
+  grid-template-columns: 0.75rem minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--s-3);
+  padding-block: var(--s-3);
+  border-block-end: 1px solid var(--line);
+}
+.c-choice:last-child {
+  border-block-end: 0;
+}
+.c-swatch {
+  inline-size: 0.75rem;
+  block-size: 0.75rem;
+  border-radius: 3px;
+  margin-block-start: 0.3rem;
+}
+.c-who {
+  display: grid;
+  gap: 2px;
+  min-inline-size: 0;
+}
+.c-ident {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  min-inline-size: 0;
+}
+.c-requested {
+  color: var(--ink);
+  font-weight: 600;
+}
+.c-tally {
+  display: grid;
+  justify-items: end;
+  font-variant-numeric: tabular-nums;
+}
+.c-tally b {
+  font-size: var(--t-l);
+  font-weight: 650;
+}
