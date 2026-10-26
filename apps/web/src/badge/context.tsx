@@ -4,18 +4,21 @@
 // The scheduler (review H1/N1, M3): one per identity across tabs (Web Locks), every change merged into the latest stored jobs under
 // a store lock, and token requests kept COOLDOWN_MS away from any Platform write from this browser and from each other (visit.ts),
 // so the issuer's view of a request and the public view of this identity's writes do not line up.
+// A held Standard token (PLAN §8.10) is never posted by the scheduler: it goes out with this identity's next Platform write in
+// this browser once the request's cooldown is over (onIdentityWrite, in whichever tab writes), or at once on Register now.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { clientPostingWindow, displayWindow, epochLength, EPOCH_PARAMS, isPrivacyMode, resumeDelayMs, type PrivacyMode } from '@govhub/badge';
+import { parsePrivacyMode, type PrivacyMode } from '@govhub/badge';
 import { signMessageWif } from '@govhub/verify';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import type { AppAuthSession } from '../session/authSession.ts';
 import { BADGE_NETWORKS, loadTrustList, resetTrustList, saveTrustList, type TrustedIssuer } from './config.ts';
-import { createJob, isActive, renewal, requestWindow, step, type BadgeJob, type ClientDeps, type VotingSigner } from './client.ts';
+import { createJob, isActive, type BadgeJob, type ClientDeps, type VotingSigner } from './client.ts';
 import { badgeQuery, badgesOfAuthors } from './queries.ts';
 import { createBadgeReader, type BadgeReader } from './reader.ts';
 import { deriveStoreKey, encryptedJobStore, jobStorageKey, memoryJobStore, type JobStore } from './store.ts';
-import { mayPost, mayRequest, mayStandard, noteIdentityWrite, notePrivateRequest, noteRequestSent, onVisitChange, privateCooldownLeft, privateCooldownNote } from './visit.ts';
+import { cooldownNote, createScheduler, separationAtStake, TICK_MS, type Mutate, type Scheduler } from './scheduler.ts';
+import { lastActivityAt, onIdentityWrite, onVisitChange, requestCooldownLeft, requestWaitLeft } from './visit.ts';
 import { badgeWorker } from './workerClient.ts';
 
 export interface BadgeCtx {
@@ -32,7 +35,8 @@ export interface BadgeCtx {
   /**
    * Starts a badge request for the signed-in identity: `voting` is the MN voting key as WIF (stored encrypted with the job), or a
    * signer (the keyring), which must be registered with registerVotingSigner when the request runs. Resolves once the request is
-   * scheduled; it is sent later, at a random height in the issuance window, in a visit without public writes of this identity.
+   * scheduled; it is sent later, without public writes from this browser in the half hour before (Standard: as soon as that
+   * holds; Private: at a random height in the issuance window).
    * `epoch`: a later epoch, when the issuer's first key is for that one (RequestOptions.epoch).
    */
   requestBadge(voting: string | VotingSigner, proTxHash: string, opts?: { issuer?: TrustedIssuer; keepKey?: boolean; mode?: PrivacyMode; epoch?: number }): Promise<BadgeJob>;
@@ -43,8 +47,16 @@ export interface BadgeCtx {
   registerVotingSigner(proTxHash: string, signer: VotingSigner): () => void;
   /** Deletes a job and everything stored with it (blinding state, an encrypted voting key): Remove, and Cancel for pending ones. Resolves once saved. */
   removeJob(id: string): Promise<void>;
-  /** Clears a job's backoff and wakes the scheduler (Retry now). Private jobs still wait for their quiet half hour. */
+  /** Clears a job's backoff and wakes the scheduler (Retry now). Requests still wait for their quiet half hour. */
   retryJob(id: string): void;
+  /** Register now: posts a held Standard token at once, whatever the cooldown (the user accepts the timing link). */
+  registerNow(id: string): Promise<void>;
+  /** ms until a token request may go out from this browser (0: now), before the job's own extra quiet (fetchWait) */
+  requestWait: number;
+  /** when this browser last wrote or sent a request (ms, 0: never): a job's request goes at quietSince + COOLDOWN_MS + its quietExtraMs */
+  quietSince: number;
+  /** ms left of the cooldown after the last token request (0: none running): a held badge goes with a write only after it */
+  postWait: number;
 }
 
 const Ctx = createContext<BadgeCtx | null>(null);
@@ -61,13 +73,14 @@ export function useBadgeClient(): Pick<BadgeCtx, 'requestBadge' | 'registerVotin
   return { requestBadge, registerVotingSigner, jobs };
 }
 
-const TICK_MS = 60_000;
-type Mutate = (jobs: BadgeJob[]) => BadgeJob[];
-
 /** Runs `fn` under a Web Lock when the browser has them (all current ones), else directly. */
 function withLock<T>(name: string, fn: () => Promise<T>, opts: { signal?: AbortSignal } = {}): Promise<T> {
   const locks = (globalThis.navigator as Navigator | undefined)?.locks;
   return locks ? (locks.request(name, opts, fn) as Promise<T>) : fn();
+}
+
+function readVisit(): Pick<BadgeCtx, 'requestWait' | 'postWait' | 'quietSince'> {
+  return { requestWait: requestWaitLeft(), postWait: requestCooldownLeft(), quietSince: lastActivityAt() };
 }
 
 export function BadgeProvider({ children }: { children: ReactNode }) {
@@ -88,33 +101,33 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
   const [jobs, setJobs] = useState<BadgeJob[]>([]);
   const [coreHeight, setCoreHeight] = useState<number | null>(null);
   const [storeError, setStoreError] = useState<string | null>(null);
-  // the note shows in every tab while a Private or Extra-private request's cooldown runs (a Standard request has none)
-  const [cooldown, setCooldown] = useState(() => privateCooldownLeft());
+  // the spacing as it stands, in every tab: when a request may go out, and the cooldown after the last one (for the note)
+  const [visit, setVisit] = useState(readVisit);
   useEffect(() => {
     let t: ReturnType<typeof setTimeout> | undefined;
     const update = () => {
       clearTimeout(t);
-      const left = privateCooldownLeft();
-      setCooldown(left);
-      if (left > 0) t = setTimeout(update, Math.min(left, 60_000));
+      const v = readVisit();
+      setVisit((old) => (old.requestWait === v.requestWait && old.postWait === v.postWait && old.quietSince === v.quietSince ? old : v));
+      const next = Math.min(...[v.requestWait, v.postWait].filter((x) => x > 0));
+      if (Number.isFinite(next)) t = setTimeout(update, Math.min(next, 60_000));
     };
     update();
     const off = onVisitChange(update);
     return () => (off(), clearTimeout(t));
   }, []);
   const signers = useRef(new Map<string, VotingSigner>());
-  /** token requests handed to the worker so far (a private attempt that sent none undoes its cooldown mark) */
-  const tokenSends = useRef(0);
   const jobsRef = useRef<BadgeJob[]>([]);
   /** the current effect run's merge-and-save (null while no identity is loaded) */
   const commitRef = useRef<((m: Mutate) => Promise<BadgeJob[]>) | null>(null);
+  /** the current effect run's scheduler (null while no identity is loaded): held Standard tokens are posted through it */
+  const schedRef = useRef<Scheduler | null>(null);
   const wakeRef = useRef<() => void>(() => undefined);
   // the privacy mode, remembered per identity in this browser (not on Platform: it says something about the user)
   const modeKey = `govhub.badge.mode.v1.${session?.identityId ?? '-'}`;
   const readMode = (k: string): PrivacyMode => {
     try {
-      const v = globalThis.localStorage?.getItem(k);
-      return isPrivacyMode(v) ? v : 'standard';
+      return parsePrivacyMode(globalThis.localStorage?.getItem(k), 'standard'); // a remembered Extra private reads as Private
     } catch {
       return 'standard';
     }
@@ -141,14 +154,7 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
       contractId,
       ownerId: session.identityId,
       issuerKey: (i, e) => reader.key(i, e),
-      // a token request (it names the masternode) marks this visit (visit.ts); a challenge alone names nothing
-      worker: ((call) => {
-        if (call.kind === 'token') {
-          tokenSends.current++;
-          noteRequestSent();
-        }
-        return badgeWorker(call as never);
-      }) as ClientDeps['worker'],
+      worker: badgeWorker,
       signWithWif: (wif, m) => signMessageWif(wif, m, net),
       externalSigner: (p) => signers.current.get(p),
       async postBadge(data) {
@@ -173,6 +179,7 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
     jobsRef.current = [];
     setJobs([]);
     commitRef.current = null;
+    schedRef.current = null;
     if (!deps || !session) return;
     const ownerId = session.identityId;
     const lockBase = `govhub-badge-${net}-${ownerId}`;
@@ -198,112 +205,10 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
         ac.signal.addEventListener('abort', done, { once: true });
       });
 
-    const notBefore = new Map<string, number>();
-    let okTicks = 0;
-    const tick = async (): Promise<number> => {
-      const height = await reader!.coreHeight();
-      if (!live || !store) return TICK_MS;
-      setCoreHeight(height);
-      const p = EPOCH_PARAMS[net];
-      const snapshot = await store.load(); // other tabs may have added jobs
-      if (!live) return TICK_MS;
-      const updates = new Map<string, BadgeJob>();
-      const added: BadgeJob[] = [];
-      const run = async (j: BadgeJob) => {
-        const after = await step(deps, j, height);
-        if (JSON.stringify(after) !== JSON.stringify(j)) updates.set(j.id, after);
-      };
-      // windows that closed: no network involved
-      for (const j of snapshot.filter(isActive)) {
-        const closed = j.state === 'scheduled' ? height >= requestWindow(p, j.epoch, j.mode).to : height > displayWindow(p, j.epoch).to;
-        if (closed) await run(j);
-      }
-      const due = snapshot.filter((j) => isActive(j) && !updates.has(j.id) && height >= (j.state === 'scheduled' ? j.requestAt : (j.postAt ?? clientPostingWindow(p, j.epoch, j.mode).from)));
-      // Standard mode: no waiting of any kind (the user accepted that the issuer could link the two by timing): request, then post
-      // (only a Private request's cooldown in this browser holds them, so they cannot undo its separation)
-      // checked under the activity lock, so it cannot interleave with another tab's Private request (the lock is brief per job)
-      const standardDue = due.filter((x) => x.mode === 'standard' && Date.now() >= (x.retryAt ?? 0));
-      const standardOk = standardDue.length ? await withLock('govhub-badge-activity', async () => mayStandard(), { signal: ac.signal }) : false;
-      for (const j of standardOk ? standardDue : []) {
-        let cur = j;
-        for (let i = 0; i < 2 && isActive(cur) && Date.now() >= (cur.retryAt ?? 0) && (cur.state === 'token' ? height >= (cur.postAt ?? 0) : height >= cur.requestAt); i++) {
-          const before = cur;
-          cur = await step(deps, cur, height);
-          if (JSON.stringify(cur) === JSON.stringify(before)) break;
-          updates.set(j.id, cur);
-        }
-        if (!live) return TICK_MS;
-      }
-      const privateDue = due.filter((j) => j.mode !== 'standard' && !updates.has(j.id));
-      // A due action found on the first tick of a visit waits a random 30 s - 10 min, so it is not tied to the page load (L1: the
-      // first SUCCESSFUL tick).
-      for (const j of privateDue) {
-        if (notBefore.has(j.id)) continue;
-        const end = j.state === 'scheduled' ? requestWindow(p, j.epoch, j.mode).to : clientPostingWindow(p, j.epoch, j.mode).to;
-        const leftMs = Math.max(0, end - height) * 150_000;
-        notBefore.set(j.id, Date.now() + (okTicks === 0 ? resumeDelayMs(Math.min(600_000, leftMs / 2)) : 0));
-      }
-      // a job whose last attempt failed waits its backoff (retryAt), so it does not monopolise visits
-      const ready = privateDue.filter((j) => Date.now() >= notBefore.get(j.id)! && Date.now() >= (j.retryAt ?? 0));
-      // only requests that can actually go out now (trusted issuer, a signer): one that would wait must not hold up posts (N2)
-      const requests = ready
-        .filter((j) => j.state === 'scheduled' && deps.trusted(j.issuer.identityId) && (j.signer.kind === 'wif' || signers.current.has(j.proTxHash)))
-        .sort((a, b) => requestWindow(p, a.epoch, a.mode).to - requestWindow(p, b.epoch, b.mode).to);
-      // only posts that can go out: a post for an untrusted issuer would mark a write every tick and starve requests (round 4)
-      const posts = ready.filter((j) => j.state === 'token' && deps.trusted(j.issuer.identityId));
-      // H1/N1: posts first (finite: one per issuer and epoch), and only once the cooldown after the last request is over; otherwise
-      // one token request (the one whose window closes first), only when nothing was written and nothing requested in this browser
-      // for the cooldown. The check and the mark happen under a browser-wide lock, so two tabs cannot both pass it (round 3 L1).
-      await withLock(
-        'govhub-badge-activity',
-        async () => {
-          if (!live) return;
-          if (posts.length && mayPost()) {
-            noteIdentityWrite(); // before the post path's reads: the write is on its way
-            for (const j of posts) await run(j);
-          } else if (requests.length && mayRequest()) {
-            const undo = notePrivateRequest();
-            const sent = tokenSends.current;
-            await run(requests[0]!);
-            // nothing named the masternode to the issuer (it was unreachable): no cooldown for nothing (D-046)
-            if (tokenSends.current === sent) undo();
-          }
-        },
-        { signal: ac.signal },
-      );
-      if (!live) return TICK_MS;
-      // renewals: create the next epoch's job (no network to the issuer; blinding only)
-      const current = () => snapshot.map((j) => updates.get(j.id) ?? j).concat(added);
-      const sourceOf = new Map<string, string>(); // renewal job id -> the job whose kept key it takes
-      for (const j of current()) {
-        const issuer = trustRef.current.find((t) => t.identityId === j.issuer.identityId && t.enabled);
-        if (!issuer) continue;
-        const r = await renewal(deps, current(), j, height, issuer);
-        if (r) {
-          added.push(r);
-          sourceOf.set(r.id, j.id);
-        }
-      }
-      if (!live) return TICK_MS;
-      const keepFrom = Math.floor(height / epochLength(p)) - 2;
-      await commit((latest) => {
-        // a renewal made from an older snapshot must not duplicate a job added meanwhile for the same issuer and epoch (N11)
-        const fresh = added.filter((a) => !latest.some((j) => j.id === a.id || (j.issuer.identityId === a.issuer.identityId && j.epoch === a.epoch && j.state !== 'failed' && j.state !== 'expired')));
-        // the kept voting key moves to a renewal job only if that job is kept (round 3 L4)
-        const handedOver = new Set(fresh.map((a) => sourceOf.get(a.id)));
-        const merged = latest
-          .map((j) => updates.get(j.id) ?? j)
-          .map((j) => (handedOver.has(j.id) && j.signer.kind === 'wif' ? { ...j, signer: { kind: 'external' as const }, proTxHash: '' } : j))
-          .concat(fresh);
-        return merged.filter((j) => isActive(j) || j.epoch >= keepFrom);
-      });
-      okTicks++;
-      // sooner only for a job about to become ready (its resume delay); jobs in backoff wait for the normal tick
-      const soon = due.filter((j) => !updates.has(j.id)).map((j) => Math.max(notBefore.get(j.id) ?? 0, j.retryAt ?? 0) - Date.now());
-      const next = Math.min(TICK_MS, ...soon.filter((ms) => ms > 0));
-      return Math.max(5_000, next);
-    };
-
+    // this identity is about to write in this tab: its held badge goes along (never delaying the write: not awaited)
+    const offWrite = onIdentityWrite((writer) => {
+      if (writer === ownerId) void schedRef.current?.postHeld({ force: false }).catch(() => undefined);
+    });
     (async () => {
       // one store per (identity, signing key): the store key comes from the key, so another key of the same identity has its own
       const s = authSession ? encryptedJobStore(`${ownerId}.${authSession.auth.keyId}`, ownerId, await deriveStoreKey(authSession.auth.privateKey, ownerId)) : memoryJobStore();
@@ -318,6 +223,19 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
       if (!live) return;
       store = s;
       commitRef.current = commit;
+      const current = createScheduler({
+        net,
+        deps,
+        store: s,
+        commit,
+        coreHeight: () => reader!.coreHeight(),
+        onHeight: (h) => live && setCoreHeight(h),
+        trust: () => trustRef.current,
+        hasSigner: (pro) => signers.current.has(pro),
+        lock: (name, fn) => withLock(name, fn, { signal: ac.signal }),
+        live: () => live,
+      });
+      schedRef.current = current;
       show(loaded);
       // one scheduler per identity in this browser: the other tabs wait for the lock
       await withLock(
@@ -326,7 +244,7 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
           while (live) {
             let wait = TICK_MS;
             try {
-              wait = await tick();
+              wait = await current.tick();
             } catch {
               /* Platform not reachable or signed out: next tick */
             }
@@ -344,6 +262,7 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
     return () => {
       live = false;
       ac.abort();
+      offWrite();
       globalThis.removeEventListener?.('storage', onStorage);
     };
   }, [deps, session, authSession, reader, net]);
@@ -380,6 +299,12 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
     if (!commit) throw new Error('Your badge requests are not loaded in this tab (sign in again).');
     await commit((latest) => latest.filter((j) => j.id !== id));
   }, []);
+  const registerNow = useCallback(async (id: string) => {
+    const sched = schedRef.current;
+    if (!sched) throw new Error('Your badge requests are not loaded in this tab (sign in again).');
+    const job = (await sched.postHeld({ id, force: true })).find((j) => j.id === id);
+    if (job?.state !== 'posted') throw new Error(job?.note ?? 'This badge is no longer waiting to be posted.');
+  }, []);
   const retryJob = useCallback(
     (id: string) =>
       void commitRef.current?.((latest) => latest.map((j) => (j.id === id && isActive(j) ? { ...j, retryAt: undefined } : j))).then(
@@ -389,16 +314,18 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const { requestWait, postWait, quietSince } = visit;
   const value = useMemo<BadgeCtx>(
-    () => ({ contractId, trust, setTrust, resetTrust, reader, jobs, coreHeight, requestBadge, registerVotingSigner, removeJob, retryJob, privacy, setPrivacy }),
-    [contractId, trust, setTrust, resetTrust, reader, jobs, coreHeight, requestBadge, registerVotingSigner, removeJob, retryJob, privacy, setPrivacy],
+    () => ({ contractId, trust, setTrust, resetTrust, reader, jobs, coreHeight, requestBadge, registerVotingSigner, removeJob, retryJob, registerNow, requestWait, postWait, quietSince, privacy, setPrivacy }),
+    [contractId, trust, setTrust, resetTrust, reader, jobs, coreHeight, requestBadge, registerVotingSigner, removeJob, retryJob, registerNow, requestWait, postWait, quietSince, privacy, setPrivacy],
   );
   return (
     <Ctx.Provider value={value}>
       {children}
-      {cooldown > 0 && (
+      {/* only while a request's cooldown runs AND a write now would undo something: rare, and a nudge */}
+      {postWait > 0 && separationAtStake(jobs) && (
         <p className="badge-visit-note" role="status" data-testid="badge-visit-note">
-          {privateCooldownNote(cooldown)}
+          {cooldownNote(postWait)}
         </p>
       )}
     </Ctx.Provider>

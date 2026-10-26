@@ -8,7 +8,9 @@ import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { errText, formatInt } from '../lib/format.ts';
 import { assertUsableKey, type OwnedMasternode } from '../voting/masternodes.ts';
-import { checkKeyAvailability, etaSeconds, isActive, type BadgeJob, type KeyAvailability } from './client.ts';
+import { checkKeyAvailability, etaSeconds, isActive, isHeld, lapseHeight, nearLapse, type BadgeJob, type KeyAvailability } from './client.ts';
+import { COOLDOWN_MS } from './visit.ts';
+import { useNow } from '../ui/vote/common.tsx';
 import type { TrustedIssuer } from './config.ts';
 import { useBadgeCtx, useBadges } from './context.tsx';
 
@@ -58,7 +60,7 @@ export function availabilityText(av: KeyAvailability, issuerName: string, p: Epo
       ? `${issuerName} has published no key for the next few epochs.`
       : `${issuerName}’s first key is for epoch ${first}, which starts at ${eta(epochStart(p, first), av.height)}.`;
   if (std && !std.ok && priv?.ok) return `Standard is not available yet: ${issuerName} has no key for the current epoch, ${std.epoch} (${std.problem}). ${firstText} Private works now: it asks for a token for epoch ${priv.epoch}, and the badge appears early in that epoch.${noCrowd && ` ${noCrowd}`}`;
-  if (std?.ok && priv && !priv.ok) return `Private and Extra private are not available yet: ${issuerName} has no key for epoch ${priv.epoch} (${priv.problem}). Standard works now.`;
+  if (std?.ok && priv && !priv.ok) return `Private is not available yet: ${issuerName} has no key for epoch ${priv.epoch} (${priv.problem}). Standard works now.`;
   return `No badge can be requested from ${issuerName} right now: it has no key for epoch ${std?.epoch ?? '?'} or ${priv?.epoch ?? '?'}. ${firstText}`;
 }
 
@@ -69,7 +71,7 @@ export function availabilityText(av: KeyAvailability, issuerName: string, p: Epo
  *            the badge can appear from `from`, that epoch's first block
  *   blocked  nothing can be scheduled in this mode (no key within reach, or only for an earlier epoch than the mode asks for)
  */
-type Readiness ={ kind: 'now'; epoch: number } | { kind: 'later'; epoch: number; from: number } | { kind: 'blocked'; noKeys: boolean };
+type Readiness = { kind: 'now'; epoch: number } | { kind: 'later'; epoch: number; from: number } | { kind: 'blocked'; noKeys: boolean };
 
 export function readiness(av: KeyAvailability, mode: PrivacyMode, p: EpochParams): Readiness {
   const m = av.modes.find((x) => x.mode === mode);
@@ -79,20 +81,23 @@ export function readiness(av: KeyAvailability, mode: PrivacyMode, p: EpochParams
   return { kind: 'blocked', noKeys: first === null };
 }
 
-/** The first block a pending badge can appear at: a Standard request's height (posted at once), else its posting window. */
+/** The first block a pending badge can be fetched or appear at: a Standard request's height, else Private's posting window. */
 function badgeFrom(j: BadgeJob, p: EpochParams): number {
-  if (j.state === 'token') return j.postAt ?? clientPostingWindow(p, j.epoch, j.mode).from;
-  return j.mode === 'standard' ? j.requestAt : clientPostingWindow(p, j.epoch, j.mode).from;
+  if (j.state === 'token') return j.postAt ?? clientPostingWindow(p, j.epoch).from;
+  return j.mode === 'standard' ? j.requestAt : clientPostingWindow(p, j.epoch).from;
 }
 
 /**
  * This identity's badge with one issuer:
  *   shown    readers show it (proved read), or this browser posted one whose display window is still open
- *   pending  a request in this browser is scheduled or holds its token
+ *   held     a Standard token is in this browser, waiting for the next post or reaction (or Register now); `lapseAt` is its
+ *            last block, `lapsing` when that is near (lapseNudgeBlocks)
+ *   pending  a request in this browser is scheduled, or a Private token waits for its height
  *   none     neither; `last` is the newest finished job (failed or expired), to say why
  */
 type BadgeStatus =
   | { kind: 'shown'; issuer: string; until: number | null }
+  | { kind: 'held'; job: BadgeJob; lapseAt: number; lapsing: boolean }
   | { kind: 'pending'; job: BadgeJob; from: number }
   | { kind: 'none'; last?: BadgeJob };
 
@@ -101,11 +106,48 @@ function badgeStatus(jobs: readonly BadgeJob[], shownBy: readonly string[], heig
   const posted = mine.filter((j) => j.state === 'posted' && (height === null || height <= displayWindow(p, j.epoch).to)).sort((a, b) => b.epoch - a.epoch)[0];
   if (posted) return { kind: 'shown', issuer: posted.issuer.name, until: displayWindow(p, posted.epoch).to };
   if (shownBy.length) return { kind: 'shown', issuer: issuer && shownBy.includes(issuer.name) ? issuer.name : shownBy[0]!, until: null };
+  // the newest held token (an older one is superseded once saved)
+  const held = mine.filter(isHeld).sort((a, b) => b.epoch - a.epoch)[0];
+  if (held) {
+    return { kind: 'held', job: held, lapseAt: lapseHeight(p, held.epoch), lapsing: nearLapse(p, held.epoch, height) };
+  }
   const active = mine.filter(isActive).sort((a, b) => a.epoch - b.epoch)[0];
   if (active) return { kind: 'pending', job: active, from: badgeFrom(active, p) };
   const last = mine.filter((j) => j.state === 'failed' || j.state === 'expired').sort((a, b) => b.epoch - a.epoch)[0];
   return last ? { kind: 'none', last } : { kind: 'none' };
 }
+
+/** The honest note next to Register now (PLAN §8.10). */
+export const registerNowNote = (issuerName: string): string =>
+  `Posting now lets ${issuerName}’s issuer match your masternode to this account by timing. Waiting until you next post or react hides that better; the longer the gap, the better.`;
+
+/**
+ * ms until a scheduled job's request may go (0: now, give or take the first-tick delay of a visit): the quiet half hour after this
+ * browser's last write or request, plus the job's own random extra (visit.ts).
+ */
+export const fetchWaitMs = (j: BadgeJob, quietSince: number, now = Date.now()): number => Math.max(0, quietSince + COOLDOWN_MS + (j.quietExtraMs ?? 0) - now);
+
+/** "We'll fetch your badge in about 50 minutes, at a random time, so the request is harder to match to your account." */
+export const fetchWaitText = (waitMs: number): string =>
+  `We’ll fetch your badge in about ${inTime(waitMs / 1000)}, at a random time, so the request is harder to match to your account.`;
+
+/** The held token's nudge; `postWaitMs`: the cooldown left after its request (a write before then does not carry it). */
+export function heldText(postWaitMs: number): string {
+  const after = postWaitMs > 0 ? ` after about ${clockTime(Date.now() + postWaitMs)}` : '';
+  return `Your MN badge is ready. It will appear the next time you post or react${after}. The longer you wait, the harder it is for anyone to match it to your masternode.`;
+}
+
+/** A Register now call as the error text its UI shows, or null when it posted (what RegisterNow's `onRegister` resolves with). */
+export const registerNowResult = (posting: Promise<void>): Promise<string | null> => posting.then(() => null, (e: unknown) => errText(e));
+
+/** Only in this browser: a write from another device does not carry it. */
+export const HELD_HERE = 'It’s kept in this browser only: posting from another device won’t publish it.';
+
+/** "3 days": how long until a held token lapses at block `lapseAt`. */
+export const lapseIn = (lapseAt: number, height: number | null): string => (height === null ? 'a few days' : inTime(etaSeconds(lapseAt, height)));
+
+/** "Your badge will lapse in 3 days unless registered." */
+export const lapseText = (lapseAt: number, height: number | null): string => `Your badge will lapse in ${lapseIn(lapseAt, height)} unless registered.`;
 
 /** The masternode a badge is asked with: one only (more would tell the issuer they belong together), a valid one, list-confirmed first. */
 export function pickBadgeMn(owned: readonly OwnedMasternode[], keyIndex?: number): OwnedMasternode | undefined {
@@ -120,7 +162,7 @@ export function badgeWif(key: { privateKey: Uint8Array; compressed: boolean } | 
   return encodeWif(key.privateKey, key.compressed, network);
 }
 
-type Availability ={ state: 'checking' } | { state: 'error'; message: string } | { state: 'ready'; av: KeyAvailability };
+type Availability = { state: 'checking' } | { state: 'error'; message: string } | { state: 'ready'; av: KeyAvailability };
 
 /** The issuer's keys per mode, from proved issuerKey reads only (nothing goes to the issuer); checked again when the epoch changes. */
 export function useKeyAvailability(issuer: TrustedIssuer | undefined): (Availability & { retry(): void }) | null {
@@ -170,6 +212,12 @@ export interface MnBadge {
   /** what the last cancel did, until the next request */
   cancelled: string | null;
   retry(job: BadgeJob): void;
+  /** Register now: posts a held token at once; resolves with an error text, or null */
+  registerNow(job: BadgeJob): Promise<string | null>;
+  /** ms until this scheduled job's request may go out (0: now) */
+  fetchWait(job: BadgeJob): number;
+  /** ms left of the cooldown after the last request: a held badge goes with a write only after it */
+  postWait: number;
 }
 
 export function useMnBadge(): MnBadge {
@@ -189,6 +237,7 @@ export function useMnBadge(): MnBadge {
   else if (!issuer) unusableText = 'Your list of badge issuers has none turned on (Settings).';
   const ready = availability?.state === 'ready' ? readiness(availability.av, ctx.privacy, p) : null;
   const [cancelled, setCancelled] = useState<string | null>(null);
+  const now = useNow(30_000); // the "fetching in ~N min" countdown
   return {
     usable: unusableText === null,
     unusableText,
@@ -213,11 +262,14 @@ export function useMnBadge(): MnBadge {
       }
       setCancelled(
         job.state === 'token'
-          ? `Cancelled: the badge for epoch ${job.epoch} is not posted, and its token is deleted from this browser. The issuer already counted this masternode for that epoch, so asking again for it will be refused.`
+          ? `Cancelled: the badge for epoch ${job.epoch} is not posted, and its token is deleted from this browser. The issuer already counted this masternode for that epoch, so it can ask again only from the next epoch.`
           : `Cancelled: the request for epoch ${job.epoch} and the voting key stored with it are deleted from this browser.`,
       );
     },
     cancelled,
     retry: (job) => ctx.retryJob(job.id),
+    registerNow: (job) => registerNowResult(ctx.registerNow(job.id)),
+    fetchWait: (job) => fetchWaitMs(job, ctx.quietSince, now),
+    postWait: ctx.postWait,
   };
 }

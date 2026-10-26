@@ -5,8 +5,8 @@
 //   L  = epoch length in blocks = superblockCycle * epochCycles
 //   S(E) = E * L                    (a superblock height: superblocks are the multiples of superblockCycle)
 //   epoch(h) = floor(h / L)
-//   tokens for E are minted while S(E-1) <= h < S(E+1) (the issuance window): during E-1 (the private modes ask early) and
-//   during E itself (Standard mode asks for the current epoch and posts at once)
+//   tokens for E are minted while S(E-1) <= h < S(E+1) (the issuance window): during E-1 (Private mode asks early) and
+//   during E itself (Standard mode asks for the current epoch, and posts with the user's next write)
 //   a badge for E is never created before S(E); it is shown while S(E) <= h <= S(E+1) + W, and its own height must be in
 //   that range too
 //   the issuerKey for E must have been created before S(E+1) - margin (the end of the last Standard request window for E), and a
@@ -78,7 +78,7 @@ export interface HeightRange {
   to: number;
 }
 
-/** The epochs an issuer mints tokens for at `height`: the current one (Standard mode) and the next one (private modes). */
+/** The epochs an issuer mints tokens for at `height`: the current one (Standard mode) and the next one (Private mode). */
 export const issuingEpochsAt = (p: EpochParams, height: number): [number, number] => {
   const e = epochOf(p, height);
   return [e, e + 1];
@@ -104,13 +104,6 @@ export function postingWindow(p: EpochParams, epoch: number): HeightRange {
   checkEpoch(epoch);
   const s = epochStart(p, epoch);
   return { from: s, to: s + p.graceBlocks };
-}
-
-/** Extra-private mode posts badges for E anywhere in the first half of E. */
-export function extraPostingWindow(p: EpochParams, epoch: number): HeightRange {
-  checkEpoch(epoch);
-  const s = epochStart(p, epoch);
-  return { from: s, to: s + Math.floor(epochLength(p) / 2) };
 }
 
 /** The issuerReport for E counts if created in [S(E+1), S(E+1) + W]: after E's issuance window closed, promptly. */
@@ -141,7 +134,7 @@ export function displayEpochsAt(p: EpochParams, height: number): number[] {
  * The issuerKey for E counts only if created strictly before S(E+1) - margin: inside E's issuance window, before the last
  * Standard request for E can be made (clients ask for E+1 from then on), and so before E's issuerReport (created from S(E+1)).
  * It may appear mid-window: the key is unique and immutable per (issuer, E) and clients use only the proved key, so every token
- * for E is signed by that one key whenever it was published. A key that appears after S(E) - margin is simply too late for the
- * private modes (they ask during E-1). Readers also reject a badge created before its key.
+ * for E is signed by that one key whenever it was published. A key that appears after S(E) - margin is simply too late for
+ * Private mode (it asks during E-1). Readers also reject a badge created before its key.
  */
 export const keyDeadline = (p: EpochParams, epoch: number): number => epochStart(p, epoch + 1) - p.boundaryMarginBlocks;

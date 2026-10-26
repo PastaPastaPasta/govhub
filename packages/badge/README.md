@@ -113,8 +113,8 @@ few blocks.
 |---|---|---|
 | issuance of tokens for E | `S(E-1) <= h < S(E+1)` (the issuer's dashd tip): the next epoch during E-1, the current one during E | issuer |
 | Standard request for E | at once, during E (`[S(E), S(E+1) - margin)`) | client |
-| Private / Extra request for E | `[S(E-1) + margin, S(E) - margin)`, one uniformly random height (`privateRequestWindow`) | `pickRequestHeight` |
-| posting of the badge | Standard: at once (never before `S(E)`); Private: `[S(E) + margin, S(E) + W]`; Extra: `[S(E) + margin, S(E) + L/2]`, one uniformly random height | `pickPostHeight` |
+| Private request for E | `[S(E-1) + margin, S(E) - margin)`, one uniformly random height (`privateRequestWindow`) | `pickRequestHeight` |
+| posting of the badge | Private: `[S(E) + margin, S(E) + W]`, one uniformly random height. Standard: no height; the web client posts it with the user's next write, up to `S(E+1) + W - margin` (PLAN §8.10) | `pickPostHeight` |
 | display of a badge for E | `S(E) <= h <= S(E+1) + W`, for the badge's `$createdAtCoreBlockHeight` **and** for the reader's current height | reader |
 | `issuerKey` for E | created strictly before `S(E+1) - margin` (`keyDeadline`); no badge for E is older than it | reader, issuer |
 | `issuerReport` for E | created in `[S(E+1), S(E+1) + W]` (`reportWindow`): after E's issuance window closed | reader, issuer |
@@ -123,16 +123,16 @@ Heights on Platform are `$createdAtCoreBlockHeight`, which Drive sets from the b
 
 **Why a key may be published late** (PLAN §8.9). The key used to be required before `S(E-1)`. That added no protection
 against key tagging: the unique, immutable `issuerKey` per (issuer, E) does that, and a client blinds only after a proved
-read of it, so every token for E is signed by that one key whenever it appeared. The private modes still need E's key during
+read of it, so every token for E is signed by that one key whenever it appeared. Private mode still needs E's key during
 E-1 (an issuer that publishes ahead has it); a key that appears later only means Private is not offered for E. The bound
 `S(E+1) - margin` is where Standard requests for E stop, and it keeps the key before E's report.
 Epoch 0 is not used: the window functions and `acceptIssuerKey` require `E >= 1`.
 
-**Privacy modes** (PLAN §8.8, owner decision): **Standard** (default) asks for the current epoch and posts at once, so
-the badge shows within minutes and the issuer could match token and badge by timing; the UI says so, and the issuer
-keeps no records that would let it. **Private** and **Extra private** ask for the next epoch during this one, so every
-private token for E exists before any of those badges can be posted, and the issuer cannot match them by timing. The
-old epoch's badge is still shown until `S(E+1) + W`, so renewal can happen without a visible gap.
+**Privacy modes** (PLAN §8.8, §8.10, owner decisions): **Standard** (default) asks for the current epoch; the web
+client holds the token and posts the badge with the user's next Platform write (or at once on "Register now"), so the
+badge's time follows the user's activity rather than the request. **Private** asks for the next epoch during this one,
+so every private token for E exists before any private badge can be posted. The old epoch's badge is still shown until
+`S(E+1) + W`, so renewal can happen without a visible gap.
 
 ### Testnet timing
 
@@ -140,10 +140,11 @@ Testnet has a superblock every 24 blocks (about 1 hour). One cycle per epoch wou
 badge document every hour, and a browser open every hour to renew. 24 cycles make an epoch about a day: renewal
 is daily and a new badge still shows within about a day. W = 72 is the same ~12% of an epoch as on mainnet.
 
-How long a new badge takes: in Standard mode, minutes (as soon as the current epoch's key is on Platform). In the
-private modes a request is for the next epoch E, sent at a random height in E-1's window, and the badge is posted at
-a random height in `[S(E) + margin, S(E) + W]` (Extra: the first half of E). So a private badge first shows between
-about 0 and one epoch plus W after the user asked (Extra: plus up to half an epoch):
+How long a new badge takes: in Standard mode, the token comes once the current epoch's key is on Platform and the
+browser has been quiet for half an hour plus a random extra wait (mean 1 hour, at most 4 hours), and the badge appears
+with the user's next post or reaction. In Private mode a request is for the next epoch E, sent at a random height in E-1's window, and the badge is posted at a random
+height in `[S(E) + margin, S(E) + W]`. So a private badge first shows between about 0 and one epoch plus W after the user
+asked:
 
 | | up to |
 |---|---|
@@ -207,7 +208,7 @@ Verification is cheap: about 20 to 30 microseconds per badge in Chromium (spike 
 | `src/client.ts` | `importIssuerKey`, `prepare`, `blind`, `finalize`, `verify`, `bindIssuerKey`, `prepareBadge`, `verifyBadgeSignature`, `VARIANT`, `ALLOWED_MODULUS_BITS`, `SPKI_LEN` |
 | `src/format.ts` | `buildBadgeMessage`, `parseBadgeMessage`, `deriveKeyId`, `NET_BYTE`, `isNetwork`, length constants |
 | `src/request.ts` | `buildTokenRequest`, `buildTokenRequestFor`, `parseTokenRequest`, `requestBindsBlindedMsg` |
-| `src/epoch.ts` | `EPOCH_PARAMS`, `epochStart`, `epochOf`, `issuingEpochsAt`, `issuanceWindow`, `privateRequestWindow`, `postingWindow`, `extraPostingWindow`, `reportWindow`, `displayWindow`, `inDisplayWindow`, `displayEpochsAt`, `keyDeadline` |
+| `src/epoch.ts` | `EPOCH_PARAMS`, `epochStart`, `epochOf`, `issuingEpochsAt`, `issuanceWindow`, `privateRequestWindow`, `postingWindow`, `reportWindow`, `displayWindow`, `inDisplayWindow`, `displayEpochsAt`, `keyDeadline` |
 | `src/schedule.ts` | `PrivacyMode`, `PRIVACY_MODES`, `pickRequestHeight`, `pickPostHeight` (per mode), `clientPostingWindow`, `requestableEpoch` (per mode), `resumeDelayMs` |
 | `src/reader.ts` | `acceptIssuerKey`, `verifyMnBadge` and the document types |
 | `src/docs.ts` | parsers for the JSON `Document.toJSON()` returns (`parseIssuerKeyDoc`, `parseIssuerRevocationDoc`, `parseMnBadgeDoc`, `parseIssuerReportDoc`) and field builders for writers. Parsers throw on malformed input; a reader treats that as "no valid document" |

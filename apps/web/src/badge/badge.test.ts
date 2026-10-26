@@ -1,6 +1,6 @@
 // Badge client, reader and store with real crypto: a raw RSA signer stands in for the issuer, a fake query for Platform.
 import { constants, createPublicKey, generateKeyPairSync, privateDecrypt, randomBytes, type KeyObject } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   base64ToBytes,
   blind,
@@ -22,12 +22,14 @@ import {
 import { hash160, recoverMessageSigner, signMessageWif, encodeWif } from '@govhub/verify';
 import { secp256k1 } from '@noble/curves/secp256k1.js';
 import type { DocQuery } from '@govhub/contracts-v1/queryLint';
-import { checkKeyAvailability, createJob, issuerErrorText, renewal, step, type BadgeJob, type ClientDeps } from './client.ts';
+import { checkKeyAvailability, createJob, isHeld, issuerErrorText, lapseHeight, lapseNudgeBlocks, renewal, step, type BadgeJob, type ClientDeps } from './client.ts';
 import { parseTrustList, type TrustedIssuer } from './config.ts';
 import type { BadgeWorkerCall, BadgeWorkerResponse, IssuerAnswer } from './protocol.ts';
 import { allBadges, badgesOfAuthors, issuerKeyQuery, reportQuery, revocationQuery } from './queries.ts';
 import { BadgeReader } from './reader.ts';
-import { deriveStoreKey, encryptedJobStore } from './store.ts';
+import { createScheduler, supersede } from './scheduler.ts';
+import { deriveStoreKey, encryptedJobStore, migrateJob } from './store.ts';
+import { beforeIdentityWrite, COOLDOWN_MS, drawQuietExtraMs, mayRequest, noteIdentityWrite, onIdentityWrite, QUIET_EXTRA_MAX_MS, QUIET_EXTRA_MEAN_MS, quietForMs, requestCooldownLeft } from './visit.ts';
 
 const P = EPOCH_PARAMS.testnet;
 const E = 2742;
@@ -49,6 +51,9 @@ class FakePlatform {
   revocation: Record<string, unknown> | null = null;
   /** more issuerKey documents returned with the real one (the unique index makes this impossible on Platform) */
   extraKeyDocs: Record<string, unknown>[] = [];
+  /** test switches: Platform refuses badge posts; the issuer is off the trust list */
+  failPosts = false;
+  untrusted = false;
   async query(q: DocQuery) {
     const w = Object.fromEntries(q.where.map(([k, , v]) => [k, v]));
     let docs: Record<string, unknown>[] = [];
@@ -107,13 +112,14 @@ function setup(o: Parameters<typeof fakeWorker>[0] = {}) {
     signWithWif: (wif, m) => signMessageWif(wif, m, 'testnet'),
     externalSigner: () => undefined,
     async postBadge(data) {
+      if (platform.failPosts) throw new Error('Platform said no');
       const doc = { ...data, $ownerId: ownerId, $createdAtCoreBlockHeight: platform.core, issuerId: bytesToId(data.issuerId as Uint8Array), keyId: bytesToBase64(data.keyId as Uint8Array), msgPrefix: bytesToBase64(data.msgPrefix as Uint8Array), sig: bytesToBase64(data.sig as Uint8Array) };
       posted.push(doc);
       platform.badges.push(doc);
       return 'doc1';
     },
     hasBadge: async (iid, e) => platform.badges.some((b) => b.$ownerId === ownerId && b.issuerId === iid && b.epoch === e),
-    trusted: (id) => id === issuer.identityId,
+    trusted: (id) => id === issuer.identityId && !platform.untrusted,
     reportedTokens: (i, e) => reader.reportedTokens(i, e),
     issuerFlagged: async (i, e) => (await reader.audit({ ...i, enabled: true }, e, platform.core)).flagged,
     minAnonymitySet: 3,
@@ -183,7 +189,7 @@ describe('badge client', () => {
     expect(await reader2.live()).toBe(true);
   });
 
-  it('Standard mode (the default): a token for the CURRENT epoch, then posted at once, no crowd check; readers accept it', async () => {
+  it('Standard mode (the default): a token for the CURRENT epoch, HELD until asked to post (no height of its own), no crowd check; readers accept it', async () => {
     const t = setup();
     await t.platform.addKey(E);
     const h = epochStart(P, E) + 10;
@@ -191,9 +197,16 @@ describe('badge client', () => {
     const job = await createJob(t.deps, [], votingKey().wif, proTx(), h, { issuer });
     expect(job).toMatchObject({ mode: 'standard', epoch: E, requestAt: h });
     const tok = await step(t.deps, job, h);
-    expect(tok).toMatchObject({ state: 'token', postAt: h });
-    const posted = await step(t.deps, tok, h); // no report exists for E-1: Standard does not wait for one
+    expect(tok).toMatchObject({ state: 'token', proTxHash: '' });
+    expect(tok.sig).toBeTruthy();
+    expect(tok.postAt).toBeUndefined();
+    expect(isHeld(tok)).toBe(true);
+    // held: stepping at any later height posts nothing
+    for (const at of [h, h + 100, lapseHeight(P, E)]) expect(await step(t.deps, tok, at)).toEqual(tok);
+    expect(t.posted).toHaveLength(0);
+    const posted = await step(t.deps, tok, h + 100, { post: true }); // no report exists for E-1: Standard does not wait for one
     expect(posted.state).toBe('posted');
+    expect(posted.sig).toBeUndefined();
     const view = await new BadgeReader({ net: 'testnet', contractId, issuers: [issuer], query: (q) => t.platform.query(q) }).badgesFor([t.ownerId]);
     expect(view.byOwner.get(t.ownerId)).toEqual(['test']);
   });
@@ -211,7 +224,7 @@ describe('badge client', () => {
     const after = await checkKeyAvailability(t.deps.issuerKey, issuer, 'testnet', h);
     expect(after.modes.find((m) => m.mode === 'standard')).toMatchObject({ epoch: E, ok: true });
     const job = await createJob(t.deps, [], votingKey().wif, proTx(), h, { issuer });
-    const posted = await step(t.deps, await step(t.deps, job, h), h);
+    const posted = await step(t.deps, await step(t.deps, job, h), h, { post: true });
     expect(posted.state).toBe('posted');
     const view = await new BadgeReader({ net: 'testnet', contractId, issuers: [issuer], query: (q) => t.platform.query(q) }).badgesFor([t.ownerId]);
     expect(view.byOwner.get(t.ownerId)).toEqual(['test']);
@@ -251,7 +264,8 @@ describe('badge client', () => {
     expect(tok.state).toBe('token');
     expect(tok.signer).toEqual({ kind: 'external' }); // the voting key is gone once the request is sent
     expect(JSON.stringify(tok)).not.toContain(v.wif);
-    const posted = await step(t.deps, tok, epochStart(P, E));
+    expect(await step(t.deps, tok, epochStart(P, E))).toEqual(tok); // held
+    const posted = await step(t.deps, tok, epochStart(P, E), { post: true });
     expect(posted).toMatchObject({ state: 'posted', proTxHash: '' });
   });
 
@@ -520,12 +534,10 @@ describe('trust list and storage', () => {
     noteIdentityWrite(st, t0 + COOLDOWN_MS);
     expect(mayRequest(st, t0 + COOLDOWN_MS + 1)).toBe(false); // a reload does not reset it
     expect(mayRequest(st, t0 + 2 * COOLDOWN_MS)).toBe(true);
-    // Standard waits only for a PRIVATE request's cooldown
-    const { mayStandard, notePrivateRequest } = await import('./visit.ts');
-    expect(mayStandard(st, t0 + 1000)).toBe(true); // the request above was not private
-    notePrivateRequest(st, t0 + 3 * COOLDOWN_MS);
-    expect(mayStandard(st, t0 + 3 * COOLDOWN_MS + 1000)).toBe(false);
-    expect(mayStandard(st, t0 + 4 * COOLDOWN_MS)).toBe(true);
+    // one spacing for both modes now: when the next request may go, after a write or a request
+    const { requestWaitLeft } = await import('./visit.ts');
+    expect(requestWaitLeft(st, t0 + COOLDOWN_MS + 60_000)).toBe(COOLDOWN_MS - 60_000);
+    expect(requestWaitLeft(st, t0 + 2 * COOLDOWN_MS)).toBe(0);
   });
 
   it('validates issuers', () => {
@@ -569,6 +581,30 @@ describe('trust list and storage', () => {
     await expect(deriveStoreKey(new Uint8Array(32), id)).rejects.toThrow();
   });
 
+  it('Extra-private jobs saved before the mode was removed continue as Private, posting height picked again in Private\'s window', async () => {
+    const mem = new Map<string, string>();
+    const storage = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v), removeItem: (k: string) => void mem.delete(k) };
+    const id = bytesToId(rnd(32));
+    const s = encryptedJobStore(`${id}.2`, id, await deriveStoreKey(rnd(32), id), storage);
+    const base = { v: 1, ownerId: id, issuer, epoch: E, signer: { kind: 'external' }, attempts: 1 };
+    await s.save([
+      { ...base, id: 'a', mode: 'extra', state: 'token', postAt: epochStart(P, E) + 250, sig: 'x' },
+      { ...base, id: 'b', mode: 'extra', state: 'scheduled', requestAt: 5 },
+      { ...base, id: 'c', mode: 'standard', state: 'token', sig: 'y' },
+    ] as unknown as BadgeJob[]);
+    const [a, b, c] = await s.load();
+    // an Extra token keeps the random height it had (inside its display window): it does not post at once on the next visit
+    expect(a).toMatchObject({ id: 'a', mode: 'private', state: 'token', sig: 'x', postAt: epochStart(P, E) + 250 });
+    expect(b).toMatchObject({ id: 'b', mode: 'private', requestAt: 5 });
+    expect(c).toMatchObject({ id: 'c', mode: 'standard' });
+    expect(migrateJob(c!)).toEqual(c);
+    // a Standard token from before deferral (it had a posting height) is held like any other
+    expect(migrateJob({ ...c!, postAt: 123 }).postAt).toBeUndefined();
+    const t = setup();
+    expect(await step(t.deps, migrateJob({ ...c!, postAt: 123, net: 'testnet' } as BadgeJob), epochStart(P, E) + 200)).toMatchObject({ state: 'token' });
+    expect(t.posted).toHaveLength(0);
+  });
+
   it('every badge query passes the PV13 lint', () => {
     const id = issuer.identityId;
     expect(() => [issuerKeyQuery(id, 1), revocationQuery(id, 1), reportQuery(id, 1), badgesOfAuthors(id, 1, [id]), allBadges(id, 1), allBadges(id, 1, id)]).not.toThrow();
@@ -588,7 +624,6 @@ describe('QA fixes (D-044 .. D-047)', () => {
     expect(av.modes).toEqual([
       { mode: 'standard', epoch: E - 1, ok: false, problem: 'no issuerKey for this epoch' },
       { mode: 'private', epoch: E, ok: true, problem: null },
-      { mode: 'extra', epoch: E, ok: true, problem: null },
     ]);
     expect(av.firstKeyEpoch).toBe(E);
     const err = await createJob(t.deps, [], votingKey().wif, proTx(), h, { issuer, mode: 'standard' }).catch((e: Error) => e.message);
@@ -642,41 +677,31 @@ describe('QA fixes (D-044 .. D-047)', () => {
     expect(issuerErrorText('https://x.example/', new Error('The operation was aborted due to timeout'))).toMatch(/did not answer in time/);
   });
 
-  it('the cooldown note is for Private and Extra-private requests only: none after a Standard request, which waits for nothing', async () => {
-    const { noteRequestSent, notePrivateRequest, privateCooldownLeft, privateCooldownNote, mayPost, mayRequest, requestCooldownLeft, COOLDOWN_MS } = await import('./visit.ts');
+  it('the cooldown note: only while a request’s cooldown runs AND a held token or a Private job would lose its separation; a nudge', async () => {
+    const { requestCooldownLeft, noteRequestSent, COOLDOWN_MS, mayRequest } = await import('./visit.ts');
+    const { separationAtStake, cooldownNote } = await import('./scheduler.ts');
     const mem = new Map<string, string>();
-    const st = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v), removeItem: (k: string) => void mem.delete(k) };
+    const st = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v) };
     const t0 = 1_800_000_000_000;
-    // a Standard request (noteRequestSent alone): the scheduler's spacing still holds, but there is nothing to tell the user
     noteRequestSent(st, t0);
-    expect(privateCooldownLeft(st, t0 + 60_000)).toBe(0);
-    expect(requestCooldownLeft(st, t0 + 60_000)).toBeGreaterThan(0);
-    expect(mayRequest(st, t0 + 60_000)).toBe(false);
-    expect(mayPost(st, t0 + 60_000)).toBe(false);
-    // a Private or Extra-private request: the note runs for the cooldown, and the same scheduler rules apply
-    const t1 = t0 + 2 * COOLDOWN_MS;
-    notePrivateRequest(st, t1);
-    expect(privateCooldownLeft(st, t1 + 60_000)).toBe(COOLDOWN_MS - 60_000);
-    expect(mayRequest(st, t1 + 60_000)).toBe(false);
-    expect(mayPost(st, t1 + 60_000)).toBe(false);
-    expect(privateCooldownLeft(st, t1 + COOLDOWN_MS)).toBe(0);
-    // a Standard request afterwards does not extend or start the note
-    noteRequestSent(st, t1 + COOLDOWN_MS + 1000);
-    expect(privateCooldownLeft(st, t1 + COOLDOWN_MS + 2000)).toBe(0);
-    // unreadable storage: no request can have been sent, so no note (the scheduler's own checks still fail closed)
+    expect(requestCooldownLeft(st, t0 + 60_000)).toBe(COOLDOWN_MS - 60_000);
+    const j = (p: Partial<BadgeJob>) => ({ issuer, epoch: E, mode: 'standard', state: 'scheduled', ...p }) as BadgeJob;
+    expect(separationAtStake([])).toBe(false);
+    expect(separationAtStake([j({ state: 'posted' }), j({ state: 'failed' }), j({ state: 'scheduled' })])).toBe(false); // nothing to undo
+    expect(separationAtStake([j({ state: 'token' })])).toBe(true); // a held Standard token
+    expect(separationAtStake([j({ mode: 'private', state: 'scheduled' })])).toBe(true);
+    expect(separationAtStake([j({ mode: 'private', state: 'token' })])).toBe(true);
+    expect(cooldownNote(25 * 60_000)).toBe('Your MN badge request just went out. If you can, wait about 25 min before you post or react: the longer the gap, the harder it is to match your badge to your masternode.');
+    expect(cooldownNote(1000)).toContain('about 1 min');
+    expect(cooldownNote(1000)).not.toMatch(/Extra|could let/);
+    // unreadable storage: no note (no request can have been recorded); the scheduler's checks still fail closed
     const blocked = { getItem: () => { throw new Error('blocked'); }, setItem: () => undefined };
-    expect(privateCooldownLeft(blocked, t1)).toBe(0);
-    expect(mayRequest(blocked, t1)).toBe(false);
-    // the words
-    expect(privateCooldownNote(COOLDOWN_MS - 5 * 60_000)).toBe(
-      "You asked for a Private badge 5 min ago. To keep govhub's issuer from matching that request to this account by timing, avoid posting, commenting or reacting from this browser for 25 more min. Standard badges don't need this.",
-    );
-    expect(privateCooldownNote(COOLDOWN_MS - 1000)).toContain('a moment ago');
-    expect(privateCooldownNote(COOLDOWN_MS - 1000)).toContain('for 30 more min');
+    expect(requestCooldownLeft(blocked, t0)).toBe(0);
+    expect(mayRequest(blocked, t0)).toBe(false);
   });
 
-  it('D-046: a private attempt that sent no token request undoes its cooldown mark; a newer mark is kept', async () => {
-    const { mayRequest, notePrivateRequest, requestCooldownLeft, noteRequestSent } = await import('./visit.ts');
+  it('D-046: an attempt that sent no token request undoes its cooldown mark; a newer mark is kept', async () => {
+    const { mayRequest, noteRequestAttempt: notePrivateRequest, requestCooldownLeft, noteRequestSent } = await import('./visit.ts');
     const mem = new Map<string, string>();
     const st = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v), removeItem: (k: string) => void mem.delete(k) };
     const t0 = 1_800_000_000_000;
@@ -730,5 +755,325 @@ describe('QA fixes (D-044 .. D-047)', () => {
     const { BADGE_NETWORKS } = await import('./config.ts');
     expect(BADGE_NETWORKS.testnet.minAnonymitySet).toBeGreaterThan(3);
     expect(BADGE_NETWORKS.mainnet.minAnonymitySet).toBeGreaterThan(10);
+  });
+});
+
+describe('scheduler: Standard is "token now, publish later" (PLAN §8.10)', () => {
+  /** localStorage of one browser (visit.ts reads it), and Web Locks: one holder per name, in order */
+  let storage: ReturnType<typeof memStorage>;
+  function memStorage() {
+    const mem = new Map<string, string>();
+    return { mem, getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v), removeItem: (k: string) => void mem.delete(k) };
+  }
+  const tails = new Map<string, Promise<unknown>>();
+  const lock = <T,>(name: string, fn: () => Promise<T>): Promise<T> => {
+    const run = (tails.get(name) ?? Promise.resolve()).then(fn, fn);
+    tails.set(name, run.catch(() => undefined));
+    return run;
+  };
+  const T0 = 1_800_000_000_000;
+  const at = (ms: number) => vi.setSystemTime(T0 + ms);
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    at(0);
+    storage = memStorage();
+    vi.stubGlobal('localStorage', storage);
+    tails.clear();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  /** One tab of this browser: the encrypted job store over the shared localStorage, a scheduler, and the write hook as BadgeProvider wires it. */
+  async function tab(t: ReturnType<typeof setup>, secret: Uint8Array) {
+    const store = encryptedJobStore(`${t.ownerId}.2`, t.ownerId, await deriveStoreKey(secret, t.ownerId), storage);
+    const commit = (m: (j: BadgeJob[]) => BadgeJob[]) => lock('store', async () => { const n = m(await store.load()); await store.save(n); return n; });
+    const sched = createScheduler({ net: 'testnet', deps: t.deps, store, commit, coreHeight: async () => t.platform.core, trust: () => [issuer], hasSigner: () => false, lock, live: () => true });
+    const pending: Promise<unknown>[] = [];
+    const off = onIdentityWrite((w) => void (w === t.ownerId && pending.push(sched.postHeld({ force: false }))));
+    return {
+      sched,
+      store,
+      add: (j: BadgeJob) => commit((l) => [...l, j]),
+      jobs: () => store.load(),
+      /** the identity writes (a comment, a reaction, a keyring save...): the hook fires first, then the write's own mark */
+      write: async (who: string | null = t.ownerId) => {
+        beforeIdentityWrite(who);
+        await Promise.all(pending.splice(0));
+      },
+      close: off,
+    };
+  }
+
+  /** A Standard job made mid-visit (the scheduler already ticked once), with a known extra quiet time. */
+  async function heldJob(o: { quietExtraMs?: number; keepKey?: boolean } = {}) {
+    const seen: string[] = [];
+    const t = setup({ seen });
+    await t.platform.addKey(E);
+    t.platform.core = epochStart(P, E) + 10;
+    const secret = rnd(32);
+    const a = await tab(t, secret);
+    await a.sched.tick(); // the app was already open: the job is not found by the first tick of a visit
+    const job = await createJob(t.deps, [], votingKey().wif, proTx(), t.platform.core, { issuer, keepKey: o.keepKey ?? false });
+    await a.add({ ...job, quietExtraMs: o.quietExtraMs ?? 0 });
+    return { t, seen, secret, a };
+  }
+
+  it('the request waits for a quiet half hour after a write; the token is then HELD in this browser and nothing is posted', async () => {
+    const { t, seen, a } = await heldJob();
+    noteIdentityWrite(); // the keyring save of the unified flow, just before
+    await a.sched.tick();
+    expect(seen).toEqual([]); // nothing went to the issuer
+    expect((await a.jobs())[0]!.state).toBe('scheduled');
+    at(COOLDOWN_MS - 1000);
+    await a.sched.tick();
+    expect(seen).toEqual([]);
+    at(COOLDOWN_MS + 1000);
+    await a.sched.tick();
+    expect(seen).toEqual(['challenge https://issuer.test', 'token https://issuer.test']);
+    const [held] = await a.jobs();
+    expect(isHeld(held!)).toBe(true);
+    expect(held!.proTxHash).toBe(''); // the masternode is forgotten once the token is in hand
+    expect(t.posted).toHaveLength(0);
+    // the scheduler never posts it, whatever the time or height
+    for (const ms of [2 * COOLDOWN_MS, 10 * COOLDOWN_MS]) {
+      at(ms);
+      t.platform.core += 50;
+      await a.sched.tick();
+    }
+    expect(t.posted).toHaveLength(0);
+    expect(isHeld((await a.jobs())[0]!)).toBe(true);
+    expect(mayRequest()).toBe(true); // nor does it mark writes for it (that would starve other requests)
+    // the token lives in localStorage, encrypted (not in plain text)
+    expect([...storage.mem.values()].join()).not.toContain(held!.sig!);
+  });
+
+  it('a request is not pinned to the last write: it also waits its own random extra, drawn once and stored with the job', async () => {
+    const { seen, a } = await heldJob({ quietExtraMs: 20 * 60_000 });
+    noteIdentityWrite();
+    at(COOLDOWN_MS + 19 * 60_000);
+    await a.sched.tick();
+    expect(seen).toEqual([]);
+    at(COOLDOWN_MS + 21 * 60_000);
+    await a.sched.tick();
+    expect(seen).toContain('token https://issuer.test');
+    // the draw: exponential (memoryless) with a mean of about an hour, capped; createJob stores one per job
+    const draws = Array.from({ length: 4000 }, () => drawQuietExtraMs(() => Math.floor(Math.random() * 2 ** 32)));
+    const mean = draws.reduce((x, y) => x + y, 0) / draws.length;
+    expect(mean).toBeGreaterThan(0.85 * QUIET_EXTRA_MEAN_MS);
+    expect(mean).toBeLessThan(1.15 * QUIET_EXTRA_MEAN_MS);
+    expect(Math.max(...draws)).toBeLessThanOrEqual(QUIET_EXTRA_MAX_MS);
+    expect(drawQuietExtraMs(() => 0)).toBe(QUIET_EXTRA_MAX_MS); // the tail is capped
+    const t = setup();
+    await t.platform.addKey(E);
+    const jobs = await Promise.all([1, 2, 3].map(() => createJob(t.deps, [], votingKey().wif, proTx(), epochStart(P, E) + 10, { issuer })));
+    expect(new Set(jobs.map((j) => j.quietExtraMs)).size).toBe(3);
+    expect(quietForMs({ getItem: () => { throw new Error('blocked'); }, setItem: () => undefined }, T0)).toBe(0); // fails closed
+  });
+
+  it('a pending request found when the app opens waits a random 30 s - 10 min, like Private', async () => {
+    const seen: string[] = [];
+    const t = setup({ seen });
+    await t.platform.addKey(E);
+    t.platform.core = epochStart(P, E) + 10;
+    const a = await tab(t, rnd(32));
+    await a.add({ ...(await createJob(t.deps, [], votingKey().wif, proTx(), t.platform.core, { issuer })), quietExtraMs: 0 });
+    await a.sched.tick(); // the first tick of the visit
+    expect(seen).toEqual([]);
+    at(10 * 60_000 + 1000);
+    await a.sched.tick();
+    expect(seen).toContain('token https://issuer.test');
+  });
+
+  it('memory-only users with no recent writes get the token at once', async () => {
+    const { seen, a } = await heldJob();
+    await a.sched.tick();
+    expect(seen).toContain('token https://issuer.test');
+    expect(isHeld((await a.jobs())[0]!)).toBe(true);
+  });
+
+  it('a write inside the cooldown does not carry it; the next write after the cooldown does, once; other identities and badge posts never do', async () => {
+    const { t, a } = await heldJob();
+    await a.sched.tick(); // token at T0
+    at(5 * 60_000);
+    await a.write();
+    expect(t.posted).toHaveLength(0);
+    at(COOLDOWN_MS + 60_000);
+    expect(requestCooldownLeft()).toBe(0);
+    await a.write(bytesToId(rnd(32))); // another identity signed in, in this browser
+    await a.write(null); // a badge post (or a new identity) carries nothing
+    expect(t.posted).toHaveLength(0);
+    // the identity's next write: the badge goes with it
+    await a.write();
+    expect(t.posted).toHaveLength(1);
+    const [done] = await a.jobs();
+    expect(done).toMatchObject({ state: 'posted', badgeId: 'doc1' });
+    expect(done!.sig).toBeUndefined();
+    await a.write();
+    expect(t.posted).toHaveLength(1);
+    // another reader verifies it
+    const view = await new BadgeReader({ net: 'testnet', contractId, issuers: [issuer], query: (q) => t.platform.query(q) }).badgesFor([t.ownerId]);
+    expect(view.byOwner.get(t.ownerId)).toEqual(['test']);
+  });
+
+  it('Register now posts at once, even inside the cooldown', async () => {
+    const { t, a } = await heldJob();
+    await a.sched.tick();
+    at(60_000);
+    const [held] = await a.jobs();
+    await a.sched.postHeld({ id: held!.id, force: true });
+    expect(t.posted).toHaveLength(1);
+    expect((await a.jobs())[0]!.state).toBe('posted');
+  });
+
+  it('the lapse: a held token nudges near its end, then expires unposted at S(E+1)+W-margin', async () => {
+    const { t, a } = await heldJob();
+    await a.sched.tick();
+    expect(lapseHeight(P, E)).toBe(epochStart(P, E + 1) + P.graceBlocks - P.boundaryMarginBlocks);
+    expect(lapseNudgeBlocks(P)).toBe(58); // testnet: about a tenth of a 576-block epoch (~2.5 h)
+    expect(lapseNudgeBlocks(EPOCH_PARAMS.mainnet)).toBe(1646); // mainnet: about 3 days
+    t.platform.core = lapseHeight(P, E);
+    await a.sched.tick();
+    expect(isHeld((await a.jobs())[0]!)).toBe(true);
+    t.platform.core = lapseHeight(P, E) + 1;
+    await a.sched.tick();
+    const [gone] = await a.jobs();
+    expect(gone).toMatchObject({ state: 'expired' });
+    expect(gone!.note).toMatch(/lapsed: it was never posted.*ask again from the next epoch/);
+    expect(gone!.sig).toBeUndefined();
+    at(COOLDOWN_MS * 2);
+    await a.write();
+    expect(t.posted).toHaveLength(0);
+  });
+
+  it('survives a reload, and two tabs writing at once post it once', async () => {
+    const { t, secret, a } = await heldJob();
+    await a.sched.tick();
+    a.close(); // the tab is closed
+    at(COOLDOWN_MS + 1000);
+    const b = await tab(t, secret); // a reload: a new scheduler over the same browser storage
+    const c = await tab(t, secret); // and a second tab
+    expect(isHeld((await b.jobs())[0]!)).toBe(true);
+    beforeIdentityWrite(t.ownerId); // both tabs hear only their own writes; here both are in the same JS realm, the worst case
+    await Promise.all([b.write(), c.write()]);
+    expect(t.posted).toHaveLength(1);
+    expect((await c.jobs())[0]!.state).toBe('posted');
+  });
+
+  it('one job per (issuer, epoch): a held Standard token for E and a Private job for E+1 live side by side; a newer posted badge supersedes the held one', async () => {
+    const { t, a } = await heldJob();
+    await a.sched.tick();
+    await t.platform.addKey(E + 1);
+    const jobs = await a.jobs();
+    await expect(createJob(t.deps, jobs, votingKey().wif, proTx(), t.platform.core, { issuer })).rejects.toThrow(/already have a badge request/);
+    const priv = await createJob(t.deps, jobs, votingKey().wif, proTx(), t.platform.core, { issuer, mode: 'private' });
+    expect(priv.epoch).toBe(E + 1);
+    const both = [...jobs, priv];
+    expect(supersede(P, both, t.platform.core)).toEqual(both);
+    const after = supersede(P, [jobs[0]!, { ...priv, state: 'posted' }], epochStart(P, E + 1) + 10);
+    expect(after[0]).toMatchObject({ state: 'expired', note: `Not needed: your badge for epoch ${E + 1} replaces it.` });
+    expect(after[0]!.sig).toBeUndefined();
+  });
+
+  it('a token that lapses while the app was closed still renews when the voting key is kept, and the lapsed job keeps no token', async () => {
+    const { t, a } = await heldJob({ keepKey: true });
+    await a.sched.tick();
+    const [held] = await a.jobs();
+    expect(held).toMatchObject({ state: 'token', keepKey: true, signer: { kind: 'wif' } });
+    await t.platform.addKey(E + 1);
+    at(COOLDOWN_MS * 3);
+    t.platform.core = lapseHeight(P, E) + 1; // the next visit: E+1 has started, E's token lapsed unposted
+    await a.sched.tick();
+    const jobs = await a.jobs();
+    const old = jobs.find((j) => j.epoch === E)!;
+    const next = jobs.find((j) => j.epoch === E + 1)!;
+    expect(old).toMatchObject({ state: 'expired', lapsed: true });
+    expect(old.sig).toBeUndefined();
+    expect(old.signer.kind).toBe('external'); // the kept key moved to the renewal
+    expect(next).toMatchObject({ mode: 'standard', state: 'scheduled', keepKey: true, signer: { kind: 'wif' } });
+  });
+
+  it('Register now that cannot post says why (posting failed; untrusted issuer), and the token stays held', async () => {
+    const { t, a } = await heldJob();
+    await a.sched.tick();
+    const [held] = await a.jobs();
+    t.platform.failPosts = true;
+    const after = (await a.sched.postHeld({ id: held!.id, force: true })).find((j) => j.id === held!.id)!;
+    expect(after.state).toBe('token');
+    expect(after.note).toMatch(/Posting the badge failed \(Platform said no\); it goes with your next post/);
+    t.platform.failPosts = false;
+    t.platform.untrusted = true;
+    at(COOLDOWN_MS + 1000);
+    await a.write();
+    const [still] = await a.jobs();
+    expect(still!.state).toBe('token');
+    expect(still!.note).toMatch(/not on your trust list/);
+    expect(t.posted).toHaveLength(0);
+  });
+
+  it('Private is unchanged: random request height, posts at its height after the cooldown, never with a write', async () => {
+    const seen: string[] = [];
+    const t = setup({ seen });
+    await t.platform.addKey(E);
+    t.platform.core = epochStart(P, E - 1) + 50;
+    const a = await tab(t, rnd(32));
+    const job = await createJob(t.deps, [], votingKey().wif, proTx(), t.platform.core, { issuer, mode: 'private' });
+    expect(job.requestAt >= t.platform.core && job.requestAt < privateRequestWindow(P, E).to).toBe(true);
+    await a.add(job);
+    t.platform.core = job.requestAt;
+    await a.sched.tick(); // the first tick of a visit waits a random 30 s - 10 min
+    expect(seen).toEqual([]);
+    at(11 * 60_000);
+    await a.sched.tick();
+    const [tok] = await a.jobs();
+    expect(tok).toMatchObject({ state: 'token', mode: 'private' });
+    expect(tok!.postAt! >= epochStart(P, E) + P.boundaryMarginBlocks && tok!.postAt! <= epochStart(P, E) + P.graceBlocks).toBe(true);
+    at(11 * 60_000 + COOLDOWN_MS + 1000);
+    await a.write(); // a write does not post a Private badge
+    expect(t.posted).toHaveLength(0);
+    t.platform.core = tok!.postAt!;
+    t.platform.reports.set(E - 1, 5);
+    await a.sched.tick();
+    expect(t.posted).toHaveLength(1);
+    expect(mayRequest()).toBe(false); // the post was a write: the next request waits
+  });
+});
+
+describe('every Platform write is announced first, with its writer (auth/runtime.ts)', () => {
+  it('documents, vault entries, keys and top-ups name the identity; badge posts and new identities name nobody; the write never waits', async () => {
+    const { markWrites } = await import('../auth/runtime.ts');
+    const order: string[] = [];
+    const off = onIdentityWrite((w) => void order.push(`hook ${w}`));
+    const call = (name: string) => async () => void order.push(name);
+    const port = markWrites({
+      writeDocument: async (o: { op: { type: string } }) => (order.push(`write ${o.op.type}`), { id: 'x', revision: 1 }),
+      createIdentity: call('create'),
+      topUpIdentity: call('topup'),
+      addKeys: call('addkeys'),
+      vault: { put: call('vault put'), remove: call('vault remove'), list: async () => [], byCredential: async () => null },
+    } as never);
+    await port.writeDocument({ ownerId: 'me', key: {} as never, op: { action: 'create', contractId: 'c', type: 'comment', data: {} } });
+    await port.writeDocument({ ownerId: 'me', key: {} as never, op: { action: 'create', contractId: 'c', type: 'mnBadge', data: {} } });
+    await port.vault.put({ ownerId: 'me' } as never);
+    await port.topUpIdentity({ identityId: 'me' } as never);
+    await port.createIdentity({} as never);
+    off();
+    expect(order).toEqual(['hook me', 'write comment', 'hook null', 'write mnBadge', 'hook me', 'vault put', 'hook me', 'topup', 'hook null', 'create']);
+  });
+
+  it('a listener that throws or never finishes does not fail or hold up the write', async () => {
+    const { markWrites } = await import('../auth/runtime.ts');
+    const offs = [
+      onIdentityWrite(() => {
+        throw new Error('boom');
+      }),
+      onIdentityWrite(() => void new Promise(() => undefined)), // a badge post that never settles
+    ];
+    let wrote = false;
+    const port = markWrites({ writeDocument: async () => ((wrote = true), { id: 'x', revision: 1 }), vault: {} } as never);
+    await expect(port.writeDocument({ ownerId: 'me', key: {} as never, op: { action: 'create', contractId: 'c', type: 'comment', data: {} } })).resolves.toEqual({ id: 'x', revision: 1 });
+    expect(wrote).toBe(true);
+    offs.forEach((f) => f());
   });
 });

@@ -1,4 +1,4 @@
-// The privacy mode choice (PLAN §8.5, §8.7, §8.8): one sentence per mode, its details under its own "learn more". Used by the badge
+// The privacy mode choice (PLAN §8.5, §8.7, §8.8, §8.10): one sentence per mode, its details under its own "learn more". Used by the badge
 // page and, folded under "Privacy options", by the badge option of "Add your masternodes".
 import { PRIVACY_MODES, type PrivacyMode } from '@govhub/badge';
 import type { CoreNetwork } from '../data/types.ts';
@@ -8,16 +8,12 @@ import type { KeyAvailability } from './client.ts';
 export const MODES: Record<PrivacyMode, { label: string; summary: string }> = {
   standard: {
     label: 'Standard',
-    summary: 'Fast: your badge appears now. The issuer could tell which masternode it belongs to; the govhub issuer’s operator commits to keeping no records that would let it link them, and you are trusting that.',
+    summary:
+      'Your badge is fetched in the background and appears the next time you post or react, so it shows up with your own activity rather than right after the request. You can also post it straight away.',
   },
   private: {
     label: 'Private',
-    summary:
-      'Your badge appears at a random time early in the next epoch, among the others who chose a private mode with the same issuer. That makes it harder for the issuer to match it to your masternode by timing, not impossible.',
-  },
-  extra: {
-    label: 'Extra private',
-    summary: 'Like Private, but the badge goes out at a random time across the first half of the next epoch: its timing is harder to match still, and it takes longer.',
+    summary: 'Slower: the badge is for the next epoch and appears at a random time early in it, among the others who chose Private. Harder still to match to your masternode.',
   },
 };
 

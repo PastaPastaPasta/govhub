@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { displayEpochsAt, displayWindow, EPOCH_PARAMS, epochLength, epochOf, epochStart, extraPostingWindow, issuanceWindow, issuingEpochsAt, keyDeadline, postingWindow, privateRequestWindow, reportWindow } from '../src/epoch.ts';
-import { clientPostingWindow, pickHeight, pickPostHeight, pickRequestHeight, requestableEpoch } from '../src/schedule.ts';
+import { displayEpochsAt, displayWindow, EPOCH_PARAMS, epochLength, epochOf, epochStart, issuanceWindow, issuingEpochsAt, keyDeadline, postingWindow, privateRequestWindow, reportWindow } from '../src/epoch.ts';
+import { clientPostingWindow, parsePrivacyMode, pickHeight, pickPostHeight, pickRequestHeight, PRIVACY_MODES, requestableEpoch } from '../src/schedule.ts';
 
 const M = EPOCH_PARAMS.mainnet;
 const T = EPOCH_PARAMS.testnet;
@@ -24,7 +24,6 @@ describe('epochs', () => {
     expect(issuanceWindow(T, E)).toEqual({ from: 2741 * 576, to: 2743 * 576 }); // during E-1 and during E
     expect(privateRequestWindow(T, E)).toEqual({ from: 2741 * 576 + 3, to: 2742 * 576 - 3 });
     expect(postingWindow(T, E)).toEqual({ from: 2742 * 576, to: 2742 * 576 + 72 });
-    expect(extraPostingWindow(T, E)).toEqual({ from: 2742 * 576, to: 2742 * 576 + 288 });
     expect(displayWindow(T, E)).toEqual({ from: 2742 * 576, to: 2743 * 576 + 72 });
     expect(reportWindow(T, E)).toEqual({ from: 2743 * 576, to: 2743 * 576 + 72 });
     // inside E's issuance window, before the last Standard request for E (clients switch to E+1 there) and before E's report
@@ -84,19 +83,17 @@ describe('scheduling', () => {
     expect(requestableEpoch(T, s + 10)).toBe(2742);
     expect(requestableEpoch(T, s + 576 - 2)).toBe(2743);
   });
-  it('standard mode asks for the current epoch and posts at once, never before S(E)', () => {
+  it('standard mode asks for the current epoch (the next one in its last margin blocks)', () => {
     const s = epochStart(T, 2742);
     expect(requestableEpoch(T, s + 10, 'standard')).toBe(2742);
     expect(requestableEpoch(T, s + 576 - 2, 'standard')).toBe(2743); // last margin blocks: the next epoch
-    expect(pickPostHeight(T, 2742, s + 10, 'standard')).toBe(s + 10);
-    expect(pickPostHeight(T, 2743, s + 575, 'standard')).toBe(s + 576);
   });
-  it('extra-private posts spread over the first half of the epoch', () => {
-    const w = clientPostingWindow(T, 2742, 'extra');
-    for (let i = 0; i < 200; i++) {
-      const h = pickPostHeight(T, 2742, 0, 'extra');
-      expect(h >= w.from && h < w.to).toBe(true);
-    }
-    expect(w.to - w.from).toBeGreaterThan(200);
+  it('two modes: Extra private is gone, and a stored "extra" reads as Private', () => {
+    expect(PRIVACY_MODES).toEqual(['standard', 'private']);
+    expect(parsePrivacyMode('extra', 'standard')).toBe('private');
+    expect(parsePrivacyMode('private', 'standard')).toBe('private');
+    expect(parsePrivacyMode('standard', 'private')).toBe('standard');
+    expect(parsePrivacyMode(null, 'standard')).toBe('standard');
+    expect(parsePrivacyMode('bogus', 'private')).toBe('private');
   });
 });

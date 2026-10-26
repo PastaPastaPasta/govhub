@@ -22,7 +22,7 @@ export interface BadgeNetworkConfig {
   contractId: string;
   defaultIssuers: readonly TrustedIssuer[];
   /**
-   * A Private / Extra private badge is posted only if the issuer reported at least this many tokens for the epoch before (review R1):
+   * A Private badge is posted only if the issuer reported at least this many tokens for the epoch before (review R1):
    * a badge among two or three stands out. The issuerReport has one count per epoch, Standard and private tokens together, so it
    * cannot say how many chose a private mode (SR-23); the minimum is set higher to leave room for the Standard tokens in it.
    * Testnet's value suits a demo with a handful of test masternodes.

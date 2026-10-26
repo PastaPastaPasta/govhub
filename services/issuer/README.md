@@ -135,7 +135,7 @@ Every response carries `Access-Control-Allow-Origin: *` (no credentials), `Cache
 
 ## Epochs and timing
 
-The issuer mints tokens for the **current** epoch (Standard mode) and the **next** one (the private modes): a token for E
+The issuer mints tokens for the **current** epoch (Standard mode) and the **next** one (Private mode): a token for E
 while the dashd tip is in `[S(E-1), S(E+1))`. It therefore holds the keys of both epochs. Clients stay `margin` blocks
 from the boundaries, because Platform's chain-locked height lags the dashd tip. The full table, the display
 window and the delay a new badge sees (testnet up to ~27 hours, mainnet up to ~32 days) are in
@@ -205,7 +205,7 @@ issuer publish-keys --dir ./keys-offline --identity-file critical.json --contrac
 requires `signatureSecurityLevelRequirement: 1` for `issuerKey` and `issuerRevocation`, so the online HIGH key on the
 server can neither publish nor revoke keys. Readers accept a key created before `S(E+1) - margin` (`keyDeadline`), so
 the current epoch's key can still be published; a key is skipped (`too late`) only if it would not land before that.
-Publish **at least 3 epochs ahead** anyway, so a later compromise cannot claim those slots, and so the private modes,
+Publish **at least 3 epochs ahead** anyway, so a later compromise cannot claim those slots, and so Private requests,
 which ask during E-1, have E's key in time (`--min-ahead` only reports whether enough later epochs have keys; it does
 not enforce anything).
 
@@ -382,17 +382,20 @@ The badge flow is in `apps/web/src/badge`:
 - Blinding, finalizing and every call to the issuer run in a Worker, from the portal's own pinned build, never from
   code the issuer serves. Calls use `credentials: 'omit'`, `referrerPolicy: 'no-referrer'`, `cache: 'no-store'` and
   `redirect: 'error'`.
-- The key and epoch come from the proved `issuerKey` and Platform's core height. The request is sent at a random
+- The key and epoch come from the proved `issuerKey` and Platform's core height. Private: the request is sent at a random
   height in the issuance window (the next epoch's, if less than a quarter of the current one is left), and the badge is
-  posted at a random height in the posting window.
+  posted at a random height in the posting window. Standard: the request for the current epoch is sent once the browser's
+  spacing allows, and the badge is posted with the identity's next write after the cooldown, or on "Register now".
 - **Activity separation** (`visit.ts`), browser-wide and time-based (localStorage, across tabs, reloads and identities): a
   token request goes out only after half an hour without any Platform write from this browser (every identity state
   transition is recorded at the PlatformPort) and without another request; badge posts wait half an hour after the last
   request, and go before requests. The check and the mark run under a browser-wide Web Lock. A failed request waits a
-  random 1 to 3 hours; the page shows the error, the next try, and a "Retry now" button. During the cooldown every tab asks the user not to post. One scheduler per identity runs across
+  random 1 to 3 hours; the page shows the error, the next try, and a "Retry now" button. During the cooldown, while a held
+  Standard token or a Private job is at stake, every tab nudges the user to wait before posting. A Standard token is held in
+  the browser and posted with the identity's next write after the cooldown, or on "Register now" (PLAN §8.10). One scheduler per identity runs across
   tabs (Web Locks), and every save merges into the latest stored jobs under a lock. Jobs are stored per (identity,
   signing key); an entry that does not decrypt is never overwritten.
-- A Private / Extra private badge is posted only when the issuer's report for the epoch before shows at least the network's
+- A Private badge is posted only when the issuer's report for the epoch before shows at least the network's
   minimum number of tokens (testnet 5, mainnet 20): a badge among two or three would stand out. The report has one count
   for all tokens of an epoch, Standard ones included, so it cannot say how many chose a private mode; the minimum is set
   higher to allow for that, and the page says so. If the issuer served that epoch but published no report, the badge is not
