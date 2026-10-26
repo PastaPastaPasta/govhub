@@ -48,23 +48,37 @@ export const profilesOf = (ownerIds: readonly string[]): ContractQuery =>
 export const commentsOf = (govHash: string, startAfter?: string): ContractQuery =>
   checked('forum', paged({ documentTypeName: 'comment', where: [['govHash', '==', hexToB64(govHash)]], orderBy: [['govHash', 'asc'], ['$createdAt', 'asc']], limit: PAGE }, startAfter));
 
-/** F2c (+F3p paging): a proposal's comments, newest first (the `$createdAt > 0` range makes desc work on PV13, rule 7). */
-export const commentsNewestOf = (govHash: string, startAfter?: string): ContractQuery =>
-  checked(
-    'forum',
-    paged({ documentTypeName: 'comment', where: [['govHash', '==', hexToB64(govHash)], ['$createdAt', '>', 0]], orderBy: [['govHash', 'desc'], ['$createdAt', 'desc']], limit: PAGE }, startAfter),
-  );
+/**
+ * F2c: a proposal's comments, newest first. The `$createdAt` range makes desc work on PV13 (rule 7); later pages bound it with
+ * `<= atOrBeforeMs` (the last page's oldest time) instead of `startAfter`, which rc.8 cannot verify on a desc proof (R8). The
+ * caller skips the ids it already has at that time (pageDesc in reader.ts).
+ */
+export const commentsNewestOf = (govHash: string, atOrBeforeMs?: number): ContractQuery =>
+  checked('forum', {
+    documentTypeName: 'comment',
+    where: [['govHash', '==', hexToB64(govHash)], atOrBeforeMs === undefined ? ['$createdAt', '>', 0] : ['$createdAt', '<=', atOrBeforeMs]],
+    orderBy: [['govHash', 'desc'], ['$createdAt', 'desc']],
+    limit: PAGE,
+  });
 
-/** F2d: a proposal's comments created after `sinceMs` (block time), oldest first. */
+/**
+ * F2d: a proposal's comments created at or after `sinceMs` (block time), oldest first. `>=`, not `>`: several comments can share
+ * one block time, so the caller passes the newest time it has and skips the ids it already holds.
+ */
 export const commentsSince = (govHash: string, sinceMs: number, startAfter?: string): ContractQuery =>
   checked(
     'forum',
-    paged({ documentTypeName: 'comment', where: [['govHash', '==', hexToB64(govHash)], ['$createdAt', '>', sinceMs]], orderBy: [['govHash', 'asc'], ['$createdAt', 'asc']], limit: PAGE }, startAfter),
+    paged({ documentTypeName: 'comment', where: [['govHash', '==', hexToB64(govHash)], ['$createdAt', '>=', sinceMs]], orderBy: [['govHash', 'asc'], ['$createdAt', 'asc']], limit: PAGE }, startAfter),
   );
 
-/** F3: an author's comments, newest first (the `$createdAt > 0` range makes desc work on PV13, rule 7). */
-export const commentsBy = (ownerId: string, startAfter?: string): ContractQuery =>
-  checked('forum', paged({ documentTypeName: 'comment', where: [['$ownerId', '==', ownerId], ['$createdAt', '>', 0]], orderBy: [['$ownerId', 'asc'], ['$createdAt', 'desc']], limit: PAGE }, startAfter));
+/** F3: an author's comments, newest first; paged like F2c with `<= atOrBeforeMs` (rules 7 and R8). */
+export const commentsBy = (ownerId: string, atOrBeforeMs?: number): ContractQuery =>
+  checked('forum', {
+    documentTypeName: 'comment',
+    where: [['$ownerId', '==', ownerId], atOrBeforeMs === undefined ? ['$createdAt', '>', 0] : ['$createdAt', '<=', atOrBeforeMs]],
+    orderBy: [['$ownerId', 'asc'], ['$createdAt', 'desc']],
+    limit: PAGE,
+  });
 
 // ---- reaction ---------------------------------------------------------------------------------
 /** A reaction target as base64: a comment id (base58). */

@@ -131,6 +131,17 @@ interface Proven<T> {
 
 const nowSeconds = (): number => Math.floor(Date.now() / 1000);
 
+/** The Past list's keyset cursor (see pastPage); anything malformed restarts from the newest. */
+export function parsePastCursor(cursor: string): { endEpoch: number; ids: string[] } | null {
+  try {
+    const c = JSON.parse(cursor) as { endEpoch?: unknown; ids?: unknown };
+    if (!Number.isSafeInteger(c.endEpoch) || !Array.isArray(c.ids) || !c.ids.every((x) => typeof x === 'string')) return null;
+    return { endEpoch: c.endEpoch as number, ids: c.ids as string[] };
+  } catch {
+    return null;
+  }
+}
+
 /** The chain parameters of a Core network (no bridge asked), with where they come from. */
 const chainParams = (network: CoreNetwork, detail?: string): Sourced<GovParams> => ({
   value: GOV_PARAMS[network],
@@ -265,10 +276,20 @@ export function liveSource(registry: Registry): DataSource {
     },
 
     async pastPage(cursor) {
-      const r = await queryDocs(registry, pastProposals(nowSeconds(), cursor));
-      const items = r.docs.map((d) => ({ value: docToProposal(d), prov: proof(r.height) }));
-      const next = r.docs.length === PAGE ? items.at(-1)?.value.docId : undefined;
-      return next ? { items, next } : { items };
+      // Keyset paging (R8): the cursor is the last endEpoch shown plus the ids already shown at it; the next page asks for
+      // endEpoch <= that and skips those ids, so proposals that share an endEpoch across a page boundary are neither lost nor repeated.
+      const at = cursor ? parsePastCursor(cursor) : null;
+      if (cursor && !at) return { items: [] };
+      const r = await queryDocs(registry, pastProposals(at?.endEpoch ?? nowSeconds()));
+      const shown = new Set(at?.ids);
+      const all = r.docs.map(docToProposal);
+      const items = all.filter((p) => !p.docId || !shown.has(p.docId)).map((p) => ({ value: p, prov: proof(r.height) }));
+      const last = all.at(-1);
+      // A full page with nothing new (more than PAGE proposals share one endEpoch) cannot move on: stop rather than loop.
+      if (r.docs.length < PAGE || !last || !items.length) return { items };
+      const ids = all.filter((p) => p.endEpoch === last.endEpoch).flatMap((p) => (p.docId ? [p.docId] : []));
+      if (at?.endEpoch === last.endEpoch) ids.push(...at.ids);
+      return { items, next: JSON.stringify({ endEpoch: last.endEpoch, ids: [...new Set(ids)] }) };
     },
 
     async proposal(h) {
@@ -310,7 +331,12 @@ export function liveSource(registry: Registry): DataSource {
         }
         return found;
       };
-      const [fromSet, fromDocs] = await Promise.all([packed(), single()]);
+      // A failed talliesSet read must not take the per-proposal tallies with it: those proposals then read as "no tally published".
+      const packedOrNone = packed().catch((e: unknown) => {
+        console.warn('talliesSet pages could not be read', e);
+        return [] as Sourced<Tally>[];
+      });
+      const [fromSet, fromDocs] = await Promise.all([packedOrNone, single()]);
       const out = new Map<string, Sourced<Tally>>();
       // On a tie the packed entry wins, except over a proposal's final tally (rank 0, not in the next budget): the bridge writes that
       // when the proposal leaves the active set, possibly before its next (throttled) replace of the set drops the entry.

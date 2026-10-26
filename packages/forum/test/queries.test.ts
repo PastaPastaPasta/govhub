@@ -34,9 +34,10 @@ describe('every forum/mod/gov query the data layer sends passes the PV13 lint on
     ['F2', commentsOf(H), 'byProposal'],
     ['F2 paged', commentsOf(H, DOC), 'byProposal'],
     ['F2c', commentsNewestOf(H), 'byProposal'],
-    ['F2c paged', commentsNewestOf(H, DOC), 'byProposal'],
+    ['F2c paged', commentsNewestOf(H, 1_792_807_000_000), 'byProposal'],
     ['F2d', commentsSince(H, 1_792_807_000_000), 'byProposal'],
     ['F3', commentsBy(ID), 'byAuthor'],
+    ['F3 paged', commentsBy(ID, 1_792_807_000_000), 'byAuthor'],
     ['F5', myReactionOn(ID, targetB64({ commentId: DOC })), 'byOwnerTarget'],
     ['F5b', myReactionsOn(ID, [targetB64({ commentId: ID }), targetB64({ commentId: DOC })]), 'byOwnerTarget'],
     ['F6 comment', reactionsOn(targetB64({ commentId: DOC })), 'byTarget'],
@@ -67,6 +68,21 @@ describe('every forum/mod/gov query the data layer sends passes the PV13 lint on
 
   it('newest-first comments by author carry the $createdAt range PV13 needs for desc (rule 7)', () => {
     expect(commentsBy(ID).q.where).toContainEqual(['$createdAt', '>', 0]);
+  });
+
+  it('desc lists never page with startAfter (R8: rc.8 cannot verify that proof on PV13); later pages bound $createdAt instead', () => {
+    for (const { q } of [commentsNewestOf(H, 5), commentsBy(ID, 5)]) {
+      expect(q.startAfter).toBeUndefined();
+      expect(q.where).toContainEqual(['$createdAt', '<=', 5]);
+    }
+    const r = lintQuery(SCHEMAS.forum, { ...commentsNewestOf(H).q, startAfter: DOC });
+    expect(r.ok).toBe(false);
+    expect(r.errors.join()).toMatch(/R8/);
+    expect(lintQuery(SCHEMAS.forum, commentsOf(H, DOC).q).ok).toBe(true); // asc + startAfter is fine
+  });
+
+  it('F2d reads from the boundary time itself (>=), so comments sharing that block time are not skipped', () => {
+    expect(commentsSince(H, 7).q.where).toContainEqual(['$createdAt', '>=', 7]);
   });
 
   it('byte-array values go out as base64, identifiers as base58 (rule 6)', () => {

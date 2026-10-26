@@ -103,7 +103,13 @@ enforced by the shapes listed in this file:
    works), but must include the `in` property (`orderBy: [['target','asc']]`). One `in` per query.
 4. A query may use at most 2 fewer properties than the index has (`MAX_INDEX_DIFFERENCE`), which is
    always satisfied here (max index length 3).
-5. **Paging**: `limit` (default and max 100) plus `startAfter: <last document id>` (verified, `F3p2`).
+5. **Paging**: `limit` (default and max 100) plus `startAfter: <last document id>` (verified, `F3p2`) for **ascending** lists only.
+   **A `desc` query must never carry `startAfter` (lint R8):** PV13 mainnet answers it, but evo-sdk 5.0.0-rc.8 rejects the proof
+   ("Proof op family does not match the query direction: upright op in a right-to-left walk"), so the read fails; verified
+   read-only on mainnet 2026-10-25 for F2c, F3 and a DPNS desc list, while the same lists with `asc` + `startAfter` verify. Newest-first
+   lists (G3, F2c, F3) page by a bound instead: the next page asks for `<=` the previous page's last key and drops the ids already read at
+   that key (`pageDesc` in `packages/forum/src/reader.ts`, `pastPage` in `apps/web/src/data/repo.ts`), so documents sharing one block time
+   or end epoch are neither lost nor repeated.
 6. **Value encodings in `where`** (found in the spike): `byteArray` values must be **base64 strings**
    (a `Uint8Array` throws "invalid type: byte array"); identifier values are **base58 strings**;
    integers are JS numbers. Documents read back render byte arrays as base64 and identifiers as base58.
@@ -299,9 +305,9 @@ assembled client-side from the proposal's flat list (there is deliberately no `p
 |---|---|---|---|
 | F2 | comments of a proposal, oldest first | `govHash == <b64>` | `[[govHash, asc],[$createdAt, asc]]` |
 | F2c | newest first | `govHash == <b64>`, `$createdAt > 0` (rule 7) | `[[govHash, desc],[$createdAt, desc]]` |
-| F2d | comments since T (equality + range) | `govHash == <b64>`, `$createdAt > <ms>` | `[[govHash, asc],[$createdAt, asc]]` |
+| F2d | comments since T (equality + range; `>=`, callers skip the ids they hold) | `govHash == <b64>`, `$createdAt >= <ms>` | `[[govHash, asc],[$createdAt, asc]]` |
 | F3 | comments by an author, newest first | `$ownerId == <b58>`, `$createdAt > 0` (rule 7) | `[[$ownerId, asc],[$createdAt, desc]]` |
-| F3p1/p2 | paging | as F2/F3 + `startAfter: <last id>` | as above |
+| F3p1/p2 | paging | F2: + `startAfter: <last id>`; F2c/F3 (desc): `$createdAt <= <last page's oldest>` instead (rule 5, R8) | as above |
 
 ### `reaction` (mutable, deletable)
 

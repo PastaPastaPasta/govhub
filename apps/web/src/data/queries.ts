@@ -22,9 +22,13 @@ export const proposalByHash = (govHashHex: string): DocQuery =>
 export const activeProposals = (nowS: number, startAfter?: string): DocQuery =>
   checked(paged({ documentTypeName: 'proposal', where: [['endEpoch', '>', nowS]], orderBy: [['endEpoch', 'asc']], limit: PAGE }, startAfter));
 
-/** G3: ended proposals, newest end first (the range on endEpoch is what makes desc work on PV13, rule 7). */
-export const pastProposals = (nowS: number, startAfter?: string, limit = PAGE): DocQuery =>
-  checked(paged({ documentTypeName: 'proposal', where: [['endEpoch', '<=', nowS]], orderBy: [['endEpoch', 'desc']], limit }, startAfter));
+/**
+ * G3: proposals that ended at or before `atOrBeforeS`, newest end first (the range on endEpoch is what makes desc work on PV13, rule 7).
+ * The first page passes now; later pages pass the previous page's last endEpoch and drop the ids already shown at it, because a desc
+ * query cannot page with startAfter (R8: evo-sdk rc.8 cannot verify that proof on PV13). See repo.ts pastPage.
+ */
+export const pastProposals = (atOrBeforeS: number, limit = PAGE): DocQuery =>
+  checked({ documentTypeName: 'proposal', where: [['endEpoch', '<=', atOrBeforeS]], orderBy: [['endEpoch', 'desc']], limit });
 
 /** G4: proposals by name (slug lookup), oldest first. */
 export const proposalsByName = (name: string): DocQuery =>

@@ -1,7 +1,7 @@
 // Typed reads over any DocReader (evo-sdk with proofs in the app, an in-memory store in fixtures and tests). Every
 // query comes from queries.ts, so it has passed the PV13 lint before it is sent.
 import type { DocQuery } from '@govhub/contracts-v1/queryLint';
-import { convertAll, toAttestation, toBlock, toBlockSubs, toClaim, toComment, toPost, toProfile, toReaction, type RawDoc } from './convert.ts';
+import { convertAll, num, toAttestation, toBlock, toBlockSubs, toClaim, toComment, toPost, toProfile, toReaction, type RawDoc } from './convert.ts';
 import { attestationsOf, blocksOf, blockSubsOf, claimsOf, commentsNewestOf, commentsSince, myReactionsOn, PAGE, postOf, profilesOf, reactionsOn, type ContractQuery } from './queries.ts';
 import type { Block, BlockSubs, Claim, ClaimAttestation, Comment, ContractKey, Profile, ProposalPost, Reaction } from './types.ts';
 
@@ -36,6 +36,41 @@ export async function pageAll(reader: DocReader, build: (startAfter?: string) =>
   return { docs, height, truncated: true };
 }
 
+/**
+ * Runs a newest-first shape (desc on `key`) until a short page. A desc list cannot page with `startAfter` (R8: evo-sdk rc.8 cannot
+ * verify that proof on PV13), so each next page asks for `key <= ` the last page's lowest key and drops the ids already read: documents
+ * that share that key (one block time) are read again, never skipped. If a whole page shares one key and brings nothing new (more than
+ * PAGE documents at one block time), the read stops there as `truncated`.
+ */
+export async function pageDesc(reader: DocReader, build: (atOrBefore?: number) => ContractQuery, key: string, maxPages = MAX_PAGES): Promise<DocPage & { truncated: boolean }> {
+  const docs: RawDoc[] = [];
+  const seen = new Set<string>();
+  let height: number | null = null;
+  let bound: number | undefined;
+  for (let i = 0; i < maxPages; i++) {
+    const { contract, q } = build(bound);
+    const page = await reader.query(contract, q);
+    height = page.height ?? height;
+    let fresh = 0;
+    for (const d of page.docs) {
+      const id = d.$id;
+      if (typeof id !== 'string' || seen.has(id)) continue;
+      seen.add(id);
+      docs.push(d);
+      fresh++;
+    }
+    if (page.docs.length < PAGE) return { docs, height, truncated: false };
+    const last = page.docs.at(-1);
+    if (!fresh || !last) return { docs, height, truncated: true };
+    try {
+      bound = num(last, key);
+    } catch {
+      return { docs, height, truncated: true }; // no usable key to bound the next page by
+    }
+  }
+  return { docs, height, truncated: true };
+}
+
 const chunk = <T>(xs: readonly T[], n: number): T[][] => {
   const out: T[][] = [];
   for (let i = 0; i < xs.length; i += n) out.push(xs.slice(i, i + n));
@@ -64,18 +99,21 @@ export class ForumReader {
   }
 
   /**
-   * A proposal's comments, read newest first (F2c, paged by 100) so a flood can only push the oldest out of the read, never
-   * hide new ones; `truncated` when more than `maxPages` pages exist. Returned oldest first, for threading.
+   * A proposal's comments, read newest first (F2c, paged by 100 with pageDesc) so a flood can only push the oldest out of the read,
+   * never hide new ones; `truncated` when more than `maxPages` pages exist. Returned oldest first, for threading.
    */
   async comments(govHash: string, maxPages = MAX_PAGES): Promise<{ comments: Comment[]; height: number | null; truncated: boolean }> {
-    const r = await pageAll(this.reader, (c) => commentsNewestOf(govHash, c), maxPages);
+    const r = await pageDesc(this.reader, (t) => commentsNewestOf(govHash, t), '$createdAt', maxPages);
     return { comments: convertAll(r.docs, toComment).filter((x) => x.govHash === govHash).reverse(), height: r.height, truncated: r.truncated };
   }
 
-  /** Comments created after `sinceMs` (F2d), for incremental counts. */
+  /**
+   * Comments created at or after `sinceMs` (F2d), for incremental counts. Includes `sinceMs` itself, since several comments can share
+   * one block time: callers skip the ids they already hold.
+   */
   async commentsSince(govHash: string, sinceMs: number): Promise<Comment[]> {
     const r = await pageAll(this.reader, (c) => commentsSince(govHash, sinceMs, c));
-    return convertAll(r.docs, toComment).filter((x) => x.govHash === govHash && x.createdAt > sinceMs);
+    return convertAll(r.docs, toComment).filter((x) => x.govHash === govHash && x.createdAt >= sinceMs);
   }
 
   /** Profiles of these identities (F1b, 100 per query). */

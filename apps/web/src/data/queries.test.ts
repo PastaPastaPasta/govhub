@@ -49,10 +49,12 @@ describe('every query the app sends passes the PV13 lint', () => {
     bad(GOV_SCHEMAS, { documentTypeName: 'talliesSet', where: [['asOfHeight', '>', 0]], orderBy: [['asOfHeight', 'asc']] }, 'R1');
     bad(GOV_SCHEMAS, { documentTypeName: 'talliesSet', where: [['page', '>=', 0]], orderBy: [['page', 'asc']], limit: 101 }, 'R5');
   });
-  it('G3 (past, newest first) carries a range on endEpoch so desc works on PV13', () => {
+  it('G3 (past, newest first) carries a range on endEpoch so desc works on PV13, and pages by that bound, never startAfter (R8)', () => {
     const q = pastProposals(100);
     expect(q.orderBy).toEqual([['endEpoch', 'desc']]);
     expect(q.where[0]![1]).toBe('<=');
+    expect(q.startAfter).toBeUndefined();
+    bad(GOV_SCHEMAS, { ...q, startAfter: '9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv' }, 'R8');
   });
   it('G5 dedupes hashes and sends base64', () => {
     const q = talliesFor([H, H.toUpperCase()]);
