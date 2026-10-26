@@ -18,7 +18,10 @@ vi.mock('../app/forum.tsx', () => ({ useForum: () => stable.forum }));
 vi.mock('../auth/context.tsx', () => ({ useAuth: () => stable.auth }));
 stable.app = { registry: defaultRegistry(), mode: 'fixtures' };
 stable.forum = { session: { identityId: '9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv' } };
-stable.auth = { session: null, network: 'testnet', balance: null, refreshBalance: () => {} };
+stable.auth = {
+  session: null, network: 'testnet', balance: null, refreshBalance: () => {},
+  keyringLock: { locked: () => false, lock: () => {}, unlocked: () => {}, attach: () => () => {} },
+};
 
 const { KeyringProvider, useKeyring } = await import('./KeyringContext.tsx');
 
