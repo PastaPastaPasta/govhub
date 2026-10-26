@@ -142,7 +142,7 @@ by Dash Core Group
 │ [▓▓▓▓▓▓▓▓▓▓|▓▓▓▓]  Passing by 355 votes   │  │ Payments   Aug 2026 – Dec 2026 │
 │ In the next budget · closes in 24 days    │  │ Paid so far 3                  │
 │ 751 yes · 64 no · 0 abstain               │  │ Website    dashcentral.org ↗   │
-│ [ Vote on this proposal ]                 │  │ Community  ▲ 4  ▼ 1            │
+│ [ Vote on this proposal ]                 │  │                                │
 └───────────────────────────────────────────┘  └───────────────────────────────┘
 Your vote (masternode owners)            ← only when the keyring is open, or a CTA
 About this proposal (owner's post, or "read it on dashcentral.org")

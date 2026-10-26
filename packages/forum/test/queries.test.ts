@@ -38,9 +38,9 @@ describe('every forum/mod/gov query the data layer sends passes the PV13 lint on
     ['F2d', commentsSince(H, 1_792_807_000_000), 'byProposal'],
     ['F3', commentsBy(ID), 'byAuthor'],
     ['F5', myReactionOn(ID, targetB64({ commentId: DOC })), 'byOwnerTarget'],
-    ['F5b', myReactionsOn(ID, [targetB64({ govHash: H }), targetB64({ commentId: DOC })]), 'byOwnerTarget'],
+    ['F5b', myReactionsOn(ID, [targetB64({ commentId: ID }), targetB64({ commentId: DOC })]), 'byOwnerTarget'],
     ['F6 comment', reactionsOn(targetB64({ commentId: DOC })), 'byTarget'],
-    ['F6 proposal paged', reactionsOn(targetB64({ govHash: H }), DOC), 'byTarget'],
+    ['F6 comment paged', reactionsOn(targetB64({ commentId: ID }), DOC), 'byTarget'],
     ['F7', claimsOf(H), 'byProposal'],
     ['F8', postOf(H, ID), 'byProposalOwner'],
     ['F10', blocksOf('forum', ID), 'byOwnerTarget'],
@@ -59,7 +59,7 @@ describe('every forum/mod/gov query the data layer sends passes the PV13 lint on
   });
 
   it('F6 carries the orderBy that pins byTarget (without it PV13 picks the gapped byOwnerTarget and returns [])', () => {
-    const { q } = reactionsOn(targetB64({ govHash: H }));
+    const { q } = reactionsOn(targetB64({ commentId: DOC }));
     expect(q.orderBy?.at(-1)?.[0]).toBe('$createdAt');
     const r = lintQuery(SCHEMAS.forum, { ...q, orderBy: undefined });
     expect(r.ok).toBe(false);

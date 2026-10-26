@@ -23,7 +23,6 @@ vi.mock('../app/context.tsx', () => ({
 }));
 vi.mock('../app/forum.tsx', () => ({ useForum: () => ({ session: null }) }));
 vi.mock('../voting/KeyringContext.tsx', () => ({ useKeyring: () => ({ status: hold.keyring }) }));
-vi.mock('../ui/useReactions.ts', () => ({ useReactions: () => ({ scores: new Map(), vote: async () => {}, error: null }) }));
 vi.mock('../ui/Discussion.tsx', () => ({ Discussion: () => null }));
 vi.mock('../ui/ReadError.tsx', () => ({ ReadError: () => null }));
 vi.mock('../ui/WriteError.tsx', () => ({ WriteError: () => null }));

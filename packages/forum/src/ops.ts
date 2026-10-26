@@ -65,12 +65,10 @@ export function forumOps(contracts: ForumContracts, now: () => number = Date.now
     },
     retractComment: (id: string) => del('forum', 'comment', id),
 
-    /** Up/down vote. With an existing reaction: same value = clear (delete), other value = flip (replace). */
-    react(target: { govHash: string } | { commentId: string }, value: 1 | -1, existing?: Pick<Reaction, 'id' | 'revision' | 'value'>): DocumentOp {
+    /** Up/down vote on a comment. With an existing reaction: same value = clear (delete), other value = flip (replace). */
+    react(target: { commentId: string }, value: 1 | -1, existing?: Pick<Reaction, 'id' | 'revision' | 'value'>): DocumentOp {
       if (existing && existing.value === value) return del('forum', 'reaction', existing.id);
-      const kind = 'govHash' in target ? REACTION_KIND.proposal : REACTION_KIND.comment;
-      const bytes = 'govHash' in target ? hash(target.govHash) : idToBytes(target.commentId);
-      const data = { target: bytes, kind, value };
+      const data = { target: idToBytes(target.commentId), kind: REACTION_KIND.comment, value };
       return existing ? replace('forum', 'reaction', existing.id, existing.revision, data) : create('forum', 'reaction', data);
     },
     clearReaction: (id: string) => del('forum', 'reaction', id),

@@ -30,7 +30,7 @@ describe('F2: the up-front balance check', () => {
 
   it('measured kinds (comment, reaction create) need the fee plus the headroom; the others only their fee, never a guess', () => {
     const ID = 'D'.repeat(43);
-    const measured: DocumentOp[] = [comment52(), ops.react({ govHash: GOV }, 1), ops.react({ commentId: ID }, -1)];
+    const measured: DocumentOp[] = [comment52(), ops.react({ commentId: ID }, 1)];
     for (const op of measured) {
       expect(hasMeasuredHeadroom(op), op.type).toBe(true);
       expect(forumWriteRequired(op), op.type).toBe(BigInt(forumWriteFee(op)! + UPFRONT_HEADROOM));

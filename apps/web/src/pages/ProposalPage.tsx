@@ -5,7 +5,6 @@ import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { urlClaimIdentity } from '@govhub/verify';
 import { useApp } from '../app/context.tsx';
-import { useForum } from '../app/forum.tsx';
 import { Discussion } from '../ui/Discussion.tsx';
 import { ErrorBoundary } from '../ui/ErrorBoundary.tsx';
 import { ReadError } from '../ui/ReadError.tsx';
@@ -13,12 +12,9 @@ import { FundingMeter } from '../ui/FundingMeter.tsx';
 import { LameDuckPageStatus } from '../ui/LameDuck.tsx';
 import { StartsLaterPageStatus } from '../ui/StartsLater.tsx';
 import { ClaimPanel, OwnerPost, OwnerValue, RejectedClaims, useOwnership, useOwnerPost } from '../ui/Ownership.tsx';
-import { openSignIn } from '../ui/SignIn.tsx';
 import { TrustBadge } from '../ui/trust/TrustBadge.tsx';
 import { useProposalTrust } from '../ui/trust/useProposalTrust.ts';
 import { VerificationDrawer } from '../ui/trust/VerificationDrawer.tsx';
-import { useReactions } from '../ui/useReactions.ts';
-import { Votes } from '../ui/Votes.tsx';
 import { OfflineSign, ProposalVotePanel } from '../ui/VotePanel.tsx';
 import { useAsync } from '../ui/hooks.ts';
 import type { Proposal, Sourced } from '../data/types.ts';
@@ -90,24 +86,6 @@ function NotFound({ what }: { what: string }) {
         Platform has no record of {what}. It may not be published yet. <Link to="/">Back to active proposals</Link>
       </p>
     </section>
-  );
-}
-
-/** Community up/down vote on the proposal (`reaction` kind 2): not a masternode funding vote. */
-function CommunityVote({ govHash }: { govHash: string }) {
-  const { session } = useForum();
-  const targets = useMemo(() => [{ govHash }], [govHash]);
-  const { scores, vote, error } = useReactions(targets);
-  const read = scores.get(govHash);
-  const s = read ?? { up: 0, down: 0, net: 0 };
-  return (
-    <div className="community-vote" data-testid="community-vote">
-      <Votes score={read} signedIn={!!session} label="Community vote on this proposal" onVote={(v) => (session ? vote({ govHash }, v) : (openSignIn(), Promise.resolve()))} />
-      <span className="small muted">
-        {s.up} up, {s.down} down
-      </span>
-      {error && <span className="error small">{error}</span>}
-    </div>
   );
 }
 
@@ -312,12 +290,6 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
               <div>
                 <dt>Submitted</dt>
                 <dd>{formatDateTime(p.time)}</dd>
-              </div>
-              <div>
-                <dt>Community</dt>
-                <dd>
-                  <CommunityVote govHash={p.govHash} />
-                </dd>
               </div>
             </dl>
             <button type="button" className="linkish small" onClick={() => setDrawer(true)}>

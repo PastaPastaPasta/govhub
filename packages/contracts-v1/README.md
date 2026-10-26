@@ -111,7 +111,7 @@ enforced by the shapes listed in this file:
    `where` has only equality clauses, and results come back ascending. PV14 testnet honours it. Add a
    no-op range on the last ordered property (`$createdAt > 0`, `epoch >= 0`). Verified on mainnet
    (`spikes/sdk5/results/mainnet-order-probe.json`). F2c, F3 and B1b carry that range.
-8. There is no count, sum or "all documents of a type" query. Counts (reactions per proposal) are
+8. There is no count, sum or "all documents of a type" query. Counts (reactions per comment) are
    computed client-side by paging; PV14 ranked counts replace that in v2.
 
 Every shape is numbered; the ID is the probe in `spikes/sdk5/scripts/testnet-queries.ts`, which ran
@@ -305,8 +305,8 @@ assembled client-side from the proposal's flat list (there is deliberately no `p
 
 ### `reaction` (mutable, deletable)
 
-`target` b32 (a comment's document id as raw bytes, or a `govHash`), `kind` 1..255 (1 comment, 2 proposal
-community vote), `value` in {-1, +1}. Required: `$createdAt`, `$updatedAt`, `target`, `kind`, `value`.
+`target` b32 (a comment's document id as raw bytes, or a `govHash`), `kind` 1..255 (1 comment; 2 was a proposal
+community vote, which govhub removed on 2026-10-26: the contract is unchanged, but the app no longer writes or reads kind 2, and 2 must not be reused), `value` in {-1, +1}. Required: `$createdAt`, `$updatedAt`, `target`, `kind`, `value`.
 Indexes: `byOwnerTarget` unique `[$ownerId, target]` (one reaction per user per target, flip by replacing),
 `byTarget` `[target, $createdAt]`.
 

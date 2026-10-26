@@ -97,10 +97,8 @@ test.describe('discussion (fixtures)', () => {
     await down.click();
     await expect(bob.locator(':scope > article .vote-score')).toHaveText('0');
 
-    // Community vote on the proposal.
-    const cv = page.getByTestId('community-vote');
-    await cv.locator('.vote-up').click();
-    await expect(cv.locator('.vote-score')).toHaveText('+2');
+    // The proposal itself has no up/down vote: the only votes on it are masternode votes.
+    await expect(page.getByTestId('community-vote')).toHaveCount(0);
 
     // Block Bob for me (hide, not delete), then unblock.
     await bob.locator(':scope > article').getByText('Hide…').click();

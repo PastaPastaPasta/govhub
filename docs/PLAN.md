@@ -14,8 +14,9 @@ measured in phase 0.
 ## Decisions (user, 2026-10-23)
 
 **Scope**
-- In: DashCentral governance features, community up/down votes, a DashCentral-compatible JSON
-  API that we serve, and all EvoVote features.
+- In: DashCentral governance features, a DashCentral-compatible JSON API that we serve, and all
+  EvoVote features. Proposal community votes removed (owner decision, 2026-10-26); the only votes
+  are masternode network votes. Up/down reactions on comments stay.
 - Out: MN monitoring and earnings, notifications, the Android app, the shoutbox, and **anything
   that needs DashCentral's data or API key** (no description or comment mirror).
 
@@ -184,7 +185,7 @@ values stay below 2^63, because PV14 re-keys unsigned integers around the midpoi
 |---|---|---|---|
 | `profile` | y/y | `displayName`, `about`, `avatarUrl` | unique [$ownerId] |
 | `comment` | n/y | `govHash`, `parentId?`, `body` ≤5000 B, `fmt` | [govHash, $createdAt]; [$ownerId, $createdAt] |
-| `reaction` | y/y | `target`, `kind` (1 = comment, 2 = proposal community vote), `value` ±1 | unique [$ownerId, target]; [target, $createdAt] |
+| `reaction` | y/y | `target`, `kind` (1 = comment; 2 was a proposal community vote, removed from the app, which no longer writes or reads it; do not reuse 2), `value` ±1 | unique [$ownerId, target]; [target, $createdAt] |
 | `claim` | n/y | `govHash`, `method`, `sig` | [govHash, $createdAt] |
 | `proposalPost` | y/y | `govHash`, `title`, `b0..b2` (deflated markdown), `links` | unique [govHash, $ownerId] |
 | `proposalDraft` | y/y | `time`, `revision`, `dataHex`, `govHash`, `collateralTxid?`, `stage` | unique [$ownerId, govHash]; [stage, $updatedAt] |

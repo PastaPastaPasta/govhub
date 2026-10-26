@@ -46,7 +46,7 @@ export async function seedFixtureForum(store: MemoryStore, registry: Registry, n
   const data = (op: ReturnType<typeof ops.comment>): DocData => (op.action === 'create' ? op.data : {});
   const comment = (owner: string, govHash: string, body: string, hoursAgo: number, parentId?: string, fmt = 1) =>
     store.seed('forum', 'comment', owner, data(ops.comment(govHash, body, { fmt, ...(parentId ? { parentId } : {}) })), at(hoursAgo));
-  const react = (owner: string, target: { govHash: string } | { commentId: string }, value: 1 | -1, hoursAgo: number) =>
+  const react = (owner: string, target: { commentId: string }, value: 1 | -1, hoursAgo: number) =>
     store.seed('forum', 'reaction', owner, data(ops.react(target, value)), at(hoursAgo));
 
   store.seed('forum', 'profile', alice, { displayName: 'Alice', about: 'DashCentral regular since 2017' });
@@ -72,9 +72,6 @@ export async function seedFixtureForum(store: MemoryStore, registry: Registry, n
   react(carol, { commentId: c1 }, 1, 29);
   react(dave, { commentId: c1 }, -1, 19);
   react(spammer, { commentId: c1 }, -1, 5);
-  react(bob, { govHash: op }, 1, 43);
-  react(carol, { govHash: op }, 1, 28);
-  react(dave, { govHash: op }, -1, 18);
 
   // Default moderation list: the spammer's identity.
   store.seed('mod', 'block', registry.forum.moderationIdentityId, { target: idToBytes(spammer), kind: 1, reason: 'spam' }, at(5));
