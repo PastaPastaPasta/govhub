@@ -11,6 +11,7 @@ import { dapiConfig } from '../data/dapi.ts';
 import { createSource } from '../data/repo.ts';
 import { GOV_PARAMS } from '../lib/governance.ts';
 import {
+  attestorsFor,
   backendNotice,
   customFields,
   defaultRegistry,
@@ -18,6 +19,9 @@ import {
   enabledBridges,
   LEGACY_STORAGE_KEY,
   loadRegistry,
+  MAINNET_BRIDGE_IDENTITY_ID,
+  MAINNET_FORUM,
+  MAINNET_GOV_CONTRACT_ID,
   migrateV1,
   parseRegistry,
   PROFILES,
@@ -62,8 +66,9 @@ const v1 = (over: Record<string, unknown> = {}) => ({
 });
 
 describe('relay defaults', () => {
-  it('Dev uses the mainnet relay; an empty version 1 relay list is not kept as a custom override', () => {
+  it('Dev and Mainnet use the mainnet relay; an empty version 1 relay list is not kept as a custom override', () => {
     expect(defaultRegistry().relays.map((r) => r.url)).toEqual(['https://gov-relay.dashhq.org']);
+    expect(profileRegistry('dev').relays.map((r) => r.url)).toEqual(['https://gov-relay.dashhq.org']);
     const m = migrateV1(v1());
     expect('relays' in m).toBe(false);
     expect(migrateV1(v1({ relays: [{ name: 'mine', url: 'https://relay.example.org' }] })).relays).toEqual([{ name: 'mine', url: 'https://relay.example.org' }]);
@@ -71,8 +76,18 @@ describe('relay defaults', () => {
 });
 
 describe('profiles', () => {
-  it('Dev is the default: mainnet Core, testnet Platform, the Dev contract and bridge', () => {
-    const d = defaultRegistry();
+  it('Mainnet is the default: mainnet Core and Platform, the mainnet contracts, bridge and relay', () => {
+    const m = defaultRegistry();
+    expect(m).toMatchObject({ version: 2, profile: 'mainnet', coreNetwork: 'mainnet', platformNetwork: 'mainnet', govContractId: MAINNET_GOV_CONTRACT_ID, forum: MAINNET_FORUM });
+    expect(m.bridges.map((b) => b.httpBase)).toEqual(['https://gov-bridge-mainnet.dashhq.org']);
+    expect(attestorsFor(m)).toEqual([MAINNET_BRIDGE_IDENTITY_ID]);
+    expect(m.quorumProofs.map((q) => q.url)).toEqual(['https://gov-bridge-mainnet.dashhq.org', 'https://gov-bridge.dashhq.org']);
+    expect(customFields(m).size).toBe(0);
+    expect(parseRegistry(m).errors).toEqual([]);
+  });
+
+  it('Dev: mainnet Core, testnet Platform, the Dev contract and bridge', () => {
+    const d = profileRegistry('dev');
     expect(d).toMatchObject({ version: 2, profile: 'dev', coreNetwork: 'mainnet', platformNetwork: 'testnet', govContractId: DEV_GOV_CONTRACT_ID });
     expect(d.bridges.map((b) => b.httpBase)).toEqual(['https://gov-bridge.dashhq.org']);
     expect(d.dapi.quorumUrl).toBe(QUORUM_SERVICE.mainnet);
@@ -84,14 +99,19 @@ describe('profiles', () => {
     expect(t).toMatchObject({ profile: 'testnet', coreNetwork: 'testnet', platformNetwork: 'testnet', govContractId: TESTNET_GOV_CONTRACT_ID });
     expect(t.dapi.quorumUrl).toBe('https://quorums.testnet.networks.dash.org/masternodes');
     expect(t.bridges.map((b) => b.httpBase)).toEqual(['https://gov-bridge-testnet.dashhq.org']);
-    expect(t.forum).toEqual(defaultRegistry().forum);
+    expect(t.forum).toEqual(profileRegistry('dev').forum);
     expect(parseRegistry(t).errors).toEqual([]);
   });
 
-  it('Mainnet is listed but not deployed: it cannot be selected or imported', () => {
-    expect(PROFILES.mainnet.deployed).toBe(false);
-    expect(() => registryForProfile(defaultRegistry(), 'mainnet')).toThrow(/not deployed/);
-    expect(parseRegistry({ ...defaultRegistry(), profile: 'mainnet' }).errors.join()).toMatch(/not deployed/);
+  it('a profile that is not deployed cannot be selected or imported', () => {
+    const saved = PROFILES.testnet.deployed;
+    (PROFILES.testnet as { deployed: boolean }).deployed = false;
+    try {
+      expect(() => registryForProfile(defaultRegistry(), 'testnet')).toThrow(/not deployed/);
+      expect(parseRegistry({ ...profileRegistry('testnet'), profile: 'testnet' }).errors.join()).toMatch(/not deployed/);
+    } finally {
+      (PROFILES.testnet as { deployed: boolean }).deployed = saved;
+    }
   });
 
   it('switching profile replaces every network-specific setting (overrides do not leak), keeps the price feed', () => {
@@ -121,7 +141,7 @@ describe('profiles', () => {
   });
 
   it('a bridge for another contract is never asked', () => {
-    const r: Registry = { ...defaultRegistry(), bridges: [...defaultRegistry().bridges, { name: 'other', httpBase: 'https://other.example.org', govContractId: 'CWJ5PyMMKwchk5H3FjX9enVQToWZUFA1xQaRn8zNZVjY', bridgeIdentityId: '', enabled: true }] };
+    const r: Registry = { ...profileRegistry('dev'), bridges: [...profileRegistry('dev').bridges, { name: 'other', httpBase: 'https://other.example.org', govContractId: 'CWJ5PyMMKwchk5H3FjX9enVQToWZUFA1xQaRn8zNZVjY', bridgeIdentityId: '', enabled: true }] };
     expect(enabledBridges(r).map((b) => b.name)).toEqual(['gov-bridge.dashhq.org']);
   });
 
@@ -160,7 +180,7 @@ describe('migration from version 1', () => {
   it('default version 1 settings become the Dev profile with nothing custom', () => {
     const { registry, errors } = parseRegistry(v1());
     expect(errors).toEqual([]);
-    expect(registry).toEqual(defaultRegistry());
+    expect(registry).toEqual(profileRegistry('dev'));
   });
 
   it('version 1 overrides on Dev networks are kept, marked custom', () => {
@@ -201,11 +221,12 @@ describe('migration from version 1', () => {
   });
 
   it('a profile contract cannot be read under other networks (the reported bug, as an override)', () => {
-    expect(parseRegistry({ ...defaultRegistry(), coreNetwork: 'testnet' }).errors.join()).toMatch(/Dev governance contract holds Core mainnet data/);
+    expect(parseRegistry({ ...profileRegistry('dev'), coreNetwork: 'testnet' }).errors.join()).toMatch(/Dev governance contract holds Core mainnet data/);
+    expect(parseRegistry({ ...defaultRegistry(), platformNetwork: 'testnet' }).errors.join()).toMatch(/Mainnet governance contract holds Core mainnet data on Platform mainnet/);
     // A version 1 user on the Dev contract with odd networks lands on the Dev networks.
     const { registry, errors } = parseRegistry(v1({ coreNetwork: 'testnet', platformNetwork: 'mainnet', dapi: { source: 'quorum', quorumUrl: QUORUM_SERVICE.testnet, nodes: [] } }));
     expect(errors).toEqual([]);
-    expect(registry).toEqual(defaultRegistry());
+    expect(registry).toEqual(profileRegistry('dev'));
   });
 
   it('?config= links in the version 1 format still import (migrated)', () => {

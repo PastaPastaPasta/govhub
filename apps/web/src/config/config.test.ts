@@ -19,15 +19,15 @@ class MemStorage {
 }
 
 describe('endpoint registry', () => {
-  it('defaults keep Core and Platform networks separate (phase 1: mainnet Core, testnet Platform)', () => {
-    const d = defaultRegistry();
+  it('the Dev profile keeps Core and Platform networks separate (mainnet Core, testnet Platform)', () => {
+    const d = profileRegistry('dev');
     expect(d.coreNetwork).toBe('mainnet');
     expect(d.platformNetwork).toBe('testnet');
     expect(parseRegistry(d).errors).toEqual([]);
   });
 
-  it('defaults include the reference bridge, publishing into the testnet gov contract', () => {
-    const d = defaultRegistry();
+  it('the Dev profile includes the reference bridge, publishing into the testnet gov contract', () => {
+    const d = profileRegistry('dev');
     expect(d.bridges).toEqual([
       { name: 'gov-bridge.dashhq.org', httpBase: 'https://gov-bridge.dashhq.org', govContractId: d.govContractId, bridgeIdentityId: '9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv', enabled: true },
     ]);
@@ -62,7 +62,7 @@ describe('endpoint registry', () => {
     const errs = bad.errors.join('\n');
     for (const e of ['forum.contractId must be', 'forum.modContractId must be', 'claim portal "https://no"']) expect(errs).toContain(e);
     expect(errs).not.toContain('moderationIdentityId');
-    expect(attestorsFor(defaultRegistry())).toEqual(['9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv']);
+    expect(attestorsFor(profileRegistry('dev'))).toEqual(['9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv']);
   });
 
   it('quorum proof sources: the profile bridge, then the public quorum list server; defaults for older settings; validated', () => {

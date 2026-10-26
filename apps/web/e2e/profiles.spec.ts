@@ -71,15 +71,15 @@ test.describe('network profiles', () => {
     const errors = await watchPage(page);
     await page.goto('/settings?fixtures=0');
     const label = page.getByTestId('profile-label');
-    await expect(label).toContainText('Dev: mainnet data on testnet Platform');
+    await expect(label).toContainText('Mainnet');
     const mainnet = page.getByRole('radio', { name: /Mainnet/ });
-    await expect(mainnet).toBeDisabled();
-    await expect(page.locator('.profile-switch')).toContainText('not yet deployed');
+    await expect(mainnet).toBeChecked();
+    await expect(page.locator('.profile-switch')).not.toContainText('not yet deployed');
 
     await page.locator('.profile-switch label', { hasText: 'Testnet' }).click();
     await expect(page.getByRole('radio', { name: 'Testnet' })).toBeChecked();
     // picking is not switching: the switch waits for the confirmation (D-058)
-    await expect(label).toContainText('Dev: mainnet data on testnet Platform');
+    await expect(label).toContainText('Mainnet');
     await page.getByRole('button', { name: 'Switch to Testnet' }).click();
     await expect(label).toContainText('Testnet');
     await expect(label).not.toContainText('Dev');

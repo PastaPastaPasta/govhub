@@ -940,6 +940,16 @@ are the only things to back up off the server):
 | 2 moderation | `96f4TbboxsG4SNx711fvaemSKzsTG72M2pEYLdpPrG2M` | `mod` `65CSJ6tnKFJR6T4C2TMYFsusD7scZqLkpXgjEqpKdu2P` |
 | 3 badge issuer | `9MJV17bn7C9xu1n3nopcZzScTnac3TNUjR17HmpKY4Cr` | `issuerKey` documents for epochs 154 to 167 |
 
+**Bring-up record (2026-10-26).** The archive-only start took the 29 proposals over RPC. A governance resync (section 7)
+then delivered 5,204 ZMQ messages with 2 sequence gaps (from the dashd restart), and the archive held 5,162 votes, the same as
+the Dev bridge. `bridge verify` reported ok, with 5,161 valid signatures plus 1 operator vote and 29/29 tallies equal to Core.
+The first publish pass created 32 documents (29 proposals, 1 `talliesSet`, 2 cycles) with 0 failures for 2,326,012,540
+credits (0.023 DASH). `scripts/readback.ts` matched 32/32 with proofs at protocol version 13.
+
+The resync's dashd restart exposed an empty `.dashcore/dash.conf` (created 2026-10-25 during the v24 rc.4 switch). Core
+refuses to start when the datadir holds a `dash.conf` other than the one given with `-conf`, so dashd restarted in a loop for
+about 15 minutes until the file was moved aside. If dashd loops on restart, check `docker compose logs dashd` for that error.
+
 ### 13.4 Mainnet issuer (MN badge)
 
 In the mainnet stack's project (`COMPOSE_PROFILES=tunnel,relay,issuer`), next to its dashd.
@@ -950,6 +960,13 @@ In the mainnet stack's project (`COMPOSE_PROFILES=tunnel,relay,issuer`), next to
 | Port | `ISSUER_PORT=8792` (8789 is the testnet issuer's) |
 | Secrets | `/opt/govhub/deploy/secrets`: `issuer_hmac_secret`, `issuer_report_key.json` (HIGH key) and `issuer-keys/` with only the current epoch's key and the next one. The CRITICAL key and the other `epoch-<E>.pem` stay offline |
 | Public | tunnel `govhub`: `gov-issuer.dashhq.org -> http://issuer:8789` |
+
+**Bring-up record (2026-10-26).** The 14 issuerKey documents (epochs 154 to 167) were published at core height 2,561,520,
+before the service had ever run. That is the reverse of the order in services/issuer/README.md. The new token store then
+recorded 2,561,797 as its first height and refused epochs 154 and 155 (`token store started at height …`). No token could
+have been issued: the private keys had never been on a server, and the store was empty (no token rows; 0 issued for every
+epoch). So `started_height` in `meta` was set to 2,561,511, the key's height minus the boundary margin and one, with the service
+stopped and a copy of the database kept. Do this only for a store that is known to be the first and only one.
 
 Mainnet epochs are 16,616 blocks (one superblock cycle, about a month), so copy the next epoch's key in once a month, and publish
 more keys (`issuer keygen`, `issuer publish-keys`) at least 3 epochs before 167.

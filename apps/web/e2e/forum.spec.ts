@@ -142,6 +142,8 @@ test.describe('discussion (fixtures)', () => {
 
   test('ownership: attestation owner, owner label, owner post and its editor; claim UI checks signatures', async ({ page }) => {
     const errors = await watchPage(page);
+    // the fixture attestation is the Dev bridge's: counted on the Dev profile (each profile trusts its own gov owner)
+    await page.addInitScript(() => localStorage.setItem('govhub.registry.v2', JSON.stringify({ version: 2, profile: 'dev', overrides: {} })));
     await gotoFixtures(page, '/p/dash-growth-q4-2026');
     const owner = page.getByTestId('owner');
     await expect(owner).toHaveAttribute('data-method', '4');
