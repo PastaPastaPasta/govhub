@@ -208,7 +208,7 @@ export function BadgeProgress({ b, celebrate = false, onAgain }: { b: MnBadge; c
                   {j.mode !== 'standard' && ', at a random time'}.
                 </>
               ) : spacing ? (
-                <>{fetchWaitText(fetchWait)}</>
+                <>{fetchWaitText(fetchWait, j.mode)}</>
               ) : j.state === 'token' ? (
                 <>
                   <span className="spinner" aria-hidden="true" /> Token received; posting your badge…
@@ -216,6 +216,7 @@ export function BadgeProgress({ b, celebrate = false, onAgain }: { b: MnBadge; c
               ) : (
                 <>
                   <span className="spinner" aria-hidden="true" /> Fetching your badge from {name}…
+                  {j.mode === 'standard' && ' It appears the next time you post or react.'}
                 </>
               )}{' '}
               {j.note && <span className="muted">{j.note} </span>}

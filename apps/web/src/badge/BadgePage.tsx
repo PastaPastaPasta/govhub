@@ -26,7 +26,7 @@ function requestedText(job: BadgeJob, p: EpochParams, coreHeight: number | null,
   const requestWait = fetchWaitMs(job, quietSince);
   if (job.mode !== 'standard') return `Scheduled: the request for epoch ${job.epoch} goes out at a random time, around ${eta(job.requestAt, coreHeight)}. ${ADVANCES_WHEN}`;
   if (job.requestAt > (coreHeight ?? 0)) return `Requested: epoch ${job.epoch} starts at block ${formatInt(epochStart(p, job.epoch))}; your badge is fetched then, and appears the next time you post or react. ${ADVANCES_WHEN}`;
-  if (requestWait > 0) return `${fetchWaitText(requestWait)} It then appears the next time you post or react. ${ADVANCES_WHEN}`;
+  if (requestWait > 0) return `${fetchWaitText(requestWait, 'standard')} ${ADVANCES_WHEN}`;
   return `Fetching your badge now. It will appear the next time you post or react. ${ADVANCES_WHEN}`;
 }
 

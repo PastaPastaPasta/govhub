@@ -127,9 +127,14 @@ export const registerNowNote = (issuerName: string): string =>
  */
 export const fetchWaitMs = (j: BadgeJob, quietSince: number, now = Date.now()): number => Math.max(0, quietSince + COOLDOWN_MS + (j.quietExtraMs ?? 0) - now);
 
-/** "We'll fetch your badge in about 50 minutes, at a random time, so the request is harder to match to your account." */
-export const fetchWaitText = (waitMs: number): string =>
-  `We’ll fetch your badge in about ${inTime(waitMs / 1000)}, at a random time, so the request is harder to match to your account.`;
+/**
+ * A request waiting for its quiet time, and what follows it: "Your badge request goes to the issuer in about 50 minutes, …" then,
+ * Standard, the badge rides on the next post or reaction (or Register now); Private, it appears early in the next period.
+ */
+export const fetchWaitText = (waitMs: number, mode: PrivacyMode): string =>
+  `Your badge request goes to the issuer in about ${inTime(waitMs / 1000)}, at a random time, so it is harder to match to your account. ${
+    mode === 'standard' ? 'The badge then appears the next time you post or react, or when you press Register now.' : 'The badge then appears at a random time early in the next badge period.'
+  }`;
 
 /** The held token's nudge; `postWaitMs`: the cooldown left after its request (a write before then does not carry it). */
 export function heldText(postWaitMs: number): string {
