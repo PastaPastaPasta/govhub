@@ -37,6 +37,11 @@ cd deploy && scripts/init.sh --network testnet && docker compose up -d --build
 That starts a Dash Core node and an archive-only bridge. See [`docs/self-hosting.md`](docs/self-hosting.md) for what else
 you can run and how to point the app at it.
 
+## Supporting govhub
+
+Donations to `XcLkMQensjHhr5r9SAUVm4meh2HFKaeAXG` pay for our servers' Platform fees and the machine they run on. What
+that costs is in [`docs/self-hosting.md`](docs/self-hosting.md#what-it-costs).
+
 ## License
 
 MIT

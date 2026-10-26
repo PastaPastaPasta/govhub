@@ -3101,3 +3101,9 @@ details.advanced[open] > summary {
   font-size: 0.875rem;
   z-index: 20;
 }
+
+/* About: the donation address, wrapped on narrow screens and selected whole with one click */
+.about .donate a {
+  overflow-wrap: anywhere;
+  user-select: all;
+}
