@@ -11,7 +11,7 @@ import {
 } from '../src/funding.ts';
 import { addressOf, publicKeyOf, wifOf } from '../src/keys.ts';
 import {
-  CREATE_KEYS, createRequiredCredits, MIN_CREATE_DEPOSIT_DUFFS, MIN_CREATE_LOCK_DUFFS, MIN_TOPUP_DEPOSIT_DUFFS, MIN_TOPUP_LOCK_DUFFS, topUpRequiredCredits,
+  CREATE_KEYS, createRequiredCredits, MIN_CREATE_DEPOSIT_DUFFS, MIN_CREATE_LOCK_DUFFS, MIN_TOPUP_DEPOSIT_DUFFS, MIN_TOPUP_LOCK_DUFFS, SUGGESTED_CREATE_DEPOSIT_DUFFS, topUpRequiredCredits,
 } from '../src/layout.ts';
 import type { AssetLockProofInput, PlatformPort } from '../src/platform.ts';
 import { legacyRegistrationFundingPath, registrationFundingPath, SeedWallet, topUpFundingPath } from '../src/seed.ts';
@@ -585,6 +585,56 @@ describe('D-006: a lock too small to create an identity', () => {
 });
 
 describe('D-032: an underpayment asks only for what is missing', () => {
+  it('the QR first asks for the suggestion (0.005); the minimum (0.00224) is still what "remaining" is measured against', async () => {
+    expect(SUGGESTED_CREATE_DEPOSIT_DUFFS).toBe(500_000);
+    expect(SUGGESTED_CREATE_DEPOSIT_DUFFS).toBeGreaterThan(MIN_CREATE_DEPOSIT_DUFFS);
+    const ac = new AbortController();
+    const first = new Promise<FundingView>((resolve) => {
+      void runFunding({
+        wallet: SeedWallet.fromPhrase(PHRASE, 'testnet'), dapi: fakeDapi({ events: [], deliverIsLock: true, mined: 0 }) as unknown as Dapi, platform: fakePlatform(), store: memStore(), kind: 'create', identityIndex: 0, signal: ac.signal,
+        onUpdate: (v) => (resolve(v), ac.abort()),
+      }).catch(() => {});
+    });
+    const v = await first;
+    expect(v).toMatchObject({ minDuffs: 224_000, suggestedDuffs: 500_000, remainingDuffs: 224_000n });
+    expect(v.uri).toBe(`dash:${v.address}?amount=0.005`);
+  });
+
+  it('a top-up has no suggestion above its minimum, and a caller may set or drop one (never below the minimum)', async () => {
+    const first = async (extra: object, kind: 'create' | 'topup' = 'create') => {
+      const ac = new AbortController();
+      return new Promise<FundingView>((resolve) => {
+        void runFunding({
+          wallet: SeedWallet.fromPhrase(PHRASE, 'testnet'), dapi: fakeDapi({ events: [], deliverIsLock: true, mined: 0 }) as unknown as Dapi, platform: fakePlatform(), store: memStore(), kind, identityIndex: 0,
+          ...(kind === 'topup' ? { topUp: { identityId: '8GqCCpTFpgPREMUTqHESkuDMvkrfwBEd45fVeLUEYKYL', index: 0 } } : {}), ...extra, signal: ac.signal, onUpdate: (v) => (resolve(v), ac.abort()),
+        }).catch(() => {});
+      });
+    };
+    const top = await first({}, 'topup');
+    expect(top.suggestedDuffs).toBe(top.minDuffs);
+    expect(top.uri).toBe(`dash:${top.address}?amount=0.00053`);
+    expect((await first({ suggestedDepositDuffs: 1_000_000 })).uri).toMatch(/amount=0\.01$/);
+    const low = await first({ suggestedDepositDuffs: 1 });
+    expect(low.suggestedDuffs).toBe(224_000);
+    expect(low.uri).toMatch(/amount=0\.00224$/);
+  });
+
+  it('paying exactly the minimum in one go creates the account without waiting for the suggestion', async () => {
+    const s: Script = { events: [], deliverIsLock: true, mined: 0 };
+    const dapi = fakeDapi(s);
+    let paid = false;
+    const r = await runFunding({
+      wallet: SeedWallet.fromPhrase(PHRASE, 'testnet'), dapi: dapi as unknown as Dapi, platform: fakePlatform(), store: memStore(), kind: 'create', identityIndex: 0, isLockWaitMs: 2000,
+      onUpdate: (v) => {
+        if (v.state !== 'awaiting-deposit' || paid) return;
+        paid = true;
+        dapi.pay(payTo(v.address, BigInt(MIN_CREATE_DEPOSIT_DUFFS)));
+      },
+    });
+    expect(r.record.state).toBe('done');
+    expect(BigInt(r.record.lock!.lockDuffs)).toBeGreaterThanOrEqual(BigInt(MIN_CREATE_LOCK_DUFFS));
+  });
+
   it('received 0.001 of 0.00224: the view and the QR ask for 0.00124, and paying that finishes', async () => {
     const s: Script = { events: [], deliverIsLock: true, mined: 0 };
     const dapi = fakeDapi(s);
@@ -598,7 +648,7 @@ describe('D-032: an underpayment asks only for what is missing', () => {
         if (step === 0) {
           step = 1;
           expect(v.remainingDuffs).toBe(224_000n);
-          expect(v.uri).toBe(`dash:${v.address}?amount=0.00224`);
+          expect(v.uri).toBe(`dash:${v.address}?amount=0.005`); // the suggestion; the minimum is what is waited for
           dapi.pay(payTo(v.address, 100_000n));
         } else if (step === 1 && v.receivedDuffs === 100_000n) {
           step = 2;

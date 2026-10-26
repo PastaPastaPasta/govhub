@@ -18,7 +18,7 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesEqual, bytesToHex, concatBytes, hash160, hexToBytes, identifierBytes, reversed, u32be, u32le, wipe } from './bytes.ts';
 import { addressOf, isValidPrivateKey, publicKeyOf, type Network } from './keys.ts';
 import {
-  CREATE_KEYS, createRequiredCredits, CREDITS_PER_DUFF, MIN_CREATE_DEPOSIT_DUFFS, MIN_CREATE_LOCK_DUFFS, MIN_TOPUP_DEPOSIT_DUFFS, MIN_TOPUP_LOCK_DUFFS, topUpRequiredCredits,
+  CREATE_KEYS, createRequiredCredits, CREDITS_PER_DUFF, MIN_CREATE_DEPOSIT_DUFFS, MIN_CREATE_LOCK_DUFFS, MIN_TOPUP_DEPOSIT_DUFFS, MIN_TOPUP_LOCK_DUFFS, SUGGESTED_CREATE_DEPOSIT_DUFFS, topUpRequiredCredits,
 } from './layout.ts';
 import type { AssetLockProofInput, PlatformPort, SigningKey } from './platform.ts';
 import { IDENTITY_GAP_LIMIT, legacyRegistrationFundingPath, registrationFundingPath, topUpFundingPath, type SeedWallet } from './seed.ts';
@@ -131,9 +131,12 @@ function createRecordAt(store: FundingStore, wallet: SeedWallet, path: string): 
 export interface FundingView {
   state: FundingState;
   address: string;
-  /** `dash:<address>?amount=<still needed>` for the QR code: the minimum, or after an underpayment only what is missing. */
+  /** `dash:<address>?amount=<ask>` for the QR code: the suggestion while nothing has arrived, then only what the minimum is still missing. */
   uri: string;
+  /** The least that does the job (creates the account, or tops it up). Every "still need", underpayment and enough check is against this. */
   minDuffs: number;
+  /** What is asked before any payment is seen: at least `minDuffs`. A suggestion only; the minimum is all that is waited for. */
+  suggestedDuffs: number;
   /** What is still missing (counting payments seen but not yet confirmed); 0 once the payments cover the minimum. */
   remainingDuffs: bigint;
   /** Counted deposits (IS-locked or in a block). */
@@ -178,6 +181,8 @@ export interface FundingOptions {
    */
   restore?: FundingRecord;
   minDepositDuffs?: number;
+  /** The amount the QR code first asks for. Default: the account-setup suggestion for a create, the minimum otherwise. Never below the minimum. */
+  suggestedDepositDuffs?: number;
   /** How long to wait for the asset lock's IS-lock before switching to the chain-lock proof. Default 60 s. */
   isLockWaitMs?: number;
   /** Poll interval for mined height / Platform's chain-locked height. Default 8 s. */
@@ -482,16 +487,22 @@ async function fund(o: FundingOptions, fk: { privateKey: Uint8Array; publicKey: 
   // A create spent as a top-up only needs a top-up's minimum.
   const target: FundingKind = rec.recoveredInto ? 'topup' : kind;
   const minDuffs = o.minDepositDuffs ?? (target === 'create' ? MIN_CREATE_DEPOSIT_DUFFS : MIN_TOPUP_DEPOSIT_DUFFS);
+  // only for an account setup: a create spent as a top-up (recoverInto) asks for its own, smaller minimum
+  const suggestedDuffs = target === 'create' ? Math.max(minDuffs, o.suggestedDepositDuffs ?? SUGGESTED_CREATE_DEPOSIT_DUFFS) : minDuffs;
   const minLock = BigInt(target === 'create' ? MIN_CREATE_LOCK_DUFFS : MIN_TOPUP_LOCK_DUFFS);
   const sum = (l: ReadonlyArray<{ value: string }>) => l.reduce((a, d) => a + BigInt(d.value), 0n);
   const counted = () => rec.deposits.filter((d) => d.confirmed);
   const view = (note?: string): FundingView => {
     const remainingDuffs = rec.lock ? 0n : stillNeededDuffs(rec.deposits, minLock, BigInt(minDuffs));
+    // Nothing seen yet: ask for the suggestion. After any payment, ask only for what the minimum is missing (never make anyone wait for more).
+    const suggested = BigInt(suggestedDuffs);
+    const ask = rec.deposits.length === 0 && remainingDuffs > 0n && remainingDuffs < suggested ? suggested : remainingDuffs;
     return {
       state: rec.state,
       address,
-      uri: remainingDuffs > 0n ? `dash:${address}?amount=${dashAmount(Number(remainingDuffs))}` : `dash:${address}`,
+      uri: ask > 0n ? `dash:${address}?amount=${dashAmount(Number(ask))}` : `dash:${address}`,
       minDuffs,
+      suggestedDuffs,
       remainingDuffs,
       receivedDuffs: sum(counted()),
       pendingDuffs: sum(rec.deposits.filter((d) => !d.confirmed)),

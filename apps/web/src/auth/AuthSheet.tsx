@@ -3,7 +3,7 @@
 // them; the session takes ownership of the seed when sign-in completes, and closing the sheet drops the rest.
 import {
   addressOf, discardFunding, discoverIdentities, generatePhrase, lockTooSmall, nextCreateIndex, isValidPhrase, localPasskeys, MIN_CREATE_DEPOSIT_DUFFS, MIN_TOPUP_DEPOSIT_DUFFS, nextTopUpIndex, normalizePhrase,
-  createFundingPath, parseVoucher, pendingFundings, PhraseError, redeemVoucher, SeedWallet, signInWithKey, signInWithSeed, toBase64, wipe, type FoundIdentity, type FundingRecord,
+  createFundingPath, SUGGESTED_CREATE_DEPOSIT_DUFFS, parseVoucher, pendingFundings, PhraseError, redeemVoucher, SeedWallet, signInWithKey, signInWithSeed, toBase64, wipe, type FoundIdentity, type FundingRecord,
   type PhraseLength,
 } from '@govhub/auth';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
@@ -376,7 +376,7 @@ function FundNewIdentity({ phrase, identityIndex, resume }: { phrase: string; id
           <li>
             <button type="button" className="choice choice-l" onClick={() => setHow('dash')}>
               <b>Pay with DASH</b>
-              <span className="muted small">Scan a QR code with any Dash wallet. {formatDuffs(MIN_CREATE_DEPOSIT_DUFFS)} at least; 0.01 DASH leaves room for many comments.</span>
+              <span className="muted small">Scan a QR code with any Dash wallet. {formatDuffs(SUGGESTED_CREATE_DEPOSIT_DUFFS)} lets you post right away; {formatDuffs(MIN_CREATE_DEPOSIT_DUFFS)} is the minimum.</span>
             </button>
           </li>
         </ul>
