@@ -208,7 +208,7 @@ test.describe('settings', () => {
     const ta = page.getByLabel('Settings JSON (paste and import, or copy)');
     const json = JSON.parse(await ta.inputValue());
     expect(json.coreNetwork).toBe('mainnet');
-    expect(json.platformNetwork).toBe('testnet');
+    expect(json.platformNetwork).toBe('mainnet');
 
     json.bridges = [{ name: 'test bridge', httpBase: 'https://bridge.example.org', govContractId: json.govContractId, bridgeIdentityId: '', enabled: true }];
     await ta.fill(JSON.stringify(json));
@@ -226,7 +226,7 @@ test.describe('settings', () => {
     await expect(page.getByRole('alert')).toContainText('must be an https URL');
 
     await page.getByRole('button', { name: 'Reset to defaults' }).click();
-    await expect(page.getByLabel('URL', { exact: true })).toHaveValue('https://gov-bridge.dashhq.org');
+    await expect(page.getByLabel('URL', { exact: true })).toHaveValue('https://gov-bridge-mainnet.dashhq.org');
   });
 
   test('?config= share link asks before applying', async ({ page }) => {

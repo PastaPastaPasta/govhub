@@ -33,8 +33,9 @@ const h = vi.hoisted(() => ({
   absent: false,
 }));
 vi.mock('../app/context.tsx', async () => {
-  const { defaultRegistry: reg } = await import('../config/registry.ts');
-  const app = { registry: { ...reg(), bridges: [], relays: [] }, mode: 'live' };
+  // a testnet-Platform profile: the keyring below is derived for testnet
+  const { profileRegistry } = await import('../config/registry.ts');
+  const app = { registry: { ...profileRegistry('dev'), bridges: [], relays: [] }, mode: 'live' };
   return { useApp: () => app };
 });
 vi.mock('../app/forum.tsx', () => ({ useForum: () => h.useForum() }));

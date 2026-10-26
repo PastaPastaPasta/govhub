@@ -46,7 +46,7 @@ test.describe('MN badge (fixtures)', () => {
     await openGroup(page, 'Masternode badges');
     const s = page.locator('#badge-trust');
     await expect(s.getByText('govhub', { exact: true })).toBeVisible();
-    await expect(s.getByText('H62hSf5TpKbUSMov85GMhPQahZDbqsTipeoBsYPgveUH')).toBeVisible();
+    await expect(s.getByText('9MJV17bn7C9xu1n3nopcZzScTnac3TNUjR17HmpKY4Cr')).toBeVisible();
     await s.getByLabel('Name (shown as “vouched by …”)').fill('evil');
     await s.getByLabel('Issuer identity id').fill('not-an-id');
     await s.getByLabel('Issuer URL (https, its own origin)').fill('http://evil.example');

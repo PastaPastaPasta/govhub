@@ -49,8 +49,14 @@ export const BADGE_NETWORKS: Readonly<Record<CoreNetwork, BadgeNetworkConfig>> =
     // testnet has about 150 masternodes (2026-10)
     maxPlausibleTokens: 500,
   },
-  // mainnet has about 2,400 masternodes (2026-10); the bound needs updating if that grows a lot
-  mainnet: { contractId: '', defaultIssuers: [], minAnonymitySet: 20, maxPlausibleTokens: 4_000 },
+  // mainnet: contract and issuer identity 9MJV… created 2026-10-26 from the operations seed (deploy/README.md 13.3, 13.4).
+  // About 2,400 masternodes (2026-10); the bound needs updating if that grows a lot.
+  mainnet: {
+    contractId: 'Acfd9ZKRFdAAxpSab5kb9zP2P5bKQQ4kZVqeBnck3pZi',
+    defaultIssuers: [{ name: 'govhub', identityId: '9MJV17bn7C9xu1n3nopcZzScTnac3TNUjR17HmpKY4Cr', url: 'https://gov-issuer.dashhq.org', enabled: true }],
+    minAnonymitySet: 20,
+    maxPlausibleTokens: 4_000,
+  },
 };
 
 const KEY = (net: CoreNetwork) => `govhub.badge.trust.v1.${net}`;

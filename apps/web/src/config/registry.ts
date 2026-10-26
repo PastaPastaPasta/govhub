@@ -17,7 +17,7 @@ export const TESTNET_GOV_CONTRACT_ID = '5gMnJLDpcoMaQCQNqmHtBiSqCxRCmroXFAffPNdJ
 export const TESTNET_BRIDGE_IDENTITY_ID = '24tL6v5jMR1H9dtUoTgbedePsMJtYPk4Q4bo6h8jTdK9';
 /** The testnet relay (services/relay; deploy/README.md 11.4): masternode votes on Core testnet go through it. */
 export const TESTNET_RELAY: NamedUrl = { name: 'gov-relay-testnet.dashhq.org', url: 'https://gov-relay-testnet.dashhq.org' };
-/** The mainnet relay: masternode votes on Core mainnet (the Dev profile today, Mainnet later) go through it. */
+/** The mainnet relay: masternode votes on Core mainnet (the Mainnet and Dev profiles) go through it. */
 export const MAINNET_RELAY: NamedUrl = { name: 'gov-relay.dashhq.org', url: 'https://gov-relay.dashhq.org' };
 
 export interface BridgeEndpoint {
@@ -117,6 +117,20 @@ export const TESTNET_FORUM: ForumEndpoints = {
   claimPortals: ['gov.dashhq.org'],
 };
 
+/**
+ * Mainnet: every id was created 2026-10-26 from the project's operations seed (deploy/README.md section 13.3). The bridge identity
+ * owns `gov`; the moderation identity owns `mod`; the admin identity owns `forum` and `badge`.
+ */
+export const MAINNET_GOV_CONTRACT_ID = 'BqszMpFvXm11jWeUYRqQu2yREZi7EzgkFfDKZR9dqamq';
+export const MAINNET_BRIDGE_IDENTITY_ID = '7P3ZsJHh61jhvVwaxh1xyNx7wkCqiDdkhw2EpCfTn9J';
+export const MAINNET_FORUM: ForumEndpoints = {
+  contractId: '4EcYtwedNjTm4iGmx47GkLX2uNkCUWS4tt1KHhgGkjR3',
+  modContractId: '65CSJ6tnKFJR6T4C2TMYFsusD7scZqLkpXgjEqpKdu2P',
+  moderationIdentityId: '96f4TbboxsG4SNx711fvaemSKzsTG72M2pEYLdpPrG2M',
+  moderationName: 'govhub moderation',
+  claimPortals: ['gov.dashhq.org'],
+};
+
 export interface NetworkProfile {
   id: ProfileId;
   /** Short label (segmented control, mobile header). */
@@ -173,22 +187,23 @@ export const PROFILES: Record<ProfileId, NetworkProfile> = {
     id: 'mainnet',
     label: 'Mainnet',
     title: 'Mainnet',
-    description: 'Core mainnet governance on mainnet Platform. Not yet deployed.',
+    description: 'Core mainnet governance (proposals, votes, monthly superblocks) published on mainnet Platform.',
     coreNetwork: 'mainnet',
     platformNetwork: 'mainnet',
-    govContractId: '',
-    bridge: null,
-    relays: [],
-    proofBridges: [],
-    forum: null,
-    deployed: false,
+    govContractId: MAINNET_GOV_CONTRACT_ID,
+    bridge: { url: 'https://gov-bridge-mainnet.dashhq.org', identityId: MAINNET_BRIDGE_IDENTITY_ID },
+    relays: [MAINNET_RELAY],
+    // both bridges run on the same v24 dashd; either one's proofs check out against the pinned checkpoint
+    proofBridges: ['https://gov-bridge-mainnet.dashhq.org', 'https://gov-bridge.dashhq.org'],
+    forum: MAINNET_FORUM,
+    deployed: true,
   },
 };
 
-export const PROFILE_ORDER: readonly ProfileId[] = ['testnet', 'dev', 'mainnet'];
+export const PROFILE_ORDER: readonly ProfileId[] = ['mainnet', 'testnet', 'dev'];
 
 /** The profile the app starts on. */
-export const DEFAULT_PROFILE: ProfileId = 'dev';
+export const DEFAULT_PROFILE: ProfileId = 'mainnet';
 
 const isProfileId = (v: unknown): v is ProfileId => typeof v === 'string' && Object.hasOwn(PROFILES, v);
 

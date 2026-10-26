@@ -116,17 +116,18 @@ test.describe('settings', () => {
     await offline(context);
     await page.goto('/settings?fixtures=0');
     const label = page.getByTestId('profile-label');
-    await expect(label).toContainText('Dev');
-    await page.getByRole('radio', { name: 'Dev' }).focus();
-    await page.keyboard.press('ArrowLeft');
+    await expect(label).toContainText('Mainnet');
+    await page.getByRole('radio', { name: 'Mainnet' }).focus();
+    await page.keyboard.press('ArrowRight');
     await expect(page.getByRole('radio', { name: 'Testnet' })).toBeChecked();
     await page.keyboard.press('ArrowRight');
     await page.keyboard.press('ArrowLeft');
-    await expect(label).toContainText('Dev');
+    await expect(page.getByRole('radio', { name: 'Testnet' })).toBeChecked();
+    await expect(label).toContainText('Mainnet');
     expect(await savedProfile(page)).not.toBe('testnet');
-    await page.getByRole('button', { name: 'Stay on Dev' }).click();
-    await expect(page.getByRole('radio', { name: 'Dev' })).toBeChecked();
-    await expect(page.getByRole('radio', { name: 'Dev' })).toBeFocused();
+    await page.getByRole('button', { name: 'Stay on Mainnet' }).click();
+    await expect(page.getByRole('radio', { name: 'Mainnet' })).toBeChecked();
+    await expect(page.getByRole('radio', { name: 'Mainnet' })).toBeFocused();
     await page.locator('.profile-switch label', { hasText: 'Testnet' }).click();
     await page.getByRole('button', { name: 'Switch to Testnet' }).click();
     await expect(label).toContainText('Testnet');
@@ -147,7 +148,7 @@ test.describe('settings', () => {
     const notice = page.getByTestId('settings-problem');
     await expect(notice).toContainText('Your saved settings could not be used');
     await expect(notice).toContainText('price feed URL must be an https URL');
-    await expect(notice).toContainText('Dev profile');
+    await expect(notice).toContainText('Mainnet profile');
     // kept until replaced
     expect(await page.evaluate(() => localStorage.getItem('govhub.registry.v2'))).toContain('ftp://bad');
     await notice.getByRole('button', { name: 'Dismiss' }).click();
