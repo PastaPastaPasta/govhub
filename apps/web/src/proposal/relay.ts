@@ -1,7 +1,9 @@
 // Proposal submission through govhub relays (services/relay/openapi.json). A relay that holds proposals takes the proposal as soon as
-// the fee is paid and runs `gobject submit` itself once the collateral has 6 confirmations (POST /v1/proposals). An older relay only
-// submits on request (POST /v1/proposals/submit, 425 until 6 confirmations): this page then asks it at 6 confirmations. Either way the
-// relay sees only public data (the proposal becomes public when submitted) and the request's IP and timing; it never sees a key.
+// the fee is paid and runs `gobject submit` itself once the fee is in a ChainLocked block (POST /v1/proposals). Dash Core relays it
+// then and makes it live at 6 confirmations; the relay reports `sent` until it has seen Core take it in full, then `submitted`. A
+// relay without holding only submits on request (POST /v1/proposals/submit, 425 until it may): this page asks it once the fee is
+// ChainLocked (an older relay says 425 until 6 confirmations). Either way the relay sees only public data (the proposal becomes
+// public when submitted) and the request's IP and timing; it never sees a key.
 import type { CoreNetwork } from '../data/types.ts';
 import { isObj, normalizeRelayUrl, numOrNull, RelayError, relayHost } from '../voting/relay.ts';
 
@@ -15,6 +17,8 @@ export interface HeldProposalState {
   status: HeldStatus;
   /** Core's count when the relay last looked. */
   confirmations: number | null;
+  /** Dash Core took it before 6 confirmations and relayed it; it goes live at 6 (`submitted` once the relay saw that). */
+  sent: boolean;
   lastError: string | null;
   /** Core's refusal text (`core-rejected` only). */
   coreMessage: string | null;
@@ -35,11 +39,14 @@ export interface SubmitBody {
 export interface ProposalRelayPort {
   readonly name: string;
   readonly base: string;
-  /** POST /v1/proposals. `legacy`: this relay has no holding; use `submitNow` at 6 confirmations. */
+  /** POST /v1/proposals. `legacy`: this relay has no holding; use `submitNow` once the fee is ChainLocked. */
   hold(body: SubmitBody, govHash: string): Promise<{ kind: 'held'; state: HeldProposalState } | { kind: 'legacy' }>;
   status(id: string, govHash: string): Promise<HeldProposalState | null>;
-  /** POST /v1/proposals/submit: `unconfirmed` (425) until Core counts 6 confirmations. */
-  submitNow(body: SubmitBody): Promise<{ kind: 'submitted'; govHash: string } | { kind: 'unconfirmed'; confirmations: number | null }>;
+  /**
+   * POST /v1/proposals/submit: `unconfirmed` (425) until the relay's Core counts a ChainLocked confirmation (an older relay: 6).
+   * `postponed`: taken below 6 confirmations, live at 6.
+   */
+  submitNow(body: SubmitBody): Promise<{ kind: 'submitted'; govHash: string; postponed: boolean } | { kind: 'unconfirmed'; confirmations: number | null }>;
 }
 
 /** A refusal keeps the relay's JSON body (a 425 carries the confirmation count). */
@@ -59,6 +66,7 @@ export function parseHeldState(raw: unknown, govHash: string): HeldProposalState
     govHash,
     status: status as HeldStatus,
     confirmations: numOrNull(raw.confirmations),
+    sent: raw.sent === true,
     lastError: shortText(raw.lastError, 80),
     coreMessage: shortText(raw.coreMessage, 200),
     nextAttemptAt: numOrNull(raw.nextAttemptAt),
@@ -132,7 +140,7 @@ export class HttpProposalRelay implements ProposalRelayPort {
       const json = await this.req('/v1/proposals/submit', body);
       const o = isObj(json) ? json : {};
       if (typeof o.govHash !== 'string') throw new RelayError('bad relay answer');
-      return { kind: 'submitted' as const, govHash: o.govHash.toLowerCase() };
+      return { kind: 'submitted' as const, govHash: o.govHash.toLowerCase(), postponed: o.postponed === true };
     } catch (e) {
       if (e instanceof RelayError && e.status === 425) {
         return { kind: 'unconfirmed' as const, confirmations: numOrNull((e as RefusalWithBody).body?.confirmations) };

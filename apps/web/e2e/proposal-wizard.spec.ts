@@ -80,10 +80,10 @@ test.describe('create a proposal (fixtures)', () => {
     await expect(page.getByTestId('p-deposit-amount')).toHaveText('1.00001 DASH');
     await page.getByTestId('p-demo-pay').click();
 
-    // Submit: confirmations, the relay holds it and submits at 6, seen by the network, on govhub → celebration
+    // Submit: confirmations, the relay holds it and sends it once the fee is ChainLocked, live at 6, seen by the network, on govhub → celebration
     await expect(page.getByTestId('p-submit')).toBeVisible();
     await expect(page.getByTestId('p-submit-cmd')).toHaveText(new RegExp(`^gobject submit 0 1 \\d+ [0-9a-f]+ [0-9a-f]{64}$`));
-    await expect(page.getByTestId('p-stage-submitted')).toContainText('holds it and submits it at 6 confirmations');
+    await expect(page.getByTestId('p-stage-submitted')).toContainText(/holds it and sends it to the network once the fee is ChainLocked|sent it to the network once the fee was ChainLocked/);
     await expect(page.getByTestId('p-stage-confs')).toHaveAttribute('data-status', 'done', { timeout: 20_000 });
     await expect(page.getByTestId('p-live')).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId('p-stage-published')).toHaveAttribute('data-status', 'done');

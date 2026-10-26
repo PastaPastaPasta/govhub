@@ -92,8 +92,10 @@ A vote is kept until it's sent, which can be up to 40 days if you schedule it th
 it's done (sent, cancelled or replaced). The relay doesn't store IP addresses. Use several relays, or Tor, if you don't
 want one operator to see all of this.
 
-When you submit a proposal through the relay, it holds the proposal until its fee payment is 6 blocks deep in the
-blockchain (about 15 minutes on mainnet), then submits it. Proposals are public as soon as they're submitted anyway.
+When you submit a proposal through the relay, it holds the proposal until the block with its fee payment is ChainLocked
+(usually within a few minutes on mainnet), then submits it. The network makes the proposal live once the fee is 6 blocks
+deep (about 15 minutes), and the relay checks then that its Dash Core has it. Proposals are public as soon as they're
+submitted anyway.
 
 ### Badge issuers
 

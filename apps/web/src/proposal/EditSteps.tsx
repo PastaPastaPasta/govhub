@@ -263,7 +263,7 @@ export function PaymentsStep({ draft, plan, setInputs, setStep }: EditProps) {
       {firstChoice && (
         <p className={firstChoice.state === 'tight' ? 'notice-box small' : 'muted small'} data-testid="p-deadline">
           Masternodes must vote yes before block {formatInt(firstChoice.votingDeadline)} (about {formatDateTime(firstChoice.votingDeadlineEstTime)}) for the first payment.
-          {firstChoice.state === 'tight' && ' That is soon: the fee needs 6 confirmations first, and voters need time. A later first payment is safer.'}
+          {firstChoice.state === 'tight' && ' That is soon: the proposal goes live 6 blocks after the fee is paid (about 15 minutes), and voters need time. A later first payment is safer.'}
         </p>
       )}
       {s && plan.duffs !== null && plan.duffs > 0n && (

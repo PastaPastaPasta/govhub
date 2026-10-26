@@ -63,7 +63,13 @@ export class FakeCore implements CoreClient {
   mns = new Map<string, FakeMn>();
   gobjects = new Map<string, { ObjectType: number }>();
   votes = new Map<string, FakeVote>();
-  rawTxs = new Map<string, { hex: string; confirmations: number }>();
+  /** `chainlock`: a ChainLock covers the block (missing = false, as for a mempool tx) */
+  rawTxs = new Map<string, { hex: string; confirmations: number; chainlock?: boolean }>();
+  /**
+   * Core's in-memory postponed map: objects `gobject submit` took with 1-5 confirmations (gov hash -> collateral txid). `gobject
+   * get` does not see them until their collateral is 6 deep (CheckPostponedObjects); restart() loses them.
+   */
+  postponed = new Map<string, string>();
   calls: Array<{ method: string; params: unknown[] }> = [];
   /** every call fails with a transport error */
   down = false;
@@ -87,6 +93,11 @@ export class FakeCore implements CoreClient {
 
   constructor(clock: FakeClock) {
     this.clock = clock;
+  }
+
+  /** a dashd restart: the postponed objects are gone */
+  restart(): void {
+    this.postponed.clear();
   }
 
   count(method: string, sub?: string): number {
@@ -118,7 +129,7 @@ export class FakeCore implements CoreClient {
       case 'getrawtransaction': {
         const tx = this.rawTxs.get(String(params[0]));
         if (!tx) throw rpcErr(method, -5, 'No such mempool or blockchain transaction. Use gettransaction for wallet transactions.');
-        return { txid: params[0], hex: tx.hex, confirmations: tx.confirmations };
+        return { txid: params[0], hex: tx.hex, confirmations: tx.confirmations, chainlock: tx.chainlock === true };
       }
       case 'voteraw':
         return this.voteraw(params);
@@ -131,6 +142,13 @@ export class FakeCore implements CoreClient {
   private gobject(params: unknown[]): unknown {
     const sub = params[0];
     if (sub === 'get') {
+      // CheckPostponedObjects: a postponed object whose collateral is 6 deep is a full object now
+      for (const [hash, txid] of this.postponed) {
+        if ((this.rawTxs.get(txid)?.confirmations ?? 0) >= 6) {
+          this.postponed.delete(hash);
+          this.gobjects.set(hash, { ObjectType: 1 });
+        }
+      }
       const o = this.gobjects.get(String(params[1]));
       if (!o) throw rpcErr('gobject', -8, 'Unknown governance object');
       return { ObjectType: o.ObjectType, Hash: params[1] };
@@ -150,6 +168,11 @@ export class FakeCore implements CoreClient {
       const queued = this.submitErrors.shift();
       if (queued) throw queued;
       if (this.submitError) throw this.submitError;
+      if (typeof this.submitResult === 'string') {
+        const txid = String(params[5]);
+        if ((this.rawTxs.get(txid)?.confirmations ?? 0) >= 6) this.gobjects.set(this.submitResult, { ObjectType: 1 });
+        else if (!this.gobjects.has(this.submitResult)) this.postponed.set(this.submitResult, txid);
+      }
       return this.submitResult;
     }
     throw rpcErr('gobject', -8, 'Must be a valid command');

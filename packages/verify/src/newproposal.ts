@@ -328,7 +328,7 @@ export function lockProposal(dataHex: string, time: number): LockedProposal {
 
 /** `gobject prepare` for Dash Core's console / dash-cli: burns the fee from the wallet and prints the collateral txid. */
 export const gobjectPrepareCommand = (p: Pick<LockedProposal, 'time' | 'dataHex'>): string => `gobject prepare 0 1 ${p.time} ${p.dataHex}`;
-/** `gobject submit` once the collateral has 6 confirmations. */
+/** `gobject submit` once the collateral is in a ChainLocked block (Core holds it until 6 confirmations, then it is live) or 6 deep. */
 export const gobjectSubmitCommand = (p: Pick<LockedProposal, 'time' | 'dataHex'>, collateralTxid: string): string => `gobject submit 0 1 ${p.time} ${p.dataHex} ${collateralTxid}`;
 
 /** Whether `address` can receive the collateral's change: Core allows only P2PKH and unspendable outputs in it (object.cpp:834-843). */

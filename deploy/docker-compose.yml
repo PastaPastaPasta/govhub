@@ -242,7 +242,7 @@ services:
 
   # ---------------------------------------------------------------------------------------------
   # govhub relay (profile `relay`): holds fully signed masternode votes until their release time and
-  # broadcasts them with `voteraw`; relays `gobject submit` once a proposal's collateral is confirmed.
+  # broadcasts them with `voteraw`; relays `gobject submit` once a proposal's collateral is ChainLocked.
   # Holds no keys and no accounts; no IP addresses at rest (services/relay/README.md). Shares this
   # stack's dashd (RPC on the compose network only). Enable with COMPOSE_PROFILES=relay (with `tunnel`
   # to publish it: route `gov-relay.<zone> -> http://relay:8788`).
@@ -278,6 +278,7 @@ services:
       RATE_IP_PER_MIN: ${RELAY_RATE_IP_PER_MIN:-}
       RATE_MN_PER_HOUR: ${RELAY_RATE_MN_PER_HOUR:-}
       PROPOSAL_SUBMIT: ${RELAY_PROPOSAL_SUBMIT:-}
+      MIN_COLLATERAL_CONFS: ${RELAY_MIN_COLLATERAL_CONFS:-}
       RETENTION_DAYS: ${RELAY_RETENTION_DAYS:-}
       MAX_PAST_S: ${RELAY_MAX_PAST_S:-}
       MAX_HELD_TOTAL: ${RELAY_MAX_HELD_TOTAL:-}

@@ -113,6 +113,7 @@ export interface ProTxEntry {
   [k: string]: unknown;
 }
 
+/** `gobject get <hash>`: only full objects (Core's mapObjects); a postponed one is "Unknown governance object" (-8). */
 export interface GobjectGetResult {
   ObjectType: number;
   [k: string]: unknown;
@@ -122,5 +123,7 @@ export interface RawTxVerbose {
   txid: string;
   hex: string;
   confirmations?: number;
+  /** a ChainLock covers the transaction's block (src/rpc/rawtransaction.cpp TxToJSON; false in the mempool) */
+  chainlock?: boolean;
   [k: string]: unknown;
 }

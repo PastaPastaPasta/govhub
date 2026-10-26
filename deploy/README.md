@@ -609,15 +609,17 @@ http://govhub-testnet-relay:8788`. The relay answers browsers itself (CORS, 4 Ki
 limits, client address from `cf-connecting-ip`, which the gateway passes through).
 
 **Proposal submission.** The relay also takes proposals from the web app's creation wizard. `POST /v1/proposals`
-holds a paid proposal until its collateral has `MIN_COLLATERAL_CONFS` (6) confirmations by the relay's own Core,
-then runs `gobject submit`. Its state is in the same `relay-data` volume, so a restart resumes the queue. The older
+holds a paid proposal until its collateral is in a ChainLocked block by the relay's own Core (`RELAY_MIN_COLLATERAL_CONFS`,
+default 1 confirmation), then runs `gobject submit`. Dash Core relays it at once and makes it live when the collateral is 6
+deep; the relay checks then that its Core has it in full and submits it again if a dashd restart lost it. Its state is in the same `relay-data` volume, so a restart resumes the queue. The older
 `POST /v1/proposals/submit`, which submits now or answers 425, stays. dashd needs `txindex=1` (already set
 in this stack) because the relay reads the collateral with `getrawtransaction`. The relay only stores a proposal whose
 collateral Core already knows and which burns at least 1 DASH to that exact hash. The default limits are at most
 `MAX_HELD_PROPOSALS=500` waiting, 3 per hash, and the per-IP limit. Nothing about the sender is kept, and timestamps are
 rounded to the hour. `PROPOSAL_SUBMIT=0` turns both endpoints and the worker off. Upgrading needs no migration step: the new
 table is created on start-up. Check with `curl https://gov-relay-testnet.<zone>/v1/status`, which should show
-`"proposalHold": true`. The web app falls back to `/v1/proposals/submit` at 6 confirmations on a relay without holding.
+`"proposalHold": true`. The web app falls back to `/v1/proposals/submit` on a relay without holding, once the fee is
+ChainLocked (an older relay answers 425 until 6 confirmations).
 See services/relay/README.md, "Held proposal submission".
 
 ### 11.5 The MN badge issuer

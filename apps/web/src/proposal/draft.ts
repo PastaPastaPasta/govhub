@@ -47,9 +47,11 @@ export interface RelayReceipt {
   base: string;
   /** The relay's handle for a held proposal (null until it accepted one). */
   id: string | null;
-  /** A relay without holding: this page asks it to submit at 6 confirmations. */
+  /** A relay without holding: this page asks it to submit once the fee is ChainLocked. */
   legacy?: boolean;
   status: 'waiting' | 'submitting' | 'submitted' | 'failed' | 'unreachable';
+  /** Dash Core took it before 6 confirmations and relayed it; the network makes it live at 6. */
+  sent?: boolean;
   lastError?: string | null;
   coreMessage?: string | null;
   updatedAt: number;
@@ -109,7 +111,7 @@ export function payNowProblem(lock: DraftLock, tip: number | null, now: number, 
   if (lock.endEpoch <= now + 3600) return 'its end date has passed, so Dash Core would refuse it.';
   const first = lock.superblocks[0];
   if (tip !== null && first !== undefined && lock.superblocks.length === 1 && tip >= first - maturityWindow - 6) {
-    return 'the voting deadline of its only payment has passed (or is too close to collect 6 confirmations), so it could never be paid.';
+    return 'the voting deadline of its only payment has passed (or is too close: the network makes a proposal live 6 blocks after its fee), so it could never be paid.';
   }
   return null;
 }
@@ -191,12 +193,14 @@ export function coreCommands(d: ProposalDraft): { prepare: string; submit: strin
 
 /** The backup file's advice on the fee, by how far the payment got. */
 function feeStatusNote(d: ProposalDraft): string {
-  if (d.payment?.txid) return 'The fee is paid. Once the collateral has 6 confirmations, run the "submit" command below in Dash Core (Window > Console, or dash-cli).';
+  if (d.payment?.txid) {
+    return 'The fee is paid. Once the fee transaction is in a ChainLocked block (usually within a few minutes), run the "submit" command below in Dash Core (Window > Console, or dash-cli). Dash Core holds the proposal until the fee has 6 confirmations (about 15 minutes), then the network makes it live.';
+  }
   if (d.payment?.funding?.tx) {
-    return `A fee transaction (${d.payment.funding.tx.txid}) was built and saved, and may already be on the network. DO NOT PAY AGAIN: look the txid up in a block explorer, or resume in govhub with the same sign-in. Once it has 6 confirmations, run the "submit" command below.`;
+    return `A fee transaction (${d.payment.funding.tx.txid}) was built and saved, and may already be on the network. DO NOT PAY AGAIN: look the txid up in a block explorer, or resume in govhub with the same sign-in. Once it is in a ChainLocked block, run the "submit" command below.`;
   }
   if (d.payment?.funding) return 'A one-time deposit address was shown (below). If you sent money to it, do not pay with Dash Core as well: resume in govhub with the same sign-in.';
-  return 'If you have not paid yet, the "prepare" command pays the fee from a Dash Core wallet and prints the collateral txid; put that txid into the "submit" command after 6 confirmations.';
+  return 'If you have not paid yet, the "prepare" command pays the fee from a Dash Core wallet and prints the collateral txid; put that txid into the "submit" command once that transaction is in a ChainLocked block.';
 }
 
 /** The backup file: the draft itself (to resume in govhub) plus plain instructions and the Core commands (to finish without it). */

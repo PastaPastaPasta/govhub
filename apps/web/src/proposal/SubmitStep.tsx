@@ -1,6 +1,7 @@
-// Step 5: from a paid fee to a live proposal. The relay holds the proposal and submits it at 6 confirmations (Dash Core's rule),
-// the page shows each stage as it happens (confirmations proven where the chain is verified here), and the user can always submit it
-// with their own Dash Core instead. Then the moment it is live, in the same style as an accepted vote.
+// Step 5: from a paid fee to a live proposal. The relay holds the proposal and sends it once the fee is in a ChainLocked block; Dash
+// Core makes it live at 6 confirmations (its rule). The page shows each stage as it happens (confirmations proven where the chain is
+// verified here), and the user can always submit it with their own Dash Core instead. Then the moment it is live, in the same style
+// as an accepted vote.
 import { duffsToDash, GOVERNANCE_FEE_CONFIRMATIONS, gobjectSubmitCommand } from '@govhub/verify';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
@@ -12,7 +13,7 @@ import { draftStage, type DraftSubmission, type ProposalDraft, type RelayReceipt
 import { govhubUrlOwner } from './EditSteps.tsx';
 import { BackupBox, type PayProps } from './PayStep.tsx';
 import type { CollateralCheck } from './services.ts';
-import { markManualSubmit, resetRelays, submissionTick } from './submission.ts';
+import { markManualSubmit, resetRelays, sendable, submissionTick } from './submission.ts';
 
 type Status = 'done' | 'now' | 'todo' | 'bad';
 
@@ -68,7 +69,7 @@ export function SubmitStep({ draft, commit, services }: PayProps) {
   const failed = sub?.relays.filter((r) => r.status === 'failed' || r.status === 'unreachable') ?? [];
   const allFailed = !holder && failed.length > 0 && failed.length >= services.relays().length;
   const confStatus: Status = invalid ? 'bad' : n >= GOVERNANCE_FEE_CONFIRMATIONS ? 'done' : 'now';
-  const subStatus: Status = sub?.submittedAt ? 'done' : allFailed ? 'bad' : n >= GOVERNANCE_FEE_CONFIRMATIONS ? 'now' : 'todo';
+  const subStatus: Status = sub?.submittedAt ? 'done' : allFailed ? 'bad' : holder?.sent || sendable(check) ? 'now' : 'todo';
   const seenStatus: Status = sub?.seenAt ? 'done' : sub?.submittedAt ? 'now' : 'todo';
   const pubStatus: Status = sub?.publishedAt ? 'done' : sub?.seenAt ? 'now' : 'todo';
   const basis = conf?.basis === 'verified' ? 'proven in this browser' : services.demo ? 'simulated' : check?.weak ? 'checked here; testnet proof of work cannot make it secure' : 'as a DAPI node reports it';
@@ -88,7 +89,8 @@ export function SubmitStep({ draft, commit, services }: PayProps) {
           ) : (
             <p className="small muted" data-testid="p-confs-detail">
               {conf ? `${formatInt(n)} confirmation${n === 1 ? '' : 's'}, ${basis}.` : check?.state === 'not-found' ? 'Not seen on the network yet.' : 'Checking…'}
-              {conf?.final && ' Final: a ChainLock covers its block.'} Dash Core needs {GOVERNANCE_FEE_CONFIRMATIONS} (about 15 minutes) before it accepts the proposal.
+              {conf?.final && ' Final: a ChainLock covers its block.'} The relay sends the proposal once the fee is ChainLocked (usually within a few minutes). The network
+              makes it live after {GOVERNANCE_FEE_CONFIRMATIONS} confirmations (about 15 minutes).
             </p>
           )}
         </Stage>
@@ -126,7 +128,8 @@ export function SubmitStep({ draft, commit, services }: PayProps) {
       <details className="pw-details" open={allFailed || undefined}>
         <summary>Submit it yourself with Dash Core</summary>
         <p className="small">
-          After {GOVERNANCE_FEE_CONFIRMATIONS} confirmations, run this in Dash Core (Window → Console, or dash-cli). Submitting twice is harmless.
+          Once the fee transaction is in a ChainLocked block, run this in Dash Core (Window → Console, or dash-cli). Dash Core holds the proposal until the fee has{' '}
+          {GOVERNANCE_FEE_CONFIRMATIONS} confirmations, then makes it live. Submitting twice is harmless.
         </p>
         <pre className="pw-code" data-testid="p-submit-cmd">
           {submitCmd}
@@ -154,8 +157,8 @@ export function SubmitStep({ draft, commit, services }: PayProps) {
             replaced or dropped: then no fee was burned. Pay again from the Pay step after checking the transaction in a block explorer.
           </li>
           <li>
-            <b>Dash Core refuses the proposal.</b> The reason is shown above. A refusal for the collateral ("requires at least 6 confirmations") clears itself; govhub checks the
-            data against Core's rules before you pay, so a data refusal should not happen. If it does, keep the backup and ask for help in the Dash forum: the fee is spent.
+            <b>Dash Core refuses the proposal.</b> The reason is shown above. A refusal because the fee is not confirmed yet ("rejected -- try again later") clears itself;
+            govhub checks the data against Core's rules before you pay, so a data refusal should not happen. If it does, keep the backup and ask for help in the Dash forum: the fee is spent.
           </li>
           <li>
             <b>You closed the page.</b> A holding relay submits anyway. Come back to Create a proposal, or restore the backup file, to follow it.
@@ -193,8 +196,10 @@ function submittedNote(sub: DraftSubmission | undefined, holder: RelayReceipt | 
     if (sub.via === 'manual') return 'You submitted it with Dash Core.';
     return sub.via === 'network' ? 'The network has it.' : `Submitted by ${sub.via}.`;
   }
-  if (holder?.legacy) return `${holder.name} will be asked to submit it at ${GOVERNANCE_FEE_CONFIRMATIONS} confirmations; keep this page open until then.`;
-  if (holder) return `${holder.name} holds it and submits it at ${GOVERNANCE_FEE_CONFIRMATIONS} confirmations. You can close this page.`;
+  const live = `The network makes it live after ${GOVERNANCE_FEE_CONFIRMATIONS} confirmations (about 15 minutes).`;
+  if (holder?.sent) return `${holder.name} sent it to the network once the fee was ChainLocked. ${live}${holder.legacy ? '' : ' You can close this page.'}`;
+  if (holder?.legacy) return `${holder.name} will be asked to send it once the fee is ChainLocked; keep this page open until then.`;
+  if (holder) return `${holder.name} holds it and sends it to the network once the fee is ChainLocked (usually within a few minutes). You can close this page.`;
   return allFailed ? 'No relay could take it. Submit it with Dash Core (below), or try the relays again.' : 'Handing it to a relay…';
 }
 

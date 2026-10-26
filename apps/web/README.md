@@ -109,9 +109,11 @@ deposit keys and the fee transaction in `@govhub/auth` (`proposal.ts`).
    - **With Dash Core.** The page shows the exact `gobject prepare 0 1 <time> <hex>` command. The user
      pastes the txid back, and the page checks the transaction over DAPI.
 5. **Submit.** The page hands the proposal to the first configured relay right away
-   (`POST /v1/proposals`). The relay holds it and runs `gobject submit` at 6 confirmations (Core's
-   `GOVERNANCE_FEE_CONFIRMATIONS`). If a relay has no holding, the page calls `/v1/proposals/submit`
-   itself at 6 confirmations. If a relay is down three times in a row, the next one is tried. The
+   (`POST /v1/proposals`). The relay holds it and runs `gobject submit` once the fee is in a ChainLocked
+   block; Dash Core relays it then and makes it live at 6 confirmations (`GOVERNANCE_FEE_CONFIRMATIONS`).
+   The relay reports `sent` until it has seen its Core take the proposal in full at 6, then `submitted`.
+   If a relay has no holding, the page calls `/v1/proposals/submit` itself once the fee is ChainLocked
+   (an older relay answers 425 until 6 confirmations). If a relay is down three times in a row, the next one is tried. The
    `gobject submit …` command is always shown so the user can submit from their own node.
    Confirmations are counted from the chain verified in the browser: anchored, proven by quorum proofs
    or proof of work, and labelled "reported" where they rest on a node's word or testnet proof of work.

@@ -3,7 +3,7 @@
 A queue in front of a dashd. Clients sign masternode governance **funding** votes with the voting key and hand the
 fully signed vote to the relay; the relay broadcasts it with `voteraw`, either at once or at a release time the client
 chose (deferred / randomized voting, docs/PLAN.md §5.2). It also submits proposals (`gobject submit`): at once when the
-collateral is already confirmed, or held until it is, so the client can go away after paying. The relay never sees a key,
+collateral is in a ChainLocked block, or held until it is, so the client can go away after paying. The relay never sees a key,
 keeps no accounts and no IP addresses at rest.
 
 ```
@@ -12,12 +12,13 @@ keeps no accounts and no IP addresses at rest.
    cancel (signmessage)     ──POST /v1/votes/cancel──► held -> cancelled              │
    poll                     ──GET  /v1/votes/:id ◄── confirmer: gobject getcurrentvotes (is the vote visible?)
    proposal + collateral    ──POST /v1/proposals/submit──► re-verify ──► gobject submit   (now, or 425)
-   proposal + collateral    ──POST /v1/proposals──► re-verify ──► SQLite (waiting) ──► gobject submit   at 6 confirmations
-   poll                     ──GET  /v1/proposals/:id ◄── proposer: getrawtransaction <txid> true (how deep is it?)
+   proposal + collateral    ──POST /v1/proposals──► re-verify ──► SQLite (waiting) ──► gobject submit   once ChainLocked
+   poll                     ──GET  /v1/proposals/:id ◄── proposer: getrawtransaction <txid> true (how deep, ChainLocked?),
+                                                         gobject get at 6 confirmations (does Core have it in full?)
 ```
 
 Source map: `src/relay.ts` (request logic), `src/api/server.ts` (HTTP), `src/broadcaster.ts` (release, confirm, purge),
-`src/proposer.ts` (held proposals: wait for confirmations, submit), `src/db.ts` (SQLite), `src/mnlist.ts` (cached masternode list), `src/ratelimit.ts`, `src/core/rpc.ts` (Core JSON-RPC client,
+`src/proposer.ts` (held proposals: wait for a ChainLock, submit, check again at 6), `src/db.ts` (SQLite), `src/mnlist.ts` (cached masternode list), `src/ratelimit.ts`, `src/core/rpc.ts` (Core JSON-RPC client,
 a copy of the bridge's: services stay independent), `src/cli.ts`. Signing, hashing and parsing come from `@govhub/verify`
 (`governanceVoteHash`, `voteRawParams`, `relayVoteError`, `recoverVoteSigner`, `verifyRelayCancel`, `validateProposalData`,
 `governanceObjectHash`, `checkCollateralTx`). OpenAPI 3.1: `openapi.json`.
@@ -124,10 +125,10 @@ Environment variables; an empty value means the default.
 | `CLIENT_IP_HEADER` | | header carrying the client IP; empty = the socket address. `cf-connecting-ip`: the single value. `x-forwarded-for`: the RIGHTMOST entry (the one the trusted proxy appended; entries to its left are client-supplied). IPv6 clients share a bucket per /64, IPv4 and IPv4-mapped per address |
 | `TRUSTED_PROXY_CIDRS` | | comma-separated IPv4 addresses / CIDRs and exact IPv6 addresses allowed to supply `CLIENT_IP_HEADER`; a request from any other socket peer is bucketed by its socket address and the header is ignored. Empty = trust the header from any peer, which is right when only cloudflared / caddy can reach the port (the compose setup) |
 | `PROPOSAL_SUBMIT` | `1` | `0` answers 501 on `/v1/proposals/submit`, `/v1/proposals` and `/v1/proposals/:id`, and pauses the held-proposal worker (held rows stay `waiting`) |
-| `MIN_COLLATERAL_CONFS` | `6` | confirmations a proposal collateral needs before `gobject submit` (Core's own count from `getrawtransaction`). Below 6 Core accepts the object but keeps it only in memory until it is 6 deep, so a held proposal reported `submitted` could be lost by a dashd restart: keep 6 |
+| `MIN_COLLATERAL_CONFS` | `1` | confirmations (1 to 6, Core's own count from `getrawtransaction`) a proposal collateral needs before `gobject submit`, always in a block a ChainLock covers while below 6. Below 6 Core relays the object at once and keeps its own copy postponed, in memory only, until the collateral is 6 deep; held proposals are checked again at 6 and submitted again if a dashd restart lost them (`/v1/proposals/submit` does not follow up). `6` = submit only when Core takes the object in full (the behaviour before ChainLocked submission) |
 | `MAX_HELD_PROPOSALS` | `500` | held proposals waiting (or being submitted) over all hashes; more is 503 `relay-full` |
 | `PROPOSAL_CHECK_S` | `30` | how often a waiting proposal's collateral is looked at |
-| `PROPOSAL_MAX_WAIT_S` | `259200` (3 days) | a held proposal whose collateral is not deep enough this long after the hour it was received fails, `unconfirmed` |
+| `PROPOSAL_MAX_WAIT_S` | `259200` (3 days) | a held proposal not sent (its collateral not ChainLocked, nor 6 deep) this long after the hour it was received fails, `unconfirmed`. A sent one never does: Core and its peers hold it and make it live at 6 |
 | `PROPOSAL_MISSING_S` | `21600` (6 h) | a held proposal whose collateral Core no longer knows (dropped, double-spent) for this long fails, `collateral-missing` |
 | `RETENTION_DAYS` | `7` | finished votes (confirmed, failed, cancelled, superseded) and held proposals (submitted, failed) are deleted this long after they finished |
 | `CONFIRM_TIMEOUT_S` | `600` | a broadcast vote not visible in `gobject getcurrentvotes` after this long is re-broadcast (at most 3 times) |
@@ -145,9 +146,9 @@ has `X-Content-Type-Options: nosniff`, every POST body is limited to 4096 bytes 
 | `POST /v1/votes/cancel` | `{id, sig}` → 200 `{id, status: "cancelled"}`; 409 `maybe-broadcast` (with `status` and a `reason` to show) when an earlier attempt may have reached Core (`maybeSent`); 409 `not-held` once it left the held state otherwise |
 | `GET /v1/votes/:id` | `{id, voteHash, status, releaseAt, broadcastAt, confirmedAt, attempts, lastError, nextAttemptAt, holdReason, sameAsCurrent, maybeSent}` |
 | `GET /v1/status` | `{service, version, network, core: {reachable, height}, held, proposalSubmit, proposalHold: true}`, 200 whenever the process serves. `proposalHold` tells a client this relay has the held endpoints |
-| `POST /v1/proposals/submit` | `{network, parentHash: "0", revision: 1, time, dataHex, collateralTxid}` → `{govHash, result}`; 425 `collateral-unconfirmed` below `MIN_COLLATERAL_CONFS` |
+| `POST /v1/proposals/submit` | `{network, parentHash: "0", revision: 1, time, dataHex, collateralTxid}` → `{govHash, result, postponed}`; 425 `collateral-unconfirmed` (with `confirmations`, `chainlock`) until the collateral has `MIN_COLLATERAL_CONFS` in a ChainLocked block, or 6 |
 | `POST /v1/proposals` | same body → 202 with the status view (new: `waiting`, or the outcome of an immediate submit), 200 with the stored record if this proposal with this collateral is already known |
-| `GET /v1/proposals/:id` | `{id, govHash, collateralTxid, status, confirmations, minConfirmations, attempts, lastError, coreMessage?, nextAttemptAt, submittedAt, finishedAt}` |
+| `GET /v1/proposals/:id` | `{id, govHash, collateralTxid, status, confirmations, minConfirmations, sent, attempts, lastError, coreMessage?, nextAttemptAt, submittedAt, finishedAt}` |
 
 `POST /v1/votes` body: `{network, collateralTxid, collateralIndex, govHash, signal: "funding", outcome: "yes"|"no"|"abstain",
 time, sig, releaseAt?}`, where `time` is the signed nTime and `sig` the base64 of the 65-byte compact signature from
@@ -242,26 +243,43 @@ From Dash Core `governance/object.cpp` `ProcessVote`, `governance/vote.cpp` `IsV
 `POST /v1/proposals/submit` is stateless and still supported (older clients and the deployed web app use it). It re-verifies what a client could get wrong or fake before it asks Core: the proposal data
 (`validateProposalData`, including `end_epoch` in the future), the gov hash (`governanceObjectHash`), and the collateral
 transaction fetched from Core (`checkCollateralTx` against that hash and the named txid: P2PKH/OP_RETURN outputs only,
-a burn of at least 1 DASH committing to the hash). With fewer than `MIN_COLLATERAL_CONFS` confirmations it answers 425
-`collateral-unconfirmed` with the current `confirmations`; the client retries. Core's refusal is 409 `core-rejected` with
-Core's message (proposal data is public). Only proposals (`parentHash` `0`, revision 1) are accepted.
+a burn of at least 1 DASH committing to the hash). It submits once the collateral has `MIN_COLLATERAL_CONFS` (default 1)
+confirmations in a block a ChainLock covers (`chainlock` from `getrawtransaction`), or 6 without one; before that it answers 425
+`collateral-unconfirmed` with the current `confirmations` and `chainlock`, and the client retries. Below 6 confirmations Dash
+Core takes the object as postponed: it relays it to its peers at once and makes it a full, votable object when the collateral
+is 6 deep (`CGovernanceManager::CheckPostponedObjects`); the answer then says `postponed: true`. This endpoint does not follow
+up: Core keeps a postponed object in memory only, so a restart of the relay's dashd before 6 confirmations loses the relay's
+own copy (peers keep theirs). `POST /v1/proposals` checks again at 6. Core's refusal is 409 `core-rejected` with Core's
+message (proposal data is public). Only proposals (`parentHash` `0`, revision 1) are accepted.
 
 ## Held proposal submission
 
-`POST /v1/proposals` takes the same body for a client that cannot stay online until the collateral is six blocks deep (the
-proposal wizard: pay, then close the tab). The relay stores the proposal and submits it itself once Core counts enough
-confirmations. It never submits earlier: with 1 to 5 confirmations Core accepts the object but keeps it only in an in-memory
-postponed map (`rpc/governance.cpp:396-416`), which a restart of dashd loses.
+`POST /v1/proposals` takes the same body for a client that cannot stay online after paying (the proposal wizard: pay, then
+close the tab). The relay stores the proposal and submits it itself once the collateral is in a ChainLocked block, usually a
+few minutes after payment, then follows it until Dash Core has it as a full object.
+
+Dash Core's rules decide what "submitted" means. `CGovernanceObject::IsCollateralValid` (`governance/object.cpp:790-878`) needs
+6 confirmations for full acceptance, with no ChainLock shortcut. With 1 to 5 confirmations `gobject submit` keeps the object in
+an in-memory postponed map and relays it at once (`rpc/governance.cpp:396-418`); peers postpone it too, and
+`CheckPostponedObjects` (`governance/governance.cpp:856-887`) promotes it at 6. So the proposal goes live and votable at 6 either
+way; sending it at the first ChainLocked confirmation gets it onto the network sooner, and the ChainLock makes sure its block
+cannot be reorganised away. Because the postponed map is lost when dashd restarts and `gobject get` only sees full objects, a
+record sent below 6 stays `waiting` with `sent: true`. At 6 confirmations the relay asks `gobject get <hash>`: found means
+`submitted`; unknown (a restart lost it, or Core has not promoted it yet) means `gobject submit` again, which Core now takes in
+full. `MIN_COLLATERAL_CONFS=6` restores submitting only at 6.
 
 ```
-            POST                 Core counts >= MIN_COLLATERAL_CONFS        Core answers with the hash
- (new) ────────────► waiting ──────────────────────────────────► submitting ──────────────────────────► submitted
-                      │  ▲                                          │
-                      │  │ no answer / not synced (-10) / the       │ Core refuses: failed (core-rejected,
-                      │  │ collateral lost confirmations (reorg)    │ with coreMessage), or another hash:
-                      │  └──────────────────────────────────────────┘ failed (core-hash-mismatch)
-                      ▼
-                   failed: expired | unconfirmed | collateral-missing | bad-collateral
+         POST       ChainLocked with >= MIN_COLLATERAL_CONFS (or 6 deep)     Core answers with the hash
+ (new) ──────► waiting ─────────────────────────────────────────► submitting ──────────────────► submitted   (6+ confirmations)
+                │  ▲                                                │   │
+                │  │ no answer / not synced (-10) / the collateral  │   │ hash, 1-5 confirmations
+                │  │ is no longer ChainLocked or deep (reorg)       │   ▼
+                │  └────────────────────────────────────────────────┘  waiting, sent ──► at 6: gobject get
+                │                                                         │   finds it ──► submitted
+                │       Core refuses: failed (core-rejected, with         │   unknown  ──► submitting again
+                │       coreMessage), or another hash: failed             │
+                ▼       (core-hash-mismatch)                              ▼
+             failed: expired | unconfirmed | collateral-missing | bad-collateral
 ```
 
 Validation, in this order and identical to `/v1/proposals/submit` (one shared function): 501 `disabled`, `bad-request` (not
@@ -273,8 +291,8 @@ with its current state, whatever it is, without asking Core: a client whose POST
 true`: 404 `unknown-collateral` if Core does not know it (retry: it may not have propagated yet), 503 `core-unavailable`, 400
 `bad-collateral` (with `failure`) unless `checkCollateralTx` passes against the computed hash and the named txid. A
 transaction still in the mempool is held. A new record answers 202; the record is due for the worker at once (it keeps no
-exact receive second, only the hour). If the collateral is already deep enough, the relay
-submits within the request on the worker's code path, so the 202 then carries `submitted` or `failed`.
+exact receive second, only the hour). If the collateral is already ChainLocked (or 6 deep), the relay submits within the
+request on the worker's code path, so the 202 then carries `waiting` with `sent: true`, `submitted` or `failed`.
 
 The worker runs every 5 s and takes up to 20 due `waiting` records, oldest `nextAttemptAt` first. A new record is due at once;
 after that a record is due on the next `PROPOSAL_CHECK_S` boundary after its last look (or after its retry backoff), on a grid
@@ -282,19 +300,24 @@ shared by every record, so no stored time points back to the second a request ar
 to the hour, like `received_hour`). With many records waiting, 20 per 5 s is the limit (500 records: one look each about every
 2 minutes). For each record, in order:
 
-1. `end_epoch` passed (validateProposalData with now) → `failed`, `expired`.
+1. `end_epoch` passed (validateProposalData with now) → `failed`, `expired`. Not for a record already sent: only `gobject
+   submit` checks the expiry, and Core promotes a postponed object without it.
 2. `getrawtransaction <txid> true`; the bytes go through `checkCollateralTx` again (they must still be that txid and burn to
    that hash, else `failed`, `bad-collateral`). No answer → retry (30 s doubling to 10 min, `core-error`), never a failure.
    Core does not know the transaction → keep waiting (`collateral-missing`); unknown for longer than `PROPOSAL_MISSING_S` →
    `failed`, `collateral-missing`.
-3. Fewer than `MIN_COLLATERAL_CONFS` → keep waiting and store `confirmations`; still not deep enough
-   `PROPOSAL_MAX_WAIT_S` after the receive hour → `failed`, `unconfirmed`.
-4. Enough → a conditional `waiting -> submitting` UPDATE, then `gobject submit 0 1 <time> <dataHex> <txid>`. The returned hash
-   must equal the computed gov hash (`submitted`; otherwise `failed`, `core-hash-mismatch`). Core not synced with the
+3. Sent and still below 6 → keep waiting and store `confirmations`. Not sent and not submittable (fewer than
+   `MIN_COLLATERAL_CONFS`, or below 6 without `chainlock: true`) → the same; still not sent `PROPOSAL_MAX_WAIT_S` after the
+   receive hour → `failed`, `unconfirmed`.
+4. Sent and 6 deep → `gobject get <hash>`. An answer → `submitted`. "Unknown governance object" → step 5 (submitted again).
+   No answer → retry, `core-error`.
+5. Submittable → a conditional `waiting -> submitting` UPDATE, then `gobject submit 0 1 <time> <dataHex> <txid>`. The returned
+   hash must equal the computed gov hash (otherwise `failed`, `core-hash-mismatch`): with 6 or more confirmations the record is
+   `submitted`, with fewer it goes back to `waiting` with `sent: true`. Core not synced with the
    masternode network (-10, "Must wait for client to sync") → back to waiting, `core-syncing`, with the backoff. A collateral
    refusal (Core reports every collateral problem as "Invalid proposal collateral", `governance/object.cpp:740-742`) → the
-   relay asks `getrawtransaction` again: fewer confirmations than needed (a reorg) → back to waiting, `collateral-reorg`;
-   still enough → `failed`, `core-rejected`. Any other Core error → `failed`, `core-rejected`, with `coreMessage` (Core's text
+   relay asks `getrawtransaction` again: no longer submittable (a reorg) → back to waiting, `collateral-reorg`; still
+   submittable → `failed`, `core-rejected`. Any other Core error → `failed`, `core-rejected`, with `coreMessage` (Core's text
    trimmed to 200 characters; proposal data is public once submitted). No answer → back to waiting, `core-error`: a resubmit
    is harmless, Core accepts an object it already has silently and returns its hash (`governance/governance.cpp:338`).
    A record left in `submitting` by a crash goes back to `waiting`, due at once, at start-up.
@@ -311,8 +334,8 @@ same POST again and gets the record back (that needs the full proposal data, not
 network its data is public too, so until the record is purged anyone can still learn with that same POST that this relay
 submitted it. The record is returned in any state. A record that failed for a reason that can pass (`collateral-missing`,
 `unconfirmed`) is held again by the re-POST (back to `waiting`, its wait counted from that hour); every other failure is final.
-The stored `confirmations` are capped at `MIN_COLLATERAL_CONFS`: a collateral already deep when it arrived would otherwise
-date the request to the block. `/v1/status` deliberately reports no count of held proposals: on a quiet relay a change in it would hint
+The stored `confirmations` are capped at 6: a collateral already deep when it arrived would otherwise date the request to the
+block. `sent` is a flag, not a time. `/v1/status` deliberately reports no count of held proposals: on a quiet relay a change in it would hint
 which relay took a burn seen on chain.
 
 **Abuse resistance.** Nothing is stored before the collateral has been fetched from Core and checked against the exact gov

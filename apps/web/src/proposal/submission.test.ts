@@ -33,7 +33,7 @@ class FakeRelay implements ProposalRelayPort {
     if (this.mode === 'down') throw new RelayError('unreachable');
     if (this.mode === 'reject') throw new RelayError('Invalid proposal data', 400, 'bad-proposal');
     if (this.mode === 'legacy') return { kind: 'legacy' as const };
-    this.held ??= { id: 'a'.repeat(32), govHash, status: 'waiting', confirmations: 0, lastError: null, coreMessage: null, nextAttemptAt: null, submittedAt: null };
+    this.held ??= { id: 'a'.repeat(32), govHash, status: 'waiting', confirmations: 0, sent: false, lastError: null, coreMessage: null, nextAttemptAt: null, submittedAt: null };
     expect(body).toEqual({ network: 'testnet', parentHash: '0', revision: 1, time: now, dataHex: expect.any(String), collateralTxid: TXID });
     return { kind: 'held' as const, state: this.held };
   }
@@ -44,9 +44,13 @@ class FakeRelay implements ProposalRelayPort {
   }
   async submitNow() {
     this.calls.push('submitNow');
-    return this.confs >= 6 ? { kind: 'submitted' as const, govHash: '' } : { kind: 'unconfirmed' as const, confirmations: this.confs };
+    // an older relay: 6 confirmations; a newer one: 1 ChainLocked confirmation, postponed by Core until 6
+    if (this.confs >= 6) return { kind: 'submitted' as const, govHash: '', postponed: false };
+    if (this.newer && this.confs >= 1) return { kind: 'submitted' as const, govHash: '', postponed: true };
+    return { kind: 'unconfirmed' as const, confirmations: this.confs };
   }
   confs = 0;
+  newer = false;
 }
 
 function services(relays: FakeRelay[], o: { check?: CollateralCheck; seen?: boolean | null; onGovhub?: boolean } = {}): WizardServices {
@@ -85,15 +89,59 @@ describe('submissionTick', () => {
     expect(resetRelays(d).submission!.relays.map((x) => x.name)).toEqual(['relay-b']);
   });
 
-  it('an older relay without holding is asked at 6 confirmations, not before', async () => {
+  it('a relay without holding is asked once the fee is ChainLocked, not before; an older one says 425 until 6', async () => {
     const r = new FakeRelay('old', 'legacy');
-    const t1 = await submissionTick(paidDraft(), services([r], { check: mined(3) }));
+    const t1 = await submissionTick(paidDraft(), services([r], { check: { ...mined(3), final: false } }));
     expect(t1.draft.submission!.relays[0]).toMatchObject({ legacy: true, status: 'waiting' });
     expect(r.calls).toEqual(['hold']);
-    r.confs = 6;
-    const t2 = await submissionTick(t1.draft, services([r], { check: mined(6) }));
+    r.confs = 3;
+    const t2 = await submissionTick(t1.draft, services([r], { check: mined(3) }));
     expect(r.calls).toEqual(['hold', 'submitNow']);
-    expect(t2.draft.submission!.via).toBe('old');
+    expect(t2.draft.submission!.relays[0]).toMatchObject({ status: 'waiting', lastError: 'collateral-unconfirmed' });
+    expect(t2.draft.submission!.submittedAt).toBeUndefined();
+    r.confs = 6;
+    const t3 = await submissionTick(t2.draft, services([r], { check: mined(6) }));
+    expect(r.calls).toEqual(['hold', 'submitNow', 'submitNow']);
+    expect(t3.draft.submission!.via).toBe('old');
+  });
+
+  it('a newer relay without holding takes it at 1 ChainLocked confirmation (sent), and is asked once more at 6', async () => {
+    const r = new FakeRelay('plain', 'legacy');
+    r.newer = true;
+    r.confs = 2;
+    const t1 = await submissionTick(paidDraft(), services([r], { check: mined(2) }));
+    expect(r.calls).toEqual(['hold', 'submitNow']);
+    expect(t1.draft.submission!.relays[0]).toMatchObject({ status: 'waiting', sent: true, lastError: null });
+    expect(t1.draft.submission!.submittedAt).toBeUndefined();
+    // sent: not asked again below 6
+    const t2 = await submissionTick(t1.draft, services([r], { check: mined(4) }));
+    expect(r.calls).toEqual(['hold', 'submitNow']);
+    r.confs = 6;
+    const t3 = await submissionTick(t2.draft, services([r], { check: mined(6) }));
+    expect(r.calls).toEqual(['hold', 'submitNow', 'submitNow']);
+    expect(t3.draft.submission).toMatchObject({ via: 'plain', submittedAt: expect.any(Number) });
+  });
+
+  it('an older relay configured below 6 (no `postponed` in its answer) is treated as sent while this page counts fewer than 6', async () => {
+    const r = new FakeRelay('old-low', 'legacy');
+    r.confs = 6; // answers like an old relay: submitted, no postponed flag
+    const t1 = await submissionTick(paidDraft(), services([r], { check: mined(2) }));
+    expect(t1.draft.submission!.relays[0]).toMatchObject({ status: 'waiting', sent: true });
+    const t2 = await submissionTick(t1.draft, services([r], { check: mined(6) }));
+    expect(r.calls).toEqual(['hold', 'submitNow', 'submitNow']);
+    expect(t2.draft.submission).toMatchObject({ via: 'old-low', submittedAt: expect.any(Number) });
+  });
+
+  it('a holding relay that sent it below 6 is followed as waiting with `sent`, then submitted', async () => {
+    const r = new FakeRelay('relay-a');
+    const t1 = await submissionTick(paidDraft(), services([r], { check: mined(2) }));
+    r.held = { ...r.held!, sent: true, confirmations: 2 };
+    const t2 = await submissionTick(t1.draft, services([r], { check: mined(3) }));
+    expect(t2.draft.submission!.relays[0]).toMatchObject({ status: 'waiting', sent: true });
+    expect(t2.draft.submission!.submittedAt).toBeUndefined();
+    r.held = { ...r.held!, status: 'submitted', confirmations: 6 };
+    const t3 = await submissionTick(t2.draft, services([r], { check: mined(6) }));
+    expect(t3.draft.submission).toMatchObject({ via: 'relay-a', submittedAt: expect.any(Number) });
   });
 
   it("Core's refusal is final and not retried on other relays", async () => {
@@ -122,7 +170,7 @@ describe('submissionTick', () => {
 
   it('seen by the network, then on govhub; a manual submit counts', async () => {
     const r = new FakeRelay('relay-a');
-    r.held = { id: 'a'.repeat(32), govHash: paidDraft().lock!.govHash, status: 'submitted', confirmations: 6, lastError: null, coreMessage: null, nextAttemptAt: null, submittedAt: 1 };
+    r.held = { id: 'a'.repeat(32), govHash: paidDraft().lock!.govHash, status: 'submitted', confirmations: 6, sent: true, lastError: null, coreMessage: null, nextAttemptAt: null, submittedAt: 1 };
     const t = await submissionTick(paidDraft(), services([r], { check: mined(7), seen: true, onGovhub: true }));
     expect(t.draft.submission).toMatchObject({ submittedAt: expect.any(Number), seenAt: expect.any(Number), publishedAt: expect.any(Number) });
     const m = markManualSubmit(paidDraft(), 5);
@@ -143,7 +191,10 @@ describe('HttpProposalRelay', () => {
     const f = reply(202, { id: 'f'.repeat(32), govHash: gov, status: 'waiting', confirmations: 2 });
     vi.stubGlobal('fetch', f);
     const r = new HttpProposalRelay('https://relay.example/', 'relay');
-    expect(await r.hold(body, gov)).toMatchObject({ kind: 'held', state: { status: 'waiting', confirmations: 2 } });
+    expect(await r.hold(body, gov)).toMatchObject({ kind: 'held', state: { status: 'waiting', confirmations: 2, sent: false } });
+    vi.stubGlobal('fetch', reply(202, { id: 'f'.repeat(32), govHash: gov, status: 'waiting', confirmations: 2, sent: true }));
+    expect(await r.hold(body, gov)).toMatchObject({ kind: 'held', state: { status: 'waiting', sent: true } });
+    vi.stubGlobal('fetch', f);
     expect(f.mock.calls[0]![0]).toBe('https://relay.example/v1/proposals');
     expect(JSON.parse((f.mock.calls[0]![1] as RequestInit).body as string)).toEqual(body);
     expect((f.mock.calls[0]![1] as RequestInit).credentials).toBe('omit');
@@ -158,7 +209,9 @@ describe('HttpProposalRelay', () => {
     vi.stubGlobal('fetch', reply(425, { error: 'needs 6', code: 'collateral-unconfirmed', confirmations: 3 }));
     expect(await r.submitNow(body)).toEqual({ kind: 'unconfirmed', confirmations: 3 });
     vi.stubGlobal('fetch', reply(200, { govHash: gov, result: gov }));
-    expect(await r.submitNow(body)).toEqual({ kind: 'submitted', govHash: gov });
+    expect(await r.submitNow(body)).toEqual({ kind: 'submitted', govHash: gov, postponed: false });
+    vi.stubGlobal('fetch', reply(200, { govHash: gov, result: gov, postponed: true }));
+    expect(await r.submitNow(body)).toEqual({ kind: 'submitted', govHash: gov, postponed: true });
   });
 
   it('errors keep their code; status 404 is "unknown"', async () => {
