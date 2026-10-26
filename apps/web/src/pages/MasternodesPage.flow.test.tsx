@@ -446,6 +446,102 @@ describe('a locked keyring (or a pasted-key sign-in)', () => {
   });
 });
 
+describe('a passkey sign-in and the keyring\'s unlockers', () => {
+  /** The keyring fake as after a passkey sign-in; `addPasskeyUnlocker` records its options and drops the offer, like the provider. */
+  function passkeyFake() {
+    const calls = keyringFake();
+    const adds: unknown[] = [];
+    h.kr.set({
+      session: { wallet: {}, source: 'passkey', credentialId: new Uint8Array(16).fill(1) },
+      lockedReason: null,
+      passkeyOffer: null,
+      dismissPasskeyOffer: () => h.kr.set({ passkeyOffer: null }),
+      addPasskeyUnlocker: async (o: unknown) => {
+        adds.push(o);
+        h.kr.set({ passkeyOffer: null });
+      },
+    });
+    return { calls, adds };
+  }
+  const REASON = 'Your passkey signs you in, but it isn’t set up to unlock your masternode keys yet. Unlock once with your recovery phrase, then add this passkey so it works next time.';
+
+  it('creating the keyring: the added banner, then the offer; "Use my passkey" adds the signed-in passkey (only on the click)', async () => {
+    const { calls, adds } = passkeyFake();
+    const save = h.kr.get().saveToPlatform;
+    h.kr.set({ saveToPlatform: async () => (await save(), h.kr.set({ passkeyOffer: 'created' })) });
+    badgeFake();
+    const el = await start();
+    expect(q(el, 'passkey-offer')).toBeNull();
+    await pasteAndFind(el);
+    expect(q(el, 'passkey-offer')).toBeNull(); // memory-only while the flow runs
+    await click(q(el, 'mnb-toggle')!);
+    await click(q(el, 'flow-confirm')!);
+    await flush();
+    expect(calls.save).toBe(1);
+    expect(q(el, 'flow-done')).not.toBeNull();
+    const offer = q(el, 'passkey-offer')!;
+    expect(offer.textContent).toContain('Also open your masternodes with your passkey?');
+    expect(offer.textContent).not.toMatch(/—/);
+    expect(adds).toHaveLength(0);
+    await click(q(el, 'passkey-offer-use')!);
+    await flush();
+    expect(adds).toEqual([{ signedIn: true }]);
+    expect(q(el, 'passkey-offer')).toBeNull();
+    expect(q(el, 'passkey-offer-done')?.textContent).toContain('Signing in with your passkey now unlocks your masternodes too.');
+  });
+
+  it('"Not now" hides the offer without a passkey prompt', async () => {
+    const { adds } = passkeyFake();
+    badgeFake();
+    const ring = emptyKeyring(IDENTITY, []);
+    h.kr.set({ status: 'open', keyring: ring, keyInfos: [], mns: { phase: 'ready', owned: [], missing: [], mismatch: [], smlNodes: 3, forKeys: '' }, passkeyOffer: 'created' });
+    const el = await start();
+    await click(q(el, 'passkey-offer-dismiss')!);
+    expect(q(el, 'passkey-offer')).toBeNull();
+    expect(adds).toHaveLength(0);
+  });
+
+  it('locked because the passkey is no unlocker: the Unlock card says so plainly; after the phrase, the offer to use the passkey next time', async () => {
+    const { adds } = passkeyFake();
+    badgeFake();
+    const phrases: string[] = [];
+    h.kr.set({
+      status: 'locked',
+      lockedReason: 'passkey-not-unlocker',
+      unlockWithPhrase: async (p: string) => {
+        phrases.push(p);
+        h.kr.set({ status: 'open', lockedReason: null, keyring: emptyKeyring(IDENTITY, []), mns: { phase: 'ready', owned: [], missing: [], mismatch: [], smlNodes: 3, forKeys: '' }, passkeyOffer: 'unlocked' });
+      },
+    });
+    const el = await start();
+    expect(q(el, 'keyring-locked-reason')?.textContent).toBe(REASON);
+    // the phrase leads; another passkey is still possible
+    expect(q(el, 'unlock-phrase-submit')?.className).toContain('btn-primary');
+    expect(button(el, /Try another passkey/)).toBeTruthy();
+    expect(q(el, 'passkey-offer')).toBeNull();
+    await type(q(el, 'unlock-phrase') as HTMLInputElement, 'abandon about');
+    await click(q(el, 'unlock-phrase-submit')!);
+    await flush();
+    expect(phrases).toEqual(['abandon about']);
+    expect(q(el, 'keyring-locked-reason')).toBeNull();
+    expect(q(el, 'passkey-offer')?.textContent).toContain('Use your passkey to unlock next time?');
+    await click(q(el, 'passkey-offer-use')!);
+    await flush();
+    expect(adds).toEqual([{ signedIn: true }]);
+  });
+
+  it('locked for another reason (Lock now, the idle lock, a tab that took over a locked session): the card as before', async () => {
+    passkeyFake();
+    badgeFake();
+    h.kr.set({ status: 'locked', lockedReason: null });
+    const el = await start();
+    expect(q(el, 'keyring-locked-reason')).toBeNull();
+    expect(button(el, /Unlock with a passkey/).className).toContain('btn-primary');
+    expect(q(el, 'unlock-phrase-submit')?.className).not.toContain('btn-primary');
+    expect(el.textContent).toContain('Or type your recovery phrase');
+  });
+});
+
 describe('deferred Standard in the unified flow (PLAN §8.10)', () => {
   it('after the keyring save, the request waits about 30 min (said once, plainly); then the badge is held for the next post, with Register now', async () => {
     keyringFake();

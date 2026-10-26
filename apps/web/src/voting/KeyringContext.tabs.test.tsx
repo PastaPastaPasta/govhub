@@ -35,6 +35,13 @@ const h = vi.hoisted(() => ({
   saved: 0,
   /** set: the next save waits for it */
   saveGate: null as Promise<void> | null,
+  /** the unlockers of the keyring saved last (saveKeys): they open it too */
+  savedUnlockers: [] as Uint8Array[],
+  /** the PRF output the next passkey prompt returns (null: the user cancels it), and every prompt's options */
+  prf: null as Uint8Array | null,
+  prompts: [] as Array<{ allow?: Uint8Array[] }>,
+  /** set: the next passkey prompt waits for it (the user is still at the prompt) */
+  promptGate: null as Promise<void> | null,
 }));
 vi.mock('../app/context.tsx', async () => {
   // a testnet-Platform profile: the keyring below is derived for testnet
@@ -59,19 +66,30 @@ vi.mock('@govhub/auth', async (orig) => {
       if (h.gate) await h.gate;
       if (h.absent) return null as unknown as OpenedKeyring;
       const is = (u: Uint8Array | null) => !!u && u.length === key.pair.publicKey.length && u.every((b, i) => b === key.pair.publicKey[i]);
-      if (!is(h.unlocker) && !is(h.passkeyUnlocker)) throw new real.KeyringLockedError();
+      if (!is(h.unlocker) && !is(h.passkeyUnlocker) && !h.savedUnlockers.some(is)) throw new real.KeyringLockedError();
       const k = real.emptyKeyring(identityId, []);
       k.content.keys.push({ privateKey: fixtureMnKey(1).slice(), compressed: true, label: 'mn' });
       h.rings.push(k);
       return { ...k, authenticated: true } as OpenedKeyring;
     },
-    saveKeys: async () => {
+    saveKeys: async (_ctx: unknown, _s: unknown, k: OpenedKeyring) => {
       if (h.saveGate) await h.saveGate;
       h.saved++;
       h.absent = false;
+      h.savedUnlockers = k.content.unlockers.map((u) => u.recipientKey.slice());
     },
   };
 });
+// a passkey prompt ("Use a passkey I already have", "Use my passkey"): records what it was limited to
+vi.mock('@govhub/auth/webauthn', async (orig) => ({
+  ...(await orig<object>()),
+  getPasskeyPrf: async (o: { allow?: Uint8Array[] }) => {
+    h.prompts.push(o);
+    if (h.promptGate) await h.promptGate;
+    if (!h.prf) throw new Error('No passkey was chosen.');
+    return { credentialId: o.allow?.[0] ?? new Uint8Array(16).fill(2), userHandle: null, prfOutput: h.prf.slice() };
+  },
+}));
 
 const { AuthProvider, useAuth } = await import('../auth/context.tsx');
 const { passkeyUnlockKey, seedUnlockKey } = await import('@govhub/auth');
@@ -148,6 +166,10 @@ afterEach(async () => {
   h.absent = false;
   h.saved = 0;
   h.saveGate = null;
+  h.savedUnlockers = [];
+  h.prf = null;
+  h.prompts = [];
+  h.promptGate = null;
   for (const t of tabs.splice(0)) await t.close();
   vi.restoreAllMocks();
 });
@@ -347,9 +369,21 @@ describe('the keyring lock covers every tab of the session (D-015)', () => {
     await settle();
     expect(a.auth.session?.source).toBe('passkey');
     expect(a.kr.status).toBe('locked');
+    // the offer to add that passkey never shows, and cannot add it while the keyring is locked
+    expect(a.kr.passkeyOffer).toBeNull();
+    h.prf = new Uint8Array(32).fill(9);
+    await act(async () => expect(a.kr.addPasskeyUnlocker({ signedIn: true })).rejects.toThrow(/Open a saved keyring first/));
+    expect(h.prompts).toHaveLength(0);
+    expect(h.saved).toBe(0);
     const b = await openTab();
     expect(b.auth.session?.source).toBe('passkey');
     expect(b.kr.status).toBe('locked');
+    expect(b.kr.lockedReason).toBeNull(); // no ceremony in this tab: nothing it could say
+    expect(b.kr.passkeyOffer).toBeNull();
+    await act(async () => expect(b.kr.addPasskeyUnlocker({ signedIn: true })).rejects.toThrow(/Open a saved keyring first/));
+    expect(h.prompts).toHaveLength(0);
+    expect(h.saved).toBe(0);
+    expect(a.kr.status).toBe('locked');
   });
 
   it('a passkey sign-in with no saved keyring: the first keyring can be saved, and that unlocks the session (owner report)', async () => {
@@ -365,6 +399,166 @@ describe('the keyring lock covers every tab of the session (D-015)', () => {
     expect(h.saved).toBe(1);
     expect(a.kr.status).toBe('open');
     expect(a.auth.keyringLock.locked(SEED_ID)).toBe(false);
+  });
+
+  it('a passkey sign-in, no saved keyring: creating it offers that passkey (on a click only); using it makes the next passkey sign-in open it', async () => {
+    h.absent = true;
+    const prf = new Uint8Array(32).fill(5); // a passkey that is no unlocker of anything yet
+    const a = await openTab();
+    await act(async () => passkeySignIn(a, prf));
+    await settle();
+    expect(a.kr.status).toBe('absent');
+    expect(a.kr.passkeyOffer).toBeNull();
+    await act(async () => a.kr.createKeyring(false));
+    await settle();
+    expect(a.kr.status).toBe('open');
+    expect(a.kr.keyring!.content.unlockers).toHaveLength(1); // the seed only
+    expect(a.kr.passkeyOffer).toBe('created');
+    expect(h.prompts).toHaveLength(0); // no passkey prompt on its own
+    h.prf = prf;
+    await act(async () => a.kr.addPasskeyUnlocker({ signedIn: true }));
+    await settle();
+    expect(h.prompts).toHaveLength(1);
+    expect(h.prompts[0]!.allow).toEqual([new Uint8Array(16).fill(1)]); // the passkey this session signed in with
+    expect(h.saved).toBe(2);
+    expect(a.kr.keyring!.content.unlockers).toHaveLength(2);
+    expect(a.kr.passkeyOffer).toBeNull();
+    expect(a.kr.error).toBeNull();
+    // later: a new passkey sign-in (no tab open) opens the saved keyring with that passkey
+    await a.close();
+    const b = await openTab();
+    expect(b.auth.session).toBeNull();
+    await act(async () => passkeySignIn(b, prf));
+    await settle();
+    expect(b.kr.status).toBe('open');
+    expect(b.kr.lockedReason).toBeNull();
+    expect(b.kr.passkeyOffer).toBeNull();
+  });
+
+  it('memory-only keys then Save on Platform in a passkey session: the offer shows once saved, not for the memory-only keyring', async () => {
+    h.absent = true;
+    const a = await openTab();
+    await act(async () => passkeySignIn(a, new Uint8Array(32).fill(5)));
+    await settle();
+    await act(async () => a.kr.createKeyring(true));
+    await settle();
+    expect(a.kr.status).toBe('open');
+    expect(a.kr.passkeyOffer).toBeNull();
+    await act(async () => a.kr.saveToPlatform());
+    await settle();
+    expect(a.kr.memoryOnly).toBe(false);
+    expect(a.kr.passkeyOffer).toBe('created');
+    // Not now: gone, and nothing was prompted
+    await act(async () => a.kr.dismissPasskeyOffer());
+    expect(a.kr.passkeyOffer).toBeNull();
+    expect(h.prompts).toHaveLength(0);
+  });
+
+  it('a lock (here or in another tab) while the passkey prompt is open: nothing is added or saved', async () => {
+    h.absent = true;
+    const prf = new Uint8Array(32).fill(5);
+    const a = await openTab();
+    await act(async () => passkeySignIn(a, prf));
+    await settle();
+    await act(async () => a.kr.createKeyring(false));
+    await settle();
+    const b = await openTab();
+    for (const locker of [a, b]) {
+      if (a.kr.status !== 'open') {
+        await act(async () => a.kr.unlockWithPhrase(PHRASE));
+        await settle();
+      }
+      expect(a.kr.status).toBe('open');
+      const saved = h.saved;
+      let release!: () => void;
+      h.promptGate = new Promise((r) => (release = r));
+      h.prf = prf;
+      let adding!: Promise<unknown>;
+      await act(async () => {
+        adding = a.kr.addPasskeyUnlocker({ signedIn: true }).then(
+          () => 'added',
+          (e: Error) => e,
+        );
+      });
+      await act(async () => locker.kr.lock());
+      await act(async () => {
+        release();
+        expect(await adding).toBeInstanceOf(Error);
+      });
+      await settle();
+      expect(h.saved).toBe(saved);
+      expect(a.kr.status).toBe('locked');
+      expect(a.kr.passkeyOffer).toBeNull();
+      const pub = passkeyUnlockKey(prf.slice());
+      expect(h.savedUnlockers.some((u) => u.every((x, i) => x === pub.pair.publicKey[i]))).toBe(false);
+      pub.wipe();
+    }
+  });
+
+  it('a seed sign-in that creates the keyring is offered nothing', async () => {
+    h.absent = true;
+    const a = await openTab();
+    await act(async () => a.auth.signIn(seedSession()));
+    await settle();
+    await act(async () => a.kr.createKeyring(false));
+    await settle();
+    expect(a.kr.status).toBe('open');
+    expect(a.kr.passkeyOffer).toBeNull();
+  });
+
+  it('a passkey sign-in whose passkey is no unlocker: locked with that reason; the phrase opens it and then offers the passkey; Lock now says nothing more', async () => {
+    const prf = new Uint8Array(32).fill(5);
+    const a = await openTab();
+    await act(async () => passkeySignIn(a, prf));
+    await settle();
+    expect(a.kr.status).toBe('locked');
+    expect(a.kr.lockedReason).toBe('passkey-not-unlocker');
+    expect(a.kr.error).toBeNull();
+    expect(a.kr.passkeyOffer).toBeNull();
+    // D-015: that passkey cannot make itself an unlocker while the keyring is locked (the seed of its vault opens nothing)
+    h.prf = prf;
+    await act(async () => expect(a.kr.addPasskeyUnlocker({ signedIn: true })).rejects.toThrow(/Open a saved keyring first/));
+    await act(async () => expect(a.kr.addPasskeyUnlocker()).rejects.toThrow(/Open a saved keyring first/));
+    expect(h.prompts).toHaveLength(0);
+    expect(h.saved).toBe(0);
+    expect(a.kr.status).toBe('locked');
+    h.prf = null;
+    await act(async () => a.kr.unlockWithPhrase(PHRASE));
+    await settle();
+    expect(a.kr.status).toBe('open');
+    expect(a.kr.lockedReason).toBeNull();
+    expect(a.kr.passkeyOffer).toBe('unlocked');
+    expect(h.prompts).toHaveLength(0);
+    h.prf = prf;
+    await act(async () => a.kr.addPasskeyUnlocker({ signedIn: true }));
+    await settle();
+    expect(h.prompts[0]!.allow).toEqual([new Uint8Array(16).fill(1)]);
+    expect(h.saved).toBe(1);
+    expect(a.kr.passkeyOffer).toBeNull();
+    // Lock now: the usual locked card, no passkey reason
+    await act(async () => a.kr.lock());
+    await settle();
+    expect(a.kr.status).toBe('locked');
+    expect(a.kr.lockedReason).toBeNull();
+    // and that passkey opens it on the next passkey sign-in
+    await a.close();
+    const b = await openTab();
+    await act(async () => passkeySignIn(b, prf));
+    await settle();
+    expect(b.kr.status).toBe('open');
+  });
+
+  it('a passkey sign-in with a passkey that IS an unlocker: nothing to explain or offer', async () => {
+    const a = await openTab();
+    await act(async () => passkeySignIn(a, GOOD_PRF));
+    await settle();
+    expect(a.kr.status).toBe('open');
+    expect(a.kr.passkeyOffer).toBeNull();
+    await act(async () => a.kr.lock());
+    await act(async () => a.kr.unlockWithPhrase(PHRASE));
+    await settle();
+    expect(a.kr.status).toBe('open');
+    expect(a.kr.passkeyOffer).toBeNull();
   });
 
   it('a locked session with a keyring saved on Platform still may not save over it with the seed', async () => {

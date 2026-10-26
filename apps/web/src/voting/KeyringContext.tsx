@@ -90,6 +90,13 @@ import { clearStash, KEYRING_STASH_EVENT, takeStash } from './stash.ts';
 import { bytesEqual, bytesToHex, countVotes, governanceVoteHash, normalizeMnId, p2pkhAddress, recoverVoteSigner, verifyVoteSignature, VOTE_MAX_FUTURE_S, type OutcomeCounts } from '@govhub/verify';
 
 export type KeyringStatus = 'signed-out' | 'checking' | 'absent' | 'locked' | 'open' | 'error';
+/** Why the keyring is locked, when the Unlock card should say more than "unlock it": the passkey this session signed in with is not one of its unlockers. */
+export type LockedReason = 'passkey-not-unlocker';
+/**
+ * Offer to add the passkey this session signed in with as an unlocker (one passkey prompt, on a click): the keyring was just created
+ * or first saved in a passkey session ('created'), or the phrase opened it after that passkey could not ('unlocked').
+ */
+export type PasskeyOffer = 'created' | 'unlocked';
 
 export interface MnState extends LookupResult {
   phase: 'idle' | 'loading' | 'ready' | 'error';
@@ -119,6 +126,11 @@ export interface VoteProof {
 interface Ctx {
   status: KeyringStatus;
   error: string | null;
+  /** status 'locked' for a reason the Unlock card explains (null: Lock now, the idle lock, a tab that took over a locked session) */
+  lockedReason: LockedReason | null;
+  /** the keyring is open and the passkey this session signed in with could be added as an unlocker (see PasskeyOffer) */
+  passkeyOffer: PasskeyOffer | null;
+  dismissPasskeyOffer(): void;
   /** the error is "not enough credits for a keyring write": offer a top-up */
   needsTopUp: boolean;
   /** Clears the shown error (a stale "Top up" once the user chose memory-only instead of saving). */
@@ -157,8 +169,11 @@ interface Ctx {
   removeKey(index: number): Promise<void>;
   setNodeLabel(proTxHash: string, label: string): Promise<void>;
   setIdleMinutes(m: number): Promise<void>;
-  /** a passkey the user already has (one sign-in prompt) */
-  addPasskeyUnlocker(): Promise<void>;
+  /**
+   * A passkey the user already has (one sign-in prompt). `signedIn`: the passkey this session signed in with (the prompt is limited to
+   * that credential). Either way the keyring must be open already: this never opens it.
+   */
+  addPasskeyUnlocker(o?: { signedIn?: boolean }): Promise<void>;
   /** a passkey just created (auth/usePasskeyCreate.ts): adds its PRF output as an unlocker, resolving once saved. The caller wipes `prfOutput`. */
   addPasskeyUnlockerFrom(prfOutput: Uint8Array): Promise<void>;
   removeUnlockerKey(recipientKey: Uint8Array): Promise<void>;
@@ -214,6 +229,8 @@ export function pacedRandomDelays(n: number): number[] {
 /** Highest keyring generation this browser has opened or written (public: a counter), to notice a replayed older document. */
 const generationKey = (platformNetwork: string, ownerId: string) => `govhub.keyring.generation.${platformNetwork}.${ownerId}`;
 const NO_KEY_INFOS: readonly VotingKeyInfo[] = [];
+/** `pub` is one of the keyring's unlockers. */
+const hasUnlocker = (k: OpenedKeyring, pub: Uint8Array) => k.content.unlockers.some((u) => bytesEqual(u.recipientKey, pub));
 const EMPTY_MNS: MnState = { phase: 'idle', owned: [], missing: [], mismatch: [], smlNodes: 0, forKeys: '' };
 
 /** Async work whose session ended (sign-out, another identity or network) meanwhile: it stopped and kept nothing. */
@@ -270,6 +287,13 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
   const [celebrations, setCelebrations] = useState<string[]>([]);
   /** The keyring could be planted or replayed (not authenticated by this seed, or older than one seen here): saving waits for the user. */
   const [needsConfirm, setNeedsConfirm] = useState(false);
+  const [lockedReason, setLockedReason] = useState<LockedReason | null>(null);
+  const [passkeyOfferKind, setPasskeyOfferKind] = useState<PasskeyOffer | null>(null);
+  /**
+   * The passkey a passkey sign-in in this tab used: its unlocker public key (public; the private half is wiped with the stash), so
+   * the offer to add it is not shown once it is an unlocker. Unknown in a tab that took a passkey session over (no ceremony here).
+   */
+  const signedInPasskey = useRef<{ session: Session; publicKey: Uint8Array } | null>(null);
   const kr = useRef<OpenedKeyring | null>(null);
   // kept in step with `keyring` by close / opened / the session-end hook (not at render: a wipe must find a keyring opened
   // before React rendered it)
@@ -417,6 +441,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       setKeyInfos(infos);
       setMemoryOnly(memory);
       setStatus('open');
+      setLockedReason(null);
       setError(null);
       setNeedsTopUp(false);
       if (demo) {
@@ -504,6 +529,8 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
     setNeedsTopUp(false);
     setMemoryOnly(false);
     setCelebrations([]);
+    setLockedReason(null);
+    setPasskeyOfferKind(null);
     // signed votes sealed to the keyring are read when it opens; a plain list of an earlier version is watched at once (and sealed
     // and removed when a saved keyring opens)
     setWatched([]);
@@ -525,6 +552,8 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
     // not reopen it with the session seed (D-015). The passkey of a passkey sign-in in this tab still may: it is that passkey's own
     // ceremony, and it opens the keyring only if it is one of its unlockers (the seed then only checks it, never opens it).
     const passkey = stash?.purpose === 'unlock' ? stash.key : null;
+    if (passkey) signedInPasskey.current = { session, publicKey: passkey.pair.publicKey.slice() };
+    else if (signedInPasskey.current?.session !== session) signedInPasskey.current = null;
     const locked = lockedFor(session);
     const seed = locked && !passkey ? null : seedUnlockKey(session);
     const key = passkey ?? (locked ? null : seed);
@@ -555,8 +584,11 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       })
       .catch((e) => {
         if (sessionToken() !== t) return;
-        if (e instanceof KeyringLockedError || e instanceof LockedMeanwhileError) setStatus('locked');
-        else {
+        if (e instanceof KeyringLockedError || e instanceof LockedMeanwhileError) {
+          setStatus('locked');
+          // the passkey that signed in here is not one of the keyring's unlockers: the Unlock card says so (the seed opened nothing)
+          if (passkey && e instanceof KeyringLockedError) setLockedReason('passkey-not-unlocker');
+        } else {
           setStatus('error');
           setError(errorText(e));
         }
@@ -577,6 +609,8 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
   const lockHere = useCallback(() => {
     lockEpoch.current++;
     close();
+    setLockedReason(null);
+    setPasskeyOfferKind(null);
     if (!memoryOnly) lockRef.current.lock(session);
     setStatus(lockedFor(session) ? 'locked' : 'absent');
     setMns(EMPTY_MNS);
@@ -720,10 +754,13 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         const isOwn = !!own && bytesEqual(own, e);
         own?.fill(0);
         e.fill(0);
+        // the passkey of this sign-in could not open it: once the phrase has, offer to add that passkey
+        const passkeyFailed = lockedReason === 'passkey-not-unlocker';
         try {
           const r = await tryOpen(key, key, t);
           if (r === 'open' || isOwn) unlockedHere();
           if (r === 'absent') setStatus('absent');
+          if (r === 'open' && passkeyFailed) setPasskeyOfferKind('unlocked');
         } catch (err) {
           if (err instanceof KeyringLockedError) throw new Error("That recovery phrase doesn't unlock this identity's keyring.");
           throw err;
@@ -731,8 +768,13 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
           key.wipe();
         }
       }),
-    [run, identityId, auth.network, session, tryOpen, sessionToken, unlockedHere],
+    [run, identityId, auth.network, session, tryOpen, sessionToken, unlockedHere, lockedReason],
   );
+
+  /** A passkey session's passkey (its credential id known) may be offered as an unlocker of the saved keyring just made. */
+  const offerAfterSave = useCallback((s: Session) => {
+    if (s.source === 'passkey' && s.credentialId) setPasskeyOfferKind('created');
+  }, []);
 
   const createKeyring = useCallback(
     (memory: boolean) =>
@@ -757,8 +799,9 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         // this session's phrase made the first keyring and it is open here (no lock and no other session meanwhile: opened checked
         // both): like a phrase sign-in, its seed may open it again here and in tabs that take the session over
         if (locked) unlockedHere();
+        if (!memory) offerAfterSave(session);
       }),
-    [run, identityId, session, storeCtx, opened, auth, canWrite, sessionToken, lockedFor, unlockedHere],
+    [run, identityId, session, storeCtx, opened, auth, canWrite, sessionToken, lockedFor, unlockedHere, offerAfterSave],
   );
 
   /**
@@ -897,22 +940,41 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
   );
 
   const addPasskeyUnlocker = useCallback(
-    async () => {
+    async (o: { signedIn?: boolean } = {}) => {
+      // only into a keyring open here (the phrase, an unlocker, or just made): adding a passkey never opens one (D-015)
       if (!kr.current || memoryOnly) throw new Error('Open a saved keyring first.');
+      const cred = o.signedIn && session?.source === 'passkey' ? session.credentialId : undefined;
+      if (o.signedIn && !cred) throw new Error('This session did not sign in with a passkey.');
+      // the keyring, session and lock this prompt is for: a lock, sign-out or another keyring opened meanwhile keeps nothing
+      const t = sessionToken();
+      const k0 = kr.current;
+      const epoch = lockEpoch.current;
       let a;
       try {
-        a = await getPasskeyPrf({ rpId: rpId(), prfInput: prfInput(identifierBytes(registry.forum.contractId)) });
+        a = await getPasskeyPrf({ rpId: rpId(), prfInput: prfInput(identifierBytes(registry.forum.contractId)), ...(cred && { allow: [cred] }) });
       } catch (e) {
         setError(errorText(e));
         throw e;
       }
       try {
-        await addPasskeyUnlockerFrom(a.prfOutput);
+        const refuse = (e: Error): never => {
+          if (sessionToken() === t) setError(errorText(e));
+          throw e;
+        };
+        if (sessionToken() !== t || kr.current !== k0) refuse(new SessionChangedError());
+        if (lockEpoch.current !== epoch) refuse(new LockedMeanwhileError());
+        if (cred && !bytesEqual(a.credentialId, cred)) refuse(new Error('That was another passkey. Nothing was added; try again with the passkey you signed in with.'));
+        // the sign-in passkey: a tab that took the session over does not know its key, and one already an unlocker is simply done
+        const key = cred ? passkeyUnlockKey(a.prfOutput) : null;
+        const already = !!key && hasUnlocker(k0, key.pair.publicKey);
+        key?.wipe();
+        if (!already) await addPasskeyUnlockerFrom(a.prfOutput); // reports its own errors (run)
       } finally {
         a.prfOutput.fill(0);
       }
+      if (cred) setPasskeyOfferKind(null);
     },
-    [addPasskeyUnlockerFrom, memoryOnly, registry.forum.contractId],
+    [addPasskeyUnlockerFrom, memoryOnly, registry.forum.contractId, session, sessionToken],
   );
 
   const removeUnlockerKey = useCallback((recipientKey: Uint8Array) => edit('Removing the unlocker', (d) => removeUnlocker(d, recipientKey), { unconfirmedOk: true }), [edit]);
@@ -931,7 +993,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       const s = takeStash(identityId);
       if (!s) return;
       const k = kr.current;
-      if (s.purpose === 'add' && k && !memoryOnly && !k.content.unlockers.some((u) => bytesEqual(u.recipientKey, s.key.pair.publicKey))) {
+      if (s.purpose === 'add' && k && !memoryOnly && !hasUnlocker(k, s.key.pair.publicKey)) {
         void edit('Adding the passkey as an unlocker', (d) => void addUnlocker(d, s.key))
           .catch(() => {})
           .finally(() => s.key.wipe());
@@ -988,6 +1050,9 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
               throw e;
             }
             if (!opened(existing, false, t, epoch)) throw new SessionChangedError();
+            // the passkey that signed in here, known not to be an unlocker of the keyring merged into: offered too
+            const pk = signedInPasskey.current;
+            if (pk?.session === session && !hasUnlocker(existing, pk.publicKey)) offerAfterSave(session);
           } else {
             addUnlocker(k, seed);
             canWrite(k);
@@ -998,13 +1063,14 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
             keepVotesSealedTo(k);
             touch();
             if (locked) unlockedHere(); // the first saved keyring, made with this session's phrase (see createKeyring)
+            offerAfterSave(session);
           }
         } finally {
           seed.wipe();
         }
         auth.refreshBalance();
       }),
-    [run, session, storeCtx, opened, auth, registry.platformNetwork, demo, canWrite, sessionToken, keepVotesSealedTo, lockedFor, unlockedHere],
+    [run, session, storeCtx, opened, auth, registry.platformNetwork, demo, canWrite, sessionToken, keepVotesSealedTo, lockedFor, unlockedHere, offerAfterSave],
   );
 
   // ---- masternodes for the keys: ONE lookup, read by this page and every vote panel ----
@@ -1669,10 +1735,21 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
     [coreNetwork, dapi, bridge],
   );
 
+  const dismissPasskeyOffer = useCallback(() => setPasskeyOfferKind(null), []);
+  // the offer, while it applies: a saved keyring open here in a passkey session, and that passkey not (known to be) an unlocker yet
+  const pk = signedInPasskey.current;
+  const passkeyOffer =
+    passkeyOfferKind && status === 'open' && keyring && !memoryOnly && !demo && !needsConfirm && session?.source === 'passkey' && session.credentialId && !(pk?.session === session && hasUnlocker(keyring, pk.publicKey))
+      ? passkeyOfferKind
+      : null;
+
   const value = useMemo<Ctx>(
     () => ({
       status,
       error,
+      lockedReason: status === 'locked' ? lockedReason : null,
+      passkeyOffer,
+      dismissPasskeyOffer,
       needsTopUp,
       dismissError,
       demo,
@@ -1712,7 +1789,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       verifyVote,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [status, error, needsTopUp, demo, session, memoryOnly, needsConfirm, confirmUnlockers, keyring, keyInfos, version, busy, mns, watched, coreNetwork, relays, relayHealth, celebrations, dismissCelebration, bridgeEndpoint?.httpBase, unlockWithPasskey, unlockWithPhrase, createKeyring, lock, addKey, removeKey, setNodeLabel, setIdleMinutes, addPasskeyUnlocker, addPasskeyUnlockerFrom, removeUnlockerKey, saveToPlatform, currentVotes, cast, cancel, retryNow, submitSigned, verifyVote],
+    [status, error, lockedReason, passkeyOffer, dismissPasskeyOffer, needsTopUp, demo, session, memoryOnly, needsConfirm, confirmUnlockers, keyring, keyInfos, version, busy, mns, watched, coreNetwork, relays, relayHealth, celebrations, dismissCelebration, bridgeEndpoint?.httpBase, unlockWithPasskey, unlockWithPhrase, createKeyring, lock, addKey, removeKey, setNodeLabel, setIdleMinutes, addPasskeyUnlocker, addPasskeyUnlockerFrom, removeUnlockerKey, saveToPlatform, currentVotes, cast, cancel, retryNow, submitSigned, verifyVote],
   );
   return <C.Provider value={value}>{children}</C.Provider>;
 }

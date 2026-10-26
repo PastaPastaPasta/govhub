@@ -83,26 +83,40 @@ function Unlock({ onMemoryOnly }: { onMemoryOnly(): void }) {
     await k.unlockWithPhrase(phrase).catch(() => {});
     setPhrase('');
   };
+  // the passkey that signed in does not open the keyring: say so, and lead with the phrase (the way to add that passkey afterwards)
+  const passkeyNot = k.lockedReason === 'passkey-not-unlocker';
   return (
     <section className="kr-card kr-gate" aria-labelledby="unlock-title">
       <h2 id="unlock-title">Unlock your keyring</h2>
+      {passkeyNot && (
+        <p className="kr-reason" data-testid="keyring-locked-reason">
+          Your passkey signs you in, but it isn’t set up to unlock your masternode keys yet. Unlock once with your recovery phrase, then add this passkey so it works next time.
+        </p>
+      )}
       {session?.source === 'key' && (
         <p className="small muted" data-testid="keyring-keypaste">
           You signed in with a pasted key, which cannot open a saved keyring. Use your recovery phrase or a passkey, or memory-only keys.
         </p>
       )}
-      <button type="button" className="btn btn-primary" onClick={() => void k.unlockWithPasskey().catch(() => {})} disabled={!!k.busy}>
-        Unlock with a passkey
-      </button>
+      {!passkeyNot && (
+        <button type="button" className="btn btn-primary" onClick={() => void k.unlockWithPasskey().catch(() => {})} disabled={!!k.busy}>
+          Unlock with a passkey
+        </button>
+      )}
       <form onSubmit={submit} className="kr-form">
         <label className="kr-field">
-          <span>Or type your recovery phrase</span>
+          <span>{passkeyNot ? 'Your recovery phrase' : 'Or type your recovery phrase'}</span>
           <input type="password" value={phrase} onChange={(e) => setPhrase(e.target.value)} autoComplete="off" spellCheck={false} data-testid="unlock-phrase" />
         </label>
         <div className="kr-row">
-          <button type="submit" className="btn" disabled={!phrase.trim() || !!k.busy}>
+          <button type="submit" className={passkeyNot ? 'btn btn-primary' : 'btn'} disabled={!phrase.trim() || !!k.busy} data-testid="unlock-phrase-submit">
             Unlock with the phrase
           </button>
+          {passkeyNot && (
+            <button type="button" className="btn btn-quiet" onClick={() => void k.unlockWithPasskey().catch(() => {})} disabled={!!k.busy}>
+              Try another passkey
+            </button>
+          )}
           <button type="button" className="btn btn-quiet" onClick={onMemoryOnly} disabled={!!k.busy} data-testid="unlock-memory-only">
             Use memory-only keys instead
           </button>
@@ -759,6 +773,62 @@ function Privacy() {
   );
 }
 
+/**
+ * "Also open your masternodes with your passkey?": after a keyring was first saved in a passkey session, or the phrase opened it
+ * because that passkey could not. One click, one passkey prompt (the passkey that signed in); never on its own.
+ */
+function PasskeyOffer() {
+  const k = useKeyring();
+  const [done, setDone] = useState(false);
+  const [working, setWorking] = useState(false);
+  useEffect(() => {
+    if (k.passkeyOffer) setDone(false);
+  }, [k.passkeyOffer]);
+  if (done)
+    return (
+      <p className="kr-offer kr-offer-done small" role="status" data-testid="passkey-offer-done">
+        <span>Done. Signing in with your passkey now unlocks your masternodes too.</span>
+        <button type="button" className="btn btn-s btn-quiet" onClick={() => setDone(false)}>
+          Dismiss
+        </button>
+      </p>
+    );
+  if (!k.passkeyOffer) return null;
+  const use = async () => {
+    setWorking(true);
+    try {
+      await k.addPasskeyUnlocker({ signedIn: true });
+      setDone(true);
+    } catch {
+      /* shown by the provider */
+    } finally {
+      setWorking(false);
+    }
+  };
+  return (
+    <section className="kr-offer" aria-labelledby="passkey-offer-title" data-testid="passkey-offer">
+      <svg className="kr-offer-mark" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
+        <circle cx="7.5" cy="9" r="3.75" fill="none" stroke="currentColor" strokeWidth="1.6" />
+        <path d="M11 9h7M15.5 9v2.75M17.75 9v2" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      </svg>
+      <div className="kr-offer-text">
+        <p id="passkey-offer-title">
+          <b>{k.passkeyOffer === 'unlocked' ? 'Use your passkey to unlock next time?' : 'Also open your masternodes with your passkey?'}</b>
+        </p>
+        <p className="small muted">One passkey prompt now. After that, signing in with this passkey unlocks your masternodes too, no recovery phrase needed.</p>
+      </div>
+      <div className="kr-offer-actions">
+        <button type="button" className="btn btn-s btn-primary" onClick={() => void use()} disabled={working || !!k.busy} data-testid="passkey-offer-use">
+          {working ? 'Waiting for the passkey…' : 'Use my passkey'}
+        </button>
+        <button type="button" className="btn btn-s btn-quiet" onClick={k.dismissPasskeyOffer} disabled={working} data-testid="passkey-offer-dismiss">
+          Not now
+        </button>
+      </div>
+    </section>
+  );
+}
+
 /** After "Add your masternodes": one line saying what happened to the key, with a dismiss. The badge's own status is in its card only. */
 function AddedBanner({ added, onClose }: { added: Added; onClose(): void }) {
   const { n, saved, asked, note } = added;
@@ -863,6 +933,7 @@ export function MasternodesPage() {
       )}
       {adding && <AddMasternodes step={flow} setStep={setFlow} b={b} savedLocked={fromUnlock} onAdded={setAdded} />}
       {showGrid && flow === 'done' && added && <AddedBanner added={added} onClose={() => setFlow(null)} />}
+      {showGrid && <PasskeyOffer />}
       {showGrid && (
         <div className="kr-grid">
           <div className="kr-main">
