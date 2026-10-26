@@ -8,6 +8,8 @@
 //    means the SDK's cached nonce is stale: refreshIdentityNonce and retry.
 import { randomBytes } from 'node:crypto';
 import { concatBytes, hexToBytes, sha256d, utf8ToBytes } from '@govhub/verify';
+import govSchemas from '@govhub/contracts-v1/gov.json' with { type: 'json' };
+import { assertQuery, type ContractSchemas, type DocQuery } from '@govhub/contracts-v1/queryLint';
 import { errText, log } from '../log.ts';
 import type { IdentityKeyFile, PlatformNetwork } from '../config.ts';
 
@@ -54,6 +56,12 @@ export interface QueryOptions {
   prove?: boolean;
 }
 
+/** The PV13 lint's view of the gov contract (mainnet gov.json; the testnet shape has the same indexes and indexed types). */
+const GOV_LINT_SCHEMAS = govSchemas as unknown as ContractSchemas;
+
+/** The protocol version a proved response's metadata reports (0 when absent). */
+const metaPv = (r: { metadata?: { protocolVersion?: unknown } } | null | undefined): number => Number(r?.metadata?.protocolVersion) || 0;
+
 const RETRIABLE = /not found|40101|nonce|timeout|timed out|deadline|unavailable|no available addresses|connection|ECONNRESET|503|502/i;
 
 export class PlatformClient {
@@ -65,6 +73,8 @@ export class PlatformClient {
   private signer: any;
   private identityKey: any;
   private connected = false;
+  /** Highest protocol version seen in proved response metadata (the SDK's own version() can lag it, see protocolVersion). */
+  private provedPv = 0;
   /** The contract's document schemas, from the proved read at connect: which gov shape is deployed (see hasDocType/hasProperty). */
   schemas: Record<string, { properties?: Record<string, unknown> }> = {};
 
@@ -83,12 +93,14 @@ export class PlatformClient {
     await this.sdk.connect();
     this.connected = true;
     // the version ratchets up from proven metadata: run one proved read so writes use the network's real version
-    const contract = await this.sdk.contracts.fetch(this.contractId);
+    const fetched = await this.sdk.contracts.fetchWithProof(this.contractId);
+    this.notePv(fetched);
+    const contract = fetched?.data;
     if (!contract) throw new Error(`gov contract ${this.contractId} not found on ${this.network}`);
     this.schemas = contract.schemas;
     // the publisher picks the document shapes from these: fail closed on a contract that is not a gov contract
     if (!this.schemas.proposal || !this.schemas.tally) throw new Error(`contract ${this.contractId} has no proposal/tally types: not a gov contract`);
-    log.info('platform connected', { network: this.network, protocolVersion: this.sdk.version(), contractId: this.contractId, docTypes: Object.keys(this.schemas) });
+    log.info('platform connected', { network: this.network, protocolVersion: this.protocolVersion, contractId: this.contractId, docTypes: Object.keys(this.schemas) });
   }
 
   /** Loads the bridge identity and its document-signing key. The key must be AUTHENTICATION / HIGH (gov docs require HIGH). */
@@ -115,8 +127,26 @@ export class PlatformClient {
     return Object.hasOwn(this.schemas[type]?.properties ?? {}, prop);
   }
 
+  /**
+   * The network's protocol version: the higher of the SDK's version() and the proved metadata seen so far. Right after connect the SDK can
+   * still report its starting version (13) on a PV14 network, and the create id rule differs between them (packages/auth README).
+   */
   get protocolVersion(): number {
-    return this.sdk.version();
+    return Math.max(this.provedPv, Number(this.sdk.version()) || 0);
+  }
+
+  private notePv(r: { metadata?: { protocolVersion?: unknown } } | null | undefined): void {
+    this.provedPv = Math.max(this.provedPv, metaPv(r));
+  }
+
+  /** A fresh proved read of the protocol version, right before a write that depends on it (the network may have upgraded since). */
+  private async provedProtocolVersion(): Promise<number> {
+    try {
+      this.notePv(await this.sdk.identities.contractNonceWithProof(this.identityId, this.contractId));
+    } catch (e) {
+      log.warn('protocol version read failed; using the last known one', { error: errText(e) });
+    }
+    return this.protocolVersion;
   }
 
   async balance(): Promise<bigint> {
@@ -126,8 +156,19 @@ export class PlatformClient {
   /** Proved query. byteArray `where` values must already be base64 strings. */
   async query(type: string, q: QueryOptions): Promise<PlatformDoc[]> {
     await this.connect();
+    // PV13 answers a bad shape with a silent [] (or rc.8 cannot verify it): every bridge query passes the same lint as the web app's
+    const lint: DocQuery = { documentTypeName: type, where: (q.where ?? []) as unknown as DocQuery['where'], limit: q.limit ?? 100 };
+    if (q.orderBy?.length) lint.orderBy = q.orderBy as unknown as DocQuery['orderBy'];
+    if (q.startAfter) lint.startAfter = q.startAfter;
+    assertQuery(GOV_LINT_SCHEMAS, lint);
     const req = { dataContractId: this.contractId, documentTypeName: type, where: q.where ?? [], orderBy: q.orderBy ?? [], limit: q.limit ?? 100, ...(q.startAfter ? { startAfter: q.startAfter } : {}) };
-    const res: Map<string, any> = q.prove === false ? await this.sdk.documents.query(req) : (await this.sdk.documents.queryWithProof(req)).data;
+    let res: Map<string, any>;
+    if (q.prove === false) res = await this.sdk.documents.query(req);
+    else {
+      const r = await this.sdk.documents.queryWithProof(req);
+      this.notePv(r);
+      res = r.data;
+    }
     const out: PlatformDoc[] = [];
     for (const d of res.values()) if (d) out.push(this.toPlatformDoc(d));
     return out;
@@ -140,7 +181,7 @@ export class PlatformClient {
 
   /** Creates a document. `props` uses bigint for integers and Uint8Array for byte arrays. Returns the id. */
   async create(type: string, props: Record<string, unknown>, requiredSystem: { createdAt?: boolean; updatedAt?: boolean } = {}): Promise<{ id: string }> {
-    const pv = this.sdk.version();
+    const pv = await this.provedProtocolVersion();
     const entropy = Uint8Array.from(randomBytes(32));
     const id = pv >= 14 ? new Uint8Array(32) : pv13DocumentId(this.contractId, this.identityId, type, entropy);
     const now = BigInt(Date.now());

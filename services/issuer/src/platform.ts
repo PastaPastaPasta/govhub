@@ -1,6 +1,8 @@
 // The issuer's Platform access (evo-sdk 5.0.0-rc.8): proved reads of its own `badge` documents, and document writes through
 // @govhub/auth's single document writer (nonce handling and settle-by-proved-read). Byte-array `where` values are base64.
 import { createEvoPlatform } from '@govhub/auth/evo';
+import badgeSchemas from '@govhub/contracts-v1/badge.json' with { type: 'json' };
+import { assertQuery, type ContractSchemas, type DocQuery } from '@govhub/contracts-v1/queryLint';
 import { BADGE_TYPES, issuerKeyData, issuerReportData, issuerRevocationData, parseIssuerKeyDoc, parseIssuerReportDoc, parseIssuerRevocationDoc, type IssuerKeyDoc, type IssuerReport, type IssuerRevocationDoc } from '@govhub/badge';
 import type { IdentityKeyFile, PlatformNetwork } from './config.ts';
 import { errText } from './log.ts';
@@ -38,6 +40,8 @@ export async function connectPlatform(network: PlatformNetwork, contractId: stri
   const w = evo as unknown as { PrivateKey: { fromWIF(wif: string): { toBytes(): Uint8Array } } };
 
   async function query(type: string, where: unknown[][]): Promise<Record<string, unknown>[]> {
+    // the same PV13 lint as every other query (a bad shape is a silent [] on PV13, which here would read as "no key published")
+    assertQuery(badgeSchemas as unknown as ContractSchemas, { documentTypeName: type, where: where as unknown as DocQuery['where'], limit: 2 });
     const res = await sdk.documents.queryWithProof({ dataContractId: contractId, documentTypeName: type, where, limit: 2 } as never);
     return [...res.data.values()].filter((d): d is NonNullable<typeof d> => !!d).map((d) => d.toJSON() as Record<string, unknown>);
   }

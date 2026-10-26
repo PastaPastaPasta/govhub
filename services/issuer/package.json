@@ -19,6 +19,7 @@
     "@dashevo/evo-sdk": "5.0.0-rc.8",
     "@govhub/auth": "*",
     "@govhub/badge": "*",
+    "@govhub/contracts-v1": "*",
     "@govhub/verify": "*",
     "@hono/node-server": "^1.14.0",
     "better-sqlite3": "^12.4.1",
