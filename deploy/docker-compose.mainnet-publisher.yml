@@ -1,0 +1,80 @@
+# A second bridge in this (mainnet Core) stack that publishes to MAINNET Platform, next to a `bridge` that publishes the
+# same Core data elsewhere (the reference deployment's Dev bridge: PLATFORM_NETWORK=testnet). README section 13.3.
+#
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.tunnel-host.yml:docker-compose.mainnet-publisher.yml
+#
+# It shares this stack's dashd (RPC and ZMQ on `default`; one dashd, no second chainstate) and has its own archive volume,
+# identity key file and image tag, so the two bridges never share state. Its settings are the MAINNET_* variables in .env
+# (section 3b of .env.example); the shared Core settings (CORE_RPC_USER, the RPC secret) are the stack's.
+#
+# Public hostname: the web app reads a bridge only when its /v1/status names the profile's gov contract, so the mainnet
+# profile needs this bridge's own origin. Tunnel route (this stack runs cloudflared on `edge`):
+#   gov-bridge-mainnet.<zone> -> http://bridge-mainnet:8787
+#
+# Start it with MAINNET_PUBLISH=0 (archive and API only), check it, then MAINNET_PUBLISH=1 with MAINNET_GOV_CONTRACT_ID and
+# secrets/bridge_identity_mainnet.json (the mainnet bridge identity's HIGH key).
+services:
+  bridge-mainnet:
+    build:
+      context: ..
+      dockerfile: services/bridge/Dockerfile
+    image: govhub-bridge:${BRIDGE_MAINNET_TAG:-mainnet}
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    depends_on:
+      dashd:
+        condition: service_healthy
+    environment:
+      # --- wiring (fixed by this file) ---
+      CORE_NETWORK: mainnet
+      PLATFORM_NETWORK: mainnet
+      CORE_RPC_URL: http://dashd:9998
+      CORE_RPC_USER: ${CORE_RPC_USER:-govhub}
+      CORE_RPC_PASSWORD_FILE: /run/secrets/core_rpc_password
+      CORE_ZMQ_URL: tcp://dashd:29998
+      DB_PATH: /data/bridge.sqlite
+      HTTP_HOST: 0.0.0.0
+      HTTP_PORT: "8787"
+      BRIDGE_IDENTITY_KEY_FILE: /run/secrets/bridge_identity_mainnet
+      # --- chosen by the operator in .env (MAINNET_* so they never mix with the other bridge's) ---
+      PUBLISH: ${MAINNET_PUBLISH:-0}
+      GOV_CONTRACT_ID: ${MAINNET_GOV_CONTRACT_ID:-}
+      # A cycle replace costs about 0.000025 DASH: hourly is ~0.22 DASH a year, every 6 h ~0.04. Cycles change slowly.
+      CYCLE_PUBLISH_INTERVAL_S: ${MAINNET_CYCLE_PUBLISH_INTERVAL_S:-21600}
+      TALLY_PUBLISH_INTERVAL_S: ${MAINNET_TALLY_PUBLISH_INTERVAL_S:-}
+      BRIDGE_LOG_LEVEL: ${MAINNET_BRIDGE_LOG_LEVEL:-}
+      PLATFORM_MAX_CONCURRENT_WRITES: ${MAINNET_PLATFORM_MAX_CONCURRENT_WRITES:-}
+      PUBLISH_ON_MISMATCH: ${MAINNET_PUBLISH_ON_MISMATCH:-}
+      PORTAL_PROPOSAL_URL: ${PORTAL_PROPOSAL_URL:-}
+      CORE_RPC_TIMEOUT_MS: ${CORE_RPC_TIMEOUT_MS:-}
+      CORE_RPC_RETRIES: ${CORE_RPC_RETRIES:-}
+      RECONCILE_INTERVAL_S: ${RECONCILE_INTERVAL_S:-}
+      MIN_COLLATERAL_CONFS: ${MIN_COLLATERAL_CONFS:-}
+      CLIENT_IP_HEADER: ${BRIDGE_CLIENT_IP_HEADER:-cf-connecting-ip}
+      TRUSTED_PROXY_CIDRS: ${BRIDGE_TRUSTED_PROXY_CIDRS:-}
+      QUORUM_PROOF: ${QUORUM_PROOF:-}
+      QUORUM_PROOF_MAX_SPAN: ${QUORUM_PROOF_MAX_SPAN:-}
+      QUORUM_PROOF_RATE_PER_MIN: ${QUORUM_PROOF_RATE_PER_MIN:-}
+      QUORUM_PROOF_RATE_BURST: ${QUORUM_PROOF_RATE_BURST:-}
+    secrets:
+      - core_rpc_password
+      - bridge_identity_mainnet
+    volumes:
+      - bridge-mainnet-data:/data
+    networks:
+      - default
+      - edge
+    ports:
+      - "${BRIDGE_MAINNET_BIND:-127.0.0.1}:${BRIDGE_MAINNET_PORT:-8793}:8787"
+
+secrets:
+  # JSON {"identityId", "keyId", "privateKeyHex"}: the mainnet bridge identity's HIGH key (owner of the mainnet gov contract).
+  bridge_identity_mainnet:
+    file: ${SECRETS_DIR:-./secrets}/bridge_identity_mainnet.json
+
+volumes:
+  bridge-mainnet-data:

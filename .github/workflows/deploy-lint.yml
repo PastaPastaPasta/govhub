@@ -66,6 +66,9 @@ jobs:
           - name: mainnet + tunnel profile + tunnel host
             compose_file: docker-compose.yml:docker-compose.tunnel-host.yml
             profiles: tunnel
+          - name: mainnet + tunnel host + mainnet publisher + issuer and relay
+            compose_file: docker-compose.yml:docker-compose.tunnel-host.yml:docker-compose.mainnet-publisher.yml
+            profiles: tunnel,relay,issuer
     steps:
       - uses: actions/checkout@v4
 
