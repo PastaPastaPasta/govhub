@@ -70,9 +70,9 @@ export function AboutPage() {
 
       <h2>Where the data lives</h2>
       <p>
-        Proposals and votes are on the Dash network, in the same records Dash Core uses to decide what gets paid. Comments, profiles and badges are on Dash
-        Platform, a public database run by the Dash network, and each one is signed by the person who posted it. govhub doesn’t keep any of this in a private
-        database of its own.
+        Proposals and votes are on the Dash network, in the same records Dash Core uses to decide what gets paid. Comments, profiles and badges are only on Dash
+        Platform, a public database run by the Dash network, and each one is signed by the person who posted it. Our servers keep a copy of proposals and votes,
+        and serve it to anyone who asks.
       </p>
       <p>
         Our servers fetch data from the network and pass votes to it. If they went away, proposals, votes and comments would still be on the Dash network, and

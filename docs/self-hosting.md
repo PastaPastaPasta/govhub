@@ -30,15 +30,19 @@ machine (deploy/README.md, section 13).
 You can list several servers of each kind. What the app does with them depends on the kind, and it's not always
 "ask all of them".
 
-### Bridges: the first one that fits, the others as backup
+### Bridges: one at a time, in your order
 
-The app reads from the first bridge in your list that's on the right network and serves the right governance contract
-(see below). If that bridge stops answering, it moves on to the next one. **It doesn't compare bridges with each other
-or merge what they send.** If two bridges disagree, you'll only ever see the first one's answer. To get a second
-opinion, put your own bridge first.
+Proposal lists and vote counts come from the first bridge in your list that's on the right network and serves the right
+governance contract (see below). If that bridge stops answering, the app moves on to the next one. The bridge used to
+check votes and the masternode list is picked the same way when a page loads, and kept until you reload.
 
-The one exception: after you vote, the app asks up to two more bridges whether they've seen your vote too, and shows
-which ones did.
+The masternode pages are simpler: finding your masternodes, reading their current votes, checking whether a vote has
+arrived, and offline signing all use the first bridge in your list, with no checks and no backup. So keep a working bridge
+for the right network at the top.
+
+**The app doesn't compare bridges with each other or merge what they send.** If two bridges disagree, you'll only see
+the first one's answer. To get a second opinion, put your own bridge first. The one exception: after you vote, the app
+also asks the second and third bridges in your list whether they've seen your vote, and shows which ones did.
 
 Proposals and vote counts are read from Dash Platform first, with proofs. The bridge supplies the signed votes behind
 each count, the masternode list, and anything not yet published to Platform (marked as "reported" in the app).
@@ -64,7 +68,7 @@ on every bridge. Switching governance contracts doesn't hide the discussion.
 
 Each vote goes to one relay. The app picks among the relays you list (healthy ones first, in random order), and only
 tries the next if one fails. Listing several relays spreads your votes across operators, so no single one sees all of
-them, and keeps voting working if one is down. A relay that reports the wrong network is skipped.
+them, and keeps voting working if one is down. A relay that reports the wrong network is tried last, and refuses votes for a network it isn't on.
 
 ### Chain proofs
 

@@ -9,7 +9,8 @@ This page covers the servers the govhub project runs itself:
 | `gov-relay.dashhq.org`, `gov-relay-testnet.dashhq.org` | Relays: they pass masternode votes and new proposals on to the Dash network |
 | `gov-issuer.dashhq.org`, `gov-issuer-testnet.dashhq.org` | Badge issuers: they hand out the "MN" badge to masternode owners |
 
-You can replace any of these with servers someone else runs (Settings > Advanced). If you do, those servers follow
+You can replace the bridges and relays with servers someone else runs (Settings > Advanced), and choose other badge
+issuers (Settings > Masternode badges). If you do, those servers follow
 their operator's rules, not this page. The same goes for the Dash network itself: the evonodes, Platform nodes and other
 public infrastructure the app talks to are run by other people, and this project has no say over them.
 
@@ -84,7 +85,8 @@ can't change your vote. It does see:
 
 - your IP address;
 - which masternodes voted, how they voted, and which ones were sent together;
-- the time you sent them (stored rounded down to the hour).
+- when you sent them. The relay stores the arrival time rounded down to the hour, but each vote also carries the exact
+  time it was signed, which the relay keeps and the network shows once the vote is public.
 
 A vote is kept until it's sent, which can be up to 40 days if you schedule it that far ahead, and is deleted 7 days after
 it's done (sent, cancelled or replaced). The relay doesn't store IP addresses. Use several relays, or Tor, if you don't
@@ -103,20 +105,20 @@ up on your identity. It could still guess by timing, if a badge appears right af
 
 - it waits until nothing has been posted from your browser for half an hour, plus a random extra wait, before asking;
 - in Standard mode, the badge is posted with your next post, comment or reaction, at least half an hour after the request;
-- in Private mode, it's posted at a random time in the next badge period (about a month on mainnet), and only once enough
-  other badges exist to hide among.
+- in Private mode, it's posted at a random time in the first few days of the next badge period (about 3.5 days on
+  mainnet), and only once enough other badges exist to hide among.
 
 "Register now" skips the waiting, and then the issuer can match your badge to your masternode.
 
 Our issuer keeps only what it needs to stop a masternode getting two badges in one period: which masternode asked, and
 a scrambled fingerprint of its request that can't be traced to the badge. No times, no IP addresses. These records are
-deleted once the period is over (one to two months on mainnet). Its logs are hourly totals. After each period it
+deleted once the period is over, at most about two months after the request on mainnet. Its logs are hourly totals. After each period it
 publishes how many badges it signed. You can't check any of this from outside. The issuer's
 [logging policy](../services/issuer/README.md#what-is-stored-and-logged-logging-policy) lists exactly what it keeps.
 
 ### Logs and backups
 
-- Our servers write start-up messages and errors, without IP addresses or what was requested. Old log lines are
+- Our servers write start-up messages, routine status lines and errors, without IP addresses or what was requested. Old log lines are
   deleted as new ones fill the space set aside for them.
 - The Cloudflare connection that links our servers to the internet (a tunnel) logs only fatal errors.
 - The bridge archive is backed up daily, and backups are kept for 30 days. The relay and issuer databases are not
