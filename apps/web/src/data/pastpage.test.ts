@@ -74,6 +74,8 @@ async function readAll() {
   let cursor: string | undefined;
   for (let i = 0; i < 20; i++) {
     const page = await source.pastPage(cursor);
+    // the Past page loads the next page only when its rows grow: a page with a cursor must never be empty
+    if (page.next) expect(page.items.length).toBeGreaterThan(0);
     seen.push(...page.items.map((x) => x.value.docId!));
     if (!page.next) break;
     cursor = page.next;
@@ -94,6 +96,14 @@ describe('Past list paging on PV13 (G3 desc, keyset instead of startAfter)', () 
     expect(qs.every((q) => q.startAfter === undefined)).toBe(true);
     // the second page is bounded by the first page's last endEpoch
     expect(qs[1]!.where[0]).toEqual(['endEpoch', '<=', 1_700_000_000 - 2 * 86_400]);
+  });
+
+  it('exactly a page sharing one endEpoch: the sweep repeats only shown ids, and pastPage steps past it instead of returning an empty page', async () => {
+    const p = snap.proposals[0]!;
+    platform.proposals = [...Array.from({ length: 100 }, (_, i) => docOf(p, i, 1_700_000_000)), ...Array.from({ length: 3 }, (_, i) => docOf(p, 200 + i, 1_600_000_000))];
+    const seen = await readAll();
+    expect(seen).toHaveLength(103);
+    expect(new Set(seen).size).toBe(103);
   });
 
   it('more than a page sharing one endEpoch hides nothing older: that end is swept ascending (startAfter), then the list goes on', async () => {
