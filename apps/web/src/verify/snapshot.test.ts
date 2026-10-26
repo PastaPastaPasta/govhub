@@ -10,7 +10,7 @@ import { FixtureBridge, loadFixtures } from '../data/fixtures.ts';
 import type { Tally } from '../data/types.ts';
 import { votesComponent } from './aggregate.ts';
 import type { VotesDone } from './protocol.ts';
-import { recountSnapshots } from './snapshot.ts';
+import { recountSnapshots, voteSetFor } from './snapshot.ts';
 import { BRIDGE_TARGET, contradicts, PLATFORM_TARGET, voteVerdict } from './verdict.ts';
 import { verifyVotes, type VoteTarget } from './votes.ts';
 
@@ -245,6 +245,16 @@ describe('every tamper case, labelled with the tally\'s hash or relabelled: neve
     // ...but a failure before any answer still fails the recount
     const down = bridge({ height: () => { throw new BridgeError('unreachable'); }, live: () => set(fullVotes, live.voteSetHash) });
     await expect(check(down, [bridgeLive()], bridgeLive())).rejects.toThrow('unreachable');
+  });
+
+  it('a block with no new vote: the live set keeps the hash but is of the next height, so the set at the tally\'s height is asked by hash', async () => {
+    const b = bridge({ height: () => set(storedVotes, stored.voteSetHash), hash: (vsh) => (vsh === live.voteSetHash ? set(fullVotes, live.voteSetHash, H) : null), live: () => set(fullVotes, live.voteSetHash, H + 1) });
+    const got = await voteSetFor(b, base.govHash, { asOfHeight: H, voteSetHash: live.voteSetHash.toLowerCase() }, ['live', 'hash']);
+    expect(got.votes.tallyHeight).toBe(H);
+    expect(b.asked).toEqual(['live', `hash=${live.voteSetHash.slice(0, 8)}`]);
+    // a bridge that no longer keeps the set: the live answer is returned, at its own height (never compared as the tally's)
+    const old = bridge({ height: () => set(storedVotes, stored.voteSetHash), hash: () => null, live: () => set(fullVotes, live.voteSetHash, H + 1) });
+    expect((await voteSetFor(old, base.govHash, { asOfHeight: H, voteSetHash: live.voteSetHash.toLowerCase() }, ['live', 'hash'])).votes.tallyHeight).toBe(H + 1);
   });
 
   it('a 404 by hash moves on to the live set', async () => {
