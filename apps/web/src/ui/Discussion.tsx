@@ -57,6 +57,8 @@ interface ThreadData {
 function useThread(govHash: string) {
   const { forum } = useForum();
   const [data, setData] = useState<ThreadData | null>(null);
+  const latest = useRef<ThreadData | null>(null);
+  latest.current = data;
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
   /** Comments this reader posted, merged into the next read that finishes (also one still in flight): a post is never lost to a slow or lagging node. */
@@ -66,7 +68,9 @@ function useThread(govHash: string) {
     setError(null);
     (async () => {
       const r = await forum.reader.comments(govHash);
-      const authors = [...new Set(r.comments.map((c) => c.ownerId))];
+      // the reader's own just-posted comments count too: a node that lags behind the post must not leave its author unnamed
+      const pending = posted.current.filter((c) => c.govHash === govHash);
+      const authors = [...new Set([...r.comments, ...pending].map((c) => c.ownerId))];
       const [profiles, names] = await Promise.all([authors.length ? forum.reader.profiles(authors) : new Map<string, Profile>(), forum.names(authors).catch(() => new Map<string, string>())]);
       if (live) {
         const mine = posted.current.filter((c) => c.govHash === govHash && !r.comments.some((x) => x.id === c.id));
@@ -80,10 +84,21 @@ function useThread(govHash: string) {
   }, [forum, govHash, nonce]);
   const reload = useCallback(() => setNonce((n) => n + 1), []);
   /** Local edits after a write, so a lagging node does not make the user's own comment vanish. */
-  const add = useCallback((c: Comment) => {
-    posted.current = [...posted.current.filter((x) => x.id !== c.id), c];
-    setData((d) => (d ? { ...d, comments: [...d.comments.filter((x) => x.id !== c.id), c] } : d));
-  }, []);
+  const add = useCallback(
+    (c: Comment) => {
+      posted.current = [...posted.current.filter((x) => x.id !== c.id), c];
+      setData((d) => (d ? { ...d, comments: [...d.comments.filter((x) => x.id !== c.id), c] } : d));
+      const d = latest.current;
+      if (!d || d.profiles.has(c.ownerId) || d.names.has(c.ownerId)) return;
+      // a first comment in this thread: its author's profile (perhaps made a moment ago) was never read for it
+      void Promise.all([forum.reader.profiles([c.ownerId]), forum.names([c.ownerId]).catch(() => new Map<string, string>())]).then(
+        ([profiles, names]) =>
+          setData((d) => (d ? { ...d, profiles: new Map([...d.profiles, ...profiles]), names: new Map([...d.names, ...names]) } : d)),
+        () => {},
+      );
+    },
+    [forum],
+  );
   const remove = useCallback((id: string) => {
     posted.current = posted.current.filter((x) => x.id !== id);
     setData((d) => (d ? { ...d, comments: d.comments.filter((x) => x.id !== id) } : d));

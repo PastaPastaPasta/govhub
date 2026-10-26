@@ -19,8 +19,13 @@ let session: { identityId: string } | null = { identityId: ME };
 const write = vi.fn(async () => ({ id: 'NewComment5555555555555555555555555555555555', revision: 1 }));
 // stable objects: a fresh `forum` on every render would restart the thread read forever
 let readGate: Promise<void> | null = null;
+/** profiles by owner id, as Platform would answer */
+const profilesOnPlatform = new Map<string, { ownerId: string; displayName: string }>();
 const forum = {
-  reader: { comments: async () => ((await readGate), { comments: stored, height: 1, truncated: false }), profiles: async () => new Map() },
+  reader: {
+    comments: async () => ((await readGate), { comments: stored, height: 1, truncated: false }),
+    profiles: async (ids: readonly string[]) => new Map(ids.filter((id) => profilesOnPlatform.has(id)).map((id) => [id, profilesOnPlatform.get(id)!])),
+  },
   names: async () => new Map(),
   prov: () => ({ source: 'platform', height: 1 }),
   ops: { comment: (_g: string, body: string) => ({ action: 'create', type: 'comment', data: { body } }) },
@@ -39,6 +44,7 @@ beforeEach(() => {
   stored = [c('c1', BADGED, 'from a masternode owner'), c('c2', PLAIN, 'from someone without a badge'), c('c3', OWNER, 'from the proposal owner')];
   session = { identityId: ME };
   write.mockClear();
+  profilesOnPlatform.clear();
 });
 
 const mount = () =>
@@ -113,6 +119,21 @@ describe('F1: your own comment stays under the default view', () => {
     await flush();
     await flush();
     expect(shownTexts(r.el)).toContain('posted too early');
+    await r.unmount();
+  });
+});
+
+describe('the author of a first comment in a thread', () => {
+  it('is shown by profile name: the poster\'s profile is read even though nobody in the thread had it', async () => {
+    profilesOnPlatform.set(ME, { ownerId: ME, displayName: 'Pasta' });
+    const r = await mount();
+    await flush();
+    await type(r.el.querySelector<HTMLTextAreaElement>('textarea[aria-label="Post comment"]')!, 'first words');
+    await click(r.el.querySelector<HTMLButtonElement>('form.composer button[type="submit"]')!);
+    await flush();
+    await flush();
+    const mine = r.el.querySelector('#comment-NewComment5555555555555555555555555555555555')!;
+    expect(mine.querySelector('article')!.getAttribute('aria-label')).toMatch(/^Comment by Pasta /);
     await r.unmount();
   });
 });
