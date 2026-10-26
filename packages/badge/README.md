@@ -140,9 +140,9 @@ Testnet has a superblock every 24 blocks (about 1 hour). One cycle per epoch wou
 badge document every hour, and a browser open every hour to renew. 24 cycles make an epoch about a day: renewal
 is daily and a new badge still shows within about a day. W = 72 is the same ~12% of an epoch as on mainnet.
 
-How long a new badge takes: in Standard mode, the token comes within the hour (as soon as the current epoch's key is on
-Platform and the browser has been quiet for half an hour), and the badge appears with the user's next post or reaction. In
-Private mode a request is for the next epoch E, sent at a random height in E-1's window, and the badge is posted at a random
+How long a new badge takes: in Standard mode, the token comes once the current epoch's key is on Platform and the
+browser has been quiet for half an hour plus a random extra wait (mean 1 hour, at most 4 hours), and the badge appears
+with the user's next post or reaction. In Private mode a request is for the next epoch E, sent at a random height in E-1's window, and the badge is posted at a random
 height in `[S(E) + margin, S(E) + W]`. So a private badge first shows between about 0 and one epoch plus W after the user
 asked:
 

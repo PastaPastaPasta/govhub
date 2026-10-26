@@ -28,7 +28,7 @@ export function ModeDetails({ mode, net }: { mode: PrivacyMode; net: CoreNetwork
   if (mode === 'standard') {
     return (
       <>
-        The issuer blind-signs a token for the current epoch once nothing has been posted from this browser for half an hour, plus a random extra wait (about an
+        The issuer blind-signs a token for the current epoch (the next one, if this one is in its last few blocks) once nothing has been posted from this browser for half an hour, plus a random extra wait (about an
         hour on average). The token stays in this browser, and the badge is posted together with your next post, comment or reaction at least half an hour later, so
         it appears with your own activity, not right after the request. The issuer could still try to narrow it down from when you posted before and after its
         request; the random wait and a longer gap make that harder, not impossible. <b>Register now</b> posts it at once, and then the issuer can match it to your
@@ -69,7 +69,7 @@ export function BadgeLeaks({ net, open = false }: { net: CoreNetwork; open?: boo
         </li>
         <li>
           <b>In every mode</b> a token request waits until nothing has been posted from this browser for half an hour or more, and no badge is posted in the half hour
-          after a request. The issuer learns which masternode asked, when, and from which IP address, and the network nodes this app talks to see the same address when your
+          after a request (unless you press Register now). The issuer learns which masternode asked, when, and from which IP address, and the network nodes this app talks to see the same address when your
           identity reads or writes. Use Tor or a VPN if that matters. Cloudflare, in front of our services, sees request metadata at its edge; that is outside our control.
         </li>
         <li>

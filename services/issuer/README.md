@@ -382,9 +382,10 @@ The badge flow is in `apps/web/src/badge`:
 - Blinding, finalizing and every call to the issuer run in a Worker, from the portal's own pinned build, never from
   code the issuer serves. Calls use `credentials: 'omit'`, `referrerPolicy: 'no-referrer'`, `cache: 'no-store'` and
   `redirect: 'error'`.
-- The key and epoch come from the proved `issuerKey` and Platform's core height. The request is sent at a random
+- The key and epoch come from the proved `issuerKey` and Platform's core height. Private: the request is sent at a random
   height in the issuance window (the next epoch's, if less than a quarter of the current one is left), and the badge is
-  posted at a random height in the posting window.
+  posted at a random height in the posting window. Standard: the request for the current epoch is sent once the browser's
+  spacing allows, and the badge is posted with the identity's next write after the cooldown, or on "Register now".
 - **Activity separation** (`visit.ts`), browser-wide and time-based (localStorage, across tabs, reloads and identities): a
   token request goes out only after half an hour without any Platform write from this browser (every identity state
   transition is recorded at the PlatformPort) and without another request; badge posts wait half an hour after the last
