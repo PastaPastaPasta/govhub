@@ -10,7 +10,7 @@ import { useAuth } from './context.tsx';
 import { useLeaveWarning } from './leaveWarning.ts';
 import { Qr } from './Qr.tsx';
 import { RecoverLink } from './RecoverLink.tsx';
-import { errorText, formatDuffs, plainErrorText } from './runtime.ts';
+import { errorText, formatDashNumber, formatDuffs, plainErrorText } from './runtime.ts';
 
 export interface FundingPanelProps {
   kind: 'create' | 'topup';
@@ -144,9 +144,23 @@ export function FundingPanel(p: FundingPanelProps) {
                 Received <b>{formatDuffs(seenDuffs)}</b>: that is enough. Nothing more to send.
               </p>
             ) : (
-              <p>
-                Send at least <b>{formatDuffs(view.minDuffs)}</b> to this one-time address. Any Dash wallet works; one payment is best.
-              </p>
+              <>
+                {view.suggestedDuffs > view.minDuffs ? (
+                  <>
+                    <p data-testid="deposit-ask">
+                      Send <b>{formatDuffs(view.suggestedDuffs)}</b> to this one-time address; the minimum is <b>{formatDuffs(view.minDuffs)}</b>. Any Dash wallet works; one
+                      payment is best.
+                    </p>
+                    <p className="small" data-testid="deposit-suggestion">
+                      {formatDashNumber(view.suggestedDuffs)} lets you post right away; the minimum only creates the account.
+                    </p>
+                  </>
+                ) : (
+                  <p data-testid="deposit-ask">
+                    Send at least <b>{formatDuffs(view.minDuffs)}</b> to this one-time address. Any Dash wallet works; one payment is best.
+                  </p>
+                )}
+              </>
             )}
             <p className="address" data-testid="deposit-address">
               {view.address}

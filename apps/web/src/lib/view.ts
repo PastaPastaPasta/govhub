@@ -1,7 +1,7 @@
 // View model: joins a proposal with its tallies and the cycle into what a card / page shows.
 import type { Cycle, Proposal, Provenance, ProvenanceKind, Sourced, Tally } from '../data/types.ts';
 import { contentFailure, isFailed, type CheckState } from '../verify/checks.ts';
-import { isLameDuck, remainingWithSlack } from './lameDuck.ts';
+import { isLameDuck, remainingWithSlack, startsLater, type StartsLater } from './lameDuck.ts';
 import { absoluteYes, compareRank, fundingThreshold, passState, paymentSchedule, type GovParams, type PassState, type PaymentSchedule } from './governance.ts';
 
 export interface Row {
@@ -16,6 +16,11 @@ export interface Row {
   schedule: PaymentSchedule | null;
   /** Active, but no superblock left can pay it (lib/lameDuck.ts): listed apart, outside the budget numbers. */
   lameDuck: boolean;
+  /**
+   * Active, but its first eligible superblock is after the next one (lib/lameDuck.ts): passing or failing by votes alone, not up for
+   * the next budget, and outside its numbers. The schedule decides this; a source's `inNextBudget` flag does not.
+   */
+  startsLater: StartsLater | null;
   /**
    * Synchronous content check (no network): the gov hash recomputes and the displayed fields equal the
    * hashed data. When false, a lying source changed what the card shows; links must not be followed.
@@ -65,6 +70,7 @@ export function deriveRow(
   const tally = pickTally(platformTally, bridgeTally, prefer);
   const threshold = thresholdOf(cycle, params);
   const absYes = tally ? absoluteYes(tally.value) : null;
+  const later = cycle ? startsLater(p.value, cycle.value, params, nowS) : null;
   return {
     p,
     tally,
@@ -72,9 +78,11 @@ export function deriveRow(
     bridgeTally,
     absYes,
     threshold,
-    state: absYes !== null && threshold ? passState(absYes, threshold.value, tally!.value.inNextBudget) : null,
+    // not yet due: "not in the next budget" is no warning, so passing is judged by votes alone
+    state: absYes !== null && threshold ? passState(absYes, threshold.value, later ? undefined : tally!.value.inNextBudget) : null,
     schedule: cycle ? paymentSchedule(p.value, cycle.value, params, nowS) : null,
     lameDuck: isLameDuck(p.value, cycle ? remainingWithSlack(p.value, cycle.value, params, nowS) : null, nowS, !!tally?.value.inNextBudget),
+    startsLater: later,
     content: contentCheck(p.value),
   };
 }
@@ -124,17 +132,20 @@ export interface BudgetView {
   fundedSum: number;
   /** duffs: the cycle document's allocation, as published (never a sum over cards, whose flags a source could set) */
   allocated: number;
-  /** shown active proposals */
+  /** shown active proposals that can be in the next budget */
   active: number;
+  /** shown active proposals that start paying at a later superblock */
+  later: number;
 }
 
 /**
  * The budget header's numbers. Proposals that failed verification are not in the budget strip and not active; lame ducks (nothing
- * left to pay) are not active either, and never count toward the next budget.
+ * left to pay) are not active either, and never count toward the next budget. Neither do proposals that start paying at a later
+ * superblock: they cannot be in this budget, so they are not among the proposals it is counted against.
  */
 export function budgetView(shown: readonly Row[], cycle: Pick<Cycle, 'allocated'>): BudgetView {
-  const live = shown.filter((r) => !r.lameDuck);
+  const live = shown.filter((r) => !r.lameDuck && !r.startsLater);
   const funded = live.filter((r) => r.tally?.value.inNextBudget);
   const fundedSum = funded.reduce((sum, r) => sum + r.p.value.paymentAmount, 0);
-  return { funded, fundedSum, allocated: cycle.allocated, active: live.length };
+  return { funded, fundedSum, allocated: cycle.allocated, active: live.length, later: shown.filter((r) => !r.lameDuck && r.startsLater).length };
 }

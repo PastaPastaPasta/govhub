@@ -23,7 +23,7 @@ const { FundingPanel } = await import('./FundingPanel.tsx');
 const ADDRESS = 'yiKBLWNurnxpqgcQhr7r1uUxWd1nGzsN2e';
 const { TARGET } = vi.hoisted(() => ({ TARGET: '8GqCCpTFpgPREMUTqHESkuDMvkrfwBEd45fVeLUEYKYL' }));
 const view = (v: Partial<FundingView>): FundingView => ({
-  state: 'awaiting-deposit', address: ADDRESS, uri: `dash:${ADDRESS}?amount=0.00224`, minDuffs: 224_000, remainingDuffs: 224_000n, receivedDuffs: 0n, pendingDuffs: 0n, lateDuffs: 0n,
+  state: 'awaiting-deposit', address: ADDRESS, uri: `dash:${ADDRESS}?amount=0.005`, minDuffs: 224_000, suggestedDuffs: 500_000, remainingDuffs: 224_000n, receivedDuffs: 0n, pendingDuffs: 0n, lateDuffs: 0n,
   depositTxids: [], isLocked: false, ...v,
 });
 const never = () => new Promise<never>(() => {});
@@ -44,12 +44,33 @@ describe('D-032: underpayment', () => {
     await r.unmount();
   });
 
-  it('asks for the minimum before anything arrived', async () => {
+  it('asks for the suggestion before anything arrived, and states the minimum and why', async () => {
     script = async (o) => (o.onUpdate(view({})), never());
     const r = await render(<FundingPanel kind="create" wallet={null} identityIndex={0} onDone={() => {}} />);
     await flush();
-    expect(r.el.textContent).toMatch(/Send at least 0\.00224 DASH/);
+    expect(r.el.querySelector('[data-testid="deposit-ask"]')!.textContent).toMatch(/Send 0\.005 DASH to this one-time address; the minimum is 0\.00224 DASH/);
+    expect(r.el.querySelector('[data-testid="deposit-suggestion"]')!.textContent).toBe('0.005 lets you post right away; the minimum only creates the account.');
+    expect(r.el.querySelector<HTMLAnchorElement>('a[href^="dash:"]')!.getAttribute('href')).toBe(`dash:${ADDRESS}?amount=0.005`);
     expect(r.el.querySelector('[data-testid="underpaid"]')).toBeNull();
+    await r.unmount();
+  });
+
+  it('with no suggestion above the minimum (as in a top-up) it says "at least" the minimum and adds no line', async () => {
+    script = async (o) => (o.onUpdate(view({ suggestedDuffs: 224_000 })), never());
+    const r = await render(<FundingPanel kind="create" wallet={null} identityIndex={0} onDone={() => {}} />);
+    await flush();
+    expect(r.el.textContent).toMatch(/Send at least 0\.00224 DASH/);
+    expect(r.el.querySelector('[data-testid="deposit-suggestion"]')).toBeNull();
+    await r.unmount();
+  });
+
+  it('after an underpayment the suggestion is gone: only the missing minimum is asked for', async () => {
+    script = async (o) => (o.onUpdate(view({ receivedDuffs: 100_000n, remainingDuffs: 124_000n, uri: `dash:${ADDRESS}?amount=0.00124` })), never());
+    const r = await render(<FundingPanel kind="create" wallet={null} identityIndex={0} onDone={() => {}} />);
+    await flush();
+    expect(r.el.querySelector('[data-testid="deposit-suggestion"]')).toBeNull();
+    expect(r.el.querySelector('[data-testid="deposit-ask"]')).toBeNull();
+    expect(r.el.textContent).not.toMatch(/0\.005/);
     await r.unmount();
   });
 });
@@ -60,7 +81,7 @@ describe('D-032: enough received', () => {
     const r = await render(<FundingPanel kind="create" wallet={null} identityIndex={0} onDone={() => {}} />);
     await flush();
     expect(r.el.querySelector('[data-testid="enough"]')!.textContent).toMatch(/Received 0\.00224 DASH: that is enough/);
-    expect(r.el.textContent).not.toMatch(/Send at least/);
+    expect(r.el.textContent).not.toMatch(/Send at least|0\.005/);
     await r.unmount();
   });
 });

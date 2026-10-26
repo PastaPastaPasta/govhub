@@ -642,6 +642,39 @@ describe('QA fixes (D-044 .. D-047)', () => {
     expect(issuerErrorText('https://x.example/', new Error('The operation was aborted due to timeout'))).toMatch(/did not answer in time/);
   });
 
+  it('the cooldown note is for Private and Extra-private requests only: none after a Standard request, which waits for nothing', async () => {
+    const { noteRequestSent, notePrivateRequest, privateCooldownLeft, privateCooldownNote, mayPost, mayRequest, requestCooldownLeft, COOLDOWN_MS } = await import('./visit.ts');
+    const mem = new Map<string, string>();
+    const st = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v), removeItem: (k: string) => void mem.delete(k) };
+    const t0 = 1_800_000_000_000;
+    // a Standard request (noteRequestSent alone): the scheduler's spacing still holds, but there is nothing to tell the user
+    noteRequestSent(st, t0);
+    expect(privateCooldownLeft(st, t0 + 60_000)).toBe(0);
+    expect(requestCooldownLeft(st, t0 + 60_000)).toBeGreaterThan(0);
+    expect(mayRequest(st, t0 + 60_000)).toBe(false);
+    expect(mayPost(st, t0 + 60_000)).toBe(false);
+    // a Private or Extra-private request: the note runs for the cooldown, and the same scheduler rules apply
+    const t1 = t0 + 2 * COOLDOWN_MS;
+    notePrivateRequest(st, t1);
+    expect(privateCooldownLeft(st, t1 + 60_000)).toBe(COOLDOWN_MS - 60_000);
+    expect(mayRequest(st, t1 + 60_000)).toBe(false);
+    expect(mayPost(st, t1 + 60_000)).toBe(false);
+    expect(privateCooldownLeft(st, t1 + COOLDOWN_MS)).toBe(0);
+    // a Standard request afterwards does not extend or start the note
+    noteRequestSent(st, t1 + COOLDOWN_MS + 1000);
+    expect(privateCooldownLeft(st, t1 + COOLDOWN_MS + 2000)).toBe(0);
+    // unreadable storage: no request can have been sent, so no note (the scheduler's own checks still fail closed)
+    const blocked = { getItem: () => { throw new Error('blocked'); }, setItem: () => undefined };
+    expect(privateCooldownLeft(blocked, t1)).toBe(0);
+    expect(mayRequest(blocked, t1)).toBe(false);
+    // the words
+    expect(privateCooldownNote(COOLDOWN_MS - 5 * 60_000)).toBe(
+      "You asked for a Private badge 5 min ago. To keep govhub's issuer from matching that request to this account by timing, avoid posting, commenting or reacting from this browser for 25 more min. Standard badges don't need this.",
+    );
+    expect(privateCooldownNote(COOLDOWN_MS - 1000)).toContain('a moment ago');
+    expect(privateCooldownNote(COOLDOWN_MS - 1000)).toContain('for 30 more min');
+  });
+
   it('D-046: a private attempt that sent no token request undoes its cooldown mark; a newer mark is kept', async () => {
     const { mayRequest, notePrivateRequest, requestCooldownLeft, noteRequestSent } = await import('./visit.ts');
     const mem = new Map<string, string>();

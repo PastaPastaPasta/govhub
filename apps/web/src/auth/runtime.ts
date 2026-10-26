@@ -76,7 +76,8 @@ export function formatCredits(credits: bigint): string {
   return `${whole}.${frac} DASH`;
 }
 
-export const formatDuffs = (duffs: number | bigint): string => `${(Number(duffs) / 1e8).toFixed(8).replace(/0+$/, '').replace(/\.$/, '')} DASH`;
+export const formatDashNumber = (duffs: number | bigint): string => (Number(duffs) / 1e8).toFixed(8).replace(/0+$/, '').replace(/\.$/, '');
+export const formatDuffs = (duffs: number | bigint): string => `${formatDashNumber(duffs)} DASH`;
 
 /** Error text safe to show: no long hex / base58 runs (the SDK can echo transition bytes). */
 export function errorText(e: unknown): string {

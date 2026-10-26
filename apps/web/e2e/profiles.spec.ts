@@ -16,7 +16,10 @@ test.describe('failed verification is hidden (fixtures)', () => {
     await expect(toggle).toHaveText('Show 2 proposals that failed verification');
     await expect(cards).toHaveCount(21);
     await expect(page.locator('article.prow[data-check="pending"]')).toHaveCount(0, { timeout: 30_000 });
-    await expect(page.locator('.budget-facts')).toContainText('of 21 proposals');
+    // 21 are listed; one of them starts paying at a later superblock, so it is not among the proposals the next budget is counted against
+    await expect(page.locator('.budget-facts')).toContainText('of 20 proposals');
+    await expect(page.locator('.budget-facts')).toContainText('plus 1 that starts paying at a later superblock');
+    await expect(page.getByTestId('card-starts-later')).toHaveCount(1);
     await expect(page.getByRole('link', { name: /^Active/ }).locator('.count')).toHaveText('21');
     await expect(page.locator('article.prow', { hasText: 'govhub-fixture' })).toHaveCount(0);
     // lame ducks are in neither the cards nor those counts (28 listed, 7 of them with nothing left to pay)
@@ -30,7 +33,7 @@ test.describe('failed verification is hidden (fixtures)', () => {
     const wrong = page.locator('article.prow.prow-invalid', { hasText: 'govhub-fixture-wrong-collateral' });
     await expect(wrong.getByTestId('invalid-reason')).toContainText('OP_RETURN and outputs: no-matching-op-return');
     // Revealing them changes nothing in the counts.
-    await expect(page.locator('.budget-facts')).toContainText('of 21 proposals');
+    await expect(page.locator('.budget-facts')).toContainText('of 20 proposals');
 
     await toggle.click();
     await expect(cards).toHaveCount(21);

@@ -12,7 +12,7 @@
 // The superblock times are Core's own 2.62-minute-per-block estimates, so this is an estimate, labelled so where it is shown; one day
 // of slack on each edge of the window keeps a borderline proposal in the normal list.
 import type { Cycle, Proposal } from '../data/types.ts';
-import { paymentSchedule, type GovParams } from './governance.ts';
+import { nextSuperblockIndex, paymentSchedule, superblockTime, windowIndices, type GovParams } from './governance.ts';
 
 /**
  * Slack on each edge of the payment window when deciding that nothing can pay a proposal any more (the same day chain.ts allows
@@ -36,4 +36,31 @@ export function remainingWithSlack(p: Pick<Proposal, 'startEpoch' | 'endEpoch'>,
  */
 export function isLameDuck(p: Pick<Proposal, 'endEpoch'>, remaining: number | null, nowS: number, inNextBudget = false): boolean {
   return remaining !== null && remaining <= 0 && p.endEpoch > nowS && !inNextBudget;
+}
+
+/** A proposal whose first eligible superblock is after the next one: active and possibly passing, but not up for the next payout. */
+export interface StartsLater {
+  /** Estimated time of the first superblock that can pay it. */
+  firstTime: number;
+  /** Estimated time of the next superblock, which cannot. */
+  nextTime: number;
+}
+
+/**
+ * Whether the proposal's payment window (widened by `LAME_DUCK_SLACK_S`, as for lame ducks) opens only after the next superblock
+ * and still holds one: it is not in the next budget because it is not due yet, not because the budget is full. The widening keeps a
+ * borderline proposal (the next superblock estimated just before its window, or a window only the slack reaches a superblock in) in the
+ * normal list. Null when the schedule is unknown.
+ * Such a proposal is never a lame duck: it has a superblock ahead in its window.
+ */
+export function startsLater(p: Pick<Proposal, 'startEpoch' | 'endEpoch'>, cycle: Pick<Cycle, 'estTime'>, params: GovParams, nowS: number): StartsLater | null {
+  const wide = windowIndices({ startEpoch: p.startEpoch - LAME_DUCK_SLACK_S, endEpoch: p.endEpoch + LAME_DUCK_SLACK_S }, cycle, params);
+  // The cycle's own superblock (k = 0) is still the next one for a day after its estimated time: it may not be mined yet, and the
+  // header and every `inNextBudget` flag still describe it.
+  let next = nextSuperblockIndex(cycle, params, nowS);
+  if (next === 1 && nowS - cycle.estTime <= LAME_DUCK_SLACK_S) next = 0;
+  // Core's own window must hold a superblock too: a proposal only the slack lets in is borderline, and stays in the normal list
+  const strict = windowIndices(p, cycle, params);
+  if (wide.lo <= next || strict.lo > strict.hi || p.endEpoch <= nowS) return null;
+  return { firstTime: superblockTime(cycle, strict.lo, params), nextTime: superblockTime(cycle, next, params) };
 }

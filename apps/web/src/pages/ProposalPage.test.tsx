@@ -3,6 +3,7 @@
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import type { Cycle, Proposal, Sourced, Tally } from '../data/types.ts';
+import { formatDate } from '../lib/format.ts';
 import { GOV_PARAMS } from '../lib/governance.ts';
 import type { ChainReport } from '../verify/chain.ts';
 import { render } from '../test/render.tsx';
@@ -130,6 +131,35 @@ describe('ProposalView for a proposal with payments left', () => {
   it('is not a lame duck when the next superblock is flagged to pay it', async () => {
     const { el } = await view(pshenmic, { estTime: NOW + 23 * DAY, report: report({ paid: 1, remainingEstimate: 0 }), inNextBudget: true });
     expect(el.querySelector('[data-testid="lameduck-status"]')).toBeNull();
+    expect(el.textContent).toContain('In the next budget');
+  });
+});
+
+describe('ProposalView for a proposal that starts paying at a later superblock', () => {
+  // Dash-Pay-name-registration-rules: Jan 3 to Feb 1, 2027; the next superblock is Nov 20, 2026, the one that can pay it ~Jan 19
+  const NEXT = Date.UTC(2026, 10, 20, 12) / 1000;
+  const later = proposal({ startEpoch: 1798946946, endEpoch: 1801522426, paymentAmount: 1e8, name: 'Dash-Pay-name-registration-rules' });
+
+  it('explains when the first payment is, judges by votes, and has no "budget is full" or voting-deadline line', async () => {
+    const { el } = await view(later, { estTime: NEXT, report: null });
+    const status = el.querySelector('[data-testid="startslater-status"]')!;
+    expect(status.textContent).toContain('Starts paying ~Jan 2027');
+    // the first superblock is NEXT plus two cycles (~Jan 19 23:00 UTC); the day shown follows the reader's timezone
+    const first = Math.round(NEXT + 2 * GOV_PARAMS.mainnet.superblockCycle * GOV_PARAMS.mainnet.blockSeconds);
+    expect(status.textContent).toContain(`Its first payment is the superblock around ${formatDate(first)}. Votes count then; it isn't eligible for the ${formatDate(NEXT)} budget.`);
+    const text = el.textContent ?? '';
+    expect(text).toContain('Passing by 172'); // 852 yes, 348 no against 332: by votes alone
+    expect(el.querySelector('[data-testid="funding-meter"]')!.className).toContain('meter-pass');
+    expect(text).not.toMatch(/next budget is full|In the next budget|Voting closes|Voting for this payout/);
+    expect(el.querySelector('[data-testid="lameduck-status"]')).toBeNull();
+    // votes still count, so masternode owners can still vote
+    expect(el.querySelector('[data-testid="vote-panel"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="p-votes"]')!.className).not.toContain('p-votes-dim');
+  });
+
+  it('a proof that the next superblock pays it takes the usual "In the next budget"', async () => {
+    const { el } = await view(later, { estTime: NEXT, report: null, inNextBudget: true });
+    expect(el.querySelector('[data-testid="startslater-status"]')).toBeNull();
     expect(el.textContent).toContain('In the next budget');
   });
 });

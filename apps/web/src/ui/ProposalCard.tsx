@@ -13,6 +13,7 @@ import { FundingMeter } from './FundingMeter.tsx';
 import { FailedNote } from './HiddenToggle.tsx';
 import { Avatar } from './Identity.tsx';
 import { LameDuckCardStatus } from './LameDuck.tsx';
+import { StartsLaterTag } from './StartsLater.tsx';
 import { trustScope, useCachedTrust } from './trust/store.ts';
 import { TrustBadge } from './trust/TrustBadge.tsx';
 
@@ -41,7 +42,10 @@ export function ProposalCard({
     ? null
     : (trust ?? (check?.status === 'inconclusive' ? { level: 'error', reason: `The collateral couldn't be checked: ${check.reason}` } : null));
   // Under a "Verified" mark only proven data decides "in the next budget" (none: no tag); otherwise it is the tally's own flag.
-  const inBudget = trust && mark?.level === 'verified' ? (trust.funded ?? undefined) : t?.inNextBudget;
+  const verified = trust && mark?.level === 'verified' ? trust : null;
+  const inBudget = verified ? (verified.funded ?? undefined) : t?.inNextBudget;
+  // Not due until a later superblock, by the schedule; only a proven "funded" overrides that estimate.
+  const later = verified && inBudget ? null : row.startsLater;
   const ask = askText(p.paymentAmount, row.schedule, params);
   // Nothing left that can pay it: no funding bars or budget tag, and no "payments left" claim either.
   const ended = row.lameDuck && !inBudget;
@@ -90,7 +94,9 @@ export function ProposalCard({
         ) : (
           <p className="muted small">{row.tally ? 'Waiting for the budget cycle' : 'No votes yet'}</p>
         )}
-        {ended ? null : inBudget ? (
+        {ended ? null : later ? (
+          <StartsLaterTag later={later} />
+        ) : inBudget ? (
           <span className="tag tag-pass">In the next budget</span>
         ) : row.state?.passing ? (
           <span className="tag tag-warn" title="Passing, but the budget is full or the next payout is outside its window">

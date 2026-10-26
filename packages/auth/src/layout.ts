@@ -72,3 +72,12 @@ const roundUp = (n: number, step: number) => Math.ceil(n / step) * step;
 /** What we ask a depositor for, rounded up to 0.00001 DASH: 0.00224 DASH to create, 0.00053 DASH to top up. */
 export const MIN_CREATE_DEPOSIT_DUFFS = roundUp(MIN_CREATE_LOCK_DUFFS + DEPOSIT_MARGIN_DUFFS, 1000);
 export const MIN_TOPUP_DEPOSIT_DUFFS = roundUp(MIN_TOPUP_LOCK_DUFFS + DEPOSIT_MARGIN_DUFFS, 1000);
+
+/**
+ * What the sign-up asks a depositor for by default (the QR code and the amount shown): enough to post right away. The minimum above only
+ * creates the account, and leaves it with too little to comment: a comment needs its fee plus about 185 M credits (0.00185 DASH) of
+ * spare balance (forum `UPFRONT_HEADROOM`), and a 3-key account at the minimum has well under that left after the create. 0.005 DASH
+ * leaves roughly 0.0028 DASH. A suggestion only: any deposit that reaches `MIN_CREATE_DEPOSIT_DUFFS` creates the account, and nothing
+ * waits for this. The one place to tune it (mainnet pricing).
+ */
+export const SUGGESTED_CREATE_DEPOSIT_DUFFS = 500_000;

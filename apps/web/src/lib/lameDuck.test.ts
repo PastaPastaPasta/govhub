@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Cycle, Proposal, Sourced, Tally } from '../data/types.ts';
 import { FUDGE_WINDOW_S, GOV_PARAMS, paymentSchedule, type GovParams } from './governance.ts';
-import { isLameDuck, LAME_DUCK_SLACK_S } from './lameDuck.ts';
+import { isLameDuck, LAME_DUCK_SLACK_S, startsLater } from './lameDuck.ts';
 import { budgetView, deriveRow } from './view.ts';
 
 const prov = { kind: 'proof', source: 'test' } as const;
@@ -140,5 +140,118 @@ describe('budgetView with lame ducks', () => {
     // even handed every row, as a caller that forgot to split them would
     expect(budgetView(rows, cycle.value)).toMatchObject({ active: 1, fundedSum: 250e8, allocated: 250e8 });
     expect(budgetView(rows, cycle.value).funded.map((r) => r.p.value.govHash)).toEqual(['live']);
+  });
+});
+
+describe('startsLater', () => {
+  // Dash-Pay-name-registration-rules on mainnet: 1 DASH, starts Jan 3 2027 and ends Feb 1 2027; the next superblock (2,575,480) is ~Nov 20 2026
+  const NEXT = Date.UTC(2026, 10, 20, 12) / 1000;
+  const JAN3 = 1798946946;
+  const FEB1 = 1801522426;
+  const dash = (over: Partial<Proposal> = {}) => proposal('dpn', { startEpoch: JAN3, endEpoch: FEB1, paymentAmount: 1e8, ...over });
+
+  it('its first payment is a later superblock: Jan 19 (the third), not the Nov 20 or Dec 20 ones', () => {
+    const cycle = cycleAt(NEXT);
+    const later = startsLater(dash().value, cycle.value, MAIN, NOW);
+    expect(later).toEqual({ firstTime: Math.round(NEXT + 2 * mainPeriod), nextTime: NEXT });
+    expect(new Date(later!.firstTime * 1000).toISOString().slice(0, 7)).toBe('2027-01');
+    expect(paymentSchedule(dash().value, cycle.value, MAIN, NOW)).toEqual({ total: 1, remaining: 1, oneTime: true });
+    // the schedule's own count agrees: one payment ahead, so it is not a lame duck
+    const row = deriveRow(dash(), new Map([['dpn', tally('dpn', { yesWeighted: 348, noWeighted: 332 })]]), new Map(), cycle, MAIN, NOW);
+    expect(row).toMatchObject({ lameDuck: false, startsLater: { nextTime: NEXT } });
+  });
+
+  it('is judged by votes alone: passing is not a warning, and a bridge flag does not change what the schedule says', () => {
+    const cycle = cycleAt(NEXT);
+    // 3320 weighted valid -> threshold 332; 348 net yes passes by 16 (the card read "Passing by 16", yellow, "Not in the next budget")
+    const row = (over: Partial<Tally>) => deriveRow(dash(), new Map([['dpn', tally('dpn', { yesWeighted: 348, noWeighted: 0, ...over })]]), new Map(), cycle, MAIN, NOW);
+    expect(row({ inNextBudget: false }).state).toMatchObject({ passing: true, margin: 16, light: 'pass' });
+    expect(row({ inNextBudget: true })).toMatchObject({ startsLater: { nextTime: NEXT }, state: { passing: true, light: 'pass' } });
+    expect(row({ yesWeighted: 100 }).state).toMatchObject({ passing: false, light: 'fail' });
+    // a due proposal that is passing and not in the budget is still the warning
+    const due = deriveRow(proposal('d', { startEpoch: NOW - DAY, endEpoch: NOW + 90 * DAY }), new Map([['d', tally('d', { yesWeighted: 348, noWeighted: 0 })]]), new Map(), cycle, MAIN, NOW);
+    expect(due).toMatchObject({ startsLater: null, state: { light: 'warn' } });
+  });
+
+  it('starts now: a window that holds the next superblock is not later (start before it, or within the slack)', () => {
+    const cycle = cycleAt(NEXT).value;
+    const at = (start: number, end: number) => startsLater({ startEpoch: start, endEpoch: end }, cycle, MAIN, NOW);
+    expect(at(NOW - 5 * DAY, NEXT + 30 * DAY)).toBeNull();
+    expect(at(NEXT - FUDGE_WINDOW_S, NEXT + 9 * DAY)).toBeNull(); // Core's own inclusive start edge
+    expect(at(NEXT + 3600, NEXT + 9 * DAY)).toBeNull(); // starts an hour after the estimate: drift could bring it in
+    expect(at(NEXT + FUDGE_WINDOW_S + LAME_DUCK_SLACK_S, NEXT + 9 * DAY)).toBeNull(); // the slack's edge
+    expect(at(NEXT + FUDGE_WINDOW_S + LAME_DUCK_SLACK_S + 1, NEXT + 9 * DAY)).toBeNull(); // no superblock in its window at all: lame, not later
+    expect(at(NEXT + FUDGE_WINDOW_S + LAME_DUCK_SLACK_S + 1, NEXT + mainPeriod + DAY)).toEqual({ firstTime: Math.round(NEXT + mainPeriod), nextTime: NEXT });
+  });
+
+  it("a proposal only the slack lets in (nothing in Core's own window) is borderline, not \"starts later\"", () => {
+    const cycle = cycleAt(NEXT).value;
+    // ends 14 h before the superblock after the next one: Core's window holds none, one day of slack reaches it
+    const end = NEXT + mainPeriod - 14 * 3600;
+    expect(paymentSchedule({ startEpoch: NEXT + 5 * DAY, endEpoch: end }, cycle, MAIN, NOW).total).toBe(0);
+    expect(startsLater({ startEpoch: NEXT + 5 * DAY, endEpoch: end }, cycle, MAIN, NOW)).toBeNull();
+  });
+
+  it('an overdue cycle (its superblock is estimated a few hours ago, not yet mined) still has that superblock as the next one', () => {
+    const cycle = cycleAt(NOW - 3 * 3600).value;
+    // starts 10 days on: later than the unmined superblock, so it is "later" and the budget it misses is that one
+    const p = { startEpoch: NOW + 10 * DAY, endEpoch: NOW + 40 * DAY };
+    expect(startsLater(p, cycle, MAIN, NOW)).toMatchObject({ nextTime: NOW - 3 * 3600 });
+    // a cycle document more than a day stale is not trusted for that: the next superblock is the next one by the clock
+    const far = { startEpoch: NOW + 35 * DAY, endEpoch: NOW + 60 * DAY };
+    expect(startsLater(far, cycleAt(NOW - 2 * DAY).value, MAIN, NOW)?.nextTime).toBe(Math.round(NOW - 2 * DAY + mainPeriod));
+    // and a proposal the unmined superblock could still pay is not "later"
+    expect(startsLater({ startEpoch: NOW - DAY, endEpoch: NOW + 40 * DAY }, cycle, MAIN, NOW)).toBeNull();
+  });
+
+  it('one superblock later already counts, and a long window that opens later still starts at its first superblock', () => {
+    const cycle = cycleAt(NEXT).value;
+    const later = startsLater({ startEpoch: NEXT + 2 * DAY, endEpoch: NEXT + 100 * DAY }, cycle, MAIN, NOW);
+    expect(later).toEqual({ firstTime: Math.round(NEXT + mainPeriod), nextTime: NEXT });
+  });
+
+  it('lame ducks are unchanged: ended, finished or window-less proposals are never "starts later"', () => {
+    const next = NOW + 23 * DAY;
+    const paid = proposal('a', { startEpoch: SEP29, endEpoch: OCT27 });
+    expect(deriveRow(paid, new Map(), new Map(), cycleAt(next), MAIN, NOW)).toMatchObject({ lameDuck: true, startsLater: null });
+    const windowless = proposal('b', { startEpoch: NOW - DAY, endEpoch: NOW + 2 * DAY });
+    expect(deriveRow(windowless, new Map(), new Map(), cycleAt(NOW + 10 * DAY), MAIN, NOW)).toMatchObject({ lameDuck: true, startsLater: null });
+    expect(startsLater({ startEpoch: NOW - 9 * DAY, endEpoch: NOW - 1 }, cycleAt(NEXT).value, MAIN, NOW)).toBeNull();
+    // the schedule is unknown without a cycle
+    expect(deriveRow(dash(), new Map(), new Map(), null, MAIN, NOW).startsLater).toBeNull();
+  });
+
+  it('never lame and later at once, whatever the cycle estimate', () => {
+    for (let off = 1; off < 100; off += 3) {
+      const cycle = cycleAt(NOW + off * DAY);
+      const row = deriveRow(dash(), new Map(), new Map(), cycle, MAIN, NOW);
+      expect(row.lameDuck && !!row.startsLater, `offset ${off}d`).toBe(false);
+    }
+  });
+
+  it('testnet hourly: a proposal starting in a day or more is later; one starting within the day is not', () => {
+    const cycle = cycleAt(NOW + 600).value;
+    expect(startsLater({ startEpoch: NOW + 3 * 3600, endEpoch: NOW + 9 * 3600 }, cycle, TEST, NOW)).toBeNull();
+    expect(startsLater({ startEpoch: NOW + 20 * 3600, endEpoch: NOW + 30 * 3600 }, cycle, TEST, NOW)).toBeNull(); // within the slack (a day)
+    const later = startsLater({ startEpoch: NOW + 3 * DAY, endEpoch: NOW + 3 * DAY + 6 * 3600 }, cycle, TEST, NOW);
+    expect(later?.nextTime).toBe(NOW + 600);
+    // the first superblock inside Core's own window (start - 2 h .. end + 2 h), not the one the slack let in
+    expect(later!.firstTime).toBeGreaterThanOrEqual(NOW + 3 * DAY - FUDGE_WINDOW_S);
+    expect(later!.firstTime).toBeLessThan(NOW + 3 * DAY - FUDGE_WINDOW_S + testPeriod);
+    // mainnet parameters on the same data would not see a superblock hourly: the parameters follow the network
+    expect(testPeriod).toBeLessThan(DAY);
+  });
+
+  it('is left out of the budget numbers (N of M) and counted apart; allocated stays the cycle document', () => {
+    const cycle = cycleAt(NEXT, 250e8);
+    const live = proposal('live', { startEpoch: NOW - 2 * DAY, endEpoch: NEXT + 40 * DAY, paymentAmount: 250e8 });
+    const tallies = new Map([
+      ['live', tally('live', { inNextBudget: true })],
+      ['dpn', tally('dpn', { inNextBudget: true })], // a source says it is funded; the schedule says otherwise
+    ]);
+    const rows = [live, dash()].map((p) => deriveRow(p, tallies, new Map(), cycle, MAIN, NOW));
+    const view = budgetView(rows, cycle.value);
+    expect(view).toMatchObject({ active: 1, later: 1, fundedSum: 250e8, allocated: 250e8 });
+    expect(view.funded.map((r) => r.p.value.govHash)).toEqual(['live']);
   });
 });
