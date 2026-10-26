@@ -12,6 +12,7 @@ import { FramedNotice, isFramed } from './app/frame.tsx';
 import { Layout } from './app/Layout.tsx';
 import { preloadSdk } from './data/platform.ts';
 import { AboutPage } from './pages/AboutPage.tsx';
+import { VerificationPage } from './pages/VerificationPage.tsx';
 import { ActivePage } from './pages/ActivePage.tsx';
 import { PastPage } from './pages/PastPage.tsx';
 import { ProposalByHash, ProposalByName } from './pages/ProposalPage.tsx';
@@ -79,7 +80,8 @@ createRoot(document.getElementById('root')!).render(
                 <Route path="masternodes" element={<MasternodesPage />} />
                 <Route path="votes" element={<MyVotesPage />} />
                 <Route path="badge" element={<BadgePage />} />
-                <Route path="about/verification" element={<AboutPage />} />
+                <Route path="about" element={<AboutPage />} />
+                <Route path="about/verification" element={<VerificationPage />} />
                 <Route path="about/trust" element={<TrustPage />} />
                 <Route path="*" element={<NotFoundPage />} />
               </Route>

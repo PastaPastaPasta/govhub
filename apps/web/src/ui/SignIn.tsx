@@ -124,8 +124,8 @@ export function SessionControl() {
         <Link className="menu-item" to="/settings" onClick={hide}>
           Settings
         </Link>
-        <Link className="menu-item" to="/about/verification" onClick={hide}>
-          About verification
+        <Link className="menu-item" to="/about" onClick={hide}>
+          About govhub
         </Link>
         <div className="menu-theme">
           <span className="small muted">Theme</span>
