@@ -2,7 +2,7 @@
 // query comes from queries.ts, so it has passed the PV13 lint before it is sent.
 import type { DocQuery } from '@govhub/contracts-v1/queryLint';
 import { convertAll, num, toAttestation, toBlock, toBlockSubs, toClaim, toComment, toPost, toProfile, toReaction, type RawDoc } from './convert.ts';
-import { attestationsOf, blocksOf, blockSubsOf, claimsOf, commentsNewestOf, commentsSince, myReactionsOn, PAGE, postOf, profilesOf, reactionsOn, type ContractQuery } from './queries.ts';
+import { attestationsOf, blocksOf, blockSubsOf, claimsOf, commentsNewestOf, commentsSince, myReactionsOn, PAGE, postOf, profilesOf, reactionsOn, type ContractQuery, type DescStep } from './queries.ts';
 import type { Block, BlockSubs, Claim, ClaimAttestation, Comment, ContractKey, Profile, ProposalPost, Reaction } from './types.ts';
 
 export interface DocPage {
@@ -37,36 +37,45 @@ export async function pageAll(reader: DocReader, build: (startAfter?: string) =>
 }
 
 /**
- * Runs a newest-first shape (desc on `key`) until a short page. A desc list cannot page with `startAfter` (R8: evo-sdk rc.8 cannot
- * verify that proof on PV13), so each next page asks for `key <= ` the last page's lowest key and drops the ids already read: documents
- * that share that key (one block time) are read again, never skipped. If a whole page shares one key and brings nothing new (more than
- * PAGE documents at one block time), the read stops there as `truncated`.
+ * Runs a newest-first shape (desc on `key`, see DescStep) to the end. Each next page asks for `key <= ` the last page's lowest key and
+ * skips the ids already read, so documents that share that key (one block time) are read again, never lost. When a whole page sits at one
+ * key t (PAGE or more documents at one block time), t is finished with an ascending `key == t` sweep paged by `startAfter`, then the read
+ * goes on below t: a burst in one block cannot hide anything older. `truncated` only when `maxPages` queries were not enough.
  */
-export async function pageDesc(reader: DocReader, build: (atOrBefore?: number) => ContractQuery, key: string, maxPages = MAX_PAGES): Promise<DocPage & { truncated: boolean }> {
+export async function pageDesc(reader: DocReader, build: (step: DescStep) => ContractQuery, key: string, maxPages = MAX_PAGES): Promise<DocPage & { truncated: boolean }> {
   const docs: RawDoc[] = [];
   const seen = new Set<string>();
   let height: number | null = null;
-  let bound: number | undefined;
+  let step: DescStep = { op: 'first' };
   for (let i = 0; i < maxPages; i++) {
-    const { contract, q } = build(bound);
+    const { contract, q } = build(step);
     const page = await reader.query(contract, q);
     height = page.height ?? height;
-    let fresh = 0;
     for (const d of page.docs) {
       const id = d.$id;
       if (typeof id !== 'string' || seen.has(id)) continue;
       seen.add(id);
       docs.push(d);
-      fresh++;
     }
-    if (page.docs.length < PAGE) return { docs, height, truncated: false };
+    const full = page.docs.length >= PAGE;
+    const first = page.docs[0];
     const last = page.docs.at(-1);
-    if (!fresh || !last) return { docs, height, truncated: true };
+    if (step.op === '==') {
+      // the sweep of one key: on to the next sweep page, or below the key once the sweep is done
+      if (full && typeof last?.$id === 'string') step = { op: '==', t: step.t, startAfter: last.$id };
+      else step = { op: '<', t: step.t };
+      continue;
+    }
+    if (!full || !first || !last) return { docs, height, truncated: false };
+    let lo: number;
+    let hi: number;
     try {
-      bound = num(last, key);
+      lo = num(last, key);
+      hi = num(first, key);
     } catch {
       return { docs, height, truncated: true }; // no usable key to bound the next page by
     }
+    step = hi === lo ? { op: '==', t: lo } : { op: '<=', t: lo };
   }
   return { docs, height, truncated: true };
 }
@@ -103,7 +112,7 @@ export class ForumReader {
    * never hide new ones; `truncated` when more than `maxPages` pages exist. Returned oldest first, for threading.
    */
   async comments(govHash: string, maxPages = MAX_PAGES): Promise<{ comments: Comment[]; height: number | null; truncated: boolean }> {
-    const r = await pageDesc(this.reader, (t) => commentsNewestOf(govHash, t), '$createdAt', maxPages);
+    const r = await pageDesc(this.reader, (s) => commentsNewestOf(govHash, s), '$createdAt', maxPages);
     return { comments: convertAll(r.docs, toComment).filter((x) => x.govHash === govHash).reverse(), height: r.height, truncated: r.truncated };
   }
 

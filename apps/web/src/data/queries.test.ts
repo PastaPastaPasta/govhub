@@ -27,7 +27,9 @@ describe('every query the app sends passes the PV13 lint', () => {
     ['G1', proposalByHash(H), 'byGovHash'],
     ['G2', activeProposals(1_792_807_235), 'byEndEpoch'],
     ['G2 paged', activeProposals(1_792_807_235, 'GiCkEzSnk6SCCbXgjCnPYtvviYiRS5Vnbu7AcpAMUPFE'), 'byEndEpoch'],
-    ['G3', pastProposals(1_792_807_235), 'byEndEpoch'],
+    ['G3', pastProposals({ op: '<=', t: 1_792_807_235 }), 'byEndEpoch'],
+    ['G3 <', pastProposals({ op: '<', t: 1_792_807_235 }), 'byEndEpoch'],
+    ['G3 == sweep', pastProposals({ op: '==', t: 1_792_807_235, startAfter: '9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv' }), 'byEndEpoch'],
     ['G4', proposalsByName('Dash-Mass-Organic-Content-Attraction'), 'byNameCreated'],
     ['G5', talliesFor([H, H2, H.toUpperCase()]), 'byGovHash'],
     ['G5b', tallyByHash(H), 'byGovHash'],
@@ -50,7 +52,7 @@ describe('every query the app sends passes the PV13 lint', () => {
     bad(GOV_SCHEMAS, { documentTypeName: 'talliesSet', where: [['page', '>=', 0]], orderBy: [['page', 'asc']], limit: 101 }, 'R5');
   });
   it('G3 (past, newest first) carries a range on endEpoch so desc works on PV13, and pages by that bound, never startAfter (R8)', () => {
-    const q = pastProposals(100);
+    const q = pastProposals({ op: '<=', t: 100 });
     expect(q.orderBy).toEqual([['endEpoch', 'desc']]);
     expect(q.where[0]![1]).toBe('<=');
     expect(q.startAfter).toBeUndefined();

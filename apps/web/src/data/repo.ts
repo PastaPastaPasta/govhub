@@ -11,11 +11,12 @@ import { loadFixtures } from './fixtures.ts';
 import { docToCycle, docToProposal, docToTally, docToTallySet, govDocTypes, queryDocs } from './platform.ts';
 import { activeProposals, latestCycles, pastProposals, proposalByHash, proposalsByName, talliesFor, tallySetPages, PAGE } from './queries.ts';
 import type { BridgeDescriptor, DapiDescriptor } from '../verify/protocol.ts';
+import type { DescStep } from '@govhub/forum';
 import type { CoreNetwork, Cycle, Proposal, Provenance, Sourced, Tally } from './types.ts';
 
 export interface Page {
   items: Sourced<Proposal>[];
-  /** Cursor (last document id) for the next page, when there may be more. */
+  /** Opaque cursor for the next page, when there may be more (the Platform source's is a keyset cursor, see pastPage). */
   next?: string;
 }
 
@@ -131,18 +132,26 @@ interface Proven<T> {
 
 const nowSeconds = (): number => Math.floor(Date.now() / 1000);
 
-/** The Past list's keyset cursor (see pastPage); anything malformed restarts from the newest. */
-export function parsePastCursor(cursor: string): { endEpoch: number; ids: string[] } | null {
+/** The Past list's keyset cursor (see pastPage): the next step, and the ids already shown at its key. */
+export interface PastCursor {
+  step: Exclude<DescStep, { op: 'first' }>;
+  ids: string[];
+}
+
+/** Parses a cursor pastPage made; null for anything else (pastPage then returns nothing rather than start over). */
+export function parsePastCursor(cursor: string): PastCursor | null {
   try {
-    const c = JSON.parse(cursor) as { endEpoch?: unknown; ids?: unknown };
-    if (!Number.isSafeInteger(c.endEpoch) || !Array.isArray(c.ids) || !c.ids.every((x) => typeof x === 'string')) return null;
-    return { endEpoch: c.endEpoch as number, ids: c.ids as string[] };
+    const c = JSON.parse(cursor) as { step?: { op?: unknown; t?: unknown; startAfter?: unknown }; ids?: unknown };
+    const s = c.step;
+    if (!s || !['<=', '<', '=='].includes(s.op as string) || !Number.isSafeInteger(s.t)) return null;
+    if (s.startAfter !== undefined && (s.op !== '==' || typeof s.startAfter !== 'string')) return null;
+    if (!Array.isArray(c.ids) || !c.ids.every((x) => typeof x === 'string')) return null;
+    return { step: s as PastCursor['step'], ids: c.ids as string[] };
   } catch {
     return null;
   }
 }
 
-/** The chain parameters of a Core network (no bridge asked), with where they come from. */
 const chainParams = (network: CoreNetwork, detail?: string): Sourced<GovParams> => ({
   value: GOV_PARAMS[network],
   prov: { kind: 'reported', source: `Dash Core ${network} chain parameters`, ...(detail ? { detail } : {}) },
@@ -276,20 +285,29 @@ export function liveSource(registry: Registry): DataSource {
     },
 
     async pastPage(cursor) {
-      // Keyset paging (R8): the cursor is the last endEpoch shown plus the ids already shown at it; the next page asks for
-      // endEpoch <= that and skips those ids, so proposals that share an endEpoch across a page boundary are neither lost nor repeated.
-      const at = cursor ? parsePastCursor(cursor) : null;
-      if (cursor && !at) return { items: [] };
-      const r = await queryDocs(registry, pastProposals(at?.endEpoch ?? nowSeconds()));
-      const shown = new Set(at?.ids);
+      // Keyset paging (R8: a desc query cannot carry startAfter on PV13). The cursor is the next step plus the ids already shown at its key:
+      // `endEpoch <= t` re-reads the proposals ending at t and skips those; when a whole page shares one end, that end is swept ascending
+      // (`== t`, startAfter) and the list goes on below it (`< t`). Nothing is lost or repeated, however many proposals share an end.
+      const at: PastCursor | null = cursor ? parsePastCursor(cursor) : { step: { op: '<=', t: nowSeconds() }, ids: [] };
+      if (!at) return { items: [] };
+      const r = await queryDocs(registry, pastProposals(at.step));
+      const shown = new Set(at.ids);
       const all = r.docs.map(docToProposal);
       const items = all.filter((p) => !p.docId || !shown.has(p.docId)).map((p) => ({ value: p, prov: proof(r.height) }));
+      const page = (next: PastCursor) => ({ items, next: JSON.stringify(next) });
+      const full = r.docs.length >= PAGE;
+      const first = all[0];
       const last = all.at(-1);
-      // A full page with nothing new (more than PAGE proposals share one endEpoch) cannot move on: stop rather than loop.
-      if (r.docs.length < PAGE || !last || !items.length) return { items };
-      const ids = all.filter((p) => p.endEpoch === last.endEpoch).flatMap((p) => (p.docId ? [p.docId] : []));
-      if (at?.endEpoch === last.endEpoch) ids.push(...at.ids);
-      return { items, next: JSON.stringify({ endEpoch: last.endEpoch, ids: [...new Set(ids)] }) };
+      const { step } = at;
+      if (step.op === '==') {
+        if (full && last?.docId) return page({ step: { op: '==', t: step.t, startAfter: last.docId }, ids: at.ids });
+        return page({ step: { op: '<', t: step.t }, ids: [] });
+      }
+      if (!full || !first || !last) return { items };
+      const idsAt = (t: number) => all.flatMap((p) => (p.endEpoch === t && p.docId ? [p.docId] : []));
+      const carried = step.op === '<=' && step.t === last.endEpoch ? at.ids : [];
+      if (first.endEpoch === last.endEpoch) return page({ step: { op: '==', t: last.endEpoch }, ids: [...new Set([...carried, ...idsAt(last.endEpoch)])] });
+      return page({ step: { op: '<=', t: last.endEpoch }, ids: idsAt(last.endEpoch) });
     },
 
     async proposal(h) {

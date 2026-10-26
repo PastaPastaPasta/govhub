@@ -88,11 +88,33 @@ describe('writes and reads through the linted queries', () => {
     expect((await reader.commentsSince(H, last)).length).toBe(r.comments.filter((c) => c.createdAt === last).length);
   });
 
-  it('newest-first paging stops as truncated when more than a page shares one block time', async () => {
+  it('more than a page of comments in one block hides nothing older: that block time is swept ascending, then the read goes on', async () => {
+    let t = 1_792_800_000_000;
+    const now = () => t;
+    const store = new MemoryStore({ contracts: C, owners: { mod: MOD, gov: MOD }, now });
+    const ops = forumOps(C, now);
+    for (let i = 0; i < 5; i++, t += 1000) store.apply(ALICE, ops.comment(H, `old${i}`));
+    for (let i = 0; i < 230; i++) store.apply(BOB, ops.comment(H, `burst${i}`)); // one block time, more than two pages
+    t += 1000;
+    store.apply(ALICE, ops.comment(H, 'newest'));
+    const sent: DocQuery[] = [];
+    const spy: DocReader = { query: (c, q) => (sent.push(q), store.query(c, q)) };
+    const r = await new ForumReader(spy).comments(H);
+    expect(r.truncated).toBe(false);
+    expect(r.comments).toHaveLength(236);
+    expect(new Set(r.comments.map((c) => c.id)).size).toBe(236);
+    expect(r.comments.slice(0, 5).map((c) => c.body)).toEqual(['old0', 'old1', 'old2', 'old3', 'old4']);
+    expect(r.comments.at(-1)!.body).toBe('newest');
+    // desc pages never carry startAfter; only the ascending one-key sweep does
+    for (const q of sent) if (q.orderBy?.some(([, d]) => d === 'desc')) expect(q.startAfter).toBeUndefined();
+    expect(sent.some((q) => q.where.some((w) => w[1] === '==' && w[0] === '$createdAt'))).toBe(true);
+  });
+
+  it('a page cap still bounds the read (truncated)', async () => {
     const store = new MemoryStore({ contracts: C, owners: { mod: MOD, gov: MOD }, now: () => 1_792_800_000_000 });
     const ops = forumOps(C, () => 1_792_800_000_000);
     for (let i = 0; i < 120; i++) store.apply(BOB, ops.comment(H, `c${i}`));
-    const r = await new ForumReader(store).comments(H);
+    const r = await new ForumReader(store).comments(H, 1);
     expect(r.truncated).toBe(true);
     expect(r.comments).toHaveLength(100);
   });

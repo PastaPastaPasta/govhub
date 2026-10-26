@@ -4,6 +4,7 @@ import { TALLY_SET_MAX_PAGES } from '@govhub/verify';
 import govSchemas from '@govhub/contracts-v1/gov.json';
 import { hexToB64 } from '../lib/bytes.ts';
 import { assertQuery, type ContractSchemas, type DocQuery } from '@govhub/contracts-v1/queryLint';
+import type { DescStep } from '@govhub/forum';
 
 export const GOV_SCHEMAS = govSchemas as unknown as ContractSchemas;
 export const PAGE = 100;
@@ -23,12 +24,19 @@ export const activeProposals = (nowS: number, startAfter?: string): DocQuery =>
   checked(paged({ documentTypeName: 'proposal', where: [['endEpoch', '>', nowS]], orderBy: [['endEpoch', 'asc']], limit: PAGE }, startAfter));
 
 /**
- * G3: proposals that ended at or before `atOrBeforeS`, newest end first (the range on endEpoch is what makes desc work on PV13, rule 7).
- * The first page passes now; later pages pass the previous page's last endEpoch and drop the ids already shown at it, because a desc
- * query cannot page with startAfter (R8: evo-sdk rc.8 cannot verify that proof on PV13). See repo.ts pastPage.
+ * G3: ended proposals, newest end first, one keyset step (see DescStep in @govhub/forum): `endEpoch <= t` (the first page passes now;
+ * the range is what makes desc work on PV13, rule 7), `endEpoch < t`, or the ascending sweep of `endEpoch == t` with startAfter when a
+ * whole page shares one end. A desc query cannot page with startAfter (R8: evo-sdk rc.8 cannot verify that proof on PV13). See repo.ts
+ * pastPage.
  */
-export const pastProposals = (atOrBeforeS: number, limit = PAGE): DocQuery =>
-  checked({ documentTypeName: 'proposal', where: [['endEpoch', '<=', atOrBeforeS]], orderBy: [['endEpoch', 'desc']], limit });
+export const pastProposals = (step: Exclude<DescStep, { op: 'first' }>, limit = PAGE): DocQuery =>
+  checked({
+    documentTypeName: 'proposal',
+    where: [['endEpoch', step.op, step.t]],
+    orderBy: [['endEpoch', step.op === '==' ? 'asc' : 'desc']],
+    limit,
+    ...(step.op === '==' && step.startAfter ? { startAfter: step.startAfter } : {}),
+  });
 
 /** G4: proposals by name (slug lookup), oldest first. */
 export const proposalsByName = (name: string): DocQuery =>

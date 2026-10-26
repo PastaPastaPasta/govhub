@@ -34,10 +34,13 @@ describe('every forum/mod/gov query the data layer sends passes the PV13 lint on
     ['F2', commentsOf(H), 'byProposal'],
     ['F2 paged', commentsOf(H, DOC), 'byProposal'],
     ['F2c', commentsNewestOf(H), 'byProposal'],
-    ['F2c paged', commentsNewestOf(H, 1_792_807_000_000), 'byProposal'],
+    ['F2c <=', commentsNewestOf(H, { op: '<=', t: 1_792_807_000_000 }), 'byProposal'],
+    ['F2c <', commentsNewestOf(H, { op: '<', t: 1_792_807_000_000 }), 'byProposal'],
+    ['F2c == sweep', commentsNewestOf(H, { op: '==', t: 1_792_807_000_000, startAfter: DOC }), 'byProposal'],
     ['F2d', commentsSince(H, 1_792_807_000_000), 'byProposal'],
     ['F3', commentsBy(ID), 'byAuthor'],
-    ['F3 paged', commentsBy(ID, 1_792_807_000_000), 'byAuthor'],
+    ['F3 <=', commentsBy(ID, { op: '<=', t: 1_792_807_000_000 }), 'byAuthor'],
+    ['F3 == sweep', commentsBy(ID, { op: '==', t: 1_792_807_000_000, startAfter: DOC }), 'byAuthor'],
     ['F5', myReactionOn(ID, targetB64({ commentId: DOC })), 'byOwnerTarget'],
     ['F5b', myReactionsOn(ID, [targetB64({ commentId: ID }), targetB64({ commentId: DOC })]), 'byOwnerTarget'],
     ['F6 comment', reactionsOn(targetB64({ commentId: DOC })), 'byTarget'],
@@ -71,10 +74,14 @@ describe('every forum/mod/gov query the data layer sends passes the PV13 lint on
   });
 
   it('desc lists never page with startAfter (R8: rc.8 cannot verify that proof on PV13); later pages bound $createdAt instead', () => {
-    for (const { q } of [commentsNewestOf(H, 5), commentsBy(ID, 5)]) {
+    for (const { q } of [commentsNewestOf(H, { op: '<=', t: 5 }), commentsBy(ID, { op: '<=', t: 5 })]) {
       expect(q.startAfter).toBeUndefined();
       expect(q.where).toContainEqual(['$createdAt', '<=', 5]);
     }
+    // the one-key sweep pages with startAfter, so it is ascending
+    const sweep = commentsNewestOf(H, { op: '==', t: 5, startAfter: DOC }).q;
+    expect(sweep.orderBy?.every(([, d]) => d === 'asc')).toBe(true);
+    expect(sweep.startAfter).toBe(DOC);
     const r = lintQuery(SCHEMAS.forum, { ...commentsNewestOf(H).q, startAfter: DOC });
     expect(r.ok).toBe(false);
     expect(r.errors.join()).toMatch(/R8/);

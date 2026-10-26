@@ -49,17 +49,27 @@ export const commentsOf = (govHash: string, startAfter?: string): ContractQuery 
   checked('forum', paged({ documentTypeName: 'comment', where: [['govHash', '==', hexToB64(govHash)]], orderBy: [['govHash', 'asc'], ['$createdAt', 'asc']], limit: PAGE }, startAfter));
 
 /**
- * F2c: a proposal's comments, newest first. The `$createdAt` range makes desc work on PV13 (rule 7); later pages bound it with
- * `<= atOrBeforeMs` (the last page's oldest time) instead of `startAfter`, which rc.8 cannot verify on a desc proof (R8). The
- * caller skips the ids it already has at that time (pageDesc in reader.ts).
+ * One page of a newest-first read on PV13 (driven by pageDesc in reader.ts). A desc query cannot page with `startAfter` (R8: evo-sdk rc.8
+ * cannot verify that proof on PV13), so pages are bounded on the ordered key instead: the first page, then `key <= t` (re-reads the
+ * documents at t, the reader skips the ones it has), `key < t`, or, when a whole page sits at one key t, an ascending sweep of
+ * `key == t` with `startAfter` (asc + startAfter verifies) so more than a page of documents at one key are all read.
  */
-export const commentsNewestOf = (govHash: string, atOrBeforeMs?: number): ContractQuery =>
-  checked('forum', {
-    documentTypeName: 'comment',
-    where: [['govHash', '==', hexToB64(govHash)], atOrBeforeMs === undefined ? ['$createdAt', '>', 0] : ['$createdAt', '<=', atOrBeforeMs]],
-    orderBy: [['govHash', 'desc'], ['$createdAt', 'desc']],
-    limit: PAGE,
-  });
+export type DescStep = { op: 'first' } | { op: '<=' | '<'; t: number } | { op: '=='; t: number; startAfter?: string };
+
+/** The where/orderBy of `step` on `key` after the equality prefix `eq`, ordered desc (asc for the `==` sweep). */
+function descShape(eq: readonly [string, '==', unknown], firstOrder: 'asc' | 'desc', key: string, step: DescStep): Pick<DocQuery, 'where' | 'orderBy' | 'startAfter'> {
+  const range = step.op === 'first' ? ([key, '>', 0] as const) : ([key, step.op, step.t] as const);
+  const dir = step.op === '==' ? 'asc' : 'desc';
+  return {
+    where: [eq, range],
+    orderBy: [[eq[0], step.op === '==' ? 'asc' : firstOrder], [key, dir]],
+    ...(step.op === '==' && step.startAfter ? { startAfter: step.startAfter } : {}),
+  };
+}
+
+/** F2c: a proposal's comments, newest first (the `$createdAt` range makes desc work on PV13, rule 7), paged by DescStep. */
+export const commentsNewestOf = (govHash: string, step: DescStep = { op: 'first' }): ContractQuery =>
+  checked('forum', { documentTypeName: 'comment', ...descShape(['govHash', '==', hexToB64(govHash)], 'desc', '$createdAt', step), limit: PAGE });
 
 /**
  * F2d: a proposal's comments created at or after `sinceMs` (block time), oldest first. `>=`, not `>`: several comments can share
@@ -71,14 +81,9 @@ export const commentsSince = (govHash: string, sinceMs: number, startAfter?: str
     paged({ documentTypeName: 'comment', where: [['govHash', '==', hexToB64(govHash)], ['$createdAt', '>=', sinceMs]], orderBy: [['govHash', 'asc'], ['$createdAt', 'asc']], limit: PAGE }, startAfter),
   );
 
-/** F3: an author's comments, newest first; paged like F2c with `<= atOrBeforeMs` (rules 7 and R8). */
-export const commentsBy = (ownerId: string, atOrBeforeMs?: number): ContractQuery =>
-  checked('forum', {
-    documentTypeName: 'comment',
-    where: [['$ownerId', '==', ownerId], atOrBeforeMs === undefined ? ['$createdAt', '>', 0] : ['$createdAt', '<=', atOrBeforeMs]],
-    orderBy: [['$ownerId', 'asc'], ['$createdAt', 'desc']],
-    limit: PAGE,
-  });
+/** F3: an author's comments, newest first, paged like F2c (rules 7 and R8). */
+export const commentsBy = (ownerId: string, step: DescStep = { op: 'first' }): ContractQuery =>
+  checked('forum', { documentTypeName: 'comment', ...descShape(['$ownerId', '==', ownerId], 'asc', '$createdAt', step), limit: PAGE });
 
 // ---- reaction ---------------------------------------------------------------------------------
 /** A reaction target as base64: a comment id (base58). */

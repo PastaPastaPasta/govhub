@@ -28,10 +28,14 @@ vi.mock('./platform.ts', async (orig) => {
       }
       if (q.documentTypeName === 'tally') return { docs: platform.tallies, height: 777 };
       if (q.documentTypeName !== 'proposal') return { docs: [], height: 777 };
-      const bound = q.where.find((w) => w[0] === 'endEpoch' && w[1] === '<=')?.[2] as number;
-      const rows = platform.proposals
-        .filter((d) => (d.endEpoch as number) <= bound)
-        .sort((a, b) => (b.endEpoch as number) - (a.endEpoch as number) || String(a.$id).localeCompare(String(b.$id)));
+      const [, op, v] = q.where.find((w) => w[0] === 'endEpoch')!;
+      const t = v as number;
+      const test = (e: number) => (op === '<=' ? e <= t : op === '<' ? e < t : op === '==' ? e === t : false);
+      const dir = q.orderBy?.[0]?.[1] === 'asc' ? 1 : -1;
+      let rows = platform.proposals
+        .filter((d) => test(d.endEpoch as number))
+        .sort((a, b) => dir * ((a.endEpoch as number) - (b.endEpoch as number)) || String(a.$id).localeCompare(String(b.$id)));
+      if (q.startAfter) rows = rows.slice(rows.findIndex((d) => d.$id === q.startAfter) + 1);
       return { docs: rows.slice(0, q.limit ?? 100), height: 777 };
     },
   };
@@ -92,11 +96,20 @@ describe('Past list paging on PV13 (G3 desc, keyset instead of startAfter)', () 
     expect(qs[1]!.where[0]).toEqual(['endEpoch', '<=', 1_700_000_000 - 2 * 86_400]);
   });
 
-  it('stops instead of looping when more than a page of proposals share one endEpoch', async () => {
+  it('more than a page sharing one endEpoch hides nothing older: that end is swept ascending (startAfter), then the list goes on', async () => {
     const p = snap.proposals[0]!;
-    platform.proposals = Array.from({ length: 130 }, (_, i) => docOf(p, i, 1_700_000_000));
+    platform.proposals = [
+      docOf(p, 0, 1_700_100_000), // newer
+      ...Array.from({ length: 230 }, (_, i) => docOf(p, 1 + i, 1_700_000_000)),
+      ...Array.from({ length: 5 }, (_, i) => docOf(p, 300 + i, 1_600_000_000 - i)), // older
+    ];
     const seen = await readAll();
-    expect(seen).toHaveLength(100);
+    expect(seen).toHaveLength(236);
+    expect(new Set(seen).size).toBe(236);
+    expect(seen.slice(-5)).toEqual([300, 301, 302, 303, 304].map(id));
+    const qs = platform.queries.filter((q) => q.documentTypeName === 'proposal');
+    for (const q of qs) if (q.orderBy?.[0]?.[1] === 'desc') expect(q.startAfter).toBeUndefined();
+    expect(qs.some((q) => q.where[0]![1] === '==' && q.startAfter)).toBe(true);
   });
 
   it('a malformed cursor returns nothing rather than restarting from the newest', async () => {
