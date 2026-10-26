@@ -137,8 +137,9 @@ test.describe('vote panel (fixtures)', () => {
     await expect(step('signed')).toHaveAttribute('data-state', 'done');
     await expect(step('relay')).toHaveAttribute('data-state', 'done');
     await expect(step('broadcast')).toHaveAttribute('data-state', 'active');
-    await expect(tracker.getByTestId('vote-tracker-badge')).toHaveText('Held by relay');
-    await expect(tracker.getByTestId('vote-tracker-line')).toContainText(/relay-(one|two)\.example/);
+    // the fixture relay holds it with nothing left to wait for: the line says "going out now", so the badge must too (F8)
+    await expect(tracker.getByTestId('vote-tracker-badge')).toHaveText('Going out now');
+    await expect(tracker.getByTestId('vote-tracker-line')).toContainText(/relay-(one|two)\.example, going out now/);
     // broadcast: waiting for the network
     await advance(page);
     await expect(tracker).toHaveAttribute('data-status', 'broadcast', { timeout: 15_000 });
@@ -266,7 +267,7 @@ test.describe('vote panel (fixtures)', () => {
     const rows = page.getByTestId('watched-row');
     await expect(rows).toHaveCount(1);
     await expect(rows.first()).toHaveAttribute('data-status', 'held');
-    await expect(rows.first().getByTestId('watched-badge')).toHaveText('Held by relay');
+    await expect(rows.first().getByTestId('watched-badge')).toHaveText('Going out now');
     await expect(page.locator('.vgroup-title')).toHaveText('OrchardPay');
     await expect(page.getByTestId('relay-row').filter({ hasText: 'holds 1 of your votes' })).toHaveCount(1);
   });

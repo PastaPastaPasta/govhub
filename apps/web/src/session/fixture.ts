@@ -1,9 +1,10 @@
 // Fixture mode: sign in as a sample identity whose writes go into the in-memory fixture store. The balance starts
-// at 0.003 DASH (what a new account pays in) and is charged the same fee estimates the UI shows.
+// at 0.03 DASH (enough for several writes after Platform's up-front balance check, which wants about 0.0019 DASH more than a comment's
+// fee) and is charged the same fee estimates the UI shows.
 import { commentCost, COSTS, postCost, type DocumentOp, type MemoryStore } from '@govhub/forum';
 import type { Session } from './session.ts';
 
-const INITIAL_CREDITS = 300_000_000n; // 0.003 DASH
+const INITIAL_CREDITS = 3_000_000_000n; // 0.03 DASH
 
 function estimate(op: DocumentOp): number {
   if (op.action === 'delete') return op.type === 'reaction' ? COSTS.reactionDelete : op.type === 'block' ? COSTS.blockDelete : -20_000_000;

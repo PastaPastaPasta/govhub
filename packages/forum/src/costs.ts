@@ -53,3 +53,16 @@ export function postCost(compressedBytes: number, previousBytes?: number): numbe
 export const commentRetractRefund = (bytes: number): number => Math.round(-Math.max(0, commentCost(bytes) - 22_000_000));
 
 export const creditsToDash = (credits: number | bigint): number => Number(credits) / CREDITS_PER_DASH;
+
+/**
+ * What Platform wants on the identity before it will take a write: not the fee, the pre-check. Drive estimates the worst case of
+ * the transition (storage written to fresh trees plus processing, refunds ignored: `validate_fees_of_event`, "TODO: should take
+ * into account refunds") and refuses it unless the balance covers that estimate. The settled fee is much lower, and the gap is
+ * about the same for every create of this size: a 52 B comment settles near 43 M credits but was refused at 150 M with
+ * "required 227,124,440". So the requirement is the fee plus about this much, not a multiple of it (a 5 KB comment is not asked
+ * for 5 times its fee). Calibrated on that refusal; the keyring writes of `voting/funds.ts` were measured the same way.
+ */
+export const UPFRONT_HEADROOM = 185_000_000;
+
+/** About what must be available on the identity for a write whose settled fee is about `cost` credits (refunds do not count towards it). */
+export const upfrontRequired = (cost: number): number => Math.max(0, cost) + UPFRONT_HEADROOM;

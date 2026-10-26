@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { configParamUrl, fetchConfig, PROFILES, readInlineConfig, registryDiff, registryRows, saveErrorText, type Registry } from '../config/registry.ts';
+import { configParamUrl, DAMAGED_CONFIG, fetchConfig, PROFILES, readInlineConfig, registryDiff, registryRows, saveErrorText, type Registry } from '../config/registry.ts';
 import { useAuth } from '../auth/context.tsx';
 import { SessionControl } from '../ui/SignIn.tsx';
 import { ChainShield } from '../ui/trust/ChainShield.tsx';
@@ -106,17 +106,26 @@ function ConfigOffer() {
     );
   }
   const ok = current.errors.length === 0;
+  const damaged = current.errors[0] === DAMAGED_CONFIG;
   const diff = ok ? registryDiff(registry, current.registry) : [];
   const changed = new Set(diff.map((d) => d.label));
   return (
     <div className="banner banner-config" role="alertdialog" aria-labelledby="cfg-title" data-testid="config-offer">
       <p id="cfg-title">
-        <b>This link carries endpoint settings.</b>{' '}
-        {!ok
-          ? `They can't be used: ${current.errors.join('; ').replace(/\.+$/, '')}.`
-          : diff.length
-            ? `Using them changes ${diff.length === 1 ? 'one setting' : `${diff.length} settings`}; everything else stays as it is. Check every host: a bridge or DAPI node you do not trust can report false numbers.`
-            : 'They are the settings you already use: nothing would change.'}
+        {damaged ? (
+          <b>{DAMAGED_CONFIG}</b>
+        ) : (
+          <>
+            <b>This link carries endpoint settings.</b>{' '}
+          </>
+        )}
+        {damaged
+          ? null
+          : !ok
+            ? `They can't be used: ${current.errors.join('; ').replace(/\.+$/, '')}.`
+            : diff.length
+              ? `Using them changes ${diff.length === 1 ? 'one setting' : `${diff.length} settings`}; everything else stays as it is. Check every host: a bridge or DAPI node you do not trust can report false numbers.`
+              : 'They are the settings you already use: nothing would change.'}
       </p>
       {diff.length > 0 && (
         <dl className="config-summary" data-testid="config-diff">

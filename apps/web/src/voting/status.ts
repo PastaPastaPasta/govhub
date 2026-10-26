@@ -35,6 +35,9 @@ export function leadRelay(v: WatchedVote): { relay: string; info: RelayInfo; sta
   return { relay: best.relay, info: v.relayInfo?.[best.relay] ?? {}, ...(v.relayStatus?.[best.relay] ? { status: v.relayStatus[best.relay] } : {}) };
 }
 
+/** The phrase of a hold that has nothing left to wait for; the badge for that state says it too. */
+const GOING_OUT_NOW = 'going out now';
+
 /** Why a relay holds the vote and until when, in one sentence. */
 export function holdText(v: WatchedVote, now: number, fmt: TimeFmt): string {
   const lead = leadRelay(v);
@@ -54,7 +57,7 @@ export function holdText(v: WatchedVote, now: number, fmt: TimeFmt): string {
       s = `${host} is retrying after an error (${relayCodeText(info.lastError)}); next try at ${fmt(at)}.`;
       break;
     default:
-      s = at > now + 30 ? `Held by ${host} until ${fmt(at)}.` : `Accepted by ${host}, going out now.`;
+      s = at > now + 30 ? `Held by ${host} until ${fmt(at)}.` : `Accepted by ${host}, ${GOING_OUT_NOW}.`;
   }
   if (info.sameAsCurrent) s += ' It repeats the masternode’s current vote, so it only updates the timestamp.';
   return s;
@@ -113,8 +116,11 @@ export function describeVote(v: WatchedVote, now: number, fmt: TimeFmt): VoteVie
         return { badge: 'Not sent yet', tone: 'bad', line: `Not accepted by a relay yet: ${v.lastSendError}. Kept in this browser. ${when}` };
       }
       return { badge: 'Sending', tone: 'progress', line: 'Signed in this browser, sending to the relay…' };
-    case 'held':
-      return { badge: 'Held by relay', tone: 'wait', line: holdText(v, now, fmt) };
+    case 'held': {
+      const line = holdText(v, now, fmt);
+      // "Held by relay" next to "going out now" contradicts itself (F8)
+      return line.includes(GOING_OUT_NOW) ? { badge: 'Going out now', tone: 'progress', line } : { badge: 'Held by relay', tone: 'wait', line };
+    }
     case 'broadcast': {
       if (v.withdrawn) return { badge: 'May already count', tone: 'wait', line: 'Cancelled at the relay, but the relay had already handed it to the network once, so it may already count. Vote again to change it (Core allows one change per hour).' };
       const at = lead?.info.broadcastAt;

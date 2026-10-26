@@ -4,6 +4,7 @@
 import { COSTS, type Score } from '@govhub/forum';
 import { formatCredits, formatSigned } from '../lib/format.ts';
 import { useAction } from './useAction.ts';
+import { WriteError } from './WriteError.tsx';
 
 export function costOfVote(value: 1 | -1, mine: Score['mine']): { credits: number; what: string } {
   if (!mine) return { credits: COSTS.reactionCreate, what: 'a first vote' };
@@ -19,7 +20,7 @@ const hint = (value: 1 | -1, s: Score, signedIn: boolean) => {
 
 /** `score` undefined: the reactions are not read yet, so the buttons wait (a vote now could not flip or clear an existing one). */
 export function Votes({ score: read, onVote, signedIn, label }: { score: Score | undefined; onVote(value: 1 | -1): Promise<void>; signedIn: boolean; label: string }) {
-  const { busy, error, run } = useAction();
+  const { busy, error, needsTopUp, run } = useAction();
   const pending = !read;
   const score = read ?? { up: 0, down: 0, net: 0 };
   const mine = score.mine?.value;
@@ -42,11 +43,7 @@ export function Votes({ score: read, onVote, signedIn, label }: { score: Score |
         <span className="visually-hidden">Down-vote ({hint(-1, score, signedIn)})</span>
       </button>
       {busy && <span className="spinner" aria-label="signing" />}
-      {error && (
-        <span className="error small" role="alert">
-          {error}
-        </span>
-      )}
+      <WriteError error={error} needsTopUp={needsTopUp} inline />
     </span>
   );
 }

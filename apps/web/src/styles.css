@@ -803,7 +803,20 @@ button.trust-m:hover {
 .drawer-body {
   padding: var(--s-4) var(--s-5) var(--s-6);
   display: grid;
+  /* not the implicit auto column: that takes the min-content of its widest child, so one long unbroken URL in the proposal data
+     stretched the whole drawer past the screen and pushed the close button off it */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--s-4);
+  min-inline-size: 0;
+}
+.drawer-body > * {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+.drawer-body pre,
+.drawer-body code,
+.drawer-body dd {
+  overflow-wrap: anywhere;
 }
 .drawer-head {
   display: flex;
@@ -2577,6 +2590,33 @@ li[data-status='now'] > .fund-dot {
 .comment-focus > article {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+/* The comment this reader just posted: a short highlight, so a form that empties reads as "posted", not "lost". */
+.comment-new > article {
+  animation: comment-landed 2.4s ease-out 1;
+}
+@keyframes comment-landed {
+  from {
+    background: var(--accent-soft, var(--sunk));
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  to {
+    background: transparent;
+    outline-color: transparent;
+  }
+}
+@keyframes comment-landed-still {
+  from,
+  to {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .comment-new > article {
+    animation: comment-landed-still 2.4s step-end 1; /* the same highlight without the fade, gone after the same time */
+  }
 }
 .comment-placeholder > p {
   padding: 0.25rem 0.5rem;

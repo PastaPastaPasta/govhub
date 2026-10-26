@@ -69,10 +69,17 @@ export interface FilterContext {
   owner: string | null;
   /** whether an author holds a current MN badge from a trusted issuer (always false before phase 4) */
   badged: (ownerId: string) => boolean;
+  /** the signed-in reader's identity: what they wrote always shows to them, so a comment they just paid for does not vanish */
+  viewer?: string | null;
 }
 
 export function passesFilter(c: Pick<Comment, 'ownerId'>, filter: CommentFilter, ctx: FilterContext): boolean {
-  return filter === 'all' || c.ownerId === ctx.owner || ctx.badged(c.ownerId);
+  return filter === 'all' || c.ownerId === ctx.owner || ctx.badged(c.ownerId) || (!!ctx.viewer && c.ownerId === ctx.viewer);
+}
+
+/** Whether the "recommended" view would hide this comment from readers other than its author (the author still sees it). */
+export function hiddenFromOthers(c: Pick<Comment, 'ownerId'>, filter: CommentFilter, ctx: Pick<FilterContext, 'owner' | 'badged'>): boolean {
+  return !passesFilter(c, filter, { owner: ctx.owner, badged: ctx.badged });
 }
 
 /** The view a reader starts with: "recommended" once badges are live, everyone until then. */

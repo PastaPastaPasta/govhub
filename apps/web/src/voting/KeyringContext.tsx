@@ -120,6 +120,8 @@ interface Ctx {
   error: string | null;
   /** the error is "not enough credits for a keyring write": offer a top-up */
   needsTopUp: boolean;
+  /** Clears the shown error (a stale "Top up" once the user chose memory-only instead of saving). */
+  dismissError(): void;
   /** fixture mode: a demo keyring with synthetic masternodes, pretend relays */
   demo: boolean;
   /** the session can open a Platform keyring (seed or passkey); a pasted key cannot */
@@ -644,6 +646,11 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       setBusy(null);
     }
   }, [sessionToken, report]);
+
+  const dismissError = useCallback(() => {
+    setError(null);
+    setNeedsTopUp(false);
+  }, []);
 
   /** Keyring writes are paid from the identity's credits: refused up front when the balance cannot cover one (D-024). */
   const canWrite = useCallback(
@@ -1642,6 +1649,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       status,
       error,
       needsTopUp,
+      dismissError,
       demo,
       canUsePlatform: !demo && !!session && (!!session.wallet || session.source === 'passkey'),
       memoryOnly,

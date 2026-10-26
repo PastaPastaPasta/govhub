@@ -69,6 +69,12 @@ export const perSuperblock = (params: Pick<GovParams, 'superblockCycle' | 'block
   return `per superblock (${c.startsWith('every') ? c : `~${c}`})`;
 };
 
+/** "monthly superblock" (mainnet), "hourly superblock" (testnet), or "superblock (every ~N days)": how a sentence names the payout event. */
+export const superblockPhrase = (params: Pick<GovParams, 'superblockCycle' | 'blockSeconds'>): string => {
+  const c = superblockCadence(params);
+  return c.startsWith('every') ? `superblock (${c})` : `${c} superblock`;
+};
+
 /** GOVERNANCE_FUDGE_WINDOW (signing.cpp:23). */
 export const FUDGE_WINDOW_S = 2 * 3600;
 

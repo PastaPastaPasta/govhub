@@ -7,6 +7,7 @@ import { seedFixtureForum } from '../data/fixtureForum.ts';
 import { loadFixtures } from '../data/fixtures.ts';
 import { errText } from '../lib/format.ts';
 import { endSession } from '../session/end.ts';
+import { assertCanAffordWrite, topUpFromError } from '../voting/funds.ts';
 import type { Session } from '../session/session.ts';
 import { useApp } from './context.tsx';
 import { failedText, loadLocalSubs, readModeration, saveLocalSubs, type Subscriptions } from './moderationLoad.ts';
@@ -29,7 +30,7 @@ interface ForumCtx {
   /** credits, null while unknown */
   balance: bigint | null;
   refreshBalance(): void;
-  /** Signs and broadcasts through the session, then refreshes the balance. Throws when signed out. */
+  /** Signs and broadcasts through the session, then refreshes the balance. Throws when signed out, and a `TopUpError` when the balance is too low. */
   write(op: DocumentOp): Promise<DocumentResult>;
   moderation: ModerationState;
   reloadModeration(): void;
@@ -68,6 +69,8 @@ export function ForumProvider({ children }: { children: ReactNode }) {
     setSessionState(next);
   }, []);
   const [balance, setBalance] = useState<bigint | null>(null);
+  const balanceRef = useRef<bigint | null>(null);
+  balanceRef.current = balance;
   const [modNonce, setModNonce] = useState(0);
   const [moderation, setModeration] = useState<ModerationState>({ index: EMPTY_HIDE_INDEX, lists: [], subs: loadLocalSubs(), loading: true, ready: false });
 
@@ -88,8 +91,18 @@ export function ForumProvider({ children }: { children: ReactNode }) {
       if (!session) throw new Error('sign in first');
       // Fixture mode shows sample data only: a real identity would sign real documents that never appear here.
       if (forum.store && 'auth' in session) throw new Error('Fixture mode shows sample data only. Switch to live data (Settings) and sign in again to post with your identity.');
+      // Platform wants more available than the fee (see `upfrontRequired`): say so before signing, and put its own refusal in plain
+      // words (the balance read can lag, so the refusal is still worded the same way).
+      try {
+        assertCanAffordWrite(balanceRef.current, op);
+      } catch (e) {
+        refreshBalance(); // the balance this was judged on may be stale (a top-up just landed)
+        throw e;
+      }
       try {
         return await session.signAndBroadcastDocument(op);
+      } catch (e) {
+        throw topUpFromError(e, 'forum');
       } finally {
         refreshBalance();
       }

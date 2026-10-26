@@ -11,7 +11,7 @@ const POINTS: Array<[string, string]> = [
   ],
   [
     'Votes can’t be forged, but they can be left out.',
-    'Every vote is signed by a masternode’s voting key and recounted in your browser. Only votes from masternodes in the masternode list your browser proved, signed with the voting key that list gives them, are counted; any other vote is shown as excluded, with the reason. A server can’t change a signed vote. But it can leave votes or whole proposals out, or show an older vote instead of a newer one, and nothing here detects that. Compare with another bridge or your own Dash Core node.',
+    'Every vote is signed by a masternode’s voting key and recounted in your browser. Only votes from masternodes in the masternode list your browser proved, signed with the voting key that list gives them, are counted; any other vote is left out of the count and flagged as excluded. The “How do we know?” drawer gives the reason for each kind and lists the first few such votes. A server can’t change a signed vote. But it can leave votes or whole proposals out, or show an older vote instead of a newer one, and nothing here detects that. Compare with another bridge or your own Dash Core node.',
   ],
   [
     'Your vote can be delayed, not changed.',

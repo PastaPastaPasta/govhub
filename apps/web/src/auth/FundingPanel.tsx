@@ -10,7 +10,7 @@ import { useAuth } from './context.tsx';
 import { useLeaveWarning } from './leaveWarning.ts';
 import { Qr } from './Qr.tsx';
 import { RecoverLink } from './RecoverLink.tsx';
-import { errorText, formatDuffs } from './runtime.ts';
+import { errorText, formatDuffs, plainErrorText } from './runtime.ts';
 
 export interface FundingPanelProps {
   kind: 'create' | 'topup';
@@ -99,7 +99,7 @@ export function FundingPanel(p: FundingPanelProps) {
     errorBox = <TooSmall error={error} offerTopUp={p.kind === 'create' && error.canTopUp} wallet={p.wallet} problem={recoverError} initialId={lastTarget} onTopUp={startRecovery} onPayAgain={payAgain} />;
   else if (error instanceof KeyConflictError && p.kind === 'create')
     errorBox = <TooSmall error={error} offerTopUp wallet={p.wallet} problem={recoverError} initialId={lastTarget} onTopUp={startRecovery} />;
-  else if (error) errorBox = <ErrorBox text={(recoverError ? `${recoverError} ` : '') + errorText(error)} retry={retry} onRecover={closeSheet} />;
+  else if (error) errorBox = <ErrorBox text={(recoverError ? `${recoverError} ` : '') + plainErrorText(error)} retry={retry} onRecover={closeSheet} />;
 
   if (fresh !== null) return <FundingPanel key={fresh} {...p} identityIndex={fresh} />;
   if (recovered) {

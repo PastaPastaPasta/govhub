@@ -421,11 +421,14 @@ function RunResult({ run, bridge, sml, proven, demo }: { run: VoteRun; bridge: s
       )}
       {r.examples.length > 0 && (
         <details>
-          <summary>Problem votes</summary>
-          <ul className="small mono-ish">
+          <summary data-testid="problem-votes-summary">
+            Excluded votes and why ({r.examples.length < r.excluded ? `the first ${formatInt(r.examples.length)} of ${formatInt(r.excluded)}` : formatInt(r.examples.length)})
+          </summary>
+          <ul className="small mono-ish" data-testid="problem-votes">
             {r.examples.map((x, i) => (
               <li key={i}>
-                {shortHash(x.outpoint, 8)}: {x.problem}, {x.detail}
+                {shortHash(x.outpoint, 8)}: {PROBLEM_TEXT[x.problem]}
+                {x.detail && x.detail !== PROBLEM_TEXT[x.problem] ? ` (${x.detail})` : ''}
               </li>
             ))}
           </ul>
