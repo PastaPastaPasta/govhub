@@ -18,6 +18,7 @@ import {
   emptyKeyring,
   hexToBytes,
   identifierBytes,
+  KeyringKind,
   KeyringLockedError,
   KEYS_CAPS,
   loadKeyring,
@@ -529,8 +530,21 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
     const key = passkey ?? (locked ? null : seed);
     if (stash && stash.key !== key) stash.key.wipe(); // a passkey stashed for another purpose: nothing takes it now (D-068)
     if (!key) {
-      setStatus('locked');
-      return;
+      // nothing here may open a saved keyring; whether there is one at all is public (the document exists), and with none the lock
+      // protects nothing: the page offers to start one instead of an unlock that cannot apply
+      setStatus('checking');
+      let stale = false;
+      // a later run of this effect, or a keyring opened meanwhile (the phrase typed), makes this answer moot
+      const settle = (s: KeyringStatus) => !stale && sessionToken() === t && !kr.current && setStatus(s);
+      void storeCtx()
+        .then((ctx) => ctx.store.get(identityId, KeyringKind.KEYS))
+        .then(
+          (doc) => settle(doc ? 'locked' : 'absent'),
+          () => settle('locked'),
+        );
+      return () => {
+        stale = true;
+      };
     }
     setStatus('checking');
     tryOpen(key, seed, t)
@@ -726,7 +740,9 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         const t = sessionToken();
         const epoch = lockEpoch.current;
         if (!identityId || !session) throw new Error('Sign in first.');
-        if (!memory && lockedFor(session)) throw new Error(LOCKED_SAVE);
+        const locked = !memory && lockedFor(session);
+        // the lock keeps a SAVED keyring from being opened with this session's seed (D-015): with none on Platform it protects nothing
+        if (locked && (await (await storeCtx()).store.get(identityId, KeyringKind.KEYS))) throw new Error(LOCKED_SAVE);
         const k = emptyKeyring(identityId, []);
         if (!memory) {
           const seed = seedUnlockKey(session);
@@ -738,8 +754,11 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
           auth.refreshBalance();
         }
         if (!opened(k, memory, t, epoch)) throw new SessionChangedError();
+        // this session's phrase made the first keyring and it is open here (no lock and no other session meanwhile: opened checked
+        // both): like a phrase sign-in, its seed may open it again here and in tabs that take the session over
+        if (locked) unlockedHere();
       }),
-    [run, identityId, session, storeCtx, opened, auth, canWrite, sessionToken, lockedFor],
+    [run, identityId, session, storeCtx, opened, auth, canWrite, sessionToken, lockedFor, unlockedHere],
   );
 
   /**
@@ -933,17 +952,22 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         const k = kr.current;
         if (!k || !session) throw new Error('Nothing to save.');
         if (demo) throw new Error('The demo keyring of fixture mode cannot be saved.');
-        // a locked saved keyring is opened by its phrase or a passkey, never by this session's seed behind the user's back (D-015)
-        if (lockedFor(session)) throw new Error(LOCKED_SAVE);
+        // a locked saved keyring is opened by its phrase or a passkey, never by this session's seed behind the user's back (D-015);
+        // with no saved keyring on Platform the lock protects nothing, and this saves the first one
         const seed = seedUnlockKey(session);
         if (!seed) throw new Error('Saving needs your recovery phrase in this session. A pasted key cannot open a saved keyring.');
-        // merge into an existing keyring rather than replacing it blindly
-        const ctx = await storeCtx();
+        const locked = lockedFor(session);
         try {
-          const existing = await loadKeyring(ctx, k.ownerId, seed, seed).catch((e) => {
-            if (e instanceof KeyringLockedError) throw new Error('You already have a saved keyring that your recovery phrase cannot open (its phrase unlocker was removed). Unlock it with a passkey and add these keys there.');
-            throw e;
-          });
+          const ctx = await storeCtx();
+          if (locked && (await ctx.store.get(k.ownerId, KeyringKind.KEYS))) throw new Error(LOCKED_SAVE);
+          // merge into an existing keyring rather than replacing it blindly. Locked: none was saved a moment ago, and the seed must not
+          // open one saved since (another device); saving then fails on the contract's one-keyring-per-identity index instead
+          const existing = locked
+            ? null
+            : await loadKeyring(ctx, k.ownerId, seed, seed).catch((e) => {
+                if (e instanceof KeyringLockedError) throw new Error('You already have a saved keyring that your recovery phrase cannot open (its phrase unlocker was removed). Unlock it with a passkey and add these keys there.');
+                throw e;
+              });
           // locked (here or in another tab) while it loaded: the memory-only keys are gone, and the seed must not open the saved keyring
           if (lockEpoch.current !== epoch) {
             existing?.close();
@@ -973,13 +997,14 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
             setMemoryOnly(false);
             keepVotesSealedTo(k);
             touch();
+            if (locked) unlockedHere(); // the first saved keyring, made with this session's phrase (see createKeyring)
           }
         } finally {
           seed.wipe();
         }
         auth.refreshBalance();
       }),
-    [run, session, storeCtx, opened, auth, registry.platformNetwork, demo, canWrite, sessionToken, keepVotesSealedTo, lockedFor],
+    [run, session, storeCtx, opened, auth, registry.platformNetwork, demo, canWrite, sessionToken, keepVotesSealedTo, lockedFor, unlockedHere],
   );
 
   // ---- masternodes for the keys: ONE lookup, read by this page and every vote panel ----

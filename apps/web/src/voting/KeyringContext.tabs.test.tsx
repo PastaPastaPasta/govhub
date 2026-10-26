@@ -31,6 +31,10 @@ const h = vi.hoisted(() => ({
   gate: null as Promise<void> | null,
   /** no saved keyring on Platform */
   absent: false,
+  /** keyrings saved (saveKeys calls) */
+  saved: 0,
+  /** set: the next save waits for it */
+  saveGate: null as Promise<void> | null,
 }));
 vi.mock('../app/context.tsx', async () => {
   // a testnet-Platform profile: the keyring below is derived for testnet
@@ -43,7 +47,8 @@ vi.mock('./../auth/runtime.ts', async (orig) => ({ ...(await orig<object>()), ge
 vi.mock('../data/platform.ts', async (orig) => ({ ...(await orig<object>()), getSdk: async () => ({}) }));
 vi.mock('../data/dapi.ts', async (orig) => ({ ...(await orig<object>()), createWebDapi: () => ({}) }));
 vi.mock('@dashevo/evo-sdk', () => ({}));
-vi.mock('@govhub/auth/keyring-evo', () => ({ createEvoKeyringStore: () => ({}) }));
+// the saved keyring's document: present unless `absent` (its contents are never read here: loadKeyring below is the fake)
+vi.mock('@govhub/auth/keyring-evo', () => ({ createEvoKeyringStore: () => ({ get: async () => (h.absent ? null : { ownerId: 'x' }) }) }));
 // the saved keyring on "Platform": opens for PHRASE's seed unlocker only (the session's seed or the phrase typed), with one voting key
 vi.mock('@govhub/auth', async (orig) => {
   const real = await orig<typeof import('@govhub/auth')>();
@@ -59,6 +64,11 @@ vi.mock('@govhub/auth', async (orig) => {
       k.content.keys.push({ privateKey: fixtureMnKey(1).slice(), compressed: true, label: 'mn' });
       h.rings.push(k);
       return { ...k, authenticated: true } as OpenedKeyring;
+    },
+    saveKeys: async () => {
+      if (h.saveGate) await h.saveGate;
+      h.saved++;
+      h.absent = false;
     },
   };
 });
@@ -136,6 +146,8 @@ const tabs: Tab[] = [];
 afterEach(async () => {
   h.gate = null;
   h.absent = false;
+  h.saved = 0;
+  h.saveGate = null;
   for (const t of tabs.splice(0)) await t.close();
   vi.restoreAllMocks();
 });
@@ -307,9 +319,12 @@ describe('the keyring lock covers every tab of the session (D-015)', () => {
     await act(async () => a.kr.lock());
     await act(async () => a.kr.unlockWithPhrase('legal winner thank year wave sausage worth useful legal winner thank yellow'));
     await settle();
-    expect((await openTab()).kr.status).toBe('locked'); // still locked: a new tab does not even look
+    expect(a.auth.keyringLock.locked(SEED_ID)).toBe(true); // a wrong phrase lifts nothing
+    // still locked: a new tab does not open anything with the seed; it only sees that no keyring is saved (nothing to protect)
+    expect((await openTab()).kr.status).toBe('absent');
     await act(async () => a.kr.unlockWithPhrase(PHRASE));
     await settle();
+    expect(a.auth.keyringLock.locked(SEED_ID)).toBe(false);
     expect((await openTab()).kr.status).toBe('absent'); // unlocked: a new tab looks with the seed (and finds none)
   });
 
@@ -335,5 +350,86 @@ describe('the keyring lock covers every tab of the session (D-015)', () => {
     const b = await openTab();
     expect(b.auth.session?.source).toBe('passkey');
     expect(b.kr.status).toBe('locked');
+  });
+
+  it('a passkey sign-in with no saved keyring: the first keyring can be saved, and that unlocks the session (owner report)', async () => {
+    h.absent = true;
+    const a = await openTab();
+    await act(async () => passkeySignIn(a, GOOD_PRF));
+    await settle();
+    expect(a.kr.status).toBe('absent');
+    expect(a.auth.keyringLock.locked(SEED_ID)).toBe(true); // a passkey sign-in alone unlocks nothing
+    await act(async () => a.kr.createKeyring(false));
+    await settle();
+    expect(a.kr.error).toBeNull();
+    expect(h.saved).toBe(1);
+    expect(a.kr.status).toBe('open');
+    expect(a.auth.keyringLock.locked(SEED_ID)).toBe(false);
+  });
+
+  it('a locked session with a keyring saved on Platform still may not save over it with the seed', async () => {
+    const a = await openTab();
+    await act(async () => a.auth.signIn(seedSession()));
+    await settle();
+    await act(async () => a.kr.lock());
+    await settle();
+    await act(async () => a.kr.createKeyring(false).catch(() => {}));
+    await settle();
+    expect(a.kr.error).toMatch(/Your saved keyring is locked/);
+    expect(h.saved).toBe(0);
+  });
+
+  it('the page\'s own path (memory-only keys, then Save on Platform) after a passkey sign-in with no saved keyring: saved and unlocked', async () => {
+    h.absent = true;
+    const a = await openTab();
+    await act(async () => passkeySignIn(a, GOOD_PRF));
+    await settle();
+    await act(async () => a.kr.createKeyring(true));
+    await act(async () => a.kr.saveToPlatform());
+    await settle();
+    expect(a.kr.error).toBeNull();
+    expect(h.saved).toBe(1);
+    expect(a.kr.memoryOnly).toBe(false);
+    expect(a.auth.keyringLock.locked(SEED_ID)).toBe(false);
+  });
+
+  it('locked with a keyring saved on Platform: memory-only keys cannot be saved with the seed, and nothing is opened to try', async () => {
+    const a = await openTab();
+    await act(async () => a.auth.signIn(seedSession()));
+    await settle();
+    await act(async () => a.kr.lock());
+    await settle();
+    const loads = h.loads;
+    await act(async () => a.kr.createKeyring(true));
+    await act(async () => a.kr.saveToPlatform().catch(() => {}));
+    await settle();
+    expect(a.kr.error).toMatch(/Your saved keyring is locked/);
+    expect(h.saved).toBe(0);
+    expect(h.loads).toBe(loads);
+  });
+
+  it('a lock in another tab while the first keyring is being saved: the session stays locked', async () => {
+    h.absent = true;
+    const a = await openTab();
+    await act(async () => passkeySignIn(a, GOOD_PRF));
+    await settle();
+    const b = await openTab();
+    let release!: () => void;
+    h.saveGate = new Promise((r) => (release = r));
+    let saving!: Promise<void>;
+    await act(async () => {
+      saving = a.kr.createKeyring(false).catch(() => {});
+    });
+    await settle();
+    await act(async () => b.kr.lock());
+    await settle();
+    await act(async () => {
+      release();
+      await saving;
+    });
+    await settle();
+    expect(a.auth.keyringLock.locked(SEED_ID)).toBe(true);
+    expect(b.auth.keyringLock.locked(SEED_ID)).toBe(true);
+    expect((await openTab()).kr.status).toBe('locked'); // saved by now, so a new tab sees a locked saved keyring
   });
 });
