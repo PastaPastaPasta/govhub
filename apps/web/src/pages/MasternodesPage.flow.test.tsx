@@ -209,14 +209,35 @@ describe('Add your masternodes: one flow with the MN badge', () => {
     expect([...el.querySelectorAll('input')].some((i) => i.value.includes(WIF))).toBe(false);
     expect(el.innerHTML).not.toContain(WIF);
 
-    expect(q(el, 'flow-done')?.textContent).toContain('key saved encrypted on Platform');
-    expect(q(el, 'mnb-pending')?.dataset.state).toBe('requesting');
-    // the scheduler posts it: the success card, with the chip as readers see it
+    expect(q(el, 'flow-done')?.textContent).toContain('1 masternode added. Your voting key is saved encrypted on Platform.');
+    // the badge's status is in the badge card only, not repeated in the banner
+    expect(q(el, 'flow-done')?.textContent).not.toContain('badge');
+    expect(q(el, 'mnb-row')?.querySelector('[data-testid="mnb-pending"]')?.getAttribute('data-state')).toBe('requesting');
+    expect(el.querySelectorAll('[data-testid="mnb-pending"]')).toHaveLength(1);
+    // the scheduler posts it: the badge card shows the success card, with the chip as readers see it
     await setJob({ state: 'posted' });
     expect(q(el, 'mnb-success')?.textContent).toContain('Your MN badge is live');
     expect(q(el, 'mnb-success')?.textContent).toContain('MN · vouched by govhub');
-    // the keyring card under it says so too
     expect(q(el, 'mnb-summary')?.textContent).toBe('shown');
+    // Dismiss closes the banner; the badge card stays, without the success card
+    await click(q(el, 'flow-close')!);
+    expect(q(el, 'flow-done')).toBeNull();
+    expect(q(el, 'mnb-success')).toBeNull();
+    expect(q(el, 'mnb-immutable')).not.toBeNull();
+  });
+
+  it('locking while the "added" banner shows goes to Unlock, not into a new add flow', async () => {
+    keyringFake();
+    badgeFake();
+    const el = await start();
+    await pasteAndFind(el);
+    await click(q(el, 'flow-confirm')!);
+    await flush();
+    expect(q(el, 'flow-done')).not.toBeNull();
+    await act(async () => h.kr.set({ status: 'locked' })); // Lock now, or the idle lock
+    expect(q(el, 'unlock-memory-only')).not.toBeNull();
+    expect(q(el, 'add-flow')).toBeNull();
+    expect(q(el, 'flow-done')).toBeNull();
   });
 
   it('a save that merges into an existing saved keyring (closing the memory one) still requests the badge with the key taken before', async () => {
@@ -249,7 +270,7 @@ describe('Add your masternodes: one flow with the MN badge', () => {
     await click(q(el, 'flow-confirm')!);
     await flush();
     expect(bd.request).toHaveLength(0);
-    expect(q(el, 'flow-badge-off')?.textContent).toContain('MN badge: off');
+    expect(q(el, 'flow-done')?.textContent).not.toContain('badge'); // its status is in the badge card only
     expect(q(el, 'mnb-summary')?.textContent).toBe('not shown');
   });
 
@@ -278,7 +299,7 @@ describe('Add your masternodes: one flow with the MN badge', () => {
     await click(q(el, 'flow-confirm')!);
     await flush();
     expect(kr.save).toBe(1); // not tried again
-    expect(q(el, 'flow-done')?.textContent).toContain('key in memory only');
+    expect(q(el, 'flow-done')?.textContent).toContain('Your voting key is in memory only');
     expect(q(el, 'keyring-error')).toBeNull();
   });
 
@@ -304,7 +325,7 @@ describe('Add your masternodes: one flow with the MN badge', () => {
     await flush();
     expect(kr.save).toBe(0);
     expect(bd.request).toHaveLength(1);
-    expect(q(el, 'flow-done')?.textContent).toContain('key in memory only');
+    expect(q(el, 'flow-done')?.textContent).toContain('Your voting key is in memory only');
     expect(q(el, 'flow-done')?.textContent).toContain('except the badge request’s own copy');
     expect(q(el, 'keyring-status')?.textContent).toContain('nothing is saved but the pending badge request’s key copy');
   });
@@ -386,7 +407,8 @@ describe('Add your masternodes: one flow with the MN badge', () => {
     await click(q(el, 'flow-confirm')!);
     await flush();
     expect(bd.request).toHaveLength(0);
-    expect(q(el, 'mnb-shown')?.textContent).toContain('already showing');
+    expect(q(el, 'mnb-summary')?.textContent).toBe('shown');
+    expect(q(el, 'mnb-immutable')?.textContent).toContain('can’t be removed or switched off');
   });
 
   it('"Use a different key" removes the key and goes back to the paste step', async () => {
@@ -484,6 +506,19 @@ describe('the keyring card: MN badge row for existing keyrings', () => {
     expect(q(el, 'mnb-summary')?.textContent).toBe('pending (being issued)');
     await click(q(el, 'mnb-row-toggle')!);
     expect(bd.remove).toEqual(['j1']);
+  });
+
+  it('"Add a voting key" is a button that opens the form, and Cancel closes it', async () => {
+    openKeyring();
+    badgeFake();
+    const el = await start();
+    expect(q(el, 'voting-key-input')).toBeNull();
+    await click(q(el, 'addkey-open')!);
+    expect(q(el, 'voting-key-input')?.getAttribute('aria-describedby')).toBe('addkey-warn');
+    expect(document.activeElement).toBe(q(el, 'voting-key-input'));
+    await click(q(el, 'addkey-close')!);
+    expect(q(el, 'voting-key-input')).toBeNull();
+    expect(q(el, 'addkey-open')).not.toBeNull();
   });
 
   it('shown: the switch is on and cannot remove it; says badges are permanent', async () => {

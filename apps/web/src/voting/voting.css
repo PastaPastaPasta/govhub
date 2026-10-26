@@ -14,8 +14,6 @@
   align-items: flex-end;
   justify-content: space-between;
   gap: 0.75rem 1.5rem;
-  padding-block-end: 1rem;
-  border-block-end: 1px solid var(--line);
 }
 .kr-head-text {
   display: grid;
@@ -58,6 +56,7 @@
   color: var(--ink);
 }
 
+/* a main column (masternodes, votes) and a quieter side column (badge, keyring settings); one column on a phone */
 .kr-grid {
   display: grid;
   gap: 1.25rem;
@@ -71,11 +70,8 @@
 }
 @media (min-width: 960px) {
   .kr-grid {
-    grid-template-columns: minmax(0, 1fr) 20rem;
-  }
-  .kr-side {
-    position: sticky;
-    inset-block-start: 1rem;
+    grid-template-columns: minmax(0, 1fr) 21rem;
+    gap: 1.5rem;
   }
 }
 
@@ -88,25 +84,68 @@
   gap: 0.875rem;
   min-inline-size: 0;
 }
+.kr-grid .kr-card h2,
+.kr-card-head h2 {
+  font-size: 1.0625rem;
+  margin: 0;
+}
 .kr-card-head {
   display: flex;
-  align-items: baseline;
-  gap: 0.75rem;
+  align-items: center;
+  gap: 0.5rem 0.625rem;
+  flex-wrap: wrap;
+  min-block-size: 2rem;
+}
+.kr-card-actions {
+  margin-inline-start: auto;
+  display: inline-flex;
+  gap: 0.375rem;
   flex-wrap: wrap;
 }
-.kr-refresh {
-  margin-inline-start: auto;
+.kr-count {
+  font-size: var(--t-xs);
+  font-weight: 650;
+  color: var(--ink-2);
+  background: var(--sunk);
+  border-radius: 999px;
+  padding: 0.0625rem 0.5rem;
+  font-feature-settings: 'tnum' 1;
 }
 .kr-gate {
   max-inline-size: 40rem;
   justify-items: start;
 }
 .kr-side .kr-card {
-  background: color-mix(in srgb, var(--surface) 60%, var(--paper));
+  background: color-mix(in srgb, var(--surface) 55%, var(--paper));
 }
-.kr-side h2,
-.kr-card-head h2 {
-  font-size: 1.0625rem;
+
+/* after "Add your masternodes": one slim line across the page, with a real dismiss */
+.kr-done {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.75rem;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid color-mix(in srgb, var(--pass-fill) 40%, var(--line));
+  border-radius: var(--radius-m);
+  background: color-mix(in srgb, var(--pass-fill) 8%, var(--surface));
+}
+.kr-done-mark {
+  color: var(--pass-fill);
+  margin-block-start: 0.0625rem;
+}
+.kr-done-text {
+  display: grid;
+  gap: 0.25rem;
+}
+.kr-done-text p {
+  margin: 0;
+}
+.kr-done-note {
+  color: var(--warn);
+}
+.kr-done-close {
+  margin-block: -0.125rem;
 }
 
 /* ---- forms ---------------------------------------------------------------------------------- */
@@ -180,72 +219,102 @@
   font-weight: 400;
 }
 
-/* ---- masternodes, grouped by voting key ------------------------------------------------------ */
-.kr-keys {
-  display: grid;
-  gap: 1.125rem;
-}
-.kr-key {
+/* "Add a voting key", opened inside the masternodes card */
+.kr-addkey {
   display: grid;
   gap: 0.625rem;
+  margin: 0 1.125rem 0.875rem;
+  padding: 0.875rem 1rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--paper);
 }
-.kr-key + .kr-key {
-  padding-block-start: 1.125rem;
-  border-block-start: 1px solid var(--line);
+.kr-addkey h3 {
+  font-size: 0.9375rem;
+  margin: 0;
+}
+.kr-fields {
+  display: grid;
+  gap: 0.625rem;
+  inline-size: 100%;
+}
+@media (min-width: 640px) {
+  .kr-fields {
+    grid-template-columns: minmax(0, 1fr) 12rem;
+    align-items: end;
+  }
+}
+
+/* ---- masternodes: one card, grouped by voting key, a row per masternode ------------------------ */
+.kr-mns {
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+}
+.kr-mns > .kr-card-head {
+  padding: 0.875rem 1.125rem;
+}
+.kr-mns > :not(.kr-card-head, .kr-keys, .kr-addkey) {
+  margin: 0 1.125rem 0.875rem;
 }
 .kr-key-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.375rem 0.875rem;
-}
-.kr-key-id {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.25rem 0.625rem;
+  gap: 0.25rem 0.75rem;
+  min-block-size: 2.5rem;
+  padding: 0.375rem 0.75rem 0.375rem 1.125rem;
+  border-block-start: 1px solid var(--line);
+  background: color-mix(in srgb, var(--sunk) 70%, var(--surface));
+  font-size: var(--t-s);
+  color: var(--ink-2);
 }
 .kr-key-name {
-  font-weight: 650;
+  font-weight: 620;
+  color: var(--ink);
 }
 .kr-key-addr {
   display: inline-flex;
   align-items: center;
   gap: 0.125rem;
-  color: var(--ink-2);
-  font-size: 0.875rem;
 }
 .kr-key-remove {
   margin-inline-start: auto;
   display: inline-flex;
   gap: 0.25rem;
 }
+.kr-key-empty {
+  margin: 0;
+  padding: 0.75rem 1.125rem;
+  border-block-start: 1px solid var(--line);
+}
 .kr-mn-list {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: grid;
-  gap: 0.625rem;
-  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
 }
 .kr-mn {
-  background: var(--paper);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-m);
-  padding: 0.625rem 0.75rem 0.75rem;
   display: grid;
-  gap: 0.5rem;
+  gap: 0.375rem;
+  padding: 0.75rem 1.125rem 0.8125rem;
+  border-block-start: 1px solid var(--line);
   min-inline-size: 0;
 }
 .kr-mn-top {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  gap: 0.375rem 0.75rem;
+}
+.kr-mn-tags {
+  display: inline-flex;
+  flex-wrap: wrap;
   gap: 0.375rem;
+  margin-inline-start: auto;
 }
 .kr-label-input {
   font: inherit;
-  font-weight: 650;
+  font-weight: 620;
   font-size: 1rem;
   color: var(--ink);
   background: transparent;
@@ -254,13 +323,13 @@
   padding: 0.125rem 0.3125rem;
   margin-inline-start: -0.3125rem;
   inline-size: 0;
-  flex: 1 1 8rem;
+  flex: 1 1 10rem;
   min-inline-size: 8rem;
+  max-inline-size: 20rem;
 }
 .kr-label-input::placeholder {
   color: var(--ink-3);
   font-weight: 450;
-  font-size: 0.9375rem;
 }
 .kr-label-input:hover:not(:disabled) {
   border-color: var(--line-strong);
@@ -268,39 +337,58 @@
 .kr-label-input:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 0;
-  background: var(--surface);
-}
-.kr-type {
-  color: var(--ink-2);
-}
-.kr-mn-top .chip-bad {
-  margin: 0;
+  background: var(--paper);
 }
 .kr-mn-facts {
-  margin: 0;
-  display: grid;
-  gap: 0.25rem;
-  font-size: 0.875rem;
-}
-.kr-mn-facts > div {
-  display: grid;
-  grid-template-columns: 5.5rem minmax(0, 1fr);
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
-}
-.kr-mn-facts dt {
+  gap: 0.25rem 1.25rem;
   color: var(--ink-2);
 }
-.kr-mn-facts dd {
-  margin: 0;
+.kr-fact {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
   min-inline-size: 0;
 }
-.kr-mn-proof {
+.kr-fact-k {
   color: var(--ink-3);
 }
+.kr-fact .vhash {
+  color: var(--ink);
+}
+.kr-fact-none {
+  color: var(--ink-3);
+  font-style: italic;
+}
+.kr-proof {
+  font: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  margin-inline-start: auto;
+  padding: 0.125rem 0.375rem;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+.kr-proof:hover,
+.kr-proof[aria-expanded='true'] {
+  color: var(--ink);
+  background: var(--sunk);
+}
+.kr-mn-proof {
+  margin: 0;
+  color: var(--ink-2);
+  justify-self: end;
+  text-align: end;
+}
 .kr-skel {
-  min-block-size: 7.5rem;
-  background: linear-gradient(90deg, var(--paper), var(--sunk), var(--paper));
+  min-block-size: 4.25rem;
+  background: linear-gradient(90deg, var(--surface), var(--sunk), var(--surface));
   background-size: 200% 100%;
   animation: kr-shimmer 1.4s ease-in-out infinite;
 }
@@ -309,13 +397,94 @@
     background-position: -200% 0;
   }
 }
+.kr-mns-empty {
+  padding-block-end: 0.25rem;
+}
+@media (max-width: 559px) {
+  .kr-card-actions {
+    flex-basis: 100%;
+    margin-inline-start: -0.625rem;
+  }
+  .kr-mn-tags {
+    margin-inline-start: 0;
+    order: 2;
+    flex-basis: 100%;
+  }
+  .kr-proof {
+    margin-inline-start: -0.375rem;
+  }
+  .kr-mn-proof {
+    justify-self: start;
+    text-align: start;
+  }
+}
 
-/* ---- unlock methods --------------------------------------------------------------------------- */
+/* ---- the side column's folds: keyring settings, what others can see ---------------------------- */
+.kr-folds {
+  padding: 0;
+  gap: 0;
+}
+.kr-fold + .kr-fold {
+  border-block-start: 1px solid var(--line);
+}
+.kr-fold > summary {
+  display: grid;
+  gap: 0.125rem;
+  padding: 0.8125rem 1.125rem 0.8125rem 2.125rem;
+  list-style: none;
+  position: relative;
+}
+.kr-fold > summary::-webkit-details-marker {
+  display: none;
+}
+.kr-fold > summary::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 1.125rem;
+  inset-block-start: 1.1875rem;
+  border: 5px solid transparent;
+  border-inline-start: 6px solid var(--ink-2);
+  transition: transform 0.15s ease;
+  transform-origin: 3px 5px;
+}
+.kr-fold[open] > summary::before {
+  transform: rotate(90deg);
+}
+.kr-fold > summary:hover .kr-fold-title {
+  color: var(--accent-ink);
+}
+.kr-fold-title {
+  font-weight: 620;
+}
+.kr-fold-body {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0 1.125rem 1.125rem;
+  justify-items: start;
+}
+.kr-fold-sub {
+  font-size: var(--t-s);
+  font-weight: 620;
+  color: var(--ink-2);
+  margin: 0.25rem 0 -0.25rem;
+}
+.kr-passkey {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  align-items: center;
+}
+.kr-passkey > p,
+.kr-passkey > .notice-box {
+  flex-basis: 100%;
+  margin: 0;
+}
 .kr-unlocks {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
+  inline-size: 100%;
 }
 .kr-unlock {
   display: grid;
@@ -324,9 +493,6 @@
   gap: 0 0.5rem;
   padding-block: 0.5rem;
   border-block-end: 1px solid var(--line);
-}
-.kr-unlock:first-child {
-  padding-block-start: 0;
 }
 .kr-unlock-name {
   font-weight: 580;
@@ -342,9 +508,6 @@
   grid-row: 1 / span 2;
   grid-column: 2;
 }
-.kr-now {
-  color: var(--accent-ink);
-}
 .kr-card > .btn {
   justify-self: start;
 }
@@ -353,6 +516,7 @@
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.75rem;
+  inline-size: 100%;
   font-size: 0.875rem;
   color: var(--ink-2);
   padding-block-start: 0.75rem;
@@ -361,20 +525,21 @@
 .kr-setting select {
   inline-size: auto;
 }
-.kr-privacy summary {
-  margin: 0;
-  font-weight: 600;
-}
 .kr-privacy ul {
   margin: 0;
-  padding-inline-start: 1.125rem;
-  display: grid;
+  padding-inline-start: 2.25rem;
   gap: 0.375rem;
   color: var(--ink-2);
+  justify-items: stretch;
+}
+.kr-side-card p {
+  margin: 0;
 }
 
 /* ---- small shared pieces --------------------------------------------------------------------- */
 .vdot {
+  display: inline-block;
+  vertical-align: 0.0625em;
   inline-size: 0.5rem;
   block-size: 0.5rem;
   border-radius: 50%;
@@ -1209,24 +1374,30 @@
 
 /* ---- votes list ---------------------------------------------------------------------------------- */
 .vrelays {
-  display: grid;
-  gap: 0.375rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.75rem;
+  color: var(--ink-2);
+}
+.vrelays-k {
+  color: var(--ink-3);
 }
 .vrelays ul {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: grid;
-  gap: 0.25rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
 }
 .vrelays li {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.25rem 0.5rem;
-  font-size: 0.875rem;
+  gap: 0.25rem 0.375rem;
 }
-.vrelays p {
+.vrelays-wait {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -1285,7 +1456,23 @@
   margin-block-start: 0.25rem;
 }
 .vfoot {
-  color: var(--ink-3);
+  display: grid;
+  gap: 0.5rem;
+  padding-block-start: 0.75rem;
+  border-block-start: 1px solid var(--line);
+}
+.vdeliver > summary {
+  color: var(--ink-2);
+  font-weight: 560;
+  inline-size: fit-content;
+}
+.vdeliver > summary:hover {
+  color: var(--accent-ink);
+}
+.vdeliver p {
+  margin: 0.375rem 0 0;
+  color: var(--ink-2);
+  max-inline-size: var(--measure);
 }
 
 @media (prefers-reduced-motion: reduce) {

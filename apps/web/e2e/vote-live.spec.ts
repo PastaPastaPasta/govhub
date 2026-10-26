@@ -65,7 +65,7 @@ test('@live-vote keyring: add a masternode, vote now until the network has it, h
     await create.click();
     await expect(status).toContainText('Unlocked', { timeout: 180_000 });
   }
-  await expect(status).toContainText('opens with your recovery phrase');
+  await expect(page.getByTestId('keyring-settings').locator('summary')).toContainText('Opens with your recovery phrase');
 
   // ---- 2. add the GOVHUB_VOTE_MN key: exactly its masternode ----
   console.log('step 2: add the voting key');
@@ -76,6 +76,7 @@ test('@live-vote keyring: add a masternode, vote now until the network has it, h
     await expect(group).toHaveCount(0, { timeout: 180_000 });
   }
   const t2 = Date.now();
+  await page.getByTestId('addkey-open').click();
   await page.getByTestId('voting-key-input').fill(key!.wif);
   await page.getByTestId('voting-key-label').fill(MN);
   await page.getByTestId('voting-key-add').click();
@@ -87,9 +88,9 @@ test('@live-vote keyring: add a masternode, vote now until the network has it, h
   await expect(card).toHaveCount(1);
   await expect(card).toHaveAttribute('data-protx', EXPECT.proTxHash);
   await expect(card).toContainText('Regular');
-  await expect(card).toContainText('Valid');
+  await expect(card).toContainText('Can vote');
   await expect(card.locator(`[title="${EXPECT.payout}"]`)).toHaveCount(1);
-  results.found = { proTxHash: EXPECT.proTxHash, type: 'regular', valid: true, payout: EXPECT.payout, proof: (await card.locator('.kr-mn-proof').innerText()).trim() };
+  results.found = { proTxHash: EXPECT.proTxHash, type: 'regular', valid: true, payout: EXPECT.payout, proof: ((await card.locator('.kr-mn-proof').textContent()) ?? '').trim() };
   await expect(page.getByTestId('mn-error')).toHaveCount(0);
   results.relayHealth = await page.getByTestId('relay-row').allInnerTexts();
 

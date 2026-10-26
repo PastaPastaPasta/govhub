@@ -72,7 +72,7 @@ describe('MasternodesPage with a wiped keyring', () => {
     const ctx = ctxFor(ring, 'mainnet');
     hold.ctx = ctx;
     const r = await render(page());
-    const mainnet = [...r.el.querySelectorAll('.visually-hidden')].map((e) => e.textContent);
+    const mainnet = [...r.el.querySelectorAll('.kr-key-addr .visually-hidden')].map((e) => e.textContent);
     expect(mainnet).toHaveLength(2);
 
     ring.close(); // the keys are zero now, synchronously; the old keyring object is still what the next render gets
@@ -81,7 +81,7 @@ describe('MasternodesPage with a wiped keyring', () => {
     hold.ctx = { ...ctx, coreNetwork: 'testnet' };
     await r.rerender(page());
 
-    const testnet = [...r.el.querySelectorAll('.visually-hidden')].map((e) => e.textContent);
+    const testnet = [...r.el.querySelectorAll('.kr-key-addr .visually-hidden')].map((e) => e.textContent);
     expect(testnet).toEqual(ctx.keyInfos.map((i) => votingAddressOfInfo(i, 'testnet')));
     expect(testnet).not.toEqual(mainnet);
     await r.unmount();

@@ -9,13 +9,29 @@ import { cancelAction, describeVote, leadRelay } from '../../voting/status.ts';
 import { Badge, fmtTime, mnName, OutcomeChip, useLabels, useNow } from './common.tsx';
 import { VoteSuccess } from './VoteSuccess.tsx';
 
-/** Relay reachability, with Retry now when votes wait for one. */
-function RelayStrip() {
+/** Votes waiting for a relay, with Retry now; or no relay at all. Shown above the votes: it needs doing. */
+function RelayAlert() {
   const k = useKeyring();
   const waiting = k.watched.filter((w) => w.status === 'queued' && !w.restored && !w.cancelSig).length;
   if (!k.relays.length) return <p className="vwarn small">No relay is configured, so votes cannot be sent. Add one in Settings.</p>;
+  if (!waiting) return null;
   return (
-    <div className="vrelays" data-testid="relay-strip">
+    <p className="vwarn small vrelays-wait">
+      {waiting} vote{waiting === 1 ? '' : 's'} waiting in this browser for a relay.{' '}
+      <button type="button" className="btn btn-s btn-primary" onClick={k.retryNow} data-testid="relays-retry">
+        Retry now
+      </button>
+    </p>
+  );
+}
+
+/** Relay reachability, small, under the votes. */
+function RelayStrip() {
+  const k = useKeyring();
+  if (!k.relays.length) return null;
+  return (
+    <div className="vrelays small" data-testid="relay-strip">
+      <span className="vrelays-k">{k.relays.length === 1 ? 'Relay' : 'Relays'}</span>
       <ul>
         {k.relays.map((r) => {
           const h = k.relayHealth[r];
@@ -24,21 +40,11 @@ function RelayStrip() {
             <li key={r} className={h ? (h.ok ? 'up' : 'down') : 'unknown'} data-testid="relay-row">
               <span className="vdot" aria-hidden="true" />
               <span className="mono-ish">{relayHost(r)}</span>
-              <span className="small muted">
-                {!h ? 'checking…' : h.ok ? `reachable${held ? `, holds ${held} of your votes` : ''}` : `unreachable: ${h.error ?? 'no answer'}`}
-              </span>
+              <span className="muted">{!h ? 'checking…' : h.ok ? `reachable${held ? `, holds ${held} of your votes` : ''}` : `unreachable: ${h.error ?? 'no answer'}`}</span>
             </li>
           );
         })}
       </ul>
-      {waiting > 0 && (
-        <p className="small">
-          {waiting} vote{waiting === 1 ? '' : 's'} waiting in this browser for a relay.{' '}
-          <button type="button" className="btn btn-s btn-primary" onClick={k.retryNow} data-testid="relays-retry">
-            Retry now
-          </button>
-        </p>
-      )}
     </div>
   );
 }
@@ -99,13 +105,13 @@ export function VotesList({ title = 'Votes', showWins = true }: { title?: string
         <h2 id="votes-title">{title}</h2>
         {k.watched.length > 0 && <span className="small muted">{k.watched.filter(isOpen).length} on the way</span>}
       </header>
-      <RelayStrip />
+      <RelayAlert />
       {wins.map((w) => (
         <VoteSuccess key={w.voteHash} vote={w} name={mnName(w, labels)} proposalName={names.get(w.govHash) ?? shortHash(w.govHash, 6)} />
       ))}
       {!k.watched.length ? (
         <p className="vempty-line muted" data-testid="votes-empty">
-          No votes yet. Votes you sign show up here, with where each one is, until the network counts it.
+          No votes yet. Each vote you sign shows up here until the network counts it.
         </p>
       ) : (
         <div className="vgroups" data-testid="watched">
@@ -123,7 +129,16 @@ export function VotesList({ title = 'Votes', showWins = true }: { title?: string
           ))}
         </div>
       )}
-      <p className="small muted vfoot">Each vote stays in this browser until the bridge reports the network counted it. If a relay doesn't deliver it, it is sent again, through another relay when you have more than one. Cancelling a held vote relies on the relay; to be sure you change your mind, cast the new vote too: the later vote wins.</p>
+      <footer className="vfoot">
+        <RelayStrip />
+        <details className="vdeliver small">
+          <summary>How votes are delivered</summary>
+          <p>
+            Each vote stays in this browser until the bridge reports the network counted it. If a relay doesn't deliver it, it is sent again, through another relay when you have more than one. Cancelling a held vote relies on the relay; to be sure you
+            change your mind, cast the new vote too: the later vote wins.
+          </p>
+        </details>
+      </footer>
     </section>
   );
 }
