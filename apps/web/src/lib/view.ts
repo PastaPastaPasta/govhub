@@ -1,6 +1,7 @@
 // View model: joins a proposal with its tallies and the cycle into what a card / page shows.
 import type { Cycle, Proposal, Provenance, ProvenanceKind, Sourced, Tally } from '../data/types.ts';
 import { contentFailure, isFailed, type CheckState } from '../verify/checks.ts';
+import { isLameDuck, remainingWithSlack } from './lameDuck.ts';
 import { absoluteYes, compareRank, fundingThreshold, passState, paymentSchedule, type GovParams, type PassState, type PaymentSchedule } from './governance.ts';
 
 export interface Row {
@@ -13,6 +14,8 @@ export interface Row {
   threshold: Sourced<number> | null;
   state: PassState | null;
   schedule: PaymentSchedule | null;
+  /** Active, but no superblock left can pay it (lib/lameDuck.ts): listed apart, outside the budget numbers. */
+  lameDuck: boolean;
   /**
    * Synchronous content check (no network): the gov hash recomputes and the displayed fields equal the
    * hashed data. When false, a lying source changed what the card shows; links must not be followed.
@@ -71,6 +74,7 @@ export function deriveRow(
     threshold,
     state: absYes !== null && threshold ? passState(absYes, threshold.value, tally!.value.inNextBudget) : null,
     schedule: cycle ? paymentSchedule(p.value, cycle.value, params, nowS) : null,
+    lameDuck: isLameDuck(p.value, cycle ? remainingWithSlack(p.value, cycle.value, params, nowS) : null, nowS, !!tally?.value.inNextBudget),
     content: contentCheck(p.value),
   };
 }
@@ -124,9 +128,13 @@ export interface BudgetView {
   active: number;
 }
 
-/** The budget header's numbers. Proposals that failed verification are not in the budget strip and not active. */
+/**
+ * The budget header's numbers. Proposals that failed verification are not in the budget strip and not active; lame ducks (nothing
+ * left to pay) are not active either, and never count toward the next budget.
+ */
 export function budgetView(shown: readonly Row[], cycle: Pick<Cycle, 'allocated'>): BudgetView {
-  const funded = shown.filter((r) => r.tally?.value.inNextBudget);
+  const live = shown.filter((r) => !r.lameDuck);
+  const funded = live.filter((r) => r.tally?.value.inNextBudget);
   const fundedSum = funded.reduce((sum, r) => sum + r.p.value.paymentAmount, 0);
-  return { funded, fundedSum, allocated: cycle.allocated, active: shown.length };
+  return { funded, fundedSum, allocated: cycle.allocated, active: live.length };
 }

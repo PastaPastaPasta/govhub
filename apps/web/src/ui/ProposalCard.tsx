@@ -12,6 +12,7 @@ import type { CheckState } from '../verify/checks.ts';
 import { FundingMeter } from './FundingMeter.tsx';
 import { FailedNote } from './HiddenToggle.tsx';
 import { Avatar } from './Identity.tsx';
+import { LameDuckCardStatus } from './LameDuck.tsx';
 import { trustScope, useCachedTrust } from './trust/store.ts';
 import { TrustBadge } from './trust/TrustBadge.tsx';
 
@@ -42,9 +43,12 @@ export function ProposalCard({
   // Under a "Verified" mark only proven data decides "in the next budget" (none: no tag); otherwise it is the tally's own flag.
   const inBudget = trust && mark?.level === 'verified' ? (trust.funded ?? undefined) : t?.inNextBudget;
   const ask = askText(p.paymentAmount, row.schedule, params);
-  const left = paymentsLeft(row.schedule);
+  // Nothing left that can pay it: no funding bars or budget tag, and no "payments left" claim either.
+  const ended = row.lameDuck && !inBudget;
+  const left = ended ? null : paymentsLeft(row.schedule);
+  const tone = failed ? 'invalid' : ended ? 'ended' : (row.state?.light ?? 'none');
   return (
-    <article className={`prow prow-${failed ? 'invalid' : (row.state?.light ?? 'none')}`} data-govhash={p.govHash} data-check={check?.status} data-testid="proposal-card">
+    <article className={`prow prow-${tone}`} data-govhash={p.govHash} data-check={check?.status} data-lameduck={ended ? 'true' : undefined} data-testid="proposal-card">
       <div className="prow-main">
         {/* h2: the list's heading is the page's h1 (a skipped level breaks heading navigation) */}
         <h2 className="prow-title">
@@ -79,12 +83,14 @@ export function ProposalCard({
       </div>
 
       <div className="prow-fund">
-        {row.state && row.absYes !== null && row.threshold ? (
+        {ended ? (
+          <LameDuckCardStatus endEpoch={p.endEpoch} />
+        ) : row.state && row.absYes !== null && row.threshold ? (
           <FundingMeter absYes={row.absYes} threshold={row.threshold.value} state={row.state} size="s" />
         ) : (
           <p className="muted small">{row.tally ? 'Waiting for the budget cycle' : 'No votes yet'}</p>
         )}
-        {inBudget ? (
+        {ended ? null : inBudget ? (
           <span className="tag tag-pass">In the next budget</span>
         ) : row.state?.passing ? (
           <span className="tag tag-warn" title="Passing, but the budget is full or the next payout is outside its window">

@@ -678,6 +678,10 @@ details.learn.inline > summary {
   background: color-mix(in srgb, var(--fail-fill) 12%, transparent);
   justify-self: start;
 }
+.tag-done {
+  color: var(--ink-2);
+  background: color-mix(in srgb, var(--ink-3) 14%, transparent);
+}
 .tag-demo {
   color: var(--warn);
   background: color-mix(in srgb, var(--warn-fill) 16%, transparent);
@@ -1219,6 +1223,13 @@ button.trust-m:hover {
 .prow-warn::before {
   background: var(--warn-fill);
 }
+.prow-ended::before {
+  background: var(--line);
+}
+.prow-ended .prow-votes,
+.prow-ended .prow-ask .num {
+  color: var(--ink-3);
+}
 .prow-invalid {
   background: color-mix(in srgb, var(--fail-fill) 5%, var(--surface));
 }
@@ -1600,6 +1611,51 @@ table {
 }
 .p-votes .small {
   flex-basis: 100%;
+}
+.p-votes-dim,
+.p-votes-dim b {
+  color: var(--ink-3);
+}
+.p-lameduck {
+  display: grid;
+  gap: var(--s-2);
+}
+/* The collapsed "finished, still on the network" list under the active ones. */
+.lameduck {
+  display: grid;
+  gap: var(--s-2);
+  margin-block-start: var(--s-6);
+}
+.lameduck-title {
+  font-size: var(--t-m);
+  margin: 0;
+}
+.lameduck-toggle {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: var(--s-1) 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+.lameduck-caret {
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  border-inline-end: 2px solid currentColor;
+  border-block-end: 2px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.12s;
+}
+.lameduck-toggle[aria-expanded='true'] .lameduck-caret {
+  transform: rotate(45deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .lameduck-caret {
+    transition: none;
+  }
 }
 .p-ask > .btn {
   justify-self: start;

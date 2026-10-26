@@ -14,24 +14,26 @@ test.describe('failed verification is hidden (fixtures)', () => {
     // The tampered one fails at once (no network); the one naming another proposal's collateral fails once the worker has the tx.
     const toggle = page.getByTestId('toggle-failed');
     await expect(toggle).toHaveText('Show 2 proposals that failed verification');
-    await expect(cards).toHaveCount(28);
+    await expect(cards).toHaveCount(21);
     await expect(page.locator('article.prow[data-check="pending"]')).toHaveCount(0, { timeout: 30_000 });
-    await expect(page.locator('.budget-facts')).toContainText('of 28 proposals');
-    await expect(page.getByRole('link', { name: /^Active/ }).locator('.count')).toHaveText('28');
+    await expect(page.locator('.budget-facts')).toContainText('of 21 proposals');
+    await expect(page.getByRole('link', { name: /^Active/ }).locator('.count')).toHaveText('21');
     await expect(page.locator('article.prow', { hasText: 'govhub-fixture' })).toHaveCount(0);
+    // lame ducks are in neither the cards nor those counts (28 listed, 7 of them with nothing left to pay)
+    await expect(page.getByTestId('toggle-lameduck')).toHaveText('Finished, still on the network (7)');
 
     await toggle.click();
     await expect(toggle).toHaveText('Hide 2 proposals that failed verification');
-    await expect(cards).toHaveCount(30);
+    await expect(cards).toHaveCount(23);
     const tampered = page.locator('article.prow.prow-invalid', { hasText: 'govhub-fixture-tampered' });
     await expect(tampered.getByTestId('invalid-reason')).toContainText('Displayed fields: differ from the hashed data: url');
     const wrong = page.locator('article.prow.prow-invalid', { hasText: 'govhub-fixture-wrong-collateral' });
     await expect(wrong.getByTestId('invalid-reason')).toContainText('OP_RETURN and outputs: no-matching-op-return');
     // Revealing them changes nothing in the counts.
-    await expect(page.locator('.budget-facts')).toContainText('of 28 proposals');
+    await expect(page.locator('.budget-facts')).toContainText('of 21 proposals');
 
     await toggle.click();
-    await expect(cards).toHaveCount(28);
+    await expect(cards).toHaveCount(21);
     expect(errors).toEqual([]);
     expect(await cspViolations(page)).toEqual([]);
   });

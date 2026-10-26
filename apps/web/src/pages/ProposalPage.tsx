@@ -10,6 +10,7 @@ import { Discussion } from '../ui/Discussion.tsx';
 import { ErrorBoundary } from '../ui/ErrorBoundary.tsx';
 import { ReadError } from '../ui/ReadError.tsx';
 import { FundingMeter } from '../ui/FundingMeter.tsx';
+import { LameDuckPageStatus } from '../ui/LameDuck.tsx';
 import { ClaimPanel, OwnerPost, OwnerValue, RejectedClaims, useOwnership, useOwnerPost } from '../ui/Ownership.tsx';
 import { openSignIn } from '../ui/SignIn.tsx';
 import { TrustBadge } from '../ui/trust/TrustBadge.tsx';
@@ -23,6 +24,7 @@ import type { Proposal, Sourced } from '../data/types.ts';
 import { formatDash, formatDate, formatDateTime, formatDuration, formatInt, shortHash, urlHost } from '../lib/format.ts';
 import { passState, perPayment, votingDeadlineTime } from '../lib/governance.ts';
 import { deriveRow } from '../lib/view.ts';
+import { isLowerBound } from '../verify/chain.ts';
 import { paymentsFact, thresholdFact } from '../verify/facts.ts';
 import { useKeyring } from '../voting/KeyringContext.tsx';
 
@@ -125,7 +127,7 @@ function VoteCta({ proposal, active }: { proposal: Proposal; active: boolean }) 
   );
 }
 
-function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
+export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
   const { source, gov, params, checks } = useApp();
   const k = useKeyring();
   const p = sp.value;
@@ -155,6 +157,10 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
   // Proven data decides "in the next budget" once the badge is Verified; until then it is the tally's flag, under a lesser badge.
   const inBudget = trust.funded ?? !!t?.inNextBudget;
   const state = t && row.absYes !== null && threshold ? passState(row.absYes, threshold.value, inBudget) : null;
+  // Nothing left that can pay it: the list's estimate (with its slack) and, once there is one, the verified chain's "N more possible"
+  // fact must both say so, so the page never shows "0 more possible" next to a passing bar, nor "1 payment left" above "no more".
+  const payments = chain?.payments ?? null;
+  const lameDuck = row.lameDuck && !inBudget && (!payments || payments.remainingEstimate <= 0);
   // the verified chain's schedule once there is one (the deadline height is then proven, its time Core's own estimate)
   const untilDeadline = chain ? chain.schedule.deadlineEstTime - now : cycle ? votingDeadlineTime(cycle.value, params) - now : null;
 
@@ -195,12 +201,19 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
                 {sched.remaining === 0 ? 'No payments left' : `${formatInt(sched.remaining)} of ${formatInt(sched.total)} payments left`}, {formatDash(p.paymentAmount * sched.total)} in total
               </p>
             )}
-            {state && threshold && row.absYes !== null ? (
+            {lameDuck ? (
+              <LameDuckPageStatus
+                total={sched?.total ?? 0}
+                paid={payments ? { count: payments.paid.length, atLeast: isLowerBound(payments), firm: payments.othersComplete !== false && !payments.anchor?.weak } : null}
+                endEpoch={p.endEpoch}
+                counting={!chain && !trust.chain.error && !trust.chain.unavailable}
+              />
+            ) : state && threshold && row.absYes !== null ? (
               <FundingMeter absYes={row.absYes} threshold={threshold.value} state={state} />
             ) : (
               <p className="muted">{tallies.loading ? 'Reading the votes…' : t ? 'Waiting for the budget cycle' : 'No votes counted yet'}</p>
             )}
-            {active && t && (
+            {active && !lameDuck && t && (
               <p className="p-status">
                 {inBudget ? <span className="tag tag-pass">In the next budget</span> : state?.passing ? <span className="tag tag-warn">Passing, but the next budget is full</span> : null}
                 {untilDeadline !== null && (
@@ -209,7 +222,7 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
               </p>
             )}
             {t && (
-              <p className="p-votes" data-testid="p-votes" aria-label={`Masternode votes, weighted: ${t.yesWeighted} yes, ${t.noWeighted} no, ${t.abstainWeighted} abstain`}>
+              <p className={`p-votes${lameDuck ? ' p-votes-dim' : ''}`} data-testid="p-votes" aria-label={`Masternode votes, weighted: ${t.yesWeighted} yes, ${t.noWeighted} no, ${t.abstainWeighted} abstain`}>
                 <span>
                   <b>{formatInt(t.yesWeighted)}</b> yes
                 </span>
@@ -222,13 +235,14 @@ function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
                 <span className="muted small" data-testid="p-voters" title={`${formatInt(t.yesCount)} yes, ${formatInt(t.noCount)} no, ${formatInt(t.abstainCount)} abstain; counted at block ${formatInt(t.asOfHeight)}`}>
                   {formatInt(t.yesCount + t.noCount + t.abstainCount)} masternodes voted; evonodes count 4 times
                 </span>
+                {lameDuck && <span className="small muted">These votes no longer affect payment.</span>}
               </p>
             )}
             {tallies.error && <ReadError error={tallies.error} what="Platform" lead="The tally could not be read" onRetry={() => setTalliesAttempt((n) => n + 1)} />}
-            <VoteCta proposal={p} active={active} />
+            <VoteCta proposal={p} active={active && !lameDuck} />
           </section>
 
-          {active && k.status === 'open' && (
+          {active && !lameDuck && k.status === 'open' && (
             <ErrorBoundary what="masternode voting">
               <ProposalVotePanel proposal={p} onVerify={() => setDrawer(true)} />
             </ErrorBoundary>

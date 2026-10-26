@@ -32,9 +32,13 @@ export interface GovSnapshot {
   params: Sourced<GovParams> | null;
 }
 
-/** Active proposals as rows, rank order, split into shown and failed-verification (hidden by default). */
+/**
+ * Active proposals as rows, rank order, split into shown, lame ducks (still on the network but nothing left to pay: a collapsed
+ * section, outside the budget numbers) and failed-verification (hidden by default).
+ */
 export interface ActiveRows {
   shown: Checked<Row>[];
+  lameDucks: Checked<Row>[];
   failed: Checked<Row>[];
 }
 
@@ -173,7 +177,8 @@ export function AppProvider({ children, initialMode }: { children: ReactNode; in
   const now = source.now();
   const activeRows = useMemo<ActiveRows>(() => {
     const rows = (gov.active.data ?? []).map((p) => deriveRow(p, gov.tallies, gov.bridgeTallies, gov.cycle.data ?? null, params, now)).sort(byRank);
-    return partitionByCheck(rows, (r) => checks.state(r.p.value));
+    const { shown, failed } = partitionByCheck(rows, (r) => checks.state(r.p.value));
+    return { shown: shown.filter((x) => !x.item.lameDuck), lameDucks: shown.filter((x) => x.item.lameDuck), failed };
     // checksVersion: re-split when a check result lands
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gov.active.data, gov.tallies, gov.bridgeTallies, gov.cycle.data, params, now, checks, checksVersion]);
