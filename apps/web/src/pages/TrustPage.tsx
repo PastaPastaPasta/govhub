@@ -22,10 +22,6 @@ const POINTS: Array<[string, string]> = [
     'Blocks, the masternode list and the votes a proposal needs are proven from checkpoints in govhub’s code, through ChainLocks or, when no quorum proof is available, proof of work. Nodes can refuse to answer, but can’t fake the chain without the Dash network’s own signing quorums or mining power. On testnet, mining power protects little, and the app says so.',
   ],
   [
-    'Everything else from Dash Platform rests partly on Dash’s quorum service.',
-    'Comments, profiles, badges, block lists and the list of proposals are read from Dash Platform with proofs. The keys those proofs are checked against come from Dash’s public quorum service, which the app trusts today instead of proving.',
-  ],
-  [
     '“MN · vouched by X” is X’s word.',
     'A badge issuer could vouch for someone who runs no masternode. You choose which issuers to trust in Settings. Blind signatures stop an issuer from linking a badge to a masternode, unless it matches them by timing (Standard mode).',
   ],
