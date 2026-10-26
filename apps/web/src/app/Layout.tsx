@@ -306,7 +306,7 @@ export function Layout() {
         <div className="footer-inner">
           <p className="small muted">
             Checked in your browser against Dash Platform and the Dash chain. <Link to="/about/verification">How it works</Link> ·{' '}
-            <Link to="/settings">Your own servers</Link> · Open source (MIT)
+            <Link to="/settings">Settings</Link> · Open source (MIT)
           </p>
         </div>
       </footer>
