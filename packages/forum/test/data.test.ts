@@ -75,7 +75,7 @@ describe('writes and reads through the linted queries', () => {
     const c = ops.comment(H, 'x');
     expect(c.action === 'create' && typeof c.data.$createdAt).toBe('number');
     expect(c.action === 'create' && c.data.$updatedAt).toBeUndefined();
-    const r = ops.react({ govHash: H }, 1);
+    const r = ops.react({ commentId: ALICE }, 1);
     expect(r.action === 'create' && typeof r.data.$updatedAt).toBe('number');
     const p = ops.profile({ displayName: 'a' });
     expect(p.action === 'create' && p.data.$createdAt).toBeUndefined();
@@ -103,22 +103,22 @@ describe('writes and reads through the linted queries', () => {
     expect(clear.action).toBe('delete');
     store.apply(BOB, clear);
     expect(score(await reader.reactions(target), { kind: 1, target: tHex, viewer: BOB }).mine).toBeUndefined();
-    const mine = await reader.myReactions(ALICE, [target, targetB64({ govHash: H })]);
+    const mine = await reader.myReactions(ALICE, [target, targetB64({ commentId: ALICE })]);
     expect([...mine.keys()]).toEqual([tHex]);
   });
 
   it('score ignores other kinds and targets, keeps one per owner and can exclude blocked owners (never the viewer)', () => {
     const base = { id: 'x', revision: 1, createdAt: 1, updatedAt: 1 };
     const rs = [
-      { ...base, ownerId: ALICE, target: H, kind: 2, value: 1 as const },
-      { ...base, ownerId: ALICE, target: H, kind: 2, value: -1 as const, updatedAt: 5 },
-      { ...base, ownerId: BOB, target: H, kind: 2, value: 1 as const },
-      { ...base, ownerId: MOD, target: H, kind: 1, value: 1 as const },
-      { ...base, ownerId: MOD, target: H2, kind: 2, value: 1 as const },
+      { ...base, ownerId: ALICE, target: H, kind: 1, value: 1 as const },
+      { ...base, ownerId: ALICE, target: H, kind: 1, value: -1 as const, updatedAt: 5 },
+      { ...base, ownerId: BOB, target: H, kind: 1, value: 1 as const },
+      { ...base, ownerId: MOD, target: H, kind: 2, value: 1 as const }, // a retired kind (proposal community vote) is ignored
+      { ...base, ownerId: MOD, target: H2, kind: 1, value: 1 as const },
     ];
-    expect(score(rs, { kind: 2, target: H })).toMatchObject({ up: 1, down: 1 });
-    expect(score(rs, { kind: 2, target: H, exclude: (o) => o === BOB })).toMatchObject({ up: 0, down: 1 });
-    expect(score(rs, { kind: 2, target: H, viewer: BOB, exclude: (o) => o === BOB })).toMatchObject({ up: 1, down: 1 });
+    expect(score(rs, { kind: 1, target: H })).toMatchObject({ up: 1, down: 1 });
+    expect(score(rs, { kind: 1, target: H, exclude: (o) => o === BOB })).toMatchObject({ up: 0, down: 1 });
+    expect(score(rs, { kind: 1, target: H, viewer: BOB, exclude: (o) => o === BOB })).toMatchObject({ up: 1, down: 1 });
   });
 
   it('profiles, claims, posts, blocks and subscriptions round-trip', async () => {

@@ -688,7 +688,7 @@ configuration yet.
 - Blocks hide, they never delete (`packages/forum/src/moderation.ts:1`). Hidden items stay behind a "show hidden" toggle
   (`apps/web/src/ui/HiddenToggle.tsx`).
 - A blocked author's name and avatar are hidden.
-- Their reactions stop counting in scores (`apps/web/src/ui/useReactions.ts:60`).
+- Their reactions stop counting in comment scores (`apps/web/src/ui/useReactions.ts:59`).
 
 **What you can do** (Settings, "Block lists", `apps/web/src/pages/SettingsPage.tsx:148-215`):
 

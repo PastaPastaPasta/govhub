@@ -11,7 +11,8 @@ export interface ForumContracts {
 export type ContractKey = keyof ForumContracts;
 
 export const COMMENT_FMT = { plain: 0, markdown: 1 } as const;
-export const REACTION_KIND = { comment: 1, proposal: 2 } as const;
+/** `reaction.kind`: only comments are reacted to. The contract still allows other kinds; 2 was the proposal community vote, which the app removed (the only votes on a proposal are masternode votes). It is neither written nor read, and 2 must not be reused for anything else. */
+export const REACTION_KIND = { comment: 1 } as const;
 export const BLOCK_KIND = { identity: 1, document: 2 } as const;
 /** `claim.method` / `claimAttestation.method` / the claim verifier's ranks (PLAN §6.3; lower = stronger): one table, owned by @govhub/verify. */
 export const CLAIM_METHOD = CLAIM_METHODS;
@@ -33,7 +34,7 @@ export interface Comment {
 export interface Reaction {
   id: string;
   ownerId: string;
-  /** hex of the 32 target bytes: a govHash, or a comment id's bytes */
+  /** hex of the 32 bytes of the target comment's id */
   target: string;
   kind: number;
   value: 1 | -1;

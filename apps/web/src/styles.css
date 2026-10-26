@@ -1676,12 +1676,6 @@ table {
 .ext::after {
   content: ' ↗';
 }
-.community-vote {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s-2);
-  flex-wrap: wrap;
-}
 .chooser {
   display: grid;
   gap: var(--s-2);
@@ -2468,12 +2462,6 @@ li[data-status='now'] > .fund-dot {
   flex-wrap: wrap;
 }
 
-.community-vote {
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
-  flex-wrap: wrap;
-}
 .votes {
   display: inline-flex;
   align-items: center;

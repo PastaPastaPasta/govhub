@@ -67,8 +67,8 @@ export const commentsBy = (ownerId: string, startAfter?: string): ContractQuery 
   checked('forum', paged({ documentTypeName: 'comment', where: [['$ownerId', '==', ownerId], ['$createdAt', '>', 0]], orderBy: [['$ownerId', 'asc'], ['$createdAt', 'desc']], limit: PAGE }, startAfter));
 
 // ---- reaction ---------------------------------------------------------------------------------
-/** A reaction target as base64: a govHash (hex) or a comment id (base58). */
-export const targetB64 = (t: { govHash: string } | { commentId: string }): string => ('govHash' in t ? hexToB64(t.govHash) : idToB64(t.commentId));
+/** A reaction target as base64: a comment id (base58). */
+export const targetB64 = (t: { commentId: string }): string => idToB64(t.commentId);
 
 /** F6: every reaction on one target, oldest first; the orderBy pins `byTarget` (rule 1's ambiguity trap). */
 export const reactionsOn = (target: string, startAfter?: string): ContractQuery =>
