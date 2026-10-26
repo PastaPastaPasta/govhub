@@ -18,7 +18,7 @@ import { badgeQuery, badgesOfAuthors } from './queries.ts';
 import { createBadgeReader, type BadgeReader } from './reader.ts';
 import { deriveStoreKey, encryptedJobStore, jobStorageKey, memoryJobStore, type JobStore } from './store.ts';
 import { cooldownNote, createScheduler, separationAtStake, TICK_MS, type Mutate, type Scheduler } from './scheduler.ts';
-import { onIdentityWrite, onVisitChange, requestCooldownLeft, requestWaitLeft } from './visit.ts';
+import { lastActivityAt, onIdentityWrite, onVisitChange, requestCooldownLeft, requestWaitLeft } from './visit.ts';
 import { badgeWorker } from './workerClient.ts';
 
 export interface BadgeCtx {
@@ -51,8 +51,10 @@ export interface BadgeCtx {
   retryJob(id: string): void;
   /** Register now: posts a held Standard token at once, whatever the cooldown (the user accepts the timing link). */
   registerNow(id: string): Promise<void>;
-  /** ms until a token request may go out from this browser (0: now) */
+  /** ms until a token request may go out from this browser (0: now), before the job's own extra quiet (fetchWait) */
   requestWait: number;
+  /** when this browser last wrote or sent a request (ms, 0: never): a job's request goes at quietSince + COOLDOWN_MS + its quietExtraMs */
+  quietSince: number;
   /** ms left of the cooldown after the last token request (0: none running): a held badge goes with a write only after it */
   postWait: number;
 }
@@ -96,13 +98,13 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
   const [coreHeight, setCoreHeight] = useState<number | null>(null);
   const [storeError, setStoreError] = useState<string | null>(null);
   // the spacing as it stands, in every tab: when a request may go out, and the cooldown after the last one (for the note)
-  const [visit, setVisit] = useState(() => ({ requestWait: requestWaitLeft(), postWait: requestCooldownLeft() }));
+  const [visit, setVisit] = useState(() => ({ requestWait: requestWaitLeft(), postWait: requestCooldownLeft(), quietSince: lastActivityAt() }));
   useEffect(() => {
     let t: ReturnType<typeof setTimeout> | undefined;
     const update = () => {
       clearTimeout(t);
-      const v = { requestWait: requestWaitLeft(), postWait: requestCooldownLeft() };
-      setVisit((old) => (old.requestWait === v.requestWait && old.postWait === v.postWait ? old : v));
+      const v = { requestWait: requestWaitLeft(), postWait: requestCooldownLeft(), quietSince: lastActivityAt() };
+      setVisit((old) => (old.requestWait === v.requestWait && old.postWait === v.postWait && old.quietSince === v.quietSince ? old : v));
       const next = Math.min(...[v.requestWait, v.postWait].filter((x) => x > 0));
       if (Number.isFinite(next)) t = setTimeout(update, Math.min(next, 60_000));
     };
@@ -115,7 +117,7 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
   /** the current effect run's merge-and-save (null while no identity is loaded) */
   const commitRef = useRef<((m: Mutate) => Promise<BadgeJob[]>) | null>(null);
   /** the current effect run's poster of held Standard tokens (null while no identity is loaded) */
-  const postHeldRef = useRef<((o: { id?: string; force: boolean }) => Promise<void>) | null>(null);
+  const postHeldRef = useRef<Scheduler['postHeld'] | null>(null);
   const wakeRef = useRef<() => void>(() => undefined);
   // the privacy mode, remembered per identity in this browser (not on Platform: it says something about the user)
   const modeKey = `govhub.badge.mode.v1.${session?.identityId ?? '-'}`;
@@ -298,7 +300,8 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
   const registerNow = useCallback(async (id: string) => {
     const post = postHeldRef.current;
     if (!post) throw new Error('Your badge requests are not loaded in this tab (sign in again).');
-    await post({ id, force: true });
+    const job = (await post({ id, force: true })).find((j) => j.id === id);
+    if (job?.state !== 'posted') throw new Error(job?.note ?? 'This badge is no longer waiting to be posted.');
   }, []);
   const retryJob = useCallback(
     (id: string) =>
@@ -309,10 +312,10 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  const { requestWait, postWait } = visit;
+  const { requestWait, postWait, quietSince } = visit;
   const value = useMemo<BadgeCtx>(
-    () => ({ contractId, trust, setTrust, resetTrust, reader, jobs, coreHeight, requestBadge, registerVotingSigner, removeJob, retryJob, registerNow, requestWait, postWait, privacy, setPrivacy }),
-    [contractId, trust, setTrust, resetTrust, reader, jobs, coreHeight, requestBadge, registerVotingSigner, removeJob, retryJob, registerNow, requestWait, postWait, privacy, setPrivacy],
+    () => ({ contractId, trust, setTrust, resetTrust, reader, jobs, coreHeight, requestBadge, registerVotingSigner, removeJob, retryJob, registerNow, requestWait, postWait, quietSince, privacy, setPrivacy }),
+    [contractId, trust, setTrust, resetTrust, reader, jobs, coreHeight, requestBadge, registerVotingSigner, removeJob, retryJob, registerNow, requestWait, postWait, quietSince, privacy, setPrivacy],
   );
   return (
     <Ctx.Provider value={value}>

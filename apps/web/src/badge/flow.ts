@@ -9,6 +9,8 @@ import { useForum } from '../app/forum.tsx';
 import { errText, formatInt } from '../lib/format.ts';
 import { assertUsableKey, type OwnedMasternode } from '../voting/masternodes.ts';
 import { checkKeyAvailability, etaSeconds, isActive, isHeld, lapseHeight, lapseNudgeBlocks, type BadgeJob, type KeyAvailability } from './client.ts';
+import { COOLDOWN_MS } from './visit.ts';
+import { useNow } from '../ui/vote/common.tsx';
 import type { TrustedIssuer } from './config.ts';
 import { useBadgeCtx, useBadges } from './context.tsx';
 
@@ -120,9 +122,15 @@ function badgeStatus(jobs: readonly BadgeJob[], shownBy: readonly string[], heig
 export const registerNowNote = (issuerName: string): string =>
   `Posting now lets ${issuerName}’s issuer match your masternode to this account by timing. Waiting until you next post or react hides that better; the longer the gap, the better.`;
 
-/** "We'll fetch your badge in about 25 minutes so the request can't be matched to your account." (`waitMs` > 0) */
+/**
+ * ms until a scheduled job's request may go (0: now, give or take the first-tick delay of a visit): the quiet half hour after this
+ * browser's last write or request, plus the job's own random extra (visit.ts).
+ */
+export const fetchWaitMs = (j: BadgeJob, quietSince: number, now = Date.now()): number => Math.max(0, quietSince + COOLDOWN_MS + (j.quietExtraMs ?? 0) - now);
+
+/** "We'll fetch your badge in about 50 minutes, at a random time, so the request is harder to match to your account." */
 export const fetchWaitText = (waitMs: number): string =>
-  `We’ll fetch your badge in about ${inTime(waitMs / 1000)} so the request can’t be matched to your account.`;
+  `We’ll fetch your badge in about ${inTime(waitMs / 1000)}, at a random time, so the request is harder to match to your account.`;
 
 /** The held token's nudge; `postWaitMs`: the cooldown left after its request (a write before then does not carry it). */
 export function heldText(postWaitMs: number): string {
@@ -202,8 +210,8 @@ export interface MnBadge {
   retry(job: BadgeJob): void;
   /** Register now: posts a held token at once; resolves with an error text, or null */
   registerNow(job: BadgeJob): Promise<string | null>;
-  /** ms until a token request may go out from this browser (0: now) */
-  requestWait: number;
+  /** ms until this scheduled job's request may go out (0: now) */
+  fetchWait(job: BadgeJob): number;
   /** ms left of the cooldown after the last request: a held badge goes with a write only after it */
   postWait: number;
 }
@@ -225,6 +233,7 @@ export function useMnBadge(): MnBadge {
   else if (!issuer) unusableText = 'Your list of badge issuers has none turned on (Settings).';
   const ready = availability?.state === 'ready' ? readiness(availability.av, ctx.privacy, p) : null;
   const [cancelled, setCancelled] = useState<string | null>(null);
+  const now = useNow(30_000); // the "fetching in ~N min" countdown
   return {
     usable: unusableText === null,
     unusableText,
@@ -263,7 +272,7 @@ export function useMnBadge(): MnBadge {
         return errText(e);
       }
     },
-    requestWait: ctx.requestWait,
+    fetchWait: (job) => fetchWaitMs(job, ctx.quietSince, now),
     postWait: ctx.postWait,
   };
 }

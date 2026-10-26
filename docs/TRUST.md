@@ -553,13 +553,15 @@ own node.
 **Privacy modes.** There are two: Standard and Private (`packages/badge/src/schedule.ts`; Extra private was removed on
 2026-10-25 and continues as Private). They differ in the epoch requested, in timing, and in a crowd-size check. The issuer
 endpoint is the same. Both send a token request only after half an hour without Platform writes or other requests from
-this browser, plus a random 0–15 minutes (`apps/web/src/badge/visit.ts`, `scheduler.ts`).
+this browser, plus a random extra wait drawn per job (exponential, mean 1 hour, at most 4 hours; `apps/web/src/badge/visit.ts`,
+`scheduler.ts`). A request found when the app opens waits a random 30 s to 10 min first.
 
 - **Standard** (the default) asks for the current epoch and **holds** the token in the browser's encrypted job store, never
   on Platform. The badge is posted with the identity's next Platform write, once half an hour has passed since the request
   (`auth/runtime.ts` `markWrites` announces every write; `scheduler.ts` `postHeld`), or at once if the user presses
-  **Register now**. The issuer could still narrow a badge down to the Standard requests made during the user's quiet
-  stretch before that write, using the public write times (PLAN §8.10). With Register now it can match the two by timing.
+  **Register now**. The issuer could still narrow a badge down by comparing request times with the identity's public write
+  times. A request sent while the app stayed open lies 30 minutes to a few hours after the identity's last write (PLAN §8.10).
+  With Register now it can match the two by timing.
   Its no-logging policy is a promise the app can't check (`apps/web/src/badge/BadgeLeaks.tsx`).
 - A held token is kept only in that browser: a write from another device does not publish it. If nothing is posted before
   its display window ends (S(E+1)+W, less a margin), it lapses. The issuer's per-epoch dedup then means that masternode can

@@ -36,6 +36,7 @@ import {
   prepareBadge,
   privateRequestWindow,
   PRIVACY_MODES,
+  randomBelow,
   requestableEpoch,
   toHex,
   type BadgeNetwork,
@@ -45,6 +46,7 @@ import {
 } from '@govhub/badge';
 import type { TrustedIssuer } from './config.ts';
 import type { KeyLookup } from './reader.ts';
+import { drawQuietExtraMs } from './visit.ts';
 import type { badgeWorker } from './workerClient.ts';
 
 /** Signs a message with Dash `signmessage` semantics using the MN's voting key; returns the base64 signature. */
@@ -72,6 +74,8 @@ export interface BadgeJob {
   inv?: string;
   msgPrefix: string;
   requestAt: number;
+  /** extra quiet time (ms) the request needs on top of COOLDOWN_MS, drawn once (visit.ts drawQuietExtraMs) */
+  quietExtraMs?: number;
   /** 'wif': key-paste path, the key is stored encrypted with the job; 'external': a signer the keyring registers at run time */
   signer: { kind: 'wif'; wif: string } | { kind: 'external' };
   /** keep the voting key after the request, to renew every epoch */
@@ -83,6 +87,8 @@ export interface BadgeJob {
   postAt?: number;
   badgeId?: string;
   note?: string;
+  /** a held Standard token that was never posted before its lapse height (renewal still goes on from it) */
+  lapsed?: boolean;
   /** the issuer returned something that did not verify */
   issuerFlagged?: boolean;
   attempts: number;
@@ -246,6 +252,7 @@ export async function createJob(d: ClientDeps, jobs: readonly BadgeJob[], voting
     inv: blinded.inv,
     msgPrefix: bytesToBase64(prepared.msgPrefix),
     requestAt,
+    quietExtraMs: drawQuietExtraMs(() => randomBelow(2 ** 32)),
     signer: wif ? { kind: 'wif', wif } : { kind: 'external' },
     keepKey: o.keepKey ?? false,
     state: 'scheduled',
@@ -370,6 +377,7 @@ export async function step(d: ClientDeps, job: BadgeJob, height: number, o: { po
       return wipe({
         ...j,
         state: 'expired',
+        ...(j.mode === 'standard' ? { lapsed: true } : {}),
         note:
           j.mode === 'standard'
             ? `Your badge for epoch ${j.epoch} lapsed: it was never posted (no post or reaction from this browser before its time ran out). The issuer gives each masternode one token per epoch, so ask again from the next epoch.`
@@ -417,9 +425,10 @@ export async function step(d: ClientDeps, job: BadgeJob, height: number, o: { po
  */
 function wipe(j: BadgeJob): BadgeJob {
   const { preparedMsg: _p, blindedMsg: _b, inv: _i, ...rest } = j;
-  if (rest.keepKey && rest.signer.kind === 'wif') return rest;
-  // once the token is in hand (or the job is over) nothing needs the masternode any more (N10)
+  // the token is kept only while it may still be posted
   const { sig: _s, ...noSig } = rest;
+  if (rest.keepKey && rest.signer.kind === 'wif') return rest.state === 'token' ? rest : noSig;
+  // once the token is in hand (or the job is over) nothing needs the masternode any more (N10)
   return { ...(rest.state === 'token' ? rest : noSig), signer: { kind: 'external' }, proTxHash: '' };
 }
 
@@ -433,7 +442,8 @@ export const etaSeconds = (height: number, now: number): number => Math.max(0, (
  * Returns null when nothing is due.
  */
 export async function renewal(d: ClientDeps, jobs: readonly BadgeJob[], prev: BadgeJob, height: number, issuer: TrustedIssuer): Promise<BadgeJob | null> {
-  if (!prev.keepKey || prev.signer.kind !== 'wif' || !prev.proTxHash || (prev.state !== 'token' && prev.state !== 'posted')) return null;
+  // a lapsed token renews too: the user did not post in time, but asked to keep the badge going
+  if (!prev.keepKey || prev.signer.kind !== 'wif' || !prev.proTxHash || (prev.state !== 'token' && prev.state !== 'posted' && !prev.lapsed)) return null;
   const p = EPOCH_PARAMS[prev.net];
   const next = prev.epoch + 1;
   const w = requestWindow(p, next, prev.mode);

@@ -112,7 +112,7 @@ function keyringFake(o: { canSave?: boolean } = {}) {
 }
 
 /** The badge provider fake: an issuer whose first key is for `firstKey`; requestBadge records the call and adds a job. */
-function badgeFake(o: { firstKey?: number; shown?: string[]; jobs?: BadgeJob[]; requestWait?: number; postWait?: number; height?: number } = {}) {
+function badgeFake(o: { firstKey?: number; shown?: string[]; jobs?: BadgeJob[]; quietSince?: number; postWait?: number; height?: number } = {}) {
   const calls = { request: [] as Array<{ voting: unknown; pro: string; opts: any }>, remove: [] as string[], retry: [] as string[], register: [] as string[] };
   const firstKey = o.firstKey ?? 2741;
   const ctx = {
@@ -124,7 +124,8 @@ function badgeFake(o: { firstKey?: number; shown?: string[]; jobs?: BadgeJob[]; 
     },
     jobs: o.jobs ?? [],
     coreHeight: o.height ?? HEIGHT,
-    requestWait: o.requestWait ?? 0,
+    quietSince: o.quietSince ?? 0,
+    requestWait: 0,
     postWait: o.postWait ?? 0,
     registerNow: async (id: string) => {
       calls.register.push(id);
@@ -426,7 +427,7 @@ describe('a locked keyring (or a pasted-key sign-in)', () => {
 describe('deferred Standard in the unified flow (PLAN §8.10)', () => {
   it('after the keyring save, the request waits about 30 min (said once, plainly); then the badge is held for the next post, with Register now', async () => {
     keyringFake();
-    const bd = badgeFake({ requestWait: 30 * 60_000 });
+    const bd = badgeFake({ quietSince: Date.now() }); // the keyring save, just now
     const el = await start();
     await pasteAndFind(el);
     expect(q(el, 'mnb-ready')?.textContent).toContain('Your badge is fetched in the background and appears the next time you post or react.');
@@ -434,10 +435,10 @@ describe('deferred Standard in the unified flow (PLAN §8.10)', () => {
     await flush();
     const p = q(el, 'mnb-pending')!;
     expect(p.dataset.state).toBe('fetch-wait');
-    expect(p.textContent).toContain('We’ll fetch your badge in about 30 minutes so the request can’t be matched to your account.');
+    expect(p.textContent).toContain('We’ll fetch your badge in about 30 minutes, at a random time, so the request is harder to match to your account.');
     expect(q(el, 'mnb-summary')?.textContent).toBe('fetching in ~30 min');
     // the token arrives (30 min later): held, not posted
-    await act(async () => h.bd.set({ requestWait: 0, postWait: 29 * 60_000 }));
+    await act(async () => h.bd.set({ quietSince: 0, postWait: 29 * 60_000 }));
     await setJob({ state: 'token', sig: 'held', attempts: 1 });
     const held = q(el, 'mnb-held')!;
     expect(held.dataset.state).toBe('ready');
@@ -541,7 +542,7 @@ describe('the keyring card: MN badge row for existing keyrings', () => {
 
   it('fetching: the request waits for the spacing after a write: "fetching in ~N min"', async () => {
     openKeyring();
-    badgeFake({ requestWait: 12 * 60_000, jobs: [{ ...heldJob, state: 'scheduled', sig: undefined }] as BadgeJob[] });
+    badgeFake({ quietSince: Date.now() - 18 * 60_000, jobs: [{ ...heldJob, state: 'scheduled', sig: undefined, quietExtraMs: 0 }] as BadgeJob[] });
     const el = await start();
     expect(q(el, 'mnb-summary')?.textContent).toBe('fetching in ~12 min');
     expect(q(el, 'mnb-pending')?.textContent).toContain('We’ll fetch your badge in about 12 minutes');

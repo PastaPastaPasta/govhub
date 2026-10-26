@@ -11,7 +11,7 @@ import { openSignIn } from '../ui/SignIn.tsx';
 import { BadgeLeaks, PolicyLink } from './BadgeLeaks.tsx';
 import { isActive, isHeld, lapseHeight, lapseNudgeBlocks, requestWindow, type BadgeJob } from './client.ts';
 import { useBadgeCtx } from './context.tsx';
-import { ADVANCES_WHEN, availabilityText, clockTime, eta, fetchWaitText, HELD_HERE, heldText, inTime, lapseText, useKeyAvailability } from './flow.ts';
+import { ADVANCES_WHEN, availabilityText, clockTime, eta, fetchWaitMs, fetchWaitText, HELD_HERE, heldText, inTime, lapseText, useKeyAvailability } from './flow.ts';
 import { RegisterNow } from './MnBadgeOption.tsx';
 import { MODES, modeBlocked, PrivacyModes } from './PrivacyModes.tsx';
 
@@ -22,7 +22,8 @@ function clock(ms: number): string {
   return ms <= now ? `${t} (now)` : `${t} (in ${inTime((ms - now) / 1000)})`;
 }
 
-function requestedText(job: BadgeJob, p: EpochParams, coreHeight: number | null, requestWait: number): string {
+function requestedText(job: BadgeJob, p: EpochParams, coreHeight: number | null, quietSince: number): string {
+  const requestWait = fetchWaitMs(job, quietSince);
   if (job.mode !== 'standard') return `Scheduled: the request for epoch ${job.epoch} goes out at a random time, around ${eta(job.requestAt, coreHeight)}. ${ADVANCES_WHEN}`;
   if (job.requestAt > (coreHeight ?? 0)) return `Requested: epoch ${job.epoch} starts at block ${formatInt(epochStart(p, job.epoch))}; your badge is fetched then, and appears the next time you post or react. ${ADVANCES_WHEN}`;
   if (requestWait > 0) return `${fetchWaitText(requestWait)} It then appears the next time you post or react. ${ADVANCES_WHEN}`;
@@ -102,7 +103,7 @@ function JobRow({ job, now, postWait, onRemove, onCancel, onRetry, onRegister }:
 export function BadgePage() {
   const { registry, mode } = useApp();
   const { session } = useForum();
-  const { contractId, trust, jobs, coreHeight, requestBadge, removeJob, retryJob, registerNow, requestWait, postWait, reader, privacy, setPrivacy } = useBadgeCtx();
+  const { contractId, trust, jobs, coreHeight, requestBadge, removeJob, retryJob, registerNow, quietSince, postWait, reader, privacy, setPrivacy } = useBadgeCtx();
   const net = registry.platformNetwork;
   const p = EPOCH_PARAMS[net];
   const enabled = trust.filter((t) => t.enabled);
@@ -129,7 +130,7 @@ export function BadgePage() {
     try {
       const job = await requestBadge(wif, proTxHash, { ...(issuer ? { issuer } : {}), keepKey, mode: privacy });
       setWif('');
-      setMsg({ kind: 'ok', text: requestedText(job, p, coreHeight, requestWait), jobId: job.id });
+      setMsg({ kind: 'ok', text: requestedText(job, p, coreHeight, quietSince), jobId: job.id });
     } catch (e) {
       setMsg({ kind: 'error', text: errText(e) });
     } finally {

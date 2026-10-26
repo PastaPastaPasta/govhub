@@ -29,7 +29,7 @@ import { allBadges, badgesOfAuthors, issuerKeyQuery, reportQuery, revocationQuer
 import { BadgeReader } from './reader.ts';
 import { createScheduler, supersede } from './scheduler.ts';
 import { deriveStoreKey, encryptedJobStore, migrateJob } from './store.ts';
-import { beforeIdentityWrite, COOLDOWN_MS, mayRequest, noteIdentityWrite, onIdentityWrite, quietForMs, REQUEST_JITTER_MS, requestCooldownLeft } from './visit.ts';
+import { beforeIdentityWrite, COOLDOWN_MS, drawQuietExtraMs, mayRequest, noteIdentityWrite, onIdentityWrite, QUIET_EXTRA_MAX_MS, QUIET_EXTRA_MEAN_MS, quietForMs, requestCooldownLeft } from './visit.ts';
 
 const P = EPOCH_PARAMS.testnet;
 const E = 2742;
@@ -51,6 +51,9 @@ class FakePlatform {
   revocation: Record<string, unknown> | null = null;
   /** more issuerKey documents returned with the real one (the unique index makes this impossible on Platform) */
   extraKeyDocs: Record<string, unknown>[] = [];
+  /** test switches: Platform refuses badge posts; the issuer is off the trust list */
+  failPosts = false;
+  untrusted = false;
   async query(q: DocQuery) {
     const w = Object.fromEntries(q.where.map(([k, , v]) => [k, v]));
     let docs: Record<string, unknown>[] = [];
@@ -109,13 +112,14 @@ function setup(o: Parameters<typeof fakeWorker>[0] = {}) {
     signWithWif: (wif, m) => signMessageWif(wif, m, 'testnet'),
     externalSigner: () => undefined,
     async postBadge(data) {
+      if (platform.failPosts) throw new Error('Platform said no');
       const doc = { ...data, $ownerId: ownerId, $createdAtCoreBlockHeight: platform.core, issuerId: bytesToId(data.issuerId as Uint8Array), keyId: bytesToBase64(data.keyId as Uint8Array), msgPrefix: bytesToBase64(data.msgPrefix as Uint8Array), sig: bytesToBase64(data.sig as Uint8Array) };
       posted.push(doc);
       platform.badges.push(doc);
       return 'doc1';
     },
     hasBadge: async (iid, e) => platform.badges.some((b) => b.$ownerId === ownerId && b.issuerId === iid && b.epoch === e),
-    trusted: (id) => id === issuer.identityId,
+    trusted: (id) => id === issuer.identityId && !platform.untrusted,
     reportedTokens: (i, e) => reader.reportedTokens(i, e),
     issuerFlagged: async (i, e) => (await reader.audit({ ...i, enabled: true }, e, platform.core)).flagged,
     minAnonymitySet: 3,
@@ -589,18 +593,16 @@ describe('trust list and storage', () => {
       { ...base, id: 'c', mode: 'standard', state: 'token', sig: 'y' },
     ] as unknown as BadgeJob[]);
     const [a, b, c] = await s.load();
-    expect(a).toMatchObject({ id: 'a', mode: 'private', state: 'token', sig: 'x' });
-    expect(a!.postAt).toBeUndefined(); // step() picks it again in [S(E)+margin, S(E)+W]
+    // an Extra token keeps the random height it had (inside its display window): it does not post at once on the next visit
+    expect(a).toMatchObject({ id: 'a', mode: 'private', state: 'token', sig: 'x', postAt: epochStart(P, E) + 250 });
     expect(b).toMatchObject({ id: 'b', mode: 'private', requestAt: 5 });
     expect(c).toMatchObject({ id: 'c', mode: 'standard' });
     expect(migrateJob(c!)).toEqual(c);
-    // a migrated private token posts inside Private's window, not at Extra's old height
+    // a Standard token from before deferral (it had a posting height) is held like any other
+    expect(migrateJob({ ...c!, postAt: 123 }).postAt).toBeUndefined();
     const t = setup();
-    await t.platform.addKey(E);
-    const tok = await step(t.deps, await createJob(t.deps, [], votingKey().wif, proTx(), epochStart(P, E - 1) + 50, { issuer, mode: 'private', immediate: true }), epochStart(P, E - 1) + 50);
-    const { postAt: _, ...noPostAt } = tok;
-    const again = await step(t.deps, migrateJob({ ...noPostAt, mode: 'extra' as never, postAt: epochStart(P, E) + 250 }), epochStart(P, E));
-    expect(again.postAt! <= epochStart(P, E) + P.graceBlocks).toBe(true);
+    expect(await step(t.deps, migrateJob({ ...c!, postAt: 123, net: 'testnet' } as BadgeJob), epochStart(P, E) + 200)).toMatchObject({ state: 'token' });
+    expect(t.posted).toHaveLength(0);
   });
 
   it('every badge query passes the PV13 lint', () => {
@@ -804,14 +806,17 @@ describe('scheduler: Standard is "token now, publish later" (PLAN §8.10)', () =
     };
   }
 
-  async function heldJob() {
+  /** A Standard job made mid-visit (the scheduler already ticked once), with a known extra quiet time. */
+  async function heldJob(o: { quietExtraMs?: number; keepKey?: boolean } = {}) {
     const seen: string[] = [];
     const t = setup({ seen });
     await t.platform.addKey(E);
     t.platform.core = epochStart(P, E) + 10;
     const secret = rnd(32);
     const a = await tab(t, secret);
-    await a.add(await createJob(t.deps, [], votingKey().wif, proTx(), t.platform.core, { issuer }));
+    await a.sched.tick(); // the app was already open: the job is not found by the first tick of a visit
+    const job = await createJob(t.deps, [], votingKey().wif, proTx(), t.platform.core, { issuer, keepKey: o.keepKey ?? false });
+    await a.add({ ...job, quietExtraMs: o.quietExtraMs ?? 0 });
     return { t, seen, secret, a };
   }
 
@@ -824,15 +829,9 @@ describe('scheduler: Standard is "token now, publish later" (PLAN §8.10)', () =
     at(COOLDOWN_MS - 1000);
     await a.sched.tick();
     expect(seen).toEqual([]);
-    // not at exactly +30 min (that would point at the write): at a random time in the following REQUEST_JITTER_MS
-    let sentAt = 0;
-    for (let ms = COOLDOWN_MS; ms <= COOLDOWN_MS + REQUEST_JITTER_MS + 60_000 && !seen.length; ms += 30_000) {
-      at(ms);
-      await a.sched.tick();
-      sentAt = ms;
-    }
+    at(COOLDOWN_MS + 1000);
+    await a.sched.tick();
     expect(seen).toEqual(['challenge https://issuer.test', 'token https://issuer.test']);
-    expect(sentAt >= COOLDOWN_MS && sentAt <= COOLDOWN_MS + REQUEST_JITTER_MS + 30_000).toBe(true);
     const [held] = await a.jobs();
     expect(isHeld(held!)).toBe(true);
     expect(held!.proTxHash).toBe(''); // the masternode is forgotten once the token is in hand
@@ -850,22 +849,41 @@ describe('scheduler: Standard is "token now, publish later" (PLAN §8.10)', () =
     expect([...storage.mem.values()].join()).not.toContain(held!.sig!);
   });
 
-  it('the extra wait is random per request: requests held back by the same write do not all go at the same offset', async () => {
-    const offsets = new Set<number>();
-    for (let i = 0; i < 6; i++) {
-      at(0);
-      storage.mem.clear();
-      const { seen, a } = await heldJob();
-      noteIdentityWrite();
-      for (let ms = COOLDOWN_MS; ms <= COOLDOWN_MS + REQUEST_JITTER_MS + 60_000 && !seen.length; ms += 60_000) {
-        at(ms);
-        await a.sched.tick();
-        if (seen.length) offsets.add(ms);
-      }
-      expect(seen.length).toBe(2);
-    }
-    expect(offsets.size).toBeGreaterThan(1);
+  it('a request is not pinned to the last write: it also waits its own random extra, drawn once and stored with the job', async () => {
+    const { seen, a } = await heldJob({ quietExtraMs: 20 * 60_000 });
+    noteIdentityWrite();
+    at(COOLDOWN_MS + 19 * 60_000);
+    await a.sched.tick();
+    expect(seen).toEqual([]);
+    at(COOLDOWN_MS + 21 * 60_000);
+    await a.sched.tick();
+    expect(seen).toContain('token https://issuer.test');
+    // the draw: exponential (memoryless) with a mean of about an hour, capped; createJob stores one per job
+    const draws = Array.from({ length: 4000 }, () => drawQuietExtraMs(() => Math.floor(Math.random() * 2 ** 32)));
+    const mean = draws.reduce((x, y) => x + y, 0) / draws.length;
+    expect(mean).toBeGreaterThan(0.85 * QUIET_EXTRA_MEAN_MS);
+    expect(mean).toBeLessThan(1.15 * QUIET_EXTRA_MEAN_MS);
+    expect(Math.max(...draws)).toBeLessThanOrEqual(QUIET_EXTRA_MAX_MS);
+    expect(drawQuietExtraMs(() => 0)).toBe(QUIET_EXTRA_MAX_MS); // the tail is capped
+    const t = setup();
+    await t.platform.addKey(E);
+    const jobs = await Promise.all([1, 2, 3].map(() => createJob(t.deps, [], votingKey().wif, proTx(), epochStart(P, E) + 10, { issuer })));
+    expect(new Set(jobs.map((j) => j.quietExtraMs)).size).toBe(3);
     expect(quietForMs({ getItem: () => { throw new Error('blocked'); }, setItem: () => undefined }, T0)).toBe(0); // fails closed
+  });
+
+  it('a pending request found when the app opens waits a random 30 s - 10 min, like Private', async () => {
+    const seen: string[] = [];
+    const t = setup({ seen });
+    await t.platform.addKey(E);
+    t.platform.core = epochStart(P, E) + 10;
+    const a = await tab(t, rnd(32));
+    await a.add({ ...(await createJob(t.deps, [], votingKey().wif, proTx(), t.platform.core, { issuer })), quietExtraMs: 0 });
+    await a.sched.tick(); // the first tick of the visit
+    expect(seen).toEqual([]);
+    at(10 * 60_000 + 1000);
+    await a.sched.tick();
+    expect(seen).toContain('token https://issuer.test');
   });
 
   it('memory-only users with no recent writes get the token at once', async () => {
@@ -958,6 +976,42 @@ describe('scheduler: Standard is "token now, publish later" (PLAN §8.10)', () =
     expect(after[0]!.sig).toBeUndefined();
   });
 
+  it('a token that lapses while the app was closed still renews when the voting key is kept, and the lapsed job keeps no token', async () => {
+    const { t, a } = await heldJob({ keepKey: true });
+    await a.sched.tick();
+    const [held] = await a.jobs();
+    expect(held).toMatchObject({ state: 'token', keepKey: true, signer: { kind: 'wif' } });
+    await t.platform.addKey(E + 1);
+    at(COOLDOWN_MS * 3);
+    t.platform.core = lapseHeight(P, E) + 1; // the next visit: E+1 has started, E's token lapsed unposted
+    await a.sched.tick();
+    const jobs = await a.jobs();
+    const old = jobs.find((j) => j.epoch === E)!;
+    const next = jobs.find((j) => j.epoch === E + 1)!;
+    expect(old).toMatchObject({ state: 'expired', lapsed: true });
+    expect(old.sig).toBeUndefined();
+    expect(old.signer.kind).toBe('external'); // the kept key moved to the renewal
+    expect(next).toMatchObject({ mode: 'standard', state: 'scheduled', keepKey: true, signer: { kind: 'wif' } });
+  });
+
+  it('Register now that cannot post says why (posting failed; untrusted issuer), and the token stays held', async () => {
+    const { t, a } = await heldJob();
+    await a.sched.tick();
+    const [held] = await a.jobs();
+    t.platform.failPosts = true;
+    const after = (await a.sched.postHeld({ id: held!.id, force: true })).find((j) => j.id === held!.id)!;
+    expect(after.state).toBe('token');
+    expect(after.note).toMatch(/Posting the badge failed \(Platform said no\); it goes with your next post/);
+    t.platform.failPosts = false;
+    t.platform.untrusted = true;
+    at(COOLDOWN_MS + 1000);
+    await a.write();
+    const [still] = await a.jobs();
+    expect(still!.state).toBe('token');
+    expect(still!.note).toMatch(/not on your trust list/);
+    expect(t.posted).toHaveLength(0);
+  });
+
   it('Private is unchanged: random request height, posts at its height after the cooldown, never with a write', async () => {
     const seen: string[] = [];
     const t = setup({ seen });
@@ -1006,5 +1060,20 @@ describe('every Platform write is announced first, with its writer (auth/runtime
     await port.createIdentity({} as never);
     off();
     expect(order).toEqual(['hook me', 'write comment', 'hook null', 'write mnBadge', 'hook me', 'vault put', 'hook me', 'topup', 'hook null', 'create']);
+  });
+
+  it('a listener that throws or never finishes does not fail or hold up the write', async () => {
+    const { markWrites } = await import('../auth/runtime.ts');
+    const offs = [
+      onIdentityWrite(() => {
+        throw new Error('boom');
+      }),
+      onIdentityWrite(() => void new Promise(() => undefined)), // a badge post that never settles
+    ];
+    let wrote = false;
+    const port = markWrites({ writeDocument: async () => ((wrote = true), { id: 'x', revision: 1 }), vault: {} } as never);
+    await expect(port.writeDocument({ ownerId: 'me', key: {} as never, op: { action: 'create', contractId: 'c', type: 'comment', data: {} } })).resolves.toEqual({ id: 'x', revision: 1 });
+    expect(wrote).toBe(true);
+    offs.forEach((f) => f());
   });
 });

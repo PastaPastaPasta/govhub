@@ -9,7 +9,7 @@ export const MODES: Record<PrivacyMode, { label: string; summary: string }> = {
   standard: {
     label: 'Standard',
     summary:
-      'Your badge is fetched now and appears the next time you post or react, so it shows up with your own activity rather than right after the request. You can also post it straight away.',
+      'Your badge is fetched in the background and appears the next time you post or react, so it shows up with your own activity rather than right after the request. You can also post it straight away.',
   },
   private: {
     label: 'Private',

@@ -594,10 +594,15 @@ the current epoch, and readers still accept a badge for E created in [S(E), S(E+
 
 **The flow.**
 1. **Request.** Like a Private one, the request waits until nothing was written to Platform from this browser for 30 minutes
-   and no other token request went out for 30 minutes. It then waits a further random 0–15 minutes (`REQUEST_JITTER_MS`),
-   so it does not fall exactly 30 minutes after the identity's last public write. A browser that has been quiet for longer
-   sends it at once. In the unified "Add your masternodes" flow the keyring save is a write, so the request goes out about
-   30–45 minutes later, while the app is open. The UI says so once.
+   and no other token request went out for 30 minutes. It then waits its own random extra time, drawn once when the job is
+   made and stored with it (`drawQuietExtraMs`: exponential, mean 1 hour, capped at 4 hours; memoryless, so a reload cannot
+   draw again and shorten it). Without that, a request held back by a write would go out at the first tick after write + 30
+   min, which points straight at the identity's last public write. A request found when the app opens waits a random
+   30 s to 10 min first, as Private does. A browser that has been quiet for longer than the job's wait sends at once.
+   In the unified "Add your masternodes" flow the keyring save is a public write (a `keyring` document), so the request goes
+   out 30 minutes to a few hours later if the app stays open, or on a later visit. The UI says so once: "We'll fetch your
+   badge in about N minutes, at a random time, so the request is harder to match to your account." The owner's draft copy
+   said "can't be matched". That overclaims (see below).
 2. **Hold.** The token is finalized, verified and kept with the job in this browser's encrypted job store (localStorage,
    AES-GCM under a key derived from the identity's signing key). It is never put in the Platform keyring: saving that is
    itself a public write and would recreate the timing link. The masternode's proTxHash and the voting key are wiped from the
@@ -615,8 +620,9 @@ the current epoch, and readers still accept a badge for E created in [S(E), S(E+
    S(E+1)+W − margin (`lapseHeight`). Within about 3 days of that on mainnet (1,646 blocks), or a tenth of an epoch on testnet
    (58 blocks, about 2.5 hours; `lapseNudgeBlocks`), the UI says "Your badge will lapse in N unless registered" and offers
    Register now. After that the token is deleted.
-6. **Renewal** is unchanged: with the voting key kept, a job for E+1 is made from S(E+1). Its token is held like any other,
-   and once a newer badge is posted or held and current, an older held token is dropped (`supersede`).
+6. **Renewal** works as before: with the voting key kept, a job for E+1 is made from S(E+1), also from a token that lapsed
+   unposted (`lapsed`). Its token is held like any other. Once a newer badge is posted, or held and current, an older held
+   token is dropped (`supersede`).
 7. **Private** is unchanged: next-epoch token, random request and posting heights, the crowd check. Its posts never ride on
    user writes. Both modes share one spacing (one request per quiet half hour per browser) and one job per (issuer, epoch),
    so a held Standard token for E and a Private job for E+1 coexist.
@@ -635,23 +641,34 @@ the current epoch, and readers still accept a badge for E created in [S(E), S(E+
 | govhub (no logs) | Nothing kept. | Nothing kept; the token is only in the user's browser. |
 
 **How the issuer could still narrow it down.** Platform writes are public and timestamped. The issuer knows every request
-time; it can see every identity's write times. For a badge posted with I's write at t_b, X's request t_X must satisfy:
-no write by I in the 30 minutes before t_X (the request spacing), and no write by I between t_X + 30 min and t_b (else the
-badge would have gone earlier). So t_X falls either in I's idle gap before t_b (minus 30 minutes at each end) or in the
-30 minutes before I's previous write. The badge hides among the Standard requests in those stretches. The longer the user
-waits, the longer the gap and the bigger the crowd: hence the nudge. On a small network with few Standard requests per
-day, this can still be a crowd of one.
+time and can see every identity's write times. Take a badge posted with I's write at t_b, from MN X's request at t_X.
+- **Upper bound.** X's request precedes the badge by at least 30 minutes, and I wrote nothing between t_X + 30 min and
+  t_b; otherwise the badge would have gone with that write.
+- **Anchor.** If the app stayed open, t_X lies 30 minutes plus the job's random extra after I's last write before it, w.
+  So the issuer can test each request against I's write history: does T − w fall in [30 min, 30 min + a few hours]? The
+  exponential extra (mean 1 hour) spreads that over hours instead of the 15 minutes of a fixed jitter, but it does not
+  remove it. For an identity that writes rarely, few other requests pass that test.
+- **Later visit.** If the app was closed before the request went out, it goes on a later visit, 30 s to 10 min after the
+  page loads. Page loads are not public, so then the request is not tied to any write. In that case, and only then, a
+  longer wait before the badge's write widens the crowd: hence the nudge "the longer you wait, the better". With the app
+  left open, a longer wait mainly helps against the upper bound.
+- **Renewal.** With "renew every epoch" the same masternode asks every epoch, so an issuer that suspects X ↔ I can test it
+  again each epoch. The candidate sets intersect quickly.
+
+The honest summary: deferred Standard hides the badge far better than posting at once, and its timing follows the user's
+own activity. It is not unlinkable to an issuer that keeps request times and studies public write times. That is still
+covered only by the no-logs promise. Private is the mode for people who need more.
 
 **Residual risks.**
 - **IP addresses.** The issuer sees the request IP; the Platform nodes the app talks to see the IP of every write, including
   the badge post. An issuer operator that also runs evonodes can join the two. Use Tor or a VPN.
 - **A user who writes exactly once, right after the cooldown.** The gap is then about 30 minutes plus the request jitter,
   and the crowd is whoever asked in that half hour. That is better than one minute, but not much.
-- **Requests a fixed time after a write.** Without jitter, a request held back by a write would go out at the first tick
-  after write + 30 min. That pins it to the identity's last public write (for example the keyring save in the unified flow),
-  linking masternode and identity without any badge at all. The random 0–15 minutes on top widens that to a 15-minute
-  window. It does not remove it: an issuer that sees few requests can still line them up. A wider window, or sending the
-  request in a later visit, would do better at the cost of a longer wait.
+- **The request anchored to a write** (above). The unified flow's keyring save is a public document that all but says "MN
+  owner". A request 30 minutes to a few hours after it, with the app still open, can be lined up with it. **Stronger
+  option for the owner:** never send a Standard request in the same visit as a write from this browser, so it waits for
+  a later visit (30 s to 10 min after the page loads). That costs a day or more before the badge for most users, which is
+  why it is not the default here.
 - **The same browser doing many requests.** One request per quiet half hour per browser, across tabs and identities, and
   one badge per identity per issuer. Several identities in one browser are still tied together by IP and by never asking
   at the same time.
@@ -673,6 +690,13 @@ day, this can still be a crowd of one.
   deferred mode itself.
 - **The cooldown note can still be ignored.** A write right after a request (inside its cooldown) is never blocked. It
   weakens the separation even though it does not carry the badge.
+- **A failed write still carries the badge.** The badge post starts as the user's write starts. If that write then fails,
+  the badge appears alone, still at the user's own active moment rather than the request's.
+- **The voting key waits longer.** A pasted voting key stays in the encrypted job store until the request is sent. That
+  used to be at once for Standard; now it is 30 minutes to a few hours, or the next visit, and at most until the epoch's
+  request window closes.
+- **Renewal after a lapse.** A held token that lapses unposted still renews when the user keeps the voting key (`lapsed`),
+  so a badge is not lost for good because the app was closed during the last days of the window.
 
 ---
 

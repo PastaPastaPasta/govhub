@@ -28,13 +28,15 @@ export function ModeDetails({ mode, net }: { mode: PrivacyMode; net: CoreNetwork
   if (mode === 'standard') {
     return (
       <>
-        The issuer blind-signs a token for the current epoch once nothing has been posted from this browser for half an hour. The token stays in this browser, and the
-        badge is posted together with your next post, comment or reaction after another half hour, so it appears with your own activity, not right after the request.
-        The issuer can then only narrow it down to the masternodes whose tokens are not posted yet; the longer you wait, the more of them there are. <b>Register now</b>{' '}
-        posts it at once, and then the issuer can match it to your masternode by timing. The token is kept in this browser only: posting from another device does not
-        publish it. If nothing is posted before its epoch’s badges stop showing (about {span(p.graceBlocks)} after the epoch ends; an epoch is about{' '}
-        {span(epochLength(p))}), it lapses, and the masternode can ask again only in the next epoch. The govhub issuer’s operator commits to keeping no records that
-        would link a request to a badge (<PolicyLink />); that is a promise, not something this app can check.
+        The issuer blind-signs a token for the current epoch once nothing has been posted from this browser for half an hour, plus a random extra wait (about an
+        hour on average). The token stays in this browser, and the badge is posted together with your next post, comment or reaction at least half an hour later, so
+        it appears with your own activity, not right after the request. The issuer could still try to narrow it down from when you posted before and after its
+        request; the random wait and a longer gap make that harder, not impossible. <b>Register now</b> posts it at once, and then the issuer can match it to your
+        masternode by timing. Switching to Private later does not undo a match for an identity that already showed a badge: use a new identity for that. The token is
+        kept in this browser only: posting from another device does not publish it. If nothing is posted before its epoch’s badges stop showing (about{' '}
+        {span(p.graceBlocks)} after the epoch ends; an epoch is about {span(epochLength(p))}), it lapses, and the masternode can ask again only in the next epoch. The
+        govhub issuer’s operator commits to keeping no records that would link a request to a badge (<PolicyLink />); that is a promise, not something this app can
+        check.
       </>
     );
   }
@@ -66,7 +68,8 @@ export function BadgeLeaks({ net, open = false }: { net: CoreNetwork; open?: boo
           <b>Private</b>: <ModeDetails mode="private" net={net} />
         </li>
         <li>
-          <b>In every mode</b> requests and badge posts are kept half an hour away from this browser’s other Platform writes. The issuer learns which masternode asked, when, and from which IP address, and the network nodes this app talks to see the same address when your
+          <b>In every mode</b> a token request waits until nothing has been posted from this browser for half an hour or more, and no badge is posted in the half hour
+          after a request. The issuer learns which masternode asked, when, and from which IP address, and the network nodes this app talks to see the same address when your
           identity reads or writes. Use Tor or a VPN if that matters. Cloudflare, in front of our services, sees request metadata at its edge; that is outside our control.
         </li>
         <li>

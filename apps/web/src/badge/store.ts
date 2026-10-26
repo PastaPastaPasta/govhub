@@ -64,12 +64,13 @@ export function encryptedJobStore(slot: string, identityId: string, key: CryptoK
 }
 
 /**
- * Jobs saved before privacy modes existed were made under the private rules; Extra-private jobs (a mode since removed) continue
- * as Private, and a token's posting height, picked in Extra's wider window, is picked again in Private's (step() does that).
+ * Jobs saved before privacy modes existed were made under the private rules. Extra-private jobs (a mode since removed) continue
+ * as Private; a token keeps the posting height Extra picked (inside its display window), so it does not post at once. A Standard
+ * token from before Standard was deferred loses its posting height: it is held like any other (PLAN §8.10).
  */
 export function migrateJob(j: BadgeJob): BadgeJob {
   const mode = parsePrivacyMode(j.mode, 'private');
-  if ((j.mode as string) !== 'extra') return { ...j, mode };
+  if (mode !== 'standard' || j.state !== 'token' || j.postAt === undefined) return { ...j, mode };
   const { postAt: _, ...rest } = j;
   return { ...rest, mode };
 }

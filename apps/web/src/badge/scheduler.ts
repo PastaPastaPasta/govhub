@@ -9,7 +9,7 @@ import { clientPostingWindow, epochLength, epochOf, EPOCH_PARAMS, randomBelow, r
 import { isActive, isHeld, pastDeadline, renewal, requestWindow, step, type BadgeJob, type ClientDeps } from './client.ts';
 import type { TrustedIssuer } from './config.ts';
 import type { JobStore } from './store.ts';
-import { COOLDOWN_MS, mayPost, mayRequest, noteIdentityWrite, noteRequestAttempt, noteRequestSent, quietForMs, REQUEST_JITTER_MS } from './visit.ts';
+import { COOLDOWN_MS, drawQuietExtraMs, mayPost, mayRequest, noteIdentityWrite, noteRequestAttempt, noteRequestSent, quietForMs } from './visit.ts';
 
 export const TICK_MS = 60_000;
 export type Mutate = (jobs: BadgeJob[]) => BadgeJob[];
@@ -59,7 +59,8 @@ export interface SchedulerEnv {
 export interface Scheduler {
   /** one scheduler round; resolves with the ms until the next */
   tick(): Promise<number>;
-  postHeld(o: { id?: string; force: boolean }): Promise<void>;
+  /** resolves with the stored jobs after it (unchanged when nothing was posted) */
+  postHeld(o: { id?: string; force: boolean }): Promise<BadgeJob[]>;
 }
 
 export function createScheduler(env: SchedulerEnv): Scheduler {
@@ -98,11 +99,11 @@ export function createScheduler(env: SchedulerEnv): Scheduler {
    */
   const postHeld = (o: { id?: string; force: boolean }) =>
     env.lock('govhub-badge-activity', async () => {
-      if (!env.live()) return;
-      if (!o.force && !mayPost()) return;
+      if (!env.live()) return [];
       const snapshot = await env.store.load();
+      if (!o.force && !mayPost()) return snapshot;
       const held = snapshot.filter((j) => isHeld(j) && (o.id === undefined || j.id === o.id));
-      if (!held.length) return;
+      if (!held.length) return snapshot;
       const height = await env.coreHeight();
       // one badge per issuer: the newest held token that is current (an older one is superseded when saved)
       const pick = new Map<string, BadgeJob>();
@@ -112,19 +113,19 @@ export function createScheduler(env: SchedulerEnv): Scheduler {
       }
       const updates = new Map<string, BadgeJob>();
       for (const j of pick.values()) {
-        if (!env.live()) return;
+        if (!env.live()) return snapshot;
         const after = await step(deps, j, height, { post: true });
         if (JSON.stringify(after) !== JSON.stringify(j)) updates.set(j.id, after);
       }
-      await merge(snapshot, updates, height);
+      return merge(snapshot, updates, height);
     });
 
   const notBefore = new Map<string, number>();
-  /** per job: the random extra quiet a request needs on top of COOLDOWN_MS (visit.ts REQUEST_JITTER_MS), drawn once per tab */
-  const jitter = new Map<string, number>();
+  /** the extra quiet of jobs saved before it was stored with them: drawn once per tab */
+  const drawn = new Map<string, number>();
   const quietNeeded = (j: BadgeJob): number => {
-    if (!jitter.has(j.id)) jitter.set(j.id, randomBelow(REQUEST_JITTER_MS));
-    return COOLDOWN_MS + jitter.get(j.id)!;
+    if (j.quietExtraMs === undefined && !drawn.has(j.id)) drawn.set(j.id, drawQuietExtraMs(() => randomBelow(2 ** 32)));
+    return COOLDOWN_MS + (j.quietExtraMs ?? drawn.get(j.id)!);
   };
   let okTicks = 0;
   const tick = async (): Promise<number> => {
@@ -145,14 +146,10 @@ export function createScheduler(env: SchedulerEnv): Scheduler {
     const due = snapshot.filter(
       (j) => isActive(j) && !updates.has(j.id) && (j.state === 'scheduled' ? height >= j.requestAt : j.mode === 'private' && height >= (j.postAt ?? clientPostingWindow(p, j.epoch).from)),
     );
-    // A Private action found on the first tick of a visit waits a random 30 s - 10 min, so it is not tied to the page load (L1:
-    // the first SUCCESSFUL tick). A Standard request goes as soon as the spacing allows.
+    // An action found on the first tick of a visit waits a random 30 s - 10 min, so it is not tied to the page load (L1: the
+    // first SUCCESSFUL tick). One that becomes due later in the visit goes as soon as its spacing allows.
     for (const j of due) {
       if (notBefore.has(j.id)) continue;
-      if (j.mode === 'standard') {
-        notBefore.set(j.id, 0);
-        continue;
-      }
       const end = j.state === 'scheduled' ? requestWindow(p, j.epoch, j.mode).to : clientPostingWindow(p, j.epoch).to;
       const leftMs = Math.max(0, end - height) * 150_000;
       notBefore.set(j.id, Date.now() + (okTicks === 0 ? resumeDelayMs(Math.min(600_000, leftMs / 2)) : 0));
@@ -162,6 +159,7 @@ export function createScheduler(env: SchedulerEnv): Scheduler {
     // only requests that can actually go out now (trusted issuer, a signer): one that would wait must not hold up posts (N2)
     const sendable = ready.filter((j) => j.state === 'scheduled' && deps.trusted(j.issuer.identityId) && (j.signer.kind === 'wif' || env.hasSigner(j.proTxHash)));
     // and only after the quiet half hour plus this job's random extra, so it does not line up with the last write (visit.ts)
+    // (also checked under the lock below, against the latest marks)
     const quiet = quietForMs();
     const requests = sendable.filter((j) => quiet >= quietNeeded(j)).sort((a, b) => requestWindow(p, a.epoch, a.mode).to - requestWindow(p, b.epoch, b.mode).to);
     // only posts that can go out: a post for an untrusted issuer would mark a write every tick and starve requests (round 4)
@@ -177,7 +175,7 @@ export function createScheduler(env: SchedulerEnv): Scheduler {
         if (posts.length && mayPost()) {
           noteIdentityWrite(); // before the post path's reads: the write is on its way
           for (const j of posts) await run(j);
-        } else if (requests.length && mayRequest()) {
+        } else if (requests.length && mayRequest() && quietForMs() >= quietNeeded(requests[0]!)) {
           const undo = noteRequestAttempt();
           const sent = sends;
           await run(requests[0]!);

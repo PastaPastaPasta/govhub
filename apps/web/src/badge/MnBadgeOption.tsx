@@ -163,7 +163,7 @@ export function BadgeProgress({ b, celebrate = false, onAgain }: { b: MnBadge; c
     const unreachable = waiting && /could not reach the issuer/i.test(j.note ?? '');
     const scheduled = s.from > (b.height ?? 0);
     // due, but held back by the spacing after a Platform write or another request from this browser
-    const spacing = !scheduled && j.state === 'scheduled' && b.requestWait > 0;
+    const spacing = !scheduled && j.state === 'scheduled' && b.fetchWait(j) > 0;
     const cancel = (
       <button type="button" className="btn btn-s btn-quiet" onClick={() => void b.cancel(j)} data-testid="mnb-cancel">
         {j.state === 'token' ? 'Cancel: don’t post it' : 'Cancel'}
@@ -207,7 +207,7 @@ export function BadgeProgress({ b, celebrate = false, onAgain }: { b: MnBadge; c
                   {j.mode !== 'standard' && ', at a random time'}.
                 </>
               ) : spacing ? (
-                <>{fetchWaitText(b.requestWait)}</>
+                <>{fetchWaitText(b.fetchWait(j))}</>
               ) : j.state === 'token' ? (
                 <>
                   <span className="spinner" aria-hidden="true" /> Token received; posting your badge…
@@ -311,7 +311,7 @@ function badgeSummary(b: MnBadge): string {
   if (s.kind === 'held') return s.lapsing ? `will lapse in ${b.height === null ? 'a few days' : inTime(etaSeconds(s.lapseAt, b.height))}` : 'ready, appears with your next post';
   if (s.kind === 'pending') {
     if (s.from > (b.height ?? 0)) return `pending (from block ${formatInt(s.from)})`;
-    if (s.job.state === 'scheduled' && b.requestWait > 0) return `fetching in ~${Math.max(1, Math.ceil(b.requestWait / 60_000))} min`;
+    if (s.job.state === 'scheduled' && b.fetchWait(s.job) > 0) return `fetching in ~${Math.max(1, Math.ceil(b.fetchWait(s.job) / 60_000))} min`;
     return 'pending (being issued)';
   }
   return 'not shown';
