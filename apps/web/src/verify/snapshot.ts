@@ -35,7 +35,7 @@ function bySnapshot(targets: readonly VoteTarget[]): Array<{ want: Snapshot | nu
  * The vote set behind a tally, in at most three requests (`order`): the set in force at its height (`?height=`), the set with its
  * voteSetHash (`?height=&voteSetHash=`), and the live set. The tally and its votes are read at different moments and the bridge's live
  * tally changes at the same height whenever a vote arrives, so an answer may be of another snapshot: the first answer whose voteSetHash
- * is the tally's is used. When none is (a bridge that doesn't keep superseded sets, or one that withholds the set), the first answer is
+ * is the tally's is used (a live answer only while it is still at the tally's height). When none is (a bridge that doesn't keep superseded sets, or one that withholds the set), the first answer is
  * returned and the verdict says another set was served; it is never compared as the tally's set. A 404 moves on to the next request (a
  * bridge no longer holding a height's set may serve its live one); any other failure fails the recount, unless an answer is in hand.
  * `want` is the tally's snapshot, voteSetHash lowercase (snapshotOf); null: no tally, the live set.
@@ -59,7 +59,9 @@ export async function voteSetFor(bridge: Bridge, govHash: string, want: Snapshot
       throw e;
     }
     const label = got.votes.voteSetHash;
-    if (label && label.toLowerCase() === want.voteSetHash) return got;
+    // The live set keeps its voteSetHash across a block with no new vote, but its tally is then of the next height: only the set
+    // asked for at the tally's height (or the live one still at it) is that tally's.
+    if (label && label.toLowerCase() === want.voteSetHash && (how !== 'live' || got.votes.tallyHeight === want.asOfHeight)) return got;
     first ??= got;
   }
   if (first) return first;
