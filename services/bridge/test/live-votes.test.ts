@@ -189,4 +189,18 @@ describe('vote set by voteSetHash: a tally read before a mid-block vote is still
     again.retire(run([['d', '1']]), run([['d', '3']]), 1000 + RETIRED_SET_TTL_S - 10);
     expect(again.get('d', '1', 1000 + RETIRED_SET_TTL_S + 60)).toBeDefined();
   });
+
+  it('retired sets: a new block with no new vote keeps the set at the height before, under the same voteSetHash', () => {
+    const at = (h: number) => ({ tallies: [{ govHash: 'p', voteSetHash: '1', asOfHeight: h, listHash: 'l', weighted: { yes: 0, no: 0, abstain: 0 }, counted: [{ hash: 'v' }] }] }) as unknown as TallyRun;
+    const r = new RetiredVoteSets();
+    r.retire(at(10), at(11), 100);
+    r.retire(at(11), at(12), 200);
+    expect(r.get('p', '1', 200, 10)?.asOfHeight).toBe(10);
+    expect(r.get('p', '1', 200, 11)?.asOfHeight).toBe(11);
+    expect(r.get('p', '1', 200)?.asOfHeight).toBe(11);
+    expect(r.get('p', '1', 200, 9)).toBeUndefined();
+    // the live run at 12 is not retired: it is still current
+    r.retire(at(12), at(12), 300);
+    expect(r.get('p', '1', 300, 12)?.asOfHeight).toBe(11);
+  });
 });

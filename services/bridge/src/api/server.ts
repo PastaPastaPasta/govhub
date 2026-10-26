@@ -116,7 +116,7 @@ function setByHash(b: Bridge, govHash: string, voteSetHash: string, maxHeight = 
   const found: RecordedVoteSet[] = [];
   const live = b.lastRun?.tallies.find((t) => t.govHash === govHash && t.voteSetHash === voteSetHash);
   if (live) found.push({ ...live, voteHashes: live.counted.map((v) => v.hash) });
-  const retired = b.retiredSets.get(govHash, voteSetHash, nowS());
+  const retired = b.retiredSets.get(govHash, voteSetHash, nowS(), maxHeight);
   if (retired) found.push(retired);
   const row = b.db
     .prepare('SELECT * FROM tallies WHERE gov_hash = ? AND vote_set_hash = ? AND as_of_height <= ? ORDER BY as_of_height DESC, id DESC LIMIT 1')

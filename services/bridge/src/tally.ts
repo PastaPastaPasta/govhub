@@ -221,30 +221,38 @@ export interface RetiredVoteSet extends RecordedVoteSet {
  * The live tally changes at the same height whenever a vote arrives, and only the block path stores tallies: a client that read the live
  * tally and then asks for its votes may find a newer set. The sets a newer run replaced are kept here for a while, so that client can
  * still fetch exactly the set behind the tally it holds (`/v1/proposals/{hash}/votes?voteSetHash=`). Memory only, bounded in age and count.
+ * A set is kept per height: a new block with no new vote moves the live tally to the next height under the same voteSetHash, and a
+ * client holding the tally of the block before asks for it at that height (`?height=&voteSetHash=`).
  */
 export class RetiredVoteSets {
   private readonly sets = new Map<string, RetiredVoteSet>();
 
-  /** Keeps every tally of `old` whose vote set `next` no longer has. */
+  /** Keeps every tally of `old` that `next` no longer has at that height (another vote set, or the same one at a newer height). */
   retire(old: TallyRun, next: TallyRun, now: number): void {
-    const current = new Set(next.tallies.map((t) => `${t.govHash}|${t.voteSetHash}`));
+    const key = (t: { govHash: string; voteSetHash: string; asOfHeight: number }) => `${t.govHash}|${t.voteSetHash}|${t.asOfHeight}`;
+    const current = new Set(next.tallies.map(key));
     for (const t of old.tallies) {
-      const key = `${t.govHash}|${t.voteSetHash}`;
-      if (current.has(key)) continue;
+      const k = key(t);
+      if (current.has(k)) continue;
       // re-inserted (a set can be current again, e.g. a voter banned and revived): it ages from now, at the end of the order
-      this.sets.delete(key);
-      this.sets.set(key, { govHash: t.govHash, voteSetHash: t.voteSetHash, asOfHeight: t.asOfHeight, listHash: t.listHash, weighted: t.weighted, voteHashes: t.counted.map((v) => v.hash), retiredAt: now });
+      this.sets.delete(k);
+      this.sets.set(k, { govHash: t.govHash, voteSetHash: t.voteSetHash, asOfHeight: t.asOfHeight, listHash: t.listHash, weighted: t.weighted, voteHashes: t.counted.map((v) => v.hash), retiredAt: now });
     }
     // Map order is insertion order: the oldest first
-    for (const [key, s] of this.sets) {
+    for (const [k, s] of this.sets) {
       if (this.sets.size <= RETIRED_SET_MAX && now - s.retiredAt <= RETIRED_SET_TTL_S) break;
-      this.sets.delete(key);
+      this.sets.delete(k);
     }
   }
 
-  get(govHash: string, voteSetHash: string, now: number): RetiredVoteSet | undefined {
-    const s = this.sets.get(`${govHash}|${voteSetHash}`);
-    return s && now - s.retiredAt <= RETIRED_SET_TTL_S ? s : undefined;
+  /** The kept set with this voteSetHash at the highest height at or below `maxHeight`. */
+  get(govHash: string, voteSetHash: string, now: number, maxHeight = Number.MAX_SAFE_INTEGER): RetiredVoteSet | undefined {
+    let best: RetiredVoteSet | undefined;
+    for (const s of this.sets.values()) {
+      if (s.govHash !== govHash || s.voteSetHash !== voteSetHash || s.asOfHeight > maxHeight || now - s.retiredAt > RETIRED_SET_TTL_S) continue;
+      if (!best || s.asOfHeight > best.asOfHeight) best = s;
+    }
+    return best;
   }
 
   get size(): number {
