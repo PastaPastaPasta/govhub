@@ -924,7 +924,8 @@ archives, identity key files and image tags (`docker-compose.mainnet-publisher.y
 | Public | tunnel `govhub`: `gov-bridge-mainnet.dashhq.org -> http://bridge-mainnet:8787` |
 | Backups | `/opt/govhub-mainnet-backups`, daily: `BACKUP_SERVICE=bridge-mainnet deploy/scripts/backup.sh /opt/govhub-mainnet-backups 30` |
 
-Bring it up archive-only first (`MAINNET_PUBLISH=0`), run the governance resync (section 7) and `bridge verify`, then set
+`secrets/bridge_identity_mainnet.json` must exist before `up` (compose refuses a missing secret file; an empty file is enough
+while `MAINNET_PUBLISH=0`, as with init.sh's placeholder for the first bridge). Bring it up archive-only first, run the governance resync (section 7) and `bridge verify`, then set
 `MAINNET_PUBLISH=1` and recreate it. The commands of section 13 apply with the service name `bridge-mainnet`; for
 `scripts/readback.ts` use the `govhub_bridge-mainnet-data` volume, `PLATFORM_NETWORK=mainnet`, the contract and identity above
 and the image `govhub-bridge:mainnet`.
