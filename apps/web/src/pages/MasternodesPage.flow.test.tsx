@@ -435,7 +435,7 @@ describe('deferred Standard in the unified flow (PLAN §8.10)', () => {
     await flush();
     const p = q(el, 'mnb-pending')!;
     expect(p.dataset.state).toBe('fetch-wait');
-    expect(p.textContent).toContain('We’ll fetch your badge in about 30 minutes, at a random time, so the request is harder to match to your account.');
+    expect(p.textContent).toContain('Your badge request goes to the issuer in about 30 minutes, at a random time, so it is harder to match to your account. The badge then appears the next time you post or react, or when you press Register now.');
     expect(q(el, 'mnb-summary')?.textContent).toBe('fetching in ~30 min');
     // the token arrives (30 min later): held, not posted
     await act(async () => h.bd.set({ quietSince: 0, postWait: 29 * 60_000 }));
@@ -545,6 +545,6 @@ describe('the keyring card: MN badge row for existing keyrings', () => {
     badgeFake({ quietSince: Date.now() - 18 * 60_000, jobs: [{ ...heldJob, state: 'scheduled', sig: undefined, quietExtraMs: 0 }] as BadgeJob[] });
     const el = await start();
     expect(q(el, 'mnb-summary')?.textContent).toBe('fetching in ~12 min');
-    expect(q(el, 'mnb-pending')?.textContent).toContain('We’ll fetch your badge in about 12 minutes');
+    expect(q(el, 'mnb-pending')?.textContent).toContain('Your badge request goes to the issuer in about 12 minutes');
   });
 });
