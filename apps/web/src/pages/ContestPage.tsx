@@ -14,6 +14,9 @@ import { useAsync } from '../ui/hooks.ts';
 import { formatDateTime, formatDuration, formatInt } from '../lib/format.ts';
 import { contestKey, displayName, isContestedLabel, normalizeLabel, percent, phaseOf, registersAs, VOTE_CHANGES, type Contender, type ContestState, type Phase } from '../contests/model.ts';
 import { BallotBar, contenderClass, contestHref } from '../contests/ui.tsx';
+import { ContestVotePanel } from '../contests/VotePanel.tsx';
+import { useContestVotes } from '../contests/ContestVotes.tsx';
+import { authorLabel } from '../lib/social.ts';
 import { useClockMs, useContestSource } from '../contests/useContests.ts';
 
 /** How long after voting closes the page reads the contest again, for the result. */
@@ -111,6 +114,19 @@ function ContestView({ label }: { label: string }) {
       clearTimeout(t);
     };
   }, [phase, src, label, fresh, rereads]);
+  // a vote from this browser went out: the tally is read again (the sender dropped the cached one), in the background
+  const sentHere = useContestVotes().held.filter((v) => v.label === label && v.status === 'sent').length;
+  useEffect(() => {
+    if (!sentHere) return;
+    let live = true;
+    src.state(label).then(
+      (x) => live && setFresh({ key: label, s: x }),
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, [sentHere, src, label]);
 
   if (state.loading)
     return (
@@ -176,6 +192,12 @@ function ContestView({ label }: { label: string }) {
             </p>
           </section>
 
+          {phase === 'open' && (
+            <ErrorBoundary what="masternode voting">
+              <ContestVotePanel label={label} state={s} endsAt={endsAt} nameOf={(id) => contenderName(id, who.profiles.get(id), who.names.get(id))} />
+            </ErrorBoundary>
+          )}
+
           <ErrorBoundary what="discussion">
             <Discussion govHash={contestKey(label)} featured={featured} />
           </ErrorBoundary>
@@ -204,6 +226,12 @@ function ContestView({ label }: { label: string }) {
       </div>
     </article>
   );
+}
+
+/** A contender as a vote option: DPNS name, else the self-chosen name with the short id, else the short id. */
+function contenderName(id: string, profile?: Profile, dpns?: string): string {
+  const a = authorLabel(id, profile, dpns);
+  return a.dpns ?? (a.name ? `${a.quoted ? `“${a.name}”` : a.name} (${a.shortId})` : a.shortId);
 }
 
 function Tally({ n, total }: { n: number; total: number }) {

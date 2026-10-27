@@ -20,6 +20,8 @@ const forum = vi.hoisted(() => ({
   forum: { names: async () => new Map([['eUJLdV1mRNVYAMdHYV3nSiwKu2EBB1jGfVKUuCDeUE2', 'alice.dash']]), reader: { profiles: async () => new Map() } },
 }));
 vi.mock('../app/forum.tsx', () => ({ useForum: () => forum }));
+vi.mock('../contests/ContestVotes.tsx', () => ({ useContestVotes: () => ({ held: [] }) }));
+vi.mock('../contests/VotePanel.tsx', () => ({ ContestVotePanel: () => <section data-testid="contest-vote-panel" /> }));
 vi.mock('../ui/useCommentCounts.ts', () => ({ useCommentCounts: (keys: string[]) => new Map(keys.map((k, i) => [k, i])) }));
 const discussion = vi.hoisted(() => ({ props: null as null | { govHash: string; featured: { ids: readonly string[]; chip: string; view: string } } }));
 vi.mock('../ui/Discussion.tsx', () => ({
@@ -126,6 +128,8 @@ describe('ContestPage', () => {
     expect(el.textContent).toContain('Abstain');
     expect(el.textContent).toContain('Nobody gets the name.');
     expect(el.textContent).toContain('Read from Dash Platform with proofs, at Platform block 459,350.');
+    // an open contest has the vote panel; a decided one (below) does not
+    expect(el.querySelector('[data-testid="contest-vote-panel"]')).not.toBeNull();
     // the discussion hangs off the contest itself, with the contenders featured as a proposal's owner is
     expect(discussion.props!.govHash).toBe(contestKey('ther0adn0ttaken'));
     expect(discussion.props!.featured).toMatchObject({ ids: ['3Yos9bTgS21oDhEqc99f5Eyvq1axrvznkTLAjhiAXCat', 'eUJLdV1mRNVYAMdHYV3nSiwKu2EBB1jGfVKUuCDeUE2'], chip: 'contender', view: 'Contenders' });
@@ -136,6 +140,7 @@ describe('ContestPage', () => {
     await settle();
     expect(el.querySelector('[data-testid="contest-status"]')!.textContent).toMatch(/^Awarded on /);
     expect(el.querySelector('[data-testid="contender"]')!.textContent).toContain('Got the name');
+    expect(el.querySelector('[data-testid="contest-vote-panel"]')).toBeNull();
   });
 
   it('sends a typed name to its normalized address, and explains a name that cannot be contested', async () => {
