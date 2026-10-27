@@ -288,3 +288,12 @@
   gap: var(--s-2);
   margin-inline-start: auto;
 }
+.cvote-guest {
+  display: grid;
+  gap: var(--s-2);
+  border-block-start: 1px solid var(--line);
+  padding-block-start: var(--s-3);
+}
+.cvote-guest p {
+  margin: 0;
+}

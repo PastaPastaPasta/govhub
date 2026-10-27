@@ -6,7 +6,8 @@ import { getSdk, type Sdk } from '../data/platform.ts';
 import { loadFixtures } from '../data/fixtures.ts';
 import { DPNS_CONTRACT_ID, DPNS_POLL, PARENT_DOMAIN, toOutcome, type ContestState, type Contender, type OpenContest } from './model.ts';
 import { FIXTURE_CONTESTS } from './fixtures.ts';
-import { choiceFromJson, type Choice } from './vote.ts';
+import { mapLimit } from '@govhub/forum';
+import { choiceFromJson, NONCE_MASK, type Choice } from './vote.ts';
 
 export interface NamesPage {
   /** normalized labels, in index (name) order */
@@ -31,9 +32,9 @@ export interface ContestSource {
   peek(label: string): ContestState | undefined;
   /** Drops the cached state of one contest, so the next read is fresh. */
   forget(label: string): void;
-  /** Each voter's current vote on this contest (null: none), proved. `state` is the contest's state (its contenders and totals). */
-  votesOf(label: string, state: ContestState, voterIds: readonly string[]): Promise<Map<string, Choice | null>>;
-  /** A voter identity's current nonce (0 for one that never voted). */
+  /** Each voter's current vote on this contest, proved: a choice, null for none, absent when it could not be told (too many to read). */
+  votesOf(label: string, voterIds: readonly string[]): Promise<Map<string, Choice | null>>;
+  /** A voter identity's current nonce, its low 40 bits (0 for one that never voted). */
   nonceOf(voterId: string): Promise<bigint>;
   /** Sends a signed vote and waits for Platform's answer (throws Platform's error). Fixtures send nothing. */
   broadcast(st: Uint8Array): Promise<void>;
@@ -209,13 +210,16 @@ export function liveContests(r: Registry): ContestSource {
     return { label, contenders, abstain, lock, total: contenders.reduce((s, c) => s + c.votes, 0) + abstain + lock, outcome, height: num(res.metadata?.height) };
   }
 
-  async function votesOf(label: string, state: ContestState, voterIds: readonly string[]): Promise<Map<string, Choice | null>> {
+  async function votesOf(label: string, voterIds: readonly string[]): Promise<Map<string, Choice | null>> {
     const sdk = await getSdk(r);
+    // the contest as cached (a vote sent from here drops the cache): its contenders, and whether anyone abstained or locked
+    const state = await stateCache.get(label, () => readState(label));
     const want = new Set(voterIds);
     const out = new Map<string, Choice | null>();
     // the voters of each contender (one query per hundred voters) settle every masternode that voted for someone
     for (const c of state.contenders) {
       let after: string | undefined;
+      let complete = false;
       for (let page = 0; page < 50; page++) {
         const res = await sdk.group.contestedResourceVotersForIdentityWithProof({
           ...DPNS_POLL,
@@ -226,9 +230,14 @@ export function liveContests(r: Registry): ContestSource {
         });
         const ids = (res.data as Array<{ toString(): string }>).map((x) => x.toString());
         for (const id of ids) if (want.has(id)) out.set(id, { kind: 'contender', identityId: c.identityId });
-        if (ids.length < 100) break;
+        if (ids.length < 100) {
+          complete = true;
+          break;
+        }
         after = ids.at(-1);
       }
+      // a contender with more voters than were read: the rest cannot be told apart from "no vote"
+      if (!complete) return out;
     }
     // the rest voted abstain or lock, or not at all: only worth reading when the tally has abstain or lock votes
     const rest = voterIds.filter((v) => !out.has(v));
@@ -236,22 +245,27 @@ export function liveContests(r: Registry): ContestSource {
       for (const v of rest) out.set(v, null);
       return out;
     }
-    for (const v of rest) {
-      let found: Choice | null = null;
+    await mapLimit(rest, 3, async (v) => {
       let after: string | undefined;
-      for (let page = 0; page < VOTER_MAX_PAGES && !found; page++) {
+      for (let page = 0; page < VOTER_MAX_PAGES; page++) {
         const res = await sdk.voting.contestedResourceIdentityVotesWithProof({ identityId: v, limit: 100, ...(after ? { startAtVoteId: after, startAtIncluded: false } : {}) });
         let last: string | undefined;
         for (const [k, rv] of res.data) {
           last = k;
           const j = (rv as { toJSON(): unknown }).toJSON() as { votePoll?: { contractId?: string; indexValues?: unknown[] }; resourceVoteChoice?: unknown };
-          if (j.votePoll?.contractId === DPNS_CONTRACT_ID && j.votePoll.indexValues?.[1] === label) found = choiceFromJson(j.resourceVoteChoice);
+          if (j.votePoll?.contractId === DPNS_CONTRACT_ID && j.votePoll.indexValues?.[1] === label) {
+            out.set(v, choiceFromJson(j.resourceVoteChoice));
+            return;
+          }
         }
-        if (res.data.size < 100 || !last) break;
+        if (res.data.size < 100 || !last) {
+          out.set(v, null);
+          return;
+        }
         after = last;
       }
-      out.set(v, found);
-    }
+      // more votes than were read: left unknown
+    });
     return out;
   }
 
@@ -260,7 +274,7 @@ export function liveContests(r: Registry): ContestSource {
     live: true,
     votesOf,
     async nonceOf(voterId) {
-      return (await (await getSdk(r)).identities.nonce(voterId)) ?? 0n;
+      return ((await (await getSdk(r)).identities.nonce(voterId)) ?? 0n) & NONCE_MASK;
     },
     async broadcast(st) {
       const sdk = await getSdk(r);
@@ -304,7 +318,7 @@ export function fixtureContests(): ContestSource {
   return {
     network: 'mainnet',
     live: false,
-    async votesOf(_label, _state, voterIds) {
+    async votesOf(_label, voterIds) {
       return new Map(voterIds.map((v) => [v, null]));
     },
     nonceOf: async () => 0n,

@@ -15,6 +15,7 @@ import { formatDateTime, formatDuration, formatInt } from '../lib/format.ts';
 import { contestKey, displayName, isContestedLabel, normalizeLabel, percent, phaseOf, registersAs, VOTE_CHANGES, type Contender, type ContestState, type Phase } from '../contests/model.ts';
 import { BallotBar, contenderClass, contestHref } from '../contests/ui.tsx';
 import { ContestVotePanel } from '../contests/VotePanel.tsx';
+import { useContestVotes } from '../contests/ContestVotes.tsx';
 import { authorLabel } from '../lib/social.ts';
 import { useClockMs, useContestSource } from '../contests/useContests.ts';
 
@@ -113,6 +114,19 @@ function ContestView({ label }: { label: string }) {
       clearTimeout(t);
     };
   }, [phase, src, label, fresh, rereads]);
+  // a vote from this browser went out: the tally is read again (the sender dropped the cached one), in the background
+  const sentHere = useContestVotes().held.filter((v) => v.label === label && v.status === 'sent').length;
+  useEffect(() => {
+    if (!sentHere) return;
+    let live = true;
+    src.state(label).then(
+      (x) => live && setFresh({ key: label, s: x }),
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, [sentHere, src, label]);
 
   if (state.loading)
     return (

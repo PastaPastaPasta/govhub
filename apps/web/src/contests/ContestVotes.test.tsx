@@ -6,8 +6,9 @@ import { render } from '../test/render.tsx';
 import { storageKey, type HeldVote } from './held.ts';
 import type { ContestSource } from './source.ts';
 
-const hold = vi.hoisted(() => ({ src: null as unknown as ContestSource }));
+const hold = vi.hoisted(() => ({ src: null as unknown as ContestSource, forum: { session: null as null | { identityId: string } } }));
 vi.mock('../app/context.tsx', () => ({ useApp: () => ({ registry: { platformNetwork: 'testnet' } }) }));
+vi.mock('../app/forum.tsx', () => ({ useForum: () => hold.forum }));
 vi.mock('./useContests.ts', () => ({ useContestSource: () => hold.src }));
 const { ContestVotesProvider, useContestVotes } = await import('./ContestVotes.tsx');
 
@@ -25,7 +26,7 @@ const vote = (over: Partial<HeldVote> = {}): HeldVote => ({
   label: 'a1pha',
   proTxHash: 'p1',
   voterId: 'V1',
-  weight: 1,
+  owner: 'guest',
   choice: { kind: 'lock' },
   st: 'AQID',
   nonce: '1',
@@ -52,7 +53,7 @@ function fakeSource(over: Partial<ContestSource> = {}) {
   return { src, broadcast: (over.broadcast as typeof broadcast | undefined) ?? broadcast };
 }
 
-const stored = () => JSON.parse(localStorage.getItem(storageKey('testnet')) ?? '[]') as HeldVote[];
+const stored = (live = true) => JSON.parse(localStorage.getItem(storageKey(live, 'testnet')) ?? '[]') as HeldVote[];
 const mount = async () => {
   const r = await render(
     <ContestVotesProvider>
@@ -63,7 +64,10 @@ const mount = async () => {
   return r;
 };
 
-beforeEach(() => localStorage.clear());
+beforeEach(() => {
+  localStorage.clear();
+  hold.forum = { session: null };
+});
 
 describe('the contest vote sender', () => {
   it('sends a "now" vote at once and keeps nothing stored once it is accepted', async () => {
@@ -159,9 +163,51 @@ describe('the contest vote sender', () => {
     fakeSource();
     const r = await mount();
     const v = vote({ id: 'other', mode: 'spread', releaseAt: Date.now() + 3_600_000 });
-    localStorage.setItem(storageKey('testnet'), JSON.stringify([v]));
-    await act(async () => dispatchEvent(new StorageEvent('storage', { key: storageKey('testnet') })));
+    localStorage.setItem(storageKey(true, 'testnet'), JSON.stringify([v]));
+    await act(async () => dispatchEvent(new StorageEvent('storage', { key: storageKey(true, 'testnet') })));
     expect(api.held.map((x) => x.id)).toEqual(['other']);
+    await r.unmount();
+  });
+  it('shows a reader only their own votes, though it sends every stored one', async () => {
+    const { broadcast } = fakeSource();
+    hold.forum = { session: { identityId: 'ALICE' } };
+    const r = await mount();
+    await act(async () => api.add([vote({ id: 'theirs', owner: 'BOB' }), vote({ id: 'mine', owner: 'ALICE', proTxHash: 'p2', voterId: 'V2' })]));
+    await wait();
+    expect(api.held.map((x) => x.id)).toEqual(['mine']);
+    expect(broadcast).toHaveBeenCalledTimes(2);
+    await r.unmount();
+  });
+
+  it('never cancels or replaces a vote another tab is sending', async () => {
+    fakeSource();
+    const r = await mount();
+    const busy = vote({ id: 'busy', status: 'sending', sendingSince: Date.now(), mode: 'spread', releaseAt: Date.now() + 3_600_000 });
+    localStorage.setItem(storageKey(true, 'testnet'), JSON.stringify([busy]));
+    await act(async () => api.cancel('busy'));
+    await act(async () => api.add([vote({ id: 'new', mode: 'spread', releaseAt: Date.now() + 3_600_000 })]));
+    expect(stored().map((x) => [x.id, x.status])).toEqual([
+      ['busy', 'sending'],
+      ['new', 'waiting'],
+    ]);
+    await r.unmount();
+  });
+
+  it('when a used nonce cannot be checked, it tries again rather than telling the operator to vote again', async () => {
+    fakeSource({ broadcast: vi.fn(async () => Promise.reject({ code: 40204, message: 'nonce already present at tip' })), votesOf: vi.fn(async () => Promise.reject(new Error('offline'))) });
+    const r = await mount();
+    await act(async () => api.add([vote({ id: 'a' })]));
+    await wait();
+    expect(api.held.find((x) => x.id === 'a')).toMatchObject({ status: 'waiting', tries: 1, note: 'Checking whether this vote counts…' });
+    await r.unmount();
+  });
+
+  it('keeps demo votes apart from real ones', async () => {
+    fakeSource({ live: false });
+    const r = await mount();
+    await act(async () => api.add([vote({ id: 'demo', mode: 'spread', releaseAt: Date.now() + 3_600_000 })]));
+    expect(stored(false).map((x) => x.id)).toEqual(['demo']);
+    expect(stored(true)).toEqual([]);
     await r.unmount();
   });
 });

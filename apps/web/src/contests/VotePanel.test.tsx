@@ -13,18 +13,20 @@ const hold = vi.hoisted(() => ({
   k: null as unknown,
   app: { registry: { coreNetwork: 'testnet', platformNetwork: 'testnet' } } as unknown,
   held: [] as unknown[],
-  add: null as unknown as (v: unknown[]) => void,
+  add: null as unknown as (v: unknown[]) => Promise<void>,
+  guest: { status: 'empty', error: null, owned: [], keyInfos: [], add: async () => {}, forget: () => {}, copyKeys: () => null } as unknown,
   signed: [] as Array<{ privateKey: Uint8Array; nonce: bigint; proTxHash: string }>,
   src: null as unknown,
 }));
 vi.mock('@dashevo/evo-sdk', () => ({}));
 vi.mock('../app/context.tsx', () => ({ useApp: () => hold.app }));
 vi.mock('../voting/KeyringContext.tsx', () => ({ useKeyring: () => hold.k }));
-vi.mock('./ContestVotes.tsx', () => ({ useContestVotes: () => ({ held: hold.held, add: (v: unknown[]) => hold.add(v), cancel: vi.fn(), sendNow: vi.fn() }) }));
+vi.mock('./ContestVotes.tsx', () => ({ useContestVotes: () => ({ held: hold.held, owner: 'ME', snapshot: () => hold.held, add: (v: unknown[]) => hold.add(v), cancel: vi.fn(), sendNow: vi.fn() }) }));
+vi.mock('./GuestKeys.tsx', () => ({ useGuestKeys: () => hold.guest }));
 vi.mock('./useContests.ts', () => ({ useContestSource: () => hold.src }));
 vi.mock('./vote.ts', async (orig) => ({
   ...(await orig<typeof import('./vote.ts')>()),
-  signVote: (_mod: unknown, _net: unknown, v: { privateKey: Uint8Array; nonce: bigint; proTxHash: string }) => {
+  signVote: (_mod: unknown, v: { privateKey: Uint8Array; nonce: bigint; proTxHash: string }) => {
     hold.signed.push({ privateKey: v.privateKey, nonce: v.nonce, proTxHash: v.proTxHash });
     return new Uint8Array([7]);
   },
@@ -34,7 +36,7 @@ const { votingKeyHash, voterIdOf } = await import('./vote.ts');
 
 const PRO1 = 'a'.repeat(64);
 const PRO2 = 'b'.repeat(64);
-const mn = (proTxHash: string, keyIndex: number, type: 'regular' | 'evo' = 'regular') => ({ proTxHash, collateralTxid: proTxHash, collateralIndex: 0, type, valid: true, votingAddress: 'y', keyIndex, provenance: { key: 'sml', outpoint: 'protx' } });
+const mn = (proTxHash: string, keyIndex: number, type: 'regular' | 'evo' = 'regular') => ({ proTxHash, collateralTxid: proTxHash, collateralIndex: 0, type, valid: true, votingAddress: 'y', keyIndex, provenance: { key: 'sml' as const, collateral: 'protx' as const } });
 const V1 = voterIdOf(PRO1, votingKeyHash(KEY1));
 const V2 = voterIdOf(PRO2, votingKeyHash(KEY2));
 const C = 'eUJLdV1mRNVYAMdHYV3nSiwKu2EBB1jGfVKUuCDeUE2';
@@ -55,7 +57,8 @@ beforeEach(() => {
   hold.held = [];
   hold.signed = [];
   added = [];
-  hold.add = (v) => void added.push(...(v as HeldVote[]));
+  hold.add = async (v) => void added.push(...(v as HeldVote[]));
+  hold.guest = { status: 'empty', error: null, owned: [], keyInfos: [], add: async () => {}, forget: () => {}, copyKeys: () => null };
   hold.src = {
     live: true,
     // MN2 already votes Lock; MN1 has not voted
@@ -89,9 +92,9 @@ describe('ContestVotePanel', () => {
     // the copies handed to signing are zero now; the keyring's own keys are untouched
     for (const s of hold.signed) expect(s.privateKey.every((b) => b === 0)).toBe(true);
     expect((hold.k as { keyring: { content: { keys: { privateKey: Uint8Array }[] } } }).keyring.content.keys[0]!.privateKey).toEqual(KEY1);
-    expect(added.map((v) => [v.proTxHash, v.weight, v.mode, v.nonce, v.st])).toEqual([
-      [PRO1, 1, 'now', '7', 'Bw=='],
-      [PRO2, 4, 'now', '10', 'Bw=='],
+    expect(added.map((v) => [v.proTxHash, v.owner, v.mode, v.nonce, v.st])).toEqual([
+      [PRO1, 'ME', 'now', '7', 'Bw=='],
+      [PRO2, 'ME', 'now', '10', 'Bw=='],
     ]);
   });
 
@@ -118,10 +121,50 @@ describe('ContestVotePanel', () => {
     expect(el.querySelector('[role="alert"]')!.textContent).toMatch(/wiped/);
   });
 
-  it('points to My masternodes while the keyring is not open', async () => {
-    (hold.k as { status: string }).status = 'locked';
+  it('points to My masternodes while the keyring is not open, and offers pasting a voting key instead', async () => {
+    (hold.k as { status: string }).status = 'signed-out';
     const { el } = await mount();
-    expect(el.querySelector('[data-testid="vote-cta"]')!.textContent).toMatch(/Unlock your masternode keyring/);
+    expect(el.querySelector('[data-testid="vote-cta"]')!.textContent).toMatch(/sign in and add your voting keys/);
+    await click(el.querySelector<HTMLButtonElement>('[data-testid="guest-open"]')!);
+    expect(el.querySelector('[data-testid="guest-form"]')!.textContent).toMatch(/this tab’s memory only: never saved, never sent/);
+  });
+
+  it('signs with pasted keys when there is no keyring, as the guest', async () => {
+    (hold.k as { status: string }).status = 'signed-out';
+    const keys = [{ privateKey: KEY1.slice(), compressed: true, label: '' }];
+    const owned = [mn(PRO1, 0)];
+    const { castKeys } = await import('../voting/gate.ts');
+    hold.guest = { status: 'ready', error: null, owned, keyInfos: [{ keyId: '', pubKeyHash: votingKeyHash(KEY1), compressed: true, label: '' }], add: async () => {}, forget: () => {}, copyKeys: () => castKeys(keys, owned) };
+    const { el } = await mount();
+    await flush();
+    expect(el.textContent).toMatch(/From voting keys pasted into this tab/);
+    await click(pick(el, /Abstain/));
+    await click(el.querySelector<HTMLButtonElement>('[data-testid="vote-send"]')!);
+    await flush();
+    expect(added.map((v) => [v.proTxHash, v.nonce])).toEqual([[PRO1, '5']]);
+    expect(keys[0]!.privateKey).toEqual(KEY1);
+  });
+
+  it('says nothing was sent when the browser cannot store the votes', async () => {
+    hold.add = async () => Promise.reject(new Error('QuotaExceededError'));
+    const { el } = await mount();
+    await flush();
+    await click(pick(el, /Abstain/));
+    await click(el.querySelector<HTMLButtonElement>('[data-testid="vote-send"]')!);
+    await flush();
+    expect(el.querySelector('[role="alert"]')!.textContent).toMatch(/could not store the signed votes, so nothing was sent/);
+  });
+
+  it('refuses when the keys changed while the votes were prepared', async () => {
+    const { el } = await mount();
+    await flush();
+    await click(pick(el, /Abstain/));
+    // another key now sits where the first one was
+    (hold.k as { keyring: { content: { keys: { privateKey: Uint8Array }[] } } }).keyring.content.keys[0]!.privateKey = new Uint8Array(32).fill(3);
+    await click(el.querySelector<HTMLButtonElement>('[data-testid="vote-send"]')!);
+    await flush();
+    expect(added).toEqual([]);
+    expect(el.querySelector('[role="alert"]')!.textContent).toMatch(/keys changed/);
   });
 
   it('does not offer voting where Core and Platform are different networks (the Dev profile)', async () => {

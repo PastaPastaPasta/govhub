@@ -1,7 +1,7 @@
 import { hexToBytes } from '@govhub/auth';
 import { describe, expect, it } from 'vitest';
-import { dueVotes, loadHeld, releaseTimes, respreadOverdue, retryDelayMs, saveHeld, spreadWindow, storageKey, type HeldVote } from './held.ts';
-import { choiceFromJson, classifySendError, sameChoice, voterIdOf } from './vote.ts';
+import { dueVotes, loadHeld, nextNonce, releaseTimes, respreadOverdue, retryDelayMs, saveHeld, SENDING_LEASE_MS, spreadWindow, storageKey, type HeldVote } from './held.ts';
+import { choiceFromJson, classifySendError, NONCE_MASK, NONCE_WINDOW, sameChoice, voterIdOf } from './vote.ts';
 
 describe('voter identity', () => {
   it('is SHA-256(proTxHash ‖ voting key hash), as Platform derives it', () => {
@@ -37,6 +37,14 @@ describe('Platform answers', () => {
     expect(classifySendError(new Error('timeout'))).toEqual({ kind: 'retry', text: 'timeout' });
     // a code only in the message (some SDK errors carry none)
     expect(classifySendError({ message: 'Failed to broadcast: 40302 not available' }).kind).toBe('final');
+    // the nonce variants: used (read back), or out of Platform's window (final, in words)
+    expect(classifySendError(err(40204, 'nonce already present at tip')).kind).toBe('check');
+    expect(classifySendError(err(40204, 'nonce too far in future')).text).toMatch(/Too many votes of this masternode/);
+    expect(classifySendError(err(40204, 'nonce too far in past')).text).toMatch(/Newer votes of this masternode went out first/);
+    // any other Platform error does not go away by asking again
+    expect(classifySendError(err(10001, 'malformed'))).toEqual({ kind: 'final', text: 'Platform refused this vote: malformed' });
+    expect(classifySendError({ code: -1, kind: 'Protocol', isRetriable: false, message: 'bad bytes' }).kind).toBe('final');
+    expect(classifySendError({ code: -1, kind: 'Timeout', isRetriable: true, message: 'deadline' }).kind).toBe('retry');
   });
 });
 
@@ -46,7 +54,7 @@ const vote = (over: Partial<HeldVote> = {}): HeldVote => ({
   label: 'a1pha',
   proTxHash: 'p1',
   voterId: 'V1',
-  weight: 1,
+  owner: 'guest',
   choice: { kind: 'lock' },
   st: 'AA==',
   nonce: '1',
@@ -96,19 +104,37 @@ describe('held votes', () => {
     expect(retryDelayMs(20)).toBe(300_000);
   });
 
-  it('stores only what is still to send, per network, and resumes an interrupted send', () => {
+  it('stores only what is still to send, per mode and network, and takes up a send cut off past its lease', () => {
     const m = new Map<string, string>();
     const store = { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), removeItem: (k: string) => void m.delete(k) };
-    saveHeld(store, 'testnet', [vote({ id: 'w' }), vote({ id: 's', status: 'sending' }), vote({ id: 'done', status: 'sent' }), vote({ id: 'main', network: 'mainnet' })]);
-    const back = loadHeld(store, 'testnet');
-    expect(back.map((v) => [v.id, v.status])).toEqual([
+    const now = 50_000_000;
+    saveHeld(store, true, 'testnet', [vote({ id: 'w' }), vote({ id: 'fresh', status: 'sending', sendingSince: now - 10_000 }), vote({ id: 'cut', status: 'sending', sendingSince: now - SENDING_LEASE_MS - 1 }), vote({ id: 'done', status: 'sent' }), vote({ id: 'main', network: 'mainnet' })]);
+    // a send in progress stays claimed (no other tab sends, cancels or replaces it); one cut off is waiting again
+    expect(loadHeld(store, true, 'testnet', now).map((v) => [v.id, v.status])).toEqual([
       ['w', 'waiting'],
-      ['s', 'waiting'],
+      ['fresh', 'sending'],
+      ['cut', 'waiting'],
     ]);
-    expect(loadHeld(store, 'mainnet')).toEqual([]);
-    m.set(storageKey('testnet'), JSON.stringify([{ id: 1 }, vote({ id: 'ok' }), 'junk']));
-    expect(loadHeld(store, 'testnet').map((v) => v.id)).toEqual(['ok']);
-    saveHeld(store, 'testnet', []);
-    expect(m.has(storageKey('testnet'))).toBe(false);
+    expect(loadHeld(store, true, 'mainnet', now)).toEqual([]);
+    // demo votes never mix with real ones
+    expect(loadHeld(store, false, 'testnet', now)).toEqual([]);
+    expect(storageKey(true, 'testnet')).not.toBe(storageKey(false, 'testnet'));
+    m.set(storageKey(true, 'testnet'), JSON.stringify([{ id: 1 }, vote({ id: 'ok' }), vote({ id: 'badnonce', nonce: '-1' }), 'junk']));
+    expect(loadHeld(store, true, 'testnet', now).map((v) => v.id)).toEqual(['ok']);
+    saveHeld(store, true, 'testnet', []);
+    expect(m.has(storageKey(true, 'testnet'))).toBe(false);
+    // a full storage is not swallowed: the caller says nothing was kept
+    const full = { setItem: () => { throw new DOMException('full', 'QuotaExceededError'); }, removeItem: () => {} };
+    expect(() => saveHeld(full, true, 'testnet', [vote()])).toThrow();
+  });
+
+  it('takes the next nonce past Platform\'s (its low 40 bits) and past every vote held here, within Platform\'s window', () => {
+    // Platform keeps the gaps of out-of-order nonces in the top 24 bits: nonce 2 with nonce 1 missing
+    const stored = 2n | (1n << 40n);
+    expect(nextNonce(stored, [], 'V1', NONCE_WINDOW, NONCE_MASK)).toBe(3n);
+    const held = [vote({ voterId: 'V1', nonce: '7' }), vote({ voterId: 'V1', nonce: '5', status: 'sending' }), vote({ voterId: 'V2', nonce: '40' }), vote({ voterId: 'V1', nonce: '99', status: 'sent' })];
+    expect(nextNonce(stored, held, 'V1', NONCE_WINDOW, NONCE_MASK)).toBe(8n);
+    expect(nextNonce(0n, [vote({ voterId: 'V1', nonce: '23' })], 'V1', NONCE_WINDOW, NONCE_MASK)).toBe(24n);
+    expect(nextNonce(0n, [vote({ voterId: 'V1', nonce: '24' })], 'V1', NONCE_WINDOW, NONCE_MASK)).toBeNull();
   });
 });

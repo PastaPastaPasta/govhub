@@ -16,6 +16,7 @@ import { VerificationPage } from './pages/VerificationPage.tsx';
 import { ActivePage } from './pages/ActivePage.tsx';
 import { ContestsGate } from './contests/Gate.tsx';
 import { ContestVotesProvider } from './contests/ContestVotes.tsx';
+import { GuestKeysProvider } from './contests/GuestKeys.tsx';
 import { PastPage } from './pages/PastPage.tsx';
 import { ProposalByHash, ProposalByName } from './pages/ProposalPage.tsx';
 import { SettingsPage } from './pages/SettingsPage.tsx';
@@ -66,6 +67,7 @@ createRoot(document.getElementById('root')!).render(
             <KeyringProvider>
             <BadgeProvider>
             <ContestVotesProvider>
+            <GuestKeysProvider>
             <SdkWarmup />
             <Routes>
               <Route element={<Layout />}>
@@ -96,6 +98,7 @@ createRoot(document.getElementById('root')!).render(
                 <Route path="*" element={<NotFoundPage />} />
               </Route>
             </Routes>
+            </GuestKeysProvider>
             </ContestVotesProvider>
             </BadgeProvider>
             </KeyringProvider>
