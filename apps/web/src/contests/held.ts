@@ -110,6 +110,8 @@ const isHeld = (v: unknown): v is HeldVote => {
     typeof x.st === 'string' &&
     /^\d+$/.test(x.nonce ?? '') &&
     typeof x.releaseAt === 'number' &&
+    (x.endsAt === null || typeof x.endsAt === 'number') &&
+    typeof x.tries === 'number' &&
     (x.mode === 'now' || x.mode === 'spread') &&
     (x.status === 'waiting' || x.status === 'sending') &&
     isChoice(x.choice)

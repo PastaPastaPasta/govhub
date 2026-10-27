@@ -49,7 +49,7 @@ describe('Platform answers', () => {
     // a number in a message is not taken for a code when the error carries its own
     expect(classifySendError({ code: -1, kind: 'Generic', message: 'tolerance 10000 exceeded' }).kind).toBe('retry');
     // already in the mempool: it may count, so it is read back
-    expect(classifySendError({ code: -1, kind: 16, name: 'AlreadyExists', message: 'already exists' }).kind).toBe('check');
+    expect(classifySendError({ code: -1, kind: 16, name: 'AlreadyExists', message: 'already exists' })).toMatchObject({ kind: 'check', pending: true });
   });
 });
 
@@ -128,7 +128,8 @@ describe('held votes', () => {
     // demo votes never mix with real ones
     expect(loadHeld(store, false, 'testnet')).toEqual([]);
     expect(storageKey(true, 'testnet')).not.toBe(storageKey(false, 'testnet'));
-    m.set(storageKey(true, 'testnet'), JSON.stringify([{ id: 1 }, vote({ id: 'ok' }), vote({ id: 'badnonce', nonce: '-1' }), 'junk']));
+    const { tries: _t, ...noTries } = vote({ id: 'notries' });
+    m.set(storageKey(true, 'testnet'), JSON.stringify([{ id: 1 }, vote({ id: 'ok' }), vote({ id: 'badnonce', nonce: '-1' }), { ...vote({ id: 'badend' }), endsAt: 'x' }, noTries, 'junk']));
     expect(loadHeld(store, true, 'testnet').map((v) => v.id)).toEqual(['ok']);
     saveHeld(store, true, 'testnet', []);
     expect(m.has(storageKey(true, 'testnet'))).toBe(false);

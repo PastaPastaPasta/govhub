@@ -92,6 +92,8 @@ export function choiceFromJson(j: unknown): Choice | null {
 export interface SendOutcome {
   kind: 'final' | 'retry' | 'check' | 'same';
   text: string;
+  /** `check` only: the vote may still be in the mempool, so a read-back that does not see it yet is no answer */
+  pending?: boolean;
 }
 
 /** Platform's consensus code: the SDK error's own (-1 when it is not a consensus error); only an error without one is searched. */
@@ -136,7 +138,7 @@ export function classifySendError(e: unknown): SendOutcome {
   // already in the mempool (a re-send after a lost answer): it may count, so it is read back
   // (WasmSdkError: `kind` is a number, `name` the kind's name)
   const name = e && typeof e === 'object' && 'name' in e ? String((e as { name: unknown }).name) : '';
-  if (name === 'AlreadyExists') return { kind: 'check', text: 'This vote was already sent.' };
+  if (name === 'AlreadyExists') return { kind: 'check', text: 'This vote was already sent.', pending: true };
   // everything else (no node answered, a timeout, the browser offline) may pass: tried again, until voting closes
   return { kind: 'retry', text: msg || 'Platform could not be reached.' };
 }

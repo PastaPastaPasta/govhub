@@ -168,13 +168,14 @@ export function ContestVotesProvider({ children }: { children: ReactNode }) {
         } catch {
           counted = undefined;
         }
-        if (counted === undefined) {
+        if (counted && sameChoice(counted, v.choice)) return finish(v.id, 'sent');
+        // not read, or (still in the mempool) not counted yet: read again in a while
+        if (counted === undefined || o.pending) {
           const checks = (v.checks ?? 0) + 1;
           if (checks >= MAX_CHECKS) return finish(v.id, 'failed', 'Could not confirm whether this vote counts. Check the masternode’s current vote on the page.');
           await set(v.id, { checks });
           return again({ ...v, checks }, 'Checking whether this vote counts…');
         }
-        if (counted && sameChoice(counted, v.choice)) return finish(v.id, 'sent');
         return finish(v.id, 'failed', `${o.text} Vote again to replace that vote.`);
       }
     };

@@ -221,4 +221,13 @@ describe('the contest vote sender', () => {
     expect(api.held.find((x) => x.id === 'cut')!.status).toBe('sent');
     await r.unmount();
   });
+
+  it('after AlreadyExists, a read-back that does not see the vote yet checks again (it may still be in the mempool)', async () => {
+    fakeSource({ broadcast: vi.fn(async () => Promise.reject({ code: -1, kind: 16, name: 'AlreadyExists', message: 'exists' })), votesOf: vi.fn(async () => new Map([['V1', null]])) });
+    const r = await mount();
+    await act(async () => api.add([vote({ id: 'a' })]));
+    await wait();
+    expect(api.held.find((x) => x.id === 'a')).toMatchObject({ status: 'waiting', checks: 1, note: 'Checking whether this vote counts…' });
+    await r.unmount();
+  });
 });
