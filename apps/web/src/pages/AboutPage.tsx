@@ -85,8 +85,8 @@ export function AboutPage() {
 
       <h2>Usernames</h2>
       <p>
-        Short Dash usernames go to a masternode vote: when someone registers one, others can ask for the same name, and masternodes decide who gets it or
-        lock it so nobody does. The <Link to="/names">Usernames</Link> page lists the names being voted on now, and the ones decided before. Each has a
+        Some short Dash usernames go to a masternode vote: when someone registers one, others can ask for the same name for a week, and masternodes decide
+        who gets it or lock it so nobody does. The <Link to="/names">Usernames</Link> page lists the names being voted on now, and the ones decided before. Each has a
         discussion, as a proposal does.
       </p>
       <p>
