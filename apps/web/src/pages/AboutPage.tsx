@@ -83,6 +83,18 @@ export function AboutPage() {
         anyone could run the same software. The one thing at risk is old vote history, which Dash Core discards after a while and our servers keep a copy of.
       </p>
 
+      <h2>Usernames</h2>
+      <p>
+        Short Dash usernames go to a masternode vote: when someone registers one, others can ask for the same name, and masternodes decide who gets it or
+        lock it so nobody does. The <Link to="/names">Usernames</Link> page lists the names being voted on now, and the ones decided before. Each has a
+        discussion, as a proposal does.
+      </p>
+      <p>
+        Your browser reads the contests from Dash Platform and checks the network’s proofs. A masternode owner can vote with the masternode keys in their
+        account, or paste a voting key, which stays in that tab and is never saved. These votes go from your browser straight to Platform, not through our
+        servers.
+      </p>
+
       <h2>Your account</h2>
       <p>
         A govhub account is a Dash Platform identity, so it isn’t stored by us. You sign in with its recovery phrase, a private key, or a passkey. Your phrase and

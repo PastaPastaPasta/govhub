@@ -10,10 +10,9 @@ import { button, click, flush, render, type } from '../test/render.tsx';
 
 const NOW_S = Date.UTC(2026, 9, 23) / 1000;
 vi.mock('../data/fixtures.ts', () => ({ loadFixtures: async () => ({ now: NOW_S }) }));
-const hold = vi.hoisted(() => ({ src: null as unknown as ContestSource, shown: true }));
+const hold = vi.hoisted(() => ({ src: null as unknown as ContestSource }));
 vi.mock('../contests/useContests.ts', () => ({
   useContestSource: () => hold.src,
-  useContestsShown: () => hold.shown,
   useClockMs: () => NOW_S * 1000,
 }));
 const forum = vi.hoisted(() => ({
@@ -33,14 +32,12 @@ vi.mock('../ui/Discussion.tsx', () => ({
 
 const { ContestsPage } = await import('./ContestsPage.tsx');
 const { ContestPage } = await import('./ContestPage.tsx');
-const { ContestsGate } = await import('../contests/Gate.tsx');
 
 let names: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   const src = fixtureContests();
   names = vi.fn(src.names);
   hold.src = { ...src, names: names as ContestSource['names'] };
-  hold.shown = true;
 });
 
 // StrictMode, as in the app: effects mount, unmount and mount again in development
@@ -48,7 +45,7 @@ const at = (path: string) => (
   <StrictMode>
     <MemoryRouter initialEntries={[path]}>
       <Routes>
-        <Route path="/names" element={<ContestsGate />}>
+        <Route path="/names">
           <Route index element={<ContestsPage />} />
           <Route path=":label" element={<ContestPage />} />
         </Route>
@@ -97,19 +94,6 @@ describe('ContestsPage', () => {
     await settle();
     expect(names).toHaveBeenLastCalledWith({ from: 'dash' });
     expect(cards(el, '[data-testid="ended-contests"]')).toEqual(['dashpay']);
-  });
-
-  it('is not there, and reads nothing, when contests are not shown for the profile', async () => {
-    hold.shown = false;
-    const open = vi.spyOn(hold.src, 'open');
-    const state = vi.spyOn(hold.src, 'state');
-    for (const path of ['/names', '/names/sat0sh1']) {
-      const { el } = await render(at(path));
-      await settle();
-      expect(el.textContent).toContain('Page not found');
-    }
-    expect(open).not.toHaveBeenCalled();
-    expect(state).not.toHaveBeenCalled();
   });
 });
 

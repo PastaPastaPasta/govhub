@@ -274,7 +274,7 @@ function Composer({ label, state, endsAt, nameOf, signer }: { label: string; sta
 
       <details className="vcomp-mns" data-testid="vote-mns">
         <summary>
-          <span>{chosen.length === usable.length ? `With ${usable.length === 1 ? 'your masternode' : `all ${usable.length} of your masternodes`}` : `With ${chosen.length} of ${usable.length} masternodes`}</span>
+          <span>{chosen.length === usable.length ? `With ${usable.length === 1 ? 'your masternode' : usable.length === 2 ? 'both your masternodes' : `all ${usable.length} of your masternodes`}` : `With ${chosen.length} of ${usable.length} masternodes`}</span>
           <span className="vcomp-change">Change</span>
         </summary>
         {usable.length > 1 && (

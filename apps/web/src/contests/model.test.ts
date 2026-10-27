@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { contestKey, displayName, isContestedLabel, normalizeLabel, percent, phaseOf, registersAs, toOutcome, type ContestState } from './model.ts';
 import { TtlCache } from './source.ts';
 import { leadText, statusTag } from './ui.tsx';
-import { contestsShown } from './useContests.ts';
 
 const state = (over: Partial<ContestState> = {}): ContestState => {
   const s = { label: 'x', contenders: [], abstain: 0, lock: 0, total: 0, outcome: null, height: null, ...over };
@@ -86,22 +85,6 @@ describe('card wording', () => {
     expect(statusTag(state(), null, now).text).toBe('No result yet');
     expect(statusTag(state({ outcome: { kind: 'won', identityId: A, at: 1 } }), null, now)).toEqual({ text: 'Awarded', tone: 'won' });
     expect(statusTag(state({ outcome: { kind: 'locked', at: 1 } }), null, now)).toEqual({ text: 'Locked', tone: 'locked' });
-  });
-});
-
-describe('gate', () => {
-  const store = () => {
-    const m = new Map<string, string>();
-    return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), removeItem: (k: string) => void m.delete(k) };
-  };
-  it('shows contests on testnet Platform, and on mainnet Platform only after ?contests=1', () => {
-    const s = store();
-    expect(contestsShown({ platformNetwork: 'testnet' }, '', s)).toBe(true);
-    expect(contestsShown({ platformNetwork: 'mainnet' }, '', s)).toBe(false);
-    expect(contestsShown({ platformNetwork: 'mainnet' }, '?contests=1', s)).toBe(true);
-    expect(contestsShown({ platformNetwork: 'mainnet' }, '', s)).toBe(true);
-    expect(contestsShown({ platformNetwork: 'mainnet' }, '?contests=0', s)).toBe(false);
-    expect(contestsShown({ platformNetwork: 'mainnet' }, '', s)).toBe(false);
   });
 });
 
