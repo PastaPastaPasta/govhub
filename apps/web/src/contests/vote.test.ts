@@ -49,7 +49,7 @@ describe('Platform answers', () => {
     // a number in a message is not taken for a code when the error carries its own
     expect(classifySendError({ code: -1, kind: 'Generic', message: 'tolerance 10000 exceeded' }).kind).toBe('retry');
     // already in the mempool: it may count, so it is read back
-    expect(classifySendError({ code: -1, kind: 'AlreadyExists', message: 'already exists' }).kind).toBe('check');
+    expect(classifySendError({ code: -1, kind: 16, name: 'AlreadyExists', message: 'already exists' }).kind).toBe('check');
   });
 });
 

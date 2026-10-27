@@ -134,8 +134,9 @@ export function classifySendError(e: unknown): SendOutcome {
   // any other consensus error will not go away by asking again
   if (code !== null) return { kind: 'final', text: `Platform refused this vote: ${msg}` };
   // already in the mempool (a re-send after a lost answer): it may count, so it is read back
-  const kind = e && typeof e === 'object' && 'kind' in e ? String((e as { kind: unknown }).kind) : '';
-  if (/alreadyexists/i.test(kind)) return { kind: 'check', text: 'This vote was already sent.' };
+  // (WasmSdkError: `kind` is a number, `name` the kind's name)
+  const name = e && typeof e === 'object' && 'name' in e ? String((e as { name: unknown }).name) : '';
+  if (name === 'AlreadyExists') return { kind: 'check', text: 'This vote was already sent.' };
   // everything else (no node answered, a timeout, the browser offline) may pass: tried again, until voting closes
   return { kind: 'retry', text: msg || 'Platform could not be reached.' };
 }

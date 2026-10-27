@@ -37,6 +37,8 @@ export function useContestVotes(): Ctx {
 const TICK_MS = 5000;
 /** How often an unconfirmed vote (its nonce used, the read-back failed) is read back before it is given up on. */
 const MAX_CHECKS = 5;
+/** A vote with no known close (the open list could not be read) is not retried forever: about two hours of tries. */
+const MAX_TRIES_NO_CLOSE = 30;
 const SEND_LOCK = 'govhub-contest-votes-send';
 const STORE_LOCK = 'govhub-contest-votes-store';
 const store = (): Storage | undefined => globalThis.localStorage;
@@ -136,6 +138,7 @@ export function ContestVotesProvider({ children }: { children: ReactNode }) {
     const finish = (id: string, status: 'sent' | 'failed', note?: string) => set(id, { status, note, sendingSince: undefined });
     const again = (v: HeldVote, note: string) => {
       const tries = v.tries + 1;
+      if (v.endsAt === null && tries >= MAX_TRIES_NO_CLOSE) return finish(v.id, 'failed', `Platform could not be reached for this vote (${note}). Vote again.`);
       return set(v.id, { status: 'waiting', sendingSince: undefined, tries, nextTryAt: Date.now() + retryDelayMs(tries), note });
     };
     const sendOne = async (v: HeldVote) => {
