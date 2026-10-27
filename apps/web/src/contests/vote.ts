@@ -94,10 +94,13 @@ export interface SendOutcome {
   text: string;
 }
 
+/** Platform's consensus code: the SDK error's own (-1 when it is not a consensus error); only an error without one is searched. */
 const codeOf = (e: unknown): number | null => {
-  const c = e && typeof e === 'object' && 'code' in e ? Number((e as { code: unknown }).code) : NaN;
-  if (Number.isFinite(c) && c > 0) return c;
-  const m = /\b([1-4]0[0-9]{3})\b/.exec(errText(e));
+  if (e && typeof e === 'object' && 'code' in e) {
+    const c = Number((e as { code: unknown }).code);
+    return Number.isFinite(c) && c > 0 ? c : null;
+  }
+  const m = /\b(40[0-9]{3}|20002)\b/.exec(errText(e));
   return m ? Number(m[1]) : null;
 };
 
@@ -128,9 +131,11 @@ export function classifySendError(e: unknown): SendOutcome {
     case 20002:
       return { kind: 'final', text: 'Platform did not accept the signature.' };
   }
-  // any other consensus or protocol error will not go away by asking again
+  // any other consensus error will not go away by asking again
   if (code !== null) return { kind: 'final', text: `Platform refused this vote: ${msg}` };
-  const retriable = e && typeof e === 'object' && 'isRetriable' in e ? (e as { isRetriable: unknown }).isRetriable : undefined;
-  if (retriable === false && e && typeof e === 'object' && 'kind' in e) return { kind: 'final', text: `Platform refused this vote: ${msg}` };
+  // already in the mempool (a re-send after a lost answer): it may count, so it is read back
+  const kind = e && typeof e === 'object' && 'kind' in e ? String((e as { kind: unknown }).kind) : '';
+  if (/alreadyexists/i.test(kind)) return { kind: 'check', text: 'This vote was already sent.' };
+  // everything else (no node answered, a timeout, the browser offline) may pass: tried again, until voting closes
   return { kind: 'retry', text: msg || 'Platform could not be reached.' };
 }

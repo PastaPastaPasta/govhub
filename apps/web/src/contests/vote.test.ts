@@ -1,6 +1,6 @@
 import { hexToBytes } from '@govhub/auth';
 import { describe, expect, it } from 'vitest';
-import { dueVotes, loadHeld, nextNonce, releaseTimes, respreadOverdue, retryDelayMs, saveHeld, SENDING_LEASE_MS, spreadWindow, storageKey, type HeldVote } from './held.ts';
+import { dueVotes, loadHeld, nextNonce, reclaimCutOff, releaseTimes, respreadOverdue, retryDelayMs, saveHeld, SENDING_LEASE_MS, spreadWindow, storageKey, type HeldVote } from './held.ts';
 import { choiceFromJson, classifySendError, NONCE_MASK, NONCE_WINDOW, sameChoice, voterIdOf } from './vote.ts';
 
 describe('voter identity', () => {
@@ -43,8 +43,13 @@ describe('Platform answers', () => {
     expect(classifySendError(err(40204, 'nonce too far in past')).text).toMatch(/Newer votes of this masternode went out first/);
     // any other Platform error does not go away by asking again
     expect(classifySendError(err(10001, 'malformed'))).toEqual({ kind: 'final', text: 'Platform refused this vote: malformed' });
-    expect(classifySendError({ code: -1, kind: 'Protocol', isRetriable: false, message: 'bad bytes' }).kind).toBe('final');
-    expect(classifySendError({ code: -1, kind: 'Timeout', isRetriable: true, message: 'deadline' }).kind).toBe('retry');
+    // not a consensus error (code -1): no node answered, offline, a timeout... tried again, whatever isRetriable says
+    expect(classifySendError({ code: -1, kind: 'DapiClientError', isRetriable: false, message: 'no available addresses' }).kind).toBe('retry');
+    expect(classifySendError({ code: -1, kind: 'Timeout', isRetriable: true, message: 'deadline after 10000 ms' }).kind).toBe('retry');
+    // a number in a message is not taken for a code when the error carries its own
+    expect(classifySendError({ code: -1, kind: 'Generic', message: 'tolerance 10000 exceeded' }).kind).toBe('retry');
+    // already in the mempool: it may count, so it is read back
+    expect(classifySendError({ code: -1, kind: 'AlreadyExists', message: 'already exists' }).kind).toBe('check');
   });
 });
 
@@ -104,23 +109,27 @@ describe('held votes', () => {
     expect(retryDelayMs(20)).toBe(300_000);
   });
 
-  it('stores only what is still to send, per mode and network, and takes up a send cut off past its lease', () => {
+  it('stores only what is still to send, per mode and network; only the sender takes up a cut-off send', () => {
     const m = new Map<string, string>();
     const store = { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), removeItem: (k: string) => void m.delete(k) };
     const now = 50_000_000;
     saveHeld(store, true, 'testnet', [vote({ id: 'w' }), vote({ id: 'fresh', status: 'sending', sendingSince: now - 10_000 }), vote({ id: 'cut', status: 'sending', sendingSince: now - SENDING_LEASE_MS - 1 }), vote({ id: 'done', status: 'sent' }), vote({ id: 'main', network: 'mainnet' })]);
-    // a send in progress stays claimed (no other tab sends, cancels or replaces it); one cut off is waiting again
-    expect(loadHeld(store, true, 'testnet', now).map((v) => [v.id, v.status])).toEqual([
+    // reading never releases a claimed send (no other tab may cancel or replace it)
+    const back = loadHeld(store, true, 'testnet');
+    expect(back.map((v) => [v.id, v.status])).toEqual([
       ['w', 'waiting'],
       ['fresh', 'sending'],
-      ['cut', 'waiting'],
+      ['cut', 'sending'],
     ]);
-    expect(loadHeld(store, true, 'mainnet', now)).toEqual([]);
+    // the sender holding the send lock takes up every one left "sending"; without the lock, only those past the lease
+    expect(reclaimCutOff(back, now, true).map((v) => v.status)).toEqual(['waiting', 'waiting', 'waiting']);
+    expect(reclaimCutOff(back, now, false).map((v) => v.status)).toEqual(['waiting', 'sending', 'waiting']);
+    expect(loadHeld(store, true, 'mainnet')).toEqual([]);
     // demo votes never mix with real ones
-    expect(loadHeld(store, false, 'testnet', now)).toEqual([]);
+    expect(loadHeld(store, false, 'testnet')).toEqual([]);
     expect(storageKey(true, 'testnet')).not.toBe(storageKey(false, 'testnet'));
     m.set(storageKey(true, 'testnet'), JSON.stringify([{ id: 1 }, vote({ id: 'ok' }), vote({ id: 'badnonce', nonce: '-1' }), 'junk']));
-    expect(loadHeld(store, true, 'testnet', now).map((v) => v.id)).toEqual(['ok']);
+    expect(loadHeld(store, true, 'testnet').map((v) => v.id)).toEqual(['ok']);
     saveHeld(store, true, 'testnet', []);
     expect(m.has(storageKey(true, 'testnet'))).toBe(false);
     // a full storage is not swallowed: the caller says nothing was kept
@@ -132,8 +141,12 @@ describe('held votes', () => {
     // Platform keeps the gaps of out-of-order nonces in the top 24 bits: nonce 2 with nonce 1 missing
     const stored = 2n | (1n << 40n);
     expect(nextNonce(stored, [], 'V1', NONCE_WINDOW, NONCE_MASK)).toBe(3n);
-    const held = [vote({ voterId: 'V1', nonce: '7' }), vote({ voterId: 'V1', nonce: '5', status: 'sending' }), vote({ voterId: 'V2', nonce: '40' }), vote({ voterId: 'V1', nonce: '99', status: 'sent' })];
+    const held = [vote({ voterId: 'V1', nonce: '7' }), vote({ voterId: 'V1', nonce: '5', status: 'sending' }), vote({ voterId: 'V2', nonce: '40' })];
     expect(nextNonce(stored, held, 'V1', NONCE_WINDOW, NONCE_MASK)).toBe(8n);
+    // a vote that went out while the nonce was read (gone from storage, Platform not caught up) still has its nonce taken
+    expect(nextNonce(stored, [...held, vote({ voterId: 'V1', nonce: '9', status: 'sent' })], 'V1', NONCE_WINDOW, NONCE_MASK)).toBe(10n);
+    // Platform refuses a nonce 24 or more below its own: a vote still waiting at 1 would fail once 25 lands
+    expect(nextNonce(23n, [vote({ voterId: 'V1', nonce: '1' }), vote({ voterId: 'V1', nonce: '24', status: 'sent' })], 'V1', NONCE_WINDOW, NONCE_MASK)).toBeNull();
     expect(nextNonce(0n, [vote({ voterId: 'V1', nonce: '23' })], 'V1', NONCE_WINDOW, NONCE_MASK)).toBe(24n);
     expect(nextNonce(0n, [vote({ voterId: 'V1', nonce: '24' })], 'V1', NONCE_WINDOW, NONCE_MASK)).toBeNull();
   });

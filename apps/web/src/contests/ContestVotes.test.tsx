@@ -210,4 +210,15 @@ describe('the contest vote sender', () => {
     expect(stored(true)).toEqual([]);
     await r.unmount();
   });
+
+  it('takes up a send that a closed tab cut off, and sends it', async () => {
+    const { broadcast } = fakeSource();
+    const cut = vote({ id: 'cut', status: 'sending', sendingSince: Date.now() - 11 * 60_000 });
+    localStorage.setItem(storageKey(true, 'testnet'), JSON.stringify([cut]));
+    const r = await mount();
+    await wait(60);
+    expect(broadcast).toHaveBeenCalledTimes(1);
+    expect(api.held.find((x) => x.id === 'cut')!.status).toBe('sent');
+    await r.unmount();
+  });
 });

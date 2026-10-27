@@ -31,9 +31,11 @@ export interface HeldVote {
   /** ms, when the contest closes (null: not known) */
   endsAt: number | null;
   status: 'waiting' | 'sending' | 'sent' | 'failed';
-  /** ms: when a tab started sending it (a vote left "sending" longer than SENDING_LEASE_MS is taken up again) */
+  /** ms: when a tab started sending it */
   sendingSince?: number;
   tries: number;
+  /** read-backs of a used nonce that could not be done (network): given up on after a few */
+  checks?: number;
   /** ms: after a failed try, not before this */
   nextTryAt?: number;
   /** why it failed, or what it is waiting for */
@@ -48,8 +50,11 @@ const MIN_DELAY_MS = 60_000;
 /** A vote this late is overdue (govhub was not open, or the computer slept, at its time): it gets a new time in the next RESPREAD_MS. */
 export const OVERDUE_MS = 2 * 60_000;
 const RESPREAD_MS = 15 * 60_000;
-/** A send takes seconds; one "sending" for longer was cut off (the tab closed) and is tried again. */
-export const SENDING_LEASE_MS = 3 * 60_000;
+/**
+ * Without Web Locks (no way to know whether the tab sending a vote is still there), a vote "sending" for this long is taken up again.
+ * With them, a sender that holds the send lock knows any vote still "sending" was cut off (its tab closed) and takes it up at once.
+ */
+export const SENDING_LEASE_MS = 10 * 60_000;
 
 /** When spread-out votes may go (ms): from a minute from now to the margin before the close. Null when that leaves no room. */
 export function spreadWindow(nowMs: number, endsAt: number | null, network: CoreNetwork): Window | null {
@@ -111,19 +116,25 @@ const isHeld = (v: unknown): v is HeldVote => {
   );
 };
 
-/** The stored votes. One left "sending" past its lease (the tab closed mid-send) is waiting again: Platform takes it once at most. */
-export function loadHeld(store: Pick<Storage, 'getItem'> | undefined, live: boolean, network: CoreNetwork, nowMs: number): HeldVote[] {
+/** The stored votes, as stored ("sending" stays claimed: only the sender takes a cut-off send up again, see reclaimCutOff). */
+export function loadHeld(store: Pick<Storage, 'getItem'> | undefined, live: boolean, network: CoreNetwork): HeldVote[] {
   try {
     const raw: unknown = JSON.parse(store?.getItem(storageKey(live, network)) ?? '[]');
-    if (!Array.isArray(raw)) return [];
-    return raw
-      .filter(isHeld)
-      .filter((v) => v.network === network)
-      .map((v) => (v.status === 'sending' && nowMs - (v.sendingSince ?? 0) > SENDING_LEASE_MS ? { ...v, status: 'waiting' as const, sendingSince: undefined } : v));
+    return Array.isArray(raw) ? raw.filter(isHeld).filter((v) => v.network === network) : [];
   } catch {
     return [];
   }
 }
+
+/**
+ * Votes left "sending" by a send that was cut off (its tab closed) are waiting again: Platform takes each at most once. Called by the
+ * sender only, holding the send lock (`exclusive`): then no other tab is sending anything; without the lock, only after the lease.
+ */
+export const reclaimCutOff = (list: readonly HeldVote[], nowMs: number, exclusive: boolean): HeldVote[] =>
+  list.map((v) => (v.status === 'sending' && (exclusive || nowMs - (v.sendingSince ?? 0) > SENDING_LEASE_MS) ? { ...v, status: 'waiting' as const, sendingSince: undefined } : v));
+
+/** Lists of the first format (one per network, no owner, demo and live mixed): never read again, so removed. */
+export const OLD_KEYS = ['govhub.contestVotes.v1.mainnet', 'govhub.contestVotes.v1.testnet'];
 
 /** Stores the votes still to send (or being sent); everything else is not kept. Throws when storage refuses. */
 export function saveHeld(store: Pick<Storage, 'setItem' | 'removeItem'> | undefined, live: boolean, network: CoreNetwork, list: readonly HeldVote[]): void {
@@ -133,13 +144,17 @@ export function saveHeld(store: Pick<Storage, 'setItem' | 'removeItem'> | undefi
 }
 
 /**
- * The next nonce for a voter: past Platform's (its low 40 bits) and past every vote of this voter stored here (waiting or being sent,
- * on any name: a waiting vote that is replaced just leaves a gap, which Platform allows). Null when that would be more than
- * NONCE_WINDOW past Platform's: too many votes of this masternode are waiting.
+ * The next nonce for a voter: past Platform's (its low 40 bits) and past every vote of this voter seen here (any status, any name: a
+ * replaced or failed vote just leaves a gap, which Platform allows). Null when Platform would refuse it or a vote still waiting here:
+ * more than `window` past Platform's nonce, or `window` or more past the lowest waiting one (which Platform would then refuse).
  */
 export function nextNonce(onChain: bigint, held: readonly HeldVote[], voterId: string, window: bigint, mask: bigint): bigint | null {
   const base = onChain & mask;
-  const top = held.filter((v) => v.voterId === voterId && (v.status === 'waiting' || v.status === 'sending')).reduce((m, v) => (BigInt(v.nonce) > m ? BigInt(v.nonce) : m), base);
+  const mine = held.filter((v) => v.voterId === voterId);
+  const top = mine.reduce((m, v) => (BigInt(v.nonce) > m ? BigInt(v.nonce) : m), base);
   const next = top + 1n;
-  return next - base > window ? null : next;
+  if (next - base > window) return null;
+  const waiting = mine.filter((v) => v.status === 'waiting' || v.status === 'sending').map((v) => BigInt(v.nonce));
+  const lowest = waiting.reduce((m, n) => (n < m ? n : m), next);
+  return next - lowest >= window ? null : next;
 }

@@ -7,7 +7,7 @@ import { base64 } from '@scure/base';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { cryptoRand32 } from '../voting/plan.ts';
-import { dueVotes, GUEST_OWNER, loadHeld, OVERDUE_MS, respreadOverdue, retryDelayMs, saveHeld, storageKey, type HeldVote } from './held.ts';
+import { dueVotes, GUEST_OWNER, loadHeld, OLD_KEYS, OVERDUE_MS, reclaimCutOff, respreadOverdue, retryDelayMs, saveHeld, storageKey, type HeldVote } from './held.ts';
 import { useContestSource } from './useContests.ts';
 import { classifySendError, sameChoice } from './vote.ts';
 
@@ -42,12 +42,12 @@ const STORE_LOCK = 'govhub-contest-votes-store';
 const store = (): Storage | undefined => globalThis.localStorage;
 const locks = (): LockManager | undefined => (globalThis.navigator as Navigator | undefined)?.locks;
 
-/** Runs `fn` holding the send lock, or not at all when another tab holds it. Without Web Locks it simply runs. */
-async function withSendLock(fn: () => Promise<void>): Promise<void> {
+/** Runs `fn` holding the send lock (`exclusive`), or not at all when another tab holds it. Without Web Locks it simply runs. */
+async function withSendLock(fn: (exclusive: boolean) => Promise<void>): Promise<void> {
   const l = locks();
-  if (!l) return fn();
+  if (!l) return fn(false);
   await l.request(SEND_LOCK, { ifAvailable: true }, async (lock) => {
-    if (lock) await fn();
+    if (lock) await fn(true);
   });
 }
 
@@ -69,18 +69,21 @@ export function ContestVotesProvider({ children }: { children: ReactNode }) {
   scopeRef.current = scopeKey;
   // what this tab saw finish (sent or failed): memory only
   const done = useRef<HeldVote[]>([]);
-  const read = useCallback((): HeldVote[] => [...loadHeld(store(), live, network, Date.now()), ...done.current.filter((v) => v.network === network)], [live, network]);
+  const read = useCallback((): HeldVote[] => [...loadHeld(store(), live, network), ...done.current], [live, network]);
   const [all, setAll] = useState<HeldVote[]>([]);
 
   /** Applies a change to the stored list under the store lock (re-read first) and shows the result. Throws when storage refuses. */
   const apply = useCallback(
     (f: (list: HeldVote[]) => HeldVote[]) =>
       withStoreLock(() => {
-        const next = f(read());
+        // a send that finishes after a switch to another network or mode writes its own list, and shows nothing here
+        const current = scopeRef.current === storageKey(live, network);
+        const next = f(current ? read() : loadHeld(store(), live, network));
         saveHeld(store(), live, network, next);
-        done.current = next.filter((v) => v.status === 'sent' || v.status === 'failed');
-        // a send that finishes after a switch to another network or mode does not show its old list here
-        if (scopeRef.current === storageKey(live, network)) setAll(next);
+        if (current) {
+          done.current = next.filter((v) => v.status === 'sent' || v.status === 'failed');
+          setAll(next);
+        }
         return next;
       }),
     [read, live, network],
@@ -89,6 +92,11 @@ export function ContestVotesProvider({ children }: { children: ReactNode }) {
   // on load and on a switch: overdue spread-out votes get new random times (a burst would link them)
   useEffect(() => {
     done.current = [];
+    try {
+      for (const k of OLD_KEYS) store()?.removeItem(k);
+    } catch {
+      // nothing to clean
+    }
     void apply((l) => respreadOverdue(l, Date.now(), cryptoRand32)).catch(() => setAll(read()));
   }, [apply, read]);
 
@@ -157,7 +165,12 @@ export function ContestVotesProvider({ children }: { children: ReactNode }) {
         } catch {
           counted = undefined;
         }
-        if (counted === undefined) return v.tries + 1 >= MAX_CHECKS ? finish(v.id, 'failed', 'Could not confirm whether this vote counts. Check the masternode’s current vote on the page.') : again(v, 'Checking whether this vote counts…');
+        if (counted === undefined) {
+          const checks = (v.checks ?? 0) + 1;
+          if (checks >= MAX_CHECKS) return finish(v.id, 'failed', 'Could not confirm whether this vote counts. Check the masternode’s current vote on the page.');
+          await set(v.id, { checks });
+          return again({ ...v, checks }, 'Checking whether this vote counts…');
+        }
         if (counted && sameChoice(counted, v.choice)) return finish(v.id, 'sent');
         return finish(v.id, 'failed', `${o.text} Vote again to replace that vote.`);
       }
@@ -170,8 +183,11 @@ export function ContestVotesProvider({ children }: { children: ReactNode }) {
         const now = Date.now();
         if (now - lastTick > OVERDUE_MS) await apply((l) => respreadOverdue(l, now, cryptoRand32));
         lastTick = now;
-        if (!dueVotes(read(), now).length) return;
-        await withSendLock(async () => {
+        const cutOff = read().some((v) => v.status === 'sending');
+        if (!cutOff && !dueVotes(read(), now).length) return;
+        await withSendLock(async (exclusive) => {
+          // holding the lock no other tab is sending: a vote still "sending" was cut off and is due again
+          if (cutOff) await apply((l) => reclaimCutOff(l, Date.now(), exclusive));
           for (const v of dueVotes(read(), Date.now())) {
             if (stopped) break;
             await sendOne(v);

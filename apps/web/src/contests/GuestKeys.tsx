@@ -149,6 +149,8 @@ export function GuestKeysProvider({ children }: { children: ReactNode }) {
             kept.push(k);
           } else k.privateKey.fill(0);
         });
+        // a key held before but not kept now (another lookup ran meanwhile) is wiped, never just dropped
+        for (const k of keys.current) if (!kept.includes(k)) k.privateKey.fill(0);
         keys.current = kept;
         setOwned(r.owned.map((m) => ({ ...m, keyIndex: remap.get(m.keyIndex)! })));
         setKeyInfos(votingKeyInfos(kept));

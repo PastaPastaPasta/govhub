@@ -183,6 +183,8 @@ function Composer({ label, state, endsAt, nameOf, signer }: { label: string; sta
     setBusy(true);
     setError(null);
     try {
+      // what is held before the reads: a vote of ours that goes out during them leaves storage but keeps its nonce taken
+      const before = votes.snapshot();
       const t0 = Date.now();
       const times = mode === 'spread' && win && latest ? releaseTimes(toSend.length, { earliest: win.earliest, latest }, cryptoRand32) : toSend.map(() => t0);
       // Platform's nonces are read before any key is touched
@@ -203,7 +205,7 @@ function Composer({ label, state, endsAt, nameOf, signer }: { label: string; sta
           // the voter the nonce was read for must be the one this key signs as (the keys may have changed during the reads)
           const voterId = voterIdOf(m.proTxHash, votingKeyHash(key.privateKey));
           if (voterId !== voterOf.get(m.proTxHash)) throw new Error('Your voting keys changed while the votes were being prepared. Vote again.');
-          const nonce = src.live ? nextNonce(onChain.get(m.proTxHash) ?? 0n, [...held, ...signed], voterId, NONCE_WINDOW, NONCE_MASK) : 0n;
+          const nonce = src.live ? nextNonce(onChain.get(m.proTxHash) ?? 0n, [...before, ...held, ...signed], voterId, NONCE_WINDOW, NONCE_MASK) : 0n;
           if (nonce === null) return void skipped.push(mnName(m, labels));
           signed.push({
             id: crypto.randomUUID(),
@@ -232,7 +234,7 @@ function Composer({ label, state, endsAt, nameOf, signer }: { label: string; sta
           throw new Error('Your browser could not store the signed votes, so nothing was sent. Free some storage for this site and vote again.');
         }
       }
-      if (skipped.length) setError(`${skipped.join(', ')}: already has ${NONCE_WINDOW} votes waiting in this browser, the most Platform takes at once. Send or cancel some of them first.`);
+      if (skipped.length) setError(`${skipped.join(', ')}: has too many votes waiting in this browser (Platform takes ${NONCE_WINDOW} at most). Send or cancel some of them first.`);
       setChoice(null);
     } catch (e) {
       setError(errText(e));
