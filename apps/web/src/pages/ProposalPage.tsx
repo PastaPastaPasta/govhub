@@ -6,6 +6,7 @@ import { Link, useParams } from 'react-router-dom';
 import { urlClaimIdentity } from '@govhub/verify';
 import { useApp } from '../app/context.tsx';
 import { Discussion } from '../ui/Discussion.tsx';
+import { proposalOwner } from '../lib/social.ts';
 import { ErrorBoundary } from '../ui/ErrorBoundary.tsx';
 import { ReadError } from '../ui/ReadError.tsx';
 import { FundingMeter } from '../ui/FundingMeter.tsx';
@@ -123,6 +124,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
   const own = useOwnership(p, trust.collateral.verdict);
   const ownerId = own.verdict?.owner?.identityId ?? null;
   const post = useOwnerPost(p.govHash, ownerId);
+  const featured = useMemo(() => proposalOwner(ownerId), [ownerId]);
 
   const t = row.tally?.value;
   const active = p.endEpoch > now;
@@ -255,7 +257,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
           </section>
 
           <ErrorBoundary what="discussion">
-            <Discussion govHash={p.govHash} owner={ownerId} />
+            <Discussion govHash={p.govHash} featured={featured} />
           </ErrorBoundary>
         </div>
 

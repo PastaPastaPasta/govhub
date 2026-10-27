@@ -1,4 +1,4 @@
-// The proposal's discussion: every comment (paged by 100 from Platform), threaded here by parentId, with
+// The discussion under a proposal or a username contest: every comment (paged by 100 from Platform), threaded here by parentId, with
 // DashCentral-style indentation, scores, replies, retraction, ?comment= deep links, the comment view filter and
 // block lists that hide (never delete) with a "show hidden (N)" toggle.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -25,7 +25,7 @@ import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import type { Provenance } from '../data/types.ts';
 import { errText, formatAgoMs, formatCredits, formatInt } from '../lib/format.ts';
-import { authorText, windowRoots } from '../lib/social.ts';
+import { authorText, windowRoots, type Featured } from '../lib/social.ts';
 import { Composer } from './Composer.tsx';
 import { HiddenToggle } from './HiddenToggle.tsx';
 import { AuthorName, Avatar } from './Identity.tsx';
@@ -106,7 +106,11 @@ function useThread(govHash: string) {
   return { data, error, reload, add, remove };
 }
 
-export function Discussion({ govHash, owner }: { govHash: string; owner: string | null }) {
+/**
+ * The comments under one thread key: a proposal's govHash, or a username contest's key (contests/model.ts contestKey). `featured` are
+ * the authors the default view always shows besides MN badge holders.
+ */
+export function Discussion({ govHash, featured }: { govHash: string; featured: Featured }) {
   const { source, registry, mode } = useApp();
   const { forum, session, write, moderation, reloadModeration } = useForum();
   const thread = useThread(govHash);
@@ -131,13 +135,14 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
   const [extraScored, setExtraScored] = useState(0); // "read more scores" inside one thread too large for the window
   const isModerator = session?.identityId === registry.forum.moderationIdentityId;
   const viewer = session?.identityId ?? null; // what the viewer wrote always shows to them, whatever the filter
+  const featuredIds = featured.ids;
 
   const reasonsOf = useCallback((c: Comment) => moderation.index.reasons(c), [moderation.index]);
   const hiddenCount = useMemo(() => comments.filter((c) => reasonsOf(c).length > 0).length, [comments, reasonsOf]);
-  const filteredCount = useMemo(() => comments.filter((c) => !reasonsOf(c).length && !passesFilter(c, filter, { owner, badged, viewer })).length, [comments, reasonsOf, filter, owner, badged, viewer]);
+  const filteredCount = useMemo(() => comments.filter((c) => !reasonsOf(c).length && !passesFilter(c, filter, { featured: featuredIds, badged, viewer })).length, [comments, reasonsOf, filter, featuredIds, badged, viewer]);
   const [unfiltered, setUnfiltered] = useState(false);
   // The deep-linked comment always gets at least its placeholder.
-  const showOpts = useMemo(() => ({ reasonsOf, showHidden, revealed, filter, owner, badged, viewer }), [reasonsOf, showHidden, revealed, filter, owner, badged, viewer]);
+  const showOpts = useMemo(() => ({ reasonsOf, showHidden, revealed, filter, featured, badged, viewer }), [reasonsOf, showHidden, revealed, filter, featured, badged, viewer]);
   const visible = useMemo(() => visibleSubtrees(roots, (c) => c.id === focus || shown(c, showOpts)), [roots, showOpts, focus]);
   // Fail closed: nothing renders before the block lists are read, and a list that failed collapses the thread until
   // the reader chooses to see it without that list.
@@ -160,7 +165,7 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
   useEffect(() => {
     const c = focus ? comments.find((x) => x.id === focus) : undefined;
     if (!c) return;
-    if (!passesFilter(c, filter, { owner, badged, viewer })) setFilter('all');
+    if (!passesFilter(c, filter, { featured: featuredIds, badged, viewer })) setFilter('all');
     requestAnimationFrame(() => document.getElementById(`comment-${focus}`)?.scrollIntoView({ block: 'center' }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focus, comments.length]);
@@ -213,7 +218,7 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
 
   const ctx: NodeCtx = {
     now,
-    owner,
+    featured,
     filter,
     badged,
     viewer,
@@ -247,9 +252,9 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
         <div className="discussion-tools">
           <fieldset className="seg" aria-label="Which comments to show">
             <legend className="visually-hidden">Comment view</legend>
-            <label className={filter === 'recommended' ? 'on' : ''} title="Authors with an MN badge from an issuer you trust (Settings), plus the proposal owner on their own proposal">
+            <label className={filter === 'recommended' ? 'on' : ''} title={`Authors with an MN badge from an issuer you trust (Settings), plus ${featured.whoHere}`}>
               <input type="radio" name="comment-filter" checked={filter === 'recommended'} onChange={() => setFilter('recommended')} />
-              Owner and masternodes
+              {featured.view} and masternodes
             </label>
             <label className={filter === 'all' ? 'on' : ''}>
               <input type="radio" name="comment-filter" checked={filter === 'all'} onChange={() => setFilter('all')} />
@@ -262,7 +267,7 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
       <p className="muted small filter-note">
         {filter === 'all'
           ? 'Showing everyone.'
-          : `Showing the proposal owner${BADGES_LIVE ? ' and masternode owners' : ' (no masternode badges are live yet)'}.`}{' '}
+          : `Showing ${featured.who}${BADGES_LIVE ? ' and masternode owners' : ' (no masternode badges are live yet)'}.`}{' '}
         {filter === 'recommended' && filteredCount > 0 && (
           <button type="button" className="linkish" onClick={() => setFilter('all')} data-testid="show-all">
             Show all {formatInt(filteredCount)} other {filteredCount === 1 ? 'comment' : 'comments'}
@@ -291,7 +296,7 @@ export function Discussion({ govHash, owner }: { govHash: string; owner: string 
       {thread.data && count === 0 && <p className="muted">No comments yet.</p>}
       {thread.data?.truncated && (
         <p className="notice-warn small" data-testid="thread-truncated">
-          This proposal has more comments than one read returns (10,000): the newest are shown, the oldest are not.
+          This page has more comments than one read returns (10,000): the newest are shown, the oldest are not.
         </p>
       )}
       {focusMissing && (
@@ -352,7 +357,7 @@ function listNote(m: ReturnType<typeof useForum>['moderation']): string {
 
 interface NodeCtx {
   now: number;
-  owner: string | null;
+  featured: Featured;
   filter: CommentFilter;
   badged(ownerId: string): boolean;
   /** the signed-in identity (its own comments always show) */
@@ -380,9 +385,9 @@ interface NodeCtx {
   visible: Map<string, boolean>;
 }
 
-function shown(c: Comment, ctx: Pick<NodeCtx, 'reasonsOf' | 'showHidden' | 'revealed' | 'filter' | 'owner' | 'badged' | 'viewer'>): boolean {
+function shown(c: Comment, ctx: Pick<NodeCtx, 'reasonsOf' | 'showHidden' | 'revealed' | 'filter' | 'featured' | 'badged' | 'viewer'>): boolean {
   const hidden = ctx.reasonsOf(c).length > 0 && !ctx.showHidden && !ctx.revealed.has(c.id);
-  return !hidden && passesFilter(c, ctx.filter, { owner: ctx.owner, badged: ctx.badged, viewer: ctx.viewer });
+  return !hidden && passesFilter(c, ctx.filter, { featured: ctx.featured.ids, badged: ctx.badged, viewer: ctx.viewer });
 }
 
 function CommentNode({ node, ctx }: { node: ThreadNode; ctx: NodeCtx }) {
@@ -397,10 +402,10 @@ function CommentNode({ node, ctx }: { node: ThreadNode; ctx: NodeCtx }) {
   if (!ctx.visible.get(c.id)) return null;
   const reasons = ctx.reasonsOf(c);
   const isShown = shown(c, ctx);
-  const isOwner = ctx.owner !== null && c.ownerId === ctx.owner;
+  const isOwner = ctx.featured.ids.includes(c.ownerId);
   const mine = ctx.session === c.ownerId;
-  // The reader's own comment always shows, but the "Owner and masternodes" view would hide it from everyone else: say so.
-  const onlyYou = mine && hiddenFromOthers(c, ctx.filter, { owner: ctx.owner, badged: ctx.badged });
+  // The reader's own comment always shows, but the recommended view ("Owner and masternodes") would hide it from everyone else: say so.
+  const onlyYou = mine && hiddenFromOthers(c, ctx.filter, { featured: ctx.featured.ids, badged: ctx.badged });
   const score = ctx.scores.get(c.id);
   const myBlock = reasons.find((r) => r.source === 'mine');
   const modBlock = reasons.find((r) => r.source === 'default');
@@ -450,7 +455,7 @@ function CommentNode({ node, ctx }: { node: ThreadNode; ctx: NodeCtx }) {
         <header className="comment-head">
           <Avatar id={c.ownerId} profile={profile} />
           <AuthorName id={c.ownerId} profile={profile} dpns={ctx.names.get(c.ownerId)} />
-          {isOwner && <span className="chip chip-owner">proposal owner</span>}
+          {isOwner && <span className="chip chip-owner">{ctx.featured.chip}</span>}
           <MnBadges issuers={ctx.badges.get(c.ownerId)} />
           <Link to={{ search: `?comment=${c.id}` }} className="comment-time" title={new Date(c.createdAt).toISOString()}>
             {formatAgoMs(c.createdAt, ctx.now)}
@@ -459,7 +464,7 @@ function CommentNode({ node, ctx }: { node: ThreadNode; ctx: NodeCtx }) {
         </header>
         {onlyYou && (
           <p className="hidden-note small" data-testid="only-you-note">
-            Only you see this in the “Owner and masternodes” view. Readers on “Everyone” see it too.
+            Only you see this in the “{ctx.featured.view} and masternodes” view. Readers on “Everyone” see it too.
           </p>
         )}
         {reasons.length > 0 && (

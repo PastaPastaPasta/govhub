@@ -1,6 +1,7 @@
 // Contest pieces shared by the list and the contest page: the ballot bar, status wording and the list card.
 import { Link } from 'react-router-dom';
 import { formatDate, formatDuration, formatInt } from '../lib/format.ts';
+import { CommentsLink } from '../ui/CommentsLink.tsx';
 import { displayName, percent, phaseOf, type ContestState } from './model.ts';
 import './contests.css';
 
@@ -63,7 +64,7 @@ export function statusTag(s: ContestState | null, endsAt: number | null, nowMs: 
   return { text: `Closes in ${formatDuration(left)}`, tone: left < 86_400 ? 'soon' : 'open' };
 }
 
-export function ContestCard({ label, endsAt, state, nowMs }: { label: string; endsAt: number | null; state: StateEntry; nowMs: number }) {
+export function ContestCard({ label, endsAt, state, nowMs, comments }: { label: string; endsAt: number | null; state: StateEntry; nowMs: number; comments?: number | undefined }) {
   const s = typeof state === 'object' ? state : null;
   const failed = state === 'error';
   const tag = statusTag(s, endsAt, nowMs);
@@ -99,6 +100,7 @@ export function ContestCard({ label, endsAt, state, nowMs }: { label: string; en
       </div>
       <p className="prow-meta small">
         <span className="muted">{s ? `${formatInt(s.total)} ${s.total === 1 ? 'vote' : 'votes'}` : ''}</span>
+        <CommentsLink to={contestHref(label)} count={comments} />
       </p>
     </article>
   );

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { displayName, isContestedLabel, normalizeLabel, percent, phaseOf, registersAs, toOutcome, type ContestState } from './model.ts';
+import { contestKey, displayName, isContestedLabel, normalizeLabel, percent, phaseOf, registersAs, toOutcome, type ContestState } from './model.ts';
 import { TtlCache } from './source.ts';
 import { leadText, statusTag } from './ui.tsx';
 import { contestsShown } from './useContests.ts';
@@ -8,6 +8,8 @@ const state = (over: Partial<ContestState> = {}): ContestState => {
   const s = { label: 'x', contenders: [], abstain: 0, lock: 0, total: 0, outcome: null, height: null, ...over };
   return { ...s, total: over.total ?? s.contenders.reduce((n, c) => n + c.votes, 0) + s.abstain + s.lock };
 };
+/** sha256('govhub-contest-v1\n<DPNS contract>\ndomain\nparentNameAndLabel\ndash\na1pha'), computed independently */
+const KEY_A1PHA = 'a4ddc90ac6ac3d9d4f1cce3bc360d492fe1392f87d3d664922eb8552a66cde2d';
 const A = 'eUJLdV1mRNVYAMdHYV3nSiwKu2EBB1jGfVKUuCDeUE2';
 const B = '3Yos9bTgS21oDhEqc99f5Eyvq1axrvznkTLAjhiAXCat';
 
@@ -30,6 +32,16 @@ describe('labels', () => {
     expect(displayName(state(), 'sat0sh1')).toBe('sat0sh1');
     expect(registersAs('Satoshi', 'sat0sh1')).toBe('sat0sh1');
     expect(registersAs('DashPay', 'dashpay')).toBeNull();
+  });
+});
+
+describe('contest key', () => {
+  it('is a fixed 32-byte hash of the contested resource, one per name', () => {
+    expect(contestKey('ther0adn0ttaken')).toMatch(/^[0-9a-f]{64}$/);
+    expect(contestKey('ther0adn0ttaken')).toBe(contestKey('ther0adn0ttaken'));
+    expect(contestKey('ther0adn0ttaken')).not.toBe(contestKey('ther0adn0ttaker'));
+    // pinned: comments already posted under a key must keep finding their contest
+    expect(contestKey('a1pha')).toBe(KEY_A1PHA);
   });
 });
 

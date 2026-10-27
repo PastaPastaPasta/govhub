@@ -39,6 +39,7 @@ vi.mock('../badge/context.tsx', () => ({ useBadges: () => badges }));
 vi.mock('../auth/context.tsx', () => ({ useAuth: () => ({ openSheet: () => {} }) }));
 vi.mock('./useReactions.ts', () => ({ useReactions: () => ({ scores: new Map(), vote: async () => {}, error: null }) }));
 const { Discussion } = await import('./Discussion.tsx');
+const { contenders, proposalOwner } = await import('../lib/social.ts');
 
 beforeEach(() => {
   stored = [c('c1', BADGED, 'from a masternode owner'), c('c2', PLAIN, 'from someone without a badge'), c('c3', OWNER, 'from the proposal owner')];
@@ -50,7 +51,7 @@ beforeEach(() => {
 const mount = () =>
   render(
     <MemoryRouter>
-      <Discussion govHash={GOV} owner={OWNER} />
+      <Discussion govHash={GOV} featured={proposalOwner(OWNER)} />
     </MemoryRouter>,
   );
 const shownTexts = (el: ParentNode) => [...el.querySelectorAll('li.comment:not(.comment-placeholder) .comment-body')].map((n) => n.textContent!.trim());
@@ -134,6 +135,33 @@ describe('the author of a first comment in a thread', () => {
     await flush();
     const mine = r.el.querySelector('#comment-NewComment5555555555555555555555555555555555')!;
     expect(mine.querySelector('article')!.getAttribute('aria-label')).toMatch(/^Comment by Pasta /);
+    await r.unmount();
+  });
+});
+
+describe('on a username contest', () => {
+  it('features every contender with their own chip and names the view after them', async () => {
+    stored = [c('c1', BADGED, 'from a masternode owner'), c('c2', PLAIN, 'from contender two'), c('c3', OWNER, 'from contender one'), c('c4', ME, 'from me')];
+    session = null;
+    const r = await render(
+      <MemoryRouter>
+        <Discussion govHash={GOV} featured={contenders([OWNER, PLAIN])} />
+      </MemoryRouter>,
+    );
+    await flush();
+    expect(shownTexts(r.el).sort()).toEqual(['from a masternode owner', 'from contender one', 'from contender two']);
+    expect(r.el.textContent).toContain('Contenders and masternodes');
+    expect(r.el.textContent).toContain('Showing the contenders and masternode owners.');
+    expect([...r.el.querySelectorAll('.chip-owner')].map((x) => x.textContent)).toEqual(['contender', 'contender']);
+    expect(r.el.textContent).not.toContain('proposal owner');
+    expect(r.el.querySelector('label[title]')!.getAttribute('title')).toMatch(/plus the contenders on their own contest$/);
+    await r.unmount();
+  });
+
+  it('keeps the proposal tooltip word for word', async () => {
+    const r = await mount();
+    await flush();
+    expect(r.el.querySelector('label[title]')!.getAttribute('title')).toBe('Authors with an MN badge from an issuer you trust (Settings), plus the proposal owner on their own proposal');
     await r.unmount();
   });
 });

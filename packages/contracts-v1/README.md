@@ -301,9 +301,15 @@ Open contract; users sign with their HIGH key. `$ownerId` is always the author.
 Indexes: `byProposal` `[govHash, $createdAt]`, `byAuthor` `[$ownerId, $createdAt]`. Thread trees are
 assembled client-side from the proposal's flat list (there is deliberately no `parentId` index).
 
+`govHash` is the thread key, and not every key is a governance hash. A contested DPNS username's discussion uses
+`sha256("govhub-contest-v1\n" + DPNS contract id + "\ndomain\nparentNameAndLabel\ndash\n" + normalized label)`
+(`contestKey` in `apps/web/src/contests/model.ts`; fixed: comments already posted under it must keep finding their contest).
+A governance hash is a double SHA-256 of the serialized object, so the two never collide, but a reader of F3 (comments by
+an author) must not assume every key names a proposal.
+
 | ID | Purpose | where | orderBy |
 |---|---|---|---|
-| F2 | comments of a proposal, oldest first | `govHash == <b64>` | `[[govHash, asc],[$createdAt, asc]]` |
+| F2 | comments of a proposal (or contest), oldest first | `govHash == <b64>` | `[[govHash, asc],[$createdAt, asc]]` |
 | F2c | newest first | `govHash == <b64>`, `$createdAt > 0` (rule 7) | `[[govHash, desc],[$createdAt, desc]]` |
 | F2d | comments since T (equality + range; `>=`, callers skip the ids they hold) | `govHash == <b64>`, `$createdAt >= <ms>` | `[[govHash, asc],[$createdAt, asc]]` |
 | F3 | comments by an author, newest first | `$ownerId == <b58>`, `$createdAt > 0` (rule 7) | `[[$ownerId, asc],[$createdAt, desc]]` |

@@ -58,15 +58,16 @@ export function buildHideIndex(lists: readonly BlockList[]): HideIndex {
 export const EMPTY_HIDE_INDEX: HideIndex = buildHideIndex([]);
 
 /**
- * The comment views (PLAN §9). "recommended" = MN-badge holders plus the proposal owner on their own proposal;
+ * The comment views (PLAN §9). "recommended" = MN-badge holders plus the featured authors of the page (the proposal owner on their
+ * own proposal, the contenders on a username contest);
  * "all" = everyone. Badges arrive in phase 4: until the first badge epoch is live the reader starts on "all"
- * (PLAN §12 fallback), and choosing "recommended" shows only the owner. `badged` is where badge holders slot in.
+ * (PLAN §12 fallback), and choosing "recommended" shows only the featured authors. `badged` is where badge holders slot in.
  */
 export type CommentFilter = 'recommended' | 'all';
 
 export interface FilterContext {
-  /** the proposal's verified owner, if any */
-  owner: string | null;
+  /** authors always shown on this page: the proposal's verified owner, or a username contest's contenders */
+  featured: readonly string[];
   /** whether an author holds a current MN badge from a trusted issuer (always false before phase 4) */
   badged: (ownerId: string) => boolean;
   /** the signed-in reader's identity: what they wrote always shows to them, so a comment they just paid for does not vanish */
@@ -74,12 +75,12 @@ export interface FilterContext {
 }
 
 export function passesFilter(c: Pick<Comment, 'ownerId'>, filter: CommentFilter, ctx: FilterContext): boolean {
-  return filter === 'all' || c.ownerId === ctx.owner || ctx.badged(c.ownerId) || (!!ctx.viewer && c.ownerId === ctx.viewer);
+  return filter === 'all' || ctx.featured.includes(c.ownerId) || ctx.badged(c.ownerId) || (!!ctx.viewer && c.ownerId === ctx.viewer);
 }
 
 /** Whether the "recommended" view would hide this comment from readers other than its author (the author still sees it). */
-export function hiddenFromOthers(c: Pick<Comment, 'ownerId'>, filter: CommentFilter, ctx: Pick<FilterContext, 'owner' | 'badged'>): boolean {
-  return !passesFilter(c, filter, { owner: ctx.owner, badged: ctx.badged });
+export function hiddenFromOthers(c: Pick<Comment, 'ownerId'>, filter: CommentFilter, ctx: Pick<FilterContext, 'featured' | 'badged'>): boolean {
+  return !passesFilter(c, filter, { featured: ctx.featured, badged: ctx.badged });
 }
 
 /** The view a reader starts with: "recommended" once badges are live, everyone until then. */

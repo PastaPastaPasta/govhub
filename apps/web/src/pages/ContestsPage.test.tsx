@@ -4,6 +4,7 @@
 import { act, StrictMode } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { contestKey } from '../contests/model.ts';
 import { fixtureContests, type ContestSource } from '../contests/source.ts';
 import { button, click, flush, render, type } from '../test/render.tsx';
 
@@ -19,6 +20,14 @@ const forum = vi.hoisted(() => ({
   forum: { names: async () => new Map([['eUJLdV1mRNVYAMdHYV3nSiwKu2EBB1jGfVKUuCDeUE2', 'alice.dash']]), reader: { profiles: async () => new Map() } },
 }));
 vi.mock('../app/forum.tsx', () => ({ useForum: () => forum }));
+vi.mock('../ui/useCommentCounts.ts', () => ({ useCommentCounts: (keys: string[]) => new Map(keys.map((k, i) => [k, i])) }));
+const discussion = vi.hoisted(() => ({ props: null as null | { govHash: string; featured: { ids: readonly string[]; chip: string; view: string } } }));
+vi.mock('../ui/Discussion.tsx', () => ({
+  Discussion: (p: NonNullable<typeof discussion.props>) => {
+    discussion.props = p;
+    return <section data-testid="discussion" />;
+  },
+}));
 
 const { ContestsPage } = await import('./ContestsPage.tsx');
 const { ContestPage } = await import('./ContestPage.tsx');
@@ -58,6 +67,9 @@ describe('ContestsPage', () => {
     expect(cards(el, '[data-testid="open-contests"]')).toEqual(['sat0sh1', 'ther0adn0ttaken', 'm00n-wa1k', 'ga1axy']);
     expect(el.textContent).toContain('Satoshi.dash');
     expect(el.textContent).toContain('Lock leads with 69%');
+    // comment counts, keyed by each contest's discussion key (the mock counts 0, 1, 2... in list order)
+    expect([...el.querySelectorAll('[data-testid="open-contests"] [data-testid="card-comments"]')].map((a) => a.textContent)).toEqual(['Comments: 0', 'Comments: 1', 'Comments: 2', 'Comments: 3']);
+    expect(el.querySelector('[data-testid="card-comments"]')!.getAttribute('href')).toBe('/names/sat0sh1');
     expect(el.textContent).not.toContain('Ended ·');
     expect(names).not.toHaveBeenCalled();
     const toggle = el.querySelector('[data-testid="toggle-ended"]')!;
@@ -114,6 +126,9 @@ describe('ContestPage', () => {
     expect(el.textContent).toContain('Abstain');
     expect(el.textContent).toContain('Nobody gets the name.');
     expect(el.textContent).toContain('Read from Dash Platform with proofs, at Platform block 459,350.');
+    // the discussion hangs off the contest itself, with the contenders featured as a proposal's owner is
+    expect(discussion.props!.govHash).toBe(contestKey('ther0adn0ttaken'));
+    expect(discussion.props!.featured).toMatchObject({ ids: ['3Yos9bTgS21oDhEqc99f5Eyvq1axrvznkTLAjhiAXCat', 'eUJLdV1mRNVYAMdHYV3nSiwKu2EBB1jGfVKUuCDeUE2'], chip: 'contender', view: 'Contenders' });
   });
 
   it('marks the winner of a decided contest', async () => {

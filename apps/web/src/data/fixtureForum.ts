@@ -4,6 +4,8 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToId, CLAIM_METHOD, forumOps, hexToBytes, idToBytes, packPostBody, type DocData, type MemoryStore } from '@govhub/forum';
 import type { Registry } from '../config/registry.ts';
+import { contestKey } from '../contests/model.ts';
+import { ROAD_CONTENDERS } from '../contests/fixtures.ts';
 import { contractsOf } from './forum.ts';
 
 const fid = (name: string): string => bytesToId(sha256(new TextEncoder().encode(`govhub-fixture-${name}`)));
@@ -85,6 +87,14 @@ export async function seedFixtureForum(store: MemoryStore, registry: Registry, n
   store.seed('forum', 'proposalPost', growth, post, at(70));
   const q1 = comment(alice, g, 'How will you measure the acquisition experiments?', 26);
   comment(growth, g, 'Cost per funded wallet, reported monthly with the raw numbers.', 22, q1);
+
+  // A username contest's discussion: both contenders and a reader.
+  const road = contestKey('ther0adn0ttaken');
+  const [roadA, roadB] = ROAD_CONTENDERS as [string, string];
+  store.seed('forum', 'profile', roadA, { displayName: 'Road', about: 'Same handle on the Dash forum since 2015' });
+  const r1 = comment(roadA, road, 'I have used TheRoadNotTaken on the Dash forum since 2015. My profile there links to this identity.', 30);
+  comment(alice, road, 'Could you post that link here? Then anyone can check it before they vote.', 26, r1);
+  comment(roadB, road, 'I asked for the lower-case spelling before I saw the other request. Vote for whoever can show the older account.', 9);
 
   // A few comments elsewhere so list cards show counts.
   comment(carol, FIXTURE_HASH.dcgOps, 'Thanks for the detailed report.', 80);
