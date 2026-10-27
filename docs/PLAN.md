@@ -335,8 +335,8 @@ How it works:
 - DPNS contested-name contests on PV13. Moderator elections and charters come on PV14.
 - The same stored voting key is used. The voter identity is `SHA256(proTxHash ‖ keyIDVoting)` and
   needs no credits. Each MN gets 5 changes per contest.
-- Votes can be pre-signed with consecutive nonces (24-slot window) and held by the relay for
-  randomized broadcast.
+- Votes can be pre-signed with consecutive nonces (24-slot window). There is no Platform relay, so
+  "Spread out" holds them in the browser and sends each at its own random time (docs/privacy.md).
 - EvoVote's SDK quirks carry over: rebuild polls from live results, use the proTxHash in display
   order, verify by re-reading, and expect error 40305 after a voting-key change.
 

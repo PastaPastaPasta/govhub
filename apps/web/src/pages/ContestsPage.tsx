@@ -107,14 +107,15 @@ export function ContestsPage() {
   const openLabels = useMemo(() => new Set(still.map((c) => c.label)), [still]);
   const visible = still.filter((c) => matches(c.label, states.get(c.label), q));
   const counts = useCommentCounts(useMemo(() => still.map((c) => contestKey(c.label)), [still]));
-  const duration = src.network === 'testnet' ? '90 minutes' : 'two weeks';
+  // Platform takes new contenders for a week from the first one (its mainnet setting, on every network), longer than a testnet vote
+  const timing = src.network === 'testnet' ? 'while the vote runs. Voting runs for 90 minutes' : 'in the first week. Voting runs for two weeks';
 
   return (
     <section aria-labelledby="names-title" className="list-section contests">
       <div className="list-head">
         <h1 id="names-title">Usernames</h1>
         <p className="muted contests-intro">
-          Usernames of 3 to 19 characters that use only letters, hyphens, 0 and 1 go to a masternode vote when someone registers one. Others can ask for the same name while the vote runs, and masternodes decide who gets it, or lock it so nobody does. Voting runs for {duration}.
+          Usernames of 3 to 19 characters that use only letters, hyphens, 0 and 1 go to a masternode vote when someone registers one. Masternodes decide who gets it, or lock it so nobody does. Others can ask for the same name {timing}.
         </p>
         <label className="contests-search">
           <span className="visually-hidden">Find a username</span>

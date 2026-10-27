@@ -14,7 +14,6 @@ import { preloadSdk } from './data/platform.ts';
 import { AboutPage } from './pages/AboutPage.tsx';
 import { VerificationPage } from './pages/VerificationPage.tsx';
 import { ActivePage } from './pages/ActivePage.tsx';
-import { ContestsGate } from './contests/Gate.tsx';
 import { ContestVotesProvider } from './contests/ContestVotes.tsx';
 import { GuestKeysProvider } from './contests/GuestKeys.tsx';
 import { PastPage } from './pages/PastPage.tsx';
@@ -84,7 +83,7 @@ createRoot(document.getElementById('root')!).render(
                     </Suspense>
                   }
                 />
-                <Route path="names" element={<ContestsGate />}>
+                <Route path="names">
                   <Route index element={<Suspense fallback={<p className="page-narrow muted">Loading…</p>}><ContestsPage /></Suspense>} />
                   <Route path=":label" element={<Suspense fallback={<p className="page-narrow muted">Loading…</p>}><ContestPage /></Suspense>} />
                 </Route>
