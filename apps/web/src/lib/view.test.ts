@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Proposal, Sourced, Tally } from '../data/types.ts';
 import { askText, paymentsLeft } from '../ui/ProposalCard.tsx';
 import { GOV_PARAMS, parseGovParams, perPayment, perSuperblock, superblockCadence } from './governance.ts';
-import { byRank, countNames, deriveRow, pickTally, proposalHref, weakest } from './view.ts';
+import { byRank, countNames, deriveRow, pickTally, proposalHref, untalliedOf, weakest } from './view.ts';
 
 const prov = { kind: 'proof', source: 'test' } as const;
 const tally = (govHash: string, over: Partial<Tally> = {}): Sourced<Tally> => ({
@@ -154,3 +154,15 @@ describe('view model with testnet parameters', () => {
   });
 });
 
+
+describe('untalliedOf', () => {
+  const listed = ['a', 'b', 'c'];
+  const has = (...hs: string[]) => new Map(hs.map((h) => [h, true]));
+  it('is empty when every read answered: a proposal with no tally then has no votes yet', () => {
+    expect([...untalliedOf(listed, has('a'), has(), { platform: 'ok', bridge: 'ok' })]).toEqual([]);
+  });
+  it('names the proposals a failed read may have had a tally for', () => {
+    expect([...untalliedOf(listed, has('a'), has(), { platform: 'ok', bridge: 'failed' })]).toEqual(['b', 'c']);
+    expect([...untalliedOf(listed, has(), has('b'), { platform: 'failed', bridge: 'ok' })]).toEqual(['a', 'c']);
+  });
+});

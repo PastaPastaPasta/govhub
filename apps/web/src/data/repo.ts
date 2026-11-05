@@ -49,7 +49,7 @@ export interface DataSource {
    * document (ended proposals, and every tally on older testnet contracts), whichever is newer; the packed one on a tie.
    */
   tallies(govHashes: readonly string[]): Promise<Map<string, Sourced<Tally>>>;
-  /** Live tallies from the first reachable bridge (reported). Empty without a bridge. */
+  /** Live tallies from the first reachable bridge (reported). Empty without a bridge; throws when bridges are set but none answered. */
   bridgeTallies(): Promise<Map<string, Sourced<Tally>>>;
   /** Core best height. */
   height(): Promise<Sourced<number> | null>;
@@ -380,6 +380,8 @@ export function liveSource(registry: Registry): DataSource {
 
     async bridgeTallies() {
       const b = await firstBridge((x) => x.tallies());
+      // no bridge set up is no tallies; bridges set up and none answering is a failed read, which the lists must not read as "no votes"
+      if (!b && bridges.length) throw new Error('no governance bridge answered');
       return new Map((b?.value ?? []).map((t) => [t.govHash, { value: t, prov: reported(b!.bridge, `live tally as of Core block ${formatInt(t.asOfHeight)}`) }]));
     },
 

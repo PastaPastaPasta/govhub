@@ -152,7 +152,8 @@ describe('profiles', () => {
       return new Response(JSON.stringify({ tallies: [] }), { status: 200 });
     });
     const s = createSource('live', defaultRegistry());
-    expect((await s.bridgeTallies()).size).toBe(0);
+    // no coherent bridge answered: a failed read (never "no tallies", which the lists would read as "no votes")
+    await expect(s.bridgeTallies()).rejects.toThrow('no governance bridge answered');
     // Only the status was asked: the tallies of a testnet bridge never reach a mainnet-Core profile.
     expect(fetchSpy.mock.calls.map((c) => new URL(String(c[0])).pathname)).toEqual(['/v1/status']);
     // And the governance parameters fall back to mainnet's chain parameters, not the testnet bridge's.

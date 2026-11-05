@@ -185,7 +185,8 @@ export function ActivePage() {
             ))}
           </div>
         ) : rows.length === 0 && !needle ? (
-          <p className="empty dh-empty">No active proposals right now.</p>
+          // an unread list is not an empty one: the banner above says the read failed
+          gov.active.error && !gov.active.data ? null : <p className="empty dh-empty">No active proposals right now.</p>
         ) : rows.length + lameDucks.length === 0 ? null : (
           <div className="plist">
             {shown.map(card)}

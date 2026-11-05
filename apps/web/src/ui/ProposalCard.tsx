@@ -50,7 +50,7 @@ export function askText(amountDuffs: number, s: PaymentSchedule | null, params: 
 export function ProposalCard({
   row, href, comments, urlOwner, ownerProfile, check,
 }: { row: Row; href: string; comments?: number | undefined; urlOwner?: string | null; ownerProfile?: Profile | undefined; check?: CheckState }) {
-  const { params, source, registry } = useApp();
+  const { params, source, registry, gov } = useApp();
   const p = row.p.value;
   const t = row.tally?.value;
   const failed = check?.status === 'failed' ? check.reason : null;
@@ -70,6 +70,8 @@ export function ProposalCard({
   const owner = useOwnerPage(p);
   const page = row.content.ok && !failed ? (owner?.page ?? null) : null;
   const words = useReadableTitle(p.name);
+  // no tally: a read that failed or hasn't answered isn't "no votes"
+  const noTally = gov?.talliesLoading ? 'Reading the votes…' : gov?.untallied?.has(p.govHash) ? 'Votes not read' : 'No votes yet';
   const pays = () => (
     <>
       pays <dashhq-hash value={p.paymentAddress} label="Payee address" href={`https://${registry.coreNetwork === 'testnet' ? 'insight.testnet.networks.dash.org' : 'insight.dash.org'}/insight/address/${encodeURIComponent(p.paymentAddress)}`}>{p.paymentAddress}</dashhq-hash> ↗
@@ -118,7 +120,7 @@ export function ProposalCard({
         ) : row.state && row.absYes !== null && row.threshold ? (
           <FundingMeter absYes={row.absYes} threshold={row.threshold.value} state={row.state} size="s" />
         ) : (
-          <p className="muted small">{row.tally ? 'Waiting for the budget cycle' : 'No votes yet'}</p>
+          <p className="muted small">{row.tally ? 'Waiting for the budget cycle' : noTally}</p>
         )}
         {ended ? null : later ? (
           <StartsLaterTag later={later} />
@@ -145,7 +147,7 @@ export function ProposalCard({
             </span>
           </span>
         ) : (
-          <span className="muted">No votes yet</span>
+          <span className="muted">{noTally}</span>
         )}
         <CommentsLink to={href} count={comments} />
       </p>

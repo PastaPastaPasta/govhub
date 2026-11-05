@@ -50,8 +50,11 @@ export function BudgetHeader() {
   // which proposals are in the budget comes from their tallies: no count (and no per-proposal strip) until both reads have answered,
   // and none at all when the proposals or their votes couldn't be read
   const counting = gov.talliesLoading;
-  const unknown = !counting && (gov.talliesFailed || (!!gov.active.error && !gov.active.data));
+  const noList = !!gov.active.error && !gov.active.data;
+  const unknown = !counting && (gov.talliesFailed || noList);
   const noCount = counting || unknown;
+  // proposals due now whose votes a failed read left unknown: the count is then a lower bound
+  const unreadDue = activeRows.shown.filter((r) => !r.item.lameDuck && !r.item.startsLater && gov.untallied.has(r.item.p.value.govHash)).length;
 
   return (
     <section className="budget dh-page-header" aria-labelledby="budget-title">
@@ -104,14 +107,16 @@ export function BudgetHeader() {
           'counting which proposals are in the budget…'
         ) : unknown ? (
           <>
-            the votes couldn’t be read just now, so which proposals are in the budget isn’t known.{' '}
+            {noList ? 'the proposals' : 'the votes'} couldn’t be read just now, so which proposals are in the budget isn’t known.{' '}
             <button type="button" className="linkish dh-btn dh-btn--link" onClick={reload} data-testid="budget-retry">
               Try again
             </button>
           </>
         ) : (
           <>
+            {unreadDue > 0 && 'at least '}
             <b>{formatInt(funded.length)}</b> of {formatInt(active)} proposals in the budget
+            {unreadDue > 0 && ` (the votes of ${formatInt(unreadDue)} weren’t read)`}
             {later > 0 && `; plus ${formatInt(later)} that start${laterS} paying later`}
           </>
         )}
@@ -138,9 +143,10 @@ export function BudgetHeader() {
                 <span className="spinner" aria-hidden="true" /> counting the votes…
               </span>
             ) : unknown ? (
-              <span className="muted">not known: the votes couldn’t be read</span>
+              <span className="muted">not known: the {noList ? 'proposals' : 'votes'} couldn’t be read</span>
             ) : (
               <>
+                {unreadDue > 0 && <span className="muted">at least </span>}
                 <span className="num">{formatInt(funded.length)}</span> of {formatInt(active)} proposals
                 {later > 0 && <span className="muted"> (plus {formatInt(later)} that start{laterS} paying at a later superblock)</span>}
               </>

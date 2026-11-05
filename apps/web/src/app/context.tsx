@@ -11,7 +11,7 @@ import { createSource, type DataSource } from '../data/repo.ts';
 import type { Cycle, Proposal, Sourced, Tally } from '../data/types.ts';
 import { errText, setDashUnit } from '../lib/format.ts';
 import type { GovParams } from '../lib/governance.ts';
-import { byRank, deriveRow, partitionByCheck, type Checked, type Row } from '../lib/view.ts';
+import { byRank, deriveRow, partitionByCheck, untalliedOf, type Checked, type Row, type TallyReads } from '../lib/view.ts';
 import { ProposalChecks, type CheckCache, type StoredCheck } from '../verify/checks.ts';
 import { runVerification } from '../verify/client.ts';
 
@@ -30,10 +30,9 @@ export interface GovSnapshot {
   bridgeTallies: Map<string, Sourced<Tally>>;
   /** True until both tally reads (Platform's and the bridge's) have answered or failed: counts over the tallies wait for it. */
   talliesLoading: boolean;
-  /**
-   * Both reads are done, proposals are listed, and not one of them has a tally: the votes couldn't be read (a failed read leaves the
-   * maps empty), so nothing counted over them may read as "none in the budget".
-   */
+  /** Listed proposals with no tally because a read failed (lib/view.ts untalliedOf): "votes not read", and counts are lower bounds. */
+  untallied: ReadonlySet<string>;
+  /** A read failed and no listed proposal has a tally: nothing about the votes is known. */
   talliesFailed: boolean;
   /** The DASH/USD quote and whether its latest refresh failed (design/PRICE.md); empty off Mainnet. */
   usd: UsdState;
@@ -86,7 +85,7 @@ function useGovSnapshot(source: DataSource, nonce: number): GovSnapshot {
   const [active, setActive] = useState<Load<Sourced<Proposal>[]>>({ loading: true });
   const [tallies, setTallies] = useState(new Map<string, Sourced<Tally>>());
   const [bridgeTallies, setBridgeTallies] = useState(new Map<string, Sourced<Tally>>());
-  const [tallyReads, setTallyReads] = useState({ platform: false, bridge: false });
+  const [tallyReads, setTallyReads] = useState<TallyReads>({ platform: 'loading', bridge: 'loading' });
   const [usd, setUsd] = useState<UsdState>(NO_USD);
   const [params, setParams] = useState<Sourced<GovParams> | null>(null);
   // A new source (profile, network, endpoints) must not render, or start checks on, the previous source's data for even one frame.
@@ -97,7 +96,7 @@ function useGovSnapshot(source: DataSource, nonce: number): GovSnapshot {
     setParams(null);
     setTallies(new Map());
     setBridgeTallies(new Map());
-    setTallyReads({ platform: false, bridge: false });
+    setTallyReads({ platform: 'loading', bridge: 'loading' });
   };
   const [shownSource, setShownSource] = useState(source);
   if (shownSource !== source) {
@@ -109,7 +108,7 @@ function useGovSnapshot(source: DataSource, nonce: number): GovSnapshot {
   useEffect(() => {
     let live = true;
     const guard = <A extends unknown[]>(f: (...a: A) => void) => (...a: A) => live && f(...a);
-    const settled = (which: 'platform' | 'bridge') => live && setTallyReads((r) => ({ ...r, [which]: true }));
+    const read = (which: keyof TallyReads, how: TallyReads[keyof TallyReads]) => live && setTallyReads((r) => ({ ...r, [which]: how }));
     resetLoaded();
     source.params().then(guard(setParams), () => {});
     source.cycle(guard((c) => setCycle({ data: c, loading: true }))).then(guard((c) => setCycle({ data: c, loading: false })), guard((e) => setCycle({ error: errText(e), loading: false })));
@@ -119,15 +118,25 @@ function useGovSnapshot(source: DataSource, nonce: number): GovSnapshot {
       .then(
         guard(async (ps) => {
           setActive({ data: ps, loading: false });
-          if (!ps.length) return;
+          if (!ps.length) return read('platform', 'ok');
           const t = await source.tallies(ps.map((p) => p.value.govHash));
           if (live) setTallies(t);
+          read('platform', 'ok');
         }),
-        guard((e) => setActive({ error: errText(e), loading: false })),
+        guard((e) => {
+          setActive({ error: errText(e), loading: false });
+          read('platform', 'ok'); // no list: nothing for tallies to be missing from
+        }),
       )
-      .catch(() => {})
-      .finally(() => settled('platform'));
-    source.bridgeTallies().then(guard(setBridgeTallies), () => {}).finally(() => settled('bridge'));
+      .catch(() => read('platform', 'failed'));
+    source.bridgeTallies().then(
+      (m) => {
+        if (!live) return;
+        setBridgeTallies(m);
+        read('bridge', 'ok');
+      },
+      () => read('bridge', 'failed'),
+    );
     return () => {
       live = false;
     };
@@ -149,12 +158,15 @@ function useGovSnapshot(source: DataSource, nonce: number): GovSnapshot {
     };
   }, [source]);
 
-  const talliesLoading = !(tallyReads.platform && tallyReads.bridge);
-  const listed = active.data ?? [];
-  const talliesFailed = !talliesLoading && listed.length > 0 && listed.every((p) => !tallies.has(p.value.govHash) && !bridgeTallies.has(p.value.govHash));
+  const talliesLoading = tallyReads.platform === 'loading' || tallyReads.bridge === 'loading';
+  const untallied = useMemo(
+    () => (talliesLoading ? new Set<string>() : untalliedOf((active.data ?? []).map((p) => p.value.govHash), tallies, bridgeTallies, tallyReads)),
+    [talliesLoading, active.data, tallies, bridgeTallies, tallyReads],
+  );
+  const talliesFailed = untallied.size > 0 && untallied.size === (active.data?.length ?? 0);
   return useMemo(
-    () => ({ cycle, height, active, tallies, bridgeTallies, talliesLoading, talliesFailed, usd, params }),
-    [cycle, height, active, tallies, bridgeTallies, talliesLoading, talliesFailed, usd, params],
+    () => ({ cycle, height, active, tallies, bridgeTallies, talliesLoading, untallied, talliesFailed, usd, params }),
+    [cycle, height, active, tallies, bridgeTallies, talliesLoading, untallied, talliesFailed, usd, params],
   );
 }
 

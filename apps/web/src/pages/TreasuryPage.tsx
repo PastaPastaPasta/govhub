@@ -28,6 +28,7 @@ const GROUP: Record<GroupId, { title: string; desc: string }> = {
   funded: { title: 'In the next budget', desc: 'Enough votes, and room in the budget: these are paid at the next payout if the votes hold.' },
   over: { title: 'Passing, but over the budget', desc: 'Enough votes, but the budget runs out before them: proposals are paid best-supported first.' },
   short: { title: 'Short of votes', desc: 'Not paid unless more masternodes vote yes before voting closes.' },
+  unread: { title: 'Votes not read', desc: 'Their votes couldn’t be read just now, so where they stand isn’t known; each proposal’s page reads them again.' },
   later: { title: 'Starting at a later payout', desc: 'Not up for this payout: their first payment is a later superblock.' },
 };
 
@@ -35,7 +36,7 @@ export function TreasuryPage() {
   useRouteTitle('/treasury');
   const { gov, source, params, activeRows } = useApp();
   const cycle = gov.cycle.data?.value ?? null;
-  const view = useMemo(() => treasuryView(activeRows.shown.map((r) => r.item)), [activeRows.shown]);
+  const view = useMemo(() => treasuryView(activeRows.shown.map((r) => r.item), gov.untallied), [activeRows.shown, gov.untallied]);
   const names = useMemo(() => countNames([...activeRows.shown, ...activeRows.lameDucks].map((r) => r.item.p.value)), [activeRows]);
   // which proposals are in the budget comes from their tallies: no sum until both reads have answered, and none when the list or
   // its votes couldn't be read (an empty list is then no evidence of anything)
@@ -124,9 +125,19 @@ function CycleStats({ cycle, view, state }: { cycle: Cycle; view: TreasuryView; 
       </div>
       <div className="dh-stat">
         <span className="dh-stat__label">Has the votes</span>
-        <span className="dh-stat__value" data-testid="tr-passing">{hold(<DashValue duffs={view.passing} />, true)}</span>
+        <span className="dh-stat__value" data-testid="tr-passing">
+          {hold(
+            <>
+              {view.groups.unread.rows.length > 0 && <small>at least </small>}
+              <DashValue duffs={view.passing} />
+            </>,
+            true,
+          )}
+        </span>
         <span className="dh-stat__note">
-          {counting ? 'asked by proposals with enough yes votes' : `asked by proposals with enough yes votes; ${formatDash(view.groups.funded.sum)} of it fits the budget`}{' '}
+          {counting
+            ? 'asked by proposals with enough yes votes'
+            : `asked by proposals with enough yes votes; ${formatDash(view.groups.funded.sum)} of it fits the budget${view.groups.unread.rows.length ? `; the votes of ${formatInt(view.groups.unread.rows.length)} weren’t read` : ''}`}{' '}
           <ReportedProof what="Bridge’s tally" />
         </span>
       </div>
@@ -169,7 +180,7 @@ function PaysFor({ view, state, budget, names }: { view: TreasuryView; state: Re
       ) : (
         <>
           <BudgetBar funded={view.groups.funded} over={view.groups.over} budget={budget} />
-          {(['funded', 'over', 'short', 'later'] as const).map((id) => (view.groups[id].rows.length ? <Group key={id} group={view.groups[id]} budget={budget} names={names} /> : null))}
+          {(['funded', 'over', 'short', 'unread', 'later'] as const).map((id) => (view.groups[id].rows.length ? <Group key={id} group={view.groups[id]} budget={budget} names={names} /> : null))}
         </>
       )}
     </section>
@@ -444,7 +455,7 @@ function PaidColumns({ cols, allocated, network }: { cols: Col[]; allocated: num
           <div
             key={c.height}
             className={`tr-col${c.unread ? ' tr-col-unread' : ''}`}
-            title={`${c.unread ? `superblock ${formatInt(c.height)}, about ${formatDate(c.time)}: not read` : formatDate(c.time)}: ${c.paid !== null ? `${formatDash(c.paid)} paid, ${share(c.paid, c.limit)} of the ${formatDash(c.limit)} it could pay` : c.unread ? 'couldn’t be read' : 'total not known'}`}
+            title={c.unread ? `Superblock ${formatInt(c.height)}, about ${formatDate(c.time)}: couldn’t be read` : `${formatDate(c.time)}: ${c.paid !== null ? `${formatDash(c.paid)} paid, ${share(c.paid, c.limit)} of the ${formatDash(c.limit)} it could pay` : 'total not known'}`}
           >
             <span className="tr-track" style={{ height: `${(c.limit / top) * 100}%` }}>
               {i === cols.length - 1 && c.paid !== null && <span className="tr-val">{formatDashAmount(c.paid)}</span>}

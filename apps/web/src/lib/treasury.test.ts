@@ -49,6 +49,16 @@ describe('treasuryView', () => {
   });
 });
 
+describe('treasuryView with votes that weren’t read', () => {
+  it('groups those apart, still counts what they ask, and never as short of votes', () => {
+    const v = treasuryView([row('dcg', 4832, { inBudget: true }), row('apac', 61, { votes: false }), row('new', 14, { votes: false })], new Set(['apac']));
+    expect(v.groups.unread.rows.map((r) => r.p.value.name)).toEqual(['apac']);
+    expect(v.groups.short.rows.map((r) => r.p.value.name)).toEqual(['new']); // read, and no tally published: no votes yet
+    expect(v.requested).toBe((4832 + 61 + 14) * 1e8);
+    expect(v.passing).toBe(4832e8);
+  });
+});
+
 describe('share', () => {
   it('rounds to whole percent, and never calls a sliver nothing', () => {
     expect(share(4832, 6828)).toBe('71%');
@@ -57,5 +67,7 @@ describe('share', () => {
     expect(share(1, 0)).toBe('–');
     expect(share(6820, 6828)).toBe('>99%');
     expect(share(6828, 6828)).toBe('100%');
+    expect(share(6830, 6828)).toBe('>100%');
+    expect(share(8151, 6828)).toBe('119%');
   });
 });

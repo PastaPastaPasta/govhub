@@ -231,6 +231,10 @@ function MasternodeVotes({ proTx }: { proTx: string }) {
             <p className="dh-loading">
               Reading the active proposals…
             </p>
+          ) : !rows.length && gov.active.error ? (
+            <p className="notice-box dh-notice dh-notice--warn small" role="alert">
+              The active proposals couldn’t be read just now ({gov.active.error}), so this masternode’s votes on them can’t be shown.
+            </p>
           ) : !rows.length ? (
             <div className="empty-box dh-empty">
               <p>
@@ -336,10 +340,12 @@ function MnVoteRow({ row, passed, href, cell, decides, shared, now, per, open, o
   const p: Proposal = row.p.value;
   const panelId = useId();
   const sched = row.schedule;
+  const { gov } = useApp();
+  const noTally = gov.talliesLoading ? 'Reading the votes…' : gov.untallied?.has(p.govHash) ? 'Votes not read' : 'No votes yet';
   const status = row.lameDuck
     ? 'No payments left'
     : !row.tally
-      ? 'No votes yet'
+      ? noTally
       : row.state?.passing
         ? `Passing by ${formatInt(row.state.margin)}`
         : row.state
