@@ -251,8 +251,18 @@ describe('parseOwnerPage on hostile pages', () => {
     expect(parseOwnerPage(html, { ...ctx, url: 'https://www.dashcentral.org./p/someone-else' })).toBeNull();
   });
 
+  it('refuses a DashCentral page with no description block: nothing separates its own part from visitors\' comments', () => {
+    const html = dashcentral('x').replace(/<div id="description"[^>]*>x<\/div>/, '');
+    expect(parseOwnerPage(html, ctx)).toBeNull();
+  });
+
+  it('keeps its offsets on text whose lower case is longer (İ)', () => {
+    const html = dashcentral('A description that is long enough to count as this proposal\'s purpose here.').replace('Dash Core Group Operations September - December 2026</td>', `${'İ'.repeat(40)} title</td>`).replace('<table>', '<script>var x = 1;</script><table>');
+    expect(parseOwnerPage(html, ctx)?.title).toBe(`${'İ'.repeat(40)} title`);
+  });
+
   it('drops direction-control characters', () => {
-    const html = `<html><head><meta property="og:title" content="Fair &#x202E;title" /></head></html>`;
+    const html = `<html><head><meta property="og:title" content="Fair &#x202E;ti&#x61C;tle" /></head></html>`;
     expect(parseOwnerPage(html, { url: 'https://example.org/x', name: 'x', govHash: HASH })?.title).toBe('Fair title');
   });
 

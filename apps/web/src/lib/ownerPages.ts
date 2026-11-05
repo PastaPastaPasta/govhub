@@ -45,7 +45,7 @@ function decode(s: string): string {
 
 /** Text as the page shows it: entities decoded, zero-width, direction-control characters and BOMs gone, whitespace collapsed. */
 function clean(s: string): string {
-  return decode(s).replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, '').replace(/[\u0000-\u001F\u007F\s]+/g, ' ').trim();
+  return decode(s).replace(/[\u061C\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, '').replace(/[\u0000-\u001F\u007F\s]+/g, ' ').trim();
 }
 
 /** At most `n` characters, cut at a word boundary with "…". */
@@ -113,9 +113,12 @@ function tokens(html: string): Token[] {
 const textOf = (ts: readonly Token[]): string => ts.map((t) => ('text' in t ? t.text : '')).join('');
 const stripTags = (html: string): string => textOf(tokens(html));
 
+/** Lower case for ASCII only: the same length as the input, so its offsets are the input's (toLowerCase turns "İ" into two). */
+const lowerAscii = (s: string): string => s.replace(/[A-Z]+/g, (c) => c.toLowerCase());
+
 /** Comments, scripts and styles are never text; one that never ends drops the rest of the page. */
 function withoutNoise(html: string): string {
-  const lower = html.toLowerCase();
+  const lower = lowerAscii(html);
   const raw = /<(script|style|noscript|template)\b/g;
   let out = '';
   let i = 0;
@@ -229,10 +232,10 @@ function descriptionTokens(ts: readonly Token[]): Token[] | null {
   return null;
 }
 
-/** DashCentral's own header and fields, before the owner's description (and the discussion after it). */
-function dashcentralFields(ts: readonly Token[]): Token[] {
+/** DashCentral's own header and fields, before the owner's description (and the discussion after it); null without one. */
+function dashcentralFields(ts: readonly Token[]): Token[] | null {
   const at = ts.findIndex(isDescription);
-  return at < 0 ? [...ts] : ts.slice(0, at);
+  return at < 0 ? null : ts.slice(0, at);
 }
 
 /** The cell after the one that reads "Title:" in DashCentral's fields. */
@@ -284,18 +287,22 @@ export function parseOwnerPage(html: string, ctx: { url: string; name: string; g
     // whose own part, before the owner's description, names this proposal and carries its hash (the vote command of an open
     // proposal, or the page's own record of it, DW.proposal.hash) is its page
     const hash = ctx.govHash.toLowerCase();
-    const fields = clean(textOf(dashcentralFields(ts))).toLowerCase();
-    const lower = page.toLowerCase();
-    const before = lower.slice(0, Math.max(0, lower.search(/<div\b[^>]{0,200}\bid\s*=\s*["']?description\b/)) || lower.length);
+    const head = dashcentralFields(ts);
+    const lower = lowerAscii(page);
+    const cut = lower.search(/<div\b[^>]{0,200}\bid\s*=\s*["']?description\b/);
+    // no description block: nothing tells DashCentral's own part from what visitors wrote
+    if (!head || cut < 0) return null;
+    const fields = clean(textOf(head)).toLowerCase();
+    const before = lower.slice(0, cut);
     const recorded = before.includes(`dw.proposal.hash = '${hash}'`) || before.includes(`dw.proposal.hash = "${hash}"`);
     if (!(fields.includes(`vote-many ${hash}`) || recorded) || !fields.includes(ctx.name.toLowerCase())) return null;
     // its meta description is just the title again, so there is no description to take
-    own = clean(titleRow(dashcentralFields(ts)));
+    own = clean(titleRow(head));
     const body = descriptionTokens(ts);
     excerpt = body ? firstParagraph(body) : null;
   } else {
     const head = html.slice(0, HEAD_CAP);
-    const end = head.toLowerCase().indexOf('</head');
+    const end = lowerAscii(head).indexOf('</head');
     const ts = tokens(withoutNoise(end < 0 ? head : head.slice(0, end)));
     const metas = metaTags(ts);
     own = clean(metas.get('og:title') ?? '') || clean(titleOf(ts));

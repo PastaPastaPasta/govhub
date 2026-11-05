@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { formatDash, formatDate, formatDateTime, formatInt } from '../src/lib/format.ts';
 import { parseGovParams, paymentSchedule, perPayment } from '../src/lib/governance.ts';
 import { isShortLink } from '../src/lib/shorteners.ts';
+import { governanceObjectHash, parseProposalData } from '@govhub/verify';
 import { ownerPages } from './ownerpages.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -70,6 +71,17 @@ async function getJson(url, ms = 20_000) {
   return res.json();
 }
 
+/** The bridge reported the very link the network votes on: its fields hash to the governance hash, and the hashed data has this name and URL. */
+function committedLink(p) {
+  try {
+    if (governanceObjectHash({ parentHash: p.parentHash, revision: p.revision, time: p.time, dataHex: p.dataHex }).display !== p.govHash.toLowerCase()) return false;
+    const f = parseProposalData(p.dataHex).fields;
+    return !!f && f.name === p.name && f.url === p.url;
+  } catch {
+    return false;
+  }
+}
+
 /** The bridge's active and past proposals (untrusted, like every share preview: the page itself checks). */
 async function proposals() {
   const [active, past, cycleRes] = await Promise.all([getJson(`${bridge}/v1/proposals?state=active`), getJson(`${bridge}/v1/proposals?state=past`), getJson(`${bridge}/v1/cycle`)]);
@@ -84,7 +96,7 @@ async function proposals() {
       if (!p || typeof p.name !== 'string' || !SAFE_NAME.test(p.name) || typeof p.govHash !== 'string' || !HASH.test(p.govHash)) continue;
       if (!Number.isSafeInteger(p.paymentAmount) || !sane(p.startEpoch) || !sane(p.endEpoch) || seen.has(p.govHash)) continue;
       seen.add(p.govHash);
-      rows.push({ state, name: p.name, govHash: p.govHash, url: typeof p.url === 'string' ? p.url : '', amount: p.paymentAmount, startEpoch: p.startEpoch, endEpoch: p.endEpoch, tally: p.tally ?? null, params, cycle });
+      rows.push({ state, name: p.name, govHash: p.govHash, url: typeof p.url === 'string' ? p.url : '', committed: committedLink(p), amount: p.paymentAmount, startEpoch: p.startEpoch, endEpoch: p.endEpoch, tally: p.tally ?? null, params, cycle });
     }
   }
   return rows;
@@ -262,7 +274,8 @@ let owners = { fetchedAt: now, pages: {} };
 if (!offline) {
   let timer;
   try {
-    owners = await Promise.race([ownerPages(ps, links), new Promise((_, reject) => (timer = setTimeout(() => reject(new Error(`no answer in ${DATA_MS / 1000} s`)), DATA_MS)))]);
+    // only a link the network committed to: the bridge's word alone picks no page to quote
+    owners = await Promise.race([ownerPages(ps.filter((p) => p.committed), links), new Promise((_, reject) => (timer = setTimeout(() => reject(new Error(`no answer in ${DATA_MS / 1000} s`)), DATA_MS)))]);
   } catch (e) {
     console.warn(`prerender: owner pages not read (${e.message})`);
   } finally {
