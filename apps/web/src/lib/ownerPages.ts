@@ -58,6 +58,8 @@ function cap(s: string, n: number): string {
 }
 
 const squash = (s: string) => s.toLowerCase().replace(/[-_\s]+/g, '');
+/** A title that names no proposal in particular ("Dash proposal", "Budget proposal"): the on-chain name says more. */
+const VAGUE_TITLE = /^(?:(?:my|our|new|the)\s+)?(?:dash\s+)?(?:treasury\s+|budget\s+|funding\s+|governance\s+)?proposal(?:\s+for\s+dash)?$/i;
 
 /** "BTCBACKPORTSVIJAY_04" vs a title: true when the title is only the name again (case, -, _, spaces ignored). */
 export function sameAsName(title: string, name: string): boolean {
@@ -202,7 +204,7 @@ export function parseOwnerPage(html: string, ctx: { url: string; name: string; g
     }
   }
 
-  const title = own && !sameAsName(own, ctx.name) ? own : null;
+  const title = own && !sameAsName(own, ctx.name) && !VAGUE_TITLE.test(own) ? own : null;
   if (description && (description.toLowerCase() === own.toLowerCase() || sameAsName(description, ctx.name))) description = null;
   if (!title && !description && !excerpt) return null;
   return {

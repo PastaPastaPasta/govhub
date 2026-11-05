@@ -18,6 +18,15 @@ gobject vote-many ${hash} funding yes<br></td></tr>
 <div class="widget">Discussion: this text is long enough to be a paragraph but is not part of the owner's description at all.</div>
 </body></html>`;
 
+describe('a title that names nothing in particular', () => {
+  it('is dropped, keeping the opening words', () => {
+    const html = '<html><head><meta property="og:title" content="Dash proposal"><meta property="og:description" content="Turning the Dash DAO into a visible founder, application and adoption engine for Platform apps."></head></html>';
+    const page = parseOwnerPage(html, { url: 'https://docs.google.com/document/d/x/edit', name: 'DashDaoGrowthEngine', govHash: 'ab'.repeat(32) });
+    expect(page?.title).toBeNull();
+    expect(page?.excerpt).toMatch(/^Turning the Dash DAO/);
+  });
+});
+
 describe('sameAsName', () => {
   it('ignores case, dashes, underscores and spaces', () => {
     expect(sameAsName('BTC Backports Vijay 04', 'BTCBACKPORTSVIJAY_04')).toBe(true);

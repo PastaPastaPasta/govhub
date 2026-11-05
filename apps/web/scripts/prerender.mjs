@@ -165,7 +165,7 @@ async function masternodes() {
 const isShortener = (u) => isShortLink(u.hostname);
 
 /**
- * Where a shortened link leads: its redirects followed by hand (a HEAD, never the page), at most five, http(s) only, until a host
+ * Where a shortened link leads: its redirects followed by hand (a HEAD, or a GET whose body is dropped; never the page), at most five, http(s) only, until a host
  * that is not a shortener. Null when it doesn't resolve. Untrusted and dated: the page says when it was resolved and that it can change.
  */
 async function resolveShort(url) {
@@ -180,8 +180,13 @@ async function resolveShort(url) {
     // shorteners refuse bursts now and then (403, 429): a few tries, a little apart
     for (let attempt = 0; attempt < 4 && !to; attempt++) {
       if (attempt) await new Promise((r) => setTimeout(r, 1500 * attempt));
-      const res = await fetch(u, { method: 'HEAD', redirect: 'manual', signal: AbortSignal.timeout(10_000), headers: { 'user-agent': 'govhub-prerender/1 (+https://github.com/PastaPastaPasta/govhub)' } }).catch(() => null);
-      to = res && res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
+      // some shorteners refuse HEAD (shorturl.at answers it 403) but redirect a GET: its body is never read, only the Location
+      for (const method of ['HEAD', 'GET']) {
+        const res = await fetch(u, { method, redirect: 'manual', signal: AbortSignal.timeout(10_000), headers: { 'user-agent': 'govhub-prerender/1 (+https://github.com/PastaPastaPasta/govhub)' } }).catch(() => null);
+        res?.body?.cancel().catch(() => {});
+        to = res && res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
+        if (to) break;
+      }
     }
     if (!to) return null;
     try {
