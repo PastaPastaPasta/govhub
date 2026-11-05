@@ -15,3 +15,6 @@ secrets/
 
 # agent worktrees
 .claude/
+
+# Isolated browser-test build; never overwrite the lab-served dist.
+.e2e-dist/
