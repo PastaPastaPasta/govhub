@@ -34,7 +34,8 @@ export const ownerOf = (owned: readonly OwnedMasternode[], m: MnRef): OwnedMaste
  */
 export function castKeys(keys: readonly Pick<VotingKeyEntry, 'privateKey' | 'compressed'>[], owned: readonly OwnedMasternode[]) {
   const copies = keys.map((x) => ({ privateKey: x.privateKey.slice(), compressed: x.compressed }));
-  // sign-out (or pagehide) while the cast waits on the network wipes them too
+  // sign-out (or a pagehide, which ends a signed-in session) while the cast waits on the network wipes them too; keys pasted
+  // without an account have no session, so their callers copy them only after every wait and wipe them before the next one
   const off = onSessionEnd(() => copies.forEach((x) => x.privateKey.fill(0)));
   return {
     ownerOf: (m: MnRef) => ownerOf(owned, m),
