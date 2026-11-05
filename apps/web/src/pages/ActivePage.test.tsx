@@ -67,7 +67,8 @@ describe('ActivePage with a lame duck', () => {
   it('lists it only in a collapsed section after the live proposals', async () => {
     setup();
     const { el } = await render(page());
-    expect(titles(el)).toEqual(['live-one', 'partly-paid']);
+    expect(titles(el)).toEqual(['Live one', 'Partly paid']); // the names as words; the exact names are under them
+    expect([...el.querySelectorAll('[data-testid="card-slug"]')].map((x) => x.textContent)).toEqual(['live-one', 'partly-paid']);
     const toggle = el.querySelector('[data-testid="toggle-lameduck"]') as HTMLButtonElement;
     expect(toggle.textContent).toBe('Finished, still on the network (1)');
     expect(toggle.getAttribute('aria-expanded')).toBe('false');

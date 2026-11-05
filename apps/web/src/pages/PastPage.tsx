@@ -4,7 +4,7 @@
 // coinbase in the verified chain (lib/ledger.ts), named when Governance has the proposal on record. "Proposals" lists the ended
 // proposals Platform holds (newest end first, keyset-paged on endEpoch: repo.ts pastPage) with their outcome from those superblocks.
 import { Slug } from '../ui/Slug.tsx';
-import { OwnerTitle } from '../ui/OwnerPage.tsx';
+import { OwnerWordsNote, ProposalLabel } from '../ui/OwnerPage.tsx';
 import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useRouteTitle } from '../app/title.ts';
@@ -97,6 +97,7 @@ export function PastPage() {
           </button>
         </div>
       </header>
+      <OwnerWordsNote proposals={known} />
       {view === 'payments' ? <LedgerView ledger={ledger} known={known} past={past.items} /> : <ProposalsView past={past} ledger={ledger} known={known} />}
     </section>
   );
@@ -307,8 +308,7 @@ function SbLines({ entry, names }: { entry: LedgerEntry; names: ReadonlyMap<stri
             <td role="rowheader" data-label="Proposal" className="dh-rc-title">
               {l.proposal ? (
                 <>
-                  <Link to={proposalHref(l.proposal as Proposal, names)}><Slug name={l.proposal.name} /></Link>
-                  <OwnerTitle p={l.proposal} />
+                  <ProposalLabel p={l.proposal} to={proposalHref(l.proposal as Proposal, names)} />
                 </>
               ) : l.candidates.length ? (
                 <span>
@@ -444,8 +444,7 @@ function ProposalsView({ past, ledger, known }: { past: ReturnType<typeof usePas
               return (
                 <tr key={p.govHash} className={reason ? 'row-invalid' : undefined} data-check={check.status} data-testid="past-row">
                   <td role="rowheader" data-label="Proposal" className="dh-rc-title">
-                    <Link to={proposalHref(p, names)}><Slug name={p.name} /></Link>
-                    {!reason && <OwnerTitle p={p} />}
+                    <ProposalLabel p={p} to={proposalHref(p, names)} owner={!reason} />
                     {reason && <FailedNote reason={reason} />}
                   </td>
                   <td data-label="Ran ">

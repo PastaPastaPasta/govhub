@@ -2916,3 +2916,13 @@ details.tr-group > .tr-table { margin: 0; border-radius: 0; }
   .tr-share-bar { inline-size: 56px; }
   .tr-purpose { -webkit-line-clamp: 2; }
 }
+
+/* ---- one shape for a proposal in a list --------------------------------------------------------------------------- */
+.p-label { font-weight: 600; overflow-wrap: anywhere; }
+.p-slug { display: block; margin-block-start: 2px; font-family: var(--dh-mono); font-size: 12px; font-weight: 400; color: var(--dh-ink-2); overflow-wrap: anywhere; }
+.owner-words-note { margin: 0; }
+.prow-slug .prow-pays { position: relative; z-index: 1; font-family: var(--dh-font); }
+@media (max-width: 640px) {
+  /* on a phone a card compares what, how much and where it stands; the payee is a tap away on the proposal */
+  .prow-slug .prow-pays { display: none; }
+}

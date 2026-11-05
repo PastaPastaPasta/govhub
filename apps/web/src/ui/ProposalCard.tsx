@@ -1,6 +1,6 @@
 // One proposal in a list: who asks, how much, and whether it gets funded. Three zones side by side on wide screens, stacked on
 // narrow ones. The trust mark is the last full result of the proposal page (ui/trust/store.ts), when it still applies.
-import { Slug } from './Slug.tsx';
+import { readableName, Slug } from './Slug.tsx';
 import type { Profile } from '@govhub/forum';
 import { Link } from './Link.tsx';
 import { useApp } from '../app/context.tsx';
@@ -77,17 +77,16 @@ export function ProposalCard({
   return (
     <article className={`prow prow-${tone}`} data-govhash={p.govHash} data-check={check?.status} data-lameduck={ended ? 'true' : undefined} data-testid="proposal-card">
       <div className="prow-main">
-        {/* h2: the list's heading is the page's h1 (a skipped level breaks heading navigation) */}
+        {/* h2: the list's heading is the page's h1 (a skipped level breaks heading navigation). One shape for every card: the owner's
+            title quoted (or the name as words), the exact name and payee, the owner's summary quoted, who is named as owner. */}
         <h2 className="prow-title">
-          <Link to={href}>{page?.title ? <bdi>“{page.title}”</bdi> : <Slug name={p.name} />}</Link>
+          <Link to={href}>{page?.title ? <bdi>“{page.title}”</bdi> : readableName(p.name)}</Link>
           {mark && <TrustBadge size="s" level={mark.level} reason={mark.reason} testId="card-trust" />}
         </h2>
-        {page?.title && (
-          <p className="prow-slug small" title="The quoted title is the owner's, from their page; this is the proposal's name on the network">
-            <Slug name={p.name} />
-            {!urlOwner && <span className="prow-owner-none"> · {pays()}</span>}
-          </p>
-        )}
+        <p className="prow-slug small" data-testid="card-slug">
+          <Slug name={p.name} />
+          {row.content.ok && <span className="prow-pays"> · {pays()}</span>}
+        </p>
         {page && <PurposeLine page={page} />}
         {failed ? (
           <FailedNote reason={failed} />
@@ -102,9 +101,7 @@ export function ProposalCard({
               <a href={window.dashhq?.href('explorer', '/identity?id=' + encodeURIComponent(urlOwner))}><bdi>{ownerProfile && authorLabel(urlOwner, ownerProfile).name ? authorText(urlOwner, ownerProfile) : shortHash(urlOwner, 5)}</bdi></a> <span className="muted small">named by the creator</span>
             </span>
           </p>
-        ) : page?.title ? null : (
-          <p className="prow-owner prow-owner-none">{pays()}</p>
-        )}
+        ) : null}
       </div>
 
       <div className="prow-ask">

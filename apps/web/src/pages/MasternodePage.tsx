@@ -2,7 +2,6 @@
 // (from the snapshot the app already holds); this masternode's vote fills into each row as the bridge answers. Each row has the way
 // to vote that fits: the keyring's own vote panel when the keyring holds this masternode, offline signing with its voting address
 // filled in otherwise. Radar links here (and to /masternodes?proTx=, which redirects here).
-import { Slug } from '../ui/Slug.tsx';
 import { Fragment, useId, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useApp } from '../app/context.tsx';
@@ -17,7 +16,7 @@ import { OUTCOME_LABEL } from '../ui/vote/common.tsx';
 import { useMasternodeVotes, type VoteCell } from '../ui/vote/useMasternodeVotes.ts';
 import { OfflineSign, VoteComposer } from '../ui/VotePanel.tsx';
 import { useKeyring } from '../voting/KeyringContext.tsx';
-import { OwnerTitle } from '../ui/OwnerPage.tsx';
+import { OwnerWordsNote, ProposalLabel } from '../ui/OwnerPage.tsx';
 import { NetworkProbeNotice, useOtherNetwork, useProbe } from '../app/otherNetwork.tsx';
 import { makeBridge } from '../data/bridgeFactory.ts';
 import '../voting/voting.css';
@@ -215,6 +214,7 @@ function MasternodeVotes({ proTx }: { proTx: string }) {
                       .join(', ')}.`}
               {deadline !== null && deadline > now && <> Votes for the next payout close in {formatDuration(deadline - now)}, on {formatDate(deadline)}.</>}
             </p>
+            <OwnerWordsNote proposals={proposals} />
             {counts.unread > 0 && v.pending === 0 && (
               <p className="small" data-testid="mn-unread">
                 {formatInt(counts.unread)} couldn't be read just now.{' '}
@@ -351,8 +351,7 @@ function MnVoteRow({ row, passed, href, cell, decides, shared, now, per, open, o
     <Fragment>
       <tr className={`mnv-row${open ? ' mnv-row-open' : ''}`} data-testid="mn-vote-row" data-govhash={p.govHash}>
         <td role="rowheader" data-label="Proposal" className="dh-rc-title">
-          <Link to={`${href}?mn=${proTx}`}><Slug name={p.name} /></Link>
-          {passed && <OwnerTitle p={p} />}
+          <ProposalLabel p={p} to={`${href}?mn=${proTx}`} owner={passed} />
         </td>
         <td className="r num" data-label="Requests">
           {formatDash(p.paymentAmount)} <span className="muted small">{sched?.oneTime ? 'once' : per}</span>

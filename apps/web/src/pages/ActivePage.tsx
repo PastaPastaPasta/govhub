@@ -17,6 +17,7 @@ import { useCommentCounts } from '../ui/useCommentCounts.ts';
 import { countNames, proposalHref, type Checked, type Row } from '../lib/view.ts';
 import { onlyUnreached, unfinishedReason } from '../lib/netError.ts';
 import { ownerPageOf, useOwnerPages } from '../lib/ownerPages.ts';
+import { OwnerWordsNote } from '../ui/OwnerPage.tsx';
 
 /** Display names of these identities (self-chosen profiles), for the owners named in proposal URLs. */
 function useProfiles(ids: readonly string[]): ReadonlyMap<string, Profile> {
@@ -175,6 +176,7 @@ export function ActivePage() {
             </p>
           )}
         </div>
+        <OwnerWordsNote proposals={cards.map((r) => r.item.p.value)} />
         <UncheckedNote rows={[...all, ...activeRows.lameDucks]} />
         {gov.active.loading && rows.length === 0 ? (
           <div className="plist" aria-busy="true">
