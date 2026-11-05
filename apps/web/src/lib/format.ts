@@ -14,8 +14,15 @@ export function formatDashAmount(duffs: number, locale = 'en-US'): string {
   return nf(locale, 0, 8).format(dash);
 }
 
+let unit: 'DASH' | 'tDASH' = 'DASH';
+/** The unit governance amounts are shown in, set by the data's Core network: practice coins on Testnet are "tDASH" (design/PRICE.md). */
+export function setDashUnit(u: 'DASH' | 'tDASH'): void {
+  unit = u;
+}
+export const dashUnit = (): 'DASH' | 'tDASH' => unit;
+
 export function formatDash(duffs: number, locale = 'en-US'): string {
-  return `${formatDashAmount(duffs, locale)} DASH`;
+  return `${formatDashAmount(duffs, locale)} ${unit}`;
 }
 
 export function formatInt(n: number, locale = 'en-US'): string {

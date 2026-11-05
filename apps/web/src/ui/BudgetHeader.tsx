@@ -4,7 +4,7 @@ import { ChainShield } from './trust/ChainShield.tsx';
 import { Link } from './Link.tsx';
 import { UsdValue } from './UsdValue.tsx';
 import { useApp } from '../app/context.tsx';
-import { formatDash, formatDashAmount, formatDate, formatDuration, formatInt, formatPercent } from '../lib/format.ts';
+import { formatDash, formatDashAmount, formatDate, formatDuration, formatInt, formatPercent, dashUnit } from '../lib/format.ts';
 import { fundingThreshold, superblockCadence, votingDeadlineTime } from '../lib/governance.ts';
 import { budgetView, countNames, proposalHref } from '../lib/view.ts';
 
@@ -90,7 +90,7 @@ export function BudgetHeader() {
       </div>
 
       <p className="budget-compact">
-        <b>{formatDashAmount(available)} DASH</b> still available; <b>{formatInt(funded.length)}</b> of {formatInt(active)} proposals in the budget
+        <b>{formatDashAmount(available)} {dashUnit()}</b> still available; <b>{formatInt(funded.length)}</b> of {formatInt(active)} proposals in the budget
         {later > 0 && `; plus ${formatInt(later)} that start${laterS} paying later`}
       </p>
       <dl className="budget-facts">
@@ -104,7 +104,7 @@ export function BudgetHeader() {
         <div>
           <dt>Still available</dt>
           <dd>
-            <span className="num">{formatDashAmount(available)}</span> DASH
+            <span className="num">{formatDashAmount(available)}</span> {dashUnit()}
           </dd>
         </div>
         <div>

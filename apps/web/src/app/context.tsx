@@ -9,7 +9,7 @@ import { cacheDeleteWhere, cacheGet, cachePut } from '../data/cache.ts';
 import { REFRESH_MS, type UsdState } from '../data/price.ts';
 import { createSource, type DataSource } from '../data/repo.ts';
 import type { Cycle, Proposal, Sourced, Tally } from '../data/types.ts';
-import { errText } from '../lib/format.ts';
+import { errText, setDashUnit } from '../lib/format.ts';
 import type { GovParams } from '../lib/governance.ts';
 import { byRank, deriveRow, partitionByCheck, type Checked, type Row } from '../lib/view.ts';
 import { ProposalChecks, type CheckCache, type StoredCheck } from '../verify/checks.ts';
@@ -186,6 +186,8 @@ export function AppProvider({ children, initialMode }: { children: ReactNode; in
   const [mode, setModeState] = useState<DataMode>(() => initialMode ?? resolveMode(location.search, sessionStorage, import.meta.env.VITE_GOVHUB_FIXTURES));
   const [nonce, setNonce] = useState(0);
   const source = useMemo(() => createSource(mode, registry), [mode, registry]);
+  // before anything below renders an amount: Testnet's practice coins are tDASH
+  setDashUnit(source.coreNetwork === 'testnet' ? 'tDASH' : 'DASH');
   const gov = useGovSnapshot(source, nonce);
   const params = gov.params?.value ?? source.defaultParams;
   const checks = useMemo(() => makeChecks(source), [source]);

@@ -8,7 +8,7 @@ import {
 import { useMemo, useState, type ReactNode } from 'react';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
-import { formatDate, formatDateTime, formatInt } from '../lib/format.ts';
+import { formatDate, formatDateTime, formatInt, dashUnit } from '../lib/format.ts';
 import { openSignIn } from '../ui/SignIn.tsx';
 import { ProvGlyph } from '../ui/Provenance.tsx';
 import type { Provenance } from '../data/types.ts';
@@ -70,7 +70,7 @@ export function usePlan(d: ProposalDraft): Plan {
     });
     const errors: Plan['errors'] = {};
     for (const e of check.errors) errors[e.field] ??= e.message;
-    if (i.amount.trim() && duffs === null) errors.paymentAmount = 'enter an amount in DASH, with at most 8 decimals';
+    if (i.amount.trim() && duffs === null) errors.paymentAmount = `enter an amount in ${dashUnit()}, with at most 8 decimals`;
     if (i.urlMode === 'govhub' && !identityId) errors.url = 'sign in to use a Governance page, or enter your own link';
     if (!schedule) errors.schedule ??= tip ? 'choose the first payment' : 'waiting for the current block height';
     return { tip, now, choices, schedule, duffs, url, check, errors };
@@ -281,15 +281,15 @@ export function PaymentsStep({ draft, plan, setInputs, setStep }: EditProps) {
           {s.eligible.length > s.superblocks.length && (
             <p className="notice-box small" data-testid="p-eligible">
               {testnet ? 'Testnet pays every hour and Dash Core allows a 2-hour margin around the dates, so' : 'Dash Core allows a 2-hour margin around the dates, so'} this proposal can be paid at up to {s.eligible.length} superblocks:
-              up to {duffsToDash(maxTotal!)} DASH in total.
+              up to {duffsToDash(maxTotal!)} {dashUnit()} in total.
             </p>
           )}
           <p className="muted small">
-            A superblock pays at most {duffsToDash(s.superblocks[0]!.budgetLimit)} DASH in total (Dash's consensus rules, computed here).
+            A superblock pays at most {duffsToDash(s.superblocks[0]!.budgetLimit)} {dashUnit()} in total (Dash's consensus rules, computed here).
             {available !== null && cycle && (
               <>
                 {' '}
-                Of the next one's {duffsToDash(BigInt(cycle.value.budget))} DASH, {duffsToDash(BigInt(Math.max(0, available)))} DASH are not yet promised to proposals that pass{' '}
+                Of the next one's {duffsToDash(BigInt(cycle.value.budget))} {dashUnit()}, {duffsToDash(BigInt(Math.max(0, available)))} {dashUnit()} are not yet promised to proposals that pass{' '}
                 <ProvNote prov={cycle.prov} />.
               </>
             )}
@@ -361,8 +361,8 @@ export function ReviewStep({ draft, plan, setStep, lock }: EditProps) {
         <div>
           <dt>Amount</dt>
           <dd>
-            {plan.duffs !== null ? `${duffsToDash(plan.duffs)} DASH` : '–'} × {s?.superblocks.length ?? '–'}
-            {s && plan.duffs !== null && <> = {duffsToDash(plan.duffs * BigInt(s.superblocks.length))} DASH</>}
+            {plan.duffs !== null ? `${duffsToDash(plan.duffs)} ${dashUnit()}` : '–'} × {s?.superblocks.length ?? '–'}
+            {s && plan.duffs !== null && <> = {duffsToDash(plan.duffs * BigInt(s.superblocks.length))} {dashUnit()}</>}
           </dd>
         </div>
         <div>
@@ -395,7 +395,7 @@ export function ReviewStep({ draft, plan, setStep, lock }: EditProps) {
         <pre className="pw-code" data-testid="p-json">{json}</pre>
       </details>
       <p className="notice-box small">
-        Next, the proposal is fixed: the fee pays for these exact details and this moment's timestamp. Changing anything afterwards needs a new {duffsToDash(GOVERNANCE_PROPOSAL_FEE_DUFFS)} DASH fee.
+        Next, the proposal is fixed: the fee pays for these exact details and this moment's timestamp. Changing anything afterwards needs a new {duffsToDash(GOVERNANCE_PROPOSAL_FEE_DUFFS)} {dashUnit()} fee.
       </p>
       {error && <p className="error">{error}</p>}
       <div className="form-actions">

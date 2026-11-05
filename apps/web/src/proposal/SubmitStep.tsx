@@ -5,7 +5,7 @@
 import { duffsToDash, GOVERNANCE_FEE_CONFIRMATIONS, gobjectSubmitCommand } from '@govhub/verify';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from '../ui/Link.tsx';
-import { formatInt, shortHash } from '../lib/format.ts';
+import { formatInt, shortHash, dashUnit } from '../lib/format.ts';
 import { CopyButton } from '../ui/vote/common.tsx';
 import { WinMark } from '../ui/vote/VoteSuccess.tsx';
 import { relayHost } from '../voting/relay.ts';
@@ -182,7 +182,7 @@ export function SubmitStep({ draft, commit, services }: PayProps) {
           </div>
           <div>
             <dt>Amount</dt>
-            <dd>{duffsToDash(BigInt(lock.paymentDuffs))} DASH per payment</dd>
+            <dd>{duffsToDash(BigInt(lock.paymentDuffs))} {dashUnit()} per payment</dd>
           </div>
         </dl>
       </details>

@@ -7,7 +7,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Link } from '../ui/Link.tsx';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
-import { formatDateTime, shortHash } from '../lib/format.ts';
+import { formatDateTime, shortHash, dashUnit } from '../lib/format.ts';
 import { superblockPhrase } from '../lib/governance.ts';
 import { CostSummary, DetailsStep, PaymentsStep, ReviewStep, usePlan, type EditProps } from '../proposal/EditSteps.tsx';
 import { BackupError, draftStage, draftStore, mergeDraft, newDraft, readBackup, type DraftInputs, type ProposalDraft } from '../proposal/draft.ts';
@@ -203,7 +203,7 @@ function Wizard({ initial, services, onChange }: { initial: ProposalDraft; servi
       {(stage === 'submit' || stage === 'done') && <SubmitStep draft={draft} commit={commit} services={services} />}
       {stage !== 'edit' && draft.lock && (
         <p className="muted small pw-foot">
-          {draft.lock.name}: {duffsToDash(BigInt(draft.lock.paymentDuffs))} DASH × {draft.lock.superblocks.length}, hash {shortHash(draft.lock.govHash, 8)}
+          {draft.lock.name}: {duffsToDash(BigInt(draft.lock.paymentDuffs))} {dashUnit()} × {draft.lock.superblocks.length}, hash {shortHash(draft.lock.govHash, 8)}
         </p>
       )}
     </section>

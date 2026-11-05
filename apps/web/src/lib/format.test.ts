@@ -66,3 +66,13 @@ describe('D-055: errText', () => {
     expect(errText(null)).toBe('null');
   });
 });
+
+describe('the DASH unit by network', () => {
+  it('says tDASH for Testnet amounts and DASH again for Mainnet', async () => {
+    const { formatDash, setDashUnit } = await import('./format.ts');
+    setDashUnit('tDASH');
+    expect(formatDash(150e8)).toBe('150 tDASH');
+    setDashUnit('DASH');
+    expect(formatDash(150e8)).toBe('150 DASH');
+  });
+});
