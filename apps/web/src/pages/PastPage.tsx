@@ -13,13 +13,14 @@ import { useApp } from '../app/context.tsx';
 import type { Proposal, Sourced, Tally } from '../data/types.ts';
 import { dashUnit, errText, formatDash, formatDashAmount, formatDate, formatInt, formatSigned } from '../lib/format.ts';
 import { absoluteYes, perPayment } from '../lib/governance.ts';
-import { ledgerEntry, outcomeOf, type LedgerEntry, type LedgerLine, type Outcome, type SuperblockRead } from '../lib/ledger.ts';
+import { ledgerEntry, ledgerSummary, outcomeOf, type LedgerEntry, type LedgerLine, type LedgerSummary, type Outcome, type SuperblockRead } from '../lib/ledger.ts';
 import { countNames, partitionByCheck, proposalHref } from '../lib/view.ts';
 import { contentFailure, isFailed } from '../verify/checks.ts';
 import { FailedNote, FailedProposalsToggle } from '../ui/HiddenToggle.tsx';
 import { useReveal } from '../ui/hooks.ts';
 import { ProposalTabs } from '../ui/ProposalTabs.tsx';
 import { useLedger, type Ledger, type SuperblockSlot } from '../ui/useLedger.ts';
+import { ChainProof } from '../ui/ProofTag.tsx';
 
 /** Ended proposals on Platform, every page (there are tens, not thousands), with their published tallies. */
 function usePastProposals() {
@@ -92,7 +93,7 @@ export function PastPage() {
             Payments by superblock
           </button>
           <button className="dh-btn" type="button" aria-pressed={view === 'proposals'} onClick={() => setView('proposals')} data-testid="view-proposals">
-            Proposals<span className="dh-count">{past.items.length ? formatInt(past.items.length) : ''}</span>
+            Proposals<span className="dh-count">{!past.loading && past.items.length ? formatInt(past.items.length) : ''}</span>
           </button>
         </div>
       </header>
@@ -130,54 +131,24 @@ function LedgerView({ ledger, known, past }: { ledger: Ledger; known: Proposal[]
       </p>
     );
   }
-  const read = entries.flatMap((e) => (e.entry ? [{ slot: e.slot, entry: e.entry }] : []));
-  const totals = read.filter((e) => e.entry.total !== null);
-  const paid = totals.reduce((a, e) => a + e.entry.total!, 0n);
-  const reading = ledger.slots.filter((s) => s.state === 'reading').length;
-  const failed = ledger.slots.filter((s) => s.state === 'error').length;
-  const oldest = read.at(-1)?.entry.read.time;
-  const newest = read[0]?.entry.read.time;
+  const sum = ledgerSummary(entries.map((e) => ({ state: e.slot.state, entry: e.entry })));
+  const reading = sum.kind === 'reading' ? sum.of - sum.settled : 0;
+  const failed = sum.kind === 'done' ? sum.failed : 0;
   // Governance's records hold the proposals that ended since its bridge began archiving, and the active ones: others show their payee
   const recordsFrom = past.length ? Math.min(...past.map((p) => p.value.endEpoch)) : null;
   const perSb = network === 'testnet' ? 'superblock (hourly on Testnet)' : 'superblock (about monthly)';
   return (
     <div className="ledger" data-testid="ledger">
-      <div className="dh-stats ledger-stats" aria-live="polite">
-        <div className="dh-stat dh-stat--key">
-          <span className="dh-stat__label">Paid by the treasury</span>
-          <span className="dh-stat__value" data-testid="ledger-total">
-            {totals.length ? <DashValue duffs={paid} /> : '…'}
-          </span>
-          <span className="dh-stat__note">
-            {totals.length ? `in ${formatInt(totals.length)} superblock${totals.length === 1 ? '' : 's'}${oldest && newest ? `, ${formatDate(oldest)} to ${formatDate(newest)}` : ''}` : 'reading superblocks…'}
-          </span>
-        </div>
-        <div className="dh-stat">
-          <span className="dh-stat__label">On average</span>
-          <span className="dh-stat__value">{totals.length ? <DashValue duffs={paid / BigInt(totals.length)} /> : '…'}</span>
-          <span className="dh-stat__note">per {perSb}</span>
-        </div>
-        <div className="dh-stat">
-          <span className="dh-stat__label">Payments</span>
-          <span className="dh-stat__value">{totals.length ? formatInt(totals.reduce((a, e) => a + (e.entry.lines?.length ?? 0), 0)) : '…'}</span>
-          <span className="dh-stat__note">to proposals' payees</span>
-        </div>
-      </div>
+      <LedgerStats sum={sum} perSb={perSb} />
       <p className="small muted ledger-note" data-testid="ledger-status">
-        {reading > 0 ? (
-          <>
-            <span className="spinner" aria-hidden="true" /> Reading {formatInt(reading)} superblock{reading === 1 ? '' : 's'} from the chain. The first visit downloads and checks each block;
-            later visits reuse them.{' '}
-          </>
-        ) : null}
-        Each payment is read from its superblock in the chain this browser verified. Names come from the proposals Governance has on record: the
-        active ones{recordsFrom ? <> and those that ended since {formatDate(recordsFrom)}</> : null}. A payment to any other proposal shows the address it went to.
-        {failed > 0 && reading === 0 && (
+        Each payment is read from its superblock in the chain this browser verified; the first visit downloads and checks each block, later visits
+        reuse them. Names come from the proposals Governance has on record: the active ones{recordsFrom ? <> and those that ended since {formatDate(recordsFrom)}</> : null}.
+        A payment to any other proposal shows the address it went to.
+        {failed > 0 && (
           <>
             {' '}
-            {formatInt(failed)} couldn't be read just now.{' '}
             <button type="button" className="linkish dh-btn dh-btn--link" onClick={ledger.retry} data-testid="ledger-retry">
-              Try again
+              Read the {failed === 1 ? 'missing superblock' : `${formatInt(failed)} missing superblocks`} again
             </button>
           </>
         )}
@@ -197,6 +168,61 @@ function LedgerView({ ledger, known, past }: { ledger: Ledger; known: Proposal[]
               : 'That is two years of superblocks: as far back as this browser can check blocks cheaply, against the block hashes this build pins. Older payments are on the chain, but checking them here would mean downloading a large share of its headers.'}
           </p>
         )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The ledger's headline figures. They are the ones people quote, so there are none until every superblock asked for is in: while
+ * reading, only how far it got. Once done, anything the totals leave out (a superblock not read, a coinbase that doesn't split) is
+ * said beside them.
+ */
+function LedgerStats({ sum, perSb }: { sum: LedgerSummary; perSb: string }) {
+  if (sum.kind === 'reading') {
+    return (
+      <div className="ledger-stats ledger-stats-reading" role="status" data-testid="ledger-progress">
+        <p className="ledger-progress-line">
+          <span className="spinner" aria-hidden="true" /> Reading superblocks from the chain: <b>{formatInt(sum.settled)}</b> of {formatInt(sum.of)} so far.
+        </p>
+        <p className="small muted">The totals appear once all {formatInt(sum.of)} are in, so no figure here is a partial one.</p>
+        <progress className="ledger-progress" max={sum.of} value={sum.settled} aria-label="Superblocks read" />
+      </div>
+    );
+  }
+  const left = [sum.failed ? `${formatInt(sum.failed)} couldn't be read` : '', sum.unknown ? `${formatInt(sum.unknown)} with a total that isn't known` : ''].filter(Boolean).join(' and ');
+  const range = sum.oldest && sum.newest ? `, ${formatDate(sum.oldest)} to ${formatDate(sum.newest)}` : '';
+  const scope = left ? `in ${formatInt(sum.counted)} of the ${formatInt(sum.of)} superblocks${range}; ${left}, so ${sum.failed + sum.unknown === 1 ? 'it is' : 'they are'} left out` : `in ${formatInt(sum.counted)} superblock${sum.counted === 1 ? '' : 's'}${range}`;
+  if (!sum.counted) {
+    return (
+      <p className="notice-box dh-notice dh-notice--warn small" data-testid="ledger-total">
+        No superblock total could be read just now ({left}).
+      </p>
+    );
+  }
+  return (
+    <div className="dh-stats ledger-stats" aria-live="polite">
+      <div className="dh-stat dh-stat--key">
+        <span className="dh-stat__label">Paid by the treasury{left ? ' (partial)' : ''}</span>
+        <span className="dh-stat__value" data-testid="ledger-total">
+          {left ? <small>at least </small> : null}
+          <DashValue duffs={sum.paid} />
+        </span>
+        <span className="dh-stat__note" data-testid="ledger-scope">
+          {scope}. <ChainProof weak={sum.weak} />
+        </span>
+      </div>
+      <div className="dh-stat">
+        <span className="dh-stat__label">On average</span>
+        <span className="dh-stat__value">
+          <DashValue duffs={sum.paid / BigInt(sum.counted)} />
+        </span>
+        <span className="dh-stat__note">per {perSb}{left ? ', of those read' : ''}</span>
+      </div>
+      <div className="dh-stat">
+        <span className="dh-stat__label">Payments</span>
+        <span className="dh-stat__value">{formatInt(sum.payments)}</span>
+        <span className="dh-stat__note">to proposals' payees</span>
       </div>
     </div>
   );

@@ -188,6 +188,54 @@ export function outcomeOf(p: Payee, reads: readonly SuperblockRead[], network: C
   return { kind, of, paid, total, partial, shared };
 }
 
+/** A superblock slot as the ledger shows it: still reading, read (its entry), or failed. */
+export interface LedgerSlotEntry {
+  state: 'reading' | 'read' | 'error';
+  entry: LedgerEntry | null;
+}
+
+/**
+ * The ledger's totals, only once every superblock asked for has been read or has failed: while any is still reading there is no
+ * total, only how far the reading got, so a partial sum is never shown as the treasury's. `counted` are the superblocks whose total
+ * is known; `failed` and `unknown` (read, but its coinbase doesn't split) are what the totals leave out.
+ */
+export type LedgerSummary =
+  | { kind: 'reading'; settled: number; of: number }
+  | {
+      kind: 'done';
+      of: number;
+      counted: number;
+      failed: number;
+      unknown: number;
+      paid: bigint;
+      payments: number;
+      oldest: number | null;
+      newest: number | null;
+      /** some counted superblock was read from a chain this browser could not prove (Testnet's proof of work) */
+      weak: boolean;
+    };
+
+export function ledgerSummary(slots: readonly LedgerSlotEntry[]): LedgerSummary {
+  const of = slots.length;
+  const reading = slots.filter((s) => s.state === 'reading').length;
+  if (reading > 0) return { kind: 'reading', settled: of - reading, of };
+  const read = slots.flatMap((s) => (s.state === 'read' && s.entry ? [s.entry] : []));
+  const counted = read.filter((e) => e.total !== null);
+  const times = counted.map((e) => e.read.time);
+  return {
+    kind: 'done',
+    of,
+    counted: counted.length,
+    failed: slots.filter((s) => s.state === 'error').length,
+    unknown: read.length - counted.length,
+    paid: counted.reduce((a, e) => a + e.total!, 0n),
+    payments: counted.reduce((a, e) => a + (e.lines?.length ?? 0), 0),
+    oldest: times.length ? Math.min(...times) : null,
+    newest: times.length ? Math.max(...times) : null,
+    weak: counted.some((e) => !!e.read.weak),
+  };
+}
+
 /** The last `count` superblock heights at or below `lastHeight`, newest first. */
 export function superblockHeights(lastHeight: number, cycle: number, count: number, lowest = 1): number[] {
   const out: number[] = [];

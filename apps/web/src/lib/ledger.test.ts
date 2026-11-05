@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Proposal } from '../data/types.ts';
 import fixtures from './ledger.fixtures.json';
-import { ledgerEntry, outcomeOf, scriptAddress, superblockHeights, treasuryPayments, type CoinbaseOutput, type SuperblockRead } from './ledger.ts';
+import { ledgerEntry, ledgerSummary, outcomeOf, scriptAddress, superblockHeights, treasuryPayments, type CoinbaseOutput, type SuperblockRead } from './ledger.ts';
 
 const cb = fixtures as Record<string, CoinbaseOutput[]>;
 const dash = (n: bigint) => Number(n) / 1e8;
@@ -93,4 +93,28 @@ describe('outcomeOf', () => {
 
 describe('superblockHeights', () => {
   it('counts back by the cycle, newest first', () => expect(superblockHeights(2558864, 16616, 3)).toEqual([2558864, 2542248, 2525632]));
+});
+
+describe('ledgerSummary', () => {
+  const sep = ledgerEntry(read(2542248, 1789900000), [], 'mainnet');
+  const oct = ledgerEntry(read(2558864, 1792566848), [], 'mainnet');
+  it('has no total while any superblock is still reading: only how far it got', () => {
+    expect(ledgerSummary([{ state: 'reading', entry: null }, { state: 'read', entry: sep }, { state: 'error', entry: null }])).toEqual({ kind: 'reading', settled: 2, of: 3 });
+  });
+  it('totals the superblocks read once all are in', () => {
+    const s = ledgerSummary([{ state: 'read', entry: oct }, { state: 'read', entry: sep }]);
+    expect(s.kind).toBe('done');
+    if (s.kind !== 'done') return;
+    expect(dash(s.paid)).toBe(5393 + 6810);
+    expect([s.of, s.counted, s.failed, s.unknown]).toEqual([2, 2, 0, 0]);
+    expect([s.oldest, s.newest]).toEqual([1789900000, 1792566848]);
+    expect(s.payments).toBe(oct.lines!.length + sep.lines!.length);
+    expect(s.weak).toBe(false);
+  });
+  it('says what the totals leave out: unread superblocks and coinbases that do not split', () => {
+    const unsplit = ledgerEntry(read(2558864, 1792566848, cb['2558864']!.filter((_, i) => i !== 1)), [], 'mainnet');
+    const s = ledgerSummary([{ state: 'read', entry: unsplit }, { state: 'read', entry: sep }, { state: 'error', entry: null }]);
+    expect(s).toMatchObject({ kind: 'done', of: 3, counted: 1, failed: 1, unknown: 1 });
+    if (s.kind === 'done') expect(dash(s.paid)).toBe(6810);
+  });
 });
