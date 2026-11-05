@@ -13,13 +13,17 @@ import { verifyCollateral } from './collateral.ts';
 import type { DapiDescriptor, SmlUsed, WorkerRequest, WorkerResponse } from './protocol.ts';
 import { rankRecounts, type RecountedProposal } from './ranking.ts';
 import { BRIDGE_TARGET, comparable, otherSnapshot } from './verdict.ts';
-import { headerStore, proRegCache, superblockCache } from './stores.ts';
+import { headerStore, proRegCache as ownProRegCache, superblockCache } from './stores.ts';
+import { withShippedRegistrations } from './registrations.ts';
 import { loadVerifiers } from './verifiers.ts';
 import { recountSnapshots, snapshotOf, voteSetFor } from './snapshot.ts';
 import { problemCounts, verifyVotes, type ProReg, type SmlEntry } from './votes.ts';
 
 declare const self: DedicatedWorkerGlobalScope;
 const post = (m: WorkerResponse) => self.postMessage(m);
+
+/** ProRegTx facts: the build's table first (verify/registrations.ts), then what this browser proved itself. */
+const proRegCache = (network: string) => withShippedRegistrations(network, ownProRegCache(network));
 
 /** One client per DAPI setting: the anchored chain (and its proven SML) is reused by every check for a minute. */
 const clients = new Map<string, Dapi>();
