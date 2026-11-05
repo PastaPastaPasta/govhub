@@ -67,19 +67,25 @@ export function ProposalCard({
   const left = ended ? null : paymentsLeft(row.schedule);
   const tone = failed ? 'invalid' : ended ? 'ended' : (row.state?.light ?? 'none');
   // the owner's page, only for a proposal whose fields match its hash (its link is the committed one)
-  const owner = useOwnerPage(p.govHash);
+  const owner = useOwnerPage(p);
   const page = row.content.ok && !failed ? (owner?.page ?? null) : null;
+  const pays = () => (
+    <>
+      pays <dashhq-hash value={p.paymentAddress} label="Payee address" href={`https://${registry.coreNetwork === 'testnet' ? 'insight.testnet.networks.dash.org' : 'insight.dash.org'}/insight/address/${encodeURIComponent(p.paymentAddress)}`}>{p.paymentAddress}</dashhq-hash> ↗
+    </>
+  );
   return (
     <article className={`prow prow-${tone}`} data-govhash={p.govHash} data-check={check?.status} data-lameduck={ended ? 'true' : undefined} data-testid="proposal-card">
       <div className="prow-main">
         {/* h2: the list's heading is the page's h1 (a skipped level breaks heading navigation) */}
         <h2 className="prow-title">
-          <Link to={href}>{page?.title ?? <Slug name={p.name} />}</Link>
+          <Link to={href}>{page?.title ? <bdi>“{page.title}”</bdi> : <Slug name={p.name} />}</Link>
           {mark && <TrustBadge size="s" level={mark.level} reason={mark.reason} testId="card-trust" />}
         </h2>
         {page?.title && (
-          <p className="prow-slug small" title="The proposal's name on the network; the title above is the owner's, from their page">
+          <p className="prow-slug small" title="The quoted title is the owner's, from their page; this is the proposal's name on the network">
             <Slug name={p.name} />
+            {!urlOwner && <span className="prow-owner-none"> · {pays()}</span>}
           </p>
         )}
         {page && <PurposeLine page={page} />}
@@ -96,10 +102,8 @@ export function ProposalCard({
               <a href={window.dashhq?.href('explorer', '/identity?id=' + encodeURIComponent(urlOwner))}><bdi>{ownerProfile && authorLabel(urlOwner, ownerProfile).name ? authorText(urlOwner, ownerProfile) : shortHash(urlOwner, 5)}</bdi></a> <span className="muted small">named by the creator</span>
             </span>
           </p>
-        ) : page ? null : (
-          <p className="prow-owner prow-owner-none">
-            pays <dashhq-hash value={p.paymentAddress} label="Payee address" href={`https://${registry.coreNetwork === 'testnet' ? 'insight.testnet.networks.dash.org' : 'insight.dash.org'}/insight/address/${encodeURIComponent(p.paymentAddress)}`}>{p.paymentAddress}</dashhq-hash> ↗
-          </p>
+        ) : page?.title ? null : (
+          <p className="prow-owner prow-owner-none">{pays()}</p>
         )}
       </div>
 

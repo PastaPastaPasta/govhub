@@ -16,8 +16,16 @@ export function OwnerPageSummary({ page, fetchedAt }: { page: OwnerPage; fetched
         change.
       </p>
       <blockquote className="owner-page-quote" cite={page.url}>
-        {page.title && <p className="owner-page-title">{page.title}</p>}
-        {purpose && <p>{purpose}</p>}
+        {page.title && (
+          <p className="owner-page-title">
+            <bdi>{page.title}</bdi>
+          </p>
+        )}
+        {purpose && (
+          <p>
+            <bdi>{purpose}</bdi>
+          </p>
+        )}
       </blockquote>
       <a href={page.url} target="_blank" rel="noopener noreferrer nofollow ugc" className="ext small" data-testid="owner-page-link">
         Read it all on {page.host}
@@ -33,17 +41,17 @@ export function PurposeLine({ page }: { page: OwnerPage }) {
   if (!purpose && !page.title) return null;
   return (
     <p className="prow-purpose small" data-testid="card-purpose" title={`From the owner’s page on ${page.host}: the owner’s own words, not checked`}>
-      <span className="muted">{page.host}:</span> {purpose ?? page.title}
+      <span className="muted">Owner’s page, {page.host}:</span> <bdi>{purpose ?? page.title}</bdi>
     </p>
   );
 }
 
-/** The owner's title under a proposal's on-chain name in a list, when their page gives one. */
-export function OwnerTitle({ govHash }: { govHash: string }) {
-  const title = useOwnerPage(govHash)?.page.title;
-  return title ? (
-    <span className="owner-title small muted" title="The owner’s title, from their page">
-      {title}
+/** The owner's title under a proposal's on-chain name in a list, quoted and labelled as theirs, when their page gives one. */
+export function OwnerTitle({ p }: { p: { govHash: string; url: string } }) {
+  const page = useOwnerPage(p)?.page;
+  return page?.title ? (
+    <span className="owner-title small muted" data-testid="owner-title">
+      <bdi>“{page.title}”</bdi>, the owner’s title ({page.host})
     </span>
   ) : null;
 }

@@ -1,13 +1,14 @@
 // What an owner's page says: DashCentral's description, Google Docs and ordinary pages, and owners.json as the browser re-checks it.
 import { describe, expect, it } from 'vitest';
-import { parseOwnerPage, parseOwnerPages, sameAsName } from './ownerPages.ts';
+import { ownerPageOf, parseOwnerPage, parseOwnerPages, sameAsName } from './ownerPages.ts';
 
 const HASH = '91808ffd72336fd89bcf5f0b3377b3c73a9b5873da8ac9419b59ba8c92e56640';
 const OTHER = '0'.repeat(64);
 const DC = 'https://www.dashcentral.org/p/DCG-Operations-Aug-Nov-26';
 
-const dashcentral = (description: string, hash = HASH) => `<!DOCTYPE html><html><head><title>Proposal "X" - DashCentral.org</title>
+const dashcentral = (description: string, hash = HASH, name = 'DCG-Operations-Aug-Nov-26') => `<!DOCTYPE html><html><head><title>Proposal "X" - DashCentral.org</title>
 <meta name="description" content="Dash Core Group Operations September - December 2026" /></head><body>
+<h3 class="section-title first-title">Proposal &ldquo;${name}&ldquo; (Active)</h3>
 <table><tbody>
 <tr><td>Title:</td><td>Dash Core Group Operations September - December 2026</td></tr>
 <tr><td>Owner:</td><td>quantumexplorer</td></tr></tbody></table>
@@ -46,6 +47,7 @@ describe('parseOwnerPage: DashCentral', () => {
         '<strong>What is the proposal funding?</strong><br><br>Second paragraph that is also long enough to qualify as substantive text.',
     );
     expect(parseOwnerPage(html, ctx)).toEqual({
+      source: DC,
       url: DC,
       host: 'dashcentral.org',
       title: 'Dash Core Group Operations September - December 2026',
@@ -117,6 +119,7 @@ describe('parseOwnerPage: other pages', () => {
     const html = `<html><head><title>Ignored</title><meta property="og:title" content="Bitcoin backports &amp; reviews, Vijay" />
       <meta property="og:description" content="Porting upstream Bitcoin Core changes into Dash Core, with review notes."></head><body><p>${'Body text that must not be read. '.repeat(5)}</p></body></html>`;
     expect(parseOwnerPage(html, ctx)).toEqual({
+      source: 'https://example.org/vijay',
       url: 'https://example.org/vijay',
       host: 'example.org',
       title: 'Bitcoin backports & reviews, Vijay',
@@ -154,6 +157,7 @@ describe('parseOwnerPage: Google Docs', () => {
     const html = `<html><head><title>Dash Music MVP - Google Docs</title><meta property="og:title" content="Dash Music MVP" />
       <meta property="og:description" content="Dash Music MVP A music app built on Dash Platform, paying artists directly." /></head></html>`;
     expect(parseOwnerPage(html, ctx)).toEqual({
+      source: ctx.url,
       url: ctx.url,
       host: 'docs.google.com',
       title: 'Dash Music MVP',
@@ -169,7 +173,7 @@ describe('parseOwnerPage: Google Docs', () => {
 });
 
 describe('parseOwnerPages', () => {
-  const good = { url: 'https://dashcentral.org/p/x', host: 'dashcentral.org', title: 'T', description: null, excerpt: 'E' };
+  const good = { source: 'https://dashcentral.org/p/x', url: 'https://dashcentral.org/p/x', host: 'dashcentral.org', title: 'T', description: null, excerpt: 'E' };
 
   it('keeps well-formed entries with the fetch time', () => {
     const o = parseOwnerPages({ fetchedAt: 1_793_900_000, pages: { [HASH]: good } });
@@ -190,6 +194,7 @@ describe('parseOwnerPages', () => {
       ['6'.repeat(64)]: { ...good, title: null, excerpt: null },
       ['7'.repeat(64)]: { url: good.url, host: good.host },
       ['8'.repeat(64)]: null,
+      ['9'.repeat(64)]: { ...good, source: undefined },
     };
     expect(parseOwnerPages({ fetchedAt: 1, pages: bad }).pages.size).toBe(0);
   });
@@ -203,5 +208,49 @@ describe('parseOwnerPages', () => {
 
   it('treats the www. host as the page host', () => {
     expect(parseOwnerPages({ fetchedAt: 1, pages: { [HASH]: { ...good, url: 'https://www.dashcentral.org/p/x' } } }).pages.size).toBe(1);
+  });
+});
+
+describe('parseOwnerPage on hostile pages', () => {
+  const ctx = { url: DC, name: 'DCG-Operations-Aug-Nov-26', govHash: HASH };
+
+  it('reads 2 MB of tags that never close in linear time', () => {
+    for (const filler of ['<meta '.repeat(350_000), '<!--'.repeat(500_000), '<script'.repeat(300_000), '<div id="description"'.repeat(90_000), '<tr><td '.repeat(250_000)]) {
+      const t = performance.now();
+      parseOwnerPage(`<html><head>${filler}`, { url: 'https://example.org/x', name: 'x', govHash: HASH });
+      parseOwnerPage(`<html><head>${filler}`, ctx);
+      expect(performance.now() - t).toBeLessThan(2000);
+    }
+  });
+
+  it('takes the hash only from DashCentral\'s own fields, not a discussion or another proposal\'s page', () => {
+    const other = dashcentral('Another proposal entirely, with a description long enough to be quoted as its purpose.', 'cd'.repeat(32), 'Someone-Else');
+    const quoted = other.replace('</body>', `<div class="widget">Comment: please also see gobject vote-many ${HASH} funding yes</div></body>`);
+    expect(parseOwnerPage(quoted, ctx)).toBeNull();
+    // the right vote command but another proposal's name: not this one's page either
+    expect(parseOwnerPage(dashcentral('Some description that is long enough to count as a paragraph here.', HASH, 'Someone-Else'), ctx)).toBeNull();
+  });
+
+  it('gives no excerpt when the description never closes (the discussion would follow)', () => {
+    const html = dashcentral('').replace('<div id="description" style="overflow:hidden; display:block;"></div>', '<div id="description"><div>An unclosed description that is long enough to count as a paragraph.');
+    expect(parseOwnerPage(html, ctx)?.excerpt ?? null).toBeNull();
+  });
+
+  it('treats a trailing-dot DashCentral host as DashCentral', () => {
+    const html = dashcentral('Some description that is long enough to count as a paragraph here.', 'cd'.repeat(32), 'Someone-Else');
+    expect(parseOwnerPage(html, { ...ctx, url: 'https://www.dashcentral.org./p/someone-else' })).toBeNull();
+  });
+
+  it('drops direction-control characters', () => {
+    const html = `<html><head><meta property="og:title" content="Fair &#x202E;title" /></head></html>`;
+    expect(parseOwnerPage(html, { url: 'https://example.org/x', name: 'x', govHash: HASH })?.title).toBe('Fair title');
+  });
+
+  it('records the proposal link it came from, and ownerPageOf shows it only for that link', () => {
+    const page = parseOwnerPage(dashcentral('A description that is long enough to count as this proposal\'s purpose here.'), { ...ctx, source: 'https://www.dashcentral.org/p/DCG_Operations_Aug_Nov_26' })!;
+    expect(page.source).toBe('https://www.dashcentral.org/p/DCG_Operations_Aug_Nov_26');
+    const pages = new Map([[HASH, page]]);
+    expect(ownerPageOf(pages, { govHash: HASH, url: 'https://www.dashcentral.org/p/DCG_Operations_Aug_Nov_26' })).toBe(page);
+    expect(ownerPageOf(pages, { govHash: HASH, url: 'https://example.org/elsewhere' })).toBeNull();
   });
 });

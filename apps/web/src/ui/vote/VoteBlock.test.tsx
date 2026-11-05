@@ -161,6 +161,32 @@ describe('Vote on this proposal', () => {
     await r.unmount();
   });
 
+  it('pasted keys: Forget, then pasting again while a send waits on the bridge, signs nothing', async () => {
+    hold.guest = pasted();
+    let answer!: (v: null) => void;
+    hold.bridge = () => new Promise((r) => (answer = r));
+    const tree = () => (
+      <MemoryRouter initialEntries={[`/p/dash-thing?mn=${PRO}`]}>
+        <ProposalVoteBlock proposal={P} mn={PRO} closesIn={86400} onVerify={() => {}} />
+      </MemoryRouter>
+    );
+    const r = await render(tree());
+    answer(null);
+    await flush();
+    await pick(r.el, 'No');
+    await click(r.el.querySelector<HTMLButtonElement>('[data-testid="vote-send"]')!);
+    const first = answer;
+    hold.guest = noGuest; // Forget: the pasted view goes
+    await r.rerender(tree());
+    hold.guest = pasted(); // another paste
+    await r.rerender(tree());
+    first(null);
+    await flush();
+    expect(hold.submitted).toHaveLength(0);
+    expect(hold.wiped).toBe(0);
+    await r.unmount();
+  });
+
   it('pasted keys: "Now" is the bridge\'s vote; one of ours still on its way shows as sent, and the same choice is not sent twice', async () => {
     hold.guest = pasted();
     hold.keyring = keyring({ watched: [{ proTxHash: PRO, collateralTxid: MN.collateralTxid, collateralIndex: 0, govHash: P.govHash, outcome: 1, time: 100, releaseAt: 100, sig: '', voteHash: 'ff'.repeat(32), refs: [], status: 'held', rebroadcasts: 0, signedAt: 100 }] });

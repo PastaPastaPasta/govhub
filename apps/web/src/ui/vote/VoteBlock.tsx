@@ -13,7 +13,7 @@ import type { BridgeVote } from '../../data/bridge.ts';
 import type { Proposal } from '../../data/types.ts';
 import { errText, formatDuration, shortHash } from '../../lib/format.ts';
 import { useKeyring } from '../../voting/KeyringContext.tsx';
-import type { OwnedMasternode } from '../../voting/masternodes.ts';
+import { votingKeyId, type OwnedMasternode } from '../../voting/masternodes.ts';
 import { isOpen, type WatchedVote } from '../../voting/pending.ts';
 import { mnId, offlineVoteTime, signPlanned, type CurrentVote, type Outcome } from '../../voting/plan.ts';
 import { describeVote, relaySummary, voteButtonText } from '../../voting/status.ts';
@@ -257,6 +257,14 @@ function PastedKeyVote({ proposal, outcome, setOutcome, only }: { proposal: Prop
   // what the latest render sees: a send that waited on the bridge checks nothing changed meanwhile, and times against our newest votes
   const latest = useRef({ guest, watched: k.watched, network });
   latest.current = { guest, watched: k.watched, network };
+  // Forget unmounts this view: a send waiting on the bridge then signs nothing, whatever was pasted meanwhile
+  const gone = useRef(false);
+  useEffect(() => {
+    gone.current = false;
+    return () => {
+      gone.current = true;
+    };
+  }, []);
   useEffect(() => {
     let live = true;
     setVotes((v) => ({ ...v, loading: true }));
@@ -298,7 +306,7 @@ function PastedKeyVote({ proposal, outcome, setOutcome, only }: { proposal: Prop
         return;
       }
       const cur = latest.current;
-      if (cur.guest.status !== 'ready' || cur.guest.keyInfos !== start.guest.keyInfos || cur.network !== start.network) {
+      if (gone.current || cur.guest.status !== 'ready' || cur.guest.keyInfos !== start.guest.keyInfos || cur.network !== start.network) {
         out.push('The pasted keys or the network changed meanwhile, so nothing was signed.');
         return;
       }
@@ -318,6 +326,8 @@ function PastedKeyVote({ proposal, outcome, setOutcome, only }: { proposal: Prop
         for (const { m, prev } of plan) {
           const key = copies.keyOf(m);
           if (!key) continue;
+          // the key this masternode was matched to when the visitor chose: never another one that took its place
+          if (votingKeyId(key.privateKey, key.compressed) !== start.guest.keyInfos[m.keyIndex]?.keyId) throw new Error('the pasted keys changed while the vote was being prepared');
           const t = offlineVoteTime(at, prev);
           const v = signPlanned({ mn: m, govHash, outcome, time: t.time, releaseAt: t.releaseAt, notes: [] }, key.privateKey, key.compressed, cur.network);
           signed.push({ ...v, network: cur.network, weight: m.type === 'evo' ? 4 : 1, prev: prev ?? null, ...(t.hourRule ? { hourRule: true } : {}) });

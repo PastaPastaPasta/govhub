@@ -92,6 +92,7 @@ function MasternodeVotes({ proTx }: { proTx: string }) {
   const { activeRows, gov, params, registry, source } = useApp();
   const k = useKeyring();
   const rows = useMemo(() => [...activeRows.shown, ...activeRows.lameDucks].map((c) => c.item), [activeRows]);
+  const failed = useMemo(() => new Set([...activeRows.shown, ...activeRows.lameDucks].filter((c) => c.check.status === 'failed').map((c) => c.item.p.value.govHash)), [activeRows]);
   const proposals = useMemo(() => rows.map((r) => r.p.value), [rows]);
   const names = useMemo(() => countNames(proposals), [proposals]);
   const v = useMasternodeVotes(proTx, proposals);
@@ -244,6 +245,7 @@ function MasternodeVotes({ proTx }: { proTx: string }) {
                   <MnVoteRow
                     key={row.p.value.govHash}
                     row={row}
+                    passed={row.content.ok && !failed.has(row.p.value.govHash)}
                     href={proposalHref(row.p.value, names)}
                     cell={v.cells.get(row.p.value.govHash)}
                     decides={decidesBy(row, cycle, params)}
@@ -298,6 +300,8 @@ function WaysToVoteLine() {
 
 interface RowProps {
   row: Row;
+  /** its fields match its hash and no check failed: the owner's title may show */
+  passed: boolean;
   href: string;
   cell: VoteCell | undefined;
   decides: number | null;
@@ -314,7 +318,7 @@ interface RowProps {
   votingAddress: string;
 }
 
-function MnVoteRow({ row, href, cell, decides, shared, now, per, open, onToggle, canVote, stalled, owned, proTx, votingAddress }: RowProps) {
+function MnVoteRow({ row, passed, href, cell, decides, shared, now, per, open, onToggle, canVote, stalled, owned, proTx, votingAddress }: RowProps) {
   const p: Proposal = row.p.value;
   const panelId = useId();
   const sched = row.schedule;
@@ -337,7 +341,7 @@ function MnVoteRow({ row, href, cell, decides, shared, now, per, open, onToggle,
       <tr className={`mnv-row${open ? ' mnv-row-open' : ''}`} data-testid="mn-vote-row" data-govhash={p.govHash}>
         <td role="rowheader" data-label="Proposal" className="dh-rc-title">
           <Link to={`${href}?mn=${proTx}`}><Slug name={p.name} /></Link>
-          {row.content.ok && <OwnerTitle govHash={p.govHash} />}
+          {passed && <OwnerTitle p={p} />}
         </td>
         <td className="r num" data-label="Requests">
           {formatDash(p.paymentAmount)} <span className="muted small">{sched?.oneTime ? 'once' : per}</span>

@@ -1,17 +1,20 @@
 // What each proposal's owner says on the page it links to, read at build time (scripts/prerender.mjs writes the result as
 // dist/owners.json). The browser never fetches these pages, so the CSP stays as it is. Proposal links are untrusted on-chain data:
-// http(s) only, no credentials, no IP literals or local names, every redirect hop checked again, size and time bounded.
-// A page that can't be read or doesn't match is left out with one warning.
+// http(s) on the default port only, no credentials, no IP literals or local names, and every name resolved here and refused when
+// any of its addresses is not public; the connection goes to the address that was checked (no second lookup to rebind). Every
+// redirect hop is checked again; size and time are bounded. A page that can't be read or doesn't match is left out with one warning.
+import dns from 'node:dns';
+import http from 'node:http';
+import https from 'node:https';
+import net from 'node:net';
 import { isShortLink } from '../src/lib/shorteners.ts';
-import { parseOwnerPage } from '../src/lib/ownerPages.ts';
+import { isDashCentral, parseOwnerPage } from '../src/lib/ownerPages.ts';
 
 const UA = 'govhub-prerender/1 (+https://github.com/PastaPastaPasta/govhub)';
 const MAX_BYTES = 2 * 1024 * 1024;
 const GAP_MS = 300;
 const TOTAL_MS = 100_000;
-const DASHCENTRAL = new Set(['dashcentral.org', 'www.dashcentral.org']);
-
-/** A URL this build may fetch: http(s), no userinfo, a real DNS name (not an IP literal, localhost, *.local or *.internal). */
+/** A URL this build may fetch: http(s) on its default port, no userinfo, a DNS name (not an IP literal or a local name). */
 function safeUrl(raw) {
   let u;
   try {
@@ -19,12 +22,37 @@ function safeUrl(raw) {
   } catch {
     return null;
   }
-  const h = u.hostname.toLowerCase().replace(/\.$/, '');
   if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
-  if (u.username || u.password || raw.length > 2048) return null;
-  if (h.startsWith('[') || /^[\d.]+$/.test(h) || !h.includes('.')) return null;
-  if (h === 'localhost' || /\.(?:localhost|local|internal)$/.test(h)) return null;
+  if (u.username || u.password || u.port || raw.length > 2048) return null;
+  const h = u.hostname.toLowerCase().replace(/\.+$/, '');
+  if (h.startsWith('[') || /^[\d.]+$/.test(h) || /^0x/i.test(h) || !h.includes('.') || net.isIP(h)) return null;
+  if (h === 'localhost' || /\.(?:localhost|local|internal|home\.arpa|localdomain|lan)$/.test(h)) return null;
+  u.hostname = h;
   return u;
+}
+
+/** Addresses no public page lives at: loopback, private, link-local, CGNAT, documentation, multicast, reserved, unspecified. */
+const PRIVATE = new net.BlockList();
+for (const [a, n] of [['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16], ['172.16.0.0', 12], ['192.0.0.0', 24], ['192.0.2.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15], ['198.51.100.0', 24], ['203.0.113.0', 24], ['224.0.0.0', 3]]) PRIVATE.addSubnet(a, n, 'ipv4');
+for (const [a, n] of [['::', 128], ['::1', 128], ['::ffff:0:0', 96], ['64:ff9b::', 96], ['100::', 64], ['2001:db8::', 32], ['fc00::', 7], ['fe80::', 10], ['ff00::', 8]]) PRIVATE.addSubnet(a, n, 'ipv6');
+const isPublic = ({ address, family }) => !PRIVATE.check(address, family === 6 ? 'ipv6' : 'ipv4');
+
+/** dns.lookup for http(s).get: every address of the name must be public, and the socket connects to one of those. */
+function publicLookup(hostname, options, callback) {
+  dns.lookup(hostname, { all: true, verbatim: true }, (err, addresses) => {
+    if (err) return callback(err);
+    if (!addresses.length || !addresses.every(isPublic)) return callback(Object.assign(new Error(`${hostname} is not a public address`), { code: 'ENOTPUBLIC' }));
+    if (options?.all) return callback(null, addresses);
+    callback(null, addresses[0].address, addresses[0].family);
+  });
+}
+
+/** One GET, no redirects followed: status, headers and (for a 200) the body as a stream. */
+function getOnce(u, signal) {
+  return new Promise((resolve, reject) => {
+    const req = (u.protocol === 'https:' ? https : http).get(u, { lookup: publicLookup, signal, headers: { 'user-agent': UA, accept: 'text/html' } }, resolve);
+    req.on('error', reject);
+  });
 }
 
 const nextSlot = new Map();
@@ -36,7 +64,7 @@ async function polite(host) {
 }
 
 async function readCapped(res) {
-  const type = res.headers.get('content-type') ?? '';
+  const type = res.headers['content-type'] ?? '';
   let decoder;
   try {
     const cs = /charset=["']?([\w-]+)/i.exec(type)?.[1];
@@ -46,14 +74,12 @@ async function readCapped(res) {
   }
   const chunks = [];
   let size = 0;
-  const reader = res.body.getReader();
-  while (size < MAX_BYTES) {
-    const { done, value } = await reader.read();
-    if (done) break;
+  for await (const value of res) {
     chunks.push(value.subarray(0, MAX_BYTES - size));
     size += chunks.at(-1).length;
+    if (size >= MAX_BYTES) break;
   }
-  reader.cancel().catch(() => {});
+  res.destroy();
   const all = new Uint8Array(size);
   let at = 0;
   for (const c of chunks) {
@@ -69,27 +95,24 @@ async function getPage(url, signal) {
   for (let hop = 0; hop < 6; hop++) {
     if (!u) throw new Error('not a fetchable http(s) address');
     await polite(u.hostname);
-    const res = await fetch(u, {
-      redirect: 'manual',
-      signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
-      headers: { 'user-agent': UA, accept: 'text/html' },
-    });
-    if (res.status >= 300 && res.status < 400 && res.headers.get('location')) {
-      res.body?.cancel().catch(() => {});
+    const res = await getOnce(u, AbortSignal.any([signal, AbortSignal.timeout(15_000)]));
+    const status = res.statusCode ?? 0;
+    if (status >= 300 && status < 400 && res.headers.location) {
+      res.destroy();
       try {
-        u = safeUrl(new URL(res.headers.get('location'), u).href);
+        u = safeUrl(new URL(res.headers.location, u).href);
       } catch {
         u = null;
       }
       continue;
     }
-    if (res.status !== 200) {
-      res.body?.cancel().catch(() => {});
-      throw new Error(`HTTP ${res.status}`);
+    if (status !== 200) {
+      res.destroy();
+      throw new Error(`HTTP ${status}`);
     }
-    const type = (res.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
+    const type = (res.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
     if (type !== 'text/html' && type !== 'application/xhtml+xml') {
-      res.body?.cancel().catch(() => {});
+      res.destroy();
       throw new Error(`content-type ${type || 'missing'}`);
     }
     return { html: await readCapped(res), url: u.href };
@@ -99,7 +122,7 @@ async function getPage(url, signal) {
 
 async function read(p, target, signal) {
   const { html, url } = await getPage(target, signal);
-  return parseOwnerPage(html, { url, name: p.name, govHash: p.govHash });
+  return parseOwnerPage(html, { url, name: p.name, govHash: p.govHash, source: p.url });
 }
 
 async function ownerPage(p, links, signal) {
@@ -112,7 +135,7 @@ async function ownerPage(p, links, signal) {
   }
   if (!u) throw new Error('no fetchable link');
   let page = await read(p, u.href, signal);
-  if (!page && DASHCENTRAL.has(u.hostname.toLowerCase())) {
+  if (!page && isDashCentral(u.hostname.replace(/^www\./, ''))) {
     // a slug DashCentral doesn't know (or its front page): its page for this governance name, if it has one
     const own = `https://www.dashcentral.org/p/${encodeURIComponent(p.name)}`;
     if (own !== u.href) page = await read(p, own, signal);

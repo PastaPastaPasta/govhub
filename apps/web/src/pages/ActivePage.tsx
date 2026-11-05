@@ -16,7 +16,7 @@ import { useReveal } from '../ui/hooks.ts';
 import { useCommentCounts } from '../ui/useCommentCounts.ts';
 import { countNames, proposalHref, type Checked, type Row } from '../lib/view.ts';
 import { onlyUnreached, unfinishedReason } from '../lib/netError.ts';
-import { useOwnerPages } from '../lib/ownerPages.ts';
+import { ownerPageOf, useOwnerPages } from '../lib/ownerPages.ts';
 
 /** Display names of these identities (self-chosen profiles), for the owners named in proposal URLs. */
 function useProfiles(ids: readonly string[]): ReadonlyMap<string, Profile> {
@@ -110,7 +110,8 @@ export function ActivePage() {
   };
   const listed = showFailed ? all : activeRows.shown;
   const ownerPages = useOwnerPages();
-  const find = (r: Checked<Row>) => matches(r.item.p.value, needle, r.item.content.ok ? ownerPages.get(r.item.p.value.govHash)?.title : null);
+  // the titles the cards show: only for a proposal that matches its hash and passed its checks
+  const find = (r: Checked<Row>) => matches(r.item.p.value, needle, r.item.content.ok && r.check.status !== 'failed' ? ownerPageOf(ownerPages, r.item.p.value)?.title : null);
   const rows = useMemo(() => sorted(needle ? listed.filter(find) : listed, sort), [listed, needle, sort, ownerPages]);
   // a search also finds the lame ducks, listed with the rest instead of behind their toggle
   const lameDucks = useMemo(() => (needle ? activeRows.lameDucks.filter(find) : activeRows.lameDucks), [activeRows.lameDucks, needle, ownerPages]);

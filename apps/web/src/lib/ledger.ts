@@ -94,7 +94,7 @@ export function treasuryPayments(outputs: readonly CoinbaseOutput[], network: Ne
 const FUDGE_S = 2 * 3600;
 /** A real block time can be hours off Core's estimate: a payment found up to a day outside the window still counts as this one's. */
 const MATCH_SLACK_S = 86_400;
-type Payee = Pick<Proposal, 'govHash' | 'name' | 'paymentAddress' | 'paymentAmount' | 'startEpoch' | 'endEpoch'>;
+type Payee = Pick<Proposal, 'govHash' | 'name' | 'url' | 'paymentAddress' | 'paymentAmount' | 'startEpoch' | 'endEpoch'>;
 /** Wide: a superblock that may have paid it. */
 const mayPay = (p: Payee, t: number) => t >= p.startEpoch - FUDGE_S - MATCH_SLACK_S && t <= p.endEpoch + FUDGE_S + MATCH_SLACK_S;
 /** Narrow: a superblock that was due to pay it (the outcome's denominator). */

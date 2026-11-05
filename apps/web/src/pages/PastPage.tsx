@@ -282,7 +282,7 @@ function SbLines({ entry, names }: { entry: LedgerEntry; names: ReadonlyMap<stri
               {l.proposal ? (
                 <>
                   <Link to={proposalHref(l.proposal as Proposal, names)}><Slug name={l.proposal.name} /></Link>
-                  <OwnerTitle govHash={l.proposal.govHash} />
+                  <OwnerTitle p={l.proposal} />
                 </>
               ) : l.candidates.length ? (
                 <span>
@@ -419,7 +419,7 @@ function ProposalsView({ past, ledger, known }: { past: ReturnType<typeof usePas
                 <tr key={p.govHash} className={reason ? 'row-invalid' : undefined} data-check={check.status} data-testid="past-row">
                   <td role="rowheader" data-label="Proposal" className="dh-rc-title">
                     <Link to={proposalHref(p, names)}><Slug name={p.name} /></Link>
-                    {!reason && <OwnerTitle govHash={p.govHash} />}
+                    {!reason && <OwnerTitle p={p} />}
                     {reason && <FailedNote reason={reason} />}
                   </td>
                   <td data-label="Ran ">

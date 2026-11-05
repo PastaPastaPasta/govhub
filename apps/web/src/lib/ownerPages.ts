@@ -5,6 +5,8 @@
 import { useEffect, useState } from 'react';
 
 export interface OwnerPage {
+  /** the proposal link the build followed to it: shown only for a proposal whose verified link is this one */
+  source: string;
   /** the page that was read (after redirects); http(s) only */
   url: string;
   /** its hostname without a leading "www." */
@@ -41,9 +43,9 @@ function decode(s: string): string {
   });
 }
 
-/** Text as the page shows it: entities decoded, zero-width characters and BOMs gone, whitespace collapsed. */
+/** Text as the page shows it: entities decoded, zero-width, direction-control characters and BOMs gone, whitespace collapsed. */
 function clean(s: string): string {
-  return decode(s).replace(/[​-‍﻿]/g, '').replace(/[\u0000-\u001F\u007F\s]+/g, ' ').trim();
+  return decode(s).replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, '').replace(/[\u0000-\u001F\u007F\s]+/g, ' ').trim();
 }
 
 /** At most `n` characters, cut at a word boundary with "…". */
@@ -67,26 +69,105 @@ export function sameAsName(title: string, name: string): boolean {
   return t !== '' && t === squash(name);
 }
 
-const TAG = /<\/?([a-zA-Z][a-zA-Z0-9]*)((?:"[^"]*"|'[^']*'|[^'">])*)>/g;
-
-const stripTags = (html: string): string => html.replace(TAG, '');
-
-/** Comments, scripts and styles are never text. */
-const withoutNoise = (html: string): string =>
-  html.replace(/<!--[\s\S]*?-->/g, '').replace(/<(script|style|noscript|template)\b[\s\S]*?<\/\1\s*>/gi, '');
-
-function metaTags(html: string): Map<string, string> {
-  const out = new Map<string, string>();
-  for (const m of html.matchAll(/<meta\b((?:"[^"]*"|'[^']*'|[^'">])*)>/gi)) {
-    const attrs = new Map<string, string>();
-    for (const a of (m[1] ?? '').matchAll(/([^\s"'<>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g)) {
-      attrs.set((a[1] ?? '').toLowerCase(), a[2] ?? a[3] ?? a[4] ?? '');
+/**
+ * The page as text and tags, in one pass over it (untrusted pages: no pattern may rescan the rest of the page from every "<"). A tag
+ * that never closes ends the scan: the rest is text.
+ */
+type Token = { text: string } | { name: string; close: boolean; attrs: string };
+function tokens(html: string): Token[] {
+  const out: Token[] = [];
+  const n = html.length;
+  let i = 0;
+  while (i < n) {
+    const lt = html.indexOf('<', i);
+    if (lt < 0) {
+      out.push({ text: html.slice(i) });
+      break;
     }
+    if (lt > i) out.push({ text: html.slice(i, lt) });
+    const m = /^<(\/?)([a-zA-Z][a-zA-Z0-9]{0,15})/.exec(html.slice(lt, lt + 20));
+    if (!m) {
+      out.push({ text: '<' });
+      i = lt + 1;
+      continue;
+    }
+    let j = lt + m[0].length;
+    let quote = '';
+    for (; j < n; j++) {
+      const c = html[j];
+      if (quote) {
+        if (c === quote) quote = '';
+      } else if (c === '"' || c === "'") quote = c;
+      else if (c === '>') break;
+    }
+    if (j >= n) {
+      out.push({ text: html.slice(lt) });
+      break;
+    }
+    out.push({ name: m[2]!.toLowerCase(), close: m[1] === '/', attrs: html.slice(lt + m[0].length, j) });
+    i = j + 1;
+  }
+  return out;
+}
+
+const textOf = (ts: readonly Token[]): string => ts.map((t) => ('text' in t ? t.text : '')).join('');
+const stripTags = (html: string): string => textOf(tokens(html));
+
+/** Comments, scripts and styles are never text; one that never ends drops the rest of the page. */
+function withoutNoise(html: string): string {
+  const lower = html.toLowerCase();
+  const raw = /<(script|style|noscript|template)\b/g;
+  let out = '';
+  let i = 0;
+  let comment = lower.indexOf('<!--');
+  let el: RegExpExecArray | null = raw.exec(lower);
+  while (i < html.length) {
+    if (comment >= 0 && comment < i) comment = lower.indexOf('<!--', i);
+    if (el && el.index < i) {
+      raw.lastIndex = i;
+      el = raw.exec(lower);
+    }
+    const next = Math.min(comment < 0 ? Infinity : comment, el ? el.index : Infinity);
+    if (next === Infinity) {
+      out += html.slice(i);
+      break;
+    }
+    out += html.slice(i, next);
+    if (next === comment) {
+      const end = lower.indexOf('-->', next + 4);
+      if (end < 0) break;
+      i = end + 3;
+    } else {
+      const end = lower.indexOf(`</${el![1]}`, next + 1);
+      const gt = end < 0 ? -1 : lower.indexOf('>', end);
+      if (gt < 0) break;
+      i = gt + 1;
+    }
+  }
+  return out;
+}
+
+const ATTR = /([^\s"'<>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
+
+function metaTags(ts: readonly Token[]): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const t of ts) {
+    if ('text' in t || t.name !== 'meta' || t.close) continue;
+    const attrs = new Map<string, string>();
+    for (const a of t.attrs.matchAll(ATTR)) attrs.set((a[1] ?? '').toLowerCase(), a[2] ?? a[3] ?? a[4] ?? '');
     const content = clean(attrs.get('content') ?? '');
     if (!content) continue;
     for (const k of [attrs.get('property'), attrs.get('name')]) if (k && !out.has(k.toLowerCase())) out.set(k.toLowerCase(), content);
   }
   return out;
+}
+
+/** The text of the first <title>, or ''. */
+function titleOf(ts: readonly Token[]): string {
+  const at = ts.findIndex((t) => !('text' in t) && t.name === 'title' && !t.close);
+  if (at < 0) return '';
+  const end = ts.findIndex((t, k) => k > at && !('text' in t) && t.name === 'title' && t.close);
+  return textOf(ts.slice(at + 1, end < 0 ? undefined : end));
 }
 
 const BLOCK = new Set([
@@ -95,8 +176,7 @@ const BLOCK = new Set([
 ]);
 
 /** Paragraphs of an HTML fragment: split at block elements and at two or more <br>s; a heading is one that is all bold. */
-function paragraphs(fragment: string): { text: string; heading: boolean }[] {
-  const html = withoutNoise(fragment);
+function paragraphs(ts: readonly Token[]): { text: string; heading: boolean }[] {
   const out: { text: string; heading: boolean }[] = [];
   let all = '';
   let plain = '';
@@ -111,15 +191,12 @@ function paragraphs(fragment: string): { text: string; heading: boolean }[] {
     all += raw;
     if (!bold) plain += raw;
   };
-  let last = 0;
-  for (const m of html.matchAll(TAG)) {
-    const text = html.slice(last, m.index);
-    last = (m.index ?? 0) + m[0].length;
-    if (clean(text)) afterBr = false;
-    add(text);
-    const name = (m[1] ?? '').toLowerCase();
-    if (name === 'strong' || name === 'b') bold = m[0].startsWith('</') ? Math.max(0, bold - 1) : bold + 1;
-    else if (name === 'br') {
+  for (const t of ts) {
+    if ('text' in t) {
+      if (clean(t.text)) afterBr = false;
+      add(t.text);
+    } else if (t.name === 'strong' || t.name === 'b') bold = t.close ? Math.max(0, bold - 1) : bold + 1;
+    else if (t.name === 'br') {
       if (afterBr) {
         flush();
         afterBr = false;
@@ -127,40 +204,57 @@ function paragraphs(fragment: string): { text: string; heading: boolean }[] {
         afterBr = true;
         add(' ');
       }
-    } else if (BLOCK.has(name)) {
+    } else if (BLOCK.has(t.name)) {
       flush();
       afterBr = false;
     }
   }
-  add(html.slice(last));
   flush();
   return out;
 }
 
-/** The inner HTML of <div id="description"> (balanced against nested divs), or null. */
-function descriptionHtml(html: string): string | null {
-  const open = /<div\b[^>]*\bid=["']description["'][^>]*>/i.exec(html);
-  if (!open) return null;
-  const from = open.index + open[0].length;
-  const rest = html.slice(from, from + 400_000);
+const isDescription = (t: Token): boolean => !('text' in t) && t.name === 'div' && !t.close && /\bid\s*=\s*["']?description\b/i.test(t.attrs);
+
+/** The tokens inside <div id="description"> (balanced against nested divs); null when there is none, or it never closes. */
+function descriptionTokens(ts: readonly Token[]): Token[] | null {
+  const at = ts.findIndex(isDescription);
+  if (at < 0) return null;
   let depth = 1;
-  for (const m of rest.matchAll(/<(\/?)div\b[^>]*>/gi)) {
-    depth += m[1] ? -1 : 1;
-    if (depth === 0) return rest.slice(0, m.index);
+  for (let k = at + 1; k < ts.length; k++) {
+    const t = ts[k]!;
+    if ('text' in t || t.name !== 'div') continue;
+    depth += t.close ? -1 : 1;
+    if (depth === 0) return ts.slice(at + 1, k);
   }
-  return rest;
+  return null;
+}
+
+/** DashCentral's own header and fields, before the owner's description (and the discussion after it). */
+function dashcentralFields(ts: readonly Token[]): Token[] {
+  const at = ts.findIndex(isDescription);
+  return at < 0 ? [...ts] : ts.slice(0, at);
+}
+
+/** The cell after the one that reads "Title:" in DashCentral's fields. */
+function titleRow(ts: readonly Token[]): string {
+  const label = ts.findIndex((t) => 'text' in t && /^\s*Title:\s*$/i.test(t.text));
+  if (label < 0) return '';
+  const open = ts.findIndex((t, k) => k > label && !('text' in t) && t.name === 'td' && !t.close);
+  if (open < 0) return '';
+  const end = ts.findIndex((t, k) => k > open && !('text' in t) && t.name === 'td' && t.close);
+  return textOf(ts.slice(open + 1, end < 0 ? undefined : end));
 }
 
 /** The first paragraph that reads as prose (ends a sentence), else the first substantive one: list lines and labels say less. */
-function firstParagraph(fragment: string): string | null {
-  const substantive = paragraphs(fragment).filter((p) => !p.heading && p.text.length >= MIN_PARAGRAPH && !/[:?]$/.test(p.text));
+function firstParagraph(ts: readonly Token[]): string | null {
+  const substantive = paragraphs(ts).filter((p) => !p.heading && p.text.length >= MIN_PARAGRAPH && !/[:?]$/.test(p.text));
   return (substantive.find((p) => /[.!]["”’)]?$/.test(p.text)) ?? substantive[0])?.text ?? null;
 }
 
 const hostOf = (url: string): string | null => {
   try {
     const u = new URL(url);
-    return u.protocol === 'https:' || u.protocol === 'http:' ? u.hostname.toLowerCase().replace(/^www\./, '') : null;
+    return u.protocol === 'https:' || u.protocol === 'http:' ? u.hostname.toLowerCase().replace(/\.$/, '').replace(/^www\./, '') : null;
   } catch {
     return null;
   }
@@ -168,27 +262,37 @@ const hostOf = (url: string): string | null => {
 
 const GENERIC_TITLE = /^(sign in|log in|login|access denied|forbidden|not found|404|403|just a moment|attention required|page not found|error)\b/i;
 
+/** DashCentral, under any of its names. */
+export const isDashCentral = (host: string): boolean => host === 'dashcentral.org' || host.endsWith('.dashcentral.org');
+
+/** How much of a page is read: DashCentral's pages are tens of KB; elsewhere only the head is used. */
+const PAGE_CAP = 1_000_000;
+const HEAD_CAP = 200_000;
+
 /** Extracts the summary from a page's HTML; null when the page isn't about this proposal or says nothing usable. */
-export function parseOwnerPage(html: string, ctx: { url: string; name: string; govHash: string }): OwnerPage | null {
+export function parseOwnerPage(html: string, ctx: { url: string; name: string; govHash: string; source?: string }): OwnerPage | null {
   const host = hostOf(ctx.url);
   if (!host || typeof html !== 'string' || !/<!doctype html|<html[\s>]|<head[\s>]|<body[\s>]|<title[\s>]/i.test(html.slice(0, 200_000))) return null;
-  const shown = withoutNoise(html);
   let description: string | null = null;
   let excerpt: string | null = null;
   let own: string;
 
-  if (host === 'dashcentral.org') {
-    // the generic site page and a slug it doesn't know answer 200 too: only a page that carries this proposal's hash is its page
-    if (!html.toLowerCase().includes(ctx.govHash.toLowerCase())) return null;
+  if (isDashCentral(host)) {
+    const ts = tokens(withoutNoise(html.slice(0, PAGE_CAP)));
+    // the generic site page and a slug it doesn't know answer 200 too, and anyone can quote a hash in a discussion: only a page
+    // whose own fields carry this proposal's vote command and name is its page
+    const fields = clean(textOf(dashcentralFields(ts))).toLowerCase();
+    if (!fields.includes(`vote-many ${ctx.govHash.toLowerCase()}`) || !fields.includes(ctx.name.toLowerCase())) return null;
     // its meta description is just the title again, so there is no description to take
-    const row = /<tr[^>]*>\s*<td[^>]*>\s*Title:\s*<\/td>\s*<td[^>]*>([\s\S]*?)<\/td>/i.exec(shown);
-    own = clean(stripTags(row?.[1] ?? ''));
-    const body = descriptionHtml(shown);
+    own = clean(titleRow(dashcentralFields(ts)));
+    const body = descriptionTokens(ts);
     excerpt = body ? firstParagraph(body) : null;
   } else {
-    const metas = metaTags(shown);
-    const tag = /<title\b[^>]*>([\s\S]*?)<\/title\s*>/i.exec(shown);
-    own = clean(metas.get('og:title') ?? '') || clean(stripTags(tag?.[1] ?? ''));
+    const head = html.slice(0, HEAD_CAP);
+    const end = head.toLowerCase().indexOf('</head');
+    const ts = tokens(withoutNoise(end < 0 ? head : head.slice(0, end)));
+    const metas = metaTags(ts);
+    own = clean(metas.get('og:title') ?? '') || clean(titleOf(ts));
     own = own.replace(/\s[-–—|]\s*Google (?:Docs|Sheets|Slides|Drive)$/i, '').trim();
     if (GENERIC_TITLE.test(own)) return null;
     const said = clean(metas.get('og:description') ?? '') || clean(metas.get('description') ?? '');
@@ -206,6 +310,7 @@ export function parseOwnerPage(html: string, ctx: { url: string; name: string; g
   if (description && (description.toLowerCase() === own.toLowerCase() || sameAsName(description, ctx.name))) description = null;
   if (!title && !description && !excerpt) return null;
   return {
+    source: ctx.source ?? ctx.url,
     url: ctx.url,
     host,
     title: title && cap(title, CAP.title),
@@ -226,7 +331,8 @@ export function parseOwnerPages(raw: unknown): { fetchedAt: number; pages: Map<s
   const out = new Map<string, OwnerPage>();
   for (const [hash, e] of Object.entries(pages as Record<string, unknown>).slice(0, 5000)) {
     if (!HASH.test(hash) || !e || typeof e !== 'object') continue;
-    const { url, host, title, description, excerpt } = e as Record<string, unknown>;
+    const { source, url, host, title, description, excerpt } = e as Record<string, unknown>;
+    if (typeof source !== 'string' || source.length > 2048) continue;
     if (typeof url !== 'string' || url.length > 2048 || typeof host !== 'string' || hostOf(url) !== host) continue;
     try {
       if (new URL(url).username || new URL(url).password) continue;
@@ -235,7 +341,7 @@ export function parseOwnerPages(raw: unknown): { fetchedAt: number; pages: Map<s
     }
     const t = field(title, CAP.title), d = field(description, CAP.description), x = field(excerpt, CAP.excerpt);
     if (t === undefined || d === undefined || x === undefined || (t === null && d === null && x === null)) continue;
-    out.set(hash, { url, host, title: t, description: d, excerpt: x });
+    out.set(hash, { source, url, host, title: t, description: d, excerpt: x });
   }
   return { fetchedAt, pages: out };
 }
@@ -247,6 +353,12 @@ function shippedPages() {
     .then(parseOwnerPages, () => parseOwnerPages(null));
   return shipped;
 }
+
+/** The page the build read for this proposal, only when it followed the very link this proposal has (its verified copy). */
+export const ownerPageOf = (pages: ReadonlyMap<string, OwnerPage>, p: { govHash: string; url: string }): OwnerPage | null => {
+  const page = pages.get(p.govHash.toLowerCase());
+  return page && page.source === p.url ? page : null;
+};
 
 /** Every page the build read, by govHash (empty until known): for matching a search against the owners' titles. */
 export function useOwnerPages(): ReadonlyMap<string, OwnerPage> {
@@ -261,18 +373,19 @@ export function useOwnerPages(): ReadonlyMap<string, OwnerPage> {
   return pages;
 }
 
-/** What the owner's page said when the site was built, for a proposal the build could read; null otherwise (or until known). */
-export function useOwnerPage(govHash: string): { page: OwnerPage; fetchedAt: number } | null {
+/** What the owner's page said when the site was built, for a proposal the build read through this same link; null otherwise. */
+export function useOwnerPage(p: { govHash: string; url: string }): { page: OwnerPage; fetchedAt: number } | null {
   const [found, setFound] = useState<{ page: OwnerPage; fetchedAt: number } | null>(null);
+  const { govHash, url } = p;
   useEffect(() => {
     let on = true;
     shippedPages().then((o) => {
-      const page = o.pages.get(govHash.toLowerCase());
+      const page = ownerPageOf(o.pages, { govHash, url });
       if (on) setFound(page ? { page, fetchedAt: o.fetchedAt } : null);
     }, () => {});
     return () => {
       on = false;
     };
-  }, [govHash]);
+  }, [govHash, url]);
   return found;
 }

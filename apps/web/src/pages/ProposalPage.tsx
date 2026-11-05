@@ -181,7 +181,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
   const short = !!host && isShortLink(host);
   const resolved = useResolvedLink(p.url, short);
   // what the owner's page said when the site was built: only for the hash-committed link
-  const ownerPage = useOwnerPage(p.govHash);
+  const ownerPage = useOwnerPage(p);
   const page = row.content.ok && check.status !== 'failed' ? ownerPage : null;
   const sched = row.schedule;
   const chain = trust.chain.report;
@@ -224,7 +224,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
       <header className="p-hero dh-page-header">
         <p className="dh-page-header__kicker">Proposal</p>
         <div className="p-title dh-page-header__text">
-          <h1 className="dh-page-header__title">{page?.page.title ?? <Slug name={p.name} />}</h1>
+          <h1 className="dh-page-header__title">{page?.page.title ? <bdi>{page.page.title}</bdi> : <Slug name={p.name} />}</h1>
 
         </div>
         {page?.page.title && (
