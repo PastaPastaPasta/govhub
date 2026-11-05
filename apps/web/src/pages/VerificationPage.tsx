@@ -35,7 +35,7 @@ export function VerificationPage() {
   useRouteTitle('/about/verification');
   return (
     <article className="page-narrow about" aria-labelledby="about-v-title">
-      <h1 id="about-v-title">How Governance checks what it shows</h1>
+      <h1 className="dh-page-header__title" id="about-v-title">How Governance checks what it shows</h1>
       <p className="lede">
         Governance doesn’t ask you to trust a server. When you open a proposal, your browser checks it against the Dash chain by itself, in the background, and sums the
         result up in one badge. Click the badge on any proposal to see every check.
@@ -45,7 +45,7 @@ export function VerificationPage() {
       <ul className="about-states">
         {STATES.map(([level, text]) => (
           <li key={level}>
-            <span className={`trust trust-${level} trust-m`}>
+            <span className={`trust trust-${level} trust-m dh-badge`}>
               <ShieldIcon level={level} />
               <span className="trust-word">{LEVEL_LABEL[level]}</span>
             </span>

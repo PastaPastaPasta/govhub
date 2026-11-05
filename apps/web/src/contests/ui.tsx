@@ -81,7 +81,7 @@ export function ContestCard({ label, endsAt, state, nowMs, comments }: { label: 
         <p className="small muted">{s ? (s.contenders.length === 1 ? '1 contender' : `${formatInt(s.contenders.length)} contenders`) : failed ? 'Could not be read' : ' '}</p>
       </div>
       <div className="crow-status">
-        <span className={`tag ctag-${tag.tone}`}>{tag.text}</span>
+        <span className={`tag dh-badge ctag-${tag.tone}`}>{tag.text}</span>
         {s?.outcome?.at ? <p className="small muted">{formatDate(s.outcome.at / 1000)}</p> : null}
       </div>
       <div className="crow-bar">

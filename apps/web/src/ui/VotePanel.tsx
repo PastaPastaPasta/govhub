@@ -131,9 +131,9 @@ export function VoteComposer({ proposals, onVerify, onlyMn }: { proposals: Propo
 
   if (k.status !== 'open') {
     return (
-      <div className="vempty" data-testid="vote-cta">
+      <div className="vempty dh-empty" data-testid="vote-cta">
         <p>{k.status === 'signed-out' ? 'Masternode owners: voting from this browser needs an account here and your voting keys. Each proposal page can also sign offline, with no account.' : 'Unlock your masternode keyring to vote here.'}</p>
-        <Link className="btn" to="/masternodes">
+        <Link className="btn dh-btn" to="/masternodes">
           {k.status === 'signed-out' ? 'Ways to vote' : 'My masternodes'}
         </Link>
       </div>
@@ -142,7 +142,7 @@ export function VoteComposer({ proposals, onVerify, onlyMn }: { proposals: Propo
   if (!usable.length) {
     const finding = k.mns.phase === 'loading' || k.mns.phase === 'idle';
     return (
-      <div className="vempty" data-testid="vote-none">
+      <div className="vempty dh-empty" data-testid="vote-none">
         {finding ? (
           <p>
             <span className="spinner" aria-hidden="true" /> Finding your masternodes…
@@ -152,7 +152,7 @@ export function VoteComposer({ proposals, onVerify, onlyMn }: { proposals: Propo
         ) : (
           <p>None of your keyring’s masternodes can vote ({k.keyring?.content.keys.length ? 'none found for your keys, or all PoSe-banned' : 'no voting keys yet'}).</p>
         )}
-        <Link className="btn btn-s" to="/masternodes">
+        <Link className="btn dh-btn btn-s dh-btn--sm" to="/masternodes">
           My masternodes
         </Link>
       </div>
@@ -270,7 +270,7 @@ export function VoteComposer({ proposals, onVerify, onlyMn }: { proposals: Propo
           <span className="vcomp-change">Change</span>
         </summary>
         {usable.length > 1 && (
-          <label className="check vcomp-all">
+          <label className="check vcomp-all dh-field__label">
             <input type="checkbox" checked={chosen.length === usable.length} onChange={(e) => setSelected(e.target.checked ? null : new Set())} /> All masternodes
           </label>
         )}
@@ -282,7 +282,7 @@ export function VoteComposer({ proposals, onVerify, onlyMn }: { proposals: Propo
             const v = pend ? describeVote(pend, now, fmtTime) : null;
             return (
               <li key={m.proTxHash} className={`vmn${sel(m) ? ' vmn-on' : ''}`} data-testid="vote-mn-row" data-protx={m.proTxHash}>
-                <label className="vmn-pick">
+                <label className="vmn-pick dh-field__label">
                   <input type="checkbox" checked={sel(m)} onChange={(e) => toggle(m, e.target.checked)} aria-label={`Vote with ${mnName(m, labels)}`} />
                   <span className="vmn-name">{mnName(m, labels)}</span>
                   {m.type === 'evo' && <span className="chip vmn-evo">Evonode ×4</span>}
@@ -315,7 +315,7 @@ export function VoteComposer({ proposals, onVerify, onlyMn }: { proposals: Propo
             ; re-sending only updates the timestamp{repeats.some((r) => r.same === 'current') ? ' and restarts Core’s one-hour clock' : ''}.
             {differing.length > 0 && !resend && ' They are skipped.'}
           </p>
-          <label className="check">
+          <label className="check dh-check">
             <input type="checkbox" checked={resend} onChange={(e) => setResend(e.target.checked)} data-testid="vote-resend" /> Send {repeats.length === 1 ? 'it' : 'them'} again anyway
           </label>
         </div>
@@ -328,14 +328,14 @@ export function VoteComposer({ proposals, onVerify, onlyMn }: { proposals: Propo
         </summary>
         <fieldset className="vwhen-opts">
           <legend className="visually-hidden">When to send</legend>
-          <label className={`vwhen-opt${mode === 'now' ? ' on' : ''}`}>
+          <label className={[`vwhen-opt${mode === 'now' ? ' on' : ''}`, "dh-field__label"].join(" ")}>
             <input type="radio" name="vote-when" checked={mode === 'now'} onChange={() => setMode('now')} />
             <span>
               <b>Now</b>
               <span className="small muted">{VOTE_NOW_DELAY_TEXT}</span>
             </span>
           </label>
-          <label className={`vwhen-opt${mode === 'deferred' ? ' on' : ''}${unavailable ? ' off' : ''}`}>
+          <label className={[`vwhen-opt${mode === 'deferred' ? ' on' : ''}${unavailable ? ' off' : ''}`, "dh-field__label"].join(" ")}>
             <input type="radio" name="vote-when" checked={mode === 'deferred'} onChange={() => setMode('deferred')} disabled={!!unavailable} data-testid="vote-deferred" aria-describedby="vote-deferred-why" />
             <span>
               <b>Spread out (more private)</b>
@@ -347,11 +347,11 @@ export function VoteComposer({ proposals, onVerify, onlyMn }: { proposals: Propo
         </fieldset>
         {mode === 'deferred' && window && (
           <div className="vwhen-more">
-            <label>
+            <label className="dh-field__label">
               Release within the next{' '}
-              <input type="number" min={0.1} step={0.1} value={withinH} onChange={(e) => setWithinH(e.target.value)} placeholder={String(Math.floor((window.latest - now) / 360) / 10)} className="vote-hours" data-testid="vote-within" /> hours
+              <input type="number" min={0.1} step={0.1} value={withinH} onChange={(e) => setWithinH(e.target.value)} placeholder={String(Math.floor((window.latest - now) / 360) / 10)} className="vote-hours dh-input" data-testid="vote-within" /> hours
             </label>
-            <label className="check">
+            <label className="check dh-check">
               <input type="checkbox" checked={backup} onChange={(e) => setBackup(e.target.checked)} disabled={k.memoryOnly} /> Back up the held votes in my encrypted keyring (a Platform write, about 0.0015 DASH the first time)
             </label>
             <p className="small muted">The relay you use still sees which votes came from you, and when.</p>
@@ -361,7 +361,7 @@ export function VoteComposer({ proposals, onVerify, onlyMn }: { proposals: Propo
 
       <div className="vgo">
         {k.coreNetwork === 'mainnet' && <p className="small muted">Mainnet · real DASH</p>}
-        <button type="button" className="btn btn-primary btn-l vgo-btn" disabled={blocked || !toSend.length} onClick={go} data-testid="vote-send" aria-describedby={hint ? 'vote-send-hint' : undefined}>
+        <button type="button" className="btn dh-btn btn-primary dh-btn--primary btn-l dh-btn--lg vgo-btn" disabled={blocked || !toSend.length} onClick={go} data-testid="vote-send" aria-describedby={hint ? 'vote-send-hint' : undefined}>
           {buttonText}
         </button>
         {toSend.length > 0 && !blocked && (
@@ -451,20 +451,20 @@ export function OfflineSign({ proposal, address: initialAddress = '', open }: { 
     <details className="vote-offline" open={open}>
       <summary>Sign offline instead (Dash Core, hardware wallet)</summary>
       {network === 'testnet' ? (
-        <p className="notice-box small" data-testid="offline-testnet">
+        <p className="notice-box dh-notice dh-notice--info small" data-testid="offline-testnet">
           On testnet, Core checks a signature over the binary vote hash, which <code>signmessage</code> (Dash Core, DMT, hardware wallets) cannot make. Sign the hash below with your own tooling and paste the signature back, or broadcast it yourself with the <code>voteraw</code> command shown.
         </p>
       ) : (
         <p className="small muted">Paste your voting address, sign each line below with <code>signmessage &lt;address&gt; "&lt;text&gt;"</code>, and paste the signature back. The key never enters this page.</p>
       )}
       <div className="form-actions">
-        <input value={address} onChange={(e) => (setAddress(e.target.value), setMns(null))} placeholder="voting address" aria-label="Voting address" className="mono-ish vinput" />
-        <select value={outcome} onChange={(e) => (setOutcome(Number(e.target.value) as Outcome), setMns(null))} aria-label="Vote" className="vinput">
+        <input value={address} onChange={(e) => (setAddress(e.target.value), setMns(null))} placeholder="voting address" aria-label="Voting address" className="mono-ish vinput dh-input" />
+        <select value={outcome} onChange={(e) => (setOutcome(Number(e.target.value) as Outcome), setMns(null))} aria-label="Vote" className="vinput dh-input dh-select">
           <option value={1}>Yes</option>
           <option value={2}>No</option>
           <option value={3}>Abstain</option>
         </select>
-        <button type="button" className="btn" onClick={find}>
+        <button type="button" className="btn dh-btn" onClick={find}>
           {mns ? 'Time it again' : 'Show what to sign'}
         </button>
       </div>
@@ -485,7 +485,7 @@ export function OfflineSign({ proposal, address: initialAddress = '', open }: { 
               <div className="vwarn small" data-testid="offline-held">
                 <p>A vote of this masternode on this proposal that you signed here is still on its way. It could be released after this one and replace it: cancel it first.</p>
                 {held.map((w) => (
-                  <button key={w.voteHash} type="button" className="btn btn-s" onClick={() => void k.cancel(w.voteHash).catch(() => {})} disabled={!!k.busy}>
+                  <button key={w.voteHash} type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={() => void k.cancel(w.voteHash).catch(() => {})} disabled={!!k.busy}>
                     Cancel the {OUTCOME_NAME[w.outcome]} vote
                   </button>
                 ))}
@@ -498,8 +498,8 @@ export function OfflineSign({ proposal, address: initialAddress = '', open }: { 
               </pre>
             )}
             <div className="form-actions">
-              <input value={sigs[m.proTxHash] ?? ''} onChange={(e) => setSigs({ ...sigs, [m.proTxHash]: e.target.value })} placeholder="signature (base64)" aria-label="Signature" className="mono-ish vinput" data-testid="offline-sig" />
-              <button type="button" className="btn" onClick={() => void submit(m)} disabled={!k.relays.length || held.length > 0}>
+              <input value={sigs[m.proTxHash] ?? ''} onChange={(e) => setSigs({ ...sigs, [m.proTxHash]: e.target.value })} placeholder="signature (base64)" aria-label="Signature" className="mono-ish vinput dh-input" data-testid="offline-sig" />
+              <button type="button" className="btn dh-btn" onClick={() => void submit(m)} disabled={!k.relays.length || held.length > 0}>
                 Send
               </button>
             </div>
@@ -513,10 +513,10 @@ export function OfflineSign({ proposal, address: initialAddress = '', open }: { 
 export function ProposalVotePanel({ proposal, onVerify }: { proposal: Proposal; onVerify?: () => void }) {
   const k = useKeyring();
   return (
-    <section id="vote" aria-labelledby="mnvote-title" className="panel mnvote" data-testid="mn-vote-panel">
+    <section id="vote" aria-labelledby="mnvote-title" className="panel dh-card mnvote" data-testid="mn-vote-panel">
       <header className="mnvote-head">
         <h2 id="mnvote-title">Your vote</h2>
-        {k.demo && k.status === 'open' && <span className="tag tag-demo">Demo: votes aren't sent</span>}
+        {k.demo && k.status === 'open' && <span className="tag dh-badge tag-demo">Demo: votes aren't sent</span>}
       </header>
       {k.error && k.status === 'open' && (
         <p className="error small" role="alert">

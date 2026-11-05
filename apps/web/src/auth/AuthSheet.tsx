@@ -58,7 +58,7 @@ export function AuthSheet() {
         <div className="sheet-body">
           <header className="sheet-head">
             <h2 id="sheet-title">{TITLES[sheet]}</h2>
-            <button type="button" className="btn btn-quiet" onClick={closeSheet} aria-label="Close">
+            <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet" onClick={closeSheet} aria-label="Close">
               ✕
             </button>
           </header>
@@ -101,19 +101,19 @@ function SampleIdentities() {
     closeSheet();
   };
   return (
-    <div className="notice-box">
+    <div className="notice-box dh-notice dh-notice--info">
       <p>
         <b>Demo:</b> sign in as a sample person. What you post stays in this tab and costs pretend credit. A real account can sign in below, but can't post
         while demo data is shown.
       </p>
       <div className="signin-picks">
-        <button type="button" className="btn" onClick={() => pick(FIXTURE_IDS.alice, 'fixture identity')}>
+        <button type="button" className="btn dh-btn" onClick={() => pick(FIXTURE_IDS.alice, 'fixture identity')}>
           Alice
         </button>
-        <button type="button" className="btn" onClick={() => pick(FIXTURE_IDS.growth, 'fixture identity')}>
+        <button type="button" className="btn dh-btn" onClick={() => pick(FIXTURE_IDS.growth, 'fixture identity')}>
           Dash Growth team (owns dash-growth-q4-2026)
         </button>
-        <button type="button" className="btn" onClick={() => pick(registry.forum.moderationIdentityId, 'fixture moderator')}>
+        <button type="button" className="btn dh-btn" onClick={() => pick(registry.forum.moderationIdentityId, 'fixture moderator')}>
           Moderator (default block list)
         </button>
       </div>
@@ -135,7 +135,7 @@ function RecoverableNotice({ records }: { records: FundingRecord[] }) {
   const stuck = records.map(stuckDuffs).filter((d) => d > 0n);
   if (!stuck.length) return null;
   return (
-    <div className="notice-box" role="status" data-testid="recoverable">
+    <div className="notice-box dh-notice dh-notice--info" role="status" data-testid="recoverable">
       <p>
         <b>{formatDuffs(stuck.reduce((a, d) => a + d, 0n))}</b> is waiting at {stuck.length === 1 ? 'a deposit address' : 'deposit addresses'} from an earlier
         payment (paid after an account setup or top-up, or too small for it).
@@ -184,7 +184,7 @@ function Choose() {
       <p className="lede">Reading is free and needs no account. Sign in to comment, react, or vote with your masternodes.</p>
       {mode === 'fixtures' && <SampleIdentities />}
       {pending.length > 0 && (
-        <div className="notice-box" role="status">
+        <div className="notice-box dh-notice dh-notice--info" role="status">
           <p>
             <b>{pending.length === 1 ? 'An account setup is' : `${pending.length} account setups are`} in progress.</b> Enter its recovery phrase to continue.
           </p>
@@ -198,7 +198,7 @@ function Choose() {
                 {!r.deposits.length && !r.lock && (
                   <button
                     type="button"
-                    className="btn btn-quiet"
+                    className="btn dh-btn btn-quiet dh-btn--quiet"
                     onClick={() => {
                       // A payment made while no tab was watching is not visible here yet; the record is only hidden, never deleted.
                       if (!confirm(`Hide this setup? Only do this if you never sent DASH to ${r.address}. Continuing with the same phrase later still finds any payment.`)) return;
@@ -212,7 +212,7 @@ function Choose() {
               </li>
             ))}
           </ul>
-          <button type="button" className="btn" onClick={() => openSheet('phrase')}>
+          <button type="button" className="btn dh-btn" onClick={() => openSheet('phrase')}>
             Continue
           </button>
         </div>
@@ -223,7 +223,7 @@ function Choose() {
           <button type="button" className="choice choice-l" disabled aria-describedby="wallet-soon" data-testid="wallet-signin">
             <span className="choice-soon">
               <b>Sign in with a Dash wallet</b>
-              <span className="tag tag-info" id="wallet-soon">
+              <span className="tag dh-badge tag-info dh-badge--info" id="wallet-soon">
                 Coming soon
               </span>
             </span>
@@ -271,7 +271,7 @@ export function CreateFlow() {
   if (step === 'show') {
     return (
       <div className="create">
-        <ol className="steps-bar" aria-label="Creating an account">
+        <ol className="steps-bar dh-steps" aria-label="Creating an account">
           <li aria-current="step">Save your phrase</li>
           <li>Check it</li>
           <li>Add credit</li>
@@ -291,12 +291,12 @@ export function CreateFlow() {
           ))}
         </ol>
         <div className="form-actions">
-          <button type="button" className="btn btn-primary" onClick={() => setStep('quiz')}>
+          <button type="button" className="btn dh-btn btn-primary dh-btn--primary" onClick={() => setStep('quiz')}>
             I wrote it down
           </button>
           <button
             type="button"
-            className="btn btn-quiet"
+            className="btn dh-btn btn-quiet dh-btn--quiet"
             onClick={() => {
               const n: PhraseLength = words === 12 ? 24 : 12;
               setWords(n);
@@ -324,7 +324,7 @@ function Quiz({ words, positions, onPass, onBack }: { words: string[]; positions
   };
   return (
     <form className="form quiz" onSubmit={submit}>
-      <ol className="steps-bar" aria-label="Creating an account">
+      <ol className="steps-bar dh-steps" aria-label="Creating an account">
         <li>Save your phrase</li>
         <li aria-current="step">Check it</li>
         <li>Add credit</li>
@@ -332,9 +332,9 @@ function Quiz({ words, positions, onPass, onBack }: { words: string[]; positions
       <p>Type these words from your written copy, to be sure you have it.</p>
       <div className="row3">
         {positions.map((p, i) => (
-          <label key={p}>
+          <label className="dh-field__label" key={p}>
             Word #{p + 1}
-            <input
+            <input className="dh-input"
               value={answers[i]}
               onChange={(e) => setAnswers((a) => a.map((x, j) => (j === i ? e.target.value : x)))}
               autoComplete="off"
@@ -347,10 +347,10 @@ function Quiz({ words, positions, onPass, onBack }: { words: string[]; positions
       </div>
       {wrong && <p className="error" role="alert">That doesn't match. Check your written copy, or go back and look again.</p>}
       <div className="form-actions">
-        <button type="submit" className="btn btn-primary">
+        <button type="submit" className="btn dh-btn btn-primary dh-btn--primary">
           Continue
         </button>
-        <button type="button" className="btn btn-quiet" onClick={onBack}>
+        <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet" onClick={onBack}>
           Show the phrase again
         </button>
       </div>
@@ -393,7 +393,7 @@ function FundNewIdentity({ phrase, identityIndex, resume }: { phrase: string; id
   if (how === 'choose') {
     return (
       <div className="fund-choice">
-        <ol className="steps-bar" aria-label="Creating an account">
+        <ol className="steps-bar dh-steps" aria-label="Creating an account">
           <li>Save your phrase</li>
           <li>Check it</li>
           <li aria-current="step">Add credit</li>
@@ -467,7 +467,7 @@ function VoucherRedeem({ wallet, identityIndex, onDone }: { wallet: SeedWallet; 
       )}
       {error && <p className="error" role="alert">{error}</p>}
       <div className="form-actions">
-        <button type="submit" className="btn btn-primary" disabled={busy || !text.trim()}>
+        <button type="submit" className="btn dh-btn btn-primary dh-btn--primary" disabled={busy || !text.trim()}>
           {busy ? 'Redeeming…' : 'Redeem'}
         </button>
       </div>
@@ -577,7 +577,7 @@ function PhraseSignIn() {
       <p className="muted small">The phrase never leaves this browser. Governance finds your account by a public key fingerprint only.</p>
       {error && <p className="error" role="alert">{error}</p>}
       <div className="form-actions">
-        <button type="submit" className="btn btn-primary" disabled={busy || !text.trim()}>
+        <button type="submit" className="btn dh-btn btn-primary dh-btn--primary" disabled={busy || !text.trim()}>
           {busy ? <><span className="spinner" aria-hidden="true" /> Looking up…</> : 'Sign in'}
         </button>
       </div>
@@ -611,17 +611,17 @@ function KeySignIn() {
   return (
     <form className="form" onSubmit={submit}>
       <SeedWarning what="key" />
-      <label>
+      <label className="dh-field__label">
         Private key (WIF or 64 hex characters)
-        <input type="password" value={text} onChange={(e) => setText(e.target.value)} autoComplete="off" spellCheck={false} data-testid="key-input" disabled={busy} />
+        <input className="dh-input" type="password" value={text} onChange={(e) => setText(e.target.value)} autoComplete="off" spellCheck={false} data-testid="key-input" disabled={busy} />
       </label>
       <p className="muted small">Use your identity's HIGH (or CRITICAL) authentication key, never the MASTER key. It stays in memory (shared with your other open Governance tabs) and is gone when you sign out or close the browser.</p>
-      <label className="check">
+      <label className="check dh-check">
         <input type="checkbox" checked={keep} onChange={(e) => setKeep(e.target.checked)} /> Keep it with a passkey so I can sign in again without pasting
       </label>
       {error && <p className="error" role="alert">{error}</p>}
       <div className="form-actions">
-        <button type="submit" className="btn btn-primary" disabled={busy || !text.trim()}>
+        <button type="submit" className="btn dh-btn btn-primary dh-btn--primary" disabled={busy || !text.trim()}>
           {busy ? 'Checking…' : 'Sign in'}
         </button>
       </div>
@@ -643,12 +643,12 @@ function TopUp() {
   if (!session) return <p className="muted">Sign in first.</p>;
   if (foreignPasskey && !acknowledged) {
     return (
-      <div className="notice-box" role="alert">
+      <div className="notice-box dh-notice dh-notice--info" role="alert">
         <p>
           You signed in with a passkey that was not added in this browser. Only continue if you added it yourself: anyone who once held one of your keys could have
           added a passkey, and its key decides where this top-up is paid.
         </p>
-        <button type="button" className="btn" onClick={() => setAcknowledged(true)}>
+        <button type="button" className="btn dh-btn" onClick={() => setAcknowledged(true)}>
           I added this passkey, continue
         </button>
       </div>
@@ -658,7 +658,7 @@ function TopUp() {
     return (
       <div>
         <p className="notice">Top-up complete. Your balance is updated.</p>
-        <button type="button" className="btn btn-primary" onClick={closeSheet}>
+        <button type="button" className="btn dh-btn btn-primary dh-btn--primary" onClick={closeSheet}>
           Close
         </button>
       </div>

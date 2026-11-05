@@ -115,22 +115,22 @@ export function ContestsPage() {
 
   return (
     <section aria-labelledby="names-title" className="list-section contests">
-      <div className="list-head">
+      <header className="dh-page-header">
         <MovedFromVote />
-        <h1 id="names-title">Name contests</h1>
+        <h1 className="dh-page-header__title" id="names-title">Name contests</h1>
         <p className="muted contests-intro">Masternodes decide who gets a contested name. Open contests close soonest first.</p>
         <details className="learn"><summary>How name contests work</summary>
         <p className="small muted">
           Usernames of 3 to 19 characters that use only letters, hyphens, 0 and 1 go to a masternode vote when someone registers one. Masternodes decide who gets it, or lock it so nobody does. Others can ask for the same name {timing}.
         </p>
         </details>
-        <label className="contests-search">
+        <label className="contests-search dh-field__label">
           <span className="visually-hidden">Find a username</span>
-          <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a username" autoComplete="off" spellCheck={false} data-testid="names-search" />
+          <input className="dh-input" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a username" autoComplete="off" spellCheck={false} data-testid="names-search" />
         </label>
-      </div>
+      </header>
 
-      <h2 className="contests-h2">
+      <h2 className="dh-section__title">
         Open for voting{open.data && <span className="count">{formatInt(still.length)}</span>}
       </h2>
       {open.loading ? (
@@ -142,9 +142,9 @@ export function ContestsPage() {
       ) : open.error ? (
         <ReadError error={open.error} what="Platform" lead="The open contests could not be read" onRetry={() => setAttempt((n) => n + 1)} />
       ) : still.length === 0 ? (
-        <p className="empty">No usernames are being contested right now.</p>
+        <p className="empty dh-empty">No usernames are being contested right now.</p>
       ) : visible.length === 0 ? (
-        <p className="empty" role="status">
+        <p className="empty dh-empty" role="status">
           No open contest matches “{q.trim()}”.
         </p>
       ) : (
@@ -249,7 +249,7 @@ function EndedList({ src, prefix, openLabels, nowMs }: { src: ContestSource; pre
       )}
       {paging.error && <ReadError error={paging.error} what="Platform" lead="The ended contests could not be read" onRetry={() => load(paging.next)} />}
       {!paging.loading && !paging.error && labels.length === 0 && (
-        <p className="empty" role="status">
+        <p className="empty dh-empty" role="status">
           {prefix ? `No ended contest starts with “${prefix}”.` : 'No contests have ended yet.'}
         </p>
       )}

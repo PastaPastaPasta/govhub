@@ -6,10 +6,10 @@ export function ReadError({ error, what, lead, onRetry }: { error: string; what:
   const text = plainErrorText(error, what);
   const joiner = isTransientError(error) ? '. ' : ': '; // plain-words text is a sentence of its own; a raw error follows a colon
   return (
-    <div className="error read-error" role="alert" data-testid="read-error">
+    <div className="dh-error read-error" role="alert" data-testid="read-error">
       <p>{lead ? `${lead}${joiner}${text}` : text}</p>
       <p className="form-actions">
-        <button type="button" className="btn btn-s" onClick={onRetry} data-testid="read-retry">
+        <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={onRetry} data-testid="read-retry">
           Retry
         </button>
       </p>

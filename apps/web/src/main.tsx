@@ -57,7 +57,7 @@ function NotFoundPage() {
   useTitle('Page not found');
   return (
     <section className="page-narrow">
-      <h1>Page not found</h1>
+      <h1 className="dh-page-header__title">Page not found</h1>
       <p>
         <Link to="/">Back to active proposals</Link>
       </p>

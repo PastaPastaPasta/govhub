@@ -40,7 +40,7 @@ export function TrustPage() {
   useRouteTitle('/about/trust');
   return (
     <article className="page-narrow about" aria-labelledby="about-t-title">
-      <h1 id="about-t-title">What we can and can’t lie about</h1>
+      <h1 className="dh-page-header__title" id="about-t-title">What we can and can’t lie about</h1>
       <p className="lede">
         Governance checks most of what it shows in your browser. Some things still rest on someone’s word: here is what the people running Governance’s servers could get wrong
         or hide, and what they couldn’t.

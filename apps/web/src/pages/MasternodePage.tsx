@@ -34,7 +34,7 @@ export function MasternodePage() {
   if (!isProTx(proTx)) {
     return (
       <section className="page-narrow">
-        <h1>Not a masternode</h1>
+        <h1 className="dh-page-header__title">Not a masternode</h1>
         <p>
           A masternode's address here is its 64-character ProTx hash. <Link to="/masternodes">My masternodes</Link>
         </p>
@@ -61,11 +61,11 @@ function VoteChip({ cell, stalled }: { cell: VoteCell | undefined; stalled: bool
       </span>
     );
   }
-  if (cell.kind === 'unread') return <span className="vout vout-none" title={cell.error}>Couldn't read</span>;
-  if (cell.kind === 'none') return <span className="vout vout-none">Not voted</span>;
+  if (cell.kind === 'unread') return <span className="vout vout-none dh-badge" title={cell.error}>Couldn't read</span>;
+  if (cell.kind === 'none') return <span className="vout vout-none dh-badge">Not voted</span>;
   return (
     <span className="mnv-vote">
-      <span className={`vout vout-${cell.outcome}`}>{OUTCOME_LABEL[cell.outcome]}</span>
+      <span className={`vout vout-${cell.outcome} dh-badge`}>{OUTCOME_LABEL[cell.outcome]}</span>
       <span className="small muted">{formatDate(cell.time)}</span>
     </span>
   );
@@ -102,11 +102,11 @@ function MasternodeVotes({ proTx }: { proTx: string }) {
 
   return (
     <section className="mnv-page" aria-labelledby="mnv-title" data-testid="mn-page">
-      <p className="crumbs">
+      <p className="crumbs dh-crumbs">
         <Link to="/masternodes">‹ My masternodes</Link>
       </p>
-      <header className="mnv-head">
-        <h1 id="mnv-title">Masternode votes</h1>
+      <header className="mnv-head dh-page-header">
+        <h1 className="dh-page-header__title" id="mnv-title">Masternode votes</h1>
         <p className="mnv-id">
           <dashhq-hash value={proTx} full="" label="ProTx hash" {...(radar ? { href: radar } : {})}>
             {proTx}
@@ -133,7 +133,7 @@ function MasternodeVotes({ proTx }: { proTx: string }) {
       </header>
 
       {v.lookup.kind === 'absent' && (
-        <div className="empty-box" data-testid="mn-absent">
+        <div className="empty-box dh-empty" data-testid="mn-absent">
           <p>
             <b>This masternode isn't in the {network} masternode list.</b>
           </p>
@@ -146,7 +146,7 @@ function MasternodeVotes({ proTx }: { proTx: string }) {
         </div>
       )}
       {v.lookup.kind === 'no-bridge' && (
-        <p className="notice-box small">No governance bridge is configured in Settings, so this masternode's votes can't be read here.</p>
+        <p className="notice-box dh-notice dh-notice--info small">No governance bridge is configured in Settings, so this masternode's votes can't be read here.</p>
       )}
       {v.lookup.kind === 'error' && (
         <div className="read-error" role="alert" data-testid="mn-lookup-error">
@@ -154,7 +154,7 @@ function MasternodeVotes({ proTx }: { proTx: string }) {
             <b>Couldn't find this masternode just now:</b> {v.lookup.message}.
           </p>
           <p className="small muted">The proposals below are unaffected; only this masternode's votes are missing.</p>
-          <button type="button" className="btn btn-s" onClick={v.retryLookup}>
+          <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={v.retryLookup}>
             Try again
           </button>
         </div>
@@ -182,25 +182,25 @@ function MasternodeVotes({ proTx }: { proTx: string }) {
             {counts.unread > 0 && v.pending === 0 && (
               <p className="small" data-testid="mn-unread">
                 {formatInt(counts.unread)} couldn't be read just now.{' '}
-                <button type="button" className="linkish" onClick={v.retryUnread}>
+                <button type="button" className="linkish dh-btn dh-btn--link" onClick={v.retryUnread}>
                   Try again
                 </button>
               </p>
             )}
           </header>
           {gov.active.loading && !rows.length ? (
-            <p className="muted small">
-              <span className="spinner" aria-hidden="true" /> Reading the active proposals…
+            <p className="dh-loading">
+              Reading the active proposals…
             </p>
           ) : !rows.length ? (
-            <div className="empty-box">
+            <div className="empty-box dh-empty">
               <p>
                 <b>No active proposals.</b>
               </p>
               <p className="small">New proposals show up here as soon as they are submitted.</p>
             </div>
           ) : (
-            <table className="mnv-table">
+            <table className="mnv-table dh-table dh-table--cards">
               <thead>
                 <tr>
                   <th scope="col">Proposal</th>
@@ -254,7 +254,7 @@ function WaysToVoteLine() {
         <>
           <b>Is this your masternode?</b> Each row's <i>Sign offline</i> needs no account: sign with its voting key in Dash Core or a hardware wallet. To vote from
           this browser instead,{' '}
-          <button type="button" className="linkish" onClick={openSignIn}>
+          <button type="button" className="linkish dh-btn dh-btn--link" onClick={openSignIn}>
             sign in
           </button>{' '}
           and add its voting key (<Link to="/masternodes">ways to vote</Link>).
@@ -312,13 +312,13 @@ function MnVoteRow({ row, href, cell, decides, shared, now, per, open, onToggle,
   return (
     <Fragment>
       <tr className={`mnv-row${open ? ' mnv-row-open' : ''}`} data-testid="mn-vote-row" data-govhash={p.govHash}>
-        <th scope="row">
+        <td role="rowheader" data-label="Proposal" className="dh-rc-title">
           <Link to={href}><Slug name={p.name} /></Link>
-        </th>
-        <td className="r num" data-label="">
+        </td>
+        <td className="r num" data-label="Request">
           {formatDash(p.paymentAmount)} <span className="muted small">{sched?.oneTime ? 'once' : per}</span>
         </td>
-        <td data-label="">
+        <td data-label="Passing state">
           {status && (
             <span className={`mnv-status${tone ? ` mnv-${tone}` : ''}`}>
               <span className="dot" aria-hidden="true" />
@@ -327,15 +327,15 @@ function MnVoteRow({ row, href, cell, decides, shared, now, per, open, onToggle,
           )}
           {row.startsLater && <span className="small muted"> · starts later</span>}
         </td>
-        <td className="mnv-cell-vote" data-testid="mn-vote">
+        <td className="mnv-cell-vote dh-rc-end" data-label="This masternode" data-testid="mn-vote">
           <VoteChip cell={cell} stalled={stalled} />
         </td>
-        <td className={`small mnv-decides${common ? ' mnv-common' : ''}`} data-label="Decided by ">
+        <td className={`small mnv-decides${common ? ' mnv-common' : ''}`} data-label="Closes in">
           {decideText}
         </td>
-        <td className="mnv-action">
+        <td className="mnv-action dh-rc-actions" data-label="Vote">
           {canVote && (
-            <button type="button" className="btn btn-s" aria-expanded={open} aria-controls={panelId} onClick={onToggle} data-testid="mn-vote-action">
+            <button type="button" className="btn dh-btn btn-s dh-btn--sm" aria-expanded={open} aria-controls={panelId} onClick={onToggle} data-testid="mn-vote-action">
               {open ? 'Close' : action}
               <span className="visually-hidden"> on {p.name}</span>
             </button>
@@ -344,7 +344,7 @@ function MnVoteRow({ row, href, cell, decides, shared, now, per, open, onToggle,
       </tr>
       {open && (
         <tr className="mnv-panel-row">
-          <td colSpan={6} id={panelId}>
+          <td data-label="Voting options" className="dh-rc-actions" colSpan={6} id={panelId}>
             <div className="mnv-panel" data-testid="mn-vote-panel">
               {owned ? <VoteComposer proposals={[p]} onlyMn={proTx} /> : <OfflineSign proposal={p} address={votingAddress} open />}
               {owned && <OfflineSign proposal={p} address={votingAddress} />}

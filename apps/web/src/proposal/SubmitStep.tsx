@@ -114,7 +114,7 @@ export function SubmitStep({ draft, commit, services }: PayProps) {
           ))}
           <button
             type="button"
-            className="btn btn-s"
+            className="btn dh-btn btn-s dh-btn--sm"
             onClick={() => {
               commit(resetRelays);
               setNonce((x) => x + 1);
@@ -139,7 +139,7 @@ export function SubmitStep({ draft, commit, services }: PayProps) {
             Copy <CopyButton text={submitCmd} label="Copy the gobject submit command" />
           </span>
           {!sub?.submittedAt && (
-            <button type="button" className="btn btn-s" onClick={() => commit(markManualSubmit)} data-testid="p-manual-done">
+            <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={() => commit(markManualSubmit)} data-testid="p-manual-done">
               I submitted it with Dash Core
             </button>
           )}
@@ -231,10 +231,10 @@ function Live({ draft }: { draft: ProposalDraft }) {
           <b>{lock.name}</b> is on the network and in Governance. Masternodes can vote on it now.
         </p>
         <div className="vwin-actions">
-          <Link className="btn btn-s btn-primary" to={`/p/h/${lock.govHash}`} data-testid="p-view">
+          <Link className="btn dh-btn btn-s dh-btn--sm btn-primary dh-btn--primary" to={`/p/h/${lock.govHash}`} data-testid="p-view">
             View it on govhub
           </Link>
-          <Link className="btn btn-s" to={`/p/h/${lock.govHash}#ownership`} data-testid="p-claim">
+          <Link className="btn dh-btn btn-s dh-btn--sm" to={`/p/h/${lock.govHash}#ownership`} data-testid="p-claim">
             Write the description
           </Link>
         </div>

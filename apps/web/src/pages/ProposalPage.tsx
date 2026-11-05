@@ -62,7 +62,7 @@ export function ProposalByName() {
   if (list.length === 1) return <ProposalView sp={list[0]!} />;
   return (
     <section className="page-narrow">
-      <h1>{list.length} proposals are named {name}</h1>
+      <h1 className="dh-page-header__title">{list.length} proposals are named {name}</h1>
       <p className="muted">Names aren't unique in Dash governance. Pick one:</p>
       <ul className="chooser">
         {list.map((s) => (
@@ -90,7 +90,7 @@ function NotFound({ what }: { what: string }) {
   useTitle('Proposal not found');
   return (
     <section className="page-narrow">
-      <h1>Not found</h1>
+      <h1 className="dh-page-header__title">Not found</h1>
       <p>
         Platform has no record of {what}. It may not be published yet. <Link to="/">Back to active proposals</Link>
       </p>
@@ -190,7 +190,7 @@ function EvidenceLine({ agg, onRetry }: { agg: Aggregate; onRetry(): void }) {
   return (
     <p className="evidence-line small" data-testid="evidence-unverified">
       {agg.reason ? `${agg.reason.replace(/\.$/, '')}. ` : ''}The amount, votes and budget place above are shown as reported.{' '}
-      <button type="button" className="linkish" onClick={onRetry} data-testid="evidence-retry">
+      <button type="button" className="linkish dh-btn dh-btn--link" onClick={onRetry} data-testid="evidence-retry">
         Try again
       </button>
     </p>
@@ -242,33 +242,35 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
 
   return (
     <article className="proposal">
-      <p className="crumbs">
+      <p className="crumbs dh-crumbs">
         <Link to={active ? '/' : '/past'}>‹ {active ? 'Active proposals' : 'Past proposals'}</Link>
       </p>
       {check.status === 'failed' && (
-        <p className="invalid-banner" role="alert" data-testid="invalid-banner">
+        <p className="invalid-banner dh-notice dh-notice--error" role="alert" data-testid="invalid-banner">
           <b>This proposal failed verification:</b> {check.reason}.{' '}
           {row.content.ok ? 'It is hidden from the proposal lists.' : 'It is hidden from the proposal lists and its link is disabled.'}{' '}
-          <button type="button" className="linkish" onClick={() => setDrawer(true)}>
+          <button type="button" className="linkish dh-btn dh-btn--link" onClick={() => setDrawer(true)}>
             See what failed
           </button>
         </p>
       )}
 
-      <header className="p-hero">
-        <div className="p-title">
-          <h1><Slug name={p.name} /></h1>
+      <header className="p-hero dh-page-header">
+        <p className="dh-page-header__kicker">Proposal</p>
+        <div className="p-title dh-page-header__text">
+          <h1 className="dh-page-header__title"><Slug name={p.name} /></h1>
 
         </div>
         <div className="p-owner">
           <OwnerValue p={p} own={own} />
           <RejectedClaims own={own} />
         </div>
+        <div className="dh-page-header__meta"><TrustBadge level={trust.aggregate.level} reason={trust.aggregate.reason} onOpen={() => setDrawer(true)} /></div>
       </header>
 
       <div className="p-layout">
         <div className="p-main">
-          <section className="panel p-ask" aria-label="Funding">
+          <section className="panel dh-card p-ask" aria-label="Funding">
             <p className="p-amount">
               <span className="num">{formatDash(p.paymentAmount)}</span> <span className="p-per">{sched?.oneTime ? 'one payment' : perPayment(params)}</span>
             </p>
@@ -292,7 +294,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
             {later && <StartsLaterPageStatus later={later} />}
             {active && !lameDuck && !later && t && (
               <p className="p-status">
-                {inBudget ? <span className="tag tag-pass">In the next budget</span> : state?.passing ? <span className="tag tag-warn">Passing, but the next budget is full</span> : null}
+                {inBudget ? <span className="tag dh-badge tag-pass dh-badge--good">In the next budget</span> : state?.passing ? <span className="tag dh-badge tag-warn dh-badge--warn">Passing, but the next budget is full</span> : null}
                 {(inBudget || state?.passing) && trust.funded === null && (
                   <span className="small muted" data-testid="budget-reported" title="The budget place is the published tally's; it counts as verified once this browser has recounted the votes and the funding order">
                     {trust.aggregate.level === 'checking' ? 'checking…' : 'as reported, not verified here'}
@@ -320,7 +322,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
                 {lameDuck && <span className="small muted">These votes no longer affect payment.</span>}
               </p>
             )}
-            <div className="chain-context"><span>Proposal and vote evidence</span><TrustBadge level={trust.aggregate.level} reason={trust.aggregate.reason} onOpen={() => setDrawer(true)} /></div>
+
             <EvidenceLine agg={trust.aggregate} onRetry={trust.recheck} />
             {tallies.error && <ReadError error={tallies.error} what="Platform" lead="The tally could not be read" onRetry={() => setTalliesAttempt((n) => n + 1)} />}
             <VoteCta proposal={p} active={active && !lameDuck} />
@@ -430,7 +432,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
         </div>
 
         <aside className="p-side" aria-label="Summary">
-          <section className="panel">
+          <section className="panel dh-card">
             <h2 className="panel-title">Summary</h2>
             <dl className="kv" data-testid="summary">
               {paid && (
@@ -463,7 +465,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
                 <dd>{formatDateTime(p.time)}</dd>
               </div>
             </dl>
-            <button type="button" className="linkish small" onClick={() => setDrawer(true)}>
+            <button type="button" className="linkish dh-btn dh-btn--link small" onClick={() => setDrawer(true)}>
               Hashes, raw data and every check
             </button>
           </section>

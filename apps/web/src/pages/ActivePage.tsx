@@ -50,10 +50,10 @@ function UncheckedNote({ rows }: { rows: readonly Checked<Row>[] }) {
   const reasons = new Set(unfinished.map((u) => u.why));
   const why = reasons.size === 1 ? unfinished[0]!.why : "this browser couldn't reach the network just now";
   return (
-    <p className="list-note small" data-testid="unchecked-note">
+    <p className="list-note dh-notice dh-notice--warn small" data-testid="unchecked-note">
       {unfinished.length === rows.length ? 'These proposals' : `${unfinished.length} of these proposals`} couldn't be checked against the chain: {why}. Their amounts and
       votes are shown as reported.{' '}
-      <button type="button" className="linkish" onClick={() => checks.retryUnfinished(unfinished.map((u) => u.p))} data-testid="unchecked-retry">
+      <button type="button" className="linkish dh-btn dh-btn--link" onClick={() => checks.retryUnfinished(unfinished.map((u) => u.p))} data-testid="unchecked-retry">
         Try again
       </button>
     </p>
@@ -111,16 +111,13 @@ export function ActivePage() {
   return (
     <>
       <BudgetHeader />
-      <section aria-labelledby="active-title" className="list-section">
+      <section aria-label="Active proposals" className="list-section">
         <div className="list-head">
-          <h1 id="active-title" className="visually-hidden">
-            Active proposals
-          </h1>
           <ProposalTabs />
           <p className="small muted">Best-supported first: the order the treasury pays them in, as reported. Each proposal's page checks its own figures in your browser.</p>
-          <label className="contests-search proposal-search">
+          <label className="contests-search proposal-search dh-field__label">
             <span className="visually-hidden">Find a proposal by name, payee address or website</span>
-            <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a proposal" autoComplete="off" spellCheck={false} data-testid="proposal-search" />
+            <input className="dh-input" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a proposal" autoComplete="off" spellCheck={false} data-testid="proposal-search" />
           </label>
           {needle && (
             <p className="small muted proposal-search-count" role="status" data-testid="proposal-search-count">
@@ -138,7 +135,7 @@ export function ActivePage() {
             ))}
           </div>
         ) : rows.length === 0 && !needle ? (
-          <p className="empty">No active proposals right now.</p>
+          <p className="empty dh-empty">No active proposals right now.</p>
         ) : rows.length + lameDucks.length === 0 ? null : (
           <div className="plist">
             {shown.map(card)}

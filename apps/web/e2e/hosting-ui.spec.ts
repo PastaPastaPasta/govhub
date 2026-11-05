@@ -184,7 +184,7 @@ test.describe('accessibility', () => {
         const [x, y] = [lum(rgb(a)), lum(rgb(b))].sort((p, q) => q - p);
         return (x! + 0.05) / (y! + 0.05);
       };
-      const btn = getComputedStyle(document.querySelector('.btn-primary')!);
+      const btn = getComputedStyle(document.querySelector('.btn-primary:not(:disabled)')!);
       const probe = document.createElement('span');
       probe.style.color = 'var(--ink-3)';
       document.body.append(probe);

@@ -27,13 +27,13 @@ export function TrustBadge({ level, reason, onOpen, size = 'm', testId = 'trust-
   );
   if (!onOpen) {
     return (
-      <span className={`trust trust-${level} trust-${size}`} data-testid={testId} data-trust={level} role="img" aria-label={described} title={reason ?? label}>
+      <span className={`trust dh-proof dh-proof--${level === "verified" ? "ok" : level === "checking" ? "checking" : level === "failed" ? "failed" : "unverified"} trust-${level} trust-${size}`} data-testid={testId} data-trust={level} role="img" aria-label={described} title={reason ?? label}>
         {body}
       </span>
     );
   }
   return (
-    <button type="button" className={`trust trust-${level} trust-${size}`} onClick={onOpen} data-testid={testId} data-trust={level} aria-label={`${described}. How do we know?`} title={reason ?? undefined} aria-haspopup="dialog">
+    <button type="button" className={`trust dh-proof dh-proof--${level === "verified" ? "ok" : level === "checking" ? "checking" : level === "failed" ? "failed" : "unverified"} trust-${level} trust-${size}`} onClick={onOpen} data-testid={testId} data-trust={level} aria-label={`${described}. How do we know?`} title={reason ?? undefined} aria-haspopup="dialog">
       {body}
     </button>
   );

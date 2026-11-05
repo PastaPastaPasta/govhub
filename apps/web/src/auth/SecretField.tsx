@@ -22,15 +22,15 @@ export function SecretField(p: { label: string; what: string; value: string; onC
   };
   return (
     <div className="secret-field">
-      <label>
+      <label className="dh-field__label">
         {p.label}
         {shown || TEXT_SECURITY ? (
-          <textarea rows={3} className={shown ? undefined : 'masked'} {...common} onChange={(e) => p.onChange(e.target.value)} />
+          <textarea rows={3} className={shown ? 'dh-textarea' : 'masked dh-textarea'} {...common} onChange={(e) => p.onChange(e.target.value)} />
         ) : (
-          <input type="password" {...common} onChange={(e) => p.onChange(e.target.value)} onPaste={pasteOneLine(p.onChange)} />
+          <input className="dh-input" type="password" {...common} onChange={(e) => p.onChange(e.target.value)} onPaste={pasteOneLine(p.onChange)} />
         )}
       </label>
-      <button type="button" className="btn btn-quiet" aria-pressed={shown} aria-label={`${shown ? 'Hide' : 'Show'} ${p.what}`} onClick={() => setShown((v) => !v)}>
+      <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet" aria-pressed={shown} aria-label={`${shown ? 'Hide' : 'Show'} ${p.what}`} onClick={() => setShown((v) => !v)}>
         {shown ? 'Hide' : 'Show'}
       </button>
     </div>

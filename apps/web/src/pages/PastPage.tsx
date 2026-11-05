@@ -83,14 +83,14 @@ export function PastPage() {
       <div className="list-head">
         <ProposalTabs />
       </div>
-      <header className="past-head">
-        <h1 id="past-title">Past proposals</h1>
-        <p className="lede">What the Dash treasury paid, superblock by superblock, read from the chain in this browser, and how each ended proposal turned out.</p>
+      <header className="past-head dh-page-header">
+        <h1 className="dh-page-header__title" id="past-title">Past proposals</h1>
+        <p className="dh-page-header__lede">What the Dash treasury paid, superblock by superblock, read from the chain in this browser, and how each ended proposal turned out.</p>
         <div className="dh-seg" role="group" aria-label="Show">
-          <button type="button" aria-pressed={view === 'payments'} onClick={() => setView('payments')} data-testid="view-payments">
+          <button className="dh-btn" type="button" aria-pressed={view === 'payments'} onClick={() => setView('payments')} data-testid="view-payments">
             Payments by superblock
           </button>
-          <button type="button" aria-pressed={view === 'proposals'} onClick={() => setView('proposals')} data-testid="view-proposals">
+          <button className="dh-btn" type="button" aria-pressed={view === 'proposals'} onClick={() => setView('proposals')} data-testid="view-proposals">
             Proposals<span className="dh-count">{past.items.length ? formatInt(past.items.length) : ''}</span>
           </button>
         </div>
@@ -119,7 +119,7 @@ function LedgerView({ ledger, known, past }: { ledger: Ledger; known: Proposal[]
     () => (ledger.slots ?? []).map((s) => (s.state === 'read' ? { slot: s, entry: ledgerEntry(s.read, known, network) } : { slot: s, entry: null })),
     [ledger.slots, known, network],
   );
-  if (ledger.unavailable) return <p className="notice-box small">{ledger.unavailable}</p>;
+  if (ledger.unavailable) return <p className="notice-box dh-notice dh-notice--info small">{ledger.unavailable}</p>;
   if (!ledger.slots) {
     return gov.cycle.error ? (
       <p className="error small">The budget cycle couldn't be read, so Governance doesn't know where the last superblock is: {gov.cycle.error}</p>
@@ -175,7 +175,7 @@ function LedgerView({ ledger, known, past }: { ledger: Ledger; known: Proposal[]
           <>
             {' '}
             {formatInt(failed)} couldn't be read just now.{' '}
-            <button type="button" className="linkish" onClick={ledger.retry} data-testid="ledger-retry">
+            <button type="button" className="linkish dh-btn dh-btn--link" onClick={ledger.retry} data-testid="ledger-retry">
               Try again
             </button>
           </>
@@ -186,7 +186,7 @@ function LedgerView({ ledger, known, past }: { ledger: Ledger; known: Proposal[]
       ))}
       <div className="ledger-more">
         {ledger.canLoadMore ? (
-          <button type="button" className="btn" onClick={ledger.loadMore} disabled={reading > 0} data-testid="ledger-more">
+          <button type="button" className="btn dh-btn" onClick={ledger.loadMore} disabled={reading > 0} data-testid="ledger-more">
             Show {network === 'testnet' ? 'the day' : 'the year'} before
           </button>
         ) : (
@@ -269,7 +269,7 @@ function SbLines({ entry, names }: { entry: LedgerEntry; names: ReadonlyMap<stri
       <tbody>
         {entry.lines.map((l) => (
           <tr key={l.payment.index}>
-            <th scope="row">
+            <td role="rowheader" data-label="Proposal" className="dh-rc-title">
               {l.proposal ? (
                 <Link to={proposalHref(l.proposal as Proposal, names)}><Slug name={l.proposal.name} /></Link>
               ) : l.candidates.length ? (
@@ -298,8 +298,8 @@ function SbLines({ entry, names }: { entry: LedgerEntry; names: ReadonlyMap<stri
                   </span>
                 </span>
               )}
-            </th>
-            <td className="r num">{formatDash(Number(l.payment.amount))}</td>
+            </td>
+            <td data-label="Amount" className="r num">{formatDash(Number(l.payment.amount))}</td>
           </tr>
         ))}
       </tbody>
@@ -369,18 +369,18 @@ function ProposalsView({ past, ledger, known }: { past: ReturnType<typeof usePas
       {past.error && (
         <p className="error">
           Platform could not be read: {past.error}{' '}
-          <button type="button" className="linkish" onClick={past.retry}>
+          <button type="button" className="linkish dh-btn dh-btn--link" onClick={past.retry}>
             Try again
           </button>
         </p>
       )}
       {!past.loading && !past.error && past.items.length === 0 && (
-        <p className="empty">
+        <p className="empty dh-empty">
           No past proposals published yet. Proposals move here once their last payment date has passed. <Link to="/">See the active ones</Link>
         </p>
       )}
       {rows.length > 0 && (
-        <table className="past">
+        <table className="past dh-table dh-table--cards">
           <thead>
             <tr>
               <th scope="col">Proposal</th>
@@ -405,17 +405,17 @@ function ProposalsView({ past, ledger, known }: { past: ReturnType<typeof usePas
               const o = outcomes.get(p.govHash) ?? null;
               return (
                 <tr key={p.govHash} className={reason ? 'row-invalid' : undefined} data-check={check.status} data-testid="past-row">
-                  <th scope="row">
+                  <td role="rowheader" data-label="Proposal" className="dh-rc-title">
                     <Link to={proposalHref(p, names)}><Slug name={p.name} /></Link>
                     {reason && <FailedNote reason={reason} />}
-                  </th>
+                  </td>
                   <td data-label="Ran ">
                     {formatDate(p.startEpoch)} – {formatDate(p.endEpoch)}
                   </td>
                   <td className="r" data-label="Asked ">
                     {formatDash(p.paymentAmount)} <span className="muted small">{per}</span>
                   </td>
-                  <td data-testid="past-outcome">
+                  <td data-label="Outcome" className="dh-rc-end" data-testid="past-outcome">
                     <OutcomeCell o={o} reading={reading} />
                   </td>
                   <td className={`r${o && o.paid ? '' : ' past-none'}`} data-label={o && o.paid ? 'Received ' : undefined}>

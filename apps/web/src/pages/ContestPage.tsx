@@ -52,7 +52,7 @@ function Missing({ label, children, network }: { label: string; children: string
   const other = network === 'testnet' ? 'mainnet' : network ? 'testnet' : null;
   return (
     <section className="page-narrow" data-testid="contest-missing">
-      <h1>No contest for {label}.dash</h1>
+      <h1 className="dh-page-header__title">No contest for {label}.dash</h1>
       <p>
         {children} <Link to="/names">All name contests</Link>
       </p>
@@ -155,12 +155,12 @@ function ContestView({ label }: { label: string }) {
   if (state.loading)
     return (
       <article className="proposal contest" aria-busy="true">
-        <p className="crumbs">
+        <p className="crumbs dh-crumbs">
           <Link to="/names">‹ Name contests</Link>
         </p>
-        <header className="p-hero">
-          <div className="p-title">
-            <h1>
+        <header className="p-hero dh-page-header">
+          <div className="p-title dh-page-header__text">
+            <h1 className="dh-page-header__title">
               <bdi>{label}</bdi>
               <span className="tld">.dash</span>
             </h1>
@@ -185,12 +185,12 @@ function ContestView({ label }: { label: string }) {
 
   return (
     <article className="proposal contest" data-testid="contest-page">
-      <p className="crumbs">
+      <p className="crumbs dh-crumbs">
         <Link to="/names">‹ Name contests</Link>
       </p>
-      <header className="p-hero">
-        <div className="p-title">
-          <h1>
+      <header className="p-hero dh-page-header">
+        <div className="p-title dh-page-header__text">
+          <h1 className="dh-page-header__title">
             <bdi>{name}</bdi>
             <span className="tld">.dash</span>
           </h1>
@@ -201,7 +201,7 @@ function ContestView({ label }: { label: string }) {
       <p className="small muted">Elsewhere: <a href={window.dashhq?.href('explorer', '/dpns?name=' + encodeURIComponent(label))}>Username in Explorer</a></p>
       <div className="p-layout">
         <div className="p-main">
-          <section className="panel c-ballot" aria-labelledby="c-votes-title">
+          <section className="panel dh-card c-ballot" aria-labelledby="c-votes-title">
             <h2 id="c-votes-title" className="panel-title">
               Votes
             </h2>
@@ -247,7 +247,7 @@ function ContestView({ label }: { label: string }) {
         </div>
 
         <aside className="p-side" aria-label="Summary">
-          <section className="panel">
+          <section className="panel dh-card">
             <h2 className="panel-title">Summary</h2>
             <dl className="kv" data-testid="summary">
               <div>
@@ -294,7 +294,7 @@ function ContenderRow({ label, c, rank, total, won, dpns, profile }: { label: st
         <span className="c-ident">
           <Avatar id={c.identityId} profile={profile} size={22} />
           <AuthorName id={c.identityId} profile={profile} dpns={dpns} />
-          {won && <span className="tag ctag-won">Got the name</span>}
+          {won && <span className="tag dh-badge ctag-won">Got the name</span>}
         </span>
         <ContestVoters label={label} identityId={c.identityId} />
         {c.requested && (
@@ -312,9 +312,9 @@ function ContestVoters({ label, identityId }: { label: string; identityId: strin
   const src = useContestSource();
   const [load, setLoad] = useState(false);
   const voters = useAsync(() => load ? src.voters(label, identityId) : Promise.resolve(null), [src, label, identityId, load]);
-  if (!load) return <button type="button" className="btn btn-quiet btn-s" onClick={() => setLoad(true)}>Show voters</button>;
+  if (!load) return <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet btn-s dh-btn--sm" onClick={() => setLoad(true)}>Show voters</button>;
   if (voters.loading) return <p className="small muted" role="status">Reading voter identities…</p>;
-  if (voters.error) return <p className="small error" role="alert">Voters could not be read. <button type="button" className="btn btn-s" onClick={() => setLoad(false)}>Try again</button></p>;
+  if (voters.error) return <p className="small error" role="alert">Voters could not be read. <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={() => setLoad(false)}>Try again</button></p>;
   const ids = voters.data ?? [];
   return <div className="contest-voters">
     <p className="small muted">{!src.live ? 'No voter identities in this demo.' : `${formatInt(ids.length)} voter identities${ids.length === 100 ? ' (first 100)' : ''}. Voter identities are distinct from masternode ProTx hashes.`}</p>

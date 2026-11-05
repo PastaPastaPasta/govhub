@@ -7,7 +7,7 @@ export function ProposalTabs() {
   const { gov, activeRows } = useApp();
   const count = gov.active.data ? activeRows.shown.length : undefined;
   return (
-    <nav className="subtabs" aria-label="Proposals">
+    <nav className="subtabs dh-seg" aria-label="Proposals">
       <NavLink to="/" end>
         Active{count !== undefined && <span className="count">{formatInt(count)}</span>}
       </NavLink>

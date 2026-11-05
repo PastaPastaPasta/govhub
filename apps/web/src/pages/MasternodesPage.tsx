@@ -48,9 +48,9 @@ function Header({ adding, badgeKeyKept }: { adding: boolean; badgeKeyKept: boole
   const k = useKeyring();
   const open = k.status === 'open' && !!k.keyring && !adding;
   return (
-    <header className="kr-head">
+    <header className="kr-head dh-page-header">
       <div className="kr-head-text">
-        <h1 id="mn-page-title">My masternodes</h1>
+        <h1 className="dh-page-header__title" id="mn-page-title">My masternodes</h1>
         {open ? (
           <p className="kr-state" data-testid="keyring-status">
             <span className={`vdot${k.demo ? '' : ' vdot-on'}`} aria-hidden="true" />
@@ -62,11 +62,11 @@ function Header({ adding, badgeKeyKept }: { adding: boolean; badgeKeyKept: boole
       </div>
       {open && (
         <div className="kr-head-actions">
-          <Link className="btn btn-primary" to="/votes">
+          <Link className="btn dh-btn btn-primary dh-btn--primary" to="/votes">
             Vote on proposals
           </Link>
           {!k.demo && (
-            <button type="button" className="btn" onClick={k.lock} data-testid="keyring-lock">
+            <button type="button" className="btn dh-btn" onClick={k.lock} data-testid="keyring-lock">
               Lock now
             </button>
           )}
@@ -88,7 +88,7 @@ function Unlock({ onMemoryOnly }: { onMemoryOnly(): void }) {
   // the passkey that signed in does not open the keyring: say so, and lead with the phrase (the way to add that passkey afterwards)
   const passkeyNot = k.lockedReason === 'passkey-not-unlocker';
   return (
-    <section className="kr-card kr-gate" aria-labelledby="unlock-title">
+    <section className="kr-card dh-card kr-gate" aria-labelledby="unlock-title">
       <h2 id="unlock-title">Unlock your keyring</h2>
       {passkeyNot && (
         <p className="kr-reason" data-testid="keyring-locked-reason">
@@ -101,25 +101,25 @@ function Unlock({ onMemoryOnly }: { onMemoryOnly(): void }) {
         </p>
       )}
       {!passkeyNot && (
-        <button type="button" className="btn btn-primary" onClick={() => void k.unlockWithPasskey().catch(() => {})} disabled={!!k.busy}>
+        <button type="button" className="btn dh-btn btn-primary dh-btn--primary" onClick={() => void k.unlockWithPasskey().catch(() => {})} disabled={!!k.busy}>
           Unlock with a passkey
         </button>
       )}
       <form onSubmit={submit} className="kr-form">
-        <label className="kr-field">
+        <label className="kr-field dh-field__label">
           <span>{passkeyNot ? 'Your recovery phrase' : 'Or type your recovery phrase'}</span>
-          <input type="password" value={phrase} onChange={(e) => setPhrase(e.target.value)} autoComplete="off" spellCheck={false} data-testid="unlock-phrase" />
+          <input className="dh-input" type="password" value={phrase} onChange={(e) => setPhrase(e.target.value)} autoComplete="off" spellCheck={false} data-testid="unlock-phrase" />
         </label>
         <div className="kr-row">
-          <button type="submit" className={passkeyNot ? 'btn btn-primary' : 'btn'} disabled={!phrase.trim() || !!k.busy} data-testid="unlock-phrase-submit">
+          <button type="submit" className={passkeyNot ? 'btn dh-btn btn-primary dh-btn--primary' : 'btn dh-btn'} disabled={!phrase.trim() || !!k.busy} data-testid="unlock-phrase-submit">
             Unlock with the phrase
           </button>
           {passkeyNot && (
-            <button type="button" className="btn btn-quiet" onClick={() => void k.unlockWithPasskey().catch(() => {})} disabled={!!k.busy}>
+            <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet" onClick={() => void k.unlockWithPasskey().catch(() => {})} disabled={!!k.busy}>
               Try another passkey
             </button>
           )}
-          <button type="button" className="btn btn-quiet" onClick={onMemoryOnly} disabled={!!k.busy} data-testid="unlock-memory-only">
+          <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet" onClick={onMemoryOnly} disabled={!!k.busy} data-testid="unlock-memory-only">
             Use memory-only keys instead
           </button>
         </div>
@@ -251,9 +251,9 @@ function AddMasternodes({ step, setStep, b, savedLocked, onAdded }: { step: Flow
 
   const found = step === 'found' && idx >= 0;
   return (
-    <section className="kr-card kr-gate kr-flow" aria-labelledby="create-title" data-testid="add-flow">
+    <section className="kr-card dh-card kr-gate kr-flow" aria-labelledby="create-title" data-testid="add-flow">
       <h2 id="create-title">Add your masternodes</h2>
-      <ol className="kr-steps" aria-label="Steps">
+      <ol className="kr-steps dh-steps" aria-label="Steps">
         <li className={found ? 'done' : 'now'} aria-current={found ? undefined : 'step'}>
           Paste your voting key
         </li>
@@ -265,16 +265,16 @@ function AddMasternodes({ step, setStep, b, savedLocked, onAdded }: { step: Flow
       {!found ? (
         <form className="kr-form" onSubmit={(e) => void find(e)} aria-label="Paste your voting key">
           <p>Paste a masternode voting key once; Governance finds every masternode it votes for.</p>
-          <label className="kr-field">
+          <label className="kr-field dh-field__label">
             <span>Voting private key ({k.coreNetwork}, as Dash Core shows it)</span>
-            <input type="password" value={wif} onChange={(e) => setWif(e.target.value)} autoComplete="off" spellCheck={false} data-testid="flow-key-input" aria-describedby="flow-key-warn" />
+            <input className="dh-input" type="password" value={wif} onChange={(e) => setWif(e.target.value)} autoComplete="off" spellCheck={false} data-testid="flow-key-input" aria-describedby="flow-key-warn" />
           </label>
           <p className="kr-inline-warn small" id="flow-key-warn">
             Only the voting key. Never an owner, payout or collateral key: a voting key can only vote.
           </p>
-          <label className="kr-field">
+          <label className="kr-field dh-field__label">
             <span>Name (optional)</span>
-            <input value={label} onChange={(e) => setLabel(e.target.value)} maxLength={32} placeholder="e.g. rack 2" data-testid="flow-key-label" />
+            <input className="dh-input" value={label} onChange={(e) => setLabel(e.target.value)} maxLength={32} placeholder="e.g. rack 2" data-testid="flow-key-label" />
           </label>
           <div className="kr-row">
             {refused && (
@@ -282,11 +282,11 @@ function AddMasternodes({ step, setStep, b, savedLocked, onAdded }: { step: Flow
                 {refused}
               </p>
             )}
-            <button type="submit" className="btn btn-primary" disabled={!wif.trim() || !!k.busy || addAfterOpen} data-testid="flow-find">
+            <button type="submit" className="btn dh-btn btn-primary dh-btn--primary" disabled={!wif.trim() || !!k.busy || addAfterOpen} data-testid="flow-find">
               {k.busy || addAfterOpen ? 'Checking…' : 'Find my masternodes'}
             </button>
             {savedLocked && k.status !== 'open' && (
-              <button type="button" className="btn btn-quiet" onClick={() => setStep(null)}>
+              <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet" onClick={() => setStep(null)}>
                 Back to unlocking
               </button>
             )}
@@ -300,7 +300,7 @@ function AddMasternodes({ step, setStep, b, savedLocked, onAdded }: { step: Flow
                 <p>
                   <b>Your masternodes could not be looked up.</b> {k.mns.error}
                 </p>
-                <button type="button" className="btn btn-s" onClick={k.refreshMasternodes}>
+                <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={k.refreshMasternodes}>
                   Retry
                 </button>
               </div>
@@ -317,8 +317,8 @@ function AddMasternodes({ step, setStep, b, savedLocked, onAdded }: { step: Flow
               <ul className="kr-flow-mns small">
                 {mns.map((m) => (
                   <li key={m.proTxHash}>
-                    <span className="tag tag-done">{m.type === 'evo' ? 'Evonode' : 'Regular'}</span> <dashhq-hash value={m.proTxHash} label="ProTx hash" href={window.dashhq?.href('radar', '/mn/' + m.proTxHash, { network: k.coreNetwork })}>{m.proTxHash}</dashhq-hash>
-                    {!m.valid && <span className="tag tag-fail">PoSe-banned</span>}
+                    <span className="tag dh-badge tag-done">{m.type === 'evo' ? 'Evonode' : 'Regular'}</span> <dashhq-hash value={m.proTxHash} label="ProTx hash" href={window.dashhq?.href('radar', '/mn/' + m.proTxHash, { network: k.coreNetwork })}>{m.proTxHash}</dashhq-hash>
+                    {!m.valid && <span className="tag dh-badge tag-fail dh-badge--bad">PoSe-banned</span>}
                   </li>
                 ))}
               </ul>
@@ -338,7 +338,7 @@ function AddMasternodes({ step, setStep, b, savedLocked, onAdded }: { step: Flow
                 {badgeWanted && ' The badge request still keeps its own copy of the key in this browser, never in plain text, until it is sent.'}
               </p>
             )}
-            <label className="check small kr-dont-save">
+            <label className="check small kr-dont-save dh-field__label">
               <input
                 type="checkbox"
                 checked={!save}
@@ -363,14 +363,14 @@ function AddMasternodes({ step, setStep, b, savedLocked, onAdded }: { step: Flow
           <div className="kr-row">
             <button
               type="button"
-              className="btn btn-primary"
+              className="btn dh-btn btn-primary dh-btn--primary"
               onClick={() => void confirm()}
               disabled={confirming || !!k.busy || mns === null || n === 0 || (badgeWanted && b.availability?.state === 'checking')}
               data-testid="flow-confirm"
             >
               {confirming ? 'Adding…' : `Add ${n > 0 ? `${n} ` : ''}masternode${n === 1 ? '' : 's'}${badgeWanted && b.canRequest && b.status.kind === 'none' ? ' and get the badge' : ''}`}
             </button>
-            <button type="button" className="btn btn-quiet" onClick={() => void differentKey()} disabled={confirming || !!k.busy}>
+            <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet" onClick={() => void differentKey()} disabled={confirming || !!k.busy}>
               Use a different key
             </button>
           </div>
@@ -409,13 +409,13 @@ function AddKey({ onClose }: { onClose(): void }) {
       <h3 id="addkey-title">Add a voting key</h3>
       <form className="kr-form" onSubmit={submit} aria-label="Add a voting key">
         <div className="kr-fields">
-          <label className="kr-field">
+          <label className="kr-field dh-field__label">
             <span>Voting private key ({k.coreNetwork}, as Dash Core shows it)</span>
-            <input ref={input} type="password" value={wif} onChange={(e) => setWif(e.target.value)} autoComplete="off" spellCheck={false} data-testid="voting-key-input" aria-describedby="addkey-warn" />
+            <input className="dh-input" ref={input} type="password" value={wif} onChange={(e) => setWif(e.target.value)} autoComplete="off" spellCheck={false} data-testid="voting-key-input" aria-describedby="addkey-warn" />
           </label>
-          <label className="kr-field">
+          <label className="kr-field dh-field__label">
             <span>Name (optional)</span>
-            <input value={label} onChange={(e) => setLabel(e.target.value)} maxLength={32} placeholder="e.g. rack 2" data-testid="voting-key-label" />
+            <input className="dh-input" value={label} onChange={(e) => setLabel(e.target.value)} maxLength={32} placeholder="e.g. rack 2" data-testid="voting-key-label" />
           </label>
         </div>
         <p className="kr-inline-warn small" id="addkey-warn">
@@ -423,10 +423,10 @@ function AddKey({ onClose }: { onClose(): void }) {
         </p>
         {k.demo && <p className="small muted">The demo keyring has its keys already.</p>}
         <div className="kr-row">
-          <button type="submit" className="btn btn-primary" disabled={!wif.trim() || !!k.busy || k.demo} data-testid="voting-key-add">
+          <button type="submit" className="btn dh-btn btn-primary dh-btn--primary" disabled={!wif.trim() || !!k.busy || k.demo} data-testid="voting-key-add">
             {adding ? 'Adding…' : 'Add key'}
           </button>
-          <button type="button" className="btn btn-quiet" onClick={onClose} data-testid="addkey-close">
+          <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet" onClick={onClose} data-testid="addkey-close">
             {added ? 'Done' : 'Cancel'}
           </button>
         </div>
@@ -457,7 +457,7 @@ function NodeLabel({ pro, value }: { pro: string; value: string }) {
   const save = () => v.trim() !== value && void k.setNodeLabel(pro, v).catch(() => setV(value));
   return (
     <input
-      className="kr-label-input"
+      className="kr-label-input dh-input"
       aria-label={`Name for masternode ${pro.slice(0, 8)}`}
       value={v}
       maxLength={32}
@@ -490,8 +490,8 @@ function MnRow({ m, label }: { m: OwnedMasternode; label: string }) {
       <div className="kr-mn-top">
         <NodeLabel pro={m.proTxHash} value={label} />
         <span className="kr-mn-tags">
-          <span className="tag tag-done">{m.type === 'evo' ? 'Evonode ×4' : 'Regular'}</span>
-          {m.valid ? <span className={`tag ${m.provenance.key === 'sml' ? 'tag-pass' : 'tag-done'}`}>Can vote</span> : <span className="tag tag-fail">PoSe-banned: cannot vote</span>}
+          <span className="tag dh-badge tag-done">{m.type === 'evo' ? 'Evonode ×4' : 'Regular'}</span>
+          {m.valid ? <span className={`tag dh-badge ${m.provenance.key === 'sml' ? 'tag-pass dh-badge--good' : 'tag-done'}`}>Can vote</span> : <span className="tag dh-badge tag-fail dh-badge--bad">PoSe-banned: cannot vote</span>}
         </span>
       </div>
       <div className="kr-mn-facts small">
@@ -572,21 +572,21 @@ function Masternodes() {
   const loading = k.mns.phase === 'loading';
   const total = k.mns.owned.length;
   return (
-    <section className="kr-card kr-mns" aria-labelledby="mns-title" aria-busy={loading}>
+    <section className="kr-card dh-card kr-mns" aria-labelledby="mns-title" aria-busy={loading}>
       <header className="kr-card-head">
         <h2 id="mns-title">Your masternodes</h2>
         {k.mns.phase === 'ready' && (
-          <span className="kr-count">
+          <span className="kr-count dh-badge">
             {total}
             <span className="visually-hidden"> found</span>
           </span>
         )}
         <span className="kr-card-actions">
-          <button type="button" className="btn btn-s btn-quiet" onClick={k.refreshMasternodes} disabled={loading || !k.keyInfos.length}>
+          <button type="button" className="btn dh-btn btn-s dh-btn--sm btn-quiet dh-btn--quiet" onClick={k.refreshMasternodes} disabled={loading || !k.keyInfos.length}>
             Refresh
           </button>
           {!addOpen && (
-            <button ref={addButton} type="button" className="btn btn-s" onClick={() => setAddOpen(true)} data-testid="addkey-open">
+            <button ref={addButton} type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={() => setAddOpen(true)} data-testid="addkey-open">
               Add a voting key
             </button>
           )}
@@ -599,7 +599,7 @@ function Masternodes() {
           <p>
             <b>Your masternodes could not be looked up.</b> {k.mns.error}
           </p>
-          <button type="button" className="btn btn-s" onClick={k.refreshMasternodes} data-testid="mn-retry">
+          <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={k.refreshMasternodes} data-testid="mn-retry">
             Retry
           </button>
         </div>
@@ -607,7 +607,7 @@ function Masternodes() {
       {k.mns.warning && k.mns.phase === 'ready' && (
         <div className="vwarn small" data-testid="mn-warning">
           <p>{k.mns.warning}</p>
-          <button type="button" className="btn btn-s" onClick={k.refreshMasternodes}>
+          <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={k.refreshMasternodes}>
             Retry
           </button>
         </div>
@@ -642,15 +642,15 @@ function Masternodes() {
                   {!k.demo &&
                     (confirmRemove === i ? (
                       <span className="kr-key-remove">
-                        <button type="button" className="btn btn-s btn-danger" onClick={() => void k.removeKey(i).catch(() => {}).finally(() => setConfirmRemove(null))} disabled={!!k.busy}>
+                        <button type="button" className="btn dh-btn btn-s dh-btn--sm btn-danger dh-btn--destructive" onClick={() => void k.removeKey(i).catch(() => {}).finally(() => setConfirmRemove(null))} disabled={!!k.busy}>
                           Remove key
                         </button>
-                        <button type="button" className="btn btn-s btn-quiet" onClick={() => setConfirmRemove(null)}>
+                        <button type="button" className="btn dh-btn btn-s dh-btn--sm btn-quiet dh-btn--quiet" onClick={() => setConfirmRemove(null)}>
                           Keep
                         </button>
                       </span>
                     ) : (
-                      <button type="button" className="btn btn-s btn-quiet kr-key-remove" onClick={() => setConfirmRemove(i)} aria-label={`Remove ${key.label || `voting key ${i + 1}`}`}>
+                      <button type="button" className="btn dh-btn btn-s dh-btn--sm btn-quiet dh-btn--quiet kr-key-remove" onClick={() => setConfirmRemove(i)} aria-label={`Remove ${key.label || `voting key ${i + 1}`}`}>
                         Remove
                       </button>
                     ))}
@@ -683,10 +683,10 @@ function Masternodes() {
 function KeepKeys() {
   const k = useKeyring();
   return (
-    <section className="kr-card kr-side-card" aria-labelledby="store-title">
+    <section className="kr-card dh-card kr-side-card" aria-labelledby="store-title">
       <h2 id="store-title">Keep these keys</h2>
       <p className="small">Memory-only keys are gone when you sign out. Save them encrypted on Platform to get them back with your recovery phrase.</p>
-      <button type="button" className="btn btn-s" onClick={() => void k.saveToPlatform().catch(() => {})} disabled={!!k.busy}>
+      <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={() => void k.saveToPlatform().catch(() => {})} disabled={!!k.busy}>
         Save encrypted on Platform
       </button>
     </section>
@@ -712,11 +712,11 @@ function KeyringSettings() {
       <li key={id} className="kr-unlock">
         <span className="kr-unlock-name">
           {name}
-          {openedBy === id && <span className="tag tag-info">opened it now</span>}
+          {openedBy === id && <span className="tag dh-badge tag-info dh-badge--info">opened it now</span>}
         </span>
         <span className="small muted">added {new Date(u.addedAt * 1000).toLocaleDateString()}</span>
         {ring.content.unlockers.length > 1 && (
-          <button type="button" className="btn btn-s btn-quiet" onClick={() => void k.removeUnlockerKey(u.recipientKey).catch(() => {})} disabled={!!k.busy} aria-label={`Remove ${name}`}>
+          <button type="button" className="btn dh-btn btn-s dh-btn--sm btn-quiet dh-btn--quiet" onClick={() => void k.removeUnlockerKey(u.recipientKey).catch(() => {})} disabled={!!k.busy} aria-label={`Remove ${name}`}>
             Remove
           </button>
         )}
@@ -737,7 +737,7 @@ function KeyringSettings() {
             <p>
               This keyring could not be verified as yours{ring.authenticated === null ? ' (only your recovery phrase can verify it)' : ''}. Anyone listed here can open it and every key you add. Remove what you do not recognise, then confirm.
             </p>
-            <button type="button" className="btn btn-s" onClick={k.confirmUnlockers} disabled={!!k.busy}>
+            <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={k.confirmUnlockers} disabled={!!k.busy}>
               These are mine
             </button>
           </div>
@@ -750,9 +750,9 @@ function KeyringSettings() {
         <div className="kr-passkey">
           <AddPasskey />
         </div>
-        <label className="kr-setting">
+        <label className="kr-setting dh-field__label">
           <span>Lock after being idle for</span>
-          <select value={ring.content.idleLockMinutes} onChange={(e) => void k.setIdleMinutes(Number(e.target.value)).catch(() => {})} disabled={!!k.busy}>
+          <select className="dh-select" value={ring.content.idleLockMinutes} onChange={(e) => void k.setIdleMinutes(Number(e.target.value)).catch(() => {})} disabled={!!k.busy}>
             {IDLE_CHOICES.map((m) => (
               <option key={m} value={m}>
                 {m < 60 ? `${m} min` : `${m / 60} h`}
@@ -796,7 +796,7 @@ function PasskeyOffer() {
     return (
       <p className="kr-offer kr-offer-done small" role="status" data-testid="passkey-offer-done">
         <span>Done. Signing in with your passkey now unlocks your masternodes too.</span>
-        <button type="button" className="btn btn-s btn-quiet" onClick={() => setDone(false)}>
+        <button type="button" className="btn dh-btn btn-s dh-btn--sm btn-quiet dh-btn--quiet" onClick={() => setDone(false)}>
           Dismiss
         </button>
       </p>
@@ -826,10 +826,10 @@ function PasskeyOffer() {
         <p className="small muted">One passkey prompt now. After that, signing in with this passkey unlocks your masternodes too, no recovery phrase needed.</p>
       </div>
       <div className="kr-offer-actions">
-        <button type="button" className="btn btn-s btn-primary" onClick={() => void use()} disabled={working || !!k.busy} data-testid="passkey-offer-use">
+        <button type="button" className="btn dh-btn btn-s dh-btn--sm btn-primary dh-btn--primary" onClick={() => void use()} disabled={working || !!k.busy} data-testid="passkey-offer-use">
           {working ? 'Waiting for the passkey…' : 'Use my passkey'}
         </button>
-        <button type="button" className="btn btn-s btn-quiet" onClick={k.dismissPasskeyOffer} disabled={working} data-testid="passkey-offer-dismiss">
+        <button type="button" className="btn dh-btn btn-s dh-btn--sm btn-quiet dh-btn--quiet" onClick={k.dismissPasskeyOffer} disabled={working} data-testid="passkey-offer-dismiss">
           Not now
         </button>
       </div>
@@ -861,7 +861,7 @@ function AddedBanner({ added, onClose }: { added: Added; onClose(): void }) {
           </p>
         )}
       </div>
-      <button type="button" className="btn btn-s kr-done-close" onClick={onClose} data-testid="flow-close">
+      <button type="button" className="btn dh-btn btn-s dh-btn--sm kr-done-close" onClick={onClose} data-testid="flow-close">
         Dismiss
       </button>
     </section>
@@ -875,7 +875,7 @@ function AddedBanner({ added, onClose }: { added: Added; onClose(): void }) {
 function WaysToVote() {
   const k = useKeyring();
   return (
-    <section className="kr-card kr-gate vote-ways" aria-labelledby="vote-ways-title" data-testid="vote-ways">
+    <section className="kr-card dh-card kr-gate vote-ways" aria-labelledby="vote-ways-title" data-testid="vote-ways">
       <h2 id="vote-ways-title">Three ways to vote</h2>
       <ol className="vote-ways-list">
         <li>
@@ -885,7 +885,7 @@ function WaysToVote() {
             or sign in with one you have. It keeps your voting keys in an encrypted keyring that comes back when you sign in again, or only in
             this tab's memory if you prefer. Votes are signed in your browser.
           </p>
-          <button type="button" className="btn btn-primary" onClick={openSignIn} data-testid="vote-ways-signin">
+          <button type="button" className="btn dh-btn btn-primary dh-btn--primary" onClick={openSignIn} data-testid="vote-ways-signin">
             Sign in or create an account
           </button>
         </li>
@@ -962,7 +962,7 @@ export function MasternodesPage() {
         <div className="kr-alert" role="alert" data-testid="keyring-error">
           <p>{k.error}</p>
           {k.needsTopUp && (
-            <button type="button" className="btn btn-s" onClick={() => openSheet('topup')} data-testid="keyring-topup">
+            <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={() => openSheet('topup')} data-testid="keyring-topup">
               Top up
             </button>
           )}
@@ -994,7 +994,7 @@ export function MasternodesPage() {
           <aside className="kr-side" aria-label="MN badge and keyring settings">
             <BadgeRow b={b} celebrate={flow === 'done' && !!added?.asked} />
             {k.memoryOnly && !k.demo && <KeepKeys />}
-            <div className="kr-card kr-folds">
+            <div className="kr-card dh-card kr-folds">
               {!k.memoryOnly && !k.demo && <KeyringSettings />}
               <Privacy />
             </div>

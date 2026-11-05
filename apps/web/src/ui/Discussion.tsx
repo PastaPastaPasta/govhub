@@ -251,13 +251,13 @@ export function Discussion({ govHash, featured }: { govHash: string; featured: F
           Discussion {thread.data && <span className="count">{formatInt(count - hiddenCount)}{thread.data.truncated ? '+' : ''}</span>}
         </h2>
         <div className="discussion-tools">
-          <fieldset className="seg" aria-label="Which comments to show">
+          <fieldset className="seg dh-seg" aria-label="Which comments to show">
             <legend className="visually-hidden">Comment view</legend>
-            <label className={filter === 'recommended' ? 'on' : ''} title={`Authors with an MN badge from an issuer you trust (Settings), plus ${featured.whoHere}`}>
+            <label className={[filter === 'recommended' ? 'on' : '', "dh-field__label"].join(" ")} title={`Authors with an MN badge from an issuer you trust (Settings), plus ${featured.whoHere}`}>
               <input type="radio" name="comment-filter" checked={filter === 'recommended'} onChange={() => setFilter('recommended')} />
               {featured.view} and masternodes
             </label>
-            <label className={filter === 'all' ? 'on' : ''}>
+            <label className={[filter === 'all' ? 'on' : '', "dh-field__label"].join(" ")}>
               <input type="radio" name="comment-filter" checked={filter === 'all'} onChange={() => setFilter('all')} />
               Everyone
             </label>
@@ -270,7 +270,7 @@ export function Discussion({ govHash, featured }: { govHash: string; featured: F
           ? 'Showing everyone.'
           : `Showing ${featured.who}${BADGES_LIVE ? ' and masternode owners' : ' (no masternode badges are live yet)'}.`}{' '}
         {filter === 'recommended' && filteredCount > 0 && (
-          <button type="button" className="linkish" onClick={() => setFilter('all')} data-testid="show-all">
+          <button type="button" className="linkish dh-btn dh-btn--link" onClick={() => setFilter('all')} data-testid="show-all">
             Show all {formatInt(filteredCount)} other {filteredCount === 1 ? 'comment' : 'comments'}
           </button>
         )}
@@ -281,7 +281,7 @@ export function Discussion({ govHash, featured }: { govHash: string; featured: F
         <Composer label="Post comment" onSubmit={(b) => post(b)} />
       ) : (
         <p className="signin-cta">
-          <button type="button" className="btn" onClick={openSignIn}>
+          <button type="button" className="btn dh-btn" onClick={openSignIn}>
             Sign in to comment
           </button>{' '}
           <span className="muted small">Posting costs about {formatCredits(56_000_000, true)} from your account's balance.</span>
@@ -296,12 +296,12 @@ export function Discussion({ govHash, featured }: { govHash: string; featured: F
       )}
       {thread.data && count === 0 && <p className="muted">No comments yet.</p>}
       {thread.data?.truncated && (
-        <p className="notice-warn small" data-testid="thread-truncated">
+        <p className="notice-warn dh-notice dh-notice--warn small" data-testid="thread-truncated">
           This page has more comments than one read returns (10,000): the newest are shown, the oldest are not.
         </p>
       )}
       {focusMissing && (
-        <p className="notice-warn small" role="status" data-testid="focus-missing">
+        <p className="notice-warn dh-notice dh-notice--warn small" role="status" data-testid="focus-missing">
           The linked comment isn't in this discussion: it may have been retracted, or this node doesn't have it yet.{' '}
           <Link to={{ search: '' }}>Show the whole discussion</Link>
         </p>
@@ -313,10 +313,10 @@ export function Discussion({ govHash, featured }: { govHash: string; featured: F
         </p>
       )}
       {moderation.ready && moderation.error && (
-        <p className="notice-warn small" role="alert">
+        <p className="notice-warn dh-notice dh-notice--warn small" role="alert">
           {moderation.error}, so comments they would hide may show.{' '}
           {!unfiltered && (
-            <button type="button" className="linkish" onClick={() => setUnfiltered(true)}>
+            <button type="button" className="linkish dh-btn dh-btn--link" onClick={() => setUnfiltered(true)}>
               Show the comments anyway
             </button>
           )}
@@ -324,14 +324,14 @@ export function Discussion({ govHash, featured }: { govHash: string; featured: F
       )}
       {!gated && scoring.unscored > 0 && (
         <p className="center">
-          <button type="button" className="btn btn-quiet" onClick={() => setExtraScored((n) => n + SCORED_PER_PAGE)} data-testid="read-more-scores">
+          <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet" onClick={() => setExtraScored((n) => n + SCORED_PER_PAGE)} data-testid="read-more-scores">
             Read the scores of {formatInt(scoring.unscored)} older {scoring.unscored === 1 ? 'comment' : 'comments'} (their votes wait until then)
           </button>
         </p>
       )}
       {!gated && win.older > 0 && (
         <p className="center">
-          <button type="button" className="btn btn-quiet" onClick={() => setLimit((l) => l + RENDER_PAGE)} data-testid="show-older">
+          <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet" onClick={() => setLimit((l) => l + RENDER_PAGE)} data-testid="show-older">
             Show older comments ({formatInt(win.older)} more)
           </button>
         </p>
@@ -439,7 +439,7 @@ function CommentNode({ node, ctx }: { node: ThreadNode; ctx: NodeCtx }) {
         <p className="muted small">
           {why}.{' '}
           {reasons.length > 0 && (
-            <button type="button" className="linkish" onClick={() => ctx.reveal(c.id)}>
+            <button type="button" className="linkish dh-btn dh-btn--link" onClick={() => ctx.reveal(c.id)}>
               Show this comment
             </button>
           )}
@@ -479,39 +479,39 @@ function CommentNode({ node, ctx }: { node: ThreadNode; ctx: NodeCtx }) {
         <footer className="comment-actions">
           <Votes score={score} signedIn={!!ctx.session} label="Comment score" onVote={(v) => (ctx.session ? ctx.vote(c, v) : (openSignIn(), Promise.resolve()))} />
           {ctx.session && (
-            <button type="button" className="btn btn-quiet btn-s" onClick={() => setReplying((r) => !r)} aria-expanded={replying}>
+            <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet btn-s dh-btn--sm" onClick={() => setReplying((r) => !r)} aria-expanded={replying}>
               Reply
             </button>
           )}
           {mine &&
             (confirmRetract ? (
               <>
-                <button type="button" className="btn btn-s btn-danger" disabled={!!busy} onClick={run('retract', () => ctx.retract(c))}>
+                <button type="button" className="btn dh-btn btn-s dh-btn--sm btn-danger dh-btn--destructive" disabled={!!busy} onClick={run('retract', () => ctx.retract(c))}>
                   {busy === 'retract' ? 'Retracting…' : `Confirm: delete (refunds about ${formatCredits(-commentRetractRefund(new TextEncoder().encode(c.body).length), true)})`}
                 </button>
-                <button type="button" className="btn btn-quiet btn-s" onClick={() => setConfirmRetract(false)}>
+                <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet btn-s dh-btn--sm" onClick={() => setConfirmRetract(false)}>
                   Keep
                 </button>
               </>
             ) : (
-              <button type="button" className="btn btn-quiet btn-s" onClick={() => setConfirmRetract(true)}>
+              <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet btn-s dh-btn--sm" onClick={() => setConfirmRetract(true)}>
                 Retract
               </button>
             ))}
           {ctx.session && !mine && (
             <details className="menu" ref={menu}>
-              <summary className="btn btn-quiet btn-s">Hide…</summary>
+              <summary className="btn dh-btn btn-quiet dh-btn--quiet btn-s dh-btn--sm">Hide…</summary>
               <div className="menu-body">
                 {myBlock ? (
-                  <button type="button" className="btn btn-s" disabled={!!busy} onClick={run('unblock', () => ctx.unblock('forum', myBlock.block))}>
+                  <button type="button" className="btn dh-btn btn-s dh-btn--sm" disabled={!!busy} onClick={run('unblock', () => ctx.unblock('forum', myBlock.block))}>
                     Unblock ({myBlock.kind === 'identity' ? 'author' : 'comment'}, refunds about {formatCredits(-COSTS.blockDelete, true)})
                   </button>
                 ) : (
                   <>
-                    <button type="button" className="btn btn-s" disabled={!!busy} onClick={run('block', () => ctx.block('forum', c.id, BLOCK_KIND.document))}>
+                    <button type="button" className="btn dh-btn btn-s dh-btn--sm" disabled={!!busy} onClick={run('block', () => ctx.block('forum', c.id, BLOCK_KIND.document))}>
                       Hide this comment for me
                     </button>
-                    <button type="button" className="btn btn-s" disabled={!!busy} onClick={run('block', () => ctx.block('forum', c.ownerId, BLOCK_KIND.identity))}>
+                    <button type="button" className="btn dh-btn btn-s dh-btn--sm" disabled={!!busy} onClick={run('block', () => ctx.block('forum', c.ownerId, BLOCK_KIND.identity))}>
                       Hide everything by this author
                     </button>
                     <p className="muted small">Adds a block to your own list (about {formatCredits(COSTS.blockCreate, true)}). Others can subscribe to it.</p>
@@ -519,15 +519,15 @@ function CommentNode({ node, ctx }: { node: ThreadNode; ctx: NodeCtx }) {
                 )}
                 {ctx.isModerator &&
                   (modBlock ? (
-                    <button type="button" className="btn btn-s" disabled={!!busy} onClick={run('unblock', () => ctx.unblock('mod', modBlock.block))}>
+                    <button type="button" className="btn dh-btn btn-s dh-btn--sm" disabled={!!busy} onClick={run('unblock', () => ctx.unblock('mod', modBlock.block))}>
                       Remove from the default list
                     </button>
                   ) : (
                     <>
-                      <button type="button" className="btn btn-s" disabled={!!busy} onClick={run('block', () => ctx.block('mod', c.id, BLOCK_KIND.document))}>
+                      <button type="button" className="btn dh-btn btn-s dh-btn--sm" disabled={!!busy} onClick={run('block', () => ctx.block('mod', c.id, BLOCK_KIND.document))}>
                         Add comment to the default list
                       </button>
-                      <button type="button" className="btn btn-s" disabled={!!busy} onClick={run('block', () => ctx.block('mod', c.ownerId, BLOCK_KIND.identity))}>
+                      <button type="button" className="btn dh-btn btn-s dh-btn--sm" disabled={!!busy} onClick={run('block', () => ctx.block('mod', c.ownerId, BLOCK_KIND.identity))}>
                         Add author to the default list
                       </button>
                     </>

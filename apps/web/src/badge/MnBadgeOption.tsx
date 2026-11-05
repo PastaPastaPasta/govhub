@@ -37,7 +37,7 @@ function ReadinessLine({ b, offer = false }: { b: MnBadge; offer?: boolean }) {
     return (
       <p className="small" data-testid="mnb-ready" data-state="error">
         Couldn’t check {name}’s badge keys on Platform just now.{' '}
-        <button type="button" className="btn btn-s btn-quiet" onClick={a.retry}>
+        <button type="button" className="btn dh-btn btn-s dh-btn--sm btn-quiet dh-btn--quiet" onClick={a.retry}>
           Try again
         </button>
       </p>
@@ -95,7 +95,7 @@ export function BadgeChoice({ b, on, onChange }: { b: MnBadge; on: boolean; onCh
   const name = b.issuer?.name ?? 'dashhq';
   return (
     <div className="mnb-choice" data-testid="mnb-choice">
-      <label className="mnb-switch">
+      <label className="mnb-switch dh-field__label">
         <input type="checkbox" role="switch" checked={on && b.usable} onChange={(e) => onChange(e.target.checked)} disabled={!b.usable} data-testid="mnb-toggle" />
         <span>
           <b>Show the MN badge next to your name</b>
@@ -170,7 +170,7 @@ export function BadgeProgress({ b, celebrate = false, onAgain }: { b: MnBadge; c
     const fetchWait = j.state === 'scheduled' ? b.fetchWait(j) : 0;
     const spacing = !scheduled && fetchWait > 0;
     const cancel = (
-      <button type="button" className="btn btn-s btn-quiet" onClick={() => void b.cancel(j)} data-testid="mnb-cancel">
+      <button type="button" className="btn dh-btn btn-s dh-btn--sm btn-quiet dh-btn--quiet" onClick={() => void b.cancel(j)} data-testid="mnb-cancel">
         {j.state === 'token' ? 'Cancel: don’t post it' : 'Cancel'}
       </button>
     );
@@ -191,7 +191,7 @@ export function BadgeProgress({ b, celebrate = false, onAgain }: { b: MnBadge; c
               <p className="small">{j.note}</p>
             )}
             <div className="badge-job-actions">
-              <button type="button" className="btn btn-s" onClick={() => b.retry(j)} data-testid="mnb-retry">
+              <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={() => b.retry(j)} data-testid="mnb-retry">
                 Try again now
               </button>
               {cancel}
@@ -247,7 +247,7 @@ export function BadgeProgress({ b, celebrate = false, onAgain }: { b: MnBadge; c
             Your last badge request (epoch {formatInt(s.last.epoch)}) ended: {s.last.note}
           </p>
           {onAgain && (
-            <button type="button" className="btn btn-s" onClick={onAgain} data-testid="mnb-again">
+            <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={onAgain} data-testid="mnb-again">
               Ask again
             </button>
           )}
@@ -271,7 +271,7 @@ function HeldBadge({ b, job, lapseAt, lapsing }: { b: MnBadge; job: BadgeJob; la
         </p>
       )}
       <RegisterNow issuer={job.issuer.name} onRegister={() => b.registerNow(job)}>
-        <button type="button" className="btn btn-s btn-quiet" onClick={() => void b.cancel(job)} data-testid="mnb-cancel">
+        <button type="button" className="btn dh-btn btn-s dh-btn--sm btn-quiet dh-btn--quiet" onClick={() => void b.cancel(job)} data-testid="mnb-cancel">
           Cancel: don’t post it
         </button>
       </RegisterNow>
@@ -307,7 +307,7 @@ export function RegisterNow({ issuer, onRegister, children }: { issuer: string; 
   return (
     <>
       <div className="badge-job-actions">
-        <button type="button" className="btn btn-s" onClick={() => void go()} disabled={busy} data-testid="mnb-register-now">
+        <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={() => void go()} disabled={busy} data-testid="mnb-register-now">
           {busy ? 'Posting…' : 'Register now'}
         </button>
         {children}
@@ -369,11 +369,11 @@ export function KeyringBadgeRow({ b, request, why, celebrate = false }: { b: MnB
   };
   const won = asked || celebrate;
   return (
-    <section className="kr-card mnb-row" id="mn-badge" data-testid="mnb-row" data-state={s.kind} aria-labelledby="mnb-row-title">
+    <section className="kr-card dh-card mnb-row" id="mn-badge" data-testid="mnb-row" data-state={s.kind} aria-labelledby="mnb-row-title">
       <div className="mnb-row-head">
         <h2 id="mnb-row-title">MN badge</h2>
         {s.kind === 'shown' && <MnBadges issuers={[s.issuer]} />}
-        <label className="mnb-switch">
+        <label className="mnb-switch dh-field__label">
           <input
             type="checkbox"
             role="switch"

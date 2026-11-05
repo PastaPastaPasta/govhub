@@ -103,7 +103,8 @@ export function ChainShield({ line: withLine = false }: { line?: boolean }) {
   return (
     <>
       <span className="chain-status">
-        <button type="button" className={`chainchip trust-${level}`} onClick={() => setOpen(true)} data-testid="profile-label" data-trust={level} aria-label={`${p.title}${custom ? ', with custom settings' : ''}. ${line}`} title={line}>
+        {level !== "verified" && level !== "demo" && <span className="dh-badge">Reported</span>}
+        <button type="button" className={`chainchip dh-proof dh-proof--${level === "verified" ? "ok" : level === "checking" ? "checking" : level === "failed" ? "failed" : "unverified"} trust-${level}`} onClick={() => setOpen(true)} data-testid="profile-label" data-trust={level} aria-label={`${p.title}${custom ? ', with custom settings' : ''}. ${line}`} title={line}>
           <ShieldIcon level={level} size={16} />
           <span aria-hidden="true">{CHIP_TEXT[mode === 'fixtures' ? 'demo' : level]}</span>
           <span className="visually-hidden">{p.title}</span>
@@ -117,7 +118,7 @@ export function ChainShield({ line: withLine = false }: { line?: boolean }) {
         {withLine && failed && (
           <span className="chain-line small" data-testid="chain-unverified">
             Figures above are shown as reported.{' '}
-            <button type="button" className="linkish" onClick={retry} data-testid="chain-retry">
+            <button type="button" className="linkish dh-btn dh-btn--link" onClick={retry} data-testid="chain-retry">
               Try again
             </button>
           </span>
@@ -131,7 +132,7 @@ export function ChainShield({ line: withLine = false }: { line?: boolean }) {
             <p className="drawer-verdict-line">{line}</p>
           </div>
           {failed && (
-            <button type="button" className="btn btn-s" onClick={retry} data-testid="chain-drawer-retry">
+            <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={retry} data-testid="chain-drawer-retry">
               Try again
             </button>
           )}

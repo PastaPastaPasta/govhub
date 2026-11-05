@@ -91,16 +91,16 @@ function ConfigOffer() {
   if (!current) {
     if (!url) return null; // inline settings: shown once read (no network)
     return (
-      <div className="banner banner-config" role="alertdialog" aria-labelledby="cfg-title" data-testid="config-offer">
+      <div className="banner dh-notice banner-config dh-notice--info" role="alertdialog" aria-labelledby="cfg-title" data-testid="config-offer">
         <p id="cfg-title">
           <b>This link points to endpoint settings in a file at {url.host}.</b> Governance has not contacted that host. Loading the file shows the settings
           before anything changes; the request tells {url.host} that you opened this link.
         </p>
         <div className="banner-actions">
-          <button type="button" className="btn" disabled={loading === param} onClick={() => load(param, url)}>
+          <button type="button" className="btn dh-btn" disabled={loading === param} onClick={() => load(param, url)}>
             {loading === param ? `Loading from ${url.host}…` : `Load settings from ${url.host}`}
           </button>
-          <button type="button" className="btn btn-quiet" onClick={() => clear()}>
+          <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet" onClick={() => clear()}>
             Ignore this link
           </button>
         </div>
@@ -112,7 +112,7 @@ function ConfigOffer() {
   const diff = ok ? registryDiff(registry, current.registry) : [];
   const changed = new Set(diff.map((d) => d.label));
   return (
-    <div className="banner banner-config" role="alertdialog" aria-labelledby="cfg-title" data-testid="config-offer">
+    <div className="banner dh-notice banner-config dh-notice--info" role="alertdialog" aria-labelledby="cfg-title" data-testid="config-offer">
       <p id="cfg-title">
         {damaged ? (
           <b>{DAMAGED_CONFIG}</b>
@@ -164,7 +164,7 @@ function ConfigOffer() {
         {diff.length > 0 && (
           <button
             type="button"
-            className="btn btn-primary"
+            className="btn dh-btn"
             disabled={!armed}
             onClick={() => {
               try {
@@ -178,7 +178,7 @@ function ConfigOffer() {
             Use these settings
           </button>
         )}
-        <button type="button" className="btn" onClick={() => clear()}>
+        <button type="button" className="btn dh-btn" onClick={() => clear()}>
           {diff.length > 0 ? 'Keep my settings' : 'Close'}
         </button>
       </div>
@@ -192,16 +192,16 @@ function SettingsProblem() {
   if (!settingsProblem) return null;
   const shown = settingsProblem.slice(0, 3).join('; ') + (settingsProblem.length > 3 ? `; and ${settingsProblem.length - 3} more` : '');
   return (
-    <div className="banner banner-empty" role="alert" data-testid="settings-problem">
+    <div className="banner dh-notice banner-empty dh-notice--warn" role="alert" data-testid="settings-problem">
       <p>
         <b>Your saved settings could not be used:</b> {shown}. Governance shows the {PROFILES[registry.profile].label} profile's defaults instead; your saved settings
         stay in this browser until you save new ones.
       </p>
       <div className="banner-actions">
-        <Link className="btn" to="/settings">
-          Open Settings
+        <Link className="btn dh-btn" to="/settings">
+          Open settings
         </Link>
-        <button type="button" className="btn btn-quiet" onClick={dismissSettingsProblem}>
+        <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet" onClick={dismissSettingsProblem}>
           Dismiss
         </button>
       </div>
@@ -213,11 +213,11 @@ function ModeBanner() {
   const { mode, setMode, source, gov, registry, switchProfile } = useApp();
   if (mode === 'fixtures') {
     return (
-      <div className="banner banner-fixture" role="status">
+      <div className="banner dh-notice banner-fixture dh-notice--info" role="status">
         <div className="banner-text">
           <b>Demo data.</b> <span className="banner-more">A recorded mainnet snapshot from Oct 23, 2026, with sample voters.</span> Nothing here is live.
         </div>
-        <button type="button" className="btn btn-s" onClick={() => setMode('live')} title="28 real mainnet proposals as Core saw them at block 2,560,391, with recorded DAPI answers, real recorded votes for three proposals and sample voters for the rest, plus two made-up proposals that fail verification">
+        <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={() => setMode('live')} title="28 real mainnet proposals as Core saw them at block 2,560,391, with recorded DAPI answers, real recorded votes for three proposals and sample voters for the rest, plus two made-up proposals that fail verification">
           Switch to live data
         </button>
       </div>
@@ -225,12 +225,12 @@ function ModeBanner() {
   }
   if (source.notice) {
     return (
-      <div className="banner banner-empty" role="status" data-testid="backend-notice">
+      <div className="banner dh-notice banner-empty dh-notice--warn" role="status" data-testid="backend-notice">
         <p>
           <b>{source.notice}.</b> The {PROFILES[registry.profile].label} profile has no governance contract yet, so nothing is read; Governance never shows another network's proposals in its place.
         </p>
         {registry.profile !== 'dev' && (
-          <button type="button" className="btn" onClick={() => switchProfile('dev')}>
+          <button type="button" className="btn dh-btn" onClick={() => switchProfile('dev')}>
             Use mainnet proposals on Testnet Platform
           </button>
         )}
@@ -240,7 +240,7 @@ function ModeBanner() {
   const empty = !gov.active.loading && !gov.active.error && (gov.active.data?.length ?? 0) === 0;
   if (!empty && !gov.active.error) return null;
   return (
-    <div className="banner banner-empty" role="status">
+    <div className="banner dh-notice banner-empty dh-notice--warn" role="status">
       <p>
         {gov.active.error ? (
           <>
@@ -252,7 +252,7 @@ function ModeBanner() {
           </>
         )}
       </p>
-      <button type="button" className="btn" onClick={() => setMode('fixtures')}>
+      <button type="button" className="btn dh-btn" onClick={() => setMode('fixtures')}>
         View the fixture snapshot
       </button>
     </div>
@@ -297,8 +297,9 @@ export function Layout() {
         </nav>
         <div slot="actions"><SessionControl /></div>
       </dashhq-bar>
-      {unsupportedNetwork && <aside className="network-context" role="alert">This Governance build supports Mainnet and Testnet. The requested network <bdi>{requestedNetwork}</bdi> is unavailable; showing Mainnet.</aside>}
-      {registry.coreNetwork !== registry.platformNetwork && <aside className="network-context" role="status">
+      <div className="dh-container">
+      {unsupportedNetwork && <aside className="network-context dh-notice dh-notice--info" role="alert">This Governance build supports Mainnet and Testnet. The requested network <bdi>{requestedNetwork}</bdi> is unavailable; showing Mainnet.</aside>}
+      {registry.coreNetwork !== registry.platformNetwork && <aside className="network-context dh-notice dh-notice--info" role="status">
         <b>{coreLabel} proposals · {platformLabel} Platform.</b> This {registry.profile === 'dev' ? 'development' : 'custom'} profile reads {coreLabel} governance through {platformLabel} Platform. Name contests use {platformLabel}.
         <Link to="/settings#network">Network settings</Link>
       </aside>}
@@ -306,7 +307,8 @@ export function Layout() {
       <ConfigOffer />
       <SettingsProblem />
       <ModeBanner />
-      <main id="main" className="main">
+      </div>
+      <main id="main" className="main dh-container dh-page">
         <Outlet />
       </main>
       <dashhq-footer product="gov" source="https://github.com/PastaPastaPasta/govhub">

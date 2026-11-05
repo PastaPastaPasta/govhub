@@ -55,7 +55,7 @@ export function SessionControl() {
   return (
     <div className="account">
       {session ? (
-        <button type="button" className="account-btn" popoverTarget="account-menu" id="session-button" data-testid="session-button">
+        <button type="button" className="account-btn dh-btn dh-btn--quiet" popoverTarget="account-menu" id="session-button" data-testid="session-button">
           <Avatar id={session.identityId} size={22} />
           <span className="account-name">{name ?? shortHash(session.identityId, 4)}</span>
           <svg width="10" height="10" viewBox="0 0 10 10" className="account-chevron" aria-hidden="true">
@@ -64,7 +64,7 @@ export function SessionControl() {
         </button>
       ) : (
         <>
-          <button type="button" className="btn" onClick={openSignIn} title="Sign in" id="session-button" data-testid="session-button">
+          <button type="button" className="btn dh-btn" onClick={openSignIn} title="Sign in" id="session-button" data-testid="session-button">
             <svg className="signin-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><circle cx="12" cy="8" r="4" /><path d="M4 22v-2a8 8 0 0 1 16 0v2" /></svg>
             <span className="signin-label">{auth.restoring ? 'Signing in…' : 'Sign in'}</span>
           </button>
@@ -149,27 +149,27 @@ function SessionPanel({ onDone, onSaved }: { onDone(): void; onSaved(name: strin
     <form className="form" onSubmit={save}>
       <h2 id="session-title">Your profile</h2>
       <p className="small muted">Your name and picture next to your comments. Anyone can read them; they're stored on Dash Platform.</p>
-      <label>
+      <label className="dh-field__label">
         Display name
-        <input value={name} onChange={(e) => setName(e.target.value)} maxLength={64} required aria-describedby="name-problem" />
+        <input className="dh-input" value={name} onChange={(e) => setName(e.target.value)} maxLength={64} required aria-describedby="name-problem" />
       </label>
       {problem && (
         <p className="error small" id="name-problem" data-testid="name-problem">
           {problem}
         </p>
       )}
-      <label>
+      <label className="dh-field__label">
         Picture <span className="small muted">(a small data: image; others see a pattern from your identity otherwise, and web images are never loaded)</span>
-        <input value={avatar} onChange={(e) => setAvatar(e.target.value)} maxLength={512} spellCheck={false} />
+        <input className="dh-input" value={avatar} onChange={(e) => setAvatar(e.target.value)} maxLength={512} spellCheck={false} />
       </label>
       <p className="muted small">Saving costs about {formatCredits(profile ? COSTS.profileReplace : COSTS.profileCreate, true)} from your balance.</p>
       {saved && <p className="notice">Profile saved on Platform.</p>}
       <WriteError error={error} needsTopUp={needsTopUp} onTopUp={onDone} />
       <div className="form-actions">
-        <button type="submit" className="btn btn-primary" disabled={busy || profile === undefined || !name.trim() || !!problem}>
+        <button type="submit" className="btn dh-btn btn-primary dh-btn--primary" disabled={busy || profile === undefined || !name.trim() || !!problem}>
           {busy ? 'Saving…' : profile ? 'Save profile' : 'Create profile'}
         </button>
-        <button type="button" className="btn btn-quiet" onClick={onDone}>
+        <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet" onClick={onDone}>
           Close
         </button>
       </div>

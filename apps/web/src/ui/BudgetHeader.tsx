@@ -17,15 +17,15 @@ export function BudgetHeader() {
   if (source.notice) return null;
   if (gov.cycle.loading && !cycle) {
     return (
-      <section className="budget budget-loading" aria-busy="true" aria-label="Budget">
-        <p className="budget-line muted">Loading the budget…</p>
+      <section className="budget dh-page-header dh-loading" aria-busy="true" aria-label="Budget">
+        <h1 className="dh-page-header__title">Loading the budget…</h1>
       </section>
     );
   }
   if (!cycle) {
     return (
-      <section className="budget" aria-label="Budget">
-        <p className="budget-line">No budget has been published yet.</p>
+      <section className="budget dh-page-header" aria-label="Budget">
+        <h1 className="dh-page-header__title">Active proposals</h1><p className="dh-page-header__lede">No budget has been published yet.</p>
         <p className="muted small">{gov.cycle.error ? `Platform read failed: ${gov.cycle.error}` : 'The bridge publishes one for every payout. Add a bridge in Settings to see live numbers.'}</p>
       </section>
     );
@@ -49,8 +49,8 @@ export function BudgetHeader() {
   const height = gov.height.data?.value;
 
   return (
-    <section className="budget" aria-labelledby="budget-title">
-      <h2 id="budget-title" className="budget-line">
+    <section className="budget dh-page-header" aria-labelledby="budget-title">
+      <h1 id="budget-title" className="dh-page-header__title">
         {untilSb > 0 ? (
           <>
             Next payout in <span className="num">{formatDuration(untilSb)}</span>
@@ -58,8 +58,8 @@ export function BudgetHeader() {
         ) : (
           'The next payout is due any moment'
         )}
-      </h2>
-      <p className="budget-sub">
+      </h1>
+      <p className="dh-page-header__lede">
         {untilDeadline > 0 ? (
           <>
             Masternodes can vote for another <b>{formatDuration(untilDeadline)}</b>, until {formatDate(deadline)}.
@@ -121,7 +121,7 @@ export function BudgetHeader() {
           </dd>
         </div>
       </dl>
-      <div className="chain-context"><span>Chain check</span><ChainShield line /></div>
+      <div className="chain-context dh-page-header__meta"><span>Chain check</span><ChainShield /></div>
       <details className="learn">
         <summary>How funding works</summary>
         <p className="strip-legend small muted">

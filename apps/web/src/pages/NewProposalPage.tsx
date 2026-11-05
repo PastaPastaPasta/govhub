@@ -41,8 +41,8 @@ export function NewProposalPage() {
   if (draft && draft.network !== network) {
     return (
       <section className="page-narrow">
-        <h1>Create a proposal</h1>
-        <p className="notice-box">This draft is for Dash {draft.network}; Governance is set to {network}. Switch the network profile in Settings to continue it.</p>
+        <h1 className="dh-page-header__title">Create a proposal</h1>
+        <p className="notice-box dh-notice dh-notice--info">This draft is for Dash {draft.network}; Governance is set to {network}. Switch the network profile in Settings to continue it.</p>
       </section>
     );
   }
@@ -77,9 +77,9 @@ function Start({ drafts, demo, onOpen, onNew, onRestored }: { drafts: ProposalDr
   };
   return (
     <section className="page-narrow pw" aria-labelledby="pw-title" data-testid="p-start">
-      <h1 id="pw-title">Create a proposal</h1>
+      <h1 className="dh-page-header__title" id="pw-title">Create a proposal</h1>
       <p className="pw-lede">Ask the Dash treasury to fund your work. Masternodes vote on proposals; those with enough yes votes are paid at each {superblockPhrase(params)}.</p>
-      {demo && <p className="notice-box small">Demo data: payments and the relay are simulated, nothing is sent anywhere.</p>}
+      {demo && <p className="notice-box dh-notice dh-notice--info small">Demo data: payments and the relay are simulated, nothing is sent anywhere.</p>}
       <CostSummary />
       <ol className="pw-overview small">
         <li>Describe it: a short name, the address that gets paid, a link to the full description.</li>
@@ -107,10 +107,10 @@ function Start({ drafts, demo, onOpen, onNew, onRestored }: { drafts: ProposalDr
         </section>
       )}
       <div className="form-actions">
-        <button type="button" className="btn btn-primary btn-l" onClick={onNew} data-testid="p-new">
+        <button type="button" className="btn dh-btn btn-primary dh-btn--primary btn-l dh-btn--lg" onClick={onNew} data-testid="p-new">
           Start a new proposal
         </button>
-        <button type="button" className="btn" onClick={() => fileRef.current?.click()} data-testid="p-restore">
+        <button type="button" className="btn dh-btn" onClick={() => fileRef.current?.click()} data-testid="p-restore">
           Restore from a backup file
         </button>
         <input
@@ -179,14 +179,11 @@ function Wizard({ initial, services, onChange }: { initial: ProposalDraft; servi
       <p className="small">
         <Link to="/create">← All proposals in progress</Link>
       </p>
-      <h1 id="pw-title">{draft.lock?.name ?? (draft.inputs.name || 'Create a proposal')}</h1>
-      {services.demo && <p className="notice-box small">Demo: payments and the relay are simulated, nothing is sent anywhere.</p>}
-      <ol className="pw-steps" aria-label="Steps">
+      <h1 className="dh-page-header__title" id="pw-title">{draft.lock?.name ?? (draft.inputs.name || 'Create a proposal')}</h1>
+      {services.demo && <p className="notice-box dh-notice dh-notice--info small">Demo: payments and the relay are simulated, nothing is sent anywhere.</p>}
+      <ol className="pw-steps dh-steps" aria-label="Steps">
         {STEP_LABELS.map((l, i) => (
           <li key={l} data-status={i < step || stage === 'done' ? 'done' : i === step ? 'now' : 'todo'} aria-current={i === step ? 'step' : undefined}>
-            <span className="pw-step-n" aria-hidden="true">
-              {i + 1}
-            </span>
             <span className="pw-step-l">{l}</span>
           </li>
         ))}

@@ -613,7 +613,7 @@ export function VerificationDrawer({ sp, trust, cycle, open, onClose }: { sp: So
           <p className="drawer-verdict-title">{LEVEL_LABEL[a.level]}</p>
           <p className="drawer-verdict-line">{a.level === 'verified' ? VERIFIED_LINE : a.reason}</p>
         </div>
-        <button type="button" className="btn btn-s" onClick={trust.recheck} data-testid="recheck">
+        <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={trust.recheck} data-testid="recheck">
           Re-check
         </button>
       </section>
@@ -641,7 +641,7 @@ export function VerificationDrawer({ sp, trust, cycle, open, onClose }: { sp: So
             <>
               <p className="small muted">{rankingNote(trust.ranking)}</p>
               {trust.rankNow && (
-                <button type="button" className="btn btn-s" onClick={trust.rankNow} data-testid="rank-now">
+                <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={trust.rankNow} data-testid="rank-now">
                   Rank every active proposal
                 </button>
               )}

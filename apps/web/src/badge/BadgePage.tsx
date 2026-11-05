@@ -82,17 +82,17 @@ function JobRow({ job, now, postWait, onRemove, onCancel, onRetry, onRegister }:
       {held && <RegisterNow issuer={job.issuer.name} onRegister={onRegister} />}
       <div className="badge-job-actions">
         {waiting && (
-          <button type="button" className="btn btn-s" onClick={onRetry} data-testid="badge-job-retry">
+          <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={onRetry} data-testid="badge-job-retry">
             Retry now
           </button>
         )}
         {active && (
-          <button type="button" className="btn btn-s btn-quiet" onClick={onCancel} data-testid="badge-job-cancel">
+          <button type="button" className="btn dh-btn btn-s dh-btn--sm btn-quiet dh-btn--quiet" onClick={onCancel} data-testid="badge-job-cancel">
             {job.state === 'token' ? 'Cancel: do not post' : 'Cancel request'}
           </button>
         )}
         {!active && (
-          <button type="button" className="btn btn-s btn-quiet" onClick={onRemove}>
+          <button type="button" className="btn dh-btn btn-s dh-btn--sm btn-quiet dh-btn--quiet" onClick={onRemove}>
             Remove
           </button>
         )}
@@ -157,7 +157,7 @@ export function BadgePage() {
 
   return (
     <section className="list-section badge-page" aria-labelledby="badge-title">
-      <h1 id="badge-title">MN owner badge</h1>
+      <h1 className="dh-page-header__title" id="badge-title">MN owner badge</h1>
       <p>
         Masternode owners can show <span className="chip chip-mn">MN · vouched by …</span> next to their name without revealing which masternode, how many, or of what type. An issuer
         blind-signs a token for your identity after you prove control of a masternode’s <b>voting key</b>. Blind signing means the token itself does not tell the issuer which
@@ -173,7 +173,7 @@ export function BadgePage() {
         <p className="notice">Badges need live data on a network where the badge contract is deployed (testnet for now). Change it in <Link to="/settings">Settings</Link>.</p>
       ) : !session ? (
         <p>
-          <button type="button" className="btn btn-primary" onClick={openSignIn}>
+          <button type="button" className="btn dh-btn btn-primary dh-btn--primary" onClick={openSignIn}>
             Sign in
           </button>{' '}
           with the identity that should show the badge.
@@ -198,15 +198,15 @@ export function BadgePage() {
           <PrivacyModes value={privacy} onChange={setPrivacy} av={av} net={net} />
           <fieldset>
             <legend>Masternode</legend>
-            <label>
+            <label className="dh-field__label">
               proTxHash
-              <input value={proTxHash} onChange={(e) => setProTxHash(e.target.value)} spellCheck={false} autoComplete="off" placeholder="64 hex characters" data-testid="badge-protx" />
+              <input className="dh-input" value={proTxHash} onChange={(e) => setProTxHash(e.target.value)} spellCheck={false} autoComplete="off" placeholder="64 hex characters" data-testid="badge-protx" />
             </label>
-            <label>
+            <label className="dh-field__label">
               Voting key (WIF). Only the voting key: never the owner or collateral key.
-              <input type="password" value={wif} onChange={(e) => setWif(e.target.value)} spellCheck={false} autoComplete="off" data-testid="badge-wif" />
+              <input className="dh-input" type="password" value={wif} onChange={(e) => setWif(e.target.value)} spellCheck={false} autoComplete="off" data-testid="badge-wif" />
             </label>
-            <label className="check">
+            <label className="check dh-check">
               <input type="checkbox" checked={keepKey} onChange={(e) => setKeepKey(e.target.checked)} />
               <span>
                 Renew every epoch: keep the voting key in this browser, encrypted with your identity key. Anyone who gets your identity key then also gets the voting key. Off:
@@ -214,9 +214,9 @@ export function BadgePage() {
               </span>
             </label>
           </fieldset>
-          <label>
+          <label className="dh-field__label">
             Issuer
-            <select value={issuer?.identityId ?? ''} onChange={(e) => setIssuerId(e.target.value)}>
+            <select className="dh-select" value={issuer?.identityId ?? ''} onChange={(e) => setIssuerId(e.target.value)}>
               {enabled.map((t) => (
                 <option key={t.identityId} value={t.identityId}>
                   {t.name} ({t.url.replace(/^https?:\/\//, '')})
@@ -226,7 +226,7 @@ export function BadgePage() {
           </label>
           <p className="small muted">{ADVANCES_WHEN} You can cancel a pending request below.</p>
           <div className="form-actions">
-            <button type="button" className="btn btn-primary" disabled={busy || !reader || !proTxHash || !wif || !enabled.length || !!blocked} onClick={() => void submit()} data-testid="badge-request">
+            <button type="button" className="btn dh-btn btn-primary dh-btn--primary" disabled={busy || !reader || !proTxHash || !wif || !enabled.length || !!blocked} onClick={() => void submit()} data-testid="badge-request">
               {busy ? 'Preparing…' : 'Get MN badge'}
             </button>
             {blocked && (

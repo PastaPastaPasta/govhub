@@ -56,12 +56,12 @@ export function VoteTracker({ vote, name }: { vote: WatchedVote; name: string })
       {(sendError || cancelText) && (
         <div className="vtrack-actions">
           {sendError && (
-            <button type="button" className="btn btn-s btn-primary" onClick={k.retryNow} data-testid="vote-retry">
+            <button type="button" className="btn dh-btn btn-s dh-btn--sm btn-primary dh-btn--primary" onClick={k.retryNow} data-testid="vote-retry">
               {k.relays.length > 1 ? 'Retry now (tries every relay)' : 'Retry now'}
             </button>
           )}
           {cancelText && (
-            <button type="button" className="btn btn-s" onClick={() => void k.cancel(vote.voteHash).catch(() => {})} disabled={!!k.busy} data-testid="vote-cancel">
+            <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={() => void k.cancel(vote.voteHash).catch(() => {})} disabled={!!k.busy} data-testid="vote-cancel">
               {cancelText}
             </button>
           )}

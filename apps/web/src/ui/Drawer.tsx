@@ -27,7 +27,7 @@ export function Drawer({ open, onClose, title, children, testId, wide = false }:
         <div className="drawer-body">
           <header className="drawer-head">
             <h2 id={testId ? `${testId}-title` : undefined}>{title}</h2>
-            <button type="button" className="icon-btn" onClick={onClose} aria-label="Close">
+            <button type="button" className="icon-btn dh-btn dh-btn--quiet dh-btn--icon" onClick={onClose} aria-label="Close">
               <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
                 <path d="m4.5 4.5 9 9m0-9-9 9" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
               </svg>

@@ -154,7 +154,7 @@ test.describe('vote panel (fixtures)', () => {
     const win = page.getByTestId('vote-success');
     await expect(win).toBeVisible({ timeout: 15_000 });
     await expect(win.getByRole('heading')).toHaveText('The bridge reports your vote is on the network');
-    await expect(win).toContainText('voted ABSTAIN on OrchardPay');
+    await expect(win).toContainText('voted abstain on OrchardPay');
     await expect(step('seen')).toHaveAttribute('data-state', 'done');
     await expect(tracker).toHaveAttribute('data-counted', 'yes', { timeout: 15_000 });
     await expect(step('counted')).toHaveAttribute('data-state', 'done');

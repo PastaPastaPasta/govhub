@@ -18,7 +18,7 @@ function RelayAlert() {
   return (
     <p className="vwarn small vrelays-wait">
       {waiting} vote{waiting === 1 ? '' : 's'} waiting in this browser for a relay.{' '}
-      <button type="button" className="btn btn-s btn-primary" onClick={k.retryNow} data-testid="relays-retry">
+      <button type="button" className="btn dh-btn btn-s dh-btn--sm btn-primary dh-btn--primary" onClick={k.retryNow} data-testid="relays-retry">
         Retry now
       </button>
     </p>
@@ -74,12 +74,12 @@ function VoteRow({ v, name, now }: { v: WatchedVote; name: string; now: number }
       {(cancelText || sendError) && (
         <div className="vrow-actions">
           {sendError && (
-            <button type="button" className="btn btn-s btn-primary" onClick={k.retryNow} data-testid="vote-retry">
+            <button type="button" className="btn dh-btn btn-s dh-btn--sm btn-primary dh-btn--primary" onClick={k.retryNow} data-testid="vote-retry">
               Retry now
             </button>
           )}
           {cancelText && (
-            <button type="button" className="btn btn-s" onClick={() => void k.cancel(v.voteHash).catch(() => {})} disabled={!!k.busy} data-testid="vote-cancel">
+            <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={() => void k.cancel(v.voteHash).catch(() => {})} disabled={!!k.busy} data-testid="vote-cancel">
               {cancelText}
             </button>
           )}
@@ -100,7 +100,7 @@ export function VotesList({ title = 'Votes', showWins = true }: { title?: string
   for (const v of [...k.watched].sort((a, b) => (b.signedAt ?? b.time) - (a.signedAt ?? a.time))) groups.set(v.govHash, [...(groups.get(v.govHash) ?? []), v]);
   const wins = !showWins ? [] : k.celebrations.map((h) => k.watched.find((w) => w.voteHash === h)).filter((w): w is WatchedVote => !!w);
   return (
-    <section className="kr-card" aria-labelledby="votes-title" data-testid="votes-section">
+    <section className="kr-card dh-card" aria-labelledby="votes-title" data-testid="votes-section">
       <header className="kr-card-head">
         <h2 id="votes-title">{title}</h2>
         {k.watched.length > 0 && <span className="small muted">{k.watched.filter(isOpen).length} on the way</span>}

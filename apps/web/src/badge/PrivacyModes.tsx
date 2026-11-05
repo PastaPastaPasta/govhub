@@ -29,7 +29,7 @@ export function PrivacyModes({ value, onChange, av, net, name = 'badge-mode' }: 
       <legend>Privacy</legend>
       {PRIVACY_MODES.map((m) => (
         <div key={m} className="badge-mode">
-          <label className="check">
+          <label className="check dh-check">
             <input type="radio" name={name} checked={value === m} onChange={() => onChange(m)} data-testid={`${name}-${m}`} />
             <span>
               <b>{MODES[m].label}</b>

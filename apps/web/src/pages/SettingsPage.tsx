@@ -80,15 +80,15 @@ function ProfileSettings() {
       <h2 id="profile-title">Network</h2>
       {registry.govContractId && <p className="small">Governance contract <dashhq-hash value={registry.govContractId} label="Governance contract" href={window.dashhq?.href('explorer', '/contract?id=' + encodeURIComponent(registry.govContractId), { network: registry.platformNetwork })}>{registry.govContractId}</dashhq-hash></p>}
       <p className="small muted">Which Dash network Governance shows. Testnet is for trying things; the development profile shows Mainnet proposals on Testnet Platform.</p>
-      <fieldset className="seg profile-switch" ref={radios}>
+      <fieldset className="seg dh-seg profile-switch" ref={radios}>
         <legend className="visually-hidden">Network profile</legend>
         {PROFILE_ORDER.map((id) => {
           const x = PROFILES[id];
           const on = picked === id;
           return (
-            <label key={id} className={[on ? 'on' : '', x.deployed ? '' : 'disabled'].filter(Boolean).join(' ')} title={x.deployed ? x.title : `${x.title}: not yet deployed`}>
+            <label key={id} aria-current={on ? "true" : undefined} className={['dh-field__label', on ? 'on' : '', x.deployed ? '' : 'disabled'].filter(Boolean).join(' ')} title={x.deployed ? x.title : `${x.title}: not yet deployed`}>
               <input
-                type="radio"
+                className="dh-sr" type="radio"
                 name="profile"
                 value={id}
                 checked={on}
@@ -106,7 +106,7 @@ function ProfileSettings() {
       </fieldset>
       {picked !== registry.profile && (
         <div className="form-actions" data-testid="profile-confirm">
-          <button type="button" className="btn btn-primary" onClick={() => {
+          <button type="button" className="btn dh-btn btn-primary dh-btn--primary" onClick={() => {
               run(() => switchProfile(picked), `Switched to ${PROFILES[picked].title}. Data reloads.`);
               backToRadios();
             }}
@@ -115,7 +115,7 @@ function ProfileSettings() {
           </button>
           <button
             type="button"
-            className="btn btn-quiet"
+            className="btn dh-btn btn-quiet dh-btn--quiet"
             onClick={() => {
               setPicked(registry.profile);
               backToRadios();
@@ -135,14 +135,14 @@ function ProfileSettings() {
           <Custom on /> Overrides in Advanced: {[...custom].join(', ')}.{' '}
           <button
             type="button"
-            className="linkish"
+            className="linkish dh-btn dh-btn--link"
             onClick={() => run(() => setRegistry(profileRegistry(registry.profile)), `Overrides removed: back to the ${p.label} profile's settings.`)}
           >
             Use the profile's settings
           </button>
         </p>
       )}
-      <label className="check">
+      <label className="check dh-check">
         <input type="checkbox" checked={mode === 'fixtures'} onChange={(e) => setMode(e.target.checked ? 'fixtures' : 'live')} /> Show demo data (a recorded mainnet snapshot) instead, in this tab
       </label>
     </section>
@@ -180,13 +180,13 @@ function BlockListSettings() {
       </p>
       <fieldset>
         <legend>Lists you follow</legend>
-        <label className="check">
+        <label className="check dh-check">
           <input type="checkbox" checked={!defaultOff} onChange={(e) => setDefaultOff(!e.target.checked)} /> The default list, {registry.forum.moderationName}{' '}
           <span className="mono-ish small break">{registry.forum.moderationIdentityId}</span>
         </label>
-        <label>
+        <label className="dh-field__label">
           Other lists: the identity ids of their owners, one per line
-          <textarea rows={3} className="code" value={lists} onChange={(e) => setLists(e.target.value)} spellCheck={false} />
+          <textarea rows={3} className="code dh-textarea" value={lists} onChange={(e) => setLists(e.target.value)} spellCheck={false} />
         </label>
         <ul className="small muted">
           {moderation.lists.map((l) => (
@@ -199,12 +199,12 @@ function BlockListSettings() {
         {session && moderation.subs.doc && <p className="muted small">While you are signed in, your blockSubs document on Platform decides; changes here are saved to it.</p>}
         <div className="form-actions">
           {!(session && moderation.subs.doc) && (
-            <button type="button" className="btn" disabled={busy} onClick={() => save(false)}>
+            <button type="button" className="btn dh-btn" disabled={busy} onClick={() => save(false)}>
               Save in this browser
             </button>
           )}
           {session && (
-            <button type="button" className="btn btn-primary" disabled={busy} onClick={() => save(true)}>
+            <button type="button" className="btn dh-btn btn-primary dh-btn--primary" disabled={busy} onClick={() => save(true)}>
               Save to Platform (about {formatCredits(cost, true)}; balance {balance === null ? '…' : formatCredits(balance)})
             </button>
           )}
@@ -277,7 +277,7 @@ export function SettingsPage() {
 
   return (
     <section className="settings page-narrow" aria-labelledby="settings-title">
-      <h1 id="settings-title">Settings</h1>
+      <h1 className="dh-page-header__title" id="settings-title">Settings</h1>
       <p className="muted">Settings stay in this browser.</p>
 
       <ProfileSettings />
@@ -306,9 +306,9 @@ export function SettingsPage() {
             </legend>
             <p className="muted small">Core and Platform networks are separate overrides: a mismatched pair reads one network's data with the other's rules, so prefer a profile.</p>
             <div className="row2">
-              <label>
+              <label className="dh-field__label">
                 Core network
-                <select
+                <select className="dh-select"
                   value={draft.coreNetwork}
                   onChange={(e) => {
                     const n = e.target.value as Registry['coreNetwork'];
@@ -319,17 +319,17 @@ export function SettingsPage() {
                   <option value="testnet">testnet</option>
                 </select>
               </label>
-              <label>
+              <label className="dh-field__label">
                 Platform network
-                <select value={draft.platformNetwork} onChange={(e) => set('platformNetwork', e.target.value as Registry['platformNetwork'])}>
+                <select className="dh-select" value={draft.platformNetwork} onChange={(e) => set('platformNetwork', e.target.value as Registry['platformNetwork'])}>
                   <option value="mainnet">mainnet</option>
                   <option value="testnet">testnet</option>
                 </select>
               </label>
             </div>
-            <label>
+            <label className="dh-field__label">
               Governance contract id
-              <input value={draft.govContractId} onChange={(e) => set('govContractId', e.target.value.trim())} spellCheck={false} autoComplete="off" />
+              <input className="dh-input" value={draft.govContractId} onChange={(e) => set('govContractId', e.target.value.trim())} spellCheck={false} autoComplete="off" />
             </label>
           </fieldset>
 
@@ -338,27 +338,27 @@ export function SettingsPage() {
               DAPI nodes for Core data <Custom on={isCustom('dapi', 'platform')} />
             </legend>
             <div className="radios">
-              <label className="check">
+              <label className="check dh-check">
                 <input type="radio" name="dapi" checked={draft.dapi.source === 'quorum'} onChange={() => set('dapi', { ...draft.dapi, source: 'quorum' })} /> Quorum service list
               </label>
-              <label className="check">
+              <label className="check dh-check">
                 <input type="radio" name="dapi" checked={draft.dapi.source === 'manual'} onChange={() => set('dapi', { ...draft.dapi, source: 'manual' })} /> My own nodes
               </label>
             </div>
             {draft.dapi.source === 'quorum' ? (
-              <label>
+              <label className="dh-field__label">
                 Quorum service URL
-                <input type="url" value={draft.dapi.quorumUrl} onChange={(e) => set('dapi', { ...draft.dapi, quorumUrl: e.target.value })} spellCheck={false} />
+                <input className="dh-input" type="url" value={draft.dapi.quorumUrl} onChange={(e) => set('dapi', { ...draft.dapi, quorumUrl: e.target.value })} spellCheck={false} />
               </label>
             ) : (
-              <label>
+              <label className="dh-field__label">
                 Nodes (host:port, one per line)
-                <textarea rows={3} value={draft.dapi.nodes.join('\n')} onChange={(e) => set('dapi', { ...draft.dapi, nodes: lines(e.target.value) })} spellCheck={false} />
+                <textarea className="dh-textarea" rows={3} value={draft.dapi.nodes.join('\n')} onChange={(e) => set('dapi', { ...draft.dapi, nodes: lines(e.target.value) })} spellCheck={false} />
               </label>
             )}
-            <label>
+            <label className="dh-field__label">
               Platform DAPI addresses (optional, https URLs; empty uses the SDK's defaults)
-              <textarea rows={2} value={draft.platform.addresses.join('\n')} onChange={(e) => set('platform', { ...draft.platform, addresses: lines(e.target.value) })} spellCheck={false} />
+              <textarea className="dh-textarea" rows={2} value={draft.platform.addresses.join('\n')} onChange={(e) => set('platform', { ...draft.platform, addresses: lines(e.target.value) })} spellCheck={false} />
             </label>
           </fieldset>
 
@@ -370,33 +370,33 @@ export function SettingsPage() {
             {draft.bridges.length === 0 && <p className="muted">No bridge configured. Lists and tallies come from Platform only.</p>}
             {draft.bridges.map((b, i) => (
               <div key={i} className="bridge-row">
-                <label>
+                <label className="dh-field__label">
                   Name
-                  <input value={b.name} onChange={(e) => setBridge(i, { name: e.target.value })} />
+                  <input className="dh-input" value={b.name} onChange={(e) => setBridge(i, { name: e.target.value })} />
                 </label>
-                <label className="grow">
+                <label className="grow dh-field__label">
                   URL
-                  <input type="url" value={b.httpBase} placeholder="https://bridge.example.org" onChange={(e) => setBridge(i, { httpBase: e.target.value.trim() })} spellCheck={false} />
+                  <input className="dh-input" type="url" value={b.httpBase} placeholder="https://bridge.example.org" onChange={(e) => setBridge(i, { httpBase: e.target.value.trim() })} spellCheck={false} />
                 </label>
-                <label>
+                <label className="dh-field__label">
                   Contract
-                  <input value={b.govContractId} onChange={(e) => setBridge(i, { govContractId: e.target.value.trim() })} spellCheck={false} />
+                  <input className="dh-input" value={b.govContractId} onChange={(e) => setBridge(i, { govContractId: e.target.value.trim() })} spellCheck={false} />
                 </label>
-                <label>
+                <label className="dh-field__label">
                   Identity
-                  <input value={b.bridgeIdentityId} onChange={(e) => setBridge(i, { bridgeIdentityId: e.target.value.trim() })} spellCheck={false} />
+                  <input className="dh-input" value={b.bridgeIdentityId} onChange={(e) => setBridge(i, { bridgeIdentityId: e.target.value.trim() })} spellCheck={false} />
                 </label>
-                <label className="check">
+                <label className="check dh-check">
                   <input type="checkbox" checked={b.enabled} onChange={(e) => setBridge(i, { enabled: e.target.checked })} /> On
                 </label>
-                <button type="button" className="btn btn-quiet" onClick={() => set('bridges', draft.bridges.filter((_, j) => j !== i))}>
+                <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet" onClick={() => set('bridges', draft.bridges.filter((_, j) => j !== i))}>
                   Remove
                 </button>
               </div>
             ))}
             <button
               type="button"
-              className="btn"
+              className="btn dh-btn"
               onClick={() => set('bridges', [...draft.bridges, { name: `bridge ${draft.bridges.length + 1}`, httpBase: '', govContractId: draft.govContractId, bridgeIdentityId: '', enabled: true }])}
             >
               Add a bridge
@@ -407,13 +407,13 @@ export function SettingsPage() {
             <legend>
               Relays and price feed <Custom on={isCustom('relays', 'priceFeed')} />
             </legend>
-            <label>
+            <label className="dh-field__label">
               Relays (one URL per line; each vote goes to one of them)
-              <textarea rows={2} value={draft.relays.map((r) => r.url).join('\n')} onChange={(e) => set('relays', lines(e.target.value).map((url, i) => ({ name: `relay ${i + 1}`, url })))} spellCheck={false} />
+              <textarea className="dh-textarea" rows={2} value={draft.relays.map((r) => r.url).join('\n')} onChange={(e) => set('relays', lines(e.target.value).map((url, i) => ({ name: `relay ${i + 1}`, url })))} spellCheck={false} />
             </label>
-            <label>
+            <label className="dh-field__label">
               Price feed URL (a DASH-USD spot price in Coinbase's JSON; empty turns it off; never used off Mainnet)
-              <input type="url" value={draft.priceFeed?.url ?? ''} onChange={(e) => set('priceFeed', e.target.value ? { name: draft.priceFeed?.name ?? 'price feed', url: e.target.value } : null)} spellCheck={false} />
+              <input className="dh-input" type="url" value={draft.priceFeed?.url ?? ''} onChange={(e) => set('priceFeed', e.target.value ? { name: draft.priceFeed?.name ?? 'price feed', url: e.target.value } : null)} spellCheck={false} />
             </label>
           </fieldset>
 
@@ -422,28 +422,28 @@ export function SettingsPage() {
               Forum and moderation <Custom on={isCustom('forum')} />
             </legend>
             <div className="row2">
-              <label>
+              <label className="dh-field__label">
                 Forum contract
-                <input value={draft.forum.contractId} onChange={(e) => set('forum', { ...draft.forum, contractId: e.target.value.trim() })} spellCheck={false} />
+                <input className="dh-input" value={draft.forum.contractId} onChange={(e) => set('forum', { ...draft.forum, contractId: e.target.value.trim() })} spellCheck={false} />
               </label>
-              <label>
+              <label className="dh-field__label">
                 Moderation (mod) contract
-                <input value={draft.forum.modContractId} onChange={(e) => set('forum', { ...draft.forum, modContractId: e.target.value.trim() })} spellCheck={false} />
+                <input className="dh-input" value={draft.forum.modContractId} onChange={(e) => set('forum', { ...draft.forum, modContractId: e.target.value.trim() })} spellCheck={false} />
               </label>
             </div>
             <div className="row2">
-              <label>
+              <label className="dh-field__label">
                 Default block list: owner identity
-                <input value={draft.forum.moderationIdentityId} onChange={(e) => set('forum', { ...draft.forum, moderationIdentityId: e.target.value.trim() })} spellCheck={false} />
+                <input className="dh-input" value={draft.forum.moderationIdentityId} onChange={(e) => set('forum', { ...draft.forum, moderationIdentityId: e.target.value.trim() })} spellCheck={false} />
               </label>
-              <label>
+              <label className="dh-field__label">
                 Default block list: name
-                <input value={draft.forum.moderationName} onChange={(e) => set('forum', { ...draft.forum, moderationName: e.target.value })} />
+                <input className="dh-input" value={draft.forum.moderationName} onChange={(e) => set('forum', { ...draft.forum, moderationName: e.target.value })} />
               </label>
             </div>
-            <label>
+            <label className="dh-field__label">
               Hosts accepted in URL-embedded ownership claims (https://host/p/&lt;identity&gt;/&lt;name&gt;)
-              <input
+              <input className="dh-input"
                 value={portalsText}
                 onChange={(e) => {
                   setPortalsText(e.target.value);
@@ -455,15 +455,15 @@ export function SettingsPage() {
           </fieldset>
 
           <div className="form-actions">
-            <button type="submit" className="btn btn-primary">
+            <button type="submit" className="btn dh-btn btn-primary dh-btn--primary">
               Save settings
             </button>
-            <button type="button" className="btn" onClick={() => setDraft(registry)}>
+            <button type="button" className="btn dh-btn" onClick={() => setDraft(registry)}>
               Discard changes
             </button>
             <button
               type="button"
-              className="btn btn-quiet"
+              className="btn dh-btn btn-quiet dh-btn--quiet"
               onClick={() => {
                 try {
                   setRegistry(resetRegistry(undefined, registry.profile));
@@ -505,15 +505,15 @@ export function SettingsPage() {
         <section className="form" aria-labelledby="share-title">
           <h2 id="share-title">Export, import and share</h2>
           <div className="form-actions">
-            <button type="button" className="btn" onClick={download}>
+            <button type="button" className="btn dh-btn" onClick={download}>
               Download JSON
             </button>
-            <button type="button" className="btn" onClick={() => setJson(exportRegistry(registry))}>
+            <button type="button" className="btn dh-btn" onClick={() => setJson(exportRegistry(registry))}>
               Show JSON
             </button>
             <button
               type="button"
-              className="btn"
+              className="btn dh-btn"
               onClick={() => {
                 // the app's own URL, base path included (e.g. /govhub/ on a project Pages site)
                 const link = shareLink(registry, new URL(import.meta.env.BASE_URL, location.origin).href);
@@ -527,7 +527,7 @@ export function SettingsPage() {
             >
               Copy share link
             </button>
-            <button type="button" className="btn" onClick={() => fileRef.current?.click()}>
+            <button type="button" className="btn dh-btn" onClick={() => fileRef.current?.click()}>
               Import file
             </button>
             <input
@@ -547,12 +547,12 @@ export function SettingsPage() {
             />
           </div>
           <Message msg={at('share')} />
-          <label>
+          <label className="dh-field__label">
             Settings JSON (paste and import, or copy)
-            <textarea rows={10} className="code" value={json} onChange={(e) => setJson(e.target.value)} spellCheck={false} placeholder={exportRegistry(defaultRegistry()).slice(0, 120) + '…'} />
+            <textarea rows={10} className="code dh-textarea" value={json} onChange={(e) => setJson(e.target.value)} spellCheck={false} placeholder={exportRegistry(defaultRegistry()).slice(0, 120) + '…'} />
           </label>
           <div className="form-actions">
-            <button type="button" className="btn" onClick={() => importText('json', json)} disabled={!json.trim()}>
+            <button type="button" className="btn dh-btn" onClick={() => importText('json', json)} disabled={!json.trim()}>
               Import this JSON
             </button>
           </div>

@@ -160,15 +160,15 @@ export function RecoverFunds() {
           <fieldset className="radios" disabled={!!progress}>
             <legend>Look for funds of</legend>
             {session && (
-              <label className="check">
+              <label className="check dh-check">
                 <input type="radio" name="recover-source" checked={source === 'session'} onChange={() => setSource('session')} /> The account you are signed in to
                 {session.wallet ? ' (its recovery phrase)' : ' (its key)'}
               </label>
             )}
-            <label className="check">
+            <label className="check dh-check">
               <input type="radio" name="recover-source" checked={source === 'phrase'} onChange={() => setSource('phrase')} /> A recovery phrase
             </label>
-            <label className="check">
+            <label className="check dh-check">
               <input type="radio" name="recover-source" checked={source === 'key'} onChange={() => setSource('key')} /> A private key I signed in with (top-ups paid
               while signed in with a key)
             </label>
@@ -177,14 +177,14 @@ export function RecoverFunds() {
             <SecretField label="Recovery phrase (12 or 24 words)" what="the recovery phrase" value={phrase} onChange={setPhrase} testId="recover-phrase" disabled={!!progress} />
           )}
           {source === 'key' && (
-            <label>
+            <label className="dh-field__label">
               Private key (WIF or 64 hex characters)
-              <input type="password" value={keyText} onChange={(e) => setKeyText(e.target.value)} autoComplete="off" spellCheck={false} data-testid="recover-key" disabled={!!progress} />
+              <input className="dh-input" type="password" value={keyText} onChange={(e) => setKeyText(e.target.value)} autoComplete="off" spellCheck={false} data-testid="recover-key" disabled={!!progress} />
             </label>
           )}
-          <label>
+          <label className="dh-field__label">
             Look back to
-            <select value={start} onChange={(e) => setStart(e.target.value as Start)} disabled={!!progress} data-testid="recover-start">
+            <select className="dh-select" value={start} onChange={(e) => setStart(e.target.value as Start)} disabled={!!progress} data-testid="recover-start">
               <option value="default">When Governance started taking payments (block {RECOVERY_START_HEIGHT[network].toLocaleString('en-US')})</option>
               <option value="month">The last 30 days</option>
               <option value="year">The last year (slow)</option>
@@ -192,9 +192,9 @@ export function RecoverFunds() {
             </select>
           </label>
           {start === 'custom' && (
-            <label>
+            <label className="dh-field__label">
               Start at block
-              <input inputMode="numeric" value={custom} onChange={(e) => setCustom(e.target.value.trim())} placeholder={String(RECOVERY_START_HEIGHT[network])} />
+              <input className="dh-input" inputMode="numeric" value={custom} onChange={(e) => setCustom(e.target.value.trim())} placeholder={String(RECOVERY_START_HEIGHT[network])} />
             </label>
           )}
           <p className="muted small">
@@ -207,12 +207,12 @@ export function RecoverFunds() {
               {retryable && !progress && (
                 <>
                   {' '}
-                  <button type="button" className="btn btn-s" onClick={() => void scan(true)} data-testid="recover-retry">
+                  <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={() => void scan(true)} data-testid="recover-retry">
                     Try again
                   </button>{' '}
                   <button
                     type="button"
-                    className="btn btn-quiet btn-s"
+                    className="btn dh-btn btn-quiet dh-btn--quiet btn-s dh-btn--sm"
                     onClick={() => {
                       forget(); // the phrase or key kept in memory for "Try again" is wiped
                       setError(null);
@@ -228,11 +228,11 @@ export function RecoverFunds() {
           )}
           <div className="form-actions">
             {progress ? (
-              <button type="button" className="btn" onClick={cancel}>
+              <button type="button" className="btn dh-btn" onClick={cancel}>
                 Stop
               </button>
             ) : (
-              <button type="submit" className="btn btn-primary" disabled={(source === 'phrase' && !phrase.trim()) || (source === 'key' && !keyText.trim())} data-testid="recover-scan">
+              <button type="submit" className="btn dh-btn btn-primary dh-btn--primary" disabled={(source === 'phrase' && !phrase.trim()) || (source === 'key' && !keyText.trim())} data-testid="recover-scan">
                 Scan for funds
               </button>
             )}
@@ -302,10 +302,10 @@ function Results({ scan, secret, onRescan, onDone }: { scan: RecoveryScan; secre
         ))}
       </ul>
       <div className="form-actions">
-        <button type="button" className="btn" onClick={onRescan} disabled={busy > 0}>
+        <button type="button" className="btn dh-btn" onClick={onRescan} disabled={busy > 0}>
           Scan again
         </button>
-        <button type="button" className="btn btn-quiet" onClick={onDone} disabled={busy > 0} data-testid="recover-done">
+        <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet" onClick={onDone} disabled={busy > 0} data-testid="recover-done">
           Done (forget the phrase or key)
         </button>
       </div>
@@ -429,7 +429,7 @@ function ItemCard({ item, scan, secret, onBusy }: { item: RecoveryItem; scan: Re
               {retry && !busy && (
                 <>
                   {' '}
-                  <button type="button" className="btn btn-s" onClick={() => void run(retry)} data-testid="recover-item-retry">
+                  <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={() => void run(retry)} data-testid="recover-item-retry">
                     Try again
                   </button>
                 </>
@@ -468,29 +468,29 @@ function UseOnPlatform({ opts, scan, busy, onFund }: { opts: ItemOptions; scan: 
   return (
     <div className="form-actions recover-use">
       {opts.create !== null && (
-        <button type="button" className="btn btn-primary" disabled={busy} onClick={() => onFund({ create: true })} data-testid="recover-create">
+        <button type="button" className="btn dh-btn btn-primary dh-btn--primary" disabled={busy} onClick={() => onFund({ create: true })} data-testid="recover-create">
           Create account #{opts.create} with it
         </button>
       )}
       {own && (
-        <button type="button" className="btn" disabled={busy} onClick={() => onFund({ topUp: own })} data-testid="recover-topup-own">
+        <button type="button" className="btn dh-btn" disabled={busy} onClick={() => onFund({ topUp: own })} data-testid="recover-topup-own">
           Top up {short(own)}
         </button>
       )}
       {opts.topUp === 'any' &&
         scan.identities.map((f) => (
-          <button key={f.identityId} type="button" className="btn" disabled={busy} onClick={() => onFund({ topUp: f.identityId })} data-testid="recover-topup-mine">
+          <button key={f.identityId} type="button" className="btn dh-btn" disabled={busy} onClick={() => onFund({ topUp: f.identityId })} data-testid="recover-topup-mine">
             Top up identity #{f.identityIndex} ({short(f.identityId)})
           </button>
         ))}
       {opts.topUp === 'any' && (
         <form className="form recover-topup" onSubmit={submit}>
-          <label>
+          <label className="dh-field__label">
             {scan.identities.length ? 'Or top up another identity' : 'Top up an identity'}
-            <input value={id} onChange={(e) => (setId(e.target.value), setBad(false))} placeholder="identity id (base58)" spellCheck={false} autoComplete="off" data-testid="recover-topup-id" />
+            <input className="dh-input" value={id} onChange={(e) => (setId(e.target.value), setBad(false))} placeholder="identity id (base58)" spellCheck={false} autoComplete="off" data-testid="recover-topup-id" />
           </label>
           {bad && <p className="error small">That is not an identity id.</p>}
-          <button type="submit" className="btn" disabled={busy || !id.trim()} data-testid="recover-topup-other">
+          <button type="submit" className="btn dh-btn" disabled={busy || !id.trim()} data-testid="recover-topup-other">
             Top up this identity
           </button>
         </form>
@@ -515,7 +515,7 @@ function SweepForm({ item, network, busy, onSweep }: { item: RecoveryItem; netwo
   const sent = item.duffs - fee;
   if (!open) {
     return (
-      <button type="button" className="btn" disabled={busy} onClick={() => setOpen(true)} data-testid="recover-sweep-open">
+      <button type="button" className="btn dh-btn" disabled={busy} onClick={() => setOpen(true)} data-testid="recover-sweep-open">
         Send to a Dash address
       </button>
     );
@@ -528,19 +528,19 @@ function SweepForm({ item, network, busy, onSweep }: { item: RecoveryItem; netwo
         if (!problem && to.trim()) onSweep(to);
       }}
     >
-      <label>
+      <label className="dh-field__label">
         Dash address ({network}) to send {item.payments.length > 1 ? 'these payments' : 'this payment'} to
-        <input value={to} onChange={(e) => setTo(e.target.value)} placeholder={network === 'mainnet' ? 'X…' : 'y…'} spellCheck={false} autoComplete="off" data-testid="recover-sweep-to" />
+        <input className="dh-input" value={to} onChange={(e) => setTo(e.target.value)} placeholder={network === 'mainnet' ? 'X…' : 'y…'} spellCheck={false} autoComplete="off" data-testid="recover-sweep-to" />
       </label>
       {problem && <p className="error small">{problem}</p>}
       <p className="small" data-testid="recover-sweep-amount">
         Sends <b>{formatDuffs(sent)}</b>; the network fee is {formatDuffs(fee)}. Check the address: a payment can't be undone.
       </p>
       <div className="form-actions">
-        <button type="submit" className="btn btn-primary" disabled={busy || !to.trim() || !!problem} data-testid="recover-sweep-send">
+        <button type="submit" className="btn dh-btn btn-primary dh-btn--primary" disabled={busy || !to.trim() || !!problem} data-testid="recover-sweep-send">
           {busy ? 'Sending…' : `Send ${formatDuffs(sent)}`}
         </button>
-        <button type="button" className="btn btn-quiet" disabled={busy} onClick={() => setOpen(false)}>
+        <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet" disabled={busy} onClick={() => setOpen(false)}>
           Cancel
         </button>
       </div>
@@ -562,13 +562,13 @@ function ExportKey({ item, scan, secret }: { item: RecoveryItem; scan: RecoveryS
         this key can take what is at {item.address}
         {item.type === 'lock' ? ' and use its asset lock' : ''}. Don't paste it into websites or chats; nobody from Governance will ever ask for it.
       </p>
-      <label className="check">
+      <label className="check dh-check">
         <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} /> I understand anyone with this key can take these funds
       </label>
       {wif === null ? (
         <button
           type="button"
-          className="btn btn-quiet"
+          className="btn dh-btn btn-quiet dh-btn--quiet"
           disabled={!ack}
           onClick={() => {
             try {
@@ -583,14 +583,14 @@ function ExportKey({ item, scan, secret }: { item: RecoveryItem; scan: RecoveryS
         </button>
       ) : (
         <div className="secret-field">
-          <label>
+          <label className="dh-field__label">
             Private key (WIF)
-            <input type={shown ? 'text' : 'password'} readOnly value={wif} autoComplete="off" spellCheck={false} data-testid="recover-wif" data-masked={!shown} />
+            <input className="dh-input" type={shown ? 'text' : 'password'} readOnly value={wif} autoComplete="off" spellCheck={false} data-testid="recover-wif" data-masked={!shown} />
           </label>
-          <button type="button" className="btn btn-quiet" aria-pressed={shown} onClick={() => setShown((v) => !v)}>
+          <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet" aria-pressed={shown} onClick={() => setShown((v) => !v)}>
             {shown ? 'Hide' : 'Show'}
           </button>
-          <button type="button" className="btn btn-quiet" onClick={() => void navigator.clipboard?.writeText(wif)}>
+          <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet" onClick={() => void navigator.clipboard?.writeText(wif)}>
             Copy
           </button>
         </div>

@@ -75,7 +75,7 @@ export function VoteSuccess({ vote, name, proposalName, onRecount }: { vote: Wat
     if (!a || a === document.body || a.closest('[data-testid="vote-composer"]')) ref.current?.focus({ preventScroll: true });
   }, []);
   const outcomeName = OUTCOME_NAME[vote.outcome];
-  const word = outcomeName.toUpperCase();
+  const word = outcomeName;
   const signed = useMemo(
     () =>
       JSON.stringify({ collateralTxid: vote.collateralTxid, collateralIndex: vote.collateralIndex, govHash: vote.govHash, signal: 'funding', outcome: outcomeName, time: vote.time, sig: vote.sig }, null, 2) +
@@ -119,7 +119,7 @@ export function VoteSuccess({ vote, name, proposalName, onRecount }: { vote: Wat
         <details className="vwin-yourself" data-testid="vote-yourself">
           <summary>Check it yourself</summary>
           <div className="vwin-actions">
-            <button type="button" className="btn btn-s btn-primary" onClick={() => void check()} disabled={checking} data-testid="vote-verify">
+            <button type="button" className="btn dh-btn btn-s dh-btn--sm btn-primary dh-btn--primary" onClick={() => void check()} disabled={checking} data-testid="vote-verify">
               {checking ? 'Checking…' : proof ? 'Check again' : 'Verify this vote'}
             </button>
             <span className="vwin-copy">
@@ -134,7 +134,7 @@ export function VoteSuccess({ vote, name, proposalName, onRecount }: { vote: Wat
               </a>
             )}
             {onRecount && (
-              <button type="button" className="btn btn-s btn-quiet" onClick={onRecount}>
+              <button type="button" className="btn dh-btn btn-s dh-btn--sm btn-quiet dh-btn--quiet" onClick={onRecount}>
                 See the full recount
               </button>
             )}

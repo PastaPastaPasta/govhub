@@ -75,7 +75,7 @@ export function ProposalCard({
         {failed ? (
           <FailedNote reason={failed} />
         ) : !row.content.ok ? (
-          <p className="tag tag-fail" title={row.content.problem}>
+          <p className="tag dh-badge tag-fail dh-badge--bad" title={row.content.problem}>
             Published fields don't match the hashed data
           </p>
         ) : urlOwner ? (
@@ -110,9 +110,9 @@ export function ProposalCard({
         {ended ? null : later ? (
           <StartsLaterTag later={later} />
         ) : inBudget ? (
-          <span className="tag tag-pass">In the next budget</span>
+          <span className="tag dh-badge tag-pass dh-badge--good">In the next budget</span>
         ) : row.state?.passing ? (
-          <span className="tag tag-warn" title="Passing, but the budget is full or the next payout is outside its window">
+          <span className="tag dh-badge tag-warn dh-badge--warn" title="Passing, but the budget is full or the next payout is outside its window">
             Not in the next budget
           </span>
         ) : null}
