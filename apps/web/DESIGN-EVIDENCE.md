@@ -79,3 +79,50 @@ What the round-2 reviews (`reviews/round2-opus.md`, `reviews/round2-sol.md`) and
 - **Also:** content aligned to the shell gutter, one account control (the signed-out ⋮ menu is gone), slugs that wrap at hyphens.
 
 Evidence: `shots/r3-gov/` (lab capture), `shots/r3-gov-s2/` (timing logs and journey screenshots).
+
+## Round 4 (5 November 2026)
+
+What the round-3 reviews (`reviews/round3-opus.md`, `reviews/round3-sol.md`) and stream S1 asked of Governance.
+
+- **Vote on this proposal.** Every open proposal leads, right after its ask, with Yes / No / Abstain and the way to sign that fits
+  what the visitor has: an open keyring gets its composer; voting keys pasted for this tab sign here (a copy, wiped once signed) and
+  only the signed vote goes to the relay; anyone else signs offline with the Dash Core `signmessage` command filled in. Nothing new
+  is stored and no key or signature goes into a URL. `src/ui/vote/VoteBlock.tsx`.
+- **Masternode context.** `/masternodes/<protx>` links each proposal with `?mn=<protx>` (a public id): the proposal shows that
+  masternode, its current vote and voting address, and links back. A shared masternode page no longer says "My masternodes", and a
+  visit from Radar goes back to Radar.
+- **Writes in the lab.** A relay answer carrying the read-only preview's stub ends the vote as "Preview: not sent" instead of
+  retrying it as possibly held.
+- **What the treasury funds.** The build reads the linked page of every proposal whose fields hash to its governance hash into
+  `owners.json` (`scripts/ownerpages.mjs`, `src/lib/ownerPages.ts`): on DashCentral its page for that hash (DashCentral's own
+  fields must carry the hash and name; its page for the governance name when the linked slug is wrong), elsewhere the page's title
+  and description. 45 of 45 mainnet proposals on 5 November. Proposal pages quote it as the owner's unverified claims with host and
+  date and a link out; the owner's title heads the page with the on-chain name beside it, and goes into the shared link's
+  description; cards, Past and masternode rows show it quoted and labelled; search matches it. A page is shown only for the link it
+  was read through. The browser never fetches those pages; CSP is unchanged. The fetcher refuses non-public addresses (resolved,
+  pinned, no environment proxy), default ports only, hops checked, size and time bounded; the parser is single-pass.
+- **Sign-in.** Shell 1.5.0 vendored (the phone bar now reads `dashhq / Governance`). The sheet uses `<dashhq-signin-help>` with
+  "Create an account" in its slot, the ways in as `.dh-choice` cards (the unavailable wallet last), and says voting needs no account.
+- **Also:** Active list sorts (payout order, closest to the line, newest, largest request); one check status in the proposal
+  header, keeping an earlier proof of the same tally while it re-runs; one chain chip while checking; Past rows say they are reading;
+  plainer words ("Requests", "Standing", "No verified owner yet", "Most votes: nobody gets it (Lock)"); name contests lead with the
+  voting key when signed out and say when a contender has no other username; shorturl.at links resolve again (a GET when HEAD is
+  refused).
+
+Evidence: before `shots/round3/gov/` (revision `b188cae`); after `shots/r4-gov/` (lab capture) and `shots/r4-gov-s1/` (journeys:
+Radar → masternode → proposal as that masternode → offline command → back to Radar, desktop light and phone dark; sign-in sheet;
+pasted-key and offline paths; owner summaries).
+
+Validation:
+
+- Web: 813 vitest tests in 70 files; typecheck passes. New: the vote block's paths, pasted-key signing (one send at a time, copies
+  wiped, key and view checks), the preview stub, owner-page parsing (hostile 2 MB pages in linear time, DashCentral gates, link
+  binding), list sorts.
+- e2e (fixture suite: auth, badge, fixtures, forum, hosting-ui, prelaunch-polish, profiles, proposal-wizard, recording, tamper,
+  voting): 89 pass, 2 skipped.
+- Lab: `node lab/verify.mjs` 108 checks pass. Browser journeys under `lab/qa-guard.mjs`: no blocked writes, no page errors.
+- Review: three independent reviews of the vote block and owner pages; every finding fixed (`7ef978e`, `9dc4645`, `483002f`,
+  `ff1d0e8`, `c619c14`).
+
+Not tested: a real vote broadcast (the lab blocks writes; the block shows "Preview: not sent"), and a real voting key (the
+pasted-key path is covered by unit tests with a generated key).
