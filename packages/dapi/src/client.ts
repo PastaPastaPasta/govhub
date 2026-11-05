@@ -49,7 +49,12 @@ export class Dapi {
         if (!nodes.length) throw new Error('node source returned no usable nodes');
         this.pool.setNodes(nodes);
       })
-      .catch((e) => { this.#boot = undefined; throw e; });
+      .catch((e) => {
+        const failed = this.#boot;
+        const t = setTimeout(() => { if (this.#boot === failed) this.#boot = undefined; }, o.bootRetryMs ?? 2000);
+        (t as { unref?: () => void }).unref?.();
+        throw e;
+      });
     return this.#boot.then(() => this.pool.list());
   }
 

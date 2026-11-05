@@ -64,9 +64,19 @@ describe('node bootstrap', () => {
   });
   it('a failed bootstrap can be retried', async () => {
     let calls = 0;
-    const d = new Dapi({ fetchNodes: async () => { if (calls++ === 0) throw new Error('down'); return [N(1)]; } });
+    const d = new Dapi({ bootRetryMs: 0, fetchNodes: async () => { if (calls++ === 0) throw new Error('down'); return [N(1)]; } });
     await expect(d.ready()).rejects.toThrow('down');
+    await new Promise((r) => setTimeout(r, 5));
     expect(await d.ready()).toEqual([N(1)]);
+  });
+  it('callers share a failed bootstrap for a while instead of each fetching the list again', async () => {
+    let calls = 0;
+    const d = new Dapi({ bootRetryMs: 60, fetchNodes: async () => { calls++; throw new Error('down'); } });
+    for (let i = 0; i < 5; i++) await expect(d.ready()).rejects.toThrow('down');
+    expect(calls).toBe(1);
+    await new Promise((r) => setTimeout(r, 80));
+    await expect(d.ready()).rejects.toThrow('down');
+    expect(calls).toBe(2);
   });
   it('an empty node source is an error', async () => {
     await expect(new Dapi({ fetchNodes: async () => [] }).ready()).rejects.toThrow(/no usable nodes/);

@@ -32,6 +32,11 @@ export interface DapiOptions {
   nodeListUrl?: string;
   /** Fully custom node source; overrides nodeListUrl. */
   fetchNodes?: () => Promise<string[]>;
+  /**
+   * After a failed node-list fetch, how long every caller shares that failure before the next one fetches again (default 2000 ms).
+   * Without it, each check that runs while the list is unreachable starts a fetch of its own.
+   */
+  bootRetryMs?: number;
   /** Crypto modules for verified results; pass the modules or an async loader to keep them out of the first bundle. */
   verifiers?: Verifiers | (() => Verifiers | Promise<Verifiers>);
   /** Per-node request budget per minute. Default 150. */
