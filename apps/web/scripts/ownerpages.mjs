@@ -34,8 +34,12 @@ function safeUrl(raw) {
 /** Addresses no public page lives at: loopback, private, link-local, CGNAT, documentation, multicast, reserved, unspecified. */
 const PRIVATE = new net.BlockList();
 for (const [a, n] of [['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16], ['172.16.0.0', 12], ['192.0.0.0', 24], ['192.0.2.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15], ['198.51.100.0', 24], ['203.0.113.0', 24], ['224.0.0.0', 3]]) PRIVATE.addSubnet(a, n, 'ipv4');
-for (const [a, n] of [['::', 128], ['::1', 128], ['::ffff:0:0', 96], ['64:ff9b::', 96], ['100::', 64], ['2001:db8::', 32], ['fc00::', 7], ['fe80::', 10], ['ff00::', 8]]) PRIVATE.addSubnet(a, n, 'ipv6');
-const isPublic = ({ address, family }) => !PRIVATE.check(address, family === 6 ? 'ipv6' : 'ipv4');
+// (no ::ffff:0:0/96 here: BlockList matches every IPv4 address against that range; a mapped address is checked as its IPv4 instead)
+for (const [a, n] of [['::', 128], ['::1', 128], ['64:ff9b::', 96], ['100::', 64], ['2001:db8::', 32], ['fc00::', 7], ['fe80::', 10], ['ff00::', 8]]) PRIVATE.addSubnet(a, n, 'ipv6');
+function isPublic({ address, family }) {
+  const mapped = family === 6 ? /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address) : null;
+  return mapped ? !PRIVATE.check(mapped[1], 'ipv4') : !PRIVATE.check(address, family === 6 ? 'ipv6' : 'ipv4');
+}
 
 /** dns.lookup for http(s).get: every address of the name must be public, and the socket connects to one of those. */
 function publicLookup(hostname, options, callback) {
