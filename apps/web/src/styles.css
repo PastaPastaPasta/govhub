@@ -89,9 +89,10 @@ h3 {
   text-wrap: balance;
 }
 h1 {
-  font-size: var(--t-2xl);
-  font-stretch: 112%;
-  font-weight: 700;
+  font-size: 30px;
+  font-stretch: 110%;
+  font-weight: 660;
+  letter-spacing: -0.015em;
 }
 h2 {
   font-size: var(--t-l);
@@ -3103,3 +3104,11 @@ dashhq-hash { vertical-align: middle; max-width: 100%; }
 .contest-voters { max-height: 240px; overflow: auto; }
 .contest-voters ul { list-style: none; padding: 0; margin: 8px 0; }
 .contest-voters li { padding-block: 4px; }
+
+.signin-icon { display: none; }
+@media (max-width: 600px) {
+  .account .btn, .account-btn { width: 40px; height: 40px; min-height: 40px; padding: 0; justify-content: center; border-radius: var(--dh-r2); }
+  .signin-icon { display: block; }
+  .signin-label, .account-name { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .account-chevron { display: none; }
+}

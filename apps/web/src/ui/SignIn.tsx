@@ -58,18 +58,19 @@ export function SessionControl() {
         <button type="button" className="account-btn" popoverTarget="account-menu" id="session-button" data-testid="session-button">
           <Avatar id={session.identityId} size={22} />
           <span className="account-name">{name ?? shortHash(session.identityId, 4)}</span>
-          <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+          <svg width="10" height="10" viewBox="0 0 10 10" className="account-chevron" aria-hidden="true">
             <path d="m2 3.5 3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.4" />
           </svg>
         </button>
       ) : (
         <>
-          <button type="button" className="btn" onClick={openSignIn} id="session-button" data-testid="session-button">
-            {auth.restoring ? 'Signing in…' : 'Sign in'}
+          <button type="button" className="btn" onClick={openSignIn} title="Sign in" id="session-button" data-testid="session-button">
+            <svg className="signin-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><circle cx="12" cy="8" r="4" /><path d="M4 22v-2a8 8 0 0 1 16 0v2" /></svg>
+            <span className="signin-label">{auth.restoring ? 'Signing in…' : 'Sign in'}</span>
           </button>
           <button type="button" className="icon-btn" popoverTarget="account-menu" aria-label="Account and settings" data-testid="menu-button">
             <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-              <path d="M3 5h12M3 9h12M3 13h12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+              <circle cx="9" cy="3.5" r="1.3" fill="currentColor" /><circle cx="9" cy="9" r="1.3" fill="currentColor" /><circle cx="9" cy="14.5" r="1.3" fill="currentColor" />
             </svg>
           </button>
         </>
