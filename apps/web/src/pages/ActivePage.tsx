@@ -16,6 +16,7 @@ import { useReveal } from '../ui/hooks.ts';
 import { useCommentCounts } from '../ui/useCommentCounts.ts';
 import { countNames, proposalHref, type Checked, type Row } from '../lib/view.ts';
 import { onlyUnreached, unfinishedReason } from '../lib/netError.ts';
+import { useOwnerPages } from '../lib/ownerPages.ts';
 
 /** Display names of these identities (self-chosen profiles), for the owners named in proposal URLs. */
 function useProfiles(ids: readonly string[]): ReadonlyMap<string, Profile> {
@@ -33,9 +34,9 @@ function useProfiles(ids: readonly string[]): ReadonlyMap<string, Profile> {
   return map;
 }
 
-/** A search over what a proposal is known by: its name, its payee address, its website. */
-function matches(p: Proposal, needle: string): boolean {
-  return p.name.toLowerCase().includes(needle) || p.paymentAddress.toLowerCase().startsWith(needle) || p.url.toLowerCase().includes(needle);
+/** A search over what a proposal is known by: its name, the owner's title for it, its payee address, its website. */
+function matches(p: Proposal, needle: string, title: string | null | undefined): boolean {
+  return p.name.toLowerCase().includes(needle) || !!title?.toLowerCase().includes(needle) || p.paymentAddress.toLowerCase().startsWith(needle) || p.url.toLowerCase().includes(needle);
 }
 
 type Sort = 'order' | 'new' | 'amount' | 'close';
@@ -108,9 +109,11 @@ export function ActivePage() {
     setParams(next, { replace: true });
   };
   const listed = showFailed ? all : activeRows.shown;
-  const rows = useMemo(() => sorted(needle ? listed.filter((r) => matches(r.item.p.value, needle)) : listed, sort), [listed, needle, sort]);
+  const ownerPages = useOwnerPages();
+  const find = (r: Checked<Row>) => matches(r.item.p.value, needle, r.item.content.ok ? ownerPages.get(r.item.p.value.govHash)?.title : null);
+  const rows = useMemo(() => sorted(needle ? listed.filter(find) : listed, sort), [listed, needle, sort, ownerPages]);
   // a search also finds the lame ducks, listed with the rest instead of behind their toggle
-  const lameDucks = useMemo(() => (needle ? activeRows.lameDucks.filter((r) => matches(r.item.p.value, needle)) : activeRows.lameDucks), [activeRows.lameDucks, needle]);
+  const lameDucks = useMemo(() => (needle ? activeRows.lameDucks.filter(find) : activeRows.lameDucks), [activeRows.lameDucks, needle, ownerPages]);
   const names = useMemo(() => countNames([...all, ...activeRows.lameDucks].map((r) => r.item.p.value)), [all, activeRows.lameDucks]);
   // 12 rows first; the rest in one go once the reader scrolls (rows are tall, so small steps would stall the observer). Search results all show.
   const { count, sentinel, more: moreToReveal } = useReveal(rows.length, 40, undefined, 12);

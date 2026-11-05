@@ -22,6 +22,8 @@ import type { Aggregate } from '../verify/aggregate.ts';
 import { trustScope, useCachedTrust, type StoredTrust } from '../ui/trust/store.ts';
 import { VerificationDrawer } from '../ui/trust/VerificationDrawer.tsx';
 import { mnParam, ProposalVoteBlock } from '../ui/vote/VoteBlock.tsx';
+import { useOwnerPage } from '../lib/ownerPages.ts';
+import { OwnerPageSummary } from '../ui/OwnerPage.tsx';
 import { useAsync } from '../ui/hooks.ts';
 import type { Proposal, Sourced } from '../data/types.ts';
 import { formatDash, formatDate, formatDateTime, formatDuration, formatInt, shortHash, urlHost } from '../lib/format.ts';
@@ -178,6 +180,9 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
   const host = row.content.ok ? urlHost(p.url) : null;
   const short = !!host && isShortLink(host);
   const resolved = useResolvedLink(p.url, short);
+  // what the owner's page said when the site was built: only for the hash-committed link
+  const ownerPage = useOwnerPage(p.govHash);
+  const page = row.content.ok && check.status !== 'failed' ? ownerPage : null;
   const sched = row.schedule;
   const chain = trust.chain.report;
   // The proven threshold replaces the bridge's once the chain is verified.
@@ -219,9 +224,17 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
       <header className="p-hero dh-page-header">
         <p className="dh-page-header__kicker">Proposal</p>
         <div className="p-title dh-page-header__text">
-          <h1 className="dh-page-header__title"><Slug name={p.name} /></h1>
+          <h1 className="dh-page-header__title">{page?.page.title ?? <Slug name={p.name} />}</h1>
 
         </div>
+        {page?.page.title && (
+          <p className="p-chain-name small" data-testid="p-chain-name">
+            <span className="mono-ish">
+              <Slug name={p.name} />
+            </span>{' '}
+            <span className="muted">is its name on the network; the title is the owner’s, from {page.page.host}.</span>
+          </p>
+        )}
         <div className="p-owner">
           <OwnerValue p={p} own={own} />
           <RejectedClaims own={own} />
@@ -263,7 +276,6 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
                     as reported, not verified here
                   </span>
                 )}
-                {/* the vote block below says when voting closes */}
               </p>
             )}
             {t && (
@@ -304,7 +316,13 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
                     <OwnerPost govHash={p.govHash} ownerId={ownerId} post={post} trustLevel={trust.aggregate.level} />
                   </ErrorBoundary>
                 )}
-                {!(post.state?.post && post.state.body !== null) && (
+                {!(post.state?.post && post.state.body !== null) && page && (
+                  <>
+                    <OwnerPageSummary page={page.page} fetchedAt={page.fetchedAt} />
+                    <p className="small muted">The owner can also post a description here, by claiming the proposal.</p>
+                  </>
+                )}
+                {!(post.state?.post && post.state.body !== null) && !page && (
                   <p className="small" data-testid="about-link">
                     {host ? (
                       <>

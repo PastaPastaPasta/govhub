@@ -2,7 +2,8 @@
 // and `/p/<name>` with p/<name>.html (200, no redirect), so a shared link gets its own title, description and share tags
 // while the app itself is unchanged: every file is index.html with a different <head>. Proposals and name contests are
 // listed from public reads at build time (the bridge's HTTP API and Platform, Mainnet), and so is every masternode
-// (/masternodes/<proTxHash>, from the bridge's list). A route that appears after the
+// (/masternodes/<proTxHash>, from the bridge's list). Each proposal's linked page is read too, for what its owner says it is
+// (scripts/ownerpages.mjs, shipped as owners.json, never fetched by the browser). A route that appears after the
 // build still loads, through 404.html with HTTP 404, until the next build (the Pages workflow rebuilds on a schedule).
 //
 // Usage: node scripts/prerender.mjs [distDir]. Env: GOVHUB_SITE_URL (canonical origin, default https://gov.dashhq.org),
@@ -13,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { formatDash, formatDate, formatDateTime, formatInt } from '../src/lib/format.ts';
 import { parseGovParams, paymentSchedule, perPayment } from '../src/lib/governance.ts';
 import { isShortLink } from '../src/lib/shorteners.ts';
+import { ownerPages } from './ownerpages.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.resolve(process.argv[2] ?? path.join(here, '../dist'));
@@ -249,10 +251,26 @@ for (const [route, m] of Object.entries(meta.routes)) {
 }
 
 const [ps, cs, ms] = await Promise.all([settle('proposals', proposals), settle('name contests', contests), settle('masternodes', masternodes)]);
+const links = offline ? {} : await shortLinks(ps);
+await fs.writeFile(path.join(dist, 'links.json'), JSON.stringify({ resolvedAt: now, links }));
+let owners = { fetchedAt: now, pages: {} };
+if (!offline) {
+  let timer;
+  try {
+    owners = await Promise.race([ownerPages(ps, links), new Promise((_, reject) => (timer = setTimeout(() => reject(new Error(`no answer in ${DATA_MS / 1000} s`)), DATA_MS)))]);
+  } catch (e) {
+    console.warn(`prerender: owner pages not read (${e.message})`);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+await fs.writeFile(path.join(dist, 'owners.json'), JSON.stringify(owners));
 const sameName = new Map();
 for (const p of ps) sameName.set(p.name, (sameName.get(p.name) ?? 0) + 1);
 for (const p of ps) {
-  const description = describeProposal(p);
+  // the owner's title, quoted as theirs, ahead of what the network records: a shared link then says what the proposal is for
+  const title = owners.pages[p.govHash]?.title;
+  const description = `${title ? `“${title}” (the owner’s title). ` : ''}${describeProposal(p)}`;
   const canonical = `/p/h/${p.govHash}`;
   await write(canonical, head(template, { route: canonical, record: p.name, description }));
   // a shared name is a chooser page in the app; its own entry says so instead of describing one of them
@@ -261,8 +279,6 @@ for (const p of ps) {
     ? { route: `/p/${p.name}`, record: p.name, description: `${formatInt(shared)} Dash treasury proposals are named ${p.name}. Pick one to see what it asks for and how masternodes voted.` }
     : { route: `/p/${p.name}`, record: p.name, description, canonical }));
 }
-const links = offline ? {} : await shortLinks(ps);
-await fs.writeFile(path.join(dist, 'links.json'), JSON.stringify({ resolvedAt: now, links }));
 const activeCount = ps.filter((p) => p.state === 'active').length;
 for (const m of ms) {
   await write(`/masternodes/${m.proTx}`, head(template, { route: `/masternodes/${m.proTx}`, record: `Masternode ${m.proTx.slice(0, 6)}…${m.proTx.slice(-6)}`, description: describeMasternode(m, activeCount) }));
@@ -270,6 +286,6 @@ for (const m of ms) {
 for (const c of cs) {
   await write(`/names/${c.label}`, head(template, { route: `/names/${c.label}`, record: `${c.label}.dash name contest`, description: describeContest(c) }));
 }
-console.log(`prerender: ${Object.keys(links).length} short links resolved; ${written.size} entry pages (${ps.length} proposals, ${ms.length} masternodes, ${cs.length} name contests${cs.length ? `, ${cs.filter((c) => c.endsAt).length} open` : ''})${offline ? ', offline' : ''}`);
+console.log(`prerender: ${Object.keys(links).length} short links resolved; ${Object.keys(owners.pages).length} owner pages read; ${written.size} entry pages (${ps.length} proposals, ${ms.length} masternodes, ${cs.length} name contests${cs.length ? `, ${cs.filter((c) => c.endsAt).length} open` : ''})${offline ? ', offline' : ''}`);
 // evo-sdk keeps its connections open
 process.exit(0);

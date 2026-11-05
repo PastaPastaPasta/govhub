@@ -17,6 +17,7 @@ import { OUTCOME_LABEL } from '../ui/vote/common.tsx';
 import { useMasternodeVotes, type VoteCell } from '../ui/vote/useMasternodeVotes.ts';
 import { OfflineSign, VoteComposer } from '../ui/VotePanel.tsx';
 import { useKeyring } from '../voting/KeyringContext.tsx';
+import { OwnerTitle } from '../ui/OwnerPage.tsx';
 import '../voting/voting.css';
 
 /** "17 Nov" (the year only when it isn't this one) */
@@ -336,6 +337,7 @@ function MnVoteRow({ row, href, cell, decides, shared, now, per, open, onToggle,
       <tr className={`mnv-row${open ? ' mnv-row-open' : ''}`} data-testid="mn-vote-row" data-govhash={p.govHash}>
         <td role="rowheader" data-label="Proposal" className="dh-rc-title">
           <Link to={`${href}?mn=${proTx}`}><Slug name={p.name} /></Link>
+          {row.content.ok && <OwnerTitle govHash={p.govHash} />}
         </td>
         <td className="r num" data-label="Requests">
           {formatDash(p.paymentAmount)} <span className="muted small">{sched?.oneTime ? 'once' : per}</span>
@@ -352,7 +354,7 @@ function MnVoteRow({ row, href, cell, decides, shared, now, per, open, onToggle,
         <td className="mnv-cell-vote dh-rc-end" data-label="This masternode" data-testid="mn-vote">
           <VoteChip cell={cell} stalled={stalled} />
         </td>
-        <td className={`small mnv-decides${common ? ' mnv-common' : ''}`} data-label="Closes in">
+        <td className={`small mnv-decides${common ? ' mnv-common' : ''}`} data-label="Decided by">
           {decideText}
         </td>
         <td className="mnv-action dh-rc-actions" data-label="Vote">

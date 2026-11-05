@@ -4,6 +4,7 @@
 // coinbase in the verified chain (lib/ledger.ts), named when Governance has the proposal on record. "Proposals" lists the ended
 // proposals Platform holds (newest end first, keyset-paged on endEpoch: repo.ts pastPage) with their outcome from those superblocks.
 import { Slug } from '../ui/Slug.tsx';
+import { OwnerTitle } from '../ui/OwnerPage.tsx';
 import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useRouteTitle } from '../app/title.ts';
@@ -279,7 +280,10 @@ function SbLines({ entry, names }: { entry: LedgerEntry; names: ReadonlyMap<stri
           <tr key={l.payment.index}>
             <td role="rowheader" data-label="Proposal" className="dh-rc-title">
               {l.proposal ? (
-                <Link to={proposalHref(l.proposal as Proposal, names)}><Slug name={l.proposal.name} /></Link>
+                <>
+                  <Link to={proposalHref(l.proposal as Proposal, names)}><Slug name={l.proposal.name} /></Link>
+                  <OwnerTitle govHash={l.proposal.govHash} />
+                </>
               ) : l.candidates.length ? (
                 <span>
                   One of{' '}
@@ -394,7 +398,7 @@ function ProposalsView({ past, ledger, known }: { past: ReturnType<typeof usePas
               <th scope="col">Proposal</th>
               <th scope="col">Ran</th>
               <th scope="col" className="r">
-                Asked
+                Requested
               </th>
               <th scope="col">Outcome</th>
               <th scope="col" className="r">
@@ -415,12 +419,13 @@ function ProposalsView({ past, ledger, known }: { past: ReturnType<typeof usePas
                 <tr key={p.govHash} className={reason ? 'row-invalid' : undefined} data-check={check.status} data-testid="past-row">
                   <td role="rowheader" data-label="Proposal" className="dh-rc-title">
                     <Link to={proposalHref(p, names)}><Slug name={p.name} /></Link>
+                    {!reason && <OwnerTitle govHash={p.govHash} />}
                     {reason && <FailedNote reason={reason} />}
                   </td>
                   <td data-label="Ran ">
                     {formatDate(p.startEpoch)} – {formatDate(p.endEpoch)}
                   </td>
-                  <td className="r" data-label="Asked ">
+                  <td className="r" data-label="Requested ">
                     {formatDash(p.paymentAmount)} <span className="muted small">{per}</span>
                   </td>
                   <td data-label="Outcome" className="dh-rc-end" data-testid="past-outcome">
