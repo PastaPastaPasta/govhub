@@ -87,15 +87,15 @@ export function stepErrors(plan: Plan, step: number): string[] {
 
 function Field({ label, hint, error, children, id }: { label: string; hint?: ReactNode; error?: string | undefined; children: ReactNode; id: string }) {
   return (
-    <div className="pw-field">
+    <div className="pw-field dh-field">
       <label className="dh-field__label" htmlFor={id}>{label}</label>
       {children}
       {error ? (
-        <p className="error small" id={`${id}-err`} data-testid={`${id}-error`}>
+        <p className="error dh-field__error small" id={`${id}-err`} data-testid={`${id}-error`}>
           {error}
         </p>
       ) : hint ? (
-        <p className="muted small" id={`${id}-hint`}>
+        <p className="dh-field__help" id={`${id}-hint`}>
           {hint}
         </p>
       ) : null}
@@ -129,6 +129,8 @@ export function DetailsStep({ draft, plan, setInputs, setStep }: EditProps) {
       <Field id="p-name" label="Short name" error={show('name', 'name')} hint="Up to 40 characters: letters, digits, - and _. It is how the proposal is listed, e.g. dash-docs-2027.">
         <input className="dh-input"
           id="p-name"
+          aria-invalid={Boolean(show('name', 'name'))}
+          aria-describedby={show('name', 'name') ? 'p-name-err' : 'p-name-hint'}
           data-testid="p-name"
           value={i.name}
           maxLength={60}
@@ -141,6 +143,8 @@ export function DetailsStep({ draft, plan, setInputs, setStep }: EditProps) {
       <Field id="p-address" label="Dash address that receives the payments" error={show('paymentAddress', 'address')} hint="A normal Dash address or a multisig (P2SH) address of this network. Double-check it: payments can't be redirected later.">
         <input className="dh-input"
           id="p-address"
+          aria-invalid={Boolean(show('paymentAddress', 'address'))}
+          aria-describedby={show('paymentAddress', 'address') ? 'p-address-err' : 'p-address-hint'}
           data-testid="p-address"
           value={i.paymentAddress}
           autoComplete="off"
@@ -180,6 +184,8 @@ export function DetailsStep({ draft, plan, setInputs, setStep }: EditProps) {
           <Field id="p-url" label="Link" error={touched.url ? plan.errors.url : undefined} hint="No spaces. It is fixed once the fee is paid.">
             <input className="dh-input"
               id="p-url"
+          aria-invalid={Boolean(touched.url && plan.errors.url)}
+          aria-describedby={touched.url && plan.errors.url ? 'p-url-err' : 'p-url-hint'}
               data-testid="p-url"
               type="url"
               value={i.customUrl}
@@ -224,12 +230,14 @@ export function PaymentsStep({ draft, plan, setInputs, setStep }: EditProps) {
       }}
     >
       <Field id="p-amount" label="Amount per payment (DASH)" error={touched || i.amount ? plan.errors.paymentAmount : undefined} hint="Paid at each superblock (the network's payout block) while the proposal has enough yes votes.">
-        <input className="dh-input" id="p-amount" data-testid="p-amount" inputMode="decimal" value={i.amount} autoComplete="off" onChange={(e) => setInputs({ amount: e.target.value })} />
+        <input className="dh-input" id="p-amount" aria-invalid={Boolean((touched || i.amount) && plan.errors.paymentAmount)} aria-describedby={(touched || i.amount) && plan.errors.paymentAmount ? 'p-amount-err' : 'p-amount-hint'} data-testid="p-amount" inputMode="decimal" value={i.amount} autoComplete="off" onChange={(e) => setInputs({ amount: e.target.value })} />
       </Field>
       <div className="row2">
         <Field id="p-first" label="First payment" error={touched && plan.errors.schedule === 'choose the first payment' ? plan.errors.schedule : undefined}>
           <select className="dh-select"
             id="p-first"
+          aria-invalid={Boolean(touched && plan.errors.schedule === 'choose the first payment')}
+          aria-describedby={touched && plan.errors.schedule === 'choose the first payment' ? 'p-first-err' : undefined}
             data-testid="p-first"
             value={i.firstSuperblock ?? ''}
             onChange={(e) => setInputs({ firstSuperblock: e.target.value ? Number(e.target.value) : null })}

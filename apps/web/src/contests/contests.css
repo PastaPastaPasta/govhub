@@ -75,16 +75,7 @@
   max-inline-size: var(--measure);
   margin: 0;
 }
-.contests-search input {
-  font: inherit;
-  font-size: 0.9375rem;
-  color: var(--ink);
-  background: var(--surface);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-m);
-  padding: 0.4375rem 0.75rem;
-  inline-size: min(22rem, 100%);
-}
+.contests-search input { inline-size: min(22rem, 100%); }
 .contests-search {
   inline-size: 100%;
 }
