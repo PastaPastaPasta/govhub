@@ -418,10 +418,10 @@ function ProposalsView({ past, ledger, known }: { past: ReturnType<typeof usePas
                   <td data-label="Outcome" className="dh-rc-end" data-testid="past-outcome">
                     <OutcomeCell o={o} reading={reading} />
                   </td>
-                  <td className={`r${o && o.paid ? '' : ' past-none'}`} data-label={o && o.paid ? 'Received ' : undefined}>
-                    {o && o.paid ? `${o.partial ? 'at least ' : ''}${formatDash(Number(o.total))}` : o && !reading ? '—' : ''}
+                  <td className={`r${o && o.paid ? '' : ' past-none'}`} data-label="Received">
+                    {o && o.paid ? `${o.partial ? 'at least ' : ''}${formatDash(Number(o.total))}` : o && !reading ? '—' : '…'}
                   </td>
-                  <td className="r" data-label={t ? 'Net yes ' : undefined}>
+                  <td className="r" data-label="Net yes">
                     {t ? (
                       formatSigned(absoluteYes(t.value))
                     ) : past.tallies.size || !past.loading ? (
