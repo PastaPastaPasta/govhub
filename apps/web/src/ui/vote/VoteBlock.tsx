@@ -11,15 +11,16 @@ import { SecretField } from '../../auth/SecretField.tsx';
 import { useGuestKeys } from '../../contests/GuestKeys.tsx';
 import type { BridgeVote } from '../../data/bridge.ts';
 import type { Proposal } from '../../data/types.ts';
-import { formatDuration, shortHash } from '../../lib/format.ts';
+import { errText, formatDuration, shortHash } from '../../lib/format.ts';
 import { useKeyring } from '../../voting/KeyringContext.tsx';
 import type { OwnedMasternode } from '../../voting/masternodes.ts';
-import { offlineVoteTime, signPlanned, type CurrentVote, type Outcome } from '../../voting/plan.ts';
-import { relaySummary, voteButtonText } from '../../voting/status.ts';
+import { isOpen, type WatchedVote } from '../../voting/pending.ts';
+import { mnId, offlineVoteTime, signPlanned, type CurrentVote, type Outcome } from '../../voting/plan.ts';
+import { describeVote, relaySummary, voteButtonText } from '../../voting/status.ts';
 import { Link } from '../Link.tsx';
 import { openSignIn } from '../SignIn.tsx';
 import { bridgeVotesFor, latestKnownVote, OfflineSign, OfflineSignBody, OutcomePicker, VoteComposer } from '../VotePanel.tsx';
-import { mnName, OutcomeChip, OUTCOME_LABEL, useLabels } from './common.tsx';
+import { Badge, fmtTime, mnName, OutcomeChip, OUTCOME_LABEL, useLabels } from './common.tsx';
 import { useMasternodeVotes, type MnLookup, type VoteCell } from './useMasternodeVotes.ts';
 import { VoteTracker } from './VoteTracker.tsx';
 import '../../voting/voting.css';
@@ -53,7 +54,10 @@ function VoteBlock({ proposal, ctx, closesIn, onVerify }: { proposal: Proposal; 
   const guest = useGuestKeys();
   const signedIn = !!useForum().session;
   const [outcome, setOutcome] = useState<Outcome | 0>(0);
-  const [way, setWay] = useState<Way>(signedIn ? 'account' : 'offline');
+  const [chosenWay, setWay] = useState<Way>(signedIn ? 'account' : 'offline');
+  // pasted keys are for visitors without an account (signing in wipes them: the keyring takes over)
+  const ways = WAYS.filter((w) => !(signedIn && w.id === 'paste'));
+  const way = ways.some((w) => w.id === chosenWay) ? chosenWay : ways[0]!.id;
   const is = (m: { proTxHash: string; valid: boolean }) => m.valid && (!ctx || m.proTxHash.toLowerCase() === ctx.proTx);
   const keyring = k.status === 'open' && (!ctx || k.mns.owned.some(is) || k.mns.phase === 'loading');
   const pasted = !keyring && guest.status === 'ready' && guest.owned.some(is);
@@ -83,11 +87,12 @@ function VoteBlock({ proposal, ctx, closesIn, onVerify }: { proposal: Proposal; 
           <OfflineSign proposal={proposal} address={address} />
         </>
       ) : pasted ? (
-        <PastedKeyVote proposal={proposal} outcome={outcome} setOutcome={setOutcome} only={ctx?.proTx ?? null} />
+        // a new masternode or another set of pasted keys starts a fresh selection
+        <PastedKeyVote key={`${ctx?.proTx ?? ''}|${guest.keyInfos.map((x) => x.keyId).join()}`} proposal={proposal} outcome={outcome} setOutcome={setOutcome} only={ctx?.proTx ?? null} />
       ) : (
         <>
           <OutcomePicker label="Your vote" value={outcome} onChange={setOutcome} testId="vote-choice" />
-          <WayPicker way={way} setWay={setWay} signedIn={signedIn} />
+          <WayPicker ways={ways} way={way} setWay={setWay} />
           {way === 'offline' ? (
             outcome ? <OfflineSignBody proposal={proposal} address={address} outcome={outcome} /> : null
           ) : way === 'paste' ? (
@@ -144,10 +149,8 @@ const WAYS: Array<{ id: Way; label: string; line: string }> = [
   { id: 'account', label: 'Account', line: 'Your keyring keeps voting keys encrypted on Dash Platform, and can spread votes out over time.' },
 ];
 
-function WayPicker({ way, setWay, signedIn }: { way: Way; setWay(w: Way): void; signedIn: boolean }) {
-  // pasted keys are for visitors without an account (signing in wipes them: the keyring takes over)
-  const ways = WAYS.filter((w) => !(signedIn && w.id === 'paste'));
-  const current = ways.find((w) => w.id === way) ?? ways[0]!;
+function WayPicker({ ways, way, setWay }: { ways: typeof WAYS; way: Way; setWay(w: Way): void }) {
+  const current = ways.find((w) => w.id === way)!;
   return (
     <div className="pvote-ways">
       <p className="pvote-ways-label small muted" id="pvote-ways-label">
@@ -231,66 +234,107 @@ function AccountWay({ ctx }: { ctx: MnContext | null }) {
   );
 }
 
-/** Votes with the keys pasted for this tab: each masternode's vote timed after its latest one we know of, signed here, sent to the relay. */
+/**
+ * Votes with the keys pasted for this tab. One send at a time: the bridge's vote set is read first, then (if the keys and network
+ * are still the ones the visitor chose with) the keys are copied, every vote is signed at once, and the copies are wiped before
+ * anything is sent. Each vote is timed after this masternode's latest known one (Core: one change an hour, the later one wins).
+ */
 function PastedKeyVote({ proposal, outcome, setOutcome, only }: { proposal: Proposal; outcome: Outcome | 0; setOutcome(o: Outcome | 0): void; only: string | null }) {
   const k = useKeyring();
   const guest = useGuestKeys();
   const { registry } = useApp();
   const labels = useLabels();
   const network = k.coreNetwork;
+  const govHash = proposal.govHash;
   const usable = useMemo(() => guest.owned.filter((m) => m.valid), [guest.owned]);
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set(usable.filter((m) => !only || m.proTxHash.toLowerCase() === only).map((m) => m.proTxHash)));
   const chosen = usable.filter((m) => selected.has(m.proTxHash));
   const [votes, setVotes] = useState<{ list: BridgeVote[] | null; error: string | null; loading: boolean }>({ list: null, error: null, loading: true });
   const [nonce, setNonce] = useState(0);
-  const [skipped, setSkipped] = useState<string[]>([]);
+  const [notes, setNotes] = useState<string[]>([]);
+  const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
+  // what the latest render sees: a send that waited on the bridge checks nothing changed meanwhile, and times against our newest votes
+  const latest = useRef({ guest, watched: k.watched, network });
+  latest.current = { guest, watched: k.watched, network };
   useEffect(() => {
     let live = true;
     setVotes((v) => ({ ...v, loading: true }));
-    bridgeVotesFor(registry, proposal.govHash).then(
+    bridgeVotesFor(registry, govHash).then(
       (list) => live && setVotes({ list, error: null, loading: false }),
-      (e: unknown) => live && setVotes({ list: null, error: e instanceof Error ? e.message : String(e), loading: false }),
+      (e: unknown) => live && setVotes({ list: null, error: errText(e), loading: false }),
     );
     return () => {
       live = false;
     };
-  }, [registry, proposal.govHash, nonce]);
+  }, [registry, govHash, nonce]);
   const now = Math.floor(Date.now() / 1000);
   const keyHash = (m: OwnedMasternode) => guest.keyInfos[m.keyIndex]?.pubKeyHash;
-  const current = (m: OwnedMasternode, list: readonly BridgeVote[] | null, at: number): CurrentVote | undefined => {
+  /** Its vote as the bridge's vote set has it (signature checked here); ours on their way are not counted yet. */
+  const counted = (m: OwnedMasternode, list: readonly BridgeVote[] | null, at: number) => {
     const h = keyHash(m);
-    return h ? latestKnownVote(m, proposal.govHash, list, h, k.watched, network, at) : undefined;
+    return h ? latestKnownVote(m, govHash, list, h, [], network, at) : undefined;
   };
+  const latestKnown = (m: OwnedMasternode, list: readonly BridgeVote[] | null, watched: readonly WatchedVote[], at: number) => {
+    const h = keyHash(m);
+    return h ? latestKnownVote(m, govHash, list, h, watched, network, at) : undefined;
+  };
+  const onItsWay = (m: OwnedMasternode, watched: readonly WatchedVote[]) => watched.filter((w) => isOpen(w) && w.govHash === govHash && mnId(w) === mnId(m)).sort((a, b) => b.time - a.time)[0];
+  const held = chosen.filter((m) => offlineVoteTime(now, latestKnown(m, votes.list, k.watched, now)).hourRule);
+
   const go = async () => {
-    if (!outcome) return;
-    setSkipped([]);
-    const copies = guest.copyKeys();
-    if (!copies) return;
-    const signed: Array<{ v: ReturnType<typeof signPlanned>; weight: number; prev: CurrentVote | null }> = [];
-    const skip: string[] = [];
+    if (!outcome || sendingRef.current) return;
+    sendingRef.current = true;
+    setSending(true);
+    setNotes([]);
+    const out: string[] = [];
+    const start = latest.current;
     try {
-      // the vote set as it is now: each vote is timed after this masternode's latest one (Core: one change an hour, the later wins)
-      const list = await bridgeVotesFor(registry, proposal.govHash);
-      const at = Math.floor(Date.now() / 1000);
-      for (const m of chosen) {
-        const cur = current(m, list, at);
-        if (cur?.outcome === outcome) {
-          skip.push(`${mnName(m, labels)} already voted ${OUTCOME_LABEL[outcome]}; nothing was sent for it.`);
-          continue;
-        }
-        const key = copies.keyOf(m);
-        if (!key) continue;
-        const t = offlineVoteTime(at, cur);
-        signed.push({ v: signPlanned({ mn: m, govHash: proposal.govHash, outcome, time: t.time, releaseAt: t.releaseAt, notes: [] }, key.privateKey, key.compressed, network), weight: m.type === 'evo' ? 4 : 1, prev: cur ?? null });
+      let list: BridgeVote[] | null;
+      try {
+        list = await bridgeVotesFor(registry, govHash);
+      } catch (e) {
+        out.push(`Your current votes could not be read from the bridge (${errText(e)}), so nothing was signed.`);
+        return;
       }
-    } catch (e) {
-      skip.push(`Your current votes could not be read from the bridge (${e instanceof Error ? e.message : String(e)}), so nothing was signed.`);
+      const cur = latest.current;
+      if (cur.guest.status !== 'ready' || cur.guest.keyInfos !== start.guest.keyInfos || cur.network !== start.network) {
+        out.push('The pasted keys or the network changed meanwhile, so nothing was signed.');
+        return;
+      }
+      const at = Math.floor(Date.now() / 1000);
+      const plan: Array<{ m: OwnedMasternode; prev: CurrentVote | undefined }> = [];
+      for (const m of chosen) {
+        const mine = onItsWay(m, cur.watched);
+        if (mine?.outcome === outcome) out.push(`${mnName(m, labels)}: the ${OUTCOME_LABEL[outcome]} vote you sent is still on its way, so nothing more was sent.`);
+        else if (!mine && counted(m, list, at)?.outcome === outcome) out.push(`${mnName(m, labels)} already voted ${OUTCOME_LABEL[outcome]}; nothing was sent for it.`);
+        else plan.push({ m, prev: latestKnown(m, list, cur.watched, at) });
+      }
+      if (!plan.length) return;
+      const copies = cur.guest.copyKeys();
+      if (!copies) return;
+      let signed: Array<Parameters<typeof k.submitSigned>[0]> = [];
+      try {
+        for (const { m, prev } of plan) {
+          const key = copies.keyOf(m);
+          if (!key) continue;
+          const t = offlineVoteTime(at, prev);
+          const v = signPlanned({ mn: m, govHash, outcome, time: t.time, releaseAt: t.releaseAt, notes: [] }, key.privateKey, key.compressed, cur.network);
+          signed.push({ ...v, network: cur.network, weight: m.type === 'evo' ? 4 : 1, prev: prev ?? null, ...(t.hourRule ? { hourRule: true } : {}) });
+        }
+      } catch (e) {
+        signed = [];
+        out.push(`Nothing was sent: ${errText(e)}.`);
+      } finally {
+        copies.wipe();
+      }
+      for (const v of signed) await k.submitSigned(v).catch(() => {});
     } finally {
-      copies.wipe();
+      sendingRef.current = false;
+      setSending(false);
+      setNotes(out);
+      setNonce((n) => n + 1);
     }
-    setSkipped(skip);
-    for (const s of signed) await k.submitSigned({ ...s.v, network, weight: s.weight, prev: s.prev }).catch(() => {});
-    setNonce((n) => n + 1);
   };
   const toggle = (m: OwnedMasternode, on: boolean) => {
     const s = new Set(selected);
@@ -299,10 +343,10 @@ function PastedKeyVote({ proposal, outcome, setOutcome, only }: { proposal: Prop
     setSelected(s);
   };
   const relays = relaySummary(k.relays, k.relayHealth);
-  const blocked = !!k.busy || !k.relays.length || !outcome || !chosen.length;
+  const blocked = sending || !!k.busy || !k.relays.length || !outcome || !chosen.length;
   return (
     <div className="vcomp" data-testid="vote-pasted">
-      <OutcomePicker label="Your vote" value={outcome} onChange={setOutcome} testId="vote-choice" />
+      <OutcomePicker label="Your vote" value={outcome} onChange={setOutcome} testId="vote-choice" disabled={sending} />
       <div className="pvote-keys small">
         <p>
           With {usable.length === 1 ? 'the masternode' : `${chosen.length} of the ${usable.length} masternodes`} your pasted key votes for. The key is in this tab’s memory only.{' '}
@@ -312,17 +356,26 @@ function PastedKeyVote({ proposal, outcome, setOutcome, only }: { proposal: Prop
         </p>
         <ul className="vmn-list">
           {usable.map((m) => {
-            const cur = current(m, votes.list, now);
+            const cur = counted(m, votes.list, now);
+            const mine = onItsWay(m, k.watched);
+            const v = mine ? describeVote(mine, now, fmtTime) : null;
             return (
               <li key={m.proTxHash} className={`vmn${selected.has(m.proTxHash) ? ' vmn-on' : ''}`} data-testid="vote-mn-row" data-protx={m.proTxHash}>
                 <label className="vmn-pick dh-field__label">
-                  {usable.length > 1 && <input type="checkbox" checked={selected.has(m.proTxHash)} onChange={(e) => toggle(m, e.target.checked)} aria-label={`Vote with ${mnName(m, labels)}`} />}
+                  {usable.length > 1 && <input type="checkbox" checked={selected.has(m.proTxHash)} onChange={(e) => toggle(m, e.target.checked)} disabled={sending} aria-label={`Vote with ${mnName(m, labels)}`} />}
                   <span className="vmn-name">{mnName(m, labels)}</span>
                   {m.type === 'evo' && <span className="chip vmn-evo">Evonode ×4</span>}
                 </label>
-                <span className="vmn-cur" data-testid="current-vote">
-                  <span className="vmn-k">Now</span> {votes.loading ? <span className="muted">…</span> : votes.error ? <span className="muted">couldn’t read</span> : <OutcomeChip outcome={cur?.outcome} />}
-                </span>
+                <div className="vmn-state">
+                  <span className="vmn-cur" data-testid="current-vote">
+                    <span className="vmn-k">Now</span> {votes.loading ? <span className="muted">…</span> : votes.error ? <span className="muted">couldn’t read</span> : <OutcomeChip outcome={cur?.outcome} />}
+                  </span>
+                  {mine && v && (
+                    <span className="vmn-pend" data-testid="pending-vote">
+                      <span className="vmn-k">Sent</span> <OutcomeChip outcome={mine.outcome} muted /> <Badge tone={v.tone}>{v.badge}</Badge>
+                    </span>
+                  )}
+                </div>
               </li>
             );
           })}
@@ -330,11 +383,17 @@ function PastedKeyVote({ proposal, outcome, setOutcome, only }: { proposal: Prop
       </div>
       <div className="vgo">
         {network === 'mainnet' && <p className="small muted">Mainnet · real DASH</p>}
-        <button type="button" className="btn dh-btn btn-primary dh-btn--primary btn-l dh-btn--lg vgo-btn" disabled={blocked} onClick={() => void go()} data-testid="vote-send">
-          {k.busy?.startsWith('Sending') ? 'Sending…' : !chosen.length ? 'Select a masternode' : voteButtonText(outcome, chosen.length, false)}
+        <button type="button" className="btn dh-btn btn-primary dh-btn--primary btn-l dh-btn--lg vgo-btn" disabled={blocked} aria-busy={sending || undefined} onClick={() => void go()} data-testid="vote-send">
+          {sending ? 'Signing and sending…' : !chosen.length ? 'Select a masternode' : voteButtonText(outcome, chosen.length, false)}
         </button>
-        {outcome !== 0 && chosen.length > 0 && <p className={`vgo-sum small ${relays.warn ? 'vwarn' : 'muted'}`}>{relays.text}</p>}
-        {skipped.map((s) => (
+        {outcome !== 0 && held.length > 0 && (
+          <p className="small vwarn" data-testid="vote-hour-rule">
+            {held.length === 1 ? `${mnName(held[0]!, labels)} voted on this proposal` : `${held.length} of these masternodes voted on it`} less than an hour ago. Core accepts one change an
+            hour, so the relay holds the new vote until then.
+          </p>
+        )}
+        {((outcome !== 0 && chosen.length > 0) || !k.relays.length) && <p className={`vgo-sum small ${relays.warn ? 'vwarn' : 'muted'}`}>{relays.text}</p>}
+        {notes.map((s) => (
           <p key={s} className="small muted">
             {s}
           </p>

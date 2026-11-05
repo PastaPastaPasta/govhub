@@ -54,7 +54,7 @@ export function useCurrentVotes(govHashes: string[], nonce = 0): { votes: Map<st
 const OUTCOMES: Outcome[] = [1, 2, 3];
 
 /** Yes / No / Abstain as one radio group: arrow keys move, Space/Enter pick; clicking the picked one again clears it (when allowed). */
-export function OutcomePicker({ value, onChange, label, size = 'l', clearable = false, testId }: { value: Outcome | 0; onChange(o: Outcome | 0): void; label: string; size?: 'l' | 's'; clearable?: boolean; testId?: string }) {
+export function OutcomePicker({ value, onChange, label, size = 'l', clearable = false, testId, disabled = false }: { value: Outcome | 0; onChange(o: Outcome | 0): void; label: string; size?: 'l' | 's'; clearable?: boolean; testId?: string; disabled?: boolean }) {
   const focusable = value || 1;
   const key = (e: KeyboardEvent<HTMLButtonElement>, o: Outcome) => {
     const d = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
@@ -74,6 +74,7 @@ export function OutcomePicker({ value, onChange, label, size = 'l', clearable = 
           aria-checked={value === o}
           tabIndex={focusable === o ? 0 : -1}
           data-outcome={o}
+          disabled={disabled}
           className={`vpick-opt vpick-${o}`}
           onClick={() => onChange(clearable && value === o ? 0 : o)}
           onKeyDown={(e) => key(e, o)}

@@ -193,6 +193,9 @@ describe('B-S1-1: the relay stored the vote, the browser lost its answer as a ne
     const view = describeVote(v, NOW, fmt);
     expect(view.badge).toBe('Preview: not sent');
     expect(view.line).toMatch(/nothing reached a relay or the network/);
+    // a 5xx carrying the flag (the preview's own proxy failing) proves nothing: retried, maybe at the relay
+    r.answer({ status: 502, body: { localPreview: true, error: 'LAB_PROXY_ERROR' } });
+    expect((await submitToRelays(vote(), [R1], sendDeps)).maybeAt).toEqual([R1]);
   });
 
   it('a request that was never made (an unusable relay URL) is not sent', async () => {

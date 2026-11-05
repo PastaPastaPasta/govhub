@@ -21,6 +21,7 @@ const hold = vi.hoisted(() => ({
   session: null as unknown,
   wiped: 0,
   submitted: [] as Array<Record<string, unknown>>,
+  bridge: (async () => null) as () => Promise<unknown>,
 }));
 vi.mock('../../voting/KeyringContext.tsx', () => ({ useKeyring: () => hold.keyring }));
 vi.mock('../../contests/GuestKeys.tsx', () => ({ useGuestKeys: () => hold.guest }));
@@ -37,7 +38,7 @@ vi.mock('../VotePanel.tsx', async (orig) => ({
   OfflineSignBody: ({ address, outcome }: { address: string; outcome: number }) => <p data-testid="offline">{`offline ${address} ${outcome}`}</p>,
   OfflineSign: () => null,
   VoteComposer: ({ onlyMn }: { onlyMn?: string }) => <p data-testid="composer">{`composer ${onlyMn ?? 'all'}`}</p>,
-  bridgeVotesFor: async () => null,
+  bridgeVotesFor: () => hold.bridge(),
 }));
 
 const { ProposalVoteBlock } = await import('./VoteBlock.tsx');
@@ -73,6 +74,7 @@ beforeEach(() => {
   hold.session = null;
   hold.wiped = 0;
   hold.submitted = [];
+  hold.bridge = async () => null;
 });
 
 describe('Vote on this proposal', () => {
@@ -127,6 +129,50 @@ describe('Vote on this proposal', () => {
     // the signature is by the pasted key over exactly this vote
     const signer = recoverVoteSigner(v.sig as string, { collateralTxid: MN.collateralTxid, collateralIndex: 0, govHashDisplay: P.govHash, signal: 1, outcome: 3, time: v.time as number }, 'mainnet');
     expect(signer && Buffer.from(signer.keyId).toString('hex')).toBe(votingKeyInfos([{ privateKey: KEY, compressed: true, label: '' }])[0]!.keyId);
+    await r.unmount();
+  });
+
+  it('pasted keys: one send at a time, and nothing is signed when the keys change while the bridge answers', async () => {
+    hold.guest = pasted();
+    let answer!: (v: null) => void;
+    hold.bridge = () => new Promise((r) => (answer = r));
+    const tree = () => (
+      <MemoryRouter initialEntries={[`/p/dash-thing?mn=${PRO}`]}>
+        <ProposalVoteBlock proposal={P} mn={PRO} closesIn={86400} onVerify={() => {}} />
+      </MemoryRouter>
+    );
+    const r = await render(tree());
+    await flush();
+    answer(null);
+    await flush();
+    await pick(r.el, 'Yes');
+    const send = r.el.querySelector<HTMLButtonElement>('[data-testid="vote-send"]')!;
+    await click(send);
+    expect(send.disabled).toBe(true);
+    expect(send.textContent).toBe('Signing and sending…');
+    await click(send); // ignored while the first one runs
+    hold.guest = pasted(); // pasted again (new key infos) while the bridge is slow
+    await r.rerender(tree());
+    answer(null);
+    await flush();
+    expect(hold.submitted).toHaveLength(0);
+    expect(hold.wiped).toBe(0); // never copied
+    expect(r.el.textContent).toContain('The pasted keys or the network changed meanwhile, so nothing was signed.');
+    await r.unmount();
+  });
+
+  it('pasted keys: "Now" is the bridge\'s vote; one of ours still on its way shows as sent, and the same choice is not sent twice', async () => {
+    hold.guest = pasted();
+    hold.keyring = keyring({ watched: [{ proTxHash: PRO, collateralTxid: MN.collateralTxid, collateralIndex: 0, govHash: P.govHash, outcome: 1, time: 100, releaseAt: 100, sig: '', voteHash: 'ff'.repeat(32), refs: [], status: 'held', rebroadcasts: 0, signedAt: 100 }] });
+    const r = await view(PRO);
+    await flush();
+    expect(r.el.querySelector('[data-testid="current-vote"]')?.textContent).toContain('Not voted');
+    expect(r.el.querySelector('[data-testid="pending-vote"]')?.textContent).toContain('Yes');
+    await pick(r.el, 'Yes');
+    await click(r.el.querySelector<HTMLButtonElement>('[data-testid="vote-send"]')!);
+    await flush();
+    expect(hold.submitted).toHaveLength(0);
+    expect(r.el.textContent).toContain('the Yes vote you sent is still on its way');
     await r.unmount();
   });
 
