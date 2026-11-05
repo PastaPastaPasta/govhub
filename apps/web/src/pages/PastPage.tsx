@@ -3,6 +3,7 @@
 // "Payments" (default) is the ledger: superblock by superblock, newest first, the treasury payments read from each superblock's
 // coinbase in the verified chain (lib/ledger.ts), named when Governance has the proposal on record. "Proposals" lists the ended
 // proposals Platform holds (newest end first, keyset-paged on endEpoch: repo.ts pastPage) with their outcome from those superblocks.
+import { Slug } from '../ui/Slug.tsx';
 import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useRouteTitle } from '../app/title.ts';
@@ -261,14 +262,14 @@ function SbLines({ entry, names }: { entry: LedgerEntry; names: ReadonlyMap<stri
           <tr key={l.payment.index}>
             <th scope="row">
               {l.proposal ? (
-                <Link to={proposalHref(l.proposal as Proposal, names)}>{l.proposal.name}</Link>
+                <Link to={proposalHref(l.proposal as Proposal, names)}><Slug name={l.proposal.name} /></Link>
               ) : l.candidates.length ? (
                 <span>
                   One of{' '}
                   {l.candidates.map((c, i) => (
                     <span key={c.govHash}>
                       {i > 0 && ' or '}
-                      <Link to={proposalHref(c as Proposal, names)}>{c.name}</Link>
+                      <Link to={proposalHref(c as Proposal, names)}><Slug name={c.name} /></Link>
                     </span>
                   ))}
                   <span className="small muted"> (same payee and amount)</span>
@@ -280,7 +281,7 @@ function SbLines({ entry, names }: { entry: LedgerEntry; names: ReadonlyMap<stri
                     {l.samePayee ? (
                       <>
                         {' '}
-                        not on record; same payee as <Link to={proposalHref(l.samePayee as Proposal, names)}>{l.samePayee.name}</Link>
+                        not on record; same payee as <Link to={proposalHref(l.samePayee as Proposal, names)}><Slug name={l.samePayee.name} /></Link>
                       </>
                     ) : (
                       ' not on record'
@@ -391,7 +392,7 @@ function ProposalsView({ past, ledger }: { past: ReturnType<typeof usePastPropos
               return (
                 <tr key={p.govHash} className={reason ? 'row-invalid' : undefined} data-check={check.status} data-testid="past-row">
                   <th scope="row">
-                    <Link to={proposalHref(p, names)}>{p.name}</Link>
+                    <Link to={proposalHref(p, names)}><Slug name={p.name} /></Link>
                     {reason && <FailedNote reason={reason} />}
                   </th>
                   <td data-label="Ran ">

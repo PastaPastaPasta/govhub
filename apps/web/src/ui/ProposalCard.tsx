@@ -1,5 +1,6 @@
 // One proposal in a list: who asks, how much, and whether it gets funded. Three zones side by side on wide screens, stacked on
 // narrow ones. The trust mark is the last full result of the proposal page (ui/trust/store.ts), when it still applies.
+import { Slug } from './Slug.tsx';
 import type { Profile } from '@govhub/forum';
 import { Link } from './Link.tsx';
 import { useApp } from '../app/context.tsx';
@@ -68,7 +69,7 @@ export function ProposalCard({
       <div className="prow-main">
         {/* h2: the list's heading is the page's h1 (a skipped level breaks heading navigation) */}
         <h2 className="prow-title">
-          <Link to={href}>{p.name}</Link>
+          <Link to={href}><Slug name={p.name} /></Link>
           {mark && <TrustBadge size="s" level={mark.level} reason={mark.reason} testId="card-trust" />}
         </h2>
         {failed ? (

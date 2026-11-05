@@ -14,8 +14,8 @@ import { WriteError } from './WriteError.tsx';
 export const openSignIn = () => window.dispatchEvent(new Event(OPEN_SIGNIN_EVENT));
 
 /**
- * The account control. Signed out: "Sign in" (opens the sheet) and a small menu for settings. Signed in: the identity, which opens
- * the account menu (balance, profile, top-up, passkeys, settings, sign out).
+ * The account control, in the shell bar's account slot. Signed out: "Sign in" alone (Settings and About are in the footer). Signed in:
+ * the identity, which opens the account menu (balance, profile, top-up, passkeys, settings, sign out).
  */
 export function SessionControl() {
   const { forum, session, balance } = useForum();
@@ -68,11 +68,6 @@ export function SessionControl() {
             <svg className="signin-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><circle cx="12" cy="8" r="4" /><path d="M4 22v-2a8 8 0 0 1 16 0v2" /></svg>
             <span className="signin-label">{auth.restoring ? 'Signing in…' : 'Sign in'}</span>
           </button>
-          <button type="button" className="icon-btn" popoverTarget="account-menu" aria-label="Account and settings" data-testid="menu-button">
-            <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-              <circle cx="9" cy="3.5" r="1.3" fill="currentColor" /><circle cx="9" cy="9" r="1.3" fill="currentColor" /><circle cx="9" cy="14.5" r="1.3" fill="currentColor" />
-            </svg>
-          </button>
         </>
       )}
       <div ref={menu} id="account-menu" popover="auto" className="account-menu" aria-label="Account and settings">
@@ -92,7 +87,6 @@ export function SessionControl() {
         {session && item('Edit profile', () => dialog.current?.showModal())}
         {session && auth.session && item('Top up', () => auth.openSheet('topup'))}
         {session && auth.session && item('Add passkey', () => auth.openSheet('passkeys'))}
-        {!session && item('Sign in or create an account', openSignIn)}
         {session && (
           <Link className="menu-item" to="/masternodes#mn-badge" onClick={hide} data-testid="menu-badge">
             Masternode badge

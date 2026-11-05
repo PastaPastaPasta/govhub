@@ -2,6 +2,7 @@
 // (from the snapshot the app already holds); this masternode's vote fills into each row as the bridge answers. Each row has the way
 // to vote that fits: the keyring's own vote panel when the keyring holds this masternode, offline signing with its voting address
 // filled in otherwise. Radar links here (and to /masternodes?proTx=, which redirects here).
+import { Slug } from '../ui/Slug.tsx';
 import { Fragment, useId, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useApp } from '../app/context.tsx';
@@ -136,7 +137,12 @@ function MasternodeVotes({ proTx }: { proTx: string }) {
           <p>
             <b>This masternode isn't in the {network} masternode list.</b>
           </p>
-          <p className="small">It may have been removed, or it is on the other network. The list is the governance bridge's, at block {formatInt(v.lookup.height)}.</p>
+          <p className="small">
+            It may have been removed, or it is on the other network. The list is the governance bridge's, at block {formatInt(v.lookup.height)}.{' '}
+            <a href={`?network=${registry.coreNetwork === 'testnet' ? 'mainnet' : 'testnet'}`} data-testid="mn-other-network">
+              Look on {registry.coreNetwork === 'testnet' ? 'Mainnet' : 'Testnet'}
+            </a>
+          </p>
         </div>
       )}
       {v.lookup.kind === 'no-bridge' && (
@@ -305,7 +311,7 @@ function MnVoteRow({ row, href, cell, decides, shared, now, per, open, onToggle,
     <Fragment>
       <tr className={`mnv-row${open ? ' mnv-row-open' : ''}`} data-testid="mn-vote-row" data-govhash={p.govHash}>
         <th scope="row">
-          <Link to={href}>{p.name}</Link>
+          <Link to={href}><Slug name={p.name} /></Link>
         </th>
         <td className="r num" data-label="">
           {formatDash(p.paymentAmount)} <span className="muted small">{sched?.oneTime ? 'once' : per}</span>
