@@ -4,6 +4,8 @@ import type { Profile } from '@govhub/forum';
 import { EVONODE_WEIGHT } from '@govhub/verify';
 import { useEffect, useMemo, useState } from 'react';
 import { Navigate, useLocation, useParams } from 'react-router-dom';
+import { MovedFromVote } from '../contests/MovedFromVote.tsx';
+import { useTitle } from '../app/title.ts';
 import { Link } from '../ui/Link.tsx';
 import { useForum } from '../app/forum.tsx';
 import { AuthorName, Avatar } from '../ui/Identity.tsx';
@@ -34,19 +36,37 @@ export function ContestPage() {
         Only names of 3 to 19 letters, hyphens, 0 and 1 (after o becomes 0 and i and l become 1) can be contested.
       </Missing>
     );
-  return <ContestView label={label} />;
+  return (
+    <>
+      <MovedFromVote />
+      <ContestView label={label} />
+    </>
+  );
 }
 
-function Missing({ label, children }: { label: string; children: string }) {
+const networkLabel = (n: string) => (n === 'testnet' ? 'Testnet' : 'Mainnet');
+
+/** `network`: where it was looked for; the other network is offered (old EvoVote bookmarks carry no network, so they land on Mainnet). */
+function Missing({ label, children, network }: { label: string; children: string; network?: string }) {
+  useTitle(`No contest for ${label}.dash`);
+  const other = network === 'testnet' ? 'mainnet' : network ? 'testnet' : null;
   return (
-    <section className="page-narrow">
+    <section className="page-narrow" data-testid="contest-missing">
       <h1>No contest for {label}.dash</h1>
       <p>
         {children} <Link to="/names">All name contests</Link>
       </p>
+      {other && (
+        <p>
+          <Link to={`${contestHref(label)}?network=${other}`} data-testid="contest-other-network">
+            Look on {networkLabel(other)} →
+          </Link>
+        </p>
+      )}
     </section>
   );
 }
+
 
 /** DPNS names and self-chosen profiles of these identities, best effort (an identity without either shows its short id). */
 function useIdentities(ids: readonly string[]): { names: ReadonlyMap<string, string>; profiles: ReadonlyMap<string, Profile> } {
@@ -101,6 +121,7 @@ function ContestView({ label }: { label: string }) {
   const contenderKey = s ? s.contenders.map((c) => c.identityId).sort().join(',') : '';
   const featured = useMemo(() => contenders(contenderKey ? contenderKey.split(',') : []), [contenderKey]);
   const phase = s ? phaseOf(s, endsAt, nowMs) : null;
+  useTitle(`${s ? displayName(s, label) : label}.dash name contest`);
   useEffect(() => {
     if (phase !== 'closing') return;
     let live = true;
@@ -137,7 +158,12 @@ function ContestView({ label }: { label: string }) {
       </p>
     );
   if (!s) return <ReadError error={state.error ?? 'no answer'} what="Platform" lead="The contest could not be read" onRetry={() => setAttempt((n) => n + 1)} />;
-  if (s.contenders.length === 0 && s.total === 0 && !s.outcome) return <Missing label={label}>{`Platform has no record of a vote on this name on ${src.network}.`}</Missing>;
+  if (s.contenders.length === 0 && s.total === 0 && !s.outcome)
+    return (
+      <Missing label={label} network={src.network}>
+        {`Platform has no record of a vote on this name on ${networkLabel(src.network)}.`}
+      </Missing>
+    );
 
   const name = displayName(s, label);
   const regAs = registersAs(name, label);

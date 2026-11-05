@@ -1,5 +1,7 @@
 // /names: contested usernames. Open contests come from one query and lead the page; ended ones (hundreds on mainnet) sit in a
 // collapsed section that reads nothing until it is opened, then pages through the names, loading tallies only for rows on screen.
+import { MovedFromVote } from '../contests/MovedFromVote.tsx';
+import { useRouteTitle } from '../app/title.ts';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { ReadError } from '../ui/ReadError.tsx';
 import { useAsync, useReveal } from '../ui/hooks.ts';
@@ -91,6 +93,7 @@ function useSettled<T>(value: T, ms: number): T {
 }
 
 export function ContestsPage() {
+  useRouteTitle('/names');
   const src = useContestSource();
   const nowMs = useClockMs();
   const [attempt, setAttempt] = useState(0);
@@ -113,6 +116,7 @@ export function ContestsPage() {
   return (
     <section aria-labelledby="names-title" className="list-section contests">
       <div className="list-head">
+        <MovedFromVote />
         <h1 id="names-title">Name contests</h1>
         <p className="muted contests-intro">Masternodes decide who gets a contested name. Open contests close soonest first.</p>
         <details className="learn"><summary>How name contests work</summary>
