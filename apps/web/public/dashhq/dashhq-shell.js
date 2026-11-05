@@ -1,4 +1,4 @@
-/*! dashhq-shell 1.5.3 | family bar, footer, hash display, sign-in help and theme for dashhq.org tools | MIT */
+/*! dashhq-shell 1.6.1 | family bar, footer, hash display, sign-in help, not-found and moved notices, and theme for dashhq.org tools | MIT */
 /* Load as a classic, blocking script in <head>, before any stylesheet that depends on [data-theme]:
      <script src="/dashhq/dashhq-shell.js"></script>
    CSP: needs only script-src 'self'. No inline script, no eval, no innerHTML, no style attributes,
@@ -7,7 +7,7 @@
   'use strict';
   if (window.dashhq && window.dashhq.version) return;
 
-  const VERSION = '1.5.3';
+  const VERSION = '1.6.1';
   const doc = document;
   const root = doc.documentElement;
   const host = location.hostname;
@@ -44,6 +44,12 @@
   const ALSO = ['arch', 'fees', 'dapi'];
   // Products folded into another one: family menus link straight to the new home instead of the old host's notice.
   const MOVED = { fees: ['explorer', '/tools/fees/'] };
+  // The door a product is: only a door's own products mark it current. Architecture, the DAPI console, the retired
+  // tools and the apps mark their own entry under Also or Apps, never Explorer's or Governance's door.
+  const doorOf = (key) => {
+    const d = DOORS.find((x) => PRODUCTS[x.key] === PRODUCTS[key] || (x.steps && x.steps.includes(key)));
+    return d ? d.door : null;
+  };
   // The hub's page that explains identities, keys and each app's sign-in (linked from <dashhq-signin-help>).
   const IDENTITY_PATH = '/identity/';
 
@@ -75,6 +81,13 @@
     if (n === 'mainnet') return 'Mainnet';
     if (n === 'testnet') return 'Testnet';
     return n && n.startsWith('devnet-') ? 'Devnet ' + n.slice(7) : '';
+  }
+  // The family's order, whatever order a site passes: Mainnet, Testnet, then devnets A to Z. In a menu where a
+  // mis-click means real money or practice money, the same position always means the same network.
+  function sortNetworks(list) {
+    const rank = (n) => (n === 'mainnet' ? 0 : n === 'testnet' ? 1 : 2);
+    return [...new Set([...(list || [])].map(parseNetwork).filter(Boolean))]
+      .sort((a, b) => rank(a) - rank(b) || (a < b ? -1 : a > b ? 1 : 0));
   }
   // ?network= wins; the legacy ?net= is read so old links keep working. Absent means mainnet.
   function networkFromUrl(u) {
@@ -109,6 +122,20 @@
     return n || networkFromUrl();
   }
   const netChanged = () => [...netListeners].forEach((fn) => fn());
+
+  // A record that isn't on this network: look on the others, in the family's order. exists(network, signal) resolves
+  // true or false; a throw counts as "couldn't check". Resolves to the first network that has it, 'none' when every
+  // other network said no, or 'unknown' when none had it and at least one couldn't be asked.
+  async function findElsewhere(exists, opts) {
+    const o = opts || {};
+    const here = parseNetwork(o.network) || activeNetwork();
+    let unknown = false;
+    for (const n of sortNetworks(o.networks || ['mainnet', 'testnet']).filter((x) => x !== here)) {
+      if (o.signal && o.signal.aborted) return 'unknown';
+      try { if (await exists(n, o.signal)) return n; } catch { unknown = true; }
+    }
+    return unknown ? 'unknown' : 'none';
+  }
 
   function href(key, path, opts) {
     const base = origin(key);
@@ -432,8 +459,8 @@
     'background:var(--dh-surface);border-top:1px solid var(--dh-line);' +
     '--dh-nav-dir:row;--dh-nav-h:56px;--dh-nav-fs:12px;--dh-nav-pad:4px;--dh-nav-align:stretch;--dh-nav-gap:0;' +
     '--dh-nav-item:1 1 0;--dh-nav-item-dir:column;--dh-nav-item-gap:4px;--dh-nav-item-justify:center;--dh-nav-ws:normal;' +
-    '--dh-nav-icon:block;--dh-nav-radius:0;--dh-nav-current-bg:transparent;--dh-nav-current-ink:var(--dh-brand-ink);' +
-    '--dh-nav-current-mark:inset 0 2px 0 var(--dh-brand)}' +
+    '--dh-nav-icon:block;--dh-nav-radius:0;--dh-nav-current-bg:transparent;--dh-nav-current-ink:var(--dh-ink);' +
+    '--dh-nav-current-mark:inset 0 2px 0 var(--dh-select);--dh-nav-current-icon:var(--dh-select)}' +
     '.bar.compact.tabs .nav.empty{display:none}' +
     '.bar.compact.tabs .family{border-top:0;padding-top:0}' +
     '.bar.compact .net{height:36px}' +
@@ -511,7 +538,68 @@
     '::slotted([slot=start]:focus-visible){outline:2px solid var(--dh-focus)!important;outline-offset:2px!important;' +
     'border-radius:var(--dh-r1)!important}' +
     '@media (pointer:coarse){.f a{display:inline-flex;align-items:center;min-height:40px}' +
-    '::slotted([slot=start]){min-height:40px!important}}';
+    '::slotted([slot=start]){min-height:40px!important}}' +
+    /* Compact (phones, or compact="always"): one line that opens the explanation, so the ways in come first. */
+    '.w.c{padding:4px 6px 4px 12px;gap:0}.w.c.open{padding-bottom:14px;gap:10px}' +
+    '.tg{display:flex;align-items:center;gap:8px;width:100%;min-height:36px;text-align:left;font-size:14px;font-weight:600;' +
+    'line-height:1.3;border-radius:var(--dh-r2)}' +
+    '.tg .ic{color:var(--dh-brand-ink);flex:none}' +
+    '.tg .tt{flex:1 1 auto;min-width:0}' +
+    '.tg .wt{flex:none;margin-left:auto;padding:0 2px 0 6px;color:var(--dh-brand-ink);font-size:13px;white-space:nowrap}' +
+    '.tg .cv{transform:rotate(-90deg);transition:transform var(--dh-dur-2) var(--dh-ease)}' +
+    '.tg[aria-expanded=true] .cv{transform:none}' +
+    '.tg:hover .wt{text-decoration:underline;text-underline-offset:3px}' +
+    '.bd{display:grid;gap:10px}.bd[hidden]{display:none}' +
+    /* One line at any width: the sentence where it fits, shorter forms of it on 390 and 360px phones. */
+    '.tg .tt>span{display:none}' +
+    '@container (min-width:340px){.tg .tt .lg{display:inline}}' +
+    '@container (min-width:300px) and (max-width:339.98px){.tg .tt .md{display:inline}}' +
+    '@container (max-width:299.98px){.tg .tt .sh{display:inline}}' +
+    '@media (pointer:coarse){.tg{min-height:44px}}';
+
+  // The buttons and action row the notices share. Navigation is a bordered button; .pri is the amber committing one.
+  const ACT_CSS =
+    '.acts{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px}' +
+    '.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:var(--dh-ctl-h);padding:0 14px;' +
+    'border:1px solid var(--dh-line-2);border-radius:var(--dh-r2);background:var(--dh-surface);color:var(--dh-ink);' +
+    'font-size:14px;font-weight:600;white-space:nowrap}' +
+    '.btn:hover{background:var(--dh-sunken)}' +
+    '.btn[hidden]{display:none}' +
+    '.ar{margin-left:.3em}';
+
+  // Not on this network: a dashed well (dashed = nothing real here) that says where the record is instead.
+  const NOTFOUND_CSS = BASE_CSS + ACT_CSS +
+    ':host{display:block}' +
+    '.nf{display:grid;gap:6px;justify-items:start;padding:20px 24px;border:1px dashed var(--dh-line-2);' +
+    'border-radius:var(--dh-r3);font-size:15px;line-height:1.5;color:var(--dh-ink);text-align:left}' +
+    'h2{margin:0;font-size:17px;font-weight:620;line-height:1.3}' +
+    'p{margin:0;color:var(--dh-ink-2);max-width:64ch}' +
+    '.chk{display:flex;align-items:center;gap:10px}' +
+    '.spin{width:14px;height:14px;flex:none;border-radius:50%;border:2px solid var(--dh-line);border-top-color:var(--dh-brand);' +
+    'animation:dh-rot .8s linear infinite}' +
+    '.acts{column-gap:20px}' +
+    '.lk{color:var(--dh-brand-ink);font-size:14px;font-weight:600}' +
+    '.lk:hover{text-decoration:underline;text-underline-offset:3px}' +
+    '@media (pointer:coarse){.lk{display:inline-flex;align-items:center;min-height:40px}}' +
+    '@media (max-width:480px){.nf{padding:16px}}' +
+    '@media (prefers-reduced-motion:reduce){.spin{animation-duration:2.4s}}' +
+    '@keyframes dh-rot{to{transform:rotate(360deg)}}';
+
+  // A retired product's page: what moved where, one way on, and the same timed forward everywhere.
+  const MOVED_CSS = BASE_CSS + ACT_CSS +
+    ':host{display:block}' +
+    'h1{margin:0;font:var(--dh-w-head) var(--dh-fs-h1)/var(--dh-lh-head) var(--dh-font);font-stretch:var(--dh-stretch-head);' +
+    'letter-spacing:-.015em;text-wrap:balance;overflow-wrap:anywhere}' +
+    '.l{margin:8px 0 0;max-width:64ch;font-size:var(--dh-fs-lead);line-height:1.55;color:var(--dh-ink-2)}' +
+    '.n{display:grid;gap:4px;margin-top:var(--dh-5);padding:12px 16px;border-left:3px solid var(--dh-info);' +
+    'border-radius:var(--dh-r2);background:var(--dh-info-soft);font-size:var(--dh-fs-ui);line-height:1.5}' +
+    '.nt{margin:0;font-weight:620}' +
+    '.nb{margin:0;color:var(--dh-ink)}' +
+    '.btn{font-weight:520}' +
+    '.pri{border-color:transparent;background:var(--dh-act);color:var(--dh-act-ink);font-weight:620}' +
+    '.pri:hover{background:var(--dh-act);background-image:linear-gradient(var(--dh-shade-1),var(--dh-shade-1))}' +
+    '@media (max-width:480px){h1{font-size:26px}.l{font-size:var(--dh-fs-body)}' +
+    '.acts{flex-direction:column-reverse;align-items:stretch}.btn{width:100%}}';
 
   /* ---------------------------------------------------------------- base element */
   // Shadow root + one adopted stylesheet per element class; re-render on any observed attribute change.
@@ -687,7 +775,7 @@
 
     // Doors, Apps, Also and the theme choice: the desktop popover and the phone sheet each get a copy.
     _family(key, net) {
-      const cur = PRODUCTS[key].door;
+      const cur = doorOf(key);
       const to = (k) => doorHref(k, net);
       const link = (k, tag = true) => h('a', { href: to(k), 'aria-current': current(key === k, 'page') }, PRODUCTS[k].name,
         tag && PRODUCTS[k].only && h('span', { class: 'only' }, PRODUCTS[k].only));
@@ -723,7 +811,9 @@
 
     _netControl(net, kind) {
       const label = networkLabel(net);
-      const list = (this.getAttribute('networks') || '').split(/[\s,]+/).map(parseNetwork).filter(Boolean);
+      // The shell owns the order (sortNetworks); a site's list only says which networks it offers.
+      let list = sortNetworks((this.getAttribute('networks') || '').split(/[\s,]+/));
+      if (list.length > 1 && !list.includes(net)) list = sortNetworks([...list, net]);
       const face = [h('span', { class: 'dot', 'aria-hidden': 'true' }), h('span', { class: 'sr' }, 'Network: '),
         h('span', { class: 'nl' }, label)];
       if (list.length < 2) return h('span', { class: 'net ' + kind, title: 'Network: ' + label }, face);
@@ -745,12 +835,13 @@
         });
         return a;
       };
-      // Devnets are internal: unless this page is on one, they wait behind a toggle instead of sitting beside Mainnet.
-      const devs = kind === 'dev' ? [] : list.filter((n) => networkKind(n) === 'dev');
+      // Devnets are internal: they always come last, behind "Developer networks", which starts open only on a devnet.
+      const devs = list.filter((n) => networkKind(n) === 'dev');
       let devGroup = null;
       if (devs.length) {
-        const box = h('div', { id: 'dh-devnets', hidden: true }, devs.map(option));
-        const toggle = h('button', { class: 'opt', type: 'button', 'aria-expanded': 'false', 'aria-controls': 'dh-devnets' },
+        const open = kind === 'dev';
+        const box = h('div', { id: 'dh-devnets', hidden: !open }, devs.map(option));
+        const toggle = h('button', { class: 'opt', type: 'button', 'aria-expanded': String(open), 'aria-controls': 'dh-devnets' },
           h('span', { class: 'tick' }), 'Developer networks', icon('chevron', 14));
         toggle.addEventListener('click', () => {
           box.hidden = !box.hidden;
@@ -877,11 +968,12 @@
       this._drop();
       this._on(netListeners, () => this.render());
       const key = productOf(this);
-      const cur = PRODUCTS[key].door;
+      const cur = doorOf(key);
       const src = this.getAttribute('source');
       const doorLinks = DOORS.slice(1).map((d) =>
         h('li', null, h('a', { href: doorHref(d.key), 'aria-current': current(cur === d.door) }, d.label)));
-      doorLinks.push(h('li', null, h('a', { href: href('home', '/#apps'), 'aria-current': current(cur === 'apps') }, 'Apps')));
+      doorLinks.push(h('li', null, h('a', { href: href('home', '/#apps'),
+        'aria-current': current(PRODUCTS[key].door === 'apps') }, 'Apps')));
       this._paint(h('footer', { class: 'f', part: 'footer' },
         h('div', { class: 'in' },
           h('div', { class: 'top' },
@@ -967,8 +1059,34 @@
   }
 
   class DashhqSigninHelp extends ShellElement {
-    static get observedAttributes() { return ['product', 'network', 'asks', 'why', 'kept', 'kept-note']; }
+    static get observedAttributes() { return ['product', 'network', 'asks', 'why', 'kept', 'kept-note', 'compact']; }
     static css = SIGNIN_CSS;
+
+    // compact: absent or "auto" folds the explanation into one line when the help is phone-narrow; "" / "always"
+    // folds it everywhere; "never" keeps it open.
+    connectedCallback() {
+      if (!this._ro) {
+        this._ro = new ResizeObserver(() => {
+          const n = this._isNarrow();
+          if (n !== this._narrow) { this._narrow = n; if (this.shadowRoot) this.render(); }
+        });
+      }
+      this._narrow = this._isNarrow();
+      super.connectedCallback();
+      this._ro.observe(this);
+    }
+    disconnectedCallback() { super.disconnectedCallback(); this._ro.disconnect(); }
+    _isNarrow() {
+      const w = this.getBoundingClientRect().width;
+      return w > 0 ? w < 440 : matchMedia('(max-width: 600px)').matches;
+    }
+    _compact() {
+      const a = this.getAttribute('compact');
+      const mode = a == null ? 'auto' : a.trim().toLowerCase();
+      if (mode === '' || mode === 'true' || mode === 'always') return true;
+      if (mode === 'never' || mode === 'false') return false;
+      return this._narrow;
+    }
 
     render() {
       this._drop();
@@ -1011,19 +1129,277 @@
         : [h('a', { href: href('bridge', '/?mode=create', { network: net }) }, 'Create one in Bridge', arrow()),
           h('span', { class: 'nt' }, net === 'mainnet' ? 'Mainnet, real DASH' : netName)];
 
-      this._paint(h('div', { class: 'w' },
-        h('p', { class: 't' }, icon('identity', 20), 'You sign in with a Dash identity'),
+      const body = [
         h('p', { class: 'p' }, `Your account on Dash Platform. One ${netName} identity works across the dashhq apps on ` +
           `${netName}; each app signs you in on its own. ` + (net === 'mainnet' ? 'Saving data on Mainnet costs real DASH. ' : ''),
         h('a', { class: 'lk', href: href('home', IDENTITY_PATH) }, 'How identities work', arrow())),
         facts.length ? h('dl', null, facts) : null,
-        h('p', { class: 'f' }, h('span', { class: 'q' }, 'No identity yet?'), h('slot', { name: 'start' }, start))));
+        h('p', { class: 'f' }, h('span', { class: 'q' }, 'No identity yet?'), h('slot', { name: 'start' }, start))];
+      // Re-rendering (a new attribute, or the layout flipping between folded and open) keeps keyboard focus inside.
+      const hadFocus = this.shadowRoot.activeElement && this.shadowRoot.activeElement.closest('.w');
+      if (!this._compact()) {
+        this._paint(h('div', { class: 'w' }, h('p', { class: 't' }, icon('identity', 20), 'You sign in with a Dash identity'), body));
+        if (hadFocus) this.shadowRoot.querySelector('a').focus();
+        return;
+      }
+
+      // Compact: the controls come first and the explanation is one tap away. The toggle flips in place, so focus stays.
+      const more = h('div', { class: 'bd', id: 'dh-signin-more' }, body);
+      const word = h('span', { class: 'wt' });
+      const tg = h('button', { class: 'tg', type: 'button', 'aria-controls': 'dh-signin-more' }, icon('identity', 20),
+        h('span', { class: 'tt' }, h('span', { class: 'lg' }, 'You sign in with a Dash identity'),
+          h('span', { class: 'md' }, 'Uses your Dash identity'), h('span', { class: 'sh' }, 'Your Dash identity')),
+        word, h('span', { class: 'cv', 'aria-hidden': 'true' }, icon('chevron', 14)));
+      const well = h('div', { class: 'w c' }, tg, more);
+      const sync = () => {
+        const o = !!this._open;
+        more.hidden = !o;
+        tg.setAttribute('aria-expanded', String(o));
+        word.textContent = o ? 'Hide' : 'What\'s this?';
+        well.classList.toggle('open', o);
+      };
+      sync();
+      tg.addEventListener('click', () => { this._open = !this._open; sync(); });
+      this._paint(well);
+      if (hadFocus) tg.focus();
+    }
+  }
+
+  // The notices keep one live region for their whole life and change only its words, so screen readers hear each
+  // result once; the visible content beside it is repainted freely.
+  class NoticeElement extends ShellElement {
+    _show(...nodes) {
+      if (!this._box) {
+        this._box = h('div');
+        this._live = h('p', { class: 'sr', role: 'status' });
+        this._paint(this._box, this._live);
+      }
+      const f = this.shadowRoot.activeElement && this.shadowRoot.activeElement.dataset.f;
+      this._box.replaceChildren(...nodes.filter(Boolean));
+      if (f) { const el = this._box.querySelector(`[data-f="${f}"]`); if (el) el.focus(); }
+    }
+    // Say it once, a moment after the region exists, so it is announced rather than read as part of the page.
+    _say(text) {
+      if (text === this._said) return;
+      this._said = text;
+      clearTimeout(this._sayT);
+      this._sayT = setTimeout(() => { if (this._live) this._live.textContent = text; }, 60);
+    }
+  }
+
+  /* ---------------------------------------------------------------- <dashhq-not-found> */
+  // A record looked up on one network that isn't there. Says so, then where it is instead (or that it is nowhere), so a
+  // shared link opened on the other network never looks like missing data. The app either sets found="mainnet" |
+  // "none" | "unknown" itself, or hands the element a lookup: el.lookup = (network, signal) => Promise<boolean>.
+  class DashhqNotFound extends NoticeElement {
+    static get observedAttributes() {
+      return ['thing', 'id-label', 'network', 'networks', 'found', 'href', 'list-href', 'list-label'];
+    }
+    static css = NOTFOUND_CSS;
+
+    get lookup() { return this._lookup || null; }
+    set lookup(fn) {
+      fn = typeof fn === 'function' ? fn : null;
+      if (fn === this._lookup) return;
+      // A new lookup may be for a new record, so ask again; the last answer stays on screen until the new one comes.
+      this._lookup = fn;
+      this._ranFor = null;
+      if (this.shadowRoot && this.isConnected) this.render();
+    }
+    disconnectedCallback() {
+      super.disconnectedCallback();
+      if (this._ac) this._ac.abort();
+      this._ac = null;
+      this._ranFor = null;
+    }
+    _nets() { return sortNetworks((this.getAttribute('networks') || 'mainnet testnet').split(/[\s,]+/)); }
+    _run(here) {
+      if (this._ac) this._ac.abort();
+      const ac = this._ac = new AbortController();
+      this._ranFor = here;
+      findElsewhere(this._lookup, { network: here, networks: this._nets(), signal: ac.signal }).then((found) => {
+        if (ac.signal.aborted || (found === this._found && here === this._foundFor)) return;
+        this._found = found;
+        this._foundFor = here;
+        this.render();
+      });
+    }
+    _target(network) {
+      const given = this.getAttribute('href');
+      return given ? new URL(given, location.href).href : withNetwork(location.href, network);
+    }
+    // found="…": a network, "none" or "unknown"; empty or "checking" shows the check; anything else can't be trusted to
+    // mean "nowhere", so it reads as "couldn't check".
+    _answer(here) {
+      const raw = this.getAttribute('found');
+      if (raw == null) return this._lookup && this._foundFor === here ? this._found : null;
+      const v = raw.trim().toLowerCase();
+      if (v === '' || v === 'checking') return null;
+      return v === 'none' || v === 'unknown' ? v : parseNetwork(v) || 'unknown';
+    }
+
+    render() {
+      this._drop();
+      if (!this.hasAttribute('network')) this._on(netListeners, () => this.render());
+      const here = parseNetwork(this.getAttribute('network')) || activeNetwork();
+      if (this._lookup && !this.hasAttribute('found') && this._ranFor !== here) this._run(here);
+      const found = this._answer(here);
+      const thing = (this.getAttribute('thing') || 'record').trim();
+      const idLabel = (this.getAttribute('id-label') || 'ID').trim();
+      const hereL = networkLabel(here);
+      const others = this._nets().filter((n) => n !== here);
+      const otherLs = others.map(networkLabel);
+      const othersL = listOf(otherLs) || 'the other network';
+
+      // Opening it on the other network is a network switch: the page's bar hears it first (where SPAs listen and route,
+      // as they do for the bar's own menu); if nobody cancels it, the link simply navigates.
+      const open = (network, text) => {
+        const a = h('a', { class: 'btn', href: this._target(network), 'data-f': 'open' }, text, arrow());
+        a.addEventListener('click', (e) => {
+          a.href = this._target(network);
+          const go = ([...bars].pop() || this).dispatchEvent(new CustomEvent('dashhq-network', {
+            bubbles: true, composed: true, cancelable: true, detail: { network, href: a.href } }));
+          if (!go) e.preventDefault();
+        });
+        return a;
+      };
+      const listHref = this.getAttribute('list-href');
+      const list = listHref && h('a', { class: 'lk', href: new URL(listHref, location.href).href, 'data-f': 'list' },
+        this.getAttribute('list-label') || `Search ${hereL}`, arrow());
+
+      let title = `Not on ${hereL}`, line, action = null;
+      if (found === 'none') {
+        title = `Not on ${listOf([hereL, ...otherLs])}`;
+        line = `There's no ${thing} with this ${idLabel} on ${others.length > 1 ? 'any network' : 'either network'}.`;
+      } else if (found === 'unknown') {
+        line = `We couldn't check ${othersL} just now.`;
+        if (others[0]) action = open(others[0], `Look on ${otherLs[0]}`);
+      } else if (found) {
+        line = `This ${thing} exists on ${networkLabel(found)}.`;
+        action = open(found, `Open it on ${networkLabel(found)}`);
+      }
+      this._show(h('div', { class: 'nf' }, h('h2', null, title),
+        h('p', null, line || h('span', { class: 'chk' }, h('span', { class: 'spin', 'aria-hidden': 'true' }), `Checking ${othersL}…`)),
+        h('slot'), (action || list) && h('div', { class: 'acts' }, action, list)));
+      this._say(line ? `${title}. ${line}` : '');
+    }
+  }
+
+  /* ---------------------------------------------------------------- <dashhq-moved> */
+  // A retired product's page. One behaviour for the family: say what moved where, offer the one way on, and forward
+  // after MOVED_DELAY seconds unless the visitor stops it (Stay here, or by using the page). The old link's network
+  // and query travel with it; the page's bar shows the network the visitor will land on.
+  // 20 s: WCAG 2.2.1 gives anyone warned of a time limit at least 20 seconds to act on it.
+  const MOVED_DELAY = 20;
+  class DashhqMoved extends NoticeElement {
+    static get observedAttributes() { return ['to', 'path', 'product', 'network', 'heading', 'lede', 'label']; }
+    static css = MOVED_CSS;
+
+    connectedCallback() {
+      const first = !this.shadowRoot;
+      if (first) {
+        this._left = MOVED_DELAY;
+        const nav = performance.getEntriesByType && performance.getEntriesByType('navigation')[0];
+        // Back to this page (from the new home, say): forwarding again would trap the visitor.
+        this._stopped = !!(nav && nav.type === 'back_forward');
+        // Any use of the page stops the forward, except the two controls, which act on their own clicks.
+        this._onUse = (e) => {
+          if (this._stopped) return;
+          const path = e.composedPath();
+          if (path.includes(this._pri) || path.includes(this._stay)) return;
+          if (e.type === 'keydown' && /^(Shift|Control|Alt|Meta)$/.test(e.key)) return;
+          this._stop();
+        };
+        this._onShow = (e) => { if (e.persisted) this._stop(); };
+      }
+      super.connectedCallback();
+      if (first && !this._stopped) {
+        this._say(`Opening ${this._names().toName} automatically in ${MOVED_DELAY} seconds. Choose Stay here to stop.`);
+      }
+      doc.addEventListener('pointerdown', this._onUse, true);
+      doc.addEventListener('keydown', this._onUse, true);
+      addEventListener('pageshow', this._onShow);
+      if (!this._stopped && !this._tick) {
+        this._tick = setInterval(() => {
+          if (doc.hidden) return; // a background tab waits until someone looks at it
+          this._left -= 1;
+          if (this._left > 0) return this._sync();
+          this._clearTick();
+          location.replace(this._dest());
+        }, 1000);
+      }
+    }
+    disconnectedCallback() {
+      super.disconnectedCallback();
+      doc.removeEventListener('pointerdown', this._onUse, true);
+      doc.removeEventListener('keydown', this._onUse, true);
+      removeEventListener('pageshow', this._onShow);
+      this._clearTick();
+    }
+    _clearTick() { clearInterval(this._tick); this._tick = null; }
+    _stop() {
+      this._clearTick();
+      if (this._stopped) return;
+      this._stopped = true;
+      this._sync();
+      this._say('Staying on this page.');
+    }
+    _names() {
+      const to = this.getAttribute('to');
+      const from = PRODUCTS[this.getAttribute('product')] ? this.getAttribute('product') : pageProduct();
+      return { to: PRODUCTS[to] ? to : 'home', toName: PRODUCTS[to] ? PRODUCTS[to].name : 'dashhq.org',
+        fromName: from && from !== 'home' ? PRODUCTS[from].name : 'This tool' };
+    }
+    _net() {
+      const sp = new URL(location.href).searchParams;
+      return parseNetwork(sp.get('network') || sp.get('net')) || parseNetwork(this.getAttribute('network')) || 'mainnet';
+    }
+    // The new home, with the old link's network, its query (contract, id, filters, every value of a repeated key) unless
+    // the new path sets that key, and its hash unless the path has one or the old hash was a hash route ("#/c/german":
+    // the site maps that into path).
+    _dest() {
+      const { to } = this._names();
+      let u;
+      try { u = new URL(href(to, this.getAttribute('path') || '/', { network: this._net() })); } catch { u = new URL(href(to)); }
+      const own = new Set(u.searchParams.keys());
+      for (const [k, v] of new URL(location.href).searchParams) {
+        if (k !== 'network' && k !== 'net' && !own.has(k)) u.searchParams.append(k, v);
+      }
+      if (!u.hash && location.hash && !location.hash.startsWith('#/')) u.hash = location.hash;
+      return u.href;
+    }
+    _sync() {
+      this._title.textContent = this._stopped ? 'Staying on this page' : `Opening ${this._names().toName} in ${this._left} s`;
+      this._stay.hidden = this._stopped;
+    }
+
+    render() {
+      const { to, toName, fromName } = this._names();
+      const aware = !!PRODUCTS[to].net;
+      const net = this._net();
+      // The same header on every retired page: the bar shows the network the visitor will land on.
+      const bar = [...bars].pop();
+      if (bar && aware && bar.getAttribute('network') !== net) bar.setAttribute('network', net);
+      this._pri = h('a', { class: 'btn pri', href: this._dest(), 'data-f': 'pri' }, this.getAttribute('label') || `Open ${toName}`, arrow());
+      this._stay = h('button', { class: 'btn', type: 'button', 'data-f': 'stay' }, 'Stay here');
+      // Focus moves on once the click is done, so the key that pressed Stay here can't also open the link.
+      this._stay.addEventListener('click', () => { this._stop(); this._pri.focus(); });
+      this._title = h('p', { class: 'nt', 'aria-hidden': 'true' });
+      const lede = (this.getAttribute('lede') || '').trim();
+      this._show(h('div', { class: 'm' },
+        h('h1', null, this.getAttribute('heading') || `${fromName} has moved to ${toName}`),
+        lede && h('p', { class: 'l' }, lede),
+        h('div', { class: 'n' }, this._title,
+          h('p', { class: 'nb' }, `Links to ${fromName} keep working: they open the same place in ${toName}` +
+            (aware ? `, on ${networkLabel(net)}.` : '.')),
+          h('div', { class: 'acts' }, this._stay, this._pri))));
+      this._sync();
     }
   }
 
   /* ---------------------------------------------------------------- register + public API */
   for (const [name, cls] of [['dashhq-bar', DashhqBar], ['dashhq-footer', DashhqFooter], ['dashhq-hash', DashhqHash],
-    ['dashhq-signin-help', DashhqSigninHelp]]) {
+    ['dashhq-signin-help', DashhqSigninHelp], ['dashhq-not-found', DashhqNotFound], ['dashhq-moved', DashhqMoved]]) {
     if (!customElements.get(name)) customElements.define(name, cls);
   }
 
@@ -1044,9 +1420,11 @@
       parse: parseNetwork,
       label: networkLabel,
       kind: networkKind,
+      sort: sortNetworks,
       fromUrl: networkFromUrl,
       withNetwork,
-      canonicalize: canonicalizeNetworkParam
+      canonicalize: canonicalizeNetworkParam,
+      findElsewhere
     })
   });
 })();
