@@ -273,5 +273,10 @@
 .cvote-guest p {
   margin: 0;
 }
+/* the panel's first content when signed out: no rule above it */
+.cvote-guest-lead {
+  border-block-start: 0;
+  padding-block-start: 0;
+}
 
 }

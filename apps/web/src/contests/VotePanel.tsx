@@ -417,7 +417,7 @@ function GuestKeyForm({ open: startOpen = false }: { open?: boolean }) {
     setText('');
   };
   return (
-    <div className="form cvote-guest" data-testid="guest-form">
+    <div className={`form cvote-guest${startOpen ? ' cvote-guest-lead' : ''}`} data-testid="guest-form">
       {startOpen && <p className="small">Masternodes vote with their voting key. No account needed: paste it here.</p>}
       <SecretField label="Voting keys" what="voting key" value={text} onChange={setText} testId="guest-key" placeholder="One voting private key per line (WIF or hex)" />
       <p className="small muted">The keys stay in this tab’s memory only: never saved, never sent. They are forgotten after 15 minutes without use, when you close the tab, or when you click Forget.</p>

@@ -902,7 +902,7 @@ function WaysToVote() {
         </li>
         <li>
           <h3>Name contests, without an account</h3>
-          <p>Paste a voting key on a contest's page. It stays in this tab's memory, signs only contest votes, and is wiped after 15 minutes idle.</p>
+          <p>Paste a voting key on a contest's page. It stays in this tab's memory, signs only votes, and is wiped after 15 minutes idle.</p>
           <Link to="/names">Open name contests</Link>
         </li>
       </ol>
