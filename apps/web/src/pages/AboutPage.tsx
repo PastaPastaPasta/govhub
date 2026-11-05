@@ -22,11 +22,11 @@ export function AboutPage() {
   useRouteTitle('/about');
   return (
     <article className="page-narrow about" aria-labelledby="about-title">
-      <h1 className="dh-page-header__title" id="about-title">About Governance</h1>
-      <p className="lede">
+      <header className="dh-page-header"><h1 className="dh-page-header__title" id="about-title">About Governance</h1>
+      <p className="dh-page-header__lede">
         Governance is a place to follow, discuss and vote on Dash governance proposals. It does what dashcentral.org did, but your browser checks the data it’s given
         before showing it as verified.
-      </p>
+      </p></header>
 
       <h2>Why it exists</h2>
       <p>
