@@ -35,6 +35,9 @@ export interface RelayHealth {
   checkedAt: number;
 }
 
+/** A preview build's relay refused the write without passing it on. */
+export const WRITES_OFF = 'this preview has writes switched off, so nothing reached a relay or the network';
+
 export class RelayError extends Error {
   constructor(
     message: string,
@@ -130,6 +133,8 @@ export class RelayClient {
     } catch {
       /* empty or non-JSON body */
     }
+    // a read-only preview (the local lab) answers every write with this stub instead of passing it on: nothing was stored or sent
+    if (body !== undefined && isObj(json) && json.localPreview === true) throw new RelayError(WRITES_OFF, res.status, 'writes-disabled');
     if (!res.ok) {
       const o = isObj(json) ? json : {};
       throw new RelayError(typeof o.error === 'string' ? o.error.slice(0, 200) : `relay answered HTTP ${res.status}`, res.status, typeof o.code === 'string' ? o.code : undefined, typeof o.status === 'string' ? o.status : undefined, Number(res.headers.get('retry-after')) || undefined);

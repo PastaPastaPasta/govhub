@@ -37,7 +37,7 @@ const repostRelease = (v: WatchedVote, now: number): number => Math.max(v.releas
  * when it has it), so it refused it against another vote of the masternode, or because it is full. Any other refusal can come before
  * that lookup (services/relay/src/relay.ts submitVote).
  */
-const NOT_HELD = new Set(['later-vote-held', 'newer-vote-in-core', 'too-many-held', 'relay-full']);
+const NOT_HELD = new Set(['later-vote-held', 'newer-vote-in-core', 'too-many-held', 'relay-full', 'writes-disabled']);
 export const provesNotHeld = (e: unknown): boolean => e instanceof RelayError && NOT_HELD.has(e.code ?? '');
 
 /** Thrown when a relay could not be reached; `vote` carries what was learned (relay ids), which the caller should keep. */

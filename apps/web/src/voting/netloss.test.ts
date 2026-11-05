@@ -183,6 +183,18 @@ describe('B-S1-1: the relay stored the vote, the browser lost its answer as a ne
     expect((await submitToRelays(vote(), [R1], sendDeps)).maybeAt).toEqual([R1]);
   });
 
+  it('a read-only preview answering the write with its stub: stopped for good, never "maybe at the relay"', async () => {
+    const r = httpRelay(R1);
+    stubFetch(r);
+    r.answer({ status: 200, body: { ok: false, success: false, localPreview: true, error: 'LOCAL_PREVIEW_READ_ONLY', message: 'local lab: writes disabled' } });
+    const v = await submitToRelays(vote(), [R1], sendDeps);
+    expect(v.status).toBe('failed');
+    expect(v.maybeAt).toBeUndefined();
+    const view = describeVote(v, NOW, fmt);
+    expect(view.badge).toBe('Preview: not sent');
+    expect(view.line).toMatch(/nothing reached a relay or the network/);
+  });
+
   it('a request that was never made (an unusable relay URL) is not sent', async () => {
     const bad = new RelayClient('not a url');
     const e = await bad.submit(vote(), 'testnet').catch((x: unknown) => x);
