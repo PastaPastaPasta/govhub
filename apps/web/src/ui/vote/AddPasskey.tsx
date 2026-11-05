@@ -28,7 +28,7 @@ export function AddPasskey() {
       )}
       {step === 'confirm' && (
         <div className="notice-box small">
-          <p>Passkey created. Confirm it once more so govhub can lock your key to it.</p>
+          <p>Passkey created. Confirm it once more so Governance can lock your key to it.</p>
           <button type="button" className="btn btn-s btn-primary" onClick={() => void confirm()} disabled={!!k.busy}>
             Confirm with the passkey
           </button>

@@ -36,7 +36,7 @@ test.describe('discussion (fixtures)', () => {
     await expect(d).not.toContainText('FREE DASH!!!');
     await d.getByTestId('toggle-hidden').click();
     const spam = comment(page, 'FREE DASH!!!');
-    await expect(spam).toContainText('author on govhub moderation (spam)');
+    await expect(spam).toContainText('author on Governance moderation (spam)');
     await d.getByTestId('toggle-hidden').click();
     await expect(spam).toHaveCount(0);
 
@@ -52,7 +52,7 @@ test.describe('discussion (fixtures)', () => {
     await gotoFixtures(page, `/p/OrchardPay?comment=${spamId}`);
     const linked = page.locator(`#comment-${spamId}`);
     await expect(linked).toHaveClass(/comment-focus/);
-    await expect(linked).toContainText('Hidden: on govhub moderation');
+    await expect(linked).toContainText('Hidden: on Governance moderation');
     await expect(linked).not.toContainText('FREE DASH!!!');
     await linked.getByRole('button', { name: 'Show this comment' }).click();
     await expect(page.locator(`#comment-${spamId}`)).toContainText('FREE DASH!!!');
@@ -134,7 +134,7 @@ test.describe('discussion (fixtures)', () => {
     await expect(d.getByTestId('toggle-hidden')).toHaveText('Show hidden (2)');
     await d.getByTestId('toggle-hidden').click();
     const hidden = comment(page, 'Quick test');
-    await expect(hidden).toContainText('comment on govhub moderation');
+    await expect(hidden).toContainText('comment on Governance moderation');
     await hidden.locator(':scope > article').getByText('Hide…').click();
     await hidden.getByRole('button', { name: 'Remove from the default list' }).click();
     await expect(d.getByTestId('toggle-hidden')).toHaveText(/\(1\)/);
@@ -187,7 +187,7 @@ test.describe('discussion (fixtures)', () => {
     await page.getByRole('link', { name: 'Settings' }).click();
     await openGroup(page, 'Hidden comments');
     const lists = page.getByRole('region', { name: 'Block lists' });
-    await expect(lists).toContainText('govhub moderation: 1 block');
+    await expect(lists).toContainText('Governance moderation: 1 block');
     await lists.getByLabel(/The default list/).uncheck();
     await lists.getByRole('button', { name: 'Save in this browser' }).click();
     await expect(lists).toContainText('Saved in this browser.');

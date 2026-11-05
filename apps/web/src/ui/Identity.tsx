@@ -47,7 +47,7 @@ export function Avatar({ id, profile, size = 28 }: { id: string; profile?: Profi
 export function AuthorName({ id, profile, dpns }: { id: string; profile?: Profile | undefined; dpns?: string | undefined }) {
   const a = authorLabel(id, profile, dpns);
   const name = a.name && (
-    <bdi className={a.quoted ? 'author-quoted' : undefined} title={a.quoted ? 'Self-chosen name; it is not a govhub label' : 'Self-chosen name'}>
+    <bdi className={a.quoted ? 'author-quoted' : undefined} title={a.quoted ? 'Self-chosen name; it is not a Governance label' : 'Self-chosen name'}>
       {a.quoted ? `“${a.name}”` : a.name}
     </bdi>
   );
@@ -126,7 +126,7 @@ function NameInfo({ name, dpns }: { name: string; dpns: string | null }) {
         ) : (
           <p>It isn’t a Dash username. The short code next to it is the account’s ID, which is unique.</p>
         )}
-        <p className="muted">When govhub supports signing in with a Dash wallet, names will come from Dash usernames.</p>
+        <p className="muted">When Governance supports signing in with a Dash wallet, names will come from Dash usernames.</p>
       </div>
     </>
   );

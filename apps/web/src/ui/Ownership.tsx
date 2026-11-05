@@ -427,8 +427,8 @@ export function OwnerPost({ govHash, ownerId, post, trustLevel = 'verified' }: {
           <h2 id="post-title">{s.post.title}</h2>
           <p className="muted small" data-testid="owner-post-byline">
             {ownerVerified(trustLevel)
-              ? 'Written by the verified proposal owner; stored on Platform. govhub does not check what it says.'
-              : "Written by the identity that claimed this proposal; stored on Platform. The proposal itself isn't fully verified here, and govhub does not check what the description says."}
+              ? 'Written by the verified proposal owner; stored on Platform. Governance does not check what it says.'
+              : "Written by the identity that claimed this proposal; stored on Platform. The proposal itself isn't fully verified here, and Governance does not check what the description says."}
           </p>
           <Markdown text={s.body} />
         </>

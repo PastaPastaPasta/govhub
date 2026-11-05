@@ -85,7 +85,7 @@ describe('backup file', () => {
 
   it.each([
     ['not json', () => 'nope', /not JSON/],
-    ['another file', () => JSON.stringify({ format: 'x' }), /not a govhub proposal backup/],
+    ['another file', () => JSON.stringify({ format: 'x' }), /not a Governance proposal backup/],
     ['a newer version', (t: string) => t.replace('"version": 1', '"version": 2'), /version 2/],
     ['the time changed', (t: string) => { const o = JSON.parse(t); o.draft.lock.time += 1; return JSON.stringify(o); }, /altered/],
     ['the data changed', (t: string) => { const o = JSON.parse(t); o.draft.lock.dataHex = o.draft.lock.dataHex.replace('3132', '3133'); return JSON.stringify(o); }, /altered|damaged/],

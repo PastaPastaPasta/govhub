@@ -71,7 +71,7 @@ export function usePlan(d: ProposalDraft): Plan {
     const errors: Plan['errors'] = {};
     for (const e of check.errors) errors[e.field] ??= e.message;
     if (i.amount.trim() && duffs === null) errors.paymentAmount = 'enter an amount in DASH, with at most 8 decimals';
-    if (i.urlMode === 'govhub' && !identityId) errors.url = 'sign in to use a govhub page, or enter your own link';
+    if (i.urlMode === 'govhub' && !identityId) errors.url = 'sign in to use a Governance page, or enter your own link';
     if (!schedule) errors.schedule ??= tip ? 'choose the first payment' : 'waiting for the current block height';
     return { tip, now, choices, schedule, duffs, url, check, errors };
   }, [tip, now, network, identityId, i.name, i.paymentAddress, i.amount, i.urlMode, i.customUrl, i.firstSuperblock, i.payments]);
@@ -154,7 +154,7 @@ export function DetailsStep({ draft, plan, setInputs, setStep }: EditProps) {
         <label className="check">
           <input type="radio" name="p-url-mode" checked={i.urlMode === 'govhub'} onChange={() => setInputs({ urlMode: 'govhub' })} data-testid="p-url-govhub" />
           <span>
-            <b>A page on govhub</b> (recommended). You write the description after submitting; the link proves the proposal is yours.
+            <b>A page on Governance</b> (recommended). You write the description after submitting; the link proves the proposal is yours.
           </span>
         </label>
         {i.urlMode === 'govhub' &&
@@ -164,7 +164,7 @@ export function DetailsStep({ draft, plan, setInputs, setStep }: EditProps) {
             </p>
           ) : (
             <div className="notice-box">
-              <p className="small">This needs a govhub sign-in: the link names your Dash identity, which is what lets you publish the description later.</p>
+              <p className="small">This needs a sign-in here: the link names your Dash identity, which is what lets you publish the description later.</p>
               <button type="button" className="btn btn-s" onClick={openSignIn}>
                 Sign in
               </button>

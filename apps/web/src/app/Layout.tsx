@@ -93,7 +93,7 @@ function ConfigOffer() {
     return (
       <div className="banner banner-config" role="alertdialog" aria-labelledby="cfg-title" data-testid="config-offer">
         <p id="cfg-title">
-          <b>This link points to endpoint settings in a file at {url.host}.</b> govhub has not contacted that host. Loading the file shows the settings
+          <b>This link points to endpoint settings in a file at {url.host}.</b> Governance has not contacted that host. Loading the file shows the settings
           before anything changes; the request tells {url.host} that you opened this link.
         </p>
         <div className="banner-actions">
@@ -194,7 +194,7 @@ function SettingsProblem() {
   return (
     <div className="banner banner-empty" role="alert" data-testid="settings-problem">
       <p>
-        <b>Your saved settings could not be used:</b> {shown}. govhub shows the {PROFILES[registry.profile].label} profile's defaults instead; your saved settings
+        <b>Your saved settings could not be used:</b> {shown}. Governance shows the {PROFILES[registry.profile].label} profile's defaults instead; your saved settings
         stay in this browser until you save new ones.
       </p>
       <div className="banner-actions">
@@ -227,7 +227,7 @@ function ModeBanner() {
     return (
       <div className="banner banner-empty" role="status" data-testid="backend-notice">
         <p>
-          <b>{source.notice}.</b> The {PROFILES[registry.profile].label} profile has no governance contract yet, so nothing is read; govhub never shows another network's proposals in its place.
+          <b>{source.notice}.</b> The {PROFILES[registry.profile].label} profile has no governance contract yet, so nothing is read; Governance never shows another network's proposals in its place.
         </p>
         {registry.profile !== 'dev' && (
           <button type="button" className="btn" onClick={() => switchProfile('dev')}>

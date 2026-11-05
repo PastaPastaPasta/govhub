@@ -197,9 +197,9 @@ function feeStatusNote(d: ProposalDraft): string {
     return 'The fee is paid. Once the fee transaction is in a ChainLocked block (usually within a few minutes), run the "submit" command below in Dash Core (Window > Console, or dash-cli). Dash Core holds the proposal until the fee has 6 confirmations (about 15 minutes), then the network makes it live.';
   }
   if (d.payment?.funding?.tx) {
-    return `A fee transaction (${d.payment.funding.tx.txid}) was built and saved, and may already be on the network. DO NOT PAY AGAIN: look the txid up in a block explorer, or resume in govhub with the same sign-in. Once it is in a ChainLocked block, run the "submit" command below.`;
+    return `A fee transaction (${d.payment.funding.tx.txid}) was built and saved, and may already be on the network. DO NOT PAY AGAIN: look the txid up in a block explorer, or resume in Governance with the same sign-in. Once it is in a ChainLocked block, run the "submit" command below.`;
   }
-  if (d.payment?.funding) return 'A one-time deposit address was shown (below). If you sent money to it, do not pay with Dash Core as well: resume in govhub with the same sign-in.';
+  if (d.payment?.funding) return 'A one-time deposit address was shown (below). If you sent money to it, do not pay with Dash Core as well: resume in Governance with the same sign-in.';
   return 'If you have not paid yet, the "prepare" command pays the fee from a Dash Core wallet and prints the collateral txid; put that txid into the "submit" command once that transaction is in a ChainLocked block.';
 }
 
@@ -213,11 +213,11 @@ export function backupFile(d: ProposalDraft): { name: string; text: string } {
     savedAt: new Date().toISOString(),
     readme: [
       'This file holds everything needed to finish this Dash governance proposal. It contains no keys and no recovery phrase.',
-      'Resume it in govhub: Create a proposal > Restore from a backup file. Or finish it with Dash Core:',
+      'Resume it in Governance: Create a proposal > Restore from a backup file. Or finish it with Dash Core:',
       feeStatusNote(d),
       ...(f
         ? [
-            `A browser payment uses the one-time deposit address ${f.address}, derived from your ${f.source.kind === 'seed' ? 'recovery phrase' : 'signed-in identity key'} (${f.source.kind === 'seed' ? `path ${proposalDepositPath(d.network, f.source.index)}` : `govhub key derivation, index ${f.source.index}, identity ${f.source.identityId}`}). Sign in the same way to resume; Settings > Recover funds finds and returns money left there.`,
+            `A browser payment uses the one-time deposit address ${f.address}, derived from your ${f.source.kind === 'seed' ? 'recovery phrase' : 'signed-in identity key'} (${f.source.kind === 'seed' ? `path ${proposalDepositPath(d.network, f.source.index)}` : `Governance key derivation, index ${f.source.index}, identity ${f.source.identityId}`}). Sign in the same way to resume; Settings > Recover funds finds and returns money left there.`,
           ]
         : []),
       'Never change the time or the data: the fee commits to their hash, and a changed proposal needs a new fee.',
@@ -245,13 +245,13 @@ export function readBackup(text: string, network: CoreNetwork): ProposalDraft {
   try {
     o = JSON.parse(text) as Record<string, unknown>;
   } catch {
-    throw new BackupError('This is not a govhub proposal backup (it is not JSON).');
+    throw new BackupError('This is not a Governance proposal backup (it is not JSON).');
   }
-  if (!o || o.format !== BACKUP_FORMAT) throw new BackupError('This is not a govhub proposal backup file.');
-  if (o.version !== 1) throw new BackupError(`This backup is version ${String(o.version)}; this govhub reads version 1.`);
+  if (!o || o.format !== BACKUP_FORMAT) throw new BackupError('This is not a Governance proposal backup file.');
+  if (o.version !== 1) throw new BackupError(`This backup is version ${String(o.version)}; this app reads version 1.`);
   const d = o.draft as ProposalDraft;
   if (!isDraft(d)) throw new BackupError('The backup file is damaged (the proposal draft is missing or malformed).');
-  if (d.network !== network) throw new BackupError(`This backup is for Dash ${d.network}; govhub is set to ${network}. Switch the network profile in Settings, then restore it.`);
+  if (d.network !== network) throw new BackupError(`This backup is for Dash ${d.network}; Governance is set to ${network}. Switch the network profile in Settings, then restore it.`);
   if (d.lock) {
     const l = d.lock;
     if (typeof l.dataHex !== 'string' || !Number.isSafeInteger(l.time)) throw new BackupError('The backup file is damaged (time or data).');

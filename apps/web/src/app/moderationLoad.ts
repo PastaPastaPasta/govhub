@@ -68,5 +68,5 @@ export async function readModeration(
   return { lists, subs, failed };
 }
 
-/** The notice for lists that failed: "The block list govhub moderation could not be read". */
+/** The notice for lists that failed: "The block list Governance moderation could not be read". */
 export const failedText = (failed: readonly string[]): string => `${failed.length === 1 ? 'The block list' : 'The block lists'} ${failed.join(', ')} could not be read`;

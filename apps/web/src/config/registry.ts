@@ -113,7 +113,7 @@ export const TESTNET_FORUM: ForumEndpoints = {
   contractId: 'HfLWUEWnp4YCQ9Mzp9DexG58WPKvHm7SahMVSuzKSQRw',
   modContractId: 'CWJ5PyMMKwchk5H3FjX9enVQToWZUFA1xQaRn8zNZVjY',
   moderationIdentityId: DEV_BRIDGE_IDENTITY_ID,
-  moderationName: 'govhub moderation',
+  moderationName: 'Governance moderation',
   claimPortals: ['gov.dashhq.org'],
 };
 
@@ -127,7 +127,7 @@ export const MAINNET_FORUM: ForumEndpoints = {
   contractId: '4EcYtwedNjTm4iGmx47GkLX2uNkCUWS4tt1KHhgGkjR3',
   modContractId: '65CSJ6tnKFJR6T4C2TMYFsusD7scZqLkpXgjEqpKdu2P',
   moderationIdentityId: '96f4TbboxsG4SNx711fvaemSKzsTG72M2pEYLdpPrG2M',
-  moderationName: 'govhub moderation',
+  moderationName: 'Governance moderation',
   claimPortals: ['gov.dashhq.org'],
 };
 
@@ -232,7 +232,7 @@ function profileBridges(p: NetworkProfile): BridgeEndpoint[] {
 }
 
 const PRICE_FEED: NamedUrl = { name: 'CoinGecko', url: 'https://api.coingecko.com/api/v3/simple/price?ids=dash&vs_currencies=usd' };
-const EMPTY_FORUM: ForumEndpoints = { contractId: '', modContractId: '', moderationIdentityId: '', moderationName: 'govhub moderation', claimPortals: [] };
+const EMPTY_FORUM: ForumEndpoints = { contractId: '', modContractId: '', moderationIdentityId: '', moderationName: 'Governance moderation', claimPortals: [] };
 
 /** A profile's settings, with no overrides. */
 export function profileRegistry(id: ProfileId): Registry {
@@ -522,7 +522,7 @@ export const loadRegistry = (storage: Store | undefined = globalThis.localStorag
 /** What a failed save says: a full storage quota is not a problem with the settings themselves. */
 export function saveErrorText(e: unknown): string {
   const name = (e as { name?: unknown } | null)?.name;
-  if (name === 'QuotaExceededError' || name === 'NS_ERROR_DOM_QUOTA_REACHED') return "Not saved: this browser's storage for govhub is full. Clear some site data and try again.";
+  if (name === 'QuotaExceededError' || name === 'NS_ERROR_DOM_QUOTA_REACHED') return "Not saved: this browser's storage for Governance is full. Clear some site data and try again.";
   return `Not saved: ${(e as Error)?.message ?? String(e)}`;
 }
 
@@ -533,7 +533,7 @@ export const MAX_IMPORT_BYTES = 64 * 1024;
 export function importSizeError(bytes: number): string | null {
   if (bytes <= MAX_IMPORT_BYTES) return null;
   const size = bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.ceil(bytes / 1024)} KB`;
-  return `Too large to be govhub settings: ${size} (the limit is ${MAX_IMPORT_BYTES / 1024} KB). Nothing was imported.`;
+  return `Too large to be Governance settings: ${size} (the limit is ${MAX_IMPORT_BYTES / 1024} KB). Nothing was imported.`;
 }
 
 export function saveRegistry(r: Registry, storage: Pick<Storage, 'setItem'> | undefined = globalThis.localStorage): void {

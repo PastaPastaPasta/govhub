@@ -578,7 +578,7 @@ function RawData({ p, sp }: { p: Proposal; sp: Sourced<Proposal> }) {
           </div>
         ))}
       </dl>
-      <p className="small muted">Exactly what the governance hash commits to ({formatInt(parsed.dataBytes)} bytes). The URL is the owner's own page; govhub doesn't host or check its content.</p>
+      <p className="small muted">Exactly what the governance hash commits to ({formatInt(parsed.dataBytes)} bytes). The URL is the owner's own page; Governance doesn't host or check its content.</p>
       <pre className="code">{json}</pre>
       <details>
         <summary>dataHex</summary>

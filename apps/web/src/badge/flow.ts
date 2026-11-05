@@ -36,7 +36,7 @@ export function clockTime(ms: number): string {
 }
 
 /** The job only moves while the app is open and the same identity is signed in with the same key (D-081, D-616). */
-export const ADVANCES_WHEN = 'A badge request moves on only while govhub is open in this browser and you are signed in as this identity with the same sign-in key.';
+export const ADVANCES_WHEN = 'A badge request moves on only while Governance is open in this browser and you are signed in as this identity with the same sign-in key.';
 
 /**
  * The issuer's first key epoch has no earlier token count, so the client posts a private badge for it without the crowd check:

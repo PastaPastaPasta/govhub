@@ -37,10 +37,10 @@ export function PasskeySignIn() {
   return (
     <div>
       {support === 'no' ? (
-        <p className="notice-box">This browser can't use passkeys to keep a govhub sign-in. Use your recovery phrase instead.</p>
+        <p className="notice-box">This browser can't use passkeys to keep a Governance sign-in. Use your recovery phrase instead.</p>
       ) : (
         <>
-          <p>Choose the passkey you added to govhub. Your device unlocks the key it keeps; nothing is sent to a server.</p>
+          <p>Choose the passkey you added to Governance. Your device unlocks the key it keeps; nothing is sent to a server.</p>
           <div className="form-actions">
             <button type="button" className="btn btn-primary" onClick={go} disabled={busy}>
               {busy ? <><span className="spinner" aria-hidden="true" /> Opening…</> : 'Use a passkey'}
@@ -124,7 +124,7 @@ export function Passkeys() {
 
       {step === 'confirm' && (
         <div className="notice-box">
-          <p>Passkey created. Confirm it once more so govhub can lock your key to it.</p>
+          <p>Passkey created. Confirm it once more so Governance can lock your key to it.</p>
           <button type="button" className="btn btn-primary" onClick={confirm}>
             Confirm with the passkey
           </button>

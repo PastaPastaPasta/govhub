@@ -142,11 +142,11 @@ export function RecoverFunds() {
       <h2 id="recover-title">Recover funds</h2>
       <p className="small">
         Paid a deposit address and it didn't finish? Paid too little, too much, twice, or after the account was set up? This finds every payment and asset lock
-        sitting at govhub's one-time addresses for your recovery phrase (or key), from the {network} chain itself: it works on any device, even if this browser forgot
+        sitting at Governance's one-time addresses for your recovery phrase (or key), from the {network} chain itself: it works on any device, even if this browser forgot
         the setup. Then you can send it to any Dash address, or use it for your account.
       </p>
       <p className="muted small">
-        Nothing leaves this browser but public key fingerprints (as a bloom filter) and the transactions you choose to send. govhub has no server that holds keys or
+        Nothing leaves this browser but public key fingerprints (as a bloom filter) and the transactions you choose to send. Governance has no server that holds keys or
         funds, and support can't move them for you. This scans {network}; payments made on {other} show after switching the network profile.
       </p>
       {!result && (
@@ -185,7 +185,7 @@ export function RecoverFunds() {
           <label>
             Look back to
             <select value={start} onChange={(e) => setStart(e.target.value as Start)} disabled={!!progress} data-testid="recover-start">
-              <option value="default">When govhub started taking payments (block {RECOVERY_START_HEIGHT[network].toLocaleString('en-US')})</option>
+              <option value="default">When Governance started taking payments (block {RECOVERY_START_HEIGHT[network].toLocaleString('en-US')})</option>
               <option value="month">The last 30 days</option>
               <option value="year">The last year (slow)</option>
               <option value="custom">A block height I choose</option>
@@ -198,7 +198,7 @@ export function RecoverFunds() {
             </label>
           )}
           <p className="muted small">
-            Pick an older start if you first used govhub (or this phrase in another Dash Platform wallet) earlier. The scan replays every block since then from a
+            Pick an older start if you first used Governance (or this phrase in another Dash Platform wallet) earlier. The scan replays every block since then from a
             DAPI node, roughly a minute per 5,000 to 10,000 blocks.
           </p>
           {error && (
@@ -560,7 +560,7 @@ function ExportKey({ item, scan, secret }: { item: RecoveryItem; scan: RecoveryS
       <p className="small">
         For importing into another wallet, e.g. Dash Core's <code>importprivkey</code> (legacy wallets) or a wallet with a "sweep private key" feature. Anyone who sees
         this key can take what is at {item.address}
-        {item.type === 'lock' ? ' and use its asset lock' : ''}. Don't paste it into websites or chats; govhub support will never ask for it.
+        {item.type === 'lock' ? ' and use its asset lock' : ''}. Don't paste it into websites or chats; nobody from Governance will ever ask for it.
       </p>
       <label className="check">
         <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} /> I understand anyone with this key can take these funds

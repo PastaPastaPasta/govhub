@@ -549,12 +549,13 @@ describe('trust list and storage', () => {
       { name: 'creds', identityId: bytesToId(rnd(32)), url: 'https://u:p@a.b' },
       { name: '', identityId: bytesToId(rnd(32)), url: 'https://a.b' },
       { name: 'TEST', identityId: bytesToId(rnd(32)), url: 'https://a.b' },
+      { name: 'dashhq', identityId: bytesToId(rnd(32)), url: 'https://a.b' },
+      { name: 'dashhq' + ' '.repeat(34) + 'x', identityId: bytesToId(rnd(32)), url: 'https://a.b' },
+      { name: 'dаshhq', identityId: bytesToId(rnd(32)), url: 'https://a.b' },
       { name: 'govhub', identityId: bytesToId(rnd(32)), url: 'https://a.b' },
-      { name: 'govhub' + ' '.repeat(34) + 'x', identityId: bytesToId(rnd(32)), url: 'https://a.b' },
-      { name: 'gоvhub', identityId: bytesToId(rnd(32)), url: 'https://a.b' },
     ]);
-    expect(issuers.map((i) => i.name)).toEqual(['test', 'govhub x']); // padding collapses: what is shown is what is compared
-    expect(errors).toHaveLength(8);
+    expect(issuers.map((i) => i.name)).toEqual(['test', 'dashhq x']); // padding collapses: what is shown is what is compared
+    expect(errors).toHaveLength(9);
     expect(errors.join(' ')).toMatch(/already has this name|another issuer on the list has this name/);
     expect(errors.join(' ')).toMatch(/belongs to a default issuer/);
   });

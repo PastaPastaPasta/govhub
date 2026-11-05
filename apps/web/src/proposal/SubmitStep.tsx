@@ -228,7 +228,7 @@ function Live({ draft }: { draft: ProposalDraft }) {
       <div className="vwin-body">
         <h3 id="pw-live-title">Your proposal is live</h3>
         <p className="vwin-sub">
-          <b>{lock.name}</b> is on the network and on govhub. Masternodes can vote on it now.
+          <b>{lock.name}</b> is on the network and in Governance. Masternodes can vote on it now.
         </p>
         <div className="vwin-actions">
           <Link className="btn btn-s btn-primary" to={`/p/h/${lock.govHash}`} data-testid="p-view">

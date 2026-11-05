@@ -68,7 +68,7 @@ test.describe('?config= links', () => {
     await page.setContent(`<iframe src="${baseURL}/settings?fixtures=1&config=${b64({ ...cfg, relays: [] })}" width="1000" height="700"></iframe>`);
     const frame = page.frameLocator('iframe');
     await expect(frame.getByTestId('framed-notice')).toContainText('only works in its own tab');
-    await expect(frame.getByRole('link', { name: 'Open govhub in its own tab' })).toHaveAttribute('target', '_blank');
+    await expect(frame.getByRole('link', { name: 'Open Governance in its own tab' })).toHaveAttribute('target', '_blank');
     await expect(frame.getByRole('button')).toHaveCount(0);
     await expect(frame.getByTestId('config-offer')).toHaveCount(0);
   });
@@ -104,7 +104,7 @@ test.describe('settings', () => {
     await expect(page.getByRole('alert')).toBeInViewport();
 
     await page.locator('input[type=file]').setInputFiles({ name: 'big.json', mimeType: 'application/json', buffer: Buffer.alloc(12 * 1024 * 1024, 0x20) });
-    await expect(page.getByRole('alert')).toContainText('Too large to be govhub settings: 12.0 MB');
+    await expect(page.getByRole('alert')).toContainText('Too large to be Governance settings: 12.0 MB');
     await expect(page.getByRole('alert')).toBeInViewport();
 
     await g.getByLabel(JSON_BOX).fill(' '.repeat(70 * 1024) + '{}');

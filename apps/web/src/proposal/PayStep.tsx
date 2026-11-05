@@ -217,7 +217,7 @@ function BrowserPay({ draft, commit, services }: PayProps) {
     ) : (
       <div className="notice-box" data-testid="p-pay-signin">
         <p className="small">
-          Paying from the browser needs a govhub sign-in: the one-time deposit address is derived from your recovery phrase (or signed-in key), so whatever is sent to it can
+          Paying from the browser needs a sign-in here: the one-time deposit address is derived from your recovery phrase (or signed-in key), so whatever is sent to it can
           always be recovered, on any device.
         </p>
         <button type="button" className="btn btn-s" onClick={openSignIn}>
@@ -377,7 +377,7 @@ function Deposit({ draft, view, error, retry, services }: { draft: ProposalDraft
       <details className="pw-details">
         <summary>Details</summary>
         <p className="small muted">
-          The deposit address is derived from your {f.source.kind === 'seed' ? `recovery phrase at ${proposalDepositPath(services.network, f.source.index)}` : `signed-in key (govhub derivation, index ${f.source.index})`}.
+          The deposit address is derived from your {f.source.kind === 'seed' ? `recovery phrase at ${proposalDepositPath(services.network, f.source.index)}` : `signed-in key (Governance derivation, index ${f.source.index})`}.
           Only payments that InstantSend locked or a block confirmed are spent. The fee transaction is [OP_RETURN with the proposal hash, worth {duffsToDash(GOVERNANCE_PROPOSAL_FEE_DUFFS)} {unit}] plus your change, and it is saved in this
           browser before it is sent.
         </p>

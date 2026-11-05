@@ -151,7 +151,7 @@ test.describe('fixture mode', () => {
 
   test('About verification explains every state', async ({ page }) => {
     await gotoFixtures(page, '/about/verification');
-    await expect(page.getByRole('heading', { level: 1, name: 'How govhub checks what it shows' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'How Governance checks what it shows' })).toBeVisible();
     for (const s of ['Verified', 'Checking…', 'Partly verified', "Couldn't verify", 'Failed verification', 'Demo data']) await expect(page.locator('.about-states')).toContainText(s);
   });
 

@@ -152,7 +152,7 @@ function RecoverableNotice({ records }: { records: FundingRecord[] }) {
 function SeedWarning({ what = 'phrase' }: { what?: 'phrase' | 'key' }) {
   return (
     <p className="seed-warning" role="note" data-testid="seed-warning">
-      <b>Use a {what === 'key' ? 'key from an account' : 'recovery phrase'} just for govhub.</b> You type it into a web page, so never use one that holds
+      <b>Use a {what === 'key' ? 'key from an account' : 'recovery phrase'} just for Governance.</b> You type it into a web page, so never use one that holds
       real money, or one you couldn’t afford to see leaked.
     </p>
   );
@@ -165,7 +165,7 @@ function Choose() {
   const pending = pendingFundings(store, network).filter((r) => r.kind === 'create');
   const main: Array<{ v: SheetView; title: string; text: string }> = [
     { v: 'create', title: 'Create an account', text: `Pay a little DASH (${formatDuffs(SUGGESTED_CREATE_DEPOSIT_DUFFS)} is suggested) from any Dash wallet; it covers the account and your first comments.` },
-    { v: 'phrase', title: 'I have a recovery phrase', text: 'The 12 or 24 words of an account you made for govhub.' },
+    { v: 'phrase', title: 'I have a recovery phrase', text: 'The 12 or 24 words of an account you made for Governance.' },
   ];
   const other: Array<{ v: SheetView; title: string; text: string }> = [
     { v: 'passkey', title: 'Use a passkey', text: 'If you saved one on this device or another.' },
@@ -240,7 +240,7 @@ function Choose() {
         <p className="small">
           Your account is a Dash Platform identity. Comments and reactions are stored on Dash Platform and paid for with a little credit from your account’s
           balance (about 0.0005 DASH a comment). Your recovery phrase is the account: other Dash wallets (DashPay, Dash Evo Tool) can restore it. It stays in
-          this browser; govhub has no account server and can’t reset it for you.
+          this browser; Governance has no account server and can’t reset it for you.
         </p>
       </details>
     </div>
@@ -278,10 +278,10 @@ export function CreateFlow() {
         </ol>
         <p>
           These words are your <b>recovery phrase</b>. They <i>are</i> your account: write them down in order and keep them somewhere safe, offline. Anyone who
-          has them can use your account, and nobody, govhub included, can recover it if you lose them.
+          has them can use your account, and nobody, Governance included, can recover it if you lose them.
         </p>
         <p className="seed-warning" role="note">
-          <b>Keep this phrase for govhub only.</b> Don’t reuse it in a wallet, and don’t keep more DASH in it than govhub needs.
+          <b>Keep this phrase for Governance only.</b> Don’t reuse it in a wallet, and don’t keep more DASH in it than Governance needs.
         </p>
         <ol className="words" data-testid="phrase-words">
           {list.map((w, i) => (
@@ -574,7 +574,7 @@ function PhraseSignIn() {
     <form className="form" onSubmit={submit}>
       <SeedWarning />
       <SecretField label="Recovery phrase (12 or 24 words)" what="the recovery phrase" value={text} onChange={setText} testId="phrase-input" disabled={busy} />
-      <p className="muted small">The phrase never leaves this browser. govhub finds your account by a public key fingerprint only.</p>
+      <p className="muted small">The phrase never leaves this browser. Governance finds your account by a public key fingerprint only.</p>
       {error && <p className="error" role="alert">{error}</p>}
       <div className="form-actions">
         <button type="submit" className="btn btn-primary" disabled={busy || !text.trim()}>
@@ -615,7 +615,7 @@ function KeySignIn() {
         Private key (WIF or 64 hex characters)
         <input type="password" value={text} onChange={(e) => setText(e.target.value)} autoComplete="off" spellCheck={false} data-testid="key-input" disabled={busy} />
       </label>
-      <p className="muted small">Use your identity's HIGH (or CRITICAL) authentication key, never the MASTER key. It stays in memory (shared with your other open govhub tabs) and is gone when you sign out or close the browser.</p>
+      <p className="muted small">Use your identity's HIGH (or CRITICAL) authentication key, never the MASTER key. It stays in memory (shared with your other open Governance tabs) and is gone when you sign out or close the browser.</p>
       <label className="check">
         <input type="checkbox" checked={keep} onChange={(e) => setKeep(e.target.checked)} /> Keep it with a passkey so I can sign in again without pasting
       </label>

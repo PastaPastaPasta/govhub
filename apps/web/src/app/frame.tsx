@@ -15,14 +15,14 @@ export function FramedNotice() {
   return (
     <main className="main">
       <section className="page-narrow" data-testid="framed-notice">
-        <h1>govhub only works in its own tab</h1>
+        <h1>Governance only works in its own tab</h1>
         <p>
-          This page shows govhub inside another site, where clicks can be redirected without you seeing it. Nothing here can be changed from inside a
+          This page shows Governance inside another site, where clicks can be redirected without you seeing it. Nothing here can be changed from inside a
           frame.
         </p>
         <p>
           <a className="btn btn-primary" href={location.href} target="_blank" rel="noopener noreferrer">
-            Open govhub in its own tab
+            Open Governance in its own tab
           </a>
         </p>
       </section>

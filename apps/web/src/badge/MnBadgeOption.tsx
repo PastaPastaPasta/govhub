@@ -21,7 +21,7 @@ function clock(ms: number): string {
 }
 
 /** What the badge request keeps of the voting key, and for how long (the job store: badge/store.ts, wiped by client.ts). */
-const KEY_COPY = 'To send that request, govhub keeps a copy of the voting key in this browser, never in plain text, until the request is sent, then deletes it.';
+const KEY_COPY = 'To send that request, Governance keeps a copy of the voting key in this browser, never in plain text, until the request is sent, then deletes it.';
 
 /** When the issuer can issue in the chosen mode, before anything is requested. `offer`: the switch is still off (keyring card). */
 function ReadinessLine({ b, offer = false }: { b: MnBadge; offer?: boolean }) {
@@ -92,7 +92,7 @@ function PrivacyOptions({ b, name, testId, children }: { b: MnBadge; name: strin
 /** The switch and what it means; the privacy mode under "Privacy options". `on` is the user's choice (default on). */
 export function BadgeChoice({ b, on, onChange }: { b: MnBadge; on: boolean; onChange(v: boolean): void }) {
   const { registry } = useApp();
-  const name = b.issuer?.name ?? 'govhub';
+  const name = b.issuer?.name ?? 'dashhq';
   return (
     <div className="mnb-choice" data-testid="mnb-choice">
       <label className="mnb-switch">

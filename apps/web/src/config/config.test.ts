@@ -200,7 +200,7 @@ describe('hosting and settings fixes (fix-hosting-ui)', () => {
     expect(importSizeError(12 * 1024 * 1024)).toMatch(/Too large .*12\.0 MB/);
     expect(importSizeError(MAX_IMPORT_BYTES + 1)).toMatch(/Too large/);
     const quota = Object.assign(new Error('The quota has been exceeded.'), { name: 'QuotaExceededError' });
-    expect(saveErrorText(quota)).toMatch(/storage for govhub is full/);
+    expect(saveErrorText(quota)).toMatch(/storage for Governance is full/);
     expect(saveErrorText(quota)).not.toMatch(/JSON/);
   });
 
