@@ -30,8 +30,19 @@ export function readableName(name: string): string {
  * The reading title of `name` among `others` (the proposals on show): its words, unless another, different name reads the same
  * ("Dash-Core-Group" beside "Dash_Core_Group"), when the exact name is the only honest title.
  */
-export function titleOf(name: string, others: Iterable<string>): string {
+export function titleOf(name: string, others: TitleIndex): string {
   const words = readableName(name);
-  for (const o of others) if (o !== name && readableName(o) === words) return name;
-  return words;
+  const same = others.get(words);
+  return same && [...same].some((o) => o !== name) ? name : words;
+}
+
+/** The names on show by their reading title, built once per list for titleOf. */
+export type TitleIndex = ReadonlyMap<string, ReadonlySet<string>>;
+export function titleIndex(names: Iterable<string>): TitleIndex {
+  const out = new Map<string, Set<string>>();
+  for (const n of names) {
+    const w = readableName(n);
+    out.set(w, (out.get(w) ?? new Set()).add(n));
+  }
+  return out;
 }

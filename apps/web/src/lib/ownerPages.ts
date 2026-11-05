@@ -365,11 +365,16 @@ let shipped: Promise<Shipped> | null = null;
 /** The file once it has been read, so a page rendered after that has its owner's title in its first frame (no title swap). */
 let shippedNow: Shipped | null = null;
 function shippedPages() {
+  if (shipped) return shipped;
   // a request that hangs must not hold a proposal's heading: after a few seconds there are no owners' pages this visit
-  shipped ??= fetch(`${(import.meta.env?.BASE_URL as string | undefined) ?? '/'}owners.json`, { credentials: 'omit', signal: AbortSignal.timeout(OWNERS_TIMEOUT_MS) })
+  // (an AbortController and a timer, not AbortSignal.timeout: this runs before the app renders, and older Safari lacks it)
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), OWNERS_TIMEOUT_MS);
+  shipped = fetch(`${(import.meta.env?.BASE_URL as string | undefined) ?? '/'}owners.json`, { credentials: 'omit', signal: ac.signal })
     .then((r) => (r.ok ? r.json() : null))
     .then(parseOwnerPages, () => parseOwnerPages(null))
-    .then((o) => (shippedNow = o));
+    .then((o) => (shippedNow = o))
+    .finally(() => clearTimeout(timer));
   return shipped;
 }
 

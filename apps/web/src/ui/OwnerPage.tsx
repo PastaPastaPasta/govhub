@@ -2,9 +2,8 @@
 // host and the date it was read, and marked as claims nobody has checked. The on-chain name stays beside any title taken from it.
 import { ownerPageOf, useOwnerPage, useOwnerPages, type OwnerPage } from '../lib/ownerPages.ts';
 import { Link } from './Link.tsx';
-import { useMemo } from 'react';
 import { useApp } from '../app/context.tsx';
-import { Slug, titleOf } from './Slug.tsx';
+import { Slug, titleIndex, titleOf, type TitleIndex } from './Slug.tsx';
 
 /** The page's words about what the proposal is for: its opening paragraph, else its description. */
 export const purposeOf = (page: OwnerPage): string | null => page.excerpt ?? page.description;
@@ -12,8 +11,15 @@ export const purposeOf = (page: OwnerPage): string | null => page.excerpt ?? pag
 /** A proposal's reading title (titleOf) among the active proposals, where a look-alike name would compete for the same votes. */
 export function useReadableTitle(name: string): string {
   const active = useApp().gov?.active?.data;
-  const names = useMemo(() => (active ?? []).map((s) => s.value.name), [active]);
-  return titleOf(name, names);
+  return titleOf(name, active ? indexOf(active) : NO_TITLES);
+}
+// one index per active list, shared by every card and row that reads it
+const indexes = new WeakMap<object, TitleIndex>();
+const NO_TITLES: TitleIndex = new Map();
+function indexOf(active: readonly { value: { name: string } }[]): TitleIndex {
+  let idx = indexes.get(active);
+  if (!idx) indexes.set(active, (idx = titleIndex(active.map((s) => s.value.name))));
+  return idx;
 }
 
 /** A card's one line on what a proposal is for: the owner's words, quoted; where they come from is said once above the list. */

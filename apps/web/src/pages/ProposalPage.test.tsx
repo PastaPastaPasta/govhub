@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // The proposal page for a lame duck (still on the network, nothing left that can pay it) against a proposal that has payments left.
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Cycle, Proposal, Sourced, Tally } from '../data/types.ts';
 import { formatDate } from '../lib/format.ts';
 import { GOV_PARAMS } from '../lib/governance.ts';
@@ -57,6 +57,10 @@ vi.mock('../ui/hooks.ts', async (orig) => ({
 }));
 
 const { ProposalView } = await import('./ProposalPage.tsx');
+afterEach(() => {
+  owner.page = null;
+  content.problem = null;
+});
 
 const cycle = (estTime: number): Sourced<Cycle> => ({ value: { superblockHeight: 1, budget: 6000e8, allocated: 250e8, votingDeadlineHeight: 0, estTime, validWeighted: 3320, paid: 0 }, prov });
 const proposal = (over: Partial<Proposal>): Sourced<Proposal> => ({
@@ -205,7 +209,6 @@ describe('ProposalView before and without its record', () => {
     expect(h1.getAttribute('aria-busy')).toBe('true');
     expect(h1.querySelector('.dh-skel')).not.toBeNull();
     expect(h1.textContent).toBe('pshenmic-dev-dash-desktop-november-2026');
-    owner.page = null;
   });
 
   it('heads with the owner’s title once read, the exact name beside it', async () => {
@@ -214,7 +217,6 @@ describe('ProposalView before and without its record', () => {
     expect(el.querySelector('[data-testid="p-title"]')!.textContent).toBe('Dash Desktop, November');
     expect(el.querySelector('[data-testid="p-chain-name"]')!.textContent).toContain('the title is the owner’s, from dashcentral.org');
     expect(el.querySelector('[data-testid="p-funds"] blockquote')!.textContent).toBe('It funds the desktop wallet.');
-    owner.page = null;
   });
 
   it('does not show fields that don’t match the hash as what it funds', async () => {
@@ -224,6 +226,5 @@ describe('ProposalView before and without its record', () => {
     expect(funds.querySelector('[data-testid="p-funds-mismatch"]')!.textContent).toContain('don’t match the hash the network votes on (url)');
     expect(funds.querySelector('[data-testid="p-ask"]')).toBeNull();
     expect(funds.textContent).not.toContain('Pays');
-    content.problem = null;
   });
 });
