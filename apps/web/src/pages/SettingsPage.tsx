@@ -1,4 +1,5 @@
 // Endpoint registry editor (PLAN §1.1): edit, export/import JSON, share as a ?config= link, reset.
+import { useRouteTitle } from '../app/title.ts';
 import { useEffect, useRef, useState } from 'react';
 import { COSTS, isIdentifier } from '@govhub/forum';
 import { useApp } from '../app/context.tsx';
@@ -216,6 +217,7 @@ function BlockListSettings() {
 }
 
 export function SettingsPage() {
+  useRouteTitle('/settings');
   const { registry, setRegistry } = useApp();
   const [draft, setDraft] = useState<Registry>(registry);
   const [json, setJson] = useState('');
@@ -288,7 +290,7 @@ export function SettingsPage() {
           <span className="group-title">
             Advanced: choose your own servers <Custom on={custom.size > 0} />
           </span>
-          <span className="small muted">Every server govhub uses can be replaced; each network starts with govhub's own.</span>
+          <span className="small muted">Every server Governance uses can be replaced; each network starts with the project's own.</span>
         </summary>
         <form
           className="form"

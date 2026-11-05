@@ -1,4 +1,5 @@
 // /about/verification: what the trust badge means, in plain words (the rules are verify/aggregate.ts; README has the same list).
+import { useRouteTitle } from '../app/title.ts';
 import { Link } from '../ui/Link.tsx';
 import type { ProvenanceKind } from '../data/types.ts';
 import { LEVEL_LABEL, type TrustLevel } from '../verify/aggregate.ts';
@@ -11,12 +12,12 @@ const STATES: Array<[TrustLevel, string]> = [
   ['partial', 'Every check finished, but something rests on someone’s word. The badge says what, in one line.'],
   ['error', 'A check couldn’t finish, usually because the network couldn’t be reached. Open the badge and choose Re-check.'],
   ['failed', 'A check contradicted the data. The proposal is hidden from the lists, and its page says what failed.'],
-  ['demo', 'Recorded sample data for trying govhub. Never “Verified”.'],
+  ['demo', 'Recorded sample data for trying Governance. Never “Verified”.'],
 ];
 
 const CHECKS: Array<[string, string]> = [
   ['The proposal text', 'The proposal’s fingerprint (its governance hash) is recomputed from the published text, and every field shown, from the name to the amount and dates, is the one it covers.'],
-  ['The submission fee', 'Every proposal burns a fee on the Dash chain that names that fingerprint. Your browser fetches that transaction, checks it, and proves it sits in a final block of the chain it verified itself from a checkpoint built into govhub, at the published height.'],
+  ['The submission fee', 'Every proposal burns a fee on the Dash chain that names that fingerprint. Your browser fetches that transaction, checks it, and proves it sits in a final block of the chain it verified itself from a checkpoint built into this app, at the published height.'],
   ['The chain and the masternode list', 'The list of masternodes, and so the number of votes a proposal needs, is proven by the chain too.'],
   ['The vote count', 'Every signed vote behind the tally is checked against the masternode’s voting key and recounted. The result must equal the tally recorded on Dash Platform, down to its fingerprint of the whole vote set.'],
   ['Funding', '“Passing” or “needs more votes” follows from the recount and the proven threshold. Whether a passing proposal fits in the next budget comes from recounting and ranking every active proposal the way Dash Core does.'],
@@ -31,11 +32,12 @@ const GLYPHS: Array<[ProvenanceKind, string, string]> = [
 ];
 
 export function VerificationPage() {
+  useRouteTitle('/about/verification');
   return (
     <article className="page-narrow about" aria-labelledby="about-v-title">
-      <h1 id="about-v-title">How govhub checks what it shows</h1>
+      <h1 id="about-v-title">How Governance checks what it shows</h1>
       <p className="lede">
-        govhub doesn’t ask you to trust a server. When you open a proposal, your browser checks it against the Dash chain by itself, in the background, and sums the
+        Governance doesn’t ask you to trust a server. When you open a proposal, your browser checks it against the Dash chain by itself, in the background, and sums the
         result up in one badge. Click the badge on any proposal to see every check.
       </p>
 
@@ -81,12 +83,12 @@ export function VerificationPage() {
         the owner’s signed claim, and is not part of the badge.
       </p>
       <p>
-        <Link to="/about/trust">What we can and can’t lie about</Link>: every server govhub uses, and what each could get wrong or hide.
+        <Link to="/about/trust">What we can and can’t lie about</Link>: every server Governance uses, and what each could get wrong or hide.
       </p>
 
       <h2>Your own votes</h2>
       <p>
-        When you vote with your masternodes, govhub follows each vote until the network has it, and checks that the vote the network now holds is yours: the
+        When you vote with your masternodes, Governance follows each vote until the network has it, and checks that the vote the network now holds is yours: the
         exact signature, against your voting key. “Counted” means a recount of the tally includes it. Open “Check it yourself” on the confirmation to see the
         signature and the Dash Core command that shows the same.
       </p>

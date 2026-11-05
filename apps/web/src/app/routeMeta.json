@@ -1,0 +1,49 @@
+{
+  "product": "Governance · dashhq",
+  "routes": {
+    "/": {
+      "title": null,
+      "description": "Dash treasury proposals, the next payout and how masternodes are voting, checked against the chain in your browser."
+    },
+    "/past": {
+      "title": "Past proposals",
+      "description": "Dash treasury proposals whose payment window has ended: what they asked for and how masternodes voted."
+    },
+    "/names": {
+      "title": "Name contests",
+      "description": "Dash usernames that went to a masternode vote: who wants each name, the vote so far and when voting closes."
+    },
+    "/masternodes": {
+      "title": "My masternodes",
+      "description": "Vote on Dash proposals and name contests with your masternodes' voting keys."
+    },
+    "/votes": {
+      "title": "My votes",
+      "description": "The governance votes your masternodes cast from this browser, and whether the network counted them."
+    },
+    "/create": {
+      "title": "Create a proposal",
+      "description": "Write a Dash treasury proposal, pay its fee and submit it to the network from your browser."
+    },
+    "/settings": {
+      "title": "Settings",
+      "description": "Network, data sources and verification settings for Dash Governance."
+    },
+    "/badge": {
+      "title": "Masternode owner badge",
+      "description": "Show that you own a Dash masternode next to your name in Governance discussions, without revealing which one."
+    },
+    "/about": {
+      "title": "About",
+      "description": "What Dash Governance is, where its data comes from and how your browser checks it."
+    },
+    "/about/verification": {
+      "title": "How verification works",
+      "description": "How your browser checks Dash proposals, votes and payments against the chain, step by step."
+    },
+    "/about/trust": {
+      "title": "What we can and can't lie about",
+      "description": "Which Governance facts your browser proves, and which still rest on someone's word."
+    }
+  }
+}

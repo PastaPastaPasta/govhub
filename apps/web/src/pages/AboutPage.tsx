@@ -1,5 +1,6 @@
 // /about: what govhub is, who it's for, where its data lives, and where to read more. Plain words; the details are on
 // /about/verification, /about/trust and the docs on GitHub (docs/privacy.md, docs/self-hosting.md).
+import { useRouteTitle } from '../app/title.ts';
 import { Link } from '../ui/Link.tsx';
 import { TRUST_DOC_URL } from './TrustPage.tsx';
 
@@ -18,6 +19,7 @@ function Ext({ href, children }: { href: string; children: React.ReactNode }) {
 }
 
 export function AboutPage() {
+  useRouteTitle('/about');
   return (
     <article className="page-narrow about" aria-labelledby="about-title">
       <h1 id="about-title">About Governance</h1>
@@ -117,7 +119,7 @@ export function AboutPage() {
       <p>
         Governance works with servers that anyone can run: the ones that fetch governance data, send votes to the network, or hand out badges. You can switch to
         servers you run or trust in <Link to="/settings">Settings</Link>, and share your settings as a link. To run your own, see{' '}
-        <Ext href={SELF_HOSTING_DOC_URL}>running your own govhub servers</Ext>.
+        <Ext href={SELF_HOSTING_DOC_URL}>running your own servers</Ext>.
       </p>
 
       <h2>Privacy</h2>

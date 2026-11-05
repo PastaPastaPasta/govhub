@@ -1,6 +1,7 @@
 // "Get MN badge" (PLAN §8.5, §8.10): pick an MN (paste its voting key; the MN keyring calls the same requestBadge with its own
 // signer), choose a privacy mode (Standard: the token now, the badge with your next post; Private: next epoch, at a random time),
 // and follow the request until the badge is posted (Register now posts a held one at once).
+import { useRouteTitle } from '../app/title.ts';
 import { useState } from 'react';
 import { Link } from '../ui/Link.tsx';
 import { EPOCH_PARAMS, epochStart, type EpochParams } from '@govhub/badge';
@@ -101,6 +102,7 @@ function JobRow({ job, now, postWait, onRemove, onCancel, onRetry, onRegister }:
 }
 
 export function BadgePage() {
+  useRouteTitle('/badge');
   const { registry, mode } = useApp();
   const { session } = useForum();
   const { contractId, trust, jobs, coreHeight, requestBadge, removeJob, retryJob, registerNow, quietSince, postWait, reader, privacy, setPrivacy } = useBadgeCtx();
@@ -159,7 +161,7 @@ export function BadgePage() {
       <p>
         Masternode owners can show <span className="chip chip-mn">MN · vouched by …</span> next to their name without revealing which masternode, how many, or of what type. An issuer
         blind-signs a token for your identity after you prove control of a masternode’s <b>voting key</b>. Blind signing means the token itself does not tell the issuer which
-        identity it is for; the issuer can still try to match your request to a badge by timing. How hard that is depends on the mode you choose below. The govhub issuer’s
+        identity it is for; the issuer can still try to match your request to a badge by timing. How hard that is depends on the mode you choose below. The Governance issuer’s
         operator commits to keeping no logs that could link them (<PolicyLink />).
       </p>
       <p className="small" data-testid="badge-main-path">

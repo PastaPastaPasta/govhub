@@ -1,4 +1,5 @@
 // /votes: "my votes" across every active proposal, for all or selected masternodes of the keyring.
+import { useRouteTitle } from '../app/title.ts';
 import { useApp } from '../app/context.tsx';
 import { fmtTime } from '../ui/vote/common.tsx';
 import { VotesList } from '../ui/vote/VotesList.tsx';
@@ -7,6 +8,7 @@ import { useKeyring } from '../voting/KeyringContext.tsx';
 import '../voting/voting.css';
 
 export function MyVotesPage() {
+  useRouteTitle('/votes');
   const { gov } = useApp();
   const k = useKeyring();
   const deadline = useDeadline();

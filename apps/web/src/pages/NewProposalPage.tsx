@@ -1,5 +1,6 @@
 // Create a proposal (replaces proposal.dash.org; PLAN 6.1). Step by step in plain words, the cost up front, technical detail behind
 // "Details". Drafts stay in this browser (and in the backup file); nothing is published until the proposal is submitted.
+import { useRouteTitle } from '../app/title.ts';
 import { duffsToDash } from '@govhub/verify';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -20,6 +21,7 @@ const STEP_LABELS = ['Details', 'Payments', 'Review', 'Pay the fee', 'Submit'];
 const MAX_BACKUP_BYTES = 64 * 1024;
 
 export function NewProposalPage() {
+  useRouteTitle('/create');
   const { source, mode } = useApp();
   const network = source.coreNetwork;
   const services = useMemo<WizardServices>(() => (mode === 'fixtures' ? demoServices(network) : liveServices(source)), [mode, network, source]);
@@ -40,7 +42,7 @@ export function NewProposalPage() {
     return (
       <section className="page-narrow">
         <h1>Create a proposal</h1>
-        <p className="notice-box">This draft is for Dash {draft.network}; govhub is set to {network}. Switch the network profile in Settings to continue it.</p>
+        <p className="notice-box">This draft is for Dash {draft.network}; Governance is set to {network}. Switch the network profile in Settings to continue it.</p>
       </section>
     );
   }
@@ -84,7 +86,7 @@ function Start({ drafts, demo, onOpen, onNew, onRestored }: { drafts: ProposalDr
         <li>Choose the amount and how many payments (one at each superblock).</li>
         <li>Review it against Dash Core's rules.</li>
         <li>Save a backup, then pay the fee from any wallet or from Dash Core.</li>
-        <li>govhub sends it to the network once the payment is ChainLocked (usually within a few minutes). It goes live after 6 confirmations (about 15 minutes).</li>
+        <li>Governance sends it to the network once the payment is ChainLocked (usually within a few minutes). It goes live after 6 confirmations (about 15 minutes).</li>
       </ol>
       {drafts.length > 0 && (
         <section aria-labelledby="pw-drafts-title">

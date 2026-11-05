@@ -1,5 +1,6 @@
 // /about/trust: what the people running govhub's servers could and couldn't lie about, in plain words. The full, code-cited
 // version is docs/TRUST.md; keep the two in step.
+import { useRouteTitle } from '../app/title.ts';
 import { Link } from '../ui/Link.tsx';
 
 export const TRUST_DOC_URL = 'https://github.com/PastaPastaPasta/govhub/blob/main/docs/TRUST.md';
@@ -19,7 +20,7 @@ const POINTS: Array<[string, string]> = [
   ],
   [
     'The chain is checked from checkpoints built into this app.',
-    'Blocks, the masternode list and the votes a proposal needs are proven from checkpoints in govhub’s code, through ChainLocks or, when no quorum proof is available, proof of work. Nodes can refuse to answer, but can’t fake the chain without the Dash network’s own signing quorums or mining power. On testnet, mining power protects little, and the app says so.',
+    'Blocks, the masternode list and the votes a proposal needs are proven from checkpoints in this app’s code, through ChainLocks or, when no quorum proof is available, proof of work. Nodes can refuse to answer, but can’t fake the chain without the Dash network’s own signing quorums or mining power. On testnet, mining power protects little, and the app says so.',
   ],
   [
     '“MN · vouched by X” is X’s word.',
@@ -31,16 +32,17 @@ const POINTS: Array<[string, string]> = [
   ],
   [
     'The app itself is the biggest trust.',
-    'Whoever serves this website could serve different code. To remove that trust, build govhub from its source and run it yourself, with your own backends.',
+    'Whoever serves this website could serve different code. To remove that trust, build Governance from its source (the govhub repository) and run it yourself, with your own backends.',
   ],
 ];
 
 export function TrustPage() {
+  useRouteTitle('/about/trust');
   return (
     <article className="page-narrow about" aria-labelledby="about-t-title">
       <h1 id="about-t-title">What we can and can’t lie about</h1>
       <p className="lede">
-        govhub checks most of what it shows in your browser. Some things still rest on someone’s word: here is what the people running govhub’s servers could get wrong
+        Governance checks most of what it shows in your browser. Some things still rest on someone’s word: here is what the people running Governance’s servers could get wrong
         or hide, and what they couldn’t.
       </p>
       <ul className="about-checks" data-testid="trust-points">
@@ -55,7 +57,7 @@ export function TrustPage() {
         <a href={TRUST_DOC_URL} target="_blank" rel="noopener noreferrer" data-testid="trust-doc-link">
           the trust model on GitHub
         </a>
-        . What each badge state means is on <Link to="/about/verification">How govhub checks what it shows</Link>.
+        . What each badge state means is on <Link to="/about/verification">How Governance checks what it shows</Link>.
       </p>
     </article>
   );

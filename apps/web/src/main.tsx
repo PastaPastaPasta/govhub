@@ -1,4 +1,5 @@
 import { StrictMode } from 'react';
+import { useTitle } from './app/title.ts';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { Link } from './ui/Link.tsx';
@@ -43,6 +44,7 @@ function SdkWarmup() {
 }
 
 function NotFoundPage() {
+  useTitle('Page not found');
   return (
     <section className="page-narrow">
       <h1>Page not found</h1>
