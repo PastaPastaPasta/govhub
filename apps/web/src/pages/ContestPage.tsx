@@ -69,22 +69,23 @@ function Missing({ label, children, network }: { label: string; children: string
 
 
 /** DPNS names and self-chosen profiles of these identities, best effort (an identity without either shows its short id). */
-function useIdentities(ids: readonly string[]): { names: ReadonlyMap<string, string>; profiles: ReadonlyMap<string, Profile> } {
+function useIdentities(ids: readonly string[]): { names: ReadonlyMap<string, string>; namesRead: boolean; profiles: ReadonlyMap<string, Profile> } {
   const { forum } = useForum();
   const [names, setNames] = useState<ReadonlyMap<string, string>>(new Map());
+  const [namesRead, setNamesRead] = useState(false);
   const [profiles, setProfiles] = useState<ReadonlyMap<string, Profile>>(new Map());
   const key = [...ids].sort().join(',');
   useEffect(() => {
     if (!key) return;
     let live = true;
     const list = key.split(',');
-    forum.names(list).then((m) => live && setNames(m), () => {});
+    forum.names(list).then((m) => live && (setNames(m), setNamesRead(true)), () => {});
     forum.reader.profiles(list).then((m) => live && setProfiles(m), () => {});
     return () => {
       live = false;
     };
   }, [forum, key]);
-  return { names, profiles };
+  return { names, namesRead, profiles };
 }
 
 function statusLine(phase: Phase, s: ContestState, endsAt: number | null, nowMs: number): string {
@@ -198,7 +199,6 @@ function ContestView({ label }: { label: string }) {
         {regAs && <p className="muted">Registers as {regAs}.dash</p>}
       </header>
 
-      <p className="small muted">Elsewhere: <a href={window.dashhq?.href('explorer', '/dpns?name=' + encodeURIComponent(label))}>Username in Explorer</a></p>
       <div className="p-layout">
         <div className="p-main">
           <section className="panel dh-card c-ballot" aria-labelledby="c-votes-title">
@@ -211,7 +211,7 @@ function ContestView({ label }: { label: string }) {
             <BallotBar state={s} />
             <ol className="c-choices" data-testid="contenders">
               {s.contenders.map((c, i) => (
-                <ContenderRow key={c.identityId} label={label} c={c} rank={i} total={s.total} won={winner === c.identityId} dpns={who.names.get(c.identityId)} profile={who.profiles.get(c.identityId)} />
+                <ContenderRow key={c.identityId} label={label} c={c} rank={i} total={s.total} won={winner === c.identityId} dpns={who.names.get(c.identityId)} namesRead={who.namesRead} profile={who.profiles.get(c.identityId)} />
               ))}
               <li className="c-choice">
                 <span className="c-swatch cb-abstain" aria-hidden="true" />
@@ -264,6 +264,9 @@ function ContestView({ label }: { label: string }) {
               </div>
             </dl>
             <p className="small muted">{s.height !== null ? `Read from Dash Platform with proofs, at Platform block ${formatInt(s.height)}.` : 'Read from Dash Platform with proofs.'}</p>
+            <a className="small" href={window.dashhq?.href('explorer', '/dpns?name=' + encodeURIComponent(label))} data-testid="contest-explorer">
+              This name in Explorer →
+            </a>
           </section>
         </aside>
       </div>
@@ -286,7 +289,7 @@ function Tally({ n, total }: { n: number; total: number }) {
   );
 }
 
-function ContenderRow({ label, c, rank, total, won, dpns, profile }: { label: string; c: Contender; rank: number; total: number; won: boolean; dpns?: string | undefined; profile?: Profile | undefined }) {
+function ContenderRow({ label, c, rank, total, won, dpns, namesRead, profile }: { label: string; c: Contender; rank: number; total: number; won: boolean; dpns?: string | undefined; namesRead: boolean; profile?: Profile | undefined }) {
   return (
     <li className={`c-choice${won ? ' c-won' : ''}`} data-testid="contender">
       <span className={`c-swatch ${contenderClass(rank)}`} aria-hidden="true" />
@@ -296,12 +299,18 @@ function ContenderRow({ label, c, rank, total, won, dpns, profile }: { label: st
           <AuthorName id={c.identityId} profile={profile} dpns={dpns} />
           {won && <span className="tag dh-badge ctag-won">Got the name</span>}
         </span>
+        <span className="small muted" data-testid="contender-facts">
+          {c.requested && (
+            <>
+              Asked for <bdi className="c-requested">{c.requested}</bdi>
+              {' · '}
+            </>
+          )}
+          {/* who is asking, when the identity has no name to show: say so, and where to look it up */}
+          {!dpns && namesRead && 'no other username yet · '}
+          <a href={window.dashhq?.href('explorer', '/identity?id=' + encodeURIComponent(c.identityId))}>its identity in Explorer</a>
+        </span>
         <ContestVoters label={label} identityId={c.identityId} />
-        {c.requested && (
-          <span className="small muted">
-            Asked for <bdi className="c-requested">{c.requested}</bdi>
-          </span>
-        )}
       </div>
       <Tally n={c.votes} total={total} />
     </li>

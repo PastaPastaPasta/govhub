@@ -36,11 +36,11 @@ export function leadText(s: ContestState): string {
       const got = s.contenders.find((c) => c.identityId === w);
       return got ? `Won with ${percent(got.votes, s.total)} of the votes` : 'Awarded';
     }
-    if (s.outcome.kind === 'locked') return `Locked by ${percent(s.lock, s.total)} of the votes`;
+    if (s.outcome.kind === 'locked') return `Locked: nobody gets it (${percent(s.lock, s.total)} of the votes)`;
     return s.total === 0 ? 'No votes' : 'No winner';
   }
   if (s.total === 0) return 'No votes yet';
-  if (!top || s.lock > top.votes) return `Lock leads with ${percent(s.lock, s.total)}`;
+  if (!top || s.lock > top.votes) return `Most votes: nobody gets it (Lock), ${percent(s.lock, s.total)}`;
   if (top.votes === 0) return 'Only abstain votes so far';
   if (s.contenders.length === 1) return `${percent(top.votes, s.total)} for the only contender`;
   return `Leader ${percent(top.votes, s.total)}, next ${percent(s.contenders[1]!.votes, s.total)}`;

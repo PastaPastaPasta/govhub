@@ -68,13 +68,13 @@ describe('card wording', () => {
   it('says who leads while open', () => {
     expect(leadText(state())).toBe('No votes yet');
     expect(leadText(state({ contenders: [{ identityId: A, votes: 6 }], lock: 4 }))).toBe('60% for the only contender');
-    expect(leadText(state({ contenders: [{ identityId: A, votes: 3 }], lock: 7 }))).toBe('Lock leads with 70%');
+    expect(leadText(state({ contenders: [{ identityId: A, votes: 3 }], lock: 7 }))).toBe('Most votes: nobody gets it (Lock), 70%');
     expect(leadText(state({ contenders: [{ identityId: A, votes: 6 }, { identityId: B, votes: 3 }], abstain: 1 }))).toBe('Leader 60%, next 30%');
     expect(leadText(state({ contenders: [{ identityId: A, votes: 0 }], abstain: 2 }))).toBe('Only abstain votes so far');
   });
   it('says how it ended once decided', () => {
     expect(leadText(state({ contenders: [{ identityId: A, votes: 9 }], abstain: 1, outcome: { kind: 'won', identityId: A, at: 1 } }))).toBe('Won with 90% of the votes');
-    expect(leadText(state({ contenders: [{ identityId: A, votes: 1 }], lock: 3, outcome: { kind: 'locked', at: 1 } }))).toBe('Locked by 75% of the votes');
+    expect(leadText(state({ contenders: [{ identityId: A, votes: 1 }], lock: 3, outcome: { kind: 'locked', at: 1 } }))).toBe('Locked: nobody gets it (75% of the votes)');
     expect(leadText(state({ contenders: [{ identityId: B, votes: 1 }], outcome: { kind: 'won', identityId: A, at: 1 } }))).toBe('Awarded');
   });
   it('tags the status, urgent under a day', () => {
