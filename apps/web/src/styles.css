@@ -3215,3 +3215,45 @@ dashhq-hash { vertical-align: middle; max-width: 100%; }
 .usd { display: block; margin-block-start: 2px; font-weight: 400; color: var(--dh-ink-2); }
 .usd-value { color: var(--dh-ink); font-variant-numeric: tabular-nums; }
 .usd-flag { font-weight: 600; color: var(--dh-warn-ink, var(--dh-ink)); }
+
+/* ---- Past: the treasury ledger and the proposals' outcomes ------------------------------------- */
+.past-page { display: grid; gap: var(--s-4); }
+.past-page > .list-head { margin: 0; }
+.past-head { display: grid; gap: 10px; justify-items: start; }
+.past-head h1 { margin: 0; }
+.past-head .lede { margin: 0; }
+.ledger { display: grid; gap: 14px; }
+.ledger-stats { padding: 4px 0 6px; }
+.ledger-note { margin: 0; max-inline-size: 72ch; }
+.sb-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 14px 16px 12px; cursor: pointer; list-style: none; }
+.sb-head::-webkit-details-marker { display: none; }
+.sb[open] > .sb-head { border-block-end: 1px solid var(--dh-line); }
+.sb-head:hover { background: var(--dh-hover); }
+.sb-head:focus-visible { outline: 2px solid var(--dh-focus); outline-offset: -2px; }
+.sb-chevron { display: inline-block; inline-size: 7px; block-size: 7px; margin-inline-end: 10px; border-right: 1.5px solid var(--dh-ink-2); border-bottom: 1.5px solid var(--dh-ink-2); transform: translateY(-3px) rotate(-45deg); transition: transform var(--dh-dur-1) var(--dh-ease); }
+.sb[open] .sb-chevron { transform: translateY(-4px) rotate(45deg); }
+.sb-date { margin: 0; font-size: 17px; font-weight: 620; min-inline-size: 6rem; }
+.sb-skel { inline-size: 7rem; }
+.sb-total { margin: 0; margin-inline-start: auto; text-align: end; }
+.sb-total b { font-variant-numeric: tabular-nums; }
+.sb-error { margin: 0; padding: 12px 16px; }
+.sb-lines th, .sb-lines td { padding: 8px 16px; font-size: 14px; }
+.sb-lines tbody tr:last-child > * { border-bottom: 0; }
+.sb-lines tbody th { font-weight: 560; text-align: start; overflow-wrap: anywhere; }
+.sb-lines .r { text-align: end; white-space: nowrap; }
+.sb-payee { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; }
+.ledger-more { display: flex; justify-content: center; padding-block: 4px; }
+.ledger-more p { margin: 0; text-align: center; max-inline-size: 60ch; }
+.outcome { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0 6px; }
+.outcome .dot { inline-size: 8px; block-size: 8px; border-radius: 50%; background: var(--dh-ink-2); }
+.outcome-pass .dot { background: var(--dh-good); }
+.outcome-warn .dot { background: var(--dh-warn); }
+.outcome-fail .dot { background: var(--dh-bad); }
+@media (max-width: 600px) {
+  .sb-head { padding: 12px; }
+  .sb-total { margin-inline-start: 0; text-align: start; flex-basis: 100%; }
+  .sb-lines th, .sb-lines td { padding: 8px 12px; }
+  .past td[data-label="Ran "], .past td.past-none { display: none; }
+  .past td[data-label="Ran "] + td::before { content: attr(data-label); }
+}
+.nowrap { white-space: nowrap; }

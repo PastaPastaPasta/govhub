@@ -4,6 +4,7 @@ import type { CoreNetwork, Proposal } from '../data/types.ts';
 import type { AnchorSummary, ChainReport, PaymentsFact } from './chain.ts';
 import type { CollateralVerdict } from './collateral.ts';
 import type { RankingResult } from './ranking.ts';
+import type { SuperblockRead } from '../lib/ledger.ts';
 import type { VoteRun, VoteTarget } from './votes.ts';
 
 export type BridgeDescriptor = { kind: 'http'; name: string; base: string } | { kind: 'fixture' };
@@ -44,6 +45,8 @@ export type WorkerRequest =
       now: number;
       crossCheckSml: boolean;
     }
+  /** One superblock's coinbase from the verified chain (the Past ledger): pinned below the checkpoint, reached by headers above it. */
+  | { id: number; kind: 'superblock'; height: number; dapi: DapiDescriptor; network: CoreNetwork }
   /** The anchored chain alone (the header's chain shield): trust root, verified tip, ChainLock. */
   | { id: number; kind: 'anchor'; dapi: DapiDescriptor }
   /** Recount every listed proposal's live votes and rank them like Core's superblock candidate. */
@@ -55,6 +58,7 @@ export type WorkerResponse =
   | { id: number; kind: 'chain'; report: ChainReport }
   | { id: number; kind: 'payments'; payments: PaymentsFact }
   | { id: number; kind: 'anchor'; anchor: AnchorSummary }
+  | { id: number; kind: 'superblock'; read: SuperblockRead }
   | {
       id: number;
       kind: 'votes';

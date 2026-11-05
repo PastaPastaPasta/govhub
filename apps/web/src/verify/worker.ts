@@ -8,7 +8,7 @@ import type { Bridge, BridgeMnList, BridgeVotes } from '../data/bridge.ts';
 import { makeBridge } from '../data/bridgeFactory.ts';
 import type { CoreNetwork } from '../data/types.ts';
 import { errText } from '../lib/format.ts';
-import { claimedWeight, payments, scheduleAndBudget, summarize, threshold, EST_BLOCK_SECONDS } from './chain.ts';
+import { claimedWeight, payments, readCoinbase, scheduleAndBudget, summarize, threshold, EST_BLOCK_SECONDS } from './chain.ts';
 import { verifyCollateral } from './collateral.ts';
 import type { DapiDescriptor, SmlUsed, WorkerRequest, WorkerResponse } from './protocol.ts';
 import { rankRecounts, type RecountedProposal } from './ranking.ts';
@@ -154,6 +154,18 @@ async function handle(req: WorkerRequest): Promise<void> {
   if (req.kind === 'anchor') {
     if (req.dapi.kind !== 'live') throw new Error('recorded data has no header chain');
     post({ id: req.id, kind: 'anchor', anchor: summarize(await anchor(await dapiFor(req.dapi), progress)) });
+    return;
+  }
+
+  if (req.kind === 'superblock') {
+    if (req.dapi.kind !== 'live') throw new Error('the treasury ledger needs live DAPI nodes (recorded data has no header chain)');
+    const dapi = await dapiFor(req.dapi);
+    let a = await anchor(dapi, progress);
+    // below the contiguous run and not pinned (between the checkpoint and the run): headers down to it first
+    if (!a.chain.hashHexAt?.(req.height) && req.height < a.chain.lo) a = await anchor(dapi, progress, req.height);
+    progress(`Reading superblock ${req.height.toLocaleString('en-US')}`);
+    const c = (await readCoinbase(dapi, a, req.height, superblockCache(req.network)))!;
+    post({ id: req.id, kind: 'superblock', read: { height: req.height, blockHash: c.blockHash, time: c.time, outputs: c.outputs, weak: a.weak } });
     return;
   }
 

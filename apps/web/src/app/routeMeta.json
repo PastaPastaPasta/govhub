@@ -7,7 +7,7 @@
     },
     "/past": {
       "title": "Past proposals",
-      "description": "Dash treasury proposals whose payment window has ended: what they asked for and how masternodes voted."
+      "description": "What the Dash treasury paid, superblock by superblock, and how each ended proposal turned out: funded, partly funded or not."
     },
     "/names": {
       "title": "Name contests",
