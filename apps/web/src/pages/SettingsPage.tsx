@@ -412,7 +412,7 @@ export function SettingsPage() {
               <textarea rows={2} value={draft.relays.map((r) => r.url).join('\n')} onChange={(e) => set('relays', lines(e.target.value).map((url, i) => ({ name: `relay ${i + 1}`, url })))} spellCheck={false} />
             </label>
             <label>
-              Price feed URL (JSON with dash.usd; empty turns it off)
+              Price feed URL (a DASH-USD spot price in Coinbase's JSON; empty turns it off; never used off Mainnet)
               <input type="url" value={draft.priceFeed?.url ?? ''} onChange={(e) => set('priceFeed', e.target.value ? { name: draft.priceFeed?.name ?? 'price feed', url: e.target.value } : null)} spellCheck={false} />
             </label>
           </fieldset>

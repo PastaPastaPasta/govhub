@@ -174,16 +174,18 @@ describe('bridge client against services/bridge/openapi.json (untrusted input)',
   });
 });
 
-describe('USD price (D-083)', () => {
+describe('USD price (design/PRICE.md)', () => {
   afterEach(() => vi.unstubAllGlobals());
-  it('is never asked for or shown on testnet, where DASH has no price; mainnet still gets one', async () => {
+  it('is never asked for or shown off Mainnet, where DASH has no price; Mainnet asks Coinbase', async () => {
     const asked: string[] = [];
     vi.stubGlobal('fetch', async (u: string) => {
       asked.push(u);
-      return new Response(JSON.stringify({ dash: { usd: 30 } }), { status: 200 });
+      return new Response(JSON.stringify({ data: { amount: '48.74', base: 'DASH', currency: 'USD' } }), { status: 200 });
     });
     expect(await liveSource(profileRegistry('testnet')).usdPrice()).toBeNull();
     expect(asked).toEqual([]);
-    expect((await liveSource(profileRegistry('dev')).usdPrice())?.value).toBe(30);
+    const q = await liveSource(profileRegistry('dev')).usdPrice();
+    expect(q).toMatchObject({ rate: 48.74, source: 'Coinbase' });
+    expect(asked).toEqual(['https://api.coinbase.com/v2/prices/DASH-USD/spot']);
   });
 });

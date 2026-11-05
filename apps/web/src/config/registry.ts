@@ -5,6 +5,7 @@
 // Settings start from a network PROFILE (Testnet, Dev, Mainnet): one coherent set of Core network, Platform network,
 // `gov` contract, bridge, DAPI node source and forum contracts. Any field can still be overridden ("custom") under
 // Advanced, but switching profile is one action and never mixes one network's data with another's parameters.
+import { COINBASE_SPOT } from '../data/price.ts';
 import type { CoreNetwork } from '../data/types.ts';
 
 /**
@@ -231,7 +232,9 @@ function profileBridges(p: NetworkProfile): BridgeEndpoint[] {
   return [{ name: url.replace(/^[a-z]+:\/\//i, ''), httpBase: url, govContractId: p.govContractId, bridgeIdentityId: p.bridge.identityId, enabled: true }];
 }
 
-const PRICE_FEED: NamedUrl = { name: 'CoinGecko', url: 'https://api.coingecko.com/api/v3/simple/price?ids=dash&vs_currencies=usd' };
+const PRICE_FEED: NamedUrl = COINBASE_SPOT;
+/** The default before the family price rule (design/PRICE.md): saved settings that still name it get the new default. */
+const OLD_DEFAULT_PRICE_FEED = 'https://api.coingecko.com/api/v3/simple/price?ids=dash&vs_currencies=usd';
 const EMPTY_FORUM: ForumEndpoints = { contractId: '', modContractId: '', moderationIdentityId: '', moderationName: 'Governance moderation', claimPortals: [] };
 
 /** A profile's settings, with no overrides. */
@@ -447,7 +450,7 @@ export function parseRegistry(input: unknown): { registry: Registry; errors: str
         if (kind !== 'bridge' && kind !== 'quorum-list') errors.push(`quorum proof source ${i + 1}: kind must be "bridge" or "quorum-list"`);
         return { ...q, kind: kind === 'quorum-list' ? 'quorum-list' : 'bridge' };
       }),
-    priceFeed: pf && typeof pf === 'object' ? { name: cleanName(pf.name) || 'price feed', url: httpsUrl(pf.url, 'price feed URL', errors) } : null,
+    priceFeed: pf && typeof pf === 'object' ? (pf.url === OLD_DEFAULT_PRICE_FEED ? { ...PRICE_FEED } : { name: cleanName(pf.name) || 'price feed', url: httpsUrl(pf.url, 'price feed URL', errors) }) : null,
     accounts: optionalNamed(o.accounts, d.accounts, 'accounts service'),
     faucet: optionalNamed(o.faucet, d.faucet, 'faucet'),
     forum: parseForum(o.forum, d.forum, errors),

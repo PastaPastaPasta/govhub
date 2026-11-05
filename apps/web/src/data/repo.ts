@@ -8,6 +8,7 @@ import { HttpBridge, type Bridge } from './bridge.ts';
 import { cacheGet, cachePut } from './cache.ts';
 import { createWebDapi, dapiConfig } from './dapi.ts';
 import { loadFixtures } from './fixtures.ts';
+import { fetchSpot, type UsdQuote } from './price.ts';
 import { docToCycle, docToProposal, docToTally, docToTallySet, govDocTypes, queryDocs } from './platform.ts';
 import { activeProposals, latestCycles, pastProposals, proposalByHash, proposalsByName, talliesFor, tallySetPages, PAGE } from './queries.ts';
 import type { BridgeDescriptor, DapiDescriptor } from '../verify/protocol.ts';
@@ -52,7 +53,8 @@ export interface DataSource {
   bridgeTallies(): Promise<Map<string, Sourced<Tally>>>;
   /** Core best height. */
   height(): Promise<Sourced<number> | null>;
-  usdPrice(): Promise<Sourced<number> | null>;
+  /** The DASH/USD spot quote (design/PRICE.md); null when there is none to fetch (no feed, or not Mainnet). Throws when the fetch fails. */
+  usdPrice(): Promise<UsdQuote | null>;
   bridgeDescriptor(): BridgeDescriptor | null;
   dapiDescriptor(): DapiDescriptor;
 }
@@ -394,16 +396,9 @@ export function liveSource(registry: Registry): DataSource {
 
     async usdPrice() {
       const pf = registry.priceFeed;
-      // testnet DASH has no price: a USD figure next to a testnet budget would be made up
-      if (!pf?.url || registry.coreNetwork === 'testnet') return null;
-      try {
-        const res = await fetch(pf.url, { credentials: 'omit', referrerPolicy: 'no-referrer', signal: AbortSignal.timeout(8000) });
-        const j = (await res.json()) as { dash?: { usd?: unknown } };
-        const usd = j.dash?.usd;
-        return typeof usd === 'number' && usd > 0 ? { value: usd, prov: { kind: 'reported', source: pf.name } } : null;
-      } catch {
-        return null;
-      }
+      // practice coins have no USD value: never a dollar figure off Mainnet, whatever feed is configured
+      if (!pf?.url || registry.coreNetwork !== 'mainnet') return null;
+      return fetchSpot(pf);
     },
 
     bridgeDescriptor() {

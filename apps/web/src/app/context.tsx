@@ -6,6 +6,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, u
 import { loadSavedRegistry, registryScope, saveRegistry, registryForProfile, type ProfileId, type Registry } from '../config/registry.ts';
 import { resolveMode, setMode as persistMode, type DataMode } from '../config/mode.ts';
 import { cacheDeleteWhere, cacheGet, cachePut } from '../data/cache.ts';
+import { REFRESH_MS, type UsdState } from '../data/price.ts';
 import { createSource, type DataSource } from '../data/repo.ts';
 import type { Cycle, Proposal, Sourced, Tally } from '../data/types.ts';
 import { errText } from '../lib/format.ts';
@@ -27,7 +28,8 @@ export interface GovSnapshot {
   active: Load<Sourced<Proposal>[]>;
   tallies: Map<string, Sourced<Tally>>;
   bridgeTallies: Map<string, Sourced<Tally>>;
-  usd: Sourced<number> | null;
+  /** The DASH/USD quote and whether its latest refresh failed (design/PRICE.md); empty off Mainnet. */
+  usd: UsdState;
   /** Governance parameters reported for the data's Core network, once known. */
   params: Sourced<GovParams> | null;
 }
@@ -69,13 +71,15 @@ export function useApp(): Ctx {
   return c;
 }
 
+const NO_USD: UsdState = { quote: null, failedAt: null };
+
 function useGovSnapshot(source: DataSource, nonce: number): GovSnapshot {
   const [cycle, setCycle] = useState<Load<Sourced<Cycle> | null>>({ loading: true });
   const [height, setHeight] = useState<Load<Sourced<number> | null>>({ loading: true });
   const [active, setActive] = useState<Load<Sourced<Proposal>[]>>({ loading: true });
   const [tallies, setTallies] = useState(new Map<string, Sourced<Tally>>());
   const [bridgeTallies, setBridgeTallies] = useState(new Map<string, Sourced<Tally>>());
-  const [usd, setUsd] = useState<Sourced<number> | null>(null);
+  const [usd, setUsd] = useState<UsdState>(NO_USD);
   const [params, setParams] = useState<Sourced<GovParams> | null>(null);
   // A new source (profile, network, endpoints) must not render, or start checks on, the previous source's data for even one frame.
   const resetLoaded = () => {
@@ -90,7 +94,7 @@ function useGovSnapshot(source: DataSource, nonce: number): GovSnapshot {
   if (shownSource !== source) {
     setShownSource(source);
     resetLoaded();
-    setUsd(null);
+    setUsd(NO_USD);
   }
 
   useEffect(() => {
@@ -113,11 +117,26 @@ function useGovSnapshot(source: DataSource, nonce: number): GovSnapshot {
       )
       .catch(() => {});
     source.bridgeTallies().then(guard(setBridgeTallies), () => {});
-    source.usdPrice().then(guard(setUsd), () => {});
     return () => {
       live = false;
     };
   }, [source, nonce]);
+
+  // the price refreshes on its own clock while the page is open; a failed refresh keeps the last good quote, marked as such
+  useEffect(() => {
+    let live = true;
+    const refresh = () =>
+      source.usdPrice().then(
+        (quote) => live && setUsd(quote ? { quote, failedAt: null } : NO_USD),
+        () => live && setUsd((s) => ({ quote: s.quote, failedAt: Date.now() })),
+      );
+    void refresh();
+    const t = setInterval(() => void refresh(), REFRESH_MS);
+    return () => {
+      live = false;
+      clearInterval(t);
+    };
+  }, [source]);
 
   return useMemo(() => ({ cycle, height, active, tallies, bridgeTallies, usd, params }), [cycle, height, active, tallies, bridgeTallies, usd, params]);
 }
