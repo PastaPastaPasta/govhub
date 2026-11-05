@@ -2,10 +2,9 @@
 // the redirects once (scripts/prerender.mjs) and ships /links.json from this origin. That answer is a dated observation, not a fact
 // the chain commits to: whoever made a short link can point it elsewhere later, so the page says when it was resolved.
 import { useEffect, useState } from 'react';
+import { isShortLink } from './shorteners.ts';
 
-/** Link shorteners hide where a proposal's link leads (the same list as scripts/prerender.mjs). */
-export const SHORTENERS = new Set(['bit.ly', 'tinyurl.com', 'shorturl.at', 't.co', 'goo.gl', 'ow.ly', 'is.gd', 'buff.ly', 'rebrand.ly', 'cutt.ly', 'tiny.cc', 'rb.gy', 's.id', 't.ly', 'shorturl.com', 'v.gd']);
-export const isShortLink = (host: string): boolean => SHORTENERS.has(host.replace(/^www\./, '').toLowerCase());
+export { isShortLink };
 
 export interface Resolved {
   to: string;

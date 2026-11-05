@@ -1,7 +1,7 @@
 // What the proposal page may claim about chain facts, and on what basis: each helper returns the text and the provenance mark.
 // "verified" only for what this browser proved; heights from consensus rules are verified, times derived from them are estimates.
 import type { Cycle, Provenance } from '../data/types.ts';
-import { formatDash, formatInt, formatRelative } from '../lib/format.ts';
+import { formatDash, formatInt, formatRelative, dashUnit } from '../lib/format.ts';
 import { isLowerBound, type ChainReport } from './chain.ts';
 import type { ChainFacts } from './collateral.ts';
 import type { RankingResult } from './ranking.ts';
@@ -100,7 +100,7 @@ export function paymentsFact(r: ChainReport | null): { made: { text: string; pro
 export function budgetFact(r: ChainReport, cycle: Cycle | null): { text: string; ok: boolean | null } {
   const limit = Number(r.budget.limit);
   const vs = cycle && cycle.superblockHeight === r.budget.height ? (cycle.budget === limit ? 'the bridge reports the same' : `the bridge reports ${formatDash(cycle.budget)}`) : null;
-  const exact = `${(limit / 1e8).toLocaleString('en-US', { maximumFractionDigits: 8 })} DASH`;
+  const exact = `${(limit / 1e8).toLocaleString('en-US', { maximumFractionDigits: 8 })} ${dashUnit()}`;
   return { text: `${exact} for superblock ${formatInt(r.budget.height)}${vs ? `; ${vs}` : ''}`, ok: vs === null ? null : cycle!.budget === limit };
 }
 

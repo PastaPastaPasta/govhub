@@ -95,7 +95,7 @@ export function PastPage() {
           </button>
         </div>
       </header>
-      {view === 'payments' ? <LedgerView ledger={ledger} known={known} past={past.items} /> : <ProposalsView past={past} ledger={ledger} />}
+      {view === 'payments' ? <LedgerView ledger={ledger} known={known} past={past.items} /> : <ProposalsView past={past} ledger={ledger} known={known} />}
     </section>
   );
 }
@@ -103,7 +103,9 @@ export function PastPage() {
 // ---- payments ---------------------------------------------------------------------------------------------------------------
 
 function LedgerView({ ledger, known, past }: { ledger: Ledger; known: Proposal[]; past: Sourced<Proposal>[] }) {
-  const { source, gov } = useApp();
+  const { source, gov, checks } = useApp();
+  // the proposals that can name a payment get their background check too: one that fails it stops naming payments
+  useEffect(() => checks.ensure(past.map((i) => i.value)), [checks, past]);
   const network = source.coreNetwork;
   const names = useMemo(() => countNames(known), [known]);
   const entries = useMemo(
@@ -120,7 +122,7 @@ function LedgerView({ ledger, known, past }: { ledger: Ledger; known: Proposal[]
       </p>
     );
   }
-  const read = entries.filter((e) => e.entry) as Array<{ slot: SuperblockSlot; entry: LedgerEntry }>;
+  const read = entries.flatMap((e) => (e.entry ? [{ slot: e.slot, entry: e.entry }] : []));
   const totals = read.filter((e) => e.entry.total !== null);
   const paid = totals.reduce((a, e) => a + e.entry.total!, 0n);
   const reading = ledger.slots.filter((s) => s.state === 'reading').length;
@@ -311,12 +313,13 @@ const OUTCOME_TEXT: Record<Outcome['kind'], string> = {
 function OutcomeCell({ o, reading }: { o: Outcome | null; reading: boolean }) {
   if (!o || (o.kind === 'unknown' && reading)) return <span className="muted">{reading ? 'reading…' : '—'}</span>;
   const tone = o.kind === 'funded' ? 'pass' : o.kind === 'partly' ? 'warn' : o.kind === 'unknown' ? '' : 'fail';
+  const why = o.partial === 'earlier' ? 'its window starts before the superblocks read' : o.partial === 'unread' ? 'a superblock in its window could not be read' : '';
   const detail =
     o.kind === 'no-payout'
       ? 'no superblock fell in its payment window'
       : o.kind === 'unknown'
-        ? 'its window starts before the superblocks read'
-        : `paid ${formatInt(o.paid)} of ${formatInt(o.of)}${o.partial ? ' read; its window starts earlier' : ''}`;
+        ? why
+        : `paid ${formatInt(o.paid)} of ${formatInt(o.of)}${why ? ` read; ${why}` : ''}${o.shared ? `; ${formatInt(o.shared)} could also be a proposal with the same payee and amount` : ''}`;
   return (
     <span className={`outcome${tone ? ` outcome-${tone}` : ''}`} title={detail}>
       <span className="dot" aria-hidden="true" />
@@ -326,7 +329,7 @@ function OutcomeCell({ o, reading }: { o: Outcome | null; reading: boolean }) {
   );
 }
 
-function ProposalsView({ past, ledger }: { past: ReturnType<typeof usePastProposals>; ledger: Ledger }) {
+function ProposalsView({ past, ledger, known }: { past: ReturnType<typeof usePastProposals>; ledger: Ledger; known: Proposal[] }) {
   const { checks, params, source } = useApp();
   const [showFailed, setShowFailed] = useState(false);
   const checksVersion = useSyncExternalStore(checks.subscribe, checks.getVersion);
@@ -339,7 +342,7 @@ function ProposalsView({ past, ledger }: { past: ReturnType<typeof usePastPropos
   const { count, sentinel } = useReveal(rows.length, 20, () => {});
   const names = useMemo(() => countNames(past.items.map((i) => i.value)), [past.items]);
   useEffect(() => checks.ensure(past.items.slice(0, count + 12).map((i) => i.value)), [checks, past.items, count]);
-  const reads = useMemo(() => (ledger.slots ?? []).flatMap((s) => (s.state === 'read' ? [s.read] : [])) as SuperblockRead[], [ledger.slots]);
+  const reads = useMemo(() => (ledger.slots ?? []).flatMap((s): SuperblockRead[] => (s.state === 'read' ? [s.read] : [])), [ledger.slots]);
   const reading = !!ledger.slots?.some((s) => s.state === 'reading');
   const cover = useMemo(() => {
     const oldest = reads.length ? Math.min(...reads.map((r) => r.time)) : null;
@@ -348,6 +351,10 @@ function ProposalsView({ past, ledger }: { past: ReturnType<typeof usePastPropos
     const unread = ref ? (ledger.slots ?? []).filter((s) => s.state !== 'read').map((s) => ref.time + (s.height - ref.height) * params.blockSeconds) : [];
     return { oldest, unread };
   }, [reads, ledger.slots, params.blockSeconds]);
+  const outcomes = useMemo(
+    () => (ledger.unavailable ? new Map<string, Outcome>() : new Map(past.items.map((i) => [i.value.govHash, outcomeOf(i.value, reads, source.coreNetwork, cover, known)]))),
+    [ledger.unavailable, past.items, reads, source.coreNetwork, cover, known],
+  );
   const per = perPayment(params);
 
   return (
@@ -388,7 +395,7 @@ function ProposalsView({ past, ledger }: { past: ReturnType<typeof usePastPropos
               const p = it.value;
               const t = past.tallies.get(p.govHash);
               const reason = isFailed(check) ? check.reason : null;
-              const o = ledger.unavailable ? null : outcomeOf(p, reads, source.coreNetwork, cover);
+              const o = outcomes.get(p.govHash) ?? null;
               return (
                 <tr key={p.govHash} className={reason ? 'row-invalid' : undefined} data-check={check.status} data-testid="past-row">
                   <th scope="row">

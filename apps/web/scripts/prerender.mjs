@@ -12,6 +12,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { formatDash, formatDate, formatDateTime, formatInt } from '../src/lib/format.ts';
 import { parseGovParams, paymentSchedule, perPayment } from '../src/lib/governance.ts';
+import { isShortLink } from '../src/lib/shorteners.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.resolve(process.argv[2] ?? path.join(here, '../dist'));
@@ -151,16 +152,15 @@ async function contests() {
 async function masternodes() {
   const list = await getJson(`${bridge}/v1/mnlist`, 60_000);
   const out = [];
-  for (const m of Array.isArray(list?.masternodes) ? list.masternodes : []) {
+  // an untrusted list: bounded well above the real network (about 3,000) so it can't flood the build
+  for (const m of (Array.isArray(list?.masternodes) ? list.masternodes : []).slice(0, 10_000)) {
     if (!m || typeof m.proTxHash !== 'string' || !HASH.test(m.proTxHash.toLowerCase())) continue;
     out.push({ proTx: m.proTxHash.toLowerCase(), evo: m.type === 'evo' });
   }
   return out;
 }
 
-/** Link shorteners (as src/lib/links.ts): where a proposal's shortened link led is resolved here, once per build. */
-const SHORTENERS = new Set(['bit.ly', 'tinyurl.com', 'shorturl.at', 't.co', 'goo.gl', 'ow.ly', 'is.gd', 'buff.ly', 'rebrand.ly', 'cutt.ly', 'tiny.cc', 'rb.gy', 's.id', 't.ly', 'shorturl.com', 'v.gd']);
-const isShortener = (u) => SHORTENERS.has(u.hostname.replace(/^www\./, '').toLowerCase());
+const isShortener = (u) => isShortLink(u.hostname);
 
 /**
  * Where a shortened link leads: its redirects followed by hand (a HEAD, never the page), at most five, http(s) only, until a host
@@ -192,13 +192,21 @@ async function resolveShort(url) {
   return isShortener(u) ? null : u.href;
 }
 
+/** Every shortened proposal link, four at a time, each given at most 30 s: what resolved is kept even if others don't. */
 async function shortLinks(ps) {
   const out = {};
   const urls = [...new Set(ps.map((p) => p.url).filter((url) => { try { return isShortener(new URL(url)); } catch { return false; } }))];
-  for (const url of urls) {
-    const to = await resolveShort(url);
-    if (to && to.length <= 2048) out[url] = to;
-  }
+  let next = 0;
+  const work = async () => {
+    while (next < urls.length) {
+      const url = urls[next++];
+      let timer;
+      const to = await Promise.race([resolveShort(url), new Promise((r) => (timer = setTimeout(() => r(null), 30_000)))]);
+      clearTimeout(timer);
+      if (to && to.length <= 2048) out[url] = to;
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(4, urls.length) }, work));
   return out;
 }
 
@@ -253,8 +261,8 @@ for (const p of ps) {
     ? { route: `/p/${p.name}`, record: p.name, description: `${formatInt(shared)} Dash treasury proposals are named ${p.name}. Pick one to see what it asks for and how masternodes voted.` }
     : { route: `/p/${p.name}`, record: p.name, description, canonical }));
 }
-const links = await settle('short links', () => shortLinks(ps));
-await fs.writeFile(path.join(dist, 'links.json'), JSON.stringify({ resolvedAt: now, links: Array.isArray(links) ? {} : links }));
+const links = offline ? {} : await shortLinks(ps);
+await fs.writeFile(path.join(dist, 'links.json'), JSON.stringify({ resolvedAt: now, links }));
 const activeCount = ps.filter((p) => p.state === 'active').length;
 for (const m of ms) {
   await write(`/masternodes/${m.proTx}`, head(template, { route: `/masternodes/${m.proTx}`, record: `Masternode ${m.proTx.slice(0, 6)}…${m.proTx.slice(-6)}`, description: describeMasternode(m, activeCount) }));
@@ -262,6 +270,6 @@ for (const m of ms) {
 for (const c of cs) {
   await write(`/names/${c.label}`, head(template, { route: `/names/${c.label}`, record: `${c.label}.dash name contest`, description: describeContest(c) }));
 }
-console.log(`prerender: ${Object.keys(Array.isArray(links) ? {} : links).length} short links resolved; ${written.size} entry pages (${ps.length} proposals, ${ms.length} masternodes, ${cs.length} name contests${cs.length ? `, ${cs.filter((c) => c.endsAt).length} open` : ''})${offline ? ', offline' : ''}`);
+console.log(`prerender: ${Object.keys(links).length} short links resolved; ${written.size} entry pages (${ps.length} proposals, ${ms.length} masternodes, ${cs.length} name contests${cs.length ? `, ${cs.filter((c) => c.endsAt).length} open` : ''})${offline ? ', offline' : ''}`);
 // evo-sdk keeps its connections open
 process.exit(0);

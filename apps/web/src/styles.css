@@ -3177,10 +3177,10 @@ dashhq-hash { vertical-align: middle; max-width: 100%; }
 .mnv-decides { white-space: nowrap; }
 .mnv-common { color: var(--dh-ink-2); }
 .mnv-status { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
-.mnv-status .dot { inline-size: 8px; block-size: 8px; border-radius: 50%; background: var(--dh-ink-2); }
-.mnv-pass .dot { background: var(--dh-good); }
-.mnv-warn .dot { background: var(--dh-warn); }
-.mnv-fail .dot { background: var(--dh-bad); }
+:is(.mnv-status, .outcome) .dot { inline-size: 8px; block-size: 8px; border-radius: 50%; background: var(--dh-ink-2); }
+:is(.mnv-pass, .outcome-pass) .dot { background: var(--dh-good); }
+:is(.mnv-warn, .outcome-warn) .dot { background: var(--dh-warn); }
+:is(.mnv-fail, .outcome-fail) .dot { background: var(--dh-bad); }
 .mnv-vote { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
 .mnv-reading { display: inline-block; inline-size: 88px; }
 .skel-line { display: block; block-size: 18px; border-radius: var(--dh-r1); background: linear-gradient(90deg, var(--dh-sunken), var(--dh-hover), var(--dh-sunken)); background-size: 200% 100%; animation: skel 1.4s ease-in-out infinite; }
@@ -3245,10 +3245,6 @@ dashhq-hash { vertical-align: middle; max-width: 100%; }
 .ledger-more { display: flex; justify-content: center; padding-block: 4px; }
 .ledger-more p { margin: 0; text-align: center; max-inline-size: 60ch; }
 .outcome { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0 6px; }
-.outcome .dot { inline-size: 8px; block-size: 8px; border-radius: 50%; background: var(--dh-ink-2); }
-.outcome-pass .dot { background: var(--dh-good); }
-.outcome-warn .dot { background: var(--dh-warn); }
-.outcome-fail .dot { background: var(--dh-bad); }
 @media (max-width: 600px) {
   .sb-head { padding: 12px; }
   .sb-total { margin-inline-start: 0; text-align: start; flex-basis: 100%; }
@@ -3284,6 +3280,4 @@ dashhq-hash { vertical-align: middle; max-width: 100%; }
 .p-recorded { padding: 12px 14px; border: 1px solid var(--dh-line); border-radius: var(--dh-r2); background: var(--dh-sunken); }
 .p-recorded .kv { margin: 0; }
 .p-short { padding: 8px 10px; border-inline-start: 3px solid var(--dh-line-2); background: var(--dh-surface); }
-.break { overflow-wrap: anywhere; }
 @media (max-width: 760px) { .p-claims { grid-template-columns: minmax(0, 1fr); } }
-.p-owner-title { margin: 4px 0 0; font-size: 17px; color: var(--dh-ink); }

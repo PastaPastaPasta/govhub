@@ -19,7 +19,8 @@ export function UsdValue({ duffs, what }: { duffs: number; what: string }) {
         {what} ≈ {formatUsd((duffs / 1e8) * v.rate)}
       </span>{' '}
       <span className="usd-source muted" title={`An approximate current valuation, not a chain fact: DASH/USD spot fetched by this browser from ${v.source} at ${when}.`}>
-        price from {v.source}, {when}
+        price from {v.source}, <span className="visually-hidden">fetched by this browser </span>
+        {when}
         {flags.length > 0 && <b className="usd-flag"> · {flags.join(' · ')}</b>}
       </span>
     </span>

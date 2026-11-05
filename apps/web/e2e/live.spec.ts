@@ -93,6 +93,7 @@ test('@live Dev profile: spike proposals are hidden, counts and remaining paymen
 
   await page.getByRole('link', { name: 'Past', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Past proposals' })).toBeVisible();
+  await page.getByTestId('view-proposals').click();
   const pastToggle = page.getByTestId('toggle-failed');
   await expect(pastToggle).toBeVisible({ timeout: 120_000 });
   await expect(page.locator('table.past tr', { hasText: 'govhub-claim-test' })).toHaveCount(0);

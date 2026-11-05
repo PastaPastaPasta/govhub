@@ -948,7 +948,7 @@ export function MasternodesPage() {
   if (proTx) {
     const rest = new URLSearchParams(search);
     rest.delete('proTx');
-    return <Navigate replace to={{ pathname: `/masternodes/${proTx}`, search: rest.size ? `?${rest}` : '' }} />;
+    return <Navigate replace to={{ pathname: `/masternodes/${proTx}`, search: rest.toString() ? `?${rest}` : '' }} />;
   }
   return (
     <section className="kr-page" aria-labelledby="mn-page-title">

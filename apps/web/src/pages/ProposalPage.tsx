@@ -3,7 +3,7 @@
 // and adds up to one badge; its detail is in the "How do we know?" drawer.
 import { Slug } from '../ui/Slug.tsx';
 import { useTitle } from '../app/title.ts';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Link } from '../ui/Link.tsx';
 import { urlClaimIdentity } from '@govhub/verify';
@@ -150,16 +150,20 @@ const STAGE: Record<CheckId, { label: string; done: string }> = {
  */
 function EvidenceLine({ agg, onRetry }: { agg: Aggregate; onRetry(): void }) {
   const checking = agg.level === 'checking';
-  const [started] = useState(() => Date.now());
+  // the clock starts again with each run of the checks (Try again, Re-check)
+  const started = useRef(Date.now());
+  const wasChecking = useRef(checking);
+  if (checking && !wasChecking.current) started.current = Date.now();
+  wasChecking.current = checking;
   const now = useNow(1000, checking);
   if (checking) {
     const done = agg.components.filter((c) => c.state.status !== 'pending').length;
-    const secs = Math.round((now - started) / 1000);
+    const secs = Math.max(0, Math.round((now - started.current) / 1000));
     return (
       <details className="evidence-progress small" data-testid="evidence-progress">
-        <summary aria-live="polite">
-          <span className="spinner" aria-hidden="true" /> Checking in this browser: {done} of {agg.components.length} done
-          <span className="muted"> · {secs} s{secs >= 45 ? '; slower than usual, still going' : ''}</span>
+        <summary>
+          <span className="spinner" aria-hidden="true" /> <span aria-live="polite">Checking in this browser: {done} of {agg.components.length} done</span>
+          <span className="muted" aria-hidden="true"> · {secs} s{secs >= 45 ? '; slower than usual, still going' : ''}</span>
           <span className="evidence-more">Details</span>
         </summary>
         <ol className="stages" data-testid="evidence-stages">
@@ -254,11 +258,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
       <header className="p-hero">
         <div className="p-title">
           <h1><Slug name={p.name} /></h1>
-          {post.state?.post?.title && !post.state.error && (
-            <p className="p-owner-title" data-testid="owner-title">
-              {post.state.post.title} <span className="small muted">· the owner's title</span>
-            </p>
-          )}
+
         </div>
         <div className="p-owner">
           <OwnerValue p={p} own={own} />
@@ -380,37 +380,46 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
               </section>
               <section className="p-claim p-recorded" aria-labelledby="network-records" data-testid="about-recorded">
                 <h3 id="network-records">What the network records</h3>
-                <dl className="kv small">
-                  <div>
-                    <dt>Name</dt>
-                    <dd className="break">{p.name}</dd>
-                  </div>
-                  <div>
-                    <dt>Asks</dt>
-                    <dd>
-                      {formatDash(p.paymentAmount)} {sched?.oneTime ? 'once' : perPayment(params)}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Payment window</dt>
-                    <dd>
-                      {formatDate(p.startEpoch)} to {formatDate(p.endEpoch)}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Pays</dt>
-                    <dd>
-                      <dashhq-hash value={p.paymentAddress} full="" label="payment address">
-                        {p.paymentAddress}
-                      </dashhq-hash>
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Link</dt>
-                    <dd className="break">{row.content.ok ? p.url : <span className="muted">not shown: it doesn't match the proposal's hash</span>}</dd>
-                  </div>
-                </dl>
-                <p className="small muted">That is all a Dash proposal holds. Each field above matches the hash the network votes on.</p>
+                {row.content.ok ? (
+                  <>
+                  <dl className="kv small">
+                    <div>
+                      <dt>Name</dt>
+                      <dd className="break">{p.name}</dd>
+                    </div>
+                    <div>
+                      <dt>Asks</dt>
+                      <dd>
+                        {formatDash(p.paymentAmount)} {sched?.oneTime ? 'once' : perPayment(params)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Payment window</dt>
+                      <dd>
+                        {formatDate(p.startEpoch)} to {formatDate(p.endEpoch)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Pays</dt>
+                      <dd>
+                        <dashhq-hash value={p.paymentAddress} full="" label="payment address">
+                          {p.paymentAddress}
+                        </dashhq-hash>
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Link</dt>
+                      <dd className="break">{p.url}</dd>
+                    </div>
+                  </dl>
+                  <p className="small muted">That is all a Dash proposal holds. Each field above matches the hash the network votes on.</p>
+                  </>
+                ) : (
+                  <p className="small" data-testid="about-recorded-mismatch">
+                    The fields published for this proposal don't match the hash the network votes on ({row.content.problem}), so none of them is shown here as
+                    the network's record.
+                  </p>
+                )}
               </section>
             </div>
           </section>

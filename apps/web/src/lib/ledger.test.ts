@@ -30,6 +30,9 @@ describe('treasuryPayments', () => {
     expect(treasuryPayments(outs.filter((_, i) => i !== 1), 'mainnet')).toBeNull(); // no credit-pool output (older era)
     expect(treasuryPayments(outs.map((o, i) => (i === 0 ? { ...o, value: String(BigInt(o.value) + 1000n) } : o)), 'mainnet')).toBeNull();
   });
+  it('finds no payments in a superblock that paid none, rather than giving up', () => {
+    expect(treasuryPayments(cb['2558864']!.slice(0, 3), 'mainnet')).toEqual([]);
+  });
   it('reads only standard scripts as addresses', () => {
     expect(scriptAddress('6a', 'mainnet')).toBeNull();
     expect(scriptAddress('76a914' + '00'.repeat(20) + '88ac', 'testnet')?.startsWith('y')).toBe(true);
@@ -64,18 +67,27 @@ describe('ledgerEntry', () => {
 describe('outcomeOf', () => {
   const sb = read(2558864, 1792566848);
   const cover = { oldest: 1_780_000_000, unread: [] };
-  it('funded when every superblock of the window paid it', () => {
-    expect(outcomeOf({ ...DCG, startEpoch: 1_792_000_000, endEpoch: 1_793_000_000 }, [sb], 'mainnet', cover)).toMatchObject({ kind: 'funded', of: 1, paid: 1, total: 4832_00000000n });
+  it('funded when every superblock due to pay it did', () => {
+    expect(outcomeOf({ ...DCG, startEpoch: 1_792_000_000, endEpoch: 1_793_000_000 }, [sb], 'mainnet', cover)).toMatchObject({ kind: 'funded', of: 1, paid: 1, total: 4832_00000000n, partial: null });
   });
-  it('not funded when none did, and no payout date when its window held no superblock', () => {
+  it('not funded when none did, and expired unpaid when none was due', () => {
     const missed = proposal({ paymentAddress: 'XoLMVTXpDWvLe4yKcj989nZ2vddE2zJQ6q', paymentAmount: 61e8, startEpoch: 1_792_000_000, endEpoch: 1_793_000_000 });
     expect(outcomeOf(missed, [sb], 'mainnet', cover).kind).toBe('not-funded');
     expect(outcomeOf({ ...missed, startEpoch: 1_792_700_000, endEpoch: 1_792_800_000 }, [sb], 'mainnet', cover).kind).toBe('no-payout');
   });
-  it('is only a lower bound when its window starts before the superblocks read, or one in it was not read', () => {
-    expect(outcomeOf(DCG, [sb], 'mainnet', { oldest: 1_792_000_000, unread: [] })).toMatchObject({ kind: 'funded', of: 1, paid: 1, partial: true });
-    expect(outcomeOf({ ...DCG, startEpoch: 1_792_000_000 }, [sb], 'mainnet', { ...cover, unread: [1_792_100_000] })).toMatchObject({ partial: true });
+  it("doesn't count a superblock just outside its window as due, but counts it when it paid", () => {
+    const missed = proposal({ paymentAddress: 'XoLMVTXpDWvLe4yKcj989nZ2vddE2zJQ6q', paymentAmount: 61e8, startEpoch: 1_792_000_000, endEpoch: 1_792_566_848 - 3 * 3600 });
+    expect(outcomeOf(missed, [sb], 'mainnet', cover).kind).toBe('no-payout');
+    expect(outcomeOf({ ...DCG, startEpoch: 1_792_000_000, endEpoch: 1_792_566_848 - 3 * 3600 }, [sb], 'mainnet', cover)).toMatchObject({ kind: 'funded', of: 1, paid: 1 });
+  });
+  it('says why the counts are only a lower bound', () => {
+    expect(outcomeOf(DCG, [sb], 'mainnet', { oldest: 1_792_000_000, unread: [] })).toMatchObject({ kind: 'funded', of: 1, paid: 1, partial: 'earlier' });
+    expect(outcomeOf({ ...DCG, startEpoch: 1_792_000_000 }, [sb], 'mainnet', { ...cover, unread: [1_792_100_000] })).toMatchObject({ partial: 'unread' });
     expect(outcomeOf(DCG, [], 'mainnet', { oldest: null, unread: [] }).kind).toBe('unknown');
+  });
+  it('flags a payment a twin (same payee and amount, due then too) could account for', () => {
+    const p = { ...DCG, startEpoch: 1_792_000_000, endEpoch: 1_793_000_000 };
+    expect(outcomeOf(p, [sb], 'mainnet', cover, [p, { ...p, govHash: 'f'.repeat(64) }])).toMatchObject({ kind: 'funded', shared: 1 });
   });
 });
 

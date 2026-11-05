@@ -7,9 +7,9 @@ import { Fragment, useId, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useApp } from '../app/context.tsx';
 import { useTitle } from '../app/title.ts';
-import type { Proposal } from '../data/types.ts';
+import type { Cycle, Proposal } from '../data/types.ts';
 import { formatDash, formatDate, formatDuration, formatInt, shortHash } from '../lib/format.ts';
-import { perPayment, votingDeadlineTime } from '../lib/governance.ts';
+import { perPayment, votingDeadlineTime, type GovParams } from '../lib/governance.ts';
 import { countNames, proposalHref, type Row } from '../lib/view.ts';
 import { Link } from '../ui/Link.tsx';
 import { openSignIn } from '../ui/SignIn.tsx';
@@ -19,14 +19,13 @@ import { OfflineSign, VoteComposer } from '../ui/VotePanel.tsx';
 import { useKeyring } from '../voting/KeyringContext.tsx';
 import '../voting/voting.css';
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 /** "17 Nov" (the year only when it isn't this one) */
 function shortDate(s: number): string {
-  const d = new Date(s * 1000);
-  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}${d.getUTCFullYear() === new Date().getUTCFullYear() ? '' : ` ${d.getUTCFullYear()}`}`;
+  const full = formatDate(s);
+  return new Date(s * 1000).getUTCFullYear() === new Date().getUTCFullYear() ? full.replace(/ \d{4}$/, '') : full;
 }
 
-export const isProTx = (s: string): boolean => /^[0-9a-f]{64}$/i.test(s);
+const isProTx = (s: string): boolean => /^[0-9a-f]{64}$/i.test(s);
 
 export function MasternodePage() {
   const { proTx: raw = '' } = useParams();
@@ -42,18 +41,19 @@ export function MasternodePage() {
       </section>
     );
   }
-  return <MasternodeVotes proTx={proTx} />;
+  // a new masternode starts from nothing: no rows, open panel or address of the previous one
+  return <MasternodeVotes key={proTx} proTx={proTx} />;
 }
 
 /** The voting deadline that decides this proposal's next payment (null: no payment left, or the cycle is not known yet). */
-function decidesBy(row: Row, cycle: Parameters<typeof votingDeadlineTime>[0] | null, params: Parameters<typeof votingDeadlineTime>[1]): number | null {
+function decidesBy(row: Row, cycle: Cycle | null, params: GovParams): number | null {
   if (!cycle || row.lameDuck) return null;
-  const next = votingDeadlineTime(cycle, params);
   // a proposal that starts paying at a later superblock is decided by that superblock's deadline
-  return row.startsLater ? Math.round(row.startsLater.firstTime - (cycle.superblockHeight - cycle.votingDeadlineHeight) * params.blockSeconds) : next;
+  return row.startsLater ? Math.round(row.startsLater.firstTime - (cycle.superblockHeight - cycle.votingDeadlineHeight) * params.blockSeconds) : votingDeadlineTime(cycle, params);
 }
 
-function VoteChip({ cell }: { cell: VoteCell | undefined }) {
+function VoteChip({ cell, stalled }: { cell: VoteCell | undefined; stalled: boolean }) {
+  if (stalled && (!cell || cell.kind === 'waiting')) return <span className="muted">—</span>;
   if (!cell || cell.kind === 'waiting') {
     return (
       <span className="mnv-reading" aria-label="Reading this masternode's vote">
@@ -85,14 +85,14 @@ function MasternodeVotes({ proTx }: { proTx: string }) {
   const radar = window.dashhq?.href('radar', '/mn/' + proTx, { network: registry.coreNetwork });
   const mn = v.lookup.kind === 'found' ? v.lookup.mn : null;
   const owned = k.status === 'open' && k.mns.owned.some((m) => m.valid && m.proTxHash.toLowerCase() === proTx);
+  // the bridge's list could not be read: the rows say so instead of waiting forever
+  const stalled = v.lookup.kind === 'error' || v.lookup.kind === 'no-bridge';
   const counts = useMemo(() => {
-    const c = { voted: 0, yes: 0, no: 0, abstain: 0, none: 0, unread: 0 };
+    const c = { yes: 0, no: 0, abstain: 0, none: 0, unread: 0 };
     for (const p of proposals) {
       const cell = v.cells.get(p.govHash);
-      if (cell?.kind === 'voted') {
-        c.voted++;
-        c[cell.outcome === 1 ? 'yes' : cell.outcome === 2 ? 'no' : 'abstain']++;
-      } else if (cell?.kind === 'none') c.none++;
+      if (cell?.kind === 'voted') c[cell.outcome === 1 ? 'yes' : cell.outcome === 2 ? 'no' : 'abstain']++;
+      else if (cell?.kind === 'none') c.none++;
       else if (cell?.kind === 'unread') c.unread++;
     }
     return c;
@@ -228,7 +228,8 @@ function MasternodeVotes({ proTx }: { proTx: string }) {
                     per={perPayment(params)}
                     open={open === row.p.value.govHash}
                     onToggle={() => setOpen((o) => (o === row.p.value.govHash ? null : row.p.value.govHash))}
-                    canVote={!!mn?.valid && !row.lameDuck}
+                    canVote={(owned || !!mn?.valid) && !row.lameDuck}
+                    stalled={stalled}
                     owned={owned}
                     proTx={proTx}
                     votingAddress={mn?.votingAddress ?? ''}
@@ -283,12 +284,13 @@ interface RowProps {
   open: boolean;
   onToggle(): void;
   canVote: boolean;
+  stalled: boolean;
   owned: boolean;
   proTx: string;
   votingAddress: string;
 }
 
-function MnVoteRow({ row, href, cell, decides, shared, now, per, open, onToggle, canVote, owned, proTx, votingAddress }: RowProps) {
+function MnVoteRow({ row, href, cell, decides, shared, now, per, open, onToggle, canVote, stalled, owned, proTx, votingAddress }: RowProps) {
   const p: Proposal = row.p.value;
   const panelId = useId();
   const sched = row.schedule;
@@ -326,7 +328,7 @@ function MnVoteRow({ row, href, cell, decides, shared, now, per, open, onToggle,
           {row.startsLater && <span className="small muted"> · starts later</span>}
         </td>
         <td className="mnv-cell-vote" data-testid="mn-vote">
-          <VoteChip cell={cell} />
+          <VoteChip cell={cell} stalled={stalled} />
         </td>
         <td className={`small mnv-decides${common ? ' mnv-common' : ''}`} data-label="Decided by ">
           {decideText}

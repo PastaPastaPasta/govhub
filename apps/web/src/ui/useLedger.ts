@@ -2,6 +2,7 @@
 // quorum checkpoint cost one block read; newer ones the headers down to them, once). Results arrive one by one; what this browser
 // read before comes from its cache.
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { GOV_CHAIN_PARAMS, isSuperblockHeight } from '@govhub/verify';
 import { useApp } from '../app/context.tsx';
 import type { SuperblockRead } from '../lib/ledger.ts';
 import { superblockHeights } from '../lib/ledger.ts';
@@ -26,10 +27,12 @@ export interface Ledger {
 }
 
 export function useLedger(): Ledger {
-  const { gov, params, source, mode } = useApp();
+  const { gov, source, mode } = useApp();
   const network = source.coreNetwork;
+  // the next superblock as the budget cycle reports it, checked against consensus: only a real superblock height is read as one
+  const cycle = GOV_CHAIN_PARAMS[network].superblockCycle;
   const next = gov.cycle.data?.value.superblockHeight ?? null;
-  const last = next !== null ? next - params.superblockCycle : null;
+  const last = next !== null && isSuperblockHeight(next, network) ? next - cycle : null;
   const [count, setCount] = useState<number>(LEDGER_STEP[network]);
   const [slots, setSlots] = useState<Map<number, SuperblockSlot>>(new Map());
   const [nonce, setNonce] = useState(0);
@@ -42,7 +45,7 @@ export function useLedger(): Ledger {
     setCount(LEDGER_STEP[network]);
   }, [source, network]);
 
-  const heights = last !== null && live ? superblockHeights(last, params.superblockCycle, count) : [];
+  const heights = last !== null && live ? superblockHeights(last, cycle, count) : [];
   const key = heights.join(',');
   useEffect(() => {
     if (!heights.length) return;
@@ -61,6 +64,7 @@ export function useLedger(): Ledger {
           if (on) done.add(height);
           put({ height, state: 'read', read: r.read });
         } catch (e) {
+          if (!on) continue; // cleaned up: the next run owns `started`
           started.current.delete(height);
           put({ height, state: 'error', error: unfinishedReason(e) });
         }
@@ -79,7 +83,11 @@ export function useLedger(): Ledger {
   const retry = useCallback(() => setNonce((n) => n + 1), []);
   return {
     slots: heights.length ? heights.map((h) => slots.get(h) ?? { height: h, state: 'reading' }) : null,
-    unavailable: !live ? 'The demo snapshot has no chain to read superblocks from; switch to live data to see what the treasury paid.' : null,
+    unavailable: !live
+      ? 'The demo snapshot has no chain to read superblocks from; switch to live data to see what the treasury paid.'
+      : next !== null && last === null
+        ? `The budget cycle names block ${next.toLocaleString('en-US')} as the next superblock, which isn't a superblock height, so no superblock is read.`
+        : null,
     canLoadMore: count < LEDGER_MAX[network],
     loadMore,
     retry,

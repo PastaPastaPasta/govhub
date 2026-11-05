@@ -7,7 +7,7 @@
 // 3 * miner - 3 and 3 * miner duffs. Pools order the outputs differently, so the split is searched for, not read by position, and it
 // must be the only one. Everything else is a treasury payment. When no unique split exists (older eras, unusual coinbases) the
 // superblock's total is left unknown; payments to known proposals are still matched by address and exact amount.
-import { encodeAddress, hexToBytes, superblockPaymentsLimit, type Network } from '@govhub/verify';
+import { bytesToHex, encodeAddress, hexToBytes, payeeScript, superblockPaymentsLimit, type Network } from '@govhub/verify';
 import type { CoreNetwork, Proposal } from '../data/types.ts';
 
 /** A coinbase output as the worker passes it: script hex and value in duffs (decimal string). */
@@ -46,8 +46,8 @@ export function scriptAddress(script: string, network: Network): string | null {
   return null;
 }
 
-/** Owner and operator payouts (a shared masternode can split the owner's further): at most this many payee outputs. */
-const MAX_PAYEES = 4;
+/** The masternode payee outputs: owner and operator (Core pays at most these two today), with room for one more. */
+const MAX_PAYEES = 3;
 
 /** Subsets of `items` of size 1..max, as index lists. */
 function* subsets(items: number[], max: number, start = 0, picked: number[] = []): Generator<number[]> {
@@ -59,8 +59,8 @@ function* subsets(items: number[], max: number, start = 0, picked: number[] = []
 }
 
 /**
- * The treasury payments of a superblock's coinbase (see the header), or null when the block reward can't be told apart from them.
- * Superblock payments are never zero-value or null-data outputs.
+ * The treasury payments of a superblock's coinbase (see the header): empty when it paid none, null when the block reward can't be
+ * told apart from them. Superblock payments are never zero-value or null-data outputs.
  */
 export function treasuryPayments(outputs: readonly CoinbaseOutput[], network: Network): TreasuryPayment[] | null {
   const values = outputs.map((o) => BigInt(o.value));
@@ -84,16 +84,21 @@ export function treasuryPayments(outputs: readonly CoinbaseOutput[], network: Ne
   if (solutions.size !== 1) return null;
   const reward = new Set([...solutions][0]!.split(',').map(Number));
   const indices = outputs.map((_, i) => i).filter((i) => !reward.has(i));
-  if (!indices.length || indices.some((i) => values[i]! <= 0n || isNullData(outputs[i]!.script))) return null;
+  if (indices.some((i) => values[i]! <= 0n || isNullData(outputs[i]!.script))) return null;
   return indices.map((i) => ({ index: i, script: outputs[i]!.script.toLowerCase(), address: scriptAddress(outputs[i]!.script, network), amount: values[i]! }));
 }
 
 // ---- proposals ---------------------------------------------------------------------------------------------------------------
 
-/** Core pays in [start - 2 h, end + 2 h] (governance/signing.cpp:86-99) by its time estimate; a day of slack covers the real block time. */
-const SLACK_S = 2 * 3600 + 86_400;
+/** Core pays in [start - 2 h, end + 2 h] (governance/signing.cpp:86-99) by its time estimate. */
+const FUDGE_S = 2 * 3600;
+/** A real block time can be hours off Core's estimate: a payment found up to a day outside the window still counts as this one's. */
+const MATCH_SLACK_S = 86_400;
 type Payee = Pick<Proposal, 'govHash' | 'name' | 'paymentAddress' | 'paymentAmount' | 'startEpoch' | 'endEpoch'>;
-const inWindow = (p: Payee, t: number) => t >= p.startEpoch - SLACK_S && t <= p.endEpoch + SLACK_S;
+/** Wide: a superblock that may have paid it. */
+const mayPay = (p: Payee, t: number) => t >= p.startEpoch - FUDGE_S - MATCH_SLACK_S && t <= p.endEpoch + FUDGE_S + MATCH_SLACK_S;
+/** Narrow: a superblock that was due to pay it (the outcome's denominator). */
+const due = (p: Payee, t: number) => t >= p.startEpoch - FUDGE_S && t <= p.endEpoch + FUDGE_S;
 
 export interface LedgerLine {
   payment: TreasuryPayment;
@@ -115,12 +120,23 @@ export interface LedgerEntry {
   limit: bigint;
 }
 
+/** The split of each coinbase, once per read (it doesn't depend on which proposals are known). */
+const splits = new WeakMap<SuperblockRead, TreasuryPayment[] | null>();
+function paymentsOf(read: SuperblockRead, network: CoreNetwork): TreasuryPayment[] | null {
+  if (!splits.has(read)) {
+    const ps = treasuryPayments(read.outputs, network);
+    // consensus caps what a superblock pays: a split that leaves more is the wrong split
+    splits.set(read, ps && ps.reduce((a, p) => a + p.amount, 0n) <= superblockPaymentsLimit(read.height, network) ? ps : null);
+  }
+  return splits.get(read)!;
+}
+
 export function ledgerEntry(read: SuperblockRead, known: readonly Payee[], network: CoreNetwork): LedgerEntry {
-  const payments = treasuryPayments(read.outputs, network);
+  const payments = paymentsOf(read, network);
   const limit = superblockPaymentsLimit(read.height, network);
   if (!payments) return { read, lines: null, total: null, limit };
   const lines = payments.map((payment): LedgerLine => {
-    const match = known.filter((p) => p.paymentAddress === payment.address && BigInt(p.paymentAmount) === payment.amount && inWindow(p, read.time));
+    const match = known.filter((p) => p.paymentAddress === payment.address && BigInt(p.paymentAmount) === payment.amount && mayPay(p, read.time));
     const samePayee = match.length ? null : (known.filter((p) => p.paymentAddress === payment.address).sort((a, b) => b.endEpoch - a.endEpoch)[0] ?? null);
     return { payment, proposal: match.length === 1 ? match[0]! : null, candidates: match.length > 1 ? match : [], samePayee };
   });
@@ -133,36 +149,43 @@ export type OutcomeKind = 'funded' | 'partly' | 'not-funded' | 'no-payout' | 'un
 
 export interface Outcome {
   kind: OutcomeKind;
-  /** Superblocks read inside its window, and those that paid it. */
+  /** Superblocks read that were due to pay it (or did), and those that paid it. */
   of: number;
   paid: number;
   /** What it received in those (duffs). */
   total: bigint;
-  /** Some of its window lies outside the superblocks read (older, or not read): the counts are a lower bound. */
-  partial: boolean;
+  /** Why the counts are a lower bound: its window starts before the superblocks read, or one in it could not be read. */
+  partial: 'earlier' | 'unread' | null;
+  /** Payments another known proposal (same payee and amount, due then too) could equally account for. */
+  shared: number;
 }
 
 /**
- * How an ended proposal turned out, from the superblocks read: paid in every superblock of its window (funded), in some (partly), in
- * none (not funded), or its window held no superblock at all (no payout date). `oldest`: the time of the oldest superblock read;
- * `unread`: estimated times of superblocks that could not be read.
+ * How an ended proposal turned out, from the superblocks read: paid in every superblock that was due to pay it (funded), in some
+ * (partly), in none (not funded), or none was due (expired unpaid). `oldest`: the time of the oldest superblock read; `unread`:
+ * estimated times of superblocks that could not be read; `others`: the other known proposals, for payments a twin could account for.
  */
-export function outcomeOf(p: Payee, reads: readonly SuperblockRead[], network: CoreNetwork, cover: { oldest: number | null; unread: readonly number[] }): Outcome {
-  const inside = reads.filter((r) => inWindow(p, r.time));
-  let paid = 0;
+export function outcomeOf(p: Payee, reads: readonly SuperblockRead[], network: CoreNetwork, cover: { oldest: number | null; unread: readonly number[] }, others: readonly Payee[] = []): Outcome {
+  if (cover.oldest === null) return { kind: 'unknown', of: 0, paid: 0, total: 0n, partial: 'unread', shared: 0 };
+  const script = payeeScript(p.paymentAddress, network);
+  const scriptHex = script ? bytesToHex(script) : null;
+  const amount = BigInt(p.paymentAmount);
+  const twins = others.filter((o) => o.govHash !== p.govHash && o.paymentAddress === p.paymentAddress && BigInt(o.paymentAmount) === amount);
+  let of = 0, paid = 0, shared = 0;
   let total = 0n;
-  for (const r of inside) {
-    const hit = r.outputs.find((o) => scriptAddress(o.script, network) === p.paymentAddress && BigInt(o.value) === BigInt(p.paymentAmount));
-    if (hit) {
-      paid++;
-      total += BigInt(hit.value);
-    }
+  for (const r of reads) {
+    const hit = scriptHex !== null && mayPay(p, r.time) && r.outputs.some((o) => o.script.toLowerCase() === scriptHex && BigInt(o.value) === amount);
+    if (!hit && !due(p, r.time)) continue;
+    of++;
+    if (!hit) continue;
+    paid++;
+    total += amount;
+    if (twins.some((t) => due(t, r.time))) shared++;
   }
-  const partial = cover.oldest === null || p.startEpoch - SLACK_S < cover.oldest || cover.unread.some((t) => inWindow(p, t));
-  if (cover.oldest === null) return { kind: 'unknown', of: 0, paid: 0, total: 0n, partial: true };
+  const partial = p.startEpoch - FUDGE_S < cover.oldest ? 'earlier' : cover.unread.some((t) => due(p, t)) ? 'unread' : null;
   // `partial` qualifies the counts (shown with them); the kind says what the superblocks read show
-  const kind: OutcomeKind = inside.length === 0 ? (partial ? 'unknown' : 'no-payout') : paid === 0 ? 'not-funded' : paid === inside.length ? 'funded' : 'partly';
-  return { kind, of: inside.length, paid, total, partial };
+  const kind: OutcomeKind = of === 0 ? (partial ? 'unknown' : 'no-payout') : paid === 0 ? 'not-funded' : paid === of ? 'funded' : 'partly';
+  return { kind, of, paid, total, partial, shared };
 }
 
 /** The last `count` superblock heights at or below `lastHeight`, newest first. */

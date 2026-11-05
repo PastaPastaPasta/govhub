@@ -192,9 +192,11 @@ test.describe('fixture mode', () => {
     await expect(page.getByTestId('p-votes')).toContainText('These votes no longer affect payment.');
   });
 
-  test('past proposals: empty state at the snapshot time', async ({ page }) => {
+  test('past proposals: empty state at the snapshot time, and no ledger without a chain', async ({ page }) => {
     await gotoFixtures(page, '/past');
     await expect(page.getByRole('heading', { name: 'Past proposals' })).toBeVisible();
+    await expect(page.getByText('The demo snapshot has no chain to read superblocks from')).toBeVisible();
+    await page.getByTestId('view-proposals').click();
     await expect(page.getByText('No past proposals published yet.')).toBeVisible();
   });
 

@@ -62,7 +62,10 @@ export function shippedRegistrations(network: RegNetwork, get: (url: string) => 
     const base = (import.meta.env?.BASE_URL as string | undefined) ?? '/';
     t = get(`${base.replace(/\/?$/, '/')}verify/registrations-${network}.bin`)
       .then(async (r) => (r.ok ? (decodeRegistrations(new Uint8Array(await r.arrayBuffer()), network)?.entries ?? new Map()) : new Map()))
-      .catch(() => new Map<string, ProRegInfo>());
+      .catch(() => {
+        tables.delete(network); // a failed fetch is asked again by the next check
+        return new Map<string, ProRegInfo>();
+      });
     tables.set(network, t);
   }
   return t;
