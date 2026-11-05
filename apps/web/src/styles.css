@@ -3107,7 +3107,7 @@ dashhq-hash { vertical-align: middle; max-width: 100%; }
 
 .signin-icon { display: none; }
 @media (max-width: 600px) {
-  .account .btn, .account-btn { width: 40px; height: 40px; min-height: 40px; padding: 0; justify-content: center; border-radius: var(--dh-r2); }
+  .account .btn, .account-btn { width: 42px; height: 42px; min-height: 42px; padding: 0; justify-content: center; border-radius: var(--dh-r2); }
   .signin-icon { display: block; }
   .signin-label, .account-name { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .account-chevron { display: none; }
