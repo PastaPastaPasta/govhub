@@ -98,7 +98,7 @@ export function PastPage() {
           </button>
         </div>
       </header>
-      <OwnerWordsNote proposals={known} />
+      <OwnerWordsNote proposals={view === 'payments' ? known : past.items.map((i) => i.value)} />
       {view === 'payments' ? <LedgerView ledger={ledger} known={known} past={past.items} /> : <ProposalsView past={past} ledger={ledger} known={known} />}
     </section>
   );
@@ -134,6 +134,10 @@ function LedgerView({ ledger, known, past }: { ledger: Ledger; known: Proposal[]
   return (
     <div className="ledger" data-testid="ledger">
       <LedgerStats sum={sum} perSb={perSb} />
+      {/* one region that speaks once, when the totals are in: not at every superblock read */}
+      <p className="visually-hidden" aria-live="polite" data-testid="ledger-announce">
+        {sum.kind === 'done' && sum.counted ? `Totals ready: ${formatDash(Number(sum.paid))} paid in ${formatInt(sum.counted)} superblocks.` : ''}
+      </p>
       <p className="small muted ledger-note" data-testid="ledger-status">
         Each payment is read from its superblock in the chain this browser verified; the first visit downloads and checks each block, later visits
         reuse them. Names come from the proposals Governance has on record: the active ones{recordsFrom ? <> and those that ended since {formatDate(recordsFrom)}</> : null}.
@@ -175,7 +179,7 @@ function LedgerView({ ledger, known, past }: { ledger: Ledger; known: Proposal[]
 function LedgerStats({ sum, perSb }: { sum: LedgerSummary; perSb: string }) {
   if (sum.kind === 'reading') {
     return (
-      <div className="ledger-stats ledger-stats-reading" role="status" data-testid="ledger-progress">
+      <div className="ledger-stats ledger-stats-reading" data-testid="ledger-progress">
         <p className="ledger-progress-line">
           <span className="spinner" aria-hidden="true" /> Reading superblocks from the chain: <b>{formatInt(sum.settled)}</b> of {formatInt(sum.of)} so far.
         </p>
@@ -195,7 +199,7 @@ function LedgerStats({ sum, perSb }: { sum: LedgerSummary; perSb: string }) {
     );
   }
   return (
-    <div className="dh-stats ledger-stats" aria-live="polite">
+    <div className="dh-stats ledger-stats">
       <div className="dh-stat dh-stat--key">
         <span className="dh-stat__label">Paid by the treasury{left ? ' (partial)' : ''}</span>
         <span className="dh-stat__value" data-testid="ledger-total">
@@ -214,9 +218,12 @@ function LedgerStats({ sum, perSb }: { sum: LedgerSummary; perSb: string }) {
         <span className="dh-stat__note">per {perSb}{left ? ', of those read' : ''}</span>
       </div>
       <div className="dh-stat">
-        <span className="dh-stat__label">Payments</span>
-        <span className="dh-stat__value">{formatInt(sum.payments)}</span>
-        <span className="dh-stat__note">to proposals' payees</span>
+        <span className="dh-stat__label">Payments{left ? ' (partial)' : ''}</span>
+        <span className="dh-stat__value">
+          {left ? <small>at least </small> : null}
+          {formatInt(sum.payments)}
+        </span>
+        <span className="dh-stat__note">to proposals' payees{left ? ', in the superblocks read' : ''}</span>
       </div>
     </div>
   );
@@ -348,8 +355,9 @@ const OUTCOME_TEXT: Record<Outcome['kind'], string> = {
   unknown: 'Not checked',
 };
 
+/** An outcome counts over the superblocks read: none is shown until they all are (a partial count would read as the result). */
 function OutcomeCell({ o, reading }: { o: Outcome | null; reading: boolean }) {
-  if (!o || (o.kind === 'unknown' && reading)) return <span className="muted">{reading ? 'reading…' : '—'}</span>;
+  if (!o || reading) return <span className="muted">{reading ? 'reading…' : '—'}</span>;
   const tone = o.kind === 'funded' ? 'pass' : o.kind === 'partly' ? 'warn' : o.kind === 'unknown' ? '' : 'fail';
   const why = o.partial === 'earlier' ? 'its window starts before the superblocks read' : o.partial === 'unread' ? 'a superblock in its window could not be read' : '';
   const detail =
@@ -386,7 +394,7 @@ function ProposalsView({ past, ledger, known }: { past: ReturnType<typeof usePas
     const oldest = reads.length ? Math.min(...reads.map((r) => r.time)) : null;
     // an unread superblock's time, estimated from a read one: enough to know which windows it falls in
     const ref = reads[0];
-    const unread = ref ? (ledger.slots ?? []).filter((s) => s.state !== 'read').map((s) => ref.time + (s.height - ref.height) * params.blockSeconds) : [];
+    const unread = ref ? (ledger.slots ?? []).filter((s) => s.state === 'error').map((s) => ref.time + (s.height - ref.height) * params.blockSeconds) : [];
     return { oldest, unread };
   }, [reads, ledger.slots, params.blockSeconds]);
   const outcomes = useMemo(
@@ -449,8 +457,8 @@ function ProposalsView({ past, ledger, known }: { past: ReturnType<typeof usePas
                   <td data-label="Outcome" className="dh-rc-end" data-testid="past-outcome">
                     <OutcomeCell o={o} reading={reading} />
                   </td>
-                  <td className={`r${o && o.paid ? '' : ' past-none'}`} data-label="Received">
-                    {o && o.paid ? `${o.partial ? 'at least ' : ''}${formatDash(Number(o.total))}` : o && !reading ? '—' : '…'}
+                  <td className={`r${o && o.paid && !reading ? '' : ' past-none'}`} data-label="Received">
+                    {reading || !o ? '…' : o.paid ? `${o.partial ? 'at least ' : ''}${formatDash(Number(o.total))}` : '—'}
                   </td>
                   <td className="r" data-label="Net yes">
                     {t ? (
