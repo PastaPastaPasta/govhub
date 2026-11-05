@@ -154,9 +154,22 @@ function ContestView({ label }: { label: string }) {
 
   if (state.loading)
     return (
-      <p className="muted center pad" aria-busy="true">
-        <span className="spinner" aria-hidden="true" /> Reading the contest from Platform…
-      </p>
+      <article className="proposal contest" aria-busy="true">
+        <p className="crumbs">
+          <Link to="/names">‹ Name contests</Link>
+        </p>
+        <header className="p-hero">
+          <div className="p-title">
+            <h1>
+              <bdi>{label}</bdi>
+              <span className="tld">.dash</span>
+            </h1>
+          </div>
+        </header>
+        <p className="muted">
+          <span className="spinner" aria-hidden="true" /> Reading who wants this name and how masternodes voted, from Platform…
+        </p>
+      </article>
     );
   if (!s) return <ReadError error={state.error ?? 'no answer'} what="Platform" lead="The contest could not be read" onRetry={() => setAttempt((n) => n + 1)} />;
   if (none)

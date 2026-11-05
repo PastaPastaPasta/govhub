@@ -44,6 +44,15 @@ function SdkWarmup() {
   return null;
 }
 
+/** While a page's code loads: what is opening, not a bare "Loading…". */
+function Opening({ what }: { what: string }) {
+  return (
+    <p className="page-narrow muted" aria-busy="true">
+      <span className="spinner" aria-hidden="true" /> Opening {what}…
+    </p>
+  );
+}
+
 function NotFoundPage() {
   useTitle('Page not found');
   return (
@@ -81,14 +90,14 @@ createRoot(document.getElementById('root')!).render(
                 <Route
                   path="create"
                   element={
-                    <Suspense fallback={<p className="page-narrow muted">Loading…</p>}>
+                    <Suspense fallback={<Opening what="the proposal form" />}>
                       <NewProposalPage />
                     </Suspense>
                   }
                 />
                 <Route path="names">
-                  <Route index element={<Suspense fallback={<p className="page-narrow muted">Loading…</p>}><ContestsPage /></Suspense>} />
-                  <Route path=":label" element={<Suspense fallback={<p className="page-narrow muted">Loading…</p>}><ContestPage /></Suspense>} />
+                  <Route index element={<Suspense fallback={<Opening what="name contests" />}><ContestsPage /></Suspense>} />
+                  <Route path=":label" element={<Suspense fallback={<Opening what="the name contest" />}><ContestPage /></Suspense>} />
                 </Route>
                 <Route path="settings" element={<SettingsPage />} />
                 <Route path="masternodes" element={<MasternodesPage />} />
