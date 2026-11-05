@@ -38,6 +38,23 @@ function matches(p: Proposal, needle: string): boolean {
   return p.name.toLowerCase().includes(needle) || p.paymentAddress.toLowerCase().startsWith(needle) || p.url.toLowerCase().includes(needle);
 }
 
+type Sort = 'order' | 'new' | 'amount' | 'close';
+const SORTS: Array<{ id: Sort; label: string; note: string }> = [
+  { id: 'order', label: 'Payout order', note: 'Best-supported first: the order the treasury pays them in, as reported. Each proposal’s page checks its own figures in your browser.' },
+  { id: 'close', label: 'Closest to the line', note: 'Closest to the passing line first, either side: where a few votes decide.' },
+  { id: 'new', label: 'Newest', note: 'Newest first, by when they were submitted.' },
+  { id: 'amount', label: 'Largest request', note: 'Largest payment first.' },
+];
+const sortOf = (v: string | null): Sort => (SORTS.some((x) => x.id === v) ? (v as Sort) : 'order');
+
+/** The list in another order; payout order is the bridge's own (already the list's). Stable, so ties keep payout order. */
+function sorted(rows: readonly Checked<Row>[], by: Sort): Checked<Row>[] {
+  if (by === 'order') return [...rows];
+  const key = ({ item: r }: Checked<Row>): number =>
+    by === 'new' ? -r.p.value.time : by === 'amount' ? -r.p.value.paymentAmount : r.absYes !== null && r.threshold ? Math.abs(r.absYes - r.threshold.value) : Infinity;
+  return [...rows].sort((a, b) => key(a) - key(b));
+}
+
 /** One line for the background checks that could not finish (instead of a mark on every row), with a way to run them again. */
 function UncheckedNote({ rows }: { rows: readonly Checked<Row>[] }) {
   const { checks } = useApp();
@@ -68,6 +85,13 @@ export function ActivePage() {
   const all = useMemo(() => [...activeRows.shown, ...activeRows.failed], [activeRows]);
   const [params, setParams] = useSearchParams();
   const q = params.get('q') ?? '';
+  const sort = sortOf(params.get('sort'));
+  const setSort = (v: Sort) => {
+    const next = new URLSearchParams(params);
+    if (v === 'order') next.delete('sort');
+    else next.set('sort', v);
+    setParams(next, { replace: true });
+  };
   const needle = q.trim().toLowerCase();
   const setQ = (v: string) => {
     const next = new URLSearchParams(params);
@@ -76,7 +100,7 @@ export function ActivePage() {
     setParams(next, { replace: true });
   };
   const listed = showFailed ? all : activeRows.shown;
-  const rows = useMemo(() => (needle ? listed.filter((r) => matches(r.item.p.value, needle)) : listed), [listed, needle]);
+  const rows = useMemo(() => sorted(needle ? listed.filter((r) => matches(r.item.p.value, needle)) : listed, sort), [listed, needle, sort]);
   // a search also finds the lame ducks, listed with the rest instead of behind their toggle
   const lameDucks = useMemo(() => (needle ? activeRows.lameDucks.filter((r) => matches(r.item.p.value, needle)) : activeRows.lameDucks), [activeRows.lameDucks, needle]);
   const names = useMemo(() => countNames([...all, ...activeRows.lameDucks].map((r) => r.item.p.value)), [all, activeRows.lameDucks]);
@@ -114,11 +138,23 @@ export function ActivePage() {
       <section aria-label="Active proposals" className="list-section">
         <div className="list-head">
           <ProposalTabs />
-          <p className="small muted">Best-supported first: the order the treasury pays them in, as reported. Each proposal's page checks its own figures in your browser.</p>
-          <label className="contests-search proposal-search dh-field__label">
-            <span className="visually-hidden">Find a proposal by name, payee address or website</span>
-            <input className="dh-input" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a proposal" autoComplete="off" spellCheck={false} data-testid="proposal-search" />
-          </label>
+          <p className="small muted" data-testid="list-order-note">{SORTS.find((x) => x.id === sort)!.note}</p>
+          <div className="list-tools">
+            <label className="contests-search proposal-search dh-field__label">
+              <span className="visually-hidden">Find a proposal by name, title, payee address or website</span>
+              <input className="dh-input" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a proposal" autoComplete="off" spellCheck={false} data-testid="proposal-search" />
+            </label>
+            <label className="list-sort dh-field__label">
+              <span>Sort</span>
+              <select className="dh-input dh-select" value={sort} onChange={(e) => setSort(sortOf(e.target.value))} data-testid="proposal-sort">
+                {SORTS.map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {x.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
           {needle && (
             <p className="small muted proposal-search-count" role="status" data-testid="proposal-search-count">
               {rows.length + lameDucks.length === 0

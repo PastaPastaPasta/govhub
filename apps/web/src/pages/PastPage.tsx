@@ -209,7 +209,15 @@ function SuperblockPanel({ slot, entry, names, open }: { slot: SuperblockSlot; e
       <summary className="sb-head">
         <h2 id={headId} className="sb-date">
           <span className="sb-chevron" aria-hidden="true" />
-          {entry ? formatDate(entry.read.time) : slot.state === 'error' ? 'Not read' : <span className="skel-line sb-skel" aria-label="Reading" />}
+          {entry ? (
+            formatDate(entry.read.time)
+          ) : slot.state === 'error' ? (
+            'Not read'
+          ) : (
+            <span className="sb-reading small muted">
+              <span className="spinner" aria-hidden="true" /> Reading this superblock from the chain…
+            </span>
+          )}
         </h2>
         <span className="sb-height small muted">superblock {formatInt(slot.height)}</span>
         {entry && <SbTotal entry={entry} />}

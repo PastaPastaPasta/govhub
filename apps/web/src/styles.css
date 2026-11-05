@@ -2035,6 +2035,41 @@ li[data-status='now'] > .fund-dot {
   background: color-mix(in srgb, var(--warn-fill) 10%, transparent);
   font-size: 0.875rem;
 }
+.signin-help {
+  display: grid;
+  gap: 0.375rem;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--sunk);
+}
+.signin-help p,
+.signin-help dl {
+  margin: 0;
+}
+.signin-help-title {
+  font-weight: 650;
+}
+.signin-help dl {
+  display: grid;
+  gap: 0.25rem;
+}
+.signin-help dt {
+  font-weight: 600;
+  color: var(--ink);
+}
+.signin-help dd {
+  margin: 0;
+  color: var(--ink-2);
+}
+.sheet-vote-note {
+  margin: 0;
+  color: var(--ink-2);
+}
+.choice-later {
+  border-style: dashed;
+  background: var(--sunk);
+}
 .choice-soon {
   display: flex;
   align-items: center;
@@ -2683,8 +2718,12 @@ dashhq-hash { vertical-align: middle; max-width: 100%; }
 .chain-unverified ul { margin: 0; padding-inline-start: 18px; }
 .p-status [data-testid="budget-reported"] { margin-inline-start: -2px; }
 
-.proposal-search, .proposal-search-count { flex-basis: 100%; margin: 0; }
-.proposal-search input { inline-size: min(22rem, 100%); }
+.proposal-search-count { flex-basis: 100%; margin: 0; }
+.list-tools { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: end; gap: var(--s-2) var(--s-4); }
+.list-tools .proposal-search { flex: 1 1 18rem; margin: 0; }
+.list-tools .proposal-search input { inline-size: 100%; }
+.list-sort { display: inline-flex; align-items: center; gap: var(--s-2); margin: 0; font-size: var(--t-s); color: var(--ink-2); }
+.list-sort select { inline-size: auto; }
 .vote-ways-list { margin: 8px 0 0; padding-inline-start: 20px; display: grid; gap: 14px; }
 .vote-ways-list h3 { font-size: 15px; font-weight: 620; margin: 0 0 2px; }
 .vote-ways-list p { margin: 0 0 6px; }
@@ -2727,6 +2766,7 @@ dashhq-hash { vertical-align: middle; max-width: 100%; }
 /* ---- Past: the treasury ledger and the proposals' outcomes ------------------------------------- */
 .past-page { display: grid; gap: var(--s-4); }
 .past-page > .list-head { margin: 0; }
+.sb-reading { font-weight: 500; display: inline-flex; align-items: center; gap: 6px; }
 .past-head { display: grid; gap: 10px; justify-items: start; }
 .past-head h1 { margin: 0; }
 .past-head .lede { margin: 0; }

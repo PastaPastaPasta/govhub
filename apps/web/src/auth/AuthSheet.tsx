@@ -6,7 +6,7 @@ import {
   createFundingPath, SUGGESTED_CREATE_DEPOSIT_DUFFS, parseVoucher, pendingFundings, PhraseError, redeemVoucher, SeedWallet, signInWithKey, signInWithSeed, toBase64, wipe, type FoundIdentity, type FundingRecord,
   type PhraseLength,
 } from '@govhub/auth';
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { createElement, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { FIXTURE_IDS } from '../data/fixtureForum.ts';
@@ -163,8 +163,8 @@ function Choose() {
   const { mode } = useApp();
   const [, rerender] = useState(0);
   const pending = pendingFundings(store, network).filter((r) => r.kind === 'create');
-  const main: Array<{ v: SheetView; title: string; text: string }> = [
-    { v: 'create', title: 'Create an account', text: `Pay a little DASH (${formatDuffs(SUGGESTED_CREATE_DEPOSIT_DUFFS)} is suggested) from any Dash wallet; it covers the account and your first comments.` },
+  const main: Array<{ v: SheetView; title: string; text: string; tag?: string }> = [
+    { v: 'create', title: 'Create an account', tag: 'New here? Start here', text: `A new Dash identity, made in this browser. Pay a little DASH (${formatDuffs(SUGGESTED_CREATE_DEPOSIT_DUFFS)} is suggested) from any Dash wallet; it covers the account and your first comments.` },
     { v: 'phrase', title: 'I have a recovery phrase', text: 'The 12 or 24 words of an account you made for Governance.' },
   ];
   const other: Array<{ v: SheetView; title: string; text: string }> = [
@@ -173,15 +173,22 @@ function Choose() {
   ];
   const choice = (o: (typeof main)[number], big: boolean) => (
     <li key={o.v}>
-      <button type="button" className={`choice${big ? ' choice-l' : ''}`} onClick={() => openSheet(o.v)}>
-        <b>{o.title}</b>
+      <button type="button" className={`choice${big ? ' choice-l' : ''}`} onClick={() => openSheet(o.v)} data-testid={`choose-${o.v}`}>
+        <span className="choice-soon">
+          <b>{o.title}</b>
+          {o.tag && <span className="tag dh-badge dh-badge--good">{o.tag}</span>}
+        </span>
         <span className="muted small">{o.text}</span>
       </button>
     </li>
   );
   return (
     <div className="sheet-choose">
-      <p className="lede">Reading is free and needs no account. Sign in to comment, react, or vote with your masternodes.</p>
+      <p className="lede">Reading needs no account. Sign in to comment and react, or to keep your masternodes’ voting keys for next time.</p>
+      <SigninHelp />
+      <p className="small sheet-vote-note" data-testid="signin-vote-note">
+        <b>Only here to vote?</b> You don’t need an account: every open proposal can be signed offline in Dash Core, or with a voting key kept in that tab only.
+      </p>
       {mode === 'fixtures' && <SampleIdentities />}
       {pending.length > 0 && (
         <div className="notice-box dh-notice dh-notice--info" role="status">
@@ -218,23 +225,23 @@ function Choose() {
         </div>
       )}
       <RecoverableNotice records={store.list().filter((r) => r.network === network && !r.discarded)} />
-      <ul className="choices">
-        <li>
-          <button type="button" className="choice choice-l" disabled aria-describedby="wallet-soon" data-testid="wallet-signin">
-            <span className="choice-soon">
-              <b>Sign in with a Dash wallet</b>
-              <span className="tag dh-badge tag-info dh-badge--info" id="wallet-soon">
-                Coming soon
-              </span>
-            </span>
-            <span className="muted small">Approve from DashPay or another Dash wallet, with no phrase typed here. This will become the main way to sign in.</span>
-          </button>
-        </li>
-        {main.map((o) => choice(o, true))}
-      </ul>
+      <ul className="choices">{main.map((o) => choice(o, true))}</ul>
       <SeedWarning />
       <p className="small muted choices-more">Other ways to sign in</p>
-      <ul className="choices choices-s">{other.map((o) => choice(o, false))}</ul>
+      <ul className="choices choices-s">
+        {other.map((o) => choice(o, false))}
+        <li>
+          <button type="button" className="choice choice-later" disabled aria-describedby="wallet-soon" data-testid="wallet-signin">
+            <span className="choice-soon">
+              <b>A Dash wallet</b>
+              <span className="tag dh-badge tag-info dh-badge--info" id="wallet-soon">
+                Not yet
+              </span>
+            </span>
+            <span className="muted small">Approving from DashPay, with no phrase typed here, isn’t available yet.</span>
+          </button>
+        </li>
+      </ul>
       <details className="learn">
         <summary>What is an account here?</summary>
         <p className="small">
@@ -244,6 +251,37 @@ function Choose() {
         </p>
       </details>
     </div>
+  );
+}
+
+/**
+ * What signing in is, in the family's words: the shell's <dashhq-signin-help> once this site vendors a shell that has it (it then
+ * draws its own explanation and hides these children); until then the same facts, here.
+ */
+function SigninHelp() {
+  const { network } = useAuth();
+  const net = network === 'testnet' ? 'Testnet' : 'Mainnet';
+  // created by name: a shell release that types the element would clash with a stopgap declaration here
+  return createElement(
+      'dashhq-signin-help',
+      { product: 'gov', network, asks: 'phrase passkey key voting-key', kept: 'memory', 'kept-note': 'Voting keys you add are kept encrypted on Dash Platform, unless you choose memory only.' },
+      <div className="signin-help" data-testid="signin-help">
+        <p className="signin-help-title">You sign in with a Dash identity</p>
+        <p className="small">
+          A Dash identity is your account on Dash Platform: its keys prove it’s you, and its credits pay for what you post. One {net} identity works in every
+          dashhq app; each app signs you in on its own.{network === 'mainnet' ? ' On Mainnet, credits cost real DASH.' : ''}
+        </p>
+        <dl className="small">
+          <div>
+            <dt>Governance asks for</dt>
+            <dd>Your recovery phrase, a passkey or a private key. To vote as a masternode, also its voting key: never the owner, payout or collateral key.</dd>
+          </div>
+          <div>
+            <dt>Where it’s kept</dt>
+            <dd>In memory only, never saved: closing the last Governance tab signs you out. Voting keys you add are kept encrypted on Dash Platform, unless you choose memory only.</dd>
+          </div>
+        </dl>
+      </div>
   );
 }
 
