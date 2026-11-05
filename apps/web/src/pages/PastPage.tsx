@@ -10,7 +10,7 @@ import { useRouteTitle } from '../app/title.ts';
 import { Link } from '../ui/Link.tsx';
 import { useApp } from '../app/context.tsx';
 import type { Proposal, Sourced, Tally } from '../data/types.ts';
-import { errText, formatDash, formatDate, formatInt, formatSigned } from '../lib/format.ts';
+import { dashUnit, errText, formatDash, formatDashAmount, formatDate, formatInt, formatSigned } from '../lib/format.ts';
 import { absoluteYes, perPayment } from '../lib/governance.ts';
 import { ledgerEntry, outcomeOf, type LedgerEntry, type LedgerLine, type Outcome, type SuperblockRead } from '../lib/ledger.ts';
 import { countNames, partitionByCheck, proposalHref } from '../lib/view.ts';
@@ -102,6 +102,13 @@ export function PastPage() {
 
 // ---- payments ---------------------------------------------------------------------------------------------------------------
 
+/** A stat value with its unit set smaller (DESIGN.md §6, stats). */
+const DashValue = ({ duffs }: { duffs: bigint }) => (
+  <>
+    {formatDashAmount(Number(duffs))} <small>{dashUnit()}</small>
+  </>
+);
+
 function LedgerView({ ledger, known, past }: { ledger: Ledger; known: Proposal[]; past: Sourced<Proposal>[] }) {
   const { source, gov, checks } = useApp();
   // the proposals that can name a payment get their background check too: one that fails it stops naming payments
@@ -138,7 +145,7 @@ function LedgerView({ ledger, known, past }: { ledger: Ledger; known: Proposal[]
         <div className="dh-stat dh-stat--key">
           <span className="dh-stat__label">Paid by the treasury</span>
           <span className="dh-stat__value" data-testid="ledger-total">
-            {totals.length ? formatDash(Number(paid)) : '…'}
+            {totals.length ? <DashValue duffs={paid} /> : '…'}
           </span>
           <span className="dh-stat__note">
             {totals.length ? `in ${formatInt(totals.length)} superblock${totals.length === 1 ? '' : 's'}${oldest && newest ? `, ${formatDate(oldest)} to ${formatDate(newest)}` : ''}` : 'reading superblocks…'}
@@ -146,7 +153,7 @@ function LedgerView({ ledger, known, past }: { ledger: Ledger; known: Proposal[]
         </div>
         <div className="dh-stat">
           <span className="dh-stat__label">On average</span>
-          <span className="dh-stat__value">{totals.length ? formatDash(Number(paid / BigInt(totals.length))) : '…'}</span>
+          <span className="dh-stat__value">{totals.length ? <DashValue duffs={paid / BigInt(totals.length)} /> : '…'}</span>
           <span className="dh-stat__note">per {perSb}</span>
         </div>
         <div className="dh-stat">
