@@ -38,7 +38,7 @@ vi.mock('../data/bridgeFactory.ts', () => ({
 vi.mock('../app/context.tsx', () => ({
   useApp: () => ({
     activeRows: { shown: (hold.proposals as Proposal[]).map((p) => ({ item: rowOf(p), check: { status: 'pending' } })), lameDucks: [], failed: [] },
-    gov: { active: { data: hold.proposals, loading: false }, cycle: { loading: false } },
+    gov: { active: { data: (hold.proposals as Proposal[]).map((p) => ({ value: p, prov: { kind: 'proof', source: 'test' } })), loading: false }, cycle: { loading: false } },
     params: GOV_PARAMS.mainnet,
     registry: { coreNetwork: 'mainnet', platformNetwork: 'mainnet' },
     source: { now: () => 1_793_000_000, bridgeDescriptor: () => ({ kind: 'http', name: 'test', base: 'https://bridge.test' }) },

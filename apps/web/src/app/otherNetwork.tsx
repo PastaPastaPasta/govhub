@@ -3,6 +3,7 @@
 // Bridge do): it exists there → "Open it on Mainnet"; on neither → not on either network; the other couldn't be asked → say so and
 // offer to look.
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useHref } from 'react-router-dom';
 import { profileSearch } from '../config/network.ts';
 import { registryForProfile, type ProfileId, type Registry } from '../config/registry.ts';
 import { createSource, type DataSource } from '../data/repo.ts';
@@ -70,7 +71,8 @@ export function useProbe(other: OtherNetwork | null, look: (o: OtherNetwork) => 
  */
 export function NetworkProbeNotice({ thing, idLabel, absent, probe, other, list }: { thing: string; idLabel: string; absent: string; probe: Probe; other: OtherNetwork | null; list: { path: string; label: string } }) {
   const { registry } = useApp();
-  const listHref = list.path + profileSearch('', registry.profile);
+  // through the router, so a build under a base path keeps it
+  const listHref = useHref(list.path) + profileSearch('', registry.profile);
   if (!other) {
     return (
       <div className="dh-notice dh-notice--info" role="status" data-testid="not-found-plain">

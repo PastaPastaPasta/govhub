@@ -125,7 +125,10 @@ function MasternodeVotes({ proTx }: { proTx: string }) {
   const elsewhere = useProbe(absent ? other : null, async (o) => {
     const d = o.source.bridgeDescriptor();
     if (!d) throw new Error('no governance bridge');
-    return (await makeBridge(d).mnlist()).masternodes.some((m) => m.proTxHash.toLowerCase() === proTx);
+    const bridge = makeBridge(d);
+    // only a bridge that says it runs on that network answers for it (as the data layer requires before reading one)
+    if ((await bridge.status()).network !== o.registry.coreNetwork) throw new Error('the bridge serves another network');
+    return (await bridge.mnlist()).masternodes.some((m) => m.proTxHash.toLowerCase() === proTx);
   }, `${proTx}:${absent}`);
   // Radar's record on the network the masternode is on: none to link while that is unknown
   const radarHere = !absent ? radar : elsewhere === 'found' && other ? window.dashhq?.href('radar', '/mn/' + proTx, { network: other.registry.coreNetwork }) : null;
@@ -214,7 +217,7 @@ function MasternodeVotes({ proTx }: { proTx: string }) {
                       .join(', ')}.`}
               {deadline !== null && deadline > now && <> Votes for the next payout close in {formatDuration(deadline - now)}, on {formatDate(deadline)}.</>}
             </p>
-            <OwnerWordsNote proposals={proposals} />
+            <OwnerWordsNote proposals={proposals.filter((p) => !failed.has(p.govHash))} />
             {counts.unread > 0 && v.pending === 0 && (
               <p className="small" data-testid="mn-unread">
                 {formatInt(counts.unread)} couldn't be read just now.{' '}

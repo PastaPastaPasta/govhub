@@ -12,13 +12,23 @@ import type { Cycle, Proposal, Tally } from './types.ts';
 type EvoModule = typeof import('@dashevo/evo-sdk');
 export type Sdk = InstanceType<EvoModule['EvoSDK']>;
 
-let current: { key: string; sdk: Promise<Sdk> } | null = null;
+/**
+ * Connected SDKs by network and endpoints: this profile's, and at most one more (a not-found page asking the other network), so that
+ * question never drops this network's connection. Older ones are let go.
+ */
+const sdks = new Map<string, Promise<Sdk>>();
+const MAX_SDKS = 2;
 
 const sdkKey = (r: Registry) => JSON.stringify([r.platformNetwork, r.platform]);
 
 export function getSdk(r: Registry): Promise<Sdk> {
   const key = sdkKey(r);
-  if (current?.key === key) return current.sdk;
+  const hit = sdks.get(key);
+  if (hit) {
+    sdks.delete(key); // most recently used last
+    sdks.set(key, hit);
+    return hit;
+  }
   const sdk = (async () => {
     const mod: EvoModule = await import('@dashevo/evo-sdk');
     await mod.ensureInitialized?.();
@@ -31,9 +41,10 @@ export function getSdk(r: Registry): Promise<Sdk> {
     await s.connect();
     return s;
   })();
-  current = { key, sdk };
+  sdks.set(key, sdk);
+  while (sdks.size > MAX_SDKS) sdks.delete(sdks.keys().next().value!);
   sdk.catch(() => {
-    if (current?.sdk === sdk) current = null;
+    if (sdks.get(key) === sdk) sdks.delete(key);
   });
   return sdk;
 }

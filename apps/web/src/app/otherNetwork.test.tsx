@@ -4,6 +4,7 @@
 import type { ReactElement } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act } from 'react';
 import { flush, render } from '../test/render.tsx';
 
 const other = vi.hoisted(() => ({ byName: async (_n: string): Promise<unknown[]> => [], proposal: async (_h: string): Promise<unknown> => null }));
@@ -12,6 +13,7 @@ vi.mock('./context.tsx', () => ({ useApp: () => app }));
 vi.mock('../config/registry.ts', async (orig) => ({ ...(await orig<typeof import('../config/registry.ts')>()), registryForProfile: (_r: unknown, id: string) => ({ profile: id, coreNetwork: id }) }));
 vi.mock('../data/repo.ts', () => ({ createSource: () => other }));
 const { ProposalByHash, ProposalByName } = await import('../pages/ProposalPage.tsx');
+const { useProbe } = await import('./otherNetwork.tsx');
 
 const at = (path: string, el: ReactElement, route: string) =>
   render(
@@ -66,5 +68,34 @@ describe('a proposal that is not on this network', () => {
     await flush();
     expect(notice(r.el).getAttribute('found')).toBe('unknown');
     expect(notice(r.el).getAttribute('id-label')).toBe('hash');
+  });
+});
+
+describe('useProbe', () => {
+  const net = { profile: 'mainnet', label: 'Mainnet', registry: {}, source: {} } as unknown as Parameters<typeof useProbe>[0];
+  function Probe({ k, look }: { k: string; look(): Promise<boolean> }) {
+    return <i data-probe={useProbe(net, look, k)} />;
+  }
+  const probeOf = (el: HTMLElement) => el.querySelector('i')!.dataset.probe;
+
+  it('gives up as "unknown" after 25 s, never as "absent"', async () => {
+    vi.useFakeTimers();
+    try {
+      const r = await render(<Probe k="a" look={() => new Promise(() => {})} />);
+      expect(probeOf(r.el)).toBe('checking');
+      await act(async () => vi.advanceTimersByTime(25_000));
+      expect(probeOf(r.el)).toBe('unknown');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('reads "checking" for a new question at once, and drops a late answer to the old one', async () => {
+    let answerA!: (v: boolean) => void;
+    const r = await render(<Probe k="a" look={() => new Promise((res) => (answerA = res))} />);
+    await r.rerender(<Probe k="b" look={() => new Promise(() => {})} />);
+    expect(probeOf(r.el)).toBe('checking');
+    await act(async () => answerA(true));
+    expect(probeOf(r.el)).toBe('checking'); // "a" was found, but this page now asks about "b"
   });
 });
