@@ -39,18 +39,22 @@ test.describe('F3: Reset to defaults keeps the profile', () => {
   test('on Testnet it resets the edits and stays on Testnet', async ({ page, context }) => {
     await offline(context);
     await page.goto('/settings?fixtures=0');
-    await page.locator('.profile-switch label', { hasText: 'Testnet' }).click();
+    await page.locator('.profile-switch').getByText('Testnet', { exact: true }).click();
     await page.getByRole('button', { name: 'Switch to Testnet' }).click();
-    await expect(page.getByTestId('profile-label')).toContainText('Testnet');
+    await expect(page.getByTestId('profile-description')).toContainText('Testnet');
     await page.getByText('Advanced: choose your own servers').click();
     await page.getByLabel('Price feed URL (JSON with dash.usd; empty turns it off)').fill('https://price.example.org/dash');
     await page.getByRole('button', { name: 'Save settings' }).click();
-    await expect(page.getByTestId('profile-label').locator('.chip-custom')).toBeVisible();
+    await expect(page.locator('#network .chip-custom')).toBeVisible();
     await page.getByRole('button', { name: 'Reset to defaults' }).click();
     await expect(page.getByText(/Reset to the Testnet defaults \(you are still on Testnet\)/)).toBeVisible();
-    await expect(page.getByTestId('profile-label')).toContainText('Testnet');
-    await expect(page.getByTestId('profile-label')).not.toContainText('Dev');
-    await expect(page.getByTestId('profile-label').locator('.chip-custom')).toHaveCount(0);
+    await expect(page.getByTestId('profile-description')).toContainText('Testnet');
+    await expect(page.getByTestId('profile-description')).not.toContainText('Dev');
+    await expect(page.locator('#network .chip-custom')).toHaveCount(0);
+    await expect(page.locator('dashhq-bar')).toHaveAttribute('network', 'testnet');
+    await expect(page).toHaveURL(url => url.searchParams.get('network') === 'testnet');
+    await page.reload();
+    await expect(page.getByTestId('profile-description')).toContainText('Testnet');
     // and a reload still starts on Testnet
     expect(await page.evaluate(() => JSON.parse(localStorage.getItem('govhub.registry.v2') ?? 'null'))).toEqual({ version: 2, profile: 'testnet', overrides: {} });
   });

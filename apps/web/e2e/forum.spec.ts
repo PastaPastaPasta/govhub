@@ -143,8 +143,8 @@ test.describe('discussion (fixtures)', () => {
   test('ownership: attestation owner, owner label, owner post and its editor; claim UI checks signatures', async ({ page }) => {
     const errors = await watchPage(page);
     // the fixture attestation is the Dev bridge's: counted on the Dev profile (each profile trusts its own gov owner)
-    await page.addInitScript(() => localStorage.setItem('govhub.registry.v2', JSON.stringify({ version: 2, profile: 'dev', overrides: {} })));
-    await gotoFixtures(page, '/p/dash-growth-q4-2026');
+
+    await gotoFixtures(page, '/p/dash-growth-q4-2026?network=testnet&profile=dev');
     const owner = page.getByTestId('owner');
     await expect(owner).toHaveAttribute('data-method', '4');
     await expect(owner).toContainText('Dash Growth team');
@@ -166,7 +166,7 @@ test.describe('discussion (fixtures)', () => {
     // Claim UI on an unclaimed proposal: the exact string, and a pasted signature is checked before publishing.
     await page.getByTestId('session-button').click();
     await page.getByRole('button', { name: 'Sign out' }).click();
-    await gotoFixtures(page, '/p/OrchardPay');
+    await gotoFixtures(page, '/p/OrchardPay?network=testnet&profile=dev');
     await signInAs(page, /^Alice$/);
     const panel = page.getByTestId('claim-panel');
     await panel.locator('summary').click();

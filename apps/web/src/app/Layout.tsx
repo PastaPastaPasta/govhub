@@ -81,10 +81,10 @@ function ConfigOffer() {
       setLoading(null);
     });
   };
-  const clear = () => {
+  const clear = (profile: Registry['profile'] = registry.profile) => {
     const sp = new URLSearchParams(loc.search);
     sp.delete('config');
-    nav({ pathname: loc.pathname, search: sp.toString() }, { replace: true });
+    nav({ pathname: loc.pathname, search: profileSearch(sp.toString(), profile) }, { replace: true });
     setOffer(null);
   };
   const current = offer?.param === param ? offer : null;
@@ -100,7 +100,7 @@ function ConfigOffer() {
           <button type="button" className="btn" disabled={loading === param} onClick={() => load(param, url)}>
             {loading === param ? `Loading from ${url.host}…` : `Load settings from ${url.host}`}
           </button>
-          <button type="button" className="btn btn-quiet" onClick={clear}>
+          <button type="button" className="btn btn-quiet" onClick={() => clear()}>
             Ignore this link
           </button>
         </div>
@@ -169,7 +169,7 @@ function ConfigOffer() {
             onClick={() => {
               try {
                 setRegistry(current.registry);
-                clear();
+                clear(current.registry.profile);
               } catch (e) {
                 setSaveError(saveErrorText(e));
               }
@@ -178,7 +178,7 @@ function ConfigOffer() {
             Use these settings
           </button>
         )}
-        <button type="button" className="btn" onClick={clear}>
+        <button type="button" className="btn" onClick={() => clear()}>
           {diff.length > 0 ? 'Keep my settings' : 'Close'}
         </button>
       </div>

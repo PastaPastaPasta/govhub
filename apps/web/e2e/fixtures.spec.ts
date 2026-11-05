@@ -40,7 +40,7 @@ test.describe('fixture mode', () => {
 
     // Open a proposal.
     await page.getByRole('link', { name: 'OrchardPay', exact: true }).click();
-    await expect(page).toHaveURL(/\/p\/OrchardPay$/);
+    await expect(page).toHaveURL(url => url.pathname === '/p/OrchardPay' && url.searchParams.get('fixtures') === '1');
     await expect(page.getByRole('heading', { level: 1, name: 'OrchardPay' })).toBeVisible();
     await expect(page.getByTestId('p-votes')).toContainText('197 yes22 no9 abstain');
     await expect(page.getByTestId('p-voters')).toHaveText('228 masternodes voted; evonodes count 4 times');
@@ -161,7 +161,7 @@ test.describe('fixture mode', () => {
     const links = page.locator('.chooser a');
     await expect(links).toHaveCount(2);
     await links.first().click();
-    await expect(page).toHaveURL(/\/p\/h\/[0-9a-f]{64}$/);
+    await expect(page).toHaveURL(url => /^\/p\/h\/[0-9a-f]{64}$/.test(url.pathname) && url.searchParams.get('fixtures') === '1');
     await expect(page.getByRole('heading', { level: 1, name: 'Dash-Mass-Organic-Content-Attraction' })).toBeVisible();
     const drawer = await openDrawer(page);
     await expect(drawer.getByTestId('collateral-check').locator('[data-verdict]')).toHaveAttribute('data-verdict', 'demo');
@@ -175,7 +175,11 @@ test.describe('fixture mode', () => {
     await expect(dupLinks).toHaveCount(1);
     await page.getByTestId('toggle-lameduck').click();
     await expect(dupLinks).toHaveCount(2);
-    for (const href of await dupLinks.evaluateAll((as) => as.map((a) => a.getAttribute('href')))) expect(href).toMatch(/^\/p\/h\/[0-9a-f]{64}$/);
+    for (const href of await dupLinks.evaluateAll((as) => as.map((a) => (a as HTMLAnchorElement).href))) {
+      const url = new URL(href);
+      expect(url.pathname).toMatch(/^\/p\/h\/[0-9a-f]{64}$/);
+      expect(url.searchParams.get('fixtures')).toBe('1');
+    }
   });
 
   test('a lame duck proposal page shows its outcome instead of passing, budget and deadline', async ({ page }) => {
@@ -239,14 +243,17 @@ test.describe('settings', () => {
     await expect(offer).toContainText('3ueAfbVe8LvCxYWk7bKvXxc5uHe7E1TDJHzN3k3ZDehZ');
     await offer.getByRole('button', { name: 'Use these settings' }).click();
     await expect(offer).toHaveCount(0);
+    await expect(page).toHaveURL(url => url.searchParams.get('network') === 'testnet' && url.searchParams.get('profile') === 'dev' && !url.searchParams.has('config'));
+    await expect(page.locator('dashhq-bar')).toHaveAttribute('network', 'testnet');
     await expect(page.getByLabel('Nodes (host:port, one per line)')).toHaveValue('1.2.3.4:443');
     await expect(page).not.toHaveURL(/config=/);
   });
 
   test('theme switch sets data-theme and persists', async ({ page }) => {
     await gotoFixtures(page);
-    await page.getByTestId('menu-button').click();
-    await page.locator('#account-menu').getByText('Dark', { exact: true }).click();
+    const bar = page.locator('dashhq-bar');
+    await bar.getByRole('button', { name: 'All dashhq tools' }).click();
+    await bar.getByRole('button', { name: 'Dark', exact: true }).click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     await page.reload();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');

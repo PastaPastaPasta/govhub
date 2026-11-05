@@ -1748,6 +1748,7 @@ details summary {
 .form {
   max-inline-size: 52rem;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--s-4);
   margin-block-start: var(--s-5);
 }
@@ -2921,6 +2922,7 @@ details.advanced[open] > summary {
 }
 .badge-jobs,
 .badge-trust {
+  overflow-wrap: anywhere;
   list-style: none;
   padding: 0;
   display: grid;

@@ -46,9 +46,9 @@ test.describe('keyring page (fixtures, demo keyring)', () => {
     await signIn(page);
     await expect(page.getByTestId('key-group')).toHaveCount(2);
     await page.getByRole('link', { name: 'Settings', exact: true }).click();
-    await page.locator('.profile-switch label', { hasText: 'Testnet' }).click();
+    await page.locator('.profile-switch').getByText('Testnet', { exact: true }).click();
     await page.getByRole('button', { name: 'Switch to Testnet' }).click();
-    await expect(page.getByTestId('profile-label')).toContainText('Testnet');
+    await expect(page.getByTestId('profile-description')).toContainText('Testnet');
     // back on the page after the switch (it ended the demo session): still no error
     await page.getByRole('link', { name: 'My masternodes', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'My masternodes' })).toBeVisible();
@@ -67,7 +67,7 @@ test.describe('keyring page (fixtures, demo keyring)', () => {
     await expect(groups.nth(1).getByTestId('key-count')).toHaveText('controls 1 masternode');
     await expect(groups.nth(1).getByTestId('mn-row')).toContainText('Evonode ×4');
     await expect(page.getByTestId('mn-row').first()).toContainText('Can vote');
-    await expect(page.getByTestId('mn-row').first().getByRole('button', { name: 'Copy masternode ID' })).toBeVisible();
+    await expect(page.getByTestId('mn-row').first().getByRole('button', { name: 'Copy ProTx hash' })).toBeVisible();
     await expect(page.getByTestId('votes-empty')).toBeVisible();
     // adding a key is a button that opens the form
     await expect(page.getByTestId('voting-key-input')).toHaveCount(0);

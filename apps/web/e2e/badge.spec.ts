@@ -32,7 +32,7 @@ test.describe('MN badge (fixtures)', () => {
     // the standalone badge page stays, and points back to the unified flow
     await gotoFixtures(page, '/badge');
     await expect(page.getByRole('heading', { name: 'MN owner badge' })).toBeVisible();
-    await expect(page.getByTestId('badge-main-path').getByRole('link', { name: 'add your masternodes' })).toHaveAttribute('href', /\/masternodes#mn-badge$/);
+    await expect(page.getByTestId('badge-main-path').getByRole('link', { name: 'add your masternodes' })).toHaveAttribute('href', /\/masternodes\?fixtures=1#mn-badge$/);
     const main = page.locator('#main');
     await expect(main).not.toContainText('never learns which identity');
     await expect(main).not.toContainText('cannot tell by timing');

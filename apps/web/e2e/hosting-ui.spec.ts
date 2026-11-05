@@ -115,24 +115,24 @@ test.describe('settings', () => {
   test('D-058: arrow keys move through the profile radios without switching; the switch needs a confirmation', async ({ page, context }) => {
     await offline(context);
     await page.goto('/settings?fixtures=0');
-    const label = page.getByTestId('profile-label');
+    const label = page.getByTestId('profile-description');
     await expect(label).toContainText('Mainnet');
-    await page.getByRole('radio', { name: 'Mainnet' }).focus();
+    await page.getByRole('radio', { name: 'Mainnet', exact: true }).focus();
     await page.keyboard.press('ArrowRight');
-    await expect(page.getByRole('radio', { name: 'Testnet' })).toBeChecked();
+    await expect(page.getByRole('radio', { name: 'Testnet', exact: true })).toBeChecked();
     await page.keyboard.press('ArrowRight');
     await page.keyboard.press('ArrowLeft');
-    await expect(page.getByRole('radio', { name: 'Testnet' })).toBeChecked();
+    await expect(page.getByRole('radio', { name: 'Testnet', exact: true })).toBeChecked();
     await expect(label).toContainText('Mainnet');
     expect(await savedProfile(page)).not.toBe('testnet');
     await page.getByRole('button', { name: 'Stay on Mainnet' }).click();
-    await expect(page.getByRole('radio', { name: 'Mainnet' })).toBeChecked();
-    await expect(page.getByRole('radio', { name: 'Mainnet' })).toBeFocused();
-    await page.locator('.profile-switch label', { hasText: 'Testnet' }).click();
+    await expect(page.getByRole('radio', { name: 'Mainnet', exact: true })).toBeChecked();
+    await expect(page.getByRole('radio', { name: 'Mainnet', exact: true })).toBeFocused();
+    await page.locator('.profile-switch').getByText('Testnet', { exact: true }).click();
     await page.getByRole('button', { name: 'Switch to Testnet' }).click();
     await expect(label).toContainText('Testnet');
     expect(await savedProfile(page)).toBe('testnet');
-    await expect(page.getByRole('radio', { name: 'Testnet' })).toBeFocused();
+    await expect(page.getByRole('radio', { name: 'Testnet', exact: true })).toBeFocused();
     await expect(page.getByRole('status').filter({ hasText: 'Switched to Testnet' })).toBeInViewport();
   });
 
@@ -171,7 +171,8 @@ test.describe('accessibility', () => {
   });
 
   test('D-061: primary buttons and muted text meet AA contrast in the light theme', async ({ page }) => {
-    await page.addInitScript(() => localStorage.setItem('govhub.theme', 'light'));
+    await page.addInitScript(() => localStorage.setItem('dh-theme', 'light'));
+    await page.emulateMedia({ colorScheme: 'light' });
     await gotoFixtures(page, '/settings');
     const ratios = await page.evaluate(() => {
       const rgb = (s: string) => (s.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);

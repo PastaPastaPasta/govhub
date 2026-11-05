@@ -15,7 +15,8 @@
     "screenshots": "SCREENSHOTS=1 playwright test --grep @screenshots",
     "record:dapi": "node scripts/record-dapi.mjs",
     "e2e:auth": "GOVHUB_LIVE_AUTH=1 playwright test --grep @live-auth",
-    "e2e:vote": "GOVHUB_LIVE_VOTE=1 playwright test --grep @live-vote"
+    "e2e:vote": "GOVHUB_LIVE_VOTE=1 playwright test --grep @live-vote",
+    "e2e:fixtures": "playwright test 'e2e/(auth|badge|fixtures|forum|hosting-ui|prelaunch-polish|profiles|proposal-wizard|recording|tamper|voting)[.]spec[.]ts$'"
   },
   "dependencies": {
     "@dashevo/evo-sdk": "5.0.0-rc.8",
