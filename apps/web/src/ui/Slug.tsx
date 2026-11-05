@@ -15,3 +15,13 @@ export function Slug({ name }: { name: string }) {
     </>
   );
 }
+
+/**
+ * A proposal's on-chain name as a reading title: its hyphens and underscores as spaces, the first letter capitalised, nothing else
+ * changed ("Dash-Music-MVP-Application-Developing" reads "Dash Music MVP Application Developing"). Shown only beside the exact
+ * name, never instead of it.
+ */
+export function readableName(name: string): string {
+  const words = name.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return words ? words[0]!.toUpperCase() + words.slice(1) : name;
+}

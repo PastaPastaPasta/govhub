@@ -96,8 +96,7 @@ function useIdentityNames(id: string | null) {
  * Who owns the proposal: the verified owner's name and how they proved it, or "Unclaimed proposal". An identity the proposal URL
  * names but that has not accepted is shown as named by the creator, never as the verified owner (naming is not consent).
  */
-export function OwnerValue({ p, own }: { p: Proposal; own: Ownership }) {
-  const { registry } = useApp();
+export function OwnerValue({ own }: { own: Ownership }) {
   const { moderation } = useForum();
   const o = own.verdict?.owner ?? null;
   const n = own.verdict?.named;
@@ -128,9 +127,6 @@ export function OwnerValue({ p, own }: { p: Proposal; own: Ownership }) {
       <span className="owner-value owner-none" data-testid="owner-none">
         <span title={own.loading ? undefined : 'Nobody has proved on Governance that they own this proposal (by signing with its collateral or its URL). The owner can claim it.'}>{own.loading ? 'Checking who owns it…' : 'No verified owner yet'}</span>
         {namedNote}
-        <span className="muted small">
-          pays <dashhq-hash value={p.paymentAddress} label="Payee address" href={`https://${registry.coreNetwork === 'testnet' ? 'insight.testnet.networks.dash.org' : 'insight.dash.org'}/insight/address/${encodeURIComponent(p.paymentAddress)}`}>{p.paymentAddress}</dashhq-hash> ↗
-        </span>
       </span>
     );
   }

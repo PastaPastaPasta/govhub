@@ -359,12 +359,21 @@ export function parseOwnerPages(raw: unknown): { fetchedAt: number; pages: Map<s
   return { fetchedAt, pages: out };
 }
 
-let shipped: Promise<ReturnType<typeof parseOwnerPages>> | null = null;
+type Shipped = ReturnType<typeof parseOwnerPages>;
+let shipped: Promise<Shipped> | null = null;
+/** The file once it has been read, so a page rendered after that has its owner's title in its first frame (no title swap). */
+let shippedNow: Shipped | null = null;
 function shippedPages() {
   shipped ??= fetch(`${(import.meta.env?.BASE_URL as string | undefined) ?? '/'}owners.json`, { credentials: 'omit' })
     .then((r) => (r.ok ? r.json() : null))
-    .then(parseOwnerPages, () => parseOwnerPages(null));
+    .then(parseOwnerPages, () => parseOwnerPages(null))
+    .then((o) => (shippedNow = o));
   return shipped;
+}
+
+/** Starts reading owners.json (a small file from this origin) while the app reads Platform, so proposal titles are ready with it. */
+export function preloadOwnerPages(): void {
+  void shippedPages();
 }
 
 /** The page the build read for this proposal, only when it followed the very link this proposal has (its verified copy). */
@@ -375,7 +384,7 @@ export const ownerPageOf = (pages: ReadonlyMap<string, OwnerPage>, p: { govHash:
 
 /** Every page the build read, by govHash (empty until known): for matching a search against the owners' titles. */
 export function useOwnerPages(): ReadonlyMap<string, OwnerPage> {
-  const [pages, setPages] = useState<ReadonlyMap<string, OwnerPage>>(new Map());
+  const [pages, setPages] = useState<ReadonlyMap<string, OwnerPage>>(() => shippedNow?.pages ?? new Map());
   useEffect(() => {
     let on = true;
     shippedPages().then((o) => on && setPages(o.pages), () => {});
@@ -386,16 +395,22 @@ export function useOwnerPages(): ReadonlyMap<string, OwnerPage> {
   return pages;
 }
 
-/** What the owner's page said when the site was built, for a proposal the build read through this same link; null otherwise. */
-export function useOwnerPage(p: { govHash: string; url: string }): { page: OwnerPage; fetchedAt: number } | null {
-  const [found, setFound] = useState<{ page: OwnerPage; fetchedAt: number } | null>(null);
+type Found = { page: OwnerPage; fetchedAt: number } | null;
+const foundIn = (o: Shipped, p: { govHash: string; url: string }): Found => {
+  const page = ownerPageOf(o.pages, p);
+  return page ? { page, fetchedAt: o.fetchedAt } : null;
+};
+
+/**
+ * What the owner's page said when the site was built, for a proposal the build read through this same link; null when there is
+ * none, undefined while owners.json is still being read (a heading can wait for it rather than change under the reader).
+ */
+export function useOwnerPage(p: { govHash: string; url: string }): Found | undefined {
+  const [found, setFound] = useState<Found | undefined>(() => (shippedNow ? foundIn(shippedNow, p) : undefined));
   const { govHash, url } = p;
   useEffect(() => {
     let on = true;
-    shippedPages().then((o) => {
-      const page = ownerPageOf(o.pages, { govHash, url });
-      if (on) setFound(page ? { page, fetchedAt: o.fetchedAt } : null);
-    }, () => {});
+    shippedPages().then((o) => on && setFound(foundIn(o, { govHash, url })), () => on && setFound(null));
     return () => {
       on = false;
     };

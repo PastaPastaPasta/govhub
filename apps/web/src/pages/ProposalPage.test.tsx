@@ -29,6 +29,7 @@ vi.mock('../ui/SignIn.tsx', () => ({ openSignIn: () => {} }));
 vi.mock('../ui/trust/TrustBadge.tsx', () => ({ TrustBadge: () => null }));
 vi.mock('../ui/trust/VerificationDrawer.tsx', () => ({ VerificationDrawer: () => null }));
 vi.mock('../ui/vote/VoteBlock.tsx', () => ({ mnParam: () => null, ProposalVoteBlock: ({ closesIn }: { closesIn: number | null }) => <div data-testid="vote-panel">{closesIn !== null && 'Voting closes in (the block)'}</div> }));
+vi.mock('../lib/ownerPages.ts', () => ({ useOwnerPage: () => null }));
 vi.mock('../ui/trust/store.ts', () => ({ trustScope: () => 'test', useCachedTrust: () => null }));
 vi.mock('../ui/Ownership.tsx', () => ({
   ClaimPanel: () => null,
@@ -88,7 +89,7 @@ describe('ProposalView for a lame duck', () => {
     expect(status.textContent).toContain('1 of 1 payment made. No more payments are possible; it leaves the network on 27 Oct 2026.');
     const text = el.textContent ?? '';
     expect(text).not.toMatch(/Passing by|next budget is full|In the next budget|Voting closes|Voting for this payout/);
-    expect(el.querySelector('[data-testid="summary"]')!.textContent).toContain('1, 0 more possible');
+    expect(el.querySelector('[data-testid="p-paid"]')!.textContent).toBe('1 made, 0 more possible');
     // votes stay, de-emphasised
     const votes = el.querySelector('[data-testid="p-votes"]')!;
     expect(votes.className).toContain('p-votes-dim');
@@ -124,7 +125,7 @@ describe('ProposalView for a proposal with payments left', () => {
   it('is not a lame duck when the verified chain still counts a payment possible (the page never contradicts its own summary)', async () => {
     const { el } = await view(pshenmic, { estTime: NOW + 23 * DAY, report: report({ paid: 1, remainingEstimate: 1 }) });
     expect(el.querySelector('[data-testid="lameduck-status"]')).toBeNull();
-    expect(el.querySelector('[data-testid="summary"]')!.textContent).toContain('1, 1 more possible');
+    expect(el.querySelector('[data-testid="p-paid"]')!.textContent).toBe('1 made, 1 more possible');
   });
 
   it('is not a lame duck when the next superblock is flagged to pay it', async () => {
@@ -160,5 +161,32 @@ describe('ProposalView for a proposal that starts paying at a later superblock',
     const { el } = await view(later, { estTime: NEXT, report: null, inNextBudget: true });
     expect(el.querySelector('[data-testid="startslater-status"]')).toBeNull();
     expect(el.textContent).toContain('In the next budget');
+  });
+});
+
+describe('ProposalView reading order', () => {
+  const open = proposal({ startEpoch: NOW - 10 * DAY, endEpoch: NOW + 80 * DAY });
+
+  it('says what it funds (ask × payments, payee, timeline) and where it stands before the vote, with a jump to the vote', async () => {
+    const { el } = await view(open, { estTime: NOW + 5 * DAY, report: null });
+    const funds = el.querySelector('[data-testid="p-funds"]')!;
+    const vote = el.querySelector('[data-testid="vote-panel"]')!;
+    expect(funds.compareDocumentPosition(vote) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(el.querySelector('[data-testid="p-ask"]')!.textContent).toMatch(/^100 DASH per month × \d+ payments = [\d,]+ DASH$/);
+    expect(funds.textContent).toContain('Pays');
+    expect(funds.textContent).toContain(`the next payout is around ${formatDate(NOW + 5 * DAY)}`);
+    expect(funds.querySelector('[data-testid="p-votes"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="jump-vote"]')!.getAttribute('href')).toBe('#vote');
+  });
+
+  it('heads an unclaimed proposal with its name as words, and keeps the exact name beside it', async () => {
+    const { el } = await view(open, { estTime: NOW + 5 * DAY, report: null });
+    expect(el.querySelector('[data-testid="p-title"]')!.textContent).toBe('Pshenmic dev dash desktop november 2026');
+    expect(el.querySelector('[data-testid="p-chain-name"]')!.textContent).toBe('pshenmic-dev-dash-desktop-november-2026 is its name on the network.');
+  });
+
+  it('has no jump to a vote it no longer shows', async () => {
+    const { el } = await view(proposal({ startEpoch: NOW - 40 * DAY, endEpoch: NOW - DAY }), { estTime: NOW + 5 * DAY, report: null });
+    expect(el.querySelector('[data-testid="jump-vote"]')).toBeNull();
   });
 });

@@ -1,15 +1,16 @@
-// /p/h/<govHash> (canonical) and /p/<name> (slug; duplicate names get a chooser). The page leads with what a reader wants: the ask,
-// whether it will be funded, the vote, the description and the discussion. Every check still runs (ui/trust/useProposalTrust.ts)
-// and adds up to one badge; its detail is in the "How do we know?" drawer.
-import { Slug } from '../ui/Slug.tsx';
+// /p/h/<govHash> (canonical) and /p/<name> (slug; duplicate names get a chooser). The page leads with what a voter needs to know
+// before voting: what it funds (the owner's summary, the ask, the payee, the timeline) and where it stands, then the vote, the
+// network's record and the discussion. Every check still runs (ui/trust/useProposalTrust.ts) and adds up to one badge; its detail
+// is in the "How do we know?" drawer.
+import { readableName, Slug } from '../ui/Slug.tsx';
 import { useTitle } from '../app/title.ts';
 import { useMemo, useState } from 'react';
 import { useLocation, useParams } from 'react-router-dom';
 import { Link } from '../ui/Link.tsx';
 import { urlClaimIdentity } from '@govhub/verify';
 import { useApp } from '../app/context.tsx';
-import { Discussion } from '../ui/Discussion.tsx';
 import { useOtherNetwork, useProbe, WrongNetwork } from '../app/otherNetwork.tsx';
+import { Discussion } from '../ui/Discussion.tsx';
 import { proposalOwner } from '../lib/social.ts';
 import { ErrorBoundary } from '../ui/ErrorBoundary.tsx';
 import { ReadError } from '../ui/ReadError.tsx';
@@ -24,9 +25,10 @@ import { trustScope, useCachedTrust, type StoredTrust } from '../ui/trust/store.
 import { VerificationDrawer } from '../ui/trust/VerificationDrawer.tsx';
 import { mnParam, ProposalVoteBlock } from '../ui/vote/VoteBlock.tsx';
 import { useOwnerPage } from '../lib/ownerPages.ts';
-import { OwnerPageSummary } from '../ui/OwnerPage.tsx';
+import { purposeOf } from '../ui/OwnerPage.tsx';
 import { useAsync } from '../ui/hooks.ts';
 import type { Proposal, Sourced } from '../data/types.ts';
+import type { OwnerPage } from '../lib/ownerPages.ts';
 import { formatDash, formatDate, formatDateTime, formatDuration, formatInt, shortHash, urlHost } from '../lib/format.ts';
 import { passState, perPayment, votingDeadlineTime } from '../lib/governance.ts';
 import { deriveRow } from '../lib/view.ts';
@@ -136,6 +138,61 @@ function EvidenceLine({ agg, onRetry }: { agg: Aggregate; onRetry(): void }) {
 }
 
 /**
+ * The first thing on the page: what the proposal is for, in the owner's words from their page (read when the site was built,
+ * quoted and attributed), else where the owner says it.
+ */
+function Purpose({ page, hasPost, url, host }: { page: { page: OwnerPage; fetchedAt: number } | null; hasPost: boolean; url: string; host: string | null }) {
+  const below = hasPost ? (
+    <p className="small" data-testid="p-purpose-post">
+      The owner has posted a description here: <a href="#about-title">read it below</a>.
+    </p>
+  ) : null;
+  if (page) {
+    const text = purposeOf(page.page);
+    return (
+      <div className="p-purpose" data-testid="p-purpose">
+        {text && (
+          <blockquote className="owner-page-quote p-purpose-quote" cite={page.page.url}>
+            <p>
+              <bdi>{text}</bdi>
+            </p>
+          </blockquote>
+        )}
+        <p className="small muted p-purpose-from" data-testid="owner-page">
+          {text ? 'The owner’s own words' : 'The title is the owner’s'}, from their page on {page.page.host} (read {formatDate(page.fetchedAt)}). Nobody has checked
+          them.{' '}
+          <a href={page.page.url} target="_blank" rel="noopener noreferrer nofollow ugc" className="ext" data-testid="owner-page-link">
+            Read it all on {page.page.host}
+            <span className="visually-hidden"> (opens another site)</span>
+          </a>
+        </p>
+        {below}
+      </div>
+    );
+  }
+  if (below) return below;
+  return (
+    <p className="small p-purpose" data-testid="about-link">
+      {host ? (
+        <>
+          The owner hasn’t said here what it funds; it is on their own page:{' '}
+          <a href={url} target="_blank" rel="noopener noreferrer nofollow ugc" className="ext">
+            {linkText(url, host)}
+            <span className="visually-hidden"> (opens another site)</span>
+          </a>
+          . <span className="muted">Nobody has checked what that page says.</span>
+        </>
+      ) : (
+        'The owner hasn’t said what it funds, and the proposal links to no page that would.'
+      )}
+    </p>
+  );
+}
+
+/** What the header's badge vouches for: the proposal's record, collateral, votes and budget place, not who owns it. */
+const VERIFIED_SUBJECT = 'Proposal data verified';
+
+/**
  * The header's one status: the badge, with the checks' progress while they run ("Checking 3 of 5"). A result this browser proved
  * earlier for the very tally shown stays up while the checks run again, so a return visit doesn't flicker back to "Checking".
  */
@@ -146,7 +203,7 @@ function TrustStatus({ agg, cached, onOpen }: { agg: Aggregate; cached: StoredTr
     const ago = `${formatDuration(Math.max(60, Math.floor((Date.now() - cached.at) / 1000)))} ago`;
     return (
       <span className="trust-status" data-testid="trust-status">
-        <TrustBadge level="verified" reason={`Proved in this browser ${ago}; checking again now`} onOpen={onOpen} />
+        <TrustBadge level="verified" label={VERIFIED_SUBJECT} reason={`Proved in this browser ${ago}; checking again now`} onOpen={onOpen} />
         <span className="small muted" aria-live="polite">
           proved {ago}, checking again
         </span>
@@ -155,7 +212,7 @@ function TrustStatus({ agg, cached, onOpen }: { agg: Aggregate; cached: StoredTr
   }
   return (
     <span className="trust-status" data-testid="trust-status">
-      <TrustBadge level={agg.level} reason={agg.reason} onOpen={onOpen} {...(checking ? { label: `Checking ${done} of ${agg.components.length}` } : {})} />
+      <TrustBadge level={agg.level} reason={agg.reason} onOpen={onOpen} {...(checking ? { label: `Checking ${done} of ${agg.components.length}` } : agg.level === 'verified' ? { label: VERIFIED_SUBJECT } : {})} />
       {checking && (
         <span className="small muted" aria-live="polite" data-testid="evidence-progress">
           in this browser; a first visit takes 10 to 40 seconds
@@ -194,7 +251,11 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
   const resolved = useResolvedLink(p.url, short);
   // what the owner's page said when the site was built: only for the hash-committed link
   const ownerPage = useOwnerPage(p);
-  const page = row.content.ok && check.status !== 'failed' ? ownerPage : null;
+  const page = row.content.ok && check.status !== 'failed' ? (ownerPage ?? null) : null;
+  // the heading waits for owners.json (preloaded with the app) rather than changing from the name to the owner's title under the reader
+  const titleReady = ownerPage !== undefined || !row.content.ok;
+  const ownerTitle = page?.page.title ?? null;
+  const hasPost = !!(post.state?.post && post.state.body !== null);
   const sched = row.schedule;
   const chain = trust.chain.report;
   // The proven threshold replaces the bridge's once the chain is verified.
@@ -235,81 +296,122 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
 
       <header className="p-hero dh-page-header">
         <p className="dh-page-header__kicker">Proposal</p>
-        <div className="p-title dh-page-header__text">
-          <h1 className="dh-page-header__title">{page?.page.title ? <bdi>{page.page.title}</bdi> : <Slug name={p.name} />}</h1>
-
-        </div>
-        {page?.page.title && (
-          <p className="p-chain-name small" data-testid="p-chain-name">
-            <span className="mono-ish">
-              <Slug name={p.name} />
-            </span>{' '}
-            <span className="muted">is its name on the network; the title is the owner’s, from {page.page.host}.</span>
-          </p>
-        )}
-        <div className="p-owner">
-          <OwnerValue p={p} own={own} />
-          <RejectedClaims own={own} />
-        </div>
-        <div className="dh-page-header__meta">
+        <h1 className="dh-page-header__title" data-testid="p-title" aria-busy={titleReady ? undefined : true}>
+          {!titleReady ? <span className="dh-skel dh-skel--title" aria-label="Loading the title" /> : ownerTitle ? <bdi>{ownerTitle}</bdi> : readableName(p.name)}
+        </h1>
+        <p className="p-chain-name small" data-testid="p-chain-name">
+          <span className="mono-ish">
+            <Slug name={p.name} />
+          </span>{' '}
+          <span className="muted">{ownerTitle ? `is its name on the network; the title is the owner’s, from ${page!.page.host}.` : 'is its name on the network.'}</span>
+        </p>
+        <div className="dh-page-header__meta p-meta">
           <TrustStatus agg={trust.aggregate} cached={cachedTrust} onOpen={() => setDrawer(true)} />
+          {active && !lameDuck && (
+            <a href="#vote" className="dh-btn dh-btn--secondary dh-btn--sm p-jump" data-testid="jump-vote">
+              Go to the vote ↓
+            </a>
+          )}
         </div>
       </header>
 
       <div className="p-layout">
         <div className="p-main">
-          <section className="panel dh-card p-ask" aria-label="Funding">
-            <p className="p-amount">
+          <section className="panel dh-card p-funds" aria-labelledby="funds-title" data-testid="p-funds">
+            <h2 id="funds-title" className="panel-title">
+              What this funds
+            </h2>
+            <Purpose page={page} hasPost={hasPost} url={p.url} host={host} />
+            <p className="p-amount" data-testid="p-ask">
               <span className="num">{formatDash(p.paymentAmount)}</span> <span className="p-per">{sched?.oneTime ? 'one payment' : perPayment(params)}</span>
+              {sched && !sched.oneTime && sched.total > 0 && (
+                <span className="p-total">
+                  {' '}
+                  × {formatInt(sched.total)} payments = <b>{formatDash(p.paymentAmount * sched.total)}</b>
+                </span>
+              )}
             </p>
-            {sched && !sched.oneTime && sched.total > 0 && (
-              <p className="muted">
-                {sched.remaining === 0 ? 'No payments left' : `${formatInt(sched.remaining)} of ${formatInt(sched.total)} payments left`}, {formatDash(p.paymentAmount * sched.total)} in total
-              </p>
-            )}
-            {lameDuck ? (
-              <LameDuckPageStatus
-                total={sched?.total ?? 0}
-                paid={payments ? { count: payments.paid.length, atLeast: isLowerBound(payments), firm: payments.othersComplete !== false && !payments.anchor?.weak } : null}
-                endEpoch={p.endEpoch}
-                counting={!chain && !trust.chain.error && !trust.chain.unavailable}
-              />
-            ) : state && threshold && row.absYes !== null ? (
-              <FundingMeter absYes={row.absYes} threshold={threshold.value} state={state} />
-            ) : (
-              <p className="muted">{tallies.loading ? 'Reading the votes…' : t ? 'Waiting for the budget cycle' : 'No votes counted yet'}</p>
-            )}
-            {later && <StartsLaterPageStatus later={later} />}
-            {active && !lameDuck && !later && t && (
-              <p className="p-status">
-                {inBudget ? <span className="tag dh-badge tag-pass dh-badge--good">In the next budget</span> : state?.passing ? <span className="tag dh-badge tag-warn dh-badge--warn">Passing, but the next budget is full</span> : null}
-                {(inBudget || state?.passing) && trust.funded === null && trust.aggregate.level !== 'checking' && (
-                  <span className="small muted" data-testid="budget-reported" title="The budget place is the published tally's; it counts as verified once this browser has recounted the votes and the funding order">
-                    as reported, not verified here
-                  </span>
-                )}
-              </p>
-            )}
-            {t && (
-              <p className={`p-votes${lameDuck ? ' p-votes-dim' : ''}`} data-testid="p-votes" aria-label={`Masternode votes, weighted: ${t.yesWeighted} yes, ${t.noWeighted} no, ${t.abstainWeighted} abstain`}>
-                <span>
-                  <b>{formatInt(t.yesWeighted)}</b> yes
-                </span>
-                <span>
-                  <b>{formatInt(t.noWeighted)}</b> no
-                </span>
-                <span>
-                  <b>{formatInt(t.abstainWeighted)}</b> abstain
-                </span>
-                <span className="muted small" data-testid="p-voters" title={`${formatInt(t.yesCount)} yes, ${formatInt(t.noCount)} no, ${formatInt(t.abstainCount)} abstain; counted at block ${formatInt(t.asOfHeight)}`}>
-                  {formatInt(t.yesCount + t.noCount + t.abstainCount)} masternodes voted; evonodes count 4 times
-                </span>
-                {lameDuck && <span className="small muted">These votes no longer affect payment.</span>}
-              </p>
-            )}
+            <dl className="kv p-facts small" data-testid="p-facts">
+              {(paid || (sched && !sched.oneTime && sched.total > 0)) && (
+                <div>
+                  <dt>Payments</dt>
+                  <dd data-testid="p-paid">
+                    {paid ? `${paid.made.text} made, ${paid.remaining.text}` : sched!.remaining === 0 ? 'No payments left' : `${formatInt(sched!.remaining)} of ${formatInt(sched!.total)} left`}
+                  </dd>
+                </div>
+              )}
+              <div>
+                <dt>Runs</dt>
+                <dd>
+                  {formatDate(p.startEpoch)} to {formatDate(p.endEpoch)}
+                  {active && !lameDuck && !later && cycle && <span className="muted">; the next payout is around {formatDate(cycle.value.estTime)}</span>}
+                </dd>
+              </div>
+              <div>
+                <dt>Pays</dt>
+                <dd>
+                  <dashhq-hash value={p.paymentAddress} label="payment address" href={`https://${source.coreNetwork === 'testnet' ? 'insight.testnet.networks.dash.org' : 'insight.dash.org'}/insight/address/${encodeURIComponent(p.paymentAddress)}`}>
+                    {p.paymentAddress}
+                  </dashhq-hash>
+                </dd>
+              </div>
+              <div>
+                <dt>Owner</dt>
+                <dd className="p-owner">
+                  <OwnerValue own={own} />
+                  <RejectedClaims own={own} />
+                </dd>
+              </div>
+            </dl>
 
-            <EvidenceLine agg={trust.aggregate} onRetry={trust.recheck} />
-            {tallies.error && <ReadError error={tallies.error} what="Platform" lead="The tally could not be read" onRetry={() => setTalliesAttempt((n) => n + 1)} />}
+            <div className="p-standing" aria-labelledby="standing-title">
+              <h3 id="standing-title" className="p-standing-title">
+                Where it stands
+              </h3>
+              {lameDuck ? (
+                <LameDuckPageStatus
+                  total={sched?.total ?? 0}
+                  paid={payments ? { count: payments.paid.length, atLeast: isLowerBound(payments), firm: payments.othersComplete !== false && !payments.anchor?.weak } : null}
+                  endEpoch={p.endEpoch}
+                  counting={!chain && !trust.chain.error && !trust.chain.unavailable}
+                />
+              ) : state && threshold && row.absYes !== null ? (
+                <FundingMeter absYes={row.absYes} threshold={threshold.value} state={state} />
+              ) : (
+                <p className="muted">{tallies.loading ? 'Reading the votes…' : t ? 'Waiting for the budget cycle' : 'No votes counted yet'}</p>
+              )}
+              {later && <StartsLaterPageStatus later={later} />}
+              {active && !lameDuck && !later && t && (
+                <p className="p-status">
+                  {inBudget ? <span className="tag dh-badge tag-pass dh-badge--good">In the next budget</span> : state?.passing ? <span className="tag dh-badge tag-warn dh-badge--warn">Passing, but the next budget is full</span> : null}
+                  {(inBudget || state?.passing) && trust.funded === null && trust.aggregate.level !== 'checking' && (
+                    <span className="small muted" data-testid="budget-reported" title="The budget place is the published tally's; it counts as verified once this browser has recounted the votes and the funding order">
+                      as reported, not verified here
+                    </span>
+                  )}
+                </p>
+              )}
+              {t && (
+                <p className={`p-votes${lameDuck ? ' p-votes-dim' : ''}`} data-testid="p-votes" aria-label={`Masternode votes, weighted: ${t.yesWeighted} yes, ${t.noWeighted} no, ${t.abstainWeighted} abstain`}>
+                  <span>
+                    <b>{formatInt(t.yesWeighted)}</b> yes
+                  </span>
+                  <span>
+                    <b>{formatInt(t.noWeighted)}</b> no
+                  </span>
+                  <span>
+                    <b>{formatInt(t.abstainWeighted)}</b> abstain
+                  </span>
+                  <span className="muted small" data-testid="p-voters" title={`${formatInt(t.yesCount)} yes, ${formatInt(t.noCount)} no, ${formatInt(t.abstainCount)} abstain; counted at block ${formatInt(t.asOfHeight)}`}>
+                    {formatInt(t.yesCount + t.noCount + t.abstainCount)} masternodes voted; evonodes count 4 times
+                  </span>
+                  {lameDuck && <span className="small muted">These votes no longer affect payment.</span>}
+                </p>
+              )}
+
+              <EvidenceLine agg={trust.aggregate} onRetry={trust.recheck} />
+              {tallies.error && <ReadError error={tallies.error} what="Platform" lead="The tally could not be read" onRetry={() => setTalliesAttempt((n) => n + 1)} />}
+            </div>
           </section>
 
           {active && !lameDuck && (
@@ -328,27 +430,10 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
                     <OwnerPost govHash={p.govHash} ownerId={ownerId} post={post} trustLevel={trust.aggregate.level} />
                   </ErrorBoundary>
                 )}
-                {!(post.state?.post && post.state.body !== null) && page && (
-                  <>
-                    <OwnerPageSummary page={page.page} fetchedAt={page.fetchedAt} />
-                    <p className="small muted">The owner can also post a description here, by claiming the proposal.</p>
-                  </>
-                )}
-                {!(post.state?.post && post.state.body !== null) && !page && (
-                  <p className="small" data-testid="about-link">
-                    {host ? (
-                      <>
-                        The owner hasn't posted a description here; it is on their own page:{' '}
-                        <a href={p.url} target="_blank" rel="noopener noreferrer nofollow ugc" className="ext">
-                          {linkText(p.url, host)}
-                          <span className="visually-hidden"> (opens another site)</span>
-                        </a>
-                        .
-                      </>
-                    ) : (
-                      "The owner hasn't posted a description here."
-                    )}{' '}
-                    <span className="muted">Nobody has checked what the linked page says. The owner can post a description here by claiming the proposal.</span>
+                {!hasPost && (
+                  <p className="small muted" data-testid="about-owner-none">
+                    {page ? `Their summary, quoted from ${page.page.host}, is at the top of this page.` : 'The owner hasn’t posted a description here.'} The owner can post one here by
+                    claiming the proposal.
                   </p>
                 )}
                 {short && (
@@ -425,20 +510,6 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
           <section className="panel dh-card">
             <h2 className="panel-title">Summary</h2>
             <dl className="kv" data-testid="summary">
-              {paid && (
-                <div>
-                  <dt>Paid so far</dt>
-                  <dd>
-                    {paid.made.text}, {paid.remaining.text}
-                  </dd>
-                </div>
-              )}
-              <div>
-                <dt>Runs</dt>
-                <dd>
-                  {formatDate(p.startEpoch)} to {formatDate(p.endEpoch)}
-                </dd>
-              </div>
               {host && (
                 <div>
                   <dt>Website</dt>

@@ -12,6 +12,7 @@ import { BadgeProvider } from './badge/context.tsx';
 import { FramedNotice, isFramed } from './app/frame.tsx';
 import { Layout } from './app/Layout.tsx';
 import { preloadSdk } from './data/platform.ts';
+import { preloadOwnerPages } from './lib/ownerPages.ts';
 import { AboutPage } from './pages/AboutPage.tsx';
 import { VerificationPage } from './pages/VerificationPage.tsx';
 import { ActivePage } from './pages/ActivePage.tsx';
@@ -64,6 +65,8 @@ function NotFoundPage() {
     </section>
   );
 }
+
+if (!isFramed()) preloadOwnerPages();
 
 createRoot(document.getElementById('root')!).render(
   // inside another page's frame: no app at all (no data, no storage, nothing to click), only a way out

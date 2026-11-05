@@ -2833,3 +2833,28 @@ dashhq-hash { vertical-align: middle; max-width: 100%; }
   overflow: hidden;
 }
 .owner-title { display: block; overflow-wrap: anywhere; font-weight: 400; }
+
+/* ---- proposal page: what it funds, then where it stands, then the vote --------------------------- */
+.p-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3); }
+.p-jump { text-decoration: none; }
+.p-funds { gap: var(--s-3); }
+.p-purpose { display: grid; gap: 6px; margin: 0; }
+.p-purpose-quote p { font-size: var(--t-m, 1rem); line-height: 1.5; }
+.p-purpose-from { margin: 0; }
+.p-amount { margin: 0; }
+.p-total { color: var(--ink-2); }
+.p-total b { color: var(--ink); font-weight: 650; white-space: nowrap; }
+/* the badge and the jump to the vote share a row; the checks' progress note goes under both */
+.p-meta .trust-status { display: contents; }
+.p-meta .trust-status > .small { order: 3; flex-basis: 100%; }
+.p-meta .p-jump { order: 2; }
+.p-facts { margin: 0; }
+.p-facts > div { grid-template-columns: 6.5rem minmax(0, 1fr); }
+.p-facts .p-owner { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
+.p-standing { display: grid; gap: var(--s-3); padding-block-start: var(--s-3); border-block-start: 1px solid var(--line); }
+.p-standing-title { margin: 0; font-size: var(--t-s); font-weight: 650; color: var(--ink-2); }
+@media (max-width: 640px) {
+  /* a phone keeps the owner's summary to a few lines: the rest is a tap away on their page, and the vote stays near */
+  .p-purpose-quote p { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 5; overflow: hidden; }
+  .p-amount .num { font-size: var(--t-xl, 1.5rem); }
+}
