@@ -278,11 +278,17 @@ export function parseOwnerPage(html: string, ctx: { url: string; name: string; g
   let own: string;
 
   if (isDashCentral(host)) {
-    const ts = tokens(withoutNoise(html.slice(0, PAGE_CAP)));
+    const page = html.slice(0, PAGE_CAP);
+    const ts = tokens(withoutNoise(page));
     // the generic site page and a slug it doesn't know answer 200 too, and anyone can quote a hash in a discussion: only a page
-    // whose own fields carry this proposal's vote command and name is its page
+    // whose own part, before the owner's description, names this proposal and carries its hash (the vote command of an open
+    // proposal, or the page's own record of it, DW.proposal.hash) is its page
+    const hash = ctx.govHash.toLowerCase();
     const fields = clean(textOf(dashcentralFields(ts))).toLowerCase();
-    if (!fields.includes(`vote-many ${ctx.govHash.toLowerCase()}`) || !fields.includes(ctx.name.toLowerCase())) return null;
+    const lower = page.toLowerCase();
+    const before = lower.slice(0, Math.max(0, lower.search(/<div\b[^>]{0,200}\bid\s*=\s*["']?description\b/)) || lower.length);
+    const recorded = before.includes(`dw.proposal.hash = '${hash}'`) || before.includes(`dw.proposal.hash = "${hash}"`);
+    if (!(fields.includes(`vote-many ${hash}`) || recorded) || !fields.includes(ctx.name.toLowerCase())) return null;
     // its meta description is just the title again, so there is no description to take
     own = clean(titleRow(dashcentralFields(ts)));
     const body = descriptionTokens(ts);

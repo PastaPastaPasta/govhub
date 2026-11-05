@@ -231,6 +231,16 @@ describe('parseOwnerPage on hostile pages', () => {
     expect(parseOwnerPage(dashcentral('Some description that is long enough to count as a paragraph here.', HASH, 'Someone-Else'), ctx)).toBeNull();
   });
 
+  it("accepts a closed proposal's page by DashCentral's own record of its hash, but not one in a discussion", () => {
+    const closed = (hash: string, after = '') =>
+      dashcentral('A description that is long enough to count as this proposal\'s purpose here.', 'ef'.repeat(32))
+        .replace(/gobject vote-many [0-9a-f]{64} funding yes/, '')
+        .replace('<div id="description"', `<script type="text/javascript">DW.proposal.id = 1519; DW.proposal.hash = '${hash}';</script><div id="description"`)
+        .replace('</body>', `${after}</body>`);
+    expect(parseOwnerPage(closed(HASH), ctx)?.title).toBe('Dash Core Group Operations September - December 2026');
+    expect(parseOwnerPage(closed('cd'.repeat(32), `<script>DW.proposal.hash = '${HASH}';</script>`), ctx)).toBeNull();
+  });
+
   it('gives no excerpt when the description never closes (the discussion would follow)', () => {
     const html = dashcentral('').replace('<div id="description" style="overflow:hidden; display:block;"></div>', '<div id="description"><div>An unclosed description that is long enough to count as a paragraph.');
     expect(parseOwnerPage(html, ctx)?.excerpt ?? null).toBeNull();
