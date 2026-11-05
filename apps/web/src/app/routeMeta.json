@@ -9,6 +9,10 @@
       "title": "Past proposals",
       "description": "What the Dash treasury paid, superblock by superblock, and how each ended proposal turned out: funded, partly funded or not."
     },
+    "/treasury": {
+      "title": "What the treasury funds",
+      "description": "This month's Dash treasury budget, what is asked of it and what has the votes, what it pays for, the next payout, and how it compares with the past year, read from the chain."
+    },
     "/names": {
       "title": "Name contests",
       "description": "Dash usernames that went to a masternode vote: who wants each name, the vote so far and when voting closes."

@@ -279,7 +279,7 @@ export function Layout() {
   const unsupportedNetwork = requestedNetwork && !['mainnet', 'testnet', 'main', 'test'].includes(requestedNetwork);
   const coreLabel = registry.coreNetwork === 'mainnet' ? 'Mainnet' : 'Testnet';
   const platformLabel = registry.platformNetwork === 'mainnet' ? 'Mainnet' : 'Testnet';
-  const proposals = loc.pathname === '/' || loc.pathname.startsWith('/past') || loc.pathname.startsWith('/p/');
+  const proposals = loc.pathname === '/' || loc.pathname.startsWith('/past') || loc.pathname.startsWith('/treasury') || loc.pathname.startsWith('/p/');
   // a masternode's own votes page (/masternodes/<proTx>) is public, usually someone else's: not "My masternodes"
   const masternodes = loc.pathname === '/masternodes' || loc.pathname.startsWith('/votes');
   const create = loc.pathname.startsWith('/create');

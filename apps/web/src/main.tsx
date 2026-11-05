@@ -19,6 +19,7 @@ import { ActivePage } from './pages/ActivePage.tsx';
 import { ContestVotesProvider } from './contests/ContestVotes.tsx';
 import { GuestKeysProvider } from './contests/GuestKeys.tsx';
 import { PastPage } from './pages/PastPage.tsx';
+import { TreasuryPage } from './pages/TreasuryPage.tsx';
 import { ProposalByHash, ProposalByName } from './pages/ProposalPage.tsx';
 import { SettingsPage } from './pages/SettingsPage.tsx';
 import { TrustPage } from './pages/TrustPage.tsx';
@@ -87,6 +88,7 @@ createRoot(document.getElementById('root')!).render(
               <Route element={<Layout />}>
                 <Route index element={<ActivePage />} />
                 <Route path="past" element={<PastPage />} />
+                <Route path="treasury" element={<TreasuryPage />} />
                 <Route path="p/h/:hash" element={<ProposalByHash />} />
                 <Route path="p/:name" element={<ProposalByName />} />
                 <Route path="p/:identity/:name" element={<ProposalByName />} />

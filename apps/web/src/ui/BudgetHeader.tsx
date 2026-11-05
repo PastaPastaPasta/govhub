@@ -142,6 +142,11 @@ export function BudgetHeader() {
           </dd>
         </div>
       </dl>
+      <p className="budget-more">
+        <Link to="/treasury" data-testid="budget-treasury">
+          What this budget pays for, and how it compares →
+        </Link>
+      </p>
       <div className="chain-context dh-page-header__meta"><span>Chain check</span><ChainShield /></div>
       <details className="learn">
         <summary>How funding works</summary>

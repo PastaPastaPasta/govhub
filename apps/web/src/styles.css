@@ -2858,3 +2858,61 @@ dashhq-hash { vertical-align: middle; max-width: 100%; }
   .p-purpose-quote p { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 5; overflow: hidden; }
   .p-amount .num { font-size: var(--t-xl, 1.5rem); }
 }
+
+/* ---- what the treasury funds (/treasury) ------------------------------------------------------------ */
+.treasury { display: grid; gap: 20px; }
+.tr-stats .dh-stat { min-inline-size: 0; }
+.tr-stats .dh-stat__note { overflow-wrap: anywhere; }
+.tr-stats .dh-stat__note .usd { display: block; }
+.tr-pays, .tr-compare { display: grid; gap: 14px; }
+.tr-budget { margin: 0; display: grid; gap: 8px; }
+.tr-budget-bar { display: flex; gap: 2px; block-size: 14px; border-radius: var(--dh-r1); overflow: hidden; background: var(--dh-sunken); }
+.tr-seg { background: var(--dh-brand); min-inline-size: 3px; }
+.tr-seg:hover { background: var(--dh-brand-ink); }
+.tr-seg-free { background: var(--dh-sunken); }
+.tr-key { display: inline-block; inline-size: 10px; block-size: 10px; border-radius: 2px; vertical-align: -1px; }
+.tr-key-seg, .tr-key-paid { background: var(--dh-brand); }
+.tr-key-free, .tr-key-cap { background: var(--dh-sunken); box-shadow: inset 0 0 0 1px var(--dh-line-2); }
+.tr-key-next, .tr-next { background: color-mix(in srgb, var(--dh-ink-2) 16%, transparent); outline: 1.5px dashed var(--dh-ink-2); outline-offset: -1.5px; }
+.tr-group { display: grid; gap: 8px; }
+.tr-group-head { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; }
+.tr-group-title { font-size: 17px; font-weight: 650; }
+.tr-group-sum { color: var(--dh-ink-2); }
+.tr-group-desc { margin: 0; }
+details.tr-group { gap: 0; }
+details.tr-group > summary { padding: 12px 16px; cursor: pointer; list-style: none; }
+details.tr-group > summary::-webkit-details-marker { display: none; }
+details.tr-group[open] > summary .sb-chevron { transform: translateY(-4px) rotate(45deg); }
+details.tr-group > .tr-group-desc { padding: 0 16px 10px; }
+details.tr-group > .tr-table { margin: 0; border-radius: 0; }
+.tr-name a { font-weight: 600; }
+.tr-name .tr-slug, .tr-name .tr-purpose { display: block; margin-block-start: 2px; font-weight: 400; }
+.tr-slug { font-family: var(--dh-mono); font-size: 12px; color: var(--dh-ink-2); overflow-wrap: anywhere; }
+.tr-slug .muted { font-family: var(--dh-font); }
+.tr-purpose { color: var(--dh-ink-2); max-inline-size: 64ch; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; }
+.tr-ask, .tr-share { white-space: nowrap; }
+.tr-share-bar { display: inline-block; inline-size: 88px; block-size: 6px; margin-inline-end: 8px; border-radius: 3px; overflow: hidden; vertical-align: middle; background: var(--dh-sunken); }
+.tr-share-bar > span { display: block; block-size: 100%; min-inline-size: 2px; border-radius: 3px; background: var(--dh-brand); }
+.tr-compare-line { margin: 0; max-inline-size: 72ch; }
+.tr-chart { margin: 0; display: grid; gap: 10px; }
+.tr-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--dh-ink-2); }
+.tr-legend > span { display: inline-flex; align-items: center; gap: 6px; }
+.tr-cols { display: flex; align-items: flex-end; gap: 2px; block-size: 200px; margin-block-end: 22px; border-block-end: 1px solid var(--dh-line-2); }
+.tr-col { position: relative; flex: 1 1 0; min-inline-size: 0; block-size: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; cursor: default; }
+.tr-track { display: flex; flex-direction: column; justify-content: flex-end; align-items: center; inline-size: min(100%, 40px); border-radius: 4px 4px 0 0; background: var(--dh-sunken); box-shadow: inset 0 0 0 1px var(--dh-line); }
+.tr-bar { flex: none; inline-size: 100%; border-radius: 4px 4px 0 0; background: var(--dh-brand); }
+.tr-col:hover .tr-bar { background: var(--dh-brand-ink); }
+.tr-col-next { margin-inline-start: 10px; }
+.tr-next { inline-size: min(100%, 40px); border-radius: 4px 4px 0 0; }
+.tr-val { flex: none; margin-block-end: 3px; font-size: 11px; font-weight: 650; color: var(--dh-ink); white-space: nowrap; }
+.tr-x { position: absolute; inset-block-start: calc(100% + 5px); font-size: 11px; color: var(--dh-ink-2); white-space: nowrap; }
+.tr-table-view > summary { cursor: pointer; color: var(--dh-brand-ink); }
+.tr-table-view table { margin-block-start: 8px; max-inline-size: 32rem; }
+.budget-more { margin: 0; }
+@media (max-width: 640px) {
+  .tr-yr { display: none; }
+  .tr-x { font-size: 10px; }
+  .tr-cols { block-size: 160px; }
+  .tr-share-bar { inline-size: 56px; }
+  .tr-purpose { -webkit-line-clamp: 2; }
+}

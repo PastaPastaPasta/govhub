@@ -1,4 +1,4 @@
-// Active / Past: the two views of Proposals, with the active count.
+// Active / Past / Treasury: the views of Proposals, with the active count.
 import { NavLink } from './Link.tsx';
 import { useApp } from '../app/context.tsx';
 import { formatInt } from '../lib/format.ts';
@@ -12,6 +12,9 @@ export function ProposalTabs() {
         Active{count !== undefined && <span className="count">{formatInt(count)}</span>}
       </NavLink>
       <NavLink to="/past">Past</NavLink>
+      <NavLink to="/treasury" data-testid="tab-treasury">
+        Treasury
+      </NavLink>
     </nav>
   );
 }
