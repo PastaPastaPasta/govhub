@@ -50,8 +50,16 @@ const sortOf = (v: string | null): Sort => (SORTS.some((x) => x.id === v) ? (v a
 /** The list in another order; payout order is the bridge's own (already the list's). Stable, so ties keep payout order. */
 function sorted(rows: readonly Checked<Row>[], by: Sort): Checked<Row>[] {
   if (by === 'order') return [...rows];
-  const key = ({ item: r }: Checked<Row>): number =>
-    by === 'new' ? -r.p.value.time : by === 'amount' ? -r.p.value.paymentAmount : r.absYes !== null && r.threshold ? Math.abs(r.absYes - r.threshold.value) : Infinity;
+  const key = ({ item: r }: Checked<Row>): number => {
+    switch (by) {
+      case 'new':
+        return -r.p.value.time;
+      case 'amount':
+        return -r.p.value.paymentAmount;
+      case 'close':
+        return r.absYes !== null && r.threshold ? Math.abs(r.absYes - r.threshold.value) : Infinity;
+    }
+  };
   return [...rows].sort((a, b) => key(a) - key(b));
 }
 

@@ -1544,8 +1544,8 @@
   align-items: center;
   gap: 0.375rem;
 }
-.pvote-mn-links {
-  gap: 0.25rem 1.25rem !important;
+.pvote-mn .pvote-mn-links {
+  gap: 0.25rem 1.25rem;
 }
 .pvote-ways {
   display: grid;

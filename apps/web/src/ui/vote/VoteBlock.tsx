@@ -57,7 +57,7 @@ function VoteBlock({ proposal, ctx, closesIn, onVerify }: { proposal: Proposal; 
   const is = (m: { proTxHash: string; valid: boolean }) => m.valid && (!ctx || m.proTxHash.toLowerCase() === ctx.proTx);
   const keyring = k.status === 'open' && (!ctx || k.mns.owned.some(is) || k.mns.phase === 'loading');
   const pasted = !keyring && guest.status === 'ready' && guest.owned.some(is);
-  const found = ctx?.lookup.kind === 'found' ? ctx.lookup.mn : null;
+  const address = ctx?.lookup.kind === 'found' ? ctx.lookup.mn.votingAddress : '';
   // a masternode's "Vote" lands on #vote: the block, once the proposal has rendered
   const ref = useRef<HTMLElement>(null);
   const { hash } = useLocation();
@@ -80,7 +80,7 @@ function VoteBlock({ proposal, ctx, closesIn, onVerify }: { proposal: Proposal; 
       {keyring ? (
         <>
           <VoteComposer proposals={[proposal]} onVerify={onVerify} {...(ctx ? { onlyMn: ctx.proTx } : {})} />
-          <OfflineSign proposal={proposal} address={found?.votingAddress ?? ''} />
+          <OfflineSign proposal={proposal} address={address} />
         </>
       ) : pasted ? (
         <PastedKeyVote proposal={proposal} outcome={outcome} setOutcome={setOutcome} only={ctx?.proTx ?? null} />
@@ -89,7 +89,7 @@ function VoteBlock({ proposal, ctx, closesIn, onVerify }: { proposal: Proposal; 
           <OutcomePicker label="Your vote" value={outcome} onChange={setOutcome} testId="vote-choice" />
           <WayPicker way={way} setWay={setWay} signedIn={signedIn} />
           {way === 'offline' ? (
-            outcome ? <OfflineSignBody proposal={proposal} address={found?.votingAddress ?? ''} outcome={outcome} /> : null
+            outcome ? <OfflineSignBody proposal={proposal} address={address} outcome={outcome} /> : null
           ) : way === 'paste' ? (
             <PasteKey ctx={ctx} />
           ) : (
