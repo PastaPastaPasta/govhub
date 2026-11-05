@@ -21,6 +21,8 @@ import { ContestVotePanel } from '../contests/VotePanel.tsx';
 import { useContestVotes } from '../contests/ContestVotes.tsx';
 import { authorLabel } from '../lib/social.ts';
 import { useClockMs, useContestSource } from '../contests/useContests.ts';
+import { liveContests } from '../contests/source.ts';
+import { NetworkProbeNotice, useOtherNetwork, useProbe } from '../app/otherNetwork.tsx';
 
 /** How long after voting closes the page reads the contest again, for the result. */
 const CLOSING_REREAD_MS = 20_000;
@@ -46,26 +48,45 @@ export function ContestPage() {
 
 const networkLabel = (n: string) => (n === 'testnet' ? 'Testnet' : 'Mainnet');
 
-/** `network`: where it was looked for; the other network is offered (old EvoVote bookmarks carry no network, so they land on Mainnet). */
-function Missing({ label, children, network }: { label: string; children: string; network?: string }) {
+/** A name that can't be contested: what can be. */
+function Missing({ label, children }: { label: string; children: string }) {
   useTitle(`No contest for ${label}.dash`);
-  const other = network === 'testnet' ? 'mainnet' : network ? 'testnet' : null;
   return (
     <section className="page-narrow" data-testid="contest-missing">
       <h1 className="dh-page-header__title">No contest for {label}.dash</h1>
       <p>
         {children} <Link to="/names">All name contests</Link>
       </p>
-      {other && (
-        <p>
-          <Link to={`${contestHref(label)}?network=${other}`} data-testid="contest-other-network">
-            Look on {networkLabel(other)} →
-          </Link>
-        </p>
-      )}
     </section>
   );
 }
+
+/**
+ * No vote on this name on this network: the other network is asked before saying so (an old EvoVote bookmark carries no network,
+ * so a Testnet contest lands on Mainnet).
+ */
+function NoContestHere({ label, network }: { label: string; network: string }) {
+  const other = useOtherNetwork();
+  const probe = useProbe(other, async (o) => contestExists(await liveContests(o.registry).state(label)), label);
+  const here = networkLabel(network);
+  // the tab keeps the page's own title ("No contest for …"): true of this network whatever the other says
+  const title = probe === 'found' ? `The contest for ${label}.dash isn’t on ${here}` : `No contest for ${label}.dash`;
+  return (
+    <section className="page-narrow" data-testid="contest-missing" data-probe={probe}>
+      <h1 className="dh-page-header__title">{title}</h1>
+      <NetworkProbeNotice
+        what="name contest"
+        probe={probe}
+        other={other}
+        missing={`Platform has no record of a vote on this name on ${here}.`}
+        absent="A name goes to a vote only when two or more identities ask for it."
+        back={<Link to="/names">All name contests</Link>}
+      />
+    </section>
+  );
+}
+
+const contestExists = (s: ContestState) => !(s.contenders.length === 0 && s.total === 0 && !s.outcome);
 
 
 /** DPNS names and self-chosen profiles of these identities, best effort (an identity without either shows its short id). */
@@ -122,7 +143,7 @@ function ContestView({ label }: { label: string }) {
   const contenderKey = s ? s.contenders.map((c) => c.identityId).sort().join(',') : '';
   const featured = useMemo(() => contenders(contenderKey ? contenderKey.split(',') : []), [contenderKey]);
   const phase = s ? phaseOf(s, endsAt, nowMs) : null;
-  const none = !!s && s.contenders.length === 0 && s.total === 0 && !s.outcome;
+  const none = !!s && !contestExists(s);
   useTitle(none ? `No contest for ${label}.dash` : `${s ? displayName(s, label) : label}.dash name contest`);
   useEffect(() => {
     if (phase !== 'closing') return;
@@ -175,9 +196,7 @@ function ContestView({ label }: { label: string }) {
   if (!s) return <ReadError error={state.error ?? 'no answer'} what="Platform" lead="The contest could not be read" onRetry={() => setAttempt((n) => n + 1)} />;
   if (none)
     return (
-      <Missing label={label} network={src.network}>
-        {`Platform has no record of a vote on this name on ${networkLabel(src.network)}.`}
-      </Missing>
+      <NoContestHere label={label} network={src.network} />
     );
 
   const name = displayName(s, label);

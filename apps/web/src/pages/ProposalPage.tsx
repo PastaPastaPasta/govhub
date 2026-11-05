@@ -9,6 +9,7 @@ import { Link } from '../ui/Link.tsx';
 import { urlClaimIdentity } from '@govhub/verify';
 import { useApp } from '../app/context.tsx';
 import { Discussion } from '../ui/Discussion.tsx';
+import { useOtherNetwork, useProbe, WrongNetwork } from '../app/otherNetwork.tsx';
 import { proposalOwner } from '../lib/social.ts';
 import { ErrorBoundary } from '../ui/ErrorBoundary.tsx';
 import { ReadError } from '../ui/ReadError.tsx';
@@ -40,7 +41,7 @@ export function ProposalByHash() {
   const load = useAsync(() => (/^[0-9a-fA-F]{64}$/.test(hash) ? source.proposal(hash.toLowerCase()) : Promise.resolve(null)), [source, hash, attempt]);
   if (load.loading) return <Loading />;
   if (load.error) return <ReadError error={load.error} what="Platform" lead="The proposal could not be read" onRetry={() => setAttempt((n) => n + 1)} />;
-  if (!load.data) return <NotFound what={`a proposal with hash ${shortHash(hash)}`} />;
+  if (!load.data) return <NotFound by={{ hash: hash.toLowerCase() }} />;
   return <ProposalView sp={load.data} />;
 }
 
@@ -59,7 +60,7 @@ export function ProposalByName() {
   const all = load.data ?? [];
   const named = identity ? all.filter((s) => urlClaimIdentity(s.value.url, s.value.name, registry.forum.claimPortals) === identity) : [];
   const list = named.length ? named : all;
-  if (list.length === 0) return <NotFound what={`a proposal named "${name}"`} />;
+  if (list.length === 0) return <NotFound by={{ name }} />;
   if (list.length === 1) return <ProposalView sp={list[0]!} />;
   return (
     <section className="page-narrow">
@@ -87,15 +88,26 @@ function Loading() {
   );
 }
 
-function NotFound({ what }: { what: string }) {
-  useTitle('Proposal not found');
+/** No such proposal on this network: before saying so, the other network is asked (a link shared from there, opened here). */
+function NotFound({ by }: { by: { name: string } | { hash: string } }) {
+  const other = useOtherNetwork();
+  const key = 'name' in by ? `name:${by.name}` : `hash:${by.hash}`;
+  const probe = useProbe(other, async (o) => ('name' in by ? (await o.source.byName(by.name)).length > 0 : !!(/^[0-9a-f]{64}$/.test(by.hash) && (await o.source.proposal(by.hash)))), key);
+  const { registry } = useApp();
+  const here = registry.profile === 'testnet' ? 'Testnet' : 'Mainnet';
   return (
-    <section className="page-narrow">
-      <h1 className="dh-page-header__title">Not found</h1>
-      <p>
-        Platform has no record of {what}. It may not be published yet. <Link to="/">Back to active proposals</Link>
-      </p>
-    </section>
+    <WrongNetwork
+      what="proposal"
+      probe={probe}
+      other={other}
+      missing={'name' in by ? `${here} has no proposal named “${by.name}”.` : `${here} has no proposal with hash ${shortHash(by.hash)}.`}
+      absent="If it was submitted in the last few minutes, Governance’s bridge may not have published it yet."
+      back={
+        <Link to="/" data-testid="wrong-network-back">
+          {here}’s active proposals
+        </Link>
+      }
+    />
   );
 }
 

@@ -19,6 +19,8 @@ const forum = vi.hoisted(() => ({
   forum: { names: async () => new Map([['eUJLdV1mRNVYAMdHYV3nSiwKu2EBB1jGfVKUuCDeUE2', 'alice.dash']]), reader: { profiles: async () => new Map() } },
 }));
 vi.mock('../app/forum.tsx', () => ({ useForum: () => forum }));
+// demo data: there is no other network to look in
+vi.mock('../app/context.tsx', () => ({ useApp: () => ({ mode: 'fixtures', registry: { profile: 'mainnet' } }) }));
 vi.mock('../contests/ContestVotes.tsx', () => ({ useContestVotes: () => ({ held: [] }) }));
 vi.mock('../contests/VotePanel.tsx', () => ({ ContestVotePanel: () => <section data-testid="contest-vote-panel" /> }));
 vi.mock('../ui/useCommentCounts.ts', () => ({ useCommentCounts: (keys: string[]) => new Map(keys.map((k, i) => [k, i])) }));

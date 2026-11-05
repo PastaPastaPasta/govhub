@@ -42,7 +42,7 @@ describe('F4: the proposal page retries a failed read', () => {
     await flush();
     expect(calls).toBe(2);
     expect(r.el.querySelector('[data-testid="read-error"]')).toBeNull();
-    expect(r.el.textContent).toMatch(/Not found/); // the second read answered: no such proposal
+    expect(r.el.querySelector('h1')!.textContent).toBe('Proposal not found'); // the second read answered: no such proposal
     await r.unmount();
   });
 
@@ -64,7 +64,7 @@ describe('F4: the proposal page retries a failed read', () => {
     await click(r.el.querySelector<HTMLButtonElement>('[data-testid="read-retry"]')!);
     await flush();
     expect(calls).toBe(2);
-    expect(r.el.textContent).toMatch(/Not found/);
+    expect(r.el.querySelector('h1')!.textContent).toBe('Proposal not found');
     await r.unmount();
   });
 });

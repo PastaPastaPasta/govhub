@@ -18,6 +18,8 @@ import { useMasternodeVotes, type VoteCell } from '../ui/vote/useMasternodeVotes
 import { OfflineSign, VoteComposer } from '../ui/VotePanel.tsx';
 import { useKeyring } from '../voting/KeyringContext.tsx';
 import { OwnerTitle } from '../ui/OwnerPage.tsx';
+import { NetworkProbeNotice, useOtherNetwork, useProbe, wrongNetworkTitle } from '../app/otherNetwork.tsx';
+import { makeBridge } from '../data/bridgeFactory.ts';
 import '../voting/voting.css';
 
 /** "17 Nov" (the year only when it isn't this one) */
@@ -118,6 +120,16 @@ function MasternodeVotes({ proTx }: { proTx: string }) {
   const deadline = cycle ? votingDeadlineTime(cycle, params) : null;
   const read = proposals.length - v.pending;
   const fromRadar = useMemo(() => cameFromRadar(proTx), [proTx]);
+  // not in this network's list: is it in the other network's?
+  const other = useOtherNetwork();
+  const absent = v.lookup.kind === 'absent';
+  const elsewhere = useProbe(absent ? other : null, async (o) => {
+    const d = o.source.bridgeDescriptor();
+    if (!d) throw new Error('no governance bridge');
+    return (await makeBridge(d).mnlist()).masternodes.some((m) => m.proTxHash.toLowerCase() === proTx);
+  }, `${proTx}:${absent}`);
+  // Radar's record on the network the masternode is on: none to link while that is unknown
+  const radarHere = !absent ? radar : elsewhere === 'found' && other ? window.dashhq?.href('radar', '/mn/' + proTx, { network: other.registry.coreNetwork }) : null;
 
   return (
     <section className="mnv-page" aria-labelledby="mnv-title" data-testid="mn-page">
@@ -131,9 +143,11 @@ function MasternodeVotes({ proTx }: { proTx: string }) {
         )}
       </p>
       <header className="mnv-head dh-page-header">
-        <h1 className="dh-page-header__title" id="mnv-title">Masternode votes</h1>
+        <h1 className="dh-page-header__title" id="mnv-title">
+          {v.lookup.kind === 'absent' ? wrongNetworkTitle('masternode', elsewhere, network, other) : 'Masternode votes'}
+        </h1>
         <p className="mnv-id">
-          <dashhq-hash value={proTx} full="" label="ProTx hash" {...(radar ? { href: radar } : {})}>
+          <dashhq-hash value={proTx} full="" label="ProTx hash" {...(radarHere ? { href: radarHere } : {})}>
             {proTx}
           </dashhq-hash>
         </p>
@@ -149,25 +163,24 @@ function MasternodeVotes({ proTx }: { proTx: string }) {
           ) : v.lookup.kind === 'loading' ? (
             <span className="muted">Finding it in the {network} masternode list…</span>
           ) : null}
-          {radar && (
+          {radarHere && (
             <span>
-              <a href={radar}>Its record in Radar →</a>
+              <a href={radarHere}>Its record in Radar{absent && elsewhere === 'found' && other ? ` (${other.label})` : ''} →</a>
             </span>
           )}
         </p>
       </header>
 
       {v.lookup.kind === 'absent' && (
-        <div className="empty-box dh-empty" data-testid="mn-absent">
-          <p>
-            <b>This masternode isn't in the {network} masternode list.</b>
-          </p>
-          <p className="small">
-            It may have been removed, or it is on the other network. The list is the governance bridge's, at block {formatInt(v.lookup.height)}.{' '}
-            <a href={`?network=${registry.coreNetwork === 'testnet' ? 'mainnet' : 'testnet'}`} data-testid="mn-other-network">
-              Look on {registry.coreNetwork === 'testnet' ? 'Mainnet' : 'Testnet'}
-            </a>
-          </p>
+        <div data-testid="mn-absent">
+          <NetworkProbeNotice
+            what="masternode"
+            probe={elsewhere}
+            other={other}
+            missing={`This masternode isn't in the ${network} masternode list (the governance bridge's, at block ${formatInt(v.lookup.height)}).`}
+            absent="It may have been removed, or the link may be cut short."
+            back={<Link to="/">{network}’s active proposals</Link>}
+          />
         </div>
       )}
       {v.lookup.kind === 'no-bridge' && (
