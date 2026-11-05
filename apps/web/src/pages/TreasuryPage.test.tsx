@@ -25,7 +25,7 @@ const row = (name: string, dash: number, inNextBudget: boolean, passing = inNext
 const hold = vi.hoisted(() => ({ app: null as unknown, slots: null as unknown }));
 vi.mock('../app/context.tsx', () => ({ useApp: () => hold.app }));
 vi.mock('../ui/useLedger.ts', () => ({ LEDGER_STEP: { mainnet: 12, testnet: 24 }, useLedger: () => ({ slots: hold.slots, unavailable: null, canLoadMore: false, loadMore() {}, retry() {} }) }));
-vi.mock('../lib/ownerPages.ts', async (orig) => ({ ...(await orig<typeof import('../lib/ownerPages.ts')>()), useOwnerPages: () => new Map() }));
+vi.mock('../lib/ownerPages.ts', async (orig) => ({ ...(await orig<typeof import('../lib/ownerPages.ts')>()), useOwnerPages: () => new Map(), useOwnerPage: () => null }));
 vi.mock('../ui/UsdValue.tsx', () => ({ UsdValue: () => null }));
 const { TreasuryPage } = await import('./TreasuryPage.tsx');
 
@@ -40,6 +40,7 @@ function app(talliesLoading: boolean) {
     params: GOV_PARAMS.mainnet,
     activeRows: { shown: [row('dcg', 4832, true), row('italia', 60, true), row('growth', 200, false, true), row('apac', 61, false)], lameDucks: [], failed: [] },
     checks: { state: () => ({ status: 'passed' }) },
+    reload: () => {},
   };
 }
 const view = () =>
@@ -101,4 +102,27 @@ it('says when the bridge’s budget differs from the consensus limit', async () 
   (hold.app as ReturnType<typeof app>).gov.cycle.data.value.budget = 7000e8;
   const { el } = await view();
   expect(el.querySelector('[data-testid="treasury-stats"] [data-proof="reported"]')!.textContent).toMatch(/^Bridge’s figure; consensus says 6,82\d DASH$/);
+});
+
+describe('the treasury overview when a read fails', () => {
+  it('says the proposals couldn’t be read instead of showing zeros', async () => {
+    const a = app(false);
+    hold.app = { ...a, gov: { ...a.gov, active: { loading: false, error: 'Platform did not answer' } }, activeRows: { shown: [], lameDucks: [], failed: [] } };
+    const { el } = await view();
+    expect(el.querySelector('[data-testid="tr-requested"]')!.textContent).toBe('not known');
+    expect(el.querySelector('[data-testid="tr-passing"]')!.textContent).toBe('not known');
+    expect(el.querySelector('[data-testid="tr-unread"]')!.textContent).toContain('The active proposals couldn’t be read just now (Platform did not answer)');
+    expect(el.querySelector('[data-testid="tr-group-funded"]')).toBeNull();
+    expect(el.textContent).not.toContain('0 DASH');
+  });
+
+  it('keeps what is asked for but not who has the votes when the votes couldn’t be read', async () => {
+    const a = app(false);
+    hold.app = { ...a, gov: { ...a.gov, talliesFailed: true } };
+    const { el } = await view();
+    expect(el.querySelector('[data-testid="tr-requested"]')!.textContent).toBe('5,153 DASH');
+    expect(el.querySelector('[data-testid="tr-passing"]')!.textContent).toBe('not known');
+    expect(el.querySelector('[data-testid="tr-unread"]')!.textContent).toContain('The votes couldn’t be read just now');
+    expect(el.querySelector('[data-testid="tr-group-short"]')).toBeNull();
+  });
 });

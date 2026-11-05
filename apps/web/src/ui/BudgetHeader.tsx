@@ -9,7 +9,7 @@ import { fundingThreshold, superblockCadence, votingDeadlineTime } from '../lib/
 import { budgetView, countNames, proposalHref } from '../lib/view.ts';
 
 export function BudgetHeader() {
-  const { gov, source, params, activeRows } = useApp();
+  const { gov, source, params, activeRows, reload } = useApp();
   const cycle = gov.cycle.data;
   const now = source.now();
 
@@ -47,8 +47,11 @@ export function BudgetHeader() {
   const available = Math.max(0, c.budget - allocated);
   const threshold = fundingThreshold(c.validWeighted, params);
   const height = gov.height.data?.value;
-  // which proposals are in the budget comes from their tallies: no count (and no per-proposal strip) until both reads have answered
+  // which proposals are in the budget comes from their tallies: no count (and no per-proposal strip) until both reads have answered,
+  // and none at all when the proposals or their votes couldn't be read
   const counting = gov.talliesLoading;
+  const unknown = !counting && (gov.talliesFailed || (!!gov.active.error && !gov.active.data));
+  const noCount = counting || unknown;
 
   return (
     <section className="budget dh-page-header" aria-labelledby="budget-title">
@@ -73,9 +76,9 @@ export function BudgetHeader() {
 
       {/* The segments are links for the pointer only; an image role around them would be an interactive control nested in an image
           (axe nested-interactive), so assistive technology gets this sentence and the strip is hidden from it. */}
-      <p className="visually-hidden">{`Allocated ${formatDash(allocated)} of ${formatDash(c.budget)} (${formatPercent(allocatedFrac)})${counting ? '' : ` across ${funded.length} proposals`}`}</p>
+      <p className="visually-hidden">{`Allocated ${formatDash(allocated)} of ${formatDash(c.budget)} (${formatPercent(allocatedFrac)})${noCount ? '' : ` across ${funded.length} proposals`}`}</p>
       <div className="strip" aria-hidden="true">
-        {!counting && funded.map((r) => (
+        {!noCount && funded.map((r) => (
           <Link
             key={r.p.value.govHash}
             to={proposalHref(r.p.value, names)}
@@ -87,18 +90,25 @@ export function BudgetHeader() {
           />
         ))}
         {/* Allocation the cycle reports beyond the proposals listed here (e.g. not yet published). */}
-        {counting ? (
+        {noCount ? (
           <span className="strip-other" style={{ flexGrow: allocated }} title={`${formatDash(allocated)} allocated`} />
         ) : (
           allocated > fundedSum && <span className="strip-other" style={{ flexGrow: allocated - fundedSum }} title={`${formatDash(allocated - fundedSum)} allocated to proposals not listed here`} />
         )}
-        <span className="strip-free" style={{ flexGrow: Math.max(0, c.budget - Math.max(allocated, counting ? 0 : fundedSum)) }} />
+        <span className="strip-free" style={{ flexGrow: Math.max(0, c.budget - Math.max(allocated, noCount ? 0 : fundedSum)) }} />
       </div>
 
       <p className="budget-compact">
         <b>{formatDashAmount(available)} {dashUnit()}</b> still available;{' '}
         {counting ? (
           'counting which proposals are in the budget…'
+        ) : unknown ? (
+          <>
+            the votes couldn’t be read just now, so which proposals are in the budget isn’t known.{' '}
+            <button type="button" className="linkish dh-btn dh-btn--link" onClick={reload} data-testid="budget-retry">
+              Try again
+            </button>
+          </>
         ) : (
           <>
             <b>{formatInt(funded.length)}</b> of {formatInt(active)} proposals in the budget
@@ -127,6 +137,8 @@ export function BudgetHeader() {
               <span className="muted">
                 <span className="spinner" aria-hidden="true" /> counting the votes…
               </span>
+            ) : unknown ? (
+              <span className="muted">not known: the votes couldn’t be read</span>
             ) : (
               <>
                 <span className="num">{formatInt(funded.length)}</span> of {formatInt(active)} proposals

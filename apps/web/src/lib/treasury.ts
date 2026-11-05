@@ -37,9 +37,11 @@ export function treasuryView(rows: readonly Row[]): TreasuryView {
   return { groups, requested: passing + groups.short.sum, passing };
 }
 
-/** `part` as a whole percentage of `whole` ("<1%" for a sliver, never "0%" for something there). */
+/** `part` as a whole percentage of `whole`: "<1%" for a sliver and ">99%" for nearly all, never "0%" or "100%" when it isn't. */
 export function share(part: number, whole: number): string {
   if (whole <= 0) return '–';
   const pct = (part / whole) * 100;
-  return pct > 0 && pct < 1 ? '<1%' : `${Math.round(pct)}%`;
+  if (pct > 0 && pct < 1) return '<1%';
+  if (pct > 99 && pct < 100) return '>99%';
+  return `${Math.round(pct)}%`;
 }

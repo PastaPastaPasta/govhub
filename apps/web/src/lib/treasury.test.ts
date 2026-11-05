@@ -55,5 +55,7 @@ describe('share', () => {
     expect(share(1, 6828)).toBe('<1%');
     expect(share(0, 6828)).toBe('0%');
     expect(share(1, 0)).toBe('–');
+    expect(share(6820, 6828)).toBe('>99%');
+    expect(share(6828, 6828)).toBe('100%');
   });
 });

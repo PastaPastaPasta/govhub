@@ -30,6 +30,11 @@ export interface GovSnapshot {
   bridgeTallies: Map<string, Sourced<Tally>>;
   /** True until both tally reads (Platform's and the bridge's) have answered or failed: counts over the tallies wait for it. */
   talliesLoading: boolean;
+  /**
+   * Both reads are done, proposals are listed, and not one of them has a tally: the votes couldn't be read (a failed read leaves the
+   * maps empty), so nothing counted over them may read as "none in the budget".
+   */
+  talliesFailed: boolean;
   /** The DASH/USD quote and whether its latest refresh failed (design/PRICE.md); empty off Mainnet. */
   usd: UsdState;
   /** Governance parameters reported for the data's Core network, once known. */
@@ -145,7 +150,12 @@ function useGovSnapshot(source: DataSource, nonce: number): GovSnapshot {
   }, [source]);
 
   const talliesLoading = !(tallyReads.platform && tallyReads.bridge);
-  return useMemo(() => ({ cycle, height, active, tallies, bridgeTallies, talliesLoading, usd, params }), [cycle, height, active, tallies, bridgeTallies, talliesLoading, usd, params]);
+  const listed = active.data ?? [];
+  const talliesFailed = !talliesLoading && listed.length > 0 && listed.every((p) => !tallies.has(p.value.govHash) && !bridgeTallies.has(p.value.govHash));
+  return useMemo(
+    () => ({ cycle, height, active, tallies, bridgeTallies, talliesLoading, talliesFailed, usd, params }),
+    [cycle, height, active, tallies, bridgeTallies, talliesLoading, talliesFailed, usd, params],
+  );
 }
 
 const checkCache: CheckCache = {

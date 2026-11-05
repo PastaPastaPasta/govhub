@@ -21,6 +21,9 @@ import { ProposalTabs } from '../ui/ProposalTabs.tsx';
 import { UsdValue } from '../ui/UsdValue.tsx';
 import { useLedger, LEDGER_STEP } from '../ui/useLedger.ts';
 
+/** How far the active list and its votes got: every sum over them waits for 'ok'. */
+type ReadState = 'counting' | 'ok' | 'no-list' | 'no-votes';
+
 const GROUP: Record<GroupId, { title: string; desc: string }> = {
   funded: { title: 'In the next budget', desc: 'Enough votes, and room in the budget: these are paid at the next payout if the votes hold.' },
   over: { title: 'Passing, but over the budget', desc: 'Enough votes, but the budget runs out before them: proposals are paid best-supported first.' },
@@ -34,8 +37,9 @@ export function TreasuryPage() {
   const cycle = gov.cycle.data?.value ?? null;
   const view = useMemo(() => treasuryView(activeRows.shown.map((r) => r.item)), [activeRows.shown]);
   const names = useMemo(() => countNames([...activeRows.shown, ...activeRows.lameDucks].map((r) => r.item.p.value)), [activeRows]);
-  // which proposals are in the budget comes from their tallies: no sum until both reads have answered
-  const counting = gov.talliesLoading || gov.active.loading;
+  // which proposals are in the budget comes from their tallies: no sum until both reads have answered, and none when the list or
+  // its votes couldn't be read (an empty list is then no evidence of anything)
+  const state: ReadState = gov.active.loading || gov.talliesLoading ? 'counting' : gov.active.error && !gov.active.data ? 'no-list' : gov.talliesFailed ? 'no-votes' : 'ok';
 
   if (source.notice) return null;
   return (
@@ -54,8 +58,8 @@ export function TreasuryPage() {
       </header>
       {cycle ? (
         <>
-          <CycleStats cycle={cycle} view={view} counting={counting} />
-          <PaysFor view={view} counting={counting} budget={cycle.budget} names={names} />
+          <CycleStats cycle={cycle} view={view} state={state} />
+          <PaysFor view={view} state={state} budget={cycle.budget} names={names} />
         </>
       ) : gov.cycle.loading ? (
         <p className="muted" aria-busy="true">
@@ -69,7 +73,7 @@ export function TreasuryPage() {
   );
 }
 
-function CycleStats({ cycle, view, counting }: { cycle: Cycle; view: TreasuryView; counting: boolean }) {
+function CycleStats({ cycle, view, state }: { cycle: Cycle; view: TreasuryView; state: ReadState }) {
   const { source, params } = useApp();
   const now = source.now();
   // the most this superblock can pay is a consensus rule of its height: computed here, and checked against the bridge's figure
@@ -81,7 +85,11 @@ function CycleStats({ cycle, view, counting }: { cycle: Cycle; view: TreasuryVie
     }
   }, [cycle.superblockHeight, source.coreNetwork]);
   const deadline = votingDeadlineTime(cycle, params);
-  const hold = (v: ReactNode) => (counting ? <span className="muted">counting…</span> : v);
+  const counting = state !== 'ok';
+  const hold = (v: ReactNode, needsVotes: boolean) =>
+    state === 'counting' ? <span className="muted">counting…</span> : state === 'no-list' || (needsVotes && state === 'no-votes') ? <span className="muted">not known</span> : v;
+  // the sum is only as strong as its weakest record: a proposal the bridge reported before Platform had it makes it the bridge's
+  const fromBridge = Object.values(view.groups).some((g) => g.rows.some((r) => r.p.prov.kind !== 'proof' && r.p.prov.kind !== 'fixture'));
   return (
     <div className="dh-stats tr-stats" data-testid="treasury-stats">
       <div className="dh-stat dh-stat--key">
@@ -102,17 +110,21 @@ function CycleStats({ cycle, view, counting }: { cycle: Cycle; view: TreasuryVie
       </div>
       <div className="dh-stat">
         <span className="dh-stat__label">Asked for</span>
-        <span className="dh-stat__value" data-testid="tr-requested">{hold(<DashValue duffs={view.requested} />)}</span>
+        <span className="dh-stat__value" data-testid="tr-requested">{hold(<DashValue duffs={view.requested} />, false)}</span>
         <span className="dh-stat__note">
-          {counting ? 'by the proposals due at this payout' : `${share(view.requested, cycle.budget)} of what it can pay, by the proposals due at this payout`}{' '}
-          <ProofTag state="reported" title="The proposals Governance lists, read from Platform; each one's fields match the hash the network votes on">
-            Platform records
-          </ProofTag>
+          {state === 'counting' || state === 'no-list' ? 'by the proposals due at this payout' : `${share(view.requested, cycle.budget)} of what it can pay, by the proposals due at this payout`}{' '}
+          {fromBridge ? (
+            <ReportedProof what="Bridge’s records" />
+          ) : (
+            <ProofTag state="reported" title="The proposals Governance lists, read from Platform; each one's fields match the hash the network votes on">
+              Platform records
+            </ProofTag>
+          )}
         </span>
       </div>
       <div className="dh-stat">
         <span className="dh-stat__label">Has the votes</span>
-        <span className="dh-stat__value" data-testid="tr-passing">{hold(<DashValue duffs={view.passing} />)}</span>
+        <span className="dh-stat__value" data-testid="tr-passing">{hold(<DashValue duffs={view.passing} />, true)}</span>
         <span className="dh-stat__note">
           {counting ? 'asked by proposals with enough yes votes' : `asked by proposals with enough yes votes; ${formatDash(view.groups.funded.sum)} of it fits the budget`}{' '}
           <ReportedProof what="Bridge’s tally" />
@@ -129,7 +141,8 @@ function CycleStats({ cycle, view, counting }: { cycle: Cycle; view: TreasuryVie
   );
 }
 
-function PaysFor({ view, counting, budget, names }: { view: TreasuryView; counting: boolean; budget: number; names: ReadonlyMap<string, number> }) {
+function PaysFor({ view, state, budget, names }: { view: TreasuryView; state: ReadState; budget: number; names: ReadonlyMap<string, number> }) {
+  const { gov, reload } = useApp();
   return (
     <section className="dh-section tr-pays" aria-labelledby="tr-pays-title">
       <div className="dh-section__head">
@@ -142,9 +155,16 @@ function PaysFor({ view, counting, budget, names }: { view: TreasuryView; counti
           proposal’s page recounts its own.
         </p>
       </div>
-      {counting ? (
+      {state === 'counting' ? (
         <p className="muted" aria-busy="true" data-testid="tr-counting">
           <span className="spinner" aria-hidden="true" /> Counting the votes, to group the proposals…
+        </p>
+      ) : state !== 'ok' ? (
+        <p className="notice-box dh-notice dh-notice--warn small" role="alert" data-testid="tr-unread">
+          {state === 'no-list' ? `The active proposals couldn’t be read just now (${gov.active.error}), so what this payout funds isn’t known.` : 'The votes couldn’t be read just now, so where each proposal stands isn’t known.'}{' '}
+          <button type="button" className="linkish dh-btn dh-btn--link" onClick={reload} data-testid="tr-retry">
+            Try again
+          </button>
         </p>
       ) : (
         <>
@@ -282,6 +302,8 @@ interface Col {
   paid: number | null;
   /** the most it could pay (duffs) */
   limit: number;
+  /** couldn't be read: its time is an estimate */
+  unread: boolean;
 }
 
 function Compared({ allocated, network }: { allocated: number | null; network: CoreNetwork }) {
@@ -290,6 +312,7 @@ function Compared({ allocated, network }: { allocated: number | null; network: C
     () => (ledger.slots ?? []).map((s) => ({ state: s.state, entry: s.state === 'read' ? ledgerEntry(s.read, [], network) : null })),
     [ledger.slots, network],
   );
+  const sum = useMemo(() => ledgerSummary(entries), [entries]);
   const last = `the last ${LEDGER_STEP[network]} superblocks`;
   return (
     <section className="dh-section dh-section--rule tr-compare" aria-labelledby="tr-compare-title" data-testid="tr-compare">
@@ -301,12 +324,16 @@ function Compared({ allocated, network }: { allocated: number | null; network: C
           What each superblock actually paid, read from the chain in this browser. <Link to="/past">Every payment, superblock by superblock →</Link>
         </p>
       </div>
-      <ComparedBody ledger={ledger} entries={entries} allocated={allocated} network={network} last={last} />
+      <ComparedBody ledger={ledger} entries={entries} sum={sum} allocated={allocated} network={network} last={last} />
+      <p className="visually-hidden" aria-live="polite" data-testid="tr-compare-announce">
+        {ledger.slots && sum.kind === 'done' ? 'The comparison with past superblocks is ready.' : ''}
+      </p>
     </section>
   );
 }
 
-function ComparedBody({ ledger, entries, allocated, network, last }: { ledger: ReturnType<typeof useLedger>; entries: { state: 'reading' | 'read' | 'error'; entry: LedgerEntry | null }[]; allocated: number | null; network: CoreNetwork; last: string }) {
+function ComparedBody({ ledger, entries, sum, allocated, network, last }: { ledger: ReturnType<typeof useLedger>; entries: { state: 'reading' | 'read' | 'error'; entry: LedgerEntry | null }[]; sum: ReturnType<typeof ledgerSummary>; allocated: number | null; network: CoreNetwork; last: string }) {
+  const { params } = useApp();
   if (ledger.unavailable) return <p className="notice-box dh-notice dh-notice--info small">{ledger.unavailable}</p>;
   if (!ledger.slots)
     return (
@@ -314,10 +341,9 @@ function ComparedBody({ ledger, entries, allocated, network, last }: { ledger: R
         <span className="spinner" aria-hidden="true" /> Finding the last superblock…
       </p>
     );
-  const sum = ledgerSummary(entries);
   if (sum.kind === 'reading')
     return (
-      <div role="status" data-testid="tr-compare-progress">
+      <div data-testid="tr-compare-progress">
         <p className="small">
           <span className="spinner" aria-hidden="true" /> Reading superblocks from the chain: <b>{formatInt(sum.settled)}</b> of {formatInt(sum.of)} so far. The comparison
           appears once all are in.
@@ -334,8 +360,16 @@ function ComparedBody({ ledger, entries, allocated, network, last }: { ledger: R
         </button>
       </p>
     );
-  // oldest first, left to right
-  const cols: Col[] = entries.flatMap((e) => (e.entry ? [{ height: e.entry.read.height, time: e.entry.read.time, paid: e.entry.total === null ? null : Number(e.entry.total), limit: Number(e.entry.limit) }] : [])).reverse();
+  // oldest first, left to right; a superblock that couldn't be read keeps its place, its time estimated from one that was
+  const slots = ledger.slots;
+  const ref = entries.find((e) => e.entry)?.entry!.read;
+  const cols: Col[] = slots
+    .map((slot, i): Col => {
+      const e = entries[i]?.entry;
+      if (e) return { height: slot.height, time: e.read.time, paid: e.total === null ? null : Number(e.total), limit: Number(e.limit), unread: false };
+      return { height: slot.height, time: ref ? ref.time + (slot.height - ref.height) * params.blockSeconds : 0, paid: null, limit: Number(superblockPaymentsLimit(slot.height, network)), unread: true };
+    })
+    .reverse();
   return (
     <>
       <CompareLine sum={sum} cols={cols} allocated={allocated} last={last} onRetry={ledger.retry} />
@@ -409,8 +443,8 @@ function PaidColumns({ cols, allocated, network }: { cols: Col[]; allocated: num
         {cols.map((c, i) => (
           <div
             key={c.height}
-            className="tr-col"
-            title={`${formatDate(c.time)}: ${c.paid !== null ? `${formatDash(c.paid)} paid, ${share(c.paid, c.limit)} of the ${formatDash(c.limit)} it could pay` : 'total not known'}`}
+            className={`tr-col${c.unread ? ' tr-col-unread' : ''}`}
+            title={`${c.unread ? `superblock ${formatInt(c.height)}, about ${formatDate(c.time)}: not read` : formatDate(c.time)}: ${c.paid !== null ? `${formatDash(c.paid)} paid, ${share(c.paid, c.limit)} of the ${formatDash(c.limit)} it could pay` : c.unread ? 'couldn’t be read' : 'total not known'}`}
           >
             <span className="tr-track" style={{ height: `${(c.limit / top) * 100}%` }}>
               {i === cols.length - 1 && c.paid !== null && <span className="tr-val">{formatDashAmount(c.paid)}</span>}
@@ -448,10 +482,11 @@ function PaidColumns({ cols, allocated, network }: { cols: Col[]; allocated: num
             {[...cols].reverse().map((c) => (
               <tr key={c.height}>
                 <td data-label="Superblock">
+                  {c.unread && 'about '}
                   {formatDate(c.time)} <span className="muted">({formatInt(c.height)})</span>
                 </td>
                 <td data-label="Paid" className="r num">
-                  {c.paid !== null ? formatDash(c.paid) : 'not known'}
+                  {c.paid !== null ? formatDash(c.paid) : c.unread ? 'not read' : 'not known'}
                 </td>
                 <td data-label="Could pay" className="r num">
                   {formatDash(c.limit)}
