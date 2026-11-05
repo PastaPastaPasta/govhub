@@ -25,6 +25,12 @@ const now = Math.floor(Date.now() / 1000);
 const SAFE_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 const SAFE_LABEL = /^[a-z0-9-]{3,63}$/;
 const HASH = /^[0-9a-f]{64}$/;
+/** Untrusted epochs a description may use: from 2014 (Dash governance) to 2100, so date formatting and schedules stay bounded. */
+const sane = (t) => Number.isSafeInteger(t) && t > 1_388_534_400 && t < 4_102_444_800;
+/** Every public read together; a listing that takes longer is skipped (its links still load through 404.html). */
+const DATA_MS = 120_000;
+/** Tags this script adds: dropped from the template first, so running it again on a built dist doesn't add them twice. */
+const OURS = /\n\s*<(?:link rel="canonical"|meta (?:property="og:|name="twitter:|name="robots"))[^>]*>/g;
 
 const esc = (s) => String(s).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 const title = (record) => (record ? `${record} · ${meta.product}` : meta.product);
@@ -47,9 +53,10 @@ function head(template, { route, record, description, canonical = route, noindex
     `<meta name="twitter:description" content="${d}" />`,
   ].join('\n    ');
   const out = template
+    .replace(OURS, '')
     .replace(/<title>[^<]*<\/title>/, () => `<title>${t}</title>`)
     .replace(/<meta name="description" content="[^"]*" \/>/, () => `<meta name="description" content="${d}" />\n    ${tags}`);
-  if (out === template || !out.includes(`<title>${t}</title>`) || !out.includes(tags)) throw new Error('index.html has no <title> or description meta to replace');
+  if (!out.includes(`<title>${t}</title>`) || !out.includes(tags)) throw new Error('index.html has no <title> or description meta to replace');
   return out;
 }
 
@@ -62,13 +69,17 @@ async function getJson(url, ms = 20_000) {
 /** The bridge's active and past proposals (untrusted, like every share preview: the page itself checks). */
 async function proposals() {
   const [active, past, cycleRes] = await Promise.all([getJson(`${bridge}/v1/proposals?state=active`), getJson(`${bridge}/v1/proposals?state=past`), getJson(`${bridge}/v1/cycle`)]);
-  const params = parseGovParams(cycleRes?.governance);
-  const cycle = cycleRes?.cycle;
+  // a cycle shorter than an hour of blocks or an implausible estimate would make the schedule meaningless (and long to compute)
+  const p = parseGovParams(cycleRes?.governance);
+  const params = p && p.superblockCycle >= 24 ? p : null;
+  const cycle = sane(cycleRes?.cycle?.estTime) ? cycleRes.cycle : null;
   const rows = [];
+  const seen = new Set();
   for (const [state, list] of [['active', active?.proposals], ['past', past?.proposals]]) {
     for (const p of Array.isArray(list) ? list : []) {
       if (!p || typeof p.name !== 'string' || !SAFE_NAME.test(p.name) || typeof p.govHash !== 'string' || !HASH.test(p.govHash)) continue;
-      if (![p.paymentAmount, p.startEpoch, p.endEpoch].every(Number.isSafeInteger)) continue;
+      if (!Number.isSafeInteger(p.paymentAmount) || !sane(p.startEpoch) || !sane(p.endEpoch) || seen.has(p.govHash)) continue;
+      seen.add(p.govHash);
       rows.push({ state, name: p.name, govHash: p.govHash, amount: p.paymentAmount, startEpoch: p.startEpoch, endEpoch: p.endEpoch, tally: p.tally ?? null, params, cycle });
     }
   }
@@ -76,7 +87,16 @@ async function proposals() {
 }
 
 function describeProposal(p) {
-  const sched = p.params && Number.isSafeInteger(p.cycle?.estTime) ? paymentSchedule(p, p.cycle, p.params, now) : null;
+  try {
+    return describeProposalOrThrow(p);
+  } catch (e) {
+    console.warn(`prerender: ${p.name}: ${e.message}; a plain description instead`);
+    return `${p.state === 'active' ? 'Dash treasury proposal' : 'Past Dash treasury proposal'} ${p.name}: what it asks for and how masternodes vote.`;
+  }
+}
+
+function describeProposalOrThrow(p) {
+  const sched = p.params && p.cycle ? paymentSchedule(p, p.cycle, p.params, now) : null;
   const ask = sched?.oneTime ? `${formatDash(p.amount)} in one payment` : `${formatDash(p.amount)} ${p.params ? perPayment(p.params) : 'per payment'}${sched?.total ? ` for ${formatInt(sched.total)} payment${sched.total === 1 ? '' : 's'}` : ''}`;
   const window = `${formatDate(p.startEpoch)} to ${formatDate(p.endEpoch)}`;
   const t = p.tally;
@@ -142,11 +162,14 @@ async function write(route, html) {
 
 async function settle(what, fn) {
   if (offline) return [];
+  let timer;
   try {
-    return await fn();
+    return await Promise.race([fn(), new Promise((_, reject) => (timer = setTimeout(() => reject(new Error(`no answer in ${DATA_MS / 1000} s`)), DATA_MS)))]);
   } catch (e) {
     console.warn(`prerender: ${what} not listed (${e.message}); their links still load through 404.html`);
     return [];
+  } finally {
+    clearTimeout(timer);
   }
 }
 
