@@ -1564,7 +1564,7 @@
   font-size: 0.875rem;
   font-weight: 600;
   min-block-size: var(--dh-ctl-h);
-  padding: 0.25rem 0.875rem;
+  padding: 0.25rem 0.75rem;
   border: 1px solid var(--line-strong);
   border-radius: 999px;
   background: var(--surface);

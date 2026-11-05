@@ -59,7 +59,7 @@ export function ContestVotePanel({ label, state, endsAt, nameOf }: { label: stri
   const shell = (body: ReactNode) => (
     <section className="panel dh-card mnvote" aria-labelledby="cvote-title" data-testid="contest-vote-panel">
       <header className="mnvote-head">
-        <h2 id="cvote-title">Your vote</h2>
+        <h2 id="cvote-title">Vote on this name</h2>
         {k.demo && k.status === 'open' && <span className="tag dh-badge tag-demo">Demo: votes aren't sent</span>}
       </header>
       {body}
@@ -84,10 +84,20 @@ export function ContestVotePanel({ label, state, endsAt, nameOf }: { label: stri
   const signer = keyring ?? pasted;
 
   if (!signer) {
+    // signed out, the way that needs nothing more comes first: the masternode's voting key, for this tab only
+    if (k.status === 'signed-out')
+      return shell(
+        <>
+          <GuestKeyForm open />
+          <p className="small muted" data-testid="vote-cta">
+            Or keep your voting keys in an account, so they’re back next time: <Link to="/masternodes">ways to vote</Link>.
+          </p>
+        </>,
+      );
     return shell(
       <>
         <div className="vempty dh-empty" data-testid="vote-cta">
-          <p>{k.status === 'signed-out' ? 'Masternode owners: sign in and add your voting keys to vote here.' : 'Unlock your masternode keyring to vote here.'}</p>
+          <p>Unlock your masternode keyring to vote here.</p>
           <Link className="btn dh-btn" to="/masternodes">
             My masternodes
           </Link>
@@ -389,10 +399,10 @@ function Composer({ label, state, endsAt, nameOf, signer }: { label: string; sta
 }
 
 /** Pasting voting keys without an account, as vote.dashhq.org allowed. */
-function GuestKeyForm() {
+function GuestKeyForm({ open: startOpen = false }: { open?: boolean }) {
   const guest = useGuestKeys();
   const [text, setText] = useState('');
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(startOpen);
   if (!open)
     return (
       <p className="small muted">
@@ -408,6 +418,7 @@ function GuestKeyForm() {
   };
   return (
     <div className="form cvote-guest" data-testid="guest-form">
+      {startOpen && <p className="small">Masternodes vote with their voting key. No account needed: paste it here.</p>}
       <SecretField label="Voting keys" what="voting key" value={text} onChange={setText} testId="guest-key" placeholder="One voting private key per line (WIF or hex)" />
       <p className="small muted">The keys stay in this tab’s memory only: never saved, never sent. They are forgotten after 15 minutes without use, when you close the tab, or when you click Forget.</p>
       <div className="cvote-acts">

@@ -139,9 +139,9 @@ function MasternodeLine({ ctx }: { ctx: MnContext }) {
 }
 
 const WAYS: Array<{ id: Way; label: string; line: string }> = [
-  { id: 'offline', label: 'Sign offline', line: 'No account. Choose your vote, then sign it in Dash Core or with a hardware wallet: the key never enters this page.' },
-  { id: 'paste', label: 'Paste voting key', line: 'No account. The key stays in this tab’s memory only and is forgotten after 15 minutes idle.' },
-  { id: 'account', label: 'Your account', line: 'Your keyring keeps voting keys encrypted on Dash Platform, and can spread votes out over time.' },
+  { id: 'offline', label: 'Sign offline', line: 'No account, and the key never enters this page: you sign in Dash Core or with a hardware wallet.' },
+  { id: 'paste', label: 'Paste key', line: 'No account. The key stays in this tab’s memory only and is forgotten after 15 minutes idle.' },
+  { id: 'account', label: 'Account', line: 'Your keyring keeps voting keys encrypted on Dash Platform, and can spread votes out over time.' },
 ];
 
 function WayPicker({ way, setWay, signedIn }: { way: Way; setWay(w: Way): void; signedIn: boolean }) {

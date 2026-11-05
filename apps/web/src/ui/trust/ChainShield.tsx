@@ -103,7 +103,8 @@ export function ChainShield({ line: withLine = false }: { line?: boolean }) {
   return (
     <>
       <span className="chain-status">
-        {level !== "verified" && level !== "demo" && <span className="dh-badge">Reported</span>}
+        {/* while the check runs the chip says so; "Reported" only once it has not verified */}
+        {(level === 'error' || level === 'partial' || level === 'failed') && <span className="dh-badge">Reported</span>}
         <button type="button" className={`chainchip dh-proof dh-proof--${level === "verified" ? "ok" : level === "checking" ? "checking" : level === "failed" ? "failed" : "unverified"} trust-${level}`} onClick={() => setOpen(true)} data-testid="profile-label" data-trust={level} aria-label={`${p.title}${custom ? ', with custom settings' : ''}. ${line}`} title={line}>
           <ShieldIcon level={level} size={16} />
           <span aria-hidden="true">{CHIP_TEXT[mode === 'fixtures' ? 'demo' : level]}</span>

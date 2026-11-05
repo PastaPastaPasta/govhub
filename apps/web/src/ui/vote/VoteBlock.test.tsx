@@ -80,7 +80,7 @@ describe('Vote on this proposal', () => {
     const r = await view();
     expect(r.el.querySelector('h2')?.textContent).toBe('Vote on this proposal');
     expect(r.el.textContent).toContain('Voting closes in 12 days');
-    expect([...r.el.querySelectorAll('[data-way]')].map((b) => b.textContent)).toEqual(['Sign offline', 'Paste voting key', 'Your account']);
+    expect([...r.el.querySelectorAll('[data-way]')].map((b) => b.textContent)).toEqual(['Sign offline', 'Paste key', 'Account']);
     expect(r.el.querySelector('[data-testid="offline"]')).toBeNull();
     await pick(r.el, 'No');
     expect(r.el.querySelector('[data-testid="offline"]')?.textContent).toBe('offline  2');
@@ -100,7 +100,7 @@ describe('Vote on this proposal', () => {
     hold.session = { identityId: 'me' };
     hold.keyring = keyring({ status: 'locked' });
     let r = await view();
-    expect([...r.el.querySelectorAll('[data-way]')].map((b) => b.textContent)).toEqual(['Sign offline', 'Your account']);
+    expect([...r.el.querySelectorAll('[data-way]')].map((b) => b.textContent)).toEqual(['Sign offline', 'Account']);
     expect(r.el.querySelector('[data-way="account"]')?.getAttribute('aria-checked')).toBe('true');
     expect(r.el.querySelector('[data-testid="vote-keyring-link"]')?.textContent).toBe('Unlock your keyring');
     await r.unmount();

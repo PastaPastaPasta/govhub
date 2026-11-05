@@ -471,7 +471,7 @@ export function OfflineSignBody({ proposal, address: initialAddress = '', outcom
           On Testnet, Core checks a signature over the binary vote hash, which <code>signmessage</code> (Dash Core, DMT, hardware wallets) cannot make. Sign the hash below with your own tooling and paste the signature back, or broadcast it yourself with the <code>voteraw</code> command shown.
         </p>
       ) : (
-        <p className="small muted">Enter the masternode's voting address to get the Dash Core command for your {OUTCOME_NAME[outcome].toUpperCase()} vote. Run it in Dash Core's console (or sign the text with a hardware wallet), then paste the signature back here. The key never enters this page.</p>
+        <p className="small muted">Enter the masternode’s voting address for the Dash Core command that signs your {OUTCOME_NAME[outcome].toUpperCase()} vote. Run it in Dash Core’s console (or sign its text with a hardware wallet) and paste the signature back.</p>
       )}
       <div className="form-actions">
         <input value={address} onChange={(e) => (setAddress(e.target.value), setMns(null))} placeholder="Voting address" aria-label="Voting address" className="mono-ish vinput dh-input" data-testid="offline-address" />
@@ -479,7 +479,7 @@ export function OfflineSignBody({ proposal, address: initialAddress = '', outcom
           {finding ? 'Finding its masternodes…' : mns ? 'Time it again' : network === 'testnet' ? 'Show what to sign' : 'Show the command'}
         </button>
       </div>
-      {err && <p className="error small" role="alert">{err}</p>}
+      {err && !mns?.length && <p className="error small" role="alert">{err}</p>}
       {mns && !mns.length && <p className="muted small">No masternode that can vote uses this voting address.</p>}
       {mns?.map((m) => {
         const vote = { mn: m, govHash: proposal.govHash, outcome, time: m.time };
@@ -527,6 +527,7 @@ export function OfflineSignBody({ proposal, address: initialAddress = '', outcom
           </div>
         );
       })}
+      {err && !!mns?.length && <p className="error small" role="alert">{err}</p>}
       {mns && mns.length > 0 && (k.status !== 'open' || k.memoryOnly) && <p className="muted small">Without an open keyring, this tab follows a vote sent from here until it closes; the relay still holds and sends it.</p>}
     </div>
   );
