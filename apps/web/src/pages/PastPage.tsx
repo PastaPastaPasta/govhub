@@ -28,12 +28,15 @@ function usePastProposals() {
   const { source } = useApp();
   const [items, setItems] = useState<Sourced<Proposal>[]>([]);
   const [tallies, setTallies] = useState(new Map<string, Sourced<Tally>>());
+  // the list's read and its tallies' read: a tally that wasn't read is never "not recorded"
+  const [talliesRead, setTalliesRead] = useState<'loading' | 'ok' | 'failed'>('loading');
   const [state, setState] = useState<{ loading: boolean; error?: string }>({ loading: true });
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let on = true;
     setItems([]);
     setTallies(new Map());
+    setTalliesRead('loading');
     setState({ loading: true });
     (async () => {
       let cursor: string | undefined;
@@ -46,16 +49,24 @@ function usePastProposals() {
         cursor = r.next;
       }
       if (on) setState({ loading: false });
-      if (all.length) {
-        const t = await source.tallies(all.map((i) => i.value.govHash));
-        if (on) setTallies(t);
-      }
-    })().catch((e) => on && setState({ loading: false, error: errText(e) }));
+      return all;
+    })().then(
+      async (all) => {
+        if (!all.length) return on && setTalliesRead('ok');
+        try {
+          const t = await source.tallies(all.map((i) => i.value.govHash));
+          if (on) (setTallies(t), setTalliesRead('ok'));
+        } catch {
+          if (on) setTalliesRead('failed');
+        }
+      },
+      (e) => on && (setState({ loading: false, error: errText(e) }), setTalliesRead('failed')),
+    );
     return () => {
       on = false;
     };
   }, [source, attempt]);
-  return { items, tallies, ...state, retry: () => setAttempt((n) => n + 1) };
+  return { items, tallies, talliesRead, ...state, retry: () => setAttempt((n) => n + 1) };
 }
 
 type View = 'payments' | 'proposals';
@@ -94,19 +105,19 @@ export function PastPage() {
             Payments by superblock
           </button>
           <button className="dh-btn" type="button" aria-pressed={view === 'proposals'} onClick={() => setView('proposals')} data-testid="view-proposals">
-            Proposals<span className="dh-count">{!past.loading && past.items.length ? formatInt(past.items.length) : ''}</span>
+            Proposals<span className="dh-count">{!past.loading && !past.error && past.items.length ? formatInt(past.items.length) : ''}</span>
           </button>
         </div>
       </header>
       <OwnerWordsNote proposals={view === 'payments' ? known : past.items.map((i) => i.value)} />
-      {view === 'payments' ? <LedgerView ledger={ledger} known={known} past={past.items} /> : <ProposalsView past={past} ledger={ledger} known={known} />}
+      {view === 'payments' ? <LedgerView ledger={ledger} known={known} past={past.items} pastError={past.error ?? null} /> : <ProposalsView past={past} ledger={ledger} known={known} />}
     </section>
   );
 }
 
 // ---- payments ---------------------------------------------------------------------------------------------------------------
 
-function LedgerView({ ledger, known, past }: { ledger: Ledger; known: Proposal[]; past: Sourced<Proposal>[] }) {
+function LedgerView({ ledger, known, past, pastError }: { ledger: Ledger; known: Proposal[]; past: Sourced<Proposal>[]; pastError: string | null }) {
   const { source, gov, checks } = useApp();
   // the proposals that can name a payment get their background check too: one that fails it stops naming payments
   useEffect(() => checks.ensure(past.map((i) => i.value)), [checks, past]);
@@ -142,6 +153,7 @@ function LedgerView({ ledger, known, past }: { ledger: Ledger; known: Proposal[]
         Each payment is read from its superblock in the chain this browser verified; the first visit downloads and checks each block, later visits
         reuse them. Names come from the proposals Governance has on record: the active ones{recordsFrom ? <> and those that ended since {formatDate(recordsFrom)}</> : null}.
         A payment to any other proposal shows the address it went to.
+        {pastError && <> The ended proposals couldn’t be read just now ({pastError}), so payments to them show their payee’s address.</>}
         {failed > 0 && (
           <>
             {' '}
@@ -376,7 +388,7 @@ function OutcomeCell({ o, reading }: { o: Outcome | null; reading: boolean }) {
 }
 
 function ProposalsView({ past, ledger, known }: { past: ReturnType<typeof usePastProposals>; ledger: Ledger; known: Proposal[] }) {
-  const { checks, params, source } = useApp();
+  const { checks, params, source, gov } = useApp();
   const [showFailed, setShowFailed] = useState(false);
   const checksVersion = useSyncExternalStore(checks.subscribe, checks.getVersion);
   const parts = useMemo(
@@ -389,7 +401,8 @@ function ProposalsView({ past, ledger, known }: { past: ReturnType<typeof usePas
   const names = useMemo(() => countNames(past.items.map((i) => i.value)), [past.items]);
   useEffect(() => checks.ensure(past.items.slice(0, count + 12).map((i) => i.value)), [checks, past.items, count]);
   const reads = useMemo(() => (ledger.slots ?? []).flatMap((s): SuperblockRead[] => (s.state === 'read' ? [s.read] : [])), [ledger.slots]);
-  const reading = !!ledger.slots?.some((s) => s.state === 'reading');
+  // outcomes wait for the superblocks: still to be found (the budget cycle names the last one), or still being read
+  const reading = !ledger.unavailable && (ledger.slots ? ledger.slots.some((s) => s.state === 'reading') : !gov.cycle.error);
   const cover = useMemo(() => {
     const oldest = reads.length ? Math.min(...reads.map((r) => r.time)) : null;
     // an unread superblock's time, estimated from a read one: enough to know which windows it falls in
@@ -463,9 +476,13 @@ function ProposalsView({ past, ledger, known }: { past: ReturnType<typeof usePas
                   <td className="r" data-label="Net yes">
                     {t ? (
                       formatSigned(absoluteYes(t.value))
-                    ) : past.tallies.size || !past.loading ? (
+                    ) : past.talliesRead === 'ok' ? (
                       <span className="muted nowrap" title="No vote tally was published on Platform for this proposal: it ended before Governance's bridge was recording votes">
                         not recorded
+                      </span>
+                    ) : past.talliesRead === 'failed' ? (
+                      <span className="muted nowrap" title="The tallies couldn't be read just now">
+                        not read
                       </span>
                     ) : (
                       <span className="muted" aria-label="Reading the tally">
@@ -481,7 +498,7 @@ function ProposalsView({ past, ledger, known }: { past: ReturnType<typeof usePas
       )}
       <div ref={sentinel} className="sentinel" aria-hidden="true" />
       {past.loading && <p className="muted small center">Loading…</p>}
-      {!past.loading && rows.length > 0 && (
+      {!past.loading && !past.error && rows.length > 0 && (
         <p className="muted small center">
           That's all {formatInt(parts.shown.length)} past proposals Governance has on record. Outcomes come from the superblocks on the Payments view.
         </p>
