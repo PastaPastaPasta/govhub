@@ -101,7 +101,7 @@ describe('Vote on this proposal', () => {
     hold.keyring = keyring({ status: 'locked' });
     let r = await view();
     expect([...r.el.querySelectorAll('[data-way]')].map((b) => b.textContent)).toEqual(['Sign offline', 'Account']);
-    expect(r.el.querySelector('[data-way="account"]')?.getAttribute('aria-checked')).toBe('true');
+    expect(r.el.querySelector('[data-way="account"]')?.getAttribute('aria-pressed')).toBe('true');
     expect(r.el.querySelector('[data-testid="vote-keyring-link"]')?.textContent).toBe('Unlock your keyring');
     await r.unmount();
     hold.keyring = keyring({ status: 'open', mns: { owned: [MN], phase: 'done' } });

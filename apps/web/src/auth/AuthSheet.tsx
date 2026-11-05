@@ -6,7 +6,7 @@ import {
   createFundingPath, SUGGESTED_CREATE_DEPOSIT_DUFFS, parseVoucher, pendingFundings, PhraseError, redeemVoucher, SeedWallet, signInWithKey, signInWithSeed, toBase64, wipe, type FoundIdentity, type FundingRecord,
   type PhraseLength,
 } from '@govhub/auth';
-import { createElement, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { FIXTURE_IDS } from '../data/fixtureForum.ts';
@@ -171,21 +171,28 @@ function Choose() {
     { v: 'passkey', title: 'Use a passkey', text: 'If you saved one on this device or another.' },
     { v: 'key', title: 'Paste a key', text: 'For developers: a private key of your identity.' },
   ];
-  const choice = (o: (typeof main)[number], big: boolean) => (
-    <li key={o.v}>
-      <button type="button" className={`choice${big ? ' choice-l' : ''}`} onClick={() => openSheet(o.v)} data-testid={`choose-${o.v}`}>
-        <span className="choice-soon">
-          <b>{o.title}</b>
-          {o.tag && <span className="tag dh-badge dh-badge--good">{o.tag}</span>}
-        </span>
-        <span className="muted small">{o.text}</span>
-      </button>
-    </li>
+  const choice = (o: (typeof main)[number]) => (
+    <button key={o.v} type="button" className="dh-choice" onClick={() => openSheet(o.v)} data-testid={`choose-${o.v}`}>
+      <span className="dh-choice__title">
+        {o.title}
+        {o.tag && <span className="dh-badge dh-badge--good">{o.tag}</span>}
+      </span>
+      <span className="dh-choice__desc">{o.text}</span>
+    </button>
   );
   return (
     <div className="sheet-choose">
       <p className="lede">Reading needs no account. Sign in to comment and react, or to keep your masternodes’ voting keys for next time.</p>
-      <SigninHelp />
+      <dashhq-signin-help
+        asks="phrase passkey key voting-key"
+        kept="memory"
+        why="It signs your comments and reactions, and opens the encrypted keyring that keeps your voting keys."
+        kept-note="Voting keys you add are kept encrypted on Dash Platform, unless you choose memory only."
+      >
+        <button type="button" slot="start" onClick={() => openSheet('create')}>
+          Create an account
+        </button>
+      </dashhq-signin-help>
       <p className="small sheet-vote-note" data-testid="signin-vote-note">
         <b>Only here to vote?</b> You don’t need an account: every open proposal can be signed offline in Dash Core, or with a voting key kept in that tab only.
       </p>
@@ -225,23 +232,21 @@ function Choose() {
         </div>
       )}
       <RecoverableNotice records={store.list().filter((r) => r.network === network && !r.discarded)} />
-      <ul className="choices">{main.map((o) => choice(o, true))}</ul>
+      <div className="dh-choices">{main.map(choice)}</div>
       <SeedWarning />
       <p className="small muted choices-more">Other ways to sign in</p>
-      <ul className="choices choices-s">
-        {other.map((o) => choice(o, false))}
-        <li>
-          <button type="button" className="choice choice-later" disabled aria-describedby="wallet-soon" data-testid="wallet-signin">
-            <span className="choice-soon">
-              <b>A Dash wallet</b>
-              <span className="tag dh-badge tag-info dh-badge--info" id="wallet-soon">
-                Not yet
-              </span>
+      <div className="dh-choices dh-choices--2">
+        {other.map(choice)}
+        <button type="button" className="dh-choice" disabled aria-describedby="wallet-soon" data-testid="wallet-signin">
+          <span className="dh-choice__title">
+            A Dash wallet
+            <span className="dh-badge dh-badge--info" id="wallet-soon">
+              Not yet
             </span>
-            <span className="muted small">Approving from DashPay, with no phrase typed here, isn’t available yet.</span>
-          </button>
-        </li>
-      </ul>
+          </span>
+          <span className="dh-choice__desc">Approving from DashPay, with no phrase typed here, isn’t available yet.</span>
+        </button>
+      </div>
       <details className="learn">
         <summary>What is an account here?</summary>
         <p className="small">
@@ -251,37 +256,6 @@ function Choose() {
         </p>
       </details>
     </div>
-  );
-}
-
-/**
- * What signing in is, in the family's words: the shell's <dashhq-signin-help> once this site vendors a shell that has it (it then
- * draws its own explanation and hides these children); until then the same facts, here.
- */
-function SigninHelp() {
-  const { network } = useAuth();
-  const net = network === 'testnet' ? 'Testnet' : 'Mainnet';
-  // created by name: a shell release that types the element would clash with a stopgap declaration here
-  return createElement(
-      'dashhq-signin-help',
-      { product: 'gov', network, asks: 'phrase passkey key voting-key', kept: 'memory', 'kept-note': 'Voting keys you add are kept encrypted on Dash Platform, unless you choose memory only.' },
-      <div className="signin-help" data-testid="signin-help">
-        <p className="signin-help-title">You sign in with a Dash identity</p>
-        <p className="small">
-          A Dash identity is your account on Dash Platform: its keys prove it’s you, and its credits pay for what you post. One {net} identity works in every
-          dashhq app; each app signs you in on its own.{network === 'mainnet' ? ' On Mainnet, credits cost real DASH.' : ''}
-        </p>
-        <dl className="small">
-          <div>
-            <dt>Governance asks for</dt>
-            <dd>Your recovery phrase, a passkey or a private key. To vote as a masternode, also its voting key: never the owner, payout or collateral key.</dd>
-          </div>
-          <div>
-            <dt>Where it’s kept</dt>
-            <dd>In memory only, never saved: closing the last Governance tab signs you out. Voting keys you add are kept encrypted on Dash Platform, unless you choose memory only.</dd>
-          </div>
-        </dl>
-      </div>
   );
 }
 

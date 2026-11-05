@@ -142,7 +142,9 @@ test.describe('fixture mode', () => {
 
   test('offline signing is there without a keyring; the drawer can rank every active proposal on request', async ({ page }) => {
     await gotoFixtures(page, '/p/OrchardPay');
-    await expect(page.getByText('Sign offline instead (Dash Core, hardware wallet)')).toBeVisible();
+    const vote = page.getByTestId('mn-vote-panel');
+    await expect(vote.getByRole('heading', { name: 'Vote on this proposal' })).toBeVisible();
+    await expect(vote.getByRole('button', { name: 'Sign offline' })).toHaveAttribute('aria-pressed', 'true');
     const drawer = await openDrawer(page);
     // fixture data: the votes are not proven, so the funding order did not run on its own
     await drawer.locator('[data-check="funding"] .check-more > summary').click();

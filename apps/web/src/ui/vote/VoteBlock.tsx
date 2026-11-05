@@ -65,7 +65,7 @@ function VoteBlock({ proposal, ctx, closesIn, onVerify }: { proposal: Proposal; 
     if (hash === '#vote') ref.current?.scrollIntoView({ block: 'start' });
   }, [hash]);
   return (
-    <section ref={ref} id="vote" className="panel dh-card pvote" aria-labelledby="pvote-title" data-testid="vote-block">
+    <section ref={ref} id="vote" className="panel dh-card pvote" aria-labelledby="pvote-title" data-testid="mn-vote-panel">
       <header className="pvote-head">
         <h2 id="pvote-title">Vote on this proposal</h2>
         {closesIn !== null && <span className="small muted">{closesIn > 0 ? `Voting closes in ${formatDuration(closesIn)}` : 'Votes now count toward the next payout'}</span>}
@@ -153,9 +153,9 @@ function WayPicker({ way, setWay, signedIn }: { way: Way; setWay(w: Way): void; 
       <p className="pvote-ways-label small muted" id="pvote-ways-label">
         How to sign it
       </p>
-      <div className="pvote-seg" role="radiogroup" aria-labelledby="pvote-ways-label" data-testid="vote-ways">
+      <div className="dh-seg" role="group" aria-labelledby="pvote-ways-label" data-testid="vote-ways">
         {ways.map((w) => (
-          <button key={w.id} type="button" role="radio" aria-checked={current.id === w.id} className="pvote-seg-opt" onClick={() => setWay(w.id)} data-way={w.id}>
+          <button key={w.id} type="button" aria-pressed={current.id === w.id} onClick={() => setWay(w.id)} data-way={w.id}>
             {w.label}
           </button>
         ))}
