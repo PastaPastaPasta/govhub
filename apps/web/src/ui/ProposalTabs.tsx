@@ -1,5 +1,5 @@
 // Active / Past: the two views of Proposals, with the active count.
-import { NavLink } from 'react-router-dom';
+import { NavLink } from './Link.tsx';
 import { useApp } from '../app/context.tsx';
 import { formatInt } from '../lib/format.ts';
 

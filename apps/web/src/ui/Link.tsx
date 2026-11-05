@@ -1,14 +1,26 @@
 import { forwardRef } from 'react';
-import { Link as RouterLink, useLocation, useResolvedPath, type LinkProps } from 'react-router-dom';
+import { Link as RouterLink, NavLink as RouterNavLink, useLocation, useResolvedPath, type LinkProps, type NavLinkProps } from 'react-router-dom';
 
-/** Keep the selected network on internal links, including open-in-new-tab. */
-export const Link = forwardRef<HTMLAnchorElement, LinkProps>(function Link({ to, ...props }, ref) {
+const KEPT = ['network', 'profile', 'fixtures'];
+
+/** `to` with the page's network (and profile, demo mode) added where it names none. */
+function useKept(to: LinkProps['to']) {
   const { search } = useLocation();
   const resolved = useResolvedPath(to);
   const params = new URLSearchParams(resolved.search);
   const current = new URLSearchParams(search);
-  for (const key of ['network', 'profile', 'fixtures']) {
+  for (const key of KEPT) {
     if (!params.has(key) && current.has(key)) params.set(key, current.get(key)!);
   }
-  return <RouterLink ref={ref} to={{ ...resolved, search: params.toString() }} {...props} />;
+  return { ...resolved, search: params.toString() };
+}
+
+/** Keep the selected network on internal links, including open-in-new-tab. */
+export const Link = forwardRef<HTMLAnchorElement, LinkProps>(function Link({ to, ...props }, ref) {
+  return <RouterLink ref={ref} to={useKept(to)} {...props} />;
+});
+
+/** A NavLink (marks the current page) that keeps the selected network like Link. */
+export const NavLink = forwardRef<HTMLAnchorElement, NavLinkProps>(function NavLink({ to, ...props }, ref) {
+  return <RouterNavLink ref={ref} to={useKept(to)} {...props} />;
 });
