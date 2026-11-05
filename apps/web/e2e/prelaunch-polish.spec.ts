@@ -43,7 +43,7 @@ test.describe('F3: Reset to defaults keeps the profile', () => {
     await page.getByRole('button', { name: 'Switch to Testnet' }).click();
     await expect(page.getByTestId('profile-description')).toContainText('Testnet');
     await page.getByText('Advanced: choose your own servers').click();
-    await page.getByLabel('Price feed URL (JSON with dash.usd; empty turns it off)').fill('https://price.example.org/dash');
+    await page.getByLabel(/^Price feed URL/).fill('https://price.example.org/dash');
     await page.getByRole('button', { name: 'Save settings' }).click();
     await expect(page.locator('#network .chip-custom')).toBeVisible();
     await page.getByRole('button', { name: 'Reset to defaults' }).click();
