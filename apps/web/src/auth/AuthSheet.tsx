@@ -21,7 +21,7 @@ import { formatDuffs, plainErrorText } from './runtime.ts';
 export { SecretField }; // moved to its own file (the Recover tool uses it too); tests import it from here
 
 const TITLES: Record<SheetView, string> = {
-  choose: 'Sign in or create an account',
+  choose: 'Sign in to Governance',
   create: 'Create an account',
   phrase: 'Sign in with a recovery phrase',
   key: 'Sign in with a key',
@@ -175,9 +175,10 @@ function Choose() {
     <button key={o.v} type="button" className="dh-choice" onClick={() => openSheet(o.v)} data-testid={`choose-${o.v}`}>
       <span className="dh-choice__title">
         {o.title}
-        {o.tag && <span className="dh-badge dh-badge--good">{o.tag}</span>}
+        {o.tag && <span className="dh-badge dh-badge--info">{o.tag}</span>}
       </span>
       <span className="dh-choice__desc">{o.text}</span>
+      {o.v === 'phrase' && <span className="dh-choice__meta">Other Dash wallets (DashPay, Dash Evo Tool) can restore it.</span>}
     </button>
   );
   return (
@@ -186,7 +187,7 @@ function Choose() {
       <dashhq-signin-help
         asks="phrase passkey key voting-key"
         kept="memory"
-        why="It signs your comments and reactions, and opens the encrypted keyring that keeps your voting keys."
+        why="It signs your comments and reactions and unlocks your saved voting keys."
         kept-note="Voting keys you add are kept encrypted on Dash Platform, unless you choose memory only."
       >
         <button type="button" slot="start" onClick={() => openSheet('create')}>
@@ -247,14 +248,6 @@ function Choose() {
           <span className="dh-choice__desc">Approving from DashPay, with no phrase typed here, isn’t available yet.</span>
         </button>
       </div>
-      <details className="learn">
-        <summary>What is an account here?</summary>
-        <p className="small">
-          Your account is a Dash Platform identity. Comments and reactions are stored on Dash Platform and paid for with a little credit from your account’s
-          balance (about 0.0005 DASH a comment). Your recovery phrase is the account: other Dash wallets (DashPay, Dash Evo Tool) can restore it. It stays in
-          this browser; Governance has no account server and can’t reset it for you.
-        </p>
-      </details>
     </div>
   );
 }

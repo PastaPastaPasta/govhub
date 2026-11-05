@@ -79,7 +79,7 @@ p { margin: 0; }
 .logo-pollr { stroke: var(--dh-accent-pollr); }
 /* bars.html: real bar widths (edge to edge), so the lockup is measured as phones see it */
 .bars--bleed { margin-inline: calc(-1 * var(--dh-gutter)); gap: 10px; }
-.bars--bleed dashhq-bar { border-radius: 0; border-width: 1px 0; }
+.bars--bleed dashhq-bar { border-radius: 0; border-width: 1px 0; overflow: visible; }
 /* app.html */
 .demo-polls { --dh-grid-min: 340px; }
 .demo-app { --dh-accent: var(--dh-accent-pollr); }

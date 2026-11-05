@@ -1,4 +1,4 @@
-/*! dashhq-shell 1.5.0 | family bar, footer, hash display, sign-in help and theme for dashhq.org tools | MIT */
+/*! dashhq-shell 1.5.3 | family bar, footer, hash display, sign-in help and theme for dashhq.org tools | MIT */
 /* Load as a classic, blocking script in <head>, before any stylesheet that depends on [data-theme]:
      <script src="/dashhq/dashhq-shell.js"></script>
    CSP: needs only script-src 'self'. No inline script, no eval, no innerHTML, no style attributes,
@@ -7,7 +7,7 @@
   'use strict';
   if (window.dashhq && window.dashhq.version) return;
 
-  const VERSION = '1.5.0';
+  const VERSION = '1.5.3';
   const doc = document;
   const root = doc.documentElement;
   const host = location.hostname;
@@ -24,7 +24,7 @@
     faucet:   { name: 'Faucet',        url: 'https://faucet.dashhq.org',   door: 'start',      net: true },
     bridge:   { name: 'Bridge',        url: 'https://bridge.thepasta.org', door: 'start',      net: true },
     arch:     { name: 'Architecture',  url: 'https://arch.dashhq.org',     door: 'platform' },
-    fees:     { name: 'Fee estimator', url: 'https://fees.dashhq.org',     door: 'platform',   net: true },
+    fees:     { name: 'Fee estimator', url: 'https://explorer.dashhq.org',     door: 'platform',   net: true },
     dapi:     { name: 'DAPI console',  url: 'https://dapi.dashhq.org',     door: 'platform',   net: true },
     vote:     { name: 'EvoVote',       url: 'https://vote.dashhq.org',     door: 'governance', net: true },
     basics:   { name: 'Basics',        url: 'https://basics.dashhq.org',   door: 'platform' },
@@ -42,6 +42,8 @@
   ];
   const APPS = ['forge', 'pollr', 'yappr'];
   const ALSO = ['arch', 'fees', 'dapi'];
+  // Products folded into another one: family menus link straight to the new home instead of the old host's notice.
+  const MOVED = { fees: ['explorer', '/tools/fees/'] };
   // The hub's page that explains identities, keys and each app's sign-in (linked from <dashhq-signin-help>).
   const IDENTITY_PATH = '/identity/';
 
@@ -50,6 +52,7 @@
   const LAB = host === 'dashhq.localhost' || host.endsWith('.dashhq.localhost');
 
   function origin(key) {
+    if (MOVED[key]) key = MOVED[key][0];
     if (key === 'nodes') key = 'radar';
     const p = PRODUCTS[key];
     if (!p) throw new Error(`dashhq: unknown product "${key}"`);
@@ -111,6 +114,7 @@
     const base = origin(key);
     const u = new URL(path || '/', base + '/');
     if (u.origin !== new URL(base).origin) throw new Error(`dashhq: href("${key}") must stay on ${base}`);
+    if (MOVED[key]) u.pathname = MOVED[key][1];
     const p = PRODUCTS[key];
     const fallback = p.door === 'start' ? parseNetwork(u.searchParams.get('network')) || 'testnet' : activeNetwork();
     const n = parseNetwork(opts && 'network' in opts ? opts.network : fallback);
@@ -122,6 +126,7 @@
   }
 
   function doorHref(key, network) {
+    if (MOVED[key]) return href(MOVED[key][0], MOVED[key][1], network ? { network } : undefined);
     if (PRODUCTS[key].door === 'start') {
       return href(key, key === 'bridge' ? '/?mode=create&journey=start' : '/?journey=start', { network: 'testnet' });
     }
@@ -332,7 +337,7 @@
     '.pop{position:absolute;top:calc(100% + 6px);z-index:2;background:var(--dh-surface);border-radius:var(--dh-r3);' +
     'box-shadow:var(--dh-shadow-pop);padding:6px}' +
     '.doorpop{left:var(--dh-gutter);width:min(440px,calc(100vw - 2 * var(--dh-gutter)))}' +
-    '.netpop{right:0;min-width:200px;max-width:min(300px,calc(100vw - 2 * var(--dh-gutter)))}' +
+    '.netpop{right:0;width:max-content;min-width:200px;max-width:min(300px,calc(100vw - 2 * var(--dh-gutter)))}' +
     '.nnote{margin:4px 0 0;padding:8px 10px 4px;border-top:1px solid var(--dh-line);font-size:13px;line-height:1.4;' +
     'color:var(--dh-ink-2)}' +
     '.opt{display:flex;align-items:center;gap:10px;min-height:36px;padding:6px 10px;border-radius:var(--dh-r2);' +
@@ -361,13 +366,13 @@
     '.steps a:hover{text-decoration:underline}' +
     '.grp{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;padding:10px 14px;border-top:1px solid var(--dh-line);' +
     'margin-top:6px;font-size:14px}' +
-    '.gl{font-size:13px;color:var(--dh-ink-2);min-width:52px}' +
+    '.gl{font-size:13px;color:var(--dh-ink-2);min-width:92px}' +
     '.grp a{font-weight:540}' +
     '.only{margin-left:6px;padding:1px 5px;border:1px dashed var(--dh-line-2);border-radius:var(--dh-r1);' +
     'font-size:12px;font-weight:520;color:var(--dh-ink-2);vertical-align:1px}' +
     '.grp a:hover{color:var(--dh-brand-ink)}' +
     '.grp a[aria-current]{color:var(--dh-brand-ink);text-decoration:underline;text-underline-offset:3px}' +
-    '.themes{display:flex;align-items:center;gap:12px;padding:10px 14px 6px;border-top:1px solid var(--dh-line);' +
+    '.themes{display:flex;align-items:center;gap:14px;padding:10px 14px 6px;border-top:1px solid var(--dh-line);' +
     'margin-top:6px}' +
     '.seg{display:inline-flex;padding:2px;background:var(--dh-sunken);border-radius:var(--dh-r2);gap:2px}' +
     '.seg button{height:28px;padding:0 11px;border-radius:4px;font-size:13px;font-weight:520;color:var(--dh-ink-2)}' +
@@ -423,13 +428,14 @@
     '.bar.compact .themes{padding-left:14px;padding-right:0}' +
     /* phone-nav="tabs": the product's sections become a bottom tab bar; the menu then holds only the family */
     '.bar.compact.tabs .nav{position:fixed;left:0;right:0;bottom:0;z-index:3;margin:0;' +
-    'padding:0 max(env(safe-area-inset-left,0px),4px) env(safe-area-inset-bottom,0px);' +
+    'padding:0 max(env(safe-area-inset-right,0px),4px) env(safe-area-inset-bottom,0px) max(env(safe-area-inset-left,0px),4px);' +
     'background:var(--dh-surface);border-top:1px solid var(--dh-line);' +
     '--dh-nav-dir:row;--dh-nav-h:56px;--dh-nav-fs:12px;--dh-nav-pad:4px;--dh-nav-align:stretch;--dh-nav-gap:0;' +
-    '--dh-nav-item:1 1 0;--dh-nav-item-dir:column;--dh-nav-item-gap:4px;--dh-nav-item-justify:center;' +
+    '--dh-nav-item:1 1 0;--dh-nav-item-dir:column;--dh-nav-item-gap:4px;--dh-nav-item-justify:center;--dh-nav-ws:normal;' +
     '--dh-nav-icon:block;--dh-nav-radius:0;--dh-nav-current-bg:transparent;--dh-nav-current-ink:var(--dh-brand-ink);' +
     '--dh-nav-current-mark:inset 0 2px 0 var(--dh-brand)}' +
     '.bar.compact.tabs .nav.empty{display:none}' +
+    '.bar.compact.tabs .family{border-top:0;padding-top:0}' +
     '.bar.compact .net{height:36px}' +
     '.bar.compact .menu{width:40px;height:40px;margin-right:-4px}' +
     '.bar.compact .seg button{height:40px;padding:0 14px}' +
@@ -479,22 +485,28 @@
     'p{margin:0}' +
     '.t{display:flex;align-items:center;gap:8px;font-size:15px;font-weight:620;line-height:1.3}' +
     '.t .ic{color:var(--dh-brand-ink);flex:none}' +
-    '.p{color:var(--dh-ink-2)}' +
+    '.p,.q,.nn{color:var(--dh-ink-2)}' +
+    '.nn{font-size:13px}' +
+    '.p a{color:var(--dh-brand-ink);font-weight:600;white-space:nowrap}' +
+    '.p a:hover{text-decoration:underline;text-underline-offset:3px}' +
     'dl{margin:0;display:grid;grid-template-columns:max-content minmax(0,1fr);gap:6px 14px}' +
     'dl>div{display:contents}' +
     'dt{font-size:13px;font-weight:520;color:var(--dh-ink-2);padding-top:1px}' +
     'dd{margin:0}' +
-    '@container (max-width:360px){dl{grid-template-columns:minmax(0,1fr);gap:0}dd{margin-bottom:8px}dd:last-child{margin-bottom:0}}' +
+    /* Narrow (a phone dialog): each fact is one paragraph with its label as a lead-in, so the ways in stay close. */
+    '@container (max-width:360px){dl{grid-template-columns:minmax(0,1fr);gap:8px}dl>div{display:block}' +
+    'dt{display:inline;padding:0;font-size:14px;font-weight:600;color:var(--dh-ink)}dt::after{content:":"}' +
+    'dd{display:inline;margin-left:.3em}}' +
     '.f{display:flex;flex-wrap:wrap;align-items:center;gap:2px 10px;padding-top:10px;border-top:1px solid var(--dh-line)}' +
-    '.q{color:var(--dh-ink-2)}' +
     '.f a{color:var(--dh-brand-ink);font-weight:600}' +
     '.f a:hover{text-decoration:underline;text-underline-offset:3px}' +
-    '@container (min-width:361px){.lk{margin-left:auto}}' +
     '.nt{color:var(--dh-ink-2);font-size:13px}' +
+    '.ar{margin-left:.3em}' +
     /* An app's own create action in the start slot (Governance: "Create an account") looks like the default link,
        whatever classes or framework resets it brings. */
     '::slotted([slot=start]){all:unset!important;display:inline-flex!important;align-items:center!important;' +
     'color:var(--dh-brand-ink)!important;font:600 14px/1.45 var(--dh-font)!important;cursor:pointer!important}' +
+    '::slotted([slot=start][hidden]){display:none!important}' +
     '::slotted([slot=start]:hover){text-decoration:underline!important;text-underline-offset:3px!important}' +
     '::slotted([slot=start]:focus-visible){outline:2px solid var(--dh-focus)!important;outline-offset:2px!important;' +
     'border-radius:var(--dh-r1)!important}' +
@@ -555,8 +567,13 @@
   function setState(el, name, on) {
     const s = el._internals && el._internals.states;
     if (!s) return;
+    // Old engines throw only from add() for the unprefixed name, so setting stops at the first spelling that
+    // works and removal clears both.
     for (const n of [name, '--' + name]) {
-      try { if (on) s.add(n); else s.delete(n); return; } catch { /* try the legacy spelling */ }
+      try {
+        if (on) { s.add(n); return; }
+        s.delete(n);
+      } catch { /* spelling not supported */ }
     }
   }
 
@@ -733,8 +750,8 @@
       let devGroup = null;
       if (devs.length) {
         const box = h('div', { id: 'dh-devnets', hidden: true }, devs.map(option));
-        const toggle = h('button', { class: 'opt', type: 'button', 'aria-expanded': 'false', 'aria-controls': 'dh-devnets',
-          'data-f': 'devnets' }, h('span', { class: 'tick' }), 'Developer networks', icon('chevron', 14));
+        const toggle = h('button', { class: 'opt', type: 'button', 'aria-expanded': 'false', 'aria-controls': 'dh-devnets' },
+          h('span', { class: 'tick' }), 'Developer networks', icon('chevron', 14));
         toggle.addEventListener('click', () => {
           box.hidden = !box.hidden;
           toggle.setAttribute('aria-expanded', String(!box.hidden));
@@ -790,6 +807,8 @@
     _outside(e) {
       if (!this._open) return false;
       const path = e.composedPath();
+      // The tab bar stays visible under the open menu; a tab is a real destination, not a tap to dismiss.
+      if (this._tabs && path.includes(this._nav)) return false;
       return !path.includes(this._open.panel) && !path.includes(this._open.trigger);
     }
     _onPointer(e) {
@@ -821,15 +840,19 @@
     _fit() {
       const bar = this._bar, row = this._row;
       if (!bar) return;
-      // A product may hide its slotted nav (an app with its own bottom nav on phones); treat that as no nav.
-      const shown = this._navSlot.assignedElements().some((el) => getComputedStyle(el).display !== 'none');
-      this._nav.classList.toggle('empty', !shown);
       const w = this.getBoundingClientRect().width;
       const was = bar.classList.contains('compact');
+      // Measure the wide row as the wide row: product CSS keyed to :state(compact) must not still apply, or the
+      // bar would flip back and forth between layouts.
       bar.classList.remove('compact', 'squeeze');
+      setState(this, 'compact', false);
       const over = () => row.scrollWidth > row.clientWidth + 1;
       const compact = w > 0 && (w < 600 || over());
       bar.classList.toggle('compact', compact);
+      setState(this, 'compact', compact);
+      // A product may hide its slotted nav in one layout; treat that as no nav (read after the final state is set).
+      const shown = this._navSlot.assignedElements().some((el) => getComputedStyle(el).display !== 'none');
+      this._nav.classList.toggle('empty', !shown);
       // The phone lockup keeps "dashhq" and the product at any width. Short of room, the network pill drops its word
       // first; only then does the product name truncate (with the full name as its tooltip).
       const pn = this._product && this._pn;
@@ -839,7 +862,6 @@
         if (compact && cut()) this._product.setAttribute('title', pn.textContent);
         else this._product.removeAttribute('title');
       }
-      setState(this, 'compact', compact);
       if (compact && this._tabs && shown) tabBars.add(this); else tabBars.delete(this);
       syncTabs();
       if (this._open && was !== compact && (this._open.which === 'sheet') !== compact) this.close();
@@ -926,7 +948,7 @@
     passkey: 'a passkey',
     phrase: 'your recovery phrase (12 or 24 words)',
     key: 'a private key (High or Critical)',
-    password: (name) => `a backup password you set in ${name}`
+    password: (name) => `a password you set in ${name}`
   };
   const KEPT = {
     memory: 'In memory only, never saved in this browser. Closing the tab signs you out.',
@@ -936,7 +958,8 @@
   };
   const listOf = (items) => (items.length < 2 ? items[0] : `${items.slice(0, -1).join(', ')} or ${items[items.length - 1]}`);
   const sentence = (s) => s.charAt(0).toUpperCase() + s.slice(1) + '.';
-  const arrow = () => h('span', { 'aria-hidden': 'true' }, ' →');
+  // A margin, not a space: touch screens lay these links out as flex boxes, which drop a leading space.
+  const arrow = () => h('span', { class: 'ar', 'aria-hidden': 'true' }, '→');
   function pageProduct() {
     let key = null;
     for (const b of bars) key = PRODUCTS[b.getAttribute('product')] ? b.getAttribute('product') : key;
@@ -953,10 +976,11 @@
       if (!this.hasAttribute('network') || !this.hasAttribute('product')) this._on(netListeners, () => this.render());
       const key = PRODUCTS[this.getAttribute('product')] ? this.getAttribute('product') : pageProduct();
       const name = key && key !== 'home' ? PRODUCTS[key].name : null;
-      const net = parseNetwork(this.getAttribute('network')) || activeNetwork();
+      // An app that runs on one network explains that network, whatever page or bar it sits under.
+      const net = parseNetwork(this.getAttribute('network')) || (key && parseNetwork(PRODUCTS[key].only)) || activeNetwork();
       const netName = networkLabel(net);
 
-      const tokens = (this.getAttribute('asks') || '').split(/[\s,]+/).filter(Boolean);
+      const tokens = [...new Set((this.getAttribute('asks') || '').split(/[\s,]+/).filter(Boolean))];
       const ways = tokens.filter((t) => Object.hasOwn(ASKS, t))
         .map((t) => (typeof ASKS[t] === 'function' ? ASKS[t](name || 'this app') : ASKS[t]));
       const voting = tokens.includes('voting-key');
@@ -969,29 +993,31 @@
       const why = (this.getAttribute('why') || '').trim();
       if (why && asks.length) asks.push(why);
       const keptKey = this.getAttribute('kept');
-      const kept = [Object.hasOwn(KEPT, keptKey || '') ? KEPT[keptKey]
-        : asks.length ? 'Each way below says what it keeps and for how long.' : null,
-      (this.getAttribute('kept-note') || '').trim() || null].filter(Boolean);
+      const several = ways.length + (voting ? 1 : 0) > 1;
+      let keptLine = null;
+      if (Object.hasOwn(KEPT, keptKey)) keptLine = KEPT[keptKey];
+      else if (several) keptLine = 'Each way below says what it keeps and for how long.';
+      const note = (this.getAttribute('kept-note') || '').trim();
 
       const facts = [];
       if (asks.length) facts.push(h('div', null, h('dt', null, `${name || 'This app'} asks for`), h('dd', null, asks.join(' '))));
-      if (asks.length && kept.length) facts.push(h('div', null, h('dt', null, 'Where it\'s kept'), h('dd', null, kept.join(' '))));
+      if (asks.length && (keptLine || note)) {
+        facts.push(h('div', null, h('dt', null, 'Where it\'s kept'),
+          h('dd', null, keptLine, keptLine && note && ' ', note && h('span', { class: 'nn' }, note))));
+      }
 
-      const start = net === 'mainnet'
-        ? [h('a', { href: href('bridge', '/?mode=create', { network: 'mainnet' }) }, 'Create one in Bridge', arrow()),
-          h('span', { class: 'nt' }, 'Mainnet, real DASH')]
-        : h('a', { href: doorHref('bridge') }, 'Start on Testnet', arrow());
+      // Testnet starts the family's Start journey; Mainnet and devnets create one in Bridge on that network.
+      const start = net === 'testnet' ? h('a', { href: doorHref('bridge') }, 'Start on Testnet', arrow())
+        : [h('a', { href: href('bridge', '/?mode=create', { network: net }) }, 'Create one in Bridge', arrow()),
+          h('span', { class: 'nt' }, net === 'mainnet' ? 'Mainnet, real DASH' : netName)];
 
       this._paint(h('div', { class: 'w' },
         h('p', { class: 't' }, icon('identity', 20), 'You sign in with a Dash identity'),
-        h('p', { class: 'p' }, 'A Dash identity is your account on Dash Platform: its keys prove it\'s you, and its ' +
-          `credits pay for what you save. One ${netName} identity works in every dashhq app; each app signs you in ` +
-          'on its own.' + (net === 'mainnet' ? ' On Mainnet, credits cost real DASH.' : '')),
+        h('p', { class: 'p' }, `Your account on Dash Platform. One ${netName} identity works across the dashhq apps on ` +
+          `${netName}; each app signs you in on its own. ` + (net === 'mainnet' ? 'Saving data on Mainnet costs real DASH. ' : ''),
+        h('a', { class: 'lk', href: href('home', IDENTITY_PATH) }, 'How identities work', arrow())),
         facts.length ? h('dl', null, facts) : null,
-        h('p', { class: 'f' },
-          h('span', { class: 'q' }, 'No identity yet?'),
-          h('slot', { name: 'start' }, start),
-          h('a', { class: 'lk', href: href('home', IDENTITY_PATH) }, 'How identities work', arrow()))));
+        h('p', { class: 'f' }, h('span', { class: 'q' }, 'No identity yet?'), h('slot', { name: 'start' }, start))));
     }
   }
 

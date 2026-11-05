@@ -1,10 +1,10 @@
-# dashhq shell 1.5.0
+# dashhq shell 1.5.3
 
 The shared shell for the dashhq.org family: the family bar, the footer, the hash display, the sign-in explanation,
 the theme, and the tokens they all draw with. Read `../DESIGN.md` for the rules and `../ADOPTION-r4.md` for your
 site's changes this round.
 
-## New in 1.5.0 (round 4)
+## New in 1.5 (round 4)
 
 | What | Who acts | How |
 |---|---|---|
@@ -15,6 +15,9 @@ site's changes this round.
 | **Phone menu.** Start is "Start on Testnet" with its explanation and Bridge → Faucet; Apps and Also are 44px rows. | Nobody | |
 | **Devnets** in a `networks` list sit behind "Developer networks" unless the page is on a devnet. | Nobody (Explorer: no change needed) | |
 | **`:state(compact)`** on the bar and **`--dh-tabs-h`** on `<html>` let product CSS follow the bar. | Optional | |
+| **1.5.1:** the family menus' Fee estimator opens Explorer's `/tools/fees/` (with the network) instead of the retired host. Review fixes: the bar no longer oscillates when product CSS hides its nav with `:state(compact)`; `hidden` works on nav items and on the help's `start` slot; a tab works while the menu is open; the sign-in help explains the app's own network (Testnet for the apps, even under a Mainnet bar) and offers Bridge on that network off Testnet. | Everyone: re-vendor 1.5.1 | |
+| **1.5.3:** the sign-in help is shorter on phones: one sentence about identities with "How identities work →" inline, facts as lead-in paragraphs, `kept-note` in secondary ink. The door switcher's group labels line up; the network menu sizes to its content ("Developer networks" on one line). | Everyone: re-vendor 1.5.3 | |
+| **1.5.2:** `asks="password"` reads "a password you set in *Product*" (Yappr's backup password, Forge's unlock passphrase). On phones a done step's link in `.dh-steps` covers its disc, and its label lines up with the others (it sat lower in Faucet). | Everyone: re-vendor 1.5.2 | |
 
 | File | What | Required |
 |---|---|---|
@@ -155,6 +158,14 @@ state, `dashhq-bar:state(compact)`, for the rare control in your actions slot th
 `<dashhq-footer>` already pads itself by it, and anything of yours fixed to the bottom (a toast, a compose button)
 should sit at `bottom: var(--dh-tabs-h, 0px)`.
 
+`:state()` is recent (Chrome 125, Firefox 126, Safari 17.4). Older engines reject the whole selector list it appears
+in, and `el.matches(':state(compact)')` throws there, so keep it in a rule of its own or behind
+`@supports selector(:state(a))`. Hide a nav item with the `hidden` attribute (or `data-dh-phone` / `data-dh-desktop`):
+the bar's item rules outrank utility classes such as Tailwind's `.hidden`. The tab bar is `position: fixed`, so the
+bar must not sit inside an element with `transform`, `filter`, `backdrop-filter`, `will-change` or `contain`; that
+would pin the tab bar inside the header instead of the screen's bottom edge. Tab labels are one or two short words
+("Polls", "My polls"); they wrap under the icon rather than overflow.
+
 ### Navigation layers
 
 One owner per job, at every width (`../DESIGN.md` §5 has the full rule):
@@ -199,25 +210,28 @@ title and one lede, above your own ways in:
 … your form, or your ways in as .dh-choice cards …
 ```
 
-It says what a Dash identity is (network-aware: "One Testnet identity works in every dashhq app; each app signs you in
-on its own"), what this app asks for and where it keeps it, "No identity yet? Start on Testnet →" (Mainnet: "Create
-one in Bridge → · Mainnet, real DASH"), and links "How identities work →" to the hub's `/identity/` page. Your
+It says what a Dash identity is (network-aware: "One Testnet identity works across the dashhq apps on Testnet; each
+app signs you in on its own"), what this app asks for and where it keeps it, "No identity yet? Start on Testnet →"
+(Mainnet and devnets: "Create one in Bridge →" on that network, with "Mainnet, real DASH" on Mainnet), and links
+"How identities work →" to the hub's `/identity/` page. Your
 implementation, your security model and your forms stay exactly as they are; this only explains them.
 
 | Attribute | Meaning |
 |---|---|
-| `asks` | What you accept, space-separated, in the order you offer them. `wallet` (an approval in a Dash wallet), `passkey`, `phrase` (recovery phrase, 12 or 24 words), `key` (a private key, High or Critical), `password` (a backup password set in this app), `voting-key` (a masternode's voting key; said separately, with "never the owner, payout or collateral key"). Unknown words are ignored. |
+| `asks` | What you accept, space-separated, in the order you offer them. `wallet` (an approval in a Dash wallet), `passkey`, `phrase` (recovery phrase, 12 or 24 words), `key` (a private key, High or Critical), `password` (a password or passphrase set in this app: Yappr's backup password, Forge's unlock passphrase), `voting-key` (a masternode's voting key; said separately, with "never the owner, payout or collateral key"). Unknown words are ignored. |
 | `kept` | Where it ends up and for how long. `memory` (never saved in the browser; closing the tab signs you out), `tab` (this tab until it closes or you sign out), `browser` (this browser until you sign out, with the shared-computer advice), `sealed` (this browser, encrypted with a passkey or passphrase). Omit it when your ways differ; the help then says each way below says what it keeps, and each `.dh-choice` says so in its meta line. Update it live if the user flips a "keep me signed in" switch. |
 | `kept-note` | One or two sentences of specifics: limits, expiry, encrypted copies on Platform. "This browser gets its own limited key: at most 0.05 DASH, only on Forge, for 90 days." |
 | `why` | One sentence: what the credential signs here. |
-| `product`, `network` | Default to the page bar's. Set `network` if the dialog is about a different network than the page. |
+| `product`, `network` | Default to the page bar's. An app that runs on one network (Forge, Pollr, Yappr) explains that network even without `network`. Set `network` if the dialog is about a different network than the page. |
 
 | Slot | Content |
 |---|---|
 | `start` | Your own create action instead of the default Start link, when you have one (Governance's "Create an account"). A plain `<button>` or `<a>`; the help styles it like its own link. |
 
 It is a well (page ground, hairline border), so it sits inside a dialog or a card without becoming a card in a
-card. Under 360px of width its facts stack. Copy is fixed on purpose: if a sentence is wrong for your app, request a
+card. Under 360px of width (a phone dialog) each fact becomes one paragraph with its label as a lead-in ("Pollr asks
+for: …"), and `kept-note` is set smaller in secondary ink, so the first way in stays on the first screen. Keep `why`
+to about 12 words. Copy is fixed on purpose: if a sentence is wrong for your app, request a
 change in `REQUESTS/` rather than working around it. Accurate values for each app are in `../ADOPTION-r4.md`, and the
 page it links to is `../IDENTITY-PAGE.md`.
 

@@ -270,7 +270,7 @@ function AddMasternodes({ step, setStep, b, savedLocked, onAdded }: { step: Flow
             <input className="dh-input" type="password" value={wif} onChange={(e) => setWif(e.target.value)} autoComplete="off" spellCheck={false} data-testid="flow-key-input" aria-describedby="flow-key-warn" />
           </label>
           <p className="kr-inline-warn small" id="flow-key-warn">
-            Only the voting key. Never an owner, payout or collateral key: a voting key can only vote.
+            Only the voting key. Never an owner, payout or collateral key: a voting key can only vote. <a href="https://dashhq.org/identity/#governance" data-family="home" data-path="/identity/#governance">How voting keys are kept →</a>
           </p>
           <label className="kr-field dh-field__label">
             <span>Name (optional)</span>
@@ -419,7 +419,7 @@ function AddKey({ onClose }: { onClose(): void }) {
           </label>
         </div>
         <p className="kr-inline-warn small" id="addkey-warn">
-          Only the voting key. Never an owner, payout or collateral key: a voting key can only vote.
+          Only the voting key. Never an owner, payout or collateral key: a voting key can only vote. <a href="https://dashhq.org/identity/#governance" data-family="home" data-path="/identity/#governance">How voting keys are kept →</a>
         </p>
         {k.demo && <p className="small muted">The demo keyring has its keys already.</p>}
         <div className="kr-row">
