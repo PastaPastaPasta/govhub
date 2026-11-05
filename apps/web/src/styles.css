@@ -3257,3 +3257,33 @@ dashhq-hash { vertical-align: middle; max-width: 100%; }
   .past td[data-label="Ran "] + td::before { content: attr(data-label); }
 }
 .nowrap { white-space: nowrap; }
+
+/* The proposal's checks while they run: one line, the stages folded under it */
+.evidence-progress { margin: 6px 0 0; color: var(--dh-ink-2); }
+.evidence-progress > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; cursor: pointer; list-style: none; }
+.evidence-progress > summary::-webkit-details-marker { display: none; }
+.evidence-progress > summary .spinner { inline-size: 12px; block-size: 12px; margin-inline-end: 4px; }
+.evidence-more { margin-inline-start: 6px; color: var(--dh-brand-ink); text-decoration: underline; text-underline-offset: 3px; }
+.evidence-progress[open] .evidence-more { text-decoration: none; }
+.evidence-progress > p { margin: 8px 0 0; max-inline-size: 64ch; }
+.stages { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.stage { display: flex; gap: 8px; align-items: baseline; }
+.stage b { font-weight: 600; color: var(--dh-ink); }
+.stage-mark { flex: none; inline-size: 10px; block-size: 10px; border-radius: 50%; border: 1.5px solid var(--dh-line-2); transform: translateY(1px); }
+.stage-proven .stage-mark { background: var(--dh-good); border-color: var(--dh-good); }
+.stage-reported .stage-mark, .stage-error .stage-mark { background: var(--dh-warn); border-color: var(--dh-warn); }
+.stage-failed .stage-mark { background: var(--dh-bad); border-color: var(--dh-bad); }
+.stage-pending .stage-mark { border-color: var(--dh-brand); border-top-color: transparent; animation: dh-rot 0.9s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .stage-pending .stage-mark { animation: none; } }
+
+/* About a proposal: what the owner says beside what the network records */
+.p-claims { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; align-items: start; }
+.p-claim { display: grid; gap: 8px; align-content: start; }
+.p-claim h3 { margin: 0; font-size: 15px; font-weight: 620; }
+.p-claim p { margin: 0; }
+.p-recorded { padding: 12px 14px; border: 1px solid var(--dh-line); border-radius: var(--dh-r2); background: var(--dh-sunken); }
+.p-recorded .kv { margin: 0; }
+.p-short { padding: 8px 10px; border-inline-start: 3px solid var(--dh-line-2); background: var(--dh-surface); }
+.break { overflow-wrap: anywhere; }
+@media (max-width: 760px) { .p-claims { grid-template-columns: minmax(0, 1fr); } }
+.p-owner-title { margin: 4px 0 0; font-size: 17px; color: var(--dh-ink); }

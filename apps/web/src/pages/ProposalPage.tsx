@@ -1,6 +1,7 @@
 // /p/h/<govHash> (canonical) and /p/<name> (slug; duplicate names get a chooser). The page leads with what a reader wants: the ask,
 // whether it will be funded, the vote, the description and the discussion. Every check still runs (ui/trust/useProposalTrust.ts)
 // and adds up to one badge; its detail is in the "How do we know?" drawer.
+import { Slug } from '../ui/Slug.tsx';
 import { useTitle } from '../app/title.ts';
 import { useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
@@ -17,7 +18,8 @@ import { StartsLaterPageStatus } from '../ui/StartsLater.tsx';
 import { ClaimPanel, OwnerPost, OwnerValue, RejectedClaims, useOwnership, useOwnerPost } from '../ui/Ownership.tsx';
 import { TrustBadge } from '../ui/trust/TrustBadge.tsx';
 import { useProposalTrust } from '../ui/trust/useProposalTrust.ts';
-import type { TrustLevel } from '../verify/aggregate.ts';
+import type { Aggregate, CheckId } from '../verify/aggregate.ts';
+import { useNow } from '../ui/vote/common.tsx';
 import { VerificationDrawer } from '../ui/trust/VerificationDrawer.tsx';
 import { OfflineSign, ProposalVotePanel } from '../ui/VotePanel.tsx';
 import { useAsync } from '../ui/hooks.ts';
@@ -25,6 +27,7 @@ import type { Proposal, Sourced } from '../data/types.ts';
 import { formatDash, formatDate, formatDateTime, formatDuration, formatInt, shortHash, urlHost } from '../lib/format.ts';
 import { passState, perPayment, votingDeadlineTime } from '../lib/governance.ts';
 import { deriveRow } from '../lib/view.ts';
+import { isShortLink, useResolvedLink } from '../lib/links.ts';
 import { isLowerBound } from '../verify/chain.ts';
 import { paymentsFact, thresholdFact } from '../verify/facts.ts';
 import { useKeyring } from '../voting/KeyringContext.tsx';
@@ -121,10 +124,6 @@ function VoteCta({ proposal, active }: { proposal: Proposal; active: boolean }) 
   );
 }
 
-/** Link shorteners hide where a proposal's link leads; the page says so. */
-const SHORTENERS = new Set(['bit.ly', 'tinyurl.com', 'shorturl.at', 't.co', 'goo.gl', 'ow.ly', 'is.gd', 'buff.ly', 'rebrand.ly', 'cutt.ly', 'tiny.cc', 'rb.gy', 's.id', 't.ly', 'shorturl.com', 'v.gd']);
-const isShortLink = (host: string) => SHORTENERS.has(host.replace(/^www\./, '').toLowerCase());
-
 /** The host, plus the path when it is short enough to read (a shortened link is all path). */
 function linkText(url: string, host: string): string {
   try {
@@ -136,19 +135,57 @@ function linkText(url: string, host: string): string {
   }
 }
 
-/** What the evidence badge means right now, in a sentence: what is running, or that the figures are unconfirmed and how to retry. */
-function EvidenceLine({ level, reason, onRetry }: { level: TrustLevel; reason: string | null; onRetry(): void }) {
-  if (level === 'checking') {
+/** Each check as the stage list names it: what it establishes once done. */
+const STAGE: Record<CheckId, { label: string; done: string }> = {
+  content: { label: 'Proposal text', done: 'matches the hash the network holds' },
+  collateral: { label: 'Submission fee', done: 'proven into a ChainLocked block' },
+  chain: { label: 'Chain and masternode list', done: 'anchored; threshold and budget computed here' },
+  votes: { label: 'Vote count', done: 'recounted from the signed votes' },
+  funding: { label: 'Funding', done: 'payments and budget place checked' },
+};
+
+/**
+ * What the evidence badge means right now. While checking: one line (how many checks are done, for how long, and what to expect),
+ * with the checks themselves, what each has established and what is running, folded below it. On failure: the reason and Try again.
+ */
+function EvidenceLine({ agg, onRetry }: { agg: Aggregate; onRetry(): void }) {
+  const checking = agg.level === 'checking';
+  const [started] = useState(() => Date.now());
+  const now = useNow(1000, checking);
+  if (checking) {
+    const done = agg.components.filter((c) => c.state.status !== 'pending').length;
+    const secs = Math.round((now - started) / 1000);
     return (
-      <p className="evidence-line small muted" aria-live="polite" data-testid="evidence-progress">
-        <span className="spinner" aria-hidden="true" /> {reason ?? 'Checking in your browser'}. The first check in a browser can take a minute; later ones reuse what it proved.
-      </p>
+      <details className="evidence-progress small" data-testid="evidence-progress">
+        <summary aria-live="polite">
+          <span className="spinner" aria-hidden="true" /> Checking in this browser: {done} of {agg.components.length} done
+          <span className="muted"> · {secs} s{secs >= 45 ? '; slower than usual, still going' : ''}</span>
+          <span className="evidence-more">Details</span>
+        </summary>
+        <ol className="stages" data-testid="evidence-stages">
+          {agg.components.map((c) => (
+            <li key={c.id} className={`stage stage-${c.state.status}`}>
+              <span className="stage-mark" aria-hidden="true" />
+              <span>
+                <b>{STAGE[c.id].label}</b>{' '}
+                <span className="muted">
+                  {c.state.status === 'pending' ? `${(c.state.note ?? 'waiting for the checks before it').replace(/\.$/, '')}…` : c.state.status === 'proven' ? STAGE[c.id].done : c.state.reason}
+                </span>
+              </span>
+            </li>
+          ))}
+        </ol>
+        <p className="muted">
+          A first visit usually takes 10 to 40 seconds; later visits reuse what it proved and take a few. Until then the amount, votes and budget place above are
+          shown as Platform and the bridge report them, and nothing on this page waits for the checks.
+        </p>
+      </details>
     );
   }
-  if (level !== 'error') return null;
+  if (agg.level !== 'error') return null;
   return (
     <p className="evidence-line small" data-testid="evidence-unverified">
-      {reason ? `${reason.replace(/\.$/, '')}. ` : ''}The amount, votes and budget place above are shown as reported.{' '}
+      {agg.reason ? `${agg.reason.replace(/\.$/, '')}. ` : ''}The amount, votes and budget place above are shown as reported.{' '}
       <button type="button" className="linkish" onClick={onRetry} data-testid="evidence-retry">
         Try again
       </button>
@@ -180,6 +217,8 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
   const active = p.endEpoch > now;
   // Only link a URL that is the hash-committed one (the synchronous check passed).
   const host = row.content.ok ? urlHost(p.url) : null;
+  const short = !!host && isShortLink(host);
+  const resolved = useResolvedLink(p.url, short);
   const sched = row.schedule;
   const chain = trust.chain.report;
   // The proven threshold replaces the bridge's once the chain is verified.
@@ -214,7 +253,12 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
 
       <header className="p-hero">
         <div className="p-title">
-          <h1>{p.name}</h1>
+          <h1><Slug name={p.name} /></h1>
+          {post.state?.post?.title && !post.state.error && (
+            <p className="p-owner-title" data-testid="owner-title">
+              {post.state.post.title} <span className="small muted">· the owner's title</span>
+            </p>
+          )}
         </div>
         <div className="p-owner">
           <OwnerValue p={p} own={own} />
@@ -277,7 +321,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
               </p>
             )}
             <div className="chain-context"><span>Proposal and vote evidence</span><TrustBadge level={trust.aggregate.level} reason={trust.aggregate.reason} onOpen={() => setDrawer(true)} /></div>
-            <EvidenceLine level={trust.aggregate.level} reason={trust.aggregate.reason} onRetry={trust.recheck} />
+            <EvidenceLine agg={trust.aggregate} onRetry={trust.recheck} />
             {tallies.error && <ReadError error={tallies.error} what="Platform" lead="The tally could not be read" onRetry={() => setTalliesAttempt((n) => n + 1)} />}
             <VoteCta proposal={p} active={active && !lameDuck} />
           </section>
@@ -290,33 +334,85 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
 
           <section className="p-about" aria-labelledby="about-title">
             <h2 id="about-title">About this proposal</h2>
-            {ownerId && (
-              <ErrorBoundary what="owner's description">
-                <OwnerPost govHash={p.govHash} ownerId={ownerId} post={post} trustLevel={trust.aggregate.level} />
-              </ErrorBoundary>
-            )}
-            {!(post.state?.post && post.state.body !== null) && (
-              <>
-                <p className="muted" data-testid="about-link">
-                  {host ? (
-                    <>
-                      The owner describes it on their own page, outside Governance:{' '}
-                      <a href={p.url} target="_blank" rel="noopener noreferrer nofollow ugc" className="ext">
-                        {linkText(p.url, host)}
-                        <span className="visually-hidden"> (opens another site)</span>
-                      </a>
-                      .{isShortLink(host) && ' That is a shortened link, so where it leads shows only once you open it.'}
-                    </>
-                  ) : (
-                    'No description has been posted here yet.'
-                  )}
-                </p>
-                <p className="small muted" data-testid="about-recorded">
-                  The network records only what is above: the name, the amount, the payment window, the payee and this link. Nobody has checked what the
-                  linked page says. The owner can post a description here by claiming the proposal.
-                </p>
-              </>
-            )}
+            <div className="p-claims">
+              <section className="p-claim" aria-labelledby="owner-says" data-testid="about-owner">
+                <h3 id="owner-says">What the owner says</h3>
+                {ownerId && (
+                  <ErrorBoundary what="owner's description">
+                    <OwnerPost govHash={p.govHash} ownerId={ownerId} post={post} trustLevel={trust.aggregate.level} />
+                  </ErrorBoundary>
+                )}
+                {!(post.state?.post && post.state.body !== null) && (
+                  <p className="small" data-testid="about-link">
+                    {host ? (
+                      <>
+                        The owner hasn't posted a description here; it is on their own page:{' '}
+                        <a href={p.url} target="_blank" rel="noopener noreferrer nofollow ugc" className="ext">
+                          {linkText(p.url, host)}
+                          <span className="visually-hidden"> (opens another site)</span>
+                        </a>
+                        .
+                      </>
+                    ) : (
+                      "The owner hasn't posted a description here."
+                    )}{' '}
+                    <span className="muted">Nobody has checked what the linked page says. The owner can post a description here by claiming the proposal.</span>
+                  </p>
+                )}
+                {short && (
+                  <p className="small p-short" data-testid="about-short">
+                    {resolved ? (
+                      <>
+                        <b>{host} is a link shortener.</b> When this site was built ({formatDate(resolved.at)}) it led to{' '}
+                        <a href={resolved.to} target="_blank" rel="noopener noreferrer nofollow ugc" className="ext break" data-testid="about-short-to">
+                          {resolved.to}
+                          <span className="visually-hidden"> (opens another site)</span>
+                        </a>
+                        . Whoever made the short link can point it elsewhere, so check where it leads when you open it.
+                      </>
+                    ) : (
+                      <>
+                        <b>{host} is a link shortener</b>, so where it leads shows only once you open it.
+                      </>
+                    )}
+                  </p>
+                )}
+              </section>
+              <section className="p-claim p-recorded" aria-labelledby="network-records" data-testid="about-recorded">
+                <h3 id="network-records">What the network records</h3>
+                <dl className="kv small">
+                  <div>
+                    <dt>Name</dt>
+                    <dd className="break">{p.name}</dd>
+                  </div>
+                  <div>
+                    <dt>Asks</dt>
+                    <dd>
+                      {formatDash(p.paymentAmount)} {sched?.oneTime ? 'once' : perPayment(params)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Payment window</dt>
+                    <dd>
+                      {formatDate(p.startEpoch)} to {formatDate(p.endEpoch)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Pays</dt>
+                    <dd>
+                      <dashhq-hash value={p.paymentAddress} full="" label="payment address">
+                        {p.paymentAddress}
+                      </dashhq-hash>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Link</dt>
+                    <dd className="break">{row.content.ok ? p.url : <span className="muted">not shown: it doesn't match the proposal's hash</span>}</dd>
+                  </div>
+                </dl>
+                <p className="small muted">That is all a Dash proposal holds. Each field above matches the hash the network votes on.</p>
+              </section>
+            </div>
           </section>
 
           <ErrorBoundary what="discussion">
@@ -349,6 +445,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
                     <a href={p.url} target="_blank" rel="noopener noreferrer nofollow ugc" className="ext">
                       {host}
                     </a>
+                    {resolved && <span className="small muted"> leading to {urlHost(resolved.to)}</span>}
                   </dd>
                 </div>
               )}

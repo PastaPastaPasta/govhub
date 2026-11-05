@@ -81,7 +81,7 @@ async function proposals() {
       if (!p || typeof p.name !== 'string' || !SAFE_NAME.test(p.name) || typeof p.govHash !== 'string' || !HASH.test(p.govHash)) continue;
       if (!Number.isSafeInteger(p.paymentAmount) || !sane(p.startEpoch) || !sane(p.endEpoch) || seen.has(p.govHash)) continue;
       seen.add(p.govHash);
-      rows.push({ state, name: p.name, govHash: p.govHash, amount: p.paymentAmount, startEpoch: p.startEpoch, endEpoch: p.endEpoch, tally: p.tally ?? null, params, cycle });
+      rows.push({ state, name: p.name, govHash: p.govHash, url: typeof p.url === 'string' ? p.url : '', amount: p.paymentAmount, startEpoch: p.startEpoch, endEpoch: p.endEpoch, tally: p.tally ?? null, params, cycle });
     }
   }
   return rows;
@@ -158,6 +158,50 @@ async function masternodes() {
   return out;
 }
 
+/** Link shorteners (as src/lib/links.ts): where a proposal's shortened link led is resolved here, once per build. */
+const SHORTENERS = new Set(['bit.ly', 'tinyurl.com', 'shorturl.at', 't.co', 'goo.gl', 'ow.ly', 'is.gd', 'buff.ly', 'rebrand.ly', 'cutt.ly', 'tiny.cc', 'rb.gy', 's.id', 't.ly', 'shorturl.com', 'v.gd']);
+const isShortener = (u) => SHORTENERS.has(u.hostname.replace(/^www\./, '').toLowerCase());
+
+/**
+ * Where a shortened link leads: its redirects followed by hand (a HEAD, never the page), at most five, http(s) only, until a host
+ * that is not a shortener. Null when it doesn't resolve. Untrusted and dated: the page says when it was resolved and that it can change.
+ */
+async function resolveShort(url) {
+  let u;
+  try {
+    u = new URL(url);
+  } catch {
+    return null;
+  }
+  for (let hop = 0; hop < 5 && isShortener(u); hop++) {
+    let to = null;
+    // shorteners refuse bursts now and then (403, 429): a few tries, a little apart
+    for (let attempt = 0; attempt < 4 && !to; attempt++) {
+      if (attempt) await new Promise((r) => setTimeout(r, 1500 * attempt));
+      const res = await fetch(u, { method: 'HEAD', redirect: 'manual', signal: AbortSignal.timeout(10_000), headers: { 'user-agent': 'govhub-prerender/1 (+https://github.com/PastaPastaPasta/govhub)' } }).catch(() => null);
+      to = res && res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
+    }
+    if (!to) return null;
+    try {
+      u = new URL(to, u);
+    } catch {
+      return null;
+    }
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
+  }
+  return isShortener(u) ? null : u.href;
+}
+
+async function shortLinks(ps) {
+  const out = {};
+  const urls = [...new Set(ps.map((p) => p.url).filter((url) => { try { return isShortener(new URL(url)); } catch { return false; } }))];
+  for (const url of urls) {
+    const to = await resolveShort(url);
+    if (to && to.length <= 2048) out[url] = to;
+  }
+  return out;
+}
+
 const describeMasternode = (m, active) =>
   `How Dash ${m.evo ? 'evonode' : 'masternode'} ${m.proTx.slice(0, 8)}… voted on ${active ? `the ${formatInt(active)} active treasury proposals` : 'the active treasury proposals'}, and how to vote with it.`;
 
@@ -209,6 +253,8 @@ for (const p of ps) {
     ? { route: `/p/${p.name}`, record: p.name, description: `${formatInt(shared)} Dash treasury proposals are named ${p.name}. Pick one to see what it asks for and how masternodes voted.` }
     : { route: `/p/${p.name}`, record: p.name, description, canonical }));
 }
+const links = await settle('short links', () => shortLinks(ps));
+await fs.writeFile(path.join(dist, 'links.json'), JSON.stringify({ resolvedAt: now, links: Array.isArray(links) ? {} : links }));
 const activeCount = ps.filter((p) => p.state === 'active').length;
 for (const m of ms) {
   await write(`/masternodes/${m.proTx}`, head(template, { route: `/masternodes/${m.proTx}`, record: `Masternode ${m.proTx.slice(0, 6)}…${m.proTx.slice(-6)}`, description: describeMasternode(m, activeCount) }));
@@ -216,6 +262,6 @@ for (const m of ms) {
 for (const c of cs) {
   await write(`/names/${c.label}`, head(template, { route: `/names/${c.label}`, record: `${c.label}.dash name contest`, description: describeContest(c) }));
 }
-console.log(`prerender: ${written.size} entry pages (${ps.length} proposals, ${ms.length} masternodes, ${cs.length} name contests${cs.length ? `, ${cs.filter((c) => c.endsAt).length} open` : ''})${offline ? ', offline' : ''}`);
+console.log(`prerender: ${Object.keys(Array.isArray(links) ? {} : links).length} short links resolved; ${written.size} entry pages (${ps.length} proposals, ${ms.length} masternodes, ${cs.length} name contests${cs.length ? `, ${cs.filter((c) => c.endsAt).length} open` : ''})${offline ? ', offline' : ''}`);
 // evo-sdk keeps its connections open
 process.exit(0);
