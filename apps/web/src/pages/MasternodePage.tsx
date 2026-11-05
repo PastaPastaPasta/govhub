@@ -27,6 +27,22 @@ function shortDate(s: number): string {
 
 const isProTx = (s: string): boolean => /^[0-9a-f]{64}$/i.test(s);
 
+/**
+ * Radar's origin when this page load came from there to this masternode's page: Radar links here with the ProTx, and its referrer
+ * policy sends its origin. Read from the page load itself, so moving around in the app later doesn't make it up.
+ */
+function cameFromRadar(proTx: string): string | null {
+  try {
+    const radar = window.dashhq?.href('radar', '/');
+    if (!radar || !document.referrer) return null;
+    const entry = (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined)?.name ?? location.href;
+    if (new URL(entry).pathname.toLowerCase() !== `/masternodes/${proTx}`) return null;
+    return new URL(document.referrer).origin === new URL(radar).origin ? radar : null;
+  } catch {
+    return null;
+  }
+}
+
 export function MasternodePage() {
   const { proTx: raw = '' } = useParams();
   const proTx = raw.toLowerCase();
@@ -99,11 +115,18 @@ function MasternodeVotes({ proTx }: { proTx: string }) {
   }, [proposals, v.cells]);
   const deadline = cycle ? votingDeadlineTime(cycle, params) : null;
   const read = proposals.length - v.pending;
+  const fromRadar = useMemo(() => cameFromRadar(proTx), [proTx]);
 
   return (
     <section className="mnv-page" aria-labelledby="mnv-title" data-testid="mn-page">
-      <p className="crumbs dh-crumbs">
-        <Link to="/masternodes">‹ My masternodes</Link>
+      <p className="crumbs dh-crumbs" data-testid="mn-crumbs">
+        {fromRadar && radar ? (
+          <a href={radar}>‹ Back to Radar</a>
+        ) : owned ? (
+          <Link to="/masternodes">‹ My masternodes</Link>
+        ) : (
+          <Link to="/">‹ Active proposals</Link>
+        )}
       </p>
       <header className="mnv-head dh-page-header">
         <h1 className="dh-page-header__title" id="mnv-title">Masternode votes</h1>
@@ -205,9 +228,9 @@ function MasternodeVotes({ proTx }: { proTx: string }) {
                 <tr>
                   <th scope="col">Proposal</th>
                   <th scope="col" className="r">
-                    Asks
+                    Requests
                   </th>
-                  <th scope="col">Network</th>
+                  <th scope="col">Standing</th>
                   <th scope="col">This masternode</th>
                   <th scope="col">Decided by</th>
                   <th scope="col">
@@ -252,20 +275,20 @@ function WaysToVoteLine() {
     <p className="mnv-ways small muted" data-testid="mn-ways">
       {k.status === 'signed-out' ? (
         <>
-          <b>Is this your masternode?</b> Each row's <i>Sign offline</i> needs no account: sign with its voting key in Dash Core or a hardware wallet. To vote from
-          this browser instead,{' '}
+          <b>Is this your masternode?</b> Each row's <i>Vote</i> opens the proposal as this masternode: sign offline in Dash Core or with a hardware wallet, or
+          paste its voting key for that tab only. Neither needs an account. To keep its key for next time,{' '}
           <button type="button" className="linkish dh-btn dh-btn--link" onClick={openSignIn}>
             sign in
           </button>{' '}
-          and add its voting key (<Link to="/masternodes">ways to vote</Link>).
+          and add it (<Link to="/masternodes">ways to vote</Link>).
         </>
       ) : k.status === 'open' ? (
         <>
-          <b>Is this your masternode?</b> <Link to="/masternodes">Add its voting key</Link> to vote from this browser, or sign offline on any row.
+          <b>Is this your masternode?</b> <Link to="/masternodes">Add its voting key</Link> to vote from your keyring, or use any row's <i>Vote</i> to sign offline.
         </>
       ) : (
         <>
-          <b>Is this your masternode?</b> <Link to="/masternodes">Unlock your keyring</Link> to vote from this browser, or sign offline on any row.
+          <b>Is this your masternode?</b> <Link to="/masternodes">Unlock your keyring</Link> to vote from it, or use any row's <i>Vote</i> to sign offline.
         </>
       )}
     </p>
@@ -308,17 +331,16 @@ function MnVoteRow({ row, href, cell, decides, shared, now, per, open, onToggle,
   const common = decides !== null && decides === shared;
   const decideText =
     decides === null ? (row.lameDuck ? 'nothing left to decide' : '…') : decides <= now ? 'closed for the next payout' : common ? shortDate(decides) : `${shortDate(decides)} (${formatDuration(decides - now)})`;
-  const action = owned ? 'Vote' : 'Sign offline';
   return (
     <Fragment>
       <tr className={`mnv-row${open ? ' mnv-row-open' : ''}`} data-testid="mn-vote-row" data-govhash={p.govHash}>
         <td role="rowheader" data-label="Proposal" className="dh-rc-title">
-          <Link to={href}><Slug name={p.name} /></Link>
+          <Link to={`${href}?mn=${proTx}`}><Slug name={p.name} /></Link>
         </td>
-        <td className="r num" data-label="Request">
+        <td className="r num" data-label="Requests">
           {formatDash(p.paymentAmount)} <span className="muted small">{sched?.oneTime ? 'once' : per}</span>
         </td>
-        <td data-label="Passing state">
+        <td data-label="Standing">
           {status && (
             <span className={`mnv-status${tone ? ` mnv-${tone}` : ''}`}>
               <span className="dot" aria-hidden="true" />
@@ -334,20 +356,27 @@ function MnVoteRow({ row, href, cell, decides, shared, now, per, open, onToggle,
           {decideText}
         </td>
         <td className="mnv-action dh-rc-actions" data-label="Vote">
-          {canVote && (
-            <button type="button" className="btn dh-btn btn-s dh-btn--sm" aria-expanded={open} aria-controls={panelId} onClick={onToggle} data-testid="mn-vote-action">
-              {open ? 'Close' : action}
-              <span className="visually-hidden"> on {p.name}</span>
-            </button>
-          )}
+          {canVote &&
+            (owned ? (
+              <button type="button" className="btn dh-btn btn-s dh-btn--sm" aria-expanded={open} aria-controls={panelId} onClick={onToggle} data-testid="mn-vote-action">
+                {open ? 'Close' : 'Vote'}
+                <span className="visually-hidden"> on {p.name}</span>
+              </button>
+            ) : (
+              // the proposal's own vote block, as this masternode: offline signing filled in, or its voting key for this tab
+              <Link className="btn dh-btn btn-s dh-btn--sm" to={`${href}?mn=${proTx}#vote`} data-testid="mn-vote-action">
+                Vote
+                <span className="visually-hidden"> on {p.name}</span>
+              </Link>
+            ))}
         </td>
       </tr>
-      {open && (
+      {open && owned && (
         <tr className="mnv-panel-row">
           <td data-label="Voting options" className="dh-rc-actions" colSpan={6} id={panelId}>
             <div className="mnv-panel" data-testid="mn-vote-panel">
-              {owned ? <VoteComposer proposals={[p]} onlyMn={proTx} /> : <OfflineSign proposal={p} address={votingAddress} open />}
-              {owned && <OfflineSign proposal={p} address={votingAddress} />}
+              <VoteComposer proposals={[p]} onlyMn={proTx} />
+              <OfflineSign proposal={p} address={votingAddress} />
             </div>
           </td>
         </tr>

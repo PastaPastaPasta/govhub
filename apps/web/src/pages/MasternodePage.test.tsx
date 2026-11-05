@@ -98,14 +98,16 @@ describe('MasternodePage', () => {
     await r.unmount();
   });
 
-  it("opens offline signing with this masternode's voting address on a row", async () => {
+  it("sends each row's Vote to the proposal's vote block as this masternode, and says it needs no account", async () => {
     const r = await render(page());
     await act(async () => (hold.mnlist as Deferred<unknown>).resolve({ height: 5, listHash: 'x', masternodes: [MN] }));
-    const action = r.el.querySelector<HTMLButtonElement>('[data-testid="mn-vote-action"]')!;
-    expect(action.textContent).toContain('Sign offline');
-    await click(action);
-    expect(r.el.querySelector('[data-testid="offline"]')?.textContent).toBe(`offline ${MN.votingAddress} open`);
-    expect(r.el.querySelector('[data-testid="mn-ways"]')?.textContent).toContain('needs no account');
+    const action = r.el.querySelector<HTMLAnchorElement>('a[data-testid="mn-vote-action"]')!;
+    expect(action.textContent).toContain('Vote');
+    expect(action.getAttribute('href')).toBe(`/p/prop-1?mn=${PRO}#vote`);
+    expect(r.el.querySelector('[data-testid="mn-vote-row"] a')?.getAttribute('href')).toBe(`/p/prop-1?mn=${PRO}`);
+    expect(r.el.querySelector('[data-testid="mn-ways"]')?.textContent).toContain('Neither needs an account');
+    // a shared link, signed out: not "My masternodes"
+    expect(r.el.querySelector('[data-testid="mn-crumbs"]')?.textContent).toBe('‹ Active proposals');
     await r.unmount();
   });
 

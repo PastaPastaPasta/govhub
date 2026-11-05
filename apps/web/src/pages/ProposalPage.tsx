@@ -3,8 +3,8 @@
 // and adds up to one badge; its detail is in the "How do we know?" drawer.
 import { Slug } from '../ui/Slug.tsx';
 import { useTitle } from '../app/title.ts';
-import { useMemo, useRef, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useMemo, useState } from 'react';
+import { useLocation, useParams } from 'react-router-dom';
 import { Link } from '../ui/Link.tsx';
 import { urlClaimIdentity } from '@govhub/verify';
 import { useApp } from '../app/context.tsx';
@@ -18,10 +18,10 @@ import { StartsLaterPageStatus } from '../ui/StartsLater.tsx';
 import { ClaimPanel, OwnerPost, OwnerValue, RejectedClaims, useOwnership, useOwnerPost } from '../ui/Ownership.tsx';
 import { TrustBadge } from '../ui/trust/TrustBadge.tsx';
 import { useProposalTrust } from '../ui/trust/useProposalTrust.ts';
-import type { Aggregate, CheckId } from '../verify/aggregate.ts';
-import { useNow } from '../ui/vote/common.tsx';
+import type { Aggregate } from '../verify/aggregate.ts';
+import { trustScope, useCachedTrust, type StoredTrust } from '../ui/trust/store.ts';
 import { VerificationDrawer } from '../ui/trust/VerificationDrawer.tsx';
-import { OfflineSign, ProposalVotePanel } from '../ui/VotePanel.tsx';
+import { mnParam, ProposalVoteBlock } from '../ui/vote/VoteBlock.tsx';
 import { useAsync } from '../ui/hooks.ts';
 import type { Proposal, Sourced } from '../data/types.ts';
 import { formatDash, formatDate, formatDateTime, formatDuration, formatInt, shortHash, urlHost } from '../lib/format.ts';
@@ -30,7 +30,6 @@ import { deriveRow } from '../lib/view.ts';
 import { isShortLink, useResolvedLink } from '../lib/links.ts';
 import { isLowerBound } from '../verify/chain.ts';
 import { paymentsFact, thresholdFact } from '../verify/facts.ts';
-import { useKeyring } from '../voting/KeyringContext.tsx';
 
 export function ProposalByHash() {
   const { hash = '' } = useParams();
@@ -98,32 +97,6 @@ function NotFound({ what }: { what: string }) {
   );
 }
 
-/**
- * Masternode owners without an open keyring get a pointer, and offline signing (the key never enters the page); with a keyring, the
- * vote panel right below is the call to action.
- */
-function VoteCta({ proposal, active }: { proposal: Proposal; active: boolean }) {
-  const k = useKeyring();
-  if (!active || k.status === 'open') return null;
-  return (
-    <div className="p-vote-cta">
-      <p className="small muted" data-testid="vote-cta-line">
-        {k.status === 'signed-out' ? (
-          <>
-            Own a masternode? Voting from this browser needs an account here and the masternode's voting key (<Link to="/masternodes">ways to vote</Link>). Or sign
-            offline below, with no account.
-          </>
-        ) : (
-          <>
-            Own a masternode? <Link to="/masternodes">Add your voting key</Link> to vote here, or sign offline below.
-          </>
-        )}
-      </p>
-      <OfflineSign proposal={proposal} />
-    </div>
-  );
-}
-
 /** The host, plus the path when it is short enough to read (a shortened link is all path). */
 function linkText(url: string, host: string): string {
   try {
@@ -135,57 +108,8 @@ function linkText(url: string, host: string): string {
   }
 }
 
-/** Each check as the stage list names it: what it establishes once done. */
-const STAGE: Record<CheckId, { label: string; done: string }> = {
-  content: { label: 'Proposal text', done: 'matches the hash the network holds' },
-  collateral: { label: 'Submission fee', done: 'proven into a ChainLocked block' },
-  chain: { label: 'Chain and masternode list', done: 'anchored; threshold and budget computed here' },
-  votes: { label: 'Vote count', done: 'recounted from the signed votes' },
-  funding: { label: 'Funding', done: 'payments and budget place checked' },
-};
-
-/**
- * What the evidence badge means right now. While checking: one line (how many checks are done, for how long, and what to expect),
- * with the checks themselves, what each has established and what is running, folded below it. On failure: the reason and Try again.
- */
+/** Why the checks didn't finish, what still holds, and Try again. Nothing while they run: the badge above shows their progress. */
 function EvidenceLine({ agg, onRetry }: { agg: Aggregate; onRetry(): void }) {
-  const checking = agg.level === 'checking';
-  // the clock starts again with each run of the checks (Try again, Re-check)
-  const started = useRef(Date.now());
-  const wasChecking = useRef(checking);
-  if (checking && !wasChecking.current) started.current = Date.now();
-  wasChecking.current = checking;
-  const now = useNow(1000, checking);
-  if (checking) {
-    const done = agg.components.filter((c) => c.state.status !== 'pending').length;
-    const secs = Math.max(0, Math.round((now - started.current) / 1000));
-    return (
-      <details className="evidence-progress small" data-testid="evidence-progress">
-        <summary>
-          <span className="spinner" aria-hidden="true" /> <span aria-live="polite">Checking in this browser: {done} of {agg.components.length} done</span>
-          <span className="muted" aria-hidden="true"> · {secs} s{secs >= 45 ? '; slower than usual, still going' : ''}</span>
-          <span className="evidence-more">Details</span>
-        </summary>
-        <ol className="stages" data-testid="evidence-stages">
-          {agg.components.map((c) => (
-            <li key={c.id} className={`stage stage-${c.state.status}`}>
-              <span className="stage-mark" aria-hidden="true" />
-              <span>
-                <b>{STAGE[c.id].label}</b>{' '}
-                <span className="muted">
-                  {c.state.status === 'pending' ? `${(c.state.note ?? 'waiting for the checks before it').replace(/\.$/, '')}…` : c.state.status === 'proven' ? STAGE[c.id].done : c.state.reason}
-                </span>
-              </span>
-            </li>
-          ))}
-        </ol>
-        <p className="muted">
-          A first visit usually takes 10 to 40 seconds; later visits reuse what it proved and take a few. Until then the amount, votes and budget place above are
-          shown as Platform and the bridge report them, and nothing on this page waits for the checks.
-        </p>
-      </details>
-    );
-  }
   if (agg.level !== 'error') return null;
   return (
     <p className="evidence-line small" data-testid="evidence-unverified">
@@ -197,10 +121,40 @@ function EvidenceLine({ agg, onRetry }: { agg: Aggregate; onRetry(): void }) {
   );
 }
 
+/**
+ * The header's one status: the badge, with the checks' progress while they run ("Checking 3 of 5"). A result this browser proved
+ * earlier for the very tally shown stays up while the checks run again, so a return visit doesn't flicker back to "Checking".
+ */
+function TrustStatus({ agg, cached, onOpen }: { agg: Aggregate; cached: StoredTrust | null; onOpen(): void }) {
+  const checking = agg.level === 'checking';
+  const done = agg.components.filter((c) => c.state.status !== 'pending').length;
+  if (checking && cached?.level === 'verified') {
+    const ago = `${formatDuration(Math.max(60, Math.floor((Date.now() - cached.at) / 1000)))} ago`;
+    return (
+      <span className="trust-status" data-testid="trust-status">
+        <TrustBadge level="verified" reason={`Proved in this browser ${ago}; checking again now`} onOpen={onOpen} />
+        <span className="small muted" aria-live="polite">
+          proved {ago}, checking again
+        </span>
+      </span>
+    );
+  }
+  return (
+    <span className="trust-status" data-testid="trust-status">
+      <TrustBadge level={agg.level} reason={agg.reason} onOpen={onOpen} {...(checking ? { label: `Checking ${done} of ${agg.components.length}` } : {})} />
+      {checking && (
+        <span className="small muted" aria-live="polite" data-testid="evidence-progress">
+          in this browser; a first visit takes 10 to 40 seconds
+        </span>
+      )}
+    </span>
+  );
+}
+
 export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
   const { source, gov, params, checks } = useApp();
-  const k = useKeyring();
   const p = sp.value;
+  const mn = mnParam(useLocation().search);
   useTitle(p.name);
   const now = source.now();
   const [talliesAttempt, setTalliesAttempt] = useState(0);
@@ -209,6 +163,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
   // The Platform tally document whenever there is one: the recount is checked against that proven record, not the bridge's own.
   const row = useMemo(() => deriveRow(sp, tallies.data ?? new Map(), gov.bridgeTallies, cycle, params, now, 'platform'), [sp, tallies.data, gov.bridgeTallies, cycle, params, now]);
   const trust = useProposalTrust(p, row, tallies.loading);
+  const cachedTrust = useCachedTrust(trustScope(source), p, row.tally?.value ?? null);
   const [drawer, setDrawer] = useState(false);
   const check = checks.state(p);
 
@@ -243,7 +198,13 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
   return (
     <article className="proposal">
       <p className="crumbs dh-crumbs">
-        <Link to={active ? '/' : '/past'}>‹ {active ? 'Active proposals' : 'Past proposals'}</Link>
+        {mn ? (
+          <Link to={`/masternodes/${mn}`} data-testid="crumb-mn">
+            ‹ Masternode {shortHash(mn, 6)}’s votes
+          </Link>
+        ) : (
+          <Link to={active ? '/' : '/past'}>‹ {active ? 'Active proposals' : 'Past proposals'}</Link>
+        )}
       </p>
       {check.status === 'failed' && (
         <p className="invalid-banner dh-notice dh-notice--error" role="alert" data-testid="invalid-banner">
@@ -265,7 +226,9 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
           <OwnerValue p={p} own={own} />
           <RejectedClaims own={own} />
         </div>
-        <div className="dh-page-header__meta"><TrustBadge level={trust.aggregate.level} reason={trust.aggregate.reason} onOpen={() => setDrawer(true)} /></div>
+        <div className="dh-page-header__meta">
+          <TrustStatus agg={trust.aggregate} cached={cachedTrust} onOpen={() => setDrawer(true)} />
+        </div>
       </header>
 
       <div className="p-layout">
@@ -295,14 +258,12 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
             {active && !lameDuck && !later && t && (
               <p className="p-status">
                 {inBudget ? <span className="tag dh-badge tag-pass dh-badge--good">In the next budget</span> : state?.passing ? <span className="tag dh-badge tag-warn dh-badge--warn">Passing, but the next budget is full</span> : null}
-                {(inBudget || state?.passing) && trust.funded === null && (
+                {(inBudget || state?.passing) && trust.funded === null && trust.aggregate.level !== 'checking' && (
                   <span className="small muted" data-testid="budget-reported" title="The budget place is the published tally's; it counts as verified once this browser has recounted the votes and the funding order">
-                    {trust.aggregate.level === 'checking' ? 'checking…' : 'as reported, not verified here'}
+                    as reported, not verified here
                   </span>
                 )}
-                {untilDeadline !== null && (
-                  <span className="muted">{untilDeadline > 0 ? `Voting closes in ${formatDuration(untilDeadline)}` : 'Voting for this payout has closed; new votes count toward the next one'}</span>
-                )}
+                {/* the vote block below says when voting closes */}
               </p>
             )}
             {t && (
@@ -325,12 +286,11 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
 
             <EvidenceLine agg={trust.aggregate} onRetry={trust.recheck} />
             {tallies.error && <ReadError error={tallies.error} what="Platform" lead="The tally could not be read" onRetry={() => setTalliesAttempt((n) => n + 1)} />}
-            <VoteCta proposal={p} active={active && !lameDuck} />
           </section>
 
-          {active && !lameDuck && k.status === 'open' && (
+          {active && !lameDuck && (
             <ErrorBoundary what="masternode voting">
-              <ProposalVotePanel proposal={p} onVerify={() => setDrawer(true)} />
+              <ProposalVoteBlock proposal={p} mn={mn} closesIn={later ? null : untilDeadline} onVerify={() => setDrawer(true)} />
             </ErrorBoundary>
           )}
 
@@ -390,7 +350,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
                       <dd className="break">{p.name}</dd>
                     </div>
                     <div>
-                      <dt>Asks</dt>
+                      <dt>Requests</dt>
                       <dd>
                         {formatDash(p.paymentAmount)} {sched?.oneTime ? 'once' : perPayment(params)}
                       </dd>

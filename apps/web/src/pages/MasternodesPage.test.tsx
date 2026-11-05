@@ -131,7 +131,8 @@ describe('signed out', () => {
     hold.ctx = { ...ctxFor(openKeyring(), 'mainnet'), status: 'signed-out', keyring: null } as unknown as Ctx;
     const r = await render(page());
     const ways = r.el.querySelector('[data-testid="vote-ways"]');
-    expect(ways?.textContent).toContain('Proposals, from this browser');
+    expect(ways?.textContent).toContain('Proposals, from your account');
+    expect(ways?.textContent).toContain('paste the voting key there');
     expect(ways?.textContent).toContain('Needs an account here');
     expect(ways?.textContent).toContain('Proposals, without an account');
     expect(ways?.textContent).toContain('Name contests, without an account');

@@ -869,8 +869,8 @@ function AddedBanner({ added, onClose }: { added: Added; onClose(): void }) {
 }
 
 /**
- * Signed out: what each way of voting needs, before anything is asked for. Browser voting on proposals keeps its keys in a keyring that
- * belongs to an account (a Platform identity); offline signing and pasted contest keys need none.
+ * Signed out: what each way of voting needs, before anything is asked for. A keyring that keeps voting keys belongs to an account (a
+ * Platform identity); offline signing and voting keys pasted for one tab need none.
  */
 function WaysToVote() {
   const k = useKeyring();
@@ -879,7 +879,7 @@ function WaysToVote() {
       <h2 id="vote-ways-title">Three ways to vote</h2>
       <ol className="vote-ways-list">
         <li>
-          <h3>Proposals, from this browser</h3>
+          <h3>Proposals, from your account</h3>
           <p>
             Needs an account here and each masternode's voting key. The account is a Dash Platform identity: create one for about 0.005 DASH,
             or sign in with one you have. It keeps your voting keys in an encrypted keyring that comes back when you sign in again, or only in
@@ -892,10 +892,11 @@ function WaysToVote() {
         <li>
           <h3>Proposals, without an account</h3>
           <p>
+            Each open proposal has <b>Vote on this proposal</b>. Sign the vote offline:{' '}
             {k.coreNetwork === 'testnet'
-              ? 'Sign each vote hash with your own tooling (on Testnet, Dash Core’s signmessage can’t make that signature), or broadcast it yourself with voteraw.'
-              : 'Sign each vote with signmessage in Dash Core or with a hardware wallet.'}{' '}
-            The page of each proposal still open for votes has <b>Sign offline instead</b> with the exact text or command.
+              ? 'on Testnet, sign its vote hash with your own tooling (Dash Core’s signmessage can’t make that signature), or broadcast it yourself with voteraw.'
+              : 'the page gives the Dash Core signmessage command, or the text for a hardware wallet.'}{' '}
+            Or paste the voting key there: it stays in that tab’s memory and is forgotten after 15 minutes idle.
           </p>
           <Link to="/">Choose a proposal</Link>
         </li>

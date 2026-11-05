@@ -1504,3 +1504,127 @@
 }
 
 }
+
+/* ---- the proposal page's "Vote on this proposal" ------------------------------------------------ */
+.pvote {
+  gap: var(--s-4);
+  scroll-margin-block-start: 5rem;
+}
+.pvote-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+}
+.pvote-head h2 {
+  font-size: var(--t-l);
+  margin: 0;
+}
+.pvote-mn {
+  display: grid;
+  gap: 0.375rem;
+  padding: 0.625rem 0.875rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+  border-radius: var(--radius-m);
+  background: color-mix(in srgb, var(--accent-wash) 40%, var(--surface));
+}
+.pvote-mn p {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
+}
+.pvote-mn dashhq-hash {
+  min-inline-size: 0;
+}
+.pvote-now {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+.pvote-mn-links {
+  gap: 0.25rem 1.25rem !important;
+}
+.pvote-ways {
+  display: grid;
+  gap: 0.5rem;
+}
+.pvote-ways > p {
+  margin: 0;
+}
+.pvote-seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+.pvote-seg-opt {
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  min-block-size: var(--dh-ctl-h);
+  padding: 0.25rem 0.875rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.pvote-seg-opt:hover {
+  background: var(--sunk);
+  color: var(--ink);
+}
+.pvote-seg-opt[aria-checked='true'] {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+  color: var(--accent-ink);
+}
+.pvote-paste,
+.pvote-account {
+  display: grid;
+  gap: 0.625rem;
+  justify-items: start;
+}
+.pvote-paste .secret-field {
+  inline-size: 100%;
+}
+.pvote-paste p,
+.pvote-account p {
+  margin: 0;
+}
+.pvote-keys {
+  display: grid;
+  gap: 0.5rem;
+}
+.pvote-keys p {
+  margin: 0;
+}
+.vote-offline-body {
+  display: grid;
+  gap: 0.625rem;
+}
+.vote-offline-body > p {
+  margin: 0;
+}
+.vote-offline-body .form-actions .vinput {
+  flex: 1 1 18rem;
+  min-inline-size: 0;
+}
+.vcmd {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.25rem;
+}
+.vcmd .code {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.trust-status {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.625rem;
+}

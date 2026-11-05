@@ -1,5 +1,6 @@
 // Voting keys pasted without an account (what vote.dashhq.org offered): kept in this tab's memory only, never stored and never sent
-// anywhere, and used only to sign username contest votes. They are wiped after 15 minutes without use, on "Forget", when the network
+// anywhere, and used only to sign votes in this tab (username contests, and proposal votes the page then hands to a relay, signed;
+// ui/vote/VoteBlock.tsx). They are wiped after 15 minutes without use, on "Forget", when the network
 // changes, and when the page is hidden for good (pagehide, as the keyring does: D-025). Only keys that are some masternode's current
 // voting key are kept; the rest are wiped as soon as the lookup says so. Signing in wipes them too (the keyring takes over).
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';

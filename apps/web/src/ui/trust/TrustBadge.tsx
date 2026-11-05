@@ -16,8 +16,8 @@ export function ShieldIcon({ level, size = 18 }: { level: TrustLevel; size?: num
   );
 }
 
-export function TrustBadge({ level, reason, onOpen, size = 'm', testId = 'trust-badge' }: { level: TrustLevel; reason: string | null; onOpen?: () => void; size?: 's' | 'm'; testId?: string }) {
-  const label = LEVEL_LABEL[level];
+/** `label`: the word instead of the level's own ("Checking 3 of 5"). */
+export function TrustBadge({ level, reason, onOpen, size = 'm', testId = 'trust-badge', label = LEVEL_LABEL[level] }: { level: TrustLevel; reason: string | null; onOpen?: () => void; size?: 's' | 'm'; testId?: string; label?: string }) {
   const described = `${label}${reason ? `: ${reason}` : ''}`;
   const body = (
     <>

@@ -22,14 +22,14 @@ vi.mock('../app/context.tsx', () => ({
   }),
 }));
 vi.mock('../app/forum.tsx', () => ({ useForum: () => ({ session: null }) }));
-vi.mock('../voting/KeyringContext.tsx', () => ({ useKeyring: () => ({ status: hold.keyring }) }));
 vi.mock('../ui/Discussion.tsx', () => ({ Discussion: () => null }));
 vi.mock('../ui/ReadError.tsx', () => ({ ReadError: () => null }));
 vi.mock('../ui/WriteError.tsx', () => ({ WriteError: () => null }));
 vi.mock('../ui/SignIn.tsx', () => ({ openSignIn: () => {} }));
 vi.mock('../ui/trust/TrustBadge.tsx', () => ({ TrustBadge: () => null }));
 vi.mock('../ui/trust/VerificationDrawer.tsx', () => ({ VerificationDrawer: () => null }));
-vi.mock('../ui/VotePanel.tsx', () => ({ OfflineSign: () => null, ProposalVotePanel: () => <div data-testid="vote-panel" /> }));
+vi.mock('../ui/vote/VoteBlock.tsx', () => ({ mnParam: () => null, ProposalVoteBlock: ({ closesIn }: { closesIn: number | null }) => <div data-testid="vote-panel">{closesIn !== null && 'Voting closes in (the block)'}</div> }));
+vi.mock('../ui/trust/store.ts', () => ({ trustScope: () => 'test', useCachedTrust: () => null }));
 vi.mock('../ui/Ownership.tsx', () => ({
   ClaimPanel: () => null,
   OwnerPost: () => null,
@@ -40,7 +40,7 @@ vi.mock('../ui/Ownership.tsx', () => ({
 }));
 vi.mock('../ui/trust/useProposalTrust.ts', () => ({
   useProposalTrust: () => ({
-    aggregate: { level: 'verified', reason: null },
+    aggregate: { level: 'verified', reason: null, components: [] },
     collateral: { verdict: null },
     chain: { report: hold.report, error: null, unavailable: false },
     funded: hold.funded,
