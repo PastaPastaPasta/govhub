@@ -1,7 +1,7 @@
 // The header's chain status: a small shield with the network profile's short name. The worker anchors the chain for the active
 // profile (the same anchored chain every proposal page then reuses); the drawer says what it rests on.
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from '../Link.tsx';
 import { useApp } from '../../app/context.tsx';
 import { customFields, PROFILES } from '../../config/registry.ts';
 import type { DataSource } from '../../data/repo.ts';
@@ -83,7 +83,7 @@ export function ChainShield() {
     <>
       <button type="button" className={`chainchip trust-${level}`} onClick={() => setOpen(true)} data-testid="profile-label" data-trust={level} aria-label={`${p.title}${custom ? ', with custom settings' : ''}. ${line}`} title={line}>
         <ShieldIcon level={level} size={16} />
-        <span aria-hidden="true">{mode === 'fixtures' ? 'Demo' : p.label}</span>
+        <span aria-hidden="true">{mode === 'fixtures' ? 'Demo data' : level === 'checking' ? 'Checking chain proof' : level === 'verified' ? 'Chain verified' : level === 'error' ? 'Chain not verified' : 'Chain partly checked'}</span>
         <span className="visually-hidden">{p.title}</span>
         {custom && <span className="chip-custom">custom</span>}
       </button>

@@ -113,10 +113,13 @@ export function ContestsPage() {
   return (
     <section aria-labelledby="names-title" className="list-section contests">
       <div className="list-head">
-        <h1 id="names-title">Usernames</h1>
-        <p className="muted contests-intro">
+        <h1 id="names-title">Name contests</h1>
+        <p className="muted contests-intro">Masternodes decide who gets a contested name. Open contests close soonest first.</p>
+        <details className="learn"><summary>How name contests work</summary>
+        <p className="small muted">
           Usernames of 3 to 19 characters that use only letters, hyphens, 0 and 1 go to a masternode vote when someone registers one. Masternodes decide who gets it, or lock it so nobody does. Others can ask for the same name {timing}.
         </p>
+        </details>
         <label className="contests-search">
           <span className="visually-hidden">Find a username</span>
           <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a username" autoComplete="off" spellCheck={false} data-testid="names-search" />

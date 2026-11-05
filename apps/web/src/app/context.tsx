@@ -1,4 +1,6 @@
-// App-wide state: endpoint registry, data mode, the data source built from them, theme, and the
+import { useLocation, useNavigate } from 'react-router-dom';
+import { profileFromSearch, profileSearch } from '../config/network.ts';
+// App-wide state: endpoint registry, data mode, the data source built from them, and the
 // governance snapshot (cycle, height, active proposals, tallies) shared by the header and lists.
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { loadSavedRegistry, registryScope, saveRegistry, registryForProfile, type ProfileId, type Registry } from '../config/registry.ts';
@@ -12,8 +14,6 @@ import { byRank, deriveRow, partitionByCheck, type Checked, type Row } from '../
 import { ProposalChecks, type CheckCache, type StoredCheck } from '../verify/checks.ts';
 import { runVerification } from '../verify/client.ts';
 
-export type Theme = 'system' | 'light' | 'dark';
-const THEME_KEY = 'govhub.theme';
 
 export interface Load<T> {
   data?: T;
@@ -55,8 +55,6 @@ interface Ctx {
   setMode(m: DataMode): void;
   source: DataSource;
   params: GovParams;
-  theme: Theme;
-  setTheme(t: Theme): void;
   gov: GovSnapshot;
   checks: ProposalChecks;
   activeRows: ActiveRows;
@@ -159,11 +157,14 @@ function makeChecks(source: DataSource): ProposalChecks {
 }
 
 export function AppProvider({ children, initialMode }: { children: ReactNode; initialMode?: DataMode }) {
+  const loc = useLocation();
+  const navigate = useNavigate();
   const [saved] = useState(() => loadSavedRegistry());
-  const [registry, setRegistryState] = useState<Registry>(saved.registry);
+  const [configuredRegistry, setRegistryState] = useState<Registry>(saved.registry);
+  const profile = profileFromSearch(loc.search);
+  const registry = useMemo(() => configuredRegistry.profile === profile ? configuredRegistry : registryForProfile(configuredRegistry, profile), [configuredRegistry, profile]);
   const [settingsProblem, setSettingsProblem] = useState<string[] | null>(saved.errors.length ? saved.errors : null);
   const [mode, setModeState] = useState<DataMode>(() => initialMode ?? resolveMode(location.search, sessionStorage, import.meta.env.VITE_GOVHUB_FIXTURES));
-  const [theme, setThemeState] = useState<Theme>(() => (localStorage.getItem(THEME_KEY) as Theme | null) ?? 'system');
   const [nonce, setNonce] = useState(0);
   const source = useMemo(() => createSource(mode, registry), [mode, registry]);
   const gov = useGovSnapshot(source, nonce);
@@ -183,25 +184,17 @@ export function AppProvider({ children, initialMode }: { children: ReactNode; in
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gov.active.data, gov.tallies, gov.bridgeTallies, gov.cycle.data, params, now, checks, checksVersion]);
 
-  useEffect(() => {
-    const el = document.documentElement;
-    if (theme === 'system') el.removeAttribute('data-theme');
-    else el.setAttribute('data-theme', theme);
-  }, [theme]);
-
   const setRegistry = useCallback((r: Registry) => {
     saveRegistry(r);
     setRegistryState(r);
     setSettingsProblem(null);
-  }, []);
+    const search = profileSearch(loc.search, r.profile);
+    if (search !== loc.search) navigate({ pathname: loc.pathname, search, hash: loc.hash }, { replace: true });
+  }, [loc, navigate]);
   const dismissSettingsProblem = useCallback(() => setSettingsProblem(null), []);
   const setMode = useCallback((m: DataMode) => {
     persistMode(m);
     setModeState(m);
-  }, []);
-  const setTheme = useCallback((t: Theme) => {
-    localStorage.setItem(THEME_KEY, t);
-    setThemeState(t);
   }, []);
   const reload = useCallback(() => setNonce((n) => n + 1), []);
   const switchProfile = useCallback(
@@ -216,8 +209,8 @@ export function AppProvider({ children, initialMode }: { children: ReactNode; in
   );
 
   const value = useMemo<Ctx>(
-    () => ({ registry, setRegistry, settingsProblem, dismissSettingsProblem, switchProfile, mode, setMode, source, params, theme, setTheme, gov, checks, activeRows, reload }),
-    [registry, setRegistry, settingsProblem, dismissSettingsProblem, switchProfile, mode, setMode, source, params, theme, setTheme, gov, checks, activeRows, reload],
+    () => ({ registry, setRegistry, settingsProblem, dismissSettingsProblem, switchProfile, mode, setMode, source, params, gov, checks, activeRows, reload }),
+    [registry, setRegistry, settingsProblem, dismissSettingsProblem, switchProfile, mode, setMode, source, params, gov, checks, activeRows, reload],
   );
   return <AppCtx.Provider value={value}>{children}</AppCtx.Provider>;
 }

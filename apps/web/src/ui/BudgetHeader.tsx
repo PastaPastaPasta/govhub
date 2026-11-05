@@ -1,6 +1,7 @@
+import { ChainShield } from './trust/ChainShield.tsx';
 // The landing summary: when the next payout is, how much of the budget is promised, and what it takes to pass. The strip shows
 // each proposal in the next budget as a segment of the treasury.
-import { Link } from 'react-router-dom';
+import { Link } from './Link.tsx';
 import { useApp } from '../app/context.tsx';
 import { formatDash, formatDashAmount, formatDate, formatDuration, formatInt, formatPercent } from '../lib/format.ts';
 import { fundingThreshold, superblockCadence, votingDeadlineTime } from '../lib/governance.ts';
@@ -119,6 +120,7 @@ export function BudgetHeader() {
           </dd>
         </div>
       </dl>
+      <div className="chain-context"><span>Chain evidence</span><ChainShield /></div>
       <details className="learn">
         <summary>How funding works</summary>
         <p className="strip-legend small muted">

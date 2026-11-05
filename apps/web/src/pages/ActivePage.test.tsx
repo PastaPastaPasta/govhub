@@ -89,7 +89,7 @@ describe('ActivePage with a lame duck', () => {
     expect(card.dataset.lameduck).toBe('true');
     expect(card.textContent).toContain('pshenmic-dev-dash-desktop-november-2026');
     expect(card.textContent).toContain('No more payments possible');
-    expect(card.textContent).toContain('Ends Oct 27, 2026');
+    expect(card.textContent).toContain('Ends 27 Oct 2026');
     expect(card.textContent).not.toMatch(/Passing by|In the next budget|Not in the next budget|payments left|final payment/);
     expect(card.querySelector('.fund, [role="meter"], meter, progress')).toBeNull();
     expect(card.className).toContain('prow-ended');

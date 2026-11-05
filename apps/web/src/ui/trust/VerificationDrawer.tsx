@@ -3,7 +3,7 @@
 // proposal's raw data and hashes; and what no check here can detect. Everything runs automatically (ui/trust/useProposalTrust.ts).
 import { parseProposalData } from '@govhub/verify';
 import { useMemo, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from '../Link.tsx';
 import { useApp } from '../../app/context.tsx';
 import type { Cycle, Proposal, Sourced } from '../../data/types.ts';
 import { formatDash, formatDateTime, formatInt, formatRelative, shortHash } from '../../lib/format.ts';

@@ -3,7 +3,8 @@
 import type { Profile } from '@govhub/forum';
 import { EVONODE_WEIGHT } from '@govhub/verify';
 import { useEffect, useMemo, useState } from 'react';
-import { Link, Navigate, useParams } from 'react-router-dom';
+import { Navigate, useLocation, useParams } from 'react-router-dom';
+import { Link } from '../ui/Link.tsx';
 import { useForum } from '../app/forum.tsx';
 import { AuthorName, Avatar } from '../ui/Identity.tsx';
 import { Discussion } from '../ui/Discussion.tsx';
@@ -24,8 +25,9 @@ const CLOSING_REREAD_MS = 20_000;
 
 export function ContestPage() {
   const { label: raw = '' } = useParams();
+  const { search } = useLocation();
   const label = normalizeLabel(raw);
-  if (label !== raw) return <Navigate replace to={contestHref(label)} />;
+  if (label !== raw) return <Navigate replace to={contestHref(label) + search} />;
   if (!isContestedLabel(label))
     return (
       <Missing label={label}>
@@ -40,7 +42,7 @@ function Missing({ label, children }: { label: string; children: string }) {
     <section className="page-narrow">
       <h1>No contest for {label}.dash</h1>
       <p>
-        {children} <Link to="/names">All contested usernames</Link>
+        {children} <Link to="/names">All name contests</Link>
       </p>
     </section>
   );
@@ -91,9 +93,9 @@ function ContestView({ label }: { label: string }) {
   const open = useAsync(() => src.open().catch(() => []), [src]);
   const endsAt = open.data?.find((c) => c.label === label)?.endsAt ?? null;
   // while a closed contest waits for its result it is read again in the background: the page keeps showing the last good read
-  const [fresh, setFresh] = useState<{ key: string; s: ContestState } | null>(null);
+  const [fresh, setFresh] = useState<{ src: typeof src; key: string; s: ContestState } | null>(null);
   const [rereads, setRereads] = useState(0);
-  const s = fresh?.key === label && state.data ? fresh.s : state.data;
+  const s = fresh?.src === src && fresh.key === label && state.data ? fresh.s : state.data;
   const who = useIdentities(s ? s.contenders.map((c) => c.identityId) : []);
   // the contenders are this discussion's featured authors, as a proposal's owner is on its page
   const contenderKey = s ? s.contenders.map((c) => c.identityId).sort().join(',') : '';
@@ -105,7 +107,7 @@ function ContestView({ label }: { label: string }) {
     const t = setTimeout(() => {
       src.forget(label);
       src.state(label).then(
-        (x) => live && setFresh({ key: label, s: x }),
+        (x) => live && setFresh({ src, key: label, s: x }),
         () => live && setRereads((n) => n + 1), // try again in a while
       );
     }, CLOSING_REREAD_MS);
@@ -120,7 +122,7 @@ function ContestView({ label }: { label: string }) {
     if (!sentHere) return;
     let live = true;
     src.state(label).then(
-      (x) => live && setFresh({ key: label, s: x }),
+      (x) => live && setFresh({ src, key: label, s: x }),
       () => {},
     );
     return () => {
@@ -144,7 +146,7 @@ function ContestView({ label }: { label: string }) {
   return (
     <article className="proposal contest" data-testid="contest-page">
       <p className="crumbs">
-        <Link to="/names">‹ Usernames</Link>
+        <Link to="/names">‹ Name contests</Link>
       </p>
       <header className="p-hero">
         <div className="p-title">
@@ -156,6 +158,7 @@ function ContestView({ label }: { label: string }) {
         {regAs && <p className="muted">Registers as {regAs}.dash</p>}
       </header>
 
+      <p className="small muted">Elsewhere: <a href={window.dashhq?.href('explorer', '/dpns?name=' + encodeURIComponent(label))}>Username in Explorer</a></p>
       <div className="p-layout">
         <div className="p-main">
           <section className="panel c-ballot" aria-labelledby="c-votes-title">
@@ -168,7 +171,7 @@ function ContestView({ label }: { label: string }) {
             <BallotBar state={s} />
             <ol className="c-choices" data-testid="contenders">
               {s.contenders.map((c, i) => (
-                <ContenderRow key={c.identityId} c={c} rank={i} total={s.total} won={winner === c.identityId} dpns={who.names.get(c.identityId)} profile={who.profiles.get(c.identityId)} />
+                <ContenderRow key={c.identityId} label={label} c={c} rank={i} total={s.total} won={winner === c.identityId} dpns={who.names.get(c.identityId)} profile={who.profiles.get(c.identityId)} />
               ))}
               <li className="c-choice">
                 <span className="c-swatch cb-abstain" aria-hidden="true" />
@@ -243,7 +246,7 @@ function Tally({ n, total }: { n: number; total: number }) {
   );
 }
 
-function ContenderRow({ c, rank, total, won, dpns, profile }: { c: Contender; rank: number; total: number; won: boolean; dpns?: string | undefined; profile?: Profile | undefined }) {
+function ContenderRow({ label, c, rank, total, won, dpns, profile }: { label: string; c: Contender; rank: number; total: number; won: boolean; dpns?: string | undefined; profile?: Profile | undefined }) {
   return (
     <li className={`c-choice${won ? ' c-won' : ''}`} data-testid="contender">
       <span className={`c-swatch ${contenderClass(rank)}`} aria-hidden="true" />
@@ -253,6 +256,7 @@ function ContenderRow({ c, rank, total, won, dpns, profile }: { c: Contender; ra
           <AuthorName id={c.identityId} profile={profile} dpns={dpns} />
           {won && <span className="tag ctag-won">Got the name</span>}
         </span>
+        <ContestVoters label={label} identityId={c.identityId} />
         {c.requested && (
           <span className="small muted">
             Asked for <bdi className="c-requested">{c.requested}</bdi>
@@ -262,4 +266,18 @@ function ContenderRow({ c, rank, total, won, dpns, profile }: { c: Contender; ra
       <Tally n={c.votes} total={total} />
     </li>
   );
+}
+
+function ContestVoters({ label, identityId }: { label: string; identityId: string }) {
+  const src = useContestSource();
+  const [load, setLoad] = useState(false);
+  const voters = useAsync(() => load ? src.voters(label, identityId) : Promise.resolve(null), [src, label, identityId, load]);
+  if (!load) return <button type="button" className="btn btn-quiet btn-s" onClick={() => setLoad(true)}>Show voters</button>;
+  if (voters.loading) return <p className="small muted" role="status">Reading voter identities…</p>;
+  if (voters.error) return <p className="small error" role="alert">Voters could not be read. <button type="button" className="btn btn-s" onClick={() => setLoad(false)}>Try again</button></p>;
+  const ids = voters.data ?? [];
+  return <div className="contest-voters">
+    <p className="small muted">{!src.live ? 'No voter identities in this demo.' : `${formatInt(ids.length)} voter identities${ids.length === 100 ? ' (first 100)' : ''}. Voter identities are distinct from masternode ProTx hashes.`}</p>
+    <ul>{ids.map(id => <li key={id}><dashhq-hash value={id} label="Voter identity" href={window.dashhq?.href('explorer', '/identity?id=' + encodeURIComponent(id))}>{id}</dashhq-hash></li>)}</ul>
+  </div>;
 }

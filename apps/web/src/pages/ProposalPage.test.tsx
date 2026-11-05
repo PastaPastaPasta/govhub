@@ -85,7 +85,7 @@ describe('ProposalView for a lame duck', () => {
     const { el } = await view(pshenmic, { estTime: NOW + 23 * DAY, report: report({ paid: 1, remainingEstimate: 0 }) });
     const status = el.querySelector('[data-testid="lameduck-status"]')!;
     expect(status.textContent).toContain('Paid in full');
-    expect(status.textContent).toContain('1 of 1 payment made. No more payments are possible; it leaves the network on Oct 27, 2026.');
+    expect(status.textContent).toContain('1 of 1 payment made. No more payments are possible; it leaves the network on 27 Oct 2026.');
     const text = el.textContent ?? '';
     expect(text).not.toMatch(/Passing by|next budget is full|In the next budget|Voting closes|Voting for this payout/);
     expect(el.querySelector('[data-testid="summary"]')!.textContent).toContain('1, 0 more possible');

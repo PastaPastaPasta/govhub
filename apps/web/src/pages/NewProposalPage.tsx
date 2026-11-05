@@ -2,7 +2,8 @@
 // "Details". Drafts stay in this browser (and in the backup file); nothing is published until the proposal is submitted.
 import { duffsToDash } from '@govhub/verify';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
+import { Link } from '../ui/Link.tsx';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { formatDateTime, shortHash } from '../lib/format.ts';

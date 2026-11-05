@@ -4,7 +4,7 @@
 // proposal votes. What leaves the signing is signed votes, never keys.
 import { base64 } from '@scure/base';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from '../ui/Link.tsx';
 import { useApp } from '../app/context.tsx';
 import { SecretField } from '../auth/SecretField.tsx';
 import { errText, formatInt } from '../lib/format.ts';
@@ -292,6 +292,7 @@ function Composer({ label, state, endsAt, nameOf, signer }: { label: string; sta
                   <span className="vmn-name">{mnName(m, labels)}</span>
                   {m.type === 'evo' && <span className="chip vmn-evo">Evonode ×4</span>}
                 </label>
+                <a className="small" href={window.dashhq?.href('radar', '/mn/' + m.proTxHash, { network: k.coreNetwork })}>View in Radar</a>
                 <div className="vmn-state">
                   <span className="vmn-cur" data-testid="current-vote">
                     <span className="vmn-k">Now</span> {current.loading ? <span className="muted">…</span> : current.error ? <span className="muted">unknown</span> : choiceText(current.data?.get(voterOf.get(m.proTxHash) ?? ''), nameOf)}
@@ -357,6 +358,7 @@ function Composer({ label, state, endsAt, nameOf, signer }: { label: string; sta
       </details>
 
       <div className="vgo">
+        {src.network === 'mainnet' && <p className="small muted">Mainnet · real DASH</p>}
         <button type="button" className="btn btn-primary btn-l vgo-btn" disabled={busy || !!hint} onClick={go} data-testid="vote-send">
           {buttonText}
         </button>

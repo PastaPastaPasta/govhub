@@ -1,27 +1,11 @@
 /* ---- username contests ------------------------------------------------------------------- */
 :root {
-  --cb-c0: var(--accent);
-  --cb-c1: #1f9d8b;
-  --cb-c2: #8a63d2;
-  --cb-c3: #c47a2c;
-  --cb-abstain: #9fb0bf;
-  --cb-lock: #3d5163;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    --cb-c1: #34b8a5;
-    --cb-c2: #a585e6;
-    --cb-c3: #d9944a;
-    --cb-abstain: #5d7387;
-    --cb-lock: #9fb3c6;
-  }
-}
-:root[data-theme='dark'] {
-  --cb-c1: #34b8a5;
-  --cb-c2: #a585e6;
-  --cb-c3: #d9944a;
-  --cb-abstain: #5d7387;
-  --cb-lock: #9fb3c6;
+  --cb-c0: var(--dh-ramp-1);
+  --cb-c1: var(--dh-ramp-2);
+  --cb-c2: var(--dh-ramp-3);
+  --cb-c3: var(--dh-ramp-4);
+  --cb-abstain: var(--dh-line-2);
+  --cb-lock: var(--dh-ink-2);
 }
 
 .cb-c0 {

@@ -2,7 +2,8 @@
 // DashCentral-style indentation, scores, replies, retraction, ?comment= deep links, the comment view filter and
 // block lists that hide (never delete) with a "show hidden (N)" toggle.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
+import { Link } from './Link.tsx';
 import {
   BLOCK_KIND,
   buildThreads,

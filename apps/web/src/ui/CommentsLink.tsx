@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link } from './Link.tsx';
 import { formatInt } from '../lib/format.ts';
 
 /** A list card's comment count, linking to the page (undefined while counting). */

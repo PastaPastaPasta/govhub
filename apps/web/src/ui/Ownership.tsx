@@ -9,7 +9,7 @@ import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { attestorsFor } from '../config/registry.ts';
 import type { Proposal } from '../data/types.ts';
-import { errText, formatCredits, formatInt, shortAddress, shortHash } from '../lib/format.ts';
+import { errText, formatCredits, formatInt, shortHash } from '../lib/format.ts';
 import type { TrustLevel } from '../verify/aggregate.ts';
 import type { CollateralVerdict } from '../verify/collateral.ts';
 import { HiddenToggle, plural } from './HiddenToggle.tsx';
@@ -97,6 +97,7 @@ function useIdentityNames(id: string | null) {
  * names but that has not accepted is shown as named by the creator, never as the verified owner (naming is not consent).
  */
 export function OwnerValue({ p, own }: { p: Proposal; own: Ownership }) {
+  const { registry } = useApp();
   const { moderation } = useForum();
   const o = own.verdict?.owner ?? null;
   const n = own.verdict?.named;
@@ -128,7 +129,7 @@ export function OwnerValue({ p, own }: { p: Proposal; own: Ownership }) {
         <span>{own.loading ? 'Checking who owns it…' : 'Unclaimed proposal'}</span>
         {namedNote}
         <span className="muted small">
-          pays <span className="mono-ish break" title={p.paymentAddress}>{shortAddress(p.paymentAddress)}</span>
+          pays <dashhq-hash value={p.paymentAddress} label="Payee address" href={`https://${registry.coreNetwork === 'testnet' ? 'insight.testnet.networks.dash.org' : 'insight.dash.org'}/insight/address/${encodeURIComponent(p.paymentAddress)}`}>{p.paymentAddress}</dashhq-hash> ↗
         </span>
       </span>
     );

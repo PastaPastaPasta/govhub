@@ -4,7 +4,8 @@
 // by default) and keeps the key saved encrypted on Platform unless "Don't save my key"; it ends in a slim banner above the page.
 import { bytesToHex, UnlockerType } from '@govhub/auth';
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
+import { Link } from '../ui/Link.tsx';
 import { useAuth } from '../auth/context.tsx';
 import { badgeWif, pickBadgeMn, useMnBadge, type MnBadge } from '../badge/flow.ts';
 import { BadgeChoice, KeyringBadgeRow } from '../badge/MnBadgeOption.tsx';
@@ -315,7 +316,7 @@ function AddMasternodes({ step, setStep, b, savedLocked, onAdded }: { step: Flow
               <ul className="kr-flow-mns small">
                 {mns.map((m) => (
                   <li key={m.proTxHash}>
-                    <span className="tag tag-done">{m.type === 'evo' ? 'Evonode' : 'Regular'}</span> <span className="mono-ish">{m.proTxHash.slice(0, 12)}…</span>
+                    <span className="tag tag-done">{m.type === 'evo' ? 'Evonode' : 'Regular'}</span> <dashhq-hash value={m.proTxHash} label="ProTx hash" href={window.dashhq?.href('radar', '/mn/' + m.proTxHash, { network: k.coreNetwork })}>{m.proTxHash}</dashhq-hash>
                     {!m.valid && <span className="tag tag-fail">PoSe-banned</span>}
                   </li>
                 ))}
@@ -479,6 +480,7 @@ function proofOf(m: OwnedMasternode): { short: string; full: string } {
 }
 
 function MnRow({ m, label }: { m: OwnedMasternode; label: string }) {
+  const k = useKeyring();
   const [why, setWhy] = useState(false);
   const proofId = useId();
   const proof = proofOf(m);
@@ -494,7 +496,7 @@ function MnRow({ m, label }: { m: OwnedMasternode; label: string }) {
       <div className="kr-mn-facts small">
         <span className="kr-fact">
           <span className="kr-fact-k">ProTx</span>
-          <HashCopy value={m.proTxHash} label="masternode ID" n={6} />
+          <dashhq-hash value={m.proTxHash} label="ProTx hash" href={window.dashhq?.href('radar', '/mn/' + m.proTxHash, { network: k.coreNetwork })}>{m.proTxHash}</dashhq-hash>
         </span>
         <span className="kr-fact">
           <span className="kr-fact-k">Payout</span>

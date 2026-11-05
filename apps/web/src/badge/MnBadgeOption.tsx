@@ -3,7 +3,7 @@
 // ~N min, ready and waiting for the next post with Register now, about to lapse, issuer unreachable with a retry, already
 // showing, success). Everything runs through the badge client (flow.ts useMnBadge).
 import { useState, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from '../ui/Link.tsx';
 import { epochLength } from '@govhub/badge';
 import { useApp } from '../app/context.tsx';
 import { errText, formatInt } from '../lib/format.ts';

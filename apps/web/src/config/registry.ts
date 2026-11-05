@@ -170,8 +170,8 @@ export const PROFILES: Record<ProfileId, NetworkProfile> = {
   },
   dev: {
     id: 'dev',
-    label: 'Dev',
-    title: 'Dev: mainnet data on testnet Platform',
+    label: 'Mainnet on Testnet',
+    title: 'Mainnet proposals · Testnet Platform',
     description: 'Mainnet governance (real Core mainnet proposals, votes and superblocks) published on testnet Platform, for development.',
     coreNetwork: 'mainnet',
     platformNetwork: 'testnet',

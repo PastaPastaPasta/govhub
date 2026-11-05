@@ -1,5 +1,5 @@
 // Contest pieces shared by the list and the contest page: the ballot bar, status wording and the list card.
-import { Link } from 'react-router-dom';
+import { Link } from '../ui/Link.tsx';
 import { formatDate, formatDuration, formatInt } from '../lib/format.ts';
 import { CommentsLink } from '../ui/CommentsLink.tsx';
 import { displayName, percent, phaseOf, type ContestState } from './model.ts';

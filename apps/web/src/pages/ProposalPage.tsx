@@ -2,7 +2,8 @@
 // whether it will be funded, the vote, the description and the discussion. Every check still runs (ui/trust/useProposalTrust.ts)
 // and adds up to one badge; its detail is in the "How do we know?" drawer.
 import { useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
+import { Link } from '../ui/Link.tsx';
 import { urlClaimIdentity } from '@govhub/verify';
 import { useApp } from '../app/context.tsx';
 import { Discussion } from '../ui/Discussion.tsx';
@@ -165,7 +166,6 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
       <header className="p-hero">
         <div className="p-title">
           <h1>{p.name}</h1>
-          <TrustBadge level={trust.aggregate.level} reason={trust.aggregate.reason} onOpen={() => setDrawer(true)} />
         </div>
         <div className="p-owner">
           <OwnerValue p={p} own={own} />
@@ -222,6 +222,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
                 {lameDuck && <span className="small muted">These votes no longer affect payment.</span>}
               </p>
             )}
+            <div className="chain-context"><span>Proposal and vote evidence</span><TrustBadge level={trust.aggregate.level} reason={trust.aggregate.reason} onOpen={() => setDrawer(true)} /></div>
             {tallies.error && <ReadError error={tallies.error} what="Platform" lead="The tally could not be read" onRetry={() => setTalliesAttempt((n) => n + 1)} />}
             <VoteCta proposal={p} active={active && !lameDuck} />
           </section>

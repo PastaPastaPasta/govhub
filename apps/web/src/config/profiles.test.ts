@@ -221,7 +221,7 @@ describe('migration from version 1', () => {
   });
 
   it('a profile contract cannot be read under other networks (the reported bug, as an override)', () => {
-    expect(parseRegistry({ ...profileRegistry('dev'), coreNetwork: 'testnet' }).errors.join()).toMatch(/Dev governance contract holds Core mainnet data/);
+    expect(parseRegistry({ ...profileRegistry('dev'), coreNetwork: 'testnet' }).errors.join()).toMatch(/Mainnet on Testnet governance contract holds Core mainnet data/);
     expect(parseRegistry({ ...defaultRegistry(), platformNetwork: 'testnet' }).errors.join()).toMatch(/Mainnet governance contract holds Core mainnet data on Platform mainnet/);
     // A version 1 user on the Dev contract with odd networks lands on the Dev networks.
     const { registry, errors } = parseRegistry(v1({ coreNetwork: 'testnet', platformNetwork: 'mainnet', dapi: { source: 'quorum', quorumUrl: QUORUM_SERVICE.testnet, nodes: [] } }));

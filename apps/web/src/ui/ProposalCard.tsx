@@ -1,9 +1,9 @@
 // One proposal in a list: who asks, how much, and whether it gets funded. Three zones side by side on wide screens, stacked on
 // narrow ones. The trust mark is the last full result of the proposal page (ui/trust/store.ts), when it still applies.
 import type { Profile } from '@govhub/forum';
-import { Link } from 'react-router-dom';
+import { Link } from './Link.tsx';
 import { useApp } from '../app/context.tsx';
-import { formatDash, formatInt, shortAddress, shortHash } from '../lib/format.ts';
+import { formatDash, formatInt, shortHash } from '../lib/format.ts';
 import { authorLabel, authorText } from '../lib/social.ts';
 import { perPayment, type GovParams, type PaymentSchedule } from '../lib/governance.ts';
 import type { Row } from '../lib/view.ts';
@@ -33,7 +33,7 @@ export function askText(amountDuffs: number, s: PaymentSchedule | null, params: 
 export function ProposalCard({
   row, href, comments, urlOwner, ownerProfile, check,
 }: { row: Row; href: string; comments?: number | undefined; urlOwner?: string | null; ownerProfile?: Profile | undefined; check?: CheckState }) {
-  const { params, source } = useApp();
+  const { params, source, registry } = useApp();
   const p = row.p.value;
   const t = row.tally?.value;
   const failed = check?.status === 'failed' ? check.reason : null;
@@ -70,12 +70,12 @@ export function ProposalCard({
           <p className="prow-owner">
             <Avatar id={urlOwner} profile={ownerProfile} size={18} />
             <span title={`Identity ${urlOwner}, named in the proposal URL by its creator; the proposal page shows whether it accepted`}>
-              <bdi>{ownerProfile && authorLabel(urlOwner, ownerProfile).name ? authorText(urlOwner, ownerProfile) : shortHash(urlOwner, 5)}</bdi> <span className="muted small">named by the creator</span>
+              <a href={window.dashhq?.href('explorer', '/identity?id=' + encodeURIComponent(urlOwner))}><bdi>{ownerProfile && authorLabel(urlOwner, ownerProfile).name ? authorText(urlOwner, ownerProfile) : shortHash(urlOwner, 5)}</bdi></a> <span className="muted small">named by the creator</span>
             </span>
           </p>
         ) : (
           <p className="prow-owner prow-owner-none">
-            pays <span className="mono-ish" title={p.paymentAddress}>{shortAddress(p.paymentAddress)}</span>
+            pays <dashhq-hash value={p.paymentAddress} label="Payee address" href={`https://${registry.coreNetwork === 'testnet' ? 'insight.testnet.networks.dash.org' : 'insight.dash.org'}/insight/address/${encodeURIComponent(p.paymentAddress)}`}>{p.paymentAddress}</dashhq-hash> ↗
           </p>
         )}
       </div>

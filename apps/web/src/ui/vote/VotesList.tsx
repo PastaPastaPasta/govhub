@@ -1,5 +1,5 @@
 // Your signed votes, grouped by proposal: what each one is doing now (in plain words), which relay holds it, and cancel / retry.
-import { Link } from 'react-router-dom';
+import { Link } from '../Link.tsx';
 import { useApp } from '../../app/context.tsx';
 import { shortHash } from '../../lib/format.ts';
 import { useKeyring } from '../../voting/KeyringContext.tsx';
@@ -58,7 +58,7 @@ function VoteRow({ v, name, now }: { v: WatchedVote; name: string; now: number }
   return (
     <li className={`vrow vrow-${view.tone}`} data-testid="watched-row" data-status={v.status}>
       <div className="vrow-main">
-        <span className="vrow-name">{name}</span>
+        <a className="vrow-name" href={window.dashhq?.href('radar', '/mn/' + v.proTxHash, { network: k.coreNetwork })}>{name}</a>
         <OutcomeChip outcome={v.outcome} />
         <Badge tone={view.tone} testId="watched-badge">
           {view.badge}

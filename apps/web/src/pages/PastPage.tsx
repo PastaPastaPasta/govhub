@@ -1,7 +1,7 @@
 // Past proposals, newest end first (G3: the range on endEpoch is what makes desc work on PV13).
 // Pages of 100 come from Platform, keyset-paged on endEpoch (repo.ts pastPage); the list reveals 12 at a time.
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from '../ui/Link.tsx';
 import { useApp } from '../app/context.tsx';
 import type { Proposal, Sourced, Tally } from '../data/types.ts';
 import { errText, formatDash, formatDate, formatInt, formatSigned } from '../lib/format.ts';

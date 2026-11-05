@@ -24,7 +24,6 @@ import {
 import { cacheClear } from '../data/cache.ts';
 import { BadgeSettings } from '../badge/BadgeSettings.tsx';
 import { RecoverFunds } from '../auth/Recover.tsx';
-import { ThemeSwitch } from '../ui/SignIn.tsx';
 import { useAction } from '../ui/useAction.ts';
 import { WriteError } from '../ui/WriteError.tsx';
 
@@ -78,7 +77,8 @@ function ProfileSettings() {
   return (
     <section className="form" aria-labelledby="profile-title" id="network">
       <h2 id="profile-title">Network</h2>
-      <p className="small muted">Which Dash network govhub shows. Testnet is for trying things; Dev shows real mainnet proposals while govhub is being built.</p>
+      {registry.govContractId && <p className="small">Governance contract <dashhq-hash value={registry.govContractId} label="Governance contract" href={window.dashhq?.href('explorer', '/contract?id=' + encodeURIComponent(registry.govContractId), { network: registry.platformNetwork })}>{registry.govContractId}</dashhq-hash></p>}
+      <p className="small muted">Which Dash network Governance shows. Testnet is for trying things; the development profile shows Mainnet proposals on Testnet Platform.</p>
       <fieldset className="seg profile-switch" ref={radios}>
         <legend className="visually-hidden">Network profile</legend>
         {PROFILE_ORDER.map((id) => {
@@ -280,10 +280,6 @@ export function SettingsPage() {
 
       <ProfileSettings />
 
-      <section className="form" aria-labelledby="appearance-title">
-        <h2 id="appearance-title">Appearance</h2>
-        <ThemeSwitch />
-      </section>
 
       <RecoverFunds />
 

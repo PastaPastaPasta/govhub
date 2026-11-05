@@ -99,7 +99,7 @@ describe('StartsLaterPageStatus', () => {
     const later = rowOf(proposal(), tally()).startsLater!;
     expect(startsLaterLabel(later)).toBe('Starts paying ~Jan 2027');
     // the superblock is ~Jan 19 23:00 UTC: the day shown depends on the reader's timezone
-    expect(formatDate(later.firstTime)).toMatch(/^Jan (19|20), 2027$/);
+    expect(formatDate(later.firstTime)).toMatch(/^(19|20) Jan 2027$/);
     expect(startsLaterDetail(later)).toBe(`Its first payment is the superblock around ${formatDate(later.firstTime)}. Votes count then; it isn't eligible for the ${formatDate(later.nextTime)} budget.`);
     const { el } = await render(<StartsLaterPageStatus later={later} />);
     const text = el.textContent ?? '';

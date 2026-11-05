@@ -1,7 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Link, Route, Routes } from 'react-router-dom';
-import '@fontsource-variable/archivo/wdth.css';
+import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { Link } from './ui/Link.tsx';
 import './styles.css';
 import { AppProvider, useApp } from './app/context.tsx';
 import { ForumProvider } from './app/forum.tsx';

@@ -72,3 +72,13 @@ describe('liveContests', () => {
     expect(contestedResourcesWithProof).toHaveBeenLastCalledWith(expect.objectContaining({ startAtValue: 'a099', startAtValueIncluded: false }));
   });
 });
+
+describe('contender voter identities', () => {
+  it('uses the proof query and returns public identities without interpreting them as ProTx hashes', async () => {
+    const query = vi.fn(async () => ({ data: [{ toString: () => 'voter-identity' }] }));
+    fake.sdk = { group: { contestedResourceVotersForIdentityWithProof: query } };
+    const ids = await liveContests({ platformNetwork: 'mainnet' } as Registry).voters('german', 'contender');
+    expect(ids).toEqual(['voter-identity']);
+    expect(query).toHaveBeenCalledWith(expect.objectContaining({ indexValues: ['dash', 'german'], contestantId: 'contender', limit: 100 }));
+  });
+});

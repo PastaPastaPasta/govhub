@@ -1,7 +1,7 @@
 // Trust list of badge issuers (PLAN §8.6): only issuers on it are shown; anyone may run one. Ours is the only default. Each issuer's
 // current epoch is audited: verified badges against the issuer's own issuerReport.
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from '../ui/Link.tsx';
 import { displayEpochsAt, EPOCH_PARAMS, epochStart, type EpochParams } from '@govhub/badge';
 import { useApp } from '../app/context.tsx';
 import { errText, formatInt } from '../lib/format.ts';

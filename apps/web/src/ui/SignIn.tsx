@@ -1,9 +1,8 @@
 // Topbar identity control. Signed out: opens the sign-in sheet (auth/AuthSheet.tsx: new identity, recovery phrase, passkey, pasted
 // key; sample identities in fixture mode). Signed in: identity, balance, profile editing, top-up and passkeys, and sign-out.
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { Link } from './Link.tsx';
 import { cleanName, COSTS, nameProblem, type Profile } from '@govhub/forum';
-import { useApp, type Theme } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { OPEN_SIGNIN_EVENT, useAuth } from '../auth/context.tsx';
 import { formatCredits, shortHash } from '../lib/format.ts';
@@ -14,32 +13,9 @@ import { WriteError } from './WriteError.tsx';
 /** Opens the sign-in sheet from anywhere ("Sign in to comment"). */
 export const openSignIn = () => window.dispatchEvent(new Event(OPEN_SIGNIN_EVENT));
 
-const THEMES: Array<{ id: Theme; label: string }> = [
-  { id: 'system', label: 'System' },
-  { id: 'light', label: 'Light' },
-  { id: 'dark', label: 'Dark' },
-];
-
-export function ThemeSwitch() {
-  const { theme, setTheme } = useApp();
-  // the menu and Settings can both show one: each needs its own radio group
-  const group = useId();
-  return (
-    <fieldset className="seg theme-switch">
-      <legend className="visually-hidden">Theme</legend>
-      {THEMES.map((t) => (
-        <label key={t.id} className={theme === t.id ? 'on' : ''}>
-          <input type="radio" name={group} value={t.id} checked={theme === t.id} onChange={() => setTheme(t.id)} />
-          {t.label}
-        </label>
-      ))}
-    </fieldset>
-  );
-}
-
 /**
  * The account control. Signed out: "Sign in" (opens the sheet) and a small menu for settings. Signed in: the identity, which opens
- * the account menu (balance, profile, top-up, passkeys, settings, theme, sign out).
+ * the account menu (balance, profile, top-up, passkeys, settings, sign out).
  */
 export function SessionControl() {
   const { forum, session, balance } = useForum();
@@ -88,10 +64,10 @@ export function SessionControl() {
         </button>
       ) : (
         <>
-          <button type="button" className="btn btn-primary" onClick={openSignIn} id="session-button" data-testid="session-button">
+          <button type="button" className="btn" onClick={openSignIn} id="session-button" data-testid="session-button">
             {auth.restoring ? 'Signing in…' : 'Sign in'}
           </button>
-          <button type="button" className="icon-btn" popoverTarget="account-menu" aria-label="Menu: settings, theme, about" data-testid="menu-button">
+          <button type="button" className="icon-btn" popoverTarget="account-menu" aria-label="Account and settings" data-testid="menu-button">
             <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
               <path d="M3 5h12M3 9h12M3 13h12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
             </svg>
@@ -109,7 +85,7 @@ export function SessionControl() {
               Balance <b data-testid="session-balance">{balance === null ? 'reading…' : formatCredits(balance)}</b>{' '}
               <span className="muted">(pays for posts and votes on Platform)</span>
             </p>
-            <p className="small muted">Signed in with {session.label}. The key stays in memory, shared with your other open govhub tabs: closing the browser (or the last govhub tab) signs you out.</p>
+            <p className="small muted">Signed in with {session.label}. The key stays in memory, shared with your other open Governance tabs: closing the browser (or the last Governance tab) signs you out.</p>
           </div>
         )}
         {session && item('Edit profile', () => dialog.current?.showModal())}
@@ -125,12 +101,8 @@ export function SessionControl() {
           Settings
         </Link>
         <Link className="menu-item" to="/about" onClick={hide}>
-          About govhub
+          About Governance
         </Link>
-        <div className="menu-theme">
-          <span className="small muted">Theme</span>
-          <ThemeSwitch />
-        </div>
         {session && item('Sign out', auth.signOut)}
       </div>
       <dialog ref={dialog} className="dialog" aria-labelledby="session-title" onClick={(e) => e.target === dialog.current && close()}>

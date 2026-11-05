@@ -53,7 +53,7 @@ export function AuthorName({ id, profile, dpns }: { id: string; profile?: Profil
   );
   return (
     <span className="author">
-      <b className="author-name">
+      <a className="author-name" href={window.dashhq?.href('explorer', '/identity?id=' + encodeURIComponent(id))}>
         {a.dpns ? (
           <bdi className="author-dpns-name" title="DPNS username, proven by Platform">
             {a.dpns}
@@ -61,7 +61,7 @@ export function AuthorName({ id, profile, dpns }: { id: string; profile?: Profil
         ) : (
           (name ?? shortHash(id, 5))
         )}
-      </b>
+      </a>
       {a.dpns && name && <span className="author-alias">{name}</span>}
       {(a.dpns || a.name) && (
         <span className="author-id mono-ish" title={id}>

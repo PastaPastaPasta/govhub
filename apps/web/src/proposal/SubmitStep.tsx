@@ -4,7 +4,7 @@
 // as an accepted vote.
 import { duffsToDash, GOVERNANCE_FEE_CONFIRMATIONS, gobjectSubmitCommand } from '@govhub/verify';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from '../ui/Link.tsx';
 import { formatInt, shortHash } from '../lib/format.ts';
 import { CopyButton } from '../ui/vote/common.tsx';
 import { WinMark } from '../ui/vote/VoteSuccess.tsx';

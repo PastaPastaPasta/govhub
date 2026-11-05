@@ -1,10 +1,7 @@
-/* govhub. One family, Archivo (variable weight and width): width is the expressive axis, semi-expanded for headings and the
-   payout figure, condensed for hashes, so the page never needs a second face or a monospace. Cool paper, deep slate ink, Dash
-   blue for interaction and for "verified"; green / amber / red only for whether a proposal passes. No purple anywhere.
-   DESIGN.md §5 has the system: spacing on a 4 px base, a 1.25 type scale, radii by role. */
+/* Governance maps its existing components onto the shared DashHQ tokens. */
 
 :root {
-  --font: 'Archivo Variable', 'Archivo', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font: var(--dh-font);
 
   /* type scale (1.25) */
   --t-xs: 0.8rem;
@@ -26,107 +23,39 @@
   --s-8: 4rem;
 
   /* radii by role */
-  --radius-s: 4px; /* chips, inputs */
-  --radius-m: 8px; /* buttons */
-  --radius-l: 12px; /* panels */
+  --radius-s: var(--dh-r1); /* chips, inputs */
+  --radius-m: var(--dh-r2); /* buttons */
+  --radius-l: var(--dh-r3); /* panels */
   --radius-xl: 16px; /* sheets */
 
   --measure: 70ch;
-  --page: 1180px;
+  --page: var(--dh-max);
 
-  --paper: #f3f6f9;
-  --surface: #ffffff;
-  --sunk: #e9eef3;
-  --ink: #0d2231;
-  --ink-2: #4a5f71;
-  --ink-3: #566a7c; /* muted text: AA (4.5:1) on paper, surface, sunk and wash */
-  --line: #dce4eb;
-  --line-strong: #b4c3d0;
-
-  --accent: #008de4; /* Dash blue: fills, focus, bars, "verified" */
-  --accent-ink: #006cb0; /* Dash blue for text on paper (AA) */
-  --accent-wash: #e3f2fc;
-  /* Filled controls (primary buttons, step numbers): Dash blue dark enough for white text at AA, and the text on it. */
-  --accent-fill: #006cb0;
-  --accent-fill-hover: #005b94;
-  --on-accent: #ffffff;
-
-  --pass: #167a46;
-  --pass-fill: #22a25f;
-  --warn: #8a5a00;
-  --warn-fill: #e2a514;
-  --fail: #b8352b;
-  --fail-fill: #d9493d;
-  --slate: #56697b;
-  --track: #e1e8ee;
-  --disabled-bg: #e9eef3;
-  --disabled-ink: #6d8193;
-
-  --float-shadow: 0 12px 40px rgb(13 34 49 / 0.18), 0 2px 6px rgb(13 34 49 / 0.08);
-
-  color-scheme: light;
-}
-
-:root[data-theme='dark'] {
-  --paper: #0a1520;
-  --surface: #0f1f2d;
-  --sunk: #0c1a26;
-  --ink: #e5edf4;
-  --ink-2: #a3b5c5;
-  --ink-3: #8094a7;
-  --line: #1e3345;
-  --line-strong: #31495e;
-  --accent: #1a9cf0;
-  --accent-ink: #5dbdf7;
-  --accent-wash: #0d2c43;
-  --accent-fill: #1a9cf0;
-  --accent-fill-hover: #48b0f3;
-  --on-accent: #04131f;
-  --pass: #4fcf8b;
-  --pass-fill: #2fb46d;
-  --warn: #f0be4b;
-  --warn-fill: #e2a514;
-  --fail: #ff8075;
-  --fail-fill: #e0564a;
-  --slate: #9db0c2;
-  --track: #29435a;
-  --disabled-bg: #1c2a3a;
-  --disabled-ink: #8a9bb0;
-  --float-shadow: 0 12px 40px rgb(0 0 0 / 0.5), 0 2px 6px rgb(0 0 0 / 0.3);
-  color-scheme: dark;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    --paper: #0a1520;
-    --surface: #0f1f2d;
-    --sunk: #0c1a26;
-    --ink: #e5edf4;
-    --ink-2: #a3b5c5;
-    --ink-3: #8094a7;
-    --line: #1e3345;
-    --line-strong: #31495e;
-    --accent: #1a9cf0;
-    --accent-ink: #5dbdf7;
-    --accent-wash: #0d2c43;
-    --accent-fill: #1a9cf0;
-    --accent-fill-hover: #48b0f3;
-    --on-accent: #04131f;
-    --pass: #4fcf8b;
-    --pass-fill: #2fb46d;
-    --warn: #f0be4b;
-    --warn-fill: #e2a514;
-    --fail: #ff8075;
-    --fail-fill: #e0564a;
-    --slate: #9db0c2;
-    --track: #29435a;
-    --disabled-bg: #1c2a3a;
-    --disabled-ink: #8a9bb0;
-  --disabled-bg: #1c2a3a;
-  --disabled-ink: #8a9bb0;
-    --float-shadow: 0 12px 40px rgb(0 0 0 / 0.5), 0 2px 6px rgb(0 0 0 / 0.3);
-    color-scheme: dark;
-  }
+  --paper: var(--dh-page);
+  --surface: var(--dh-surface);
+  --sunk: var(--dh-sunken);
+  --ink: var(--dh-ink);
+  --ink-2: var(--dh-ink-2);
+  --ink-3: var(--dh-ink-2);
+  --line: var(--dh-line);
+  --line-strong: var(--dh-line-2);
+  --accent: var(--dh-brand);
+  --accent-ink: var(--dh-brand-ink);
+  --accent-wash: var(--dh-brand-soft);
+  --accent-fill: var(--dh-sunken);
+  --accent-fill-hover: var(--dh-hover);
+  --on-accent: var(--dh-ink);
+  --pass: var(--dh-good);
+  --pass-fill: var(--dh-good);
+  --warn: var(--dh-warn);
+  --warn-fill: var(--dh-warn);
+  --fail: var(--dh-bad);
+  --fail-fill: var(--dh-bad);
+  --slate: var(--dh-ink-2);
+  --track: var(--dh-sunken);
+  --disabled-bg: var(--dh-sunken);
+  --disabled-ink: var(--dh-ink-2);
+  --float-shadow: var(--dh-shadow-pop);
 }
 
 *,
@@ -137,7 +66,7 @@
 
 html {
   font-family: var(--font);
-  font-size: 100%;
+  font-size: 15px;
   line-height: 1.55;
   color: var(--ink);
   background: var(--paper);
@@ -261,91 +190,10 @@ a:hover {
   min-height: 100vh;
 }
 
-.topbar {
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
-  backdrop-filter: blur(8px);
-  border-block-end: 1px solid var(--line);
-  position: sticky;
-  inset-block-start: 0;
-  z-index: 5;
-}
-.topbar-inner,
-.footer-inner,
 .main {
   max-inline-size: var(--page);
   margin-inline: auto;
   padding-inline: var(--s-5);
-}
-.topbar-inner {
-  display: flex;
-  align-items: center;
-  gap: var(--s-5);
-  min-block-size: 3.75rem;
-}
-.wordmark {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s-2);
-  font-weight: 760;
-  font-stretch: 114%;
-  font-size: 1.1875rem;
-  color: var(--ink);
-  text-decoration: none;
-  letter-spacing: -0.015em;
-}
-.wordmark-tile {
-  fill: var(--accent);
-}
-.mainnav {
-  display: flex;
-  gap: var(--s-1);
-}
-.mainnav a {
-  color: var(--ink-2);
-  text-decoration: none;
-  padding: 0.4375rem 0.75rem;
-  border-radius: var(--radius-m);
-  font-weight: 580;
-  white-space: nowrap;
-}
-.mainnav a:hover {
-  color: var(--ink);
-  background: var(--sunk);
-}
-.mainnav a.active {
-  color: var(--ink);
-  background: var(--sunk);
-}
-/* "New proposal" is "New" and "My masternodes" is "Masternodes" where the links would not fit on one line; a narrower phone
-   scrolls the row sideways rather than wrapping it */
-.nav-short {
-  display: none;
-}
-@media (max-width: 420px) {
-  .nav-more {
-    display: none;
-  }
-  .nav-short {
-    display: inline;
-  }
-  .mainnav {
-    gap: 0;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-  .mainnav a {
-    padding-inline: 0.5rem;
-  }
-  /* inside the scrolling row an outside ring would be clipped */
-  .mainnav a:focus-visible {
-    outline-offset: -2px;
-  }
-}
-.topbar-end {
-  margin-inline-start: auto;
-  display: flex;
-  align-items: center;
-  gap: var(--s-2);
 }
 .count {
   margin-inline-start: 0.375rem;
@@ -354,7 +202,7 @@ a:hover {
   font-weight: 600;
 }
 
-/* The header's chain status: a quiet chip, coloured only by its shield. */
+/* Chain evidence stays beside the figures it supports. */
 .chainchip {
   font: inherit;
   font-size: var(--t-s);
@@ -562,13 +410,6 @@ a:hover {
 .banner-actions {
   display: flex;
   gap: 0.5rem;
-}
-
-.footer {
-  border-block-start: 1px solid var(--line);
-}
-.footer-inner {
-  padding-block: var(--s-5);
 }
 
 /* "Learn more": long explanations stay one click away. */
@@ -2385,20 +2226,6 @@ li[data-status='now'] > .fund-dot {
 }
 
 @media (max-width: 720px) {
-  .topbar-inner {
-    flex-wrap: wrap;
-    gap: 0 var(--s-3);
-    padding-inline: var(--s-4);
-  }
-  .wordmark {
-    min-block-size: 3.25rem;
-  }
-  .mainnav {
-    order: 3;
-    inline-size: 100%;
-    margin-inline: calc(-1 * var(--s-2));
-    padding-block-end: var(--s-2);
-  }
   .main {
     padding-inline: var(--s-4);
     padding-block-start: var(--s-5);
@@ -3252,3 +3079,27 @@ details.advanced[open] > summary {
   overflow-wrap: anywhere;
   user-select: all;
 }
+
+/* The shared bar owns navigation and appearance. */
+dashhq-bar { flex: none; }
+.network-context { max-width: var(--dh-max); width: calc(100% - 32px); margin: 16px auto 0; padding: 12px 16px; border: 1px solid var(--dh-line); border-radius: var(--dh-r2); background: var(--dh-surface); color: var(--dh-ink-2); font-size: 14px; }
+.network-context a { margin-inline-start: 8px; }
+.btn-primary { background: var(--dh-surface); border-color: var(--dh-line-2); color: var(--dh-ink); }
+.btn-primary:hover { background: var(--dh-hover); border-color: var(--dh-line-2); }
+.btn.vgo-btn:not(:disabled) { background: var(--dh-act); border-color: var(--dh-act); color: var(--dh-act-ink); }
+.btn.vgo-btn:not(:disabled):hover { background: var(--dh-act-hover); border-color: var(--dh-act-hover); }
+.chain-context { display: flex; align-items: center; gap: 8px; margin-top: 12px; color: var(--dh-ink-2); font-size: 13px; }
+.mono-ish { font-family: var(--dh-mono); }
+dashhq-hash { vertical-align: middle; max-width: 100%; }
+@media (max-width: 600px) {
+  input, textarea, select { font-size: 16px; }
+  .main { padding-top: 24px; }
+  .budget .budget-line { font-size: 28px; }
+  .budget { padding-bottom: 20px; }
+  .account .icon-btn { display: none; }
+  .account .btn { padding-inline: 10px; min-height: 34px; }
+}
+
+.contest-voters { max-height: 240px; overflow: auto; }
+.contest-voters ul { list-style: none; padding: 0; margin: 8px 0; }
+.contest-voters li { padding-block: 4px; }

@@ -3,7 +3,7 @@
 // deadline, then follow every vote until the network counts it. Also offline signing (the exact text for `signmessage`).
 import { bytesEqual, decodeAddress, governanceVoteHash, recoverVoteSigner, verifyVoteSignature, VOTE_MAX_FUTURE_S, type Network } from '@govhub/verify';
 import { useEffect, useState, type KeyboardEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from './Link.tsx';
 import { useApp } from '../app/context.tsx';
 import { errorText } from '../auth/runtime.ts';
 import { enabledBridges } from '../config/registry.ts';
@@ -286,6 +286,7 @@ export function VoteComposer({ proposals, onVerify }: { proposals: Proposal[]; o
                   <span className="vmn-name">{mnName(m, labels)}</span>
                   {m.type === 'evo' && <span className="chip vmn-evo">Evonode ×4</span>}
                 </label>
+                <a className="small" href={globalThis.window.dashhq?.href('radar', '/mn/' + m.proTxHash, { network: k.coreNetwork })}>View in Radar</a>
                 {!multi && (
                   <div className="vmn-state">
                     <span className="vmn-cur" data-testid="current-vote">
@@ -358,6 +359,7 @@ export function VoteComposer({ proposals, onVerify }: { proposals: Proposal[]; o
       </details>
 
       <div className="vgo">
+        {k.coreNetwork === 'mainnet' && <p className="small muted">Mainnet · real DASH</p>}
         <button type="button" className="btn btn-primary btn-l vgo-btn" disabled={blocked || !toSend.length} onClick={go} data-testid="vote-send" aria-describedby={hint ? 'vote-send-hint' : undefined}>
           {buttonText}
         </button>

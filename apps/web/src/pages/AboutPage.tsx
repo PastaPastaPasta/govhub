@@ -1,6 +1,6 @@
 // /about: what govhub is, who it's for, where its data lives, and where to read more. Plain words; the details are on
 // /about/verification, /about/trust and the docs on GitHub (docs/privacy.md, docs/self-hosting.md).
-import { Link } from 'react-router-dom';
+import { Link } from '../ui/Link.tsx';
 import { TRUST_DOC_URL } from './TrustPage.tsx';
 
 const REPO_URL = 'https://github.com/PastaPastaPasta/govhub';
@@ -20,9 +20,9 @@ function Ext({ href, children }: { href: string; children: React.ReactNode }) {
 export function AboutPage() {
   return (
     <article className="page-narrow about" aria-labelledby="about-title">
-      <h1 id="about-title">About govhub</h1>
+      <h1 id="about-title">About Governance</h1>
       <p className="lede">
-        govhub is a place to follow, discuss and vote on Dash governance proposals. It does what dashcentral.org did, but your browser checks the data it’s given
+        Governance is a place to follow, discuss and vote on Dash governance proposals. It does what dashcentral.org did, but your browser checks the data it’s given
         before showing it as verified.
       </p>
 
@@ -32,7 +32,7 @@ export function AboutPage() {
         whoever runs it to show the proposals and votes as they really are.
       </p>
       <p>
-        govhub cuts down how much you have to trust us. Your browser checks each proposal’s text against the fee it paid on the blockchain, so a changed amount,
+        Governance cuts down how much you have to trust us. Your browser checks each proposal’s text against the fee it paid on the blockchain, so a changed amount,
         address or date shows up as a failure. It checks the signature on every vote and counts the votes again, so nobody can invent a vote or change one.
       </p>
       <p>
@@ -69,7 +69,7 @@ export function AboutPage() {
       </ul>
       <p>
         <i>Verified</i> covers what your browser was given. It doesn’t mean nothing was left out. If any step had to take someone’s word for it, the badge says so. Click the badge on a proposal to see each step. The full explanation is on{' '}
-        <Link to="/about/verification">how govhub checks what it shows</Link>.
+        <Link to="/about/verification">how Governance checks what it shows</Link>.
       </p>
 
       <h2>Where the data lives</h2>
@@ -83,10 +83,10 @@ export function AboutPage() {
         anyone could run the same software. The one thing at risk is old vote history, which Dash Core discards after a while and our servers keep a copy of.
       </p>
 
-      <h2>Usernames</h2>
+      <h2>Name contests</h2>
       <p>
         Some short Dash usernames go to a masternode vote: when someone registers one, others can ask for the same name for a week, and masternodes decide
-        who gets it or lock it so nobody does. The <Link to="/names">Usernames</Link> page lists the names being voted on now, and the ones decided before. Each has a
+        who gets it or lock it so nobody does. The <Link to="/names">Name contests</Link> page lists the names being voted on now, and the ones decided before. Each has a
         discussion, as a proposal does.
       </p>
       <p>
@@ -97,37 +97,40 @@ export function AboutPage() {
 
       <h2>Your account</h2>
       <p>
-        A govhub account is a Dash Platform identity, so it isn’t stored by us. You sign in with its recovery phrase, a private key, or a passkey. Your phrase and
+        A Governance account is a Dash Platform identity, so it isn’t stored by us. You sign in with its recovery phrase, a private key, or a passkey. Your phrase and
         keys stay in your browser. If you use a passkey, it unlocks an encrypted copy of your keys that is kept on Dash Platform, which only the passkey can open.
       </p>
       <p>
         Creating an account costs a little DASH, sent from any Dash wallet. Each post or change on Platform then costs a small fee, taken from your account’s
-        balance by the network. govhub doesn’t charge anything, and none of that money goes to us.
+        balance by the network. Governance doesn’t charge anything, and none of that money goes to us.
       </p>
 
       <h2>Networks</h2>
       <p>
-        Settings has a switch for which Dash network you’re looking at. Mainnet is the live network, where votes count and DASH has real value. Testnet is for
-        practice: test DASH is free and worth nothing. Dev is for people working on govhub, and you can ignore it.
+        The network menu in the bar switches between Mainnet and Testnet, and the URL carries your choice. Mainnet is the live network, where votes count and
+        DASH has real value. Testnet is for practice, with test DASH. Advanced profiles are in <Link to="/settings#network">Network settings</Link>.
+        The development profile reads real Mainnet proposals through Testnet Platform; its name contests and accounts are on Testnet. A notice stays visible
+        whenever Core and Platform use different networks.
       </p>
 
       <h2>Using other servers</h2>
       <p>
-        govhub works with servers that anyone can run: the ones that fetch governance data, send votes to the network, or hand out badges. You can switch to
+        Governance works with servers that anyone can run: the ones that fetch governance data, send votes to the network, or hand out badges. You can switch to
         servers you run or trust in <Link to="/settings">Settings</Link>, and share your settings as a link. To run your own, see{' '}
         <Ext href={SELF_HOSTING_DOC_URL}>running your own govhub servers</Ext>.
       </p>
 
       <h2>Privacy</h2>
       <p>
-        govhub has no ads or analytics, sets no cookies, and never asks for your email address. Our servers see your IP address when you use them, like any
+        Governance has no ads or analytics and never asks for your email address. The family shell saves your theme choice in a preference cookie and browser
+        storage so it can follow you between DashHQ tools. Our servers see your IP address when you use them, like any
         website, and don’t store it. Cloudflare, which sits in front of them, has its own policy. Anything you post on Dash Platform is public. What each of our
         servers sees and keeps is on <Ext href={PRIVACY_DOC_URL}>our privacy page</Ext>. Other people’s servers follow their own rules.
       </p>
 
-      <h2>Supporting govhub</h2>
+      <h2>Supporting Governance</h2>
       <p>
-        Running govhub costs money: the Dash network charges our servers to publish proposals and vote counts, and the servers themselves need a machine to run
+        Running Governance costs money: the Dash network charges our servers to publish proposals and vote counts, and the servers themselves need a machine to run
         on. <Ext href={`${SELF_HOSTING_DOC_URL}#what-it-costs`}>What it costs</Ext> lists our real numbers. If you’d like to help, donations go to the wallet that
         pays for it:
       </p>
@@ -140,7 +143,7 @@ export function AboutPage() {
 
       <h2>Who runs it</h2>
       <p>
-        govhub is open source under the MIT license. The code, the issue tracker and the history of every change are on <Ext href={REPO_URL}>GitHub</Ext>. This
+        Governance is open source under the MIT license. The code, the issue tracker and the history of every change are on <Ext href={REPO_URL}>GitHub</Ext>. This
         copy at gov.dashhq.org, and the servers it uses unless you change them, are run by the project’s maintainers. If something looks wrong, please{' '}
         <Ext href={`${REPO_URL}/issues`}>open an issue</Ext>. The technical detail behind this page is in the <Ext href={TRUST_DOC_URL}>trust model</Ext>.
       </p>

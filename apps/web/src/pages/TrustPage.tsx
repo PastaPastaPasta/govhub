@@ -1,6 +1,6 @@
 // /about/trust: what the people running govhub's servers could and couldn't lie about, in plain words. The full, code-cited
 // version is docs/TRUST.md; keep the two in step.
-import { Link } from 'react-router-dom';
+import { Link } from '../ui/Link.tsx';
 
 export const TRUST_DOC_URL = 'https://github.com/PastaPastaPasta/govhub/blob/main/docs/TRUST.md';
 

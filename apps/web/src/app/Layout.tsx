@@ -1,9 +1,10 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
-import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Link } from '../ui/Link.tsx';
 import { configParamUrl, DAMAGED_CONFIG, fetchConfig, PROFILES, readInlineConfig, registryDiff, registryRows, saveErrorText, type Registry } from '../config/registry.ts';
+import { profileSearch } from '../config/network.ts';
 import { useAuth } from '../auth/context.tsx';
 import { SessionControl } from '../ui/SignIn.tsx';
-import { ChainShield } from '../ui/trust/ChainShield.tsx';
 import { useApp } from './context.tsx';
 import { PRIVACY_DOC_URL } from '../pages/AboutPage.tsx';
 
@@ -230,7 +231,7 @@ function ModeBanner() {
         </p>
         {registry.profile !== 'dev' && (
           <button type="button" className="btn" onClick={() => switchProfile('dev')}>
-            Switch to Dev
+            Use mainnet proposals on Testnet Platform
           </button>
         )}
       </div>
@@ -260,6 +261,24 @@ function ModeBanner() {
 
 export function Layout() {
   const loc = useLocation();
+  const { registry } = useApp();
+  const navigate = useNavigate();
+  const bar = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const change = (event: Event) => {
+      const e = event as CustomEvent<{ href: string }>;
+      e.preventDefault();
+      const url = new URL(e.detail.href);
+      url.searchParams.delete('profile');
+      navigate(`${url.pathname}${url.search}${url.hash}`);
+    };
+    bar.current?.addEventListener('dashhq-network', change);
+    return () => bar.current?.removeEventListener('dashhq-network', change);
+  }, [navigate]);
+  const requestedNetwork = new URLSearchParams(loc.search).get('network');
+  const unsupportedNetwork = requestedNetwork && !['mainnet', 'testnet', 'main', 'test'].includes(requestedNetwork);
+  const coreLabel = registry.coreNetwork === 'mainnet' ? 'Mainnet' : 'Testnet';
+  const platformLabel = registry.platformNetwork === 'mainnet' ? 'Mainnet' : 'Testnet';
   const proposals = loc.pathname === '/' || loc.pathname.startsWith('/past') || loc.pathname.startsWith('/p/');
   const masternodes = loc.pathname.startsWith('/masternodes') || loc.pathname.startsWith('/votes');
   const create = loc.pathname.startsWith('/create');
@@ -269,38 +288,20 @@ export function Layout() {
       <a className="skip" href="#main">
         Skip to content
       </a>
-      <header className="topbar">
-        <div className="topbar-inner">
-          <NavLink to="/" className="wordmark" aria-label="govhub home">
-            <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true">
-              <rect width="32" height="32" rx="8" className="wordmark-tile" />
-              <rect x="7" y="18" width="4" height="7" rx="1" fill="#fff" />
-              <rect x="14" y="12" width="4" height="13" rx="1" fill="#fff" />
-              <rect x="21" y="7" width="4" height="18" rx="1" fill="#fff" />
-            </svg>
-            <span>govhub</span>
-          </NavLink>
-          <nav aria-label="Main" className="mainnav">
-            <Link to="/" className={proposals ? 'active' : undefined} aria-current={proposals ? 'page' : undefined}>
-              Proposals
-            </Link>
-            <Link to="/names" className={names ? 'active' : undefined} aria-current={names ? 'page' : undefined} data-testid="nav-names">
-              Usernames
-            </Link>
-            <Link to="/masternodes" className={masternodes ? 'active' : undefined} aria-current={masternodes ? 'page' : undefined}>
-              <span className="nav-more">My masternodes</span>
-              <span className="nav-short">Masternodes</span>
-            </Link>
-            <Link to="/create" className={create ? 'active' : undefined} aria-current={create ? 'page' : undefined} data-testid="nav-create">
-              New<span className="nav-more"> proposal</span>
-            </Link>
-          </nav>
-          <div className="topbar-end">
-            <ChainShield />
-            <SessionControl />
-          </div>
-        </div>
-      </header>
+      <dashhq-bar ref={bar} product="gov" network={registry.platformNetwork} networks="mainnet testnet" product-href={'/' + profileSearch('', registry.profile)} network-settings={'/settings' + profileSearch('', registry.profile) + '#network'} sticky="">
+        <nav slot="nav" aria-label="Governance">
+          <Link to="/" aria-current={proposals ? 'page' : undefined}>Proposals</Link>
+          <Link to="/names" aria-current={names ? 'page' : undefined} data-testid="nav-names">Name contests</Link>
+          <Link to="/masternodes" aria-current={masternodes ? 'page' : undefined}>My masternodes</Link>
+          <Link to="/create" aria-current={create ? 'page' : undefined} data-testid="nav-create">Create</Link>
+        </nav>
+        <div slot="actions"><SessionControl /></div>
+      </dashhq-bar>
+      {unsupportedNetwork && <aside className="network-context" role="alert">This Governance build supports Mainnet and Testnet. The requested network <bdi>{requestedNetwork}</bdi> is unavailable; showing Mainnet.</aside>}
+      {registry.coreNetwork !== registry.platformNetwork && <aside className="network-context" role="status">
+        <b>{coreLabel} proposals · {platformLabel} Platform.</b> This {registry.profile === 'dev' ? 'development' : 'custom'} profile reads {coreLabel} governance through {platformLabel} Platform. Name contests use {platformLabel}.
+        <Link to="/settings#network">Network settings</Link>
+      </aside>}
       <LazyAuthSheet />
       <ConfigOffer />
       <SettingsProblem />
@@ -308,17 +309,9 @@ export function Layout() {
       <main id="main" className="main">
         <Outlet />
       </main>
-      <footer className="footer">
-        <div className="footer-inner">
-          <p className="small muted">
-            Checked in your browser against Dash Platform and the Dash chain. <Link to="/about">About</Link> ·{' '}
-            <a href={PRIVACY_DOC_URL} target="_blank" rel="noopener noreferrer">
-              Privacy
-            </a>{' '}
-            · <Link to="/settings">Settings</Link> · Open source (MIT)
-          </p>
-        </div>
-      </footer>
+      <dashhq-footer product="gov" source="https://github.com/PastaPastaPasta/govhub">
+        <p>Proofs are checked in this browser. <Link to="/about">About</Link> · <a href={PRIVACY_DOC_URL}>Privacy ↗</a> · <Link to="/settings">Settings</Link></p>
+      </dashhq-footer>
     </div>
   );
 }

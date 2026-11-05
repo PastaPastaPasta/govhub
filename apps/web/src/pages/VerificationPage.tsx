@@ -1,5 +1,5 @@
 // /about/verification: what the trust badge means, in plain words (the rules are verify/aggregate.ts; README has the same list).
-import { Link } from 'react-router-dom';
+import { Link } from '../ui/Link.tsx';
 import type { ProvenanceKind } from '../data/types.ts';
 import { LEVEL_LABEL, type TrustLevel } from '../verify/aggregate.ts';
 import { ProvGlyph } from '../ui/Provenance.tsx';

@@ -2,7 +2,7 @@
 // signer), choose a privacy mode (Standard: the token now, the badge with your next post; Private: next epoch, at a random time),
 // and follow the request until the badge is posted (Register now posts a held one at once).
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from '../ui/Link.tsx';
 import { EPOCH_PARAMS, epochStart, type EpochParams } from '@govhub/badge';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
