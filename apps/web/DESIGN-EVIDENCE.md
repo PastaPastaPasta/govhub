@@ -58,3 +58,24 @@ Tests:
 - Lab: 19 server tests, 103 route and proxy checks, and the browser safety check pass.
 - e2e: the tamper suite passes again (21) after its replay was pointed at Testnet. Fifteen fixture and settings specs fail on
   the round-1 parent commit too (drift from the shell migration) and still fail. They are not addressed here.
+
+## Round 3 (5 November 2026)
+
+What the round-2 reviews (`reviews/round2-opus.md`, `reviews/round2-sol.md`) and stream S2 asked of Governance.
+
+- **A masternode's votes.** `/masternodes/<proTxHash>` lists every active proposal at once (amount, network standing, the deadline
+  that decides it) and fills in this masternode's vote per row as the bridge answers. Each row opens the keyring's vote panel for
+  this masternode, or offline signing with its voting address filled in. Rows become cards on phones. Radar's
+  `/masternodes?proTx=` link redirects there; the build writes an entry page per masternode.
+- **Cold verification.** The build ships proven masternode registrations (`scripts/registrations.mjs`, `docs/TRUST.md` §2.2b): a
+  cold proposal check in the lab went from 130 s to 10–32 s. The check line is one line with the five checks folded under it.
+  Trade-offs and measurements: `reviews/r3-gov-verification.md`.
+- **Past is a treasury ledger.** What each superblock paid, read from its coinbase in the verified chain, for a year (two on request),
+  named where Governance has the proposal on record; per-proposal outcomes (funded, partly, not funded, expired unpaid).
+- **Proposal purpose.** "What the owner says" beside "What the network records"; a shortened link's destination, resolved by the
+  build and dated.
+- **Price.** design/PRICE.md: Coinbase spot, source and UTC fetch time beside the value, stale/refresh-failed labels, none off
+  Mainnet; Testnet amounts in tDASH.
+- **Also:** content aligned to the shell gutter, one account control (the signed-out ⋮ menu is gone), slugs that wrap at hyphens.
+
+Evidence: `shots/r3-gov/` (lab capture), `shots/r3-gov-s2/` (timing logs and journey screenshots).
