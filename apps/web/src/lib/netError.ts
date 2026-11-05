@@ -28,20 +28,30 @@ const TRANSIENT_ERROR = new RegExp(
 
 export const isTransientError = (e: unknown): boolean => TRANSIENT_ERROR.test(errText(e));
 
-/** The verification worker's own words for "no node answered": the node list, the pool, a bridge it could not reach. */
+/** The verification worker's own words for "no node answered": the node list, the pool, a node it could not reach. */
 const UNREACHED = /node list|no usable nodes|all nodes failed|node attempts failed|\bfetch failed\b|no nodes? (?:left|available)|unreachable|\btimeout\b/i;
-const THROTTLED = /\b429\b|rate.?limit|too many requests|request budget/i;
+const THROTTLED = /(?:HTTP|status)[ :]+429\b|rate.?limit|too many requests/i;
+
+const NODES = "this browser couldn't reach the Dash network's nodes just now";
+const BRIDGE = "this browser couldn't reach the governance bridge just now";
+const SLOW_DOWN = 'the Dash network nodes asked this browser to slow down';
 
 /**
- * Why a check stopped, as the end of a sentence ("The chain couldn't be checked: <this>"). Only failures of the network or of
- * a node are put in words; anything else (a proof that did not check out, a bug) keeps its own text, because it may matter.
+ * Why a check stopped, as the end of a sentence ("The chain couldn't be checked: <this>"). Only failures of the network, a node or
+ * the bridge are put in words; anything else (a proof that did not check out, a bug) keeps its own text, because it may matter.
  */
 export function unfinishedReason(e: unknown): string {
   const raw = errText(e);
-  if (THROTTLED.test(raw)) return 'the Dash network nodes asked this browser to slow down';
-  if (isTransientError(raw) || UNREACHED.test(raw)) return "this browser couldn't reach the Dash network's nodes just now";
+  if (THROTTLED.test(raw)) return SLOW_DOWN;
+  if (isTransientError(raw) || UNREACHED.test(raw)) return /\bbridge\b/i.test(raw) ? BRIDGE : NODES;
   return raw;
 }
 
 /** Whether `unfinishedReason` replaced the raw text (then it is worth offering under "Details"). */
 export const isNetworkReason = (e: unknown): boolean => unfinishedReason(e) !== errText(e);
+
+/**
+ * Whether a check's reason (as aggregate.ts words it) only says the network didn't answer. Such a result says nothing about the
+ * proposal; a mismatch, an absent transaction or a node answer that didn't check out never reads like this.
+ */
+export const onlyUnreached = (reason: string | null | undefined): boolean => !!reason && [NODES, BRIDGE, SLOW_DOWN].some((t) => reason.includes(t));

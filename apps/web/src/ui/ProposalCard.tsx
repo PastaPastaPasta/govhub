@@ -4,6 +4,7 @@ import type { Profile } from '@govhub/forum';
 import { Link } from './Link.tsx';
 import { useApp } from '../app/context.tsx';
 import { formatDash, formatInt, shortHash } from '../lib/format.ts';
+import { onlyUnreached, unfinishedReason } from '../lib/netError.ts';
 import { authorLabel, authorText } from '../lib/social.ts';
 import { perPayment, type GovParams, type PaymentSchedule } from '../lib/governance.ts';
 import type { Row } from '../lib/view.ts';
@@ -18,7 +19,18 @@ import { StartsLaterTag } from './StartsLater.tsx';
 import { trustScope, useCachedTrust } from './trust/store.ts';
 import { TrustBadge } from './trust/TrustBadge.tsx';
 
-const UNFINISHED: ReadonlySet<TrustLevel> = new Set(['checking', 'error']);
+type Mark = { level: TrustLevel; reason: string | null };
+
+/**
+ * The card's trust mark: the proposal page's last full result, else the list's background check. A check that only failed to reach the
+ * network says nothing about the proposal and is usually the same trouble for every row, so the list says that once (UncheckedNote)
+ * instead. Anything else that kept it from "verified" (a mismatch, an absent or unconfirmed collateral) stays on the card as
+ * "Couldn't verify", never like a pass.
+ */
+export function cardMark(trust: Mark | null, check: CheckState | undefined): Mark | null {
+  const background: Mark | null = check?.status === 'inconclusive' ? { level: 'error', reason: `The collateral couldn't be checked: ${unfinishedReason(check.reason)}` } : null;
+  return [trust, background].find((m): m is Mark => !!m && !(m.level === 'error' && onlyUnreached(m.reason))) ?? null;
+}
 
 /** "1 of 4 payments left", "one payment", "ended". */
 export function paymentsLeft(s: PaymentSchedule | null): string | null {
@@ -40,9 +52,7 @@ export function ProposalCard({
   const t = row.tally?.value;
   const failed = check?.status === 'failed' ? check.reason : null;
   const trust = useCachedTrust(trustScope(source), p, t ?? null);
-  // A row shows what a finished check found (verified, partly, failed). A check that could not finish says nothing about the
-  // proposal and is usually the same network trouble for every row: the list says that once, above the rows (UncheckedNote).
-  const mark: { level: TrustLevel; reason: string | null } | null = failed || !trust || UNFINISHED.has(trust.level) ? null : trust;
+  const mark = failed ? null : cardMark(trust, check);
   // Under a "Verified" mark only proven data decides "in the next budget" (none: no tag); otherwise it is the tally's own flag.
   const verified = trust && mark?.level === 'verified' ? trust : null;
   const inBudget = verified ? (verified.funded ?? undefined) : t?.inNextBudget;

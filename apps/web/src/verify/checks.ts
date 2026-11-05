@@ -125,7 +125,8 @@ export class ProposalChecks {
   retryUnfinished(ps: readonly Proposal[]): void {
     for (const p of ps) {
       const k = this.key(p);
-      if (this.states.get(k)?.status !== 'inconclusive' || this.queue.includes(p)) continue;
+      // a full page check that decided it outranks the background one: running that again would only leave the row pending
+      if (this.states.get(k)?.status !== 'inconclusive' || this.full.has(k) || this.queue.includes(p)) continue;
       this.set(k, { status: 'pending' });
       this.queue.push(p);
     }

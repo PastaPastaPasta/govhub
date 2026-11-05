@@ -15,7 +15,7 @@ import { ProposalTabs } from '../ui/ProposalTabs.tsx';
 import { useReveal } from '../ui/hooks.ts';
 import { useCommentCounts } from '../ui/useCommentCounts.ts';
 import { countNames, proposalHref, type Checked, type Row } from '../lib/view.ts';
-import { unfinishedReason } from '../lib/netError.ts';
+import { onlyUnreached, unfinishedReason } from '../lib/netError.ts';
 
 /** Display names of these identities (self-chosen profiles), for the owners named in proposal URLs. */
 function useProfiles(ids: readonly string[]): ReadonlyMap<string, Profile> {
@@ -41,15 +41,19 @@ function matches(p: Proposal, needle: string): boolean {
 /** One line for the background checks that could not finish (instead of a mark on every row), with a way to run them again. */
 function UncheckedNote({ rows }: { rows: readonly Checked<Row>[] }) {
   const { checks } = useApp();
-  const unfinished = rows.filter((r) => r.check.status === 'inconclusive');
+  // only the network failures (each card shows any other reason itself), with the reason of the rows counted
+  const unfinished = rows.flatMap((r) => {
+    const why = r.check.status === 'inconclusive' ? unfinishedReason(r.check.reason) : null;
+    return why && onlyUnreached(why) ? [{ p: r.item.p.value, why }] : [];
+  });
   if (!unfinished.length) return null;
-  const first = unfinished[0]!.check;
-  const why = first.status === 'inconclusive' ? unfinishedReason(first.reason) : '';
+  const reasons = new Set(unfinished.map((u) => u.why));
+  const why = reasons.size === 1 ? unfinished[0]!.why : "this browser couldn't reach the network just now";
   return (
     <p className="list-note small" data-testid="unchecked-note">
-      {unfinished.length === rows.length ? 'These proposals' : `${unfinished.length} of these proposals`} couldn't be checked against the chain{why ? `: ${why}` : ''}. Their amounts and
-      votes are as Platform reports them.{' '}
-      <button type="button" className="linkish" onClick={() => checks.retryUnfinished(unfinished.map((r) => r.item.p.value))} data-testid="unchecked-retry">
+      {unfinished.length === rows.length ? 'These proposals' : `${unfinished.length} of these proposals`} couldn't be checked against the chain: {why}. Their amounts and
+      votes are shown as reported.{' '}
+      <button type="button" className="linkish" onClick={() => checks.retryUnfinished(unfinished.map((u) => u.p))} data-testid="unchecked-retry">
         Try again
       </button>
     </p>
@@ -113,7 +117,7 @@ export function ActivePage() {
             Active proposals
           </h1>
           <ProposalTabs />
-          <p className="small muted">Best-supported first: the order the treasury pays them in, as reported on Platform. Each proposal's page checks its own figures in your browser.</p>
+          <p className="small muted">Best-supported first: the order the treasury pays them in, as reported. Each proposal's page checks its own figures in your browser.</p>
           <label className="contests-search proposal-search">
             <span className="visually-hidden">Find a proposal by name, payee address or website</span>
             <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a proposal" autoComplete="off" spellCheck={false} data-testid="proposal-search" />
@@ -126,7 +130,7 @@ export function ActivePage() {
             </p>
           )}
         </div>
-        <UncheckedNote rows={all} />
+        <UncheckedNote rows={[...all, ...activeRows.lameDucks]} />
         {gov.active.loading && rows.length === 0 ? (
           <div className="plist" aria-busy="true">
             {Array.from({ length: 6 }, (_, i) => (
