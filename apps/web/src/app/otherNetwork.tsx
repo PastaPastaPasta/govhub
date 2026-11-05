@@ -35,7 +35,7 @@ export function useOtherNetwork(): OtherNetwork | null {
   }, [mode, registry]);
 }
 
-export type Probe = 'checking' | 'found' | 'absent' | 'unknown';
+type Probe = 'checking' | 'found' | 'absent' | 'unknown';
 
 const PROBE_TIMEOUT_MS = 25_000;
 
@@ -70,7 +70,6 @@ export function useProbe(other: OtherNetwork | null, look: (o: OtherNetwork) => 
  */
 export function NetworkProbeNotice({ thing, idLabel, absent, probe, other, list }: { thing: string; idLabel: string; absent: string; probe: Probe; other: OtherNetwork | null; list: { path: string; label: string } }) {
   const { registry } = useApp();
-  const here = registry.coreNetwork;
   const listHref = list.path + profileSearch('', registry.profile);
   if (!other) {
     return (
@@ -82,9 +81,10 @@ export function NetworkProbeNotice({ thing, idLabel, absent, probe, other, list 
       </div>
     );
   }
-  const found = probe === 'found' ? other.registry.coreNetwork : probe === 'absent' ? 'none' : probe === 'checking' ? undefined : 'unknown';
+  // the element's `found`: the network it is on, none, couldn't check; left off while checking
+  const found = { found: other.registry.coreNetwork, absent: 'none', unknown: 'unknown', checking: undefined } as const satisfies Record<Probe, string | undefined>;
   return (
-    <dashhq-not-found thing={thing} id-label={idLabel} network={here} networks="mainnet testnet" found={found} list-href={listHref} list-label={list.label} data-testid="not-found" data-probe={probe}>
+    <dashhq-not-found thing={thing} id-label={idLabel} network={registry.coreNetwork} networks="mainnet testnet" found={found[probe]} list-href={listHref} list-label={list.label} data-testid="not-found" data-probe={probe}>
       {probe === 'absent' && <p>{absent}</p>}
     </dashhq-not-found>
   );

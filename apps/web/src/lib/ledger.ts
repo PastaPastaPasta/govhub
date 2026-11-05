@@ -236,6 +236,16 @@ export function ledgerSummary(slots: readonly LedgerSlotEntry[]): LedgerSummary 
   };
 }
 
+export type LedgerDone = Extract<LedgerSummary, { kind: 'done' }>;
+
+/** What finished totals leave out, in words ("1 couldn’t be read and 1 with a total that isn’t known"), or null when nothing is. */
+export function leftOut(sum: LedgerDone): { text: string; verb: 'it is' | 'they are' } | null {
+  const text = [sum.failed ? `${sum.failed.toLocaleString('en-US')} couldn’t be read` : '', sum.unknown ? `${sum.unknown.toLocaleString('en-US')} with a total that isn’t known` : '']
+    .filter(Boolean)
+    .join(' and ');
+  return text ? { text, verb: sum.failed + sum.unknown === 1 ? 'it is' : 'they are' } : null;
+}
+
 /** The last `count` superblock heights at or below `lastHeight`, newest first. */
 export function superblockHeights(lastHeight: number, cycle: number, count: number, lowest = 1): number[] {
   const out: number[] = [];

@@ -11,9 +11,9 @@ import { useRouteTitle } from '../app/title.ts';
 import { Link } from '../ui/Link.tsx';
 import { useApp } from '../app/context.tsx';
 import type { Proposal, Sourced, Tally } from '../data/types.ts';
-import { dashUnit, errText, formatDash, formatDashAmount, formatDate, formatInt, formatSigned } from '../lib/format.ts';
+import { errText, formatDash, formatDate, formatInt, formatSigned } from '../lib/format.ts';
 import { absoluteYes, perPayment } from '../lib/governance.ts';
-import { ledgerEntry, ledgerSummary, outcomeOf, type LedgerEntry, type LedgerLine, type LedgerSummary, type Outcome, type SuperblockRead } from '../lib/ledger.ts';
+import { leftOut, ledgerEntry, ledgerSummary, outcomeOf, type LedgerEntry, type LedgerLine, type LedgerSummary, type Outcome, type SuperblockRead } from '../lib/ledger.ts';
 import { countNames, partitionByCheck, proposalHref } from '../lib/view.ts';
 import { contentFailure, isFailed } from '../verify/checks.ts';
 import { FailedNote, FailedProposalsToggle } from '../ui/HiddenToggle.tsx';
@@ -21,6 +21,7 @@ import { useReveal } from '../ui/hooks.ts';
 import { ProposalTabs } from '../ui/ProposalTabs.tsx';
 import { useLedger, type Ledger, type SuperblockSlot } from '../ui/useLedger.ts';
 import { ChainProof } from '../ui/ProofTag.tsx';
+import { DashValue } from '../ui/DashValue.tsx';
 
 /** Ended proposals on Platform, every page (there are tens, not thousands), with their published tallies. */
 function usePastProposals() {
@@ -105,13 +106,6 @@ export function PastPage() {
 
 // ---- payments ---------------------------------------------------------------------------------------------------------------
 
-/** A stat value with its unit set smaller (DESIGN.md §6, stats). */
-const DashValue = ({ duffs }: { duffs: bigint }) => (
-  <>
-    {formatDashAmount(Number(duffs))} <small>{dashUnit()}</small>
-  </>
-);
-
 function LedgerView({ ledger, known, past }: { ledger: Ledger; known: Proposal[]; past: Sourced<Proposal>[] }) {
   const { source, gov, checks } = useApp();
   // the proposals that can name a payment get their background check too: one that fails it stops naming payments
@@ -133,7 +127,6 @@ function LedgerView({ ledger, known, past }: { ledger: Ledger; known: Proposal[]
     );
   }
   const sum = ledgerSummary(entries.map((e) => ({ state: e.slot.state, entry: e.entry })));
-  const reading = sum.kind === 'reading' ? sum.of - sum.settled : 0;
   const failed = sum.kind === 'done' ? sum.failed : 0;
   // Governance's records hold the proposals that ended since its bridge began archiving, and the active ones: others show their payee
   const recordsFrom = past.length ? Math.min(...past.map((p) => p.value.endEpoch)) : null;
@@ -159,7 +152,7 @@ function LedgerView({ ledger, known, past }: { ledger: Ledger; known: Proposal[]
       ))}
       <div className="ledger-more">
         {ledger.canLoadMore ? (
-          <button type="button" className="btn dh-btn" onClick={ledger.loadMore} disabled={reading > 0} data-testid="ledger-more">
+          <button type="button" className="btn dh-btn" onClick={ledger.loadMore} disabled={sum.kind === 'reading'} data-testid="ledger-more">
             Show {network === 'testnet' ? 'the day' : 'the year'} before
           </button>
         ) : (
@@ -191,13 +184,13 @@ function LedgerStats({ sum, perSb }: { sum: LedgerSummary; perSb: string }) {
       </div>
     );
   }
-  const left = [sum.failed ? `${formatInt(sum.failed)} couldn't be read` : '', sum.unknown ? `${formatInt(sum.unknown)} with a total that isn't known` : ''].filter(Boolean).join(' and ');
+  const left = leftOut(sum);
   const range = sum.oldest && sum.newest ? `, ${formatDate(sum.oldest)} to ${formatDate(sum.newest)}` : '';
-  const scope = left ? `in ${formatInt(sum.counted)} of the ${formatInt(sum.of)} superblocks${range}; ${left}, so ${sum.failed + sum.unknown === 1 ? 'it is' : 'they are'} left out` : `in ${formatInt(sum.counted)} superblock${sum.counted === 1 ? '' : 's'}${range}`;
+  const scope = left ? `in ${formatInt(sum.counted)} of the ${formatInt(sum.of)} superblocks${range}; ${left.text}, so ${left.verb} left out` : `in ${formatInt(sum.counted)} superblock${sum.counted === 1 ? '' : 's'}${range}`;
   if (!sum.counted) {
     return (
       <p className="notice-box dh-notice dh-notice--warn small" data-testid="ledger-total">
-        No superblock total could be read just now ({left}).
+        No superblock total could be read just now ({left?.text}).
       </p>
     );
   }

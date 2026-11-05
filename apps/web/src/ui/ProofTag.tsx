@@ -1,12 +1,12 @@
 // What a figure rests on, said beside it with the family's proof badge (DESIGN.md §6): proven in this browser, reported by a
-// source, still checking, or read but not proven. Not a control: the proposal page's badge is the one that opens the checks.
+// source, or read but not proven. Not a control: the proposal page's badge is the one that opens the checks.
 import type { ReactNode } from 'react';
 
-export type ProofState = 'ok' | 'reported' | 'checking' | 'unverified';
+type ProofState = 'ok' | 'reported' | 'unverified';
 
-export function ProofTag({ state, title, children, testId }: { state: ProofState; title?: string; children: ReactNode; testId?: string }) {
+export function ProofTag({ state, title, children }: { state: ProofState; title?: string; children: ReactNode }) {
   return (
-    <span className={`dh-proof dh-proof--${state} proof-tag`} title={title} data-testid={testId} data-proof={state}>
+    <span className={`dh-proof dh-proof--${state} proof-tag`} title={title} data-proof={state}>
       {children}
     </span>
   );

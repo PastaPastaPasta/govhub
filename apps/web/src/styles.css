@@ -2808,8 +2808,6 @@ dashhq-hash { vertical-align: middle; max-width: 100%; }
 .masked[data-masked="true"] { -webkit-text-security: disc; }
 
 /* ---- what the owner's page says (read at build time) ----------------------------------------- */
-.owner-page { display: grid; gap: 8px; }
-.owner-page-from { margin: 0; }
 .owner-page-quote {
   margin: 0;
   padding: 10px 14px;
@@ -2820,7 +2818,6 @@ dashhq-hash { vertical-align: middle; max-width: 100%; }
   gap: 6px;
 }
 .owner-page-quote p { margin: 0; }
-.owner-page-title { font-weight: 650; }
 .p-chain-name { margin: 0; overflow-wrap: anywhere; }
 .prow-slug { margin: 0; color: var(--ink-3); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: var(--t-xs); overflow-wrap: anywhere; }
 .prow-purpose {
@@ -2832,7 +2829,6 @@ dashhq-hash { vertical-align: middle; max-width: 100%; }
   -webkit-line-clamp: 2;
   overflow: hidden;
 }
-.owner-title { display: block; overflow-wrap: anywhere; font-weight: 400; }
 
 /* ---- proposal page: what it funds, then where it stands, then the vote --------------------------- */
 .p-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3); }
@@ -2885,11 +2881,6 @@ details.tr-group > summary::-webkit-details-marker { display: none; }
 details.tr-group[open] > summary .sb-chevron { transform: translateY(-4px) rotate(45deg); }
 details.tr-group > .tr-group-desc { padding: 0 16px 10px; }
 details.tr-group > .tr-table { margin: 0; border-radius: 0; }
-.tr-name a { font-weight: 600; }
-.tr-name .tr-slug, .tr-name .tr-purpose { display: block; margin-block-start: 2px; font-weight: 400; }
-.tr-slug { font-family: var(--dh-mono); font-size: 12px; color: var(--dh-ink-2); overflow-wrap: anywhere; }
-.tr-slug .muted { font-family: var(--dh-font); }
-.tr-purpose { color: var(--dh-ink-2); max-inline-size: 64ch; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; }
 .tr-ask, .tr-share { white-space: nowrap; }
 .tr-share-bar { display: inline-block; inline-size: 88px; block-size: 6px; margin-inline-end: 8px; border-radius: 3px; overflow: hidden; vertical-align: middle; background: var(--dh-sunken); }
 .tr-share-bar > span { display: block; block-size: 100%; min-inline-size: 2px; border-radius: 3px; background: var(--dh-brand); }
@@ -2914,7 +2905,6 @@ details.tr-group > .tr-table { margin: 0; border-radius: 0; }
   .tr-x { font-size: 10px; }
   .tr-cols { block-size: 160px; }
   .tr-share-bar { inline-size: 56px; }
-  .tr-purpose { -webkit-line-clamp: 2; }
 }
 
 /* ---- one shape for a proposal in a list --------------------------------------------------------------------------- */

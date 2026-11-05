@@ -28,7 +28,7 @@ import { useOwnerPage } from '../lib/ownerPages.ts';
 import { purposeOf } from '../ui/OwnerPage.tsx';
 import { useAsync } from '../ui/hooks.ts';
 import type { Proposal, Sourced } from '../data/types.ts';
-import type { OwnerPage } from '../lib/ownerPages.ts';
+import type { Found } from '../lib/ownerPages.ts';
 import { formatDash, formatDate, formatDateTime, formatDuration, formatInt, shortHash, urlHost } from '../lib/format.ts';
 import { passState, perPayment, votingDeadlineTime } from '../lib/governance.ts';
 import { deriveRow } from '../lib/view.ts';
@@ -140,7 +140,7 @@ function EvidenceLine({ agg, onRetry }: { agg: Aggregate; onRetry(): void }) {
  * The first thing on the page: what the proposal is for, in the owner's words from their page (read when the site was built,
  * quoted and attributed), else where the owner says it.
  */
-function Purpose({ page, hasPost, url, host }: { page: { page: OwnerPage; fetchedAt: number } | null; hasPost: boolean; url: string; host: string | null }) {
+function Purpose({ page, hasPost, url, host }: { page: Found; hasPost: boolean; url: string; host: string | null }) {
   const below = hasPost ? (
     <p className="small" data-testid="p-purpose-post">
       The owner has posted a description here: <a href="#about-title">read it below</a>.

@@ -395,7 +395,7 @@ export function useOwnerPages(): ReadonlyMap<string, OwnerPage> {
   return pages;
 }
 
-type Found = { page: OwnerPage; fetchedAt: number } | null;
+export type Found = { page: OwnerPage; fetchedAt: number } | null;
 const foundIn = (o: Shipped, p: { govHash: string; url: string }): Found => {
   const page = ownerPageOf(o.pages, p);
   return page ? { page, fetchedAt: o.fetchedAt } : null;
