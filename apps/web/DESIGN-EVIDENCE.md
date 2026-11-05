@@ -31,3 +31,30 @@ Status: **APPROVED**. The actual implementation diffs were reviewed for correctn
 The simplification pass removed duplicate theme state and theme controls, obsolete header/footer CSS and the old Vote theme module. Existing component tokens map to the shared tokens rather than adding a second component system. These changes preserve the voting and verification interfaces.
 
 Both sites vendor shell **1.0.1** unchanged. The shell script is pinned as `7dd0e4bcad13c265403e6539d18c12df0030235c6eb1c3826c12d540610fec28`. No shell requests or lab tooling edits were needed.
+
+## Round 2 (5 November 2026)
+
+What the round-1 reviews (`reviews/round1-opus.md`, `reviews/round1-sol.md`) asked of Governance, and where the evidence is.
+
+- **Verification.** The lab's "Chain not verified" everywhere was a lab artefact: the lab's CSP refused the verification Worker's
+  reads. The diagnosis and the production comparison are in `reviews/r2-gov-verification.md`. The app now names what is
+  running, says what an unfinished check means and what still holds, never shows a raw exception as the message, offers Try
+  again, and keeps budget places "as reported" until proven. Evidence: `shots/r2-gov-ux/` (`fail-*` show a simulated chain
+  outage; `lab-*` and `prod-*` show the lab and production verifying).
+- **Shared links.** `scripts/prerender.mjs` writes a static entry page per route: titles, descriptions and share tags, HTTP 200
+  on Pages. Open question for the first deploy: confirm with `curl -I` that Pages serves `/about` and `/names` from
+  `about.html` and `names.html` (each also has a same-named directory without an `index.html`).
+- **Voting flow.** Signed out, My masternodes lists three ways to vote and what each needs. The Radar handoff shows the node's
+  public votes on request and links back to Radar.
+- **Name contests.** `/names/<label>` handles EvoVote's forwarding (`from=vote`), display spellings and the wrong network.
+- **Also in this round:** Past proposals as row cards on phones, a proposal search, honest About links (shortened links named
+  as such), and "Governance" instead of "govhub" in the UI copy.
+- **Screenshots.** `shots/r2-gov/` (lab capture) and `shots/r2-gov-ux/j-*` (journeys at 390 and 1440, light and dark).
+
+Tests:
+
+- Web: 735 vitest tests. Typecheck passes.
+- dapi: client tests pass.
+- Lab: 19 server tests, 103 route and proxy checks, and the browser safety check pass.
+- e2e: the tamper suite passes again (21) after its replay was pointed at Testnet. Fifteen fixture and settings specs fail on
+  the round-1 parent commit too (drift from the shell migration) and still fail. They are not addressed here.
