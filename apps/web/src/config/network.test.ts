@@ -11,7 +11,8 @@ describe('shareable network profiles', () => {
   it('changes networks without losing config or filters and removes stale profile flags', () => {
     const start = '?config=reviewed-settings&filter=active&network=testnet&profile=dev';
     expect(new URLSearchParams(profileSearch(start, 'mainnet')).get('config')).toBe('reviewed-settings');
-    expect(profileSearch(start, 'mainnet')).not.toMatch(/network|profile/);
+    expect(new URLSearchParams(profileSearch(start, 'mainnet')).get('network')).toBe('mainnet');
+    expect(new URLSearchParams(profileSearch(start, 'mainnet')).has('profile')).toBe(false);
     expect(profileSearch('', 'dev')).toBe('?network=testnet&profile=dev');
     expect(profileSearch('?profile=dev', 'testnet')).toBe('?network=testnet');
   });

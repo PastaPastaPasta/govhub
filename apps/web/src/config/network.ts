@@ -11,7 +11,7 @@ export function profileSearch(search: string, profile: ProfileId): string {
   const p = new URLSearchParams(search);
   p.delete('profile');
   p.delete('network');
-  if (profile !== 'mainnet') p.set('network', 'testnet');
+  p.set('network', profile === 'mainnet' ? 'mainnet' : 'testnet');
   if (profile === 'dev') p.set('profile', 'dev');
   return p.toString() ? `?${p}` : '';
 }

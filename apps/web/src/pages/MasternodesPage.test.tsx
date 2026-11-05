@@ -95,3 +95,20 @@ describe('votingKeyInfos', () => {
     expect(() => votingKeyInfos(ring.content.keys)).toThrow(ZeroedKeyError);
   });
 });
+
+describe('Radar handoff', () => {
+  it('retains a valid selected masternode without importing a key', async () => {
+    hold.ctx = ctxFor(openKeyring(), 'testnet');
+    const hash = 'ab'.repeat(32);
+    const r = await render(<MemoryRouter initialEntries={['/masternodes?proTx=' + hash]}><MasternodesPage /></MemoryRouter>);
+    expect(r.el.querySelector('[aria-label="Masternode from Radar"] dashhq-hash')?.getAttribute('value')).toBe(hash);
+    expect(r.el.textContent).toContain('Use this masternode’s voting key');
+    await r.unmount();
+  });
+  it('ignores malformed public record identifiers', async () => {
+    hold.ctx = ctxFor(openKeyring(), 'mainnet');
+    const r = await render(<MemoryRouter initialEntries={['/masternodes?proTx=invalid']}><MasternodesPage /></MemoryRouter>);
+    expect(r.el.querySelector('[aria-label="Masternode from Radar"]')).toBeNull();
+    await r.unmount();
+  });
+});

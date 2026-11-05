@@ -866,7 +866,9 @@ export function MasternodesPage() {
   const k = useKeyring();
   const { openSheet } = useAuth();
   const b = useMnBadge();
-  const { hash, key: navKey } = useLocation();
+  const { hash, search, key: navKey } = useLocation();
+  const requestedProTx = new URLSearchParams(search).get('proTx') || '';
+  const proTx = /^[a-f0-9]{64}$/i.test(requestedProTx) ? requestedProTx.toLowerCase() : null;
   // the flow stays on screen while the key it adds opens the keyring (null: not adding)
   const [flow, setFlow] = useState<FlowStep | null>(null);
   // what the flow's confirm did, for the banner it ends in
@@ -896,6 +898,13 @@ export function MasternodesPage() {
   return (
     <section className="kr-page" aria-labelledby="mn-page-title">
       <Header adding={adding} badgeKeyKept={b.status.kind === 'pending' && b.status.job.signer.kind === 'wif'} />
+      {proTx && (
+        <section className="kr-card" aria-label="Masternode from Radar">
+          <h2>Continue from Radar</h2>
+          <p><dashhq-hash value={proTx} full="" label="ProTx hash" href={window.dashhq?.href('radar', '/mn/' + proTx, { network: k.coreNetwork })}>{proTx}</dashhq-hash></p>
+          <p>Use this masternode’s voting key to add it to your keyring. Its network record is in Radar.</p>
+        </section>
+      )}
       {k.busy && (
         <p className="kr-busy small" role="status">
           <span className="spinner" aria-hidden="true" /> {k.busy}…
