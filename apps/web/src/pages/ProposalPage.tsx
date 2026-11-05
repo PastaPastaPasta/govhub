@@ -9,7 +9,7 @@ import { useLocation, useParams } from 'react-router-dom';
 import { Link } from '../ui/Link.tsx';
 import { urlClaimIdentity } from '@govhub/verify';
 import { useApp } from '../app/context.tsx';
-import { useOtherNetwork, useProbe, WrongNetwork } from '../app/otherNetwork.tsx';
+import { RecordNotFound, useOtherNetwork, useProbe } from '../app/otherNetwork.tsx';
 import { Discussion } from '../ui/Discussion.tsx';
 import { proposalOwner } from '../lib/social.ts';
 import { ErrorBoundary } from '../ui/ErrorBoundary.tsx';
@@ -98,17 +98,16 @@ function NotFound({ by }: { by: { name: string } | { hash: string } }) {
   const { registry } = useApp();
   const here = registry.profile === 'testnet' ? 'Testnet' : 'Mainnet';
   return (
-    <WrongNetwork
-      what="proposal"
+    <RecordNotFound
+      kicker="Proposal"
+      name={'name' in by ? <Slug name={by.name} /> : <span className="mono-ish">{shortHash(by.hash, 10)}</span>}
+      title={'name' in by ? `${by.name}: not on ${here}` : `Proposal not on ${here}`}
+      thing="proposal"
+      idLabel={'name' in by ? 'name' : 'hash'}
       probe={probe}
       other={other}
-      missing={'name' in by ? `${here} has no proposal named “${by.name}”.` : `${here} has no proposal with hash ${shortHash(by.hash)}.`}
-      absent="If it was submitted in the last few minutes, Governance’s bridge may not have published it yet."
-      back={
-        <Link to="/" data-testid="wrong-network-back">
-          {here}’s active proposals
-        </Link>
-      }
+      absent="A proposal shows here a few minutes after it is submitted, once Governance’s bridge has published it."
+      list={{ path: '/', label: `Browse ${here} proposals` }}
     />
   );
 }

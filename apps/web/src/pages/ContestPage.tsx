@@ -68,19 +68,22 @@ function Missing({ label, children }: { label: string; children: string }) {
 function NoContestHere({ label, network }: { label: string; network: string }) {
   const other = useOtherNetwork();
   const probe = useProbe(other, async (o) => contestExists(await liveContests(o.registry).state(label)), label);
-  const here = networkLabel(network);
-  // the tab keeps the page's own title ("No contest for …"): true of this network whatever the other says
-  const title = probe === 'found' ? `The contest for ${label}.dash isn’t on ${here}` : `No contest for ${label}.dash`;
   return (
     <section className="page-narrow" data-testid="contest-missing" data-probe={probe}>
-      <h1 className="dh-page-header__title">{title}</h1>
+      <header className="dh-page-header">
+        <p className="dh-page-header__kicker">Name contest</p>
+        <h1 className="dh-page-header__title">
+          <bdi>{label}</bdi>
+          <span className="tld">.dash</span>
+        </h1>
+      </header>
       <NetworkProbeNotice
-        what="name contest"
+        thing="name contest"
+        idLabel="name"
         probe={probe}
         other={other}
-        missing={`Platform has no record of a vote on this name on ${here}.`}
         absent="A name goes to a vote only when two or more identities ask for it."
-        back={<Link to="/names">All name contests</Link>}
+        list={{ path: '/names', label: `Browse ${networkLabel(network)} name contests` }}
       />
     </section>
   );

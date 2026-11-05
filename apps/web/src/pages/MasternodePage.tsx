@@ -18,7 +18,7 @@ import { useMasternodeVotes, type VoteCell } from '../ui/vote/useMasternodeVotes
 import { OfflineSign, VoteComposer } from '../ui/VotePanel.tsx';
 import { useKeyring } from '../voting/KeyringContext.tsx';
 import { OwnerTitle } from '../ui/OwnerPage.tsx';
-import { NetworkProbeNotice, useOtherNetwork, useProbe, wrongNetworkTitle } from '../app/otherNetwork.tsx';
+import { NetworkProbeNotice, useOtherNetwork, useProbe } from '../app/otherNetwork.tsx';
 import { makeBridge } from '../data/bridgeFactory.ts';
 import '../voting/voting.css';
 
@@ -143,9 +143,7 @@ function MasternodeVotes({ proTx }: { proTx: string }) {
         )}
       </p>
       <header className="mnv-head dh-page-header">
-        <h1 className="dh-page-header__title" id="mnv-title">
-          {v.lookup.kind === 'absent' ? wrongNetworkTitle('masternode', elsewhere, network, other) : 'Masternode votes'}
-        </h1>
+        <h1 className="dh-page-header__title" id="mnv-title">Masternode votes</h1>
         <p className="mnv-id">
           <dashhq-hash value={proTx} full="" label="ProTx hash" {...(radarHere ? { href: radarHere } : {})}>
             {proTx}
@@ -174,12 +172,12 @@ function MasternodeVotes({ proTx }: { proTx: string }) {
       {v.lookup.kind === 'absent' && (
         <div data-testid="mn-absent">
           <NetworkProbeNotice
-            what="masternode"
+            thing="masternode"
+            idLabel="ProTx hash"
             probe={elsewhere}
             other={other}
-            missing={`This masternode isn't in the ${network} masternode list (the governance bridge's, at block ${formatInt(v.lookup.height)}).`}
-            absent="It may have been removed, or the link may be cut short."
-            back={<Link to="/">{network}’s active proposals</Link>}
+            absent={`Governance reads the governance bridge's masternode list, at block ${formatInt(v.lookup.height)}; it may have been removed.`}
+            list={{ path: '/', label: `Browse ${network} proposals` }}
           />
         </div>
       )}

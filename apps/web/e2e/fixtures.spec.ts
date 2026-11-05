@@ -204,7 +204,7 @@ test.describe('fixture mode', () => {
 
   test('unknown proposal hash shows not found', async ({ page }) => {
     await gotoFixtures(page, `/p/h/${'ab'.repeat(32)}`);
-    await expect(page.getByRole('heading', { name: 'Proposal not found' })).toBeVisible();
+    await expect(page.getByTestId('not-found-plain')).toContainText('There’s no proposal with this hash here.');
   });
 });
 

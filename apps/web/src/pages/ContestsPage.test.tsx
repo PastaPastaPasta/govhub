@@ -137,6 +137,7 @@ describe('ContestPage', () => {
     expect(other.el.textContent).toContain('Only names of 3 to 19 letters');
     const none = await render(at('/names/zzzz'));
     await settle();
-    expect(none.el.textContent).toContain('No contest for zzzz.dash');
+    expect(none.el.querySelector('[data-testid="contest-missing"] h1')!.textContent).toBe('zzzz.dash');
+    expect(none.el.querySelector('[data-testid="not-found-plain"]')!.textContent).toContain('There’s no name contest with this name here.');
   });
 });
