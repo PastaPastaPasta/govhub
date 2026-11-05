@@ -47,6 +47,8 @@ export function BudgetHeader() {
   const available = Math.max(0, c.budget - allocated);
   const threshold = fundingThreshold(c.validWeighted, params);
   const height = gov.height.data?.value;
+  // which proposals are in the budget comes from their tallies: no count (and no per-proposal strip) until both reads have answered
+  const counting = gov.talliesLoading;
 
   return (
     <section className="budget dh-page-header" aria-labelledby="budget-title">
@@ -71,9 +73,9 @@ export function BudgetHeader() {
 
       {/* The segments are links for the pointer only; an image role around them would be an interactive control nested in an image
           (axe nested-interactive), so assistive technology gets this sentence and the strip is hidden from it. */}
-      <p className="visually-hidden">{`Allocated ${formatDash(allocated)} of ${formatDash(c.budget)} (${formatPercent(allocatedFrac)}) across ${funded.length} proposals`}</p>
+      <p className="visually-hidden">{`Allocated ${formatDash(allocated)} of ${formatDash(c.budget)} (${formatPercent(allocatedFrac)})${counting ? '' : ` across ${funded.length} proposals`}`}</p>
       <div className="strip" aria-hidden="true">
-        {funded.map((r) => (
+        {!counting && funded.map((r) => (
           <Link
             key={r.p.value.govHash}
             to={proposalHref(r.p.value, names)}
@@ -85,13 +87,24 @@ export function BudgetHeader() {
           />
         ))}
         {/* Allocation the cycle reports beyond the proposals listed here (e.g. not yet published). */}
-        {allocated > fundedSum && <span className="strip-other" style={{ flexGrow: allocated - fundedSum }} title={`${formatDash(allocated - fundedSum)} allocated to proposals not listed here`} />}
-        <span className="strip-free" style={{ flexGrow: Math.max(0, c.budget - Math.max(allocated, fundedSum)) }} />
+        {counting ? (
+          <span className="strip-other" style={{ flexGrow: allocated }} title={`${formatDash(allocated)} allocated`} />
+        ) : (
+          allocated > fundedSum && <span className="strip-other" style={{ flexGrow: allocated - fundedSum }} title={`${formatDash(allocated - fundedSum)} allocated to proposals not listed here`} />
+        )}
+        <span className="strip-free" style={{ flexGrow: Math.max(0, c.budget - Math.max(allocated, counting ? 0 : fundedSum)) }} />
       </div>
 
       <p className="budget-compact">
-        <b>{formatDashAmount(available)} {dashUnit()}</b> still available; <b>{formatInt(funded.length)}</b> of {formatInt(active)} proposals in the budget
-        {later > 0 && `; plus ${formatInt(later)} that start${laterS} paying later`}
+        <b>{formatDashAmount(available)} {dashUnit()}</b> still available;{' '}
+        {counting ? (
+          'counting which proposals are in the budget…'
+        ) : (
+          <>
+            <b>{formatInt(funded.length)}</b> of {formatInt(active)} proposals in the budget
+            {later > 0 && `; plus ${formatInt(later)} that start${laterS} paying later`}
+          </>
+        )}
       </p>
       <dl className="budget-facts">
         <div>
@@ -109,9 +122,17 @@ export function BudgetHeader() {
         </div>
         <div>
           <dt>In the budget</dt>
-          <dd>
-            <span className="num">{formatInt(funded.length)}</span> of {formatInt(active)} proposals
-            {later > 0 && <span className="muted"> (plus {formatInt(later)} that start{laterS} paying at a later superblock)</span>}
+          <dd data-testid="budget-in">
+            {counting ? (
+              <span className="muted">
+                <span className="spinner" aria-hidden="true" /> counting the votes…
+              </span>
+            ) : (
+              <>
+                <span className="num">{formatInt(funded.length)}</span> of {formatInt(active)} proposals
+                {later > 0 && <span className="muted"> (plus {formatInt(later)} that start{laterS} paying at a later superblock)</span>}
+              </>
+            )}
           </dd>
         </div>
         <div>
