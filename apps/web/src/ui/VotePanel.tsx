@@ -97,7 +97,8 @@ function trackedFor(watched: readonly WatchedVote[], govHashes: ReadonlySet<stri
     .sort((a, b) => (b.signedAt ?? b.time) - (a.signedAt ?? a.time));
 }
 
-export function VoteComposer({ proposals, onVerify }: { proposals: Proposal[]; onVerify?: () => void }) {
+/** `onlyMn`: start with just this masternode selected (when the keyring has it), e.g. from a masternode's own page. */
+export function VoteComposer({ proposals, onVerify, onlyMn }: { proposals: Proposal[]; onVerify?: () => void; onlyMn?: string }) {
   const k = useKeyring();
   const deadline = useDeadline();
   const labels = useLabels();
@@ -109,7 +110,7 @@ export function VoteComposer({ proposals, onVerify }: { proposals: Proposal[]; o
     nonce + confirmedCount,
   );
   const usable = k.mns.owned.filter((m) => m.valid);
-  const [selected, setSelected] = useState<Set<string> | null>(null); // null = all
+  const [selected, setSelected] = useState<Set<string> | null>(() => (onlyMn && k.mns.owned.some((m) => m.valid && m.proTxHash.toLowerCase() === onlyMn) ? new Set(k.mns.owned.filter((m) => m.proTxHash.toLowerCase() === onlyMn).map((m) => m.proTxHash)) : null)); // null = all
   const [choice, setChoice] = useState<Record<string, Outcome | 0>>({});
   const [mode, setMode] = useState<'now' | 'deferred'>('now');
   const [withinH, setWithinH] = useState('');
@@ -400,11 +401,12 @@ export function VoteComposer({ proposals, onVerify }: { proposals: Proposal[]; o
  * hash, which `signmessage` cannot make) and the `voteraw` command, for custom tooling. Either way a signature can be pasted back and
  * is checked here before it is sent. No key enters the page.
  */
-export function OfflineSign({ proposal }: { proposal: Proposal }) {
+/** `address` fills in the voting address (a masternode's own page knows it); `open` shows it unfolded. */
+export function OfflineSign({ proposal, address: initialAddress = '', open }: { proposal: Proposal; address?: string; open?: boolean }) {
   const k = useKeyring();
   const { registry } = useApp();
   const network: Network = k.coreNetwork;
-  const [address, setAddress] = useState('');
+  const [address, setAddress] = useState(initialAddress);
   const [outcome, setOutcome] = useState<Outcome>(1);
   const [mns, setMns] = useState<Array<BridgeMasternode & { time: number; releaseAt: number; hourRule: boolean }> | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -446,7 +448,7 @@ export function OfflineSign({ proposal }: { proposal: Proposal }) {
     await k.submitSigned({ proTxHash: m.proTxHash, collateralTxid: fields.collateralTxid, collateralIndex: m.collateralIndex, govHash: proposal.govHash, outcome, time: m.time, releaseAt: m.releaseAt, sig, voteHash: governanceVoteHash(fields), network }).catch(() => {});
   };
   return (
-    <details className="vote-offline">
+    <details className="vote-offline" open={open}>
       <summary>Sign offline instead (Dash Core, hardware wallet)</summary>
       {network === 'testnet' ? (
         <p className="notice-box small" data-testid="offline-testnet">

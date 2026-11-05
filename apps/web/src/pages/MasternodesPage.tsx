@@ -5,7 +5,7 @@
 import { useRouteTitle } from '../app/title.ts';
 import { bytesToHex, UnlockerType } from '@govhub/auth';
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
-import { useLocation } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { Link } from '../ui/Link.tsx';
 import { useAuth } from '../auth/context.tsx';
 import { badgeWif, pickBadgeMn, useMnBadge, type MnBadge } from '../badge/flow.ts';
@@ -14,7 +14,6 @@ import { errText, shortAddress } from '../lib/format.ts';
 import { openSignIn } from '../ui/SignIn.tsx';
 import { CopyButton, HashCopy, useLabels, useNow } from '../ui/vote/common.tsx';
 import { AddPasskey } from '../ui/vote/AddPasskey.tsx';
-import { RadarHandoff } from '../ui/vote/RadarHandoff.tsx';
 import { VotesList } from '../ui/vote/VotesList.tsx';
 import { useKeyring } from '../voting/KeyringContext.tsx';
 import { STEP_NAME } from '../voting/lookup.ts';
@@ -501,6 +500,11 @@ function MnRow({ m, label }: { m: OwnedMasternode; label: string }) {
           <dashhq-hash value={m.proTxHash} label="ProTx hash" href={window.dashhq?.href('radar', '/mn/' + m.proTxHash, { network: k.coreNetwork })}>{m.proTxHash}</dashhq-hash>
         </span>
         <span className="kr-fact">
+          <Link to={`/masternodes/${m.proTxHash.toLowerCase()}`} data-testid="mn-votes-link">
+            Its votes
+          </Link>
+        </span>
+        <span className="kr-fact">
           <span className="kr-fact-k">Payout</span>
           {m.payoutAddress ? <HashCopy value={m.payoutAddress} label="payout address" n={6} /> : <span className="kr-fact-none">not read yet</span>}
         </span>
@@ -914,6 +918,7 @@ export function MasternodesPage() {
   const { hash, search, key: navKey } = useLocation();
   const requestedProTx = new URLSearchParams(search).get('proTx') || '';
   const proTx = /^[a-f0-9]{64}$/i.test(requestedProTx) ? requestedProTx.toLowerCase() : null;
+  // Radar's older links (/masternodes?proTx=<hash>) land on the masternode's own page, with the rest of the query (the network) kept
   // the flow stays on screen while the key it adds opens the keyring (null: not adding)
   const [flow, setFlow] = useState<FlowStep | null>(null);
   // what the flow's confirm did, for the banner it ends in
@@ -940,10 +945,14 @@ export function MasternodesPage() {
     scrolled.current = navKey;
     el.scrollIntoView({ block: 'start' });
   }, [hash, navKey, adding, showGrid]);
+  if (proTx) {
+    const rest = new URLSearchParams(search);
+    rest.delete('proTx');
+    return <Navigate replace to={{ pathname: `/masternodes/${proTx}`, search: rest.size ? `?${rest}` : '' }} />;
+  }
   return (
     <section className="kr-page" aria-labelledby="mn-page-title">
       <Header adding={adding} badgeKeyKept={b.status.kind === 'pending' && b.status.job.signer.kind === 'wif'} />
-      {proTx && <RadarHandoff proTx={proTx} />}
       {k.busy && (
         <p className="kr-busy small" role="status">
           <span className="spinner" aria-hidden="true" /> {k.busy}…

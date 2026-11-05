@@ -3,7 +3,7 @@
 // more render still runs with the old keyring object. The page must render from the keys' public info, never derive from a private
 // key (noble throws `invalid scalar: out of range` for the all-zero key).
 import { emptyKeyring, type OpenedKeyring } from '@govhub/auth';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { fixtureMnKey } from '../data/fixtureVotes.ts';
 import { render } from '../test/render.tsx';
@@ -25,6 +25,11 @@ vi.mock('../badge/context.tsx', () => ({
 }));
 
 const { MasternodesPage } = await import('./MasternodesPage.tsx');
+
+function LocationProbe() {
+  const loc = useLocation();
+  return <p data-testid="probe">{loc.pathname + loc.search}</p>;
+}
 
 function openKeyring(): OpenedKeyring {
   const ring = emptyKeyring('9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv', []);
@@ -97,19 +102,26 @@ describe('votingKeyInfos', () => {
 });
 
 describe('Radar handoff', () => {
-  it('retains a valid selected masternode without importing a key', async () => {
+  const at = (entry: string) => (
+    <MemoryRouter initialEntries={[entry]}>
+      <Routes>
+        <Route path="/masternodes" element={<MasternodesPage />} />
+        <Route path="/masternodes/:proTx" element={<LocationProbe />} />
+      </Routes>
+    </MemoryRouter>
+  );
+  it("sends Radar's /masternodes?proTx= links to the masternode's own page, keeping the network", async () => {
     hold.ctx = ctxFor(openKeyring(), 'testnet');
-    const hash = 'ab'.repeat(32);
-    const r = await render(<MemoryRouter initialEntries={['/masternodes?proTx=' + hash]}><MasternodesPage /></MemoryRouter>);
-    expect(r.el.querySelector('[data-testid="radar-handoff"] dashhq-hash')?.getAttribute('value')).toBe(hash);
-    expect(r.el.textContent).toContain('Its network record is in Radar');
-    expect(r.el.textContent).toContain('Voting with it needs its voting key');
+    const hash = 'AB'.repeat(32);
+    const r = await render(at(`/masternodes?network=testnet&proTx=${hash}`));
+    expect(r.el.querySelector('[data-testid="probe"]')?.textContent).toBe(`/masternodes/${'ab'.repeat(32)}?network=testnet`);
     await r.unmount();
   });
   it('ignores malformed public record identifiers', async () => {
     hold.ctx = ctxFor(openKeyring(), 'mainnet');
-    const r = await render(<MemoryRouter initialEntries={['/masternodes?proTx=invalid']}><MasternodesPage /></MemoryRouter>);
-    expect(r.el.querySelector('[data-testid="radar-handoff"]')).toBeNull();
+    const r = await render(at('/masternodes?proTx=invalid'));
+    expect(r.el.querySelector('[data-testid="probe"]')).toBeNull();
+    expect(r.el.querySelector('#mn-page-title')).not.toBeNull();
     await r.unmount();
   });
 });

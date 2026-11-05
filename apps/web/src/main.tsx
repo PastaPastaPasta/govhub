@@ -22,6 +22,7 @@ import { ProposalByHash, ProposalByName } from './pages/ProposalPage.tsx';
 import { SettingsPage } from './pages/SettingsPage.tsx';
 import { TrustPage } from './pages/TrustPage.tsx';
 import { MasternodesPage } from './pages/MasternodesPage.tsx';
+import { MasternodePage } from './pages/MasternodePage.tsx';
 import { MyVotesPage } from './pages/MyVotesPage.tsx';
 import { KeyringProvider } from './voting/KeyringContext.tsx';
 import { lazy, Suspense, useEffect } from 'react';
@@ -91,6 +92,7 @@ createRoot(document.getElementById('root')!).render(
                 </Route>
                 <Route path="settings" element={<SettingsPage />} />
                 <Route path="masternodes" element={<MasternodesPage />} />
+                <Route path="masternodes/:proTx" element={<MasternodePage />} />
                 <Route path="votes" element={<MyVotesPage />} />
                 <Route path="badge" element={<BadgePage />} />
                 <Route path="about" element={<AboutPage />} />

@@ -1,7 +1,8 @@
 // Static entry pages for the app's routes, written into dist/ after `vite build`. GitHub Pages answers `/past` with past.html
 // and `/p/<name>` with p/<name>.html (200, no redirect), so a shared link gets its own title, description and share tags
 // while the app itself is unchanged: every file is index.html with a different <head>. Proposals and name contests are
-// listed from public reads at build time (the bridge's HTTP API and Platform, Mainnet). A route that appears after the
+// listed from public reads at build time (the bridge's HTTP API and Platform, Mainnet), and so is every masternode
+// (/masternodes/<proTxHash>, from the bridge's list). A route that appears after the
 // build still loads, through 404.html with HTTP 404, until the next build (the Pages workflow rebuilds on a schedule).
 //
 // Usage: node scripts/prerender.mjs [distDir]. Env: GOVHUB_SITE_URL (canonical origin, default https://gov.dashhq.org),
@@ -146,6 +147,20 @@ async function contests() {
   return [...labels].filter((l) => SAFE_LABEL.test(l)).map((label) => ({ label, endsAt: open.get(label) ?? null }));
 }
 
+/** Every masternode in the bridge's list (untrusted, like the proposals: the page reads its own data). */
+async function masternodes() {
+  const list = await getJson(`${bridge}/v1/mnlist`, 60_000);
+  const out = [];
+  for (const m of Array.isArray(list?.masternodes) ? list.masternodes : []) {
+    if (!m || typeof m.proTxHash !== 'string' || !HASH.test(m.proTxHash.toLowerCase())) continue;
+    out.push({ proTx: m.proTxHash.toLowerCase(), evo: m.type === 'evo' });
+  }
+  return out;
+}
+
+const describeMasternode = (m, active) =>
+  `How Dash ${m.evo ? 'evonode' : 'masternode'} ${m.proTx.slice(0, 8)}… voted on ${active ? `the ${formatInt(active)} active treasury proposals` : 'the active treasury proposals'}, and how to vote with it.`;
+
 function describeContest(c) {
   return c.endsAt
     ? `Who wants the Dash username ${c.label}.dash and how masternodes are voting. Voting closes ${formatDateTime(Math.floor(c.endsAt / 1000))}.`
@@ -181,7 +196,7 @@ for (const [route, m] of Object.entries(meta.routes)) {
   await write(route, head(template, { route, record: m.title, description: m.description }));
 }
 
-const [ps, cs] = await Promise.all([settle('proposals', proposals), settle('name contests', contests)]);
+const [ps, cs, ms] = await Promise.all([settle('proposals', proposals), settle('name contests', contests), settle('masternodes', masternodes)]);
 const sameName = new Map();
 for (const p of ps) sameName.set(p.name, (sameName.get(p.name) ?? 0) + 1);
 for (const p of ps) {
@@ -194,9 +209,13 @@ for (const p of ps) {
     ? { route: `/p/${p.name}`, record: p.name, description: `${formatInt(shared)} Dash treasury proposals are named ${p.name}. Pick one to see what it asks for and how masternodes voted.` }
     : { route: `/p/${p.name}`, record: p.name, description, canonical }));
 }
+const activeCount = ps.filter((p) => p.state === 'active').length;
+for (const m of ms) {
+  await write(`/masternodes/${m.proTx}`, head(template, { route: `/masternodes/${m.proTx}`, record: `Masternode ${m.proTx.slice(0, 6)}…${m.proTx.slice(-6)}`, description: describeMasternode(m, activeCount) }));
+}
 for (const c of cs) {
   await write(`/names/${c.label}`, head(template, { route: `/names/${c.label}`, record: `${c.label}.dash name contest`, description: describeContest(c) }));
 }
-console.log(`prerender: ${written.size} entry pages (${ps.length} proposals, ${cs.length} name contests${cs.length ? `, ${cs.filter((c) => c.endsAt).length} open` : ''})${offline ? ', offline' : ''}`);
+console.log(`prerender: ${written.size} entry pages (${ps.length} proposals, ${ms.length} masternodes, ${cs.length} name contests${cs.length ? `, ${cs.filter((c) => c.endsAt).length} open` : ''})${offline ? ', offline' : ''}`);
 // evo-sdk keeps its connections open
 process.exit(0);
