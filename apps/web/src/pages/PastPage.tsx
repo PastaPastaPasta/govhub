@@ -1,6 +1,7 @@
 // Past proposals, newest end first (G3: the range on endEpoch is what makes desc work on PV13).
 // Pages of 100 come from Platform, keyset-paged on endEpoch (repo.ts pastPage); the list reveals 12 at a time.
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useRouteTitle } from '../app/title.ts';
 import { Link } from '../ui/Link.tsx';
 import { useApp } from '../app/context.tsx';
 import type { Proposal, Sourced, Tally } from '../data/types.ts';
@@ -13,10 +14,13 @@ import { useReveal } from '../ui/hooks.ts';
 import { ProposalTabs } from '../ui/ProposalTabs.tsx';
 
 export function PastPage() {
+  useRouteTitle('/past');
   const { source, checks } = useApp();
   const [showFailed, setShowFailed] = useState(false);
   const [items, setItems] = useState<Sourced<Proposal>[]>([]);
   const [tallies, setTallies] = useState(new Map<string, Sourced<Tally>>());
+  // proposals whose tallies were asked for: a missing tally after that means none was published (not "still loading")
+  const [asked, setAsked] = useState<ReadonlySet<string>>(new Set());
   const [next, setNext] = useState<string | undefined>(undefined);
   const [state, setState] = useState<{ loading: boolean; error?: string; done: boolean }>({ loading: true, done: false });
   const gen = useRef(0);
@@ -36,8 +40,12 @@ export function PastPage() {
         setNext(page.next);
         setState({ loading: false, done: !page.next });
         if (page.items.length) {
-          const t = await source.tallies(page.items.map((i) => i.value.govHash));
-          if (g === gen.current) setTallies((prev) => new Map([...prev, ...t]));
+          const hashes = page.items.map((i) => i.value.govHash);
+          const t = await source.tallies(hashes);
+          if (g === gen.current) {
+            setTallies((prev) => new Map([...prev, ...t]));
+            setAsked((prev) => new Set([...prev, ...hashes]));
+          }
         }
       } catch (e) {
         if (g === gen.current) setState({ loading: false, done: true, error: errText(e) });
@@ -51,6 +59,7 @@ export function PastPage() {
   useEffect(() => {
     setItems([]);
     setTallies(new Map());
+    setAsked(new Set());
     void load();
   }, [load]);
 
@@ -111,9 +120,17 @@ export function PastPage() {
                     <Link to={proposalHref(p, names)}>{p.name}</Link>
                     {reason && <FailedNote reason={reason} />}
                   </th>
-                  <td>{formatDate(p.endEpoch)}</td>
+                  <td data-label="Ended ">{formatDate(p.endEpoch)}</td>
                   <td className="r">{formatDash(p.paymentAmount)}</td>
-                  <td className="r">{t ? formatSigned(absoluteYes(t.value)) : '–'}</td>
+                  <td className="r" data-label={t ? 'Net yes ' : undefined}>
+                    {t ? (
+                      formatSigned(absoluteYes(t.value))
+                    ) : asked.has(p.govHash) ? (
+                      <span className="muted" title="No vote tally was published on Platform for this proposal">no tally</span>
+                    ) : (
+                      <span className="muted" aria-label="Reading the tally">…</span>
+                    )}
+                  </td>
                 </tr>
               );
             })}

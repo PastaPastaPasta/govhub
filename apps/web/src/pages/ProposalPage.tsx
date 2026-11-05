@@ -1,6 +1,7 @@
 // /p/h/<govHash> (canonical) and /p/<name> (slug; duplicate names get a chooser). The page leads with what a reader wants: the ask,
 // whether it will be funded, the vote, the description and the discussion. Every check still runs (ui/trust/useProposalTrust.ts)
 // and adds up to one badge; its detail is in the "How do we know?" drawer.
+import { useTitle } from '../app/title.ts';
 import { useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Link } from '../ui/Link.tsx';
@@ -16,6 +17,7 @@ import { StartsLaterPageStatus } from '../ui/StartsLater.tsx';
 import { ClaimPanel, OwnerPost, OwnerValue, RejectedClaims, useOwnership, useOwnerPost } from '../ui/Ownership.tsx';
 import { TrustBadge } from '../ui/trust/TrustBadge.tsx';
 import { useProposalTrust } from '../ui/trust/useProposalTrust.ts';
+import type { TrustLevel } from '../verify/aggregate.ts';
 import { VerificationDrawer } from '../ui/trust/VerificationDrawer.tsx';
 import { OfflineSign, ProposalVotePanel } from '../ui/VotePanel.tsx';
 import { useAsync } from '../ui/hooks.ts';
@@ -44,6 +46,7 @@ export function ProposalByHash() {
  */
 export function ProposalByName() {
   const { name = '', identity } = useParams();
+  useTitle(name);
   const { source, registry } = useApp();
   const [attempt, setAttempt] = useState(0);
   const load = useAsync(() => source.byName(name), [source, name, attempt]);
@@ -100,11 +103,55 @@ function VoteCta({ proposal, active }: { proposal: Proposal; active: boolean }) 
   if (!active || k.status === 'open') return null;
   return (
     <div className="p-vote-cta">
-      <p className="small muted">
-        Own a masternode? <Link to="/masternodes">Add your voting key</Link> to vote here.
+      <p className="small muted" data-testid="vote-cta-line">
+        {k.status === 'signed-out' ? (
+          <>
+            Own a masternode? Voting from this browser needs an account here and the masternode's voting key (<Link to="/masternodes">ways to vote</Link>). Or sign
+            offline below, with no account.
+          </>
+        ) : (
+          <>
+            Own a masternode? <Link to="/masternodes">Add your voting key</Link> to vote here, or sign offline below.
+          </>
+        )}
       </p>
       <OfflineSign proposal={proposal} />
     </div>
+  );
+}
+
+/** Link shorteners hide where a proposal's link leads; the page says so. */
+const SHORTENERS = new Set(['bit.ly', 'tinyurl.com', 'shorturl.at', 't.co', 'goo.gl', 'ow.ly', 'is.gd', 'buff.ly', 'rebrand.ly', 'cutt.ly', 'tiny.cc', 'rb.gy', 's.id', 't.ly', 'shorturl.com', 'v.gd']);
+const isShortLink = (host: string) => SHORTENERS.has(host.replace(/^www\./, '').toLowerCase());
+
+/** The host, plus the path when it is short enough to read (a shortened link is all path). */
+function linkText(url: string, host: string): string {
+  try {
+    const u = new URL(url);
+    const rest = (u.pathname === '/' ? '' : u.pathname) + u.search;
+    return rest && rest.length <= 40 ? host + rest : host;
+  } catch {
+    return host;
+  }
+}
+
+/** What the evidence badge means right now, in a sentence: what is running, or that the figures are unconfirmed and how to retry. */
+function EvidenceLine({ level, reason, onRetry }: { level: TrustLevel; reason: string | null; onRetry(): void }) {
+  if (level === 'checking') {
+    return (
+      <p className="evidence-line small muted" aria-live="polite" data-testid="evidence-progress">
+        <span className="spinner" aria-hidden="true" /> {reason ?? 'Checking in your browser'}. The first check in a browser can take a minute; later ones reuse what it proved.
+      </p>
+    );
+  }
+  if (level !== 'error') return null;
+  return (
+    <p className="evidence-line small" data-testid="evidence-unverified">
+      {reason ? `${reason.replace(/\.$/, '')}. ` : ''}The amount, votes and budget place above are as Platform reports them.{' '}
+      <button type="button" className="linkish" onClick={onRetry} data-testid="evidence-retry">
+        Try again
+      </button>
+    </p>
   );
 }
 
@@ -112,6 +159,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
   const { source, gov, params, checks } = useApp();
   const k = useKeyring();
   const p = sp.value;
+  useTitle(p.name);
   const now = source.now();
   const [talliesAttempt, setTalliesAttempt] = useState(0);
   const tallies = useAsync(() => source.tallies([p.govHash]), [source, p.govHash, talliesAttempt]);
@@ -200,6 +248,11 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
             {active && !lameDuck && !later && t && (
               <p className="p-status">
                 {inBudget ? <span className="tag tag-pass">In the next budget</span> : state?.passing ? <span className="tag tag-warn">Passing, but the next budget is full</span> : null}
+                {(inBudget || state?.passing) && trust.funded === null && (
+                  <span className="small muted" data-testid="budget-reported" title="The budget place is the published tally's; it counts as verified once this browser has recounted the votes and the funding order">
+                    {trust.aggregate.level === 'checking' ? 'checking…' : 'as Platform reports it'}
+                  </span>
+                )}
                 {untilDeadline !== null && (
                   <span className="muted">{untilDeadline > 0 ? `Voting closes in ${formatDuration(untilDeadline)}` : 'Voting for this payout has closed; new votes count toward the next one'}</span>
                 )}
@@ -223,6 +276,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
               </p>
             )}
             <div className="chain-context"><span>Proposal and vote evidence</span><TrustBadge level={trust.aggregate.level} reason={trust.aggregate.reason} onOpen={() => setDrawer(true)} /></div>
+            <EvidenceLine level={trust.aggregate.level} reason={trust.aggregate.reason} onRetry={trust.recheck} />
             {tallies.error && <ReadError error={tallies.error} what="Platform" lead="The tally could not be read" onRetry={() => setTalliesAttempt((n) => n + 1)} />}
             <VoteCta proposal={p} active={active && !lameDuck} />
           </section>
@@ -241,19 +295,26 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
               </ErrorBoundary>
             )}
             {!(post.state?.post && post.state.body !== null) && (
-              <p className="muted">
-                {host ? (
-                  <>
-                    The owner describes it on their own page:{' '}
-                    <a href={p.url} target="_blank" rel="noopener noreferrer nofollow ugc" className="ext">
-                      {host}
-                      <span className="visually-hidden"> (opens another site)</span>
-                    </a>
-                  </>
-                ) : (
-                  'No description has been posted here yet.'
-                )}
-              </p>
+              <>
+                <p className="muted" data-testid="about-link">
+                  {host ? (
+                    <>
+                      The owner describes it on their own page, outside Governance:{' '}
+                      <a href={p.url} target="_blank" rel="noopener noreferrer nofollow ugc" className="ext">
+                        {linkText(p.url, host)}
+                        <span className="visually-hidden"> (opens another site)</span>
+                      </a>
+                      .{isShortLink(host) && ' That is a shortened link, so where it leads shows only once you open it.'}
+                    </>
+                  ) : (
+                    'No description has been posted here yet.'
+                  )}
+                </p>
+                <p className="small muted" data-testid="about-recorded">
+                  The network records only what is above: the name, the amount, the payment window, the payee and this link. Nobody has checked what the
+                  linked page says. The owner can post a description here by claiming the proposal.
+                </p>
+              </>
             )}
           </section>
 

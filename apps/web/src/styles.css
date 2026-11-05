@@ -3112,3 +3112,39 @@ dashhq-hash { vertical-align: middle; max-width: 100%; }
   .signin-label, .account-name { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .account-chevron { display: none; }
 }
+
+/* Chain and evidence status lines: what is running, or that the figures are unconfirmed (with a retry) */
+.chain-status { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.chain-line { display: inline-flex; align-items: center; gap: 6px; color: var(--dh-ink-2); }
+.chain-line .spinner, .evidence-line .spinner { inline-size: 12px; block-size: 12px; }
+.evidence-line { margin: 6px 0 0; color: var(--dh-ink-2); }
+.evidence-line .spinner { margin-inline-end: 4px; }
+.list-note { margin: 8px 0 12px; padding: 8px 12px; border-left: 3px solid var(--dh-warn); background: var(--dh-surface); color: var(--dh-ink-2); }
+.chain-unverified { margin: 12px 0; }
+.small-head { font-size: 13px; font-weight: 620; margin: 12px 0 4px; color: var(--dh-ink); }
+.chain-unverified ul { margin: 0; padding-inline-start: 18px; }
+.p-status [data-testid="budget-reported"] { margin-inline-start: -2px; }
+
+/* Past proposals on phones: row cards (DESIGN.md §6 Tables): the proposal on the first line, then its facts joined by "·" */
+@media (max-width: 600px) {
+  .past thead { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .past, .past tbody, .past tr, .past tbody th { display: block; }
+  .past tr { padding: 10px 16px; border-block-end: 1px solid var(--dh-line); }
+  .past tbody tr:last-child { border-block-end: 0; }
+  .past th, .past td { padding: 0; border: 0; }
+  .past tbody th { margin-block-end: 2px; overflow-wrap: anywhere; }
+  .past td { display: inline; font-size: 13px; color: var(--dh-ink-2); }
+  .past .r { text-align: start; }
+  .past td[data-label]::before { content: attr(data-label); }
+  .past td + td::before { content: " · "; }
+  .past td + td[data-label]::before { content: " · " attr(data-label); }
+}
+.proposal-search, .proposal-search-count { flex-basis: 100%; margin: 0; }
+.proposal-search input { font: inherit; font-size: 15px; color: var(--dh-ink); background: var(--dh-surface); border: 1px solid var(--dh-line-2); border-radius: var(--dh-r2); padding: 7px 12px; inline-size: min(22rem, 100%); min-block-size: var(--dh-ctl-h, 34px); }
+.proposal-search input:focus-visible { outline: 2px solid var(--dh-focus); outline-offset: 2px; }
+@media (pointer: coarse) { .proposal-search input { font-size: 16px; } }
+.radar-votes { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 6px; }
+.radar-votes a { overflow-wrap: anywhere; }
+.vote-ways-list { margin: 8px 0 0; padding-inline-start: 20px; display: grid; gap: 14px; }
+.vote-ways-list h3 { font-size: 15px; font-weight: 620; margin: 0 0 2px; }
+.vote-ways-list p { margin: 0 0 6px; }

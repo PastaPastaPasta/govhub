@@ -1,5 +1,9 @@
 import type { Profile } from '@govhub/forum';
+import { useRouteTitle } from '../app/title.ts';
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import type { Proposal } from '../data/types.ts';
+import { formatInt } from '../lib/format.ts';
 import { urlClaimIdentity } from '@govhub/verify';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
@@ -11,6 +15,7 @@ import { ProposalTabs } from '../ui/ProposalTabs.tsx';
 import { useReveal } from '../ui/hooks.ts';
 import { useCommentCounts } from '../ui/useCommentCounts.ts';
 import { countNames, proposalHref, type Checked, type Row } from '../lib/view.ts';
+import { unfinishedReason } from '../lib/netError.ts';
 
 /** Display names of these identities (self-chosen profiles), for the owners named in proposal URLs. */
 function useProfiles(ids: readonly string[]): ReadonlyMap<string, Profile> {
@@ -28,17 +33,53 @@ function useProfiles(ids: readonly string[]): ReadonlyMap<string, Profile> {
   return map;
 }
 
+/** A search over what a proposal is known by: its name, its payee address, its website. */
+function matches(p: Proposal, needle: string): boolean {
+  return p.name.toLowerCase().includes(needle) || p.paymentAddress.toLowerCase().startsWith(needle) || p.url.toLowerCase().includes(needle);
+}
+
+/** One line for the background checks that could not finish (instead of a mark on every row), with a way to run them again. */
+function UncheckedNote({ rows }: { rows: readonly Checked<Row>[] }) {
+  const { checks } = useApp();
+  const unfinished = rows.filter((r) => r.check.status === 'inconclusive');
+  if (!unfinished.length) return null;
+  const first = unfinished[0]!.check;
+  const why = first.status === 'inconclusive' ? unfinishedReason(first.reason) : '';
+  return (
+    <p className="list-note small" data-testid="unchecked-note">
+      {unfinished.length === rows.length ? 'These proposals' : `${unfinished.length} of these proposals`} couldn't be checked against the chain{why ? `: ${why}` : ''}. Their amounts and
+      votes are as Platform reports them.{' '}
+      <button type="button" className="linkish" onClick={() => checks.retryUnfinished(unfinished.map((r) => r.item.p.value))} data-testid="unchecked-retry">
+        Try again
+      </button>
+    </p>
+  );
+}
+
 export function ActivePage() {
+  useRouteTitle('/');
   const { gov, activeRows, registry } = useApp();
   const [showFailed, setShowFailed] = useState(false);
   const [showLameDucks, setShowLameDucks] = useState(false);
   const all = useMemo(() => [...activeRows.shown, ...activeRows.failed], [activeRows]);
-  const rows = showFailed ? all : activeRows.shown;
-  const lameDucks = activeRows.lameDucks;
-  const names = useMemo(() => countNames([...all, ...lameDucks].map((r) => r.item.p.value)), [all, lameDucks]);
-  // 12 rows first; the rest in one go once the reader scrolls (rows are tall, so small steps would stall the observer)
-  const { count, sentinel, more } = useReveal(rows.length, 40, undefined, 12);
-  const shown = useMemo(() => rows.slice(0, count), [rows, count]);
+  const [params, setParams] = useSearchParams();
+  const q = params.get('q') ?? '';
+  const needle = q.trim().toLowerCase();
+  const setQ = (v: string) => {
+    const next = new URLSearchParams(params);
+    if (v) next.set('q', v);
+    else next.delete('q');
+    setParams(next, { replace: true });
+  };
+  const listed = showFailed ? all : activeRows.shown;
+  const rows = useMemo(() => (needle ? listed.filter((r) => matches(r.item.p.value, needle)) : listed), [listed, needle]);
+  // a search also finds the lame ducks, listed with the rest instead of behind their toggle
+  const lameDucks = useMemo(() => (needle ? activeRows.lameDucks.filter((r) => matches(r.item.p.value, needle)) : activeRows.lameDucks), [activeRows.lameDucks, needle]);
+  const names = useMemo(() => countNames([...all, ...activeRows.lameDucks].map((r) => r.item.p.value)), [all, activeRows.lameDucks]);
+  // 12 rows first; the rest in one go once the reader scrolls (rows are tall, so small steps would stall the observer). Search results all show.
+  const { count, sentinel, more: moreToReveal } = useReveal(rows.length, 40, undefined, 12);
+  const more = moreToReveal && !needle;
+  const shown = useMemo(() => (needle ? rows : rows.slice(0, count)), [rows, count, needle]);
   // the lame ducks are few and listed once the reader opens them; their comment counts and owners are read with the rest
   const cards = useMemo(() => [...shown, ...lameDucks], [shown, lameDucks]);
   const counts = useCommentCounts(useMemo(() => cards.map((r) => r.item.p.value.govHash), [cards]));
@@ -72,22 +113,37 @@ export function ActivePage() {
             Active proposals
           </h1>
           <ProposalTabs />
-          <p className="small muted">Best-supported first: the order the treasury pays them in.</p>
+          <p className="small muted">Best-supported first: the order the treasury pays them in, as reported on Platform. Each proposal's page checks its own figures in your browser.</p>
+          <label className="contests-search proposal-search">
+            <span className="visually-hidden">Find a proposal by name, payee address or website</span>
+            <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a proposal" autoComplete="off" spellCheck={false} data-testid="proposal-search" />
+          </label>
+          {needle && (
+            <p className="small muted proposal-search-count" role="status" data-testid="proposal-search-count">
+              {rows.length + lameDucks.length === 0
+                ? `No active proposal matches “${q.trim()}”.`
+                : `${formatInt(rows.length + lameDucks.length)} of ${formatInt(listed.length + activeRows.lameDucks.length)} active proposals match “${q.trim()}”.`}
+            </p>
+          )}
         </div>
+        <UncheckedNote rows={all} />
         {gov.active.loading && rows.length === 0 ? (
           <div className="plist" aria-busy="true">
             {Array.from({ length: 6 }, (_, i) => (
               <div key={i} className="prow prow-skeleton" />
             ))}
           </div>
-        ) : rows.length === 0 ? (
+        ) : rows.length === 0 && !needle ? (
           <p className="empty">No active proposals right now.</p>
-        ) : (
-          <div className="plist">{shown.map(card)}</div>
+        ) : rows.length + lameDucks.length === 0 ? null : (
+          <div className="plist">
+            {shown.map(card)}
+            {needle && lameDucks.map(card)}
+          </div>
         )}
         <div ref={sentinel} className="sentinel" aria-hidden="true" />
         {more && <p className="muted small center">Scroll for more</p>}
-        {!more && (
+        {!more && !needle && (
           <LameDuckSection count={lameDucks.length} open={showLameDucks} onToggle={() => setShowLameDucks((v) => !v)}>
             {lameDucks.map(card)}
           </LameDuckSection>
