@@ -251,17 +251,14 @@ export function Discussion({ govHash, featured }: { govHash: string; featured: F
           Discussion {thread.data && <span className="count">{formatInt(count - hiddenCount)}{thread.data.truncated ? '+' : ''}</span>}
         </h2>
         <div className="discussion-tools">
-          <fieldset className="seg dh-seg" aria-label="Which comments to show">
-            <legend className="visually-hidden">Comment view</legend>
-            <label className={[filter === 'recommended' ? 'on' : '', "dh-field__label"].join(" ")} title={`Authors with an MN badge from an issuer you trust (Settings), plus ${featured.whoHere}`}>
-              <input type="radio" name="comment-filter" checked={filter === 'recommended'} onChange={() => setFilter('recommended')} />
+          <div className="dh-seg" role="group" aria-label="Which comments to show" data-testid="comment-filter">
+            <button type="button" className="dh-btn" aria-pressed={filter === 'recommended'} onClick={() => setFilter('recommended')} title={`Authors with an MN badge from an issuer you trust (Settings), plus ${featured.whoHere}`}>
               {featured.view} and masternodes
-            </label>
-            <label className={[filter === 'all' ? 'on' : '', "dh-field__label"].join(" ")}>
-              <input type="radio" name="comment-filter" checked={filter === 'all'} onChange={() => setFilter('all')} />
+            </button>
+            <button type="button" className="dh-btn" aria-pressed={filter === 'all'} onClick={() => setFilter('all')}>
               Everyone
-            </label>
-          </fieldset>
+            </button>
+          </div>
           <HiddenToggle count={hiddenCount} shown={showHidden} onToggle={() => setShowHidden((v) => !v)} show={`Show hidden (${hiddenCount})`} hide={`Hide blocked (${hiddenCount})`} />
         </div>
       </div>
