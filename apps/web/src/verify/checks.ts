@@ -121,6 +121,17 @@ export class ProposalChecks {
     }
   }
 
+  /** Runs again the checks of these proposals that could not finish; a definite result stands. */
+  retryUnfinished(ps: readonly Proposal[]): void {
+    for (const p of ps) {
+      const k = this.key(p);
+      if (this.states.get(k)?.status !== 'inconclusive' || this.queue.includes(p)) continue;
+      this.set(k, { status: 'pending' });
+      this.queue.push(p);
+    }
+    this.pump();
+  }
+
   subscribe = (fn: () => void): (() => void) => {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);

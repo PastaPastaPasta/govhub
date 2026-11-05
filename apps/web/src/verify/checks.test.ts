@@ -229,3 +229,22 @@ describe('hide rules in the lists and the budget header', () => {
     expect(b.active).toBe(1);
   });
 });
+
+describe('checks that could not finish', () => {
+  it('run again on request, and a definite result still stands', async () => {
+    forgetCheckResults();
+    let calls = 0;
+    const other = snap.proposals[1]!;
+    const checks = new ProposalChecks({ scope: uniq(), run: async (p) => (calls++, p === other ? okVerdict : Promise.reject(new Error('Failed to fetch'))) });
+    checks.ensure([real, other]);
+    for (let i = 0; i < 5; i++) await tick();
+    expect(checks.state(real).status).toBe('inconclusive');
+    expect(checks.state(other).status).toBe('ok');
+    const before = calls;
+    checks.retryUnfinished([real, other]);
+    expect(checks.state(real).status).toBe('pending');
+    for (let i = 0; i < 5; i++) await tick();
+    expect(calls).toBe(before + 1);
+    expect(checks.state(other).status).toBe('ok');
+  });
+});

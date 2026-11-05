@@ -120,7 +120,7 @@ export function BudgetHeader() {
           </dd>
         </div>
       </dl>
-      <div className="chain-context"><span>Chain evidence</span><ChainShield /></div>
+      <div className="chain-context"><span>Chain check</span><ChainShield line /></div>
       <details className="learn">
         <summary>How funding works</summary>
         <p className="strip-legend small muted">

@@ -30,7 +30,7 @@ async function testnetProfile(ctx: BrowserContext, overrides: Record<string, unk
 
 /** Waits for the badge to settle (not "checking"), opens the drawer and reads every check's state. */
 async function settle(page: Page, path = `/p/h/${P}`) {
-  await page.goto(`${path}?fixtures=0`);
+  await page.goto(`${path}?fixtures=0&network=testnet`);
   const badge = page.getByTestId('trust-badge');
   await expect(badge).toBeVisible({ timeout: 60_000 });
   await expect(badge).not.toHaveAttribute('data-trust', 'checking', { timeout: 120_000 });
@@ -56,7 +56,7 @@ test.describe('@record', () => {
     await testnetProfile(ctx);
     const rec = await record(ctx, BASE);
     const page = await ctx.newPage();
-    await page.goto('/?fixtures=0');
+    await page.goto('/?fixtures=0&network=testnet');
     await expect(page.getByTestId('proposal-card').first()).toBeVisible({ timeout: 60_000 });
     await page.waitForTimeout(8000); // the background collateral checks of the list
     const r = await settle(page);
@@ -352,7 +352,7 @@ test.describe('tamper (replayed Testnet session)', () => {
   // S1-T3.9: the bridge down
   test('bridge-down: votes are not recounted; not Verified', async ({ browser }) => {
     const { page } = await open(browser, (e) => (e.url.includes(BRIDGE) ? 'abort' : null));
-    await page.goto(`/p/h/${P}?fixtures=0`);
+    await page.goto(`/p/h/${P}?fixtures=0&network=testnet`);
     const badge = page.getByTestId('trust-badge');
     await expect(badge).toBeVisible({ timeout: 60_000 });
     await expect(badge).not.toHaveAttribute('data-trust', 'checking', { timeout: 120_000 });
@@ -406,31 +406,30 @@ test.describe('tamper (replayed Testnet session)', () => {
     expect(trust.split(`${name}:`).length - 1).toBeLessThanOrEqual(1);
   });
 
-  // D-020: a card whose check could not conclude shows it
-  test('a card whose collateral check is inconclusive says "Couldn\'t verify", unlike one that passed', async ({ browser }) => {
+  // A check that could not conclude says nothing about the proposal: the list says so once, with a retry, instead of marking the card
+  test('an inconclusive collateral check marks no card; the list says it could not be checked, with Try again', async ({ browser }) => {
     const txid = collateralTxid();
     const { page } = await open(browser, (e) => (getTx.test(e.url) && asks(e, txid) ? 'abort' : null));
-    await page.goto('/?fixtures=0');
+    await page.goto('/?fixtures=0&network=testnet');
     const card = page.locator(`[data-testid="proposal-card"][data-govhash="${P}"]`);
     await expect(card).toBeVisible({ timeout: 60_000 });
     await expect(card).toHaveAttribute('data-check', 'inconclusive', { timeout: 90_000 });
-    await expect(card.getByTestId('card-trust')).toHaveAttribute('data-trust', 'error');
-    // a card whose check passed carries no such mark
-    const other = page.locator('[data-testid="proposal-card"][data-check="ok"]').first();
-    if (await other.count()) await expect(other.getByTestId('card-trust')).toHaveCount(0);
+    await expect(card.getByTestId('card-trust')).toHaveCount(0);
+    await expect(page.getByTestId('unchecked-note')).toContainText("couldn't be checked against the chain");
+    await expect(page.getByTestId('unchecked-retry')).toBeVisible();
   });
 
   // D-012: the budget header's allocation is the cycle document's, not a sum of the tallies' flags
   test('budget header: tampered inNextBudget flags do not move "Allocated"', async ({ browser }) => {
     test.setTimeout(PER_LOAD_MS * 2);
     const truth = await open(browser);
-    await truth.page.goto('/?fixtures=0');
+    await truth.page.goto('/?fixtures=0&network=testnet');
     const facts = truth.page.locator('.budget-facts');
     await expect(facts).toContainText('Allocated', { timeout: 60_000 });
     const allocated = await facts.locator('div', { hasText: 'Allocated' }).locator('dd .num').textContent();
     await truth.ctx.close();
     const { page } = await open(browser, onUrl(talliesUrl, json((o) => { for (const t of o.tallies) t.inNextBudget = !t.inNextBudget; })));
-    await page.goto('/?fixtures=0');
+    await page.goto('/?fixtures=0&network=testnet');
     await expect(page.locator('.budget-facts')).toContainText('Allocated', { timeout: 60_000 });
     await expect(page.locator('.budget-facts div', { hasText: 'Allocated' }).locator('dd .num')).toHaveText(allocated!);
     await expect(page.locator('.budget [data-prov]')).toHaveCount(0);

@@ -1,11 +1,13 @@
-// The header's chain status: a small shield with the network profile's short name. The worker anchors the chain for the active
-// profile (the same anchored chain every proposal page then reuses); the drawer says what it rests on.
-import { useEffect, useState } from 'react';
+// The header's chain status: a small shield, beside the budget figures it backs. The worker anchors the chain for the active
+// profile (the same anchored chain every proposal page then reuses); the drawer says what it rests on, and when it could not be
+// checked, what that means for the figures, what still holds, and how to try again.
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from '../Link.tsx';
 import { useApp } from '../../app/context.tsx';
 import { customFields, PROFILES } from '../../config/registry.ts';
 import type { DataSource } from '../../data/repo.ts';
-import { formatInt, formatRelative } from '../../lib/format.ts';
+import { errText, formatInt, formatRelative } from '../../lib/format.ts';
+import { isNetworkReason, unfinishedReason } from '../../lib/netError.ts';
 import type { TrustLevel } from '../../verify/aggregate.ts';
 import type { AnchorSummary } from '../../verify/chain.ts';
 import { runVerification } from '../../verify/client.ts';
@@ -16,6 +18,8 @@ type State = { anchor?: AnchorSummary; error?: string; progress?: string };
 
 const TTL_MS = 5 * 60_000;
 const runs = new Map<string, { at: number; promise: Promise<AnchorSummary> }>();
+/** The last chain this session verified, per DAPI setting: shown when a later check fails. */
+const lastGood = new Map<string, { anchor: AnchorSummary; at: number }>();
 
 /** The anchored chain of this source's DAPI setting, once per 5 minutes (the worker keeps the headers in IndexedDB). */
 function anchorOnce(source: DataSource, onProgress: (m: string) => void): Promise<AnchorSummary> {
@@ -25,7 +29,7 @@ function anchorOnce(source: DataSource, onProgress: (m: string) => void): Promis
   if (hit && Date.now() - hit.at < TTL_MS) return hit.promise;
   const promise = runVerification({ kind: 'anchor', dapi }, onProgress).then((r) => r.anchor);
   runs.set(key, { at: Date.now(), promise });
-  promise.catch(() => runs.delete(key));
+  promise.then((anchor) => lastGood.set(key, { anchor, at: Date.now() }), () => runs.delete(key));
   return promise;
 }
 
@@ -36,27 +40,32 @@ function chainLevel(demo: boolean, notice: string | null, s: State): TrustLevel 
   return s.error ? 'error' : 'checking';
 }
 
-function useChainStatus(): { level: TrustLevel; state: State } {
+function useChainStatus(): { level: TrustLevel; state: State; retry(): void; last: { anchor: AnchorSummary; at: number } | undefined } {
   const { source, mode } = useApp();
   const [state, setState] = useState<State>({});
+  const [attempt, setAttempt] = useState(0);
   const idle = mode === 'fixtures' || !!source.notice;
   useEffect(() => {
     if (idle) return;
     let on = true;
     setState({});
-    // after the first paint and the list: the chain is background work
-    const t = setTimeout(() => {
-      anchorOnce(source, (m) => on && setState((s) => ({ ...s, progress: m }))).then(
-        (anchor) => on && setState({ anchor }),
-        (e: Error) => on && setState({ error: e.message }),
-      );
-    }, 1500);
+    // after the first paint and the list: the chain is background work (a retry starts at once)
+    const t = setTimeout(
+      () => {
+        anchorOnce(source, (m) => on && setState((s) => ({ ...s, progress: m }))).then(
+          (anchor) => on && setState({ anchor }),
+          (e: unknown) => on && setState({ error: errText(e) }),
+        );
+      },
+      attempt ? 0 : 1500,
+    );
     return () => {
       on = false;
       clearTimeout(t);
     };
-  }, [source, idle]);
-  return { level: chainLevel(mode === 'fixtures', source.notice, state), state };
+  }, [source, idle, attempt]);
+  const retry = useCallback(() => setAttempt((n) => n + 1), []);
+  return { level: chainLevel(mode === 'fixtures', source.notice, state), state, retry, last: lastGood.get(JSON.stringify(source.dapiDescriptor())) };
 }
 
 function headline(level: TrustLevel, s: State, notice: string | null, nowS: number): string {
@@ -66,27 +75,53 @@ function headline(level: TrustLevel, s: State, notice: string | null, nowS: numb
     const a = s.anchor;
     return a.weak ? `Chain checked to block ${formatInt(a.tip)}, but only proof of work protects it here` : `Chain verified to block ${formatInt(a.tip)}, ChainLocked ${formatRelative(a.chainLock.time, nowS)}`;
   }
-  if (s.error) return `The chain couldn't be verified: ${s.error}`;
-  return `${s.progress || 'Verifying the chain'}…`;
+  if (s.error) return `Couldn't check the chain: ${unfinishedReason(s.error)}`;
+  return `${s.progress || 'Checking the chain'}…`;
 }
 
-export function ChainShield() {
+const CHIP_TEXT: Record<TrustLevel, string> = {
+  demo: 'Demo data',
+  checking: 'Checking the chain',
+  verified: 'Chain verified',
+  partial: 'Chain partly checked',
+  error: "Couldn't verify",
+  failed: 'Proof failed',
+};
+
+/** `line`: also say, under the chip, what is running or that the figures are unconfirmed (the budget header). */
+export function ChainShield({ line: withLine = false }: { line?: boolean }) {
   const { registry, mode, source } = useApp();
   const [open, setOpen] = useState(false);
-  const { level, state } = useChainStatus();
+  const { level, state, retry, last } = useChainStatus();
   const p = PROFILES[registry.profile];
   const custom = customFields(registry).size > 0;
   const a = state.anchor;
   const nowS = Math.floor(Date.now() / 1000);
   const line = headline(level, state, source.notice, nowS);
+  const failed = !!state.error && !source.notice;
   return (
     <>
-      <button type="button" className={`chainchip trust-${level}`} onClick={() => setOpen(true)} data-testid="profile-label" data-trust={level} aria-label={`${p.title}${custom ? ', with custom settings' : ''}. ${line}`} title={line}>
-        <ShieldIcon level={level} size={16} />
-        <span aria-hidden="true">{mode === 'fixtures' ? 'Demo data' : level === 'checking' ? 'Checking chain proof' : level === 'verified' ? 'Chain verified' : level === 'error' ? 'Chain not verified' : 'Chain partly checked'}</span>
-        <span className="visually-hidden">{p.title}</span>
-        {custom && <span className="chip-custom">custom</span>}
-      </button>
+      <span className="chain-status">
+        <button type="button" className={`chainchip trust-${level}`} onClick={() => setOpen(true)} data-testid="profile-label" data-trust={level} aria-label={`${p.title}${custom ? ', with custom settings' : ''}. ${line}`} title={line}>
+          <ShieldIcon level={level} size={16} />
+          <span aria-hidden="true">{CHIP_TEXT[mode === 'fixtures' ? 'demo' : level]}</span>
+          <span className="visually-hidden">{p.title}</span>
+          {custom && <span className="chip-custom">custom</span>}
+        </button>
+        {withLine && level === 'checking' && (
+          <span className="chain-line small muted" aria-live="polite" data-testid="chain-progress">
+            <span className="spinner" aria-hidden="true" /> {state.progress || 'Checking the chain in your browser'}
+          </span>
+        )}
+        {withLine && failed && (
+          <span className="chain-line small" data-testid="chain-unverified">
+            Figures above are as Platform reports them.{' '}
+            <button type="button" className="linkish" onClick={retry} data-testid="chain-retry">
+              Try again
+            </button>
+          </span>
+        )}
+      </span>
       <Drawer open={open} onClose={() => setOpen(false)} title="Network and chain" testId="chain-drawer">
         <section className={`drawer-verdict trust-${level}`}>
           <ShieldIcon level={level} size={32} />
@@ -94,7 +129,45 @@ export function ChainShield() {
             <p className="drawer-verdict-title">{p.title}</p>
             <p className="drawer-verdict-line">{line}</p>
           </div>
+          {failed && (
+            <button type="button" className="btn btn-s" onClick={retry} data-testid="chain-drawer-retry">
+              Try again
+            </button>
+          )}
         </section>
+        {level === 'checking' && (
+          <p className="small muted" data-testid="chain-expect">
+            The first check in a browser downloads about a thousand block headers and proves a ChainLock: usually 5 to 60 seconds. Later
+            visits reuse what this browser already proved.
+          </p>
+        )}
+        {failed && (
+          <div className="chain-unverified" data-testid="chain-explain">
+            <h3 className="small-head">What this means</h3>
+            <p className="small">
+              The budget, the vote counts and which proposals are in the next budget are shown as Dash Platform and the governance bridge
+              report them. Your browser hasn't confirmed them against the Dash chain, so treat passing margins and budget places as
+              reported, not verified.
+            </p>
+            <h3 className="small-head">What still holds</h3>
+            <ul className="small">
+              <li>Each proposal's text is still checked against its governance hash, which needs no network.</li>
+              {registry.platform.trusted && <li>Platform's answers are still checked against Platform's quorum signatures by evo-sdk.</li>}
+              <li>Your keys, votes and settings are untouched. Nothing was sent.</li>
+            </ul>
+            {last && (
+              <p className="small muted" data-testid="chain-last-good">
+                Last verified in this browser: block {formatInt(last.anchor.tip)}, {formatRelative(Math.floor(last.at / 1000), nowS)}.
+              </p>
+            )}
+            {isNetworkReason(state.error) && (
+              <details className="learn inline">
+                <summary>Details</summary>
+                <p className="small mono-ish">{state.error}</p>
+              </details>
+            )}
+          </div>
+        )}
         <p className="small">{p.description}</p>
         {a && (
           <details className="learn">

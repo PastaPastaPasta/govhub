@@ -18,6 +18,8 @@ import { StartsLaterTag } from './StartsLater.tsx';
 import { trustScope, useCachedTrust } from './trust/store.ts';
 import { TrustBadge } from './trust/TrustBadge.tsx';
 
+const UNFINISHED: ReadonlySet<TrustLevel> = new Set(['checking', 'error']);
+
 /** "1 of 4 payments left", "one payment", "ended". */
 export function paymentsLeft(s: PaymentSchedule | null): string | null {
   if (!s) return null;
@@ -38,10 +40,9 @@ export function ProposalCard({
   const t = row.tally?.value;
   const failed = check?.status === 'failed' ? check.reason : null;
   const trust = useCachedTrust(trustScope(source), p, t ?? null);
-  // An inconclusive check (the page's, or the list's background collateral check) shows as "Couldn't verify", never like a pass.
-  const mark: { level: TrustLevel; reason: string | null } | null = failed
-    ? null
-    : (trust ?? (check?.status === 'inconclusive' ? { level: 'error', reason: `The collateral couldn't be checked: ${check.reason}` } : null));
+  // A row shows what a finished check found (verified, partly, failed). A check that could not finish says nothing about the
+  // proposal and is usually the same network trouble for every row: the list says that once, above the rows (UncheckedNote).
+  const mark: { level: TrustLevel; reason: string | null } | null = failed || !trust || UNFINISHED.has(trust.level) ? null : trust;
   // Under a "Verified" mark only proven data decides "in the next budget" (none: no tag); otherwise it is the tally's own flag.
   const verified = trust && mark?.level === 'verified' ? trust : null;
   const inBudget = verified ? (verified.funded ?? undefined) : t?.inNextBudget;
