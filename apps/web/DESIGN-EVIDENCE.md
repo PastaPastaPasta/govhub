@@ -9,6 +9,8 @@ All paths below are relative to the DashHQ lab root. Evidence stays local. Nothi
 
 Baseline images are in `shots/baseline/gov/` and `shots/baseline/vote/`. Final captures are in `shots/wip-c/gov/` and `shots/wip-c/vote/`, with a focused contest in `shots/wip-c/gov-contest-phone.png`. `shots/wip-c/report.json` records exact capture heads, viewport, theme, timestamps and request failures. A documentation-only commit may follow the implementation revisions above.
 
+Final runtime captures were built from Gov `7a51ffad700d82b6dac8ffe354b1d2f6bd4cf5f3` and Vote `2bb69e00811ea84c92c02965ef3fc89ff2958fc2`. All 24 overview images and the focused contest image were opened and inspected at original resolution. The guarded journey run passed 41 checks, with no page exceptions or blocked writes.
+
 The overview captures use matching routes, viewports, UTC timezone and themes. Live counts and relative times can change between the baseline and the final captures; they are not evidence of a data change. Desktop is 1440 × 900; phone is 390 × 844 at device scale 2.
 
 ## Validation

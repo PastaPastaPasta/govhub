@@ -17,7 +17,8 @@ public infrastructure the app talks to are run by other people, and this project
 ## Summary
 
 - We don't keep accounts. You sign in with a Dash Platform identity, which lives on the Dash network, not with us.
-- The app sets no cookies and has no analytics or tracking code.
+- The app has no analytics or tracking code. The DashHQ shell saves only your theme preference in a cookie, shared
+  across the family's sites, and in local storage. It contains `light`, `dark` or `system`, not an identity or key.
 - Your recovery phrase and private keys never leave your browser unencrypted, and we never receive them.
 - Our servers see your IP address when your browser talks to them, like any website. Our code doesn't write IP addresses
   to disk or to logs.
@@ -39,6 +40,9 @@ Some things are saved in the browser's local storage so the app works the next t
 - encrypted records: votes you're following, and badge requests in progress. The key to open them comes from your own
   signing key, so they're unreadable without it;
 - username contest votes that are signed but not sent yet (see below). These are not encrypted.
+
+The theme uses local storage key `dh-theme` and the shared `dh_theme` cookie. The cookie lasts up to one year and is
+renewed on visits. Other settings and account data are not shared with sibling sites by the shell.
 
 Signing out clears the session, but not this saved data. Some of the saved items are named after your identity, so
 someone with access to your browser can tell which identity was used there. To remove all of it, clear the site data
