@@ -98,7 +98,8 @@ test.describe('fixture mode', () => {
   test('recount of recorded mainnet votes reproduces the tally and voteSetHash', async ({ page }) => {
     const errors = await watchPage(page);
     await gotoFixtures(page, '/p/dash-growth-q4-2026');
-    await expect(page.getByRole('heading', { level: 1, name: 'dash-growth-q4-2026' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Dash growth q4 2026' })).toBeVisible();
+    await expect(page.getByTestId('p-chain-name')).toHaveText('dash-growth-q4-2026 is its name on the network.');
     // Evonodes weigh 4: 298 yes masternodes are 673 weighted votes.
     await expect(page.getByTestId('p-votes')).toContainText('673 yes');
     await expect(page.getByTestId('p-votes')).toContainText('475 no');
@@ -164,7 +165,7 @@ test.describe('fixture mode', () => {
     await expect(links).toHaveCount(2);
     await links.first().click();
     await expect(page).toHaveURL(url => /^\/p\/h\/[0-9a-f]{64}$/.test(url.pathname) && url.searchParams.get('fixtures') === '1');
-    await expect(page.getByRole('heading', { level: 1, name: 'Dash-Mass-Organic-Content-Attraction' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Dash Mass Organic Content Attraction' })).toBeVisible();
     const drawer = await openDrawer(page);
     await expect(drawer.getByTestId('collateral-check').locator('[data-verdict]')).toHaveAttribute('data-verdict', 'demo');
   });
@@ -173,7 +174,7 @@ test.describe('fixture mode', () => {
     await gotoFixtures(page);
     await page.locator('.sentinel').scrollIntoViewIfNeeded();
     // one of the two is a lame duck (its October payment was the only one it can get): it is in the collapsed section
-    const dupLinks = page.locator('article.prow h2 a', { hasText: 'Dash-Mass-Organic-Content-Attraction' });
+    const dupLinks = page.locator('article.prow', { has: page.getByTestId('card-slug').filter({ hasText: /^Dash-Mass-Organic-Content-Attraction( ·|$)/ }) }).locator('h2 a');
     await expect(dupLinks).toHaveCount(1);
     await page.getByTestId('toggle-lameduck').click();
     await expect(dupLinks).toHaveCount(2);
@@ -186,11 +187,12 @@ test.describe('fixture mode', () => {
 
   test('a lame duck proposal page shows its outcome instead of passing, budget and deadline', async ({ page }) => {
     await gotoFixtures(page, '/p/pshenmic-dev-dash-desktop-november-2026');
-    await expect(page.getByRole('heading', { level: 1, name: 'pshenmic-dev-dash-desktop-november-2026' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Pshenmic dev dash desktop november 2026' })).toBeVisible();
     const status = page.getByTestId('lameduck-status');
     await expect(status).toContainText('No more payments are possible');
     await expect(status).toContainText('it leaves the network on');
-    await expect(page.locator('.p-ask')).not.toContainText(/Passing|next budget|Voting closes|Voting for this payout/);
+    await expect(page.locator('.p-standing')).not.toContainText(/Passing|next budget|Voting closes|Voting for this payout/);
+    await expect(page.getByTestId('jump-vote')).toHaveCount(0);
     await expect(page.getByTestId('p-votes')).toContainText('These votes no longer affect payment.');
   });
 

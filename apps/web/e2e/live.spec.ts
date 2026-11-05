@@ -167,7 +167,7 @@ test('@live voting keys of recorded votes are confirmed by the masternode list t
   );
   const errors = await watchPage(page);
   await page.goto(`/p/h/${GROWTH}?fixtures=0`);
-  await expect(page.getByRole('heading', { level: 1, name: 'dash-growth-q4-2026' })).toBeVisible({ timeout: 120_000 });
+  await expect(page.getByTestId('p-chain-name')).toContainText('dash-growth-q4-2026 is its name on the network', { timeout: 120_000 });
 
   // The recount runs on its own once the tallies are read; it targets the Platform tally's height.
   await expect(page.getByTestId('p-votes')).toContainText(/\d+ yes/, { timeout: 120_000 });

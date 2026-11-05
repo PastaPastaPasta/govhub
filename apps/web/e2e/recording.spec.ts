@@ -16,7 +16,7 @@ test('@screenshots walkthrough video', async ({ page }) => {
   await page.mouse.wheel(0, 500);
   await pause(page, 1200);
   await page.getByRole('link', { name: 'Dash-Italia-Management-2026', exact: true }).click();
-  await expect(page.getByRole('heading', { level: 1, name: 'Dash-Italia-Management-2026' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Dash Italia Management 2026' })).toBeVisible();
   await pause(page, 1500);
   // the one trust badge, and everything behind it
   await page.getByTestId('trust-badge').click();

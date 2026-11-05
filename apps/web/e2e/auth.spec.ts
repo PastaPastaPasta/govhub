@@ -7,7 +7,7 @@ test('create flow shows a fresh phrase, checks three words, then offers funding'
   const errors = await watchPage(page);
   await gotoFixtures(page);
   await page.getByRole('button', { name: 'Sign in' }).click();
-  const sheet = page.getByRole('dialog', { name: 'Sign in or create an account' });
+  const sheet = page.getByRole('dialog', { name: 'Sign in to Governance' });
   await expect(sheet).toBeVisible();
   // the family's sign-in help offers the same start as the first way in
   await expect(sheet.locator('dashhq-signin-help').getByRole('button', { name: 'Create an account', exact: true })).toBeVisible();

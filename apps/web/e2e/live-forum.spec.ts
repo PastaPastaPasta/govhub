@@ -157,7 +157,7 @@ test('@live forum on testnet: comment, reply, react, flip, block, unblock, retra
 
   // ---- payment-address claim on the synthetic proposal, then the owner's description ------------------------------
   await page.goto(`/p/h/${claimKey.govHash}?fixtures=0`);
-  await expect(page.getByRole('heading', { level: 1, name: 'govhub-claim-test' })).toBeVisible({ timeout: 180_000 });
+  await expect(page.getByTestId('p-chain-name')).toContainText('govhub-claim-test is its name on the network', { timeout: 180_000 });
   await signIn(page, u6);
   const owner = page.getByTestId('owner');
   if ((await owner.count()) === 0 || (await owner.getAttribute('data-owner')) !== u6.identityId) {

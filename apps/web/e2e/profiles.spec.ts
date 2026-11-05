@@ -43,7 +43,7 @@ test.describe('failed verification is hidden (fixtures)', () => {
 
   test('a hidden proposal opened directly is shown under a failed-verification banner', async ({ page }) => {
     await gotoFixtures(page, '/p/govhub-fixture-tampered');
-    await expect(page.getByRole('heading', { level: 1, name: 'govhub-fixture-tampered' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Govhub fixture tampered' })).toBeVisible();
     await expect(page.getByTestId('invalid-banner')).toContainText('This proposal failed verification: Displayed fields: differ from the hashed data: url');
     // The published (tampered) URL is not linked.
     await expect(page.locator('a.ext')).toHaveCount(0);
