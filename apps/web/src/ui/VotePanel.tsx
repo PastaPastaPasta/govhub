@@ -362,7 +362,7 @@ export function VoteComposer({ proposals, onVerify, onlyMn }: { proposals: Propo
 
       <div className="vgo">
         {k.coreNetwork === 'mainnet' && <p className="small muted">Mainnet · real DASH</p>}
-        <button type="button" className="btn dh-btn btn-primary dh-btn--primary btn-l dh-btn--lg vgo-btn" disabled={blocked || !toSend.length} onClick={go} data-testid="vote-send" aria-describedby={hint ? 'vote-send-hint' : undefined}>
+        <button type="button" className="btn dh-btn btn-primary dh-btn--primary vgo-btn" disabled={blocked || !toSend.length} onClick={go} data-testid="vote-send" aria-describedby={hint ? 'vote-send-hint' : undefined}>
           {buttonText}
         </button>
         {toSend.length > 0 && !blocked && (

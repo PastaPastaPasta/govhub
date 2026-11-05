@@ -393,7 +393,7 @@ function PastedKeyVote({ proposal, outcome, setOutcome, only }: { proposal: Prop
       </div>
       <div className="vgo">
         {network === 'mainnet' && <p className="small muted">Mainnet · real DASH</p>}
-        <button type="button" className="btn dh-btn btn-primary dh-btn--primary btn-l dh-btn--lg vgo-btn" disabled={blocked} aria-busy={sending || undefined} onClick={() => void go()} data-testid="vote-send">
+        <button type="button" className="btn dh-btn btn-primary dh-btn--primary vgo-btn" disabled={blocked} aria-busy={sending || undefined} onClick={() => void go()} data-testid="vote-send">
           {sending ? 'Signing and sending…' : !chosen.length ? 'Select a masternode' : voteButtonText(outcome, chosen.length, false)}
         </button>
         {outcome !== 0 && held.length > 0 && (

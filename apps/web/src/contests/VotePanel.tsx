@@ -369,7 +369,7 @@ function Composer({ label, state, endsAt, nameOf, signer }: { label: string; sta
 
       <div className="vgo">
         {src.network === 'mainnet' && <p className="small muted">Mainnet · real DASH</p>}
-        <button type="button" className="btn dh-btn btn-primary dh-btn--primary btn-l dh-btn--lg vgo-btn" disabled={busy || !!hint} onClick={go} data-testid="vote-send">
+        <button type="button" className="btn dh-btn btn-primary dh-btn--primary vgo-btn" disabled={busy || !!hint} onClick={go} data-testid="vote-send">
           {buttonText}
         </button>
         {!hint && (

@@ -107,7 +107,7 @@ function Start({ drafts, demo, onOpen, onNew, onRestored }: { drafts: ProposalDr
         </section>
       )}
       <div className="form-actions">
-        <button type="button" className="btn dh-btn btn-primary dh-btn--primary btn-l dh-btn--lg" onClick={onNew} data-testid="p-new">
+        <button type="button" className="btn dh-btn btn-primary dh-btn--primary" onClick={onNew} data-testid="p-new">
           Start a new proposal
         </button>
         <button type="button" className="btn dh-btn" onClick={() => fileRef.current?.click()} data-testid="p-restore">
