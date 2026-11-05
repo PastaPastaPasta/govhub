@@ -86,12 +86,14 @@ async function proposals() {
   return rows;
 }
 
+const kindOf = (p) => (p.state === 'active' ? 'Dash treasury proposal' : 'Past Dash treasury proposal');
+
 function describeProposal(p) {
   try {
     return describeProposalOrThrow(p);
   } catch (e) {
     console.warn(`prerender: ${p.name}: ${e.message}; a plain description instead`);
-    return `${p.state === 'active' ? 'Dash treasury proposal' : 'Past Dash treasury proposal'} ${p.name}: what it asks for and how masternodes vote.`;
+    return `${kindOf(p)} ${p.name}: what it asks for and how masternodes vote.`;
   }
 }
 
@@ -103,7 +105,7 @@ function describeProposalOrThrow(p) {
   const votes = t && [t.yesWeighted, t.noWeighted, t.abstainWeighted].every(Number.isSafeInteger)
     ? ` Masternode votes on ${formatDate(now)}: ${formatInt(t.yesWeighted)} yes, ${formatInt(t.noWeighted)} no, ${formatInt(t.abstainWeighted)} abstain.`
     : '';
-  return `${p.state === 'active' ? 'Dash treasury proposal' : 'Past Dash treasury proposal'} asking ${ask}, ${window}.${votes}`;
+  return `${kindOf(p)} asking ${ask}, ${window}.${votes}`;
 }
 
 /** Every contested username on Mainnet Platform (proof-checked by evo-sdk), and when the open ones close. */

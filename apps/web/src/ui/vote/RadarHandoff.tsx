@@ -6,7 +6,7 @@ import { useApp } from '../../app/context.tsx';
 import { BridgeError } from '../../data/bridge.ts';
 import { makeBridge } from '../../data/bridgeFactory.ts';
 import type { Proposal } from '../../data/types.ts';
-import { errText, formatInt } from '../../lib/format.ts';
+import { formatInt } from '../../lib/format.ts';
 import { unfinishedReason } from '../../lib/netError.ts';
 import { countNames, proposalHref } from '../../lib/view.ts';
 import { Link } from '../Link.tsx';
@@ -48,7 +48,7 @@ export function RadarHandoff({ proTx }: { proTx: string }) {
       });
       setState({ kind: 'done', summary: { type: mn.type, rows } });
     } catch (e) {
-      setState({ kind: 'error', message: unfinishedReason(errText(e)) });
+      setState({ kind: 'error', message: unfinishedReason(e) });
     }
   };
 
