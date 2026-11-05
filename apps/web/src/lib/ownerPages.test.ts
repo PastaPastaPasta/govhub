@@ -64,6 +64,13 @@ describe('parseOwnerPage: DashCentral', () => {
     expect(parseOwnerPage(html, ctx)?.excerpt).toBe('The first list item is a substantive sentence of the proposal text, long enough to count.');
   });
 
+  it('prefers a paragraph that ends a sentence over a list line before it, and falls back to the list line', () => {
+    const lead = 'DCG is submitting only one funding proposal for the budget cycle that pays out August 21st:<br>\n<strong>1) DCG Operations: 4,832 Dash per month (currently in month 1/4)</strong>';
+    const prose = 'This proposal funds Dash Core Group&#39;s ongoing operating costs, including compensation and infrastructure.';
+    expect(parseOwnerPage(dashcentral(`${lead}<br>\n<br>\n${prose}`), ctx)?.excerpt).toBe("This proposal funds Dash Core Group's ongoing operating costs, including compensation and infrastructure.");
+    expect(parseOwnerPage(dashcentral(lead), ctx)?.excerpt).toMatch(/^DCG is submitting only one funding proposal/);
+  });
+
   it('stays inside nested divs of the description', () => {
     const html = dashcentral('<div><div>Nested text that is long enough to be the first substantive paragraph of this page.</div></div>');
     expect(parseOwnerPage(html, ctx)?.excerpt).toBe('Nested text that is long enough to be the first substantive paragraph of this page.');

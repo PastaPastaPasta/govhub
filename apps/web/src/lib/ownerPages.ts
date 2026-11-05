@@ -151,12 +151,10 @@ function descriptionHtml(html: string): string | null {
   return rest;
 }
 
+/** The first paragraph that reads as prose (ends a sentence), else the first substantive one: list lines and labels say less. */
 function firstParagraph(fragment: string): string | null {
-  for (const p of paragraphs(fragment)) {
-    if (p.heading || p.text.length < MIN_PARAGRAPH || /[:?]$/.test(p.text)) continue;
-    return p.text;
-  }
-  return null;
+  const substantive = paragraphs(fragment).filter((p) => !p.heading && p.text.length >= MIN_PARAGRAPH && !/[:?]$/.test(p.text));
+  return (substantive.find((p) => /[.!]["”’)]?$/.test(p.text)) ?? substantive[0])?.text ?? null;
 }
 
 const hostOf = (url: string): string | null => {
