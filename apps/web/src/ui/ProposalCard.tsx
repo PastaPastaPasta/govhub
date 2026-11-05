@@ -1,6 +1,6 @@
 // One proposal in a list: who asks, how much, and whether it gets funded. Three zones side by side on wide screens, stacked on
 // narrow ones. The trust mark is the last full result of the proposal page (ui/trust/store.ts), when it still applies.
-import { readableName, Slug } from './Slug.tsx';
+import { Slug } from './Slug.tsx';
 import type { Profile } from '@govhub/forum';
 import { Link } from './Link.tsx';
 import { useApp } from '../app/context.tsx';
@@ -19,7 +19,7 @@ import { LameDuckCardStatus } from './LameDuck.tsx';
 import { StartsLaterTag } from './StartsLater.tsx';
 import { trustScope, useCachedTrust } from './trust/store.ts';
 import { useOwnerPage } from '../lib/ownerPages.ts';
-import { PurposeLine } from './OwnerPage.tsx';
+import { PurposeLine, useReadableTitle } from './OwnerPage.tsx';
 import { TrustBadge } from './trust/TrustBadge.tsx';
 
 type Mark = { level: TrustLevel; reason: string | null };
@@ -69,6 +69,7 @@ export function ProposalCard({
   // the owner's page, only for a proposal whose fields match its hash (its link is the committed one)
   const owner = useOwnerPage(p);
   const page = row.content.ok && !failed ? (owner?.page ?? null) : null;
+  const words = useReadableTitle(p.name);
   const pays = () => (
     <>
       pays <dashhq-hash value={p.paymentAddress} label="Payee address" href={`https://${registry.coreNetwork === 'testnet' ? 'insight.testnet.networks.dash.org' : 'insight.dash.org'}/insight/address/${encodeURIComponent(p.paymentAddress)}`}>{p.paymentAddress}</dashhq-hash> ↗
@@ -80,7 +81,7 @@ export function ProposalCard({
         {/* h2: the list's heading is the page's h1 (a skipped level breaks heading navigation). One shape for every card: the owner's
             title quoted (or the name as words), the exact name and payee, the owner's summary quoted, who is named as owner. */}
         <h2 className="prow-title">
-          <Link to={href}>{page?.title ? <bdi>“{page.title}”</bdi> : readableName(p.name)}</Link>
+          <Link to={href}>{page?.title ? <bdi>“{page.title}”</bdi> : words}</Link>
           {mark && <TrustBadge size="s" level={mark.level} reason={mark.reason} testId="card-trust" />}
         </h2>
         <p className="prow-slug small" data-testid="card-slug">

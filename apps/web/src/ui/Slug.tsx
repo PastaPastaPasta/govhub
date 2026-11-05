@@ -25,3 +25,13 @@ export function readableName(name: string): string {
   const words = name.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
   return words ? words[0]!.toUpperCase() + words.slice(1) : name;
 }
+
+/**
+ * The reading title of `name` among `others` (the proposals on show): its words, unless another, different name reads the same
+ * ("Dash-Core-Group" beside "Dash_Core_Group"), when the exact name is the only honest title.
+ */
+export function titleOf(name: string, others: Iterable<string>): string {
+  const words = readableName(name);
+  for (const o of others) if (o !== name && readableName(o) === words) return name;
+  return words;
+}

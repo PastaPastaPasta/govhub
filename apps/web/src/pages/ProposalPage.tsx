@@ -2,7 +2,7 @@
 // before voting: what it funds (the owner's summary, the ask, the payee, the timeline) and where it stands, then the vote, the
 // network's record and the discussion. Every check still runs (ui/trust/useProposalTrust.ts) and adds up to one badge; its detail
 // is in the "How do we know?" drawer.
-import { readableName, Slug } from '../ui/Slug.tsx';
+import { Slug } from '../ui/Slug.tsx';
 import { useTitle } from '../app/title.ts';
 import { useMemo, useState } from 'react';
 import { useLocation, useParams } from 'react-router-dom';
@@ -25,7 +25,7 @@ import { trustScope, useCachedTrust, type StoredTrust } from '../ui/trust/store.
 import { VerificationDrawer } from '../ui/trust/VerificationDrawer.tsx';
 import { mnParam, ProposalVoteBlock } from '../ui/vote/VoteBlock.tsx';
 import { useOwnerPage } from '../lib/ownerPages.ts';
-import { purposeOf } from '../ui/OwnerPage.tsx';
+import { purposeOf, useReadableTitle } from '../ui/OwnerPage.tsx';
 import { useAsync } from '../ui/hooks.ts';
 import type { Proposal, Sourced } from '../data/types.ts';
 import type { Found } from '../lib/ownerPages.ts';
@@ -96,7 +96,7 @@ function NotFound({ by }: { by: { name: string } | { hash: string } }) {
   const key = 'name' in by ? `name:${by.name}` : `hash:${by.hash}`;
   const probe = useProbe(other, async (o) => ('name' in by ? (await o.source.byName(by.name)).length > 0 : !!(/^[0-9a-f]{64}$/.test(by.hash) && (await o.source.proposal(by.hash)))), key);
   const { registry } = useApp();
-  const here = registry.profile === 'testnet' ? 'Testnet' : 'Mainnet';
+  const here = registry.coreNetwork === 'testnet' ? 'Testnet' : 'Mainnet';
   return (
     <RecordNotFound
       kicker="Proposal"
@@ -255,6 +255,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
   const titleReady = ownerPage !== undefined || !row.content.ok;
   const ownerTitle = page?.page.title ?? null;
   const hasPost = !!(post.state?.post && post.state.body !== null);
+  const words = useReadableTitle(p.name);
   const sched = row.schedule;
   const chain = trust.chain.report;
   // The proven threshold replaces the bridge's once the chain is verified.
@@ -296,7 +297,16 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
       <header className="p-hero dh-page-header">
         <p className="dh-page-header__kicker">Proposal</p>
         <h1 className="dh-page-header__title" data-testid="p-title" aria-busy={titleReady ? undefined : true}>
-          {!titleReady ? <span className="dh-skel dh-skel--title" aria-label="Loading the title" /> : ownerTitle ? <bdi>{ownerTitle}</bdi> : readableName(p.name)}
+          {!titleReady ? (
+            <>
+              <span className="dh-skel dh-skel--title" aria-hidden="true" />
+              <span className="visually-hidden">{p.name}</span>
+            </>
+          ) : ownerTitle ? (
+            <bdi>{ownerTitle}</bdi>
+          ) : (
+            words
+          )}
         </h1>
         <p className="p-chain-name small" data-testid="p-chain-name">
           <span className="mono-ish">
@@ -320,18 +330,27 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
             <h2 id="funds-title" className="panel-title">
               What this funds
             </h2>
-            <Purpose page={page} hasPost={hasPost} url={p.url} host={host} />
-            <p className="p-amount" data-testid="p-ask">
-              <span className="num">{formatDash(p.paymentAmount)}</span> <span className="p-per">{sched?.oneTime ? 'one payment' : perPayment(params)}</span>
-              {sched && !sched.oneTime && sched.total > 0 && (
-                <span className="p-total">
-                  {' '}
-                  × {formatInt(sched.total)} payments = <b>{formatDash(p.paymentAmount * sched.total)}</b>
-                </span>
-              )}
-            </p>
+            {row.content.ok ? (
+              <>
+                <Purpose page={page} hasPost={hasPost} url={p.url} host={host} />
+                <p className="p-amount" data-testid="p-ask">
+                  <span className="num">{formatDash(p.paymentAmount)}</span> <span className="p-per">{sched?.oneTime ? 'one payment' : perPayment(params)}</span>
+                  {sched && !sched.oneTime && sched.total > 0 && (
+                    <span className="p-total">
+                      {' '}
+                      × {formatInt(sched.total)} payments = <b>{formatDash(p.paymentAmount * sched.total)}</b>
+                    </span>
+                  )}
+                </p>
+              </>
+            ) : (
+              <p className="small" data-testid="p-funds-mismatch">
+                The fields published for this proposal don’t match the hash the network votes on ({row.content.problem}), so its amount, payee and dates aren’t shown
+                as what it funds.
+              </p>
+            )}
             <dl className="kv p-facts small" data-testid="p-facts">
-              {(paid || (sched && !sched.oneTime && sched.total > 0)) && (
+              {row.content.ok && (paid || (sched && !sched.oneTime && sched.total > 0)) && (
                 <div>
                   <dt>Payments</dt>
                   <dd data-testid="p-paid">
@@ -339,21 +358,25 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
                   </dd>
                 </div>
               )}
-              <div>
-                <dt>Runs</dt>
-                <dd>
-                  {formatDate(p.startEpoch)} to {formatDate(p.endEpoch)}
-                  {active && !lameDuck && !later && cycle && <span className="muted">; the next payout is around {formatDate(cycle.value.estTime)}</span>}
-                </dd>
-              </div>
-              <div>
-                <dt>Pays</dt>
-                <dd>
-                  <dashhq-hash value={p.paymentAddress} label="payment address" href={`https://${source.coreNetwork === 'testnet' ? 'insight.testnet.networks.dash.org' : 'insight.dash.org'}/insight/address/${encodeURIComponent(p.paymentAddress)}`}>
-                    {p.paymentAddress}
-                  </dashhq-hash>
-                </dd>
-              </div>
+              {row.content.ok && (
+                <div>
+                  <dt>Runs</dt>
+                  <dd>
+                    {formatDate(p.startEpoch)} to {formatDate(p.endEpoch)}
+                    {active && !lameDuck && !later && cycle && <span className="muted">; the next payout is around {formatDate(cycle.value.estTime)}</span>}
+                  </dd>
+                </div>
+              )}
+              {row.content.ok && (
+                <div>
+                  <dt>Pays</dt>
+                  <dd>
+                    <dashhq-hash value={p.paymentAddress} label="payment address" href={`https://${source.coreNetwork === 'testnet' ? 'insight.testnet.networks.dash.org' : 'insight.dash.org'}/insight/address/${encodeURIComponent(p.paymentAddress)}`}>
+                      {p.paymentAddress}
+                    </dashhq-hash>
+                  </dd>
+                </div>
+              )}
               <div>
                 <dt>Owner</dt>
                 <dd className="p-owner">
@@ -363,7 +386,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
               </div>
             </dl>
 
-            <div className="p-standing" aria-labelledby="standing-title">
+            <section className="p-standing" aria-labelledby="standing-title">
               <h3 id="standing-title" className="p-standing-title">
                 Where it stands
               </h3>
@@ -410,7 +433,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
 
               <EvidenceLine agg={trust.aggregate} onRetry={trust.recheck} />
               {tallies.error && <ReadError error={tallies.error} what="Platform" lead="The tally could not be read" onRetry={() => setTalliesAttempt((n) => n + 1)} />}
-            </div>
+            </section>
           </section>
 
           {active && !lameDuck && (

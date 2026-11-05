@@ -2,10 +2,19 @@
 // host and the date it was read, and marked as claims nobody has checked. The on-chain name stays beside any title taken from it.
 import { ownerPageOf, useOwnerPage, useOwnerPages, type OwnerPage } from '../lib/ownerPages.ts';
 import { Link } from './Link.tsx';
-import { readableName, Slug } from './Slug.tsx';
+import { useMemo } from 'react';
+import { useApp } from '../app/context.tsx';
+import { Slug, titleOf } from './Slug.tsx';
 
 /** The page's words about what the proposal is for: its opening paragraph, else its description. */
 export const purposeOf = (page: OwnerPage): string | null => page.excerpt ?? page.description;
+
+/** A proposal's reading title (titleOf) among the active proposals, where a look-alike name would compete for the same votes. */
+export function useReadableTitle(name: string): string {
+  const active = useApp().gov?.active?.data;
+  const names = useMemo(() => (active ?? []).map((s) => s.value.name), [active]);
+  return titleOf(name, names);
+}
 
 /** A card's one line on what a proposal is for: the owner's words, quoted; where they come from is said once above the list. */
 export function PurposeLine({ page }: { page: OwnerPage }) {
@@ -26,10 +35,11 @@ export function PurposeLine({ page }: { page: OwnerPage }) {
 export function ProposalLabel({ p, to, owner = true }: { p: { govHash: string; url: string; name: string }; to: string; owner?: boolean }) {
   const page = useOwnerPage(p)?.page;
   const title = owner ? page?.title : null;
+  const words = useReadableTitle(p.name);
   return (
     <>
       <Link to={to} className="p-label" title={title ? `The owner’s title, from their page on ${page!.host}` : undefined}>
-        {title ? <bdi>“{title}”</bdi> : readableName(p.name)}
+        {title ? <bdi>“{title}”</bdi> : words}
       </Link>
       <span className="p-slug small" data-testid="proposal-slug">
         <Slug name={p.name} />

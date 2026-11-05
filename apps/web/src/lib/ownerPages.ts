@@ -360,11 +360,13 @@ export function parseOwnerPages(raw: unknown): { fetchedAt: number; pages: Map<s
 }
 
 type Shipped = ReturnType<typeof parseOwnerPages>;
+const OWNERS_TIMEOUT_MS = 4000;
 let shipped: Promise<Shipped> | null = null;
 /** The file once it has been read, so a page rendered after that has its owner's title in its first frame (no title swap). */
 let shippedNow: Shipped | null = null;
 function shippedPages() {
-  shipped ??= fetch(`${(import.meta.env?.BASE_URL as string | undefined) ?? '/'}owners.json`, { credentials: 'omit' })
+  // a request that hangs must not hold a proposal's heading: after a few seconds there are no owners' pages this visit
+  shipped ??= fetch(`${(import.meta.env?.BASE_URL as string | undefined) ?? '/'}owners.json`, { credentials: 'omit', signal: AbortSignal.timeout(OWNERS_TIMEOUT_MS) })
     .then((r) => (r.ok ? r.json() : null))
     .then(parseOwnerPages, () => parseOwnerPages(null))
     .then((o) => (shippedNow = o));
@@ -415,5 +417,6 @@ export function useOwnerPage(p: { govHash: string; url: string }): Found | undef
       on = false;
     };
   }, [govHash, url]);
-  return found;
+  // once the file is in, this proposal's answer comes from it in the same render (a changed proposal never shows the last one's)
+  return shippedNow ? foundIn(shippedNow, { govHash, url }) : found;
 }

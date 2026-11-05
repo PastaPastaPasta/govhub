@@ -29,7 +29,11 @@ vi.mock('../ui/SignIn.tsx', () => ({ openSignIn: () => {} }));
 vi.mock('../ui/trust/TrustBadge.tsx', () => ({ TrustBadge: () => null }));
 vi.mock('../ui/trust/VerificationDrawer.tsx', () => ({ VerificationDrawer: () => null }));
 vi.mock('../ui/vote/VoteBlock.tsx', () => ({ mnParam: () => null, ProposalVoteBlock: ({ closesIn }: { closesIn: number | null }) => <div data-testid="vote-panel">{closesIn !== null && 'Voting closes in (the block)'}</div> }));
-vi.mock('../lib/ownerPages.ts', () => ({ useOwnerPage: () => null }));
+const owner = vi.hoisted(() => ({ page: null as unknown }));
+vi.mock('../lib/ownerPages.ts', () => ({ useOwnerPage: () => owner.page }));
+// these records stand for ones whose fields match their hash, unless a test says otherwise
+const content = vi.hoisted(() => ({ problem: null as string | null }));
+vi.mock('../verify/checks.ts', async (orig) => ({ ...(await orig<typeof import('../verify/checks.ts')>()), contentFailure: () => content.problem }));
 vi.mock('../ui/trust/store.ts', () => ({ trustScope: () => 'test', useCachedTrust: () => null }));
 vi.mock('../ui/Ownership.tsx', () => ({
   ClaimPanel: () => null,
@@ -188,5 +192,38 @@ describe('ProposalView reading order', () => {
   it('has no jump to a vote it no longer shows', async () => {
     const { el } = await view(proposal({ startEpoch: NOW - 40 * DAY, endEpoch: NOW - DAY }), { estTime: NOW + 5 * DAY, report: null });
     expect(el.querySelector('[data-testid="jump-vote"]')).toBeNull();
+  });
+});
+
+describe('ProposalView before and without its record', () => {
+  const open = proposal({ startEpoch: NOW - 10 * DAY, endEpoch: NOW + 80 * DAY });
+
+  it('holds the heading while owners.json is read, with the name for screen readers, instead of swapping it later', async () => {
+    owner.page = undefined;
+    const { el } = await view(open, { estTime: NOW + 5 * DAY, report: null });
+    const h1 = el.querySelector('[data-testid="p-title"]')!;
+    expect(h1.getAttribute('aria-busy')).toBe('true');
+    expect(h1.querySelector('.dh-skel')).not.toBeNull();
+    expect(h1.textContent).toBe('pshenmic-dev-dash-desktop-november-2026');
+    owner.page = null;
+  });
+
+  it('heads with the owner’s title once read, the exact name beside it', async () => {
+    owner.page = { page: { source: '', url: 'https://www.dashcentral.org/p/x', host: 'dashcentral.org', title: 'Dash Desktop, November', description: null, excerpt: 'It funds the desktop wallet.' }, fetchedAt: NOW };
+    const { el } = await view(open, { estTime: NOW + 5 * DAY, report: null });
+    expect(el.querySelector('[data-testid="p-title"]')!.textContent).toBe('Dash Desktop, November');
+    expect(el.querySelector('[data-testid="p-chain-name"]')!.textContent).toContain('the title is the owner’s, from dashcentral.org');
+    expect(el.querySelector('[data-testid="p-funds"] blockquote')!.textContent).toBe('It funds the desktop wallet.');
+    owner.page = null;
+  });
+
+  it('does not show fields that don’t match the hash as what it funds', async () => {
+    content.problem = 'url';
+    const { el } = await view(open, { estTime: NOW + 5 * DAY, report: null });
+    const funds = el.querySelector('[data-testid="p-funds"]')!;
+    expect(funds.querySelector('[data-testid="p-funds-mismatch"]')!.textContent).toContain('don’t match the hash the network votes on (url)');
+    expect(funds.querySelector('[data-testid="p-ask"]')).toBeNull();
+    expect(funds.textContent).not.toContain('Pays');
+    content.problem = null;
   });
 });
