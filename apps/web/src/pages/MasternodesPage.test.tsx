@@ -17,7 +17,7 @@ vi.mock('../voting/KeyringContext.tsx', () => ({ useKeyring: () => hold.ctx }));
 vi.mock('../auth/context.tsx', () => ({ useAuth: () => ({ openSheet: () => {} }) }));
 vi.mock('../ui/vote/VotesList.tsx', () => ({ VotesList: () => null }));
 vi.mock('../ui/SignIn.tsx', () => ({ openSignIn: () => {} }));
-vi.mock('../app/context.tsx', () => ({ useApp: () => ({ registry: { platformNetwork: 'testnet' }, mode: 'fixtures' }) }));
+vi.mock('../app/context.tsx', () => ({ useApp: () => ({ registry: { platformNetwork: 'testnet', coreNetwork: 'testnet' }, mode: 'fixtures', gov: { active: { data: [] } }, source: { bridgeDescriptor: () => null } }) }));
 vi.mock('../app/forum.tsx', () => ({ useForum: () => ({ session: null }) }));
 vi.mock('../badge/context.tsx', () => ({
   useBadgeCtx: () => ({ contractId: '', trust: [], reader: null, jobs: [], coreHeight: null, privacy: 'standard', setPrivacy: () => {}, requestBadge: async () => ({}), removeJob: () => {}, retryJob: () => {} }),
@@ -101,14 +101,29 @@ describe('Radar handoff', () => {
     hold.ctx = ctxFor(openKeyring(), 'testnet');
     const hash = 'ab'.repeat(32);
     const r = await render(<MemoryRouter initialEntries={['/masternodes?proTx=' + hash]}><MasternodesPage /></MemoryRouter>);
-    expect(r.el.querySelector('[aria-label="Masternode from Radar"] dashhq-hash')?.getAttribute('value')).toBe(hash);
-    expect(r.el.textContent).toContain('Use this masternode’s voting key');
+    expect(r.el.querySelector('[data-testid="radar-handoff"] dashhq-hash')?.getAttribute('value')).toBe(hash);
+    expect(r.el.textContent).toContain('Its network record is in Radar');
+    expect(r.el.textContent).toContain('Voting with it needs its voting key');
     await r.unmount();
   });
   it('ignores malformed public record identifiers', async () => {
     hold.ctx = ctxFor(openKeyring(), 'mainnet');
     const r = await render(<MemoryRouter initialEntries={['/masternodes?proTx=invalid']}><MasternodesPage /></MemoryRouter>);
-    expect(r.el.querySelector('[aria-label="Masternode from Radar"]')).toBeNull();
+    expect(r.el.querySelector('[data-testid="radar-handoff"]')).toBeNull();
+    await r.unmount();
+  });
+});
+
+describe('signed out', () => {
+  it('says what each way of voting needs before asking for anything', async () => {
+    hold.ctx = { ...ctxFor(openKeyring(), 'mainnet'), status: 'signed-out', keyring: null } as unknown as Ctx;
+    const r = await render(page());
+    const ways = r.el.querySelector('[data-testid="vote-ways"]');
+    expect(ways?.textContent).toContain('Proposals, from this browser');
+    expect(ways?.textContent).toContain('Needs an account here');
+    expect(ways?.textContent).toContain('Proposals, without an account');
+    expect(ways?.textContent).toContain('Name contests, without an account');
+    expect(r.el.textContent).not.toContain('Only the voting key is needed');
     await r.unmount();
   });
 });

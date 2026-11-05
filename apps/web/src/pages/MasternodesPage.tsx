@@ -2,6 +2,7 @@
 // and your votes; a quieter side column with the MN badge, the keyring settings (how it opens and locks) and what others can see.
 // Adding the first key is one flow (paste the key, see its masternodes, confirm) that also asks for the MN badge (one switch, on
 // by default) and keeps the key saved encrypted on Platform unless "Don't save my key"; it ends in a slim banner above the page.
+import { useRouteTitle } from '../app/title.ts';
 import { bytesToHex, UnlockerType } from '@govhub/auth';
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { useLocation } from 'react-router-dom';
@@ -13,6 +14,7 @@ import { errText, shortAddress } from '../lib/format.ts';
 import { openSignIn } from '../ui/SignIn.tsx';
 import { CopyButton, HashCopy, useLabels, useNow } from '../ui/vote/common.tsx';
 import { AddPasskey } from '../ui/vote/AddPasskey.tsx';
+import { RadarHandoff } from '../ui/vote/RadarHandoff.tsx';
 import { VotesList } from '../ui/vote/VotesList.tsx';
 import { useKeyring } from '../voting/KeyringContext.tsx';
 import { STEP_NAME } from '../voting/lookup.ts';
@@ -56,7 +58,7 @@ function Header({ adding, badgeKeyKept }: { adding: boolean; badgeKeyKept: boole
             {statusLine(k, badgeKeyKept)}
           </p>
         ) : (
-          <p className="kr-state muted">Vote with your masternodes from any proposal. Only the voting key is needed.</p>
+          <p className="kr-state muted">Vote on proposals and name contests with your masternodes' voting keys. Never the owner or collateral key.</p>
         )}
       </div>
       {open && (
@@ -263,7 +265,7 @@ function AddMasternodes({ step, setStep, b, savedLocked, onAdded }: { step: Flow
       </ol>
       {!found ? (
         <form className="kr-form" onSubmit={(e) => void find(e)} aria-label="Paste your voting key">
-          <p>Paste a masternode voting key once; govhub finds every masternode it votes for.</p>
+          <p>Paste a masternode voting key once; Governance finds every masternode it votes for.</p>
           <label className="kr-field">
             <span>Voting private key ({k.coreNetwork}, as Dash Core shows it)</span>
             <input type="password" value={wif} onChange={(e) => setWif(e.target.value)} autoComplete="off" spellCheck={false} data-testid="flow-key-input" aria-describedby="flow-key-warn" />
@@ -862,7 +864,47 @@ function AddedBanner({ added, onClose }: { added: Added; onClose(): void }) {
   );
 }
 
+/**
+ * Signed out: what each way of voting needs, before anything is asked for. Browser voting on proposals keeps its keys in a keyring that
+ * belongs to an account (a Platform identity); offline signing and pasted contest keys need none.
+ */
+function WaysToVote() {
+  return (
+    <section className="kr-card kr-gate vote-ways" aria-labelledby="vote-ways-title" data-testid="vote-ways">
+      <h2 id="vote-ways-title">Three ways to vote</h2>
+      <ol className="vote-ways-list">
+        <li>
+          <h3>Proposals, from this browser</h3>
+          <p>
+            Needs an account here and each masternode's voting key. The account is a Dash Platform identity: create one for about 0.005 DASH,
+            or sign in with one you have. It keeps your voting keys in an encrypted keyring that comes back when you sign in again, or only in
+            this tab's memory if you prefer. Votes are signed in your browser.
+          </p>
+          <button type="button" className="btn btn-primary" onClick={openSignIn} data-testid="vote-ways-signin">
+            Sign in or create an account
+          </button>
+        </li>
+        <li>
+          <h3>Proposals, without an account</h3>
+          <p>
+            Sign each vote in Dash Core or with a hardware wallet. Every proposal page has <b>Sign offline instead</b> with the exact text or
+            command to sign.
+          </p>
+          <Link to="/">Choose a proposal</Link>
+        </li>
+        <li>
+          <h3>Name contests, without an account</h3>
+          <p>Paste a voting key on a contest's page. It stays in this tab's memory, signs only contest votes, and is wiped after 15 minutes idle.</p>
+          <Link to="/names">Open name contests</Link>
+        </li>
+      </ol>
+      <p className="small muted">Masternode owners with an account can also show an MN badge next to their name in discussions.</p>
+    </section>
+  );
+}
+
 export function MasternodesPage() {
+  useRouteTitle('/masternodes');
   const k = useKeyring();
   const { openSheet } = useAuth();
   const b = useMnBadge();
@@ -898,13 +940,7 @@ export function MasternodesPage() {
   return (
     <section className="kr-page" aria-labelledby="mn-page-title">
       <Header adding={adding} badgeKeyKept={b.status.kind === 'pending' && b.status.job.signer.kind === 'wif'} />
-      {proTx && (
-        <section className="kr-card" aria-label="Masternode from Radar">
-          <h2>Continue from Radar</h2>
-          <p><dashhq-hash value={proTx} full="" label="ProTx hash" href={window.dashhq?.href('radar', '/mn/' + proTx, { network: k.coreNetwork })}>{proTx}</dashhq-hash></p>
-          <p>Use this masternode’s voting key to add it to your keyring. Its network record is in Radar.</p>
-        </section>
-      )}
+      {proTx && <RadarHandoff proTx={proTx} />}
       {k.busy && (
         <p className="kr-busy small" role="status">
           <span className="spinner" aria-hidden="true" /> {k.busy}…
@@ -920,15 +956,7 @@ export function MasternodesPage() {
           )}
         </div>
       )}
-      {k.status === 'signed-out' && (
-        <section className="kr-card kr-gate">
-          <h2>Sign in to add your masternodes</h2>
-          <p>Your voting keys are kept in an encrypted keyring that comes back whenever you sign in again. Masternode owners can also show an MN badge next to their name.</p>
-          <button type="button" className="btn btn-primary" onClick={openSignIn}>
-            Sign in
-          </button>
-        </section>
-      )}
+      {k.status === 'signed-out' && <WaysToVote />}
       {k.status === 'checking' && (
         <p className="kr-progress" role="status">
           <span className="spinner" aria-hidden="true" /> Looking for your keyring on Platform…

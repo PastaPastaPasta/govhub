@@ -131,9 +131,9 @@ export function VoteComposer({ proposals, onVerify }: { proposals: Proposal[]; o
   if (k.status !== 'open') {
     return (
       <div className="vempty" data-testid="vote-cta">
-        <p>{k.status === 'signed-out' ? 'Masternode owners: sign in and add your voting keys to vote here.' : 'Unlock your masternode keyring to vote here.'}</p>
+        <p>{k.status === 'signed-out' ? 'Masternode owners: voting from this browser needs an account here and your voting keys. Each proposal page can also sign offline, with no account.' : 'Unlock your masternode keyring to vote here.'}</p>
         <Link className="btn" to="/masternodes">
-          My masternodes
+          {k.status === 'signed-out' ? 'Ways to vote' : 'My masternodes'}
         </Link>
       </div>
     );

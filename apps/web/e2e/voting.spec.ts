@@ -58,7 +58,7 @@ test.describe('keyring page (fixtures, demo keyring)', () => {
   test('masternodes grouped by voting key, empty votes, add-key warning, privacy collapsed', async ({ page }) => {
     const errors = await watchPage(page);
     await gotoFixtures(page, '/masternodes');
-    await expect(page.getByRole('heading', { name: 'Sign in to add your masternodes' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Three ways to vote' })).toBeVisible();
     await signIn(page);
     await expect(page.getByTestId('keyring-status')).toContainText('Demo keyring');
     const groups = page.getByTestId('key-group');
