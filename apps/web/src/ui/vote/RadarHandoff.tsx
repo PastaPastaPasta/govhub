@@ -38,7 +38,8 @@ export function RadarHandoff({ proTx }: { proTx: string }) {
           const latest = (await bridge.votes(p.govHash)).votes
             .filter((v) => v.signal === 1 && `${v.collateralTxid.toLowerCase()}-${v.collateralIndex}` === outpoint)
             .sort((a, b) => b.time - a.time)[0];
-          return { p, outcome: latest?.outcome };
+          // 1 yes, 2 no, 3 abstain; anything else is no vote this page can name
+          return { p, outcome: latest && [1, 2, 3].includes(latest.outcome) ? latest.outcome : undefined };
         } catch (e) {
           // no published vote set yet (a new proposal): nobody has voted on it
           if (e instanceof BridgeError && e.status === 404) return { p, outcome: undefined };

@@ -869,6 +869,7 @@ function AddedBanner({ added, onClose }: { added: Added; onClose(): void }) {
  * belongs to an account (a Platform identity); offline signing and pasted contest keys need none.
  */
 function WaysToVote() {
+  const k = useKeyring();
   return (
     <section className="kr-card kr-gate vote-ways" aria-labelledby="vote-ways-title" data-testid="vote-ways">
       <h2 id="vote-ways-title">Three ways to vote</h2>
@@ -887,8 +888,10 @@ function WaysToVote() {
         <li>
           <h3>Proposals, without an account</h3>
           <p>
-            Sign each vote in Dash Core or with a hardware wallet. Every proposal page has <b>Sign offline instead</b> with the exact text or
-            command to sign.
+            {k.coreNetwork === 'testnet'
+              ? 'Sign each vote hash with your own tooling (on Testnet, Dash Core’s signmessage can’t make that signature), or broadcast it yourself with voteraw.'
+              : 'Sign each vote with signmessage in Dash Core or with a hardware wallet.'}{' '}
+            The page of each proposal still open for votes has <b>Sign offline instead</b> with the exact text or command.
           </p>
           <Link to="/">Choose a proposal</Link>
         </li>

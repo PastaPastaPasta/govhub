@@ -29,7 +29,8 @@ function anchorOnce(source: DataSource, onProgress: (m: string) => void): Promis
   if (hit && Date.now() - hit.at < TTL_MS) return hit.promise;
   const promise = runVerification({ kind: 'anchor', dapi }, onProgress).then((r) => r.anchor);
   runs.set(key, { at: Date.now(), promise });
-  promise.then((anchor) => lastGood.set(key, { anchor, at: Date.now() }), () => runs.delete(key));
+  // only a chain verified outright counts as "last verified" (testnet's proof of work is only checked)
+  promise.then((anchor) => anchor.weak || lastGood.set(key, { anchor, at: Date.now() }), () => runs.delete(key));
   return promise;
 }
 
@@ -115,7 +116,7 @@ export function ChainShield({ line: withLine = false }: { line?: boolean }) {
         )}
         {withLine && failed && (
           <span className="chain-line small" data-testid="chain-unverified">
-            Figures above are as Platform reports them.{' '}
+            Figures above are shown as reported.{' '}
             <button type="button" className="linkish" onClick={retry} data-testid="chain-retry">
               Try again
             </button>

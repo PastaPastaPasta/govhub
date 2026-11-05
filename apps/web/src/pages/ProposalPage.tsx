@@ -84,6 +84,7 @@ function Loading() {
 }
 
 function NotFound({ what }: { what: string }) {
+  useTitle('Proposal not found');
   return (
     <section className="page-narrow">
       <h1>Not found</h1>
@@ -147,7 +148,7 @@ function EvidenceLine({ level, reason, onRetry }: { level: TrustLevel; reason: s
   if (level !== 'error') return null;
   return (
     <p className="evidence-line small" data-testid="evidence-unverified">
-      {reason ? `${reason.replace(/\.$/, '')}. ` : ''}The amount, votes and budget place above are as Platform reports them.{' '}
+      {reason ? `${reason.replace(/\.$/, '')}. ` : ''}The amount, votes and budget place above are shown as reported.{' '}
       <button type="button" className="linkish" onClick={onRetry} data-testid="evidence-retry">
         Try again
       </button>
@@ -250,7 +251,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
                 {inBudget ? <span className="tag tag-pass">In the next budget</span> : state?.passing ? <span className="tag tag-warn">Passing, but the next budget is full</span> : null}
                 {(inBudget || state?.passing) && trust.funded === null && (
                   <span className="small muted" data-testid="budget-reported" title="The budget place is the published tally's; it counts as verified once this browser has recounted the votes and the funding order">
-                    {trust.aggregate.level === 'checking' ? 'checking…' : 'as Platform reports it'}
+                    {trust.aggregate.level === 'checking' ? 'checking…' : 'as reported, not verified here'}
                   </span>
                 )}
                 {untilDeadline !== null && (

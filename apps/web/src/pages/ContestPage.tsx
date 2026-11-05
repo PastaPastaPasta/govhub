@@ -121,7 +121,8 @@ function ContestView({ label }: { label: string }) {
   const contenderKey = s ? s.contenders.map((c) => c.identityId).sort().join(',') : '';
   const featured = useMemo(() => contenders(contenderKey ? contenderKey.split(',') : []), [contenderKey]);
   const phase = s ? phaseOf(s, endsAt, nowMs) : null;
-  useTitle(`${s ? displayName(s, label) : label}.dash name contest`);
+  const none = !!s && s.contenders.length === 0 && s.total === 0 && !s.outcome;
+  useTitle(none ? `No contest for ${label}.dash` : `${s ? displayName(s, label) : label}.dash name contest`);
   useEffect(() => {
     if (phase !== 'closing') return;
     let live = true;
@@ -158,7 +159,7 @@ function ContestView({ label }: { label: string }) {
       </p>
     );
   if (!s) return <ReadError error={state.error ?? 'no answer'} what="Platform" lead="The contest could not be read" onRetry={() => setAttempt((n) => n + 1)} />;
-  if (s.contenders.length === 0 && s.total === 0 && !s.outcome)
+  if (none)
     return (
       <Missing label={label} network={src.network}>
         {`Platform has no record of a vote on this name on ${networkLabel(src.network)}.`}
