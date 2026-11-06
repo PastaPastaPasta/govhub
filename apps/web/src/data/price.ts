@@ -70,7 +70,7 @@ const num = (v: number, o: Intl.NumberFormatOptions & { roundingPriority?: 'less
 export function formatUsdEstimate(usd: number): string {
   if (!Number.isFinite(usd) || usd < 0) return '';
   const cents = num(usd, { maximumFractionDigits: 2 });
-  if (cents < 10) return '≈ ' + cents.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 });
+  if (cents < 10) return '≈ ' + formatUsd(cents);
   const r = num(usd, { maximumSignificantDigits: 3, maximumFractionDigits: 0, roundingPriority: 'lessPrecision' });
   if (r >= 1e6) return `≈ $${(r / 1e6).toLocaleString('en-US', { maximumSignificantDigits: 3 })} million`;
   return '≈ ' + r.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });

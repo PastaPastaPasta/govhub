@@ -274,12 +274,13 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
   const lameDuck = row.lameDuck && !inBudget && (!payments || payments.remainingEstimate <= 0);
   // the verified chain's schedule once there is one (the deadline height is then proven, its time Core's own estimate)
   const untilDeadline = chain ? chain.schedule.deadlineEstTime - now : cycle ? votingDeadlineTime(cycle.value, params) - now : null;
+  const recurring = !!sched && !sched.oneTime && sched.total > 0;
   const paymentsText = paymentsLine(sched, paid && payments ? { made: paid.made.text, count: payments.paid.length, left: payments.remainingEstimate } : null);
   // the vote block names what it is voting on, in the words the lists use (the owner's title quoted as theirs)
   const voteSubject: VoteSubject = {
     title: ownerTitle ? `“${ownerTitle}”` : words,
     ask: row.content.ok ? Object.values(askText(p.paymentAmount, sched, params)).join(' ') : null,
-    payments: row.content.ok && sched && !sched.oneTime && sched.total > 0 ? paymentsText : null,
+    payments: row.content.ok && recurring ? paymentsText : null,
     standing: state ? { text: state.passing ? `Passing by ${formatInt(state.margin)}` : `Needs ${formatInt(state.needed)} more`, tone: state.light } : null,
   };
 
@@ -345,7 +346,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
                 <Purpose page={page} hasPost={hasPost} url={p.url} host={host} />
                 <p className="p-amount" data-testid="p-ask">
                   <span className="num">{formatDash(p.paymentAmount)}</span> <span className="p-per">{sched?.oneTime ? 'one payment' : perPayment(params)}</span>
-                  {sched && !sched.oneTime && sched.total > 0 && (
+                  {recurring && (
                     <span className="p-total">
                       {' '}
                       × {formatInt(sched.total)} payments = <b>{formatDash(p.paymentAmount * sched.total)}</b>
@@ -360,7 +361,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
               </p>
             )}
             <dl className="kv p-facts small" data-testid="p-facts">
-              {row.content.ok && (paid || (sched && !sched.oneTime && sched.total > 0)) && (
+              {row.content.ok && (paid || recurring) && (
                 <div>
                   <dt>Payments</dt>
                   <dd data-testid="p-paid">{capitalize(paymentsText ?? '')}</dd>

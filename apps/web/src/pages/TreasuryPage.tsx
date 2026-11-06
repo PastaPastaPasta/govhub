@@ -165,7 +165,7 @@ function CycleStats({ cycle, view, state }: { cycle: Cycle; view: TreasuryView; 
   );
 }
 
-/** Where the standings come from, said once: in a tile's tag and the section's note. */
+/** Where the standings come from, for the tile's tag. */
 const TALLY_SOURCE = 'Vote tallies as the governance data service reports them, live from Dash Core. Each proposal’s page recounts its own votes in this browser.';
 
 /** The superscript that points at a section's numbered source line. */
@@ -236,9 +236,10 @@ function PaysForSummary({ view, budget, names }: { view: TreasuryView; budget: n
   // some votes weren't read: every count and sum here is a lower bound, and says so
   const partial = unread.rows.length > 0;
   const one = (k: number, singular: string, plural: string) => `${formatInt(k)} ${k === 1 ? singular : plural}`;
+  const anyOver = over.rows.length > 0;
   const more = [
-    over.rows.length ? `${one(over.rows.length, 'more passes but doesn’t fit', 'more pass but don’t fit')} (${formatDash(over.sum)})` : '',
-    short.rows.length ? one(short.rows.length, over.rows.length ? 'is short of votes' : 'more is short of votes', over.rows.length ? 'are short of votes' : 'more are short of votes') : '',
+    anyOver ? `${one(over.rows.length, 'more passes but doesn’t fit', 'more pass but don’t fit')} (${formatDash(over.sum)})` : '',
+    short.rows.length ? one(short.rows.length, anyOver ? 'is short of votes' : 'more is short of votes', anyOver ? 'are short of votes' : 'more are short of votes') : '',
   ].filter(Boolean);
   return (
     <p className="tr-summary" data-testid="tr-summary">
@@ -260,7 +261,7 @@ function PaysForSummary({ view, budget, names }: { view: TreasuryView; budget: n
         </>
       )}
       {more.length > 0 && ` ${more.join('; ').replace(/^./, (c) => c.toUpperCase())}.`}
-      {unread.rows.length > 0 && ` The votes of ${formatInt(unread.rows.length)} weren’t read.`}
+      {partial && ` The votes of ${formatInt(unread.rows.length)} weren’t read.`}
       <Ref to="tr-pays-src-1" />
     </p>
   );

@@ -3,10 +3,14 @@ import { Link as RouterLink, NavLink as RouterNavLink, useLocation, useResolvedP
 
 const KEPT = ['network', 'profile', 'fixtures'];
 
+function keptParams(search: string): URLSearchParams {
+  const current = new URLSearchParams(search);
+  return new URLSearchParams(KEPT.flatMap((key) => (current.has(key) ? [[key, current.get(key)!]] : [])));
+}
+
 /** The page's network (and profile, demo mode) as a query for a route the app opens itself: "?network=testnet", or "". */
 export function keptSearch(search: string): string {
-  const current = new URLSearchParams(search);
-  const kept = new URLSearchParams(KEPT.flatMap((key) => (current.has(key) ? [[key, current.get(key)!]] : [])));
+  const kept = keptParams(search);
   return kept.size ? `?${kept}` : '';
 }
 
@@ -15,9 +19,8 @@ function useKept(to: LinkProps['to']) {
   const { search } = useLocation();
   const resolved = useResolvedPath(to);
   const params = new URLSearchParams(resolved.search);
-  const current = new URLSearchParams(search);
-  for (const key of KEPT) {
-    if (!params.has(key) && current.has(key)) params.set(key, current.get(key)!);
+  for (const [key, value] of keptParams(search)) {
+    if (!params.has(key)) params.set(key, value);
   }
   return { ...resolved, search: params.toString() };
 }

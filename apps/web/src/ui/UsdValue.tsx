@@ -18,7 +18,8 @@ export function UsdValue({ duffs, what }: { duffs: number; what?: string }) {
   const when = formatUtc(v.fetchedAt);
   // "01:51 UTC" today, "5 Nov 2026, 01:51 UTC" otherwise
   const time = dayOf(v.fetchedAt) === dayOf(now) ? when.slice(-9) : when;
-  const label = v.stale ? `Stale${v.failed ? ', refresh failed' : ''}` : `${v.source} price, ${time}${v.failed ? ', refresh failed' : ''}`;
+  const failed = v.failed ? ', refresh failed' : '';
+  const label = v.stale ? `Stale${failed}` : `${v.source} price, ${time}${failed}`;
   return (
     <span className="usd small" data-testid="usd">
       <span className="usd-value">

@@ -140,7 +140,6 @@ function mainnetSdk() {
 /** Every contested username on Mainnet Platform (proof-checked by evo-sdk), and when the open ones close. */
 async function contests() {
   const sdk = await mainnetSdk();
-  const poll = DPNS_POLL;
   const open = new Map();
   let start = Date.now();
   for (let page = 0; page < 20; page++) {
@@ -154,7 +153,7 @@ async function contests() {
         polls++;
         const j = v.toJSON();
         const [parent, label] = j.indexValues ?? [];
-        if (j.contractId !== poll.dataContractId || j.indexName !== poll.indexName || parent !== 'dash' || typeof label !== 'string') continue;
+        if (j.contractId !== DPNS_POLL.dataContractId || j.indexName !== DPNS_POLL.indexName || parent !== 'dash' || typeof label !== 'string') continue;
         if (!open.has(label)) added++;
         open.set(label, endsAt);
       }
@@ -164,7 +163,7 @@ async function contests() {
   const labels = new Set(open.keys());
   let after;
   for (let page = 0; page < 100; page++) {
-    const res = await sdk.group.contestedResourcesWithProof({ ...poll, startIndexValues: ['dash'], limit: 100, ...(after !== undefined ? { startAtValue: after, startAtValueIncluded: false } : {}) });
+    const res = await sdk.group.contestedResourcesWithProof({ ...DPNS_POLL, startIndexValues: ['dash'], limit: 100, ...(after !== undefined ? { startAtValue: after, startAtValueIncluded: false } : {}) });
     const raw = Array.from(res.data ?? []);
     for (const l of raw) if (typeof l === 'string') labels.add(l);
     if (raw.length < 100 || typeof raw.at(-1) !== 'string') break;
