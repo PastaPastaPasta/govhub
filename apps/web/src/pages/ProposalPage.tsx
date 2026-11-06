@@ -2,6 +2,8 @@
 // before voting: what it funds (the owner's summary, the ask, the payee, the timeline) and where it stands, then the vote, the
 // network's record and the discussion. Every check still runs (ui/trust/useProposalTrust.ts) and adds up to one badge; its detail
 // is in the "How do we know?" drawer.
+import { useNow } from '../ui/vote/common.tsx';
+import { formatUtc } from '../data/price.ts';
 import { Slug } from '../ui/Slug.tsx';
 import { useTitle } from '../app/title.ts';
 import { useMemo, useState } from 'react';
@@ -30,7 +32,7 @@ import { askText, paymentsLine } from '../ui/ProposalCard.tsx';
 import { useAsync } from '../ui/hooks.ts';
 import type { Proposal, Sourced } from '../data/types.ts';
 import type { Found } from '../lib/ownerPages.ts';
-import { capitalize, formatDash, formatDate, formatDateTime, formatDuration, formatInt, shortHash, urlHost } from '../lib/format.ts';
+import { capitalize, formatAgoMs, formatDash, formatDate, formatDateTime, formatDuration, formatInt, shortHash, urlHost } from '../lib/format.ts';
 import { passState, perPayment, votingDeadlineTime } from '../lib/governance.ts';
 import { deriveRow } from '../lib/view.ts';
 import { isShortLink, useResolvedLink } from '../lib/links.ts';
@@ -143,6 +145,7 @@ function EvidenceLine({ agg, onRetry }: { agg: Aggregate; onRetry(): void }) {
  * quoted and attributed), else where the owner says it.
  */
 function Purpose({ page, hasPost, url, host }: { page: Found; hasPost: boolean; url: string; host: string | null }) {
+  const now = useNow(30_000, !!page);
   const below = hasPost ? (
     <p className="small" data-testid="p-purpose-post">
       The owner has posted a description here: <a href="#about-title" className="dh-link">read it below</a>.
@@ -160,7 +163,7 @@ function Purpose({ page, hasPost, url, host }: { page: Found; hasPost: boolean; 
           </blockquote>
         )}
         <p className="small muted p-purpose-from" data-testid="owner-page">
-          {text ? 'The owner’s own words' : 'The title is the owner’s'}, from their page on {page.page.host} (read {formatDate(page.fetchedAt)}). Nobody has checked
+          {text ? 'The owner’s own words' : 'The title is the owner’s'}, from their page on {page.page.host} (read <time className="dh-time" dateTime={new Date(page.fetchedAt).toISOString()} title={formatUtc(page.fetchedAt)}>{formatAgoMs(page.fetchedAt, now / 1000)}</time>). Nobody has checked
           them.{' '}
           <a href={page.page.url} target="_blank" rel="noopener noreferrer nofollow ugc" className="ext dh-link" data-testid="owner-page-link">
             Read it all on {page.page.host}

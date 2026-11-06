@@ -183,11 +183,11 @@ function Choose() {
   );
   return (
     <div className="sheet-choose">
-      <p className="lede">Reading needs no account. Sign in to comment and react, or to keep your masternodes’ voting keys for next time.</p>
+      <p className="lede">Reading needs no account. Sign in to ask and answer polls, comment, or keep your masternodes’ voting keys for next time.</p>
       <dashhq-signin-help compact="always"
         asks="phrase passkey key voting-key"
         kept="memory"
-        why="It signs your comments and reactions and unlocks your saved voting keys."
+        why="It signs your polls, answers, comments and reactions and unlocks your saved voting keys."
         kept-note="Voting keys you add are kept encrypted on Dash Platform, unless you choose memory only."
       >
         <button type="button" slot="start" onClick={() => openSheet('create')}>
@@ -195,7 +195,7 @@ function Choose() {
         </button>
       </dashhq-signin-help>
       <p className="small sheet-vote-note" data-testid="signin-vote-note">
-        <b>Only here to vote?</b> You don’t need an account: every open proposal can be signed offline in Dash Core, or with a voting key kept in that tab only.
+        <b>Only here for treasury voting?</b> You don’t need an account: every open proposal can be signed offline in Dash Core, or with a voting key kept in that tab only.
       </p>
       {mode === 'fixtures' && <SampleIdentities />}
       {pending.length > 0 && (

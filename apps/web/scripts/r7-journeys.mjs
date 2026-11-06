@@ -33,7 +33,9 @@ try {
       if (await firstPoll.count()) { await firstPoll.click(); await page.waitForTimeout(18000); await shot('poll-record'); await page.getByRole('link', { name: '‹ Polls', exact: true }).click(); }
       else record.pollRecord = 'No open poll was returned by the live read.';
       await page.getByRole('button', { name: 'Closed', exact: true }).click();
+      await page.waitForTimeout(12000);
       await shot('polls-closed');
+      if (await firstPoll.count()) { await firstPoll.first().click(); await page.waitForTimeout(15000); await shot('closed-poll-record'); await page.getByRole('link', { name: '‹ Polls', exact: true }).click(); }
       await page.getByRole('button', { name: 'Mine', exact: true }).click();
       await page.getByText('Your polls, together').waitFor();
       await shot('polls-mine');
@@ -42,12 +44,14 @@ try {
       await page.getByLabel('Option 1', { exact: true }).fill('Saturday');
       await page.getByLabel('Option 2', { exact: true }).fill('Sunday');
       await page.getByLabel('Allow more than one choice').check();
+      await page.evaluate(() => scrollTo(0, 0));
       await shot('draft-before-signin');
       await page.getByRole('button', { name: 'Sign in to publish', exact: true }).click();
       await page.getByTestId('choose-passkey').waitFor();
       check('Governance sign-in choices visible', await page.getByTestId('choose-passkey').isVisible());
       await shot('governance-signin');
-      await page.keyboard.press('Escape');
+      await page.getByRole('button', { name: 'Close', exact: true }).click();
+      await page.locator('dialog[open]').waitFor({ state: 'hidden' });
       await page.reload();
       check('Question survives sign-in and reload', await page.getByLabel('Question', { exact: true }).inputValue() === 'Which day should we meet?');
       check('Options survive sign-in and reload', await page.getByLabel('Option 1', { exact: true }).inputValue() === 'Saturday' && await page.getByLabel('Option 2', { exact: true }).inputValue() === 'Sunday');
@@ -74,7 +78,7 @@ try {
       await shot('pollr-forwarded-record');
       check('No document writes reached the guard', record.blockedWrites.length === 0);
       check('No horizontal overflow', await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-    } catch (error) { record.failure = error.message; }
+    } catch (error) { record.failure = error.message; record.failureUrl = page.url(); record.failureText = await page.locator('body').innerText(); await shot('failure'); }
     report.cases.push(record);
     await fs.writeFile(new URL('report.json', out), JSON.stringify(report, null, 2));
     await context.close();

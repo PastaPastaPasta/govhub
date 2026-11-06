@@ -18,7 +18,7 @@
 .poll-empty { padding: 32px 0; border-block: 1px solid var(--dh-line); margin-block: 20px; }
 .poll-empty h2 { font-size: 21px; margin: 0 0 8px; }
 .poll-empty p { color: var(--dh-ink-2); max-inline-size: 60ch; }
-.polls-earlier { font-size: 14px; padding-block: 20px; border-block-start: 1px solid var(--dh-line); }
+.polls-earlier { font-size: 14px; padding-block: 20px; }
 .poll-back { display: inline-block; margin-block-end: 24px; }
 .poll-composer { max-inline-size: 680px; margin-inline: auto; }
 .poll-form, .poll-options { display: grid; gap: 20px; }
