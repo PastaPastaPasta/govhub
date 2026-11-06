@@ -100,6 +100,11 @@ export function proposalHref(p: Proposal, nameCounts?: ReadonlyMap<string, numbe
   return nameCounts && (nameCounts.get(p.name) ?? 0) > 1 ? `/p/h/${p.govHash}` : `/p/${encodeURIComponent(p.name)}`;
 }
 
+/** A search over what a proposal is known by: its name, the owner's title for it, its payee address, its website. */
+export function proposalMatches(p: Proposal, needle: string, title: string | null | undefined): boolean {
+  return p.name.toLowerCase().includes(needle) || !!title?.toLowerCase().includes(needle) || p.paymentAddress.toLowerCase().startsWith(needle) || p.url.toLowerCase().includes(needle);
+}
+
 export function countNames(ps: readonly Proposal[]): Map<string, number> {
   const m = new Map<string, number>();
   for (const p of ps) m.set(p.name, (m.get(p.name) ?? 0) + 1);

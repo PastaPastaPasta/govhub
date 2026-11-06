@@ -3,13 +3,14 @@
 // to vote that fits: the keyring's own vote panel when the keyring holds this masternode, offline signing with its voting address
 // filled in otherwise. Radar links here (and to /masternodes?proTx=, which redirects here).
 import { Fragment, useId, useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { useApp } from '../app/context.tsx';
 import { useTitle } from '../app/title.ts';
 import type { Cycle, Proposal } from '../data/types.ts';
 import { formatDash, formatDate, formatDuration, formatInt, shortHash } from '../lib/format.ts';
 import { perPayment, votingDeadlineTime, type GovParams } from '../lib/governance.ts';
-import { countNames, proposalHref, type Row } from '../lib/view.ts';
+import { countNames, proposalHref, proposalMatches, type Row } from '../lib/view.ts';
+import { ownerPageOf, useOwnerPages } from '../lib/ownerPages.ts';
 import { Link } from '../ui/Link.tsx';
 import { openSignIn } from '../ui/SignIn.tsx';
 import { OUTCOME_LABEL } from '../ui/vote/common.tsx';
@@ -89,6 +90,15 @@ function VoteChip({ cell, stalled }: { cell: VoteCell | undefined; stalled: bool
   );
 }
 
+/** Which rows the work queue shows: every active proposal, the ones this masternode hasn't voted on, or the ones it has. */
+type Show = 'all' | 'unvoted' | 'voted';
+const SHOWS: Array<{ id: Show; label: string }> = [
+  { id: 'all', label: 'All' },
+  { id: 'unvoted', label: 'Not voted' },
+  { id: 'voted', label: 'Voted' },
+];
+const showOf = (v: string | null): Show => (SHOWS.some((x) => x.id === v) ? (v as Show) : 'all');
+
 function MasternodeVotes({ proTx }: { proTx: string }) {
   const { activeRows, gov, params, registry, source } = useApp();
   const k = useKeyring();
@@ -118,6 +128,25 @@ function MasternodeVotes({ proTx }: { proTx: string }) {
   }, [proposals, v.cells]);
   const deadline = cycle ? votingDeadlineTime(cycle, params) : null;
   const read = proposals.length - v.pending;
+  // a search and a filter over the queue, kept in the address like the Active list's (?q=, ?show=)
+  const [query, setQuery] = useSearchParams();
+  const q = query.get('q') ?? '';
+  const show = showOf(query.get('show'));
+  const setParam = (key: string, value: string | null) => {
+    const next = new URLSearchParams(query);
+    if (value) next.set(key, value);
+    else next.delete(key);
+    setQuery(next, { replace: true });
+  };
+  const ownerPages = useOwnerPages();
+  const needle = q.trim().toLowerCase();
+  const visible = rows.filter((row) => {
+    const p = row.p.value;
+    if (needle && !proposalMatches(p, needle, row.content.ok && !failed.has(p.govHash) ? ownerPageOf(ownerPages, p)?.title : null)) return false;
+    const cell = v.cells.get(p.govHash);
+    return show === 'all' || (show === 'unvoted' ? cell?.kind === 'none' : cell?.kind === 'voted');
+  });
+  const shown: Record<Show, number> = { all: rows.length, unvoted: counts.none, voted: counts.yes + counts.no + counts.abstain };
   const fromRadar = useMemo(() => cameFromRadar(proTx), [proTx]);
   // not in this network's list: is it in the other network's?
   const other = useOtherNetwork();
@@ -220,6 +249,22 @@ function MasternodeVotes({ proTx }: { proTx: string }) {
                       .join(', ')}.`}
               {deadline !== null && deadline > now && <> Votes for the next payout close in {formatDuration(deadline - now)}, on {formatDate(deadline)}.</>}
             </p>
+            {mn && rows.length > 0 && (
+              <div className="list-tools mnv-tools">
+                <label className="contests-search proposal-search dh-field__label">
+                  <span className="visually-hidden">Find a proposal by name, title, payee address or website</span>
+                  <input className="dh-input" type="search" value={q} onChange={(e) => setParam('q', e.target.value)} placeholder="Find a proposal" autoComplete="off" spellCheck={false} data-testid="mn-search" />
+                </label>
+                <div className="dh-seg" role="group" aria-label="Show" data-testid="mn-show">
+                  {SHOWS.map((x) => (
+                    <button key={x.id} type="button" aria-pressed={show === x.id} onClick={() => setParam('show', x.id === 'all' ? null : x.id)} data-show={x.id}>
+                      {x.label}
+                      {(x.id === 'all' || v.pending === 0) && <span className="count">{formatInt(shown[x.id])}</span>}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <OwnerWordsNote proposals={proposals.filter((p) => !failed.has(p.govHash))} />
             {counts.unread > 0 && v.pending === 0 && (
               <p className="small" data-testid="mn-unread">
@@ -245,6 +290,13 @@ function MasternodeVotes({ proTx }: { proTx: string }) {
               </p>
               <p className="small">New proposals show up here as soon as they are submitted.</p>
             </div>
+          ) : !visible.length ? (
+            <p className="small muted" role="status" data-testid="mn-none-shown">
+              {show === 'unvoted' && !needle ? 'It has voted on every active proposal.' : show === 'voted' && !needle ? 'It hasn’t voted on any active proposal yet.' : `No active proposal matches “${q.trim()}”${show !== 'all' ? ' here' : ''}.`}{' '}
+              <button type="button" className="linkish dh-btn dh-btn--link" onClick={() => setQuery(new URLSearchParams([...query].filter(([k]) => k !== 'q' && k !== 'show')), { replace: true })}>
+                Show all
+              </button>
+            </p>
           ) : (
             <table className="mnv-table dh-table dh-table--cards">
               <thead>
@@ -262,7 +314,7 @@ function MasternodeVotes({ proTx }: { proTx: string }) {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row) => (
+                {visible.map((row) => (
                   <MnVoteRow
                     key={row.p.value.govHash}
                     row={row}
@@ -365,10 +417,11 @@ function MnVoteRow({ row, passed, href, cell, decides, shared, now, per, open, o
         <td role="rowheader" data-label="Proposal" className="dh-rc-title">
           <ProposalLabel p={p} to={`${href}?mn=${proTx}`} owner={passed} />
         </td>
-        <td className="r num" data-label="Requests">
+        {/* phones read these as one line, "4,832 DASH per month · Passing by 355", with the shared deadline said above the table */}
+        <td className="r num mnv-ask">
           {formatDash(p.paymentAmount)} <span className="muted small">{sched?.oneTime ? 'once' : per}</span>
         </td>
-        <td data-label="Standing">
+        <td className="mnv-standing">
           {status && (
             <span className={`mnv-status${tone ? ` mnv-${tone}` : ''}`}>
               <span className="dot" aria-hidden="true" />
@@ -380,7 +433,7 @@ function MnVoteRow({ row, passed, href, cell, decides, shared, now, per, open, o
         <td className="mnv-cell-vote dh-rc-end" data-label="This masternode" data-testid="mn-vote">
           <VoteChip cell={cell} stalled={stalled} />
         </td>
-        <td className={`small mnv-decides${common ? ' mnv-common' : ''}`} data-label="Decided by">
+        <td className={`small mnv-decides${common ? ' mnv-common' : ''}`}>
           {decideText}
         </td>
         <td className="mnv-action dh-rc-actions" data-label="Vote">

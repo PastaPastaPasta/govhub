@@ -2935,3 +2935,19 @@ details.tr-group > .tr-table { margin: 0; border-radius: 0; }
   .list-sort > span { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .list-sort select { max-inline-size: 11rem; }
 }
+
+/* ---- one masternode's work queue: search, filter, and phone cards that read as one line ------------------------- */
+.mnv-tools { margin-block-start: var(--s-2); }
+.mnv-tools .dh-seg { flex: none; }
+.mnv-tools .count { margin-inline-start: 6px; color: var(--dh-ink-2); font-variant-numeric: tabular-nums; }
+@media (max-width: 640px) {
+  .mnv-tools { flex-wrap: wrap; }
+  .mnv-tools .proposal-search { flex-basis: 100%; }
+  .mnv-table td.mnv-ask { font-weight: 400; font-stretch: 100%; color: var(--dh-ink); white-space: nowrap; }
+  .mnv-table td.mnv-standing::before { content: "\00a0·\00a0"; }
+  .mnv-table td.mnv-standing:empty { display: none; }
+  /* the shared deadline is said once above the table; another one gets a line of its own */
+  .mnv-table td.mnv-common { display: none; }
+  .mnv-table td.mnv-decides { flex-basis: 100%; }
+  .mnv-table td.mnv-decides::before { content: "Decided by "; }
+}

@@ -9,7 +9,7 @@ import { BridgeError } from '../data/bridge.ts';
 import type { Proposal } from '../data/types.ts';
 import { GOV_PARAMS } from '../lib/governance.ts';
 import type { Row } from '../lib/view.ts';
-import { click, render } from '../test/render.tsx';
+import { click, render, type } from '../test/render.tsx';
 import { latestFundingVote } from '../ui/vote/useMasternodeVotes.ts';
 
 const PRO = 'aa'.repeat(32);
@@ -95,6 +95,35 @@ describe('MasternodePage', () => {
     await flush();
     expect(cellText(r.el)).toEqual(['Not voted', expect.stringContaining('Yes'), 'Not voted']);
     expect(r.el.querySelector('[data-testid="mn-progress"]')?.textContent).toContain('not voted on 2, 1 yes');
+    await r.unmount();
+  });
+
+  it('narrows the queue to what is not voted, what is, or a search, and back to all', async () => {
+    const r = await render(page());
+    await act(async () => (hold.mnlist as Deferred<unknown>).resolve({ height: 5, listHash: 'x', masternodes: [MN] }));
+    const [a, b, c] = hold.proposals as Proposal[];
+    await act(async () => (hold.votes.get(a!.govHash) as Deferred<unknown>).reject(new BridgeError('none', 404)));
+    await act(async () => (hold.votes.get(b!.govHash) as Deferred<unknown>).resolve({ votes: [vote(1, 1_792_000_000)] }));
+    await act(async () => (hold.votes.get(c!.govHash) as Deferred<unknown>).reject(new BridgeError('none', 404)));
+    await flush();
+    const rows = () => [...r.el.querySelectorAll('[data-testid="mn-vote-row"]')].map((x) => x.getAttribute('data-govhash'));
+    const show = (id: string) => r.el.querySelector<HTMLButtonElement>(`[data-testid="mn-show"] [data-show="${id}"]`)!;
+    expect(show('unvoted').textContent).toBe('Not voted2');
+    expect(show('voted').textContent).toBe('Voted1');
+    await click(show('unvoted'));
+    expect(rows()).toEqual([a!.govHash, c!.govHash]);
+    await click(show('voted'));
+    expect(rows()).toEqual([b!.govHash]);
+    await click(show('all'));
+    expect(rows()).toHaveLength(3);
+    const input = r.el.querySelector<HTMLInputElement>('[data-testid="mn-search"]')!;
+    await type(input, 'prop-3');
+    expect(rows()).toEqual([c!.govHash]);
+    await click(show('voted'));
+    expect(rows()).toEqual([]);
+    expect(r.el.querySelector('[data-testid="mn-none-shown"]')?.textContent).toContain('No active proposal matches “prop-3” here.');
+    await click(r.el.querySelector<HTMLButtonElement>('[data-testid="mn-none-shown"] button')!);
+    expect(rows()).toHaveLength(3);
     await r.unmount();
   });
 

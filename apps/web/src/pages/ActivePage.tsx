@@ -2,7 +2,6 @@ import type { Profile } from '@govhub/forum';
 import { useRouteTitle } from '../app/title.ts';
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import type { Proposal } from '../data/types.ts';
 import { formatInt } from '../lib/format.ts';
 import { urlClaimIdentity } from '@govhub/verify';
 import { useApp } from '../app/context.tsx';
@@ -14,7 +13,7 @@ import { ProposalCard } from '../ui/ProposalCard.tsx';
 import { ProposalTabs } from '../ui/ProposalTabs.tsx';
 import { useReveal } from '../ui/hooks.ts';
 import { useCommentCounts } from '../ui/useCommentCounts.ts';
-import { countNames, proposalHref, type Checked, type Row } from '../lib/view.ts';
+import { countNames, proposalHref, proposalMatches, type Checked, type Row } from '../lib/view.ts';
 import { onlyUnreached, unfinishedReason } from '../lib/netError.ts';
 import { ownerPageOf, useOwnerPages } from '../lib/ownerPages.ts';
 import { OwnerWordsNote } from '../ui/OwnerPage.tsx';
@@ -33,11 +32,6 @@ function useProfiles(ids: readonly string[]): ReadonlyMap<string, Profile> {
     };
   }, [forum, key]);
   return map;
-}
-
-/** A search over what a proposal is known by: its name, the owner's title for it, its payee address, its website. */
-function matches(p: Proposal, needle: string, title: string | null | undefined): boolean {
-  return p.name.toLowerCase().includes(needle) || !!title?.toLowerCase().includes(needle) || p.paymentAddress.toLowerCase().startsWith(needle) || p.url.toLowerCase().includes(needle);
 }
 
 type Sort = 'order' | 'new' | 'amount' | 'close';
@@ -112,7 +106,7 @@ export function ActivePage() {
   const listed = showFailed ? all : activeRows.shown;
   const ownerPages = useOwnerPages();
   // the titles the cards show: only for a proposal that matches its hash and passed its checks
-  const find = (r: Checked<Row>) => matches(r.item.p.value, needle, r.item.content.ok && r.check.status !== 'failed' ? ownerPageOf(ownerPages, r.item.p.value)?.title : null);
+  const find = (r: Checked<Row>) => proposalMatches(r.item.p.value, needle, r.item.content.ok && r.check.status !== 'failed' ? ownerPageOf(ownerPages, r.item.p.value)?.title : null);
   const rows = useMemo(() => sorted(needle ? listed.filter(find) : listed, sort), [listed, needle, sort, ownerPages]);
   // a search also finds the lame ducks, listed with the rest instead of behind their toggle
   const lameDucks = useMemo(() => (needle ? activeRows.lameDucks.filter(find) : activeRows.lameDucks), [activeRows.lameDucks, needle, ownerPages]);
