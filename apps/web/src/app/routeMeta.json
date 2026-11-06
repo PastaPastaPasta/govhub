@@ -1,5 +1,5 @@
 {
-  "product": "Governance · dashhq",
+  "product": "Governance \u00b7 dashhq",
   "routes": {
     "/": {
       "title": null,
@@ -48,6 +48,18 @@
     "/about/trust": {
       "title": "What we can and can't lie about",
       "description": "Which Governance facts your browser proves, and which still rest on someone's word."
+    },
+    "/polls": {
+      "title": "Polls",
+      "description": "Ask and answer questions with your Dash identity. Testnet community polls, with results checked against Dash Platform."
+    },
+    "/polls/new": {
+      "title": "New poll",
+      "description": "Ask a question on Dash Platform. Drafts stay in this tab through sign-in."
+    },
+    "/polls/archive": {
+      "title": "Earlier polls",
+      "description": "Read-only polls from Pollr\u2019s first Dash Platform contract."
     }
   }
 }

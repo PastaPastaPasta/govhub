@@ -27,6 +27,7 @@ import { MasternodesPage } from './pages/MasternodesPage.tsx';
 import { MasternodePage } from './pages/MasternodePage.tsx';
 import { MyVotesPage } from './pages/MyVotesPage.tsx';
 import { KeyringProvider } from './voting/KeyringContext.tsx';
+import { PollsPage, NewPollPage, PollPage } from './polls/Pages.tsx';
 import { lazy, Suspense, useEffect } from 'react';
 
 // The wizard brings key derivation and transaction building (@govhub/auth): loaded when it is opened.
@@ -104,6 +105,10 @@ createRoot(document.getElementById('root')!).render(
                   <Route index element={<Suspense fallback={<Opening what="name contests" />}><ContestsPage /></Suspense>} />
                   <Route path=":label" element={<Suspense fallback={<Opening what="the name contest" />}><ContestPage /></Suspense>} />
                 </Route>
+                <Route path="polls" element={<PollsPage />} />
+                <Route path="polls/new" element={<NewPollPage />} />
+                <Route path="polls/archive" element={<PollsPage archive />} />
+                <Route path="polls/:id" element={<PollPage />} />
                 <Route path="settings" element={<SettingsPage />} />
                 <Route path="masternodes" element={<MasternodesPage />} />
                 <Route path="masternodes/:proTx" element={<MasternodePage />} />

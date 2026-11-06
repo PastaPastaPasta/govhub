@@ -18,6 +18,7 @@ import { isShortLink } from '../src/lib/shorteners.ts';
 import { contestAliases, DPNS_CONTRACT_ID, DPNS_POLL, normalizeLabel, PARENT_DOMAIN, registersAs } from '../src/contests/model.ts';
 import { governanceObjectHash, parseProposalData } from '@govhub/verify';
 import { ownerPages } from './ownerpages.mjs';
+import { POLL_CONTRACT, ARCHIVE_CONTRACT } from '../src/polls/model.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.resolve(process.argv[2] ?? path.join(here, '../dist'));
@@ -54,7 +55,7 @@ function head(template, { route, record, description, canonical = route, noindex
     `<meta property="og:description" content="${d}" />`,
     ...(noindex ? [] : [`<meta property="og:url" content="${esc(urlOf(canonical))}" />`]),
     `<meta property="og:image" content="${esc(urlOf('/icon-512.png'))}" />`,
-    '<meta property="og:image:alt" content="The dashhq mark: two layers joined by an amber link" />',
+    '<meta property="og:image:alt" content="Governance: three ascending bars" />',
     '<meta name="twitter:card" content="summary" />',
     `<meta name="twitter:title" content="${t}" />`,
     `<meta name="twitter:description" content="${d}" />`,
@@ -126,20 +127,20 @@ function describeProposalOrThrow(p) {
   return `${kindOf(p)} asking ${ask}, ${window}.${votes}`;
 }
 
-let mainnet;
+const networkSdks = new Map();
 /** One Mainnet SDK for the contest reads (proof-checked by evo-sdk). */
-function mainnetSdk() {
-  mainnet ??= import('@dashevo/evo-sdk').then(async ({ EvoSDK }) => {
-    const sdk = EvoSDK.mainnetTrusted({ settings: { timeoutMs: 20_000, retries: 2 } });
+function networkSdk(network = 'mainnet') {
+  if (!networkSdks.has(network)) networkSdks.set(network, import('@dashevo/evo-sdk').then(async ({ EvoSDK }) => {
+    const sdk = new EvoSDK({ network, trusted: true, settings: { timeoutMs: 20_000, retries: 2 } });
     await sdk.connect();
     return sdk;
-  });
-  return mainnet;
+  }));
+  return networkSdks.get(network);
 }
 
 /** Every contested username on Mainnet Platform (proof-checked by evo-sdk), and when the open ones close. */
-async function contests() {
-  const sdk = await mainnetSdk();
+async function contests(network = 'mainnet') {
+  const sdk = await networkSdk(network);
   const open = new Map();
   let start = Date.now();
   for (let page = 0; page < 20; page++) {
@@ -177,8 +178,8 @@ async function contests() {
  * contender's own spelling. `/names/Alice` and `/names/alice` then get an entry page of their own that names `/names/a11ce` as
  * canonical, instead of answering 404 until the app rewrites the address. Labels with no known spelling keep their normalized page only.
  */
-async function spellings(cs, out) {
-  const sdk = await mainnetSdk();
+async function spellings(cs, out, network = 'mainnet') {
+  const sdk = await networkSdk(network);
   for (const c of cs) out.set(c.label, []);
   const add = (label, s) => {
     if (typeof s === 'string' && out.has(label) && normalizeLabel(s) === label && !out.get(label).includes(s)) out.get(label).push(s);
@@ -290,6 +291,24 @@ async function shortLinks(ps) {
   return out;
 }
 
+async function pollPages() {
+  const sdk = await networkSdk('testnet');
+  const polls = [];
+  for (const dataContractId of [POLL_CONTRACT, ARCHIVE_CONTRACT]) {
+    let startAfter;
+    for (let page = 0; page < 100; page++) {
+      const res = await sdk.documents.queryWithProof({ dataContractId, documentTypeName: 'poll', orderBy: [['$createdAt', 'asc']], limit: 100, ...(startAfter ? { startAfter } : {}) });
+      const rows = [...res.data.values()].filter(Boolean).map(d => d.toJSON());
+      for (const d of rows) if (typeof d.$id === 'string' && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(d.$id)) polls.push({ id: d.$id, question: typeof d.question === 'string' ? d.question : 'Earlier poll' });
+      if (rows.length < 100) break;
+      const next = rows.at(-1)?.$id;
+      if (!next || next === startAfter) break;
+      startAfter = next;
+    }
+  }
+  return polls;
+}
+
 const describeMasternode = (m, active) =>
   `How Dash ${m.evo ? 'evonode' : 'masternode'} ${m.proTx.slice(0, 8)}… voted on ${active ? `the ${formatInt(active)} active treasury proposals` : 'the active treasury proposals'}, and how to vote with it.`;
 
@@ -330,7 +349,12 @@ for (const [route, m] of Object.entries(meta.routes)) {
   await write(route, head(template, { route, record: m.title, description: m.description }));
 }
 
-const [ps, cs, ms] = await Promise.all([settle('proposals', proposals), settle('name contests', contests), settle('masternodes', masternodes)]);
+const [ps, mainContests, testContests, ms, polls] = await Promise.all([
+  settle('proposals', proposals), settle('Mainnet name contests', () => contests('mainnet')),
+  settle('Testnet name contests', () => contests('testnet')), settle('masternodes', masternodes), settle('polls', pollPages),
+]);
+const cs = [...new Map([...testContests, ...mainContests].map(c => [c.label, c])).values()];
+for (const p of polls) await write(`/polls/${p.id}`, head(template, { route: `/polls/${p.id}`, record: p.question, description: 'A community poll on Dash Platform Testnet. Read the question, options and proof-checked answers.' }));
 const links = offline ? {} : await shortLinks(ps);
 await fs.writeFile(path.join(dist, 'links.json'), JSON.stringify({ resolvedAt: now, links }));
 let owners = { fetchedAt: now, pages: {} };
@@ -366,7 +390,12 @@ for (const m of ms) {
 }
 // filled as it is read: a timeout keeps what was read, and a contest with none keeps its normalized page only
 const spelled = new Map();
-if (cs.length) await settle('name spellings', () => spellings(cs, spelled));
+if (mainContests.length) await settle('Mainnet name spellings', () => spellings(mainContests, spelled, 'mainnet'));
+if (testContests.length) {
+  const testSpelled = new Map();
+  await settle('Testnet name spellings', () => spellings(testContests, testSpelled, 'testnet'));
+  for (const [label, aliases] of testSpelled) spelled.set(label, [...new Set([...(spelled.get(label) ?? []), ...aliases])]);
+}
 let aliases = 0;
 for (const c of cs) {
   const known = spelled.get(c.label) ?? [];

@@ -84,6 +84,7 @@ export function SessionControl() {
             <p className="small muted">Signed in with {session.label}. The key stays in memory, shared with your other open Governance tabs: closing the browser (or the last Governance tab) signs you out.</p>
           </div>
         )}
+        {session && <Link className="menu-item" to="/polls?seg=mine" onClick={hide}>My polls</Link>}
         {session && item('Edit profile', () => dialog.current?.showModal())}
         {session && auth.session && item('Top up', () => auth.openSheet('topup'))}
         {session && auth.session && item('Add passkey', () => auth.openSheet('passkeys'))}

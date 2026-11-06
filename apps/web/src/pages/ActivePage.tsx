@@ -6,6 +6,7 @@ import { formatInt } from '../lib/format.ts';
 import { urlClaimIdentity } from '@govhub/verify';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
+import { Link } from '../ui/Link.tsx';
 import { BudgetHeader } from '../ui/BudgetHeader.tsx';
 import { FailedProposalsToggle } from '../ui/HiddenToggle.tsx';
 import { LameDuckSection } from '../ui/LameDuck.tsx';
@@ -141,10 +142,12 @@ export function ActivePage() {
 
   return (
     <>
+      <div className="proposal-page-actions"><Link to="/create" className="dh-btn dh-btn--secondary">New proposal</Link></div>
       <BudgetHeader />
       <section aria-label="Active proposals" className="list-section">
         <div className="list-head">
           <ProposalTabs />
+          <OwnerWordsNote proposals={cards.map((r) => r.item.p.value)} />
           <p className="small muted" data-testid="list-order-note">{SORTS.find((x) => x.id === sort)!.note}</p>
           <div className="list-tools">
             <label className="contests-search proposal-search dh-field__label">
@@ -170,7 +173,6 @@ export function ActivePage() {
             </p>
           )}
         </div>
-        <OwnerWordsNote proposals={cards.map((r) => r.item.p.value)} />
         <UncheckedNote rows={[...all, ...activeRows.lameDucks]} />
         {gov.active.loading && rows.length === 0 ? (
           <div className="plist" aria-busy="true">
