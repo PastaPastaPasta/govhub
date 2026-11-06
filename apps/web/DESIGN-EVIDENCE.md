@@ -184,3 +184,63 @@ Not done:
   list then reads as empty.
 - `lab/check-shell.mjs` stops at the hub's vendored copy (another stream's repo); gov's copy matches `design/shell` 1.6.2
   byte for byte.
+
+## Round 6 (6 November 2026)
+
+What the round-5 reviews (`reviews/round5-opus.md`, `reviews/round5-sol.md`) and stream S1 asked of Governance, on shell 1.8.1 and
+`design/ADOPTION-r6.md` (§1 retired pages, §3 one meaning of "Bridge", §4 sources beside figures).
+
+- **"Bridge" means the Bridge app only** (Opus #2, Sol #10). Every user-visible "bridge" that meant Governance's relay now says
+  "the governance data service" ("the data service" after the first mention in a block), in pages, errors, provenance, the vote
+  tracker ("Data service: counted"), the verification drawer ("Data service live tally") and Settings ("Data services",
+  "data service 1"). Code identifiers, settings keys, API paths and the service's host names are unchanged.
+- **The treasury reads in sentences you can quote** (Opus #3, Sol #23 in part). No source chip sits inside a sentence: each tile
+  names its source as a `.dh-src` tag beside its label ("Consensus limit", checked here; "Platform records"; "Reported tally";
+  "Estimate"), "What it pays for" opens with a summary built from the figures ("5 proposals have the votes and fit in this payout:
+  5,193 DASH, 76% of what it can pay. The largest is …"), and its sources close the section as numbered `.dh-sources` lines (the
+  standings with the block they were counted at; the owners' titles, unchecked). While some votes are unread the summary says
+  "at least" and "the largest of those read". The comparison keeps one chain proof beside its description. Proposals still carry
+  no category, so none is invented.
+- **Fiat as an estimate** (Opus #3). `formatUsdEstimate` (design/PRICE.md): "≈ $308,000", whole dollars to three significant
+  figures, cents under $10, millions in words; the Coinbase time is a tag beside the value ("Stale" past ten minutes, the date only
+  when it isn't today). The home's budget value says "Budget ≈ …".
+- **Name contests answer 200 under the spellings people write** (Opus #8, ADOPTION-r6 §1). The build reads each contest's
+  registered spelling (one proof-checked DPNS query per hundred labels) and each open contest's contenders' spellings, and writes
+  `names/<spelling>.html` and its lower case, canonical to `/names/<label>`: 1,014 alias pages for 710 of 948 contests.
+  `/names/alice` and `/names/Alice` are 200; EvoVote now forwards to the canonical address itself. A failed read loses only its
+  page of labels; "index" is never an alias.
+- **The vote names what is voted on** (Sol #4). The vote block opens with the proposal's title, its exact name, the ask, the
+  payments left and where it stands; the offline signing instructions and rows name the proposal too.
+- **The proposals start on a phone's first screen** (Sol #7). Phones drop the treasury link (the Treasury tab is below), put the
+  chain check and "How funding works" on one line, and the search and sort on one row: the first card moved from 743 px to 496 px.
+- **A masternode's work queue** (Sol #12, Opus #18). Search and an All / Not voted / Voted filter, kept in the address; the filter
+  waits until every vote is read. Phone cards read "4,832 DASH per month · Passing by 355" with no stray separator.
+- **One payments phrase** (Opus #16). "1 of 4 payments left", then "· 3 paid" once the chain is read; "1 more possible · 1 paid"
+  when the chain's counts don't fit the schedule.
+- **Also:** the network record at full width (Opus #19); a ProTx hash field on My masternodes, signed out, that opens the
+  masternode's own page (and Radar for finding it by IP); Governance's own EvoVote notice removed, since the shell's arrival
+  notice replaces it (ADOPTION-r6 §1); the phone menu is the shell's short one (ADOPTION-r6 §2: nothing for Governance).
+
+Evidence: before `shots/r6-gov-s1/before/` (revision `fe748ad`); after `shots/r6-gov-s1/after/` and the lab capture
+`shots/r6-s1/gov/` (40 images, revision `92f72d3`, every page HTTP 200, no console or page errors, no blocked writes; aborted
+reads on page close and the data service's quorum-proof errors as in round 5); journeys `shots/r6-gov-s1/journeys/report.json`.
+
+Validation:
+
+- Web: 861 vitest tests in 77 files; typecheck passes; whitespace check passes. New: contest aliases, the payments line, the vote
+  subject, the queue's filter and its wait, the ProTx field, `formatUsdEstimate` boundaries, the USD tag's states, the treasury's
+  tags, summary, notes and lower bounds.
+- e2e (fixture suite, `GOVHUB_E2E_PORT` set): 89 pass, 2 skipped.
+- Lab: `node lab/verify.mjs` 111 checks pass. Guarded journeys at 390 (`isMobile`) and 1440, light and dark: 108 checks, no blocked
+  writes, no page errors (Radar → masternode votes → filter and search → the vote with its subject in view → back; the treasury
+  with no chip in a sentence, four source tags, an estimate, a summary and its notes; the phone landing and a menu that lists
+  nothing twice; `/names/Alice` 200 and an old Vote link arriving with the shell's notice; the ProTx field keeping Testnet; no
+  "bridge" for the data service on any page).
+- Review: an independent review of the range (no blocking findings; its four medium and five low findings fixed in `c65267f`,
+  `1b1f45b`), then a simplification pass (`e5a3f8a`).
+
+Not done:
+- The first visit's proposal check still takes 10 to 40 seconds (Opus #17), for the reason in round 5; a return visit shows the
+  earlier result while it re-checks.
+- Spellings nobody registered or asked for (`/names/ALICE`), and contests newer than the build, still load through 404.html.
+- One sign-in across the family (Sol #2) is not a Governance-only change.
