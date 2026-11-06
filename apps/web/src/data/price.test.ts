@@ -92,6 +92,7 @@ describe('formatUsdEstimate', () => {
     expect(formatUsdEstimate(999_500)).toBe('≈ $1 million');
     expect(formatUsdEstimate(1_234_567)).toBe('≈ $1.23 million');
     expect(formatUsdEstimate(12_345_678)).toBe('≈ $12.3 million');
+    expect(formatUsdEstimate(-0)).toBe('≈ $0.00');
     expect(formatUsdEstimate(-1)).toBe('');
     expect(formatUsdEstimate(Number.NaN)).toBe('');
   });

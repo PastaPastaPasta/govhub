@@ -6,10 +6,12 @@ import type { ReactNode } from 'react';
 type ProofState = 'ok' | 'reported' | 'unverified';
 const SRC: Record<ProofState, string> = { ok: ' dh-src--ok', reported: '', unverified: ' dh-src--warn' };
 
-export function ProofTag({ state, title, children }: { state: ProofState; title?: string; children: ReactNode }) {
+/** `said`: the label already says it was checked here ("Verified…"), so screen readers aren't told twice. */
+export function ProofTag({ state, title, said, children }: { state: ProofState; title?: string; said?: boolean; children: ReactNode }) {
   return (
     <span className={`dh-src${SRC[state]}`} title={title} data-proof={state}>
       {children}
+      {state === 'ok' && !said && <span className="dh-sr">, checked in this browser</span>}
     </span>
   );
 }
@@ -21,7 +23,7 @@ export function ChainProof({ weak }: { weak: boolean }) {
       Read from the chain, not proven
     </ProofTag>
   ) : (
-    <ProofTag state="ok" title="Read from each superblock in the chain this browser verified">
+    <ProofTag state="ok" said title="Read from each superblock in the chain this browser verified">
       Verified from the chain
     </ProofTag>
   );

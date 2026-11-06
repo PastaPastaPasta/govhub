@@ -210,7 +210,7 @@ function PaysFor({ view, state, budget, names }: { view: TreasuryView; state: Re
           </p>
           <BudgetBar funded={view.groups.funded} budget={budget} />
           {(['funded', 'over', 'short', 'unread', 'later'] as const).map((id) => (view.groups[id].rows.length ? <Group key={id} group={view.groups[id]} budget={budget} names={names} /> : null))}
-          <ol className="dh-sources" aria-label="Sources">
+          <ol className="dh-sources" role="list" aria-label="Sources">
             <li id="tr-pays-src-1">
               Standings: vote tallies reported by the governance data service{tallyAt ? ` at block ${formatInt(tallyAt)}` : ''}, live from Dash Core. Each proposal’s page
               recounts its own votes in this browser.
@@ -465,7 +465,7 @@ function ComparedBody({ ledger, entries, sum, allocated, network, last }: { ledg
       <CompareLine sum={sum} cols={cols} allocated={allocated} last={last} onRetry={ledger.retry} />
       <PaidColumns cols={cols} allocated={allocated} network={network} />
       {allocated !== null && (
-        <ol className="dh-sources" aria-label="Sources">
+        <ol className="dh-sources" role="list" aria-label="Sources">
           <li id="tr-cmp-src-1">This payout’s budget so far: what the governance data service reports allocated to the next superblock. It isn’t paid yet.</li>
         </ol>
       )}

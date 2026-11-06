@@ -78,7 +78,7 @@ describe('the treasury overview', () => {
     expect(el.querySelector('[data-testid="tr-group-over"]')!.textContent).toContain('Passing, but over the budget');
     // each tile names its source beside its label; no proof chip sits inside a sentence
     const tags = [...el.querySelectorAll('[data-testid="treasury-stats"] .dh-stat__label .dh-src')].map((t) => [t.textContent, t.getAttribute('data-proof')]);
-    expect(tags).toEqual([['Consensus limit', 'ok'], ['Platform records', 'reported'], ['Reported tally', 'reported'], ['Estimate', 'reported']]);
+    expect(tags).toEqual([['Consensus limit, checked in this browser', 'ok'], ['Platform records', 'reported'], ['Reported tally', 'reported'], ['Estimate', 'reported']]);
     expect(el.querySelectorAll('p [data-proof], .dh-stat__note [data-proof], .dh-proof')).toHaveLength(0);
     expect(el.textContent).not.toMatch(/bridge/i);
     // a sentence a reader can quote, and its source as a numbered note

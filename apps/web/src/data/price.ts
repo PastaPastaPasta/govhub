@@ -61,19 +61,20 @@ const USD = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD',
 export const formatUsd = (usd: number): string => USD.format(usd);
 
 // Intl rounds in decimal (half away from zero), so binary float error can't move a boundary: $9.995 is "≈ $10", $999,500 "≈ $1 million".
-const num = (v: number, o: Intl.NumberFormatOptions & { roundingPriority?: 'lessPrecision' }): number =>
-  Number(new Intl.NumberFormat('en-US', { useGrouping: false, ...o } as Intl.NumberFormatOptions).format(v));
+// Plain Intl options only, so older engines agree.
+const num = (v: number, o: Intl.NumberFormatOptions): number => Number(new Intl.NumberFormat('en-US', { useGrouping: false, ...o }).format(v));
 /**
  * A converted amount, written as the estimate it is (design/PRICE.md formatUsdEstimate): "≈ $4.87" under $10, three significant
- * figures in whole dollars up to a million ("≈ $487", "≈ $18,200", "≈ $309,000"), then "≈ $1.23 million".
+ * figures in whole dollars up to a million ("≈ $49", "≈ $487", "≈ $18,200", "≈ $309,000"), then "≈ $1.23 million".
  */
 export function formatUsdEstimate(usd: number): string {
   if (!Number.isFinite(usd) || usd < 0) return '';
-  const cents = num(usd, { maximumFractionDigits: 2 });
-  if (cents < 10) return '≈ ' + formatUsd(cents);
-  const r = num(usd, { maximumSignificantDigits: 3, maximumFractionDigits: 0, roundingPriority: 'lessPrecision' });
+  usd += 0; // -0 is 0
+  const dollars = num(usd, { maximumFractionDigits: 2 });
+  if (dollars < 10) return '≈ ' + formatUsd(dollars);
+  const r = dollars < 100 ? num(usd, { maximumFractionDigits: 0 }) : num(usd, { maximumSignificantDigits: 3 });
   if (r >= 1e6) return `≈ $${(r / 1e6).toLocaleString('en-US', { maximumSignificantDigits: 3 })} million`;
-  return '≈ ' + r.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+  return '≈ ' + r.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
