@@ -69,7 +69,7 @@ export function useProbe(other: OtherNetwork | null, look: (o: OtherNetwork) => 
  * check. `thing`: "proposal"; `idLabel`: what the id is called ("name"); `absent`: one sentence for "on neither"; `list`: this
  * network's list. With no other network to ask (demo data, the development profile) it says plainly that there is none here.
  */
-export function NetworkProbeNotice({ thing, idLabel, absent, probe, other, list }: { thing: string; idLabel: string; absent: string; probe: Probe; other: OtherNetwork | null; list: { path: string; label: string } }) {
+export function NetworkProbeNotice({ thing, idLabel, absent, probe, other, list, record }: { record?: string; thing: string; idLabel: string; absent: string; probe: Probe; other: OtherNetwork | null; list: { path: string; label: string } }) {
   const { registry } = useApp();
   // through the router, so a build under a base path keeps it
   const listHref = useHref(list.path) + profileSearch('', registry.profile);
@@ -87,6 +87,7 @@ export function NetworkProbeNotice({ thing, idLabel, absent, probe, other, list 
   const found = { found: other.registry.coreNetwork, absent: 'none', unknown: 'unknown', checking: undefined } as const satisfies Record<Probe, string | undefined>;
   return (
     <dashhq-not-found thing={thing} id-label={idLabel} network={registry.coreNetwork} networks="mainnet testnet" found={found[probe]} list-href={listHref} list-label={list.label} data-testid="not-found" data-probe={probe}>
+      {record && <p><dashhq-hash value={record} label={idLabel} full="">{record}</dashhq-hash></p>}
       {probe === 'absent' && <p>{absent}</p>}
     </dashhq-not-found>
   );

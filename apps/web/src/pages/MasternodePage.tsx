@@ -145,13 +145,14 @@ function MasternodeVotes({ proTx }: { proTx: string }) {
         )}
       </p>
       <header className="mnv-head dh-page-header">
-        <h1 className="dh-page-header__title" id="mnv-title">Masternode votes</h1>
-        <p className="mnv-id">
+        {absent && <p className="dh-page-header__kicker">Masternode</p>}
+        <h1 className="dh-page-header__title" id="mnv-title">{absent ? shortHash(proTx, 8) : 'Masternode votes'}</h1>
+        {!absent && <p className="mnv-id">
           <dashhq-hash value={proTx} full="" label="ProTx hash" {...(radarHere ? { href: radarHere } : {})}>
             {proTx}
           </dashhq-hash>
-        </p>
-        <p className="mnv-facts small" data-testid="mn-facts">
+        </p>}
+        {!absent && <p className="mnv-facts small" data-testid="mn-facts">
           {mn ? (
             <>
               <span>{mn.type === 'evo' ? 'Evonode: each vote counts 4 times' : 'Regular masternode: each vote counts once'}</span>
@@ -168,13 +169,14 @@ function MasternodeVotes({ proTx }: { proTx: string }) {
               <a href={radarHere} className="dh-link dh-link--go">Its record in Radar{absent && elsewhere === 'found' && other ? ` (${other.label})` : ''} →</a>
             </span>
           )}
-        </p>
+        </p>}
       </header>
 
       {v.lookup.kind === 'absent' && (
         <div data-testid="mn-absent">
           <NetworkProbeNotice
             thing="masternode"
+            record={proTx}
             idLabel="ProTx hash"
             probe={elsewhere}
             other={other}

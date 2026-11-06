@@ -103,6 +103,7 @@ function NotFound({ by }: { by: { name: string } | { hash: string } }) {
       name={'name' in by ? <Slug name={by.name} /> : <span className="mono-ish">{shortHash(by.hash, 10)}</span>}
       title={'name' in by ? `${by.name}: not on ${here}` : `Proposal not on ${here}`}
       thing="proposal"
+      record={'name' in by ? by.name : by.hash}
       idLabel={'name' in by ? 'name' : 'hash'}
       probe={probe}
       other={other}

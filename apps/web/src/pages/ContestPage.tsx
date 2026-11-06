@@ -79,6 +79,7 @@ function NoContestHere({ label, network }: { label: string; network: string }) {
       </header>
       <NetworkProbeNotice
         thing="name contest"
+        record={`${label}.dash`}
         idLabel="name"
         probe={probe}
         other={other}
