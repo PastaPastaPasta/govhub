@@ -4,7 +4,6 @@ import type { Profile } from '@govhub/forum';
 import { EVONODE_WEIGHT } from '@govhub/verify';
 import { useEffect, useMemo, useState } from 'react';
 import { Navigate, useLocation, useParams } from 'react-router-dom';
-import { MovedFromVote } from '../contests/MovedFromVote.tsx';
 import { useTitle } from '../app/title.ts';
 import { Link } from '../ui/Link.tsx';
 import { useForum } from '../app/forum.tsx';
@@ -38,12 +37,7 @@ export function ContestPage() {
         Only names of 3 to 19 letters, hyphens, 0 and 1 (after o becomes 0 and i and l become 1) can be contested.
       </Missing>
     );
-  return (
-    <>
-      <MovedFromVote />
-      <ContestView label={label} />
-    </>
-  );
+  return <ContestView label={label} />;
 }
 
 const networkLabel = (n: string) => (n === 'testnet' ? 'Testnet' : 'Mainnet');

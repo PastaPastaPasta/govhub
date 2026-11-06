@@ -1,6 +1,5 @@
 // /names: contested usernames. Open contests come from one query and lead the page; ended ones (hundreds on mainnet) sit in a
 // collapsed section that reads nothing until it is opened, then pages through the names, loading tallies only for rows on screen.
-import { MovedFromVote } from '../contests/MovedFromVote.tsx';
 import { useRouteTitle } from '../app/title.ts';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { ReadError } from '../ui/ReadError.tsx';
@@ -116,7 +115,6 @@ export function ContestsPage() {
   return (
     <section aria-labelledby="names-title" className="list-section contests">
       <header className="dh-page-header">
-        <MovedFromVote />
         <h1 className="dh-page-header__title" id="names-title">Name contests</h1>
         <p className="dh-page-header__lede contests-intro">Masternodes decide who gets a contested name. Open contests close soonest first.</p>
         <details className="learn"><summary>How name contests work</summary>
