@@ -183,6 +183,7 @@ function MasternodeVotes({ proTx }: { proTx: string }) {
             absent={`Governance reads the governance bridge's masternode list, at block ${formatInt(v.lookup.height)}; it may have been removed.`}
             list={{ path: '/', label: `Browse ${network} proposals` }}
           />
+          {radarHere && <p><a href={radarHere} className="dh-link dh-link--go">Its record in Radar{elsewhere === 'found' && other ? ` (${other.label})` : ''} →</a></p>}
         </div>
       )}
       {v.lookup.kind === 'no-bridge' && (

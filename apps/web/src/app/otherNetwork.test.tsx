@@ -47,7 +47,8 @@ describe('a proposal that is not on this network', () => {
     expect(n.getAttribute('found')).toBe('mainnet');
     expect(n.getAttribute('list-href')).toBe('/?network=testnet');
     expect(n.getAttribute('list-label')).toBe('Browse Testnet proposals');
-    expect(n.textContent).toBe(''); // the shell writes the words; no sentence of ours unless it is on neither
+    expect(n.querySelector('dashhq-hash')!.getAttribute('value')).toBe('DCG-Operations');
+    expect(n.querySelector('dashhq-hash')!.hasAttribute('full')).toBe(true);
   });
 
   it('is checking (no found attribute) while the other network answers, then on neither, with one sentence of ours', async () => {
