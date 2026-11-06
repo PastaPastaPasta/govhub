@@ -27,15 +27,16 @@ try {
       await page.getByRole('link', { name: 'Open Polls on Testnet' }).click();
       await page.getByRole('link', { name: 'New poll', exact: true }).waitFor();
       check('Explicit Testnet handoff', new URL(page.url()).searchParams.get('network') === 'testnet');
-      await page.waitForTimeout(18000);
+      await page.getByText('Reading polls from Platform…', { exact: true }).waitFor({ state: 'hidden' });
       await shot('polls-list');
       const firstPoll = page.locator('.poll-title-link').first();
-      if (await firstPoll.count()) { await firstPoll.click(); await page.waitForTimeout(18000); await shot('poll-record'); await page.getByRole('link', { name: '‹ Polls', exact: true }).click(); }
+      if (await firstPoll.count()) { await firstPoll.click(); await page.locator('.poll-answer-value').first().filter({ hasText: /^\d/ }).waitFor(); await shot('poll-record'); await page.getByRole('link', { name: '‹ Polls', exact: true }).click(); }
       else record.pollRecord = 'No open poll was returned by the live read.';
       await page.getByRole('button', { name: 'Closed', exact: true }).click();
-      await page.waitForTimeout(12000);
+      await page.locator('.poll-title-link').first().waitFor();
+      await page.waitForFunction(() => ![...document.querySelectorAll('.poll-leader')].some(el => el.textContent.includes('Reading answers')));
       await shot('polls-closed');
-      if (await firstPoll.count()) { await firstPoll.first().click(); await page.waitForTimeout(15000); await shot('closed-poll-record'); await page.getByRole('link', { name: '‹ Polls', exact: true }).click(); }
+      if (await firstPoll.count()) { await firstPoll.first().click(); await page.locator('.poll-answer-value').first().filter({ hasText: /^\d/ }).waitFor(); await shot('closed-poll-record'); await page.getByRole('link', { name: '‹ Polls', exact: true }).click(); }
       await page.getByRole('button', { name: 'Mine', exact: true }).click();
       await page.getByText('Your polls, together').waitFor();
       await shot('polls-mine');
@@ -73,7 +74,7 @@ try {
       check('Proposals URL keeps selected node', new URL(page.url()).searchParams.get('mn') === node);
       const response = await page.goto(`${gov}/names/testtata?network=testnet`);
       check('Testnet contest document returns 200', response.status() === 200);
-      await page.waitForTimeout(10000);
+      await page.getByTestId('contest-page').waitFor();
       await shot('contest-testtata');
       for (const [path, expected] of [['/', '/polls'], ['/create/', '/polls/new'], ['/my-polls/', '/polls?seg=mine'], ['/poll/?id=9mmD1KZFbtLxrEUMdeTDqxNGsRBDNwtJ1ZEicizTNANn', '/polls/9mmD1KZFbtLxrEUMdeTDqxNGsRBDNwtJ1ZEicizTNANn']]) {
         await page.goto(`http://pollr.dashhq.localhost:8787${path}`);
@@ -84,7 +85,7 @@ try {
       await shot('pollr-forwarded-record');
       await page.goto(`${gov}/polls/archive?network=testnet`);
       await page.locator('.poll-title-link').first().waitFor();
-      await page.waitForTimeout(8000);
+      await page.waitForFunction(() => ![...document.querySelectorAll('.poll-leader')].some(el => el.textContent.includes('Reading answers')));
       await shot('earlier-polls');
       const archived = 'FC9FQmwVB3HYisioAgk8TuFHBK4thZdYRkGPu9yXCPUN';
       await page.goto(`http://pollr.dashhq.localhost:8787/poll/?id=${archived}&archive=1&network=mainnet&tag=a&tag=b#answers`);
@@ -93,7 +94,7 @@ try {
       const forwarded = new URL(page.url());
       check('Archive forward retains record and Testnet', forwarded.pathname === `/polls/${archived}` && forwarded.searchParams.get('archive') === '1' && forwarded.searchParams.get('network') === 'testnet');
       check('Forward retains hashes and repeated query values', forwarded.hash === '#answers' && forwarded.searchParams.getAll('tag').join(',') === 'a,b');
-      await page.waitForTimeout(8000);
+      await page.locator('.poll-answer-value').first().filter({ hasText: /^\d/ }).waitFor();
       await shot('archive-forwarded-record');
       check('No document writes reached the guard', record.blockedWrites.length === 0);
       check('No horizontal overflow', await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
