@@ -2951,3 +2951,11 @@ details.tr-group > .tr-table { margin: 0; border-radius: 0; }
   .mnv-table td.mnv-decides { flex-basis: 100%; }
   .mnv-table td.mnv-decides::before { content: "Decided by "; }
 }
+
+/* ---- My masternodes, signed out: a masternode's own page from its ProTx hash ----------------------------------- */
+.mn-find { display: grid; gap: var(--s-3); margin-block-end: var(--s-5); }
+.mn-find h2 { margin: 0; font-size: var(--t-l); }
+.mn-find p { margin: 0; }
+.mn-find-form { display: grid; gap: 6px; }
+.mn-find-form .form-actions { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.mn-find-form input { flex: 1 1 22rem; min-inline-size: 0; }

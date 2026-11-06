@@ -5,8 +5,8 @@
 import { useRouteTitle } from '../app/title.ts';
 import { bytesToHex, UnlockerType } from '@govhub/auth';
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
-import { Link } from '../ui/Link.tsx';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { keptSearch, Link } from '../ui/Link.tsx';
 import { useAuth } from '../auth/context.tsx';
 import { badgeWif, pickBadgeMn, useMnBadge, type MnBadge } from '../badge/flow.ts';
 import { BadgeChoice, KeyringBadgeRow } from '../badge/MnBadgeOption.tsx';
@@ -16,6 +16,7 @@ import { CopyButton, HashCopy, useLabels, useNow } from '../ui/vote/common.tsx';
 import { AddPasskey } from '../ui/vote/AddPasskey.tsx';
 import { VotesList } from '../ui/vote/VotesList.tsx';
 import { useKeyring } from '../voting/KeyringContext.tsx';
+import { useApp } from '../app/context.tsx';
 import { STEP_NAME } from '../voting/lookup.ts';
 import { votingAddressOfInfo, type OwnedMasternode } from '../voting/masternodes.ts';
 import '../voting/voting.css';
@@ -869,6 +870,66 @@ function AddedBanner({ added, onClose }: { added: Added; onClose(): void }) {
 }
 
 /**
+ * Signed out, the quickest way in: a masternode's own page (its vote on every active proposal, and a Vote on each) from its ProTx hash,
+ * with no account. Radar finds the hash from an IP address.
+ */
+function FindMasternode() {
+  const navigate = useNavigate();
+  const { search } = useLocation();
+  const { registry } = useApp();
+  const id = useId();
+  const [text, setText] = useState('');
+  const [error, setError] = useState(false);
+  const radar = window.dashhq?.href('radar', '/', { network: registry.coreNetwork });
+  const go = (e: FormEvent) => {
+    e.preventDefault();
+    const pro = text.trim().toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(pro)) return setError(true);
+    navigate({ pathname: `/masternodes/${pro}`, search: keptSearch(search) });
+  };
+  return (
+    <section className="kr-card dh-card mn-find" aria-labelledby={`${id}-title`} data-testid="mn-find">
+      <h2 id={`${id}-title`}>Your masternode’s votes</h2>
+      <form className="mn-find-form" onSubmit={go}>
+        <label className="dh-field__label" htmlFor={`${id}-pro`}>
+          ProTx hash
+        </label>
+        <div className="form-actions">
+          <input
+            id={`${id}-pro`}
+            className="dh-input mono-ish"
+            value={text}
+            onChange={(e) => (setText(e.target.value), setError(false))}
+            placeholder="64 characters, as Dash Core or Radar shows it"
+            autoComplete="off"
+            spellCheck={false}
+            aria-invalid={error || undefined}
+            aria-describedby={error ? `${id}-err` : undefined}
+            data-testid="mn-find-input"
+          />
+          <button type="submit" className="btn dh-btn" disabled={!text.trim()} data-testid="mn-find-go">
+            Show its votes
+          </button>
+        </div>
+        {error && (
+          <p className="error small" id={`${id}-err`} role="alert">
+            A ProTx hash is 64 characters of 0–9 and a–f.
+          </p>
+        )}
+      </form>
+      <p className="small muted">
+        Every active proposal with its vote, and a Vote on each: no account needed.{' '}
+        {radar && (
+          <a href={radar} className="dh-link">
+            Find it by IP address in Radar
+          </a>
+        )}
+      </p>
+    </section>
+  );
+}
+
+/**
  * Signed out: what each way of voting needs, before anything is asked for. A keyring that keeps voting keys belongs to an account (a
  * Platform identity); offline signing and voting keys pasted for one tab need none.
  */
@@ -969,7 +1030,12 @@ export function MasternodesPage() {
           )}
         </div>
       )}
-      {k.status === 'signed-out' && <WaysToVote />}
+      {k.status === 'signed-out' && (
+        <>
+          <FindMasternode />
+          <WaysToVote />
+        </>
+      )}
       {k.status === 'checking' && (
         <p className="kr-progress" role="status">
           <span className="spinner" aria-hidden="true" /> Looking for your keyring on Platform…

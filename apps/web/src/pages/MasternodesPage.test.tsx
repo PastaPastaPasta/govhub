@@ -6,7 +6,8 @@ import { emptyKeyring, type OpenedKeyring } from '@govhub/auth';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { fixtureMnKey } from '../data/fixtureVotes.ts';
-import { render } from '../test/render.tsx';
+import { render, type } from '../test/render.tsx';
+import { act } from 'react';
 import { votingAddressOfInfo, votingKeyInfos, ZeroedKeyError } from '../voting/masternodes.ts';
 import type { useKeyring } from '../voting/KeyringContext.tsx';
 
@@ -127,6 +128,29 @@ describe('Radar handoff', () => {
 });
 
 describe('signed out', () => {
+  it("opens a masternode's own page from its ProTx hash, keeping the network, and refuses anything else", async () => {
+    hold.ctx = { ...ctxFor(openKeyring(), 'testnet'), status: 'signed-out', keyring: null } as unknown as Ctx;
+    const r = await render(
+      <MemoryRouter initialEntries={['/masternodes?network=testnet']}>
+        <Routes>
+          <Route path="/masternodes" element={<MasternodesPage />} />
+          <Route path="/masternodes/:proTx" element={<LocationProbe />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    const input = r.el.querySelector<HTMLInputElement>('[data-testid="mn-find-input"]')!;
+    const submit = () => act(async () => r.el.querySelector('[data-testid="mn-find"] form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+    await type(input, 'not-a-hash');
+    await submit();
+    expect(r.el.querySelector('[data-testid="mn-find"] [role="alert"]')?.textContent).toContain('64 characters');
+    expect(r.el.querySelector('[data-testid="probe"]')).toBeNull();
+    await type(input, ` ${'AB'.repeat(32)} `);
+    await submit();
+    expect(r.el.querySelector('[data-testid="probe"]')?.textContent).toBe(`/masternodes/${'ab'.repeat(32)}?network=testnet`);
+    await r.unmount();
+  });
+
+
   it('says what each way of voting needs before asking for anything', async () => {
     hold.ctx = { ...ctxFor(openKeyring(), 'mainnet'), status: 'signed-out', keyring: null } as unknown as Ctx;
     const r = await render(page());

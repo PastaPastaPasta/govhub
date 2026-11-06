@@ -3,6 +3,13 @@ import { Link as RouterLink, NavLink as RouterNavLink, useLocation, useResolvedP
 
 const KEPT = ['network', 'profile', 'fixtures'];
 
+/** The page's network (and profile, demo mode) as a query for a route the app opens itself: "?network=testnet", or "". */
+export function keptSearch(search: string): string {
+  const current = new URLSearchParams(search);
+  const kept = new URLSearchParams(KEPT.flatMap((key) => (current.has(key) ? [[key, current.get(key)!]] : [])));
+  return kept.size ? `?${kept}` : '';
+}
+
 /** `to` with the page's network (and profile, demo mode) added where it names none. */
 function useKept(to: LinkProps['to']) {
   const { search } = useLocation();
