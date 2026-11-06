@@ -126,3 +126,61 @@ Validation:
 
 Not tested: a real vote broadcast (the lab blocks writes; the block shows "Preview: not sent"), and a real voting key (the
 pasted-key path is covered by unit tests with a generated key).
+
+## Round 5 (5 November 2026)
+
+What the round-4 reviews (`reviews/round4-opus.md`, `reviews/round4-sol.md`) and stream S1 asked of Governance.
+
+- **What it funds, then the vote** (Sol #5). A proposal opens with "What this funds": the owner's summary quoted and attributed,
+  the ask × its payments = the total, payments left, when it runs and the next payout, the payee, the owner, and where it stands.
+  The vote block follows, with "Go to the vote ↓" in the header. The badge names what it vouches for, "Proposal data verified",
+  apart from the owner row (Sol #11). An unclaimed proposal is headed by its name as words beside the exact name (Sol #21); the
+  heading waits for owners.json (read with the app, given up after 4 s) instead of swapping (Opus #12). A proposal whose fields
+  don't match its hash shows none of them as what it funds.
+- **What the treasury funds** (Sol #6, Opus journey 3). `/treasury`, a tab beside Active and Past and linked from the budget: what
+  this payout can pay (checked against the consensus limit), what is asked of it, what has the votes, the next payout; what it pays
+  for grouped by standing and ordered by size (proposals carry no category, so none is guessed); and the last year's superblocks
+  read from the chain, with this payout's allocation beside them. Each figure carries its basis: "Consensus limit", "Platform
+  records" (or "Bridge's records" when it sums one), "Bridge's tally", "Verified from the chain".
+- **No partial figure shown as final** (Opus #4). Past shows "Reading superblocks: 4 of 12 so far" and no total, average or count
+  until all are read; a superblock that fails is named and the totals say "at least". Past's per-proposal outcomes, Active's "N of
+  M in the budget" and the treasury wait the same way. A read that fails is never read as "none": an unread list isn't "no
+  proposals", a tally a failed read may have had is "Votes not read" (cards, masternode rows, its own treasury group) and makes
+  the counts "at least", and Past's "not recorded" and "That's all N" appear only when the reads answered.
+- **Wrong network** (Opus #3, Sol #23). Proposal, masternode and name-contest pages ask the other network before "not found" and
+  show the shell's `<dashhq-not-found>` (1.6) under the record's own header: "Not on Testnet. This proposal exists on Mainnet.
+  Open it on Mainnet →", routed by the bar's handler. Radar's link follows the masternode to its network.
+- **One name per proposal in every list** (Opus #11, Sol #19). Cards, masternode votes, Past and the treasury name a proposal by
+  the owner's quoted title or its name as words, the exact name under it; one line above each list says whose words are quoted;
+  the per-row "…, the owner's title (dashcentral.org)" is gone. Phones drop the payee from cards. Look-alike names keep their exact
+  spelling as the title.
+- **Also:** the discussion's view switch is a segmented control (Opus #21); the Active/Past tabs keep `?network=`; vote and
+  new-proposal buttons at the family height; shell 1.6.2 (network order, folded sign-in help on phones, Sol #4); the
+  e2e specs follow the new heading and the sign-in title, which round 4's integration renamed.
+
+Evidence: before `shots/r5-gov-s1/before/` (revision `40b0b6f`, plus the reviewers' shots); after `shots/r5-gov-s1/after/` and
+the lab capture `shots/r5-s1/gov/` (36 images, revision `c510a89`, no errors, blocked writes or non-200 pages); journeys
+`shots/r5-gov-s1/journeys/report.json`.
+
+Validation:
+
+- Web: 848 vitest tests in 76 files; typecheck passes. New: ledger and treasury summaries, the treasury page's reading and
+  failure states, which proposals a failed tally read leaves unknown, the budget header's counting / not known / at least, the
+  other-network probe (found, none, couldn't check, timeout, a changed question), the masternode probe's bridge-network check,
+  proposal reading order, heading wait and hash mismatch, reading titles and look-alikes.
+- e2e (fixture suite): 89 pass, 2 skipped, with `GOVHUB_E2E_PORT` set (it builds into `.e2e-dist`).
+- Lab: `node lab/verify.mjs` 110 checks pass. Guarded journeys at 390 (`isMobile`) and 1440, light and dark: 29 checks, no
+  blocked writes, no page errors (masternode owner from Radar, the jump to the vote, journalist to the treasury and Past with no
+  partial figure, a Mainnet link under Testnet and "Open it on Mainnet", Testnet tabs, phone sign-in, overflow at 390).
+- Review: an independent review of the whole range, a simplification pass (`6adde51`), and a re-check of the fixes. The first
+  review's findings are fixed in `7457769`, `ad4eb8a`, `caca498` and `24a74b8`; the re-check approved them, and its further
+  findings on partial read failures are fixed in `a07ceb4`, `17cb48c` and `c510a89`.
+
+Not done:
+- The first visit's proposal check still takes 10 to 40 seconds (Opus #12). The chain anchor is already warmed on Active; the
+  rest is per proposal (its collateral proof, the masternode list at its tally's height, the recount), so prefetching it would
+  download about 1.4 MB per proposal that may never be opened.
+- A Platform read that fails while a bridge answers with an empty list is still hidden by the data layer (`repo.ts`), so the
+  list then reads as empty.
+- `lab/check-shell.mjs` stops at the hub's vendored copy (another stream's repo); gov's copy matches `design/shell` 1.6.2
+  byte for byte.
