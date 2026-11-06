@@ -900,7 +900,7 @@ function FindMasternode() {
             className="dh-input mono-ish"
             value={text}
             onChange={(e) => (setText(e.target.value), setError(false))}
-            placeholder="64 characters, as Dash Core or Radar shows it"
+            placeholder="64 characters, from Dash Core or Radar"
             autoComplete="off"
             spellCheck={false}
             aria-invalid={error || undefined}

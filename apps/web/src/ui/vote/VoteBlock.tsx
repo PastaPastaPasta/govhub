@@ -151,7 +151,7 @@ function VoteBlock({ proposal, subject, ctx, closesIn, onVerify }: BlockProps & 
   );
 }
 
-/** "As masternode d353cd…7eff · evonode, counts 4 times · Now: Yes", and the way back to its votes. */
+/** "As masternode d353cd…7eff, Evonode: its vote counts 4 times, Now: Yes", and the way back to its votes. */
 function MasternodeLine({ ctx }: { ctx: MnContext }) {
   const { registry } = useApp();
   const mn = ctx.lookup.kind === 'found' ? ctx.lookup.mn : null;

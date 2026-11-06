@@ -26,7 +26,7 @@ import { VerificationDrawer } from '../ui/trust/VerificationDrawer.tsx';
 import { mnParam, ProposalVoteBlock, type VoteSubject } from '../ui/vote/VoteBlock.tsx';
 import { useOwnerPage } from '../lib/ownerPages.ts';
 import { purposeOf, useReadableTitle } from '../ui/OwnerPage.tsx';
-import { paymentsLine } from '../ui/ProposalCard.tsx';
+import { askText, paymentsLine } from '../ui/ProposalCard.tsx';
 import { useAsync } from '../ui/hooks.ts';
 import type { Proposal, Sourced } from '../data/types.ts';
 import type { Found } from '../lib/ownerPages.ts';
@@ -278,7 +278,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
   // the vote block names what it is voting on, in the words the lists use (the owner's title quoted as theirs)
   const voteSubject: VoteSubject = {
     title: ownerTitle ? `“${ownerTitle}”` : words,
-    ask: row.content.ok ? `${formatDash(p.paymentAmount)} ${sched?.oneTime ? 'once' : perPayment(params)}` : null,
+    ask: row.content.ok ? Object.values(askText(p.paymentAmount, sched, params)).join(' ') : null,
     payments: row.content.ok && sched && !sched.oneTime && sched.total > 0 ? paymentsText : null,
     standing: state ? { text: state.passing ? `Passing by ${formatInt(state.margin)}` : `Needs ${formatInt(state.needed)} more`, tone: state.light } : null,
   };

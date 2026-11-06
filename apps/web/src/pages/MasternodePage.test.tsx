@@ -127,6 +127,21 @@ describe('MasternodePage', () => {
     await r.unmount();
   });
 
+  it('a filter in the address waits for every vote: it never hides rows it hasn’t read', async () => {
+    const r = await render(page(`/masternodes/${PRO}?show=unvoted`));
+    const rows = () => r.el.querySelectorAll('[data-testid="mn-vote-row"]').length;
+    expect(rows()).toBe(3); // the masternode isn't found yet
+    await act(async () => (hold.mnlist as Deferred<unknown>).resolve({ height: 5, listHash: 'x', masternodes: [MN] }));
+    const [a, b, c] = hold.proposals as Proposal[];
+    await act(async () => (hold.votes.get(a!.govHash) as Deferred<unknown>).resolve({ votes: [vote(1, 1_792_000_000)] }));
+    expect(rows()).toBe(3); // two still reading
+    await act(async () => (hold.votes.get(b!.govHash) as Deferred<unknown>).resolve({ votes: [vote(1, 1_792_000_000)] }));
+    await act(async () => (hold.votes.get(c!.govHash) as Deferred<unknown>).reject(new BridgeError('none', 404)));
+    await flush();
+    expect([...r.el.querySelectorAll('[data-testid="mn-vote-row"]')].map((x) => x.getAttribute('data-govhash'))).toEqual([c!.govHash]);
+    await r.unmount();
+  });
+
   it("sends each row's Vote to the proposal's vote block as this masternode, and says it needs no account", async () => {
     const r = await render(page());
     await act(async () => (hold.mnlist as Deferred<unknown>).resolve({ height: 5, listHash: 'x', masternodes: [MN] }));

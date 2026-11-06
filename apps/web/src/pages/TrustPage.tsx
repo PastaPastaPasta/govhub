@@ -16,7 +16,7 @@ const POINTS: Array<[string, string]> = [
   ],
   [
     'Your vote can be delayed, not changed.',
-    'A relay holds your signed vote until it sends it. It can hold it back or drop it, and it sees your IP address, the time and how you voted, but it can’t change the vote. Once sent, the status says what the governance data service reports (“the data service reports the network counted it”), and names any other data service or relay you configured that agrees. Check your own node if it matters.',
+    'A relay holds your signed vote until it sends it. It can hold it back or drop it, and it sees your IP address, the time and how you voted, but it can’t change the vote. Once sent, the status says what the governance data service reports (“…reports the network counted it”), and names any other data service or relay you configured that agrees. Check your own node if it matters.',
   ],
   [
     'The chain is checked from checkpoints built into this app.',

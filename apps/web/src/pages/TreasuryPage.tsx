@@ -143,7 +143,13 @@ function CycleStats({ cycle, view, state }: { cycle: Cycle; view: TreasuryView; 
         <span className="dh-stat__note">
           {counting
             ? 'asked by proposals with enough yes votes'
-            : `${view.passing === 0 ? 'no proposal has enough yes votes yet' : view.groups.funded.sum === view.passing ? 'all of it fits the budget' : `${formatDash(view.groups.funded.sum)} of it fits the budget`}${unread ? `; the votes of ${formatInt(unread)} weren’t read` : ''}`}
+            : unread
+              ? `the votes of ${formatInt(unread)} weren’t read`
+              : view.passing === 0
+                ? 'no proposal has enough yes votes yet'
+                : view.groups.funded.sum === view.passing
+                  ? 'all of it fits the budget'
+                  : `${formatDash(view.groups.funded.sum)} of it fits the budget`}
         </span>
       </div>
       <div className="dh-stat">
@@ -227,6 +233,8 @@ function PaysForSummary({ view, budget, names }: { view: TreasuryView; budget: n
   const top = funded.rows[0];
   const largest = top?.p.value;
   const n = funded.rows.length;
+  // some votes weren't read: every count and sum here is a lower bound, and says so
+  const partial = unread.rows.length > 0;
   const one = (k: number, singular: string, plural: string) => `${formatInt(k)} ${k === 1 ? singular : plural}`;
   const more = [
     over.rows.length ? `${one(over.rows.length, 'more passes but doesn’t fit', 'more pass but don’t fit')} (${formatDash(over.sum)})` : '',
@@ -235,14 +243,16 @@ function PaysForSummary({ view, budget, names }: { view: TreasuryView; budget: n
   return (
     <p className="tr-summary" data-testid="tr-summary">
       {n === 0 ? (
-        'No proposal has both the votes and room in this payout yet.'
+        partial ? 'None of the proposals whose votes were read has both the votes and room in this payout.' : 'No proposal has both the votes and room in this payout yet.'
       ) : (
         <>
-          {n === 1 ? 'One proposal has the votes and fits' : `${unread.rows.length ? 'At least ' : ''}${formatInt(n)} proposals have the votes and fit`} in this
-          payout: <b>{formatDash(funded.sum)}</b>, {share(funded.sum, budget)} of what it can pay.{' '}
+          {partial ? 'At least ' : ''}
+          {n === 1 ? `${partial ? 'one' : 'One'} proposal has the votes and fits` : `${formatInt(n)} proposals have the votes and fit`} in this payout:{' '}
+          {partial ? 'at least ' : ''}
+          <b>{formatDash(funded.sum)}</b>, {share(funded.sum, budget)} of what it can pay.{' '}
           {largest && (
             <>
-              {n === 1 ? 'It is ' : 'The largest is '}
+              {n === 1 ? 'It is ' : partial ? 'The largest of those read is ' : 'The largest is '}
               <ProposalName p={largest} to={proposalHref(largest, names)} owner={top!.content.ok && checks.state(largest).status !== 'failed'} />, at {formatDash(largest.paymentAmount)}
               {n > 1 ? `, ${share(largest.paymentAmount, funded.sum)} of what goes out` : ''}.
             </>

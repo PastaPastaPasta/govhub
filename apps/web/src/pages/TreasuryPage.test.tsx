@@ -122,6 +122,18 @@ it('says when the governance data service’s budget differs from the consensus 
   expect(tile.querySelector('.dh-stat__note')!.textContent).toMatch(/^Dash’s consensus rules allow 6,82\d DASH\./);
 });
 
+it('says "at least" in the summary when some votes weren’t read', async () => {
+  const a = app(false);
+  hold.app = { ...a, gov: { ...a.gov, untallied: new Set(['apac']) } };
+  const { el } = await view();
+  const summary = el.querySelector('[data-testid="tr-summary"]')!.textContent!;
+  expect(summary).toMatch(/^At least 2 proposals have the votes and fit in this payout: at least 4,892 DASH, /);
+  expect(summary).toContain('The largest of those read is Dcg');
+  expect(summary).toContain('The votes of 1 weren’t read.');
+  expect(el.querySelector('[data-testid="tr-passing"]')!.textContent).toBe('at least 5,092 DASH');
+  expect(el.querySelector('[data-testid="treasury-stats"] .dh-stat:nth-child(3) .dh-stat__note')!.textContent).toBe('the votes of 1 weren’t read');
+});
+
 describe('the treasury overview when a read fails', () => {
   it('says the proposals couldn’t be read instead of showing zeros', async () => {
     const a = app(false);

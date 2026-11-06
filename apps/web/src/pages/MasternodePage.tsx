@@ -140,11 +140,13 @@ function MasternodeVotes({ proTx }: { proTx: string }) {
   };
   const ownerPages = useOwnerPages();
   const needle = q.trim().toLowerCase();
+  // voted or not is only known once every vote is read: until then (or with no masternode found) the filter waits and shows every row
+  const filtering = show !== 'all' && !!mn && v.pending === 0;
   const visible = rows.filter((row) => {
     const p = row.p.value;
     if (needle && !proposalMatches(p, needle, row.content.ok && !failed.has(p.govHash) ? ownerPageOf(ownerPages, p)?.title : null)) return false;
     const cell = v.cells.get(p.govHash);
-    return show === 'all' || (show === 'unvoted' ? cell?.kind === 'none' : cell?.kind === 'voted');
+    return !filtering || (show === 'unvoted' ? cell?.kind === 'none' : cell?.kind === 'voted');
   });
   const shown: Record<Show, number> = { all: rows.length, unvoted: counts.none, voted: counts.yes + counts.no + counts.abstain };
   const fromRadar = useMemo(() => cameFromRadar(proTx), [proTx]);
@@ -292,7 +294,13 @@ function MasternodeVotes({ proTx }: { proTx: string }) {
             </div>
           ) : !visible.length ? (
             <p className="small muted" role="status" data-testid="mn-none-shown">
-              {show === 'unvoted' && !needle ? 'It has voted on every active proposal.' : show === 'voted' && !needle ? 'It hasn’t voted on any active proposal yet.' : `No active proposal matches “${q.trim()}”${show !== 'all' ? ' here' : ''}.`}{' '}
+              {needle
+                ? `No active proposal matches “${q.trim()}”${filtering ? ' here' : ''}.`
+                : counts.unread > 0
+                  ? `None here: ${formatInt(counts.unread)} of its votes couldn’t be read.`
+                  : show === 'unvoted'
+                    ? 'It has voted on every active proposal.'
+                    : 'It hasn’t voted on any active proposal yet.'}{' '}
               <button type="button" className="linkish dh-btn dh-btn--link" onClick={() => setQuery(new URLSearchParams([...query].filter(([k]) => k !== 'q' && k !== 'show')), { replace: true })}>
                 Show all
               </button>
@@ -408,7 +416,8 @@ function MnVoteRow({ row, passed, href, cell, decides, shared, now, per, open, o
           : '';
   const tone = row.lameDuck || !row.state ? '' : row.state.light;
   // most rows share the next payout's deadline (said once above the table): those say it briefly, the others in full
-  const common = decides !== null && decides === shared;
+  // the shared deadline is said once above the table, but only while it is ahead
+  const common = decides !== null && decides === shared && decides > now;
   const decideText =
     decides === null ? (row.lameDuck ? 'nothing left to decide' : '…') : decides <= now ? 'closed for the next payout' : common ? shortDate(decides) : `${shortDate(decides)} (${formatDuration(decides - now)})`;
   return (

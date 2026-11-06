@@ -8,7 +8,8 @@ import { useNow } from './vote/common.tsx';
 
 const dayOf = (ms: number): string => formatUtc(ms).slice(0, -11);
 
-export function UsdValue({ duffs }: { duffs: number }) {
+/** `what`: what is valued, when the line doesn't already say it ("Budget ≈ $308,000"). */
+export function UsdValue({ duffs, what }: { duffs: number; what?: string }) {
   const { gov } = useApp();
   const now = useNow(30_000, !!gov.usd.quote);
   const v = usdView(gov.usd, now);
@@ -20,7 +21,10 @@ export function UsdValue({ duffs }: { duffs: number }) {
   const label = v.stale ? `Stale${v.failed ? ', refresh failed' : ''}` : `${v.source} price, ${time}${v.failed ? ', refresh failed' : ''}`;
   return (
     <span className="usd small" data-testid="usd">
-      <span className="usd-value">{formatUsdEstimate((duffs / 1e8) * v.rate)}</span>
+      <span className="usd-value">
+        {what ? `${what} ` : ''}
+        {formatUsdEstimate((duffs / 1e8) * v.rate)}
+      </span>
       <span
         className={`dh-src${v.stale || v.failed ? ' dh-src--warn' : ''}`}
         title={`An approximate current valuation, not a chain fact: DASH/USD spot fetched by this browser from ${v.source} on ${when}.`}

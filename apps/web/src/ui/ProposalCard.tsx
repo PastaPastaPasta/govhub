@@ -45,13 +45,13 @@ export function paymentsLeft(s: PaymentSchedule | null): string | null {
 
 /**
  * The payments line on a proposal page, phrased as the lists phrase it ("1 of 4 payments left"), with the payments the verified chain
- * shows made ("· 3 paid") once it has been read. The chain's own count of what is still possible then decides "left", and the total is
- * never less than what was paid plus what is left.
+ * shows made ("· 3 paid") once it has been read. The chain's own count of what is still possible then decides "left"; when paid and
+ * left together exceed the schedule's total, no total is claimed ("1 more possible · 1 paid").
  */
 export function paymentsLine(s: PaymentSchedule | null, proven: { made: string; count: number; left: number } | null): string | null {
   if (!proven) return paymentsLeft(s);
-  const total = Math.max(s?.total ?? 0, proven.count + proven.left);
-  const left = proven.left === 0 ? 'no payments left' : `${formatInt(proven.left)} of ${formatInt(total)} payment${total === 1 ? '' : 's'} left`;
+  const fits = !!s && !s.oneTime && proven.count + proven.left <= s.total;
+  const left = proven.left === 0 ? 'no payments left' : fits ? `${formatInt(proven.left)} of ${formatInt(s!.total)} payments left` : `${formatInt(proven.left)} more possible`;
   return `${left} · ${proven.made} paid`;
 }
 

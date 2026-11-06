@@ -150,7 +150,6 @@ describe('signed out', () => {
     await r.unmount();
   });
 
-
   it('says what each way of voting needs before asking for anything', async () => {
     hold.ctx = { ...ctxFor(openKeyring(), 'mainnet'), status: 'signed-out', keyring: null } as unknown as Ctx;
     const r = await render(page());

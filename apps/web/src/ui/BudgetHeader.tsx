@@ -126,7 +126,7 @@ export function BudgetHeader() {
           <dt>Allocated</dt>
           <dd>
             <span className="num">{formatDashAmount(allocated)}</span> of {formatDash(c.budget)}
-            <UsdValue duffs={c.budget} />
+            <UsdValue duffs={c.budget} what="Budget" />
           </dd>
         </div>
         <div>

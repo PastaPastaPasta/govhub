@@ -674,7 +674,7 @@ export function VerificationDrawer({ sp, trust, cycle, open, onClose }: { sp: So
       <section className="drawer-note" aria-labelledby="cant-title">
         <h3 id="cant-title">What this can't detect</h3>
         <p className="small">
-          A data service can withhold. The recount proves the votes it was given, so votes the governance data service didn't serve can't be detected, and neither can a proposal it never
+          A data service can withhold. The recount proves the votes it was given, so votes it didn't serve can't be detected, and neither can a proposal it never
           published. Switch to another data service in Settings, or compare with your own Dash Core node using the commands above.
         </p>
       </section>

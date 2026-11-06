@@ -133,7 +133,7 @@ describe('ProposalView for a proposal with payments left', () => {
   it('is not a lame duck when the verified chain still counts a payment possible (the page never contradicts its own summary)', async () => {
     const { el } = await view(pshenmic, { estTime: NOW + 23 * DAY, report: report({ paid: 1, remainingEstimate: 1 }) });
     expect(el.querySelector('[data-testid="lameduck-status"]')).toBeNull();
-    expect(el.querySelector('[data-testid="p-paid"]')!.textContent).toBe('1 of 2 payments left · 1 paid');
+    expect(el.querySelector('[data-testid="p-paid"]')!.textContent).toBe('1 more possible · 1 paid');
   });
 
   it('is not a lame duck when the next superblock is flagged to pay it', async () => {

@@ -78,7 +78,7 @@ export function VerificationPage() {
 
       <h2>What it can’t detect</h2>
       <p>
-        A data service can <b>withhold</b>. The recount proves the votes it was given, so votes the governance data service didn’t serve can’t be detected, and neither can a proposal
+        A data service can <b>withhold</b>. The recount proves the votes it was given, so votes it didn’t serve can’t be detected, and neither can a proposal
         it never published. Comparing with another data service (Settings) or your own Dash Core node narrows that gap. Who owns a proposal is checked separately, from
         the owner’s signed claim, and is not part of the badge.
       </p>
