@@ -189,7 +189,7 @@ export function FundingPanel(p: FundingPanelProps) {
               {formatDuffs(view.pendingDuffs)} seen; it counts once InstantSend locks it or it is in a block.
             </p>
           )}
-          <details className="learn small" data-testid="deposit-rules">
+          <details className="learn small dh-disclosure" data-testid="deposit-rules">
             <summary>Sent too much, too little, or too late?</summary>
             <p className="muted">
               What arrives before your payment is locked becomes Platform credits; anything above the minimum stays in your account's balance. A payment that

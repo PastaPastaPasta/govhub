@@ -374,7 +374,7 @@ function Deposit({ draft, view, error, retry, services }: { draft: ProposalDraft
           </button>
         </div>
       )}
-      <details className="pw-details">
+      <details className="pw-details dh-disclosure">
         <summary>Details</summary>
         <p className="small muted">
           The deposit address is derived from your {f.source.kind === 'seed' ? `recovery phrase at ${proposalDepositPath(services.network, f.source.index)}` : `signed-in key (Governance derivation, index ${f.source.index})`}.

@@ -79,7 +79,7 @@ function ReadinessLine({ b, offer = false }: { b: MnBadge; offer?: boolean }) {
 function PrivacyOptions({ b, name, testId, children }: { b: MnBadge; name: string; testId?: string; children?: ReactNode }) {
   const { registry } = useApp();
   return (
-    <details className="mnb-privacy" data-testid={testId}>
+    <details className="mnb-privacy dh-disclosure" data-testid={testId}>
       <summary>
         Privacy options: <b>{MODES[b.privacy].label}</b>
       </summary>
@@ -197,7 +197,7 @@ export function BadgeProgress({ b, celebrate = false, onAgain }: { b: MnBadge; c
               {cancel}
             </div>
             {unreachable && (
-              <details className="small muted">
+              <details className="small muted dh-disclosure">
                 <summary>Details</summary>
                 {j.note}
               </details>
@@ -286,7 +286,7 @@ function HeldBadge({ b, job, lapseAt, lapsing }: { b: MnBadge; job: BadgeJob; la
 /** The badge card's fine print, folded under "Details". */
 function More({ children }: { children: ReactNode }) {
   return (
-    <details className="mnb-more small">
+    <details className="mnb-more small dh-disclosure">
       <summary>Details</summary>
       {children}
     </details>

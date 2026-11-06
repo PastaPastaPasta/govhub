@@ -64,7 +64,7 @@ export function VerificationPage() {
         ))}
       </ol>
 
-      <details className="learn">
+      <details className="learn dh-disclosure">
         <summary>What never counts as proven</summary>
         <ul className="small">
           <li>A node’s word about a transaction’s block, confirmations or ChainLock, even when a second node agrees.</li>
@@ -93,7 +93,7 @@ export function VerificationPage() {
         signature and the Dash Core command that shows the same.
       </p>
 
-      <details className="learn">
+      <details className="learn dh-disclosure">
         <summary>The marks inside the details</summary>
         <dl className="glyph-legend">
           {GLYPHS.map(([kind, name, text]) => (
@@ -107,7 +107,7 @@ export function VerificationPage() {
         </dl>
       </details>
 
-      <details className="learn">
+      <details className="learn dh-disclosure">
         <summary>Where the data comes from</summary>
         <p className="small">
           Proposals, tallies, comments and profiles live on Dash Platform, read with proofs. Transactions, blocks, ChainLocks and the masternode list come from

@@ -164,7 +164,7 @@ export function ChainShield({ line: withLine = false }: { line?: boolean }) {
               </p>
             )}
             {isNetworkReason(state.error) && (
-              <details className="learn inline">
+              <details className="learn inline dh-disclosure">
                 <summary>Details</summary>
                 <p className="small mono-ish">{state.error}</p>
               </details>
@@ -173,7 +173,7 @@ export function ChainShield({ line: withLine = false }: { line?: boolean }) {
         )}
         <p className="small">{p.description}</p>
         {a && (
-          <details className="learn">
+          <details className="learn dh-disclosure">
             <summary>What the chain check rests on</summary>
             <dl className="kv">
               <div>

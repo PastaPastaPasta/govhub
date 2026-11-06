@@ -171,7 +171,7 @@ export function BudgetHeader() {
           <span className="chain-label">Chain check</span>
           <ChainShield />
         </div>
-        <details className="learn">
+        <details className="learn dh-disclosure">
         <summary>How funding works</summary>
         <p className="strip-legend small muted">
           <span className="legend-item">

@@ -131,7 +131,7 @@ export function VotesList({ title = 'Votes', showWins = true }: { title?: string
       )}
       <footer className="vfoot">
         <RelayStrip />
-        <details className="vdeliver small">
+        <details className="vdeliver small dh-disclosure">
           <summary>How votes are delivered</summary>
           <p>
             Each vote stays in this browser until the governance data service reports the network counted it. If a relay doesn't deliver it, it is sent again, through another relay when you have more than one. Cancelling a held vote relies on the relay; to be sure you

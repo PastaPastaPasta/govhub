@@ -125,7 +125,7 @@ export function SubmitStep({ draft, commit, services }: PayProps) {
         </div>
       )}
 
-      <details className="pw-details" open={allFailed || undefined}>
+      <details className="pw-details dh-disclosure" open={allFailed || undefined}>
         <summary>Submit it yourself with Dash Core</summary>
         <p className="small">
           Once the fee transaction is in a ChainLocked block, run this in Dash Core (Window → Console, or dash-cli). Dash Core holds the proposal until the fee has{' '}
@@ -146,7 +146,7 @@ export function SubmitStep({ draft, commit, services }: PayProps) {
         </div>
       </details>
 
-      <details className="pw-details">
+      <details className="pw-details dh-disclosure">
         <summary>If something goes wrong</summary>
         <ul className="small pw-help">
           <li>
@@ -167,7 +167,7 @@ export function SubmitStep({ draft, commit, services }: PayProps) {
       </details>
 
       <BackupBox draft={draft} commit={commit} compact />
-      <details className="pw-details">
+      <details className="pw-details dh-disclosure">
         <summary>Details</summary>
         <dl className="kv small">
           <div>

@@ -116,7 +116,7 @@ export function VoteSuccess({ vote, name, proposalName, onRecount }: { vote: Wat
             <span className="spinner" aria-hidden="true" /> Recounting the tally with your vote…
           </p>
         )}
-        <details className="vwin-yourself" data-testid="vote-yourself">
+        <details className="vwin-yourself dh-disclosure" data-testid="vote-yourself">
           <summary>Check it yourself</summary>
           <div className="vwin-actions">
             <button type="button" className="btn dh-btn btn-s dh-btn--sm btn-primary dh-btn--primary" onClick={() => void check()} disabled={checking} data-testid="vote-verify">

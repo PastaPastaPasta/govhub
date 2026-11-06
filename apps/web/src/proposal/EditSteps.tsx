@@ -394,7 +394,7 @@ export function ReviewStep({ draft, plan, setStep, lock }: EditProps) {
           ))}
         </ul>
       )}
-      <details className="pw-details">
+      <details className="pw-details dh-disclosure">
         <summary>Details: the exact data</summary>
         <p className="small muted">
           Dash Core checks and hashes exactly these bytes (keys in alphabetical order, no spaces). Start {s ? formatDateTime(s.startEpoch) : '–'}, end {s ? formatDateTime(s.endEpoch) : '–'}: halfway

@@ -725,7 +725,7 @@ function KeyringSettings() {
     );
   };
   return (
-    <details className="kr-fold" data-testid="keyring-settings" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
+    <details className="kr-fold dh-disclosure" data-testid="keyring-settings" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
       <summary>
         <span className="kr-fold-title">Keyring settings</span>
         <span className="small muted">
@@ -768,7 +768,7 @@ function KeyringSettings() {
 
 function Privacy() {
   return (
-    <details className="kr-fold kr-privacy">
+    <details className="kr-fold kr-privacy dh-disclosure">
       <summary>
         <span className="kr-fold-title">What’s visible to others</span>
         <span className="small muted">Platform, DAPI evonodes and the relays.</span>

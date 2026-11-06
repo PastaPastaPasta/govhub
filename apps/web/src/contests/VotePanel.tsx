@@ -282,7 +282,7 @@ function Composer({ label, state, endsAt, nameOf, signer }: { label: string; sta
         ))}
       </fieldset>
 
-      <details className="vcomp-mns" data-testid="vote-mns">
+      <details className="vcomp-mns dh-disclosure" data-testid="vote-mns">
         <summary>
           <span>{chosen.length === usable.length ? `With ${usable.length === 1 ? 'your masternode' : usable.length === 2 ? 'both your masternodes' : `all ${usable.length} of your masternodes`}` : `With ${chosen.length} of ${usable.length} masternodes`}</span>
           <span className="vcomp-change">Change</span>
@@ -328,7 +328,7 @@ function Composer({ label, state, endsAt, nameOf, signer }: { label: string; sta
         )}
       </details>
 
-      <details className="vwhen">
+      <details className="vwhen dh-disclosure">
         <summary>
           <span>{mode === 'spread' ? 'Spread out over time' : 'Send now'}</span>
           <span className="vcomp-change">Options</span>

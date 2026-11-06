@@ -555,7 +555,7 @@ function ExportKey({ item, scan, secret }: { item: RecoveryItem; scan: RecoveryS
   const [shown, setShown] = useState(false);
   const [error, setError] = useState<string | null>(null);
   return (
-    <details className="recover-export" onToggle={(e) => !(e.target as HTMLDetailsElement).open && (setWif(null), setShown(false), setAck(false))}>
+    <details className="recover-export dh-disclosure" onToggle={(e) => !(e.target as HTMLDetailsElement).open && (setWif(null), setShown(false), setAck(false))}>
       <summary className="small">Advanced: export this address's private key</summary>
       <p className="small">
         For importing into another wallet, e.g. Dash Core's <code>importprivkey</code> (legacy wallets) or a wallet with a "sweep private key" feature. Anyone who sees

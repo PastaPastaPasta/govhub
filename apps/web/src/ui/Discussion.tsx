@@ -496,7 +496,7 @@ function CommentNode({ node, ctx }: { node: ThreadNode; ctx: NodeCtx }) {
               </button>
             ))}
           {ctx.session && !mine && (
-            <details className="menu" ref={menu}>
+            <details className="menu dh-disclosure" ref={menu}>
               <summary className="btn dh-btn btn-quiet dh-btn--quiet btn-s dh-btn--sm">Hide…</summary>
               <div className="menu-body">
                 {myBlock ? (

@@ -285,7 +285,7 @@ export function SettingsPage() {
 
       <RecoverFunds />
 
-      <details className="group" open={advanced} onToggle={(e) => setAdvanced((e.target as HTMLDetailsElement).open)}>
+      <details className="group dh-disclosure" open={advanced} onToggle={(e) => setAdvanced((e.target as HTMLDetailsElement).open)}>
         <summary>
           <span className="group-title">
             Advanced: choose your own servers <Custom on={custom.size > 0} />
@@ -481,7 +481,7 @@ export function SettingsPage() {
         </form>
       </details>
 
-      <details className="group">
+      <details className="group dh-disclosure">
         <summary>
           <span className="group-title">Hidden comments</span>
           <span className="small muted">The block lists that hide spam and abuse in discussions.</span>
@@ -489,7 +489,7 @@ export function SettingsPage() {
         <BlockListSettings />
       </details>
 
-      <details className="group">
+      <details className="group dh-disclosure">
         <summary>
           <span className="group-title">Masternode badges</span>
           <span className="small muted">Who may vouch that a commenter owns a masternode, and how private your own badge is.</span>
@@ -497,7 +497,7 @@ export function SettingsPage() {
         <BadgeSettings />
       </details>
 
-      <details className="group">
+      <details className="group dh-disclosure">
         <summary>
           <span className="group-title">Export, import and share</span>
           <span className="small muted">Move these settings to another browser, or share them as a link.</span>

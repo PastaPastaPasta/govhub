@@ -264,7 +264,7 @@ export function VoteComposer({ proposals, onVerify, onlyMn }: { proposals: Propo
         <OutcomePicker label="Your vote" value={single} onChange={(o) => setChoice({ [proposals[0]!.govHash]: o })} testId="vote-choice" />
       )}
 
-      <details className="vcomp-mns" data-testid="vote-mns">
+      <details className="vcomp-mns dh-disclosure" data-testid="vote-mns">
         <summary>
           <span>{mnsSummary}</span>
           {!multi && <span className="small muted">{loading ? 'reading their votes…' : `now ${nowLine(proposals[0]!.govHash) || 'none selected'}`}</span>}
@@ -322,7 +322,7 @@ export function VoteComposer({ proposals, onVerify, onlyMn }: { proposals: Propo
         </div>
       )}
 
-      <details className="vwhen">
+      <details className="vwhen dh-disclosure">
         <summary>
           <span>{mode === 'deferred' ? 'Spread out over time' : 'Send now'}</span>
           <span className="vcomp-change">Options</span>
@@ -540,7 +540,7 @@ export function OfflineSignBody({ proposal, address: initialAddress = '', outcom
 export function OfflineSign({ proposal, address = '', open }: { proposal: Proposal; address?: string; open?: boolean }) {
   const [outcome, setOutcome] = useState<Outcome>(1);
   return (
-    <details className="vote-offline" open={open}>
+    <details className="vote-offline dh-disclosure" open={open}>
       <summary>Sign offline instead (Dash Core, hardware wallet)</summary>
       <OutcomePicker size="s" label="Vote to sign" value={outcome} onChange={(o) => o && setOutcome(o)} testId="offline-choice" />
       <OfflineSignBody proposal={proposal} address={address} outcome={outcome} />

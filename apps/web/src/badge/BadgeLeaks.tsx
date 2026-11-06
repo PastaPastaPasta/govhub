@@ -54,7 +54,7 @@ export function ModeDetails({ mode, net }: { mode: PrivacyMode; net: CoreNetwork
 
 export function BadgeLeaks({ net, open = false }: { net: CoreNetwork; open?: boolean }) {
   return (
-    <details className="badge-leaks" open={open}>
+    <details className="badge-leaks dh-disclosure" open={open}>
       <summary>Learn more: what the badge reveals, and to whom</summary>
       <ul className="small">
         <li>

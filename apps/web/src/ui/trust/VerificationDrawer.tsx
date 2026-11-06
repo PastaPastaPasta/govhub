@@ -75,7 +75,7 @@ function Steps({ steps, demo }: { steps: Row[]; demo: boolean }) {
 
 function How({ rows }: { rows: Array<[string, string]> }) {
   return (
-    <details className="how">
+    <details className="how dh-disclosure">
       <summary>How this was checked</summary>
       <dl>
         {rows.map(([k, v]) => (
@@ -425,7 +425,7 @@ function RunResult({ run, bridge, sml, proven, demo }: { run: VoteRun; bridge: s
         </table>
       )}
       {r.examples.length > 0 && (
-        <details>
+        <details className="dh-disclosure">
           <summary data-testid="problem-votes-summary">
             Excluded votes and why ({r.examples.length < r.excluded ? `the first ${formatInt(r.examples.length)} of ${formatInt(r.excluded)}` : formatInt(r.examples.length)})
           </summary>
@@ -511,7 +511,7 @@ function CheckRow({ c, demo, children }: { c: Component; demo: boolean; children
         </div>
       </div>
       {children && (
-        <details className="check-more">
+        <details className="check-more dh-disclosure">
           <summary>Details</summary>
           {children}
         </details>
@@ -580,7 +580,7 @@ function RawData({ p, sp }: { p: Proposal; sp: Sourced<Proposal> }) {
       </dl>
       <p className="small muted">Exactly what the governance hash commits to ({formatInt(parsed.dataBytes)} bytes). The URL is the owner's own page; Governance doesn't host or check its content.</p>
       <pre className="code">{json}</pre>
-      <details>
+      <details className="dh-disclosure">
         <summary>dataHex</summary>
         <pre className="code break">{p.dataHex}</pre>
       </details>
@@ -650,7 +650,7 @@ export function VerificationDrawer({ sp, trust, cycle, open, onClose }: { sp: So
         </CheckRow>
       </ol>
 
-      <details className="drawer-section" data-testid="votes-check" open={a.level === 'failed' && byId(a.components, 'votes').state.status === 'failed'}>
+      <details className="drawer-section dh-disclosure" data-testid="votes-check" open={a.level === 'failed' && byId(a.components, 'votes').state.status === 'failed'}>
         <summary>Check the votes yourself</summary>
         {!bridge ? (
           <p className="muted small">
@@ -666,7 +666,7 @@ export function VerificationDrawer({ sp, trust, cycle, open, onClose }: { sp: So
         <YourselfCommands govHash={p.govHash} bridgeBase={bridgeBase} />
       </details>
 
-      <details className="drawer-section">
+      <details className="drawer-section dh-disclosure">
         <summary>Proposal data and hashes</summary>
         <RawData p={p} sp={sp} />
       </details>

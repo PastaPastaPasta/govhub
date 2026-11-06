@@ -117,7 +117,7 @@ export function ContestsPage() {
       <header className="dh-page-header">
         <h1 className="dh-page-header__title" id="names-title">Name contests</h1>
         <p className="dh-page-header__lede contests-intro">Masternodes decide who gets a contested name. Open contests close soonest first.</p>
-        <details className="learn"><summary>How name contests work</summary>
+        <details className="learn dh-disclosure"><summary>How name contests work</summary>
         <p className="small muted">
           Usernames of 3 to 19 characters that use only letters, hyphens, 0 and 1 go to a masternode vote when someone registers one. Masternodes decide who gets it, or lock it so nobody does. Others can ask for the same name {timing}.
         </p>

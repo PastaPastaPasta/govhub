@@ -220,7 +220,7 @@ export function ClaimPanel({ p, own, collateral }: { p: Proposal; own: Ownership
   };
 
   return (
-    <details className="claim-panel" data-testid="claim-panel">
+    <details className="claim-panel dh-disclosure" data-testid="claim-panel">
       <summary>{o ? 'Claim this proposal (a stronger claim outranks the current one)' : 'Are you the proposal owner? Claim it'}</summary>
       <div className="claim-body">
         <p className="small">
@@ -502,7 +502,7 @@ function PostEditor({ govHash, existing, initialBody, onDone }: { govHash: strin
           : `${formatInt(new TextEncoder().encode(body).length)} bytes, ${formatInt(compressed)} of ${formatInt(POST_MAX_COMPRESSED)} bytes after compression (${packed && 'chunks' in packed ? packed.chunks.length : 0} of 3 fields) · ${costText(cost)} · your balance ${balance === null ? '…' : formatCredits(balance)}`}
       </p>
       {body.trim() && (
-        <details>
+        <details className="dh-disclosure">
           <summary>Preview</summary>
           <div className="composer-preview">
             <Markdown text={body} />

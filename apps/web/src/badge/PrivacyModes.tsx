@@ -37,7 +37,7 @@ export function PrivacyModes({ value, onChange, av, net, name = 'badge-mode' }: 
               {modeBlocked(av, m) && <span className="muted"> · not available yet ({modeBlocked(av, m)})</span>}: {MODES[m].summary}
             </span>
           </label>
-          <details className="badge-mode-more" data-testid={`${name}-more-${m}`}>
+          <details className="badge-mode-more dh-disclosure" data-testid={`${name}-more-${m}`}>
             <summary>Learn more about {MODES[m].label}</summary>
             <p className="small">
               <ModeDetails mode={m} net={net} />
