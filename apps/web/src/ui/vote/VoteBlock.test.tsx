@@ -60,10 +60,12 @@ const pasted = () => ({
   },
 });
 
+const SUBJECT = { title: '“Dash thing”', ask: '100 DASH per month', payments: '1 of 4 payments left', standing: { text: 'Passing by 12', tone: 'pass' } };
+
 const view = (mn: string | null = null) =>
   render(
     <MemoryRouter initialEntries={[`/p/dash-thing${mn ? `?mn=${mn}` : ''}`]}>
-      <ProposalVoteBlock proposal={P} mn={mn} closesIn={86400 * 12} onVerify={() => {}} />
+      <ProposalVoteBlock proposal={P} subject={SUBJECT} mn={mn} closesIn={86400 * 12} onVerify={() => {}} />
     </MemoryRouter>,
   );
 const pick = (el: HTMLElement, label: string) => click([...el.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find((b) => b.textContent === label)!);
@@ -82,6 +84,13 @@ describe('Vote on this proposal', () => {
     const r = await view();
     expect(r.el.querySelector('h2')?.textContent).toBe('Vote on this proposal');
     expect(r.el.textContent).toContain('Voting closes in 12 days');
+    // it names what is being voted on, so #vote never lands on buttons alone
+    const subject = r.el.querySelector('[data-testid="vote-subject"]')!;
+    expect(subject.textContent).toContain('“Dash thing”');
+    expect(subject.textContent).toContain('dash-thing');
+    expect(subject.textContent).toContain('100 DASH per month · 1 of 4 payments left');
+    expect(subject.textContent).toContain('Passing by 12');
+    expect(subject.compareDocumentPosition(r.el.querySelector('[role="radio"]')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect([...r.el.querySelectorAll('[data-way]')].map((b) => b.textContent)).toEqual(['Sign offline', 'Paste key', 'Account']);
     expect(r.el.querySelector('[data-testid="offline"]')).toBeNull();
     await pick(r.el, 'No');
@@ -91,7 +100,7 @@ describe('Vote on this proposal', () => {
 
   it('carries the masternode from ?mn=: its line, its voting address for offline signing, and the way back to its votes', async () => {
     const r = await view(OTHER);
-    expect(r.el.querySelector('[data-testid="vote-mn-context"]')?.textContent).toContain('evonode, its vote counts 4 times');
+    expect(r.el.querySelector('[data-testid="vote-mn-context"]')?.textContent).toContain('Evonode: its vote counts 4 times');
     expect(r.el.querySelector('[data-testid="vote-mn-back"]')?.getAttribute('href')).toBe(`/masternodes/${OTHER}`);
     await pick(r.el, 'Yes');
     expect(r.el.querySelector('[data-testid="offline"]')?.textContent).toBe('offline Xvote 1');
@@ -138,7 +147,7 @@ describe('Vote on this proposal', () => {
     hold.bridge = () => new Promise((r) => (answer = r));
     const tree = () => (
       <MemoryRouter initialEntries={[`/p/dash-thing?mn=${PRO}`]}>
-        <ProposalVoteBlock proposal={P} mn={PRO} closesIn={86400} onVerify={() => {}} />
+        <ProposalVoteBlock proposal={P} subject={SUBJECT} mn={PRO} closesIn={86400} onVerify={() => {}} />
       </MemoryRouter>
     );
     const r = await render(tree());
@@ -167,7 +176,7 @@ describe('Vote on this proposal', () => {
     hold.bridge = () => new Promise((r) => (answer = r));
     const tree = () => (
       <MemoryRouter initialEntries={[`/p/dash-thing?mn=${PRO}`]}>
-        <ProposalVoteBlock proposal={P} mn={PRO} closesIn={86400} onVerify={() => {}} />
+        <ProposalVoteBlock proposal={P} subject={SUBJECT} mn={PRO} closesIn={86400} onVerify={() => {}} />
       </MemoryRouter>
     );
     const r = await render(tree());

@@ -97,7 +97,7 @@ describe('ProposalView for a lame duck', () => {
     expect(status.textContent).toContain('1 of 1 payment made. No more payments are possible; it leaves the network on 27 Oct 2026.');
     const text = el.textContent ?? '';
     expect(text).not.toMatch(/Passing by|next budget is full|In the next budget|Voting closes|Voting for this payout/);
-    expect(el.querySelector('[data-testid="p-paid"]')!.textContent).toBe('1 made, 0 more possible');
+    expect(el.querySelector('[data-testid="p-paid"]')!.textContent).toBe('No payments left · 1 paid');
     // votes stay, de-emphasised
     const votes = el.querySelector('[data-testid="p-votes"]')!;
     expect(votes.className).toContain('p-votes-dim');
@@ -133,7 +133,7 @@ describe('ProposalView for a proposal with payments left', () => {
   it('is not a lame duck when the verified chain still counts a payment possible (the page never contradicts its own summary)', async () => {
     const { el } = await view(pshenmic, { estTime: NOW + 23 * DAY, report: report({ paid: 1, remainingEstimate: 1 }) });
     expect(el.querySelector('[data-testid="lameduck-status"]')).toBeNull();
-    expect(el.querySelector('[data-testid="p-paid"]')!.textContent).toBe('1 made, 1 more possible');
+    expect(el.querySelector('[data-testid="p-paid"]')!.textContent).toBe('1 of 2 payments left · 1 paid');
   });
 
   it('is not a lame duck when the next superblock is flagged to pay it', async () => {

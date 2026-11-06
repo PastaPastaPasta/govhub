@@ -472,7 +472,9 @@ export function OfflineSignBody({ proposal, address: initialAddress = '', outcom
           On Testnet, Core checks a signature over the binary vote hash, which <code>signmessage</code> (Dash Core, DMT, hardware wallets) cannot make. Sign the hash below with your own tooling and paste the signature back, or broadcast it yourself with the <code>voteraw</code> command shown.
         </p>
       ) : (
-        <p className="small muted">Enter the masternode’s voting address for the Dash Core command that signs your {OUTCOME_NAME[outcome].toUpperCase()} vote. Run it in Dash Core’s console (or sign its text with a hardware wallet) and paste the signature back.</p>
+        <p className="small muted">
+          Enter the masternode’s voting address for the Dash Core command that signs your {OUTCOME_NAME[outcome].toUpperCase()} vote on <span className="mono-ish">{proposal.name}</span>. Run it in Dash Core’s console (or sign its text with a hardware wallet) and paste the signature back.
+        </p>
       )}
       <div className="form-actions">
         <input value={address} onChange={(e) => (setAddress(e.target.value), setMns(null))} placeholder="Voting address" aria-label="Voting address" className="mono-ish vinput dh-input" data-testid="offline-address" />
@@ -490,7 +492,7 @@ export function OfflineSignBody({ proposal, address: initialAddress = '', outcom
         return (
           <div key={m.proTxHash} className="vote-offline-row" data-testid="offline-row">
             <div className="small">
-              <b>{OUTCOME_LABEL[outcome]}</b> with masternode {shortHash(m.proTxHash, 6)}
+              <b>{OUTCOME_LABEL[outcome]}</b> on <span className="mono-ish">{proposal.name}</span>, with masternode {shortHash(m.proTxHash, 6)}
               {m.type === 'evo' ? ' (evonode, counts 4 times)' : ''}
             </div>
             {held.length > 0 && (

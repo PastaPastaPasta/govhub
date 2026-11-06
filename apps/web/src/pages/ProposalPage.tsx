@@ -23,13 +23,14 @@ import { useProposalTrust } from '../ui/trust/useProposalTrust.ts';
 import type { Aggregate } from '../verify/aggregate.ts';
 import { trustScope, useCachedTrust, type StoredTrust } from '../ui/trust/store.ts';
 import { VerificationDrawer } from '../ui/trust/VerificationDrawer.tsx';
-import { mnParam, ProposalVoteBlock } from '../ui/vote/VoteBlock.tsx';
+import { mnParam, ProposalVoteBlock, type VoteSubject } from '../ui/vote/VoteBlock.tsx';
 import { useOwnerPage } from '../lib/ownerPages.ts';
 import { purposeOf, useReadableTitle } from '../ui/OwnerPage.tsx';
+import { paymentsLine } from '../ui/ProposalCard.tsx';
 import { useAsync } from '../ui/hooks.ts';
 import type { Proposal, Sourced } from '../data/types.ts';
 import type { Found } from '../lib/ownerPages.ts';
-import { formatDash, formatDate, formatDateTime, formatDuration, formatInt, shortHash, urlHost } from '../lib/format.ts';
+import { capitalize, formatDash, formatDate, formatDateTime, formatDuration, formatInt, shortHash, urlHost } from '../lib/format.ts';
 import { passState, perPayment, votingDeadlineTime } from '../lib/governance.ts';
 import { deriveRow } from '../lib/view.ts';
 import { isShortLink, useResolvedLink } from '../lib/links.ts';
@@ -273,6 +274,14 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
   const lameDuck = row.lameDuck && !inBudget && (!payments || payments.remainingEstimate <= 0);
   // the verified chain's schedule once there is one (the deadline height is then proven, its time Core's own estimate)
   const untilDeadline = chain ? chain.schedule.deadlineEstTime - now : cycle ? votingDeadlineTime(cycle.value, params) - now : null;
+  const paymentsText = paymentsLine(sched, paid && payments ? { made: paid.made.text, count: payments.paid.length, left: payments.remainingEstimate } : null);
+  // the vote block names what it is voting on, in the words the lists use (the owner's title quoted as theirs)
+  const voteSubject: VoteSubject = {
+    title: ownerTitle ? `“${ownerTitle}”` : words,
+    ask: row.content.ok ? `${formatDash(p.paymentAmount)} ${sched?.oneTime ? 'once' : perPayment(params)}` : null,
+    payments: row.content.ok && sched && !sched.oneTime && sched.total > 0 ? paymentsText : null,
+    standing: state ? { text: state.passing ? `Passing by ${formatInt(state.margin)}` : `Needs ${formatInt(state.needed)} more`, tone: state.light } : null,
+  };
 
   return (
     <article className="proposal">
@@ -354,9 +363,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
               {row.content.ok && (paid || (sched && !sched.oneTime && sched.total > 0)) && (
                 <div>
                   <dt>Payments</dt>
-                  <dd data-testid="p-paid">
-                    {paid ? `${paid.made.text} made, ${paid.remaining.text}` : sched!.remaining === 0 ? 'No payments left' : `${formatInt(sched!.remaining)} of ${formatInt(sched!.total)} left`}
-                  </dd>
+                  <dd data-testid="p-paid">{capitalize(paymentsText ?? '')}</dd>
                 </div>
               )}
               {row.content.ok && (
@@ -439,7 +446,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
 
           {active && !lameDuck && (
             <ErrorBoundary what="masternode voting">
-              <ProposalVoteBlock proposal={p} mn={mn} closesIn={later ? null : untilDeadline} onVerify={() => setDrawer(true)} />
+              <ProposalVoteBlock proposal={p} subject={voteSubject} mn={mn} closesIn={later ? null : untilDeadline} onVerify={() => setDrawer(true)} />
             </ErrorBoundary>
           )}
 

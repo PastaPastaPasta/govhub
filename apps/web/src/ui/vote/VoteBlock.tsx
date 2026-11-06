@@ -1,4 +1,5 @@
-// "Vote on this proposal": the proposal page's vote, near the top. Yes / No / Abstain, then the way to sign that fits what the visitor
+// "Vote on this proposal": the proposal page's vote, near the top. It names what is being voted on (the title, the ask, where it stands),
+// so a masternode arriving at #vote never has to scroll back to see it. Yes / No / Abstain, then the way to sign that fits what the visitor
 // has: the keyring's composer when signed in with voting keys, the voting keys pasted for this tab (contest pages take the same keys),
 // or offline signing with the Dash Core command filled in. `?mn=<proTxHash>` (from a masternode's votes page) carries which masternode
 // is voting: its current vote, its voting address for offline signing, and the way back. Nothing here is stored, and no key or
@@ -19,6 +20,7 @@ import { mnId, offlineVoteTime, signPlanned, type CurrentVote, type Outcome } fr
 import { describeVote, relaySummary, voteButtonText } from '../../voting/status.ts';
 import { Link } from '../Link.tsx';
 import { openSignIn } from '../SignIn.tsx';
+import { Slug } from '../Slug.tsx';
 import { bridgeVotesFor, latestKnownVote, OfflineSign, OfflineSignBody, OutcomePicker, VoteComposer } from '../VotePanel.tsx';
 import { Badge, fmtTime, mnName, OutcomeChip, OUTCOME_LABEL, useLabels } from './common.tsx';
 import { useMasternodeVotes, type MnLookup, type VoteCell } from './useMasternodeVotes.ts';
@@ -37,19 +39,60 @@ interface MnContext {
   cell: VoteCell | undefined;
 }
 
-export function ProposalVoteBlock({ proposal, mn, closesIn, onVerify }: { proposal: Proposal; mn: string | null; closesIn: number | null; onVerify(): void }) {
-  return mn ? <WithMasternode proposal={proposal} proTx={mn} closesIn={closesIn} onVerify={onVerify} /> : <VoteBlock proposal={proposal} ctx={null} closesIn={closesIn} onVerify={onVerify} />;
+/** What the vote is on, as the page heads it: the title, and the ask and standing when the proposal's fields match its hash. */
+export interface VoteSubject {
+  title: string;
+  /** "4,832 DASH per month" */
+  ask: string | null;
+  /** "1 of 4 payments left" */
+  payments: string | null;
+  standing: { text: string; tone: string } | null;
 }
 
-function WithMasternode({ proposal, proTx, closesIn, onVerify }: { proposal: Proposal; proTx: string; closesIn: number | null; onVerify(): void }) {
-  const one = useMemo(() => [proposal], [proposal]);
+interface BlockProps {
+  proposal: Proposal;
+  subject: VoteSubject;
+  closesIn: number | null;
+  onVerify(): void;
+}
+
+export function ProposalVoteBlock({ mn, ...props }: BlockProps & { mn: string | null }) {
+  return mn ? <WithMasternode {...props} proTx={mn} /> : <VoteBlock {...props} ctx={null} />;
+}
+
+function WithMasternode({ proTx, ...props }: BlockProps & { proTx: string }) {
+  const one = useMemo(() => [props.proposal], [props.proposal]);
   const v = useMasternodeVotes(proTx, one);
-  return <VoteBlock proposal={proposal} ctx={{ proTx, lookup: v.lookup, cell: v.cells.get(proposal.govHash) }} closesIn={closesIn} onVerify={onVerify} />;
+  return <VoteBlock {...props} ctx={{ proTx, lookup: v.lookup, cell: v.cells.get(props.proposal.govHash) }} />;
+}
+
+/** The proposal being voted on: its title and exact name, what it asks and where it stands. */
+function Subject({ proposal, subject }: { proposal: Proposal; subject: VoteSubject }) {
+  const facts = [subject.ask, subject.payments].filter(Boolean).join(' · ');
+  return (
+    <div className="pvote-subject" data-testid="vote-subject">
+      <p className="pvote-subject-title">
+        <bdi>{subject.title}</bdi>
+      </p>
+      <p className="pvote-subject-facts small">
+        <span className="mono-ish pvote-subject-name">
+          <Slug name={proposal.name} />
+        </span>
+        {facts && <span>{facts}</span>}
+        {subject.standing && (
+          <span className={`mnv-status${subject.standing.tone ? ` mnv-${subject.standing.tone}` : ''}`}>
+            <span className="dot" aria-hidden="true" />
+            {subject.standing.text}
+          </span>
+        )}
+      </p>
+    </div>
+  );
 }
 
 type Way = 'offline' | 'paste' | 'account';
 
-function VoteBlock({ proposal, ctx, closesIn, onVerify }: { proposal: Proposal; ctx: MnContext | null; closesIn: number | null; onVerify(): void }) {
+function VoteBlock({ proposal, subject, ctx, closesIn, onVerify }: BlockProps & { ctx: MnContext | null }) {
   const k = useKeyring();
   const guest = useGuestKeys();
   const signedIn = !!useForum().session;
@@ -75,6 +118,7 @@ function VoteBlock({ proposal, ctx, closesIn, onVerify }: { proposal: Proposal; 
         {closesIn !== null && <span className="small muted">{closesIn > 0 ? `Voting closes in ${formatDuration(closesIn)}` : 'Votes now count toward the next payout'}</span>}
         {k.demo && k.status === 'open' && <span className="tag dh-badge tag-demo">Demo: votes aren't sent</span>}
       </header>
+      <Subject proposal={proposal} subject={subject} />
       {ctx && <MasternodeLine ctx={ctx} />}
       {k.error && (keyring || pasted || way !== 'account') && (
         <p className="error small" role="alert">
@@ -120,7 +164,7 @@ function MasternodeLine({ ctx }: { ctx: MnContext }) {
         <dashhq-hash value={ctx.proTx} label="ProTx hash">
           {ctx.proTx}
         </dashhq-hash>
-        {mn && <span className="muted small"> · {mn.type === 'evo' ? 'evonode, its vote counts 4 times' : 'regular masternode'}</span>}
+        {mn && <span className="muted small">{mn.type === 'evo' ? 'Evonode: its vote counts 4 times' : 'Regular masternode'}</span>}
         {mn && !mn.valid && <span className="tag dh-badge tag-fail dh-badge--bad">PoSe-banned: its votes are not counted</span>}
         {mn && (
           <span className="pvote-now small">
