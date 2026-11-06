@@ -70,9 +70,5 @@ export function ProposalName({ p, to, owner }: { p: { govHash: string; url: stri
 export function OwnerWordsNote({ proposals }: { proposals: readonly { govHash: string; url: string }[] }) {
   const pages = useOwnerPages();
   if (!proposals.some((p) => ownerPageOf(pages, p))) return null;
-  return (
-    <p className="small muted owner-words-note" data-testid="owner-words-note">
-      Quoted titles and summaries are the owners’ own words, from the pages their proposals link to, unchecked.
-    </p>
-  );
+  return <Link to="/about#owner-words" className="owner-words-info" title="About quoted titles and summaries" aria-label="About the owners’ words">ⓘ</Link>;
 }

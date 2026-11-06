@@ -93,19 +93,11 @@ function CycleStats({ cycle, view, state }: { cycle: Cycle; view: TreasuryView; 
   const fromService = Object.values(view.groups).some((g) => g.rows.some((r) => r.p.prov.kind !== 'proof' && r.p.prov.kind !== 'fixture'));
   const unread = view.groups.unread.rows.length;
   return (
+    <>
     <div className="dh-stats tr-stats" data-testid="treasury-stats">
       <div className="dh-stat dh-stat--key">
         <span className="dh-stat__label">
-          This payout can pay{' '}
-          {limit === cycle.budget ? (
-            <ProofTag state="ok" title={`The most superblock ${formatInt(cycle.superblockHeight)} can pay by Dash's consensus rules, worked out in this browser from its height.`}>
-              Consensus limit
-            </ProofTag>
-          ) : (
-            <ProofTag state="unverified" title="As the governance data service reports it; not checked against the consensus rules in this browser.">
-              Data service figure
-            </ProofTag>
-          )}
+          This payout can pay
         </span>
         <span className="dh-stat__value" data-testid="tr-budget">
           <DashValue duffs={cycle.budget} />
@@ -117,19 +109,14 @@ function CycleStats({ cycle, view, state }: { cycle: Cycle; view: TreasuryView; 
       </div>
       <div className="dh-stat">
         <span className="dh-stat__label">
-          Asked for{' '}
-          {fromService ? (
-            <ProofTag state="reported" title="Some of these proposals are only as the governance data service reports them: Platform doesn't have them yet.">Data service records</ProofTag>
-          ) : (
-            <ProofTag state="reported" title="The proposals Governance lists, read from Platform; each one's fields match the hash the network votes on.">Platform records</ProofTag>
-          )}
+          Asked for
         </span>
         <span className="dh-stat__value" data-testid="tr-requested">{hold(<DashValue duffs={view.requested} />, false)}</span>
         <span className="dh-stat__note">{state === 'counting' || state === 'no-list' ? 'by the proposals due at this payout' : `${share(view.requested, cycle.budget)} of what it can pay`}</span>
       </div>
       <div className="dh-stat">
         <span className="dh-stat__label">
-          Has the votes <ProofTag state="reported" title={TALLY_SOURCE}>Reported tally</ProofTag>
+          Has the votes
         </span>
         <span className="dh-stat__value" data-testid="tr-passing">
           {hold(
@@ -154,7 +141,7 @@ function CycleStats({ cycle, view, state }: { cycle: Cycle; view: TreasuryView; 
       </div>
       <div className="dh-stat">
         <span className="dh-stat__label">
-          Next payout <ProofTag state="reported" title="Estimated from the time blocks take; the superblock's height is fixed.">Estimate</ProofTag>
+          Next payout
         </span>
         <span className="dh-stat__value" data-testid="tr-next">{formatDate(cycle.estTime)}</span>
         <span className="dh-stat__note">
@@ -162,6 +149,8 @@ function CycleStats({ cycle, view, state }: { cycle: Cycle; view: TreasuryView; 
         </span>
       </div>
     </div>
+    <p className="dh-sources tr-stat-sources">Limit: {limit === cycle.budget ? 'consensus' : 'data service (not verified)'} · Asked: {fromService ? 'data service records' : 'Platform records'} · Votes: reported tally · Date: estimate</p>
+    </>
   );
 }
 
@@ -205,7 +194,7 @@ function PaysFor({ view, state, budget, names }: { view: TreasuryView; state: Re
         <>
           <PaysForSummary view={view} budget={budget} names={names} />
           <p className="small muted tr-pays-how">
-            Proposals carry no category, so they are grouped by where they stand, largest first. Quoted titles and summaries are the owners’ own words.
+            Proposals carry no category, so they are grouped by where they stand, largest first.
             <Ref to="tr-pays-src-2" n={2} />
           </p>
           <BudgetBar funded={view.groups.funded} budget={budget} />
@@ -215,7 +204,7 @@ function PaysFor({ view, state, budget, names }: { view: TreasuryView; state: Re
               Standings: vote tallies reported by the governance data service{tallyAt ? ` at block ${formatInt(tallyAt)}` : ''}, live from Dash Core. Each proposal’s page
               recounts its own votes in this browser.
             </li>
-            <li id="tr-pays-src-2">Titles and summaries: each owner’s proposal page, read when this site was built. Nobody has checked them.</li>
+            <li id="tr-pays-src-2">Titles and summaries: <Link to="/about#owner-words">about the owners’ words</Link>.</li>
           </ol>
         </>
       )}
@@ -255,7 +244,7 @@ function PaysForSummary({ view, budget, names }: { view: TreasuryView; budget: n
             <>
               {n === 1 ? 'It is ' : partial ? 'The largest of those read is ' : 'The largest is '}
               <ProposalName p={largest} to={proposalHref(largest, names)} owner={top!.content.ok && checks.state(largest).status !== 'failed'} />, at {formatDash(largest.paymentAmount)}
-              {n > 1 ? `, ${share(largest.paymentAmount, funded.sum)} of what goes out` : ''}.
+              {n > 1 ? `, ${share(largest.paymentAmount, budget)} of what it can pay` : ''}.
             </>
           )}
         </>
@@ -327,7 +316,7 @@ function Group({ group, budget, names }: { group: TreasuryGroup; budget: number;
       {body}
     </section>
   ) : (
-    <details className="tr-group dh-panel dh-panel--flush" data-testid={`tr-group-${group.id}`}>
+    <details className="tr-group dh-panel dh-panel--flush dh-disclosure" data-testid={`tr-group-${group.id}`}>
       <summary className="tr-group-head">
         <span className="sb-chevron" aria-hidden="true" />
         {head}
@@ -559,7 +548,7 @@ function PaidColumns({ cols, allocated, network }: { cols: Col[]; allocated: num
       <figcaption id="tr-chart-cap" className="visually-hidden">
         What each superblock paid, oldest first{allocated !== null ? ', then what this payout has allocated so far' : ''}. The same figures are in the table below.
       </figcaption>
-      <details className="tr-table-view small">
+      <details className="tr-table-view small dh-disclosure">
         <summary>As a table</summary>
         <table className="dh-table dh-table--compact">
           <thead>

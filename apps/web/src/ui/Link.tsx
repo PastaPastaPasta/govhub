@@ -1,7 +1,7 @@
 import { forwardRef } from 'react';
 import { Link as RouterLink, NavLink as RouterNavLink, useLocation, useResolvedPath, type LinkProps, type NavLinkProps } from 'react-router-dom';
 
-const KEPT = ['network', 'profile', 'fixtures'];
+const KEPT = ['network', 'profile', 'fixtures', 'mn'];
 
 function keptParams(search: string): URLSearchParams {
   const current = new URLSearchParams(search);

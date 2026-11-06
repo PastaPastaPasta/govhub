@@ -59,6 +59,8 @@ export function AboutPage() {
         pasting the signature in.
       </p>
 
+      <h2 id="owner-words">The owners’ words</h2>
+      <p>Quoted titles and summaries are the owners’ own words, from the pages their proposals link to, read when this site was built. Nobody has checked those claims.</p>
       <h2>How the checking works</h2>
       <p>
         Each proposal has a badge, such as <i>Verified</i> or <i>Partly verified</i>. For <i>Verified</i>, your browser has:

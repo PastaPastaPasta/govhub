@@ -184,7 +184,7 @@ function Choose() {
   return (
     <div className="sheet-choose">
       <p className="lede">Reading needs no account. Sign in to comment and react, or to keep your masternodes’ voting keys for next time.</p>
-      <dashhq-signin-help
+      <dashhq-signin-help compact="always"
         asks="phrase passkey key voting-key"
         kept="memory"
         why="It signs your comments and reactions and unlocks your saved voting keys."

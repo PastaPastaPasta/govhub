@@ -191,36 +191,11 @@ function Purpose({ page, hasPost, url, host }: { page: Found; hasPost: boolean; 
 }
 
 /** What the header's badge vouches for: the proposal's record, collateral, votes and budget place, not who owns it. */
-const VERIFIED_SUBJECT = 'Proposal data verified';
 
-/**
- * The header's one status: the badge, with the checks' progress while they run ("Checking 3 of 5"). A result this browser proved
- * earlier for the very tally shown stays up while the checks run again, so a return visit doesn't flicker back to "Checking".
- */
 function TrustStatus({ agg, cached, onOpen }: { agg: Aggregate; cached: StoredTrust | null; onOpen(): void }) {
-  const checking = agg.level === 'checking';
-  const done = agg.components.filter((c) => c.state.status !== 'pending').length;
-  if (checking && cached?.level === 'verified') {
-    const ago = `${formatDuration(Math.max(60, Math.floor((Date.now() - cached.at) / 1000)))} ago`;
-    return (
-      <span className="trust-status" data-testid="trust-status">
-        <TrustBadge level="verified" label={VERIFIED_SUBJECT} reason={`Proved in this browser ${ago}; checking again now`} onOpen={onOpen} />
-        <span className="small muted" aria-live="polite">
-          proved {ago}, checking again
-        </span>
-      </span>
-    );
-  }
-  return (
-    <span className="trust-status" data-testid="trust-status">
-      <TrustBadge level={agg.level} reason={agg.reason} onOpen={onOpen} {...(checking ? { label: `Checking ${done} of ${agg.components.length}` } : agg.level === 'verified' ? { label: VERIFIED_SUBJECT } : {})} />
-      {checking && (
-        <span className="small muted" aria-live="polite" data-testid="evidence-progress">
-          in this browser; a first visit takes 10 to 40 seconds
-        </span>
-      )}
-    </span>
-  );
+  const verified = agg.level === 'verified' || (agg.level === 'checking' && cached?.level === 'verified');
+  if (!verified) return <button type="button" className="dh-btn dh-btn--link" onClick={onOpen}>Verification details</button>;
+  return <span className="trust-status" data-testid="trust-status"><TrustBadge level="verified" label="Chain verified" reason="Checked in this browser. A first visit takes 10 to 40 seconds; open for the checks and their sources." onOpen={onOpen} /></span>;
 }
 
 export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
@@ -326,7 +301,6 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
           <span className="muted">{ownerTitle ? `is its name on the network; the title is the owner’s, from ${page!.page.host}.` : 'is its name on the network.'}</span>
         </p>
         <div className="dh-page-header__meta p-meta">
-          <TrustStatus agg={trust.aggregate} cached={cachedTrust} onOpen={() => setDrawer(true)} />
           {active && !lameDuck && (
             <a href="#vote" className="dh-btn dh-btn--secondary dh-btn--sm p-jump" data-testid="jump-vote">
               Go to the vote ↓
@@ -334,6 +308,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
           )}
         </div>
       </header>
+      {(trust.aggregate.level === 'failed' || trust.aggregate.level === 'error') && <p className="dh-notice dh-notice--warn" role="status">{trust.aggregate.reason ?? 'Verification could not finish. Figures are shown as reported.'} <button type="button" className="dh-btn dh-btn--link" onClick={() => setDrawer(true)}>Review checks</button></p>}
 
       <div className="p-layout">
         <div className="p-main">
@@ -540,6 +515,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
         <aside className="p-side" aria-label="Summary">
           <section className="panel dh-card">
             <h2 className="panel-title">Summary</h2>
+            <TrustStatus agg={trust.aggregate} cached={cachedTrust} onOpen={() => setDrawer(true)} />
             <dl className="kv" data-testid="summary">
               {host && (
                 <div>

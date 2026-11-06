@@ -2809,8 +2809,8 @@ dashhq-hash { vertical-align: middle; max-width: 100%; }
   margin: 0;
   padding: 10px 14px;
   border-inline-start: 3px solid var(--line-strong);
-  background: var(--sunk);
-  border-radius: 0 var(--dh-r2) var(--dh-r2) 0;
+  background: transparent;
+  border-radius: 0;
   display: grid;
   gap: 6px;
 }
@@ -2965,3 +2965,10 @@ details.tr-group > .tr-table { margin: 0; border-radius: 0; }
 .tr-stats .dh-stat__note .usd { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 0; }
 .tr-stats .dh-stat__note .usd .dh-src,
 .budget-facts .usd .dh-src { margin-inline-start: 6px; }
+
+.usd-source { font-size: 13px; margin-inline-start: 5px; }
+.tr-pays, .tr-compare { margin-block-start: 40px; gap: 12px; }
+.tr-pays > .dh-section__head, .tr-compare > .dh-section__head { margin-block-end: 0; }
+.tr-stat-sources { margin-block: 12px 0; }
+.proposal-page-actions { display: flex; justify-content: flex-end; margin-block-end: 12px; }
+.owner-words-info { font-size: 17px; text-decoration: none; }

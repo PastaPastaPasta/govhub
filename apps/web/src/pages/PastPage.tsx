@@ -247,7 +247,7 @@ function LedgerStats({ sum, perSb }: { sum: LedgerSummary; perSb: string }) {
 function SuperblockPanel({ slot, entry, names, open }: { slot: SuperblockSlot; entry: LedgerEntry | null; names: ReadonlyMap<string, number>; open: boolean }) {
   const headId = `sb-${slot.height}`;
   return (
-    <details className="dh-panel dh-panel--flush sb" aria-labelledby={headId} data-testid="superblock" data-height={slot.height} open={open}>
+    <details className="dh-panel dh-panel--flush sb dh-disclosure" aria-labelledby={headId} data-testid="superblock" data-height={slot.height} open={open}>
       <summary className="sb-head">
         <h2 id={headId} className="sb-date">
           <span className="sb-chevron" aria-hidden="true" />

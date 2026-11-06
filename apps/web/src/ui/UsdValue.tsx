@@ -19,7 +19,7 @@ export function UsdValue({ duffs, what }: { duffs: number; what?: string }) {
   // "01:51 UTC" today, "5 Nov 2026, 01:51 UTC" otherwise
   const time = dayOf(v.fetchedAt) === dayOf(now) ? when.slice(-9) : when;
   const failed = v.failed ? ', refresh failed' : '';
-  const label = v.stale ? `Stale${failed}` : `${v.source} price, ${time}${failed}`;
+  const label = v.stale ? `Stale${failed}` : `${v.source}, ${time}${failed}`;
   return (
     <span className="usd small" data-testid="usd">
       <span className="usd-value">
@@ -27,11 +27,11 @@ export function UsdValue({ duffs, what }: { duffs: number; what?: string }) {
         {formatUsdEstimate((duffs / 1e8) * v.rate)}
       </span>
       <span
-        className={`dh-src${v.stale || v.failed ? ' dh-src--warn' : ''}`}
+        className={`usd-source muted${v.stale || v.failed ? ' error' : ''}`}
         title={`An approximate current valuation, not a chain fact: DASH/USD spot fetched by this browser from ${v.source} on ${when}.`}
         data-testid="usd-source"
       >
-        {label}
+        · {label}
         <span className="visually-hidden"> ({v.source} price fetched by this browser on {when})</span>
       </span>
     </span>
