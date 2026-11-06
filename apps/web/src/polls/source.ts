@@ -4,9 +4,11 @@ import legacySchema from './legacy-contract.json';
 import { getSdk } from '../data/platform.ts';
 import type { Registry } from '../config/registry.ts';
 import type { Session } from '../session/session.ts';
+import type { DataContract, DocumentCreateCostOptions } from '@dashevo/evo-sdk';
 import { ARCHIVE_CONTRACT, POLL_CONTRACT, answerOperations, decodePoll, identifier, pollOperation, tally, voteType, type Draft, type Poll, type Tally } from './model.ts';
 
 export function pollSource(registry: Registry) {
+  let costContract: Promise<DataContract> | undefined;
   const contract = (archive: boolean) => archive ? ARCHIVE_CONTRACT : POLL_CONTRACT;
   const checkNetwork = () => { if (registry.platformNetwork !== 'testnet') throw Error('Polls are available on Testnet only.'); };
   async function documents(type: string, archive = false, poll?: Poll): Promise<Record<string, unknown>[]> {
@@ -29,6 +31,16 @@ export function pollSource(registry: Registry) {
     throw Error('This read is too large to finish. No partial totals are shown.');
   }
   return {
+    async estimate(type: string, fields: DocumentCreateCostOptions['fields']) {
+      checkNetwork();
+      const sdk = await getSdk(registry);
+      costContract ??= sdk.contracts.fetchWithProof(POLL_CONTRACT).then(result => {
+        if (!result.data) throw Error('Poll contract unavailable.');
+        return result.data;
+      }).catch(error => { costContract = undefined; throw error; });
+      const [{ documentCreateCost }, contract] = await Promise.all([import('@dashevo/evo-sdk'), costContract]);
+      return Number(documentCreateCost(contract, type, { fields }, sdk.version()).totalCredits.newValues);
+    },
     async list(archive = false) { return (await documents('poll', archive)).map(d => decodePoll(d, archive)).sort((a, b) => b.createdAt - a.createdAt); },
     async get(id: string, archive = false) {
       checkNetwork();

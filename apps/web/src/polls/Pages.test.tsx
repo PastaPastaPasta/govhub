@@ -7,7 +7,7 @@ const hold = vi.hoisted(() => ({ registry: { platformNetwork: 'testnet' }, open:
 vi.mock('../app/context.tsx', () => ({ useApp: () => ({ registry: hold.registry }) }));
 vi.mock('../app/forum.tsx', () => ({ useForum: () => ({ session: null, forum: { names: async () => new Map() } }) }));
 vi.mock('../auth/context.tsx', () => ({ useAuth: () => ({ openSheet: hold.open }) }));
-vi.mock('./source.ts', () => ({ pollSource: () => ({ list: hold.list }) }));
+vi.mock('./source.ts', () => ({ pollSource: () => ({ list: hold.list, estimate: async () => 40_000_000 }) }));
 const { NewPollPage, PollsPage } = await import('./Pages.tsx');
 beforeEach(() => { sessionStorage.clear(); vi.clearAllMocks(); hold.registry.platformNetwork = 'testnet'; });
 const composer = () => render(<MemoryRouter initialEntries={['/polls/new?network=testnet']}><NewPollPage /></MemoryRouter>);

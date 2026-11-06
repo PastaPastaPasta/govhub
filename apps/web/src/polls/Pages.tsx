@@ -5,11 +5,11 @@ import { useForum } from '../app/forum.tsx';
 import { useTitle } from '../app/title.ts';
 import { useAuth } from '../auth/context.tsx';
 import { errorText } from '../auth/runtime.ts';
-import { shortHash } from '../lib/format.ts';
+import { formatInt, shortHash } from '../lib/format.ts';
 import { Link } from '../ui/Link.tsx';
 import { useAsync } from '../ui/hooks.ts';
 import { ReadError } from '../ui/ReadError.tsx';
-import { ARCHIVE_CONTRACT, POLL_CONTRACT, DRAFT_KEY, closed, pollOperation, readDraft, type Draft, type Poll } from './model.ts';
+import { ARCHIVE_CONTRACT, POLL_CONTRACT, DRAFT_KEY, closed, pollOperation, readDraft, voteType, type Draft, type Poll } from './model.ts';
 import { pollSource, type PollSource } from './source.ts';
 import './polls.css';
 
@@ -36,6 +36,16 @@ function Meta({ poll, asked = false }: { poll: Poll; asked?: boolean }) {
 function Loading({ children }: { children: ReactNode }) { return <p className="muted" role="status">{children}</p>; }
 function ResultBar({ value, total }: { value: number; total: number }) {
   return <progress className="poll-bar" max={total || 1} value={value} aria-label={`${total ? Math.round(value / total * 100) : 0}%`} />;
+}
+function Fee({ source, draft, poll, selections = 1 }: { source: PollSource; draft?: Draft; poll?: Poll; selections?: number }) {
+  const type = poll ? voteType(poll) : 'poll';
+  const fields = useMemo(() => draft ? {
+    question: { length: Math.max(1, [...draft.question.trim()].length) },
+    ...Object.fromEntries(Array.from({ length: 10 }, (_, i) => [`option${i}`, { present: i < draft.options.length, length: Math.max(1, [...(draft.options[i]?.trim() ?? '')].length) }])),
+    multiChoice: { present: draft.multiChoice }, endsAt: { present: !!draft.close },
+  } : {}, [draft]);
+  const quote = useAsync(() => source.estimate(type, fields), [source, type, fields]);
+  return <span className="small muted" title="SDK model estimate from the proof-checked contract, assuming new index values and 1,000 existing documents. It is not a bound or a guaranteed charge.">{quote.data !== undefined ? `Est. ${formatInt(quote.data * Math.max(1, selections))} credits · actual fee varies` : quote.error ? 'Fee estimate unavailable · paid in Platform credits' : 'Estimating the credit fee…'}</span>;
 }
 function PollRow({ poll, source, archive }: { poll: Poll; source: PollSource; archive: boolean }) {
   const result = useAsync(() => source.results(poll, undefined, archive), [source, poll, archive]);
@@ -104,7 +114,7 @@ function Composer() {
       <label className="dh-field"><span className="dh-field__label">Close date <span className="muted">(optional, your local time)</span></span><input type="datetime-local" className="dh-input" value={draft.close} onChange={e => update({ close: e.target.value })} /><span className="dh-field__help">Advisory: the contract accepts late answers. They are counted separately.</span></label>
       <p className={storageError ? 'dh-notice dh-notice--warn' : 'small muted'} role="status">{storageError ? 'This browser could not save your draft. Keep this tab open until you publish.' : 'Draft saved for this session, including while you sign in. Closing this tab clears it.'}</p>
       {error && <p className="dh-notice dh-notice--warn" role="alert">{error}</p>}
-      <div className="poll-submit"><button className="dh-btn dh-btn--primary" disabled={busy} type="submit">{busy ? 'Publishing…' : session ? 'Publish poll' : 'Sign in to publish'}</button><span className="small muted">Paid in Platform credits. The network sets the fee.</span></div>
+      <div className="poll-submit"><button className="dh-btn dh-btn--primary" disabled={busy} type="submit">{busy ? 'Publishing…' : session ? 'Publish poll' : 'Sign in to publish'}</button><Fee source={source} draft={draft} /></div>
     </form>
   </section>;
 }
@@ -146,7 +156,7 @@ function PollDetail({ poll, source, archive }: { poll: Poll; source: PollSource;
         <span className="poll-answer-label">{canChoose && <input type={poll.multiChoice ? 'checkbox' : 'radio'} name="answer" checked={selected.includes(i) || !!t?.userChoices.includes(i)} disabled={!!t?.userChoices.includes(i)} onChange={() => setSelected(s => poll.multiChoice ? s.includes(i) ? s.filter(n => n !== i) : [...s, i] : [i])} />}<span>{option}</span><span className="poll-answer-value">{t ? `${t.counts[i]} · ${t.selections ? Math.round(t.counts[i]! / t.selections * 100) : 0}%` : '—'}</span></span>{t && <ResultBar value={t.counts[i]!} total={t.selections} />}{!!t?.late[i] && <span className="small muted">{t.late[i]} late {t.late[i] === 1 ? 'selection' : 'selections'} · counted separately</span>}</label>)}</fieldset>
       {!t && !result.error && <Loading>Reading answers…</Loading>}
       {error && <p className="dh-notice dh-notice--warn" role="alert">{error}</p>}
-      {archive || isClosed || (answered && !poll.multiChoice) ? <p className="muted">{archive ? 'Earlier polls are read-only.' : isClosed ? 'This poll is closed.' : 'Your answer is recorded.'}</p> : <div className="poll-submit"><button className="dh-btn dh-btn--primary" type="button" disabled={busy || (!!session && (!selected.length || !t))} onClick={() => void answer()}>{busy ? 'Sending answer…' : session ? <>Answer as <Person id={session.identityId} /></> : 'Sign in to answer'}</button><span className="small muted">Paid in Platform credits. The network sets the fee.</span></div>}
+      {archive || isClosed || (answered && !poll.multiChoice) ? <p className="muted">{archive ? 'Earlier polls are read-only.' : isClosed ? 'This poll is closed.' : 'Your answer is recorded.'}</p> : <div className="poll-submit"><button className="dh-btn dh-btn--primary" type="button" disabled={busy || (!!session && (!selected.length || !t))} onClick={() => void answer()}>{busy ? 'Sending answer…' : session ? <>Answer as <Person id={session.identityId} /></> : 'Sign in to answer'}</button><Fee source={source} poll={poll} selections={selected.length} /></div>}
     </div><aside className="poll-record-aside"><dl><div><dt>Answers</dt><dd>{t ? `${t.identities} ${t.identities === 1 ? 'identity' : 'identities'}` : 'Unavailable'}</dd></div><div><dt>Network</dt><dd>Testnet</dd></div><div><dt>Record</dt><dd><a href={explorer}>{shortHash(poll.id, 5)} in Explorer ↗</a></dd></div><div><dt>Share</dt><dd><button type="button" className="dh-btn dh-btn--link" onClick={async () => { try { await navigator.clipboard.writeText(location.href); setCopied(true); } catch { setError('Could not copy the link. Copy it from your address bar.'); } }}>{copied ? 'Copied' : 'Copy link'}</button></dd></div></dl></aside></div>
   </>;
 }

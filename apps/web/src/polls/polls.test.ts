@@ -4,8 +4,8 @@ import { defaultRegistry } from '../config/registry.ts';
 import { ARCHIVE_CONTRACT, POLL_CONTRACT, answerOperations, decodePoll, emptyDraft, pollOperation, readDraft, tally, type Poll } from './model.ts';
 import schema from './contract.json';
 
-const mocks = vi.hoisted(() => ({ query: vi.fn(), get: vi.fn() }));
-vi.mock('../data/platform.ts', () => ({ getSdk: async () => ({ documents: { queryWithProof: mocks.query, getWithProof: mocks.get } }) }));
+const mocks = vi.hoisted(() => ({ query: vi.fn(), get: vi.fn(), contract: vi.fn() }));
+vi.mock('../data/platform.ts', () => ({ getSdk: async () => ({ version: () => 14, contracts: { fetchWithProof: mocks.contract }, documents: { queryWithProof: mocks.query, getWithProof: mocks.get } }) }));
 const { pollSource } = await import('./source.ts');
 const id = bytesToId(new Uint8Array(32).fill(1)), owner = bytesToId(new Uint8Array(32).fill(2));
 const p: Poll = { id, owner, createdAt: 1, question: 'Which day?', options: ['Saturday', 'Sunday'], multiChoice: false, endsAt: 1000 };
@@ -46,6 +46,18 @@ describe('poll drafts and contract operations', () => {
   });
 });
 describe('proof reads and mock-only publishing', () => {
+  it('calculates credit estimates locally from a proof-read contract without publishing', async () => {
+    const { DataContract, ensureInitialized } = await import('@dashevo/evo-sdk');
+    await ensureInitialized();
+    const contract = new DataContract({ ownerId: owner, identityNonce: 1n, schemas: schema.documentSchemas, platformVersion: 14 });
+    mocks.contract.mockResolvedValue({ data: contract });
+    const source = pollSource(registry);
+    const [single, multi] = await Promise.all([source.estimate('vote', {}), source.estimate('multiVote', {})]);
+    expect(single).toBeGreaterThan(0);
+    expect(multi).toBeGreaterThan(0);
+    expect(mocks.contract).toHaveBeenCalledExactlyOnceWith(POLL_CONTRACT);
+    expect(mocks.query).not.toHaveBeenCalled();
+  });
   it('uses the existing document writer and reaches the write only against a mock', async () => {
     const signAndBroadcastDocument = vi.fn().mockResolvedValue({ id });
     const session = { identityId: owner, label: 'local mock', balance: async () => 0n, close() {}, signAndBroadcastDocument };
