@@ -79,7 +79,9 @@ export function normalizeLabel(name: string): string {
 export function contestAliases(label: string, spellings: readonly string[]): string[] {
   const out = new Set<string>();
   for (const s of spellings)
-    for (const v of [s, s.toLowerCase()]) if (v !== label && /^[A-Za-z0-9][A-Za-z0-9-]{1,61}[A-Za-z0-9]$/.test(v) && normalizeLabel(v) === label) out.add(v);
+    for (const v of [s, s.toLowerCase()])
+      // "index" would become names/index.html, which a static host serves for /names/ itself
+      if (v !== label && v.toLowerCase() !== 'index' && /^[A-Za-z0-9][A-Za-z0-9-]{1,61}[A-Za-z0-9]$/.test(v) && normalizeLabel(v) === label) out.add(v);
   return [...out];
 }
 

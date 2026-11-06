@@ -178,9 +178,9 @@ async function contests() {
  * contender's own spelling. `/names/Alice` and `/names/alice` then get an entry page of their own that names `/names/a11ce` as
  * canonical, instead of answering 404 until the app rewrites the address. Labels with no known spelling keep their normalized page only.
  */
-async function spellings(cs) {
+async function spellings(cs, out) {
   const sdk = await mainnetSdk();
-  const out = new Map(cs.map((c) => [c.label, []]));
+  for (const c of cs) out.set(c.label, []);
   const add = (label, s) => {
     if (typeof s === 'string' && out.has(label) && normalizeLabel(s) === label && !out.get(label).includes(s)) out.get(label).push(s);
   };
@@ -188,14 +188,17 @@ async function spellings(cs) {
   // a registered name per label at most (the index is unique), so a hundred labels fit one page
   for (let i = 0; i < labels.length; i += 100) {
     const chunk = labels.slice(i, i + 100);
-    const res = await sdk.documents.queryWithProof({
-      dataContractId: DPNS_CONTRACT_ID,
-      documentTypeName: DPNS_POLL.documentTypeName,
-      where: [['normalizedParentDomainName', '==', PARENT_DOMAIN], ['normalizedLabel', 'in', chunk]],
-      orderBy: [['normalizedLabel', 'asc']],
-      limit: 100,
-    });
-    for (const d of res.data.values()) {
+    // a page that fails costs its hundred labels their aliases, not the rest
+    const res = await sdk.documents
+      .queryWithProof({
+        dataContractId: DPNS_CONTRACT_ID,
+        documentTypeName: DPNS_POLL.documentTypeName,
+        where: [['normalizedParentDomainName', '==', PARENT_DOMAIN], ['normalizedLabel', 'in', chunk]],
+        orderBy: [['normalizedLabel', 'asc']],
+        limit: 100,
+      })
+      .catch((e) => (console.warn(`prerender: spellings of ${chunk[0]}…${chunk.at(-1)} not read (${e.message})`), null));
+    for (const d of res?.data.values() ?? []) {
       const j = d?.toJSON();
       add(j?.normalizedLabel, j?.label);
     }
@@ -206,8 +209,9 @@ async function spellings(cs) {
     const version = sdk.version();
     for (const c of openOnes) {
       const st = await sdk.voting.contestedResourceVoteStateWithProof({ ...DPNS_POLL, indexValues: [PARENT_DOMAIN, c.label], resultType: 'documentsAndVoteTally', limit: 100 }).catch(() => null);
-      // the leading contender's spelling first, as the page shows it
-      const contenders = Array.from(st?.data?.contenders ?? []).sort((a, b) => Number(b.voteTally ?? 0) - Number(a.voteTally ?? 0));
+      // the leading contender's spelling first, ties broken as the page breaks them (contests/source.ts), so the share title matches
+      const id = (x) => x.identityId?.toString() ?? '';
+      const contenders = Array.from(st?.data?.contenders ?? []).sort((a, b) => Number(b.voteTally ?? 0) - Number(a.voteTally ?? 0) || id(a).localeCompare(id(b)));
       for (const x of contenders) {
         if (!x.serializedDocument) continue;
         try {
@@ -218,7 +222,6 @@ async function spellings(cs) {
       }
     }
   }
-  return out;
 }
 
 /** Every masternode in the bridge's list (untrusted, like the proposals: the page reads its own data). */
@@ -362,8 +365,9 @@ const activeCount = ps.filter((p) => p.state === 'active').length;
 for (const m of ms) {
   await write(`/masternodes/${m.proTx}`, head(template, { route: `/masternodes/${m.proTx}`, record: `Masternode ${m.proTx.slice(0, 6)}…${m.proTx.slice(-6)}`, description: describeMasternode(m, activeCount) }));
 }
-// a failed read leaves each contest its normalized page only
-const spelled = new Map(cs.length ? await settle('name spellings', () => spellings(cs)) : []);
+// filled as it is read: a timeout keeps what was read, and a contest with none keeps its normalized page only
+const spelled = new Map();
+if (cs.length) await settle('name spellings', () => spellings(cs, spelled));
 let aliases = 0;
 for (const c of cs) {
   const known = spelled.get(c.label) ?? [];

@@ -44,6 +44,7 @@ describe('contest aliases', () => {
   it('drops spellings that are not this label or not a plain file name', () => {
     expect(contestAliases('a11ce', ['Alicia', 'al1ce/../x', '-alice', 'alice.dash', '../a11ce', 'ALICE '])).toEqual([]);
     expect(contestAliases('a11ce', [])).toEqual([]);
+    expect(contestAliases('1ndex', ['Index', 'index', 'iNDEX'])).toEqual([]);
   });
 });
 
