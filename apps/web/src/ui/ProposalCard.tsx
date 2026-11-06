@@ -35,12 +35,24 @@ export function cardMark(trust: Mark | null, check: CheckState | undefined): Mar
   return [trust, background].find((m): m is Mark => !!m && !(m.level === 'error' && onlyUnreached(m.reason))) ?? null;
 }
 
-/** "1 of 4 payments left", "one payment", "ended". */
+/** "1 of 4 payments left", "one-time payment", "no payments left". */
 export function paymentsLeft(s: PaymentSchedule | null): string | null {
   if (!s) return null;
   if (s.oneTime) return 'one-time payment';
   if (s.total === 0) return 'no payout in its window';
-  return s.remaining === 0 ? 'final payment made' : `${formatInt(s.remaining)} of ${formatInt(s.total)} payments left`;
+  return s.remaining === 0 ? 'no payments left' : `${formatInt(s.remaining)} of ${formatInt(s.total)} payments left`;
+}
+
+/**
+ * The payments line on a proposal page, phrased as the lists phrase it ("1 of 4 payments left"), with the payments the verified chain
+ * shows made ("· 3 paid") once it has been read. The chain's own count of what is still possible then decides "left", and the total is
+ * never less than what was paid plus what is left.
+ */
+export function paymentsLine(s: PaymentSchedule | null, proven: { made: string; count: number; left: number } | null): string | null {
+  if (!proven) return paymentsLeft(s);
+  const total = Math.max(s?.total ?? 0, proven.count + proven.left);
+  const left = proven.left === 0 ? 'no payments left' : `${formatInt(proven.left)} of ${formatInt(total)} payment${total === 1 ? '' : 's'} left`;
+  return `${left} · ${proven.made} paid`;
 }
 
 export function askText(amountDuffs: number, s: PaymentSchedule | null, params: GovParams): { amount: string; per: string } {

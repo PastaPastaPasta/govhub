@@ -25,6 +25,9 @@ export function formatDash(duffs: number, locale = 'en-US'): string {
   return `${formatDashAmount(duffs, locale)} ${unit}`;
 }
 
+/** "no payments left" → "No payments left": a list's phrase heading a field of its own. */
+export const capitalize = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
+
 export function formatInt(n: number, locale = 'en-US'): string {
   return nf(locale, 0, 0).format(n);
 }
