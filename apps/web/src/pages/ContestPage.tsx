@@ -55,7 +55,7 @@ function Missing({ label, children }: { label: string; children: string }) {
     <section className="page-narrow" data-testid="contest-missing">
       <h1 className="dh-page-header__title">No contest for {label}.dash</h1>
       <p>
-        {children} <Link to="/names">All name contests</Link>
+        {children} <Link to="/names" className="dh-link">All name contests</Link>
       </p>
     </section>
   );
@@ -181,7 +181,7 @@ function ContestView({ label }: { label: string }) {
     return (
       <article className="proposal contest" aria-busy="true">
         <p className="crumbs dh-crumbs">
-          <Link to="/names">‹ Name contests</Link>
+          <Link to="/names" className="dh-link dh-link--go">‹ Name contests</Link>
         </p>
         <header className="p-hero dh-page-header">
           <div className="p-title dh-page-header__text">
@@ -209,7 +209,7 @@ function ContestView({ label }: { label: string }) {
   return (
     <article className="proposal contest" data-testid="contest-page">
       <p className="crumbs dh-crumbs">
-        <Link to="/names">‹ Name contests</Link>
+        <Link to="/names" className="dh-link dh-link--go">‹ Name contests</Link>
       </p>
       <header className="p-hero dh-page-header">
         <div className="p-title dh-page-header__text">
@@ -286,7 +286,7 @@ function ContestView({ label }: { label: string }) {
               </div>
             </dl>
             <p className="small muted">{s.height !== null ? `Read from Dash Platform with proofs, at Platform block ${formatInt(s.height)}.` : 'Read from Dash Platform with proofs.'}</p>
-            <a className="small" href={window.dashhq?.href('explorer', '/dpns?name=' + encodeURIComponent(label))} data-testid="contest-explorer">
+            <a className="small dh-link dh-link--go" href={window.dashhq?.href('explorer', '/dpns?name=' + encodeURIComponent(label))} data-testid="contest-explorer">
               This name in Explorer →
             </a>
           </section>
@@ -330,7 +330,7 @@ function ContenderRow({ label, c, rank, total, won, dpns, namesRead, profile }: 
           )}
           {/* who is asking, when the identity has no name to show: say so, and where to look it up */}
           {!dpns && namesRead && 'no other username yet · '}
-          <a href={window.dashhq?.href('explorer', '/identity?id=' + encodeURIComponent(c.identityId))}>its identity in Explorer</a>
+          <a href={window.dashhq?.href('explorer', '/identity?id=' + encodeURIComponent(c.identityId))} className="dh-link">its identity in Explorer</a>
         </span>
         <ContestVoters label={label} identityId={c.identityId} />
       </div>

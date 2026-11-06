@@ -302,7 +302,7 @@ export function liveSource(registry: Registry): DataSource {
       const seen = new Set(fromPlatform.map((p) => p.govHash));
       const b = await firstBridge((x) => x.proposals());
       for (const p of b?.value ?? []) if (p.endEpoch > now && !seen.has(p.govHash)) out.push({ value: p, prov: reported(b!.bridge, platformError ? 'Platform could not be read' : 'not yet published on Platform') });
-      if (platformError && !b) throw platformError;
+      if (platformError && out.length === 0) throw platformError;
       return out;
     },
 

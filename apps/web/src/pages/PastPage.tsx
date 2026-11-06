@@ -328,7 +328,7 @@ function SbLines({ entry, names }: { entry: LedgerEntry; names: ReadonlyMap<stri
                   {l.candidates.map((c, i) => (
                     <span key={c.govHash}>
                       {i > 0 && ' or '}
-                      <Link to={proposalHref(c as Proposal, names)}><Slug name={c.name} /></Link>
+                      <Link to={proposalHref(c as Proposal, names)} className="dh-link"><Slug name={c.name} /></Link>
                     </span>
                   ))}
                   <span className="small muted"> (same payee and amount)</span>
@@ -340,7 +340,7 @@ function SbLines({ entry, names }: { entry: LedgerEntry; names: ReadonlyMap<stri
                     {l.samePayee ? (
                       <>
                         {' '}
-                        not on record; same payee as <Link to={proposalHref(l.samePayee as Proposal, names)}><Slug name={l.samePayee.name} /></Link>
+                        not on record; same payee as <Link to={proposalHref(l.samePayee as Proposal, names)} className="dh-link"><Slug name={l.samePayee.name} /></Link>
                       </>
                     ) : (
                       ' not on record'
@@ -428,7 +428,7 @@ function ProposalsView({ past, ledger, known }: { past: ReturnType<typeof usePas
       )}
       {!past.loading && !past.error && past.items.length === 0 && (
         <p className="empty dh-empty">
-          No past proposals published yet. Proposals move here once their last payment date has passed. <Link to="/">See the active ones</Link>
+          No past proposals published yet. Proposals move here once their last payment date has passed. <Link to="/" className="dh-link">See the active ones</Link>
         </p>
       )}
       {rows.length > 0 && (

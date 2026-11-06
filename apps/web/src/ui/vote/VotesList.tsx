@@ -58,7 +58,7 @@ function VoteRow({ v, name, now }: { v: WatchedVote; name: string; now: number }
   return (
     <li className={`vrow vrow-${view.tone}`} data-testid="watched-row" data-status={v.status}>
       <div className="vrow-main">
-        <a className="vrow-name" href={window.dashhq?.href('radar', '/mn/' + v.proTxHash, { network: k.coreNetwork })}>{name}</a>
+        <a className="vrow-name dh-link" href={window.dashhq?.href('radar', '/mn/' + v.proTxHash, { network: k.coreNetwork })}>{name}</a>
         <OutcomeChip outcome={v.outcome} />
         <Badge tone={view.tone} testId="watched-badge">
           {view.badge}
@@ -118,7 +118,7 @@ export function VotesList({ title = 'Votes', showWins = true }: { title?: string
           {[...groups].map(([h, list]) => (
             <section key={h} className="vgroup" aria-label={names.get(h) ?? `Proposal ${shortHash(h, 6)}`}>
               <h3 className="vgroup-title">
-                <Link to={`/p/h/${h}`}>{names.get(h) ?? <span className="mono-ish">{shortHash(h, 8)}</span>}</Link>
+                <Link to={`/p/h/${h}`} className="dh-link">{names.get(h) ?? <span className="mono-ish">{shortHash(h, 8)}</span>}</Link>
               </h3>
               <ul className="vrows">
                 {list.map((v) => (

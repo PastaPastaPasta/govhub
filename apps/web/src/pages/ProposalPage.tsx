@@ -71,7 +71,7 @@ export function ProposalByName() {
       <ul className="chooser">
         {list.map((s) => (
           <li key={s.value.govHash}>
-            <Link to={`/p/h/${s.value.govHash}`}>
+            <Link to={`/p/h/${s.value.govHash}`} className="dh-link">
               {formatDash(s.value.paymentAmount)}, {formatDate(s.value.startEpoch)} to {formatDate(s.value.endEpoch)}
             </Link>{' '}
             <span className="mono-ish muted small">{shortHash(s.value.govHash, 10)}</span>
@@ -143,7 +143,7 @@ function EvidenceLine({ agg, onRetry }: { agg: Aggregate; onRetry(): void }) {
 function Purpose({ page, hasPost, url, host }: { page: Found; hasPost: boolean; url: string; host: string | null }) {
   const below = hasPost ? (
     <p className="small" data-testid="p-purpose-post">
-      The owner has posted a description here: <a href="#about-title">read it below</a>.
+      The owner has posted a description here: <a href="#about-title" className="dh-link">read it below</a>.
     </p>
   ) : null;
   if (page) {
@@ -160,7 +160,7 @@ function Purpose({ page, hasPost, url, host }: { page: Found; hasPost: boolean; 
         <p className="small muted p-purpose-from" data-testid="owner-page">
           {text ? 'The owner’s own words' : 'The title is the owner’s'}, from their page on {page.page.host} (read {formatDate(page.fetchedAt)}). Nobody has checked
           them.{' '}
-          <a href={page.page.url} target="_blank" rel="noopener noreferrer nofollow ugc" className="ext" data-testid="owner-page-link">
+          <a href={page.page.url} target="_blank" rel="noopener noreferrer nofollow ugc" className="ext dh-link" data-testid="owner-page-link">
             Read it all on {page.page.host}
             <span className="visually-hidden"> (opens another site)</span>
           </a>
@@ -175,7 +175,7 @@ function Purpose({ page, hasPost, url, host }: { page: Found; hasPost: boolean; 
       {host ? (
         <>
           The owner hasn’t said here what it funds; it is on their own page:{' '}
-          <a href={url} target="_blank" rel="noopener noreferrer nofollow ugc" className="ext">
+          <a href={url} target="_blank" rel="noopener noreferrer nofollow ugc" className="ext dh-link">
             {linkText(url, host)}
             <span className="visually-hidden"> (opens another site)</span>
           </a>
@@ -277,11 +277,11 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
     <article className="proposal">
       <p className="crumbs dh-crumbs">
         {mn ? (
-          <Link to={`/masternodes/${mn}`} data-testid="crumb-mn">
+          <Link to={`/masternodes/${mn}`} data-testid="crumb-mn" className="dh-link dh-link--go">
             ‹ Masternode {shortHash(mn, 6)}’s votes
           </Link>
         ) : (
-          <Link to={active ? '/' : '/past'}>‹ {active ? 'Active proposals' : 'Past proposals'}</Link>
+          <Link to={active ? '/' : '/past'} className="dh-link dh-link--go">‹ {active ? 'Active proposals' : 'Past proposals'}</Link>
         )}
       </p>
       {check.status === 'failed' && (
@@ -463,7 +463,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
                     {resolved ? (
                       <>
                         <b>{host} is a link shortener.</b> When this site was built ({formatDate(resolved.at)}) it led to{' '}
-                        <a href={resolved.to} target="_blank" rel="noopener noreferrer nofollow ugc" className="ext break" data-testid="about-short-to">
+                        <a href={resolved.to} target="_blank" rel="noopener noreferrer nofollow ugc" className="ext break dh-link" data-testid="about-short-to">
                           {resolved.to}
                           <span className="visually-hidden"> (opens another site)</span>
                         </a>
@@ -536,7 +536,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
                 <div>
                   <dt>Website</dt>
                   <dd>
-                    <a href={p.url} target="_blank" rel="noopener noreferrer nofollow ugc" className="ext">
+                    <a href={p.url} target="_blank" rel="noopener noreferrer nofollow ugc" className="ext dh-link">
                       {host}
                     </a>
                     {resolved && <span className="small muted"> leading to {urlHost(resolved.to)}</span>}

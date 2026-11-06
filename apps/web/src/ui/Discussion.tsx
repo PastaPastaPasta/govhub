@@ -300,7 +300,7 @@ export function Discussion({ govHash, featured }: { govHash: string; featured: F
       {focusMissing && (
         <p className="notice-warn dh-notice dh-notice--warn small" role="status" data-testid="focus-missing">
           The linked comment isn't in this discussion: it may have been retracted, or this node doesn't have it yet.{' '}
-          <Link to={{ search: '' }}>Show the whole discussion</Link>
+          <Link to={{ search: '' }} className="dh-link">Show the whole discussion</Link>
         </p>
       )}
       {reactions.error && <p className="error small">Scores could not be read: {reactions.error}</p>}

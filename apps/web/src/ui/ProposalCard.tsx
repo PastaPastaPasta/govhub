@@ -83,7 +83,7 @@ export function ProposalCard({
         {/* h2: the list's heading is the page's h1 (a skipped level breaks heading navigation). One shape for every card: the owner's
             title quoted (or the name as words), the exact name and payee, the owner's summary quoted, who is named as owner. */}
         <h2 className="prow-title">
-          <Link to={href}>{page?.title ? <bdi>“{page.title}”</bdi> : words}</Link>
+          <Link to={href} className="dh-link">{page?.title ? <bdi>“{page.title}”</bdi> : words}</Link>
           {mark && <TrustBadge size="s" level={mark.level} reason={mark.reason} testId="card-trust" />}
         </h2>
         <p className="prow-slug small" data-testid="card-slug">
@@ -101,7 +101,7 @@ export function ProposalCard({
           <p className="prow-owner">
             <Avatar id={urlOwner} profile={ownerProfile} size={18} />
             <span title={`Identity ${urlOwner}, named in the proposal URL by its creator; the proposal page shows whether it accepted`}>
-              <a href={window.dashhq?.href('explorer', '/identity?id=' + encodeURIComponent(urlOwner))}><bdi>{ownerProfile && authorLabel(urlOwner, ownerProfile).name ? authorText(urlOwner, ownerProfile) : shortHash(urlOwner, 5)}</bdi></a> <span className="muted small">named by the creator</span>
+              <a href={window.dashhq?.href('explorer', '/identity?id=' + encodeURIComponent(urlOwner))} className="dh-link"><bdi>{ownerProfile && authorLabel(urlOwner, ownerProfile).name ? authorText(urlOwner, ownerProfile) : shortHash(urlOwner, 5)}</bdi></a> <span className="muted small">named by the creator</span>
             </span>
           </p>
         ) : null}

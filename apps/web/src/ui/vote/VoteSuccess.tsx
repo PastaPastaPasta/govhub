@@ -129,7 +129,7 @@ export function VoteSuccess({ vote, name, proposalName, onRecount }: { vote: Wat
               Core command <CopyButton text={coreCmd} label="Copy the gobject getcurrentvotes command" />
             </span>
             {k.bridgeBase && (
-              <a className="small" href={`${k.bridgeBase}/v1/proposals/${vote.govHash}/votes`} target="_blank" rel="noopener noreferrer">
+              <a className="small dh-link" href={`${k.bridgeBase}/v1/proposals/${vote.govHash}/votes`} target="_blank" rel="noopener noreferrer">
                 Open in the bridge API
               </a>
             )}

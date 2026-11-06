@@ -12,7 +12,7 @@ export const DONATION_ADDRESS = 'XcLkMQensjHhr5r9SAUVm4meh2HFKaeAXG';
 
 function Ext({ href, children }: { href: string; children: React.ReactNode }) {
   return (
-    <a href={href} target="_blank" rel="noopener noreferrer">
+    <a href={href} target="_blank" rel="noopener noreferrer" className="dh-link">
       {children}
     </a>
   );
@@ -40,7 +40,7 @@ export function AboutPage() {
       <p>
         It can’t notice something that’s missing. Our servers, or anyone else’s, could leave out a proposal, leave out some votes, or show a masternode’s older
         vote instead of its latest one. Your browser can only count the votes it was given. If that matters to you, compare with a server you run yourself or
-        with your own Dash Core node. <Link to="/about/trust">What we can and can’t lie about</Link> goes through this for each of our servers.
+        with your own Dash Core node. <Link to="/about/trust" className="dh-link">What we can and can’t lie about</Link> goes through this for each of our servers.
       </p>
 
       <h2>What you can do here</h2>
@@ -71,7 +71,7 @@ export function AboutPage() {
       </ul>
       <p>
         <i>Verified</i> covers what your browser was given. It doesn’t mean nothing was left out. If any step had to take someone’s word for it, the badge says so. Click the badge on a proposal to see each step. The full explanation is on{' '}
-        <Link to="/about/verification">how Governance checks what it shows</Link>.
+        <Link to="/about/verification" className="dh-link">how Governance checks what it shows</Link>.
       </p>
 
       <h2>Where the data lives</h2>
@@ -88,7 +88,7 @@ export function AboutPage() {
       <h2>Name contests</h2>
       <p>
         Some short Dash usernames go to a masternode vote: when someone registers one, others can ask for the same name for a week, and masternodes decide
-        who gets it or lock it so nobody does. The <Link to="/names">Name contests</Link> page lists the names being voted on now, and the ones decided before. Each has a
+        who gets it or lock it so nobody does. The <Link to="/names" className="dh-link">Name contests</Link> page lists the names being voted on now, and the ones decided before. Each has a
         discussion, as a proposal does.
       </p>
       <p>
@@ -110,7 +110,7 @@ export function AboutPage() {
       <h2>Networks</h2>
       <p>
         The network menu in the bar switches between Mainnet and Testnet, and the URL carries your choice. Mainnet is the live network, where votes count and
-        DASH has real value. Testnet is for practice, with test DASH. Advanced profiles are in <Link to="/settings#network">Network settings</Link>.
+        DASH has real value. Testnet is for practice, with test DASH. Advanced profiles are in <Link to="/settings#network" className="dh-link">Network settings</Link>.
         The development profile reads real Mainnet proposals through Testnet Platform; its name contests and accounts are on Testnet. A notice stays visible
         whenever Core and Platform use different networks.
       </p>
@@ -118,7 +118,7 @@ export function AboutPage() {
       <h2>Using other servers</h2>
       <p>
         Governance works with servers that anyone can run: the ones that fetch governance data, send votes to the network, or hand out badges. You can switch to
-        servers you run or trust in <Link to="/settings">Settings</Link>, and share your settings as a link. To run your own, see{' '}
+        servers you run or trust in <Link to="/settings" className="dh-link">Settings</Link>, and share your settings as a link. To run your own, see{' '}
         <Ext href={SELF_HOSTING_DOC_URL}>running your own servers</Ext>.
       </p>
 
@@ -137,7 +137,7 @@ export function AboutPage() {
         pays for it:
       </p>
       <p className="donate">
-        <a href={`dash:${DONATION_ADDRESS}`} className="mono-ish" data-testid="donation-address">
+        <a href={`dash:${DONATION_ADDRESS}`} className="mono-ish dh-link" data-testid="donation-address">
           {DONATION_ADDRESS}
         </a>
       </p>

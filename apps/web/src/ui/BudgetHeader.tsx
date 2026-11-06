@@ -161,7 +161,7 @@ export function BudgetHeader() {
         </div>
       </dl>
       <p className="budget-more">
-        <Link to="/treasury" data-testid="budget-treasury">
+        <Link to="/treasury" data-testid="budget-treasury" className="dh-link dh-link--go">
           What this budget pays for, and how it compares →
         </Link>
       </p>

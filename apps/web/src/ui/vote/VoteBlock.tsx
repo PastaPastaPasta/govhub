@@ -132,10 +132,10 @@ function MasternodeLine({ ctx }: { ctx: MnContext }) {
       {ctx.lookup.kind === 'absent' && <p className="small muted">It isn’t in the {network} masternode list the governance bridge reports, so it can’t vote here.</p>}
       {ctx.lookup.kind === 'error' && <p className="small muted">Its details couldn’t be read just now ({ctx.lookup.message}); you can still vote below.</p>}
       <p className="small pvote-mn-links">
-        <Link to={`/masternodes/${ctx.proTx}`} data-testid="vote-mn-back">
+        <Link to={`/masternodes/${ctx.proTx}`} data-testid="vote-mn-back" className="dh-link dh-link--go">
           ‹ Its votes on every proposal
         </Link>
-        <Link to="." relative="path" className="muted" data-testid="vote-mn-clear">
+        <Link to="." relative="path" className="muted dh-link" data-testid="vote-mn-clear">
           Vote with another masternode
         </Link>
       </p>
@@ -193,7 +193,7 @@ function PasteKey({ ctx }: { ctx: MnContext | null }) {
       )}
       {ctx && guest.status === 'ready' && !guest.owned.some((m) => m.proTxHash.toLowerCase() === ctx.proTx) && (
         <p className="vwarn small" role="status">
-          That key votes for other masternodes, not {shortHash(ctx.proTx, 6)}. <Link to=".">Vote with those instead</Link>, or paste {shortHash(ctx.proTx, 6)}’s voting key.
+          That key votes for other masternodes, not {shortHash(ctx.proTx, 6)}. <Link to="." className="dh-link">Vote with those instead</Link>, or paste {shortHash(ctx.proTx, 6)}’s voting key.
         </p>
       )}
     </div>

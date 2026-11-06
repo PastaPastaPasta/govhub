@@ -83,7 +83,7 @@ export function VerificationPage() {
         the owner’s signed claim, and is not part of the badge.
       </p>
       <p>
-        <Link to="/about/trust">What we can and can’t lie about</Link>: every server Governance uses, and what each could get wrong or hide.
+        <Link to="/about/trust" className="dh-link">What we can and can’t lie about</Link>: every server Governance uses, and what each could get wrong or hide.
       </p>
 
       <h2>Your own votes</h2>
@@ -112,7 +112,7 @@ export function VerificationPage() {
         <p className="small">
           Proposals, tallies, comments and profiles live on Dash Platform, read with proofs. Transactions, blocks, ChainLocks and the masternode list come from
           DAPI evonodes. Signed votes come from a bridge, a Dash Core node that publishes governance data, because DAPI has no governance calls. Every one of
-          these can be replaced in <Link to="/settings">Settings</Link>.
+          these can be replaced in <Link to="/settings" className="dh-link">Settings</Link>.
         </p>
       </details>
     </article>

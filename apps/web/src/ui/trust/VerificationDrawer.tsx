@@ -543,7 +543,7 @@ function YourselfCommands({ govHash, bridgeBase }: { govHash: string; bridgeBase
       {bridgeBase && (
         <p className="small">
           The signed votes this recount used, as JSON:{' '}
-          <a href={`${bridgeBase}/v1/proposals/${govHash}/votes`} target="_blank" rel="noopener noreferrer">
+          <a href={`${bridgeBase}/v1/proposals/${govHash}/votes`} target="_blank" rel="noopener noreferrer" className="dh-link">
             {bridgeBase.replace(/^https?:\/\//, '')}/v1/proposals/…/votes
           </a>
         </p>
@@ -654,7 +654,7 @@ export function VerificationDrawer({ sp, trust, cycle, open, onClose }: { sp: So
         <summary>Check the votes yourself</summary>
         {!bridge ? (
           <p className="muted small">
-            Signed votes come from a bridge, because DAPI has no governance calls. <Link to="/settings">Add a bridge in Settings</Link> to recount them.
+            Signed votes come from a bridge, because DAPI has no governance calls. <Link to="/settings" className="dh-link">Add a bridge in Settings</Link> to recount them.
           </p>
         ) : trust.votes.result ? (
           <VotesResult done={trust.votes.result} fixtures={demo} proven={!demo && byId(a.components, 'votes').state.status === 'proven'} />
@@ -679,11 +679,11 @@ export function VerificationDrawer({ sp, trust, cycle, open, onClose }: { sp: So
         </p>
       </section>
       <p className="small">
-        <Link to="/about/verification" onClick={onClose}>
+        <Link to="/about/verification" onClick={onClose} className="dh-link">
           About verification: what each state means
         </Link>
         {' · '}
-        <Link to="/about/trust" onClick={onClose} data-testid="trust-page-link">
+        <Link to="/about/trust" onClick={onClose} data-testid="trust-page-link" className="dh-link">
           What we can and can't lie about
         </Link>
       </p>

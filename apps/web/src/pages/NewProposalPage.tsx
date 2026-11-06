@@ -177,7 +177,7 @@ function Wizard({ initial, services, onChange }: { initial: ProposalDraft; servi
   return (
     <section className="page-narrow pw" aria-labelledby="pw-title" data-testid="p-wizard" data-stage={stage}>
       <p className="small">
-        <Link to="/create">← All proposals in progress</Link>
+        <Link to="/create" className="dh-link dh-link--go">← All proposals in progress</Link>
       </p>
       <h1 className="dh-page-header__title" id="pw-title">{draft.lock?.name ?? (draft.inputs.name || 'Create a proposal')}</h1>
       {services.demo && <p className="notice-box dh-notice dh-notice--info small">Demo: payments and the relay are simulated, nothing is sent anywhere.</p>}

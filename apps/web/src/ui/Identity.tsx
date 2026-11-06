@@ -53,7 +53,7 @@ export function AuthorName({ id, profile, dpns }: { id: string; profile?: Profil
   );
   return (
     <span className="author">
-      <a className="author-name" href={window.dashhq?.href('explorer', '/identity?id=' + encodeURIComponent(id))}>
+      <a className="author-name dh-link" href={window.dashhq?.href('explorer', '/identity?id=' + encodeURIComponent(id))}>
         {a.dpns ? (
           <bdi className="author-dpns-name" title="DPNS username, proven by Platform">
             {a.dpns}

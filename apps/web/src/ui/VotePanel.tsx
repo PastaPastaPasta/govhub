@@ -253,7 +253,7 @@ export function VoteComposer({ proposals, onVerify, onlyMn }: { proposals: Propo
           {proposals.map((p) => (
             <li key={p.govHash} className="vprop" data-testid="vote-proposal-row">
               <div className="vprop-name">
-                <Link to={`/p/h/${p.govHash}`}>{p.name}</Link>
+                <Link to={`/p/h/${p.govHash}`} className="dh-link">{p.name}</Link>
                 <span className="small muted">{loading ? 'reading current votes…' : `Now: ${nowLine(p.govHash) || 'no masternodes selected'}`}</span>
               </div>
               <OutcomePicker size="s" clearable label={`Vote on ${p.name}`} value={choice[p.govHash] ?? 0} onChange={(o) => setChoice({ ...choice, [p.govHash]: o })} testId="vote-choice" />
@@ -288,7 +288,7 @@ export function VoteComposer({ proposals, onVerify, onlyMn }: { proposals: Propo
                   <span className="vmn-name">{mnName(m, labels)}</span>
                   {m.type === 'evo' && <span className="chip vmn-evo">Evonode ×4</span>}
                 </label>
-                <a className="small" href={globalThis.window.dashhq?.href('radar', '/mn/' + m.proTxHash, { network: k.coreNetwork })}>View in Radar</a>
+                <a className="small dh-link" href={globalThis.window.dashhq?.href('radar', '/mn/' + m.proTxHash, { network: k.coreNetwork })}>View in Radar</a>
                 {!multi && (
                   <div className="vmn-state">
                     <span className="vmn-cur" data-testid="current-vote">

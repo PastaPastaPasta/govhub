@@ -270,7 +270,7 @@ function AddMasternodes({ step, setStep, b, savedLocked, onAdded }: { step: Flow
             <input className="dh-input" type="password" value={wif} onChange={(e) => setWif(e.target.value)} autoComplete="off" spellCheck={false} data-testid="flow-key-input" aria-describedby="flow-key-warn" />
           </label>
           <p className="kr-inline-warn small" id="flow-key-warn">
-            Only the voting key. Never an owner, payout or collateral key: a voting key can only vote. <a href="https://dashhq.org/identity/#governance" data-family="home" data-path="/identity/#governance">How voting keys are kept →</a>
+            Only the voting key. Never an owner, payout or collateral key: a voting key can only vote. <a href="https://dashhq.org/identity/#governance" data-family="home" data-path="/identity/#governance" className="dh-link dh-link--go">How voting keys are kept →</a>
           </p>
           <label className="kr-field dh-field__label">
             <span>Name (optional)</span>
@@ -419,7 +419,7 @@ function AddKey({ onClose }: { onClose(): void }) {
           </label>
         </div>
         <p className="kr-inline-warn small" id="addkey-warn">
-          Only the voting key. Never an owner, payout or collateral key: a voting key can only vote. <a href="https://dashhq.org/identity/#governance" data-family="home" data-path="/identity/#governance">How voting keys are kept →</a>
+          Only the voting key. Never an owner, payout or collateral key: a voting key can only vote. <a href="https://dashhq.org/identity/#governance" data-family="home" data-path="/identity/#governance" className="dh-link dh-link--go">How voting keys are kept →</a>
         </p>
         {k.demo && <p className="small muted">The demo keyring has its keys already.</p>}
         <div className="kr-row">
@@ -500,7 +500,7 @@ function MnRow({ m, label }: { m: OwnedMasternode; label: string }) {
           <dashhq-hash value={m.proTxHash} label="ProTx hash" href={window.dashhq?.href('radar', '/mn/' + m.proTxHash, { network: k.coreNetwork })}>{m.proTxHash}</dashhq-hash>
         </span>
         <span className="kr-fact">
-          <Link to={`/masternodes/${m.proTxHash.toLowerCase()}`} data-testid="mn-votes-link">
+          <Link to={`/masternodes/${m.proTxHash.toLowerCase()}`} data-testid="mn-votes-link" className="dh-link">
             Its votes
           </Link>
         </span>
@@ -898,12 +898,12 @@ function WaysToVote() {
               : 'the page gives the Dash Core signmessage command, or the text for a hardware wallet.'}{' '}
             Or paste the voting key there: it stays in that tab’s memory and is forgotten after 15 minutes idle.
           </p>
-          <Link to="/">Choose a proposal</Link>
+          <Link to="/" className="dh-link">Choose a proposal</Link>
         </li>
         <li>
           <h3>Name contests, without an account</h3>
           <p>Paste a voting key on a contest's page. It stays in this tab's memory, signs only votes, and is wiped after 15 minutes idle.</p>
-          <Link to="/names">Open name contests</Link>
+          <Link to="/names" className="dh-link">Open name contests</Link>
         </li>
       </ol>
       <p className="small muted">Masternode owners with an account can also show an MN badge next to their name in discussions.</p>

@@ -54,10 +54,10 @@ export function TrustPage() {
       </ul>
       <p>
         The details, with every server and what it could do, are in{' '}
-        <a href={TRUST_DOC_URL} target="_blank" rel="noopener noreferrer" data-testid="trust-doc-link">
+        <a href={TRUST_DOC_URL} target="_blank" rel="noopener noreferrer" data-testid="trust-doc-link" className="dh-link">
           the trust model on GitHub
         </a>
-        . What each badge state means is on <Link to="/about/verification">How Governance checks what it shows</Link>.
+        . What each badge state means is on <Link to="/about/verification" className="dh-link">How Governance checks what it shows</Link>.
       </p>
     </article>
   );

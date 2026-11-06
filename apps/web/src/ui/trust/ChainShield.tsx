@@ -210,11 +210,11 @@ export function ChainShield({ line: withLine = false }: { line?: boolean }) {
           against this chain.
         </p>
         <p className="small">
-          <Link to="/settings#network" onClick={() => setOpen(false)}>
+          <Link to="/settings#network" onClick={() => setOpen(false)} className="dh-link">
             Change network
           </Link>
           {' or '}
-          <Link to="/about/verification" onClick={() => setOpen(false)}>
+          <Link to="/about/verification" onClick={() => setOpen(false)} className="dh-link">
             read how verification works
           </Link>
         </p>

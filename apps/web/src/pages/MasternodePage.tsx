@@ -54,7 +54,7 @@ export function MasternodePage() {
       <section className="page-narrow">
         <h1 className="dh-page-header__title">Not a masternode</h1>
         <p>
-          A masternode's address here is its 64-character ProTx hash. <Link to="/masternodes">My masternodes</Link>
+          A masternode's address here is its 64-character ProTx hash. <Link to="/masternodes" className="dh-link">My masternodes</Link>
         </p>
       </section>
     );
@@ -137,11 +137,11 @@ function MasternodeVotes({ proTx }: { proTx: string }) {
     <section className="mnv-page" aria-labelledby="mnv-title" data-testid="mn-page">
       <p className="crumbs dh-crumbs" data-testid="mn-crumbs">
         {fromRadar && radar ? (
-          <a href={radar}>‹ Back to Radar</a>
+          <a href={radar} className="dh-link dh-link--go">‹ Back to Radar</a>
         ) : owned ? (
-          <Link to="/masternodes">‹ My masternodes</Link>
+          <Link to="/masternodes" className="dh-link dh-link--go">‹ My masternodes</Link>
         ) : (
-          <Link to="/">‹ Active proposals</Link>
+          <Link to="/" className="dh-link dh-link--go">‹ Active proposals</Link>
         )}
       </p>
       <header className="mnv-head dh-page-header">
@@ -165,7 +165,7 @@ function MasternodeVotes({ proTx }: { proTx: string }) {
           ) : null}
           {radarHere && (
             <span>
-              <a href={radarHere}>Its record in Radar{absent && elsewhere === 'found' && other ? ` (${other.label})` : ''} →</a>
+              <a href={radarHere} className="dh-link dh-link--go">Its record in Radar{absent && elsewhere === 'found' && other ? ` (${other.label})` : ''} →</a>
             </span>
           )}
         </p>
@@ -301,15 +301,15 @@ function WaysToVoteLine() {
           <button type="button" className="linkish dh-btn dh-btn--link" onClick={openSignIn}>
             sign in
           </button>{' '}
-          and add it (<Link to="/masternodes">ways to vote</Link>).
+          and add it (<Link to="/masternodes" className="dh-link">ways to vote</Link>).
         </>
       ) : k.status === 'open' ? (
         <>
-          <b>Is this your masternode?</b> <Link to="/masternodes">Add its voting key</Link> to vote from your keyring, or use any row's <i>Vote</i> to sign offline.
+          <b>Is this your masternode?</b> <Link to="/masternodes" className="dh-link">Add its voting key</Link> to vote from your keyring, or use any row's <i>Vote</i> to sign offline.
         </>
       ) : (
         <>
-          <b>Is this your masternode?</b> <Link to="/masternodes">Unlock your keyring</Link> to vote from it, or use any row's <i>Vote</i> to sign offline.
+          <b>Is this your masternode?</b> <Link to="/masternodes" className="dh-link">Unlock your keyring</Link> to vote from it, or use any row's <i>Vote</i> to sign offline.
         </>
       )}
     </p>

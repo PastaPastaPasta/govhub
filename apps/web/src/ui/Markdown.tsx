@@ -34,7 +34,7 @@ function Inline({ nodes }: { nodes: MdInline[] }): ReactNode {
         return <br key={i} />;
       case 'link':
         return n.href ? (
-          <a key={i} href={n.href} target="_blank" rel="noopener noreferrer nofollow ugc" className="md-link" title={n.href}>
+          <a key={i} href={n.href} target="_blank" rel="noopener noreferrer nofollow ugc" className="md-link dh-link dh-link--go" title={n.href}>
             <Inline nodes={n.c} />
             {n.realHost && <span className="md-realhost" data-testid="link-real-host"> (→ {n.realHost})</span>}
           </a>
