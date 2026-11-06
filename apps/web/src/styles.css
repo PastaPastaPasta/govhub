@@ -2791,15 +2791,14 @@ dashhq-hash { vertical-align: middle; max-width: 100%; }
 .stage-pending .stage-mark { border-color: var(--dh-brand); border-top-color: transparent; animation: dh-rot 0.9s linear infinite; }
 @media (prefers-reduced-motion: reduce) { .stage-pending .stage-mark { animation: none; } }
 
-/* About a proposal: what the owner says beside what the network records */
-.p-claims { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; align-items: start; }
+/* About a proposal: what the owner says, then what the network records at full width (its address and link on one line each) */
+.p-claims { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
 .p-claim { display: grid; gap: 8px; align-content: start; }
 .p-claim h3 { margin: 0; font-size: 15px; font-weight: 620; }
 .p-claim p { margin: 0; }
 .p-recorded { padding: 12px 14px; border: 1px solid var(--dh-line); border-radius: var(--dh-r2); background: var(--dh-sunken); }
 .p-recorded .kv { margin: 0; }
 .p-short { padding: 8px 10px; border-inline-start: 3px solid var(--dh-line-2); background: var(--dh-surface); }
-@media (max-width: 760px) { .p-claims { grid-template-columns: minmax(0, 1fr); } }
 
 }
 
