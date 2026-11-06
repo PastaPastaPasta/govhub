@@ -51,6 +51,8 @@ export function paymentsLeft(s: PaymentSchedule | null): string | null {
 export function paymentsLine(s: PaymentSchedule | null, proven: { made: string; count: number; left: number } | null): string | null {
   if (!proven) return paymentsLeft(s);
   const fits = !!s && !s.oneTime && proven.count + proven.left <= s.total;
+  // nothing paid yet and every payment still ahead: the lists' phrase says it all
+  if (fits && proven.count === 0 && proven.left === s!.total) return paymentsLeft(s);
   const left = proven.left === 0 ? 'no payments left' : fits ? `${formatInt(proven.left)} of ${formatInt(s!.total)} payments left` : `${formatInt(proven.left)} more possible`;
   return `${left} · ${proven.made} paid`;
 }

@@ -78,6 +78,8 @@ describe('view model', () => {
     expect(paymentsLine({ total: 4, remaining: 1, oneTime: false }, null)).toBe('1 of 4 payments left');
     expect(paymentsLine({ total: 4, remaining: 1, oneTime: false }, { made: '3', count: 3, left: 1 })).toBe('1 of 4 payments left · 3 paid');
     expect(paymentsLine({ total: 4, remaining: 1, oneTime: false }, { made: '2', count: 2, left: 1 })).toBe('1 of 4 payments left · 2 paid');
+    expect(paymentsLine({ total: 2, remaining: 2, oneTime: false }, { made: '0', count: 0, left: 2 })).toBe('2 of 2 payments left');
+    expect(paymentsLine({ total: 2, remaining: 1, oneTime: false }, { made: '0', count: 0, left: 1 })).toBe('1 of 2 payments left · 0 paid');
     expect(paymentsLine({ total: 1, remaining: 0, oneTime: true }, { made: '1', count: 1, left: 1 })).toBe('1 more possible · 1 paid');
     expect(paymentsLine({ total: 4, remaining: 2, oneTime: false }, { made: '3', count: 3, left: 2 })).toBe('2 more possible · 3 paid');
     expect(paymentsLine({ total: 3, remaining: 0, oneTime: false }, { made: '3 or more', count: 3, left: 0 })).toBe('no payments left · 3 or more paid');

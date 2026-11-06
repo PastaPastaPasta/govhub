@@ -2935,6 +2935,8 @@ details.tr-group > .tr-table { margin: 0; border-radius: 0; }
 
 /* ---- one masternode's work queue: search, filter, and phone cards that read as one line ------------------------- */
 .mnv-tools { margin-block-start: var(--s-2); }
+.mnv-table td.mnv-ask { white-space: nowrap; }
+.mnv-table td.mnv-ask .muted { font-weight: 400; font-stretch: 100%; }
 .mnv-tools .dh-seg { flex: none; }
 .mnv-tools .count { margin-inline-start: 6px; color: var(--dh-ink-2); font-variant-numeric: tabular-nums; }
 @media (max-width: 640px) {
