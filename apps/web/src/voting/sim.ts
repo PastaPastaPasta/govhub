@@ -61,7 +61,7 @@ export class VoteSim {
     this.down = scenario === 'down';
     const base = this.base;
     this.bridge = {
-      name: 'fixture bridge',
+      name: 'fixture data service',
       status: () => base.status(),
       proposals: () => base.proposals(),
       proposal: (h) => base.proposal(h),

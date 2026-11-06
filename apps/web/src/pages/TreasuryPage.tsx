@@ -175,6 +175,8 @@ function Ref({ to, n = 1 }: { to: string; n?: number }) {
 
 function PaysFor({ view, state, budget, names }: { view: TreasuryView; state: ReadState; budget: number; names: ReadonlyMap<string, number> }) {
   const { gov, reload } = useApp();
+  // the newest block the standings were counted at, for their source line
+  const tallyAt = Math.max(0, ...Object.values(view.groups).flatMap((g) => g.rows.map((r) => r.tally?.value.asOfHeight ?? 0)));
   return (
     <section className="dh-section tr-pays" aria-labelledby="tr-pays-title">
       <div className="dh-section__head">
@@ -203,7 +205,10 @@ function PaysFor({ view, state, budget, names }: { view: TreasuryView; state: Re
           <BudgetBar funded={view.groups.funded} budget={budget} />
           {(['funded', 'over', 'short', 'unread', 'later'] as const).map((id) => (view.groups[id].rows.length ? <Group key={id} group={view.groups[id]} budget={budget} names={names} /> : null))}
           <ol className="dh-sources" aria-label="Sources">
-            <li id="tr-pays-src-1">Standings: {TALLY_SOURCE}</li>
+            <li id="tr-pays-src-1">
+              Standings: vote tallies reported by the governance data service{tallyAt ? ` at block ${formatInt(tallyAt)}` : ''}, live from Dash Core. Each proposal’s page
+              recounts its own votes in this browser.
+            </li>
             <li id="tr-pays-src-2">Titles and summaries: each owner’s proposal page, read when this site was built. Nobody has checked them.</li>
           </ol>
         </>

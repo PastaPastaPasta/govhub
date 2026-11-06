@@ -77,7 +77,7 @@ export interface VoteView {
  */
 export function corroboration(v: WatchedVote): string {
   const relays = Object.entries(v.relayStatus ?? {}).filter(([, s]) => s === 'confirmed').map(([r]) => relayHost(r));
-  const others = [...(v.alsoSeenBy ?? []).map((b) => `bridge ${b} (its vote set has it, checked here)`), ...relays.map((r) => `relay ${r} (it reports its Dash Core node lists it)`)];
+  const others = [...(v.alsoSeenBy ?? []).map((b) => `data service ${b} (its vote set has it, checked here)`), ...relays.map((r) => `relay ${r} (it reports its Dash Core node lists it)`)];
   // A source run by the same operator as the bridge agrees just as easily, so the way to be sure is always named.
   return others.length
     ? ` Also seen by ${others.join(' and ')}. To be sure, check your own Dash Core node.`

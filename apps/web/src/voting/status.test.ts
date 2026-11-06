@@ -158,7 +158,7 @@ describe('what each state says', () => {
     // confirmed is the bridge's report: the line says so, and names any other configured source that agrees
     expect(describeVote(vote({ status: 'confirmed', countedAt: NOW }), NOW, fmt).line).toMatch(/^The governance data service reports the network counted it.*That is the data service’s word/);
     const agreed = describeVote(vote({ status: 'confirmed', alsoSeenBy: ['b2.example'], relayStatus: { 'https://relay-one.example': 'confirmed' } }), NOW, fmt).line;
-    expect(agreed).toContain('Also seen by bridge b2.example (its vote set has it, checked here) and relay relay-one.example (it reports its Dash Core node lists it).');
+    expect(agreed).toContain('Also seen by data service b2.example (its vote set has it, checked here) and relay relay-one.example (it reports its Dash Core node lists it).');
     expect(agreed).not.toContain('bridge’s word');
     expect(agreed).toContain('To be sure, check your own Dash Core node.');
     expect(describeVote(vote({ status: 'failed', failReason: 'gov-relay-testnet.dashhq.org refused it: the masternode is PoSe-banned' }), NOW, fmt).line).toBe('Not sent: gov-relay-testnet.dashhq.org refused it: the masternode is PoSe-banned.');
