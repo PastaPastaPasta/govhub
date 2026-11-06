@@ -46,6 +46,10 @@ try {
       await page.getByLabel('Allow more than one choice').check();
       await page.evaluate(() => scrollTo(0, 0));
       await shot('draft-before-signin');
+      await page.getByRole('button', { name: 'Sign in to publish', exact: true }).scrollIntoViewIfNeeded();
+      await page.locator('.poll-submit').getByText(/^(Est\.|Fee estimate unavailable)/).waitFor();
+      record.fee = await page.locator('.poll-submit .small').innerText();
+      await shot('poll-credit-cost');
       await page.getByRole('button', { name: 'Sign in to publish', exact: true }).click();
       await page.getByTestId('choose-passkey').waitFor();
       check('Governance sign-in choices visible', await page.getByTestId('choose-passkey').isVisible());
@@ -76,7 +80,21 @@ try {
         await page.waitForURL(u => u.hostname === 'gov.dashhq.localhost' && u.pathname === expected.split('?')[0]);
         check(`Pollr forwards ${path}`, new URL(page.url()).searchParams.get('network') === 'testnet' && (!expected.includes('seg=mine') || new URL(page.url()).searchParams.get('seg') === 'mine'));
       }
+      await page.getByRole('heading', { level: 1, name: 'Which count-tree feature matters most?' }).waitFor();
       await shot('pollr-forwarded-record');
+      await page.goto(`${gov}/polls/archive?network=testnet`);
+      await page.locator('.poll-title-link').first().waitFor();
+      await page.waitForTimeout(8000);
+      await shot('earlier-polls');
+      const archived = 'FC9FQmwVB3HYisioAgk8TuFHBK4thZdYRkGPu9yXCPUN';
+      await page.goto(`http://pollr.dashhq.localhost:8787/poll/?id=${archived}&archive=1&network=mainnet&tag=a&tag=b#answers`);
+      await page.getByRole('heading', { level: 1, name: 'What should I ask?' }).waitFor();
+      await page.getByText('Earlier polls are read-only.').waitFor();
+      const forwarded = new URL(page.url());
+      check('Archive forward retains record and Testnet', forwarded.pathname === `/polls/${archived}` && forwarded.searchParams.get('archive') === '1' && forwarded.searchParams.get('network') === 'testnet');
+      check('Forward retains hashes and repeated query values', forwarded.hash === '#answers' && forwarded.searchParams.getAll('tag').join(',') === 'a,b');
+      await page.waitForTimeout(8000);
+      await shot('archive-forwarded-record');
       check('No document writes reached the guard', record.blockedWrites.length === 0);
       check('No horizontal overflow', await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     } catch (error) { record.failure = error.message; record.failureUrl = page.url(); record.failureText = await page.locator('body').innerText(); await shot('failure'); }
