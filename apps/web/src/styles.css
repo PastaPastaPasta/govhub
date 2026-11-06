@@ -2917,3 +2917,22 @@ details.tr-group > .tr-table { margin: 0; border-radius: 0; }
   /* on a phone a card compares what, how much and where it stands; the payee is a tap away on the proposal */
   .prow-slug .prow-pays { display: none; }
 }
+
+/* ---- the phone landing: the proposals start on the first screen ------------------------------------------------- */
+.budget-foot { display: grid; gap: var(--s-3); }
+.budget-foot .chain-context { margin: 0; }
+@media (max-width: 640px) {
+  .budget { margin-block-end: var(--s-4); }
+  /* the Treasury tab is just below */
+  .budget-more { display: none; }
+  .budget-foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-4); }
+  .budget-foot .chain-label { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .budget-foot details.learn[open] { flex-basis: 100%; }
+  .list-section > .list-head { margin-block-end: var(--s-2); }
+  /* the sort menu names the order; its longer note is for wide screens */
+  .list-head [data-testid="list-order-note"] { display: none; }
+  .list-tools { flex-wrap: nowrap; gap: var(--s-2); }
+  .list-tools .proposal-search { flex: 1 1 auto; min-inline-size: 0; }
+  .list-sort > span { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .list-sort select { max-inline-size: 11rem; }
+}

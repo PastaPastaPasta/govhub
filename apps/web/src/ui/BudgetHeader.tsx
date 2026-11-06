@@ -165,8 +165,13 @@ export function BudgetHeader() {
           What this budget pays for, and how it compares
         </Link>
       </p>
-      <div className="chain-context dh-page-header__meta"><span>Chain check</span><ChainShield /></div>
-      <details className="learn">
+      {/* On a phone the chain check and the explanation share one line, so the proposals start on the first screen. */}
+      <div className="budget-foot">
+        <div className="chain-context dh-page-header__meta">
+          <span className="chain-label">Chain check</span>
+          <ChainShield />
+        </div>
+        <details className="learn">
         <summary>How funding works</summary>
         <p className="strip-legend small muted">
           <span className="legend-item">
@@ -182,7 +187,8 @@ export function BudgetHeader() {
           weight ({formatInt(threshold)} of {formatInt(c.validWeighted)}; evonodes count 4 times). Passing proposals are paid best first until the budget of{' '}
           {formatDash(c.budget)} runs out. Votes count until {formatDate(deadline)}, a few days before the payout.
         </p>
-      </details>
+        </details>
+      </div>
     </section>
   );
 }
