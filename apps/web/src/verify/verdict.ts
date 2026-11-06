@@ -5,7 +5,7 @@ import type { Provenance, Tally } from '../data/types.ts';
 import { excludedText, type TargetResult, type VoteRun } from './votes.ts';
 
 export const PLATFORM_TARGET = 'Platform tally';
-export const BRIDGE_TARGET = 'live tally from the data service';
+export const BRIDGE_TARGET = 'Data service live tally';
 
 /**
  * `excluded`: the tally matches the votes the bridge served, but only with votes this browser couldn't prove (left out here).

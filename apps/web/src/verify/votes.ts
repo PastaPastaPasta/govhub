@@ -26,7 +26,7 @@ export interface ProReg {
 }
 
 export interface VoteTarget {
-  /** "Platform tally" / "live tally from the data service" */
+  /** "Platform tally" / "Data service live tally" */
   name: string;
   tally: Tally;
 }

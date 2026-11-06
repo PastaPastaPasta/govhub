@@ -128,8 +128,8 @@ export function describeVote(v: WatchedVote, now: number, fmt: TimeFmt): VoteVie
     }
     case 'confirmed':
       return v.countedAt
-        ? { badge: 'Counted, says the data service', tone: 'ok', line: `The governance data service reports the network counted it: its vote set includes it, and the recount of that set matches.${corroboration(v)}` }
-        : { badge: 'On the network, says the data service', tone: 'ok', line: `The governance data service reports the network has it: its vote set includes it, signature checked here against your voting key.${corroboration(v)}` };
+        ? { badge: 'Data service: counted', tone: 'ok', line: `The governance data service reports the network counted it: its vote set includes it, and the recount of that set matches.${corroboration(v)}` }
+        : { badge: 'Data service: on the network', tone: 'ok', line: `The governance data service reports the network has it: its vote set includes it, signature checked here against your voting key.${corroboration(v)}` };
     case 'failed': {
       if (v.failReason === WRITES_OFF && !v.maybeAt?.length) return { badge: 'Preview: not sent', tone: 'quiet', line: `Signed in your browser, then stopped: ${WRITES_OFF}. On gov.dashhq.org the relay sends it.` };
       // refused by one relay after another may have stored it (its answer was lost): that relay could still release it

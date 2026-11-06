@@ -120,7 +120,7 @@ describe('a vote arriving between reading the tally and reading its votes is nev
     expect(level).toBe('changed');
     expect(component.status).toBe('error');
     expect(component).not.toHaveProperty('mismatch');
-    expect(component.status === 'error' && component.reason).toMatch(/^Couldn't verify yet: for block [\d,]+ the governance data service served another vote set than the one behind the live tally from the data service \(usually a vote arrived while checking/);
+    expect(component.status === 'error' && component.reason).toMatch(/^Couldn't verify yet: for block [\d,]+ the governance data service served another vote set than the one behind the Data service live tally \(usually a vote arrived while checking/);
     // the recount is of the stored set, labelled as such
     expect(runs[0]).toMatchObject({ votesAsOf: H, asked: H, servedVoteSetHash: stored.voteSetHash });
     // and with the Platform tally next to it, that one still verifies

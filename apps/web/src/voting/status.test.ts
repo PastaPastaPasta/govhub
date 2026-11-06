@@ -153,8 +153,8 @@ describe('what each state says', () => {
     expect(holdText(planned, NOW, fmt)).toBe('Core allows one vote change per hour per masternode; gov-relay-testnet.dashhq.org sends this at T3660.');
   });
   it('the rest', () => {
-    expect(describeVote(vote({ status: 'confirmed' }), NOW, fmt).badge).toBe('On the network, says the data service');
-    expect(describeVote(vote({ status: 'confirmed', countedAt: NOW }), NOW, fmt).badge).toBe('Counted, says the data service');
+    expect(describeVote(vote({ status: 'confirmed' }), NOW, fmt).badge).toBe('Data service: on the network');
+    expect(describeVote(vote({ status: 'confirmed', countedAt: NOW }), NOW, fmt).badge).toBe('Data service: counted');
     // confirmed is the bridge's report: the line says so, and names any other configured source that agrees
     expect(describeVote(vote({ status: 'confirmed', countedAt: NOW }), NOW, fmt).line).toMatch(/^The governance data service reports the network counted it.*That is the data service’s word/);
     const agreed = describeVote(vote({ status: 'confirmed', alsoSeenBy: ['b2.example'], relayStatus: { 'https://relay-one.example': 'confirmed' } }), NOW, fmt).line;
