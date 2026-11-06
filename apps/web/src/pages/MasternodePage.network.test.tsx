@@ -63,7 +63,7 @@ describe('a masternode that is not on this network', () => {
     expect(r.el.querySelector('.dh-page-header__kicker')!.textContent).toBe('Masternode');
     expect(hold.asked).toEqual(expect.arrayContaining(['status https://mainnet.bridge', 'mnlist https://mainnet.bridge']));
     const radar = [...r.el.querySelectorAll<HTMLAnchorElement>('[data-testid="mn-absent"] a')].find((a) => a.textContent!.startsWith('Its record in Radar'))!;
-    expect(radar.textContent).toBe('Its record in Radar (Mainnet) →');
+    expect(radar.textContent).toBe('Its record in Radar (Mainnet)');
     expect(radar.getAttribute('href')).toBe(`https://radar.test/mn/${PRO}?network=mainnet`);
     await r.unmount();
   });

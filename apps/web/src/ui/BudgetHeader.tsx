@@ -162,7 +162,7 @@ export function BudgetHeader() {
       </dl>
       <p className="budget-more">
         <Link to="/treasury" data-testid="budget-treasury" className="dh-link dh-link--go">
-          What this budget pays for, and how it compares →
+          What this budget pays for, and how it compares
         </Link>
       </p>
       <div className="chain-context dh-page-header__meta"><span>Chain check</span><ChainShield /></div>

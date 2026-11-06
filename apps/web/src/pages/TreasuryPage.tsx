@@ -332,7 +332,7 @@ function Compared({ allocated, network }: { allocated: number | null; network: C
           Compared with {last} {network === 'testnet' ? '(a day; Testnet pays hourly)' : '(a year)'}
         </h2>
         <p className="dh-section__desc">
-          What each superblock actually paid, read from the chain in this browser. <Link to="/past" className="dh-link dh-link--go">Every payment, superblock by superblock →</Link>
+          What each superblock actually paid, read from the chain in this browser. <Link to="/past" className="dh-link dh-link--go">Every payment, superblock by superblock</Link>
         </p>
       </div>
       <ComparedBody ledger={ledger} entries={entries} sum={sum} allocated={allocated} network={network} last={last} />

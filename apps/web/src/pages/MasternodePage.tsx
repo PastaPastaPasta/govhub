@@ -137,11 +137,11 @@ function MasternodeVotes({ proTx }: { proTx: string }) {
     <section className="mnv-page" aria-labelledby="mnv-title" data-testid="mn-page">
       <p className="crumbs dh-crumbs" data-testid="mn-crumbs">
         {fromRadar && radar ? (
-          <a href={radar} className="dh-link dh-link--go">‹ Back to Radar</a>
+          <a href={radar} className="dh-link">‹ Back to Radar</a>
         ) : owned ? (
-          <Link to="/masternodes" className="dh-link dh-link--go">‹ My masternodes</Link>
+          <Link to="/masternodes" className="dh-link">‹ My masternodes</Link>
         ) : (
-          <Link to="/" className="dh-link dh-link--go">‹ Active proposals</Link>
+          <Link to="/" className="dh-link">‹ Active proposals</Link>
         )}
       </p>
       <header className="mnv-head dh-page-header">
@@ -166,7 +166,7 @@ function MasternodeVotes({ proTx }: { proTx: string }) {
           ) : null}
           {radarHere && (
             <span>
-              <a href={radarHere} className="dh-link dh-link--go">Its record in Radar{absent && elsewhere === 'found' && other ? ` (${other.label})` : ''} →</a>
+              <a href={radarHere} className="dh-link dh-link--go">Its record in Radar{absent && elsewhere === 'found' && other ? ` (${other.label})` : ''}</a>
             </span>
           )}
         </p>}
@@ -183,7 +183,7 @@ function MasternodeVotes({ proTx }: { proTx: string }) {
             absent={`Governance reads the governance bridge's masternode list, at block ${formatInt(v.lookup.height)}; it may have been removed.`}
             list={{ path: '/', label: `Browse ${network} proposals` }}
           />
-          {radarHere && <p><a href={radarHere} className="dh-link dh-link--go">Its record in Radar{elsewhere === 'found' && other ? ` (${other.label})` : ''} →</a></p>}
+          {radarHere && <p><a href={radarHere} className="dh-link dh-link--go">Its record in Radar{elsewhere === 'found' && other ? ` (${other.label})` : ''}</a></p>}
         </div>
       )}
       {v.lookup.kind === 'no-bridge' && (

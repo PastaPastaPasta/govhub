@@ -132,7 +132,7 @@ function MasternodeLine({ ctx }: { ctx: MnContext }) {
       {ctx.lookup.kind === 'absent' && <p className="small muted">It isn’t in the {network} masternode list the governance bridge reports, so it can’t vote here.</p>}
       {ctx.lookup.kind === 'error' && <p className="small muted">Its details couldn’t be read just now ({ctx.lookup.message}); you can still vote below.</p>}
       <p className="small pvote-mn-links">
-        <Link to={`/masternodes/${ctx.proTx}`} data-testid="vote-mn-back" className="dh-link dh-link--go">
+        <Link to={`/masternodes/${ctx.proTx}`} data-testid="vote-mn-back" className="dh-link">
           ‹ Its votes on every proposal
         </Link>
         <Link to="." relative="path" className="muted dh-link" data-testid="vote-mn-clear">

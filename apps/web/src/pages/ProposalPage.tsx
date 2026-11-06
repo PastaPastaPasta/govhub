@@ -278,11 +278,11 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
     <article className="proposal">
       <p className="crumbs dh-crumbs">
         {mn ? (
-          <Link to={`/masternodes/${mn}`} data-testid="crumb-mn" className="dh-link dh-link--go">
+          <Link to={`/masternodes/${mn}`} data-testid="crumb-mn" className="dh-link">
             ‹ Masternode {shortHash(mn, 6)}’s votes
           </Link>
         ) : (
-          <Link to={active ? '/' : '/past'} className="dh-link dh-link--go">‹ {active ? 'Active proposals' : 'Past proposals'}</Link>
+          <Link to={active ? '/' : '/past'} className="dh-link">‹ {active ? 'Active proposals' : 'Past proposals'}</Link>
         )}
       </p>
       {check.status === 'failed' && (
