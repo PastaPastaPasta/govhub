@@ -1,8 +1,17 @@
-# dashhq shell 1.7.0
+# dashhq shell 1.8.0
 
 The shared shell for the dashhq.org family: the family bar, the footer, the hash display, the sign-in explanation,
 the wrong-network and retired-page notices, the theme, and the tokens they all draw with. Read `../DESIGN.md` for the
 rules and `../ADOPTION-r6.md` for your site's changes this round (then `-r5`, `-r4`).
+
+## New in 1.8 (round 6): sources beside figures, and a switcher that says what it is
+
+| What | Who acts | How |
+|---|---|---|
+| **Sources beside figures.** A source or check label never sits inside a sentence. Three classes in the component layer: `.dh-src`, a quiet tag after a label or a complete value ("Asked for [Platform records]"; `--ok` checked in this browser, `--warn` stale or not checked); `.dh-ref`, a superscript number after a sentence's full stop; `.dh-sources`, the numbered lines closing the block (`ol`), or one "Sources: …" line for a block that shares a source (`p`). | Governance (Treasury, budget header), Explorer and anyone with a chip in a sentence; anyone showing fiat | "Sources beside figures" below; `components.html#sources`; checks `sources-*`; `../ADOPTION-r6.md` §4 |
+| **Fiat reads as an estimate**: "≈ $309,000", three significant figures (`../PRICE.md`, with a reference `formatUsdEstimate`). | Governance, Explorer, Bridge | `../PRICE.md` |
+| **The desktop switcher says what it is**: "dashhq tools ⌄" beside the product name (Sol #14), the phone menu's heading too. Short of room, the words give way to the chevron before the row collapses. Its accessible name is unchanged ("All dashhq tools"). | Nobody: re-vendor | check `switcher-says-what-it-is-*`; `bars.html` |
+| **Fixes to 1.7.0, same API.** The desktop network menu's "Network settings" row keeps its look (1.7.0's phone "More tools" style leaked onto it in Governance and Explorer). The arrival notice shows only where the retired product's links land, survives the page replacing its bar, keeps focus on Dismiss across re-renders, waits for a visible tab before speaking, and pads `<html>`'s scroll while it makes the bar taller. A retired page never forwards in a loop, and waits for DOMContentLoaded even when it is added late. | Everyone on 1.7.0: re-vendor 1.8.0 | checks `network-settings-row-unchanged`, `arrival-*`, `moved-never-loops` |
 
 ## New in 1.7 (round 6): no waiting at a retired address, and a phone menu that lists nothing twice
 
@@ -166,8 +175,9 @@ Events and API:
 - `window.dashhq.network.findElsewhere(exists, { network, networks, signal })`: see `<dashhq-not-found>`.
 - `window.dashhq.theme.set('dark' | 'light' | 'system')`, `.toggle()`, `.pref`, `.resolved`.
 
-The bar decides its own layout: it collapses to the phone layout whenever the full row would not fit, not at a fixed
-breakpoint. You do not need a media query for it. The phone lockup is the same on every site: the mark, then
+On wide screens the family switcher sits beside the product name as **dashhq tools ⌄** (accessible name "All dashhq
+tools"). The bar decides its own layout: when the full row would not fit, the switcher's words go first (the chevron
+stays), and then it collapses to the phone layout, not at a fixed breakpoint. You do not need a media query for it. The phone lockup is the same on every site: the mark, then
 `dashhq` set small over the product name (and the app's logo). It never drops the family name. If the row is still
 short of room (a long name, a network menu and an account control at 320px), the network pill keeps its dot and
 chevron but loses its word, and only then does the product name truncate, with the full name as its tooltip. At 360px
@@ -185,7 +195,7 @@ and wider every product fits whole (`bars.html`, checked by `render-demo.mjs`).
 
 Whatever your sections already link to leaves the family part when the menu opens: a link with `data-family`, or a link
 to the same address. That is how the hub's menu (whose nav is Radar, Governance, Explorer, Start on Testnet, Apps,
-Directory) shows its nav and More tools, not the same four doors again. The desktop switcher is unchanged: every door
+Directory) shows its nav and More tools, not the same four doors again. The desktop switcher keeps every door
 with its description, Start's Bridge → Faucet, Apps, Also, the theme. A group whose products all run on one network says
 so once, beside its label ("Apps · Testnet"), so nobody crosses from a Mainnet tool into a practice app unawares. The
 Fee estimator and DAPI console receive the page's network like the other network-aware tools.
@@ -387,13 +397,18 @@ its row, on the info ground, with a Dismiss button:
 > **fees.dashhq.org** is now part of Explorer. Old links open the same place here.
 
 - Phones show the first sentence only.
-- It shows only on the product that is the retired one's new home (`vote` on Governance, `fees` and `basics` on
-  Explorer), so a hand-made link can't make another tool claim a move. Any other value is taken out of the address
-  and ignored.
-- Screen readers hear it once; re-rendering the bar (a network switch) keeps the same node and says nothing new.
-- It goes when dismissed (focus moves to the product's name) or when the visitor moves on to another page: a push or
-  Back in your SPA (with the Navigation API; elsewhere it stays until dismissed). An app canonicalising its own address
-  with `replaceState` doesn't end it.
+- It shows only on the product that is the retired one's new home, and only on the pages its links land on: Governance's
+  `/names…` for `vote`; Explorer's `/tools/fees/` for `fees`; Explorer's `/`, `/identity/…` and `/dpns/…` for `basics`.
+  A hand-made link elsewhere can't make a page claim the move: the marker is taken out of the address and ignored.
+- Screen readers hear it once, when the tab is visible (a tab opened in the background waits until it is shown). Re-rendering
+  the bar keeps the same node, says nothing new and keeps focus on Dismiss. If your framework replaces the bar element,
+  the new bar takes the same node over.
+- It goes when dismissed (focus moves to the product's name) or when the visitor moves on to another page in your SPA
+  (a push or a traverse, through the Navigation API; without it, it stays until dismissed). Your app canonicalising its
+  own address with `replaceState` doesn't end it.
+- While it shows, the bar is taller, so the shell adds its height to `<html>`'s `scroll-padding-top` (on top of yours):
+  anchors and `scrollIntoView` sized for the bar alone still land clear of it. Dismissing gives your value back.
+- `<dashhq-moved>` never forwards a page that was itself reached by a forward, or one whose map points back at itself.
 - It is part of the bar, so it sticks with a `sticky` bar until dismissed. The phone menu opens over it.
 
 ## Components (`dashhq-components.css`)
@@ -446,10 +461,45 @@ accent, and never set text in it: Forge's ember would read as the dark theme's w
 | Tables | `dh-table` (`--compact`, `--cards`, `--stack`), `dh-table-wrap`, `dh-r`, `dh-sub`; row cards: `dh-rc-title`, `dh-rc-end`, `dh-rc-line`, `dh-rc-actions`, `dh-rc-hide` | Every `td` gets `data-label`. `--cards` turns list tables into Radar-style row cards under 640px: the title's link covers the card, controls in any cell stay clickable above it, and `dh-rc-actions` cells (buttons, checkboxes) move to the card's last line without a label. `--stack` turns record tables (keys, checks) into label/value blocks. Captions stay for screen readers. |
 | Key/value | `dh-kv` (`--ruled`, `--grid`) | `<dt>`/`<dd>` pairs, optionally wrapped in `<div>`. Long values wrap; they never overflow. |
 | Badges | `dh-badge` (`--good`, `--warn`, `--bad`, `--info`, `--outline`, `--dot`), `dh-status` (`--good`, `--warn`, `--bad`, `--info`), `dh-proof` (`--checking`, `--ok`, `--reported`, `--unverified`, `--failed`) | Never clickable, except the proof badge, which opens what was checked. `dh-pill` = `dh-badge`. |
+| Sources | `dh-src` (`--ok`, `--warn`), `dh-ref`, `dh-sources` (on an `ol`, numbered; on a `p`, one plain line) | Never inside a sentence. Tag after a label or a complete value; marker after the full stop; the lines close the section or card. See below. |
 | Notices | `dh-notice` (`--info`, `--success`, `--warn`, `--error`), `__title`, `__actions` | Page context. Use `role="status"`, or `role="alert"` for errors. |
 | States | `dh-empty` (`--inline`), `__title`; `dh-loading` (`--block`), `__note`, `dh-spin`, `dh-skel` (`--text`, `--title`, `--num`, `--row`, `--block`), `dh-skel-group`, `dh-progress`; `dh-error` (`--stale`), `__title` | Empty says what would be here and offers one next step. Loading names what is loading. Error says what failed, what is safe and how to retry, with the raw detail under Details. `--stale` keeps the last good data on screen and says how old it is. |
 | Stepper | `dh-steps` on an `<ol>`, `aria-current="step"` on the current `<li>`, links on done steps | Numbers come from the list. Write "Address", not "1 Address". Steps before the current one show as done (or set `data-state="done"`). An earlier step the visitor hasn't done gets `data-state="todo"` (a dashed grey ring), so opening a later step never claims progress. |
 | Misc | `dh-code`, `dh-toolbar` + `dh-grow`, `dh-pager`, `dh-elsewhere`, `dh-sr`, `dh-num`, `dh-mono`, `dh-unit`, `dh-link`, `dh-link--go` | |
+
+### Sources beside figures
+
+A source or check label never sits inside a sentence: "119% of what it can pay, by the proposals due at this payout
+[Platform records]" can't be quoted. Write the sentence plainly and put the source in one of three places
+(`../DESIGN.md` §6):
+
+```html
+<!-- 1. A tag after a label (or a table header, or a complete value). Write a space before it. -->
+<div class="dh-stat">
+  <span class="dh-stat__label">Asked for <span class="dh-src">Platform records</span></span>
+  <span class="dh-stat__value">8,125 <small>DASH</small></span>
+  <span class="dh-stat__note">119% of what it can pay</span>
+</div>
+
+<!-- 2. A marker after the sentence's full stop, and the numbered lines closing the section or card. -->
+<p>Proposals are grouped by where they stand, largest first.<sup class="dh-ref"><a href="#tr-src-1" aria-label="Source 1">1</a></sup></p>
+<ol class="dh-sources" aria-label="Sources">
+  <li id="tr-src-1">Standings: vote tallies reported by the governance data service at block 2,384,512. Each proposal's page recounts its own.</li>
+</ol>
+
+<!-- 3. A block whose figures share a source says it once, with no markers. -->
+<p class="dh-sources">Sources: proposals and amounts from Platform records; USD at Coinbase's price, 01:22 UTC.</p>
+```
+
+- `.dh-src` is dotted (reported). `.dh-src--ok` is solid green: worked out or checked in this browser ("Consensus
+  limit"). `.dh-src--warn` is dashed: stale or not checked ("Stale" on a price older than 10 minutes). It is a label,
+  like a badge, never a link: put the detail in a numbered line, or in the record's proof badge.
+- Number the markers in reading order within the page and give each line an `id` unique on the page (`tr-src-1`).
+  `aria-label="Source 1"` on the marker's link; `aria-label="Sources"` on the list. A jump lands the line clear of a
+  sticky bar and highlights it.
+- "Verified" is still the proof badge's word, one per record, beside its title.
+- A caveat that changes what the reader should do is a sentence of its own; one that only qualifies a source goes in
+  the source's line.
 
 ### Using it from each stack
 
