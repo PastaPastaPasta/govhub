@@ -193,8 +193,6 @@ function Purpose({ page, hasPost, url, host }: { page: Found; hasPost: boolean; 
   );
 }
 
-/** What the header's badge vouches for: the proposal's record, collateral, votes and budget place, not who owns it. */
-
 function TrustStatus({ agg, cached, onOpen }: { agg: Aggregate; cached: StoredTrust | null; onOpen(): void }) {
   const verified = agg.level === 'verified' || (agg.level === 'checking' && cached?.level === 'verified');
   if (!verified) return <button type="button" className="dh-btn dh-btn--link" onClick={onOpen}>Verification details</button>;

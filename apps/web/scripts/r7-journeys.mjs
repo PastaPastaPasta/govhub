@@ -70,7 +70,7 @@ try {
       check('Testnet contest document returns 200', response.status() === 200);
       await page.waitForTimeout(10000);
       await shot('contest-testtata');
-      for (const [path, expected] of [['/', '/polls'], ['/create/', '/polls/new'], ['/my-polls/', '/polls?seg=mine'], ['/poll/?id=GBCR8JqtXNMZa4B16ZAYm3RkNHrPcU3D36jcAoYWvr8E', '/polls/GBCR8JqtXNMZa4B16ZAYm3RkNHrPcU3D36jcAoYWvr8E']]) {
+      for (const [path, expected] of [['/', '/polls'], ['/create/', '/polls/new'], ['/my-polls/', '/polls?seg=mine'], ['/poll/?id=9mmD1KZFbtLxrEUMdeTDqxNGsRBDNwtJ1ZEicizTNANn', '/polls/9mmD1KZFbtLxrEUMdeTDqxNGsRBDNwtJ1ZEicizTNANn']]) {
         await page.goto(`http://pollr.dashhq.localhost:8787${path}`);
         await page.waitForURL(u => u.hostname === 'gov.dashhq.localhost' && u.pathname === expected.split('?')[0]);
         check(`Pollr forwards ${path}`, new URL(page.url()).searchParams.get('network') === 'testnet' && (!expected.includes('seg=mine') || new URL(page.url()).searchParams.get('seg') === 'mine'));

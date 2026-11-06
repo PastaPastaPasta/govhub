@@ -128,7 +128,7 @@ function describeProposalOrThrow(p) {
 }
 
 const networkSdks = new Map();
-/** One Mainnet SDK for the contest reads (proof-checked by evo-sdk). */
+/** One SDK per network for proof-checked contest and poll reads. */
 function networkSdk(network = 'mainnet') {
   if (!networkSdks.has(network)) networkSdks.set(network, import('@dashevo/evo-sdk').then(async ({ EvoSDK }) => {
     const sdk = new EvoSDK({ network, trusted: true, settings: { timeoutMs: 20_000, retries: 2 } });
@@ -299,7 +299,10 @@ async function pollPages() {
     for (let page = 0; page < 100; page++) {
       const res = await sdk.documents.queryWithProof({ dataContractId, documentTypeName: 'poll', orderBy: [['$createdAt', 'asc']], limit: 100, ...(startAfter ? { startAfter } : {}) });
       const rows = [...res.data.values()].filter(Boolean).map(d => d.toJSON());
-      for (const d of rows) if (typeof d.$id === 'string' && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(d.$id)) polls.push({ id: d.$id, question: typeof d.question === 'string' ? d.question : 'Earlier poll' });
+      for (const d of rows) if (typeof d.$id === 'string' && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(d.$id)) {
+        const question = dataContractId === ARCHIVE_CONTRACT && typeof d.question === 'string' ? Buffer.from(d.question, 'base64').toString('utf8') : d.question;
+        polls.push({ id: d.$id, question: typeof question === 'string' ? question : 'Earlier poll' });
+      }
       if (rows.length < 100) break;
       const next = rows.at(-1)?.$id;
       if (!next || next === startAfter) break;
