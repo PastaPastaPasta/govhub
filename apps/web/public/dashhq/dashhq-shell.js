@@ -43,7 +43,7 @@
   const DESCRIPTIONS = {
     arch: 'How Platform works', dapi: 'Raw node responses', faucet: 'Testnet DASH for your address'
   };
-  const MOVED = { fees: ['explorer', '/tools/fees/'], pollr: ['gov', '/polls/'] };
+  const MOVED = { fees: ['explorer', '/tools/fees/'] };
   // Retired products: the address people have bookmarked, and the product that is its new home. <dashhq-moved>
   // forwards there at once with ?moved-from=<key>, and the new home's bar says so once.
   // paths: where its forward can land, the only pages that show the notice (trailing slashes don't matter).
@@ -54,12 +54,6 @@
     basics: { to: 'explorer', was: 'basics.dashhq.org', paths: ['/', '/identity/', '/dpns/'] }
   };
   const ARRIVAL_PARAM = 'moved-from';
-  // The door a product is: only a door's own products mark it current. Architecture, the DAPI console, the retired
-  // tools and the apps mark their own entry under Also or Apps, never Explorer's or Governance's door.
-  const doorOf = (key) => {
-    const d = DOORS.find((x) => PRODUCTS[x.key] === PRODUCTS[key]);
-    return d ? d.door : null;
-  };
   // The hub's page that explains identities, keys and each app's sign-in (linked from <dashhq-signin-help>).
   const IDENTITY_PATH = '/identity/';
 
@@ -420,7 +414,7 @@
     '.family{display:none}' +
     '.end{display:flex;align-items:center;gap:6px;margin-left:auto;padding-left:12px;flex:none}' +
     '.tbtn,.menu{width:36px;height:36px;display:grid;place-items:center;border-radius:var(--dh-r2);color:var(--dh-ink-2)}' +
-    '.tbtn:hover,.menu:hover,.menu[aria-expanded=true]{background:var(--dh-hover);color:var(--dh-ink)}' +
+    '.tbtn:hover,.tbtn[aria-expanded=true],.menu:hover,.menu[aria-expanded=true]{background:var(--dh-hover);color:var(--dh-ink)}' +
     '.menu{display:none}' +
     /* network pill: solid = mainnet (live, real DASH); dashed = testnet; dotted = devnet. Same key as the hub map. */
     '.netwrap{position:relative;flex:none}' +
@@ -449,7 +443,7 @@
     'margin-top:4px}' +
     /* devnets sit behind one toggle unless the page is on one: internal networks are not for every visitor */
     'button.opt{width:100%;text-align:left;color:var(--dh-ink-2)}' +
-    'button.opt .ic{margin-left:auto;transition:transform var(--dh-dur-2) var(--dh-ease)}' +
+    '.netpop button.opt .ic{margin-left:auto;transition:transform var(--dh-dur-2) var(--dh-ease)}' +
     'button.opt[aria-expanded=true] .ic{transform:rotate(180deg)}' +
     '.doors{list-style:none;margin:0;padding:0}' +
     '.door{display:grid;grid-template-columns:150px minmax(0,1fr);align-items:center;min-height:40px;' +
@@ -779,8 +773,7 @@
       this.close();
       this._drop();
 
-      // The family switcher says what it is ("dashhq tools", as the phone menu's heading does); the words give way to the
-      // bare chevron only when the row is short of room.
+      // The label gives way to the chevron before the bar collapses.
       const switchBtn = h('button', { class: 'switch', type: 'button', 'aria-expanded': 'false', 'aria-controls': 'dh-doors',
         'aria-label': 'All dashhq tools', 'data-f': 'switch' }, h('span', { class: 'swl', 'aria-hidden': 'true' }, 'All tools'),
         icon('chevron', 14));
@@ -794,7 +787,7 @@
       this._navSlot = h('slot', { name: 'nav' });
       this._navSlot.addEventListener('slotchange', this._fit);
       this._nav = h('div', { class: 'nav empty', part: 'nav' }, this._navSlot);
-      this._pf = h('div', { class: 'family' }, this._phoneFamily(key, net));
+      this._pf = h('div', { class: 'family', hidden: key === 'home' }, this._phoneFamily(key, net));
       const sheetEl = h('div', { class: 'sheet', id: 'dh-sheet', tabindex: '-1', 'aria-label': 'Navigation' }, !this._tabs && this._nav, this._pf);
 
       const end = h('div', { class: 'end' }, net && this._netControl(net, kind));
@@ -849,13 +842,14 @@
     }
 
     _phoneFamily(key, net) {
+      if (key === 'home') return null;
       const list = (items) => h('ul', { class: 'pd' }, items.map(([k, label]) =>
         h('li', { 'data-k': k }, h('a', { href: doorHref(k, net), 'aria-current': current(k === key, 'page') }, label))));
-      return [key !== 'home' && h('div', { 'data-list': '' }, h('p', { class: 'fl' }, 'dashhq tools'),
+      return [h('div', { 'data-list': '' }, h('p', { class: 'fl' }, 'dashhq tools'),
         list(DOORS.filter(d => PRODUCTS[d.key] !== PRODUCTS[key]).map(d => [d.key, d.label]))),
-        h('div', { 'data-list': '' }, key !== 'home' && h('div', { class: 'sep', role: 'separator' }),
+        h('div', { 'data-list': '' }, h('div', { class: 'sep', role: 'separator' }),
           list(ALSO.map(k => [k, PRODUCTS[k].name]))),
-        key !== 'home' && h('div', { 'data-list': '' }, h('div', { class: 'sep', role: 'separator' }),
+        h('div', { 'data-list': '' }, h('div', { class: 'sep', role: 'separator' }),
           h('a', { class: 'hm', href: href('home', '/directory/'), 'data-k': 'home' }, 'All Dash projects →'))];
     }
 
@@ -997,7 +991,7 @@
       return h('div', { class: 'netwrap' }, btn, pop);
     }
 
-    // which: 'door' | 'net' (popovers) or 'sheet' (the phone menu)
+    // Only one panel is open across all bars.
     _setOpen(o, on) {
       o.trigger.setAttribute('aria-expanded', String(on));
       if (o.which === 'sheet') {
@@ -1122,7 +1116,6 @@
 
     render() {
       this._drop();
-      this._on(netListeners, () => this.render());
       const key = productOf(this);
       const src = this.getAttribute('source');
       this._paint(h('footer', { class: 'f', part: 'footer' },
