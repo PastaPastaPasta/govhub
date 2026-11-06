@@ -133,7 +133,7 @@ test.describe('fixture mode', () => {
     const drawer = await openDrawer(page);
     await expect(drawer.getByRole('heading', { name: 'How do we know?' })).toBeVisible();
     await expect(drawer.getByTestId('checks').locator('[data-check]')).toHaveCount(5);
-    await expect(drawer).toContainText("votes the governance data service didn't serve can't be detected");
+    await expect(drawer).toContainText("so votes it didn't serve can't be detected");
     await drawer.getByText('Proposal data and hashes').click();
     await expect(drawer.getByTestId('raw-data')).toContainText('"name": "OrchardPay"');
     await page.keyboard.press('Escape');
