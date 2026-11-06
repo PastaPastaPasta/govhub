@@ -56,13 +56,14 @@ try {
       check('Question survives sign-in and reload', await page.getByLabel('Question', { exact: true }).inputValue() === 'Which day should we meet?');
       check('Options survive sign-in and reload', await page.getByLabel('Option 1', { exact: true }).inputValue() === 'Saturday' && await page.getByLabel('Option 2', { exact: true }).inputValue() === 'Sunday');
       check('Mode survives reload', await page.getByLabel('Allow more than one choice').isChecked());
+      await page.evaluate(() => scrollTo(0, 0));
       await shot('draft-after-signin');
       await page.goto('http://bridge.dashhq.localhost:8787/?mode=resume&network=testnet');
       await page.goBack();
       check('Draft survives cross-site Back', await page.getByLabel('Question', { exact: true }).inputValue() === 'Which day should we meet?');
       await page.goto(`${gov}/masternodes/${node}?network=mainnet`);
       const proposals = page.locator('dashhq-bar [slot="nav"] a').filter({ hasText: /^Proposals$/ });
-      if (phone) await page.locator('dashhq-bar').getByRole('button', { name: /menu/i }).click();
+      if (phone) { await page.locator('dashhq-bar').getByRole('button', { name: /menu/i }).click(); await shot('governance-menu'); }
       check('Proposals tab carries selected node', new URL(await proposals.getAttribute('href'), gov).searchParams.get('mn') === node);
       await proposals.click();
       check('Proposals URL keeps selected node', new URL(page.url()).searchParams.get('mn') === node);
