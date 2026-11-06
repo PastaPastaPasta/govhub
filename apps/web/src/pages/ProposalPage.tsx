@@ -163,7 +163,7 @@ function Purpose({ page, hasPost, url, host }: { page: Found; hasPost: boolean; 
           </blockquote>
         )}
         <p className="small muted p-purpose-from" data-testid="owner-page">
-          {text ? 'The owner’s own words' : 'The title is the owner’s'}, from their page on {page.page.host} (read <time className="dh-time" dateTime={new Date(page.fetchedAt).toISOString()} title={formatUtc(page.fetchedAt)}>{formatAgoMs(page.fetchedAt, now / 1000)}</time>). Nobody has checked
+          {text ? 'The owner’s own words' : 'The title is the owner’s'}, from their page on {page.page.host} (read <time className="dh-time" dateTime={new Date(page.fetchedAt * 1000).toISOString()} title={formatUtc(page.fetchedAt * 1000)}>{formatAgoMs(page.fetchedAt * 1000, now / 1000)}</time>). Nobody has checked
           them.{' '}
           <a href={page.page.url} target="_blank" rel="noopener noreferrer nofollow ugc" className="ext dh-link" data-testid="owner-page-link">
             Read it all on {page.page.host}

@@ -217,6 +217,8 @@ describe('ProposalView before and without its record', () => {
     expect(el.querySelector('[data-testid="p-title"]')!.textContent).toBe('Dash Desktop, November');
     expect(el.querySelector('[data-testid="p-chain-name"]')!.textContent).toContain('the title is the owner’s, from dashcentral.org');
     expect(el.querySelector('[data-testid="p-funds"] blockquote')!.textContent).toBe('It funds the desktop wallet.');
+    expect(el.querySelector('[data-testid="owner-page"] time')!.getAttribute('datetime')).toBe('2026-10-25T00:00:00.000Z');
+    expect(el.querySelector('[data-testid="owner-page"] time')!.getAttribute('title')).toBe('25 Oct 2026, 00:00 UTC');
   });
 
   it('does not show fields that don’t match the hash as what it funds', async () => {
