@@ -1,7 +1,7 @@
 // The family price rule (design/PRICE.md): the exact pair and a positive finite amount, or no price; labels by age; no fallback.
 import { describe, expect, it } from 'vitest';
 import { parseRegistry, profileRegistry } from '../config/registry.ts';
-import { COINBASE_SPOT, EXPIRE_MS, fetchSpot, formatUsd, formatUtc, parseSpot, STALE_MS, usdView } from './price.ts';
+import { COINBASE_SPOT, EXPIRE_MS, fetchSpot, formatUsd, formatUsdApprox, formatUtc, parseSpot, STALE_MS, usdView } from './price.ts';
 
 const spot = (amount: unknown, base = 'DASH', currency = 'USD') => ({ data: { amount, base, currency } });
 const answer = (body: unknown, status = 200) => (async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch;
@@ -75,5 +75,21 @@ describe('saved settings', () => {
     expect(parseRegistry(saved).registry?.priceFeed).toEqual(COINBASE_SPOT);
     const custom = { ...profileRegistry('mainnet'), priceFeed: { name: 'mine', url: 'https://price.example/spot' } };
     expect(parseRegistry(custom).registry?.priceFeed).toEqual({ name: 'mine', url: 'https://price.example/spot' });
+  });
+});
+
+describe('formatUsdApprox', () => {
+  it('writes three significant figures in full, cents under $10 and millions in words', () => {
+    expect(formatUsdApprox(307_920.56)).toBe('$308,000');
+    expect(formatUsdApprox(309_491.06)).toBe('$309,000');
+    expect(formatUsdApprox(18_166)).toBe('$18,200');
+    expect(formatUsdApprox(487.31)).toBe('$487');
+    expect(formatUsdApprox(48.74)).toBe('$48.7');
+    expect(formatUsdApprox(99.96)).toBe('$100');
+    expect(formatUsdApprox(9.876)).toBe('$9.88');
+    expect(formatUsdApprox(0.5)).toBe('$0.50');
+    expect(formatUsdApprox(999_600)).toBe('$1 million');
+    expect(formatUsdApprox(1_234_567)).toBe('$1.23 million');
+    expect(formatUsdApprox(12_345_678)).toBe('$12.3 million');
   });
 });

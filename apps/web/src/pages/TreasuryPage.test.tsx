@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 // The treasury overview never shows a figure built from parts still being read: no sums while the votes are counted, no comparison
-// while superblocks are read; once complete it says what each figure rests on.
+// while superblocks are read; once complete it says what each figure rests on, beside the figure or under its section, never inside a
+// sentence.
 import { superblockPaymentsLimit } from '@govhub/verify';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -75,7 +76,16 @@ describe('the treasury overview', () => {
     expect(el.querySelector('[data-testid="tr-passing"]')!.textContent).toBe('5,092 DASH');
     expect([...el.querySelectorAll('[data-testid="tr-group-funded"] [data-testid="tr-row"] a')].map((a) => a.textContent)).toEqual(['Dcg', 'Italia']);
     expect(el.querySelector('[data-testid="tr-group-over"]')!.textContent).toContain('Passing, but over the budget');
-    expect([...el.querySelectorAll('[data-proof]')].map((p) => p.textContent)).toEqual(expect.arrayContaining(['Consensus limit', 'Platform records', 'Bridge’s tally']));
+    // each tile names its source beside its label; no proof chip sits inside a sentence
+    const tags = [...el.querySelectorAll('[data-testid="treasury-stats"] .dh-stat__label .dh-src')].map((t) => [t.textContent, t.getAttribute('data-src')]);
+    expect(tags).toEqual([['Consensus limit', 'ok'], ['Platform records', 'reported'], ['Data service tally', 'reported'], ['Estimate', 'reported']]);
+    expect(el.querySelectorAll('p [data-proof], .dh-stat__note [data-proof]')).toHaveLength(0);
+    expect(el.textContent).not.toMatch(/bridge/i);
+    // a sentence a reader can quote, and its source as a numbered note
+    const summary = el.querySelector('[data-testid="tr-summary"]')!;
+    expect(summary.textContent).toMatch(/^2 proposals have the votes and fit in this payout: 4,892 DASH, \d+% of what it can pay\. The largest is Dcg, at 4,832 DASH, 99% of what goes out\. 1 more passes but doesn’t fit \(200 DASH\); 1 is short of votes\.1$/);
+    expect(summary.querySelector('.dh-ref a')!.getAttribute('href')).toBe('#tr-pays-src-1');
+    expect(el.querySelector('#tr-pays-src-1')!.textContent).toContain('the governance data service');
     // one superblock still reading: progress, no average and no chart
     expect(el.querySelector('[data-testid="tr-compare-progress"]')!.textContent).toContain('1 of 2 so far');
     expect(el.querySelector('[data-testid="tr-compare-line"]')).toBeNull();
@@ -92,16 +102,21 @@ describe('the treasury overview', () => {
     const line = el.querySelector('[data-testid="tr-compare-line"]')!.textContent!;
     expect(line).toContain('paid 6,102 DASH on average'); // (5,393 + 6,810) / 2, rounded
     expect(line).toContain('4,892 DASH, is 20% less than that');
-    expect(line).toContain('Verified from the chain');
+    expect(line).not.toContain('Verified from the chain');
+    expect(el.querySelector('[data-testid="tr-compare"] .dh-section__head [data-proof="ok"]')!.textContent).toBe('Verified from the chain');
+    expect(el.querySelector('#tr-cmp-src-1')!.textContent).toContain('the governance data service reports allocated');
     expect(el.querySelectorAll('[data-testid="tr-chart"] .tr-col')).toHaveLength(3); // two superblocks and the next payout
   });
 });
 
-it('says when the bridge’s budget differs from the consensus limit', async () => {
+it('says when the governance data service’s budget differs from the consensus limit', async () => {
   hold.app = app(false);
   (hold.app as ReturnType<typeof app>).gov.cycle.data.value.budget = 7000e8;
   const { el } = await view();
-  expect(el.querySelector('[data-testid="treasury-stats"] [data-proof="reported"]')!.textContent).toMatch(/^Bridge’s figure; consensus says 6,82\d DASH$/);
+  const tile = el.querySelector('[data-testid="treasury-stats"] .dh-stat')!;
+  expect(tile.querySelector('.dh-src')!.textContent).toBe('Data service figure');
+  expect(tile.querySelector('.dh-src')!.getAttribute('data-src')).toBe('warn');
+  expect(tile.querySelector('.dh-stat__note')!.textContent).toMatch(/^Dash’s consensus rules allow 6,82\d DASH\./);
 });
 
 describe('the treasury overview when a read fails', () => {

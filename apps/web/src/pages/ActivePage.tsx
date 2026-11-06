@@ -36,7 +36,7 @@ function useProfiles(ids: readonly string[]): ReadonlyMap<string, Profile> {
 
 type Sort = 'order' | 'new' | 'amount' | 'close';
 const SORTS: Array<{ id: Sort; label: string; note: string }> = [
-  { id: 'order', label: 'Payout order', note: 'Best-supported first: the order the treasury pays them in, as reported. Each proposal’s page checks its own figures in your browser.' },
+  { id: 'order', label: 'Payout order', note: 'Best-supported first: the order the treasury pays them in.' },
   { id: 'close', label: 'Closest to the line', note: 'Closest to the passing line first, either side: where a few votes decide.' },
   { id: 'new', label: 'Newest', note: 'Newest first, by when they were submitted.' },
   { id: 'amount', label: 'Largest request', note: 'Largest payment first.' },

@@ -24,12 +24,3 @@ export function ChainProof({ weak }: { weak: boolean }) {
     </ProofTag>
   );
 }
-
-/** Figures as Governance's bridge publishes them on Platform: each proposal's own page checks its share. */
-export function ReportedProof({ what }: { what: string }) {
-  return (
-    <ProofTag state="reported" title="As Governance's bridge publishes them on Platform; each proposal's page recounts its own votes and budget place in this browser">
-      {what}
-    </ProofTag>
-  );
-}

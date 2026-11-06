@@ -54,13 +54,25 @@ export function ProposalLabel({ p, to, owner = true }: { p: { govHash: string; u
   );
 }
 
+/** A proposal named inside a sentence, as the lists name it (the owner's title quoted, else its name as words), linking to it. */
+export function ProposalName({ p, to, owner }: { p: { govHash: string; url: string; name: string }; to: string; owner: boolean }) {
+  const page = useOwnerPage(p)?.page;
+  const title = owner ? page?.title : null;
+  const words = useReadableTitle(p.name);
+  return (
+    <Link to={to} className="dh-link" title={title ? `${p.name}: the owner’s title, from their page on ${page!.host}` : p.name}>
+      {title ? <bdi>“{title}”</bdi> : words}
+    </Link>
+  );
+}
+
 /** Said once above a list whose rows quote the owners: only when one of `proposals` has an owner's page to quote. */
 export function OwnerWordsNote({ proposals }: { proposals: readonly { govHash: string; url: string }[] }) {
   const pages = useOwnerPages();
   if (!proposals.some((p) => ownerPageOf(pages, p))) return null;
   return (
     <p className="small muted owner-words-note" data-testid="owner-words-note">
-      Titles and summaries in quotes are the owners’ own words, from the pages their proposals link to; nobody has checked them.
+      Quoted titles and summaries are the owners’ own words, from the pages their proposals link to, unchecked.
     </p>
   );
 }

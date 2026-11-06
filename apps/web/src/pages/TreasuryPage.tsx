@@ -1,7 +1,8 @@
 // /treasury: what the Dash treasury funds, readable in half a minute. This cycle's budget, what is asked of it and what has the
 // votes; what it pays for, grouped by where each proposal stands and ordered by size (proposals carry no category, so none is
-// guessed); the next payout; and how it compares with the superblocks before it, read from the chain. Every figure says what it
-// rests on, and no total is shown while its parts are still being read.
+// guessed); the next payout; and how it compares with the superblocks before it, read from the chain. Sentences stay quotable: each
+// figure's source is a tag beside its label or a numbered note under its section, never a chip inside the sentence. No total is shown
+// while its parts are still being read.
 import { superblockPaymentsLimit } from '@govhub/verify';
 import { useMemo, type ReactNode } from 'react';
 import { useRouteTitle } from '../app/title.ts';
@@ -15,8 +16,8 @@ import { share, treasuryView, type GroupId, type TreasuryGroup, type TreasuryVie
 import { countNames, proposalHref, type Row } from '../lib/view.ts';
 import { DashValue } from '../ui/DashValue.tsx';
 import { Link } from '../ui/Link.tsx';
-import { ProposalLabel, PurposeLine } from '../ui/OwnerPage.tsx';
-import { ChainProof, ProofTag, ReportedProof } from '../ui/ProofTag.tsx';
+import { ProposalLabel, ProposalName, PurposeLine } from '../ui/OwnerPage.tsx';
+import { ChainProof } from '../ui/ProofTag.tsx';
 import { ProposalTabs } from '../ui/ProposalTabs.tsx';
 import { UsdValue } from '../ui/UsdValue.tsx';
 import { useLedger, LEDGER_STEP } from '../ui/useLedger.ts';
@@ -53,8 +54,7 @@ export function TreasuryPage() {
           What the treasury funds
         </h1>
         <p className="dh-page-header__lede">
-          The Dash treasury pays the proposals masternodes vote for, {superblockCadence(params)}, in a superblock. Here is what this one can pay, what it pays for,
-          and how that compares with the ones before.
+          The Dash treasury pays the proposals masternodes vote for, {superblockCadence(params)}, in a superblock.
         </p>
       </header>
       {cycle ? (
@@ -89,46 +89,52 @@ function CycleStats({ cycle, view, state }: { cycle: Cycle; view: TreasuryView; 
   const counting = state !== 'ok';
   const hold = (v: ReactNode, needsVotes: boolean) =>
     state === 'counting' ? <span className="muted">counting…</span> : state === 'no-list' || (needsVotes && state === 'no-votes') ? <span className="muted">not known</span> : v;
-  // the sum is only as strong as its weakest record: a proposal the bridge reported before Platform had it makes it the bridge's
-  const fromBridge = Object.values(view.groups).some((g) => g.rows.some((r) => r.p.prov.kind !== 'proof' && r.p.prov.kind !== 'fixture'));
+  // the sum is only as strong as its weakest record: a proposal the data service reported before Platform had it makes it the data service's
+  const fromService = Object.values(view.groups).some((g) => g.rows.some((r) => r.p.prov.kind !== 'proof' && r.p.prov.kind !== 'fixture'));
+  const unread = view.groups.unread.rows.length;
   return (
     <div className="dh-stats tr-stats" data-testid="treasury-stats">
       <div className="dh-stat dh-stat--key">
-        <span className="dh-stat__label">This payout can pay</span>
+        <span className="dh-stat__label">
+          This payout can pay{' '}
+          {limit === cycle.budget ? (
+            <Src ok title={`The most superblock ${formatInt(cycle.superblockHeight)} can pay by Dash's consensus rules, worked out in this browser from its height.`}>
+              Consensus limit
+            </Src>
+          ) : (
+            <Src warn title="As the governance data service reports it; not checked against the consensus rules in this browser.">
+              Data service figure
+            </Src>
+          )}
+        </span>
         <span className="dh-stat__value" data-testid="tr-budget">
           <DashValue duffs={cycle.budget} />
         </span>
         <span className="dh-stat__note">
-          <UsdValue duffs={cycle.budget} what="About" />{' '}
-          {limit === cycle.budget ? (
-            <ProofTag state="reported" title={`The most superblock ${formatInt(cycle.superblockHeight)} can pay, by Dash's consensus rules: worked out in this browser from its height`}>
-              Consensus limit
-            </ProofTag>
-          ) : (
-            <ReportedProof what={limit === null ? 'Bridge’s figure' : `Bridge’s figure; consensus says ${formatDash(limit)}`} />
-          )}
+          {limit !== null && limit !== cycle.budget && <span className="tr-limit">Dash’s consensus rules allow {formatDash(limit)}. </span>}
+          <UsdValue duffs={cycle.budget} />
         </span>
       </div>
       <div className="dh-stat">
-        <span className="dh-stat__label">Asked for</span>
+        <span className="dh-stat__label">
+          Asked for{' '}
+          {fromService ? (
+            <Src title="Some of these proposals are only as the governance data service reports them: Platform doesn't have them yet.">Data service records</Src>
+          ) : (
+            <Src title="The proposals Governance lists, read from Platform; each one's fields match the hash the network votes on.">Platform records</Src>
+          )}
+        </span>
         <span className="dh-stat__value" data-testid="tr-requested">{hold(<DashValue duffs={view.requested} />, false)}</span>
-        <span className="dh-stat__note">
-          {state === 'counting' || state === 'no-list' ? 'by the proposals due at this payout' : `${share(view.requested, cycle.budget)} of what it can pay, by the proposals due at this payout`}{' '}
-          {fromBridge ? (
-            <ReportedProof what="Bridge’s records" />
-          ) : (
-            <ProofTag state="reported" title="The proposals Governance lists, read from Platform; each one's fields match the hash the network votes on">
-              Platform records
-            </ProofTag>
-          )}
-        </span>
+        <span className="dh-stat__note">{state === 'counting' || state === 'no-list' ? 'by the proposals due at this payout' : `${share(view.requested, cycle.budget)} of what it can pay`}</span>
       </div>
       <div className="dh-stat">
-        <span className="dh-stat__label">Has the votes</span>
+        <span className="dh-stat__label">
+          Has the votes <Src title={TALLY_SOURCE}>Data service tally</Src>
+        </span>
         <span className="dh-stat__value" data-testid="tr-passing">
           {hold(
             <>
-              {view.groups.unread.rows.length > 0 && <small>at least </small>}
+              {unread > 0 && <small>at least </small>}
               <DashValue duffs={view.passing} />
             </>,
             true,
@@ -137,18 +143,42 @@ function CycleStats({ cycle, view, state }: { cycle: Cycle; view: TreasuryView; 
         <span className="dh-stat__note">
           {counting
             ? 'asked by proposals with enough yes votes'
-            : `asked by proposals with enough yes votes; ${formatDash(view.groups.funded.sum)} of it fits the budget${view.groups.unread.rows.length ? `; the votes of ${formatInt(view.groups.unread.rows.length)} weren’t read` : ''}`}{' '}
-          <ReportedProof what="Bridge’s tally" />
+            : `${view.passing === 0 ? 'no proposal has enough yes votes yet' : view.groups.funded.sum === view.passing ? 'all of it fits the budget' : `${formatDash(view.groups.funded.sum)} of it fits the budget`}${unread ? `; the votes of ${formatInt(unread)} weren’t read` : ''}`}
         </span>
       </div>
       <div className="dh-stat">
-        <span className="dh-stat__label">Next payout</span>
+        <span className="dh-stat__label">
+          Next payout <Src title="Estimated from the time blocks take; the superblock's height is fixed.">Estimate</Src>
+        </span>
         <span className="dh-stat__value" data-testid="tr-next">{formatDate(cycle.estTime)}</span>
         <span className="dh-stat__note">
-          superblock {formatInt(cycle.superblockHeight)}, an estimate from block times; {deadline > now ? `votes count until ${formatDate(deadline)}` : 'voting for it has closed'}
+          superblock {formatInt(cycle.superblockHeight)}; {deadline > now ? `votes count until ${formatDate(deadline)}` : 'voting for it has closed'}
         </span>
       </div>
     </div>
+  );
+}
+
+/** Where the standings come from, said once: in a tile's tag and the section's note. */
+const TALLY_SOURCE = 'Vote tallies as the governance data service reports them, live from Dash Core. Each proposal’s page recounts its own votes in this browser.';
+
+/** A figure's source, beside its label or after a complete value (DESIGN.md, sources beside figures): dotted when reported, solid when checked here, dashed when not checked. */
+function Src({ ok, warn, title, children }: { ok?: boolean; warn?: boolean; title: string; children: ReactNode }) {
+  return (
+    <span className={`dh-src${ok ? ' dh-src--ok' : warn ? ' dh-src--warn' : ''}`} title={title} data-src={ok ? 'ok' : warn ? 'warn' : 'reported'}>
+      {children}
+    </span>
+  );
+}
+
+/** The superscript that points at a section's numbered source line. */
+function Ref({ to, n = 1 }: { to: string; n?: number }) {
+  return (
+    <sup className="dh-ref">
+      <a href={`#${to}`} aria-label={`Source ${n}`}>
+        {n}
+      </a>
+    </sup>
   );
 }
 
@@ -160,11 +190,6 @@ function PaysFor({ view, state, budget, names }: { view: TreasuryView; state: Re
         <h2 className="dh-section__title" id="tr-pays-title">
           What it pays for
         </h2>
-        <p className="dh-section__desc">
-          Grouped by where each proposal stands, largest first; proposals carry no category on the network, so none is guessed here. Titles and summaries in quotes
-          are the owners’ own words from their pages: nobody has checked them. Standings are the bridge’s tally <ReportedProof what="Bridge’s tally" />; each
-          proposal’s page recounts its own.
-        </p>
       </div>
       {state === 'counting' ? (
         <p className="muted" aria-busy="true" data-testid="tr-counting">
@@ -179,16 +204,60 @@ function PaysFor({ view, state, budget, names }: { view: TreasuryView; state: Re
         </p>
       ) : (
         <>
-          <BudgetBar funded={view.groups.funded} over={view.groups.over} budget={budget} />
+          <PaysForSummary view={view} budget={budget} names={names} />
+          <p className="small muted tr-pays-how">Proposals carry no category, so they are grouped by where they stand, largest first. Quoted titles and summaries are the owners’ own words, unchecked.</p>
+          <BudgetBar funded={view.groups.funded} budget={budget} />
           {(['funded', 'over', 'short', 'unread', 'later'] as const).map((id) => (view.groups[id].rows.length ? <Group key={id} group={view.groups[id]} budget={budget} names={names} /> : null))}
+          <ol className="dh-sources" aria-label="Sources">
+            <li id="tr-pays-src-1">Standings: {TALLY_SOURCE}</li>
+          </ol>
         </>
       )}
     </section>
   );
 }
 
-/** The budget as one bar: each proposal in it, largest first, then what is left; what passes but doesn't fit is said in words. */
-function BudgetBar({ funded, over, budget }: { funded: TreasuryGroup; over: TreasuryGroup; budget: number }) {
+/**
+ * What this payout funds, in sentences a reader can quote: how many proposals have the votes and fit, what that comes to, the largest,
+ * and how many more pass without room or are short of votes. The standings' source is the numbered note under the section.
+ */
+function PaysForSummary({ view, budget, names }: { view: TreasuryView; budget: number; names: ReadonlyMap<string, number> }) {
+  const { checks } = useApp();
+  const { funded, over, short, unread } = view.groups;
+  const top = funded.rows[0];
+  const largest = top?.p.value;
+  const n = funded.rows.length;
+  const one = (k: number, singular: string, plural: string) => `${formatInt(k)} ${k === 1 ? singular : plural}`;
+  const more = [
+    over.rows.length ? `${one(over.rows.length, 'more passes but doesn’t fit', 'more pass but don’t fit')} (${formatDash(over.sum)})` : '',
+    short.rows.length ? one(short.rows.length, over.rows.length ? 'is short of votes' : 'more is short of votes', over.rows.length ? 'are short of votes' : 'more are short of votes') : '',
+  ].filter(Boolean);
+  return (
+    <p className="tr-summary" data-testid="tr-summary">
+      {n === 0 ? (
+        'No proposal has both the votes and room in this payout yet.'
+      ) : (
+        <>
+          {n === 1 ? 'One proposal has the votes and fits' : `${unread.rows.length ? 'At least ' : ''}${formatInt(n)} proposals have the votes and fit`} in this
+          payout: <b>{formatDash(funded.sum)}</b>, {share(funded.sum, budget)} of what it can pay.{' '}
+          {largest && (
+            <>
+              {n === 1 ? 'It is ' : 'The largest is '}
+              <ProposalName p={largest} to={proposalHref(largest, names)} owner={top!.content.ok && checks.state(largest).status !== 'failed'} />, at {formatDash(largest.paymentAmount)}
+              {n > 1 ? `, ${share(largest.paymentAmount, funded.sum)} of what goes out` : ''}.
+            </>
+          )}
+        </>
+      )}
+      {more.length > 0 && ` ${more.join('; ').replace(/^./, (c) => c.toUpperCase())}.`}
+      {unread.rows.length > 0 && ` The votes of ${formatInt(unread.rows.length)} weren’t read.`}
+      <Ref to="tr-pays-src-1" />
+    </p>
+  );
+}
+
+/** The budget as one bar: each proposal in it, largest first, then what is left. */
+function BudgetBar({ funded, budget }: { funded: TreasuryGroup; budget: number }) {
   const left = Math.max(0, budget - funded.sum);
   return (
     <figure className="tr-budget" aria-labelledby="tr-budget-cap">
@@ -199,10 +268,8 @@ function BudgetBar({ funded, over, budget }: { funded: TreasuryGroup; over: Trea
         <span className="tr-seg-free" style={{ flexGrow: left }} />
       </div>
       <figcaption id="tr-budget-cap" className="small">
-        <span className="tr-key tr-key-seg" aria-hidden="true" /> {formatInt(funded.rows.length)} proposal{funded.rows.length === 1 ? '' : 's'} in the next budget,{' '}
-        <b>{formatDash(funded.sum)}</b> ({share(funded.sum, budget)}) · <span className="tr-key tr-key-free" aria-hidden="true" /> {formatDash(left)} left
-        {over.rows.length > 0 && <> · {formatInt(over.rows.length)} more pass but don’t fit ({formatDash(over.sum)})</>}
-        {funded.rows.length > 1 && `. The largest is ${share(funded.rows[0]!.p.value.paymentAmount, funded.sum)} of what goes out.`}
+        <span className="tr-key tr-key-seg" aria-hidden="true" /> In the next budget, {formatDash(funded.sum)} · <span className="tr-key tr-key-free" aria-hidden="true" />{' '}
+        {formatDash(left)} left
       </figcaption>
     </figure>
   );
@@ -334,6 +401,7 @@ function Compared({ allocated, network }: { allocated: number | null; network: C
         <p className="dh-section__desc">
           What each superblock actually paid, read from the chain in this browser. <Link to="/past" className="dh-link dh-link--go">Every payment, superblock by superblock</Link>
         </p>
+        {sum.kind === 'done' && sum.counted > 0 && <ChainProof weak={sum.weak} />}
       </div>
       <ComparedBody ledger={ledger} entries={entries} sum={sum} allocated={allocated} network={network} last={last} />
       <p className="visually-hidden" aria-live="polite" data-testid="tr-compare-announce">
@@ -385,6 +453,11 @@ function ComparedBody({ ledger, entries, sum, allocated, network, last }: { ledg
     <>
       <CompareLine sum={sum} cols={cols} allocated={allocated} last={last} onRetry={ledger.retry} />
       <PaidColumns cols={cols} allocated={allocated} network={network} />
+      {allocated !== null && (
+        <ol className="dh-sources" aria-label="Sources">
+          <li id="tr-cmp-src-1">This payout’s budget so far: what the governance data service reports allocated to the next superblock. It isn’t paid yet.</li>
+        </ol>
+      )}
     </>
   );
 }
@@ -402,9 +475,9 @@ function CompareLine({ sum, cols, allocated, last, onRetry }: { sum: LedgerDone;
       {diff !== null && (
         <>
           This payout’s budget so far, <b>{formatDash(allocated!)}</b>, is {Math.abs(diff) < 0.05 ? 'about the same.' : `${Math.round(Math.abs(diff) * 100)}% ${diff < 0 ? 'less' : 'more'} than that.`}
+          <Ref to="tr-cmp-src-1" />
         </>
-      )}{' '}
-      <ChainProof weak={sum.weak} /> {allocated !== null && <ReportedProof what="Next payout: bridge’s figure" />}
+      )}
       {left && (
         <span className="small">
           {' '}
@@ -465,7 +538,7 @@ function PaidColumns({ cols, allocated, network }: { cols: Col[]; allocated: num
           </div>
         ))}
         {allocated !== null && (
-          <div className="tr-col tr-col-next" title={`This payout: ${formatDash(allocated)} allocated so far, as the bridge reports it; not paid yet`}>
+          <div className="tr-col tr-col-next" title={`This payout: ${formatDash(allocated)} allocated so far, as the governance data service reports it; not paid yet`}>
             <span className="tr-val">{formatDashAmount(allocated)}</span>
             <span className="tr-next" style={{ height: `${(allocated / top) * 100}%` }} />
             <span className="tr-x">Next</span>

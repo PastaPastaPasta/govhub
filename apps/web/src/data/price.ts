@@ -57,8 +57,20 @@ export function usdView(s: UsdState, nowMs: number): UsdView {
 }
 
 const USD = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
-/** "$332,332.18" */
+/** "$332,332.18": a price itself, to the cent. */
 export const formatUsd = (usd: number): string => USD.format(usd);
+
+const SIG3 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumSignificantDigits: 3 });
+/**
+ * An approximate valuation, as the family writes one: three significant figures in full ("$309,000", "$18,200", "$487"), to the cent
+ * under $10, and from a million "$1.23 million". Anything more precise would claim more than a spot price times an amount knows.
+ */
+export function formatUsdApprox(usd: number): string {
+  if (usd < 10) return USD.format(usd);
+  const rounded = Number(usd.toPrecision(3));
+  if (rounded >= 1e6) return `$${(rounded / 1e6).toLocaleString('en-US', { maximumSignificantDigits: 3 })} million`;
+  return SIG3.format(rounded);
+}
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 /** "5 Nov 2026, 14:22 UTC" */
