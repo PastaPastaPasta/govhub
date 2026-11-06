@@ -39,6 +39,7 @@
 .poll-answer-label { display: flex; align-items: center; gap: 10px; font-size: 15px; }
 .poll-answer-value { margin-inline-start: auto; color: var(--dh-ink-2); flex: none; }
 .poll-answer-options:disabled { opacity: 1; }
+.poll-answer-options ~ p { margin-block-start: 16px; }
 .poll-record-aside dl { margin: 0; font-size: 14px; }
 .poll-record-aside dl > div { display: flex; justify-content: space-between; gap: 16px; padding-block: 16px; border-block-end: 1px solid var(--dh-line); }
 .poll-record-aside dt { color: var(--dh-ink-2); }

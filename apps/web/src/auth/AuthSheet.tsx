@@ -194,9 +194,6 @@ function Choose() {
           Create an account
         </button>
       </dashhq-signin-help>
-      <p className="small sheet-vote-note" data-testid="signin-vote-note">
-        <b>Only here for treasury voting?</b> You don’t need an account: every open proposal can be signed offline in Dash Core, or with a voting key kept in that tab only.
-      </p>
       {mode === 'fixtures' && <SampleIdentities />}
       {pending.length > 0 && (
         <div className="notice-box dh-notice dh-notice--info" role="status">
@@ -248,6 +245,9 @@ function Choose() {
           <span className="dh-choice__desc">Approving from DashPay, with no phrase typed here, isn’t available yet.</span>
         </button>
       </div>
+      <p className="small sheet-vote-note" data-testid="signin-vote-note">
+        <b>Only here for treasury voting?</b> You don’t need an account: every open proposal can be signed offline in Dash Core, or with a voting key kept in that tab only.
+      </p>
     </div>
   );
 }
