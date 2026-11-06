@@ -20,6 +20,7 @@ function useKept(to: LinkProps['to']) {
   const resolved = useResolvedPath(to);
   const params = new URLSearchParams(resolved.search);
   for (const [key, value] of keptParams(search)) {
+    if (key === 'mn' && /^\/masternodes\/[0-9a-f]{64}$/i.test(resolved.pathname)) continue;
     if (!params.has(key)) params.set(key, value);
   }
   return { ...resolved, search: params.toString() };
