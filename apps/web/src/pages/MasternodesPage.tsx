@@ -62,7 +62,7 @@ function Header({ adding, badgeKeyKept }: { adding: boolean; badgeKeyKept: boole
       </div>
       {open && (
         <div className="kr-head-actions">
-          <Link className="btn dh-btn btn-primary dh-btn--primary" to="/votes">
+          <Link className="btn dh-btn" to="/votes">
             Vote on proposals
           </Link>
           {!k.demo && (
