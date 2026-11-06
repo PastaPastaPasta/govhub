@@ -18,7 +18,7 @@ import { isShortLink } from '../src/lib/shorteners.ts';
 import { contestAliases, DPNS_CONTRACT_ID, DPNS_POLL, normalizeLabel, PARENT_DOMAIN, registersAs } from '../src/contests/model.ts';
 import { governanceObjectHash, parseProposalData } from '@govhub/verify';
 import { ownerPages } from './ownerpages.mjs';
-import { POLL_CONTRACT, ARCHIVE_CONTRACT } from '../src/polls/model.ts';
+import { POLL_CONTRACT, ARCHIVE_CONTRACT } from '../src/polls/constants.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.resolve(process.argv[2] ?? path.join(here, '../dist'));

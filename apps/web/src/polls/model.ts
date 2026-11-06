@@ -1,7 +1,7 @@
 import { base58, base64, idToBytes, isIdentifier, type DocumentOp, type DocData } from '@govhub/forum';
 
-export const POLL_CONTRACT = 'GBCR8JqtXNMZa4B16ZAYm3RkNHrPcU3D36jcAoYWvr8E';
-export const ARCHIVE_CONTRACT = '7Xye3k1MuVYTpLuTnein5GLwR1NUjmt5gtLLp4pGhhRf';
+import { POLL_CONTRACT } from './constants.ts';
+export { POLL_CONTRACT, ARCHIVE_CONTRACT } from './constants.ts';
 export interface Poll {
   id: string;
   owner: string;

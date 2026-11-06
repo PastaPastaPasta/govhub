@@ -1,0 +1,2 @@
+export const POLL_CONTRACT = 'GBCR8JqtXNMZa4B16ZAYm3RkNHrPcU3D36jcAoYWvr8E';
+export const ARCHIVE_CONTRACT = '7Xye3k1MuVYTpLuTnein5GLwR1NUjmt5gtLLp4pGhhRf';
