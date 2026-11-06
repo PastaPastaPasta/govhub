@@ -2,7 +2,8 @@
 // and `/p/<name>` with p/<name>.html (200, no redirect), so a shared link gets its own title, description and share tags
 // while the app itself is unchanged: every file is index.html with a different <head>. Proposals and name contests are
 // listed from public reads at build time (the bridge's HTTP API and Platform, Mainnet), and so is every masternode
-// (/masternodes/<proTxHash>, from the bridge's list). Each proposal's linked page is read too, for what its owner says it is
+// (/masternodes/<proTxHash>, from the bridge's list). A name contest also gets an entry page under each spelling people write
+// (/names/Alice and /names/alice for /names/a11ce, canonical to the label's). Each proposal's linked page is read too, for what its owner says it is
 // (scripts/ownerpages.mjs, shipped as owners.json, never fetched by the browser). A route that appears after the
 // build still loads, through 404.html with HTTP 404, until the next build (the Pages workflow rebuilds on a schedule).
 //
@@ -14,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { formatDash, formatDate, formatDateTime, formatInt } from '../src/lib/format.ts';
 import { parseGovParams, paymentSchedule, perPayment } from '../src/lib/governance.ts';
 import { isShortLink } from '../src/lib/shorteners.ts';
+import { contestAliases, DPNS_CONTRACT_ID, DPNS_POLL, normalizeLabel, PARENT_DOMAIN, registersAs } from '../src/contests/model.ts';
 import { governanceObjectHash, parseProposalData } from '@govhub/verify';
 import { ownerPages } from './ownerpages.mjs';
 
@@ -124,12 +126,21 @@ function describeProposalOrThrow(p) {
   return `${kindOf(p)} asking ${ask}, ${window}.${votes}`;
 }
 
+let mainnet;
+/** One Mainnet SDK for the contest reads (proof-checked by evo-sdk). */
+function mainnetSdk() {
+  mainnet ??= import('@dashevo/evo-sdk').then(async ({ EvoSDK }) => {
+    const sdk = EvoSDK.mainnetTrusted({ settings: { timeoutMs: 20_000, retries: 2 } });
+    await sdk.connect();
+    return sdk;
+  });
+  return mainnet;
+}
+
 /** Every contested username on Mainnet Platform (proof-checked by evo-sdk), and when the open ones close. */
 async function contests() {
-  const { EvoSDK } = await import('@dashevo/evo-sdk');
-  const sdk = EvoSDK.mainnetTrusted({ settings: { timeoutMs: 20_000, retries: 2 } });
-  await sdk.connect();
-  const poll = { dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec', documentTypeName: 'domain', indexName: 'parentNameAndLabel' };
+  const sdk = await mainnetSdk();
+  const poll = DPNS_POLL;
   const open = new Map();
   let start = Date.now();
   for (let page = 0; page < 20; page++) {
@@ -160,6 +171,54 @@ async function contests() {
     after = raw.at(-1);
   }
   return [...labels].filter((l) => SAFE_LABEL.test(l)).map((label) => ({ label, endsAt: open.get(label) ?? null }));
+}
+
+/**
+ * How people spell each contested name, read from Mainnet: the name as registered (an awarded contest) and, for an open contest, each
+ * contender's own spelling. `/names/Alice` and `/names/alice` then get an entry page of their own that names `/names/a11ce` as
+ * canonical, instead of answering 404 until the app rewrites the address. Labels with no known spelling keep their normalized page only.
+ */
+async function spellings(cs) {
+  const sdk = await mainnetSdk();
+  const out = new Map(cs.map((c) => [c.label, []]));
+  const add = (label, s) => {
+    if (typeof s === 'string' && out.has(label) && normalizeLabel(s) === label && !out.get(label).includes(s)) out.get(label).push(s);
+  };
+  const labels = [...out.keys()];
+  // a registered name per label at most (the index is unique), so a hundred labels fit one page
+  for (let i = 0; i < labels.length; i += 100) {
+    const chunk = labels.slice(i, i + 100);
+    const res = await sdk.documents.queryWithProof({
+      dataContractId: DPNS_CONTRACT_ID,
+      documentTypeName: DPNS_POLL.documentTypeName,
+      where: [['normalizedParentDomainName', '==', PARENT_DOMAIN], ['normalizedLabel', 'in', chunk]],
+      orderBy: [['normalizedLabel', 'asc']],
+      limit: 100,
+    });
+    for (const d of res.data.values()) {
+      const j = d?.toJSON();
+      add(j?.normalizedLabel, j?.label);
+    }
+  }
+  const openOnes = cs.filter((c) => c.endsAt !== null);
+  if (openOnes.length) {
+    const [mod, contract] = await Promise.all([import('@dashevo/evo-sdk'), sdk.contracts.fetch(DPNS_CONTRACT_ID)]);
+    const version = sdk.version();
+    for (const c of openOnes) {
+      const st = await sdk.voting.contestedResourceVoteStateWithProof({ ...DPNS_POLL, indexValues: [PARENT_DOMAIN, c.label], resultType: 'documentsAndVoteTally', limit: 100 }).catch(() => null);
+      // the leading contender's spelling first, as the page shows it
+      const contenders = Array.from(st?.data?.contenders ?? []).sort((a, b) => Number(b.voteTally ?? 0) - Number(a.voteTally ?? 0));
+      for (const x of contenders) {
+        if (!x.serializedDocument) continue;
+        try {
+          add(c.label, mod.Document.fromBytes(x.serializedDocument, contract, DPNS_POLL.documentTypeName, version).properties?.label);
+        } catch {
+          // an undecodable document: no spelling from it
+        }
+      }
+    }
+  }
+  return out;
 }
 
 /** Every masternode in the bridge's list (untrusted, like the proposals: the page reads its own data). */
@@ -232,10 +291,12 @@ async function shortLinks(ps) {
 const describeMasternode = (m, active) =>
   `How Dash ${m.evo ? 'evonode' : 'masternode'} ${m.proTx.slice(0, 8)}… voted on ${active ? `the ${formatInt(active)} active treasury proposals` : 'the active treasury proposals'}, and how to vote with it.`;
 
-function describeContest(c) {
+function describeContest(c, shown) {
+  const as = registersAs(shown, c.label);
+  const name = as ? `${shown}.dash (registers as ${as}.dash)` : `${shown}.dash`;
   return c.endsAt
-    ? `Who wants the Dash username ${c.label}.dash and how masternodes are voting. Voting closes ${formatDateTime(Math.floor(c.endsAt / 1000))}.`
-    : `The masternode vote over the Dash username ${c.label}.dash: who wanted it and how the vote ended.`;
+    ? `Who wants the Dash username ${name} and how masternodes are voting. Voting closes ${formatDateTime(Math.floor(c.endsAt / 1000))}.`
+    : `The masternode vote over the Dash username ${name}: who wanted it and how the vote ended.`;
 }
 
 const written = new Set();
@@ -301,9 +362,22 @@ const activeCount = ps.filter((p) => p.state === 'active').length;
 for (const m of ms) {
   await write(`/masternodes/${m.proTx}`, head(template, { route: `/masternodes/${m.proTx}`, record: `Masternode ${m.proTx.slice(0, 6)}…${m.proTx.slice(-6)}`, description: describeMasternode(m, activeCount) }));
 }
+// a failed read leaves each contest its normalized page only
+const spelled = new Map(cs.length ? await settle('name spellings', () => spellings(cs)) : []);
+let aliases = 0;
 for (const c of cs) {
-  await write(`/names/${c.label}`, head(template, { route: `/names/${c.label}`, record: `${c.label}.dash name contest`, description: describeContest(c) }));
+  const known = spelled.get(c.label) ?? [];
+  // the spelling the app heads the page with: the leading contender's, else the normalized label
+  const shown = known[0] ?? c.label;
+  const canonical = `/names/${c.label}`;
+  const entry = { route: canonical, record: `${shown}.dash name contest`, description: describeContest(c, shown), canonical };
+  await write(canonical, head(template, entry));
+  // the same page under each spelling people write (and EvoVote's forwarding keeps): 200, naming the label's page as canonical
+  for (const alias of contestAliases(c.label, known)) {
+    await write(`/names/${alias}`, head(template, { ...entry, route: `/names/${alias}` }));
+    aliases++;
+  }
 }
-console.log(`prerender: ${Object.keys(links).length} short links resolved; ${Object.keys(owners.pages).length} owner pages read; ${written.size} entry pages (${ps.length} proposals, ${ms.length} masternodes, ${cs.length} name contests${cs.length ? `, ${cs.filter((c) => c.endsAt).length} open` : ''})${offline ? ', offline' : ''}`);
+console.log(`prerender: ${Object.keys(links).length} short links resolved; ${Object.keys(owners.pages).length} owner pages read; ${written.size} entry pages (${ps.length} proposals, ${ms.length} masternodes, ${cs.length} name contests${cs.length ? `, ${cs.filter((c) => c.endsAt).length} open, ${aliases} spellings` : ''})${offline ? ', offline' : ''}`);
 // evo-sdk keeps its connections open
 process.exit(0);

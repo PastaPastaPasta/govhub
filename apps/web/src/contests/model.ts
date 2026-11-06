@@ -72,6 +72,17 @@ export function normalizeLabel(name: string): string {
     .replace(/[il]/g, '1');
 }
 
+/**
+ * Other addresses for a contest's page: each known spelling of the name ("Alice") as written and in lower case, when it normalizes to
+ * the label and is a plain DPNS label (letters, digits, inner hyphens). The label itself is the canonical address, never an alias.
+ */
+export function contestAliases(label: string, spellings: readonly string[]): string[] {
+  const out = new Set<string>();
+  for (const s of spellings)
+    for (const v of [s, s.toLowerCase()]) if (v !== label && /^[A-Za-z0-9][A-Za-z0-9-]{1,61}[A-Za-z0-9]$/.test(v) && normalizeLabel(v) === label) out.add(v);
+  return [...out];
+}
+
 /** Labels in the contested index: 3 to 19 of a-z, 0, 1 and hyphen (after normalization). */
 export const isContestedLabel = (label: string): boolean => /^[a-z01-]{3,19}$/.test(label);
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { contestKey, displayName, isContestedLabel, normalizeLabel, percent, phaseOf, registersAs, toOutcome, type ContestState } from './model.ts';
+import { contestAliases, contestKey, displayName, isContestedLabel, normalizeLabel, percent, phaseOf, registersAs, toOutcome, type ContestState } from './model.ts';
 import { TtlCache } from './source.ts';
 import { leadText, statusTag } from './ui.tsx';
 
@@ -31,6 +31,19 @@ describe('labels', () => {
     expect(displayName(state(), 'sat0sh1')).toBe('sat0sh1');
     expect(registersAs('Satoshi', 'sat0sh1')).toBe('sat0sh1');
     expect(registersAs('DashPay', 'dashpay')).toBeNull();
+  });
+});
+
+describe('contest aliases', () => {
+  it('serves each spelling as written and in lower case, never the label itself', () => {
+    expect(contestAliases('a11ce', ['Alice'])).toEqual(['Alice', 'alice']);
+    expect(contestAliases('ther0adn0ttaken', ['Theroadnottaken', 'TheRoadNotTaken'])).toEqual(['Theroadnottaken', 'theroadnottaken', 'TheRoadNotTaken']);
+    expect(contestAliases('dash', ['dash'])).toEqual([]);
+    expect(contestAliases('b0b', ['b0b', 'Bob'])).toEqual(['Bob', 'bob']);
+  });
+  it('drops spellings that are not this label or not a plain file name', () => {
+    expect(contestAliases('a11ce', ['Alicia', 'al1ce/../x', '-alice', 'alice.dash', '../a11ce', 'ALICE '])).toEqual([]);
+    expect(contestAliases('a11ce', [])).toEqual([]);
   });
 });
 
