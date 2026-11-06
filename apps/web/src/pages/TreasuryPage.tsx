@@ -17,7 +17,7 @@ import { countNames, proposalHref, type Row } from '../lib/view.ts';
 import { DashValue } from '../ui/DashValue.tsx';
 import { Link } from '../ui/Link.tsx';
 import { ProposalLabel, ProposalName, PurposeLine } from '../ui/OwnerPage.tsx';
-import { ChainProof } from '../ui/ProofTag.tsx';
+import { ChainProof, ProofTag } from '../ui/ProofTag.tsx';
 import { ProposalTabs } from '../ui/ProposalTabs.tsx';
 import { UsdValue } from '../ui/UsdValue.tsx';
 import { useLedger, LEDGER_STEP } from '../ui/useLedger.ts';
@@ -98,13 +98,13 @@ function CycleStats({ cycle, view, state }: { cycle: Cycle; view: TreasuryView; 
         <span className="dh-stat__label">
           This payout can pay{' '}
           {limit === cycle.budget ? (
-            <Src ok title={`The most superblock ${formatInt(cycle.superblockHeight)} can pay by Dash's consensus rules, worked out in this browser from its height.`}>
+            <ProofTag state="ok" title={`The most superblock ${formatInt(cycle.superblockHeight)} can pay by Dash's consensus rules, worked out in this browser from its height.`}>
               Consensus limit
-            </Src>
+            </ProofTag>
           ) : (
-            <Src warn title="As the governance data service reports it; not checked against the consensus rules in this browser.">
+            <ProofTag state="unverified" title="As the governance data service reports it; not checked against the consensus rules in this browser.">
               Data service figure
-            </Src>
+            </ProofTag>
           )}
         </span>
         <span className="dh-stat__value" data-testid="tr-budget">
@@ -119,9 +119,9 @@ function CycleStats({ cycle, view, state }: { cycle: Cycle; view: TreasuryView; 
         <span className="dh-stat__label">
           Asked for{' '}
           {fromService ? (
-            <Src title="Some of these proposals are only as the governance data service reports them: Platform doesn't have them yet.">Data service records</Src>
+            <ProofTag state="reported" title="Some of these proposals are only as the governance data service reports them: Platform doesn't have them yet.">Data service records</ProofTag>
           ) : (
-            <Src title="The proposals Governance lists, read from Platform; each one's fields match the hash the network votes on.">Platform records</Src>
+            <ProofTag state="reported" title="The proposals Governance lists, read from Platform; each one's fields match the hash the network votes on.">Platform records</ProofTag>
           )}
         </span>
         <span className="dh-stat__value" data-testid="tr-requested">{hold(<DashValue duffs={view.requested} />, false)}</span>
@@ -129,7 +129,7 @@ function CycleStats({ cycle, view, state }: { cycle: Cycle; view: TreasuryView; 
       </div>
       <div className="dh-stat">
         <span className="dh-stat__label">
-          Has the votes <Src title={TALLY_SOURCE}>Data service tally</Src>
+          Has the votes <ProofTag state="reported" title={TALLY_SOURCE}>Reported tally</ProofTag>
         </span>
         <span className="dh-stat__value" data-testid="tr-passing">
           {hold(
@@ -148,7 +148,7 @@ function CycleStats({ cycle, view, state }: { cycle: Cycle; view: TreasuryView; 
       </div>
       <div className="dh-stat">
         <span className="dh-stat__label">
-          Next payout <Src title="Estimated from the time blocks take; the superblock's height is fixed.">Estimate</Src>
+          Next payout <ProofTag state="reported" title="Estimated from the time blocks take; the superblock's height is fixed.">Estimate</ProofTag>
         </span>
         <span className="dh-stat__value" data-testid="tr-next">{formatDate(cycle.estTime)}</span>
         <span className="dh-stat__note">
@@ -161,15 +161,6 @@ function CycleStats({ cycle, view, state }: { cycle: Cycle; view: TreasuryView; 
 
 /** Where the standings come from, said once: in a tile's tag and the section's note. */
 const TALLY_SOURCE = 'Vote tallies as the governance data service reports them, live from Dash Core. Each proposal’s page recounts its own votes in this browser.';
-
-/** A figure's source, beside its label or after a complete value (DESIGN.md, sources beside figures): dotted when reported, solid when checked here, dashed when not checked. */
-function Src({ ok, warn, title, children }: { ok?: boolean; warn?: boolean; title: string; children: ReactNode }) {
-  return (
-    <span className={`dh-src${ok ? ' dh-src--ok' : warn ? ' dh-src--warn' : ''}`} title={title} data-src={ok ? 'ok' : warn ? 'warn' : 'reported'}>
-      {children}
-    </span>
-  );
-}
 
 /** The superscript that points at a section's numbered source line. */
 function Ref({ to, n = 1 }: { to: string; n?: number }) {
@@ -205,11 +196,15 @@ function PaysFor({ view, state, budget, names }: { view: TreasuryView; state: Re
       ) : (
         <>
           <PaysForSummary view={view} budget={budget} names={names} />
-          <p className="small muted tr-pays-how">Proposals carry no category, so they are grouped by where they stand, largest first. Quoted titles and summaries are the owners’ own words, unchecked.</p>
+          <p className="small muted tr-pays-how">
+            Proposals carry no category, so they are grouped by where they stand, largest first. Quoted titles and summaries are the owners’ own words.
+            <Ref to="tr-pays-src-2" n={2} />
+          </p>
           <BudgetBar funded={view.groups.funded} budget={budget} />
           {(['funded', 'over', 'short', 'unread', 'later'] as const).map((id) => (view.groups[id].rows.length ? <Group key={id} group={view.groups[id]} budget={budget} names={names} /> : null))}
           <ol className="dh-sources" aria-label="Sources">
             <li id="tr-pays-src-1">Standings: {TALLY_SOURCE}</li>
+            <li id="tr-pays-src-2">Titles and summaries: each owner’s proposal page, read when this site was built. Nobody has checked them.</li>
           </ol>
         </>
       )}

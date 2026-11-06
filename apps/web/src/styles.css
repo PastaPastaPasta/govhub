@@ -2730,7 +2730,6 @@ dashhq-hash { vertical-align: middle; max-width: 100%; }
 /* A USD valuation (design/PRICE.md): its own line under the DASH figure, with where the price came from and when */
 .usd { display: block; margin-block-start: 2px; font-weight: 400; color: var(--dh-ink-2); }
 .usd-value { color: var(--dh-ink); font-variant-numeric: tabular-nums; }
-.usd-flag { font-weight: 600; color: var(--dh-warn-ink, var(--dh-ink)); }
 
 /* ---- Past: the treasury ledger and the proposals' outcomes ------------------------------------- */
 .past-page { display: grid; gap: var(--s-4); }
@@ -2746,7 +2745,6 @@ dashhq-hash { vertical-align: middle; max-width: 100%; }
 .ledger-stats-reading p { margin: 0; }
 .ledger-progress-line { font-size: var(--t-m); }
 .ledger-progress { inline-size: min(100%, 28rem); block-size: 6px; accent-color: var(--dh-brand); }
-.proof-tag { vertical-align: 1px; white-space: nowrap; }
 .sb-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 14px 16px 12px; cursor: pointer; list-style: none; }
 .sb-head::-webkit-details-marker { display: none; }
 .sb[open] > .sb-head { border-block-end: 1px solid var(--dh-line); }
@@ -2858,7 +2856,6 @@ dashhq-hash { vertical-align: middle; max-width: 100%; }
 .treasury { display: grid; gap: 20px; }
 .tr-stats .dh-stat { min-inline-size: 0; }
 .tr-stats .dh-stat__note { overflow-wrap: anywhere; }
-.tr-stats .dh-stat__note .usd { display: block; }
 .tr-pays, .tr-compare { display: grid; gap: 14px; }
 .tr-budget { margin: 0; display: grid; gap: 8px; }
 .tr-budget-bar { display: flex; gap: 2px; block-size: 14px; border-radius: var(--dh-r1); overflow: hidden; background: var(--dh-sunken); }
@@ -2959,3 +2956,10 @@ details.tr-group > .tr-table { margin: 0; border-radius: 0; }
 .mn-find-form { display: grid; gap: 6px; }
 .mn-find-form .form-actions { display: flex; flex-wrap: wrap; gap: var(--s-2); }
 .mn-find-form input { flex: 1 1 22rem; min-inline-size: 0; }
+
+/* ---- the treasury in sentences: a summary a reader can quote, its sources as numbered notes ---------------------- */
+.tr-summary { margin: 0; max-inline-size: 72ch; font-size: var(--t-m); line-height: 1.55; color: var(--dh-ink); }
+.tr-pays-how { margin: 0; max-inline-size: 72ch; }
+.tr-stats .dh-stat__note .usd { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 0; }
+.tr-stats .dh-stat__note .usd .dh-src { margin-inline-start: 6px; }
+.budget-facts .usd .dh-src { margin-inline-start: 6px; }

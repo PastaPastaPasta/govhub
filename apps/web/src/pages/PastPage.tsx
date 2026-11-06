@@ -213,13 +213,15 @@ function LedgerStats({ sum, perSb }: { sum: LedgerSummary; perSb: string }) {
   return (
     <div className="dh-stats ledger-stats">
       <div className="dh-stat dh-stat--key">
-        <span className="dh-stat__label">Paid by the treasury{left ? ' (partial)' : ''}</span>
+        <span className="dh-stat__label">
+          Paid by the treasury{left ? ' (partial)' : ''} <ChainProof weak={sum.weak} />
+        </span>
         <span className="dh-stat__value" data-testid="ledger-total">
           {left ? <small>at least </small> : null}
           <DashValue duffs={sum.paid} />
         </span>
         <span className="dh-stat__note" data-testid="ledger-scope">
-          {scope}. <ChainProof weak={sum.weak} />
+          {scope}
         </span>
       </div>
       <div className="dh-stat">

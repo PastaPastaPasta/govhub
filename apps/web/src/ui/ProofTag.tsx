@@ -1,12 +1,14 @@
-// What a figure rests on, said beside it with the family's proof badge (DESIGN.md §6): proven in this browser, reported by a
-// source, or read but not proven. Not a control: the proposal page's badge is the one that opens the checks.
+// What a figure rests on, said beside it as the family's source tag (DESIGN.md §6, sources beside figures): checked in this browser
+// (solid), reported by a source (dotted), or read but not proven (dashed). It goes after a label or a complete value, never inside a
+// sentence. Not a control: a record's one proof badge (TrustBadge, ChainShield) is what opens the checks.
 import type { ReactNode } from 'react';
 
 type ProofState = 'ok' | 'reported' | 'unverified';
+const SRC: Record<ProofState, string> = { ok: ' dh-src--ok', reported: '', unverified: ' dh-src--warn' };
 
 export function ProofTag({ state, title, children }: { state: ProofState; title?: string; children: ReactNode }) {
   return (
-    <span className={`dh-proof dh-proof--${state} proof-tag`} title={title} data-proof={state}>
+    <span className={`dh-src${SRC[state]}`} title={title} data-proof={state}>
       {children}
     </span>
   );

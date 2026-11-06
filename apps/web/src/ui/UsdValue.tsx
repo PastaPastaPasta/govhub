@@ -1,33 +1,33 @@
-// A DASH amount's approximate current value in USD, the family way (design/PRICE.md): "≈ $309,000", three significant figures, with
-// its source beside it as a tag rather than in the sentence ("Coinbase price, 01:51 UTC"; the full fetch time in its title and to
-// screen readers). The tag turns to a warning when the price is stale (10 minutes) or the latest refresh failed; after an hour the
-// value gives way to "USD price unavailable", and there is nothing at all before a first good quote or off Mainnet.
+// A DASH amount's approximate current value in USD, the family way (design/PRICE.md): "≈ $309,000", with its source beside it as a
+// tag rather than in the sentence ("Coinbase price, 01:51 UTC", the date added when it isn't today; the full fetch time in its title
+// and to screen readers). Past 10 minutes the tag is a warning, "Stale"; a failed refresh says so in the tag. After an hour the value
+// gives way to "USD price unavailable", and there is nothing at all before a first good quote or off Mainnet.
 import { useApp } from '../app/context.tsx';
-import { formatUsdApprox, formatUtc, usdView } from '../data/price.ts';
+import { formatUsdEstimate, formatUtc, usdView } from '../data/price.ts';
 import { useNow } from './vote/common.tsx';
 
-export function UsdValue({ duffs, what }: { duffs: number; what?: string }) {
+const dayOf = (ms: number): string => formatUtc(ms).slice(0, -11);
+
+export function UsdValue({ duffs }: { duffs: number }) {
   const { gov } = useApp();
   const now = useNow(30_000, !!gov.usd.quote);
   const v = usdView(gov.usd, now);
   if (v.kind === 'none') return null;
   if (v.kind === 'unavailable') return <span className="usd muted small" data-testid="usd">USD price unavailable</span>;
-  const flags = [v.stale ? 'stale' : '', v.failed ? 'refresh failed' : ''].filter(Boolean);
   const when = formatUtc(v.fetchedAt);
-  const time = when.replace(/^.*, /, '');
+  // "01:51 UTC" today, "5 Nov 2026, 01:51 UTC" otherwise
+  const time = dayOf(v.fetchedAt) === dayOf(now) ? when.slice(-9) : when;
+  const label = v.stale ? `Stale${v.failed ? ', refresh failed' : ''}` : `${v.source} price, ${time}${v.failed ? ', refresh failed' : ''}`;
   return (
     <span className="usd small" data-testid="usd">
-      <span className="usd-value">
-        {what ? `${what} ` : ''}≈ {formatUsdApprox((duffs / 1e8) * v.rate)}
-      </span>
+      <span className="usd-value">{formatUsdEstimate((duffs / 1e8) * v.rate)}</span>
       <span
-        className={`dh-src${flags.length ? ' dh-src--warn' : ''}`}
+        className={`dh-src${v.stale || v.failed ? ' dh-src--warn' : ''}`}
         title={`An approximate current valuation, not a chain fact: DASH/USD spot fetched by this browser from ${v.source} on ${when}.`}
         data-testid="usd-source"
       >
-        {v.source} price, {time}
-        {flags.length > 0 && `, ${flags.join(', ')}`}
-        <span className="visually-hidden"> (fetched by this browser on {when})</span>
+        {label}
+        <span className="visually-hidden"> ({v.source} price fetched by this browser on {when})</span>
       </span>
     </span>
   );

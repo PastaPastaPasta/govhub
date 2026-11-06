@@ -60,16 +60,20 @@ const USD = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD',
 /** "$332,332.18": a price itself, to the cent. */
 export const formatUsd = (usd: number): string => USD.format(usd);
 
-const SIG3 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumSignificantDigits: 3 });
+// Intl rounds in decimal (half away from zero), so binary float error can't move a boundary: $9.995 is "≈ $10", $999,500 "≈ $1 million".
+const num = (v: number, o: Intl.NumberFormatOptions & { roundingPriority?: 'lessPrecision' }): number =>
+  Number(new Intl.NumberFormat('en-US', { useGrouping: false, ...o } as Intl.NumberFormatOptions).format(v));
 /**
- * An approximate valuation, as the family writes one: three significant figures in full ("$309,000", "$18,200", "$487"), to the cent
- * under $10, and from a million "$1.23 million". Anything more precise would claim more than a spot price times an amount knows.
+ * A converted amount, written as the estimate it is (design/PRICE.md formatUsdEstimate): "≈ $4.87" under $10, three significant
+ * figures in whole dollars up to a million ("≈ $487", "≈ $18,200", "≈ $309,000"), then "≈ $1.23 million".
  */
-export function formatUsdApprox(usd: number): string {
-  if (usd < 10) return USD.format(usd);
-  const rounded = Number(usd.toPrecision(3));
-  if (rounded >= 1e6) return `$${(rounded / 1e6).toLocaleString('en-US', { maximumSignificantDigits: 3 })} million`;
-  return SIG3.format(rounded);
+export function formatUsdEstimate(usd: number): string {
+  if (!Number.isFinite(usd) || usd < 0) return '';
+  const cents = num(usd, { maximumFractionDigits: 2 });
+  if (cents < 10) return '≈ ' + cents.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 });
+  const r = num(usd, { maximumSignificantDigits: 3, maximumFractionDigits: 0, roundingPriority: 'lessPrecision' });
+  if (r >= 1e6) return `≈ $${(r / 1e6).toLocaleString('en-US', { maximumSignificantDigits: 3 })} million`;
+  return '≈ ' + r.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
