@@ -47,7 +47,7 @@ test.describe('?config= links', () => {
     cfg.bridges[0].bridgeIdentityId = '24tL6v5jMR1H9dtUoTgbedePsMJtYPk4Q4bo6h8jTdK9';
     await page.goto(`/settings?config=${b64(cfg)}`);
     const diff = page.getByTestId('config-diff');
-    await expect(diff.locator('dt')).toHaveText(['Bridges', 'Quorum proof sources']);
+    await expect(diff.locator('dt')).toHaveText(['Data services', 'Quorum proof sources']);
     await expect(diff).toContainText('https://proofs.attacker.example/proofs');
     await expect(diff).toContainText('24tL6v5jMR1H9dtUoTgbedePsMJtYPk4Q4bo6h8jTdK9');
     await expect(diff).toContainText('gov-bridge.dashhq.org'); // what it replaces (the Dev profile's only proof source)

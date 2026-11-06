@@ -381,7 +381,7 @@ describe('vote verification against the fixture bridge (synthetic voters)', () =
   /** The proven list as the bridge states it (every synthetic voter is a regular masternode). */
   const smlOf = (list: typeof mns) => new Map(list.map((m) => [m.proTxHash, { votingAddress: m.votingAddress, isValid: true, nType: 0, typeProven: true }]));
 
-  it('a vote not signed by the voting key the proven list gives its masternode is excluded, whatever key the bridge lists', () => {
+  it('a vote not signed by the voting key the proven list gives its masternode is excluded, whatever key the governance data service lists', () => {
     const sml = smlOf(mns);
     sml.set(mns[1]!.proTxHash, { votingAddress: mns[2]!.votingAddress, isValid: true, nType: 0, typeProven: true });
     const r = check({ sml, proReg: proRegOf(mns), targets: [] });
@@ -394,7 +394,7 @@ describe('vote verification against the fixture bridge (synthetic voters)', () =
     expect(voteVerdict([run(r, 0)]).level).toBe('no-tally');
   });
 
-  it('the key the proven list assigns is the one checked: a wrong key or type in the bridge list does not drop a properly signed vote, but blocks "verified"', () => {
+  it('the key the proven list assigns is the one checked: a wrong key or type in the governance data service list does not drop a properly signed vote, but blocks "verified"', () => {
     const lying = mns.map((m, i) => (i === 1 ? { ...m, votingAddress: mns[2]!.votingAddress } : i === 3 ? { ...m, type: 'evo' as const } : m));
     const r = check({ masternodes: lying, sml: smlOf(mns), proReg: proRegOf(mns) });
     expect(r.excluded).toBe(0);
@@ -423,7 +423,7 @@ describe('vote verification against the fixture bridge (synthetic voters)', () =
     expect(prov.detail).toMatch(/counts votes this browser couldn't prove: 1 vote excluded/);
   });
 
-  it('a masternode a bridge made up (with a vote signed by its own key) is excluded, and the tally that counts it is not verified', () => {
+  it('a masternode a data service made up (with a vote signed by its own key) is excluded, and the tally that counts it is not verified', () => {
     const fake = { proTxHash: 'fa'.repeat(32), collateralTxid: 'fb'.repeat(32), collateralIndex: 0, votingAddress: '', type: 'regular' as const, valid: true };
     const key = secp256k1.utils.randomSecretKey();
     fake.votingAddress = p2pkhAddress(hash160(secp256k1.getPublicKey(key, true)), 'mainnet');
@@ -439,7 +439,7 @@ describe('vote verification against the fixture bridge (synthetic voters)', () =
     expect(voteVerdict([run(r, tally.asOfHeight)]).level).toBe('excluded');
   });
 
-  it('a type lie in the bridge list cannot be passed off as "excluded votes" by adding one junk vote: still a mismatch', () => {
+  it('a type lie in the governance data service list cannot be passed off as "excluded votes" by adding one junk vote: still a mismatch', () => {
     // review finding: ten yes voters listed as evonodes (weight 4), plus one vote from an outpoint not in any list, and a tally
     // inflated by the type lie. The junk vote is excluded but is not one the tally counts, so it must not explain the difference.
     const yesVoters = new Set(votes.filter((v) => v.outcome === 1).slice(0, 10).map((v) => `${v.collateralTxid}-${v.collateralIndex}`));
@@ -455,7 +455,7 @@ describe('vote verification against the fixture bridge (synthetic voters)', () =
     expect(voteVerdict([run(r, tally.asOfHeight)]).level).toBe('mismatch');
   });
 
-  it('a bridge that maps an outpoint to another masternode, or misstates a type, is caught by the ProRegTx', () => {
+  it('a data service that maps an outpoint to another masternode, or misstates a type, is caught by the ProRegTx', () => {
     const sml = new Map(mns.map((m) => [m.proTxHash, { votingAddress: m.votingAddress, isValid: true, nType: 0, typeProven: false }]));
     const reg = proRegOf(mns);
     reg.set(mns[1]!.proTxHash.toLowerCase(), { type: 0, collateral: { txid: 'ab'.repeat(32), index: 0 } });

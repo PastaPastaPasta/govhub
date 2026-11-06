@@ -145,7 +145,7 @@ describe('MasternodePage', () => {
     await act(async () => (hold.mnlist as Deferred<unknown>).resolve({ height: 7, listHash: 'x', masternodes: [] }));
     const absent = r.el.querySelector('[data-testid="mn-absent"]')!.textContent;
     expect(absent).toContain('There’s no masternode with this ProTx hash here.');
-    expect(absent).toContain("the governance bridge's masternode list, at block 7");
+    expect(absent).toContain("the governance data service's masternode list, at block 7");
     expect(r.el.querySelector('[data-testid="mn-vote-row"]')).toBeNull();
     await r.unmount();
   });

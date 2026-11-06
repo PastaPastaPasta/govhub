@@ -477,7 +477,7 @@ function ProposalsView({ past, ledger, known }: { past: ReturnType<typeof usePas
                     {t ? (
                       formatSigned(absoluteYes(t.value))
                     ) : past.talliesRead === 'ok' ? (
-                      <span className="muted nowrap" title="No vote tally was published on Platform for this proposal: it ended before Governance's bridge was recording votes">
+                      <span className="muted nowrap" title="No vote tally was published on Platform for this proposal: it ended before the governance data service was recording votes">
                         not recorded
                       </span>
                     ) : past.talliesRead === 'failed' ? (

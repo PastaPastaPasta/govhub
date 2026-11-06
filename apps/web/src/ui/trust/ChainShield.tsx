@@ -148,7 +148,7 @@ export function ChainShield({ line: withLine = false }: { line?: boolean }) {
           <div className="chain-unverified" data-testid="chain-explain">
             <h3 className="small-head">What this means</h3>
             <p className="small">
-              The budget, the vote counts and which proposals are in the next budget are shown as Dash Platform and the governance bridge
+              The budget, the vote counts and which proposals are in the next budget are shown as Dash Platform and the governance data service
               report them. Your browser hasn't confirmed them against the Dash chain, so treat passing margins and budget places as
               reported, not verified.
             </p>

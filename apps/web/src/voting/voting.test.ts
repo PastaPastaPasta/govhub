@@ -102,7 +102,7 @@ describe('masternode discovery', () => {
   const e = protx[0]!;
   const keyId = bytesToHex(decodeAddress(e.votingAddress, 'testnet')!.hash160);
   const bridge: BridgeMasternode[] = protx.map((x) => ({ proTxHash: x.proTxHash, collateralTxid: x.collateralHash, collateralIndex: x.collateralIndex, votingAddress: x.votingAddress, type: x.type === 'Evo' ? 'evo' : 'regular', valid: true }));
-  it('matches by the SML when there is one, and labels the bridge-only path', () => {
+  it('matches by the SML when there is one, and labels the governance data service-only path', () => {
     const sml = new Map(protx.map((x) => [x.proTxHash, { votingAddress: x.votingAddress, isValid: true, nType: x.type === 'Evo' ? 1 : 0, typeProven: true }]));
     const a = matchMasternodes([{ index: 0, keyId }], bridge, sml, 'testnet');
     expect(a.owned.map((m) => m.proTxHash)).toEqual([e.proTxHash]);
@@ -135,7 +135,7 @@ describe('watched votes', () => {
     rebroadcasts: 0,
     ...over,
   });
-  it('a newer vote drops an older one that never left this browser; one a relay took waits for the bridge', () => {
+  it('a newer vote drops an older one that never left this browser; one a relay took waits for the governance data service', () => {
     const a = base();
     const b = { ...base(), ...signPlanned({ mn, govHash: gov, outcome: 2, time: NOW + 10, releaseAt: NOW + 10, notes: [] }, priv, true, 'testnet') };
     const m = mergeWatched([a], [b]);

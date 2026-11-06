@@ -364,10 +364,10 @@ export function SettingsPage() {
 
           <fieldset>
             <legend>
-              Bridges <Custom on={isCustom('bridges')} />
+              Data services <Custom on={isCustom('bridges')} />
             </legend>
-            <p className="muted small">A bridge runs Dash Core and serves live tallies, signed votes and the masternode list. Its numbers are shown as reported until your browser verifies them.</p>
-            {draft.bridges.length === 0 && <p className="muted">No bridge configured. Lists and tallies come from Platform only.</p>}
+            <p className="muted small">A data service runs Dash Core and serves live tallies, signed votes and the masternode list. Its numbers are shown as reported until your browser verifies them.</p>
+            {draft.bridges.length === 0 && <p className="muted">No data service configured. Lists and tallies come from Platform only.</p>}
             {draft.bridges.map((b, i) => (
               <div key={i} className="bridge-row">
                 <label className="dh-field__label">
@@ -397,9 +397,9 @@ export function SettingsPage() {
             <button
               type="button"
               className="btn dh-btn"
-              onClick={() => set('bridges', [...draft.bridges, { name: `bridge ${draft.bridges.length + 1}`, httpBase: '', govContractId: draft.govContractId, bridgeIdentityId: '', enabled: true }])}
+              onClick={() => set('bridges', [...draft.bridges, { name: `data service ${draft.bridges.length + 1}`, httpBase: '', govContractId: draft.govContractId, bridgeIdentityId: '', enabled: true }])}
             >
-              Add a bridge
+              Add a data service
             </button>
           </fieldset>
 

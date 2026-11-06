@@ -99,7 +99,7 @@ export function paymentsFact(r: ChainReport | null): { made: { text: string; pro
 /** Budget limit of the next superblock, compared with what the bridge reports. */
 export function budgetFact(r: ChainReport, cycle: Cycle | null): { text: string; ok: boolean | null } {
   const limit = Number(r.budget.limit);
-  const vs = cycle && cycle.superblockHeight === r.budget.height ? (cycle.budget === limit ? 'the bridge reports the same' : `the bridge reports ${formatDash(cycle.budget)}`) : null;
+  const vs = cycle && cycle.superblockHeight === r.budget.height ? (cycle.budget === limit ? 'the governance data service reports the same' : `the governance data service reports ${formatDash(cycle.budget)}`) : null;
   const exact = `${(limit / 1e8).toLocaleString('en-US', { maximumFractionDigits: 8 })} ${dashUnit()}`;
   return { text: `${exact} for superblock ${formatInt(r.budget.height)}${vs ? `; ${vs}` : ''}`, ok: vs === null ? null : cycle!.budget === limit };
 }
@@ -109,7 +109,7 @@ export function fundedFact(rk: RankingResult | null, govHash: string): { text: s
   const e = rk?.entries.find((x) => x.govHash === govHash);
   if (!rk || !e) return null;
   const text = e.funded ? `Yes, in the next superblock (rank ${e.rank})` : e.rank !== null ? `Passing (rank ${e.rank}), but not in the next superblock` : 'No';
-  const basis = `recount of the votes the bridge served for all ${rk.entries.length} proposals it lists, each reproducing its published tally, ranked by Core's rules against the proven threshold and budget (a vote or proposal the bridge withholds cannot be detected)`;
+  const basis = `recount of the votes the governance data service served for all ${rk.entries.length} proposals it lists, each reproducing its published tally, ranked by Core's rules against the proven threshold and budget (a vote or proposal the data service withholds cannot be detected)`;
   return rk.verified && !e.timeSensitive
     ? { text, prov: verified(basis) }
     : { text, prov: { kind: 'reported', source: 'funding order', detail: `${basis}; not verified: ${rk.reasons.join('; ') || 'the superblock time decides it'}` } };

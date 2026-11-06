@@ -107,7 +107,7 @@ export function fixtureSource(registry: Registry): DataSource {
       for (const h of hashes) {
         const t = s.tallies.get(h);
         if (!t) continue;
-        out.set(h, wrap(t, s.recorded.proposals.has(h) ? `tally recorded from a mainnet bridge (block ${formatInt(t.asOfHeight)}); signed votes recorded` : 'vote counts from gobject list; voters synthetic'));
+        out.set(h, wrap(t, s.recorded.proposals.has(h) ? `tally recorded from a mainnet data service (block ${formatInt(t.asOfHeight)}); signed votes recorded` : 'vote counts from gobject list; voters synthetic'));
       }
       return out;
     },
@@ -253,7 +253,7 @@ export function liveSource(registry: Registry): DataSource {
     // Consensus constants of the profile's Core network (chainparams.cpp), never a bridge's getgovernanceinfo: a lying bridge must not
     // set the superblock cycle, maturity window or minimum quorum the page computes thresholds and schedules with.
     async params() {
-      return chainParams(registry.coreNetwork, 'consensus constants (chainparams.cpp), not a bridge report');
+      return chainParams(registry.coreNetwork, 'consensus constants (chainparams.cpp), not a data service report');
     },
 
     async cycle(onStale) {
@@ -381,7 +381,7 @@ export function liveSource(registry: Registry): DataSource {
     async bridgeTallies() {
       const b = await firstBridge((x) => x.tallies());
       // no bridge set up is no tallies; bridges set up and none answering is a failed read, which the lists must not read as "no votes"
-      if (!b && bridges.length) throw new Error('no governance bridge answered');
+      if (!b && bridges.length) throw new Error('no governance data service answered');
       return new Map((b?.value ?? []).map((t) => [t.govHash, { value: t, prov: reported(b!.bridge, `live tally as of Core block ${formatInt(t.asOfHeight)}`) }]));
     },
 

@@ -33,7 +33,7 @@ const UNREACHED = /node list|no usable nodes|all nodes failed|node attempts fail
 const THROTTLED = /(?:HTTP|status)[ :]+429\b|rate.?limit|too many requests/i;
 
 const NODES = "this browser couldn't reach the Dash network's nodes just now";
-const BRIDGE = "this browser couldn't reach the governance bridge just now";
+const BRIDGE = "this browser couldn't reach the governance data service just now";
 const SLOW_DOWN = 'the Dash network nodes asked this browser to slow down';
 
 /**

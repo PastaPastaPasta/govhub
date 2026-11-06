@@ -104,7 +104,7 @@ export function GuestKeysProvider({ children }: { children: ReactNode }) {
         .map((l) => l.trim())
         .filter(Boolean);
       if (!lines.length) return setError('Paste a voting key.');
-      if (!deps) return setError(mode === 'live' ? 'No bridge is configured (Settings): the masternode list comes from a bridge.' : 'In demo mode, sign in as a sample user to try voting.');
+      if (!deps) return setError(mode === 'live' ? 'No data service is configured (Settings): the masternode list comes from a data service.' : 'In demo mode, sign in as a sample user to try voting.');
       const parsed: GuestKey[] = [];
       try {
         lines.forEach((l, i) => {

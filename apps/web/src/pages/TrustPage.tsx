@@ -12,11 +12,11 @@ const POINTS: Array<[string, string]> = [
   ],
   [
     'Votes can’t be forged, but they can be left out.',
-    'Every vote is signed by a masternode’s voting key and recounted in your browser. Only votes from masternodes in the masternode list your browser proved, signed with the voting key that list gives them, are counted; any other vote is left out of the count and flagged as excluded. The “How do we know?” drawer gives the reason for each kind and lists the first few such votes. A server can’t change a signed vote. But it can leave votes or whole proposals out, or show an older vote instead of a newer one, and nothing here detects that. Compare with another bridge or your own Dash Core node.',
+    'Every vote is signed by a masternode’s voting key and recounted in your browser. Only votes from masternodes in the masternode list your browser proved, signed with the voting key that list gives them, are counted; any other vote is left out of the count and flagged as excluded. The “How do we know?” drawer gives the reason for each kind and lists the first few such votes. A server can’t change a signed vote. But it can leave votes or whole proposals out, or show an older vote instead of a newer one, and nothing here detects that. Compare with another data service or your own Dash Core node.',
   ],
   [
     'Your vote can be delayed, not changed.',
-    'A relay holds your signed vote until it sends it. It can hold it back or drop it, and it sees your IP address, the time and how you voted, but it can’t change the vote. Once sent, the status says what the bridge reports (“the bridge reports the network counted it”), and names any other bridge or relay you configured that agrees. Check your own node if it matters.',
+    'A relay holds your signed vote until it sends it. It can hold it back or drop it, and it sees your IP address, the time and how you voted, but it can’t change the vote. Once sent, the status says what the governance data service reports (“the data service reports the network counted it”), and names any other data service or relay you configured that agrees. Check your own node if it matters.',
   ],
   [
     'The chain is checked from checkpoints built into this app.',

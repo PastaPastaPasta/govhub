@@ -21,7 +21,7 @@ it('does not treat an empty bridge answer as a successful Platform list read', a
   await expect(liveSource(profileRegistry('testnet')).active()).rejects.toThrow('Platform list not read');
 });
 
-it('also surfaces a failed Platform read when the bridge only has expired proposals', async () => {
+it('also surfaces a failed Platform read when the governance data service only has expired proposals', async () => {
   const { proposals } = await loadFixtures();
   vi.mocked(HttpBridge.prototype.proposals).mockResolvedValue(proposals.map(p => ({ ...p, endEpoch: 1 })));
   await expect(liveSource(profileRegistry('testnet')).active()).rejects.toThrow('Platform list not read');

@@ -47,11 +47,11 @@ describe('F4: the proposal page retries a failed read', () => {
   });
 
   it('another failure keeps its text, after "The proposal could not be read", and also has Retry', async () => {
-    reads = [async () => Promise.reject(new Error('the bridge answered HTTP 418'))];
+    reads = [async () => Promise.reject(new Error('the governance data service answered HTTP 418'))];
     const r = await at(`/p/h/${HASH}`, <ProposalByHash />, '/p/h/:hash');
     await flush();
     const err = r.el.querySelector('[data-testid="read-error"]')!;
-    expect(err.textContent).toContain('The proposal could not be read: the bridge answered HTTP 418');
+    expect(err.textContent).toContain('The proposal could not be read: the governance data service answered HTTP 418');
     expect(err.querySelector('[data-testid="read-retry"]')).toBeTruthy();
     await r.unmount();
   });

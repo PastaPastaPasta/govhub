@@ -298,10 +298,10 @@ describe('votes', () => {
     expect(provenNetYes(done(verifyVotes(base)), { name: PLATFORM_TARGET, tally })).toBe(95 - 64);
   });
 
-  it('keys only as the bridge reports them (no proven list or no registrations): partly verified', () => {
+  it('keys only as the governance data service reports them (no proven list or no registrations): partly verified', () => {
     const c = comp(done(verifyVotes({ ...base, sml: null, proReg: null })));
     expect(c.status).toBe('reported');
-    expect(c.status === 'reported' && c.reason).toContain('bridge lists');
+    expect(c.status === 'reported' && c.reason).toContain('governance data service lists');
     expect(comp(done(verifyVotes({ ...base, proReg: null }))).status).toBe('reported');
     expect(provenNetYes(done(verifyVotes({ ...base, sml: null })), { name: PLATFORM_TARGET, tally })).toBeNull();
   });
@@ -326,7 +326,7 @@ describe('votes', () => {
     expect(aggregate([{ id: 'votes', state: c }]).level).not.toBe('failed');
   });
 
-  it('D-101: a bridge that withholds votes and serves a matching live tally is not verified while the Platform tally disagrees', () => {
+  it('D-101: a data service that withholds votes and serves a matching live tally is not verified while the Platform tally disagrees', () => {
     // the bridge recounts to its own live tally (newer block); the Platform tally of an older block has other counts
     const r0 = verifyVotes(base);
     const live: Tally = { ...tally, asOfHeight: tally.asOfHeight + 7, yesWeighted: r0.weighted.yes, noWeighted: r0.weighted.no, abstainWeighted: r0.weighted.abstain, voteSetHash: r0.voteSetHash };
@@ -369,7 +369,7 @@ describe('votes', () => {
     expect(shownNewer.status).toBe('reported');
   });
 
-  it('no tally, no bridge, still running, an error', () => {
+  it('no tally, no data service, still running, an error', () => {
     expect(votesComponent({ shown: null, talliesLoading: true, bridge: true, result: null, error: null }).status).toBe('pending');
     expect(votesComponent({ shown: null, talliesLoading: false, bridge: true, result: null, error: null }).status).toBe('reported');
     expect(comp(null, PLATFORM_TARGET, { bridge: false }).status).toBe('reported');

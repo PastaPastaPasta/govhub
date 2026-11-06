@@ -141,7 +141,7 @@ describe('Vote on this proposal', () => {
     await r.unmount();
   });
 
-  it('pasted keys: one send at a time, and nothing is signed when the keys change while the bridge answers', async () => {
+  it('pasted keys: one send at a time, and nothing is signed when the keys change while the governance data service answers', async () => {
     hold.guest = pasted();
     let answer!: (v: null) => void;
     hold.bridge = () => new Promise((r) => (answer = r));
@@ -170,7 +170,7 @@ describe('Vote on this proposal', () => {
     await r.unmount();
   });
 
-  it('pasted keys: Forget, then pasting again while a send waits on the bridge, signs nothing', async () => {
+  it('pasted keys: Forget, then pasting again while a send waits on the governance data service, signs nothing', async () => {
     hold.guest = pasted();
     let answer!: (v: null) => void;
     hold.bridge = () => new Promise((r) => (answer = r));
@@ -196,7 +196,7 @@ describe('Vote on this proposal', () => {
     await r.unmount();
   });
 
-  it('pasted keys: "Now" is the bridge\'s vote; one of ours still on its way shows as sent, and the same choice is not sent twice', async () => {
+  it('pasted keys: "Now" is the governance data service\'s vote; one of ours still on its way shows as sent, and the same choice is not sent twice', async () => {
     hold.guest = pasted();
     hold.keyring = keyring({ watched: [{ proTxHash: PRO, collateralTxid: MN.collateralTxid, collateralIndex: 0, govHash: P.govHash, outcome: 1, time: 100, releaseAt: 100, sig: '', voteHash: 'ff'.repeat(32), refs: [], status: 'held', rebroadcasts: 0, signedAt: 100 }] });
     const r = await view(PRO);

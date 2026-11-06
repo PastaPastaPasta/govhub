@@ -47,7 +47,7 @@ export class LookupTimeout extends Error {
 }
 
 export const STEP_NAME: Record<LookupStep, string> = {
-  bridge: "reading the bridge's masternode list",
+  bridge: "reading the governance data service's masternode list",
   sml: 'checking the masternode list with DAPI evonodes',
   protx: 'proving each collateral from its registration transaction',
 };
@@ -97,7 +97,7 @@ export async function lookupMasternodes(
       smlNodes = a.agreedBy.length;
     } catch (e) {
       if (o.signal.aborted) throw o.signal.reason;
-      warning = `Could not confirm with DAPI evonodes (${errText(e)}), so this uses the bridge’s list.`;
+      warning = `Could not confirm with DAPI evonodes (${errText(e)}), so this uses the governance data service’s list.`;
     }
   }
   const m = matchMasternodes(keys, list.masternodes, sml, deps.network);
@@ -108,10 +108,10 @@ export async function lookupMasternodes(
     const decoys = pickDecoys(sml ? [...sml.keys()] : list.masternodes.map((x) => x.proTxHash), m.owned.map((x) => x.proTxHash));
     const proved = await step('protx', t.protxMs, o.signal, (signal) => proveCollaterals(m.owned, (txid) => rawTx(txid, signal), deps.network, { decoys }));
     const unproved = proved.mns.filter((x) => x.provenance.collateral !== 'protx').length;
-    if (unproved && !warning) warning = `${unproved} collateral${unproved === 1 ? '' : 's'} could not be proved from the registration transaction yet; the bridge’s outpoint is used.`;
+    if (unproved && !warning) warning = `${unproved} collateral${unproved === 1 ? '' : 's'} could not be proved from the registration transaction yet; the governance data service’s outpoint is used.`;
     return { owned: proved.mns, list: list.masternodes, missing: m.missing, mismatch: proved.mismatch, smlNodes, ...(warning ? { warning } : {}) };
   } catch (e) {
     if (o.signal.aborted) throw o.signal.reason;
-    return { owned: m.owned, list: list.masternodes, missing: m.missing, mismatch: [], smlNodes, warning: warning ?? `Collaterals not proved yet (${errText(e)}); the bridge’s outpoints are used.` };
+    return { owned: m.owned, list: list.masternodes, missing: m.missing, mismatch: [], smlNodes, warning: warning ?? `Collaterals not proved yet (${errText(e)}); the governance data service’s outpoints are used.` };
   }
 }

@@ -190,7 +190,7 @@ export function VoteComposer({ proposals, onVerify, onlyMn }: { proposals: Propo
       : !k.relays.length
         ? 'No relay is configured (Settings).'
         : currentError
-          ? 'Waiting for your current votes from the bridge.'
+          ? 'Waiting for your current votes from the governance data service.'
           : loading
             ? 'Reading your current votes…'
             : null;
@@ -372,7 +372,7 @@ export function VoteComposer({ proposals, onVerify, onlyMn }: { proposals: Propo
         )}
         {hint && (
           <p className={`small ${currentError ? 'error' : 'muted'}`} id="vote-send-hint" data-testid="vote-send-hint">
-            {currentError ? `Your current votes could not be read from the bridge (${currentError}); voting waits until they can.` : hint}
+            {currentError ? `Your current votes could not be read from the governance data service (${currentError}); voting waits until they can.` : hint}
           </p>
         )}
         {skipped.map((s) => (
@@ -411,7 +411,7 @@ export function latestKnownVote(m: Pick<BridgeMasternode, 'collateralTxid' | 'co
 /** A proposal's published vote set from the first bridge (null: none published yet). */
 export async function bridgeVotesFor(registry: Parameters<typeof enabledBridges>[0], govHash: string): Promise<BridgeVote[] | null> {
   const b = enabledBridges(registry)[0];
-  if (!b) throw new Error('No bridge configured.');
+  if (!b) throw new Error('No data service configured.');
   const r = await new HttpBridge(b.name, b.httpBase).votes(govHash).catch((e) => (e instanceof BridgeError && e.status === 404 ? null : Promise.reject(e)));
   return r?.votes ?? null;
 }
@@ -443,7 +443,7 @@ export function OfflineSignBody({ proposal, address: initialAddress = '', outcom
     const d = decodeAddress(address.trim(), network);
     if (!d || d.type !== 'p2pkh') return setErr(`Enter a ${network === 'testnet' ? 'Testnet' : 'Mainnet'} voting address.`);
     const b = enabledBridges(registry)[0];
-    if (!b) return setErr('No bridge configured.');
+    if (!b) return setErr('No data service configured.');
     setFinding(true);
     try {
       const list = (await new HttpBridge(b.name, b.httpBase).mnlist()).masternodes.filter((m) => m.votingAddress === address.trim() && m.valid);

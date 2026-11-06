@@ -25,14 +25,14 @@ interface Mn {
  */
 export async function guardLiveVotes(context: BrowserContext, o: { bridge: string; proTxHash: string; onVote?: (route: Route, body: Record<string, unknown>) => Promise<void> }): Promise<LiveVoteGuard> {
   const res = await fetch(`${o.bridge.replace(/\/+$/, '')}/v1/mnlist`);
-  if (!res.ok) throw new Error(`the bridge's masternode list answered HTTP ${res.status}`);
+  if (!res.ok) throw new Error(`the governance data service's masternode list answered HTTP ${res.status}`);
   const list = ((await res.json()) as { masternodes: Mn[] }).masternodes;
   const col = (m: Pick<Mn, 'collateralTxid' | 'collateralIndex'>) => `${m.collateralTxid.toLowerCase()}:${m.collateralIndex}`;
   const reservedAddrs = new Set(reservedTestnetMnAddresses());
   if (reservedAddrs.size < 4) throw new Error('the reserved masternodes were not all found in testnet.yml');
   const reserved = new Set(list.filter((m) => reservedAddrs.has(m.votingAddress)).map(col));
   const mine = list.find((m) => m.proTxHash === o.proTxHash);
-  if (!mine) throw new Error(`masternode ${o.proTxHash.slice(0, 12)}… is not in the bridge's list`);
+  if (!mine) throw new Error(`masternode ${o.proTxHash.slice(0, 12)}… is not in the governance data service's list`);
   if (reservedAddrs.has(mine.votingAddress) || reserved.has(col(mine))) throw new Error('that masternode is reserved: pick another one');
   const g: LiveVoteGuard = { allowed: col(mine), blocked: [] };
   await context.route(/\/v1\/votes$/, async (route) => {

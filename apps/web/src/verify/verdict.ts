@@ -5,7 +5,7 @@ import type { Provenance, Tally } from '../data/types.ts';
 import { excludedText, type TargetResult, type VoteRun } from './votes.ts';
 
 export const PLATFORM_TARGET = 'Platform tally';
-export const BRIDGE_TARGET = 'Bridge live tally';
+export const BRIDGE_TARGET = 'live tally from the data service';
 
 /**
  * `excluded`: the tally matches the votes the bridge served, but only with votes this browser couldn't prove (left out here).
@@ -75,10 +75,10 @@ export function tallyProvenance(shown: { name: string; prov: Provenance; tally: 
   const more = (s: string) => ({ ...shown.prov, detail: `${shown.prov.detail ? `${shown.prov.detail}; ` : ''}${s}` });
   if (target.matches) {
     return r.keysFrom === 'sml'
-      ? { kind: 'verified', source: src, detail: 'every field and the voteSetHash match; voting keys, types and collateral confirmed by the proven masternode list and each voter\'s registration. Votes the bridge did not serve cannot be detected' }
-      : more('recount matches, but the voting keys are as the bridge reports them');
+      ? { kind: 'verified', source: src, detail: 'every field and the voteSetHash match; voting keys, types and collateral confirmed by the proven masternode list and each voter\'s registration. Votes the governance data service did not serve cannot be detected' }
+      : more('recount matches, but the voting keys are as the governance data service reports them');
   }
-  if (otherSnapshot(run, target)) return more(`the bridge served another vote set than this tally's for its block (usually a vote arrived while checking); not compared`);
+  if (otherSnapshot(run, target)) return more(`the governance data service served another vote set than this tally's for its block (usually a vote arrived while checking); not compared`);
   if (!comparable(run, target)) return more(`votes are as of block ${run.votesAsOf}, this tally as of block ${target.asOfHeight}`);
   if (target.servedMatches) return more(`it counts votes this browser couldn't prove: ${excludedText(r)}`);
   return { kind: 'mismatch', source: src, detail: target.compare.filter((c) => !c.ok).map((c) => c.field).join(', ') };

@@ -25,7 +25,7 @@ const CHECKS: Array<[string, string]> = [
 
 const GLYPHS: Array<[ProvenanceKind, string, string]> = [
   ['verified', 'Proven', 'Checked in your browser against the chain.'],
-  ['reported', 'Reported', 'As a bridge, a node or a feed says. Not checked.'],
+  ['reported', 'Reported', 'As a data service, a node or a feed says. Not checked.'],
   ['mismatch', 'Failed', 'Checked, and it did not match.'],
   ['proof', 'Platform proof', 'Read from Dash Platform; evo-sdk checked the proof against the quorum’s signature.'],
   ['fixture', 'Demo', 'Recorded sample data.'],
@@ -71,15 +71,15 @@ export function VerificationPage() {
           <li>A ChainLock checked against a masternode list that only nodes agree on, when the chain itself couldn’t be verified.</li>
           <li>A collateral that no ChainLock covers yet, or whose height differs from the published one.</li>
           <li>Testnet’s proof of work, which is too weak to stop a forged chain (testnet is verified through quorum proofs instead).</li>
-          <li>Voting keys as the bridge reports them, or a tally that is only the bridge’s own and not on Platform.</li>
+          <li>Voting keys as the governance data service reports them, or a tally that is only the data service’s own and not on Platform.</li>
           <li>A tally’s “in the next budget” flag, which whoever publishes it sets.</li>
         </ul>
       </details>
 
       <h2>What it can’t detect</h2>
       <p>
-        A bridge can <b>withhold</b>. The recount proves the votes it was given, so votes the bridge didn’t serve can’t be detected, and neither can a proposal
-        it never published. Comparing with another bridge (Settings) or your own Dash Core node narrows that gap. Who owns a proposal is checked separately, from
+        A data service can <b>withhold</b>. The recount proves the votes it was given, so votes the governance data service didn’t serve can’t be detected, and neither can a proposal
+        it never published. Comparing with another data service (Settings) or your own Dash Core node narrows that gap. Who owns a proposal is checked separately, from
         the owner’s signed claim, and is not part of the badge.
       </p>
       <p>
@@ -111,7 +111,7 @@ export function VerificationPage() {
         <summary>Where the data comes from</summary>
         <p className="small">
           Proposals, tallies, comments and profiles live on Dash Platform, read with proofs. Transactions, blocks, ChainLocks and the masternode list come from
-          DAPI evonodes. Signed votes come from a bridge, a Dash Core node that publishes governance data, because DAPI has no governance calls. Every one of
+          DAPI evonodes. Signed votes come from a data service, a Dash Core node that publishes governance data, because DAPI has no governance calls. Every one of
           these can be replaced in <Link to="/settings" className="dh-link">Settings</Link>.
         </p>
       </details>

@@ -65,7 +65,7 @@ export async function voteSetFor(bridge: Bridge, govHash: string, want: Snapshot
     first ??= got;
   }
   if (first) return first;
-  throw missing ?? new BridgeError('the bridge has no vote set for this proposal', 404);
+  throw missing ?? new BridgeError('the governance data service has no vote set for this proposal', 404);
 }
 
 /**

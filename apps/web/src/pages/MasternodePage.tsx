@@ -153,10 +153,10 @@ function MasternodeVotes({ proTx }: { proTx: string }) {
   const absent = v.lookup.kind === 'absent';
   const elsewhere = useProbe(absent ? other : null, async (o) => {
     const d = o.source.bridgeDescriptor();
-    if (!d) throw new Error('no governance bridge');
+    if (!d) throw new Error('no governance data service');
     const bridge = makeBridge(d);
     // only a bridge that says it runs on that network answers for it (as the data layer requires before reading one)
-    if ((await bridge.status()).network !== o.registry.coreNetwork) throw new Error('the bridge serves another network');
+    if ((await bridge.status()).network !== o.registry.coreNetwork) throw new Error('the governance data service serves another network');
     return (await bridge.mnlist()).masternodes.some((m) => m.proTxHash.toLowerCase() === proTx);
   }, `${proTx}:${absent}`);
   // Radar's record on the network the masternode is on: none to link while that is unknown
@@ -209,14 +209,14 @@ function MasternodeVotes({ proTx }: { proTx: string }) {
             idLabel="ProTx hash"
             probe={elsewhere}
             other={other}
-            absent={`Governance reads the governance bridge's masternode list, at block ${formatInt(v.lookup.height)}; it may have been removed.`}
+            absent={`Governance reads the governance data service's masternode list, at block ${formatInt(v.lookup.height)}; it may have been removed.`}
             list={{ path: '/', label: `Browse ${network} proposals` }}
           />
           {radarHere && <p><a href={radarHere} className="dh-link dh-link--go">Its record in Radar{elsewhere === 'found' && other ? ` (${other.label})` : ''}</a></p>}
         </div>
       )}
       {v.lookup.kind === 'no-bridge' && (
-        <p className="notice-box dh-notice dh-notice--info small">No governance bridge is configured in Settings, so this masternode's votes can't be read here.</p>
+        <p className="notice-box dh-notice dh-notice--info small">No governance data service is configured in Settings, so this masternode's votes can't be read here.</p>
       )}
       {v.lookup.kind === 'error' && (
         <div className="read-error" role="alert" data-testid="mn-lookup-error">
@@ -236,10 +236,10 @@ function MasternodeVotes({ proTx }: { proTx: string }) {
             <h2 id="mnv-list-title">Its votes on the {proposals.length ? formatInt(proposals.length) : ''} active proposals</h2>
             <p className="small muted" aria-live="polite" data-testid="mn-progress">
               {!mn
-                ? 'As the governance bridge reports them.'
+                ? 'As the governance data service reports them.'
                 : v.pending > 0
-                  ? `Reading its votes from the governance bridge: ${formatInt(read)} of ${formatInt(proposals.length)} read.`
-                  : `As the governance bridge reports them: ${[
+                  ? `Reading its votes from the governance data service: ${formatInt(read)} of ${formatInt(proposals.length)} read.`
+                  : `As the governance data service reports them: ${[
                       counts.none ? `not voted on ${formatInt(counts.none)}` : '',
                       counts.yes ? `${formatInt(counts.yes)} yes` : '',
                       counts.no ? `${formatInt(counts.no)} no` : '',

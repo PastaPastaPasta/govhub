@@ -405,11 +405,11 @@ export function parseRegistry(input: unknown): { registry: Registry; errors: str
     const x = (b ?? {}) as Record<string, unknown>;
     const govId = typeof x.govContractId === 'string' ? x.govContractId : '';
     const idId = typeof x.bridgeIdentityId === 'string' ? x.bridgeIdentityId : '';
-    if (govId && !B58_ID.test(govId)) errors.push(`bridge ${i + 1}: govContractId must be base58`);
-    if (idId && !B58_ID.test(idId)) errors.push(`bridge ${i + 1}: bridgeIdentityId must be base58`);
+    if (govId && !B58_ID.test(govId)) errors.push(`data service ${i + 1}: govContractId must be base58`);
+    if (idId && !B58_ID.test(idId)) errors.push(`data service ${i + 1}: identity must be base58`);
     return {
-      name: cleanName(x.name) || `bridge ${i + 1}`,
-      httpBase: httpsUrl(x.httpBase, `bridge ${i + 1} URL`, errors),
+      name: cleanName(x.name) || `data service ${i + 1}`,
+      httpBase: httpsUrl(x.httpBase, `data service ${i + 1} URL`, errors),
       govContractId: govId,
       bridgeIdentityId: idId,
       enabled: x.enabled !== false,
@@ -601,7 +601,7 @@ const ROWS: Row[] = [
   // both lists, even the one not in use: switching the source in Settings later would use it
   ['DAPI nodes', (r) => r.dapi, (r) => `from ${r.dapi.source === 'manual' ? 'my own nodes' : 'the quorum service'}; quorum service ${r.dapi.quorumUrl || 'none'}; my own nodes ${list(r.dapi.nodes)}`],
   ['Platform', (r) => r.platform, (r) => `${r.platform.trusted ? 'trusted quorum keys' : 'untrusted mode'}, ${r.platform.addresses.length ? `nodes ${list(r.platform.addresses)}` : 'SDK default nodes'}`],
-  ['Bridges', (r) => r.bridges, (r) => list(r.bridges.map((b) => `${b.name}: ${b.httpBase} (contract ${b.govContractId || 'any'}, identity ${b.bridgeIdentityId || 'none'}${b.enabled ? '' : ', off'})`))],
+  ['Data services', (r) => r.bridges, (r) => list(r.bridges.map((b) => `${b.name}: ${b.httpBase} (contract ${b.govContractId || 'any'}, identity ${b.bridgeIdentityId || 'none'}${b.enabled ? '' : ', off'})`))],
   ['Relays', (r) => r.relays, (r) => list(r.relays.map(urlText))],
   ['Quorum proof sources', (r) => r.quorumProofs, (r) => list(r.quorumProofs.map((q) => `${urlText(q)} (${q.kind})`))],
   ['Price feed', (r) => r.priceFeed, (r) => urlText(r.priceFeed)],

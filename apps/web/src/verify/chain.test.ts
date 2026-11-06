@@ -121,7 +121,7 @@ describe('schedule, budget and their labels', () => {
     const d = deadlineFact(sb as never, null, fx.now, undefined, null)!;
     expect(d.text).toMatch(/^block 2,573,818, in \d+ days \(estimated\)$/);
     expect(d.prov!.kind).toBe('verified');
-    expect(budgetFact(sb as never, { superblockHeight: 2_575_480, budget: 682_826_378_160 } as never)).toEqual({ text: '6,828.2637816 DASH for superblock 2,575,480; the bridge reports the same', ok: true });
+    expect(budgetFact(sb as never, { superblockHeight: 2_575_480, budget: 682_826_378_160 } as never)).toEqual({ text: '6,828.2637816 DASH for superblock 2,575,480; the governance data service reports the same', ok: true });
     expect(budgetFact(sb as never, { superblockHeight: 2_575_480, budget: 1 } as never).ok).toBe(false);
   });
 });

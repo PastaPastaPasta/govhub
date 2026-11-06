@@ -98,7 +98,7 @@ export function VoteSuccess({ vote, name, proposalName, onRecount }: { vote: Wat
     <section ref={ref} tabIndex={-1} className="vwin" role="status" data-testid="vote-success" aria-labelledby={`win-${vote.voteHash}`}>
       <WinMark />
       <div className="vwin-body">
-        <h3 id={`win-${vote.voteHash}`}>The bridge reports your vote is on the network</h3>
+        <h3 id={`win-${vote.voteHash}`}>The governance data service reports your vote is on the network</h3>
         <p className="small muted" data-testid="vote-success-source">
           {corroboration(vote).trim()}
         </p>
@@ -130,7 +130,7 @@ export function VoteSuccess({ vote, name, proposalName, onRecount }: { vote: Wat
             </span>
             {k.bridgeBase && (
               <a className="small dh-link" href={`${k.bridgeBase}/v1/proposals/${vote.govHash}/votes`} target="_blank" rel="noopener noreferrer">
-                Open in the bridge API
+                Open in the governance data service API
               </a>
             )}
             {onRecount && (

@@ -120,7 +120,7 @@ describe('a vote arriving between reading the tally and reading its votes is nev
     expect(level).toBe('changed');
     expect(component.status).toBe('error');
     expect(component).not.toHaveProperty('mismatch');
-    expect(component.status === 'error' && component.reason).toMatch(/^Couldn't verify yet: for block [\d,]+ the bridge served another vote set than the one behind the Bridge live tally \(usually a vote arrived while checking/);
+    expect(component.status === 'error' && component.reason).toMatch(/^Couldn't verify yet: for block [\d,]+ the governance data service served another vote set than the one behind the live tally from the data service \(usually a vote arrived while checking/);
     // the recount is of the stored set, labelled as such
     expect(runs[0]).toMatchObject({ votesAsOf: H, asked: H, servedVoteSetHash: stored.voteSetHash });
     // and with the Platform tally next to it, that one still verifies
@@ -146,7 +146,7 @@ describe('a contradiction inside one snapshot is still a mismatch', () => {
     expect(component).toMatchObject({ status: 'error', mismatch: true });
   });
 
-  it('asked by hash, the bridge serves a set labelled with that hash whose votes differ (one outcome flipped): mismatch', async () => {
+  it('asked by hash, the governance data service serves a set labelled with that hash whose votes differ (one outcome flipped): mismatch', async () => {
     const flipped = fullVotes.map((v, i) => (i === 0 ? { ...v, outcome: v.outcome === 1 ? 2 : 1 } : v));
     const b = bridge({ height: () => set(storedVotes, stored.voteSetHash), hash: (v) => (v === live.voteSetHash ? set(flipped, live.voteSetHash) : known(v)), live: () => set(laterVotes, later) });
     const { level, component } = await check(b, [platform(), bridgeLive()], platform());
@@ -154,7 +154,7 @@ describe('a contradiction inside one snapshot is still a mismatch', () => {
     expect(component).toMatchObject({ status: 'error', mismatch: true });
   });
 
-  it('a tampered Platform tally, the bridge serving its honest set labelled with the Platform hash: mismatch', async () => {
+  it('a tampered Platform tally, the governance data service serving its honest set labelled with the Platform hash: mismatch', async () => {
     const tampered: Tally = { ...stored, yesWeighted: stored.yesWeighted + 100 };
     const b = bridge({ height: () => set(storedVotes, stored.voteSetHash), hash: known, live: () => set(fullVotes, live.voteSetHash) });
     const { component } = await check(b, [{ name: PLATFORM_TARGET, tally: tampered }], { name: PLATFORM_TARGET, tally: tampered });
@@ -162,7 +162,7 @@ describe('a contradiction inside one snapshot is still a mismatch', () => {
     expect(component.status === 'error' && component.reason).toContain('Yes (weighted)');
   });
 
-  it('the bound: a bridge that withholds votes and labels what it serves consistently gets "couldn\'t verify yet", never verified', async () => {
+  it('the bound: a data service that withholds votes and labels what it serves consistently gets "couldn\'t verify yet", never verified', async () => {
     // The Platform tally counts every vote; the bridge serves five fewer under their own hash, whatever it is asked. Like answering
     // 404 (which a bridge can always do), that hides which side is wrong, so it is not called a mismatch: the recount is of no tally.
     const full: VoteTarget = { name: PLATFORM_TARGET, tally: live };

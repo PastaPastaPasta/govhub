@@ -26,7 +26,7 @@ export interface ProReg {
 }
 
 export interface VoteTarget {
-  /** "Platform tally" / "Bridge live tally" */
+  /** "Platform tally" / "live tally from the data service" */
   name: string;
   tally: Tally;
 }
@@ -56,8 +56,8 @@ export type VoteProblem = 'bad-signature' | 'unknown-masternode' | 'duplicate-ma
 /** What each exclusion means, for the UI (a count follows or precedes it). */
 export const PROBLEM_TEXT: Record<VoteProblem, string> = {
   'bad-signature': "signature doesn't check out",
-  'unknown-masternode': "outpoint isn't a masternode in the bridge's list",
-  'duplicate-masternode': "the bridge's list has its masternode twice",
+  'unknown-masternode': "outpoint isn't a masternode in the governance data service's list",
+  'duplicate-masternode': "the governance data service's list has its masternode twice",
   'not-in-proven-list': 'masternode not in the proven masternode list',
   'unproven-key': "not signed by the voting key the proven list gives its masternode",
   'unproven-registration': "collateral or type not proven by the masternode's registration (ProRegTx)",

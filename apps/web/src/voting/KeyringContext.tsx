@@ -841,7 +841,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
   /** What a key is, from the masternode list (this key's own lookup), before it is saved anywhere (D-023). */
   const checkKey = useCallback(
     async (privateKey: Uint8Array, compressed: boolean) => {
-      if (!lookupDeps) throw new Error('no bridge is configured (Settings)');
+      if (!lookupDeps) throw new Error('no data service is configured (Settings)');
       const r = await lookupMasternodes([{ index: 0, keyId: votingKeyId(privateKey, compressed) }], lookupDeps, { signal: new AbortController().signal });
       return keyRole(votingAddressOf(privateKey, compressed, coreNetwork), r.list ?? [], r.owned, r.missing.length);
     },
@@ -1077,7 +1077,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
   const keysSig = keyring ? keyInfos.map((k) => k.keyId).join(',') : '';
   useEffect(() => {
     if (!keyring || !keysSig) return setMns(EMPTY_MNS);
-    if (!lookupDeps) return setMns({ ...EMPTY_MNS, phase: 'error', error: 'No bridge is configured (Settings): the masternode list and collateral outpoints come from a bridge.', forKeys: keysSig });
+    if (!lookupDeps) return setMns({ ...EMPTY_MNS, phase: 'error', error: 'No data service is configured (Settings): the masternode list and collateral outpoints come from a data service.', forKeys: keysSig });
     const ctrl = new AbortController();
     // while a lookup runs, keep what an earlier one found for the same keys (a refresh) or for the keys before one was added
     setMns((m) => ({ ...(m.forKeys && (keysSig === m.forKeys || keysSig.startsWith(`${m.forKeys},`)) ? m : EMPTY_MNS), phase: 'loading', step: 'bridge', error: undefined, startedAt: Date.now(), forKeys: keysSig }));
@@ -1442,7 +1442,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
         p.catch(() => mnlists.delete(height));
         mnlists.set(height, p);
       }
-      return p ?? Promise.reject(new Error('no bridge'));
+      return p ?? Promise.reject(new Error('no data service'));
     };
     const schedule = (ms: number) => {
       clearTimeout(timer);
@@ -1698,7 +1698,7 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
       const pro = (owned?.proTxHash ?? v.proTxHash).toLowerCase();
       // the voting address of this masternode in the list several evonodes agree on (fixtures: the bridge's list)
       let listAddr: string | null = null;
-      let listName = 'the bridge’s masternode list';
+      let listName = 'the governance data service’s masternode list';
       try {
         if (dapi) {
           const sml = await dapi.getSml();
@@ -1725,9 +1725,9 @@ export function KeyringProvider({ children }: { children: ReactNode }) {
           const vs = await bridge.votes(v.govHash);
           const b = vs.votes.find((x) => mnId(x) === mnId(v));
           const exact = !!b && b.time === v.time && b.outcome === v.outcome && b.sig === v.sig;
-          checks.push({ label: 'The bridge reports the network has it as the current vote', ok: exact, detail: exact ? `The bridge’s vote set as of block ${vs.asOfHeight} has exactly this vote.` : b ? 'The bridge’s vote set has a different vote for this masternode.' : 'The bridge’s vote set has no vote for this masternode yet.' });
+          checks.push({ label: 'The governance data service reports the network has it as the current vote', ok: exact, detail: exact ? `The data service’s vote set as of block ${vs.asOfHeight} has exactly this vote.` : b ? 'The data service’s vote set has a different vote for this masternode.' : 'The data service’s vote set has no vote for this masternode yet.' });
         } catch (e) {
-          checks.push({ label: 'The bridge reports the network has it as the current vote', ok: null, detail: errorText(e) });
+          checks.push({ label: 'The governance data service reports the network has it as the current vote', ok: null, detail: errorText(e) });
         }
       }
       return { checks };

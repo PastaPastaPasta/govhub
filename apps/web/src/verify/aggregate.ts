@@ -184,7 +184,7 @@ export function votesComponent(i: {
   progress?: string;
 }): ComponentState {
   if (!i.shown) return i.talliesLoading ? { status: 'pending', note: 'Reading the vote tally' } : { status: 'reported', reason: 'No vote tally has been published for this proposal yet' };
-  if (!i.bridge) return { status: 'reported', reason: 'Votes not recounted: no bridge is configured to fetch the signed votes' };
+  if (!i.bridge) return { status: 'reported', reason: 'Votes not recounted: no data service is configured to fetch the signed votes' };
   if (i.error) return { status: 'error', reason: `The votes couldn't be recounted: ${unfinishedReason(i.error)}` };
   const d = i.result;
   if (!d) return { status: 'pending', note: i.progress || 'Recounting the signed votes' };
@@ -196,7 +196,7 @@ export function votesComponent(i: {
     const fields = contradicted.t.compare.filter((c) => !c.ok).map((c) => c.field).join(', ');
     return {
       status: 'error', mismatch: true,
-      reason: `Mismatch: the signed votes the bridge served contradict the ${contradicted.t.name} for block ${contradicted.t.asOfHeight.toLocaleString('en-US')}${fields ? ` (${fields})` : ''}. Either the tally or the bridge's vote archive is wrong, so the tally isn't verified`,
+      reason: `Mismatch: the signed votes the governance data service served contradict the ${contradicted.t.name} for block ${contradicted.t.asOfHeight.toLocaleString('en-US')}${fields ? ` (${fields})` : ''}. Either the tally or the data service's vote archive is wrong, so the tally isn't verified`,
     };
   }
   const shown = i.shown;
@@ -207,7 +207,7 @@ export function votesComponent(i: {
   if (hit && !hit.t.matches && !hit.t.servedMatches && otherSnapshot(hit.run, hit.t)) {
     return {
       status: 'error',
-      reason: `Couldn't verify yet: for block ${hit.t.asOfHeight.toLocaleString('en-US')} the bridge served another vote set than the one behind the ${hit.t.name} (usually a vote arrived while checking; if this persists, the bridge isn't serving that tally's votes). Re-check in a moment`,
+      reason: `Couldn't verify yet: for block ${hit.t.asOfHeight.toLocaleString('en-US')} the governance data service served another vote set than the one behind the ${hit.t.name} (usually a vote arrived while checking; if this persists, the data service isn't serving that tally's votes). Re-check in a moment`,
     };
   }
   // The Platform tally document is the proven record of the tally; the bridge's own live tally proves nothing about it.
@@ -217,7 +217,7 @@ export function votesComponent(i: {
   // The tally counts votes this browser couldn't prove: the count here leaves them out, so it can't confirm the tally.
   const excluded = excludedText(r);
   if (!hit.t.matches && hit.t.servedMatches) return { status: 'reported', reason: `Votes not fully proven: ${excluded}. The tally counts them, the count here does not` };
-  if (!hit.t.matches) return { status: 'reported', reason: "The bridge served the votes of another block than the Platform tally's, so the two can't be compared" };
+  if (!hit.t.matches) return { status: 'reported', reason: "The governance data service served the votes of another block than the Platform tally's, so the two can't be compared" };
   // A proven but old record: the votes have moved on (or the publisher stopped), so it says nothing about the funding status now.
   const shownAt = i.shown.tally.asOfHeight;
   if (i.live && i.live.asOfHeight > shownAt && !sameCounts(i.live, i.shown.tally)) {
@@ -227,8 +227,8 @@ export function votesComponent(i: {
   if (d.sml?.weak) return { status: 'reported', reason: 'Testnet: voting keys were checked against a list only proof of work protects' };
   if (r.keysFrom !== 'sml') {
     if (excluded) return { status: 'reported', reason: `Votes not fully proven: ${excluded}` };
-    if (r.listDiffers > 0) return { status: 'reported', reason: `The bridge's masternode list differs from the proven one for ${r.listDiffers.toLocaleString('en-US')} voters (key or type); their votes are counted with the proven key and type` };
-    return { status: 'reported', reason: "Not fully checked: the voters' keys are as the bridge lists them" };
+    if (r.listDiffers > 0) return { status: 'reported', reason: `The governance data service's masternode list differs from the proven one for ${r.listDiffers.toLocaleString('en-US')} voters (key or type); their votes are counted with the proven key and type` };
+    return { status: 'reported', reason: "Not fully checked: the voters' keys are as the governance data service lists them" };
   }
   return { status: 'proven', summary: `${r.verified.toLocaleString('en-US')} signed votes recounted; they match the published tally exactly` };
 }

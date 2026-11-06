@@ -173,7 +173,7 @@ function MasternodeLine({ ctx }: { ctx: MnContext }) {
           </span>
         )}
       </p>
-      {ctx.lookup.kind === 'absent' && <p className="small muted">It isn’t in the {network} masternode list the governance bridge reports, so it can’t vote here.</p>}
+      {ctx.lookup.kind === 'absent' && <p className="small muted">It isn’t in the {network} masternode list the governance data service reports, so it can’t vote here.</p>}
       {ctx.lookup.kind === 'error' && <p className="small muted">Its details couldn’t be read just now ({ctx.lookup.message}); you can still vote below.</p>}
       <p className="small pvote-mn-links">
         <Link to={`/masternodes/${ctx.proTx}`} data-testid="vote-mn-back" className="dh-link">
@@ -346,7 +346,7 @@ function PastedKeyVote({ proposal, outcome, setOutcome, only }: { proposal: Prop
       try {
         list = await bridgeVotesFor(registry, govHash);
       } catch (e) {
-        out.push(`Your current votes could not be read from the bridge (${errText(e)}), so nothing was signed.`);
+        out.push(`Your current votes could not be read from the governance data service (${errText(e)}), so nothing was signed.`);
         return;
       }
       const cur = latest.current;

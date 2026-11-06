@@ -310,7 +310,7 @@ describe('D-022: "registration proves the rest" only after the ProRegTx was read
   const keyId = bytesToHex(decodeAddress(self.votingAddress, 'testnet')!.hash160);
   const bridge: BridgeMasternode[] = protx.map((x) => ({ proTxHash: x.proTxHash, collateralTxid: x.collateralHash, collateralIndex: x.collateralIndex, votingAddress: x.votingAddress, type: x.type === 'Evo' ? 'evo' : 'regular', valid: true }));
   const sml = new Map(protx.map((x) => [x.proTxHash, { votingAddress: x.votingAddress, isValid: true, nType: x.type === 'Evo' ? 1 : 0, typeProven: true }]));
-  it('a self-collateral masternode is not "proved" by the bridge saying so', async () => {
+  it('a self-collateral masternode is not "proved" by the governance data service saying so', async () => {
     const m = matchMasternodes([{ index: 0, keyId }], bridge, sml, 'testnet').owned.find((x) => x.proTxHash === self.proTxHash)!;
     expect(m.provenance.collateral).toBe('bridge');
     const failed = await proveCollaterals([m], async () => Promise.reject(new Error('node down')), 'testnet', { pause: async () => {} });

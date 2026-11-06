@@ -108,7 +108,7 @@ function NotFound({ by }: { by: { name: string } | { hash: string } }) {
       idLabel={'name' in by ? 'name' : 'hash'}
       probe={probe}
       other={other}
-      absent="A proposal shows here a few minutes after it is submitted, once Governance’s bridge has published it."
+      absent="A proposal shows here a few minutes after it is submitted, once the governance data service has published it."
       list={{ path: '/', label: `Browse ${here} proposals` }}
     />
   );

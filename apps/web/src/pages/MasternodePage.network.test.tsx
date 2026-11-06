@@ -75,7 +75,7 @@ describe('a masternode that is not on this network', () => {
     await r.unmount();
   });
 
-  it('never trusts a bridge that says it serves another network: it couldn’t check', async () => {
+  it('never trusts a data service that says it serves another network: it couldn’t check', async () => {
     hold.statusNet = 'testnet';
     hold.mainnetList = [{ proTxHash: PRO }];
     const r = await render(page());

@@ -153,7 +153,7 @@ test.describe('vote panel (fixtures)', () => {
     await advance(page);
     const win = page.getByTestId('vote-success');
     await expect(win).toBeVisible({ timeout: 15_000 });
-    await expect(win.getByRole('heading')).toHaveText('The bridge reports your vote is on the network');
+    await expect(win.getByRole('heading')).toHaveText('The governance data service reports your vote is on the network');
     await expect(win).toContainText('voted abstain on OrchardPay');
     await expect(step('seen')).toHaveAttribute('data-state', 'done');
     await expect(tracker).toHaveAttribute('data-counted', 'yes', { timeout: 15_000 });
@@ -165,7 +165,7 @@ test.describe('vote panel (fixtures)', () => {
     const proof = win.getByTestId('vote-proof');
     await expect(proof.locator('li.ok')).toHaveCount(3);
     await expect(proof).toContainText('The signature is valid');
-    await expect(proof).toContainText('The bridge reports the network has it as the current vote');
+    await expect(proof).toContainText('The governance data service reports the network has it as the current vote');
     await expect(win.getByRole('button', { name: 'Copy the gobject getcurrentvotes command' })).toBeVisible();
     await win.getByRole('button', { name: 'Dismiss' }).click();
     await expect(win).toHaveCount(0);

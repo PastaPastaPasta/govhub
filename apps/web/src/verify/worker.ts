@@ -248,8 +248,8 @@ async function ranking(req: Extract<WorkerRequest, { kind: 'ranking' }>, bridge:
       const r = verifyVotes({ govHash: p.govHash, votes: votes.votes, masternodes: list.masternodes, network: req.network, now: req.now, targets: tally ? [{ name: BRIDGE_TARGET, tally }] : [], sml: entries, proReg });
       const matches = !!tally && r.targets[0]!.matches;
       const bad = problemCounts(r.problems).map(([k, n]) => `${n} ${k.replace(/-/g, ' ')}`);
-      const unproven = bad.length ? `not every vote proven (${bad.join(', ')})` : `the bridge's masternode list differs from the proven one for ${r.listDiffers} voters`;
-      const missing = want && otherSnapshot(run, want) ? "the bridge served another vote set than its tally's (usually a vote arrived while recounting); re-check" : `no published tally at block ${votes.tallyHeight}`;
+      const unproven = bad.length ? `not every vote proven (${bad.join(', ')})` : `the governance data service's masternode list differs from the proven one for ${r.listDiffers} voters`;
+      const missing = want && otherSnapshot(run, want) ? "the governance data service served another vote set than its tally's (usually a vote arrived while recounting); re-check" : `no published tally at block ${votes.tallyHeight}`;
       const problem = a.weak ? `not secure: ${a.weak}` : r.keysFrom !== 'sml' ? unproven : !tally ? missing : !matches ? 'the recount differs from the published tally' : null;
       recounts.push({ ...base, absYes: r.weighted.yes - r.weighted.no, proven: problem === null, ...(problem ? { problem } : {}) });
     } catch (e) {

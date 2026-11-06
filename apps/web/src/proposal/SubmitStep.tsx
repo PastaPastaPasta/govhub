@@ -98,10 +98,10 @@ export function SubmitStep({ draft, commit, services }: PayProps) {
           <p className="small muted">{submittedNote(sub, holder, allFailed)}</p>
         </Stage>
         <Stage status={seenStatus} title="Seen by the network" testId="p-stage-seen">
-          <p className="small muted">{sub?.seenAt ? 'Another Dash node has it.' : 'Checked on a bridge (a separate Dash Core node).'}</p>
+          <p className="small muted">{sub?.seenAt ? 'Another Dash node has it.' : 'Checked on a data service (a separate Dash Core node).'}</p>
         </Stage>
         <Stage status={pubStatus} title="On govhub" testId="p-stage-published">
-          <p className="small muted">{sub?.publishedAt ? 'Published to Dash Platform by the bridge.' : 'The bridge publishes proposals to Dash Platform once they have 6 confirmations.'}</p>
+          <p className="small muted">{sub?.publishedAt ? 'Published to Dash Platform by the governance data service.' : 'The governance data service publishes proposals to Dash Platform once they have 6 confirmations.'}</p>
         </Stage>
       </ol>
 

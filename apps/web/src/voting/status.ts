@@ -81,7 +81,7 @@ export function corroboration(v: WatchedVote): string {
   // A source run by the same operator as the bridge agrees just as easily, so the way to be sure is always named.
   return others.length
     ? ` Also seen by ${others.join(' and ')}. To be sure, check your own Dash Core node.`
-    : ' That is the bridge’s word: no other bridge or relay you configured confirms it. To be sure, check your own Dash Core node.';
+    : ' That is the data service’s word: no other data service or relay you configured confirms it. To be sure, check your own Dash Core node.';
 }
 
 /** The relays that hold the vote or may hold it, for display ("a.org and b.org"). */
@@ -128,8 +128,8 @@ export function describeVote(v: WatchedVote, now: number, fmt: TimeFmt): VoteVie
     }
     case 'confirmed':
       return v.countedAt
-        ? { badge: 'Bridge: counted', tone: 'ok', line: `The bridge reports the network counted it: its vote set includes it, and the recount of that set matches.${corroboration(v)}` }
-        : { badge: 'Bridge: on the network', tone: 'ok', line: `The bridge reports the network has it: its vote set includes it, signature checked here against your voting key.${corroboration(v)}` };
+        ? { badge: 'Counted, says the data service', tone: 'ok', line: `The governance data service reports the network counted it: its vote set includes it, and the recount of that set matches.${corroboration(v)}` }
+        : { badge: 'On the network, says the data service', tone: 'ok', line: `The governance data service reports the network has it: its vote set includes it, signature checked here against your voting key.${corroboration(v)}` };
     case 'failed': {
       if (v.failReason === WRITES_OFF && !v.maybeAt?.length) return { badge: 'Preview: not sent', tone: 'quiet', line: `Signed in your browser, then stopped: ${WRITES_OFF}. On gov.dashhq.org the relay sends it.` };
       // refused by one relay after another may have stored it (its answer was lost): that relay could still release it
@@ -158,8 +158,8 @@ const LABELS: Record<StepKey, string> = {
   signed: 'Signed in your browser',
   relay: 'Accepted by relay',
   broadcast: 'Broadcast to the network',
-  seen: 'The bridge reports it on the network',
-  counted: 'The bridge reports it counted',
+  seen: 'The governance data service reports it on the network',
+  counted: 'The governance data service reports it counted',
 };
 
 /** The tracker. Exactly one step is active while the vote moves; a failure marks the step where it stopped. */
@@ -209,7 +209,7 @@ export function trackerSteps(v: WatchedVote, now: number, fmt: TimeFmt): Step[] 
         : key === 'broadcast'
           ? holdText(v, now, fmt)
           : key === 'seen'
-            ? 'Waiting for the bridge’s vote set to show it…'
+            ? 'Waiting for the governance data service’s vote set to show it…'
             : 'Recounting the tally’s vote set…';
     // the relay step stops (error) only when no relay may have the vote; one whose answer was lost may hold it
     return { ...base, state: v.status === 'queued' && v.lastSendError && neverLeft(v) ? 'error' : 'active', detail };

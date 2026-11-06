@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { cardMark } from './ProposalCard.tsx';
 
 const network = "The chain couldn't be checked: this browser couldn't reach the Dash network's nodes just now";
-const mismatch = 'Mismatch: the signed votes the bridge served contradict the Platform tally for block 2,567,100';
+const mismatch = 'Mismatch: the signed votes the governance data service served contradict the Platform tally for block 2,567,100';
 
 describe('the trust mark on a proposal card', () => {
   it("a check that only couldn't reach the network marks no card (the list says it once)", () => {

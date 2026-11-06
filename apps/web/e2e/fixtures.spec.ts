@@ -79,7 +79,7 @@ test.describe('fixture mode', () => {
     const votes = drawer.getByTestId('votes-check');
     await expect(votes.locator('[data-votes]')).toHaveAttribute('data-votes', 'keys-reported', { timeout: 30_000 });
     await expect(votes).toContainText('Recount matches the Platform tally: 229 of 229 votes counted');
-    await expect(votes).toContainText('fixture bridge (synthetic voters)');
+    await expect(votes).toContainText('fixture data service (synthetic voters)');
     await expect(votes.locator('table.compare td.bad')).toHaveCount(0);
     // Keys as the fixture bridge reports them: not proven.
     await expect(drawer.locator('[data-check="votes"]')).toHaveAttribute('data-state', 'reported');
@@ -122,7 +122,7 @@ test.describe('fixture mode', () => {
     await expect(table.locator('tr', { hasText: 'voteSetHash' }).locator('.visually-hidden').last()).toHaveText('matches');
     // A bridge match on bridge-supplied keys is not "verified".
     await expect(drawer.locator('[data-check="votes"]')).toHaveAttribute('data-state', 'reported');
-    await expect(drawer.locator('[data-check="votes"]')).toContainText("the voters' keys are as the bridge lists them");
+    await expect(drawer.locator('[data-check="votes"]')).toContainText("the voters' keys are as the governance data service lists them");
     expect(errors).toEqual([]);
   });
 
@@ -133,7 +133,7 @@ test.describe('fixture mode', () => {
     const drawer = await openDrawer(page);
     await expect(drawer.getByRole('heading', { name: 'How do we know?' })).toBeVisible();
     await expect(drawer.getByTestId('checks').locator('[data-check]')).toHaveCount(5);
-    await expect(drawer).toContainText("votes the bridge didn't serve can't be detected");
+    await expect(drawer).toContainText("votes the governance data service didn't serve can't be detected");
     await drawer.getByText('Proposal data and hashes').click();
     await expect(drawer.getByTestId('raw-data')).toContainText('"name": "OrchardPay"');
     await page.keyboard.press('Escape');

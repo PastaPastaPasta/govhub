@@ -613,8 +613,8 @@ function Masternodes() {
           </button>
         </div>
       )}
-      {!!k.mns.missing.length && <p className="vwarn small">{k.mns.missing.length} masternode(s) for your keys are in the masternode list but not in the bridge’s list yet; they can vote once the bridge catches up.</p>}
-      {!!k.mns.mismatch.length && <p className="kr-alert small">The bridge named a wrong collateral for {k.mns.mismatch.length} masternode(s); they are hidden.</p>}
+      {!!k.mns.missing.length && <p className="vwarn small">{k.mns.missing.length} masternode(s) for your keys are in the masternode list but not in the governance data service’s list yet; they can vote once the data service catches up.</p>}
+      {!!k.mns.mismatch.length && <p className="kr-alert small">The governance data service named a wrong collateral for {k.mns.mismatch.length} masternode(s); they are hidden.</p>}
       {!k.keyInfos.length ? (
         <div className="vempty-line kr-mns-empty" data-testid="mn-empty">
           <p>No voting keys yet. Add one and its masternodes show up here.</p>

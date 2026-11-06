@@ -26,7 +26,7 @@ export function BudgetHeader() {
     return (
       <section className="budget dh-page-header" aria-label="Budget">
         <h1 className="dh-page-header__title">Active proposals</h1><p className="dh-page-header__lede">No budget has been published yet.</p>
-        <p className="muted small">{gov.cycle.error ? `Platform read failed: ${gov.cycle.error}` : 'The bridge publishes one for every payout. Add a bridge in Settings to see live numbers.'}</p>
+        <p className="muted small">{gov.cycle.error ? `Platform read failed: ${gov.cycle.error}` : 'The governance data service publishes one for every payout. Add a data service in Settings to see live numbers.'}</p>
       </section>
     );
   }

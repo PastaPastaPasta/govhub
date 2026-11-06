@@ -59,7 +59,7 @@ describe('a proposal that is not on this network', () => {
     answer([]);
     await flush();
     expect(notice(r.el).getAttribute('found')).toBe('none');
-    expect(notice(r.el).textContent).toContain('once Governance’s bridge has published it');
+    expect(notice(r.el).textContent).toContain('once the governance data service has published it');
   });
 
   it('says it couldn’t check when the other network can’t be asked, without claiming either way', async () => {
