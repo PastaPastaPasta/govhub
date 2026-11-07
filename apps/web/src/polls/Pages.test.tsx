@@ -56,6 +56,8 @@ describe('Polls within Governance', () => {
     await vi.waitFor(() => expect(r.el.textContent).toContain(text));
     expect(r.el.textContent).toContain('No open polls right now');
     expect(r.el.textContent).toContain('Recent closed polls');
+    expect(r.el.querySelector('.poll-meta')?.textContent).toContain('Closed 1 Jan 1970');
+    expect(r.el.querySelector('.poll-meta')?.textContent).not.toMatch(/closes/i);
     if (text.startsWith('Tied')) expect(r.el.textContent).not.toContain('leads with');
     const closed = [...r.el.querySelectorAll('button')].find(b => b.textContent === 'Closed')!;
     expect(closed.getAttribute('aria-pressed')).toBe('false');

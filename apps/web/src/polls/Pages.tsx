@@ -31,7 +31,7 @@ function Person({ id }: { id: string }) {
   return <bdi title={id}>{names.data?.get(id) ?? shortHash(id, 5)}</bdi>;
 }
 function Meta({ poll, asked = false }: { poll: Poll; asked?: boolean }) {
-  return <p className="poll-meta dh-meta"><span><span>by <Person id={poll.owner} /></span></span>{asked && <span><span>asked <time dateTime={new Date(poll.createdAt).toISOString()}>{date(poll.createdAt)}</time></span></span>}<span><span>{poll.endsAt ? <>closes <time dateTime={new Date(poll.endsAt).toISOString()}>{date(poll.endsAt)}</time> (advisory)</> : 'no close date'}</span></span>{!asked && <span>{poll.options.length} options</span>}</p>;
+  return <p className="poll-meta dh-meta"><span><span>by <Person id={poll.owner} /></span></span>{asked && <span><span>asked <time dateTime={new Date(poll.createdAt).toISOString()}>{date(poll.createdAt)}</time></span></span>}<span><span>{poll.endsAt ? <>{closed(poll) ? 'Closed' : 'Closes'} <time dateTime={new Date(poll.endsAt).toISOString()}>{date(poll.endsAt)}</time> (advisory)</> : 'no close date'}</span></span>{!asked && <span>{poll.options.length} options</span>}</p>;
 }
 function Loading({ children }: { children: ReactNode }) { return <p className="muted" role="status">{children}</p>; }
 function ResultBar({ value, total }: { value: number; total: number }) {

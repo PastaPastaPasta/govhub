@@ -46,6 +46,15 @@ const inBudget = async (a: ReturnType<typeof app>) => {
 };
 
 describe('BudgetHeader', () => {
+  it('labels the feed threshold as an estimate and explains the proposal source', async () => {
+    const a = app({});
+    a.gov.cycle.data.value.validWeighted = 3330;
+    hold.app = a;
+    const { el } = await render(<MemoryRouter><BudgetHeader /></MemoryRouter>);
+    const fact = [...el.querySelectorAll('.budget-facts > div')].find(d => d.querySelector('dt')?.textContent === 'To pass (feed estimate)')!;
+    expect(fact.querySelector('dd')?.textContent).toContain('333 net yes votes');
+    expect(el.textContent).toContain('Proposal pages use the masternode-list read when available');
+  });
   it('counts once the tallies are in', async () => expect(await inBudget(app({}))).toBe('1 of 3 proposals'));
   it('says it is counting while they are read', async () => expect(await inBudget(app({ talliesLoading: true }))).toContain('counting the votes'));
   it('says it isn’t known when the votes couldn’t be read, or the proposals', async () => {

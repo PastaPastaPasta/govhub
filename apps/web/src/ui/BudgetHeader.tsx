@@ -162,7 +162,7 @@ export function BudgetHeader() {
           </dd>
         </div>
         <div>
-          <dt>To pass</dt>
+          <dt>To pass (feed estimate)</dt>
           <dd>
             <span className="num">{formatInt(threshold)}</span> net yes votes
           </dd>
@@ -192,7 +192,7 @@ export function BudgetHeader() {
         <p className="small">
           The treasury pays out {superblockCadence(params)}, in a special block (a superblock; this one is block {formatInt(c.superblockHeight)}
           {height ? `, the chain is at ${formatInt(height)}` : ''}). A proposal is paid if its yes votes minus its no votes reach 10% of all masternode
-          weight ({formatInt(threshold)} of {formatInt(c.validWeighted)}; evonodes count 4 times). Passing proposals are paid best first until the budget of{' '}
+          weight ({formatInt(threshold)} of {formatInt(c.validWeighted)} reported by the feed; evonodes count 4 times). Proposal pages use the masternode-list read when available, which can differ from this estimate. Passing proposals are paid best first until the budget of{' '}
           {formatDash(c.budget)} runs out. Votes count until {formatDate(deadline)}, a few days before the payout.
         </p>
         </details>

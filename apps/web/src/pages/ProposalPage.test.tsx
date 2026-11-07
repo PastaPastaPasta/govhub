@@ -175,11 +175,18 @@ describe('ProposalView for a proposal that starts paying at a later superblock',
 describe('ProposalView reading order', () => {
   const open = proposal({ startEpoch: NOW - 10 * DAY, endEpoch: NOW + 80 * DAY });
 
+  it('identifies the masternode-list block behind the proposal threshold', async () => {
+    const r = report({ paid: 0, remainingEstimate: 3 });
+    r.threshold.value = 331;
+    r.threshold.validWeighted = 3310;
+    const { el } = await view(open, { estTime: NOW + 5 * DAY, report: r });
+    expect(el.querySelector('[data-testid="p-decision"]')?.textContent).toContain('331 to pass (masternode list at block 1)');
+  });
   it('says what it funds (ask × payments, payee, timeline) and where it stands before the vote, with a jump to the vote', async () => {
     const { el } = await view(open, { estTime: NOW + 5 * DAY, report: null });
     const summary = el.querySelector('[data-testid="p-decision"]')!;
     expect(summary.textContent).toContain('Requested');
-    expect(summary.textContent).toContain('504 net yes; 332 to pass');
+    expect(summary.textContent).toContain('504 net yes; 332 to pass (feed estimate)');
     expect(summary.textContent).toContain('next payout around');
     expect(el.querySelector('.p-hero [data-testid="p-chain-name"]')).toBeNull();
     const funds = el.querySelector('[data-testid="p-funds"]')!;
