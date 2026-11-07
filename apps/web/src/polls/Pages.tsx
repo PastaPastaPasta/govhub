@@ -23,7 +23,7 @@ function TestnetOnly({ children }: { children: ReactNode }) {
   const location = useLocation();
   const params = new URLSearchParams(location.search);
   params.set('network', 'testnet'); params.delete('profile'); params.delete('fixtures');
-  return registry.platformNetwork !== 'testnet' ? <section className="polls-page"><header className="dh-page-header"><h1 className="dh-page-header__title">Polls</h1></header><div className="dh-notice dh-notice--info"><p>Polls run on Testnet while the poll contract is tested.</p><Link to={`${location.pathname}?${params}`} className="dh-btn dh-btn--secondary">Open Polls on Testnet</Link></div></section> : children;
+  return registry.platformNetwork !== 'testnet' ? <section className="polls-page"><header className="dh-page-header"><h1 className="dh-page-header__title">Polls</h1><p className="dh-page-header__lede">Explore community questions and see how Dash identities have answered.</p></header><div className="dh-notice dh-notice--info"><p>Polls run on Testnet while the poll contract is tested.</p><Link to={`${location.pathname}?${params}`} className="dh-btn dh-btn--secondary">Open Polls on Testnet</Link></div><section className="dh-section polls-intro" aria-labelledby="polls-about"><h2 id="polls-about" className="dh-h2">Community opinions, on record</h2><p>Browse open questions and recent closed polls, with answer counts and results for each option. Sign in on Testnet when you want to ask or answer a question.</p><p className="muted">Polls gather opinions. Treasury funding is decided separately by masternode votes on proposals.</p></section></section> : children;
 }
 function Person({ id }: { id: string }) {
   const { forum } = useForum();
@@ -31,7 +31,7 @@ function Person({ id }: { id: string }) {
   return <bdi title={id}>{names.data?.get(id) ?? shortHash(id, 5)}</bdi>;
 }
 function Meta({ poll, asked = false }: { poll: Poll; asked?: boolean }) {
-  return <p className="poll-meta">by <Person id={poll.owner} /> · {asked && <>asked <time dateTime={new Date(poll.createdAt).toISOString()}>{date(poll.createdAt)}</time> · </>}{poll.endsAt ? <>closes <time dateTime={new Date(poll.endsAt).toISOString()}>{date(poll.endsAt)}</time> (advisory)</> : 'no close date'}{!asked && ` · ${poll.options.length} options`}</p>;
+  return <p className="poll-meta dh-meta"><span><span>by <Person id={poll.owner} /></span></span>{asked && <span><span>asked <time dateTime={new Date(poll.createdAt).toISOString()}>{date(poll.createdAt)}</time></span></span>}<span><span>{poll.endsAt ? <>closes <time dateTime={new Date(poll.endsAt).toISOString()}>{date(poll.endsAt)}</time> (advisory)</> : 'no close date'}</span></span>{!asked && <span>{poll.options.length} options</span>}</p>;
 }
 function Loading({ children }: { children: ReactNode }) { return <p className="muted" role="status">{children}</p>; }
 function ResultBar({ value, total }: { value: number; total: number }) {
@@ -50,10 +50,11 @@ function Fee({ source, draft, poll, selections = 1 }: { source: PollSource; draf
 function PollRow({ poll, source, archive }: { poll: Poll; source: PollSource; archive: boolean }) {
   const result = useAsync(() => source.results(poll, undefined, archive), [source, poll, archive]);
   const t = result.data;
-  const leader = t ? t.counts.indexOf(Math.max(...t.counts)) : 0;
+  const high = t ? Math.max(...t.counts) : 0;
+  const leaders = t?.counts.filter(n => n === high).length ?? 0;
   return <article className="poll-row">
-    <div><h2><Link to={`/polls/${poll.id}${archive ? '?archive=1' : ''}`} className="poll-title-link">{poll.question}</Link></h2><Meta poll={poll} /></div>
-    <div className="poll-leader">{t ? t.selections ? <><span>{poll.options[leader]} leads with {Math.round(t.counts[leader]! / t.selections * 100)}%</span><ResultBar value={t.counts[leader]!} total={t.selections} /></> : <span className="muted">No answers yet</span> : <span className="muted">{result.error ? 'Results unavailable' : 'Reading answers…'}</span>}</div>
+    <div><h2 className="dh-h3"><Link to={`/polls/${poll.id}${archive ? '?archive=1' : ''}`} className="poll-title-link">{poll.question}</Link></h2><Meta poll={poll} /></div>
+    <div className="poll-leader">{t ? t.selections ? <><span>{leaders > 1 ? 'Tied at' : `${poll.options[t.counts.indexOf(high)]} leads with`} {Math.round(high / t.selections * 100)}%</span><ResultBar value={high} total={t.selections} /></> : <span className="muted">No answers yet</span> : <span className="muted">{result.error ? 'Results unavailable' : 'Reading answers…'}</span>}</div>
     <div className="poll-answer-count">{t ? <><strong>{t.identities}</strong><span>{t.identities === 1 ? 'answer' : 'answers'}</span></> : <span className="muted">—</span>}</div>
   </article>;
 }
@@ -72,10 +73,12 @@ function PollList({ archive }: { archive: boolean }) {
   const seg = ['closed', 'mine'].includes(params.get('seg') ?? '') ? params.get('seg')! : 'open';
   const load = useAsync(() => source.list(archive), [source, archive, attempt]);
   const polls = load.data?.filter(p => archive || (seg === 'mine' ? p.owner === session?.identityId : closed(p, now) === (seg === 'closed'))) ?? [];
+  const recent = !archive && seg === 'open' && !polls.length ? (load.data ?? []).filter(p => closed(p, now)).sort((a, b) => b.endsAt! - a.endsAt!).slice(0, 5) : [];
   return <section className="polls-page">
     <header className="polls-heading dh-page-header"><div><h1 className="dh-page-header__title">{archive ? 'Earlier polls' : 'Polls'}</h1><p className="dh-page-header__lede">{archive ? 'Pollr’s first contract remains readable here. These polls are read-only.' : 'Questions anyone with a Dash identity can ask and answer. Polls gather opinions; treasury proposals have their own votes.'}</p></div>{!archive && <Link to="/polls/new" className="dh-btn dh-btn--primary">New poll</Link>}</header>
-    {archive ? <p><Link to="/polls">‹ Current polls</Link></p> : <nav className="dh-seg polls-segments" aria-label="Polls"><>{[['open', 'Open'], ['closed', 'Closed'], ['mine', 'Mine']].map(([value, label]) => <button key={value} type="button" aria-current={seg === value ? 'page' : undefined} onClick={() => { const next = new URLSearchParams(params); next.set('seg', value!); setParams(next); setCount(20); }}>{label}</button>)}</></nav>}
+    {archive ? <p><Link to="/polls">‹ Current polls</Link></p> : <div className="dh-seg polls-segments" role="group" aria-label="Poll views"><>{[['open', 'Open'], ['closed', 'Closed'], ['mine', 'Mine']].map(([value, label]) => <button key={value} type="button" aria-pressed={seg === value} onClick={() => { const next = new URLSearchParams(params); next.set('seg', value!); setParams(next); setCount(20); }}>{label}</button>)}</></div>}
     {seg === 'mine' && !session && !archive ? <div className="poll-empty"><h2>Your polls, together</h2><p>Sign in with your Governance account to see the questions you’ve asked.</p><button type="button" className="dh-btn dh-btn--secondary" onClick={() => auth.openSheet('choose')}>Sign in</button></div> : load.loading ? <Loading>Reading polls from Platform…</Loading> : load.error ? <ReadError error={load.error} what="Platform" lead="Polls could not be read" onRetry={() => setAttempt(n => n + 1)} /> : !polls.length ? <div className="poll-empty"><h2>{archive ? 'No earlier polls' : seg === 'closed' ? 'No closed polls yet' : seg === 'mine' ? 'You haven’t asked a question yet' : 'No open polls right now'}</h2><p>{seg === 'closed' || archive ? 'Completed questions appear here once they are available.' : 'Start with a question and a few clear options.'}</p></div> : <div className="poll-list">{polls.slice(0, count).map(p => <PollRow key={p.id} poll={p} source={source} archive={archive} />)}</div>}
+    {!load.loading && !load.error && recent.length > 0 && <section aria-labelledby="recent-polls"><h2 id="recent-polls" className="dh-h2">Recent closed polls</h2><div className="poll-list">{recent.map(p => <PollRow key={p.id} poll={p} source={source} archive={false} />)}</div></section>}
     {polls.length > count && <button type="button" className="dh-btn dh-btn--secondary" onClick={() => setCount(n => n + 20)}>Show more polls</button>}
     {!archive && <p className="polls-earlier muted">Polls from Pollr’s first contract stay readable: <Link to="/polls/archive">Earlier polls</Link>.</p>}
     <p className="dh-sources">Platform records are checked in this browser. Single-choice polls allow one answer per identity; multiple-choice polls allow each option once. Close dates are advisory.</p>

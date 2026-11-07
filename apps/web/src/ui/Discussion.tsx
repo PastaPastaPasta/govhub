@@ -278,9 +278,9 @@ export function Discussion({ govHash, featured }: { govHash: string; featured: F
         <Composer label="Post comment" onSubmit={(b) => post(b)} />
       ) : (
         <p className="signin-cta">
-          <button type="button" className="btn dh-btn" onClick={openSignIn}>
+          <button type="button" className="dh-btn dh-btn--secondary" onClick={openSignIn}>
             Sign in to comment
-          </button>{' '}
+          </button>
           <span className="muted small">Posting costs about {formatCredits(56_000_000, true)} from your account's balance.</span>
         </p>
       )}

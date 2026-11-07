@@ -260,6 +260,13 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
     standing: state ? { text: state.passing ? `Passing by ${formatInt(state.margin)}` : `Needs ${formatInt(state.needed)} more`, tone: state.light } : null,
   };
 
+  let decisionTime = `${active ? 'Payment window ends' : 'Ended'} ${formatDate(p.endEpoch)}`;
+  if (later) decisionTime = `Starts at a later payout; runs ${formatDate(p.startEpoch)} to ${formatDate(p.endEpoch)}`;
+  else if (active && !lameDuck && untilDeadline !== null) {
+    decisionTime = untilDeadline > 0 ? `Votes close around ${formatDate(now + untilDeadline)}` : 'Voting for this payout has closed';
+    if (cycle) decisionTime += `; next payout around ${formatDate(cycle.value.estTime)}`;
+  }
+
   return (
     <article className="proposal">
       <p className="crumbs dh-crumbs">
@@ -295,12 +302,12 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
             words
           )}
         </h1>
-        <p className="p-chain-name small" data-testid="p-chain-name">
-          <span className="mono-ish">
-            <Slug name={p.name} />
-          </span>{' '}
-          <span className="muted">{ownerTitle ? `is its name on the network; the title is the owner’s, from ${page!.page.host}.` : 'is its name on the network.'}</span>
-        </p>
+        <dl className="p-decision small" aria-label="Decision summary" data-testid="p-decision">
+          {row.content.ok && <div><dt>Requested</dt><dd>{formatDash(p.paymentAmount)} {sched?.oneTime ? 'once' : perPayment(params)}{recurring && ` × ${formatInt(sched.total)} payments`}</dd></div>}
+          <div><dt>Standing</dt><dd>{check.status === 'failed' ? 'Unavailable: proposal failed verification' : lameDuck ? 'No payments remain' : !active ? 'Voting ended' : state && threshold && row.absYes !== null ? <>{voteSubject.standing?.text} — {formatInt(row.absYes)} net yes; {formatInt(threshold.value)} to pass{later ? '. For a later payout' : inBudget ? '. In the next budget' : state.passing ? '. Next budget is full' : ''}</> : tallies.loading ? 'Reading the votes…' : tallies.error ? 'Vote standing unavailable' : t ? 'Waiting for the budget cycle' : 'No votes counted yet'}</dd></div>
+          {row.content.ok && <div><dt>Timing</dt><dd>{decisionTime}</dd></div>}
+        </dl>
+        <p className="small muted">{trust.aggregate.level === 'verified' ? 'Checked against the chain in this browser.' : 'Standing is reported until this browser finishes its checks.'}{ownerTitle && ` Title from the owner’s page on ${page!.page.host}.`}</p>
         <div className="dh-page-header__meta p-meta">
           {active && !lameDuck && (
             <a href="#vote" className="dh-btn dh-btn--secondary dh-btn--sm p-jump" data-testid="jump-vote">
@@ -469,7 +476,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
                   <dl className="kv small">
                     <div>
                       <dt>Name</dt>
-                      <dd className="break">{p.name}</dd>
+                      <dd className="break" data-testid="p-chain-name">{p.name}</dd>
                     </div>
                     <div>
                       <dt>Requests</dt>

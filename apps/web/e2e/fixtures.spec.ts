@@ -99,7 +99,7 @@ test.describe('fixture mode', () => {
     const errors = await watchPage(page);
     await gotoFixtures(page, '/p/dash-growth-q4-2026');
     await expect(page.getByRole('heading', { level: 1, name: 'Dash growth q4 2026' })).toBeVisible();
-    await expect(page.getByTestId('p-chain-name')).toHaveText('dash-growth-q4-2026 is its name on the network.');
+    await expect(page.getByTestId('p-chain-name')).toHaveText('dash-growth-q4-2026');
     // Evonodes weigh 4: 298 yes masternodes are 673 weighted votes.
     await expect(page.getByTestId('p-votes')).toContainText('673 yes');
     await expect(page.getByTestId('p-votes')).toContainText('475 no');

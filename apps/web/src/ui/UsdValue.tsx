@@ -21,7 +21,7 @@ export function UsdValue({ duffs, what }: { duffs: number; what?: string }) {
   const failed = v.failed ? ', refresh failed' : '';
   const label = v.stale ? `Stale${failed}` : `${v.source}, ${time}${failed}`;
   return (
-    <span className="usd small" data-testid="usd">
+    <span className="usd small dh-meta" data-testid="usd">
       <span className="usd-value">
         {what ? `${what} ` : ''}
         {formatUsdEstimate((duffs / 1e8) * v.rate)}
@@ -31,7 +31,7 @@ export function UsdValue({ duffs, what }: { duffs: number; what?: string }) {
         title={`An approximate current valuation, not a chain fact: DASH/USD spot fetched by this browser from ${v.source} on ${when}.`}
         data-testid="usd-source"
       >
-        · {label}
+        {label}
         <span className="visually-hidden"> ({v.source} price fetched by this browser on {when})</span>
       </span>
     </span>

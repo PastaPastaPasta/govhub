@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { ChainShield } from './trust/ChainShield.tsx';
 // The landing summary: when the next payout is, how much of the budget is promised, and what it takes to pass. The strip shows
 // each proposal in the next budget as a segment of the treasury.
@@ -8,24 +9,31 @@ import { formatDash, formatDashAmount, formatDate, formatDuration, formatInt, fo
 import { fundingThreshold, superblockCadence, votingDeadlineTime } from '../lib/governance.ts';
 import { budgetView, countNames, proposalHref } from '../lib/view.ts';
 
+function BudgetTitle({ children, id }: { children: ReactNode; id?: string }) {
+  return <div className="dh-page-header__row">
+    <div className="dh-page-header__text"><h1 id={id} className="dh-page-header__title">{children}</h1></div>
+    <div className="dh-page-header__actions"><Link to="/create" className="dh-btn dh-btn--secondary">New proposal</Link></div>
+  </div>;
+}
+
 export function BudgetHeader() {
   const { gov, source, params, activeRows, reload } = useApp();
   const cycle = gov.cycle.data;
   const now = source.now();
 
   // No backend for this profile: the banner above says so, and there is no cycle to show.
-  if (source.notice) return null;
+  if (source.notice) return <header className="dh-page-header"><BudgetTitle>Proposals</BudgetTitle></header>;
   if (gov.cycle.loading && !cycle) {
     return (
       <section className="budget dh-page-header dh-loading" aria-busy="true" aria-label="Budget">
-        <h1 className="dh-page-header__title">Loading the budget…</h1>
+        <BudgetTitle>Loading the budget…</BudgetTitle>
       </section>
     );
   }
   if (!cycle) {
     return (
       <section className="budget dh-page-header" aria-label="Budget">
-        <h1 className="dh-page-header__title">Active proposals</h1><p className="dh-page-header__lede">No budget has been published yet.</p>
+        <BudgetTitle>Active proposals</BudgetTitle><p className="dh-page-header__lede">No budget has been published yet.</p>
         <p className="muted small">{gov.cycle.error ? `Platform read failed: ${gov.cycle.error}` : 'The governance data service publishes one for every payout. Add a data service in Settings to see live numbers.'}</p>
       </section>
     );
@@ -58,7 +66,7 @@ export function BudgetHeader() {
 
   return (
     <section className="budget dh-page-header" aria-labelledby="budget-title">
-      <h1 id="budget-title" className="dh-page-header__title">
+      <BudgetTitle id="budget-title">
         {untilSb > 0 ? (
           <>
             Next payout in <span className="num">{formatDuration(untilSb)}</span>
@@ -66,7 +74,7 @@ export function BudgetHeader() {
         ) : (
           'The next payout is due any moment'
         )}
-      </h1>
+      </BudgetTitle>
       <p className="dh-page-header__lede">
         {untilDeadline > 0 ? (
           <>

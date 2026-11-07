@@ -98,7 +98,7 @@ export function PastPage() {
         <ProposalTabs />
       </div>
       <header className="past-head dh-page-header">
-        <h1 className="dh-page-header__title" id="past-title">Past proposals</h1>
+        <div className="past-title-line"><h1 className="dh-page-header__title" id="past-title">Past proposals</h1><OwnerWordsNote proposals={view === 'payments' ? known : past.items.map((i) => i.value)} /></div>
         <p className="dh-page-header__lede">What the Dash treasury paid, superblock by superblock, read from the chain in this browser, and how each ended proposal turned out.</p>
         <div className="dh-seg" role="group" aria-label="Show">
           <button className="dh-btn" type="button" aria-pressed={view === 'payments'} onClick={() => setView('payments')} data-testid="view-payments">
@@ -109,7 +109,6 @@ export function PastPage() {
           </button>
         </div>
       </header>
-      <OwnerWordsNote proposals={view === 'payments' ? known : past.items.map((i) => i.value)} />
       {view === 'payments' ? <LedgerView ledger={ledger} known={known} past={past.items} pastError={past.error ?? null} /> : <ProposalsView past={past} ledger={ledger} known={known} />}
     </section>
   );
@@ -249,8 +248,8 @@ function SuperblockPanel({ slot, entry, names, open }: { slot: SuperblockSlot; e
   return (
     <details className="dh-panel dh-panel--flush sb dh-disclosure" aria-labelledby={headId} data-testid="superblock" data-height={slot.height} open={open}>
       <summary className="sb-head">
-        <h2 id={headId} className="sb-date">
-          <span className="sb-chevron" aria-hidden="true" />
+        <span className="sb-summary">
+        <span id={headId} role="heading" aria-level={2} className="sb-date dh-h3">
           {entry ? (
             formatDate(entry.read.time)
           ) : slot.state === 'error' ? (
@@ -260,9 +259,10 @@ function SuperblockPanel({ slot, entry, names, open }: { slot: SuperblockSlot; e
               <span className="spinner" aria-hidden="true" /> Reading this superblock from the chain…
             </span>
           )}
-        </h2>
+        </span>
         <span className="sb-height small muted">superblock {formatInt(slot.height)}</span>
         {entry && <SbTotal entry={entry} />}
+        </span>
       </summary>
       {slot.state === 'error' && <p className="sb-error small">Couldn't read this superblock: {slot.error}.</p>}
       {entry && <SbLines entry={entry} names={names} />}
@@ -273,7 +273,7 @@ function SuperblockPanel({ slot, entry, names, open }: { slot: SuperblockSlot; e
 function SbTotal({ entry }: { entry: LedgerEntry }) {
   const share = entry.total !== null && entry.limit > 0n ? Number((entry.total * 1000n) / entry.limit) / 10 : null;
   return (
-    <p className="sb-total">
+    <span className="sb-total">
       {entry.total !== null ? (
         <>
           <b>{formatDash(Number(entry.total))}</b> paid
@@ -286,7 +286,7 @@ function SbTotal({ entry }: { entry: LedgerEntry }) {
         <span className="muted small">total not known (see below)</span>
       )}
       {entry.read.weak && <span className="small muted"> · consistent, not proven: {entry.read.weak}</span>}
-    </p>
+    </span>
   );
 }
 

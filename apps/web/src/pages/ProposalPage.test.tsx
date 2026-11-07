@@ -177,6 +177,11 @@ describe('ProposalView reading order', () => {
 
   it('says what it funds (ask × payments, payee, timeline) and where it stands before the vote, with a jump to the vote', async () => {
     const { el } = await view(open, { estTime: NOW + 5 * DAY, report: null });
+    const summary = el.querySelector('[data-testid="p-decision"]')!;
+    expect(summary.textContent).toContain('Requested');
+    expect(summary.textContent).toContain('504 net yes; 332 to pass');
+    expect(summary.textContent).toContain('next payout around');
+    expect(el.querySelector('.p-hero [data-testid="p-chain-name"]')).toBeNull();
     const funds = el.querySelector('[data-testid="p-funds"]')!;
     const vote = el.querySelector('[data-testid="vote-panel"]')!;
     expect(funds.compareDocumentPosition(vote) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -187,10 +192,10 @@ describe('ProposalView reading order', () => {
     expect(el.querySelector('[data-testid="jump-vote"]')!.getAttribute('href')).toBe('#vote');
   });
 
-  it('heads an unclaimed proposal with its name as words, and keeps the exact name beside it', async () => {
+  it('heads an unclaimed proposal with its name as words and keeps the exact name in the record', async () => {
     const { el } = await view(open, { estTime: NOW + 5 * DAY, report: null });
     expect(el.querySelector('[data-testid="p-title"]')!.textContent).toBe('Pshenmic dev dash desktop november 2026');
-    expect(el.querySelector('[data-testid="p-chain-name"]')!.textContent).toBe('pshenmic-dev-dash-desktop-november-2026 is its name on the network.');
+    expect(el.querySelector('[data-testid="p-chain-name"]')!.textContent).toBe('pshenmic-dev-dash-desktop-november-2026');
   });
 
   it('has no jump to a vote it no longer shows', async () => {
@@ -211,11 +216,12 @@ describe('ProposalView before and without its record', () => {
     expect(h1.textContent).toBe('pshenmic-dev-dash-desktop-november-2026');
   });
 
-  it('heads with the owner’s title once read, the exact name beside it', async () => {
+  it('heads with the owner’s title once read, with attribution and the exact name in the record', async () => {
     owner.page = { page: { source: '', url: 'https://www.dashcentral.org/p/x', host: 'dashcentral.org', title: 'Dash Desktop, November', description: null, excerpt: 'It funds the desktop wallet.' }, fetchedAt: NOW };
     const { el } = await view(open, { estTime: NOW + 5 * DAY, report: null });
     expect(el.querySelector('[data-testid="p-title"]')!.textContent).toBe('Dash Desktop, November');
-    expect(el.querySelector('[data-testid="p-chain-name"]')!.textContent).toContain('the title is the owner’s, from dashcentral.org');
+    expect(el.querySelector('.p-hero')!.textContent).toContain('Title from the owner’s page on dashcentral.org');
+    expect(el.querySelector('.p-hero [data-testid="p-chain-name"]')).toBeNull();
     expect(el.querySelector('[data-testid="p-funds"] blockquote')!.textContent).toBe('It funds the desktop wallet.');
     expect(el.querySelector('[data-testid="owner-page"] time')!.getAttribute('datetime')).toBe('2026-10-25T00:00:00.000Z');
     expect(el.querySelector('[data-testid="owner-page"] time')!.getAttribute('title')).toBe('25 Oct 2026, 00:00 UTC');

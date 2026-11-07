@@ -25,21 +25,21 @@ describe('UsdValue', () => {
     const { value, tag } = await at({ quote: quote(9), failedAt: null });
     expect(value).toBe('≈ $308,000');
     expect(tag!.className).toBe('usd-source muted');
-    expect(tag!.textContent).toBe('· Coinbase, 01:51 UTC (Coinbase price fetched by this browser on 6 Nov 2026, 01:51 UTC)');
+    expect(tag!.textContent).toBe('Coinbase, 01:51 UTC (Coinbase price fetched by this browser on 6 Nov 2026, 01:51 UTC)');
   });
   it('dates a price fetched before midnight', async () => {
     hold.now = Date.UTC(2026, 10, 6, 0, 5);
     const { tag } = await at({ quote: { ...quote(0), fetchedAt: Date.UTC(2026, 10, 5, 23, 58) }, failedAt: null });
     hold.now = 0;
-    expect(tag!.textContent).toMatch(/^· Coinbase, 5 Nov 2026, 23:58 UTC \(/);
+    expect(tag!.textContent).toMatch(/^Coinbase, 5 Nov 2026, 23:58 UTC \(/);
   });
   it('turns the tag into a warning when stale or when a refresh failed', async () => {
     const stale = await at({ quote: quote(11), failedAt: null });
     expect(stale.tag!.className).toBe('usd-source muted error');
-    expect(stale.tag!.textContent).toMatch(/^· Stale \(/);
+    expect(stale.tag!.textContent).toMatch(/^Stale \(/);
     const failed = await at({ quote: quote(6), failedAt: NOW - 60_000 });
     expect(failed.tag!.className).toBe('usd-source muted error');
-    expect(failed.tag!.textContent).toMatch(/^· Coinbase, 01:54 UTC, refresh failed/);
+    expect(failed.tag!.textContent).toMatch(/^Coinbase, 01:54 UTC, refresh failed/);
   });
   it('shows nothing before a first good quote', async () => {
     expect((await at({ quote: null, failedAt: null })).value).toBeNull();

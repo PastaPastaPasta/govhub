@@ -149,7 +149,7 @@ function CycleStats({ cycle, view, state }: { cycle: Cycle; view: TreasuryView; 
         </span>
       </div>
     </div>
-    <p className="dh-sources tr-stat-sources">Limit: {limit === cycle.budget ? 'consensus' : 'data service (not verified)'} · Asked: {fromService ? 'data service records' : 'Platform records'} · Votes: reported tally · Date: estimate</p>
+    <p className="dh-sources tr-stat-sources">{limit === cycle.budget ? 'The payout limit is calculated from Dash’s network rules.' : 'The payout limit is reported by the governance data service and has not been verified here.'} Requested amounts come from {fromService ? 'the governance data service’s records' : 'proposal records on Platform'}. Vote totals are reported by the governance data service; each proposal page checks its own. The payout date is an estimate.</p>
     </>
   );
 }
@@ -318,7 +318,6 @@ function Group({ group, budget, names }: { group: TreasuryGroup; budget: number;
   ) : (
     <details className="tr-group dh-panel dh-panel--flush dh-disclosure" data-testid={`tr-group-${group.id}`}>
       <summary className="tr-group-head">
-        <span className="sb-chevron" aria-hidden="true" />
         {head}
       </summary>
       <p className="small muted tr-group-desc">{g.desc}</p>

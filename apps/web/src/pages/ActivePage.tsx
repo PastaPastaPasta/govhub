@@ -142,7 +142,6 @@ export function ActivePage() {
 
   return (
     <>
-      <div className="proposal-page-actions"><Link to="/create" className="dh-btn dh-btn--secondary">New proposal</Link></div>
       <BudgetHeader />
       <section aria-label="Active proposals" className="list-section">
         <div className="list-head">
