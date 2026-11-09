@@ -3046,7 +3046,7 @@ details.tr-group > .tr-table { margin: 0; border-radius: 0; }
   position: absolute;
   z-index: -1;
   inset: 0 calc(50% - 50vw);
-  background: color-mix(in srgb, var(--gov-net-soft) 55%, var(--dh-page));
+  background: color-mix(in srgb, var(--gov-net-soft) 100%, var(--dh-page));
   border-block-end: 1px solid var(--line);
   pointer-events: none;
 }
