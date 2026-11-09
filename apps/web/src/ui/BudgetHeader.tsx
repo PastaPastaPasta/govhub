@@ -69,7 +69,7 @@ export function BudgetHeader() {
       <BudgetTitle id="budget-title">
         {untilSb > 0 ? (
           <>
-            Next payout in <span className="num">{formatDuration(untilSb)}</span>
+            Next payout in <span className="num budget-countdown">{formatDuration(untilSb)}</span>
           </>
         ) : (
           'The next payout is due any moment'
@@ -168,16 +168,10 @@ export function BudgetHeader() {
           </dd>
         </div>
       </dl>
-      <p className="budget-more">
-        <Link to="/treasury" data-testid="budget-treasury" className="dh-link dh-link--go">
-          What this budget pays for, and how it compares
-        </Link>
-      </p>
-      {/* On a phone the chain check and the explanation share one line, so the proposals start on the first screen. */}
       <div className="budget-foot">
-        <div className="chain-context dh-page-header__meta">
-          <span className="chain-label">Chain check</span>
-          <ChainShield />
+        <div className="budget-line-links">
+          <Link to="/treasury" data-testid="budget-treasury" className="dh-link dh-link--go">What this budget pays for, and how it compares</Link>
+          <div className="chain-context"><span className="chain-label">Chain check</span><ChainShield /></div>
         </div>
         <details className="learn dh-disclosure">
         <summary>How funding works</summary>

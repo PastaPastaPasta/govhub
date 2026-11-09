@@ -12,7 +12,17 @@ import { PRIVACY_DOC_URL } from '../pages/AboutPage.tsx';
 const AuthSheet = lazy(() => import('../auth/AuthSheet.tsx').then((m) => ({ default: m.AuthSheet })));
 
 function LazyAuthSheet() {
-  const { sheet } = useAuth();
+  const { sheet, openSheet } = useAuth();
+  const loc = useLocation();
+  const navigate = useNavigate();
+  const signIn = new URLSearchParams(loc.search).get('signin') === '1';
+  useEffect(() => {
+    if (!signIn) return;
+    openSheet('choose');
+    const search = new URLSearchParams(loc.search);
+    search.delete('signin');
+    navigate({ pathname: loc.pathname, search: search.toString(), hash: loc.hash }, { replace: true });
+  }, [signIn, loc.pathname, loc.search, loc.hash, navigate, openSheet]);
   // Once loaded it stays mounted: unmounting the open <dialog> skipped close(), and focus fell to <body> instead of going back.
   const [loaded, setLoaded] = useState(false);
   if (sheet && !loaded) setLoaded(true);

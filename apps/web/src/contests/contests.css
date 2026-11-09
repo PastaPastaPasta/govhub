@@ -151,6 +151,26 @@
   }
 }
 
+.contest-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-block: 8px; }
+.contest-legend > span { display: inline-flex; align-items: center; gap: 6px; }
+.contest-legend i { inline-size: 10px; block-size: 10px; border-radius: 2px; }
+#name-contests-about { scroll-margin-block-start: 76px; }
+@media (min-width: 761px) {
+  .crow {
+    grid-template-columns: minmax(10rem, 1fr) minmax(12rem, 1fr) auto minmax(11rem, auto);
+    grid-template-areas: 'main bar meta status';
+    align-items: center;
+    gap: 16px;
+    padding: 8px 16px;
+    min-block-size: 42px;
+  }
+  .crow .prow-title { font-size: 15px; white-space: nowrap; }
+  .crow .crow-contenders, .crow .crow-lead { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .crow .prow-meta { flex-wrap: nowrap; white-space: nowrap; }
+  .crow-status { justify-items: end; }
+  .crow .cbar-s { max-inline-size: none; }
+}
+
 /* contest page */
 .contest .p-title h1 {
   overflow-wrap: anywhere;

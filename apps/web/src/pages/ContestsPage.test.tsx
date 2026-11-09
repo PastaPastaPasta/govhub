@@ -62,6 +62,15 @@ const settle = async () => {
 };
 
 describe('ContestsPage', () => {
+  it('opens and scrolls the explanation for an About link', async () => {
+    const scroll = vi.spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(() => {});
+    const { el } = await render(at('/names#name-contests-about'));
+    await settle();
+    expect((el.querySelector('#name-contests-about') as HTMLDetailsElement).open).toBe(true);
+    expect(scroll).toHaveBeenCalled();
+    scroll.mockRestore();
+  });
+
   it('lists open contests soonest first and reads no ended ones until asked', async () => {
     const { el } = await render(at('/names'));
     await settle();

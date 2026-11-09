@@ -1,5 +1,6 @@
 // /names: contested usernames. Open contests come from one query and lead the page; ended ones (hundreds on mainnet) sit in a
 // collapsed section that reads nothing until it is opened, then pages through the names, loading tallies only for rows on screen.
+import { useLocation } from 'react-router-dom';
 import { useRouteTitle } from '../app/title.ts';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { ReadError } from '../ui/ReadError.tsx';
@@ -93,6 +94,14 @@ function useSettled<T>(value: T, ms: number): T {
 
 export function ContestsPage() {
   useRouteTitle('/names');
+  const { hash } = useLocation();
+  const about = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    if (hash === '#name-contests-about') {
+      about.current!.open = true;
+      about.current!.scrollIntoView({ block: 'start' });
+    }
+  }, [hash]);
   const src = useContestSource();
   const nowMs = useClockMs();
   const [attempt, setAttempt] = useState(0);
@@ -117,7 +126,7 @@ export function ContestsPage() {
       <header className="dh-page-header">
         <h1 className="dh-page-header__title" id="names-title">Name contests</h1>
         <p className="dh-page-header__lede contests-intro">Masternodes decide who gets a contested name. Open contests close soonest first.</p>
-        <details className="learn dh-disclosure"><summary>How name contests work</summary>
+        <details ref={about} id="name-contests-about" className="learn dh-disclosure"><summary>How name contests work</summary>
         <p className="small muted">
           Usernames of 3 to 19 characters that use only letters, hyphens, 0 and 1 go to a masternode vote when someone registers one. Masternodes decide who gets it, or lock it so nobody does. Others can ask for the same name {timing}.
         </p>
@@ -131,6 +140,12 @@ export function ContestsPage() {
       <h2 className="dh-section__title">
         Open for voting{open.data && <span className="count">{formatInt(still.length)}</span>}
       </h2>
+      <p className="contest-legend small muted" aria-label="Vote bar legend">
+        <span><i className="cb-c0" aria-hidden="true" />Leader</span>
+        <span><i className="cb-c1" aria-hidden="true" />Challengers</span>
+        <span><i className="cb-abstain" aria-hidden="true" />Abstain</span>
+        <span><i className="cb-lock" aria-hidden="true" />Lock</span>
+      </p>
       {open.loading ? (
         <div className="plist" aria-busy="true">
           {Array.from({ length: 4 }, (_, i) => (

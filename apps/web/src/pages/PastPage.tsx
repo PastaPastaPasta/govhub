@@ -1,6 +1,6 @@
 // Past: what the treasury paid and how each ended proposal turned out.
 //
-// "Payments" (default) is the ledger: superblock by superblock, newest first, the treasury payments read from each superblock's
+// "Payments" is the ledger: superblock by superblock, newest first, the treasury payments read from each superblock's
 // coinbase in the verified chain (lib/ledger.ts), named when Governance has the proposal on record. "Proposals" lists the ended
 // proposals Platform holds (newest end first, keyset-paged on endEpoch: repo.ts pastPage) with their outcome from those superblocks.
 import { Slug } from '../ui/Slug.tsx';
@@ -75,7 +75,7 @@ export function PastPage() {
   useRouteTitle('/past');
   const { gov, checks } = useApp();
   const [search, setSearch] = useSearchParams();
-  const view: View = search.get('view') === 'proposals' ? 'proposals' : 'payments';
+  const view: View = search.get('view') === 'payments' ? 'payments' : 'proposals';
   const past = usePastProposals();
   const ledger = useLedger();
   const checksVersion = useSyncExternalStore(checks.subscribe, checks.getVersion);
@@ -87,7 +87,7 @@ export function PastPage() {
   );
   const setView = (v: View) => {
     const sp = new URLSearchParams(search);
-    if (v === 'payments') sp.delete('view');
+    if (v === 'proposals') sp.delete('view');
     else sp.set('view', v);
     setSearch(sp, { replace: true });
   };
@@ -99,7 +99,7 @@ export function PastPage() {
       </div>
       <header className="past-head dh-page-header">
         <div className="past-title-line"><h1 className="dh-page-header__title" id="past-title">Past proposals</h1><OwnerWordsNote proposals={view === 'payments' ? known : past.items.map((i) => i.value)} /></div>
-        <p className="dh-page-header__lede">What the Dash treasury paid, superblock by superblock, read from the chain in this browser, and how each ended proposal turned out.</p>
+        <p className="dh-page-header__lede">Ended proposals, newest first, with their requested amounts and final reported votes. Payments by superblock are read from the chain in this browser.</p>
         <div className="dh-seg" role="group" aria-label="Show">
           <button className="dh-btn" type="button" aria-pressed={view === 'payments'} onClick={() => setView('payments')} data-testid="view-payments">
             Payments by superblock
@@ -210,7 +210,7 @@ function LedgerStats({ sum, perSb }: { sum: LedgerSummary; perSb: string }) {
     );
   }
   return (
-    <div className="dh-stats ledger-stats">
+    <div className="ledger-stats ledger-stats-compact">
       <div className="dh-stat dh-stat--key">
         <span className="dh-stat__label">
           Paid by the treasury{left ? ' (partial)' : ''} <ChainProof weak={sum.weak} />
@@ -384,7 +384,7 @@ function OutcomeCell({ o, reading }: { o: Outcome | null; reading: boolean }) {
     <span className={`outcome${tone ? ` outcome-${tone}` : ''}`} title={detail}>
       <span className="dot" aria-hidden="true" />
       {OUTCOME_TEXT[o.kind]}
-      <span className="small muted"> · {detail}</span>
+      <span className="small muted outcome-detail"> · {detail}</span>
     </span>
   );
 }
@@ -438,7 +438,7 @@ function ProposalsView({ past, ledger, known }: { past: ReturnType<typeof usePas
           <thead>
             <tr>
               <th scope="col">Proposal</th>
-              <th scope="col">Ran</th>
+              <th scope="col">Ended</th>
               <th scope="col" className="r">
                 Requested
               </th>
@@ -463,8 +463,8 @@ function ProposalsView({ past, ledger, known }: { past: ReturnType<typeof usePas
                     <ProposalLabel p={p} to={proposalHref(p, names)} owner={!reason} />
                     {reason && <FailedNote reason={reason} />}
                   </td>
-                  <td data-label="Ran ">
-                    {formatDate(p.startEpoch)} – {formatDate(p.endEpoch)}
+                  <td data-label="Ended">
+                    {formatDate(p.endEpoch)}
                   </td>
                   <td className="r" data-label="Requested ">
                     {formatDash(p.paymentAmount)} <span className="muted small">{per}</span>

@@ -182,7 +182,7 @@ describe('ProposalView reading order', () => {
     const { el } = await view(open, { estTime: NOW + 5 * DAY, report: r });
     expect(el.querySelector('[data-testid="p-decision"]')?.textContent).toContain('331 to pass (masternode list at block 1)');
   });
-  it('says what it funds (ask × payments, payee, timeline) and where it stands before the vote, with a jump to the vote', async () => {
+  it('leads with the ask, full tally and vote entry before the details and owner’s words', async () => {
     const { el } = await view(open, { estTime: NOW + 5 * DAY, report: null });
     const summary = el.querySelector('[data-testid="p-decision"]')!;
     expect(summary.textContent).toContain('Requested');
@@ -193,8 +193,12 @@ describe('ProposalView reading order', () => {
     const vote = el.querySelector('[data-testid="vote-panel"]')!;
     expect(funds.compareDocumentPosition(vote) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(el.querySelector('[data-testid="p-ask"]')!.textContent).toMatch(/^100 DASH per month × \d+ payments = [\d,]+ DASH$/);
-    expect(funds.textContent).toContain('Pays');
-    expect(funds.textContent).toContain(`the next payout is around ${formatDate(NOW + 5 * DAY)}`);
+    const details = el.querySelector('[data-testid="p-details"]')!;
+    expect(details.textContent).toContain('Pays');
+    expect(details.textContent).toContain(`the next payout is around ${formatDate(NOW + 5 * DAY)}`);
+    expect(funds.compareDocumentPosition(details) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(funds.querySelector('[data-testid="jump-vote"]')).not.toBeNull();
+    expect(funds.querySelector('[data-testid="p-facts"]')).toBeNull();
     expect(funds.querySelector('[data-testid="p-votes"]')).not.toBeNull();
     expect(el.querySelector('[data-testid="jump-vote"]')!.getAttribute('href')).toBe('#vote');
   });
@@ -229,7 +233,7 @@ describe('ProposalView before and without its record', () => {
     expect(el.querySelector('[data-testid="p-title"]')!.textContent).toBe('Dash Desktop, November');
     expect(el.querySelector('.p-hero')!.textContent).toContain('Title from the owner’s page on dashcentral.org');
     expect(el.querySelector('.p-hero [data-testid="p-chain-name"]')).toBeNull();
-    expect(el.querySelector('[data-testid="p-funds"] blockquote')!.textContent).toBe('It funds the desktop wallet.');
+    expect(el.querySelector('[data-testid="p-details"] blockquote')!.textContent).toBe('It funds the desktop wallet.');
     expect(el.querySelector('[data-testid="owner-page"] time')!.getAttribute('datetime')).toBe('2026-10-25T00:00:00.000Z');
     expect(el.querySelector('[data-testid="owner-page"] time')!.getAttribute('title')).toBe('25 Oct 2026, 00:00 UTC');
   });

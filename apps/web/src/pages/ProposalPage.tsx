@@ -1,5 +1,5 @@
 // /p/h/<govHash> (canonical) and /p/<name> (slug; duplicate names get a chooser). The page leads with what a voter needs to know
-// before voting: what it funds (the owner's summary, the ask, the payee, the timeline) and where it stands, then the vote, the
+// before voting: the ask, the standing and vote entry, followed by the details, the owner's words, the
 // network's record and the discussion. Every check still runs (ui/trust/useProposalTrust.ts) and adds up to one badge; its detail
 // is in the "How do we know?" drawer.
 import { useNow } from '../ui/vote/common.tsx';
@@ -141,7 +141,7 @@ function EvidenceLine({ agg, onRetry }: { agg: Aggregate; onRetry(): void }) {
 }
 
 /**
- * The first thing on the page: what the proposal is for, in the owner's words from their page (read when the site was built,
+ * What the proposal is for, in the owner's words from their page (read when the site was built,
  * quoted and attributed), else where the owner says it.
  */
 function Purpose({ page, hasPost, url, host }: { page: Found; hasPost: boolean; url: string; host: string | null }) {
@@ -302,19 +302,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
             words
           )}
         </h1>
-        <dl className="p-decision small" aria-label="Decision summary" data-testid="p-decision">
-          {row.content.ok && <div><dt>Requested</dt><dd>{formatDash(p.paymentAmount)} {sched?.oneTime ? 'once' : perPayment(params)}{recurring && ` × ${formatInt(sched.total)} payments`}</dd></div>}
-          <div><dt>Standing</dt><dd>{check.status === 'failed' ? 'Unavailable: proposal failed verification' : lameDuck ? 'No payments remain' : !active ? 'Voting ended' : state && threshold && row.absYes !== null ? <>{voteSubject.standing?.text} — {formatInt(row.absYes)} net yes; {formatInt(threshold.value)} to pass ({chain ? `masternode list at block ${formatInt(chain.threshold.height)}` : 'feed estimate'}){later ? '. For a later payout' : inBudget ? '. In the next budget' : state.passing ? '. Next budget is full' : ''}</> : tallies.loading ? 'Reading the votes…' : tallies.error ? 'Vote standing unavailable' : t ? 'Waiting for the budget cycle' : 'No votes counted yet'}</dd></div>
-          {row.content.ok && <div><dt>Timing</dt><dd>{decisionTime}</dd></div>}
-        </dl>
         <p className="small muted">{trust.aggregate.level === 'verified' ? 'Checked against the chain in this browser.' : 'Standing is reported until this browser finishes its checks.'}{ownerTitle && ` Title from the owner’s page on ${page!.page.host}.`}</p>
-        <div className="dh-page-header__meta p-meta">
-          {active && !lameDuck && (
-            <a href="#vote" className="dh-btn dh-btn--secondary dh-btn--sm p-jump" data-testid="jump-vote">
-              Go to the vote ↓
-            </a>
-          )}
-        </div>
       </header>
       {(trust.aggregate.level === 'failed' || trust.aggregate.level === 'error') && <p className="dh-notice dh-notice--warn" role="status">{trust.aggregate.reason ?? 'Verification could not finish. Figures are shown as reported.'} <button type="button" className="dh-btn dh-btn--link" onClick={() => setDrawer(true)}>Review checks</button></p>}
 
@@ -322,11 +310,10 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
         <div className="p-main">
           <section className="panel dh-card p-funds" aria-labelledby="funds-title" data-testid="p-funds">
             <h2 id="funds-title" className="panel-title">
-              What this funds
+              Amount and standing
             </h2>
             {row.content.ok ? (
               <>
-                <Purpose page={page} hasPost={hasPost} url={p.url} host={host} />
                 <p className="p-amount" data-testid="p-ask">
                   <span className="num">{formatDash(p.paymentAmount)}</span> <span className="p-per">{sched?.oneTime ? 'one payment' : perPayment(params)}</span>
                   {recurring && (
@@ -343,40 +330,6 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
                 as what it funds.
               </p>
             )}
-            <dl className="kv p-facts small" data-testid="p-facts">
-              {row.content.ok && (paid || recurring) && (
-                <div>
-                  <dt>Payments</dt>
-                  <dd data-testid="p-paid">{capitalize(paymentsText ?? '')}</dd>
-                </div>
-              )}
-              {row.content.ok && (
-                <div>
-                  <dt>Runs</dt>
-                  <dd>
-                    {formatDate(p.startEpoch)} to {formatDate(p.endEpoch)}
-                    {active && !lameDuck && !later && cycle && <span className="muted">; the next payout is around {formatDate(cycle.value.estTime)}</span>}
-                  </dd>
-                </div>
-              )}
-              {row.content.ok && (
-                <div>
-                  <dt>Pays</dt>
-                  <dd>
-                    <dashhq-hash value={p.paymentAddress} label="payment address" href={`https://${source.coreNetwork === 'testnet' ? 'insight.testnet.networks.dash.org' : 'insight.dash.org'}/insight/address/${encodeURIComponent(p.paymentAddress)}`}>
-                      {p.paymentAddress}
-                    </dashhq-hash>
-                  </dd>
-                </div>
-              )}
-              <div>
-                <dt>Owner</dt>
-                <dd className="p-owner">
-                  <OwnerValue own={own} />
-                  <RejectedClaims own={own} />
-                </dd>
-              </div>
-            </dl>
 
             <section className="p-standing" aria-labelledby="standing-title">
               <h3 id="standing-title" className="p-standing-title">
@@ -426,6 +379,13 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
               <EvidenceLine agg={trust.aggregate} onRetry={trust.recheck} />
               {tallies.error && <ReadError error={tallies.error} what="Platform" lead="The tally could not be read" onRetry={() => setTalliesAttempt((n) => n + 1)} />}
             </section>
+            <div className="dh-page-header__meta p-meta">
+              {active && !lameDuck && (
+                <a href="#vote" className="dh-btn dh-btn--secondary dh-btn--sm p-jump" data-testid="jump-vote">
+                  Go to the vote ↓
+                </a>
+              )}
+            </div>
           </section>
 
           {active && !lameDuck && (
@@ -433,6 +393,51 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
               <ProposalVoteBlock proposal={p} subject={voteSubject} mn={mn} closesIn={later ? null : untilDeadline} onVerify={() => setDrawer(true)} />
             </ErrorBoundary>
           )}
+
+          <section className="panel dh-card p-details" aria-labelledby="details-title" data-testid="p-details">
+            <h2 id="details-title" className="panel-title">Proposal details</h2>
+            <dl className="p-decision small" aria-label="Decision summary" data-testid="p-decision">
+              {row.content.ok && <div><dt>Requested</dt><dd>{formatDash(p.paymentAmount)} {sched?.oneTime ? 'once' : perPayment(params)}{recurring && ` × ${formatInt(sched.total)} payments`}</dd></div>}
+              <div><dt>Standing</dt><dd>{check.status === 'failed' ? 'Unavailable: proposal failed verification' : lameDuck ? 'No payments remain' : !active ? 'Voting ended' : state && threshold && row.absYes !== null ? <>{voteSubject.standing?.text} — {formatInt(row.absYes)} net yes; {formatInt(threshold.value)} to pass ({chain ? `masternode list at block ${formatInt(chain.threshold.height)}` : 'feed estimate'}){later ? '. For a later payout' : inBudget ? '. In the next budget' : state.passing ? '. Next budget is full' : ''}</> : tallies.loading ? 'Reading the votes…' : tallies.error ? 'Vote standing unavailable' : t ? 'Waiting for the budget cycle' : 'No votes counted yet'}</dd></div>
+              {row.content.ok && <div><dt>Timing</dt><dd>{decisionTime}</dd></div>}
+            </dl>
+            <dl className="kv p-facts small" data-testid="p-facts">
+              {row.content.ok && (paid || recurring) && (
+                <div>
+                  <dt>Payments</dt>
+                  <dd data-testid="p-paid">{capitalize(paymentsText ?? '')}</dd>
+                </div>
+              )}
+              {row.content.ok && (
+                <div>
+                  <dt>Runs</dt>
+                  <dd>
+                    {formatDate(p.startEpoch)} to {formatDate(p.endEpoch)}
+                    {active && !lameDuck && !later && cycle && <span className="muted">; the next payout is around {formatDate(cycle.value.estTime)}</span>}
+                  </dd>
+                </div>
+              )}
+              {row.content.ok && (
+                <div>
+                  <dt>Pays</dt>
+                  <dd>
+                    <dashhq-hash value={p.paymentAddress} label="payment address" href={`https://${source.coreNetwork === 'testnet' ? 'insight.testnet.networks.dash.org' : 'insight.dash.org'}/insight/address/${encodeURIComponent(p.paymentAddress)}`}>
+                      {p.paymentAddress}
+                    </dashhq-hash>
+                  </dd>
+                </div>
+              )}
+              <div>
+                <dt>Owner</dt>
+                <dd className="p-owner">
+                  <OwnerValue own={own} />
+                  <RejectedClaims own={own} />
+                </dd>
+              </div>
+            </dl>
+
+            {row.content.ok && <Purpose page={page} hasPost={hasPost} url={p.url} host={host} />}
+          </section>
 
           <section className="p-about" aria-labelledby="about-title">
             <h2 id="about-title">About this proposal</h2>
@@ -446,7 +451,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
                 )}
                 {!hasPost && (
                   <p className="small muted" data-testid="about-owner-none">
-                    {page ? `Their summary, quoted from ${page.page.host}, is at the top of this page.` : 'The owner hasn’t posted a description here.'} The owner can post one here by
+                    {page ? `Their summary, quoted from ${page.page.host}, is in the proposal details above.` : 'The owner hasn’t posted a description here.'} The owner can post one here by
                     claiming the proposal.
                   </p>
                 )}
