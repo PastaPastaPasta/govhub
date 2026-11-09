@@ -63,8 +63,9 @@ export function SessionControl() {
           </svg>
         </button>
       ) : (
-        <button type="button" className="signin-button dh-btn dh-btn--secondary" onClick={openSignIn} title="Sign in" id="session-button" data-testid="session-button">
-          {auth.restoring ? 'Signing in…' : 'Sign in'}
+        <button type="button" className="signin-button dh-btn dh-btn--secondary" onClick={openSignIn} aria-label={auth.restoring ? 'Signing in…' : 'Sign in'} title="Sign in" id="session-button" data-testid="session-button">
+          <span className="signin-label" aria-hidden="true">{auth.restoring ? 'Signing in…' : 'Sign in'}</span>
+          <span className="signin-label-compact" aria-hidden="true">{auth.restoring ? 'Wait…' : 'Log in'}</span>
         </button>
       )}
       <div ref={menu} id="account-menu" popover="auto" className="account-menu" aria-label="Account and settings">
