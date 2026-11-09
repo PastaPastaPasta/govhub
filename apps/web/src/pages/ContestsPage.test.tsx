@@ -76,7 +76,7 @@ describe('ContestsPage', () => {
     await settle();
     expect(cards(el, '[data-testid="open-contests"]')).toEqual(['sat0sh1', 'ther0adn0ttaken', 'm00n-wa1k', 'ga1axy']);
     expect(el.textContent).toContain('Satoshi.dash');
-    expect(el.textContent).toContain('Most votes: nobody gets it (Lock), 69%');
+    expect(el.textContent).toContain('Lock leads with 69%');
     // comment counts, keyed by each contest's discussion key (the mock counts 0, 1, 2... in list order)
     expect([...el.querySelectorAll('[data-testid="open-contests"] [data-testid="card-comments"]')].map((a) => a.textContent)).toEqual(['Comments: 0', 'Comments: 1', 'Comments: 2', 'Comments: 3']);
     expect(el.querySelector('[data-testid="card-comments"]')!.getAttribute('href')).toBe('/names/sat0sh1');
