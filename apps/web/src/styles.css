@@ -3057,6 +3057,7 @@ details.tr-group > .tr-table { margin: 0; border-radius: 0; }
   align-items: baseline;
   gap: 8px 16px;
   inline-size: 100%;
+  margin: 0;
   padding-block-end: 12px;
   border-block-end: 1px solid var(--line);
 }
@@ -3096,23 +3097,26 @@ details.tr-group > .tr-table { margin: 0; border-radius: 0; }
   .prow-meta > .prow-cell-label { inline-size: 100%; }
 }
 @media (max-width: 640px) {
-  .gov-band { padding-block: 20px 16px; margin-block-end: 20px; }
-  .budget { gap: 8px; }
+  .gov-band { padding-block: 16px 12px; margin-block-end: 16px; }
+  .budget { gap: 6px; }
   .budget .dh-page-header__row { gap: 8px; }
-  .budget .dh-page-header__lede { font-size: 14px; }
+  .budget .dh-page-header__lede { font-size: 14px; line-height: 1.45; }
   .budget .dh-page-header__actions { margin-inline-start: auto; }
-  .budget .dh-page-header__actions .dh-btn { min-block-size: 32px; padding: 5px 10px; font-size: 13px; }
+  .budget .dh-page-header__actions .dh-btn { block-size: 32px; min-block-size: 32px; padding: 0 10px; font-size: 13px; }
   .budget-facts { gap: 12px; }
+  .budget-facts dd { line-height: 1.2; }
+  .budget-facts small { font-size: 12px; }
+  .budget-facts .gov-stat-note { margin-block-start: 2px; line-height: 1.35; }
   .gov-stat { padding-inline-start: 10px; }
   .gov-stat .num, .gov-stat-value, .p-kpis .p-amount .num { font-size: 22px; }
   .budget-facts .usd { display: none; }
   .budget-facts dt { gap: 4px; }
   .budget-facts .gov-stat:last-child .gov-stat-note { display: none; }
   .budget-facts .gov-source { padding-inline: 3px; }
-  .budget-legend { gap: 4px; font-size: 12px; }
+  .budget-legend { gap: 4px 12px; font-size: 12px; line-height: 1.35; }
   .budget-foot { gap: 4px 12px; }
   .budget-foot .chain-context { flex-basis: 100%; }
-  .budget-foot .chainchip { min-block-size: 28px; font-size: 12px; padding: 2px 6px; }
+  .budget-foot .chainchip { block-size: 28px; min-block-size: 28px; font-size: 12px; padding: 2px 6px; }
   .budget-line-links > a, .budget-foot details.learn > summary { font-size: 12px; }
   .budget-foot details.learn > summary { padding-block: 4px; }
   .gov-section-head { gap: 8px; padding-block-end: 8px; }

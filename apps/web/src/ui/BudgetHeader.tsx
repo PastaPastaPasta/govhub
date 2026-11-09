@@ -106,7 +106,7 @@ export function BudgetHeader() {
         </span>
         {!noCount && allocated > fundedSum && <span className="legend-item">Other allocation {formatDash(allocated - fundedSum)}</span>}
         <span className="legend-item"><span className="key key-free" aria-hidden="true" />Unallocated {formatDash(available)}</span>
-        <span className="legend-item"><span className="key key-notch" aria-hidden="true" />Pass line: {formatInt(threshold)} net yes votes (feed estimate)</span>
+        <span className="legend-item"><span className="key key-notch" aria-hidden="true" />Pass line: {formatInt(threshold)} net yes votes</span>
       </p>
       <dl className="budget-facts">
         <div className="gov-stat gov-stat--blue">
