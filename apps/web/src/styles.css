@@ -3128,10 +3128,9 @@ details.tr-group > .tr-table { margin: 0; border-radius: 0; }
 }
 .budget-facts .usd-value { color: var(--ink-2); }
 
-.signin-label-compact { display: none; }
 @media (max-width: 420px) {
   dashhq-bar::part(bar) { --dh-gutter: 8px; }
   .signin-button.dh-btn { min-inline-size: 38px; min-block-size: 36px; padding-inline: 0; font-size: 13px; }
   .signin-label { display: none; }
-  .signin-label-compact { display: inline; }
+  .signin-button::after { content: attr(data-compact-label); }
 }
