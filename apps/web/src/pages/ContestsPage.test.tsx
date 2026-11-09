@@ -63,11 +63,11 @@ const settle = async () => {
 
 describe('ContestsPage', () => {
   it('opens and scrolls the explanation for an About link', async () => {
-    const scroll = vi.spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(() => {});
+    const scroll = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
     const { el } = await render(at('/names#name-contests-about'));
     await settle();
     expect((el.querySelector('#name-contests-about') as HTMLDetailsElement).open).toBe(true);
-    expect(scroll).toHaveBeenCalled();
+    expect(scroll).toHaveBeenCalledWith({ top: 0 });
     scroll.mockRestore();
   });
 

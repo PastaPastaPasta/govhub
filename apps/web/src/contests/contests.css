@@ -131,30 +131,30 @@
   color: var(--ink-2);
   background: color-mix(in srgb, var(--ink-3) 14%, transparent);
 }
-@media (max-width: 760px) {
-  .crow {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-areas:
-      'main'
-      'status'
-      'bar'
-      'meta';
-  }
-  .crow .cbar-s {
-    max-inline-size: none;
-  }
-  .crow-status {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 0 var(--s-3);
-  }
-}
 
 .contest-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-block: 8px; }
 .contest-legend > span { display: inline-flex; align-items: center; gap: 6px; }
 .contest-legend i { inline-size: 10px; block-size: 10px; border-radius: 2px; }
-#name-contests-about { scroll-margin-block-start: 128px; }
+.contest-rules { max-inline-size: var(--measure); display: grid; gap: 20px; padding-block: 12px; }
+.contest-rules h2 { font-size: var(--t-m); margin: 0 0 8px; }
+.contest-rules p { margin: 0; }
+.contest-rules p + p { margin-block-start: 8px; }
+@media (max-width: 760px) {
+  .crow {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: 'main status' 'bar meta';
+    gap: 6px 12px;
+    padding: 10px 12px;
+    align-items: center;
+  }
+  .crow .prow-title { font-size: 15px; }
+  .crow .crow-contenders, .crow .crow-lead {
+    position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  }
+  .crow-status { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s-3); justify-content: end; }
+  .crow .cbar-s { max-inline-size: none; }
+  .crow .prow-meta { margin: 0; gap: 12px; white-space: nowrap; }
+}
 @media (min-width: 761px) {
   .crow {
     grid-template-columns: minmax(10rem, 1fr) minmax(12rem, 1fr) auto minmax(11rem, auto);

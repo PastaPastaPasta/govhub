@@ -6,7 +6,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { ReadError } from '../ui/ReadError.tsx';
 import { useAsync, useReveal } from '../ui/hooks.ts';
 import { errText, formatInt } from '../lib/format.ts';
-import { contestKey, displayName, normalizeLabel, type ContestState, type OpenContest } from '../contests/model.ts';
+import { contestKey, displayName, normalizeLabel, VOTE_CHANGES, type ContestState, type OpenContest } from '../contests/model.ts';
 import { useCommentCounts } from '../ui/useCommentCounts.ts';
 import type { ContestSource } from '../contests/source.ts';
 import { ContestCard, type StateEntry } from '../contests/ui.tsx';
@@ -99,7 +99,7 @@ export function ContestsPage() {
   useEffect(() => {
     if (hash === '#name-contests-about') {
       about.current!.open = true;
-      about.current!.scrollIntoView({ block: 'start' });
+      window.scrollTo({ top: 0 });
     }
   }, [hash]);
   const src = useContestSource();
@@ -127,9 +127,27 @@ export function ContestsPage() {
         <h1 className="dh-page-header__title" id="names-title">Name contests</h1>
         <p className="dh-page-header__lede contests-intro">Masternodes decide who gets a contested name. Open contests close soonest first.</p>
         <details ref={about} id="name-contests-about" className="learn dh-disclosure"><summary>How name contests work</summary>
-        <p className="small muted">
-          Usernames of 3 to 19 characters that use only letters, hyphens, 0 and 1 go to a masternode vote when someone registers one. Masternodes decide who gets it, or lock it so nobody does. Others can ask for the same name {timing}.
-        </p>
+        <div className="contest-rules">
+          <section>
+            <h2>Which names go to a vote</h2>
+            <p>Usernames of 3 to 19 characters that use only letters, hyphens, 0 and 1 after normalization go to a masternode vote when someone registers one. Others can ask for the same name {timing}.</p>
+            <p>DPNS groups look-alike spellings into one contest: names become lowercase, <code>o</code> becomes <code>0</code>, and <code>i</code> and <code>l</code> become <code>1</code>. For example, <code>Alice</code> and <code>a11ce</code> share a contest; <code>Moon</code> becomes <code>m00n</code>. Hyphens stay in the name.</p>
+          </section>
+          <section>
+            <h2>Choices and vote weight</h2>
+            <p>Vote for a contender, choose <b>Abstain</b>, or choose <b>Lock</b> to award the name to nobody. A regular masternode has weight 1; an evonode has weight 4. Each masternode can change its vote up to {VOTE_CHANGES} times per contest. Its latest vote counts, so leave room to change your mind. Votes are public on Platform.</p>
+          </section>
+          <section>
+            <h2>Sign with your voting key</h2>
+            <p>Open a contest and add your masternode’s registered voting-address private key (WIF or hex). Governance finds your masternodes and their ProTxHashes from the key. You can vote without an account or Platform credits. The vote is signed locally in your browser; only the signed vote goes to Platform nodes.</p>
+            <p>Without an account, pasted keys stay in this tab’s memory: never saved or sent to a server. Use <b>Forget</b> to clear them; they also clear after 15 minutes without use or when the tab closes. Signed-in voters can use their encrypted masternode keyring.</p>
+            <p><strong>Use only the key for <code>votingAddress</code> in <code>protx info</code>. NEVER paste owner, operator (BLS), or collateral keys.</strong></p>
+          </section>
+          <section>
+            <h2>Discussing a contest</h2>
+            <p>A masternode voting key cannot post comments. Governance discussions use a separate Platform identity with credits; voting itself needs neither. Contenders can also share their requested name and identity ID on the Dash forum.</p>
+          </section>
+        </div>
         </details>
         <label className="contests-search dh-field__label">
           <span className="visually-hidden">Find a username</span>

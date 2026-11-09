@@ -2972,6 +2972,18 @@ details.tr-group > .tr-table { margin: 0; border-radius: 0; }
 .owner-words-info { font-size: 17px; text-decoration: none; }
 
 .past-title-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+@media (max-width: 640px) {
+  .past.dh-table--cards tr { padding: 10px 0; gap: 3px 6px; }
+  .past.dh-table--cards td.dh-rc-title { flex-basis: 100%; }
+  .past .p-slug { display: none; }
+  .past .p-label { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+  .past.dh-table--cards td.dh-rc-end { order: 2; margin: 0; padding: 0; font-size: var(--dh-fs-sm); }
+  .past .outcome-detail { display: none; }
+  .past.dh-table--cards td[data-label]::before { content: none; }
+  .past.dh-table--cards td[data-label="Requested "]::after { content: " requested"; }
+  .past.dh-table--cards td[data-label="Received"]::before { content: "Received "; }
+  .past.dh-table--cards td[data-label="Net yes"]::before { content: "Net yes "; }
+}
 .chainchip.dh-proof::before, .trust.dh-proof::before { content: none; display: none; }
 .usd.dh-meta { display: flex; }
 .p-decision { display: grid; gap: 8px; margin-block: 8px 0; padding-block: 12px; border-block: 1px solid var(--dh-line); }
