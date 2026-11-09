@@ -82,7 +82,7 @@ describe('card wording', () => {
   it('says who leads while open', () => {
     expect(leadText(state())).toBe('No votes yet');
     expect(leadText(state({ contenders: [{ identityId: A, votes: 6 }], lock: 4 }))).toBe('60% for the only contender');
-    expect(leadText(state({ contenders: [{ identityId: A, votes: 3 }], lock: 7 }))).toBe('Most votes: nobody gets it (Lock), 70%');
+    expect(leadText(state({ contenders: [{ identityId: A, votes: 3 }], lock: 7 }))).toBe('Lock leads with 70%');
     expect(leadText(state({ contenders: [{ identityId: A, votes: 6 }, { identityId: B, votes: 3 }], abstain: 1 }))).toBe('Leader 60%, next 30%');
     expect(leadText(state({ contenders: [{ identityId: A, votes: 0 }], abstain: 2 }))).toBe('Only abstain votes so far');
   });

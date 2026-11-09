@@ -40,7 +40,7 @@ export function leadText(s: ContestState): string {
     return s.total === 0 ? 'No votes' : 'No winner';
   }
   if (s.total === 0) return 'No votes yet';
-  if (!top || s.lock > top.votes) return `Most votes: nobody gets it (Lock), ${percent(s.lock, s.total)}`;
+  if (!top || s.lock > top.votes) return `Lock leads with ${percent(s.lock, s.total)}`;
   if (top.votes === 0) return 'Only abstain votes so far';
   if (s.contenders.length === 1) return `${percent(top.votes, s.total)} for the only contender`;
   return `Leader ${percent(top.votes, s.total)}, next ${percent(s.contenders[1]!.votes, s.total)}`;

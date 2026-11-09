@@ -6,7 +6,7 @@
   --cb-c2: var(--dh-ramp-3);
   --cb-c3: var(--dh-ramp-4);
   --cb-abstain: var(--dh-line-2);
-  --cb-lock: var(--dh-ink-2);
+  --cb-lock: var(--dh-bad);
 }
 
 .cb-c0 {
@@ -21,11 +21,14 @@
 .cb-c3 {
   background: var(--cb-c3);
 }
+.cb-c1, .cb-c2, .cb-c3 {
+  background-image: repeating-linear-gradient(0deg, transparent 0 2px, var(--dh-surface) 2px 4px);
+}
 .cb-abstain {
   background: var(--cb-abstain);
 }
 .cb-lock {
-  background: repeating-linear-gradient(135deg, var(--cb-lock) 0 3px, color-mix(in srgb, var(--cb-lock) 55%, transparent) 3px 6px);
+  background: repeating-linear-gradient(135deg, var(--cb-lock) 0 3px, var(--dh-bad-soft) 3px 6px);
 }
 
 /* the whole vote in one bar; segments are separated by a hairline of surface */
@@ -89,6 +92,9 @@
     'main status bar'
     'meta meta meta';
 }
+.crow .prow-main { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; }
+.crow-contenders { margin: 0; }
+.crow .crow-contenders, .crow .crow-lead { font-size: 12px; color: var(--dh-ink-2); }
 .crow-status {
   grid-area: status;
   display: grid;
@@ -99,7 +105,7 @@
 .crow-bar {
   grid-area: bar;
   display: grid;
-  gap: var(--s-2);
+  gap: 4px;
   align-content: start;
 }
 .crow-bar p,
@@ -148,9 +154,6 @@
     align-items: center;
   }
   .crow .prow-title { font-size: 15px; }
-  .crow .crow-contenders, .crow .crow-lead {
-    position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
-  }
   .crow-status { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s-3); justify-content: end; }
   .crow .cbar-s { max-inline-size: none; }
   .crow .prow-meta { margin: 0; gap: 12px; white-space: nowrap; }
@@ -164,8 +167,7 @@
     padding: 8px 16px;
     min-block-size: 42px;
   }
-  .crow .prow-title { font-size: 15px; white-space: nowrap; }
-  .crow .crow-contenders, .crow .crow-lead { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .crow .prow-title { font-size: 15px; }
   .crow .prow-meta { flex-wrap: nowrap; white-space: nowrap; }
   .crow-status { justify-items: end; }
   .crow .cbar-s { max-inline-size: none; }
