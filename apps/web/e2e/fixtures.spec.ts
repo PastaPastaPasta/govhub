@@ -199,9 +199,10 @@ test.describe('fixture mode', () => {
   test('past proposals: empty state at the snapshot time, and no ledger without a chain', async ({ page }) => {
     await gotoFixtures(page, '/past');
     await expect(page.getByRole('heading', { name: 'Past proposals' })).toBeVisible();
-    await expect(page.getByText('The demo snapshot has no chain to read superblocks from')).toBeVisible();
-    await page.getByTestId('view-proposals').click();
+    await expect(page.getByTestId('view-proposals')).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByText('No past proposals published yet.')).toBeVisible();
+    await page.getByTestId('view-payments').click();
+    await expect(page.getByText('The demo snapshot has no chain to read superblocks from')).toBeVisible();
   });
 
   test('unknown proposal hash shows not found', async ({ page }) => {
