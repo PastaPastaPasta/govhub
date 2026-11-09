@@ -51,8 +51,9 @@ describe('BudgetHeader', () => {
     a.gov.cycle.data.value.validWeighted = 3330;
     hold.app = a;
     const { el } = await render(<MemoryRouter><BudgetHeader /></MemoryRouter>);
-    const fact = [...el.querySelectorAll('.budget-facts > div')].find(d => d.querySelector('dt')?.textContent === 'To pass (feed estimate)')!;
+    const fact = [...el.querySelectorAll('.budget-facts > div')].find(d => d.querySelector('dt')?.textContent === 'To pass Feed estimate')!;
     expect(fact.querySelector('dd')?.textContent).toContain('333 net yes votes');
+    expect(fact.querySelector('dd')?.textContent).toContain('Feed estimate');
     expect(el.textContent).toContain('Proposal pages use the masternode-list read when available');
   });
   it('counts once the tallies are in', async () => expect(await inBudget(app({}))).toBe('1 of 3 proposals'));

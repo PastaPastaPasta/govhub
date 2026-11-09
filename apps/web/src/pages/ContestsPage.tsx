@@ -123,8 +123,9 @@ export function ContestsPage() {
 
   return (
     <section aria-labelledby="names-title" className="list-section contests">
-      <header className="dh-page-header">
-        <h1 className="dh-page-header__title" id="names-title">Name contests</h1>
+      <header className="dh-page-header gov-band">
+        <p className="dh-page-header__kicker">Name contests</p>
+        <h1 className="dh-page-header__title" id="names-title">{open.data ? <><span className="num">{formatInt(still.length)}</span> name {still.length === 1 ? 'contest' : 'contests'} open</> : 'Name contests'}</h1>
         <p className="dh-page-header__lede contests-intro">Masternodes decide who gets a contested name. Open contests close soonest first.</p>
         <details ref={about} id="name-contests-about" className="learn dh-disclosure"><summary>How name contests work</summary>
         <div className="contest-rules">
@@ -155,7 +156,7 @@ export function ContestsPage() {
         </label>
       </header>
 
-      <h2 className="dh-section__title">
+      <h2 className="dh-section__title gov-section-title">
         Open for voting{open.data && <span className="count">{formatInt(still.length)}</span>}
       </h2>
       <p className="contest-legend small muted" aria-label="Vote bar legend">

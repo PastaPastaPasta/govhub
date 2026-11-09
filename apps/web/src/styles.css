@@ -2,6 +2,9 @@
 /* Governance maps its existing components onto the shared DashHQ tokens. */
 
 :root {
+  --gov-net: #0070C4;
+  --gov-net-ink: #FFFFFF;
+  --gov-net-soft: #E0EFFA;
   --font: var(--dh-font);
 
   /* type scale (1.25) */
@@ -55,6 +58,19 @@
   --disabled-bg: var(--dh-sunken);
   --disabled-ink: var(--dh-ink-2);
   --float-shadow: var(--dh-shadow-pop);
+}
+
+:root[data-theme="dark"] {
+  --gov-net: #1A9CF0;
+  --gov-net-ink: #0A2A3D;
+  --gov-net-soft: #0D2B40;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --gov-net: #1A9CF0;
+    --gov-net-ink: #0A2A3D;
+    --gov-net-soft: #0D2B40;
+  }
 }
 
 *,
@@ -726,10 +742,7 @@ button.trust-m:hover {
 /* ---- budget summary (landing) --------------------------------------------------------------- */
 .budget {
   display: grid;
-  gap: var(--s-2);
-  padding-block-end: var(--s-4);
-  margin-block-end: var(--s-4);
-  border-block-end: 1px solid var(--line);
+  gap: 12px;
 }
 .budget-line {
   font-size: var(--t-3xl);
@@ -752,22 +765,7 @@ button.trust-m:hover {
   display: inline-flex;
   align-items: center;
   gap: 0.375rem;
-  white-space: nowrap;
-}
-.budget-compact {
-  display: none;
-}
-@media (max-width: 640px) {
-  .budget-compact {
-    display: block;
-    color: var(--ink-2);
-  }
-  .budget-compact b {
-    color: var(--ink);
-  }
-  .budget .budget-facts {
-    display: none;
-  }
+  white-space: normal;
 }
 .key {
   display: inline-block;
@@ -777,6 +775,11 @@ button.trust-m:hover {
 }
 .key-seg {
   background: var(--accent);
+}
+.key-notch {
+  inline-size: 2px;
+  block-size: 10px;
+  background: var(--ink);
 }
 .key-free {
   background: repeating-linear-gradient(135deg, var(--track) 0 2px, var(--line-strong) 2px 3px);
@@ -791,45 +794,77 @@ button.trust-m:hover {
 }
 .strip {
   display: flex;
-  block-size: 0.875rem;
-  border-radius: 999px;
+  block-size: 14px;
+  border-radius: 3px;
   overflow: hidden;
-  background: var(--track);
-  gap: 2px;
-  margin-block: var(--s-2);
+  background: var(--surface);
+  gap: 3px;
+  margin-block-start: 6px;
 }
-.strip-seg {
-  background: var(--accent);
-  min-inline-size: 3px;
-}
-.strip-seg:nth-child(even) {
-  background: color-mix(in srgb, var(--accent) 78%, var(--surface));
-}
-.strip-seg:hover {
-  background: var(--accent-ink);
-}
-.strip-other {
-  background: color-mix(in srgb, var(--accent) 40%, var(--sunk));
-}
+.strip > * { flex-basis: 0; min-inline-size: 0; }
+.strip-seg:hover { opacity: .8; }
+.strip-other { background: var(--line-strong); }
 .strip-free {
-  background: repeating-linear-gradient(135deg, transparent 0 5px, color-mix(in srgb, var(--line-strong) 55%, transparent) 5px 6px);
+  background: repeating-linear-gradient(135deg, var(--sunk) 0 5px, var(--line) 5px 8px);
 }
+.budget-legend { margin: 0 0 6px; font-size: 13px; }
+.budget-legend .legend-item { white-space: normal; }
+.budget-legend .key { flex: none; }
 .budget-facts {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--s-3) var(--s-5);
   margin: 0;
 }
-.budget-facts dt {
-  font-size: var(--t-s);
+.gov-stat {
+  min-inline-size: 0;
+  border-inline-start: 3px solid var(--line-strong);
+  padding-inline-start: 12px;
+}
+.gov-stat--blue { border-color: var(--dh-brand); }
+.gov-stat--good { border-color: var(--pass); }
+.gov-stat--warn { border-color: var(--warn); }
+.gov-stat--bad { border-color: var(--fail); }
+.gov-stat--good .num { color: var(--pass); }
+.gov-stat--warn .num { color: var(--warn); }
+.gov-stat--bad .num { color: var(--fail); }
+.gov-stat dt, .gov-stat-label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--ink-2);
+  line-height: 1.5;
+  margin-block-end: 4px;
+}
+.gov-stat dd, .gov-stat-value { margin: 0; }
+.gov-stat .num, .gov-stat-value {
+  font-size: 26px;
+  font-weight: 660;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+.gov-stat small, .p-kpis .p-per {
+  font-size: 14px;
+  font-weight: 400;
   color: var(--ink-2);
 }
-.budget-facts dd {
-  margin: 0;
+.gov-stat-note, .p-kpis .p-total {
+  display: block;
+  margin-block-start: 4px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--ink-2);
 }
-.budget-facts .num {
-  font-size: var(--t-l);
+.gov-source {
+  font-size: 12px;
+  border: 1px dotted var(--line-strong);
+  border-radius: 3px;
+  padding-inline: 5px;
 }
+.budget-facts .usd { color: var(--ink-2); font-size: 13px; }
 @media (max-width: 760px) {
   .budget-facts {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2831,7 +2866,15 @@ dashhq-hash { vertical-align: middle; max-width: 100%; }
 /* ---- proposal page: amount, standing and vote entry --------------------------- */
 .p-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3); }
 .p-jump { text-decoration: none; }
-.p-funds { gap: var(--s-3); }
+.p-funds { gap: var(--s-3); margin-block-end: 24px; }
+.p-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px 24px; }
+.p-kpis .meter { margin-block-start: 8px; }
+.p-kpis .meter-text { display: none; }
+.p-kpis .p-amount .num { font-size: 26px; }
+.p-kpis .p-amount .p-total b { font-size: 13px; }
+.p-kpis .gov-stat--good .gov-stat-value { color: var(--pass); }
+.p-kpis .gov-stat--warn .gov-stat-value { color: var(--warn); }
+.p-kpis .gov-stat--bad .gov-stat-value { color: var(--fail); }
 .p-details { gap: var(--s-4); }
 .p-purpose { display: grid; gap: 6px; margin: 0; }
 .p-purpose-quote p { font-size: var(--t-m, 1rem); line-height: 1.5; }
@@ -2846,7 +2889,7 @@ dashhq-hash { vertical-align: middle; max-width: 100%; }
 .p-facts { margin: 0; }
 .p-facts > div { grid-template-columns: 6.5rem minmax(0, 1fr); }
 .p-facts .p-owner { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
-.p-standing { display: grid; gap: var(--s-3); padding-block-start: var(--s-3); border-block-start: 1px solid var(--line); }
+.p-standing { display: grid; gap: var(--s-2); }
 .p-standing-title { margin: 0; font-size: var(--t-s); font-weight: 650; color: var(--ink-2); }
 @media (max-width: 640px) {
   /* a phone keeps the owner's summary to a few lines: the rest is a tap away on their page, and the vote stays near */
@@ -2921,8 +2964,6 @@ details.tr-group > .tr-table { margin: 0; border-radius: 0; }
 .budget-foot .chain-context { margin: 0; }
 @media (max-width: 640px) {
   .budget { margin-block-end: var(--s-4); }
-  /* the Treasury tab is just below */
-  .budget-line-links > a { display: none; }
   .budget-foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-4); }
   .budget-foot .chain-label { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .budget-foot details.learn[open] { flex-basis: 100%; }
@@ -2991,3 +3032,94 @@ details.tr-group > .tr-table { margin: 0; border-radius: 0; }
   .ledger-stats > .dh-stat:first-child { grid-column: 1 / -1; }
   .signin-cta { align-items: start; flex-direction: column; }
 }
+.main:has(> .gov-band),
+.main:has(> .contests > .gov-band),
+.main:has(> .polls-page > .gov-band) { padding-block-start: 0; }
+.gov-band {
+  position: relative;
+  isolation: isolate;
+  padding-block: 32px 24px;
+  margin-block-end: 32px;
+}
+.gov-band::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0 calc(50% - 50vw);
+  background: color-mix(in srgb, var(--gov-net-soft) 55%, var(--dh-page));
+  border-block-end: 1px solid var(--line);
+  pointer-events: none;
+}
+
+.gov-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 16px;
+  inline-size: 100%;
+  padding-block-end: 12px;
+  border-block-end: 1px solid var(--line);
+}
+.gov-section-head > a { margin-inline-start: auto; }
+.gov-section-title, .gov-section-head h2 {
+  border-inline-start: 4px solid var(--gov-net);
+  padding-inline-start: 12px;
+}
+.gov-section-head h2 { display: flex; align-items: baseline; gap: 10px; }
+.list-section > .list-head { margin-block-end: 12px; gap: 12px; }
+.plist-columns, .plist-proposals > .prow {
+  grid-template-columns: minmax(0, 2.5fr) minmax(0, 1.2fr) minmax(0, 1.2fr) minmax(5.4rem, .55fr);
+  column-gap: 20px;
+}
+.plist-columns {
+  display: grid;
+  padding: 10px 24px;
+  border-block-end: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.plist-columns > :last-child { text-align: end; }
+.plist-proposals > .prow { grid-template-areas: 'main ask fund meta'; }
+.plist-proposals .prow-meta { flex-direction: column; align-items: end; justify-content: start; gap: 8px; text-align: end; }
+.plist-proposals .prow-votes { flex-direction: column; gap: 0; }
+.prow-cell-label { display: none; }
+.plist-proposals .prow-fund { justify-items: stretch; }
+.plist-proposals .prow-fund > .tag { justify-self: start; }
+@media (max-width: 760px) {
+  .p-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .plist-columns { display: none; }
+  .plist-proposals > .prow { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'main' 'ask' 'fund' 'meta'; }
+  .plist-proposals .prow-meta { flex-direction: row; align-items: baseline; justify-content: space-between; flex-wrap: wrap; text-align: start; }
+  .plist-proposals .prow-votes { flex-direction: row; flex-wrap: wrap; gap: 12px; }
+  .prow-cell-label { display: block; font-size: 12px; font-weight: 400; color: var(--ink-2); }
+  .prow-ask > .prow-cell-label { flex-basis: 100%; }
+  .prow-meta > .prow-cell-label { inline-size: 100%; }
+}
+@media (max-width: 640px) {
+  .gov-band { padding-block: 20px 16px; margin-block-end: 20px; }
+  .budget { gap: 8px; }
+  .budget .dh-page-header__row { gap: 8px; }
+  .budget .dh-page-header__lede { font-size: 14px; }
+  .budget .dh-page-header__actions { margin-inline-start: auto; }
+  .budget .dh-page-header__actions .dh-btn { min-block-size: 32px; padding: 5px 10px; font-size: 13px; }
+  .budget-facts { gap: 12px; }
+  .gov-stat { padding-inline-start: 10px; }
+  .gov-stat .num, .gov-stat-value, .p-kpis .p-amount .num { font-size: 22px; }
+  .budget-facts .usd { display: none; }
+  .budget-facts dt { gap: 4px; }
+  .budget-facts .gov-stat:last-child .gov-stat-note { display: none; }
+  .budget-facts .gov-source { padding-inline: 3px; }
+  .budget-legend { gap: 4px; font-size: 12px; }
+  .budget-foot { gap: 4px 12px; }
+  .budget-foot .chain-context { flex-basis: 100%; }
+  .budget-foot .chainchip { min-block-size: 28px; font-size: 12px; padding: 2px 6px; }
+  .budget-line-links > a, .budget-foot details.learn > summary { font-size: 12px; }
+  .budget-foot details.learn > summary { padding-block: 4px; }
+  .gov-section-head { gap: 8px; padding-block-end: 8px; }
+  .gov-section-head > a { font-size: 13px; }
+  .list-tools { flex-wrap: wrap; }
+  .list-tools .dh-seg { flex-basis: 100%; }
+  .list-tools .proposal-search { flex: 1 1 0; }
+  .p-funds { padding: 0; }
+}
+.budget-facts .usd-value { color: var(--ink-2); }

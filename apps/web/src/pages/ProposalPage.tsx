@@ -32,7 +32,7 @@ import { askText, paymentsLine } from '../ui/ProposalCard.tsx';
 import { useAsync } from '../ui/hooks.ts';
 import type { Proposal, Sourced } from '../data/types.ts';
 import type { Found } from '../lib/ownerPages.ts';
-import { capitalize, formatAgoMs, formatDash, formatDate, formatDateTime, formatDuration, formatInt, shortHash, urlHost } from '../lib/format.ts';
+import { capitalize, dashUnit, formatAgoMs, formatDash, formatDashAmount, formatDate, formatDateTime, formatDuration, formatInt, shortHash, urlHost } from '../lib/format.ts';
 import { passState, perPayment, votingDeadlineTime } from '../lib/governance.ts';
 import { deriveRow } from '../lib/view.ts';
 import { isShortLink, useResolvedLink } from '../lib/links.ts';
@@ -251,6 +251,8 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
   // the verified chain's schedule once there is one (the deadline height is then proven, its time Core's own estimate)
   const untilDeadline = chain ? chain.schedule.deadlineEstTime - now : cycle ? votingDeadlineTime(cycle.value, params) - now : null;
   const recurring = !!sched && !sched.oneTime && sched.total > 0;
+  const paymentsLeft = lameDuck ? 0 : payments?.remainingEstimate ?? sched?.remaining;
+  const paymentsFit = !!sched && (!payments || payments.paid.length + payments.remainingEstimate <= sched.total);
   const paymentsText = paymentsLine(sched, paid && payments ? { made: paid.made.text, count: payments.paid.length, left: payments.remainingEstimate } : null);
   // the vote block names what it is voting on, in the words the lists use (the owner's title quoted as theirs)
   const voteSubject: VoteSubject = {
@@ -306,88 +308,97 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
       </header>
       {(trust.aggregate.level === 'failed' || trust.aggregate.level === 'error') && <p className="dh-notice dh-notice--warn" role="status">{trust.aggregate.reason ?? 'Verification could not finish. Figures are shown as reported.'} <button type="button" className="dh-btn dh-btn--link" onClick={() => setDrawer(true)}>Review checks</button></p>}
 
+      <section className="panel p-funds" aria-labelledby="funds-title" data-testid="p-funds">
+        <h2 id="funds-title" className="visually-hidden">
+          Amount and standing
+        </h2>
+        <div className="p-kpis">
+          <div className="gov-stat gov-stat--blue">
+            <h3 className="gov-stat-label">Requests</h3>
+            {row.content.ok ? (
+              <p className="p-amount" data-testid="p-ask">
+                <span className="num">{formatDashAmount(p.paymentAmount)}</span> <small>{dashUnit()}</small> <span className="p-per">{sched?.oneTime ? 'one payment' : perPayment(params)}</span>
+                {recurring && (
+                  <span className="p-total">
+                    {' '}
+                    × {formatInt(sched.total)} payments = <b>{formatDash(p.paymentAmount * sched.total)}</b>
+                  </span>
+                )}
+              </p>
+            ) : <p className="small" data-testid="p-funds-mismatch">The fields published for this proposal don’t match the hash the network votes on ({row.content.problem}), so its amount, payee and dates aren’t shown as what it funds.</p>}
+          </div>
+          <div className={`gov-stat${!lameDuck && state ? ` gov-stat--${state.light === 'pass' ? 'good' : state.light === 'warn' ? 'warn' : 'bad'}` : ''}`}>
+            <h3 className="gov-stat-label">Standing</h3>
+            {!lameDuck && state && <p className="gov-stat-value">{state.passing ? 'Passing' : 'Short by'} <span className="num">{formatInt(state.passing ? state.margin : state.needed)}</span></p>}
+            {lameDuck ? (
+              <LameDuckPageStatus
+                total={sched?.total ?? 0}
+                paid={payments ? { count: payments.paid.length, atLeast: isLowerBound(payments), firm: payments.othersComplete !== false && !payments.anchor?.weak } : null}
+                endEpoch={p.endEpoch}
+                counting={!chain && !trust.chain.error && !trust.chain.unavailable}
+              />
+            ) : state && threshold && row.absYes !== null ? (
+              <FundingMeter absYes={row.absYes} threshold={threshold.value} state={state} />
+            ) : (
+              <p className="muted">{tallies.loading ? 'Reading the votes…' : t ? 'Waiting for the budget cycle' : 'No votes counted yet'}</p>
+            )}
+          </div>
+          <div className="gov-stat gov-stat--blue">
+            <h3 className="gov-stat-label">Net votes</h3>
+            <p className="gov-stat-value">{row.absYes !== null ? <><span className="num">{formatInt(row.absYes)}</span> <small>net yes</small></> : <span className="small muted">{tallies.loading ? 'Reading the votes…' : 'Not known'}</span>}</p>
+            {threshold && <p className="gov-stat-note">{formatInt(threshold.value)} to pass · {chain ? 'masternode list' : 'feed estimate'}</p>}
+          </div>
+          <div className="gov-stat">
+            <h3 className="gov-stat-label">Payments left</h3>
+            <p className="gov-stat-value">{row.content.ok && paymentsLeft !== undefined ? <><span className="num">{formatInt(paymentsLeft)}</span>{paymentsFit && <small> of {formatInt(sched!.total)}</small>}</> : <span className="small muted">Not known</span>}</p>
+            {row.content.ok && paymentsText && <p className="gov-stat-note">{capitalize(paymentsText)}</p>}
+          </div>
+        </div>
+        <section className="p-standing" aria-labelledby="standing-title">
+          <h3 id="standing-title" className="visually-hidden">Where it stands</h3>
+          {later && <StartsLaterPageStatus later={later} />}
+          {active && !lameDuck && !later && t && (
+            <p className="p-status">
+              {inBudget ? <span className="tag dh-badge tag-pass dh-badge--good">In the next budget</span> : state?.passing ? <span className="tag dh-badge tag-warn dh-badge--warn">Passing, but the next budget is full</span> : null}
+              {(inBudget || state?.passing) && trust.funded === null && trust.aggregate.level !== 'checking' && (
+                <span className="small muted" data-testid="budget-reported" title="The budget place is the published tally's; it counts as verified once this browser has recounted the votes and the funding order">
+                  as reported, not verified here
+                </span>
+              )}
+            </p>
+          )}
+          {t && (
+            <p className={`p-votes${lameDuck ? ' p-votes-dim' : ''}`} data-testid="p-votes" aria-label={`Masternode votes, weighted: ${t.yesWeighted} yes, ${t.noWeighted} no, ${t.abstainWeighted} abstain`}>
+              <span>
+                <b>{formatInt(t.yesWeighted)}</b> yes
+              </span>
+              <span>
+                <b>{formatInt(t.noWeighted)}</b> no
+              </span>
+              <span>
+                <b>{formatInt(t.abstainWeighted)}</b> abstain
+              </span>
+              <span className="muted small" data-testid="p-voters" title={`${formatInt(t.yesCount)} yes, ${formatInt(t.noCount)} no, ${formatInt(t.abstainCount)} abstain; counted at block ${formatInt(t.asOfHeight)}`}>
+                {formatInt(t.yesCount + t.noCount + t.abstainCount)} masternodes voted; evonodes count 4 times
+              </span>
+              {lameDuck && <span className="small muted">These votes no longer affect payment.</span>}
+            </p>
+          )}
+
+          <EvidenceLine agg={trust.aggregate} onRetry={trust.recheck} />
+          {tallies.error && <ReadError error={tallies.error} what="Platform" lead="The tally could not be read" onRetry={() => setTalliesAttempt((n) => n + 1)} />}
+        </section>
+        <div className="dh-page-header__meta p-meta">
+          {active && !lameDuck && (
+            <a href="#vote" className="dh-btn dh-btn--secondary dh-btn--sm p-jump" data-testid="jump-vote">
+              Go to the vote ↓
+            </a>
+          )}
+        </div>
+      </section>
+
       <div className="p-layout">
         <div className="p-main">
-          <section className="panel dh-card p-funds" aria-labelledby="funds-title" data-testid="p-funds">
-            <h2 id="funds-title" className="panel-title">
-              Amount and standing
-            </h2>
-            {row.content.ok ? (
-              <>
-                <p className="p-amount" data-testid="p-ask">
-                  <span className="num">{formatDash(p.paymentAmount)}</span> <span className="p-per">{sched?.oneTime ? 'one payment' : perPayment(params)}</span>
-                  {recurring && (
-                    <span className="p-total">
-                      {' '}
-                      × {formatInt(sched.total)} payments = <b>{formatDash(p.paymentAmount * sched.total)}</b>
-                    </span>
-                  )}
-                </p>
-              </>
-            ) : (
-              <p className="small" data-testid="p-funds-mismatch">
-                The fields published for this proposal don’t match the hash the network votes on ({row.content.problem}), so its amount, payee and dates aren’t shown
-                as what it funds.
-              </p>
-            )}
-
-            <section className="p-standing" aria-labelledby="standing-title">
-              <h3 id="standing-title" className="p-standing-title">
-                Where it stands
-              </h3>
-              {lameDuck ? (
-                <LameDuckPageStatus
-                  total={sched?.total ?? 0}
-                  paid={payments ? { count: payments.paid.length, atLeast: isLowerBound(payments), firm: payments.othersComplete !== false && !payments.anchor?.weak } : null}
-                  endEpoch={p.endEpoch}
-                  counting={!chain && !trust.chain.error && !trust.chain.unavailable}
-                />
-              ) : state && threshold && row.absYes !== null ? (
-                <FundingMeter absYes={row.absYes} threshold={threshold.value} state={state} />
-              ) : (
-                <p className="muted">{tallies.loading ? 'Reading the votes…' : t ? 'Waiting for the budget cycle' : 'No votes counted yet'}</p>
-              )}
-              {later && <StartsLaterPageStatus later={later} />}
-              {active && !lameDuck && !later && t && (
-                <p className="p-status">
-                  {inBudget ? <span className="tag dh-badge tag-pass dh-badge--good">In the next budget</span> : state?.passing ? <span className="tag dh-badge tag-warn dh-badge--warn">Passing, but the next budget is full</span> : null}
-                  {(inBudget || state?.passing) && trust.funded === null && trust.aggregate.level !== 'checking' && (
-                    <span className="small muted" data-testid="budget-reported" title="The budget place is the published tally's; it counts as verified once this browser has recounted the votes and the funding order">
-                      as reported, not verified here
-                    </span>
-                  )}
-                </p>
-              )}
-              {t && (
-                <p className={`p-votes${lameDuck ? ' p-votes-dim' : ''}`} data-testid="p-votes" aria-label={`Masternode votes, weighted: ${t.yesWeighted} yes, ${t.noWeighted} no, ${t.abstainWeighted} abstain`}>
-                  <span>
-                    <b>{formatInt(t.yesWeighted)}</b> yes
-                  </span>
-                  <span>
-                    <b>{formatInt(t.noWeighted)}</b> no
-                  </span>
-                  <span>
-                    <b>{formatInt(t.abstainWeighted)}</b> abstain
-                  </span>
-                  <span className="muted small" data-testid="p-voters" title={`${formatInt(t.yesCount)} yes, ${formatInt(t.noCount)} no, ${formatInt(t.abstainCount)} abstain; counted at block ${formatInt(t.asOfHeight)}`}>
-                    {formatInt(t.yesCount + t.noCount + t.abstainCount)} masternodes voted; evonodes count 4 times
-                  </span>
-                  {lameDuck && <span className="small muted">These votes no longer affect payment.</span>}
-                </p>
-              )}
-
-              <EvidenceLine agg={trust.aggregate} onRetry={trust.recheck} />
-              {tallies.error && <ReadError error={tallies.error} what="Platform" lead="The tally could not be read" onRetry={() => setTalliesAttempt((n) => n + 1)} />}
-            </section>
-            <div className="dh-page-header__meta p-meta">
-              {active && !lameDuck && (
-                <a href="#vote" className="dh-btn dh-btn--secondary dh-btn--sm p-jump" data-testid="jump-vote">
-                  Go to the vote ↓
-                </a>
-              )}
-            </div>
-          </section>
-
           {active && !lameDuck && (
             <ErrorBoundary what="masternode voting">
               <ProposalVoteBlock proposal={p} subject={voteSubject} mn={mn} closesIn={later ? null : untilDeadline} onVerify={() => setDrawer(true)} />

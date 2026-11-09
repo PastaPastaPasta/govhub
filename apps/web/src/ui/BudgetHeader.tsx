@@ -9,9 +9,9 @@ import { formatDash, formatDashAmount, formatDate, formatDuration, formatInt, fo
 import { fundingThreshold, superblockCadence, votingDeadlineTime } from '../lib/governance.ts';
 import { budgetView, countNames, proposalHref } from '../lib/view.ts';
 
-function BudgetTitle({ children, id }: { children: ReactNode; id?: string }) {
+function BudgetTitle({ children, id, lede }: { children: ReactNode; id?: string; lede?: ReactNode }) {
   return <div className="dh-page-header__row">
-    <div className="dh-page-header__text"><h1 id={id} className="dh-page-header__title">{children}</h1></div>
+    <div className="dh-page-header__text"><h1 id={id} className="dh-page-header__title">{children}</h1>{lede && <p className="dh-page-header__lede">{lede}</p>}</div>
     <div className="dh-page-header__actions"><Link to="/create" className="dh-btn dh-btn--secondary">New proposal</Link></div>
   </div>;
 }
@@ -25,14 +25,14 @@ export function BudgetHeader() {
   if (source.notice) return <header className="dh-page-header"><BudgetTitle>Proposals</BudgetTitle></header>;
   if (gov.cycle.loading && !cycle) {
     return (
-      <section className="budget dh-page-header dh-loading" aria-busy="true" aria-label="Budget">
+      <section className="budget gov-band dh-page-header dh-loading" aria-busy="true" aria-label="Budget">
         <BudgetTitle>Loading the budget…</BudgetTitle>
       </section>
     );
   }
   if (!cycle) {
     return (
-      <section className="budget dh-page-header" aria-label="Budget">
+      <section className="budget gov-band dh-page-header" aria-label="Budget">
         <BudgetTitle>Active proposals</BudgetTitle><p className="dh-page-header__lede">No budget has been published yet.</p>
         <p className="muted small">{gov.cycle.error ? `Platform read failed: ${gov.cycle.error}` : 'The governance data service publishes one for every payout. Add a data service in Settings to see live numbers.'}</p>
       </section>
@@ -65,36 +65,25 @@ export function BudgetHeader() {
   const unreadDue = activeRows.shown.filter((r) => !r.item.lameDuck && !r.item.startsLater && gov.untallied.has(r.item.p.value.govHash)).length;
 
   return (
-    <section className="budget dh-page-header" aria-labelledby="budget-title">
-      <BudgetTitle id="budget-title">
-        {untilSb > 0 ? (
-          <>
-            Next payout in <span className="num budget-countdown">{formatDuration(untilSb)}</span>
-          </>
-        ) : (
-          'The next payout is due any moment'
-        )}
+    <section className="budget gov-band dh-page-header" aria-labelledby="budget-title">
+      <BudgetTitle id="budget-title" lede={untilDeadline > 0 ? <>
+        Masternodes can vote for another <b>{formatDuration(untilDeadline)}</b>, until {formatDate(deadline)}.
+      </> : 'Voting for this payout has closed.'}>
+        {untilSb > 0 ? <>
+          Next payout in <span className="num budget-countdown">{formatDuration(untilSb)}</span>
+        </> : 'The next payout is due any moment'}
       </BudgetTitle>
-      <p className="dh-page-header__lede">
-        {untilDeadline > 0 ? (
-          <>
-            Masternodes can vote for another <b>{formatDuration(untilDeadline)}</b>, until {formatDate(deadline)}.
-          </>
-        ) : (
-          'Voting for this payout has closed.'
-        )}
-      </p>
 
       {/* The segments are links for the pointer only; an image role around them would be an interactive control nested in an image
           (axe nested-interactive), so assistive technology gets this sentence and the strip is hidden from it. */}
       <p className="visually-hidden">{`Allocated ${formatDash(allocated)} of ${formatDash(c.budget)} (${formatPercent(allocatedFrac)})${noCount ? '' : ` across ${funded.length} proposals`}`}</p>
       <div className="strip" aria-hidden="true">
-        {!noCount && funded.map((r) => (
+        {!noCount && funded.map((r, i) => (
           <Link
             key={r.p.value.govHash}
             to={proposalHref(r.p.value, names)}
             className="strip-seg"
-            style={{ flexGrow: r.p.value.paymentAmount }}
+            style={{ flexGrow: r.p.value.paymentAmount, background: `var(--dh-ramp-${i % 5 + 1})` }}
             title={`${r.p.value.name}: ${formatDash(r.p.value.paymentAmount)}`}
             aria-hidden="true"
             tabIndex={-1}
@@ -109,41 +98,31 @@ export function BudgetHeader() {
         <span className="strip-free" style={{ flexGrow: Math.max(0, c.budget - Math.max(allocated, noCount ? 0 : fundedSum)) }} />
       </div>
 
-      <p className="budget-compact">
-        <b>{formatDashAmount(available)} {dashUnit()}</b> still available;{' '}
-        {counting ? (
-          'counting which proposals are in the budget…'
-        ) : unknown ? (
-          <>
-            {noList ? 'the proposals' : 'the votes'} couldn’t be read just now, so which proposals are in the budget isn’t known.{' '}
-            <button type="button" className="linkish dh-btn dh-btn--link" onClick={reload} data-testid="budget-retry">
-              Try again
-            </button>
-          </>
-        ) : (
-          <>
-            {unreadDue > 0 && 'at least '}
-            <b>{formatInt(funded.length)}</b> of {formatInt(active)} proposals in the budget
-            {unreadDue > 0 && ` (the votes of ${formatInt(unreadDue)} weren’t read)`}
-            {later > 0 && `; plus ${formatInt(later)} that start${laterS} paying later`}
-          </>
-        )}
+      <p className="strip-legend budget-legend small muted">
+        <span className="legend-item"><span className="key key-seg" aria-hidden="true" />
+          {noCount ? `Allocated ${formatDash(allocated)} (proposal breakdown ${counting ? 'loading' : 'unavailable'})` : <>
+            Funded, by payout order ({formatInt(funded.length)} proposals, {formatDash(fundedSum)})
+          </>}
+        </span>
+        {!noCount && allocated > fundedSum && <span className="legend-item">Other allocation {formatDash(allocated - fundedSum)}</span>}
+        <span className="legend-item"><span className="key key-free" aria-hidden="true" />Unallocated {formatDash(available)}</span>
+        <span className="legend-item"><span className="key key-notch" aria-hidden="true" />Pass line: {formatInt(threshold)} net yes votes (feed estimate)</span>
       </p>
       <dl className="budget-facts">
-        <div>
+        <div className="gov-stat gov-stat--blue">
           <dt>Allocated</dt>
           <dd>
-            <span className="num">{formatDashAmount(allocated)}</span> of {formatDash(c.budget)}
+            <span className="num">{formatDashAmount(allocated)}</span> <small>of {formatDash(c.budget)}</small>
             <UsdValue duffs={c.budget} what="Budget" />
           </dd>
         </div>
-        <div>
+        <div className={`gov-stat gov-stat--${available > 0 ? 'good' : 'warn'}`}>
           <dt>Still available</dt>
           <dd>
-            <span className="num">{formatDashAmount(available)}</span> {dashUnit()}
+            <span className="num">{formatDashAmount(available)}</span> <small>{dashUnit()}</small>
           </dd>
         </div>
-        <div>
+        <div className="gov-stat gov-stat--blue">
           <dt>In the budget</dt>
           <dd data-testid="budget-in">
             {counting ? (
@@ -151,27 +130,28 @@ export function BudgetHeader() {
                 <span className="spinner" aria-hidden="true" /> counting the votes…
               </span>
             ) : unknown ? (
-              <span className="muted">not known: the {noList ? 'proposals' : 'votes'} couldn’t be read</span>
+              <span className="muted small">not known: the {noList ? 'proposals' : 'votes'} couldn’t be read</span>
             ) : (
               <>
                 {unreadDue > 0 && <span className="muted">at least </span>}
-                <span className="num">{formatInt(funded.length)}</span> of {formatInt(active)} proposals
-                {later > 0 && <span className="muted"> (plus {formatInt(later)} that start{laterS} paying at a later superblock)</span>}
+                <span className="num">{formatInt(funded.length)}</span> <small>of {formatInt(active)} proposals</small>
+                {later > 0 && <span className="gov-stat-note">Plus {formatInt(later)} that start{laterS} later</span>}
               </>
             )}
           </dd>
         </div>
-        <div>
-          <dt>To pass (feed estimate)</dt>
+        <div className="gov-stat">
+          <dt>To pass <span className="gov-source">Feed estimate</span></dt>
           <dd>
-            <span className="num">{formatInt(threshold)}</span> net yes votes
+            <span className="num">{formatInt(threshold)}</span> <small>net yes votes</small><span className="gov-stat-note">Feed estimate · 10% of masternode weight</span>
           </dd>
         </div>
       </dl>
       <div className="budget-foot">
+        <div className="chain-context"><span className="chain-label">Chain check</span><ChainShield /></div>
+        {unknown && <button type="button" className="dh-btn dh-btn--link" onClick={reload} data-testid="budget-retry">Try reading the budget again</button>}
         <div className="budget-line-links">
-          <Link to="/treasury" data-testid="budget-treasury" className="dh-link dh-link--go">What this budget pays for, and how it compares</Link>
-          <div className="chain-context"><span className="chain-label">Chain check</span><ChainShield /></div>
+          <Link to="/treasury" data-testid="budget-treasury" className="dh-link dh-link--go">What the budget pays for</Link>
         </div>
         <details className="learn dh-disclosure">
         <summary>How funding works</summary>

@@ -145,10 +145,13 @@ export function ActivePage() {
       <BudgetHeader />
       <section aria-label="Active proposals" className="list-section">
         <div className="list-head">
-          <ProposalTabs />
-          <OwnerWordsNote proposals={cards.map((r) => r.item.p.value)} />
-          <p className="small muted" data-testid="list-order-note">{SORTS.find((x) => x.id === sort)!.note}</p>
+          <div className="dh-section__head gov-section-head">
+            <h2 className="dh-section__title">Proposals <OwnerWordsNote proposals={cards.map((r) => r.item.p.value)} /></h2>
+            <p className="small muted" data-testid="list-order-note">{SORTS.find((x) => x.id === sort)!.note}</p>
+            <Link to="/treasury" className="dh-link dh-link--go">Treasury history</Link>
+          </div>
           <div className="list-tools">
+            <ProposalTabs />
             <label className="contests-search proposal-search dh-field__label">
               <span className="visually-hidden">Find a proposal by name, title, payee address or website</span>
               <input className="dh-input" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a proposal" autoComplete="off" spellCheck={false} data-testid="proposal-search" />
@@ -183,7 +186,8 @@ export function ActivePage() {
           // an unread list is not an empty one: the banner above says the read failed
           gov.active.error && !gov.active.data ? null : <p className="empty dh-empty">No active proposals right now.</p>
         ) : rows.length + lameDucks.length === 0 ? null : (
-          <div className="plist">
+          <div className="plist plist-proposals">
+            <div className="plist-columns" aria-hidden="true"><span>Proposal</span><span>Requests</span><span>Standing</span><span>Votes</span></div>
             {shown.map(card)}
             {needle && lameDucks.map(card)}
           </div>
