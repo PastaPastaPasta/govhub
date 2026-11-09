@@ -37,7 +37,7 @@ function TestnetPreview() {
   const [attempt, setAttempt] = useState(0);
   const load = useAsync(() => source.list(), [source, attempt]);
   const polls = load.data?.slice(0, 3) ?? [];
-  return <section className="dh-section" aria-labelledby="testnet-preview">
+  return <section className="dh-section polls-preview" aria-labelledby="testnet-preview">
     <h2 id="testnet-preview" className="dh-h2">Recent Testnet polls</h2>
     <p className="muted">Read-only preview · Open a question on Testnet to see its results.</p>
     {load.loading ? <Loading>Reading recent Testnet polls…</Loading> : load.error ? <ReadError error={load.error} what="Platform" lead="The Testnet preview could not be read" onRetry={() => setAttempt(n => n + 1)} /> : !polls.length ? <div className="poll-empty"><h3 className="dh-h3">No Testnet polls yet</h3><p>New questions will appear here when they are published on Testnet.</p></div> : <div className="poll-preview-list">{polls.map(poll => <article key={poll.id}>

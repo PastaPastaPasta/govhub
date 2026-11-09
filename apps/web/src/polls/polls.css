@@ -56,6 +56,7 @@
 
 .polls-intro { margin-block-start: 32px; max-inline-size: 65ch; }
 
+.polls-preview { margin-block-start: 32px; }
 .poll-preview-list article { padding-block: 16px; border-block-start: 1px solid var(--dh-line); overflow-wrap: anywhere; }
 .poll-preview-list h3 { margin: 0 0 6px; }
 .poll-preview-list .poll-meta { margin-block-end: 6px; }
