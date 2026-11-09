@@ -726,9 +726,9 @@ button.trust-m:hover {
 /* ---- budget summary (landing) --------------------------------------------------------------- */
 .budget {
   display: grid;
-  gap: var(--s-3);
-  padding-block-end: var(--s-5);
-  margin-block-end: var(--s-5);
+  gap: var(--s-2);
+  padding-block-end: var(--s-4);
+  margin-block-end: var(--s-4);
   border-block-end: 1px solid var(--line);
 }
 .budget-line {
@@ -2738,9 +2738,8 @@ dashhq-hash { vertical-align: middle; max-width: 100%; }
 .past-head .lede { margin: 0; }
 .ledger { display: grid; gap: 14px; }
 .ledger-stats { padding: 4px 0 6px; }
-.ledger-stats-compact { display: flex; flex-wrap: wrap; gap: 8px 24px; border-block: 1px solid var(--dh-line); }
-.ledger-stats-compact .dh-stat { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; padding: 6px 0; border: 0; background: none; }
-.ledger-stats-compact .dh-stat__value { font-size: 15px; }
+.ledger-stats-compact { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 24px; padding-block: 8px; border-block: 1px solid var(--dh-line); }
+.ledger-stats-compact > span { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px; }
 .ledger-note { margin: 0; max-inline-size: 72ch; }
 .ledger-stats-reading { display: grid; gap: 6px; padding: 12px 0 14px; }
 .ledger-stats-reading p { margin: 0; }
@@ -2816,7 +2815,7 @@ dashhq-hash { vertical-align: middle; max-width: 100%; }
 }
 .owner-page-quote p { margin: 0; }
 .prow-slug { margin: 0; color: var(--ink-3); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: var(--t-xs); overflow-wrap: anywhere; }
-.plist > .prow[data-govhash] { padding-block: var(--s-3); row-gap: var(--s-1); }
+.plist > .prow[data-govhash] { padding-block: var(--s-2); row-gap: var(--s-1); }
 .prow-purpose {
   margin: 0;
   color: var(--ink-2);

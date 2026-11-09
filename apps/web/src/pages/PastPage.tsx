@@ -210,34 +210,13 @@ function LedgerStats({ sum, perSb }: { sum: LedgerSummary; perSb: string }) {
     );
   }
   return (
-    <div className="ledger-stats ledger-stats-compact">
-      <div className="dh-stat dh-stat--key">
-        <span className="dh-stat__label">
-          Paid by the treasury{left ? ' (partial)' : ''} <ChainProof weak={sum.weak} />
-        </span>
-        <span className="dh-stat__value" data-testid="ledger-total">
-          {left ? <small>at least </small> : null}
-          <DashValue duffs={sum.paid} />
-        </span>
-        <span className="dh-stat__note" data-testid="ledger-scope">
-          {scope}
-        </span>
-      </div>
-      <div className="dh-stat">
-        <span className="dh-stat__label">On average</span>
-        <span className="dh-stat__value">
-          <DashValue duffs={sum.paid / BigInt(sum.counted)} />
-        </span>
-        <span className="dh-stat__note">per {perSb}{left ? ', of those read' : ''}</span>
-      </div>
-      <div className="dh-stat">
-        <span className="dh-stat__label">Payments{left ? ' (partial)' : ''}</span>
-        <span className="dh-stat__value">
-          {left ? <small>at least </small> : null}
-          {formatInt(sum.payments)}
-        </span>
-        <span className="dh-stat__note">to proposals' payees{left ? ', in the superblocks read' : ''}</span>
-      </div>
+    <div className="ledger-stats">
+      <p className="ledger-stats-compact">
+        <span>Paid by the treasury{left ? ' (partial)' : ''}: <b data-testid="ledger-total">{left ? 'at least ' : ''}<DashValue duffs={sum.paid} /></b> <ChainProof weak={sum.weak} /></span>
+        <span>Average: <b><DashValue duffs={sum.paid / BigInt(sum.counted)} /></b> per superblock{left ? ', of those read' : ''}</span>
+        <span>Payments{left ? ' (partial)' : ''}: <b>{left ? 'at least ' : ''}{formatInt(sum.payments)}</b></span>
+      </p>
+      <p className="small muted" data-testid="ledger-scope">{scope}. Average per {perSb}; payments to proposals’ payees.</p>
     </div>
   );
 }
