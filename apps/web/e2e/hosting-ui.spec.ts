@@ -198,13 +198,14 @@ test.describe('accessibility', () => {
     expect(ratios.mutedOnSunk).toBeGreaterThanOrEqual(4.5);
   });
 
-  test('D-085: the budget strip is not an image wrapping links; card titles follow the page heading', async ({ page }) => {
+  test('D-085: the budget strip is not an image wrapping links; card titles follow the section heading', async ({ page }) => {
     await gotoFixtures(page);
     await expect(page.locator('.strip')).toHaveAttribute('aria-hidden', 'true');
     await expect(page.locator('.strip')).not.toHaveAttribute('role', 'img');
     await expect(page.locator('.budget p.visually-hidden')).toContainText('Allocated');
-    await expect(page.locator('article.prow h2.prow-title').first()).toBeVisible();
-    await expect(page.locator('article.prow h3')).toHaveCount(0);
+    await expect(page.getByRole('heading', { level: 2, name: 'Proposals', exact: true })).toBeVisible();
+    await expect(page.locator('article.prow h3.prow-title').first()).toBeVisible();
+    await expect(page.locator('article.prow h2')).toHaveCount(0);
   });
 });
 

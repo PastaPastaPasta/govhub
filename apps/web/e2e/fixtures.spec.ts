@@ -174,7 +174,7 @@ test.describe('fixture mode', () => {
     await gotoFixtures(page);
     await page.locator('.sentinel').scrollIntoViewIfNeeded();
     // one of the two is a lame duck (its October payment was the only one it can get): it is in the collapsed section
-    const dupLinks = page.locator('article.prow', { has: page.getByTestId('card-slug').filter({ hasText: /^Dash-Mass-Organic-Content-Attraction( ·|$)/ }) }).locator('h2 a');
+    const dupLinks = page.locator('article.prow', { has: page.getByTestId('card-slug').filter({ hasText: /^Dash-Mass-Organic-Content-Attraction( ·|$)/ }) }).locator('.prow-title a');
     await expect(dupLinks).toHaveCount(1);
     await page.getByTestId('toggle-lameduck').click();
     await expect(dupLinks).toHaveCount(2);
