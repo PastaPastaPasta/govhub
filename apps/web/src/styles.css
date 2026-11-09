@@ -2695,6 +2695,7 @@ dashhq-hash { vertical-align: middle; max-width: 100%; }
 .contest-voters li { padding-block: 4px; }
 
 .signin-button { max-inline-size: 100px; padding-inline: 10px; white-space: nowrap; }
+.signin-icon { display: none; flex: none; }
 @media (max-width: 600px) {
   .account-btn { inline-size: 36px; min-inline-size: 36px; block-size: 36px; min-block-size: 36px; padding: 8px; border-color: transparent; background: transparent; color: var(--dh-ink-2); }
   .account-btn:hover { background: var(--dh-hover); }
@@ -3130,7 +3131,7 @@ details.tr-group > .tr-table { margin: 0; border-radius: 0; }
 
 @media (max-width: 420px) {
   dashhq-bar::part(bar) { --dh-gutter: 8px; }
-  .signin-button.dh-btn { min-inline-size: 38px; min-block-size: 36px; padding-inline: 2px; font-size: 12px; }
+  .signin-button.dh-btn { inline-size: 40px; min-block-size: 40px; padding: 0; }
   .signin-label { display: none; }
-  .signin-button::after { content: attr(data-compact-label); }
+  .signin-icon { display: block; }
 }
