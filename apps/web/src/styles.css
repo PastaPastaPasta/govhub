@@ -2623,7 +2623,7 @@ details.advanced[open] > summary {
 .badge-visit-note {
   position: fixed;
   inset-inline: 1rem;
-  inset-block-end: 1rem;
+  inset-block-end: calc(1rem + var(--dh-tabs-h, 0px));
   margin: 0 auto;
   max-width: 40rem;
   padding: 0.625rem 0.875rem;
@@ -2659,12 +2659,11 @@ dashhq-hash { vertical-align: middle; max-width: 100%; }
 .contest-voters ul { list-style: none; padding: 0; margin: 8px 0; }
 .contest-voters li { padding-block: 4px; }
 
-.signin-icon { display: none; }
+.signin-button { max-inline-size: 100px; padding-inline: 10px; white-space: nowrap; }
 @media (max-width: 600px) {
-  .signin-icon { display: block; }
-  #session-button { inline-size: 36px; min-inline-size: 36px; block-size: 36px; min-block-size: 36px; padding: 8px; border-color: transparent; background: transparent; color: var(--dh-ink-2); }
-  #session-button:hover { background: var(--dh-hover); }
-  .signin-label, .account-name { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .account-btn { inline-size: 36px; min-inline-size: 36px; block-size: 36px; min-block-size: 36px; padding: 8px; border-color: transparent; background: transparent; color: var(--dh-ink-2); }
+  .account-btn:hover { background: var(--dh-hover); }
+  .account-name { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .account-chevron { display: none; }
 }
 

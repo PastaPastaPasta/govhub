@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useApp } from '../app/context.tsx';
+import { profileRegistry } from '../config/registry.ts';
 import { useForum } from '../app/forum.tsx';
 import { useTitle } from '../app/title.ts';
 import { useAuth } from '../auth/context.tsx';
@@ -18,12 +19,34 @@ function usePolls() {
   const { registry } = useApp();
   return useMemo(() => pollSource(registry), [registry]);
 }
-function TestnetOnly({ children }: { children: ReactNode }) {
+function TestnetOnly({ children, preview = false }: { children: ReactNode; preview?: boolean }) {
   const { registry } = useApp();
   const location = useLocation();
   const params = new URLSearchParams(location.search);
   params.set('network', 'testnet'); params.delete('profile'); params.delete('fixtures');
-  return registry.platformNetwork !== 'testnet' ? <section className="polls-page"><header className="dh-page-header"><h1 className="dh-page-header__title">Polls</h1><p className="dh-page-header__lede">Explore community questions and see how Dash identities have answered.</p></header><div className="dh-notice dh-notice--info"><p>Polls run on Testnet while the poll contract is tested.</p><Link to={`${location.pathname}?${params}`} className="dh-btn dh-btn--secondary">Open Polls on Testnet</Link></div><section className="dh-section polls-intro" aria-labelledby="polls-about"><h2 id="polls-about" className="dh-h2">Community opinions, on record</h2><p>Browse open questions and recent closed polls, with answer counts and results for each option. Sign in on Testnet when you want to ask or answer a question.</p><p className="muted">Polls gather opinions. Treasury funding is decided separately by masternode votes on proposals.</p></section></section> : children;
+  if (registry.platformNetwork === 'testnet') return children;
+  return <section className="polls-page">
+    <header className="dh-page-header"><h1 className="dh-page-header__title">Polls</h1><p className="dh-page-header__lede">Explore community questions and see how Dash identities have answered.</p></header>
+    <div className="dh-notice dh-notice--info"><p>Polls run on Testnet while the poll contract is tested. There are no Mainnet polls yet.</p><a href={`${location.pathname}?${params}`} className="dh-btn dh-btn--secondary">Open Polls on Testnet</a></div>
+    {preview && <TestnetPreview />}
+    <section className="dh-section polls-intro" aria-labelledby="polls-about"><h2 id="polls-about" className="dh-h2">Community opinions, on record</h2><p>Browse open questions and recent closed polls, with answer counts and results for each option. Sign in on Testnet when you want to ask or answer a question.</p><p className="muted">Polls gather opinions. Treasury funding is decided separately by masternode votes on proposals.</p></section>
+  </section>;
+}
+function TestnetPreview() {
+  const source = useMemo(() => pollSource(profileRegistry('testnet')), []);
+  const [attempt, setAttempt] = useState(0);
+  const load = useAsync(() => source.list(), [source, attempt]);
+  const polls = load.data?.slice(0, 3) ?? [];
+  return <section className="dh-section" aria-labelledby="testnet-preview">
+    <h2 id="testnet-preview" className="dh-h2">Recent Testnet polls</h2>
+    <p className="muted">Read-only preview · Open a question on Testnet to see its results.</p>
+    {load.loading ? <Loading>Reading recent Testnet polls…</Loading> : load.error ? <ReadError error={load.error} what="Platform" lead="The Testnet preview could not be read" onRetry={() => setAttempt(n => n + 1)} /> : !polls.length ? <div className="poll-empty"><h3 className="dh-h3">No Testnet polls yet</h3><p>New questions will appear here when they are published on Testnet.</p></div> : <div className="poll-preview-list">{polls.map(poll => <article key={poll.id}>
+      <h3 className="dh-h3"><a href={`/polls/${poll.id}?network=testnet`}>{poll.question}</a></h3>
+      <p className="poll-meta">Testnet · Asked <time dateTime={new Date(poll.createdAt).toISOString()}>{date(poll.createdAt)}</time> · {closed(poll) ? 'Closed' : 'Open'}</p>
+      <p className="small muted">{poll.options.join(' · ')}</p>
+    </article>)}</div>}
+    {!!polls.length && <p className="dh-sources">Testnet poll records checked against Platform proofs in this browser.</p>}
+  </section>;
 }
 function Person({ id }: { id: string }) {
   const { forum } = useForum();
@@ -60,7 +83,7 @@ function PollRow({ poll, source, archive }: { poll: Poll; source: PollSource; ar
 }
 export function PollsPage({ archive = false }: { archive?: boolean }) {
   useTitle(archive ? 'Earlier polls' : 'Polls');
-  return <TestnetOnly><PollList archive={archive} /></TestnetOnly>;
+  return <TestnetOnly preview={!archive}><PollList archive={archive} /></TestnetOnly>;
 }
 function PollList({ archive }: { archive: boolean }) {
   const source = usePolls();

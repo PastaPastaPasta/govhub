@@ -63,12 +63,9 @@ export function SessionControl() {
           </svg>
         </button>
       ) : (
-        <>
-          <button type="button" className="dh-btn dh-btn--quiet" onClick={openSignIn} title="Sign in" id="session-button" data-testid="session-button">
-            <svg className="signin-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><circle cx="12" cy="8" r="4" /><path d="M4 22v-2a8 8 0 0 1 16 0v2" /></svg>
-            <span className="signin-label">{auth.restoring ? 'Signing in…' : 'Sign in'}</span>
-          </button>
-        </>
+        <button type="button" className="signin-button dh-btn dh-btn--secondary" onClick={openSignIn} title="Sign in" id="session-button" data-testid="session-button">
+          {auth.restoring ? 'Signing in…' : 'Sign in'}
+        </button>
       )}
       <div ref={menu} id="account-menu" popover="auto" className="account-menu" aria-label="Account and settings">
         {session && (

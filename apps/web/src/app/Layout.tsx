@@ -301,13 +301,13 @@ export function Layout() {
       <a className="skip" href="#main">
         Skip to content
       </a>
-      <dashhq-bar ref={bar} product="gov" network={registry.platformNetwork} networks="mainnet testnet" product-href={'/' + profileSearch('', registry.profile)} network-settings={'/settings' + profileSearch('', registry.profile) + '#network'} sticky="">
+      <dashhq-bar ref={bar} product="gov" phone-nav="tabs" network={registry.platformNetwork} networks="mainnet testnet" product-href={'/' + profileSearch('', registry.profile)} network-settings={'/settings' + profileSearch('', registry.profile) + '#network'} sticky="">
         <img slot="logo" src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" width="22" height="22" />
         <nav slot="nav" aria-label="Governance">
-          <Link to={proposalsHref} aria-current={proposals ? 'page' : undefined}>Proposals</Link>
-          <Link to="/polls" aria-current={polls ? 'page' : undefined}>Polls</Link>
-          <Link to="/names" aria-current={names ? 'page' : undefined} data-testid="nav-names">Name contests</Link>
-          <Link to="/masternodes" aria-current={masternodes ? 'page' : undefined}>My masternodes</Link>
+          <Link to={proposalsHref} aria-current={proposals ? 'page' : undefined}><svg className="dh-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M6 3h9l3 3v15H6z" /><path d="M9 9h6M9 13h6M9 17h4" /></svg>Proposals</Link>
+          <Link to="/polls" aria-current={polls ? 'page' : undefined}><svg className="dh-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M4 20V4M4 20h17M9 17v-6M14 17V6M19 17v-9" /></svg>Polls</Link>
+          <Link to="/names" aria-current={names ? 'page' : undefined} data-testid="nav-names"><svg className="dh-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M20 12v-2a8 8 0 1 0-3 8M16 10v4a2 2 0 0 0 4 0v-2" /><circle cx="12" cy="10" r="4" /></svg>Name contests</Link>
+          <Link to="/masternodes" aria-current={masternodes ? 'page' : undefined}><svg className="dh-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><rect x="4" y="3" width="16" height="7" rx="1" /><rect x="4" y="14" width="16" height="7" rx="1" /><path d="M7 6.5h2M7 17.5h2M12 10v4" /></svg>My masternodes</Link>
         </nav>
         <div slot="actions"><SessionControl /></div>
       </dashhq-bar>
