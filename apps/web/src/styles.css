@@ -2816,6 +2816,9 @@ dashhq-hash { vertical-align: middle; max-width: 100%; }
 .owner-page-quote p { margin: 0; }
 .prow-slug { margin: 0; color: var(--ink-3); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: var(--t-xs); overflow-wrap: anywhere; }
 .plist > .prow[data-govhash] { padding-block: var(--s-2); row-gap: var(--s-1); }
+@media (min-width: 761px) {
+  .plist > .prow[data-govhash] { padding-block: var(--s-1); }
+}
 .prow-purpose {
   margin: 0;
   color: var(--ink-2);
