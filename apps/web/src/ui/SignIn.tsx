@@ -63,7 +63,7 @@ export function SessionControl() {
           </svg>
         </button>
       ) : (
-        <button type="button" className="signin-button dh-btn dh-btn--secondary" onClick={openSignIn} aria-label={auth.restoring ? 'Signing in…' : 'Sign in'} title="Sign in" data-compact-label={auth.restoring ? 'Wait…' : 'Sign in'} id="session-button" data-testid="session-button">
+        <button type="button" className="signin-button dh-btn dh-btn--secondary" onClick={openSignIn} aria-label={auth.restoring ? 'Signing in…' : 'Sign in'} title="Sign in" data-compact-label={auth.restoring ? 'Wait…' : 'Log in'} id="session-button" data-testid="session-button">
           <span className="signin-label" aria-hidden="true">{auth.restoring ? 'Signing in…' : 'Sign in'}</span>
         </button>
       )}
