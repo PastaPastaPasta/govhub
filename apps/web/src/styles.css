@@ -3131,7 +3131,7 @@ details.tr-group > .tr-table { margin: 0; border-radius: 0; }
 
 @media (max-width: 420px) {
   dashhq-bar::part(bar) { --dh-gutter: 8px; }
-  .signin-button.dh-btn { inline-size: 40px; min-block-size: 40px; padding: 0; }
+  .signin-button.dh-btn { inline-size: 36px; min-block-size: 40px; padding: 0; }
   .signin-label { display: none; }
   .signin-icon { display: block; }
 }
