@@ -18,6 +18,7 @@ import { countNames, proposalHref, proposalMatches, type Checked, type Row } fro
 import { onlyUnreached, unfinishedReason } from '../lib/netError.ts';
 import { ownerPageOf, useOwnerPages } from '../lib/ownerPages.ts';
 import { OwnerWordsNote } from '../ui/OwnerPage.tsx';
+import { SlowRead } from '../ui/SlowRead.tsx';
 
 /** Display names of these identities (self-chosen profiles), for the owners named in proposal URLs. */
 function useProfiles(ids: readonly string[]): ReadonlyMap<string, Profile> {
@@ -176,6 +177,7 @@ export function ActivePage() {
           )}
         </div>
         <UncheckedNote rows={[...all, ...activeRows.lameDucks]} />
+        {(gov.active.loading || gov.talliesLoading || gov.cycle.loading) && <SlowRead />}
         {gov.active.loading && rows.length === 0 ? (
           <div className="plist" aria-busy="true">
             {Array.from({ length: 6 }, (_, i) => (

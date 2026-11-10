@@ -199,7 +199,6 @@ a:hover {
 
 .main {
   /* the shell bar's gutter, so page content lines up with the bar's left edge at every width */
-  padding-bottom: var(--dh-tabs-h, 0px);
 }
 .count {
   margin-inline-start: 0.375rem;
@@ -3129,6 +3128,11 @@ details.tr-group > .tr-table { margin: 0; border-radius: 0; }
   .p-funds { padding: 0; }
 }
 .budget-facts .usd-value { color: var(--ink-2); }
+
+.main.dh-page { padding-block-end: calc(var(--dh-8) + var(--dh-tabs-h, 0px)); }
+@media (max-width: 640px) {
+  .main.dh-page { padding-block-end: calc(var(--dh-7) + var(--dh-tabs-h, 0px)); }
+}
 
 @media (max-width: 420px) {
   dashhq-bar::part(bar) { --dh-gutter: 8px; }

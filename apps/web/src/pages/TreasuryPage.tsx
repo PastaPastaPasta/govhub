@@ -21,6 +21,7 @@ import { ChainProof, ProofTag } from '../ui/ProofTag.tsx';
 import { ProposalTabs } from '../ui/ProposalTabs.tsx';
 import { UsdValue } from '../ui/UsdValue.tsx';
 import { useLedger, LEDGER_STEP } from '../ui/useLedger.ts';
+import { SlowRead } from '../ui/SlowRead.tsx';
 
 /** How far the active list and its votes got: every sum over them waits for 'ok'. */
 type ReadState = 'counting' | 'ok' | 'no-list' | 'no-votes';
@@ -57,6 +58,7 @@ export function TreasuryPage() {
           The Dash treasury pays the proposals masternodes vote for, {superblockCadence(params)}, in a superblock.
         </p>
       </header>
+      {(state === 'counting' || gov.cycle.loading) && <SlowRead />}
       {cycle ? (
         <>
           <CycleStats cycle={cycle} view={view} state={state} />
