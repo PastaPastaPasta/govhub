@@ -19,6 +19,9 @@ import { VerificationDrawer } from '../ui/trust/VerificationDrawer.tsx';
 import { OfflineSign, ProposalVotePanel } from '../ui/VotePanel.tsx';
 import { useAsync } from '../ui/hooks.ts';
 import type { Proposal, Sourced } from '../data/types.ts';
+import type { DataSource } from '../data/repo.ts';
+import { findOnOtherProfile } from '../data/elsewhere.ts';
+import { PROFILES, saveErrorText } from '../config/registry.ts';
 import { formatDash, formatDate, formatDateTime, formatDuration, formatInt, shortHash, urlHost } from '../lib/format.ts';
 import { passState, perPayment, votingDeadlineTime } from '../lib/governance.ts';
 import { deriveRow } from '../lib/view.ts';
@@ -30,10 +33,11 @@ export function ProposalByHash() {
   const { hash = '' } = useParams();
   const { source } = useApp();
   const [attempt, setAttempt] = useState(0); // Retry re-runs the read in place: no reload, so memory-only keys stay
-  const load = useAsync(() => (/^[0-9a-fA-F]{64}$/.test(hash) ? source.proposal(hash.toLowerCase()) : Promise.resolve(null)), [source, hash, attempt]);
+  const h = /^[0-9a-fA-F]{64}$/.test(hash) ? hash.toLowerCase() : null;
+  const load = useAsync(() => (h ? source.proposal(h) : Promise.resolve(null)), [source, h, attempt]);
   if (load.loading) return <Loading />;
   if (load.error) return <ReadError error={load.error} what="Platform" lead="The proposal could not be read" onRetry={() => setAttempt((n) => n + 1)} />;
-  if (!load.data) return <NotFound what={`a proposal with hash ${shortHash(hash)}`} />;
+  if (!load.data) return <NotFound what={`a proposal with hash ${shortHash(hash)}`} probe={h ? { key: h, has: async (s) => !!(await s.proposal(h)) } : null} />;
   return <ProposalView sp={load.data} />;
 }
 
@@ -51,7 +55,7 @@ export function ProposalByName() {
   const all = load.data ?? [];
   const named = identity ? all.filter((s) => urlClaimIdentity(s.value.url, s.value.name, registry.forum.claimPortals) === identity) : [];
   const list = named.length ? named : all;
-  if (list.length === 0) return <NotFound what={`a proposal named "${name}"`} />;
+  if (list.length === 0) return <NotFound what={`a proposal named "${name}"`} probe={{ key: name, has: async (s) => (await s.byName(name)).length > 0 }} />;
   if (list.length === 1) return <ProposalView sp={list[0]!} />;
   return (
     <section className="page-narrow">
@@ -79,13 +83,57 @@ function Loading() {
   );
 }
 
-function NotFound({ what }: { what: string }) {
+/** `probe.key` names what `probe.has` looks for: a new key asks again. */
+function NotFound({ what, probe }: { what: string; probe: { key: string; has: (s: DataSource) => Promise<boolean> } | null }) {
+  const { mode, registry, switchProfile } = useApp();
+  const [switchError, setSwitchError] = useState<string | null>(null);
+  // A link shared from another network: ask the other profiles (live data only; the fixture snapshot is one network's).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const other = useAsync(() => (mode === 'live' && probe ? findOnOtherProfile(registry.profile, probe.has) : Promise.resolve(null)), [mode, registry.profile, probe?.key]);
+  const here = PROFILES[registry.profile].label;
+  const there = other.data ? PROFILES[other.data] : null;
+  if (there) {
+    return (
+      <section className="page-narrow" data-testid="elsewhere">
+        <h1>This proposal is on {there.label}</h1>
+        <p>
+          You are viewing {here}, which has no record of {what}. {there.label} has it.
+        </p>
+        <p className="form-actions elsewhere-actions">
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => {
+              try {
+                switchProfile(there.id);
+              } catch (e) {
+                setSwitchError(saveErrorText(e));
+              }
+            }}
+          >
+            Switch to {there.label}
+          </button>
+          <Link to="/">Stay on {here}</Link>
+        </p>
+        {switchError && (
+          <p className="error" role="alert">
+            {switchError}
+          </p>
+        )}
+      </section>
+    );
+  }
   return (
     <section className="page-narrow">
       <h1>Not found</h1>
       <p>
-        Platform has no record of {what}. It may not be published yet. <Link to="/">Back to active proposals</Link>
+        Platform has no record of {what} on {here}. It may not be published yet. <Link to="/">Back to active proposals</Link>
       </p>
+      {probe && other.loading && (
+        <p className="muted small" aria-busy="true">
+          <span className="spinner" aria-hidden="true" /> Checking the other networks…
+        </p>
+      )}
     </section>
   );
 }

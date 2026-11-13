@@ -2033,6 +2033,10 @@ details summary {
   gap: 0.5rem;
   flex-wrap: wrap;
 }
+.elsewhere-actions {
+  align-items: center;
+}
+
 
 /* ---- sign-in, account, funding ------------------------------------------------------------- */
 .sheet {
