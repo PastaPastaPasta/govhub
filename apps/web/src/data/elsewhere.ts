@@ -7,10 +7,10 @@ import { liveSource, type DataSource } from './repo.ts';
  * at a time (Mainnet first), and a profile that cannot be read counts as not having it. Dev is never offered: it is for development,
  * and its copy of mainnet data would turn a proposal Mainnet has not published yet into "this is on Dev".
  */
-export async function findOnOtherProfile(current: ProfileId, has: (s: DataSource) => Promise<boolean>, make: (id: ProfileId) => DataSource = (id) => liveSource(profileRegistry(id))): Promise<ProfileId | null> {
+export async function findOnOtherProfile(current: ProfileId, has: (s: DataSource) => Promise<boolean>): Promise<ProfileId | null> {
   for (const id of PROFILE_ORDER) {
     if (id === current || id === 'dev' || !PROFILES[id].deployed) continue;
-    if (await has(make(id)).catch(() => false)) return id;
+    if (await has(liveSource(profileRegistry(id))).catch(() => false)) return id;
   }
   return null;
 }
