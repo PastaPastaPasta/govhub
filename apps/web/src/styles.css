@@ -2948,6 +2948,16 @@ li[data-status='now'] > .fund-dot {
   margin-block: 0.625rem;
   font-weight: 600;
 }
+/* In the description's place on an unclaimed proposal: the way to write one, so it should not read as an aside. */
+.p-about .claim-panel {
+  margin-block-start: 0;
+  border-color: var(--accent);
+  background: var(--accent-wash);
+}
+.p-about .claim-panel > summary {
+  color: var(--accent-ink);
+  cursor: pointer;
+}
 .claim-body {
   display: grid;
   gap: 0.75rem;

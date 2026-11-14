@@ -1,6 +1,6 @@
 // Comment editor: markdown with a live preview, the UTF-8 byte budget (5,000 B), the fee estimate and the balance
 // it will be paid from, shown before anything is signed.
-import { useState, type FormEvent } from 'react';
+import { useId, useState, type FormEvent } from 'react';
 import { commentCost, COMMENT_MAX_BYTES, isBlank, upfrontRequired } from '@govhub/forum';
 import { useForum } from '../app/forum.tsx';
 import { formatCredits, formatInt } from '../lib/format.ts';
@@ -11,8 +11,21 @@ import { LowBalance, WriteError } from './WriteError.tsx';
 
 const enc = new TextEncoder();
 
-export function Composer({ onSubmit, onCancel, label, autoFocus = false }: { onSubmit(body: string): Promise<void>; onCancel?: () => void; label: string; autoFocus?: boolean }) {
+export function Composer({
+  onSubmit,
+  onCancel,
+  label,
+  hint,
+  autoFocus = false,
+}: {
+  onSubmit(body: string): Promise<void>;
+  onCancel?: () => void;
+  label: string;
+  hint?: string;
+  autoFocus?: boolean;
+}) {
   const { balance } = useForum();
+  const hintId = useId();
   const [body, setBody] = useState('');
   const [preview, setPreview] = useState(false);
   const { busy, error, needsTopUp, run } = useAction();
@@ -36,6 +49,11 @@ export function Composer({ onSubmit, onCancel, label, autoFocus = false }: { onS
   };
   return (
     <form className="composer" onSubmit={submit}>
+      {hint && (
+        <p className="muted small" id={hintId} data-testid="composer-hint">
+          {hint}
+        </p>
+      )}
       <div className="composer-tabs" role="group" aria-label="Editor mode">
         <button type="button" className={`btn btn-quiet ${preview ? '' : 'on'}`} aria-pressed={!preview} onClick={() => setPreview(false)}>
           Write
@@ -49,7 +67,7 @@ export function Composer({ onSubmit, onCancel, label, autoFocus = false }: { onS
           <Markdown text={body} />
         </div>
       ) : (
-        <textarea aria-label={label} value={body} onChange={(e) => (setBody(e.target.value), setPosted(false))} rows={4} placeholder="Markdown: **bold**, _italic_, `code`, links, lists, > quotes. No HTML, images are shown as links." autoFocus={autoFocus} />
+        <textarea aria-label={label} aria-describedby={hint ? hintId : undefined} value={body} onChange={(e) => (setBody(e.target.value), setPosted(false))} rows={4} placeholder="Markdown: **bold**, _italic_, `code`, links, lists, > quotes. No HTML, images are shown as links." autoFocus={autoFocus} />
       )}
       <div className="composer-foot">
         <p className={`small ${over ? 'error' : 'muted'}`} data-testid="composer-meta">

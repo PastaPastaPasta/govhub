@@ -110,7 +110,7 @@ function useThread(govHash: string) {
  * The comments under one thread key: a proposal's govHash, or a username contest's key (contests/model.ts contestKey). `featured` are
  * the authors the default view always shows besides MN badge holders.
  */
-export function Discussion({ govHash, featured }: { govHash: string; featured: Featured }) {
+export function Discussion({ govHash, featured, composerNote }: { govHash: string; featured: Featured; composerNote?: string }) {
   const { source, registry, mode } = useApp();
   const { forum, session, write, moderation, reloadModeration } = useForum();
   const thread = useThread(govHash);
@@ -277,7 +277,7 @@ export function Discussion({ govHash, featured }: { govHash: string; featured: F
       </p>
 
       {session ? (
-        <Composer label="Post comment" onSubmit={(b) => post(b)} />
+        <Composer label="Post comment" hint={composerNote} onSubmit={(b) => post(b)} />
       ) : (
         <p className="signin-cta">
           <button type="button" className="btn" onClick={openSignIn}>

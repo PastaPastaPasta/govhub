@@ -152,9 +152,11 @@ test.describe('discussion (fixtures)', () => {
     await expect(comment(page, 'Cost per funded wallet').locator('.chip-owner')).toHaveText('proposal owner');
     const post = page.getByTestId('owner-post');
     await expect(post.getByRole('heading', { name: 'Dash growth, Q4 2026' })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'About this proposal' }).getByTestId('claim-panel')).toHaveCount(0);
     await expect(post.locator('table td', { hasText: '420' })).toBeVisible();
 
     await signInAs(page, /Dash Growth team/);
+    await expect(page.getByTestId('composer-hint')).toHaveCount(0);
     await post.getByRole('button', { name: 'Edit the description' }).click();
     await post.getByLabel('Title').fill('Dash growth, Q4 2026 (updated)');
     await post.getByLabel('Description (markdown)').fill('## Update\n\nNow with **numbers**.');
@@ -168,7 +170,11 @@ test.describe('discussion (fixtures)', () => {
     await page.getByRole('button', { name: 'Sign out' }).click();
     await gotoFixtures(page, '/p/OrchardPay');
     await signInAs(page, /^Alice$/);
-    const panel = page.getByTestId('claim-panel');
+    // Unclaimed: the claim sits where the description goes, and the comment box says it is not the description.
+    const panel = page.getByRole('region', { name: 'About this proposal' }).getByTestId('claim-panel');
+    await expect(panel.locator('summary')).toHaveText('Are you the proposal owner? Claim ownership to write the description');
+    await expect(page.getByRole('complementary', { name: 'Summary' }).getByTestId('claim-panel')).toHaveCount(0);
+    await expect(page.getByLabel('Post comment')).toHaveAccessibleDescription("This posts a comment in the discussion. Only the proposal's owner can write the description above.");
     await panel.locator('summary').click();
     await expect(panel.getByTestId('claim-message')).toHaveText(/^govhub-claim\|mainnet\|8410614191c3f2df69a224a1c34ebc745288700515fdece6ad3764bfc1c987fe\|[1-9A-HJ-NP-Za-km-z]{43,44}$/);
     await expect(panel).toContainText('signmessage "XbSrPJNL8Zt7qJQxeM4meNHEWS5orGbJCs"');
