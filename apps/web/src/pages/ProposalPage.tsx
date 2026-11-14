@@ -173,6 +173,10 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
   const ownerId = own.verdict?.owner?.identityId ?? null;
   const post = useOwnerPost(p.govHash, ownerId);
   const featured = useMemo(() => proposalOwner(ownerId), [ownerId]);
+  // Known to be unclaimed (not still loading, not a failed read): the claim is how anyone gets to write the description, so it sits
+  // where the description goes rather than in the sidebar.
+  const unclaimed = !own.loading && !own.error && !ownerId;
+  const claim = <ClaimPanel p={p} own={own} collateral={trust.collateral.verdict} />;
 
   const t = row.tally?.value;
   const active = p.endEpoch > now;
@@ -302,10 +306,15 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
                 )}
               </p>
             )}
+            {unclaimed && claim}
           </section>
 
           <ErrorBoundary what="discussion">
-            <Discussion govHash={p.govHash} featured={featured} />
+            <Discussion
+              govHash={p.govHash}
+              featured={featured}
+              composerNote={unclaimed ? "This posts a comment in the discussion. Only the proposal's owner can write the description above." : undefined}
+            />
           </ErrorBoundary>
         </div>
 
@@ -346,7 +355,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
               Hashes, raw data and every check
             </button>
           </section>
-          <ClaimPanel p={p} own={own} collateral={trust.collateral.verdict} />
+          {!unclaimed && claim}
         </aside>
       </div>
 

@@ -224,7 +224,7 @@ export function ClaimPanel({ p, own, collateral }: { p: Proposal; own: Ownership
 
   return (
     <details className="claim-panel" data-testid="claim-panel">
-      <summary>{o ? 'Claim this proposal (a stronger claim outranks the current one)' : 'Are you the proposal owner? Claim it'}</summary>
+      <summary>{o ? 'Claim this proposal (a stronger claim outranks the current one)' : 'Are you the proposal owner? Claim ownership to write the description'}</summary>
       <div className="claim-body">
         <p className="small">
           A claim links the proposal to your identity: your comments get the owner label and you can publish the description shown here. The strongest proof wins: an identity
