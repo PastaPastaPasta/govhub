@@ -174,7 +174,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
   const post = useOwnerPost(p.govHash, ownerId);
   const featured = useMemo(() => proposalOwner(ownerId), [ownerId]);
   // Known to be unclaimed (not still loading, not a failed read): the claim is how anyone gets to write the description, so it sits
-  // where the description goes rather than in the sidebar.
+  // where the description goes rather than in the sidebar. Neither place shows it while loading: a form moved mid-edit would reset.
   const unclaimed = !own.loading && !own.error && !ownerId;
   const claim = <ClaimPanel p={p} own={own} collateral={trust.collateral.verdict} />;
 
@@ -355,7 +355,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
               Hashes, raw data and every check
             </button>
           </section>
-          {!unclaimed && claim}
+          {!own.loading && !unclaimed && claim}
         </aside>
       </div>
 
