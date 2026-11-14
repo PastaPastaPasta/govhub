@@ -1,7 +1,7 @@
 // /p/h/<govHash> (canonical) and /p/<name> (slug; duplicate names get a chooser). The page leads with what a reader wants: the ask,
 // whether it will be funded, the vote, the description and the discussion. Every check still runs (ui/trust/useProposalTrust.ts)
 // and adds up to one badge; its detail is in the "How do we know?" drawer.
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { urlClaimIdentity } from '@govhub/verify';
 import { useApp } from '../app/context.tsx';
@@ -173,9 +173,16 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
   const ownerId = own.verdict?.owner?.identityId ?? null;
   const post = useOwnerPost(p.govHash, ownerId);
   const featured = useMemo(() => proposalOwner(ownerId), [ownerId]);
-  // Known to be unclaimed (not still loading, not a failed read): the claim is how anyone gets to write the description, so it sits
-  // where the description goes rather than in the sidebar. Neither place shows it while loading: a form moved mid-edit would reset.
-  const unclaimed = !own.loading && !own.error && !ownerId;
+  // Known to be unclaimed (owner read and collateral check done, as the latter can reveal a method-3 owner; not a failed read): the
+  // claim is how anyone gets to write the description, so it sits where the description goes rather than in the sidebar. The place is
+  // decided once per proposal and shown only then, since a form moved mid-edit (a recheck, a late owner) would reset.
+  const settled = !own.loading && (!!trust.collateral.verdict || !!trust.collateral.error);
+  const unclaimed = settled && !own.error && !ownerId;
+  const [claimPlace, setClaimPlace] = useState<{ govHash: string; about: boolean } | null>(null);
+  useEffect(() => {
+    if (settled && claimPlace?.govHash !== p.govHash) setClaimPlace({ govHash: p.govHash, about: unclaimed });
+  }, [settled, unclaimed, claimPlace, p.govHash]);
+  const claimAbout = claimPlace?.govHash === p.govHash ? claimPlace.about : null;
   const claim = <ClaimPanel p={p} own={own} collateral={trust.collateral.verdict} />;
 
   const t = row.tally?.value;
@@ -306,7 +313,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
                 )}
               </p>
             )}
-            {unclaimed && claim}
+            {claimAbout === true && claim}
           </section>
 
           <ErrorBoundary what="discussion">
@@ -355,7 +362,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
               Hashes, raw data and every check
             </button>
           </section>
-          {!own.loading && !unclaimed && claim}
+          {claimAbout === false && claim}
         </aside>
       </div>
 
