@@ -253,8 +253,10 @@ export async function runCollateralFunding(o: CollateralFundingOptions): Promise
   const view = (note?: string): CollateralFundingView => {
     const counted = rec.deposits.filter((d) => d.confirmed);
     const inputs = Math.max(1, counted.length + (rec.deposits.length > counted.length ? 1 : 0));
-    const needed = GOVERNANCE_PROPOSAL_FEE_DUFFS + collateralFeeDuffs(inputs);
     const have = sum(rec.deposits);
+    // still short after a payment: the next payment is one more input, so ask for its fee too
+    const short = rec.deposits.length > 0 && have < GOVERNANCE_PROPOSAL_FEE_DUFFS + collateralFeeDuffs(inputs);
+    const needed = GOVERNANCE_PROPOSAL_FEE_DUFFS + collateralFeeDuffs(short ? inputs + 1 : inputs);
     const remaining = rec.tx || have >= needed ? 0n : needed - have;
     const rounded = roundUpForRequest(remaining);
     return {
