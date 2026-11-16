@@ -12,6 +12,12 @@ export interface AppAuthSession extends Session {
   readonly auth: AuthSession;
 }
 
+/** A wallet (App Connect) sign-in: its key is bound to the forum contract, so it cannot post badges or anything else outside it. */
+export const isWalletSession = (s: Session | null | undefined): boolean => (s as Partial<AppAuthSession> | null | undefined)?.auth?.source === 'wallet';
+
+/** Why a wallet sign-in cannot get an MN badge. */
+export const WALLET_BADGE_TEXT = 'MN badges need a sign-in with your recovery phrase or key: a wallet sign-in can only write govhub comments, reactions and posts.';
+
 export function appSessionFromAuth(auth: AuthSession, platform: () => Promise<PlatformPort>): AppAuthSession {
   return {
     auth,

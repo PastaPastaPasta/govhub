@@ -66,12 +66,15 @@ for (const [vp, size] of [
       expect(errors).toEqual([]);
     });
 
-    test('flag on: "Not me" drops the answer and keeps waiting', async ({ page }) => {
+    test('flag on: "Not me" drops the answer, ignores that identity\'s next answer, and keeps waiting', async ({ page }) => {
       await gotoFixtures(page, '/?appconnect=1');
       await openSheet(page);
       await page.getByTestId('wallet-signin').click();
       await page.getByRole('button', { name: 'Approve as Alice' }).click();
       await page.getByTestId('wallet-not-me').click();
+      await expect(page.getByTestId('wallet-waiting')).toBeVisible();
+      await page.getByRole('button', { name: 'Approve as Alice' }).click();
+      await page.waitForTimeout(3_000);
       await expect(page.getByTestId('wallet-waiting')).toBeVisible();
       await expect(page.getByTestId('session-button')).toHaveText('Sign in');
     });

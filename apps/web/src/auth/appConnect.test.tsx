@@ -3,7 +3,7 @@
 import { storageFundingStore, makeSession } from '@govhub/auth';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { appConnectEnabled, appConnectOptIn, PROFILES, PROFILE_ORDER, profileRegistry } from '../config/registry.ts';
-import { appSessionFromAuth } from '../session/authSession.ts';
+import { appSessionFromAuth, isWalletSession } from '../session/authSession.ts';
 import { button, click, render } from '../test/render.tsx';
 
 const auth = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
@@ -97,6 +97,10 @@ describe('a wallet session', () => {
     const writeDocument = vi.fn(async () => ({ id: 'x', revision: 1 }));
     const app = appSessionFromAuth(s, async () => ({ writeDocument }) as never);
     expect(app.label).toBe('Dash wallet, key 7 (HIGH)');
+    // what closes the badge flow and the other key-dependent views to it
+    expect(isWalletSession(app)).toBe(true);
+    expect(isWalletSession(appSessionFromAuth({ ...s, source: 'seed' } as never, async () => ({}) as never))).toBe(false);
+    expect(isWalletSession(null)).toBe(false);
     await expect(app.signAndBroadcastDocument({ action: 'create', contractId: 'BqszMpFvXm11jWeUYRqQu2yREZi7EzgkFfDKZR9dqamq', type: 'mnBadge', data: {} })).rejects.toThrow(/can only write govhub comments/);
     expect(writeDocument).not.toHaveBeenCalled();
     await app.signAndBroadcastDocument({ action: 'create', contractId: forum, type: 'comment', data: {} });

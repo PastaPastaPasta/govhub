@@ -47,12 +47,16 @@ reactions, posts, profiles and block lists, and nothing else: no credit transfer
    unbound, of another purpose or unrequested; the primary binding is granted; nothing expires within an hour of the latest block
    time and the budget has credits left. A key the page's node does not show yet is looked for again for 30 seconds.
 4. Asks "Continue as <DPNS name or id>?" with the budget and the expiry, because anyone who sees a request can answer it. Several
-   identities answering are listed to choose from; "Not me" drops one.
+   identities answering are listed to choose from; "Not me" drops one and ignores its later answers to the same code. Answers
+   already shown stay on screen if the code then expires or gets flooded.
 5. Signs in with the session key through the existing document writer. The key stays in the tab's memory; it is not shared with
-   other tabs (they rebuild sessions through key sign-in, which refuses bound keys) and is wiped on sign-out.
+   other tabs (they rebuild sessions through key sign-in, which refuses bound keys) and is wiped on sign-out. So a reload or a
+   second tab asks the wallet again, and registers another key on the identity; the wallet may retire the previous one, since
+   every tab of a browser sends the same `CONNECTION_ID`.
 
 A wallet session cannot top up, add a passkey, pay for or submit a proposal (each derives from or stores the signing key, which is
-temporary), or post a masternode badge (another contract). Those views say why instead, and a write to any contract but the forum
+temporary), request a masternode badge (it posts to the badge contract, so the token could never be posted), or open a saved
+masternode keyring. Those views say why instead, and a write to any contract but the forum
 is refused before it reaches Platform, so a misrouted write never spends the key's budget.
 
 Fixture mode (`?fixtures=1&appconnect=1`) answers the request with a simulated wallet through the real verifier, for demos and the

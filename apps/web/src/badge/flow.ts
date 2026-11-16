@@ -6,6 +6,7 @@ import { clientPostingWindow, displayWindow, EPOCH_PARAMS, epochOf, epochStart, 
 import { encodeWif } from '@govhub/verify';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
+import { isWalletSession, WALLET_BADGE_TEXT } from '../session/authSession.ts';
 import { errText, formatInt } from '../lib/format.ts';
 import { assertUsableKey, type OwnedMasternode } from '../voting/masternodes.ts';
 import { checkKeyAvailability, etaSeconds, isActive, isHeld, lapseHeight, nearLapse, type BadgeJob, type KeyAvailability } from './client.ts';
@@ -239,6 +240,7 @@ export function useMnBadge(): MnBadge {
   let unusableText: string | null = null;
   if (mode !== 'live' || !ctx.contractId || !ctx.reader) unusableText = 'MN badges need live data on a network where the badge contract is deployed (testnet for now).';
   else if (!session) unusableText = 'Sign in to get an MN badge.';
+  else if (isWalletSession(session)) unusableText = WALLET_BADGE_TEXT;
   else if (!issuer) unusableText = 'Your list of badge issuers has none turned on (Settings).';
   const ready = availability?.state === 'ready' ? readiness(availability.av, ctx.privacy, p) : null;
   const [cancelled, setCancelled] = useState<string | null>(null);

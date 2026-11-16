@@ -288,6 +288,34 @@ describe('startPolling', () => {
     expect(ev2).toEqual([{ type: 'rejected', ownerId: ALICE, reason: 'key-not-found' }]);
   });
 
+  it('a candidate whose check throws does not hold up the others', async () => {
+    const s = setup();
+    const other = toBase58(new Uint8Array(32).fill(1)); // sorts before ALICE
+    const sealed = sealPayload({ appEphemeralPubKey: s.request.appEphemeralPubKey, ownerId: fromBase58(other), slots: [secp256k1.utils.randomSecretKey()] });
+    s.f.setResponses([s.candidate, { ownerId: other, ...sealed }]);
+    const port: AppConnectPort = { ...s.f.port, identityKeys: async (id) => (id === other ? Promise.reject(new Error('odd answer')) : s.f.port.identityKeys(id)) };
+    const c = clock(NOW);
+    const events: PollEvent[] = [];
+    startPolling({ request: s.request, appEphemeralPrivateKey: s.login.appEphemeralPrivateKey, port, onEvent: (e) => events.push(e), ...c });
+    await c.advance(0);
+    expect(events.map((e) => e.type)).toEqual(['error', 'grant']);
+  });
+
+  it('wipes a grant that finishes verifying after stop()', async () => {
+    const s = setup();
+    s.f.setResponses([s.candidate]);
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const port: AppConnectPort = { ...s.f.port, remainingBudgets: async (id, k) => (await gate, s.f.port.remainingBudgets(id, k)) };
+    const events: PollEvent[] = [];
+    const p = startPolling({ request: s.request, appEphemeralPrivateKey: s.login.appEphemeralPrivateKey, port, onEvent: (e) => events.push(e), ...clock(NOW) });
+    await settle();
+    p.stop();
+    release();
+    await settle();
+    expect(events).toEqual([]);
+  });
+
   it('reports read errors and keeps polling; stop() ends it', async () => {
     const s = setup();
     let fail = true;

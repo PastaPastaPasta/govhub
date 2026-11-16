@@ -78,6 +78,8 @@ export default function WalletSignIn() {
   const [trouble, setTrouble] = useState<string | null>(null);
   const poller = useRef<Poller | null>(null);
   const grantsRef = useRef<Grant[]>([]);
+  // identities the user said "Not me" to: a fresh answer from them is not shown again for this code
+  const declined = useRef(new Set<string>());
   grantsRef.current = grants;
   const network = registry.platformNetwork;
   const contractId = registry.forum.contractId;
@@ -89,6 +91,7 @@ export default function WalletSignIn() {
     setGrants([]);
     setNote(null);
     setTrouble(null);
+    declined.current = new Set();
     (async () => {
       // fixture mode: a simulated wallet and Platform (walletDemo.ts) answer instead
       const wallet = demo ? demoWallet() : null;
@@ -102,7 +105,10 @@ export default function WalletSignIn() {
         appEphemeralPrivateKey: req.appEphemeralPrivateKey,
         port,
         onEvent(e) {
-          if (!live) return;
+          if (!live || (e.type === 'grant' && declined.current.has(e.grant.identityId))) {
+            if (e.type === 'grant') wipeGrant(e.grant);
+            return;
+          }
           if (e.type === 'grant') {
             setTrouble(null);
             // an identity that answers again (a second tap in the wallet) replaces its earlier answer
@@ -169,6 +175,7 @@ export default function WalletSignIn() {
     [auth, network, demo, forum.store, forumSignIn],
   );
   const decline = (g: Grant) => {
+    declined.current.add(g.identityId);
     wipeGrant(g);
     setGrants((l) => l.filter((x) => x !== g));
   };
@@ -178,18 +185,6 @@ export default function WalletSignIn() {
       <p className="muted" data-testid="wallet-starting">
         <span className="spinner" aria-hidden="true" /> Connecting to Dash Platform…
       </p>
-    );
-  }
-  if (phase.kind === 'failed') {
-    return (
-      <div className="wallet-signin" data-testid="wallet-failed">
-        <p className="error" role="alert">
-          {phase.message}
-        </p>
-        <button type="button" className="btn btn-primary" onClick={() => setAttempt((n) => n + 1)}>
-          Try again
-        </button>
-      </div>
     );
   }
   if (grants.length) {
@@ -223,6 +218,19 @@ export default function WalletSignIn() {
           })}
         </ul>
         <p className="small muted">Only continue if this is the identity you just approved in your wallet: anyone who sees a sign-in code can answer it.</p>
+        <p className="small muted">The sign-in lasts while this tab is open. A reload or another tab asks your wallet again.</p>
+      </div>
+    );
+  }
+  if (phase.kind === 'failed') {
+    return (
+      <div className="wallet-signin" data-testid="wallet-failed">
+        <p className="error" role="alert">
+          {phase.message}
+        </p>
+        <button type="button" className="btn btn-primary" onClick={() => setAttempt((n) => n + 1)}>
+          Try again
+        </button>
       </div>
     );
   }

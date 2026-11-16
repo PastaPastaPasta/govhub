@@ -5,6 +5,7 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { requestHash, type ConnectRequest } from './codec.ts';
 import type { AppConnectPort, Candidate } from './port.ts';
 import { verifyCandidate, type Grant, type RejectReason } from './verify.ts';
+import { wipeGrant } from './login.ts';
 
 export const PAGE_SIZE = 10;
 export const MAX_CANDIDATES = 20;
@@ -90,6 +91,7 @@ export function startPolling(o: {
 
   const emit = (e: PollEvent) => {
     if (!stopped) o.onEvent(e);
+    else if (e.type === 'grant') wipeGrant(e.grant);
   };
   const giveUp = (why: 'expired' | 'too-many') => {
     emit({ type: 'gave-up', why });
@@ -117,7 +119,14 @@ export function startPolling(o: {
         if (stopped) return;
         const k = candidateKey(c);
         if (done.has(k)) continue;
-        const v = await verifyCandidate({ request: o.request, appEphemeralPrivateKey: o.appEphemeralPrivateKey, candidate: c, port: o.port });
+        let v: Awaited<ReturnType<typeof verifyCandidate>>;
+        try {
+          v = await verifyCandidate({ request: o.request, appEphemeralPrivateKey: o.appEphemeralPrivateKey, candidate: c, port: o.port });
+        } catch (error) {
+          // a failed read for one candidate never holds up the others; it is looked at again next round
+          emit({ type: 'error', error });
+          continue;
+        }
         if (v.ok) {
           done.add(k);
           emit({ type: 'grant', grant: v.grant });
