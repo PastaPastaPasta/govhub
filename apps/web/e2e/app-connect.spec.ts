@@ -1,5 +1,5 @@
-// Sign in with a Dash wallet (App Connect), behind its flag. Off (the default on every profile): the sheet shows the disabled "Coming
-// soon" button and the App Connect chunk is never fetched. On (the hidden ?appconnect=1 opt-in): fixture mode answers the request with
+// Sign in with a Dash wallet (App Connect), behind its flag. On by default on Mainnet (the default profile). Off (?appconnect=0): the
+// sheet shows the disabled "Coming soon" button and the App Connect chunk is never fetched. On: fixture mode answers the request with
 // a simulated wallet, through the real verifier; live mode with no network shows the error state.
 import { expect, test, type Page } from '@playwright/test';
 import { gotoFixtures, offline, watchPage } from './helpers.ts';
@@ -23,12 +23,21 @@ for (const [vp, size] of [
   test.describe(vp, () => {
     test.use({ viewport: size, deviceScaleFactor: vp === 'mobile' ? 2 : 1 });
 
-    test('flag off: "Coming soon", no App Connect code fetched, no page errors', async ({ page, context }) => {
+    test('on by default on Mainnet: the wallet button is enabled', async ({ page, context }) => {
+      await offline(context);
+      await page.goto('/');
+      await openSheet(page);
+      const b = page.getByTestId('wallet-signin');
+      await expect(b).toBeEnabled();
+      await expect(b).not.toContainText('Coming soon');
+    });
+
+    test('?appconnect=0: "Coming soon", no App Connect code fetched, no page errors', async ({ page, context }) => {
       await offline(context);
       const errors = await watchPage(page);
       const fetched: string[] = [];
-      page.on('request', (r) => fetched.push(r.url()));
-      await page.goto('/');
+      page.on('request', (r) => r.resourceType() !== 'document' && fetched.push(r.url()));
+      await page.goto('/?appconnect=0');
       await openSheet(page);
       const b = page.getByTestId('wallet-signin');
       await expect(b).toBeDisabled();

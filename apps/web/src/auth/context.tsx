@@ -7,7 +7,7 @@
 import { storageFundingStore, type FundingStore, type Network, type PlatformPort, type Session } from '@govhub/auth';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useApp } from '../app/context.tsx';
-import { appConnectEnabled, appConnectOptIn } from '../config/registry.ts';
+import { appConnectEnabled, appConnectOverride } from '../config/registry.ts';
 import { useForum } from '../app/forum.tsx';
 import { appSessionFromAuth, type AppAuthSession } from '../session/authSession.ts';
 import { createTabShare, type TabShare } from '../session/tabShare.ts';
@@ -87,8 +87,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [sheet, setSheet] = useState<SheetView | null>(null);
   const [restoring, setRestoring] = useState(false);
   const [walletEnded, setWalletEnded] = useState(false);
-  const [optIn] = useState(() => appConnectOptIn());
-  const appConnect = appConnectEnabled(registry, optIn);
+  const [override] = useState(() => appConnectOverride());
+  const appConnect = appConnectEnabled(registry, override);
   const share = useRef<TabShare | null>(null);
   const keyringHooks = useRef<KeyringHooks | null>(null);
   // No sharing (a sub-path): this tab's own lock (voting/gate.ts KeyringLock) is the only one. Sharing but no channel yet: locked.
