@@ -258,7 +258,7 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
     try {
       return await write(ownerId, key, op);
     } catch (e) {
-      throw e instanceof Error ? e : new Error(errText(e)); // WASM errors are not Error instances
+      throw e instanceof Error ? e : new Error(errText(e), { cause: e }); // WASM errors are not Error instances: keep the original (its name, code)
     } finally {
       key.privateKey.fill(0);
     }
@@ -269,6 +269,8 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
     const found = await readUntil(() => fetchIdentity(ownerId), (i) => !!i?.getPublicKeyById(key.id));
     const idKey = found.hit?.getPublicKeyById(key.id);
     if (!idKey) throw new Error(found.error && !found.last ? errText(found.error) : 'signing key not found on the identity');
+    // a disabled key (revoked in the wallet, for an App Connect key) would only be refused by Platform: say so in its words, unsent
+    if (keyInfo(idKey).disabled) throw new Error(`Identity key ${key.id} is disabled`);
     const owner = identifierBytes(ownerId);
     const contract = identifierBytes(op.contractId);
     const latest = w.PlatformVersion.latest() as never;

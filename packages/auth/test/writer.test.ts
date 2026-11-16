@@ -16,7 +16,7 @@ const MASK = 0xff_ffff_ffffn;
 const nonceErr = (what: string) => err(`Identity x is trying to set an invalid identity nonce. The current identity nonce is 3, we are setting 4, error is ${what}`, 40204, 'StateTransitionBroadcastError');
 
 type Doc = { id: string; type: string; revision: bigint; properties: Record<string, unknown> };
-type State = { height: bigint; nonce: bigint; docs: Map<string, Doc>; keys: Map<number, Uint8Array>; revision: bigint };
+type State = { height: bigint; nonce: bigint; docs: Map<string, Doc>; keys: Map<number, Uint8Array>; revision: bigint; disabled?: Set<number> };
 type Tx = { kind: 'create' | 'replace' | 'delete'; id: string; type: string; nonce: bigint; revision?: bigint; properties?: Record<string, unknown>; pv?: number };
 /** `hang`: executes, then the result stream stays silent for that many real ms before answering (`after` then rejects it). */
 type Send = { before?: unknown; after?: unknown; hang?: number } | void;
@@ -142,7 +142,7 @@ function chain(o: {
   };
   const identityAt = (s: State) => ({
     revision: s.revision,
-    getPublicKeyById: (id: number) => (s.keys.has(id) ? { id, toObject: () => ({ id, purpose: 0, securityLevel: 2, type: 0, data: s.keys.get(id)! }) } : undefined),
+    getPublicKeyById: (id: number) => (s.keys.has(id) ? { id, toObject: () => ({ id, purpose: 0, securityLevel: 2, type: 0, data: s.keys.get(id)!, ...(s.disabled?.has(id) ? { disabledAt: 1_700_000_000_000 } : {}) }) } : undefined),
   });
   const sdk = {
     version: () => o.sdkVersion ?? version,
@@ -303,6 +303,24 @@ describe('writeDocument: creates', () => {
     await expect(write(later, create())).rejects.toMatchObject({ message: expect.stringMatching(/unique index/) });
     expect(later.reads.doc).toBeGreaterThanOrEqual(5);
     expect(later.tip().docs.size).toBe(0);
+  });
+});
+
+describe('writeDocument: a disabled key', () => {
+  it('is refused before anything is signed or sent, in the words Platform uses', async () => {
+    const c = chain({ version: 14 });
+    c.mutate((st) => void (st.disabled = new Set([key.id])));
+    await expect(write(c, create())).rejects.toThrow(`Identity key ${key.id} is disabled`);
+    expect(c.log.signs).toBe(0);
+    expect(c.log.sends).toHaveLength(0);
+  });
+
+  it('a refusal Platform names only by its class keeps the original WASM error as the cause', async () => {
+    const refusal = err('consensus error 40211', 40211, 'IdentityPublicKeyIsDisabledError');
+    const c = chain({ version: 14, send: () => ({ before: refusal }) });
+    const e = (await write(c, create()).catch((x: unknown) => x)) as Error;
+    expect(e).toBeInstanceOf(Error);
+    expect(e.cause).toBe(refusal);
   });
 });
 
