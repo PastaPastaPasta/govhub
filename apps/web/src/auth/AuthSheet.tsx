@@ -6,7 +6,7 @@ import {
   createFundingPath, SUGGESTED_CREATE_DEPOSIT_DUFFS, parseVoucher, pendingFundings, PhraseError, redeemVoucher, SeedWallet, signInWithKey, signInWithSeed, toBase64, wipe, type FoundIdentity, type FundingRecord,
   type PhraseLength,
 } from '@govhub/auth';
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { FIXTURE_IDS } from '../data/fixtureForum.ts';
@@ -18,6 +18,9 @@ import { RecoverLink } from './RecoverLink.tsx';
 import { SecretField } from './SecretField.tsx';
 import { formatDuffs, plainErrorText } from './runtime.ts';
 
+// App Connect is a separate chunk, loaded only when the wallet view opens (it is reachable only while the feature is on)
+const WalletSignIn = lazy(() => import('./WalletSignIn.tsx'));
+
 export { SecretField }; // moved to its own file (the Recover tool uses it too); tests import it from here
 
 const TITLES: Record<SheetView, string> = {
@@ -26,6 +29,7 @@ const TITLES: Record<SheetView, string> = {
   phrase: 'Sign in with a recovery phrase',
   key: 'Sign in with a key',
   passkey: 'Sign in with a passkey',
+  wallet: 'Sign in with a Dash wallet',
   topup: 'Top up',
   passkeys: 'Passkeys',
 };
@@ -82,11 +86,33 @@ function SheetContent({ view }: { view: SheetView }) {
       return <KeySignIn />;
     case 'passkey':
       return <PasskeySignIn />;
+    case 'wallet':
+      return (
+        <Suspense fallback={<p className="muted">Loading…</p>}>
+          <WalletSignIn />
+        </Suspense>
+      );
     case 'topup':
-      return <TopUp />;
+      return <WalletLimits what="topup" fallback={<TopUp />} />;
     case 'passkeys':
-      return <Passkeys />;
+      return <WalletLimits what="passkeys" fallback={<Passkeys />} />;
   }
+}
+
+/**
+ * A wallet sign-in holds a key the wallet granted for govhub's forum only, with its own budget and expiry: top-ups and passkeys
+ * (which derive from or store the signing key) belong in the wallet. Other sessions see the normal view.
+ */
+function WalletLimits({ what, fallback }: { what: 'topup' | 'passkeys'; fallback: ReactNode }) {
+  const { session } = useAuth();
+  if (session?.source !== 'wallet') return fallback;
+  return (
+    <p className="notice-box" data-testid="wallet-limits">
+      {what === 'topup'
+        ? 'You signed in with your Dash wallet. Top up your identity from the wallet; govhub spends at most the budget you approved there.'
+        : 'You signed in with your Dash wallet, which keeps your keys. A passkey here would store a temporary key; sign in from the wallet again instead.'}
+    </p>
+  );
 }
 
 /** Fixture mode: sample identities whose writes go into the in-memory fixture store (no keys, no network). */
@@ -159,7 +185,7 @@ function SeedWarning({ what = 'phrase' }: { what?: 'phrase' | 'key' }) {
 }
 
 function Choose() {
-  const { openSheet, store, network } = useAuth();
+  const { openSheet, store, network, appConnect } = useAuth();
   const { mode } = useApp();
   const [, rerender] = useState(0);
   const pending = pendingFundings(store, network).filter((r) => r.kind === 'create');
@@ -220,15 +246,22 @@ function Choose() {
       <RecoverableNotice records={store.list().filter((r) => r.network === network && !r.discarded)} />
       <ul className="choices">
         <li>
-          <button type="button" className="choice choice-l" disabled aria-describedby="wallet-soon" data-testid="wallet-signin">
-            <span className="choice-soon">
+          {appConnect ? (
+            <button type="button" className="choice choice-l" onClick={() => openSheet('wallet')} data-testid="wallet-signin">
               <b>Sign in with a Dash wallet</b>
-              <span className="tag tag-info" id="wallet-soon">
-                Coming soon
+              <span className="muted small">Scan a code with DashPay on your phone and approve there. No phrase is typed here.</span>
+            </button>
+          ) : (
+            <button type="button" className="choice choice-l" disabled aria-describedby="wallet-soon" data-testid="wallet-signin">
+              <span className="choice-soon">
+                <b>Sign in with a Dash wallet</b>
+                <span className="tag tag-info" id="wallet-soon">
+                  Coming soon
+                </span>
               </span>
-            </span>
-            <span className="muted small">Approve from DashPay or another Dash wallet, with no phrase typed here. This will become the main way to sign in.</span>
-          </button>
+              <span className="muted small">Approve from DashPay or another Dash wallet, with no phrase typed here. This will become the main way to sign in.</span>
+            </button>
+          )}
         </li>
         {main.map((o) => choice(o, true))}
       </ul>
