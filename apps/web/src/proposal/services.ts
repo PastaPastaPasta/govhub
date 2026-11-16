@@ -1,10 +1,10 @@
 // What the wizard needs from the outside world, live (DAPI, the verification worker, relays, a bridge, Platform) or simulated for
 // the fixture demo (`?fixtures=1`: nothing leaves the browser, no money moves, a pretend payment and a pretend relay).
 import {
-  buildProposalCollateral, p2pkhScript, runCollateralFunding, sessionProposalDepositKey, type CollateralFundingRecord, type CollateralFundingView, type DepositKey, type DepositKeySource,
+  buildProposalCollateral, collateralFeeDuffs, MIN_COLLATERAL_DEPOSIT_DUFFS, p2pkhScript, runCollateralFunding, sessionProposalDepositKey, type CollateralFundingRecord, type CollateralFundingView, type DepositKey, type DepositKeySource,
 } from '@govhub/auth';
 import type { Dapi } from '@govhub/dapi';
-import { bytesToHex, checkCollateralTx, decodeAddress, GOVERNANCE_FEE_CONFIRMATIONS, hexToBytes, sha256d } from '@govhub/verify';
+import { bytesToHex, checkCollateralTx, decodeAddress, duffsToDash, GOVERNANCE_FEE_CONFIRMATIONS, GOVERNANCE_PROPOSAL_FEE_DUFFS, hexToBytes, sha256d } from '@govhub/verify';
 import type { Registry } from '../config/registry.ts';
 import { makeBridge } from '../data/bridgeFactory.ts';
 import { createWebDapi, dapiConfig } from '../data/dapi.ts';
@@ -216,8 +216,8 @@ export function demoServices(network: CoreNetwork, o: { blockMs?: number; pollMs
     },
     async fundCollateral({ record, key, save, signal, onUpdate }) {
       const view = (): CollateralFundingView => ({
-        state: record.state, address: record.address, uri: `dash:${record.address}?amount=1.00001`, neededDuffs: 100_001_000n, receivedDuffs: paid ? 120_000_000n : 0n, pendingDuffs: 0n,
-        remainingDuffs: paid ? 0n : 100_001_000n, lateDuffs: 0n, ...(record.tx ? { txid: record.tx.txid } : {}),
+        state: record.state, address: record.address, uri: `dash:${record.address}?amount=${duffsToDash(MIN_COLLATERAL_DEPOSIT_DUFFS)}`, neededDuffs: GOVERNANCE_PROPOSAL_FEE_DUFFS + collateralFeeDuffs(1), receivedDuffs: paid ? 120_000_000n : 0n, pendingDuffs: 0n,
+        remainingDuffs: paid ? 0n : MIN_COLLATERAL_DEPOSIT_DUFFS, lateDuffs: 0n, ...(record.tx ? { txid: record.tx.txid } : {}),
       });
       if (!record.tx) {
         save(record);

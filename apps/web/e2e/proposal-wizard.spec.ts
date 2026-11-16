@@ -61,6 +61,9 @@ test.describe('create a proposal (fixtures)', () => {
 
     // Pay: nothing before the backup
     await expect(page.getByTestId('p-pay')).toBeVisible();
+    await expect(page.locator('#pw-pay-title')).toHaveText('Pay the fee: send a bit more than 1 DASH');
+    await expect(page.getByTestId('p-fee-recommended')).toHaveText('1.00001 DASH');
+    await expect(page.getByTestId('p-fee-explain')).toContainText('exactly 1 DASH is not enough');
     await expect(page.getByTestId('p-pay-browser')).toHaveCount(0);
     const dl = page.waitForEvent('download');
     await page.getByTestId('p-backup-download').click();
@@ -78,6 +81,7 @@ test.describe('create a proposal (fixtures)', () => {
     await page.getByTestId('p-pay-start').click();
     await expect(page.getByTestId('p-deposit-address')).toBeVisible();
     await expect(page.getByTestId('p-deposit-amount')).toHaveText('1.00001 DASH');
+    await expect(page.locator('a[href^="dash:"]')).toHaveAttribute('href', /\?amount=1\.00001$/);
     await page.getByTestId('p-demo-pay').click();
 
     // Submit: confirmations, the relay holds it and sends it once the fee is ChainLocked, live at 6, seen by the network, on govhub → celebration
