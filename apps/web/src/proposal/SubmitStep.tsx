@@ -14,6 +14,7 @@ import { govhubUrlOwner } from './EditSteps.tsx';
 import { BackupBox, type PayProps } from './PayStep.tsx';
 import type { CollateralCheck } from './services.ts';
 import { markManualSubmit, resetRelays, sendable, submissionTick } from './submission.ts';
+import { IdentityName } from '../ui/Identity.tsx';
 
 type Status = 'done' | 'now' | 'todo' | 'bad';
 
@@ -239,9 +240,14 @@ function Live({ draft }: { draft: ProposalDraft }) {
           </Link>
         </div>
         <p className="small muted">
-          {govhubOwner
-            ? `Its link names your identity ${shortHash(govhubOwner, 6)}. On the proposal page, accept ownership while signed in as it, then publish the description voters read.`
-            : 'Claim it on the proposal page with a signature from the payment address, then publish the description voters read.'}
+          {govhubOwner ? (
+            <>
+              Its link names your identity <IdentityName id={govhubOwner} />. On the proposal page, accept ownership while signed in as it, then publish the
+              description voters read.
+            </>
+          ) : (
+            'Claim it on the proposal page with a signature from the payment address, then publish the description voters read.'
+          )}
         </p>
       </div>
     </section>

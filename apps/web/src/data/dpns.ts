@@ -2,6 +2,7 @@
 // one tick goes into proved `records.identity in [...]` queries on the DPNS domain documents, a chunk of ids per query, and each
 // answer is cached for the page's life. An identity with several names is shown by its first registered one (earliest $createdAt,
 // then the label), the same in every view. A failed read is not cached as "no name": the next ask reads again.
+import { PARENT_DOMAIN } from '../contests/model.ts';
 
 /** The fields of a DPNS domain document a name is picked from (document JSON, as evo-sdk gives it). */
 export interface DomainDoc {
@@ -19,16 +20,17 @@ const LABEL = /^[a-zA-Z0-9][a-zA-Z0-9-]{1,61}[a-zA-Z0-9]$/;
 
 const createdAt = (d: DomainDoc): number => {
   const v = d.$createdAt;
-  const n = typeof v === 'number' ? v : typeof v === 'bigint' || typeof v === 'string' ? Number(v) : NaN;
+  const n = typeof v === 'number' || typeof v === 'bigint' || typeof v === 'string' ? Number(v) : NaN;
   return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
 };
+const byLabel = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 /** The identity a domain document names as its own: a `.dash` name whose record points at its owner. Null for anything else. */
 export function domainIdentity(d: DomainDoc): string | null {
   const id = d.records?.identity;
   if (typeof id !== 'string' || !id) return null;
   if (d.$ownerId !== undefined && d.$ownerId !== id) return null;
-  if (d.normalizedParentDomainName !== 'dash' || typeof d.label !== 'string' || !LABEL.test(d.label)) return null;
+  if (d.normalizedParentDomainName !== PARENT_DOMAIN || typeof d.label !== 'string' || !LABEL.test(d.label)) return null;
   return id;
 }
 
@@ -37,12 +39,14 @@ export function primaryName(identityId: string, docs: readonly DomainDoc[]): str
   const mine = docs.filter((d) => domainIdentity(d) === identityId);
   if (!mine.length) return undefined;
   const key = (d: DomainDoc) => String(d.normalizedLabel ?? (d.label as string).toLowerCase());
-  mine.sort((a, b) => createdAt(a) - createdAt(b) || (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
-  return `${mine[0]!.label as string}.dash`;
+  mine.sort((a, b) => createdAt(a) - createdAt(b) || byLabel(key(a), key(b)));
+  return `${mine[0]!.label as string}.${PARENT_DOMAIN}`;
 }
 
 /** One page of domain documents whose `records.identity` is one of `ids`, ordered by it, after the document `startAfter`. */
 export type DomainQuery = (ids: readonly string[], page: { limit: number; startAfter?: string }) => Promise<DomainDoc[]>;
+
+type Answer = { name: string | undefined } | { error: unknown };
 
 export interface DpnsResolver {
   /** The primary DPNS name of each of these identities that has one. Rejects only when no id could be read. */
@@ -80,14 +84,30 @@ export function createDpnsResolver(query: DomainQuery, o: ResolverOptions = {}):
   }
 
   /**
-   * The names of `ids`. Pages run in `records.identity` order, so an identity holding hundreds of names can use up the pages before
-   * the ids after it are reached: those (none of their names read yet) are asked again on their own.
+   * The names of `ids` (or why they could not be read). Pages run in `records.identity` order, then by document id, so a read cut
+   * short by `maxPages` has read the ids before the last one in full, the last one only in part, and the rest not at all: those are
+   * read again, the partly read one on its own. Read on its own, an identity holding more names than the pages allow is named from
+   * its first `maxPages` pages, the same every time.
    */
-  async function resolveChunk(ids: string[]): Promise<Map<string, string | undefined>> {
+  async function resolveChunk(ids: string[]): Promise<Map<string, Answer>> {
     const { docs, complete } = await readChunk(ids);
-    const out = new Map(ids.map((id) => [id, primaryName(id, docs)] as const));
-    const unseen = complete ? [] : ids.filter((id) => !docs.some((d) => domainIdentity(d) === id));
-    if (unseen.length && unseen.length < ids.length) for (const [id, n] of await resolveChunk(unseen)) out.set(id, n);
+    const byId = new Map<string, DomainDoc[]>();
+    for (const d of docs) {
+      const id = String(d.records?.identity);
+      byId.set(id, [...(byId.get(id) ?? []), d]);
+    }
+    const out = new Map<string, Answer>();
+    const boundary = complete || ids.length === 1 ? null : String(docs[docs.length - 1]?.records?.identity);
+    const unseen = boundary === null ? [] : ids.filter((id) => id !== boundary && !byId.has(id));
+    for (const id of ids) if (id !== boundary && !unseen.includes(id)) out.set(id, { name: primaryName(id, byId.get(id) ?? []) });
+    for (const again of [boundary === null ? [] : [boundary], unseen]) {
+      if (!again.length) continue;
+      try {
+        for (const [id, a] of await resolveChunk(again)) out.set(id, a);
+      } catch (error) {
+        for (const id of again) out.set(id, { error });
+      }
+    }
     return out;
   }
 
@@ -96,14 +116,14 @@ export function createDpnsResolver(query: DomainQuery, o: ResolverOptions = {}):
     queue = [];
     for (let i = 0; i < batch.length; i += chunk) {
       const part = batch.slice(i, i + chunk);
-      resolveChunk(part.map((x) => x.id)).then(
-        (names) => part.forEach((x) => x.resolve(names.get(x.id))),
-        (e: unknown) =>
-          part.forEach((x) => {
-            cache.delete(x.id);
-            x.reject(e);
-          }),
-      );
+      const settle = (answers: Map<string, Answer> | null, error?: unknown) =>
+        part.forEach((x) => {
+          const a = answers?.get(x.id) ?? { error };
+          if ('name' in a) return x.resolve(a.name);
+          cache.delete(x.id);
+          x.reject(a.error);
+        });
+      resolveChunk(part.map((x) => x.id)).then(settle, (e: unknown) => settle(null, e));
     }
   }
 

@@ -24,6 +24,7 @@ import { FIXTURE_IDS } from '../data/fixtureForum.ts';
 import { getSdk } from '../data/platform.ts';
 import { fixtureSession } from '../session/fixture.ts';
 import { formatCredits, formatDateTime, shortHash } from '../lib/format.ts';
+import { useDpnsNames } from '../ui/useDpnsNames.ts';
 import { useAuth } from './context.tsx';
 import { Qr } from './Qr.tsx';
 import { plainErrorText } from './runtime.ts';
@@ -73,7 +74,6 @@ export default function WalletSignIn() {
   const [attempt, setAttempt] = useState(0);
   const [phase, setPhase] = useState<Phase>({ kind: 'starting' });
   const [grants, setGrants] = useState<Grant[]>([]);
-  const [names, setNames] = useState<Map<string, string>>(new Map());
   const [note, setNote] = useState<string | null>(null);
   const [trouble, setTrouble] = useState<string | null>(null);
   const poller = useRef<Poller | null>(null);
@@ -149,15 +149,7 @@ export default function WalletSignIn() {
     };
   }, []);
 
-  const ids = grants.map((g) => g.identityId).join(',');
-  useEffect(() => {
-    if (!ids) return;
-    let live = true;
-    forum.names(ids.split(',')).then((m) => live && setNames(m), () => {});
-    return () => {
-      live = false;
-    };
-  }, [ids, forum]);
+  const names = useDpnsNames(grants.map((g) => g.identityId));
 
   const accept = useCallback(
     (g: Grant) => {

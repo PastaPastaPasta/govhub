@@ -48,7 +48,8 @@ export function SessionControl() {
   const menu = useRef<HTMLDivElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const [name, setName] = useState<string | null>(null);
-  const dpns = useDpnsNames([session?.identityId]).get(session?.identityId ?? '') ?? null;
+  const id = session?.identityId ?? '';
+  const dpns = useDpnsNames([id]).get(id) ?? null;
   const close = () => dialog.current?.close();
   const hide = () => menu.current?.hidePopover?.();
   // Signing out from elsewhere (leaving the page, another network) closes the panels.

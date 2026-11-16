@@ -17,6 +17,11 @@ vi.mock('@govhub/auth', async (orig) => ({
   sweepItem: async (o: unknown) => (calls.sweep.push(o), { txid: 'ab'.repeat(32), sentDuffs: 49_774n, feeDuffs: 226n }),
   fundWithItem: async (o: unknown) => (calls.fund.push(o), fundHangs ? new Promise(() => {}) : { identityId: 'NEWID', record: {} }),
 }));
+// identity names (ui/IdentityName): none here, so the short id shows
+vi.mock('../app/forum.tsx', () => {
+  const value = { forum: { names: async () => new Map() }, moderation: { index: { identityHidden: () => false } } };
+  return { useForum: () => value };
+});
 vi.mock('./context.tsx', () => {
   const auth = { session: null, network: 'testnet', dapi: () => ({ network: 'testnet' }), platform: async () => ({ network: 'testnet' }), store: {}, closeSheet: () => {} };
   return { useAuth: () => auth };

@@ -17,6 +17,7 @@ import { PasskeySignIn, Passkeys } from './Passkeys.tsx';
 import { RecoverLink } from './RecoverLink.tsx';
 import { SecretField } from './SecretField.tsx';
 import { formatDuffs, plainErrorText } from './runtime.ts';
+import { IdentityName } from '../ui/Identity.tsx';
 
 // App Connect is a separate chunk, loaded only when the wallet view opens (it is reachable only while the feature is on)
 const WalletSignIn = lazy(() => import('./WalletSignIn.tsx'));
@@ -593,8 +594,12 @@ function PhraseSignIn() {
           {state.found.map((f) => (
             <li key={f.identityId}>
               <button type="button" className="choice" disabled={busy} onClick={() => pick(f)}>
-                <b className="break">{f.identityId}</b>
-                <span className="muted small">identity #{f.identityIndex}</span>
+                <b>
+                  <IdentityName id={f.identityId} />
+                </b>
+                <span className="muted small break">
+                  identity #{f.identityIndex} · {f.identityId}
+                </span>
               </button>
             </li>
           ))}

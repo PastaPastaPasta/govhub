@@ -5,6 +5,7 @@ import { EVONODE_WEIGHT } from '@govhub/verify';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
 import { useForum } from '../app/forum.tsx';
+import { useDpnsNames } from '../ui/useDpnsNames.ts';
 import { AuthorName, Avatar } from '../ui/Identity.tsx';
 import { Discussion } from '../ui/Discussion.tsx';
 import { contenders } from '../lib/social.ts';
@@ -49,15 +50,13 @@ function Missing({ label, children }: { label: string; children: string }) {
 /** DPNS names and self-chosen profiles of these identities, best effort (an identity without either shows its short id). */
 function useIdentities(ids: readonly string[]): { names: ReadonlyMap<string, string>; profiles: ReadonlyMap<string, Profile> } {
   const { forum } = useForum();
-  const [names, setNames] = useState<ReadonlyMap<string, string>>(new Map());
+  const names = useDpnsNames(ids);
   const [profiles, setProfiles] = useState<ReadonlyMap<string, Profile>>(new Map());
   const key = [...ids].sort().join(',');
   useEffect(() => {
     if (!key) return;
     let live = true;
-    const list = key.split(',');
-    forum.names(list).then((m) => live && setNames(m), () => {});
-    forum.reader.profiles(list).then((m) => live && setProfiles(m), () => {});
+    forum.reader.profiles(key.split(',')).then((m) => live && setProfiles(m), () => {});
     return () => {
       live = false;
     };

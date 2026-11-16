@@ -3,15 +3,17 @@
 import { useEffect, useState } from 'react';
 import { useForum } from '../app/forum.tsx';
 
+const NONE: ReadonlyMap<string, string> = new Map();
+
 export function useDpnsNames(ids: readonly (string | null | undefined)[]): ReadonlyMap<string, string> {
   const { forum } = useForum();
   const key = [...new Set(ids.filter((x): x is string => !!x))].sort().join(',');
-  const [state, setState] = useState<{ forum: unknown; key: string; names: ReadonlyMap<string, string> }>({ forum, key: '', names: new Map() });
+  const [state, setState] = useState<{ forum: unknown; names: ReadonlyMap<string, string> }>({ forum, names: NONE });
   useEffect(() => {
     if (!key) return;
     let live = true;
     forum.names(key.split(',')).then(
-      (names) => live && setState({ forum, key, names }),
+      (names) => live && setState({ forum, names }),
       () => {},
     );
     return () => {
@@ -19,5 +21,5 @@ export function useDpnsNames(ids: readonly (string | null | undefined)[]): Reado
     };
   }, [forum, key]);
   // answers for another source (a network switch) are never shown; a changed id list keeps the names it still has meanwhile
-  return state.forum === forum ? state.names : new Map();
+  return state.forum === forum ? state.names : NONE;
 }

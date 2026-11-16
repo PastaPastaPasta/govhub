@@ -105,6 +105,46 @@ describe('createDpnsResolver', () => {
     expect(p.calls.at(-1)!.ids).toEqual([hi]);
   });
 
+  it('names that are no longer the holder\'s (transferred away) filling every page do not blank the ids after it', async () => {
+    const [lo, hi] = [A, B].sort() as [string, string];
+    const p = platform([...Array.from({ length: 6 }, (_, i) => dom(lo, `gone${i}`, i, { $ownerId: C })), dom(hi, 'bob', 1)]);
+    const r = createDpnsResolver(p.query, { limit: 2, maxPages: 2 });
+    const m = await r.names([lo, hi]);
+    expect(m.get(hi)).toBe('bob.dash');
+    expect(m.has(lo)).toBe(false);
+  });
+
+  it('the id a cut-short read ends on is read again on its own, so it still gets its first registered name', async () => {
+    const [lo, hi] = [A, B].sort() as [string, string];
+    // `hi`'s first page holds "late" (its smaller document id) but not "first", which was registered earlier
+    const docs = [dom(lo, 'aaa', 1), dom(lo, 'bbb', 2), dom(lo, 'ccc', 3), dom(hi, 'late', 900), dom(hi, 'first', 1)];
+    const p = platform(docs);
+    const r = createDpnsResolver(p.query, { limit: 2, maxPages: 2 });
+    const m = await r.names([lo, hi]);
+    expect(m.get(hi)).toBe('first.dash');
+    expect(m.get(lo)).toBe('aaa.dash');
+    expect(p.calls.some((c) => c.ids.length === 1 && c.ids[0] === hi && !c.startAfter)).toBe(true);
+  });
+
+  it('a heavy holder is named the same whichever ids share its batch', async () => {
+    const docs = [...Array.from({ length: 9 }, (_, i) => dom(A, `many${i}`, 900 - i)), dom(B, 'bob', 1), dom(C, 'cat', 1)];
+    const alone = await createDpnsResolver(platform(docs).query, { limit: 2, maxPages: 2 }).names([A]);
+    const shared = await createDpnsResolver(platform(docs).query, { limit: 2, maxPages: 2 }).names([A, B, C]);
+    expect(shared.get(A)).toBe(alone.get(A));
+    expect(shared.get(B)).toBe('bob.dash');
+    expect(shared.get(C)).toBe('cat.dash');
+  });
+
+  it('a failed follow-up read keeps the names already read', async () => {
+    const [lo, hi] = [A, B].sort() as [string, string];
+    const p = platform([dom(lo, 'aaa', 1), dom(lo, 'bbb', 2), dom(lo, 'ccc', 3), dom(lo, 'ddd', 4), dom(lo, 'eee', 5), dom(hi, 'bob', 1)]);
+    const query: DomainQuery = async (ids, page) => (ids.length === 1 && ids[0] === hi ? Promise.reject(new Error('timeout')) : p.query(ids, page));
+    const r = createDpnsResolver(query, { limit: 2, maxPages: 2 });
+    const m = await r.names([lo, hi]);
+    expect(m.get(lo)).toBe('aaa.dash');
+    expect(m.has(hi)).toBe(false);
+  });
+
   it('a failed read is not remembered: the next ask reads again', async () => {
     const p = platform([dom(A, 'alice', 1)]);
     const query = vi.fn<DomainQuery>().mockRejectedValueOnce(new Error('DAPI down')).mockImplementation(p.query);

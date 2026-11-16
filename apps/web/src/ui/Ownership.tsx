@@ -14,6 +14,7 @@ import type { TrustLevel } from '../verify/aggregate.ts';
 import type { CollateralVerdict } from '../verify/collateral.ts';
 import { HiddenToggle, plural } from './HiddenToggle.tsx';
 import { AuthorName, Avatar, IdentityName } from './Identity.tsx';
+import { useDpnsNames } from './useDpnsNames.ts';
 import { Markdown } from './Markdown.tsx';
 import { openSignIn } from './SignIn.tsx';
 import { costText, isShort } from '../voting/funds.ts';
@@ -78,18 +79,20 @@ const OWNER_HOW: Record<1 | 2 | 3 | 4, string> = {
 /** Profile and DPNS name of one identity, for the owner line. */
 function useIdentityNames(id: string | null) {
   const { forum } = useForum();
-  const [state, setState] = useState<{ id: string; profile: Profile | undefined; dpns: string | undefined } | null>(null);
+  const dpns = useDpnsNames([id]);
+  const [state, setState] = useState<{ id: string; profile: Profile | undefined } | null>(null);
   useEffect(() => {
     if (!id) return;
     let live = true;
-    Promise.all([forum.reader.profiles([id]).catch(() => new Map<string, Profile>()), forum.names([id]).catch(() => new Map<string, string>())]).then(([p, n]) => {
-      if (live) setState({ id, profile: p.get(id), dpns: n.get(id) });
-    });
+    forum.reader.profiles([id]).then(
+      (p) => live && setState({ id, profile: p.get(id) }),
+      () => live && setState({ id, profile: undefined }),
+    );
     return () => {
       live = false;
     };
   }, [forum, id]);
-  return state?.id === id ? state : null;
+  return id && state?.id === id ? { ...state, dpns: dpns.get(id) } : null;
 }
 
 /**

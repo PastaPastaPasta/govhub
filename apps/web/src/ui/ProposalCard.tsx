@@ -70,7 +70,7 @@ export function ProposalCard({
           <p className="prow-owner">
             <Avatar id={urlOwner} profile={ownerProfile} size={18} />
             <span title={`Identity ${urlOwner}, named in the proposal URL by its creator; the proposal page shows whether it accepted`}>
-              <bdi data-testid="card-owner-name">{ownerDpns || authorLabel(urlOwner, ownerProfile).name ? authorText(urlOwner, ownerProfile, ownerDpns) : shortHash(urlOwner, 5)}</bdi> <span className="muted small">named by the creator</span>
+              <bdi data-testid="card-owner-name">{ownerText(urlOwner, ownerProfile, ownerDpns)}</bdi> <span className="muted small">named by the creator</span>
             </span>
           </p>
         ) : (
@@ -126,4 +126,10 @@ export function ProposalCard({
       </p>
     </article>
   );
+}
+
+/** The URL owner on a card: DPNS name, else the self-chosen name with the short id, else the short id. */
+function ownerText(id: string, profile?: Profile, dpns?: string): string {
+  const a = authorLabel(id, profile, dpns);
+  return a.dpns || a.name ? authorText(id, profile, dpns) : shortHash(id, 5);
 }

@@ -48,7 +48,7 @@ export function liveForum(registry: Registry): ForumSource {
     ops: forumOps(contracts),
     store: null,
     prov: (height) => ({ kind: 'proof', source: `Platform ${registry.platformNetwork}`, detail: [`forum contract ${shortHash(contracts.forum, 4)}`, height ? `Platform height ${formatInt(height)}` : null].filter(Boolean).join(', ') }),
-    names: (ids) => dpns.names(ids),
+    names: dpns.names,
   };
 }
 

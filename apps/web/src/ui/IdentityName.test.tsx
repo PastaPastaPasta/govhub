@@ -7,7 +7,7 @@ import { flush, render } from '../test/render.tsx';
 
 const ID = 'ATWqrABCDEFGHJKLMNPQRSTUVWXYZabcdefghiXi8rs';
 const OTHER = 'GgZekwh38XcWQTyWWWvmw6CEYFnLU7yiZFPWZEjqKHit';
-const h = vi.hoisted(() => ({ names: new Map<string, string>(), asked: [] as string[][], profileName: null as string | null, session: null as unknown }));
+const h = vi.hoisted(() => ({ names: new Map<string, string>(), asked: [] as string[][], profileName: null as string | null, session: null as unknown, hidden: false }));
 const forum = {
   names: async (ids: readonly string[]) => {
     h.asked.push([...ids]);
@@ -15,7 +15,7 @@ const forum = {
   },
   reader: { profiles: async (ids: string[]) => new Map(h.profileName ? ids.map((i) => [i, { ownerId: i, displayName: h.profileName }]) : []) },
 };
-vi.mock('../app/forum.tsx', () => ({ useForum: () => ({ forum, session: h.session, balance: null }) }));
+vi.mock('../app/forum.tsx', () => ({ useForum: () => ({ forum, session: h.session, balance: null, moderation: { index: { identityHidden: () => h.hidden } } }) }));
 vi.mock('../auth/context.tsx', () => ({ OPEN_SIGNIN_EVENT: 'x', useAuth: () => ({ session: null, restoring: false, openSheet: () => {}, signOut: () => {} }) }));
 vi.mock('../app/context.tsx', () => ({ useApp: () => ({ theme: 'system', setTheme: () => {} }) }));
 
@@ -27,6 +27,7 @@ afterEach(() => {
   h.asked = [];
   h.profileName = null;
   h.session = null;
+  h.hidden = false;
   document.body.innerHTML = '';
 });
 
@@ -50,11 +51,12 @@ describe('IdentityName', () => {
     await r.unmount();
   });
 
-  it('takes a name the caller already has without asking again', async () => {
-    const r = await render(<IdentityName id={ID} dpns="known.dash" />);
+  it('an identity on a block list is shown by its short id only', async () => {
+    h.names.set(ID, 'pasta.dash');
+    h.hidden = true;
+    const r = await render(<IdentityName id={ID} />);
     await flush();
-    expect(r.el.textContent).toBe('known.dash');
-    expect(h.asked).toEqual([]);
+    expect(r.el.textContent).toBe('ATWq…i8rs');
     await r.unmount();
   });
 });
