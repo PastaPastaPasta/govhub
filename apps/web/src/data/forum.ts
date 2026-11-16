@@ -1,9 +1,11 @@
 // The forum data source the UI uses: @govhub/forum's reader over live Platform (proof-verified evo-sdk queries) or
 // over the fixture store, plus DPNS names. Writes go through the signed-in Session, never through here.
-import { forumOps, ForumReader, mapLimit, MemoryStore, SCHEMAS, type DocReader, type ForumContracts, type ForumOps } from '@govhub/forum';
+import { forumOps, ForumReader, MemoryStore, SCHEMAS, type DocReader, type ForumContracts, type ForumOps } from '@govhub/forum';
 import type { Registry } from '../config/registry.ts';
 import type { DataMode } from '../config/mode.ts';
 import { formatInt, shortHash } from '../lib/format.ts';
+import { DPNS_CONTRACT_ID } from '../contests/model.ts';
+import { createDpnsResolver, type DomainDoc } from './dpns.ts';
 import { getSdk, queryContract } from './platform.ts';
 import type { Provenance } from './types.ts';
 
@@ -15,7 +17,7 @@ export interface ForumSource {
   readonly store: MemoryStore | null;
   /** provenance of a forum read at a Platform height */
   prov(height?: number | null): Provenance;
-  /** DPNS usernames (proof-verified) of these identities, where they have one */
+  /** The primary DPNS username (proof-verified, first registered) of each of these identities that has one; batched and cached (data/dpns.ts). */
   names(ids: readonly string[]): Promise<Map<string, string>>;
 }
 
@@ -28,30 +30,25 @@ export function liveForum(registry: Registry): ForumSource {
       return queryContract(registry, contracts[contract], SCHEMAS[contract], q);
     },
   };
-  const nameCache = new Map<string, Promise<string | undefined>>();
+  const dpns = createDpnsResolver(async (ids, { limit, startAfter }) => {
+    const sdk = await getSdk(registry);
+    const res = await sdk.documents.queryWithProof({
+      dataContractId: DPNS_CONTRACT_ID,
+      documentTypeName: 'domain',
+      where: [['records.identity', 'in', [...ids]]],
+      orderBy: [['records.identity', 'asc']],
+      limit,
+      ...(startAfter ? { startAfter } : {}),
+    } as never);
+    return [...res.data.values()].filter((d): d is NonNullable<typeof d> => !!d).map((d) => d.toJSON() as DomainDoc);
+  });
   return {
     contracts,
     reader: new ForumReader(reader),
     ops: forumOps(contracts),
     store: null,
     prov: (height) => ({ kind: 'proof', source: `Platform ${registry.platformNetwork}`, detail: [`forum contract ${shortHash(contracts.forum, 4)}`, height ? `Platform height ${formatInt(height)}` : null].filter(Boolean).join(', ') }),
-    async names(ids) {
-      const sdk = await getSdk(registry);
-      const out = new Map<string, string>();
-      await mapLimit([...new Set(ids)], 4, async (id) => {
-        let p = nameCache.get(id);
-        if (!p) {
-          p = sdk.dpns
-            .usernameWithProof(id)
-            .then((r) => r.data ?? undefined)
-            .catch(() => undefined);
-          nameCache.set(id, p);
-        }
-        const n = await p;
-        if (n) out.set(id, n);
-      });
-      return out;
-    },
+    names: (ids) => dpns.names(ids),
   };
 }
 

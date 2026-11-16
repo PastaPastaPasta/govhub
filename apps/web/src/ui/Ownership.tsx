@@ -9,11 +9,11 @@ import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { attestorsFor } from '../config/registry.ts';
 import type { Proposal } from '../data/types.ts';
-import { errText, formatCredits, formatInt, shortAddress, shortHash } from '../lib/format.ts';
+import { errText, formatCredits, formatInt, shortAddress } from '../lib/format.ts';
 import type { TrustLevel } from '../verify/aggregate.ts';
 import type { CollateralVerdict } from '../verify/collateral.ts';
 import { HiddenToggle, plural } from './HiddenToggle.tsx';
-import { AuthorName, Avatar } from './Identity.tsx';
+import { AuthorName, Avatar, IdentityName } from './Identity.tsx';
 import { Markdown } from './Markdown.tsx';
 import { openSignIn } from './SignIn.tsx';
 import { costText, isShort } from '../voting/funds.ts';
@@ -162,7 +162,7 @@ export function RejectedClaims({ own }: { own: Ownership }) {
         <ul className="invalid-note">
           {outranked.map((c) => (
             <li key={c.docId ?? `${c.method}:${c.identityId}`} data-testid="claim-outranked">
-              <span className="chip">Valid, outranked</span> <span className="mono-ish">{shortHash(c.identityId, 4)}</span> ({CLAIM_METHOD_LABEL[c.method]}): {c.detail}; the owner's claim ranks higher
+              <span className="chip">Valid, outranked</span> <IdentityName id={c.identityId} /> ({CLAIM_METHOD_LABEL[c.method]}): {c.detail}; the owner's claim ranks higher
               (claims rank by method, then by age).
             </li>
           ))}
@@ -170,7 +170,7 @@ export function RejectedClaims({ own }: { own: Ownership }) {
             const chip = rejectedChip(r.reason);
             return (
               <li key={r.docId} data-testid={chip.bad ? 'claim-failed' : 'claim-unchecked'}>
-                <span className={`chip ${chip.bad ? 'chip-bad' : ''}`}>{chip.text}</span> <span className="mono-ish">{shortHash(r.ownerId, 4)}</span> (
+                <span className={`chip ${chip.bad ? 'chip-bad' : ''}`}>{chip.text}</span> <IdentityName id={r.ownerId} /> (
                 {CLAIM_METHOD_LABEL[r.method as keyof typeof CLAIM_METHOD_LABEL] ?? `method ${r.method}`}): {r.reason}
               </li>
             );

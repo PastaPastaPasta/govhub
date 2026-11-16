@@ -3326,3 +3326,6 @@ details.advanced[open] > summary {
 .wallet-who {
   font-size: 1.125rem;
 }
+.menu-name .author-alias {
+  margin-inline-start: 0.4em;
+}

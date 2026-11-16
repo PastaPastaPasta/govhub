@@ -31,8 +31,8 @@ export function askText(amountDuffs: number, s: PaymentSchedule | null, params: 
 }
 
 export function ProposalCard({
-  row, href, comments, urlOwner, ownerProfile, check,
-}: { row: Row; href: string; comments?: number | undefined; urlOwner?: string | null; ownerProfile?: Profile | undefined; check?: CheckState }) {
+  row, href, comments, urlOwner, ownerProfile, ownerDpns, check,
+}: { row: Row; href: string; comments?: number | undefined; urlOwner?: string | null; ownerProfile?: Profile | undefined; ownerDpns?: string | undefined; check?: CheckState }) {
   const { params, source } = useApp();
   const p = row.p.value;
   const t = row.tally?.value;
@@ -70,7 +70,7 @@ export function ProposalCard({
           <p className="prow-owner">
             <Avatar id={urlOwner} profile={ownerProfile} size={18} />
             <span title={`Identity ${urlOwner}, named in the proposal URL by its creator; the proposal page shows whether it accepted`}>
-              <bdi>{ownerProfile && authorLabel(urlOwner, ownerProfile).name ? authorText(urlOwner, ownerProfile) : shortHash(urlOwner, 5)}</bdi> <span className="muted small">named by the creator</span>
+              <bdi data-testid="card-owner-name">{ownerDpns || authorLabel(urlOwner, ownerProfile).name ? authorText(urlOwner, ownerProfile, ownerDpns) : shortHash(urlOwner, 5)}</bdi> <span className="muted small">named by the creator</span>
             </span>
           </p>
         ) : (
