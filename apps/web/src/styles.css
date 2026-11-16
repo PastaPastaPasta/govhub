@@ -1624,14 +1624,41 @@ table {
   font-size: var(--t-s);
   color: var(--ink-2);
 }
+/* The browser's own arrow sits against the border; ours is drawn as far from the right edge as the text is from the left (the
+   chips' 12 px inside the border, where the first letter's ink starts 14 px in), with an 8 px gap before it. The arrow is a 7.5 px
+   square turned 45° whose drawn tip ends up about a pixel and a half outside its box. */
+.list-select {
+  position: relative;
+  display: inline-flex;
+}
+.list-select::after {
+  content: '';
+  position: absolute;
+  inset-inline-end: 15.5px;
+  inset-block-start: 50%;
+  inline-size: 6px;
+  block-size: 6px;
+  border-inline-end: 1.5px solid var(--ink-2);
+  border-block-end: 1.5px solid var(--ink-2);
+  transform: translateY(-70%) rotate(45deg);
+  pointer-events: none;
+}
 .list-sort select {
+  appearance: none;
   font: inherit;
   color: var(--ink);
   background: var(--surface);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-s);
-  padding: 0 0.5rem;
+  /* right: 14 px to the arrow's tip + 8 px arrow + 8 px gap, less the border */
+  padding: 0 29px 0 12px;
+  /* as wide as the chosen option, so the gap before the arrow is the same for each (where supported) */
+  field-sizing: content;
   min-block-size: 32px;
+  cursor: pointer;
+}
+.list-sort select:hover {
+  border-color: var(--accent);
 }
 .list-count {
   margin: 0;
