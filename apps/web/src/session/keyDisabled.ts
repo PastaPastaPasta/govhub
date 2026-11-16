@@ -14,8 +14,8 @@ export class WalletSessionEndedError extends Error {
 }
 
 const DISABLED_KEY = [
-  // "Identity key 6 is disabled", "identity public key id 12 has been disabled", "Public key 3 is disabled"
-  /\b(?:identity\s+)?(?:public\s+)?key\s+(?:id\s+)?#?\d+\s+(?:is|was|has\s+been)\s+disabled\b/i,
+  // "Identity key 6 is disabled", "Identity Public Key #12 has been disabled", "public key with id 3 disabled"
+  /\b(?:identity\s+(?:public\s+)?|public\s+)key\s+(?:with\s+)?(?:id\s+)?#?\d+\s+(?:(?:is|was|has\s+been)\s+)?disabled\b/i,
   // consensus error class names, as Rust or JS errors name them
   /\b(?:IdentityPublicKeyIsDisabled|PublicKeyIsDisabled|DisabledIdentityPublicKey|IdentityKeyDisabled)(?:Error)?\b/,
 ];
@@ -30,7 +30,8 @@ function texts(e: unknown, depth = 0, out: string[] = []): string[] {
   if (typeof e !== 'object') return out;
   const o = e as { name?: unknown; message?: unknown; cause?: unknown; errors?: unknown; toString?: () => string };
   for (const v of [o.name, o.message]) if (typeof v === 'string') out.push(v);
-  if (typeof o.toString === 'function' && o.toString !== Object.prototype.toString) {
+  // an error object without a message may still say it in its toString (Error's own repeats name and message)
+  if (typeof o.message !== 'string' && typeof o.toString === 'function' && o.toString !== Object.prototype.toString) {
     try {
       out.push(String(o.toString()));
     } catch {

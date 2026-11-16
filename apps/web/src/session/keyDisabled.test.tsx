@@ -2,7 +2,7 @@
 // A wallet (App Connect) key revoked in the wallet: Platform's "Identity key N is disabled" on any write is recognised whatever N is,
 // signs the wallet session out (this tab, the real AuthProvider) and is said once, in the app-wide banner with Reconnect.
 import { makeSession, SecurityLevel, type PlatformPort, type Session } from '@govhub/auth';
-import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react';
+import { act, createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { useAuth as UseAuth } from '../auth/context.tsx';
 import { flush, render } from '../test/render.tsx';
@@ -42,6 +42,9 @@ describe('isDisabledKeyError', () => {
       new Error('Protocol error: consensus error: Identity key 0 is disabled'),
       new Error('identity public key id 12 has been disabled'),
       new Error('Public key 3 is disabled'),
+      new Error('Identity Public Key #6 is disabled'),
+      new Error('identity key with id 8 disabled'),
+      new Error('Platform did not confirm this write (Identity key 6 is disabled). It may still appear.'),
       { message: 'state transition broadcast error: Identity key 9 is disabled' }, // a WASM error: not an Error instance
       { name: 'IdentityPublicKeyIsDisabledError', message: 'consensus error 40211' },
       new Error('broadcast failed', { cause: new Error('Identity key 7 is disabled') }),
@@ -58,6 +61,8 @@ describe('isDisabledKeyError', () => {
       new Error('Identity key 6 is not found'),
       new Error('insufficient identity GgZe balance 10 required 20'),
       new Error('The submit button is disabled'),
+      new Error('masternode key 1 is disabled'),
+      new Error('Your API key 2 is disabled'),
       new Error('This session has ended. Sign in again.'),
       { toString: () => '[object Object]' },
       42,
@@ -129,7 +134,7 @@ describe('the sign-out and the prompt', () => {
         </AuthProvider>
       </FakeForum>,
     );
-    return { ...t, r, get: () => t };
+    return { r, get: () => t };
   }
 
   afterEach(() => {
@@ -162,6 +167,7 @@ describe('the sign-out and the prompt', () => {
     expect(m.get().auth.sheet).toBe('wallet');
     expect(m.get().auth.walletEnded).toBe(false);
     expect(m.r.el.querySelector('[data-testid="wallet-session-ended"]')).toBeNull();
+    expect(m.r.el.querySelector('[data-testid="write-error"]')?.textContent).toBe(WALLET_SESSION_ENDED_TEXT); // no banner: said inline
     await m.r.unmount();
   });
 
@@ -175,9 +181,11 @@ describe('the sign-out and the prompt', () => {
     const pending = m.get().forum.session!.signAndBroadcastDocument(OP).catch((e: unknown) => e);
     await flush();
     const next = session('wallet');
-    m.get().auth.signIn(next);
-    await flush();
-    fail(new Error('Identity key 6 is disabled'));
+    // the old write fails right after the new sign-in, before React has run its effects
+    await act(async () => {
+      m.get().auth.signIn(next);
+      fail(new Error('Identity key 6 is disabled'));
+    });
     expect(await pending).toBeInstanceOf(WalletSessionEndedError);
     await flush();
     expect(m.get().forum.session).not.toBeNull();

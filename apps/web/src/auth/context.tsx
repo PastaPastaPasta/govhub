@@ -121,14 +121,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     current.current = session;
   }, [session]);
   // A wallet key disabled on Platform ends that session, in this tab only (wallet sessions are never shared with other tabs). A
-  // write of a session that was already replaced changes nothing.
+  // session already replaced or signed out was ended synchronously then, so its late failure changes nothing; a sign-in the user
+  // has started in the sheet meanwhile stays open.
   const keyDisabled = useCallback(
     (s: Session) => {
-      if (current.current !== s) return;
-      signOutHere();
+      if (s.ended) return;
+      forumSignOut();
+      setSheet((v) => (v === 'topup' || v === 'passkeys' ? null : v));
       setWalletEnded(true);
     },
-    [signOutHere],
+    [forumSignOut],
   );
   const signInHere = useCallback(
     (s: Session) => {
@@ -142,6 +144,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSheet('wallet');
   }, []);
   const dismissWalletEnded = useCallback(() => setWalletEnded(false), []);
+  // another network or data mode signs out anyway: the banner was about a session of the old one
+  useEffect(() => setWalletEnded(false), [registry.platformNetwork, registry.forum.contractId, mode]);
   const signIn = useCallback((s: Session) => {
     signInHere(s);
     share.current?.announce(s);
