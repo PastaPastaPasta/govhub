@@ -12,6 +12,7 @@ import { SecretField } from './SecretField.tsx';
 import { useAuth } from './context.tsx';
 import { useLeaveWarning } from './leaveWarning.ts';
 import { errorText, formatDuffs, isTransientError, plainErrorText } from './runtime.ts';
+import { IdentityName } from '../ui/Identity.tsx';
 
 type Start = 'default' | 'month' | 'year' | 'custom';
 type Held = { secret: RecoverySecret; owned: boolean };
@@ -474,13 +475,13 @@ function UseOnPlatform({ opts, scan, busy, onFund }: { opts: ItemOptions; scan: 
       )}
       {own && (
         <button type="button" className="btn" disabled={busy} onClick={() => onFund({ topUp: own })} data-testid="recover-topup-own">
-          Top up {short(own)}
+          Top up <IdentityName id={own} />
         </button>
       )}
       {opts.topUp === 'any' &&
         scan.identities.map((f) => (
           <button key={f.identityId} type="button" className="btn" disabled={busy} onClick={() => onFund({ topUp: f.identityId })} data-testid="recover-topup-mine">
-            Top up identity #{f.identityIndex} ({short(f.identityId)})
+            Top up identity #{f.identityIndex} (<IdentityName id={f.identityId} />)
           </button>
         ))}
       {opts.topUp === 'any' && (

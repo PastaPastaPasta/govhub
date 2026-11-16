@@ -11,6 +11,7 @@ import { useLeaveWarning } from './leaveWarning.ts';
 import { Qr } from './Qr.tsx';
 import { RecoverLink } from './RecoverLink.tsx';
 import { errorText, formatDashNumber, formatDuffs, plainErrorText } from './runtime.ts';
+import { IdentityName } from '../ui/Identity.tsx';
 
 export interface FundingPanelProps {
   kind: 'create' | 'topup';
@@ -276,7 +277,7 @@ function TooSmall(p: {
         <div className="form-actions">
           {mine.map((f) => (
             <button key={f.identityId} type="button" className="btn" onClick={() => onTopUp(f.identityId)} data-testid="recover-mine">
-              Top up this phrase's identity #{f.identityIndex} ({f.identityId.slice(0, 8)}…)
+              Top up this phrase's identity #{f.identityIndex} (<IdentityName id={f.identityId} />)
             </button>
           ))}
         </div>

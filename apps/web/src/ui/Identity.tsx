@@ -6,6 +6,8 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import type { Profile } from '@govhub/forum';
 import { shortHash, urlHost } from '../lib/format.ts';
 import { authorLabel } from '../lib/social.ts';
+import { useForum } from '../app/forum.tsx';
+import { useDpnsNames } from './useDpnsNames.ts';
 
 const DATA_IMAGE = /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+=*$/;
 
@@ -59,7 +61,11 @@ export function AuthorName({ id, profile, dpns }: { id: string; profile?: Profil
             {a.dpns}
           </bdi>
         ) : (
-          (name ?? shortHash(id, 5))
+          (name ?? (
+            <span className="mono-ish" title={id}>
+              {shortHash(id, 5)}
+            </span>
+          ))
         )}
       </b>
       {a.dpns && name && <span className="author-alias">{name}</span>}
@@ -69,6 +75,24 @@ export function AuthorName({ id, profile, dpns }: { id: string; profile?: Profil
         </span>
       )}
       {a.name && <NameInfo name={a.name} dpns={a.dpns} />}
+    </span>
+  );
+}
+
+/**
+ * An identity where only a name fits (claim lists, account pickers, inline mentions): its primary DPNS name, else its short id; the
+ * full id is in the tooltip either way. An identity on one of the reader's block lists is shown by its short id only.
+ */
+export function IdentityName({ id }: { id: string }) {
+  const { moderation } = useForum();
+  const name = useDpnsNames([id]).get(id);
+  return name && !moderation.index.identityHidden(id) ? (
+    <bdi className="author-dpns-name" title={`${name}, identity ${id}`} data-testid="identity-name">
+      {name}
+    </bdi>
+  ) : (
+    <span className="mono-ish" title={id} data-testid="identity-name">
+      {shortHash(id, 4)}
     </span>
   );
 }
@@ -126,7 +150,6 @@ function NameInfo({ name, dpns }: { name: string; dpns: string | null }) {
         ) : (
           <p>It isn’t a Dash username. The short code next to it is the account’s ID, which is unique.</p>
         )}
-        <p className="muted">When govhub supports signing in with a Dash wallet, names will come from Dash usernames.</p>
       </div>
     </>
   );

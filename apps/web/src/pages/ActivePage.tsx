@@ -10,6 +10,7 @@ import { ProposalCard } from '../ui/ProposalCard.tsx';
 import { ProposalTabs } from '../ui/ProposalTabs.tsx';
 import { useReveal } from '../ui/hooks.ts';
 import { useCommentCounts } from '../ui/useCommentCounts.ts';
+import { useDpnsNames } from '../ui/useDpnsNames.ts';
 import { countNames, proposalHref, type Checked, type Row } from '../lib/view.ts';
 
 /** Display names of these identities (self-chosen profiles), for the owners named in proposal URLs. */
@@ -30,6 +31,7 @@ function useProfiles(ids: readonly string[]): ReadonlyMap<string, Profile> {
 
 export function ActivePage() {
   const { gov, activeRows, registry } = useApp();
+  const { moderation } = useForum();
   const [showFailed, setShowFailed] = useState(false);
   const [showLameDucks, setShowLameDucks] = useState(false);
   const all = useMemo(() => [...activeRows.shown, ...activeRows.failed], [activeRows]);
@@ -46,10 +48,13 @@ export function ActivePage() {
     () => new Map(cards.map(({ item: r }) => [r.p.value.govHash, r.content.ok ? urlClaimIdentity(r.p.value.url, r.p.value.name, registry.forum.claimPortals) : null])),
     [cards, registry.forum.claimPortals],
   );
-  const profiles = useProfiles([...owners.values()].filter((x): x is string => !!x));
+  const ownerIds = useMemo(() => [...owners.values()].filter((x): x is string => !!x), [owners]);
+  const profiles = useProfiles(ownerIds);
+  const ownerNames = useDpnsNames(ownerIds);
   const failed = activeRows.failed.length;
   function card({ item: r, check }: Checked<Row>) {
     const owner = owners.get(r.p.value.govHash) ?? null;
+    const named = owner && !moderation.index.identityHidden(owner) ? owner : null; // on a block list: no name, as on the proposal page
     return (
       <ProposalCard
         key={r.p.value.govHash}
@@ -58,7 +63,8 @@ export function ActivePage() {
         href={proposalHref(r.p.value, names)}
         comments={counts.get(r.p.value.govHash)}
         urlOwner={owner}
-        ownerProfile={owner ? profiles.get(owner) : undefined}
+        ownerProfile={named ? profiles.get(named) : undefined}
+        ownerDpns={named ? ownerNames.get(named) : undefined}
       />
     );
   }

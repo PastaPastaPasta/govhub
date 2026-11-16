@@ -14,6 +14,11 @@ vi.mock('@govhub/auth', async (orig) => ({
   nextCreateIndex: () => 2,
 }));
 const closeSheet = vi.fn();
+// identity names (ui/IdentityName): none here, so the short id shows
+vi.mock('../app/forum.tsx', () => {
+  const value = { forum: { names: async () => new Map() }, moderation: { index: { identityHidden: () => false } } };
+  return { useForum: () => value };
+});
 vi.mock('./context.tsx', () => {
   const auth = { dapi: () => ({}), platform: async () => ({}), store: {}, network: 'testnet', closeSheet: () => closeSheet() };
   return { useAuth: () => auth };
