@@ -93,13 +93,15 @@ export function SortSelect<T extends string>({ value, options, onChange }: { val
   return (
     <label className="list-sort">
       <span>Sort</span>
-      <select value={value} onChange={(e) => onChange(e.target.value as T)} data-testid="list-sort">
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.text}
-          </option>
-        ))}
-      </select>
+      <span className="list-select">
+        <select value={value} onChange={(e) => onChange(e.target.value as T)} data-testid="list-sort">
+          {options.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.text}
+            </option>
+          ))}
+        </select>
+      </span>
     </label>
   );
 }
