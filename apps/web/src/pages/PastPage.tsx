@@ -10,7 +10,9 @@ import { countNames, partitionByCheck, proposalHref } from '../lib/view.ts';
 import { isFailed } from '../verify/checks.ts';
 import { FailedNote, FailedProposalsToggle } from '../ui/HiddenToggle.tsx';
 import { useReveal } from '../ui/hooks.ts';
+import { NoMatches, ResultCount, SearchField, useQueryState } from '../ui/ListControls.tsx';
 import { ProposalTabs } from '../ui/ProposalTabs.tsx';
+import { comparePast, matches, nextPastSort, pastNeedsAll, proposalFields, readPast, writePast, type PastSort } from '../lib/listQuery.ts';
 
 export function PastPage() {
   const { source, checks } = useApp();
@@ -35,10 +37,12 @@ export function PastPage() {
         setItems((prev) => (cursor ? [...prev, ...page.items] : page.items));
         setNext(page.next);
         setState({ loading: false, done: !page.next });
-        if (page.items.length) {
-          const t = await source.tallies(page.items.map((i) => i.value.govHash));
-          if (g === gen.current) setTallies((prev) => new Map([...prev, ...t]));
-        }
+        // not awaited: the next page (reading every page for a search or another order) never waits for this one's tallies
+        if (page.items.length)
+          source.tallies(page.items.map((i) => i.value.govHash)).then(
+            (t) => g === gen.current && setTallies((prev) => new Map([...prev, ...t])),
+            (e) => g === gen.current && setState({ loading: false, done: true, error: errText(e) }),
+          );
       } catch (e) {
         if (g === gen.current) setState({ loading: false, done: true, error: errText(e) });
       } finally {
@@ -54,10 +58,32 @@ export function PastPage() {
     void load();
   }, [load]);
 
+  const [query, setQuery] = useQueryState(readPast, writePast);
+  const needsAll = pastNeedsAll(query);
+  // A search or another order needs every past proposal, not just the pages read so far: read the rest, page by page.
+  useEffect(() => {
+    if (needsAll && next && !state.loading && !state.error) void load(next);
+  }, [needsAll, next, state.loading, state.error, load]);
+  const ordered = useMemo(() => {
+    if (!needsAll) return items;
+    const found = items.filter((i) => matches(query.q, proposalFields(i.value)));
+    const yes = (p: Proposal) => {
+      const t = tallies.get(p.govHash);
+      return t ? absoluteYes(t.value) : null;
+    };
+    const cmp = comparePast(query.sort, query.dir, yes);
+    return found.sort((a, b) => cmp(a.value, b.value));
+  }, [items, tallies, query, needsAll]);
+
   const checksVersion = useSyncExternalStore(checks.subscribe, checks.getVersion);
   // Proposals that failed verification are hidden until the toggle at the bottom; pending checks stay listed.
   const parts = useMemo(
-    () => partitionByCheck(items, (i) => checks.state(i.value)),
+    () => partitionByCheck(ordered, (i) => checks.state(i.value)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [ordered, checks, checksVersion],
+  );
+  const failedAll = useMemo(
+    () => items.filter((i) => isFailed(checks.state(i.value))).length,
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [items, checks, checksVersion],
   );
@@ -69,7 +95,23 @@ export function PastPage() {
   });
   const names = useMemo(() => countNames(items.map((i) => i.value)), [items]);
   // Background checks for what has been revealed so far (plus the next screenful), not for every loaded page of 100.
-  useEffect(() => checks.ensure(items.slice(0, count + 12).map((i) => i.value)), [checks, items, count]);
+  useEffect(() => checks.ensure(ordered.slice(0, count + 12).map((i) => i.value)), [checks, ordered, count]);
+  const searching = !!query.q.trim();
+  const clear = () => setQuery({ q: '' });
+  const loadingAll = needsAll && !state.done;
+  const header = (col: PastSort, text: string, className?: string) => {
+    const on = query.sort === col;
+    return (
+      <th scope="col" className={className} aria-sort={on ? (query.dir === 'asc' ? 'ascending' : 'descending') : undefined}>
+        <button type="button" className={`sort-head${on ? ' on' : ''}`} onClick={() => setQuery(nextPastSort(query, col))} data-testid={`sort-${col}`}>
+          {text}
+          <span className="sort-arrow" aria-hidden="true">
+            {on ? (query.dir === 'asc' ? '↑' : '↓') : '↕'}
+          </span>
+        </button>
+      </th>
+    );
+  };
 
   return (
     <section aria-labelledby="past-title" className="list-section">
@@ -78,8 +120,14 @@ export function PastPage() {
           Past proposals
         </h1>
         <ProposalTabs />
-        <p className="small muted">Proposals whose payments have ended, most recent first.</p>
+        <p className="small muted">Proposals whose payments have ended. Sort by any column heading.</p>
       </div>
+      {(items.length > 0 || searching) && (
+        <div className="list-tools" role="search" aria-label="Past proposals">
+          <SearchField label="Search past proposals" placeholder="Search by name, URL or address" value={query.q} onChange={(q, replace) => setQuery({ q }, { replace })} />
+          {searching && !loadingAll && !state.error && <ResultCount shown={rows.length} total={showFailed ? items.length : items.length - failedAll} what="past proposals" onClear={rows.length ? clear : undefined} />}
+        </div>
+      )}
       {state.error && <p className="error">Platform could not be read: {state.error}</p>}
       {!state.loading && !state.error && items.length === 0 && (
         <p className="empty">
@@ -90,14 +138,10 @@ export function PastPage() {
         <table className="past">
           <thead>
             <tr>
-              <th scope="col">Proposal</th>
-              <th scope="col">Ended</th>
-              <th scope="col" className="r">
-                Amount
-              </th>
-              <th scope="col" className="r">
-                Net yes
-              </th>
+              {header('name', 'Proposal')}
+              {header('ended', 'Ended')}
+              {header('amount', 'Amount', 'r')}
+              {header('yes', 'Net yes', 'r')}
             </tr>
           </thead>
           <tbody>
@@ -121,8 +165,13 @@ export function PastPage() {
         </table>
       )}
       <div ref={sentinel} className="sentinel" aria-hidden="true" />
-      {state.loading && <p className="muted small center">Loading…</p>}
-      {state.done && rows.length > 0 && <p className="muted small center">That's all {formatInt(parts.shown.length)} past proposals.</p>}
+      {searching && !loadingAll && !state.error && items.length > 0 && rows.length === 0 && <NoMatches query={query.q} onClear={clear} />}
+      {state.loading && (
+        <p className="muted small center" role="status">
+          {loadingAll && items.length ? `Reading every past proposal… ${formatInt(items.length)} so far` : 'Loading…'}
+        </p>
+      )}
+      {state.done && rows.length > 0 && !searching && <p className="muted small center">That's all {formatInt(parts.shown.length)} past proposals.</p>}
       {state.done && failed > 0 && <FailedProposalsToggle count={failed} shown={showFailed} onToggle={() => setShowFailed((v) => !v)} />}
     </section>
   );
