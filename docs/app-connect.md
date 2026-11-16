@@ -54,6 +54,13 @@ reactions, posts, profiles and block lists, and nothing else: no credit transfer
    second tab asks the wallet again, and registers another key on the identity; the wallet may retire the previous one, since
    every tab of a browser sends the same `CONNECTION_ID`.
 
+If the wallet revokes the key (or retires it for a newer one), Platform refuses whatever it signs next ("Identity key N is
+disabled"); the document writer also refuses before broadcasting when its identity read shows the key disabled. Every write goes
+through the wallet session's signer (`apps/web/src/session/authSession.ts`), which recognises that refusal by its shape
+(`session/keyDisabled.ts`), logs the raw error to the console, signs the tab out (wiping the key) and shows one banner, "Your
+wallet session has ended. Reconnect with App Connect to continue.", whose Reconnect button opens the App Connect sign-in again. No
+session is restored at startup (the key lives in the tab's memory only), so there is nothing to check then.
+
 A wallet session cannot top up, add a passkey, pay for or submit a proposal (each derives from or stores the signing key, which is
 temporary), request a masternode badge (it posts to the badge contract, so the token could never be posted), or open a saved
 masternode keyring. Those views say why instead, and a write to any contract but the forum
