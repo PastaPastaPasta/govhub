@@ -97,7 +97,9 @@ export function createDpnsResolver(query: DomainQuery, o: ResolverOptions = {}):
       byId.set(id, [...(byId.get(id) ?? []), d]);
     }
     const out = new Map<string, Answer>();
-    const boundary = complete || ids.length === 1 ? null : String(docs[docs.length - 1]?.records?.identity);
+    // the last document's identity, when it is one asked for (anything else is no progress to build on: answered as read)
+    const last = String(docs[docs.length - 1]?.records?.identity);
+    const boundary = complete || ids.length === 1 || !ids.includes(last) ? null : last;
     const unseen = boundary === null ? [] : ids.filter((id) => id !== boundary && !byId.has(id));
     for (const id of ids) if (id !== boundary && !unseen.includes(id)) out.set(id, { name: primaryName(id, byId.get(id) ?? []) });
     for (const again of [boundary === null ? [] : [boundary], unseen]) {

@@ -127,22 +127,36 @@ describe('createDpnsResolver', () => {
   });
 
   it('a heavy holder is named the same whichever ids share its batch', async () => {
-    const docs = [...Array.from({ length: 9 }, (_, i) => dom(A, `many${i}`, 900 - i)), dom(B, 'bob', 1), dom(C, 'cat', 1)];
-    const alone = await createDpnsResolver(platform(docs).query, { limit: 2, maxPages: 2 }).names([A]);
+    // B holds many names; A (read first) takes part of its first page when they share a batch
+    const docs = [...Array.from({ length: 9 }, (_, i) => dom(B, `many${i}`, 900 - i)), dom(A, 'alice', 1), dom(C, 'cat', 1)];
+    const alone = await createDpnsResolver(platform(docs).query, { limit: 2, maxPages: 2 }).names([B]);
     const shared = await createDpnsResolver(platform(docs).query, { limit: 2, maxPages: 2 }).names([A, B, C]);
-    expect(shared.get(A)).toBe(alone.get(A));
-    expect(shared.get(B)).toBe('bob.dash');
+    expect(alone.get(B)).toBe('many3.dash');
+    expect(shared.get(B)).toBe(alone.get(B));
+    expect(shared.get(A)).toBe('alice.dash');
     expect(shared.get(C)).toBe('cat.dash');
+  });
+
+  it('a cut-short answer naming none of the ids asked for ends the read instead of asking again', async () => {
+    const query = vi.fn<DomainQuery>(async (ids, { limit }) => Array.from({ length: limit }, (_, i) => dom(`other${ids[0]}`, `x${i}name`, i)));
+    const r = createDpnsResolver(query, { limit: 2, maxPages: 2 });
+    expect(await r.names([A, B])).toEqual(new Map());
+    expect(query).toHaveBeenCalledTimes(2);
   });
 
   it('a failed follow-up read keeps the names already read', async () => {
     const [lo, hi] = [A, B].sort() as [string, string];
     const p = platform([dom(lo, 'aaa', 1), dom(lo, 'bbb', 2), dom(lo, 'ccc', 3), dom(lo, 'ddd', 4), dom(lo, 'eee', 5), dom(hi, 'bob', 1)]);
-    const query: DomainQuery = async (ids, page) => (ids.length === 1 && ids[0] === hi ? Promise.reject(new Error('timeout')) : p.query(ids, page));
+    let failures = 0;
+    const query: DomainQuery = async (ids, page) => (ids.length === 1 && ids[0] === hi ? Promise.reject(new Error(`timeout ${++failures}`)) : p.query(ids, page));
     const r = createDpnsResolver(query, { limit: 2, maxPages: 2 });
     const m = await r.names([lo, hi]);
     expect(m.get(lo)).toBe('aaa.dash');
     expect(m.has(hi)).toBe(false);
+    const before = p.calls.length;
+    expect(await r.names([lo, hi])).toEqual(new Map([[lo, 'aaa.dash']]));
+    expect(p.calls.length).toBe(before); // `lo` came from the cache
+    expect(failures).toBe(2); // `hi` was not cached: it was asked again
   });
 
   it('a failed read is not remembered: the next ask reads again', async () => {
