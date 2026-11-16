@@ -269,6 +269,8 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
     const found = await readUntil(() => fetchIdentity(ownerId), (i) => !!i?.getPublicKeyById(key.id));
     const idKey = found.hit?.getPublicKeyById(key.id);
     if (!idKey) throw new Error(found.error && !found.last ? errText(found.error) : 'signing key not found on the identity');
+    // a disabled key (revoked in the wallet, for an App Connect key) would only be refused by Platform: say so in its words, unsent
+    if (keyInfo(idKey).disabled) throw new Error(`Identity key ${key.id} is disabled`);
     const owner = identifierBytes(ownerId);
     const contract = identifierBytes(op.contractId);
     const latest = w.PlatformVersion.latest() as never;

@@ -1,10 +1,12 @@
 // A failed write as the user sees it: the message, and a Top up button when the reason is the identity's balance.
 import { useAuth } from '../auth/context.tsx';
 import { formatCredits } from '../lib/format.ts';
+import { WALLET_SESSION_ENDED_TEXT } from '../session/keyDisabled.ts';
 
 export function WriteError({ error, needsTopUp = false, onTopUp, inline = false }: { error: string | null; needsTopUp?: boolean; onTopUp?: () => void; inline?: boolean }) {
   const { openSheet } = useAuth();
-  if (!error) return null;
+  // a revoked wallet session is said once, by the app-wide banner with its Reconnect button (app/Layout.tsx)
+  if (!error || error === WALLET_SESSION_ENDED_TEXT) return null;
   const Tag = inline ? 'span' : 'p'; // inline inside a <span> (the vote buttons)
   return (
     <Tag className="error small" role="alert" data-testid="write-error">

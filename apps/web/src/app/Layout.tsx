@@ -6,6 +6,7 @@ import { SessionControl } from '../ui/SignIn.tsx';
 import { ChainShield } from '../ui/trust/ChainShield.tsx';
 import { useApp } from './context.tsx';
 import { PRIVACY_DOC_URL } from '../pages/AboutPage.tsx';
+import { WALLET_SESSION_ENDED_TEXT } from '../session/keyDisabled.ts';
 
 // The sign-in sheet (BIP39 wordlist, BIP32, HPKE, tx building) loads when it is first opened.
 const AuthSheet = lazy(() => import('../auth/AuthSheet.tsx').then((m) => ({ default: m.AuthSheet })));
@@ -208,6 +209,27 @@ function SettingsProblem() {
   );
 }
 
+/** A wallet (App Connect) session ended because the wallet revoked its key: the one place that says so, with a way back in. */
+export function WalletSessionEnded() {
+  const { walletEnded, reconnectWallet, dismissWalletEnded } = useAuth();
+  if (!walletEnded) return null;
+  return (
+    <div className="banner banner-empty" role="alert" data-testid="wallet-session-ended">
+      <p>
+        <b>{WALLET_SESSION_ENDED_TEXT}</b>
+      </p>
+      <div className="banner-actions">
+        <button type="button" className="btn btn-primary" onClick={reconnectWallet} data-testid="wallet-reconnect">
+          Reconnect
+        </button>
+        <button type="button" className="btn btn-quiet" onClick={dismissWalletEnded}>
+          Dismiss
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ModeBanner() {
   const { mode, setMode, source, gov, registry, switchProfile } = useApp();
   if (mode === 'fixtures') {
@@ -302,6 +324,7 @@ export function Layout() {
         </div>
       </header>
       <LazyAuthSheet />
+      <WalletSessionEnded />
       <ConfigOffer />
       <SettingsProblem />
       <ModeBanner />
