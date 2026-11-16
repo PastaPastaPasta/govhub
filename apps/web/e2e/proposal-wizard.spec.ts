@@ -61,9 +61,9 @@ test.describe('create a proposal (fixtures)', () => {
 
     // Pay: nothing before the backup
     await expect(page.getByTestId('p-pay')).toBeVisible();
-    await expect(page.locator('#pw-pay-title')).toHaveText('Pay the fee: send a bit more than 1 DASH');
+    await expect(page.locator('#pw-pay-title')).toHaveText('Pay the fee');
     await expect(page.getByTestId('p-fee-recommended')).toHaveText('1.00001 DASH');
-    await expect(page.getByTestId('p-fee-explain')).toContainText('exactly 1 DASH is not enough');
+    await expect(page.getByTestId('p-fee-explain')).toHaveText('Total 1.00001 DASH: 1 DASH is burned, plus a tiny network fee.');
     await expect(page.getByTestId('p-pay-browser')).toHaveCount(0);
     const dl = page.waitForEvent('download');
     await page.getByTestId('p-backup-download').click();

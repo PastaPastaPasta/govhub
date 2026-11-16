@@ -2,7 +2,7 @@
 // one of two ways to pay: from any wallet through a one-time deposit address this browser watches (path b), or with Dash Core's own
 // `gobject prepare` (path a), whose txid the browser then checks over DAPI.
 import {
-  addressOf, coinType, collateralFeeDuffs, MIN_COLLATERAL_DEPOSIT_DUFFS, newCollateralFunding, proposalDepositKey, proposalDepositPath, publicKeyOf, wipe, type CollateralFundingView, type DepositKey, type DepositKeySource,
+  addressOf, coinType, MIN_COLLATERAL_DEPOSIT_DUFFS, newCollateralFunding, proposalDepositKey, proposalDepositPath, publicKeyOf, wipe, type CollateralFundingView, type DepositKey, type DepositKeySource,
 } from '@govhub/auth';
 import { duffsToDash, GOV_CHAIN_PARAMS, GOVERNANCE_PROPOSAL_FEE_DUFFS, gobjectPrepareCommand, isCollateralChangeAddress } from '@govhub/verify';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -98,7 +98,7 @@ export function PayStep({ draft, commit, services }: PayProps) {
     <div className="pw-form" data-testid="p-pay">
       <BackupBox draft={draft} commit={commit} />
       <section className={`pw-methods${ready ? '' : ' pw-locked'}`} aria-labelledby="pw-pay-title" aria-disabled={!ready}>
-        <h3 id="pw-pay-title">Pay the fee: send a bit more than {duffsToDash(GOVERNANCE_PROPOSAL_FEE_DUFFS)} {feeUnit(services.network)}</h3>
+        <h3 id="pw-pay-title">Pay the fee</h3>
         {method !== 'core' && !draft.payment?.funding && <FeeExplainer unit={feeUnit(services.network)} />}
         {!ready && <p className="muted small">Save the backup first.</p>}
         {ready && !method && (
@@ -125,13 +125,12 @@ export function PayStep({ draft, commit, services }: PayProps) {
   );
 }
 
-/** Why exactly 1 DASH is not enough: the burn and the network fee both come out of the payment. */
+/** The total to send: the burn alone is not enough, the network fee comes on top. */
 function FeeExplainer({ unit }: { unit: string }) {
-  const burn = duffsToDash(GOVERNANCE_PROPOSAL_FEE_DUFFS);
   return (
     <p className="small" data-testid="p-fee-explain">
-      Send <b data-testid="p-fee-recommended">{duffsToDash(MIN_COLLATERAL_DEPOSIT_DUFFS)} {unit}</b>. The fee transaction burns exactly {burn} {unit} and also pays a
-      small network fee (about {duffsToDash(collateralFeeDuffs(1))} {unit}), so exactly {burn} {unit} is not enough. The rest comes back to you as change.
+      Total <b data-testid="p-fee-recommended">{duffsToDash(MIN_COLLATERAL_DEPOSIT_DUFFS)} {unit}</b>: {duffsToDash(GOVERNANCE_PROPOSAL_FEE_DUFFS)} {unit} is burned, plus a tiny
+      network fee.
     </p>
   );
 }
@@ -330,8 +329,7 @@ function Deposit({ draft, view, error, retry, services }: { draft: ProposalDraft
               </p>
             ) : (
               <p>
-                Send <b data-testid="p-deposit-amount">{fmt(view.remainingDuffs)}</b> to this one-time address: the {fmt(GOVERNANCE_PROPOSAL_FEE_DUFFS)} burn plus the network fee.
-                More is fine: the rest comes back to {f.refundAddress}.
+                Send <b data-testid="p-deposit-amount">{fmt(view.remainingDuffs)}</b> to this one-time address. Any extra comes back to {f.refundAddress}.
               </p>
             )}
             <p className="muted small">Keep this page open until the fee transaction is sent (a few seconds after your payment is confirmed by InstantSend).</p>
