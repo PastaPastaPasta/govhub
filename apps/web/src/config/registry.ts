@@ -149,8 +149,20 @@ export interface NetworkProfile {
   /** Bridges whose dashd serves quorum proofs for this profile's Core network (before the public quorum list server). */
   proofBridges: string[];
   forum: ForumEndpoints | null;
+  /** Sign-in with a Dash wallet (App Connect, docs/app-connect.md). */
+  appConnect: AppConnectFlag;
   /** Not deployed: shown, but cannot be selected. */
   deployed: boolean;
+}
+
+/**
+ * App Connect for a profile. `appId` is the contract the wallet shows and binds the session key to: the profile's forum contract,
+ * so the key can write comments, reactions and posts and nothing else. Off: the "Sign in with a Dash wallet" button stays "Coming
+ * soon" and no App Connect code is loaded, unless the page was opened with the hidden `?appconnect=1` opt-in (appConnectEnabled).
+ */
+export interface AppConnectFlag {
+  enabled: boolean;
+  appId: string;
 }
 
 export const PROFILES: Record<ProfileId, NetworkProfile> = {
@@ -166,6 +178,7 @@ export const PROFILES: Record<ProfileId, NetworkProfile> = {
     relays: [TESTNET_RELAY],
     proofBridges: ['https://gov-bridge-testnet.dashhq.org'],
     forum: TESTNET_FORUM,
+    appConnect: { enabled: false, appId: TESTNET_FORUM.contractId },
     deployed: true,
   },
   dev: {
@@ -181,6 +194,7 @@ export const PROFILES: Record<ProfileId, NetworkProfile> = {
     // its dashd runs v24 (24.0.0-rc.4) and serves quorum proofs; a bridge on Core 23.x answers 501 and chain facts fall back to proof of work
     proofBridges: ['https://gov-bridge.dashhq.org'],
     forum: TESTNET_FORUM,
+    appConnect: { enabled: false, appId: TESTNET_FORUM.contractId },
     deployed: true,
   },
   mainnet: {
@@ -196,9 +210,36 @@ export const PROFILES: Record<ProfileId, NetworkProfile> = {
     // both bridges run on the same v24 dashd; either one's proofs check out against the pinned checkpoint
     proofBridges: ['https://gov-bridge-mainnet.dashhq.org', 'https://gov-bridge.dashhq.org'],
     forum: MAINNET_FORUM,
+    // flip `enabled` to true to show wallet sign-in to everyone on Mainnet (docs/app-connect.md)
+    appConnect: { enabled: false, appId: MAINNET_FORUM.contractId },
     deployed: true,
   },
 };
+
+/** The hidden opt-in: `?appconnect=1` turns App Connect on for this tab (kept across navigation), `?appconnect=0` turns it off again. */
+export const APP_CONNECT_OPT_IN_PARAM = 'appconnect';
+const APP_CONNECT_OPT_IN_KEY = 'govhub.appconnect';
+
+/** Reads and remembers the opt-in from the page URL. Never throws (storage can be blocked). */
+export function appConnectOptIn(search: string = globalThis.location?.search ?? '', storage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> | undefined = globalThis.sessionStorage): boolean {
+  const v = new URLSearchParams(search).get(APP_CONNECT_OPT_IN_PARAM);
+  try {
+    if (v === '1') storage?.setItem(APP_CONNECT_OPT_IN_KEY, '1');
+    else if (v === '0') storage?.removeItem(APP_CONNECT_OPT_IN_KEY);
+    return v === '1' || (v !== '0' && storage?.getItem(APP_CONNECT_OPT_IN_KEY) === '1');
+  } catch {
+    return v === '1';
+  }
+}
+
+/**
+ * Whether wallet sign-in is offered with these settings: the profile's flag or the opt-in, and only while the forum contract in use
+ * is the profile's app id (a key bound to it could not write to a custom forum contract).
+ */
+export function appConnectEnabled(r: Pick<Registry, 'profile' | 'forum'>, optIn: boolean): boolean {
+  const f = PROFILES[r.profile].appConnect;
+  return (f.enabled || optIn) && r.forum.contractId === f.appId;
+}
 
 export const PROFILE_ORDER: readonly ProfileId[] = ['mainnet', 'testnet', 'dev'];
 

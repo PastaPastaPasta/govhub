@@ -7,12 +7,13 @@
 import { storageFundingStore, type FundingStore, type Network, type PlatformPort, type Session } from '@govhub/auth';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useApp } from '../app/context.tsx';
+import { appConnectEnabled, appConnectOptIn } from '../config/registry.ts';
 import { useForum } from '../app/forum.tsx';
 import { appSessionFromAuth, type AppAuthSession } from '../session/authSession.ts';
 import { createTabShare, type TabShare } from '../session/tabShare.ts';
 import { getAuthDapi, getPlatformPort } from './runtime.ts';
 
-export type SheetView = 'choose' | 'create' | 'phrase' | 'key' | 'passkey' | 'topup' | 'passkeys';
+export type SheetView = 'choose' | 'create' | 'phrase' | 'key' | 'passkey' | 'wallet' | 'topup' | 'passkeys';
 
 /** The masternode keyring's lock (voting/KeyringContext.tsx), one for the open tabs of the session (session/tabShare.ts, D-015). */
 export interface KeyringLockCtl {
@@ -42,6 +43,8 @@ interface AuthCtx {
   balance: bigint | null;
   network: Network;
   forumContractId: string;
+  /** Sign-in with a Dash wallet (App Connect) is offered: the profile's flag or the `?appconnect=1` opt-in (config/registry.ts). */
+  appConnect: boolean;
   /** Signs in this tab and the other open tabs of this profile. */
   signIn(s: Session): void;
   /** Signs out this tab and the other open tabs of this profile. */
@@ -78,6 +81,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const forum = useForum();
   const [sheet, setSheet] = useState<SheetView | null>(null);
   const [restoring, setRestoring] = useState(false);
+  const [optIn] = useState(() => appConnectOptIn());
+  const appConnect = appConnectEnabled(registry, optIn);
   const share = useRef<TabShare | null>(null);
   const keyringHooks = useRef<KeyringHooks | null>(null);
   // No sharing (a sub-path): this tab's own lock (voting/gate.ts KeyringLock) is the only one. Sharing but no channel yet: locked.
@@ -175,10 +180,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AuthCtx>(
     () => ({
-      session, restoring: restoring && !session, balance: session ? forum.balance : null, network: registry.platformNetwork, forumContractId: registry.forum.contractId, signIn, signOut, keyringLock,
+      session, restoring: restoring && !session, balance: session ? forum.balance : null, network: registry.platformNetwork, forumContractId: registry.forum.contractId, appConnect, signIn, signOut, keyringLock,
       refreshBalance: forum.refreshBalance, platform, dapi, store, sheet, openSheet: setSheet, closeSheet: () => setSheet(null),
     }),
-    [session, restoring, forum.balance, forum.refreshBalance, registry.platformNetwork, registry.forum.contractId, signIn, signOut, keyringLock, platform, dapi, store, sheet],
+    [session, restoring, forum.balance, forum.refreshBalance, registry.platformNetwork, registry.forum.contractId, appConnect, signIn, signOut, keyringLock, platform, dapi, store, sheet],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

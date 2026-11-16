@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
+import { useAuth } from '../auth/context.tsx';
 import { formatDateTime, shortHash } from '../lib/format.ts';
 import { superblockPhrase } from '../lib/governance.ts';
 import { CostSummary, DetailsStep, PaymentsStep, ReviewStep, usePlan, type EditProps } from '../proposal/EditSteps.tsx';
@@ -158,6 +159,9 @@ function Wizard({ initial, services, onChange }: { initial: ProposalDraft; servi
   );
   const plan = usePlan(draft);
   const stage = draftStage(draft);
+  // the payment's deposit keys derive from the signed-in phrase or key; a wallet sign-in's key is temporary, so it could not get the
+  // money back later
+  const walletSession = useAuth().session?.source === 'wallet' && !services.demo;
   const step = stage === 'edit' ? draft.editStep : stage === 'pay' ? 3 : 4;
   // each step starts at the top of the page
   useEffect(() => {
@@ -196,8 +200,14 @@ function Wizard({ initial, services, onChange }: { initial: ProposalDraft; servi
       {stage === 'edit' && draft.editStep === 0 && <DetailsStep {...edit} />}
       {stage === 'edit' && draft.editStep === 1 && <PaymentsStep {...edit} />}
       {stage === 'edit' && draft.editStep === 2 && <ReviewStep {...edit} />}
-      {stage === 'pay' && <PayStep draft={draft} commit={commit} services={services} />}
-      {(stage === 'submit' || stage === 'done') && <SubmitStep draft={draft} commit={commit} services={services} />}
+      {stage !== 'edit' && walletSession && (
+        <p className="notice-box" data-testid="pw-wallet-session">
+          Paying for and submitting a proposal needs a sign-in with a recovery phrase or key: the payment address comes from that sign-in, so the money
+          can always be recovered. Your wallet sign-in holds a temporary key. Sign out and sign in with your recovery phrase to continue.
+        </p>
+      )}
+      {stage === 'pay' && !walletSession && <PayStep draft={draft} commit={commit} services={services} />}
+      {(stage === 'submit' || stage === 'done') && !walletSession && <SubmitStep draft={draft} commit={commit} services={services} />}
       {stage !== 'edit' && draft.lock && (
         <p className="muted small pw-foot">
           {draft.lock.name}: {duffsToDash(BigInt(draft.lock.paymentDuffs))} DASH × {draft.lock.superblocks.length}, hash {shortHash(draft.lock.govHash, 8)}

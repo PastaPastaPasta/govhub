@@ -98,6 +98,11 @@ function Unlock({ onMemoryOnly }: { onMemoryOnly(): void }) {
           You signed in with a pasted key, which cannot open a saved keyring. Use your recovery phrase or a passkey, or memory-only keys.
         </p>
       )}
+      {session?.source === 'wallet' && (
+        <p className="small muted" data-testid="keyring-wallet">
+          You signed in with your Dash wallet, which cannot open a saved keyring. Use your recovery phrase or a passkey, or memory-only keys.
+        </p>
+      )}
       {!passkeyNot && (
         <button type="button" className="btn btn-primary" onClick={() => void k.unlockWithPasskey().catch(() => {})} disabled={!!k.busy}>
           Unlock with a passkey

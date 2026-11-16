@@ -257,7 +257,8 @@ export function createTabShare(o: TabShareOptions): TabShare {
 }
 
 function materialOf(s: Session): Material | null {
-  if (s.ended) return null;
+  // a wallet grant's bound key cannot sign in through the key path the other tabs would rebuild it with
+  if (s.ended || s.source === 'wallet') return null;
   const base = { source: s.source, identityId: s.identityId, keyId: s.keyId, ...(s.credentialId && { credentialId: s.credentialId.slice() }) };
   if (s.wallet && s.identityIndex !== null) return s.wallet.wiped ? null : { ...base, identityIndex: s.identityIndex, entropy: s.wallet.entropy() };
   return { ...base, identityIndex: null, privateKey: s.privateKey.slice() };

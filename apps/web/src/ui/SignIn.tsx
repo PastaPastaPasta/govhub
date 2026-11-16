@@ -113,8 +113,8 @@ export function SessionControl() {
           </div>
         )}
         {session && item('Edit profile', () => dialog.current?.showModal())}
-        {session && auth.session && item('Top up', () => auth.openSheet('topup'))}
-        {session && auth.session && item('Add passkey', () => auth.openSheet('passkeys'))}
+        {session && auth.session && auth.session.source !== 'wallet' && item('Top up', () => auth.openSheet('topup'))}
+        {session && auth.session && auth.session.source !== 'wallet' && item('Add passkey', () => auth.openSheet('passkeys'))}
         {!session && item('Sign in or create an account', openSignIn)}
         {session && (
           <Link className="menu-item" to="/masternodes#mn-badge" onClick={hide} data-testid="menu-badge">
