@@ -99,7 +99,7 @@ export function PayStep({ draft, commit, services }: PayProps) {
       <BackupBox draft={draft} commit={commit} />
       <section className={`pw-methods${ready ? '' : ' pw-locked'}`} aria-labelledby="pw-pay-title" aria-disabled={!ready}>
         <h3 id="pw-pay-title">Pay the fee: send a bit more than {duffsToDash(GOVERNANCE_PROPOSAL_FEE_DUFFS)} {feeUnit(services.network)}</h3>
-        <FeeExplainer unit={feeUnit(services.network)} />
+        {method !== 'core' && !draft.payment?.funding && <FeeExplainer unit={feeUnit(services.network)} />}
         {!ready && <p className="muted small">Save the backup first.</p>}
         {ready && !method && (
           <div className="pw-choices">
@@ -131,7 +131,7 @@ function FeeExplainer({ unit }: { unit: string }) {
   return (
     <p className="small" data-testid="p-fee-explain">
       Send <b data-testid="p-fee-recommended">{duffsToDash(MIN_COLLATERAL_DEPOSIT_DUFFS)} {unit}</b>. The fee transaction burns exactly {burn} {unit} and also pays a
-      small network fee (about {duffsToDash(collateralFeeDuffs(1))} {unit}), so exactly {burn} {unit} is not enough. Anything over comes back to you.
+      small network fee (about {duffsToDash(collateralFeeDuffs(1))} {unit}), so exactly {burn} {unit} is not enough. The rest comes back to you as change.
     </p>
   );
 }

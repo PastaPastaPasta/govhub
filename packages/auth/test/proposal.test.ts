@@ -2,7 +2,7 @@
 // fee, change, dust, P2PKH-only outputs) and the runner (watch before showing the address, only confirmed payments spent, the signed
 // collateral saved before its broadcast, resume without a second collateral, refused inputs).
 import { parseTx, type Dapi, type WatchHandlers } from '@govhub/dapi';
-import { checkCollateralTx, collateralScript, decodeAddress, encodeAddress, GOVERNANCE_PROPOSAL_FEE_DUFFS, governanceObjectHash, p2pkhAddress } from '@govhub/verify';
+import { checkCollateralTx, collateralScript, decodeAddress, duffsToDash, encodeAddress, GOVERNANCE_PROPOSAL_FEE_DUFFS, governanceObjectHash, p2pkhAddress } from '@govhub/verify';
 import { describe, expect, it } from 'vitest';
 import { bytesToHex, hash160, hexToBytes } from '../src/bytes.ts';
 import { addressOf, publicKeyOf } from '../src/keys.ts';
@@ -110,7 +110,6 @@ describe('collateral transaction', () => {
   it('exactly 1 DASH is not enough: the request and the check both include the network fee', () => {
     const d = (value: bigint) => [{ txid: 'b'.repeat(64), vout: 0, value: String(value), confirmed: true }];
     const exact = 100_000_000n + collateralFeeDuffs(1);
-    expect(MIN_COLLATERAL_DEPOSIT_DUFFS).toBeGreaterThanOrEqual(exact);
     expect(pickCollateralInputs(d(exact - 1n))).toBeNull();
     expect(pickCollateralInputs(d(exact))).not.toBeNull();
     expect(pickCollateralInputs(d(MIN_COLLATERAL_DEPOSIT_DUFFS))).not.toBeNull();
@@ -232,6 +231,23 @@ describe('runCollateralFunding', () => {
     expect(v.remainingDuffs).toBe(1000n);
     expect(v.uri).toBe(`dash:${s.record.address}?amount=0.00001`);
     s.f.pay(1000n, s.h160, { n: 2 });
+    await run;
+    expect(parseTx(hexToBytes(s.saved.at(-1)!.tx!.raw)).inputs).toHaveLength(2);
+  });
+
+  it('after a short payment, the rest asked for also pays for the extra input', async () => {
+    const s = setup();
+    const run = runCollateralFunding({ dapi: s.f.dapi, network: 'testnet', key: s.key, record: s.record, save: s.save, onUpdate: (v) => s.views.push(v) });
+    await until(() => s.views.length > 0);
+    // 900 duffs short of a one-input collateral: rounded to 1000, that would not pay for the second input
+    const first = 100_000_000n + collateralFeeDuffs(1) - 900n;
+    s.f.pay(first, s.h160, { n: 1 });
+    await until(() => s.views.at(-1)!.receivedDuffs === first);
+    const v = s.views.at(-1)!;
+    expect(v.neededDuffs).toBe(100_000_000n + collateralFeeDuffs(2));
+    expect(first + v.remainingDuffs).toBeGreaterThanOrEqual(100_000_000n + collateralFeeDuffs(2));
+    expect(v.uri).toBe(`dash:${s.record.address}?amount=${duffsToDash(v.remainingDuffs)}`);
+    s.f.pay(v.remainingDuffs, s.h160, { n: 2 });
     await run;
     expect(parseTx(hexToBytes(s.saved.at(-1)!.tx!.raw)).inputs).toHaveLength(2);
   });
