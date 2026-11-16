@@ -1502,6 +1502,140 @@ table {
 .past tbody tr:hover {
   background: color-mix(in srgb, var(--accent-wash) 50%, transparent);
 }
+/* Sortable column headings: the whole heading is the button. */
+.past thead .sort-head {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  cursor: pointer;
+  border-radius: 2px;
+}
+.past thead .sort-head:hover,
+.past thead .sort-head.on {
+  color: var(--ink);
+}
+.past thead .sort-head:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.sort-arrow {
+  font-size: var(--t-xs);
+  color: var(--ink-3);
+  inline-size: 0.75em;
+}
+.sort-head.on .sort-arrow {
+  color: var(--accent-ink);
+}
+
+/* ---- list search, filters and sort --------------------------------------------------------- */
+.list-tools {
+  display: grid;
+  gap: var(--s-2);
+  margin-block-end: var(--s-3);
+}
+.list-search {
+  position: relative;
+  display: block;
+}
+.list-search svg {
+  position: absolute;
+  inset-inline-start: 0.6875rem;
+  inset-block-start: 50%;
+  transform: translateY(-50%);
+  color: var(--ink-3);
+  pointer-events: none;
+}
+.list-search input {
+  font: inherit;
+  /* 16 px: iOS zooms into smaller inputs on focus */
+  font-size: 1rem;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-s);
+  padding: 0.5rem 0.75rem 0.5rem 2.125rem;
+  inline-size: 100%;
+  min-block-size: 44px;
+}
+.list-search input::placeholder {
+  color: var(--ink-3);
+}
+.list-search input:focus-visible {
+  border-color: var(--accent);
+  outline-offset: 0;
+}
+.list-tools-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+}
+.list-chips {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+.list-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 32px;
+  padding: 0 0.75rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: var(--t-s);
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.list-chip:hover {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+.list-chip.on {
+  background: var(--accent-wash);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.list-chip.on .count {
+  color: var(--accent-ink);
+}
+.list-chip input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.list-chip:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.list-sort {
+  margin-inline-start: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-size: var(--t-s);
+  color: var(--ink-2);
+}
+.list-sort select {
+  font: inherit;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-s);
+  padding: 0 0.5rem;
+  min-block-size: 32px;
+}
+.list-count {
+  margin: 0;
+}
 
 /* ---- proposal page ------------------------------------------------------------------------ */
 .proposal {
