@@ -50,7 +50,7 @@ export function AboutPage() {
           can send them straight away or spread them out over time so they don’t all show up at once.
         </li>
         <li>Get an “MN” badge next to your name, which shows you run a masternode without saying which one.</li>
-        <li>Submit your own proposal. A step-by-step form helps you write it, pay the 1 DASH fee the network charges, and send it.</li>
+        <li>Submit your own proposal. A step-by-step form helps you write it, pay its fee, and send it. You send slightly more than 1 DASH: 1 DASH is burned, and a small network fee comes out of the same payment.</li>
       </ul>
       <p>
         Anyone can read. Commenting, badges and saving your voting keys need an account. You can also vote without one, by signing each vote in Dash Core and
