@@ -314,6 +314,14 @@ describe('writeDocument: a disabled key', () => {
     expect(c.log.signs).toBe(0);
     expect(c.log.sends).toHaveLength(0);
   });
+
+  it('a refusal Platform names only by its class keeps the original WASM error as the cause', async () => {
+    const refusal = err('consensus error 40211', 40211, 'IdentityPublicKeyIsDisabledError');
+    const c = chain({ version: 14, send: () => ({ before: refusal }) });
+    const e = (await write(c, create()).catch((x: unknown) => x)) as Error;
+    expect(e).toBeInstanceOf(Error);
+    expect(e.cause).toBe(refusal);
+  });
 });
 
 describe('writeDocument: a silent result stream (D-041)', () => {

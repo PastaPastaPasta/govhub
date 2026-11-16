@@ -258,7 +258,7 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
     try {
       return await write(ownerId, key, op);
     } catch (e) {
-      throw e instanceof Error ? e : new Error(errText(e)); // WASM errors are not Error instances
+      throw e instanceof Error ? e : new Error(errText(e), { cause: e }); // WASM errors are not Error instances: keep the original (its name, code)
     } finally {
       key.privateKey.fill(0);
     }
