@@ -37,10 +37,12 @@ export function PastPage() {
         setItems((prev) => (cursor ? [...prev, ...page.items] : page.items));
         setNext(page.next);
         setState({ loading: false, done: !page.next });
-        if (page.items.length) {
-          const t = await source.tallies(page.items.map((i) => i.value.govHash));
-          if (g === gen.current) setTallies((prev) => new Map([...prev, ...t]));
-        }
+        // not awaited: the next page (reading every page for a search or another order) never waits for this one's tallies
+        if (page.items.length)
+          source.tallies(page.items.map((i) => i.value.govHash)).then(
+            (t) => g === gen.current && setTallies((prev) => new Map([...prev, ...t])),
+            (e) => g === gen.current && setState({ loading: false, done: true, error: errText(e) }),
+          );
       } catch (e) {
         if (g === gen.current) setState({ loading: false, done: true, error: errText(e) });
       } finally {
@@ -63,14 +65,14 @@ export function PastPage() {
     if (needsAll && next && !state.loading && !state.error) void load(next);
   }, [needsAll, next, state.loading, state.error, load]);
   const ordered = useMemo(() => {
-    const found = query.q.trim() ? items.filter((i) => matches(query.q, proposalFields(i.value))) : items;
-    if (!needsAll) return found;
+    if (!needsAll) return items;
+    const found = items.filter((i) => matches(query.q, proposalFields(i.value)));
     const yes = (p: Proposal) => {
       const t = tallies.get(p.govHash);
       return t ? absoluteYes(t.value) : null;
     };
     const cmp = comparePast(query.sort, query.dir, yes);
-    return [...found].sort((a, b) => cmp(a.value, b.value));
+    return found.sort((a, b) => cmp(a.value, b.value));
   }, [items, tallies, query, needsAll]);
 
   const checksVersion = useSyncExternalStore(checks.subscribe, checks.getVersion);
@@ -118,12 +120,12 @@ export function PastPage() {
           Past proposals
         </h1>
         <ProposalTabs />
-        <p className="small muted">Proposals whose payments have ended. Click a column heading to sort.</p>
+        <p className="small muted">Proposals whose payments have ended. Sort by any column heading.</p>
       </div>
       {(items.length > 0 || searching) && (
         <div className="list-tools" role="search" aria-label="Past proposals">
-          <SearchField label="Search past proposals" placeholder="Search by name, URL or address" value={query.q} onChange={(q) => setQuery({ q }, { replace: true })} />
-          {searching && !loadingAll && <ResultCount shown={rows.length} total={showFailed ? items.length : items.length - failedAll} what="past proposals" onClear={rows.length ? clear : undefined} />}
+          <SearchField label="Search past proposals" placeholder="Search by name, URL or address" value={query.q} onChange={(q, replace) => setQuery({ q }, { replace })} />
+          {searching && !loadingAll && !state.error && <ResultCount shown={rows.length} total={showFailed ? items.length : items.length - failedAll} what="past proposals" onClear={rows.length ? clear : undefined} />}
         </div>
       )}
       {state.error && <p className="error">Platform could not be read: {state.error}</p>}

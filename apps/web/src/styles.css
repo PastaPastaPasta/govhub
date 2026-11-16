@@ -1586,7 +1586,7 @@ table {
   min-block-size: 32px;
   padding: 0 0.75rem;
   border: 1px solid var(--line-strong);
-  border-radius: 999px;
+  border-radius: var(--radius-m);
   background: var(--surface);
   color: var(--ink-2);
   font-size: var(--t-s);
@@ -1635,6 +1635,12 @@ table {
 }
 .list-count {
   margin: 0;
+}
+/* iOS zooms into form controls under 16 px when they are tapped */
+@media (pointer: coarse) {
+  .list-sort select {
+    font-size: 1rem;
+  }
 }
 
 /* ---- proposal page ------------------------------------------------------------------------ */

@@ -27,11 +27,16 @@ const PAGES = [
   [proposal('mid-outreach', 500, 20e8), proposal('beta-tools', 100, 1e8)],
 ];
 
-function setup() {
-  const pastPage = vi.fn(async (cursor?: string) => (cursor ? { items: PAGES[1]! } : { items: PAGES[0]!, next: 'p2' }));
+function setup(o: { slowTallies?: boolean; third?: boolean } = {}) {
+  const pages = o.third ? [PAGES[0]!, PAGES[1]!, [proposal('gamma-tools', 50, 2e8)]] : PAGES;
+  const pastPage = vi.fn(async (cursor?: string) => {
+    const i = cursor ? Number(cursor.slice(1)) - 1 : 0;
+    return { items: pages[i]!, ...(i + 1 < pages.length ? { next: `p${i + 2}` } : {}) };
+  });
+  const wait = () => new Promise((r) => setTimeout(r, o.slowTallies ? 30 : 0));
   const yes: Record<string, number> = { 'zeta-tools': 10, 'alpha-docs': 400, 'mid-outreach': 50, 'beta-tools': 5 };
   hold.ctx = {
-    source: { pastPage, tallies: async (hs: string[]) => new Map(hs.map((h) => [h, tally(h, yes[h]!)])) },
+    source: { pastPage, tallies: async (hs: string[]) => (await wait(), new Map(hs.map((h) => [h, tally(h, yes[h] ?? 0)]))) },
     checks: { subscribe: () => () => {}, getVersion: () => 0, state: () => ({ status: 'passed' }), ensure: () => () => {} },
     gov: { active: { data: [] } },
     activeRows: { shown: [] },
@@ -77,6 +82,16 @@ describe('PastPage search and sort', () => {
     expect(el.querySelector('[data-testid="list-count"]')!.textContent).toContain('2 of 4 past proposals');
     await type(el.querySelector<HTMLInputElement>('[data-testid="list-search"]')!, 'nope');
     expect(el.querySelector('[data-testid="list-no-matches"]')).not.toBeNull();
+  });
+
+  it('reading every page never waits for the tallies of a page (a slow tally read does not stall the search)', async () => {
+    const { pastPage } = setup({ slowTallies: true, third: true });
+    const { el } = await render(page('/past?q=tools'));
+    for (let i = 0; i < 20 && pastPage.mock.calls.length < 3; i++) await act(async () => new Promise((r) => setTimeout(r, 10)));
+    await act(async () => new Promise((r) => setTimeout(r, 60)));
+    expect(pastPage.mock.calls.map((c) => c[0])).toEqual([undefined, 'p2', 'p3']);
+    expect(names(el)).toEqual(['zeta-tools', 'beta-tools', 'gamma-tools']);
+    expect(el.querySelector('[data-testid="list-count"]')!.textContent).toContain('3 of 5 past proposals');
   });
 
   it('column headings sort, flip on a second click, and are kept in the URL', async () => {

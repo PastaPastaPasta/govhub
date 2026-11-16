@@ -72,7 +72,7 @@ describe('active list', () => {
 describe('active URL state', () => {
   it('defaults are left out of the URL, other parameters are kept', () => {
     const sp = new URLSearchParams('fixtures=1&sort=amount&status=passing&unvoted=1&q=x');
-    expect(writeActive(sp, { q: '  ', sort: 'rank', status: 'all', unvoted: false }).toString()).toBe('fixtures=1');
+    expect(writeActive(sp, { q: '', sort: 'rank', status: 'all', unvoted: false }).toString()).toBe('fixtures=1');
   });
   it('round-trips', () => {
     const q = { q: 'dash pay', sort: 'ending', status: 'failing', unvoted: true } as const;

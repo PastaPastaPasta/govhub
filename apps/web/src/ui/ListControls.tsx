@@ -1,10 +1,10 @@
 // The search, sort and filter controls above the proposal lists, and the query-in-the-URL hook behind them.
-import { useCallback, useMemo, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 /**
- * A view's state read from the URL query, and a setter that writes it back. Typing replaces the history entry (one Back undoes the
- * whole search, not one letter); every other change pushes one, so Back steps through sorts and filters.
+ * A view's state read from the URL query, and a setter that writes it back. Every change pushes a history entry, so Back steps
+ * through sorts and filters, except further typing in a search: that replaces it, so one Back undoes the whole search.
  */
 export function useQueryState<T>(read: (sp: URLSearchParams) => T, write: (sp: URLSearchParams, v: T) => URLSearchParams): [T, (patch: Partial<T>, o?: { replace?: boolean }) => void] {
   const [sp, setSp] = useSearchParams();
@@ -16,7 +16,27 @@ export function useQueryState<T>(read: (sp: URLSearchParams) => T, write: (sp: U
   return [state, update];
 }
 
-export function SearchField({ value, onChange, label, placeholder }: { value: string; onChange(v: string): void; label: string; placeholder: string }) {
+/**
+ * The search box. It keeps its own text: the URL lags a keystroke behind (the router updates it in a transition), and an input
+ * driven by it would drop fast typing and lose the caret. The URL's value is taken over only when it changes from outside (Back,
+ * Clear filters). `onChange`'s `replace` is false for the first letter of a search, so Back returns to the list without one.
+ */
+export function SearchField({ value, onChange, label, placeholder }: { value: string; onChange(v: string, replace: boolean): void; label: string; placeholder: string }) {
+  const [text, setText] = useState(value);
+  const sent = useRef<string[]>([]);
+  useEffect(() => {
+    const i = sent.current.indexOf(value);
+    if (i >= 0) sent.current = sent.current.slice(i + 1);
+    else {
+      sent.current = [];
+      setText(value);
+    }
+  }, [value]);
+  const change = (v: string) => {
+    sent.current.push(v);
+    setText(v);
+    onChange(v, text !== '');
+  };
   return (
     <label className="list-search">
       <span className="visually-hidden">{label}</span>
@@ -26,16 +46,16 @@ export function SearchField({ value, onChange, label, placeholder }: { value: st
       </svg>
       <input
         type="search"
-        value={value}
+        value={text}
         placeholder={placeholder}
         autoComplete="off"
         spellCheck={false}
         enterKeyHint="search"
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => change(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Escape' && value) {
+          if (e.key === 'Escape' && text) {
             e.preventDefault();
-            onChange('');
+            change('');
           }
         }}
         data-testid="list-search"
@@ -84,12 +104,12 @@ export function SortSelect<T extends string>({ value, options, onChange }: { val
   );
 }
 
-/** "3 of 21 shown" with a way back to the whole list; announced politely as the results change. */
-export function ResultCount({ shown, total, what, onClear }: { shown: number; total: number; what: string; onClear?: (() => void) | undefined }) {
+/** "3 of 21 proposals" with a way back to the whole list. Always mounted (empty when not filtering) so screen readers announce it. */
+export function ResultCount({ active = true, shown, total, what, onClear }: { active?: boolean; shown: number; total: number; what: string; onClear?: (() => void) | undefined }) {
   return (
-    <p className="list-count small muted" role="status" data-testid="list-count">
-      {shown === total ? `${total} ${what}` : `${shown} of ${total} ${what}`}
-      {onClear && (
+    <p className="list-count small muted" role="status" data-testid={active ? 'list-count' : undefined}>
+      {active && (shown === total ? `${total} ${what}` : `${shown} of ${total} ${what}`)}
+      {active && onClear && (
         <>
           {' · '}
           <button type="button" className="linkish" onClick={onClear} data-testid="list-clear">

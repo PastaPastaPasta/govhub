@@ -12,7 +12,7 @@ import { useReveal } from '../ui/hooks.ts';
 import { useCommentCounts } from '../ui/useCommentCounts.ts';
 import { useDpnsNames } from '../ui/useDpnsNames.ts';
 import { countNames, proposalHref, type Checked, type Row } from '../lib/view.ts';
-import { ACTIVE_SORT_LABEL, ACTIVE_SORT_NOTE, ACTIVE_SORTS, compareActive, isPassing, matches, proposalFields, readActive, STATUS_LABEL, STATUSES, statusOk, writeActive } from '../lib/listQuery.ts';
+import { ACTIVE_SORT_LABEL, ACTIVE_SORT_NOTE, ACTIVE_SORTS, compareActive, isPassing, matches, proposalFields, readActive, STATUS_LABEL, STATUSES, statusOk, writeActive, type Status } from '../lib/listQuery.ts';
 import { authorLabel } from '../lib/social.ts';
 import { ChipChoice, ChipToggle, NoMatches, ResultCount, SearchField, SortSelect, useQueryState } from '../ui/ListControls.tsx';
 import { useUnvoted } from '../ui/useUnvoted.ts';
@@ -39,7 +39,8 @@ export function ActivePage() {
   const { gov, activeRows, registry } = useApp();
   const { moderation } = useForum();
   const [showFailed, setShowFailed] = useState(false);
-  const [showLameDucks, setShowLameDucks] = useState(false);
+  // null: closed, but opened by itself when only finished proposals match a filter
+  const [lameDucksOpen, setLameDucksOpen] = useState<boolean | null>(null);
   const [query, setQuery] = useQueryState(readActive, writeActive);
   const all = useMemo(() => [...activeRows.shown, ...activeRows.failed], [activeRows]);
   const listed = showFailed ? all : activeRows.shown;
@@ -73,11 +74,11 @@ export function ActivePage() {
       return matches(query.q, proposalFields(r.p.value, [label?.dpns, label?.name]));
     };
     const sort = compareActive(query.sort);
-    const ordered = (xs: Checked<Row>[]) => (query.sort === 'rank' ? xs : [...xs].sort((a, b) => sort(a.item, b.item)));
+    const ordered = (xs: Checked<Row>[]) => (query.sort === 'rank' ? xs : xs.sort((a, b) => sort(a.item, b.item)));
     const matching = listed.filter(keep);
+    const passing = matching.filter((x) => isPassing(x.item)).length;
     return {
-      matching: matching.length,
-      passing: matching.filter((x) => isPassing(x.item)).length,
+      counts: { all: matching.length, passing, failing: matching.length - passing } satisfies Record<Status, number>,
       rows: ordered(matching.filter((x) => statusOk(x.item, query.status))),
       // finished proposals are neither passing nor not passing in any way that matters: a status filter leaves them out
       lameDucks: query.status === 'all' ? ordered(activeRows.lameDucks.filter(keep)) : [],
@@ -85,6 +86,7 @@ export function ActivePage() {
   }, [listed, activeRows.lameDucks, query, unvotedOn, unvoted.voted, shownOwner, profiles, ownerNames]);
   const { rows, lameDucks } = view;
   const clear = () => setQuery({ q: '', status: 'all', unvoted: false });
+  const duckOpen = lameDucksOpen ?? (filtering && rows.length === 0);
 
   // 12 rows first; the rest in one go once the reader scrolls (rows are tall, so small steps would stall the observer)
   const { count, sentinel, more } = useReveal(rows.length, 40, undefined, 12);
@@ -123,7 +125,7 @@ export function ActivePage() {
         </div>
         {everyRow.length > 0 && (
           <div className="list-tools" role="search" aria-label="Active proposals">
-            <SearchField label="Search active proposals" placeholder="Search by name, owner or address" value={query.q} onChange={(q) => setQuery({ q }, { replace: true })} />
+            <SearchField label="Search active proposals" placeholder="Search by name, owner or address" value={query.q} onChange={(q, replace) => setQuery({ q }, { replace })} />
             <div className="list-tools-row">
               <ChipChoice
                 name="status"
@@ -134,7 +136,7 @@ export function ActivePage() {
                   value,
                   text: (
                     <>
-                      {STATUS_LABEL[value]} <span className="count">{value === 'all' ? view.matching : value === 'passing' ? view.passing : view.matching - view.passing}</span>
+                      {STATUS_LABEL[value]} <span className="count">{view.counts[value]}</span>
                     </>
                   ),
                 }))}
@@ -152,7 +154,7 @@ export function ActivePage() {
               </p>
             )}
             {unvotedOn && unvoted.error && <p className="small error">Your votes couldn't be read, so every proposal is listed: {unvoted.error}</p>}
-            {filtering && <ResultCount shown={rows.length} total={listed.length} what="proposals" onClear={rows.length + lameDucks.length ? clear : undefined} />}
+            <ResultCount active={filtering} shown={rows.length} total={listed.length} what="proposals" onClear={rows.length + lameDucks.length ? clear : undefined} />
           </div>
         )}
         {gov.active.loading && all.length === 0 ? (
@@ -169,7 +171,7 @@ export function ActivePage() {
         <div ref={sentinel} className="sentinel" aria-hidden="true" />
         {more && <p className="muted small center">Scroll for more</p>}
         {!more && (
-          <LameDuckSection count={lameDucks.length} open={showLameDucks || (filtering && rows.length === 0)} onToggle={() => setShowLameDucks((v) => !v)}>
+          <LameDuckSection count={lameDucks.length} open={duckOpen} onToggle={() => setLameDucksOpen(!duckOpen)}>
             {lameDucks.map(card)}
           </LameDuckSection>
         )}

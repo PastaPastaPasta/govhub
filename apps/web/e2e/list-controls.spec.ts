@@ -37,6 +37,25 @@ test.describe('active list: search, filter, sort', () => {
     expect(errors).toEqual([]);
   });
 
+  test('typing fast keeps every letter and the caret; Back after a search returns to the plain list', async ({ page }) => {
+    await gotoFixtures(page, '/about');
+    await page.getByRole('link', { name: 'Proposals', exact: true }).first().click();
+    const search = page.getByRole('searchbox', { name: 'Search active proposals' });
+    await search.pressSequentially('dcg operations aug');
+    await expect(search).toHaveValue('dcg operations aug');
+    await expect(page).toHaveURL(/q=dcg\+operations\+aug/);
+    await search.fill('orchrd');
+    await search.press('ArrowLeft');
+    await search.press('ArrowLeft');
+    await search.pressSequentially('a');
+    await expect(search).toHaveValue('orchard');
+    await expect(cards(page)).toHaveCount(1);
+    await page.goBack();
+    await expect(page).toHaveURL(/\/(\?fixtures=1)?$/);
+    await expect(search).toHaveValue('');
+    await expect(cards(page)).toHaveCount(12);
+  });
+
   test('status chips: counts add up, the keyboard moves between them, a shared link opens the same view', async ({ page }) => {
     await gotoFixtures(page);
     const chips = page.getByTestId('chips-status');

@@ -35,10 +35,11 @@ export function useUnvoted(enabled: boolean, govHashes: readonly string[]): Unvo
   // an answer for another list (or before a filter change) is never applied
   const cur = key && read?.key === key ? read : null;
   const voted = useMemo(() => {
-    if (!cur?.votes) return null;
+    const votes = cur?.votes;
+    if (!votes) return null;
     const mine = new Set(owned.map(mnId));
     const out = new Set<string>();
-    for (const h of govHashes) if (owned.some((m) => cur.votes!.has(currentKey(m, h)))) out.add(h);
+    for (const h of govHashes) if (owned.some((m) => votes.has(currentKey(m, h)))) out.add(h);
     for (const w of watched) if ((isOpen(w) || w.status === 'confirmed') && mine.has(mnId(w))) out.add(w.govHash);
     return out;
   }, [cur, owned, govHashes, watched]);

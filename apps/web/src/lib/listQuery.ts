@@ -52,7 +52,7 @@ export function readActive(sp: URLSearchParams): ActiveQuery {
 /** The query written into `sp` (other parameters kept); defaults are removed. */
 export function writeActive(sp: URLSearchParams, a: ActiveQuery): URLSearchParams {
   const out = new URLSearchParams(sp);
-  set(out, 'q', a.q.trim() ? a.q : null);
+  set(out, 'q', a.q || null);
   set(out, 'sort', a.sort === 'rank' ? null : a.sort);
   set(out, 'status', a.status === 'all' ? null : a.status);
   set(out, 'unvoted', a.unvoted ? '1' : null);
@@ -115,7 +115,7 @@ export function readPast(sp: URLSearchParams): PastQuery {
 
 export function writePast(sp: URLSearchParams, p: PastQuery): URLSearchParams {
   const out = new URLSearchParams(sp);
-  set(out, 'q', p.q.trim() ? p.q : null);
+  set(out, 'q', p.q || null);
   set(out, 'sort', p.sort === 'ended' ? null : p.sort);
   set(out, 'dir', p.dir === PAST_DEFAULT_DIR[p.sort] ? null : p.dir);
   return out;
