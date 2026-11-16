@@ -2,24 +2,25 @@
 
 govhub can sign people in with the DashPay mobile wallet, using App Connect
 ([DIP pasta-app-connect](https://github.com/dashpay/dips/pull/181), response contract
-`H8F9mP1BM55TE1ShsxPZHzhyinaMdY9bMmP85mkDhcJJ` from Platform protocol 14). It ships **off** on every profile.
+`H8F9mP1BM55TE1ShsxPZHzhyinaMdY9bMmP85mkDhcJJ` from Platform protocol 14). It is **on by default on Mainnet**, with the mainnet
+forum contract as the app identity, and off on Testnet and Dev.
 
-## Turning it on
+## Turning it on or off
 
-For everyone on a profile, flip one line in `apps/web/src/config/registry.ts` and deploy:
+For everyone on a profile, set `enabled` in `apps/web/src/config/registry.ts` and deploy:
 
 ```ts
 // PROFILES.mainnet
 appConnect: { enabled: true, appId: MAINNET_FORUM.contractId },
 ```
 
-For one browser tab without a deploy, open any page with `?appconnect=1` (for example
-`https://gov.dashhq.org/?appconnect=1`). It lasts for that tab's session; `?appconnect=0` turns it off again. The opt-in only works
-while the forum contract in Settings is the profile's own (`appId`); a key bound to it could not write to another forum contract.
+For one browser tab without a deploy, open any page with `?appconnect=1` to turn it on or `?appconnect=0` to turn it off (for
+example `https://gov.dashhq.org/?appconnect=0`). The choice lasts for that tab's session and wins over the profile's flag. Either
+way it only works while the forum contract in Settings is the profile's own (`appId`); a key bound to it could not write to another
+forum contract.
 
-With the flag off and no opt-in, nothing changes: the "Sign in with a Dash wallet" button stays disabled ("Coming soon"), and the
-App Connect code (a separate chunk) is never fetched. Nothing needs provisioning: the forum contract and the response contract are
-already on mainnet.
+While it is off, the "Sign in with a Dash wallet" button stays disabled ("Coming soon"), and the App Connect code (a separate
+chunk) is never fetched. Nothing needs provisioning: the forum contract and the response contract are already on mainnet.
 
 ## What the request asks for
 
@@ -74,5 +75,5 @@ end-to-end tests.
 - `packages/auth/src/appconnect/`: request codec and URI, envelope, verifier, poller, the evo-sdk port, and govhub's request.
   Tests: `packages/auth/test/appconnect-*.test.ts`, including the DIP's vectors byte for byte.
 - `apps/web/src/auth/WalletSignIn.tsx` (the lazy view) and `walletDemo.ts` (fixture mode's wallet).
-- Flag: `appConnect` on each profile in `apps/web/src/config/registry.ts`, with `appConnectOptIn` and `appConnectEnabled`.
+- Flag: `appConnect` on each profile in `apps/web/src/config/registry.ts`, with `appConnectOverride` and `appConnectEnabled`.
 - End to end: `apps/web/e2e/app-connect.spec.ts`; screenshots in `apps/web/screenshots/app-connect/`.

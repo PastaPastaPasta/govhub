@@ -158,7 +158,7 @@ export interface NetworkProfile {
 /**
  * App Connect for a profile. `appId` is the contract the wallet shows and binds the session key to: the profile's forum contract,
  * so the key can write comments, reactions and posts and nothing else. Off: the "Sign in with a Dash wallet" button stays "Coming
- * soon" and no App Connect code is loaded, unless the page was opened with the hidden `?appconnect=1` opt-in (appConnectEnabled).
+ * soon" and no App Connect code is loaded. The hidden `?appconnect=1` / `?appconnect=0` override wins for the tab (appConnectEnabled).
  */
 export interface AppConnectFlag {
   enabled: boolean;
@@ -210,35 +210,35 @@ export const PROFILES: Record<ProfileId, NetworkProfile> = {
     // both bridges run on the same v24 dashd; either one's proofs check out against the pinned checkpoint
     proofBridges: ['https://gov-bridge-mainnet.dashhq.org', 'https://gov-bridge.dashhq.org'],
     forum: MAINNET_FORUM,
-    // flip `enabled` to true to show wallet sign-in to everyone on Mainnet (docs/app-connect.md)
-    appConnect: { enabled: false, appId: MAINNET_FORUM.contractId },
+    appConnect: { enabled: true, appId: MAINNET_FORUM.contractId },
     deployed: true,
   },
 };
 
-/** The hidden opt-in: `?appconnect=1` turns App Connect on for this tab (kept across navigation), `?appconnect=0` turns it off again. */
-export const APP_CONNECT_OPT_IN_PARAM = 'appconnect';
-const APP_CONNECT_OPT_IN_KEY = 'govhub.appconnect';
+/** The hidden per-tab override (kept across navigation): `?appconnect=1` turns App Connect on, `?appconnect=0` turns it off. */
+export const APP_CONNECT_OVERRIDE_PARAM = 'appconnect';
+const APP_CONNECT_OVERRIDE_KEY = 'govhub.appconnect';
 
-/** Reads and remembers the opt-in from the page URL. Never throws (storage can be blocked). */
-export function appConnectOptIn(search: string = globalThis.location?.search ?? '', storage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> | undefined = globalThis.sessionStorage): boolean {
-  const v = new URLSearchParams(search).get(APP_CONNECT_OPT_IN_PARAM);
+const overrideOf = (v: string | null | undefined): boolean | null => (v === '1' ? true : v === '0' ? false : null);
+
+/** Reads and remembers the override from the page URL: true/false, or null when the tab has none. Never throws (storage can be blocked). */
+export function appConnectOverride(search: string = globalThis.location?.search ?? '', storage: Pick<Storage, 'getItem' | 'setItem'> | undefined = globalThis.sessionStorage): boolean | null {
+  const v = overrideOf(new URLSearchParams(search).get(APP_CONNECT_OVERRIDE_PARAM));
   try {
-    if (v === '1') storage?.setItem(APP_CONNECT_OPT_IN_KEY, '1');
-    else if (v === '0') storage?.removeItem(APP_CONNECT_OPT_IN_KEY);
-    return v === '1' || (v !== '0' && storage?.getItem(APP_CONNECT_OPT_IN_KEY) === '1');
+    if (v !== null) storage?.setItem(APP_CONNECT_OVERRIDE_KEY, v ? '1' : '0');
+    return v ?? overrideOf(storage?.getItem(APP_CONNECT_OVERRIDE_KEY));
   } catch {
-    return v === '1';
+    return v;
   }
 }
 
 /**
- * Whether wallet sign-in is offered with these settings: the profile's flag or the opt-in, and only while the forum contract in use
- * is the profile's app id (a key bound to it could not write to a custom forum contract).
+ * Whether wallet sign-in is offered with these settings: the tab's override, else the profile's flag, and only while the forum contract
+ * in use is the profile's app id (a key bound to it could not write to a custom forum contract).
  */
-export function appConnectEnabled(r: Pick<Registry, 'profile' | 'forum'>, optIn: boolean): boolean {
+export function appConnectEnabled(r: Pick<Registry, 'profile' | 'forum'>, override: boolean | null): boolean {
   const f = PROFILES[r.profile].appConnect;
-  return (f.enabled || optIn) && r.forum.contractId === f.appId;
+  return (override ?? f.enabled) && r.forum.contractId === f.appId;
 }
 
 export const PROFILE_ORDER: readonly ProfileId[] = ['mainnet', 'testnet', 'dev'];

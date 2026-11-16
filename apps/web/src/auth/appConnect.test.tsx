@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
-// App Connect behind its flag: off by default on every profile, nothing of it on the page while off; the hidden opt-in turns it on.
+// App Connect behind its flag: on by default on Mainnet only, nothing of it on the page while off; the hidden per-tab override wins.
 import { storageFundingStore, makeSession } from '@govhub/auth';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { appConnectEnabled, appConnectOptIn, PROFILES, PROFILE_ORDER, profileRegistry } from '../config/registry.ts';
+import { appConnectEnabled, appConnectOverride, PROFILES, PROFILE_ORDER, profileRegistry } from '../config/registry.ts';
 import { appSessionFromAuth, isWalletSession } from '../session/authSession.ts';
 import { button, click, render } from '../test/render.tsx';
 
@@ -24,32 +24,37 @@ function mem(): Storage {
 }
 
 describe('the flag', () => {
-  it('is off on every profile and its app id is the profile forum contract', () => {
+  it('is on for Mainnet only, and its app id is the profile forum contract', () => {
     for (const id of PROFILE_ORDER) {
-      expect(PROFILES[id].appConnect.enabled).toBe(false);
+      expect(PROFILES[id].appConnect.enabled).toBe(id === 'mainnet');
       expect(PROFILES[id].appConnect.appId).toBe(PROFILES[id].forum!.contractId);
-      expect(appConnectEnabled(profileRegistry(id), false)).toBe(false);
+      expect(appConnectEnabled(profileRegistry(id), null)).toBe(id === 'mainnet');
     }
     expect(PROFILES.mainnet.appConnect.appId).toBe('4EcYtwedNjTm4iGmx47GkLX2uNkCUWS4tt1KHhgGkjR3');
   });
 
-  it('turns on with ?appconnect=1 for the tab, off again with ?appconnect=0', () => {
+  it('remembers ?appconnect=1 and ?appconnect=0 for the tab', () => {
     const s = mem();
-    expect(appConnectOptIn('', s)).toBe(false);
-    expect(appConnectOptIn('?appconnect=1', s)).toBe(true);
-    expect(appConnectOptIn('?x=2', s)).toBe(true);
-    expect(appConnectOptIn('?appconnect=0', s)).toBe(false);
-    expect(appConnectOptIn('', s)).toBe(false);
-    expect(appConnectOptIn('?appconnect=yes', s)).toBe(false);
-    const broken = { getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('blocked'); }, removeItem: () => {} };
-    expect(appConnectOptIn('?appconnect=1', broken)).toBe(true);
-    expect(appConnectOptIn('', broken)).toBe(false);
+    expect(appConnectOverride('', s)).toBe(null);
+    expect(appConnectOverride('?appconnect=1', s)).toBe(true);
+    expect(appConnectOverride('?x=2', s)).toBe(true);
+    expect(appConnectOverride('?appconnect=0', s)).toBe(false);
+    expect(appConnectOverride('', s)).toBe(false);
+    expect(appConnectOverride('?appconnect=yes', s)).toBe(false);
+    const broken = { getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('blocked'); } };
+    expect(appConnectOverride('?appconnect=1', broken)).toBe(true);
+    expect(appConnectOverride('?appconnect=0', broken)).toBe(false);
+    expect(appConnectOverride('', broken)).toBe(null);
   });
 
-  it('opts in only while the forum contract is the profile app id', () => {
+  it('the override wins over the flag, and it is never on with another forum contract', () => {
     const r = profileRegistry('mainnet');
     expect(appConnectEnabled(r, true)).toBe(true);
-    expect(appConnectEnabled({ ...r, forum: { ...r.forum, contractId: 'HfLWUEWnp4YCQ9Mzp9DexG58WPKvHm7SahMVSuzKSQRw' } }, true)).toBe(false);
+    expect(appConnectEnabled(r, false)).toBe(false);
+    expect(appConnectEnabled(profileRegistry('testnet'), true)).toBe(true);
+    const custom = { ...r, forum: { ...r.forum, contractId: 'HfLWUEWnp4YCQ9Mzp9DexG58WPKvHm7SahMVSuzKSQRw' } };
+    expect(appConnectEnabled(custom, true)).toBe(false);
+    expect(appConnectEnabled(custom, null)).toBe(false);
   });
 });
 
