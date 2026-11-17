@@ -41,7 +41,7 @@ describe('lookupMasternodes', () => {
     expect(Date.now() - t0).toBeLessThan(1000);
     expect(r.owned.map((m) => m.proTxHash)).toEqual([PRO]);
     expect(r.owned[0]!.provenance.key).toBe('bridge');
-    expect(r.warning).toMatch(/Could not confirm with DAPI evonodes \(checking the masternode list with DAPI evonodes took longer than 0 s\)/);
+    expect(r.warning).toMatch(/Could not confirm with DAPI evonodes \(double-checking the masternode list with the network took longer than 0 s\)/);
   });
   it('a bridge that never answers is an error that names the step', async () => {
     const deps: LookupDeps = { mnlist: never, sml: async () => SML, rawTx: null, network: 'testnet' };

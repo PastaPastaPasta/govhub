@@ -60,7 +60,7 @@ function Header({ adding, badgeKeyKept }: { adding: boolean; badgeKeyKept: boole
       </div>
       {open && (
         <div className="kr-head-actions">
-          <Link className="btn btn-primary" to="/votes">
+          <Link className="btn" to="/votes">
             Vote on proposals
           </Link>
           {!k.demo && (
@@ -321,7 +321,7 @@ function AddMasternodes({ step, setStep, b, savedLocked, onAdded }: { step: Flow
                 {mns.map((m) => (
                   <li key={m.proTxHash}>
                     <span className="tag tag-done">{m.type === 'evo' ? 'Evonode' : 'Regular'}</span> <span className="mono-ish">{m.proTxHash.slice(0, 12)}…</span>
-                    {!m.valid && <span className="tag tag-fail">PoSe-banned</span>}
+                    {!m.valid && <span className="tag tag-fail" title="Banned by the network (PoSe)">Banned</span>}
                   </li>
                 ))}
               </ul>
@@ -493,7 +493,7 @@ function MnRow({ m, label }: { m: OwnedMasternode; label: string }) {
         <NodeLabel pro={m.proTxHash} value={label} />
         <span className="kr-mn-tags">
           <span className="tag tag-done">{m.type === 'evo' ? 'Evonode ×4' : 'Regular'}</span>
-          {m.valid ? <span className={`tag ${m.provenance.key === 'sml' ? 'tag-pass' : 'tag-done'}`}>Can vote</span> : <span className="tag tag-fail">PoSe-banned: cannot vote</span>}
+          {m.valid ? <span className={`tag ${m.provenance.key === 'sml' ? 'tag-pass' : 'tag-done'}`}>Can vote</span> : <span className="tag tag-fail" title="Banned by the network (PoSe)">Banned: cannot vote</span>}
         </span>
       </div>
       <div className="kr-mn-facts small">
@@ -550,7 +550,7 @@ function BadgeRow({ b, celebrate }: { b: MnBadge; celebrate: boolean }) {
   let why: string | null = null;
   if (!k.demo) {
     if (k.mns.phase === 'loading' || k.mns.phase === 'idle') why = 'Finding your masternodes first…';
-    else if (!mn) why = 'None of your masternodes can ask for a badge (none found, or all PoSe-banned).';
+    else if (!mn) why = 'None of your masternodes can ask for a badge (none found, or all banned by the network).';
   }
   const request = mn && !why ? () => b.request(badgeWif(k.keyring?.content.keys[mn.keyIndex], k.coreNetwork), mn.proTxHash) : null;
   return <KeyringBadgeRow b={b} request={request} why={why} celebrate={celebrate} />;

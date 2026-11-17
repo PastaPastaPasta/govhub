@@ -132,8 +132,8 @@ describe('what each state says', () => {
     expect(describeVote(vote(), NOW, fmt)).toMatchObject({ badge: 'Sending', tone: 'progress' });
     const failed = vote({ lastSendError: 'gov-relay-testnet.dashhq.org is unreachable', nextSendAt: NOW + 20 });
     const d = describeVote(failed, NOW, fmt);
-    expect(d).toMatchObject({ badge: 'Not sent yet', tone: 'bad' });
-    expect(d.line).toBe('Not accepted by a relay yet: gov-relay-testnet.dashhq.org is unreachable. Kept in this browser. Trying again at T20.');
+    expect(d).toMatchObject({ badge: 'Retrying', tone: 'wait' });
+    expect(d.line).toBe('No relay has taken it yet (gov-relay-testnet.dashhq.org is unreachable). It is kept in this browser and retried automatically while govhub is open. Trying again at T20.');
     // its answer was lost: never "Not sent yet"
     const lost = describeVote({ ...failed, maybeAt: [R1], lastSendError: 'the connection to gov-relay-testnet.dashhq.org failed before its answer arrived: Failed to fetch' }, NOW, fmt);
     expect(lost).toMatchObject({ badge: 'May be at the relay', tone: 'wait' });
@@ -153,8 +153,8 @@ describe('what each state says', () => {
     expect(holdText(planned, NOW, fmt)).toBe('Core allows one vote change per hour per masternode; gov-relay-testnet.dashhq.org sends this at T3660.');
   });
   it('the rest', () => {
-    expect(describeVote(vote({ status: 'confirmed' }), NOW, fmt).badge).toBe('Bridge: on the network');
-    expect(describeVote(vote({ status: 'confirmed', countedAt: NOW }), NOW, fmt).badge).toBe('Bridge: counted');
+    expect(describeVote(vote({ status: 'confirmed' }), NOW, fmt).badge).toBe('On the network');
+    expect(describeVote(vote({ status: 'confirmed', countedAt: NOW }), NOW, fmt).badge).toBe('Counted');
     // confirmed is the bridge's report: the line says so, and names any other configured source that agrees
     expect(describeVote(vote({ status: 'confirmed', countedAt: NOW }), NOW, fmt).line).toMatch(/^The bridge reports the network counted it.*That is the bridge’s word/);
     const agreed = describeVote(vote({ status: 'confirmed', alsoSeenBy: ['b2.example'], relayStatus: { 'https://relay-one.example': 'confirmed' } }), NOW, fmt).line;
