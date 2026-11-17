@@ -1,4 +1,5 @@
-// Display formatting. Pure; locale is a parameter so tests are stable.
+// Display formatting. Pure apart from the coin's unit (lib/unit.ts); locale is a parameter so tests are stable.
+import { dashUnit } from './unit.ts';
 
 export const DUFFS_PER_DASH = 100_000_000;
 
@@ -15,7 +16,7 @@ export function formatDashAmount(duffs: number, locale = 'en-US'): string {
 }
 
 export function formatDash(duffs: number, locale = 'en-US'): string {
-  return `${formatDashAmount(duffs, locale)} DASH`;
+  return `${formatDashAmount(duffs, locale)} ${dashUnit()}`;
 }
 
 export function formatInt(n: number, locale = 'en-US'): string {
@@ -80,7 +81,7 @@ export const CREDITS_PER_DUFF = 1000;
 export function formatCredits(credits: number | bigint, approx = false, locale = 'en-US'): string {
   const duffs = Number(credits) / CREDITS_PER_DUFF;
   if (!approx || duffs === 0) return formatDash(Math.round(duffs), locale);
-  return `${nf(locale, 0, 8).format(Number((duffs / DUFFS_PER_DASH).toPrecision(2)))} DASH`;
+  return `${nf(locale, 0, 8).format(Number((duffs / DUFFS_PER_DASH).toPrecision(2)))} ${dashUnit()}`;
 }
 
 /** "3 hours ago" for a Platform millisecond timestamp. */

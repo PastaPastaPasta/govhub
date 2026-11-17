@@ -47,6 +47,29 @@ export interface ProposalRelayPort {
    * `postponed`: taken below 6 confirmations, live at 6.
    */
   submitNow(body: SubmitBody): Promise<{ kind: 'submitted'; govHash: string; postponed: boolean } | { kind: 'unconfirmed'; confirmations: number | null }>;
+  /** GET /v1/status: whether it could take a proposal right now. */
+  ready(network: CoreNetwork): Promise<RelayReady>;
+}
+
+/** Whether a relay can submit a proposal now; why not otherwise. */
+export type RelayReady = { ok: true } | { ok: false; problem: 'unreachable' | 'core-down' | 'wrong-network' | 'disabled'; detail?: string };
+
+export function parseRelayReady(raw: unknown, network: CoreNetwork): RelayReady {
+  const o = isObj(raw) ? raw : {};
+  if (typeof o.network === 'string' && o.network !== network) return { ok: false, problem: 'wrong-network', detail: o.network };
+  if (o.proposalSubmit === false) return { ok: false, problem: 'disabled' };
+  if (!isObj(o.core) || o.core.reachable !== true) return { ok: false, problem: 'core-down' };
+  return { ok: true };
+}
+
+/** Before the fee is paid: at least one relay must be able to submit the proposal, or paying would strand it. */
+export function relaysReadiness(results: readonly RelayReady[]): { ok: true } | { ok: false; reason: string } {
+  if (results.some((r) => r.ok)) return { ok: true };
+  if (!results.length) return { ok: false, reason: 'no relay is set up for this network (Settings, Advanced)' };
+  const problems = new Set(results.map((r) => (r.ok ? null : r.problem)));
+  if (problems.has('core-down')) return { ok: false, reason: "govhub's relay can't reach the Dash network right now" };
+  if (problems.has('unreachable')) return { ok: false, reason: "govhub's relay is not answering right now" };
+  return { ok: false, reason: 'no configured relay submits proposals on this network' };
 }
 
 /** A refusal keeps the relay's JSON body (a 425 carries the confirmation count). */
@@ -86,7 +109,7 @@ export class HttpProposalRelay implements ProposalRelayPort {
     this.name = name ?? relayHost(this.base);
   }
 
-  private async req(path: string, body?: unknown): Promise<unknown> {
+  private async req(path: string, body?: unknown, timeoutMs = this.timeoutMs): Promise<unknown> {
     let res: Response;
     try {
       res = await fetch(`${this.base}${path}`, {
@@ -94,7 +117,7 @@ export class HttpProposalRelay implements ProposalRelayPort {
         credentials: 'omit',
         referrerPolicy: 'no-referrer',
         cache: 'no-store',
-        signal: AbortSignal.timeout(this.timeoutMs),
+        signal: AbortSignal.timeout(timeoutMs),
         headers: body === undefined ? { accept: 'application/json' } : { accept: 'application/json', 'content-type': 'application/json' },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
@@ -114,6 +137,14 @@ export class HttpProposalRelay implements ProposalRelayPort {
       throw err;
     }
     return json;
+  }
+
+  async ready(network: CoreNetwork): Promise<RelayReady> {
+    try {
+      return parseRelayReady(await this.req('/v1/status', undefined, 8000), network);
+    } catch (e) {
+      return { ok: false, problem: 'unreachable', detail: (e as Error).message };
+    }
   }
 
   async hold(body: SubmitBody, govHash: string) {

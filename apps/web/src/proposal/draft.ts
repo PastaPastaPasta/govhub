@@ -4,8 +4,9 @@
 // serialized data, the time (both hashed), and then the collateral (its signed bytes before the broadcast, for a browser payment).
 // No secret is ever stored: a browser payment's deposit key is derived again from the recovery phrase or the signed-in key.
 import { proposalDepositPath, type CollateralFundingRecord } from '@govhub/auth';
-import { bytesToHex, gobjectPrepareCommand, gobjectSubmitCommand, lockProposal, parseProposalData, validateProposalData, type LockedProposal } from '@govhub/verify';
+import { bytesToHex, duffsToDash, gobjectPrepareCommand, gobjectSubmitCommand, lockProposal, parseProposalData, validateProposalData, type LockedProposal } from '@govhub/verify';
 import type { CoreNetwork } from '../data/types.ts';
+import { unitFor } from '../lib/unit.ts';
 
 export interface DraftInputs {
   name: string;
@@ -78,6 +79,8 @@ export interface ProposalDraft {
   updatedAt: number;
   /** The identity the govhub URL names (the signed-in one when it was chosen). */
   identityId?: string;
+  /** Made with demo data (`?fixtures=1`): its payment is simulated, so it never shows among the live network's proposals. */
+  demo?: boolean;
   editStep: 0 | 1 | 2;
   inputs: DraftInputs;
   lock?: DraftLock;
@@ -98,7 +101,22 @@ export function backupMilestone(d: ProposalDraft): BackupMilestone {
 }
 
 /** The unit the fee is shown in. */
-export const feeUnit = (network: CoreNetwork): string => (network === 'testnet' ? 'tDASH' : 'DASH');
+export const feeUnit = unitFor;
+
+/**
+ * How often a proposal can be paid: the superblocks it was planned for, and the most Dash Core may pay it. Core pays at every
+ * superblock within 2 hours of the proposal's window; testnet's superblocks are an hour apart, so there that is more than planned.
+ */
+export function paymentCounts(s: { superblocks: readonly unknown[]; eligible: readonly unknown[] }): { planned: number; max: number } {
+  return { planned: s.superblocks.length, max: Math.max(s.superblocks.length, s.eligible.length) };
+}
+
+/** "5 DASH × 3 = 15 DASH", or "5 tDASH × up to 7 = up to 35 tDASH" where Dash Core may pay more often than planned. */
+export function paymentTotalText(duffs: bigint, s: { superblocks: readonly unknown[]; eligible: readonly unknown[] }, unit: string): string {
+  const { planned, max } = paymentCounts(s);
+  const upTo = max > planned ? 'up to ' : '';
+  return `${duffsToDash(duffs)} ${unit} × ${upTo}${max} = ${upTo}${duffsToDash(duffs * BigInt(max))} ${unit}`;
+}
 
 /** The fee transaction's txid once known: confirmed by the network, or built and saved before its broadcast (it may be out there). */
 export const collateralTxid = (d: ProposalDraft): string | undefined => d.payment?.txid ?? d.payment?.funding?.tx?.txid;

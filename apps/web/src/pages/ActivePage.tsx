@@ -6,6 +6,7 @@ import { useForum } from '../app/forum.tsx';
 import { BudgetHeader } from '../ui/BudgetHeader.tsx';
 import { FailedProposalsToggle } from '../ui/HiddenToggle.tsx';
 import { LameDuckSection } from '../ui/LameDuck.tsx';
+import { PendingProposals } from '../proposal/Pending.tsx';
 import { ProposalCard } from '../ui/ProposalCard.tsx';
 import { ProposalTabs } from '../ui/ProposalTabs.tsx';
 import { useReveal } from '../ui/hooks.ts';
@@ -123,6 +124,7 @@ export function ActivePage() {
           <ProposalTabs />
           <p className="small muted">{ACTIVE_SORT_NOTE[query.sort]}</p>
         </div>
+        <PendingProposals />
         {everyRow.length > 0 && (
           <div className="list-tools" role="search" aria-label="Active proposals">
             <SearchField label="Search active proposals" placeholder="Search by name, owner or address" value={query.q} onChange={(q, replace) => setQuery({ q }, { replace })} />

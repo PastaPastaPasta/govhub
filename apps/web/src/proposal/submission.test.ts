@@ -3,7 +3,7 @@
 import { checkNewProposal, lockProposal } from '@govhub/verify';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { newDraft, type DraftLock, type ProposalDraft } from './draft.ts';
-import { HttpProposalRelay, RelayError, type HeldProposalState, type ProposalRelayPort, type SubmitBody } from './relay.ts';
+import { HttpProposalRelay, parseRelayReady, RelayError, relaysReadiness, type HeldProposalState, type ProposalRelayPort, type SubmitBody } from './relay.ts';
 import type { CollateralCheck, WizardServices } from './services.ts';
 import { markManualSubmit, resetRelays, submissionTick } from './submission.ts';
 
@@ -19,6 +19,7 @@ function paidDraft(): ProposalDraft {
 const mined = (n: number): CollateralCheck => ({ state: 'mined', confirmations: n, basis: 'verified', final: n >= 2 });
 
 class FakeRelay implements ProposalRelayPort {
+  ready = async () => ({ ok: true as const });
   calls: string[] = [];
   held: HeldProposalState | null = null;
   constructor(
@@ -61,6 +62,7 @@ function services(relays: FakeRelay[], o: { check?: CollateralCheck; seen?: bool
     checkCollateral: async () => o.check ?? mined(1),
     fundCollateral: async () => ({ txid: TXID }),
     relays: () => relays,
+    relaysReady: async () => ({ ok: true }),
     seenByNetwork: async () => o.seen ?? false,
     onGovhub: async () => o.onGovhub ?? false,
   };
@@ -222,5 +224,22 @@ describe('HttpProposalRelay', () => {
     expect(await r.status('f'.repeat(32), gov)).toBeNull();
     vi.stubGlobal('fetch', vi.fn(async () => Promise.reject(new TypeError('Failed to fetch'))));
     await expect(r.hold(body, gov)).rejects.toThrow(/unreachable/);
+  });
+});
+
+describe('relay readiness before payment', () => {
+  it('reads /v1/status: Core down, another network, or proposals disabled are not ready', () => {
+    expect(parseRelayReady({ network: 'testnet', core: { reachable: true, height: 1 }, proposalSubmit: true }, 'testnet')).toEqual({ ok: true });
+    expect(parseRelayReady({ network: 'testnet', core: { reachable: false, height: null }, proposalSubmit: true }, 'testnet')).toMatchObject({ ok: false, problem: 'core-down' });
+    expect(parseRelayReady({ network: 'mainnet', core: { reachable: true } }, 'testnet')).toMatchObject({ ok: false, problem: 'wrong-network' });
+    expect(parseRelayReady({ network: 'testnet', core: { reachable: true }, proposalSubmit: false }, 'testnet')).toMatchObject({ ok: false, problem: 'disabled' });
+    expect(parseRelayReady('garbage', 'testnet')).toMatchObject({ ok: false, problem: 'core-down' });
+  });
+
+  it('one ready relay is enough; none blocks payment with a reason', () => {
+    expect(relaysReadiness([{ ok: false, problem: 'core-down' }, { ok: true }])).toEqual({ ok: true });
+    expect(relaysReadiness([{ ok: false, problem: 'core-down' }])).toMatchObject({ ok: false, reason: expect.stringContaining("can't reach the Dash network") });
+    expect(relaysReadiness([{ ok: false, problem: 'unreachable' }])).toMatchObject({ ok: false, reason: expect.stringContaining('not answering') });
+    expect(relaysReadiness([])).toMatchObject({ ok: false });
   });
 });

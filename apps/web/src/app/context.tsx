@@ -11,6 +11,7 @@ import type { GovParams } from '../lib/governance.ts';
 import { byRank, deriveRow, partitionByCheck, type Checked, type Row } from '../lib/view.ts';
 import { ProposalChecks, type CheckCache, type StoredCheck } from '../verify/checks.ts';
 import { runVerification } from '../verify/client.ts';
+import { setDashUnit } from '../lib/unit.ts';
 
 export type Theme = 'system' | 'light' | 'dark';
 const THEME_KEY = 'govhub.theme';
@@ -98,7 +99,7 @@ function useGovSnapshot(source: DataSource, nonce: number): GovSnapshot {
   useEffect(() => {
     let live = true;
     const guard = <A extends unknown[]>(f: (...a: A) => void) => (...a: A) => live && f(...a);
-    resetLoaded();
+    // a new source was reset during render; a reload of the same source keeps showing what it has until the new answers land
     source.params().then(guard(setParams), () => {});
     source.cycle(guard((c) => setCycle({ data: c, loading: true }))).then(guard((c) => setCycle({ data: c, loading: false })), guard((e) => setCycle({ error: errText(e), loading: false })));
     source.height().then(guard((h) => setHeight({ data: h, loading: false })), guard((e) => setHeight({ error: errText(e), loading: false })));
@@ -165,7 +166,11 @@ export function AppProvider({ children, initialMode }: { children: ReactNode; in
   const [mode, setModeState] = useState<DataMode>(() => initialMode ?? resolveMode(location.search, sessionStorage, import.meta.env.VITE_GOVHUB_FIXTURES));
   const [theme, setThemeState] = useState<Theme>(() => (localStorage.getItem(THEME_KEY) as Theme | null) ?? 'system');
   const [nonce, setNonce] = useState(0);
-  const source = useMemo(() => createSource(mode, registry), [mode, registry]);
+  const source = useMemo(() => {
+    const s = createSource(mode, registry);
+    setDashUnit(s.coreNetwork);
+    return s;
+  }, [mode, registry]);
   const gov = useGovSnapshot(source, nonce);
   const params = gov.params?.value ?? source.defaultParams;
   const checks = useMemo(() => makeChecks(source), [source]);
