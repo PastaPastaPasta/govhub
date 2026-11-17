@@ -109,7 +109,13 @@ export function Passkeys() {
                       <span className="mono-ish">{toBase64(e.credentialId).slice(0, 12)}…</span>
                     </span>
                   </div>
-                  <button type="button" className="btn btn-quiet btn-s" onClick={() => remove(e)}>
+                  <button
+                    type="button"
+                    className="btn btn-quiet btn-s"
+                    onClick={() => {
+                      if (window.confirm(`Remove this passkey? It will no longer sign you in${here ? ' on this device' : ' on that device'}; your ${what} still does.`)) void remove(e);
+                    }}
+                  >
                     Remove
                   </button>
                 </li>

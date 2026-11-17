@@ -14,7 +14,7 @@ test('create flow shows a fresh phrase, checks three words, then offers funding'
   const words = page.getByTestId('phrase-words').locator('li');
   await expect(words).toHaveCount(12);
   const phrase = (await words.allInnerTexts()).map((t) => t.trim().split(/\s+/)[1]!);
-  await page.getByRole('button', { name: 'Use 24 words instead' }).click();
+  await page.getByRole('button', { name: /^Start over with 24 words/ }).click();
   await expect(words).toHaveCount(24);
   const phrase24 = (await words.allInnerTexts()).map((t) => t.trim().split(/\s+/)[1]!);
   expect(phrase24.slice(0, 12)).not.toEqual(phrase);

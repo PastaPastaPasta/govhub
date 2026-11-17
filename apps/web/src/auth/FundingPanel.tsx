@@ -30,9 +30,9 @@ const TESTNET_FAUCET_URL = 'https://faucet.thepasta.org';
 const STEPS: Array<{ id: FundingView['state'] | 'is'; label: string }> = [
   { id: 'awaiting-deposit', label: 'Waiting for your payment' },
   { id: 'locking', label: 'Payment received' },
-  { id: 'locked', label: 'Asset lock sent to the network' },
-  { id: 'is', label: 'InstantSend lock' },
-  { id: 'registering', label: 'Registering on Platform' },
+  { id: 'locked', label: 'Payment locked for Dash Platform' },
+  { id: 'is', label: 'Confirmed by the network' },
+  { id: 'registering', label: 'Saving on Dash Platform' },
   { id: 'done', label: 'Done' },
 ];
 const ORDER: FundingView['state'][] = ['awaiting-deposit', 'locking', 'locked', 'registering', 'done'];
@@ -181,7 +181,9 @@ export function FundingPanel(p: FundingPanelProps) {
                 )}
               </p>
             )}
-            <p className="muted small">This page is watching the network. Keep it open until it finishes.</p>
+            <p className="muted small" data-testid="deposit-leave">
+              This page is watching for your payment. If you close it, nothing is lost: sign in again the same way to continue, or use Recover funds in Settings.
+            </p>
           </div>
         </div>
       )}
@@ -200,7 +202,7 @@ export function FundingPanel(p: FundingPanelProps) {
           </div>
           {view.pendingDuffs > 0n && (
             <p className="muted small" data-testid="pending-deposit">
-              {formatDuffs(view.pendingDuffs)} seen; it counts once InstantSend locks it or it is in a block.
+              {formatDuffs(view.pendingDuffs)} seen; it counts once the network confirms it (seconds, sometimes a few minutes).
             </p>
           )}
           <details className="learn small" data-testid="deposit-rules">
@@ -218,10 +220,15 @@ export function FundingPanel(p: FundingPanelProps) {
           <li key={s.id} data-status={status(s.id)}>
             <span className="fund-dot" aria-hidden="true" />
             {s.label}
-            {s.id === 'is' && view.proofKind === 'chain' && <span className="muted small"> (not seen; using a ChainLock instead)</span>}
+            {s.id === 'is' && view.proofKind === 'chain' && <span className="muted small"> (the slower way: a few minutes)</span>}
           </li>
         ))}
       </ol>
+      {(view.state === 'locking' || view.state === 'locked' || view.state === 'registering') && !error && (
+        <p className="small" role="status" data-testid="funding-keep-open">
+          <b>Keep this page open</b> for a minute or two while {p.kind === 'create' ? 'your account is created' : 'the credit is added'}. Closing it only delays this; the payment is not lost.
+        </p>
+      )}
       {view.note && <p className="muted small" data-testid="funding-note">{view.note}</p>}
       {view.lateDuffs > 0n && (
         <div className="notice-box" role="status" data-testid="late-payment">
@@ -332,9 +339,9 @@ function ErrorBox({ text, retry, onRecover }: { text: string; retry(): void; onR
   return (
     <div className="auth-error" role="alert">
       <p>{text}</p>
-      <p className="muted small">
-        Your progress is saved in this browser. Retrying continues where it stopped; nothing is paid twice. On another device, or if this keeps failing,{' '}
-        <RecoverLink onClick={onRecover}>Recover funds</RecoverLink> finds the payment from your recovery phrase alone.
+      <p className="muted small">Your progress is saved in this browser. Retrying continues where it stopped; nothing is paid twice.</p>
+      <p className="small">
+        On another device, or if this keeps failing: <RecoverLink onClick={onRecover}>Recover funds</RecoverLink> finds the payment from your recovery phrase alone.
       </p>
       <button type="button" className="btn" onClick={retry}>
         Try again

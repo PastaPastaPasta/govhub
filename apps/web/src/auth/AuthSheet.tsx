@@ -309,7 +309,7 @@ function Choose({ openMore }: { openMore: boolean }) {
       )}
       <RecoverableNotice records={recoverable} />
       <div className="signin-main">
-        <button type="button" className="btn btn-primary signin-btn" onClick={() => openSheet('wallet')} disabled={!appConnect} aria-describedby={appConnect ? undefined : 'wallet-soon'} data-testid="wallet-signin" data-autofocus={(appConnect && autofocus) || undefined}>
+        <button type="button" className={`btn signin-btn${appConnect ? ' btn-primary' : ''}`} onClick={() => openSheet('wallet')} disabled={!appConnect} aria-describedby={appConnect ? undefined : 'wallet-soon'} data-testid="wallet-signin" data-autofocus={(appConnect && autofocus) || undefined}>
           <Icon name="wallet" />
           Sign in with Dash Wallet
           {!appConnect && (
@@ -318,7 +318,7 @@ function Choose({ openMore }: { openMore: boolean }) {
             </span>
           )}
         </button>
-        <button type="button" className="btn signin-btn" onClick={() => openSheet('passkey')} data-testid="passkey-signin" data-autofocus={(!appConnect && autofocus) || undefined}>
+        <button type="button" className={`btn signin-btn${appConnect ? '' : ' btn-primary'}`} onClick={() => openSheet('passkey')} data-testid="passkey-signin" data-autofocus={(!appConnect && autofocus) || undefined}>
           <Icon name="passkey" />
           Sign in with a passkey
         </button>
@@ -420,7 +420,7 @@ export function CreateFlow() {
               setPhrase(generatePhrase(n));
             }}
           >
-            Use {words === 12 ? 24 : 12} words instead
+            Start over with {words === 12 ? 24 : 12} words (replaces the words above)
           </button>
         </div>
       </div>
