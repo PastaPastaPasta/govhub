@@ -17,7 +17,7 @@ import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { profileRegistry } from '../src/config/registry.ts';
 import { RESERVED_TESTNET_MNS, testnetMnKeys } from '../scripts/testnet-mn-keys.ts';
-import { cspViolations, watchPage } from './helpers.ts';
+import { cspViolations, watchPage, otherWay } from './helpers.ts';
 import { guardLiveVotes } from './live-vote-guard.ts';
 
 test.skip(!process.env.GOVHUB_LIVE_VOTE, 'set GOVHUB_LIVE_VOTE=1 to run the live testnet keyring and voting flow (spends tCredits)');
@@ -34,7 +34,7 @@ const REGISTRY = process.env.GOVHUB_VOTE_RELAY ? { ...base, relays: [{ name: 're
 async function signInWithPhrase(page: Page) {
   await page.getByTestId('session-button').click();
   const sheet = page.locator('dialog[open]');
-  await sheet.getByRole('button', { name: /I have a recovery phrase/ }).click();
+  await otherWay(sheet, /I have a recovery phrase/);
   await sheet.getByTestId('phrase-input').fill(PHRASE);
   await sheet.getByRole('button', { name: 'Sign in', exact: true }).last().click();
   await expect(page.getByTestId('session-button')).not.toHaveText('Sign in', { timeout: 120_000 });

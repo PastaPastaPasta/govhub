@@ -87,6 +87,53 @@ describe('the sign-in sheet', () => {
     await r.unmount();
   });
 
+  it('flag on: wallet first, passkey second, the rest folded away, and no phrase warning until a phrase is asked for', async () => {
+    auth.value = { ...auth.value, appConnect: true };
+    const r = await render(<AuthSheet />);
+    expect(r.el.querySelector('#sheet-title')?.textContent).toBe('Sign in to govhub');
+    const main = [...r.el.querySelectorAll('.signin-main button')].map((b) => b.textContent);
+    expect(main).toEqual(['Sign in with Dash Wallet', 'Sign in with a passkey']);
+    expect(r.el.querySelector('[data-testid="seed-warning"]')).toBeNull();
+    const toggle = r.el.querySelector<HTMLButtonElement>('[data-testid="signin-more"]')!;
+    const panel = r.el.querySelector<HTMLElement>(`#${CSS.escape(toggle.getAttribute('aria-controls')!)}`)!;
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(panel.hidden).toBe(true);
+    await click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(panel.hidden).toBe(false);
+    expect([...panel.querySelectorAll('.signin-alt b')].map((b) => b.textContent)).toEqual(['Create an account', 'I have a recovery phrase', 'Paste a key']);
+    expect(panel.textContent).toContain('What is an account here?');
+
+    await click(button(panel, /I have a recovery phrase/));
+    await r.rerender(<AuthSheet />);
+    expect(r.el.querySelector('#sheet-title')?.textContent).toBe('Sign in with a recovery phrase');
+    expect(r.el.querySelector('[data-testid="seed-warning"]')).not.toBeNull();
+    await click(button(r.el, /Back to sign-in options/));
+    await r.rerender(<AuthSheet />);
+    expect(r.el.querySelector('#sheet-title')?.textContent).toBe('Sign in to govhub');
+    // back from one of the other ways: that section is still open
+    expect(r.el.querySelector('[data-testid="signin-more"]')?.getAttribute('aria-expanded')).toBe('true');
+    await r.unmount();
+  });
+
+  it('flag off: the other ways start open, since the wallet button does nothing yet', async () => {
+    const r = await render(<AuthSheet />);
+    expect(r.el.querySelector('[data-testid="signin-more"]')?.getAttribute('aria-expanded')).toBe('true');
+    await r.unmount();
+  });
+
+  it('the passkey button opens the passkey view; signed-in views have no way back to the chooser', async () => {
+    const r = await render(<AuthSheet />);
+    await click(r.el.querySelector<HTMLButtonElement>('[data-testid="passkey-signin"]')!);
+    await r.rerender(<AuthSheet />);
+    expect(auth.value.sheet).toBe('passkey');
+    expect(r.el.querySelector('[data-testid="sheet-back"]')).not.toBeNull();
+    auth.value = { ...auth.value, sheet: 'topup', session: { source: 'wallet' } };
+    await r.rerender(<AuthSheet />);
+    expect(r.el.querySelector('[data-testid="sheet-back"]')).toBeNull();
+    await r.unmount();
+  });
+
   it('a wallet session sees the wallet notice instead of top-up and passkeys', async () => {
     auth.value = { ...auth.value, sheet: 'topup', session: { source: 'wallet' } };
     const r = await render(<AuthSheet />);

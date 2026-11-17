@@ -10,6 +10,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { profileRegistry } from '../src/config/registry.ts';
+import { otherWay } from './helpers.ts';
 
 test.skip(!process.env.GOVHUB_LIVE_AUTH, 'set GOVHUB_LIVE_AUTH=1 to run the live testnet tab-sharing flow');
 test.setTimeout(5 * 60_000);
@@ -50,7 +51,7 @@ test('@live-auth one sign-in for the open tabs of a browser, gone with the brows
   await signedOut(a);
   await button(a).click();
   const sheet = a.locator('dialog[open]');
-  await sheet.getByRole('button', { name: /Paste a key/ }).click();
+  await otherWay(sheet, /Paste a key/);
   await sheet.getByTestId('key-input').fill(wif);
   await sheet.getByRole('button', { name: 'Sign in', exact: true }).click();
   const id = await identity(a);

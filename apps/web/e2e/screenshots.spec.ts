@@ -50,7 +50,7 @@ for (const scheme of ['light', 'dark'] as const) {
       test(`@screenshots sign-in`, async ({ page }) => {
         await gotoFixtures(page);
         await page.getByTestId('session-button').click();
-        await expect(page.getByRole('dialog', { name: 'Sign in or create an account' })).toBeVisible();
+        await expect(page.getByRole('dialog', { name: 'Sign in to govhub' })).toBeVisible();
         await shoot(page, `signin-${scheme}-${vp}`, false);
       });
 
