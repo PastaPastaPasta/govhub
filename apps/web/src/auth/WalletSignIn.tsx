@@ -197,7 +197,7 @@ export default function WalletSignIn() {
                   govhub may spend up to <b>{k.remainingBudget === undefined ? 'its budget' : formatCredits(k.remainingBudget)}</b> of this identity’s credits on comments,
                   reactions and posts{k.key.expiresAt ? <>, until {formatDateTime(Math.floor(k.key.expiresAt / 1000))}</> : null}. It cannot move your money or change your keys.
                 </p>
-                <div className="form-actions">
+                <div className="sheet-actions">
                   <button type="button" className="btn btn-primary" onClick={() => accept(g)} data-testid="wallet-continue">
                     Continue
                   </button>
@@ -220,9 +220,11 @@ export default function WalletSignIn() {
         <p className="error" role="alert">
           {phase.message}
         </p>
-        <button type="button" className="btn btn-primary" onClick={() => setAttempt((n) => n + 1)}>
-          Try again
-        </button>
+        <div className="sheet-actions">
+          <button type="button" className="btn btn-primary" onClick={() => setAttempt((n) => n + 1)}>
+            Try again
+          </button>
+        </div>
       </div>
     );
   }

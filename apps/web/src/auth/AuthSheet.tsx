@@ -101,7 +101,13 @@ export function AuthSheet() {
             </button>
           </header>
           {/* key = view: switching views unmounts the previous one and drops what it held */}
-          {choose ? <Choose openMore={OTHER_WAYS.has(backFrom.current)} /> : <SheetContent key={sheet} view={sheet} />}
+          {choose ? (
+            <Choose openMore={OTHER_WAYS.has(backFrom.current)} />
+          ) : (
+            <div className="sheet-view" key={sheet}>
+              <SheetContent view={sheet} />
+            </div>
+          )}
         </div>
       )}
     </dialog>
@@ -237,7 +243,6 @@ function SeedWarning({ what = 'phrase' }: { what?: 'phrase' | 'key' }) {
 }
 
 const DASH_WALLET_URL = 'https://www.dash.org/download/';
-const BRIDGE_URL = 'https://bridge.dashhq.org/';
 
 function OutLink({ href, children }: { href: string; children: ReactNode }) {
   return (
@@ -354,9 +359,6 @@ function Choose({ openMore }: { openMore: boolean }) {
         <p>
           New to Dash? <OutLink href={DASH_WALLET_URL}>Get Dash Wallet</OutLink>
         </p>
-        <p>
-          Easy setup: <OutLink href={BRIDGE_URL}>bridge.dashhq.org</OutLink>
-        </p>
       </div>
     </div>
   );
@@ -405,7 +407,7 @@ export function CreateFlow() {
             </li>
           ))}
         </ol>
-        <div className="form-actions">
+        <div className="sheet-actions">
           <button type="button" className="btn btn-primary" onClick={() => setStep('quiz')}>
             I wrote it down
           </button>
@@ -461,7 +463,7 @@ function Quiz({ words, positions, onPass, onBack }: { words: string[]; positions
         ))}
       </div>
       {wrong && <p className="error" role="alert">That doesn't match. Check your written copy, or go back and look again.</p>}
-      <div className="form-actions">
+      <div className="sheet-actions">
         <button type="submit" className="btn btn-primary">
           Continue
         </button>
@@ -581,7 +583,7 @@ function VoucherRedeem({ wallet, identityIndex, onDone }: { wallet: SeedWallet; 
         </p>
       )}
       {error && <p className="error" role="alert">{error}</p>}
-      <div className="form-actions">
+      <div className="sheet-actions">
         <button type="submit" className="btn btn-primary" disabled={busy || !text.trim()}>
           {busy ? 'Redeeming…' : 'Redeem'}
         </button>
@@ -707,7 +709,7 @@ function PhraseSignIn() {
       <SecretField label="Recovery phrase (12 or 24 words)" what="the recovery phrase" value={text} onChange={setText} testId="phrase-input" disabled={busy} />
       <p className="muted small">The phrase never leaves this browser. govhub finds your account by a public key fingerprint only.</p>
       {error && <p className="error" role="alert">{error}</p>}
-      <div className="form-actions">
+      <div className="sheet-actions">
         <button type="submit" className="btn btn-primary" disabled={busy || !text.trim()}>
           {busy ? <><span className="spinner" aria-hidden="true" /> Looking up…</> : 'Sign in'}
         </button>
@@ -751,7 +753,7 @@ function KeySignIn() {
         <input type="checkbox" checked={keep} onChange={(e) => setKeep(e.target.checked)} /> Keep it with a passkey so I can sign in again without pasting
       </label>
       {error && <p className="error" role="alert">{error}</p>}
-      <div className="form-actions">
+      <div className="sheet-actions">
         <button type="submit" className="btn btn-primary" disabled={busy || !text.trim()}>
           {busy ? 'Checking…' : 'Sign in'}
         </button>
@@ -789,9 +791,11 @@ function TopUp() {
     return (
       <div>
         <p className="notice">Top-up complete. Your balance is updated.</p>
-        <button type="button" className="btn btn-primary" onClick={closeSheet}>
-          Close
-        </button>
+        <div className="sheet-actions">
+          <button type="button" className="btn btn-primary" onClick={closeSheet}>
+            Close
+          </button>
+        </div>
       </div>
     );
   }

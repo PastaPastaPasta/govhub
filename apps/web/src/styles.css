@@ -2222,7 +2222,7 @@ details summary {
   background: rgb(6 18 28 / 0.42);
 }
 .sheet-body {
-  padding: var(--s-4) var(--s-5) var(--s-5);
+  padding: var(--s-5);
   display: grid;
   gap: var(--s-4);
 }
@@ -2243,7 +2243,18 @@ details summary {
 }
 .sheet .form {
   margin-block-start: 0;
-  gap: 0.75rem;
+  gap: var(--s-4);
+}
+/* Every view after the chooser shares one rhythm: blocks a step apart, then a row of full-size actions. */
+.sheet-view,
+.sheet-view > :is(div, form) {
+  display: grid;
+  gap: var(--s-4);
+}
+.sheet-actions {
+  display: grid;
+  gap: var(--s-2);
+  margin-block-start: var(--s-2);
 }
 .sheet .form label:not(.check) {
   color: var(--ink-2);
@@ -2334,17 +2345,26 @@ details summary {
   display: grid;
   gap: var(--s-3);
 }
-.signin-btn {
+.signin-btn,
+.sheet-actions > .btn,
+.wallet-steps .btn {
   inline-size: 100%;
   min-block-size: 3rem;
   font-size: var(--t-m);
   border-radius: var(--radius-l);
   gap: 0.625rem;
 }
-.signin-btn.btn-primary:not(:disabled) {
+.sheet-actions > .btn-quiet {
+  min-block-size: 2.5rem;
+  font-size: var(--t-s);
+}
+.signin-btn.btn-primary:not(:disabled),
+.sheet-actions > .btn-primary:not(:disabled),
+.wallet-steps .btn-primary {
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.08), 0 4px 14px color-mix(in srgb, var(--accent-fill) 28%, transparent);
 }
-.signin-btn:not(.btn-primary):not(:disabled):hover {
+.signin-btn:not(.btn-primary):not(:disabled):hover,
+.sheet-actions > .btn:not(.btn-primary):not(.btn-quiet):not(:disabled):hover {
   border-color: var(--accent);
   background: var(--accent-wash);
 }
@@ -2455,6 +2475,7 @@ details summary {
   .sheet.sheet-choose-dialog {
     inline-size: 100vw;
   }
+  .sheet-body,
   .sheet-choose-dialog .sheet-body {
     padding: var(--s-5) var(--s-4) max(var(--s-5), env(safe-area-inset-bottom));
   }
@@ -3635,9 +3656,6 @@ details.advanced[open] > summary {
   padding-inline-start: 1.25rem;
   display: grid;
   gap: 0.375rem;
-}
-.wallet-steps .btn {
-  justify-self: start;
 }
 @media (max-width: 34rem) {
   .wallet-code {

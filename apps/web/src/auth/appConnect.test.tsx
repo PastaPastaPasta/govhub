@@ -94,6 +94,8 @@ describe('the sign-in sheet', () => {
     const main = [...r.el.querySelectorAll('.signin-main button')].map((b) => b.textContent);
     expect(main).toEqual(['Sign in with Dash Wallet', 'Sign in with a passkey']);
     expect(r.el.querySelector('[data-testid="seed-warning"]')).toBeNull();
+    // the Platform bridge is not a way into govhub
+    expect(r.el.querySelector('a[href*="bridge.dashhq.org"]')).toBeNull();
     const toggle = r.el.querySelector<HTMLButtonElement>('[data-testid="signin-more"]')!;
     const panel = r.el.querySelector<HTMLElement>(`#${CSS.escape(toggle.getAttribute('aria-controls')!)}`)!;
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
@@ -108,6 +110,8 @@ describe('the sign-in sheet', () => {
     await r.rerender(<AuthSheet />);
     expect(r.el.querySelector('#sheet-title')?.textContent).toBe('Sign in with a recovery phrase');
     expect(r.el.querySelector('[data-testid="seed-warning"]')).not.toBeNull();
+    // sub-views share one layout: a .sheet-view with full-size actions at the end
+    expect(r.el.querySelector('.sheet-view .sheet-actions button[type="submit"]')?.textContent).toBe('Sign in');
     await click(button(r.el, /Back to sign-in options/));
     await r.rerender(<AuthSheet />);
     expect(r.el.querySelector('#sheet-title')?.textContent).toBe('Sign in to govhub');
