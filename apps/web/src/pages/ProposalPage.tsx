@@ -148,7 +148,15 @@ function VoteCta({ proposal, active }: { proposal: Proposal; active: boolean }) 
   return (
     <div className="p-vote-cta">
       <p className="small muted">
-        Own a masternode? <Link to="/masternodes">Add your voting key</Link> to vote here.
+        {k.status === 'locked' || k.status === 'error' ? (
+          <>
+            <Link to="/masternodes">Unlock your keyring</Link> to vote here.
+          </>
+        ) : (
+          <>
+            Own a masternode? <Link to="/masternodes">Add your voting key</Link> to vote here.
+          </>
+        )}
       </p>
       <OfflineSign proposal={proposal} />
     </div>

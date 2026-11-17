@@ -13,7 +13,7 @@ export type TimeFmt = (unixS: number) => string;
 const RELAY_CODES: Record<string, string> = {
   obsolete: 'Core already has a newer vote from this masternode',
   'mn-gone': 'the masternode is no longer registered',
-  'mn-banned': 'the masternode is PoSe-banned, and banned masternodes cannot vote',
+  'mn-banned': 'the network has banned this masternode for not doing its job (PoSe), and banned masternodes cannot vote',
   'mn-not-valid': 'Core does not list this masternode as valid',
   'bad-signature': 'Core could not verify the signature',
   'unknown-proposal': 'Core does not know this proposal',
@@ -93,9 +93,9 @@ export function describeVote(v: WatchedVote, now: number, fmt: TimeFmt): VoteVie
   if (v.cancelSig && (v.status === 'queued' || v.status === 'held')) {
     const next = v.nextCancelAt && v.nextCancelAt > now ? `next try at ${fmt(v.nextCancelAt)}` : 'trying again now';
     return {
-      badge: 'Cancelling',
+      badge: 'Cancel not confirmed',
       tone: 'bad',
-      line: `Not cancelled yet: ${v.cancelError ?? `${whereHeld(v)} could not be reached`}. ${whereHeld(v)} may still hold this vote and could release it, so this browser keeps asking for the cancel while this page is open (${next}). To be sure it does not count, vote again: a new vote is timed after it and wins.`,
+      line: `Keep this page open: this browser keeps asking for the cancel (${next}). ${whereHeld(v)} may still hold this vote and could release it (${v.cancelError ?? 'it could not be reached'}). To be sure it does not count, vote again: a new vote is timed after it and wins.`,
     };
   }
   switch (v.status) {
@@ -113,7 +113,7 @@ export function describeVote(v: WatchedVote, now: number, fmt: TimeFmt): VoteVie
       if (v.restored) return { badge: 'Signed elsewhere', tone: 'quiet', line: 'Signed on another device. This browser does not send it; only a relay that already holds it can.' };
       if (v.lastSendError) {
         const when = v.nextSendAt && v.nextSendAt > now ? `Trying again at ${fmt(v.nextSendAt)}.` : 'Trying again now.';
-        return { badge: 'Not sent yet', tone: 'bad', line: `Not accepted by a relay yet: ${v.lastSendError}. Kept in this browser. ${when}` };
+        return { badge: 'Retrying', tone: 'wait', line: `No relay has taken it yet (${v.lastSendError}). It is kept in this browser and retried automatically while govhub is open. ${when}` };
       }
       return { badge: 'Sending', tone: 'progress', line: 'Signed in this browser, sending to the relay…' };
     case 'held': {
@@ -128,8 +128,8 @@ export function describeVote(v: WatchedVote, now: number, fmt: TimeFmt): VoteVie
     }
     case 'confirmed':
       return v.countedAt
-        ? { badge: 'Bridge: counted', tone: 'ok', line: `The bridge reports the network counted it: its vote set includes it, and the recount of that set matches.${corroboration(v)}` }
-        : { badge: 'Bridge: on the network', tone: 'ok', line: `The bridge reports the network has it: its vote set includes it, signature checked here against your voting key.${corroboration(v)}` };
+        ? { badge: 'Counted', tone: 'ok', line: `The bridge reports the network counted it: its vote set includes it, and the recount of that set matches.${corroboration(v)}` }
+        : { badge: 'On the network', tone: 'ok', line: `The bridge reports the network has it: its vote set includes it, signature checked here against your voting key.${corroboration(v)}` };
     case 'failed': {
       // refused by one relay after another may have stored it (its answer was lost): that relay could still release it
       const maybe = v.maybeAt?.length ? ` ${v.maybeAt.map(relayHost).join(' and ')} may still hold it from an earlier try whose answer was lost: cancel it to take it back there.` : '';
@@ -157,8 +157,8 @@ const LABELS: Record<StepKey, string> = {
   signed: 'Signed in your browser',
   relay: 'Accepted by relay',
   broadcast: 'Broadcast to the network',
-  seen: 'The bridge reports it on the network',
-  counted: 'The bridge reports it counted',
+  seen: 'On the network',
+  counted: 'Counted in the tally',
 };
 
 /** The tracker. Exactly one step is active while the vote moves; a failure marks the step where it stopped. */
@@ -210,8 +210,8 @@ export function trackerSteps(v: WatchedVote, now: number, fmt: TimeFmt): Step[] 
           : key === 'seen'
             ? 'Waiting for the bridge’s vote set to show it…'
             : 'Recounting the tally’s vote set…';
-    // the relay step stops (error) only when no relay may have the vote; one whose answer was lost may hold it
-    return { ...base, state: v.status === 'queued' && v.lastSendError && neverLeft(v) ? 'error' : 'active', detail };
+    // a send that no relay took yet is retried automatically: still in progress, as its "Retrying" badge says
+    return { ...base, state: 'active', detail };
   });
 }
 
@@ -346,9 +346,9 @@ export function relaySummary(relays: readonly string[], health: Readonly<Record<
   const first = up[0] ?? relays.find((r) => !health[r]) ?? relays[0]!;
   const backups = relays.length - 1;
   const via = `through ${relayHost(first)}${backups ? ` (${backups === 1 ? 'another relay takes over' : `${backups} others take over`} if it fails)` : ''}`;
-  if (down.length === relays.length) return { text: `Signed in your browser and sent ${via}. No relay answered its last check, so sending may wait until one does.`, warn: true };
-  return { text: `Signed in your browser and sent ${via}.`, warn: false };
+  if (down.length === relays.length) return { text: `Your vote will be signed in your browser and sent ${via}. No relay answered its last check, so sending may wait until one does.`, warn: true };
+  return { text: `Your vote will be signed in your browser and sent ${via}.`, warn: false };
 }
 
 /** How long until "Vote now" shows up (D-071): the bridge's vote set refreshes once per block. */
-export const VOTE_NOW_DELAY_TEXT = 'The network usually shows it within a few minutes (the vote list refreshes with each block, about 2.5 minutes apart).';
+export const VOTE_NOW_DELAY_TEXT = 'The network usually shows it within a few minutes.';

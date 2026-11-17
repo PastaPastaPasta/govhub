@@ -176,7 +176,7 @@ describe('B-S1-1: the relay stored the vote, the browser lost its answer as a ne
     const limited = await submitToRelays(vote(), [R1], sendDeps);
     expect(limited).toMatchObject({ status: 'queued' });
     expect(limited.maybeAt).toBeUndefined();
-    expect(describeVote(limited, NOW, fmt).badge).toBe('Not sent yet');
+    expect(describeVote(limited, NOW, fmt).badge).toBe('Retrying');
     expect(cancelAction(limited)).toBe('Discard');
     // a proxy's 403 page (no relay code): the relay may have seen it
     r.answer({ status: 403, html: '<html>Forbidden</html>' });
@@ -238,8 +238,8 @@ describe('B-S1-1: the relay stored the vote, the browser lost its answer as a ne
     expect(isOpen(pending)).toBe(true);
     expect(needsRebroadcast({ ...pending, status: 'held', refs: [{ relay: R1, id: '1'.padStart(32, '0') }] }, NOW + 99_999)).toBe(false);
     const view = describeVote(pending, NOW, fmt);
-    expect(view.badge).toBe('Cancelling');
-    expect(view.line).toMatch(/^Not cancelled yet: no answer from gov-relay-testnet\.dashhq\.org\. .* keeps asking for the cancel while this page is open \(next try at T5\)/);
+    expect(view.badge).toBe('Cancel not confirmed');
+    expect(view.line).toMatch(/^Keep this page open: this browser keeps asking for the cancel \(next try at T5\)\. .*no answer from gov-relay-testnet\.dashhq\.org/);
     expect(cancelAction(pending)).toBe('Try cancelling again');
     expect(neverLeft(pending)).toBe(false);
     // the relay is back: the retry finds the vote and cancels it
@@ -257,7 +257,7 @@ describe('B-S1-1: the relay stored the vote, the browser lost its answer as a ne
     const after = applyRelayState(v, R2, st);
     expect(after.status).toBe('queued');
     expect(cancelDue(after, NOW)).toBe(true);
-    expect(describeVote(after, NOW, fmt).badge).toBe('Cancelling');
+    expect(describeVote(after, NOW, fmt).badge).toBe('Cancel not confirmed');
     // without a pending cancel elsewhere it is simply cancelled
     expect(applyRelayState({ ...v, maybeAt: undefined }, R2, st).status).toBe('cancelled');
   });
