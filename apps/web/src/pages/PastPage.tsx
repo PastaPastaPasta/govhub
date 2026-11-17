@@ -20,8 +20,9 @@ export function PastPage() {
   const [items, setItems] = useState<Sourced<Proposal>[]>([]);
   const [tallies, setTallies] = useState(new Map<string, Sourced<Tally>>());
   const [next, setNext] = useState<string | undefined>(undefined);
-  /** `tallies`: the error came from reading a page's tallies (its proposals did load), so a retry reads those again. */
-  const [state, setState] = useState<{ loading: boolean; error?: string; done: boolean; tallies?: boolean }>({ loading: true, done: false });
+  const [state, setState] = useState<{ loading: boolean; error?: string; done: boolean }>({ loading: true, done: false });
+  /** A page's tallies could not be read (its proposals did load): kept apart, so a later page's load does not hide it. */
+  const [tallyError, setTallyError] = useState<string | null>(null);
   const gen = useRef(0);
   const inFlight = useRef<number | null>(null);
 
@@ -42,7 +43,7 @@ export function PastPage() {
         if (page.items.length)
           source.tallies(page.items.map((i) => i.value.govHash)).then(
             (t) => g === gen.current && setTallies((prev) => new Map([...prev, ...t])),
-            (e) => g === gen.current && setState({ loading: false, done: true, error: errText(e), tallies: true }),
+            (e) => g === gen.current && setTallyError(errText(e)),
           );
       } catch (e) {
         if (g === gen.current) setState({ loading: false, done: true, error: errText(e) });
@@ -56,22 +57,21 @@ export function PastPage() {
   useEffect(() => {
     setItems([]);
     setTallies(new Map());
+    setTallyError(null);
     void load();
   }, [load]);
 
   const retry = () => {
-    if (!state.tallies) return void load(items.length && next ? next : undefined);
+    if (state.error) void load(items.length && next ? next : undefined);
+    if (!tallyError) return;
+    setTallyError(null);
     const missing = items.map((i) => i.value.govHash).filter((h) => !tallies.has(h));
     const g = gen.current;
-    setState((s) => ({ ...s, loading: true }));
-    source.tallies(missing).then(
-      (t) => {
-        if (g !== gen.current) return;
-        setTallies((prev) => new Map([...prev, ...t]));
-        setState({ loading: false, done: !next });
-      },
-      (e) => g === gen.current && setState({ loading: false, done: true, error: errText(e), tallies: true }),
-    );
+    if (missing.length)
+      source.tallies(missing).then(
+        (t) => g === gen.current && setTallies((prev) => new Map([...prev, ...t])),
+        (e) => g === gen.current && setTallyError(errText(e)),
+      );
   };
 
   const [query, setQuery] = useQueryState(readPast, writePast);
@@ -144,9 +144,9 @@ export function PastPage() {
           {searching && !loadingAll && !state.error && <ResultCount shown={rows.length} total={showFailed ? items.length : items.length - failedAll} what="past proposals" onClear={rows.length ? clear : undefined} />}
         </div>
       )}
-      {state.error && (
+      {(state.error || tallyError) && (
         <p className="error" role="alert">
-          Past proposals could not be loaded right now ({state.error}).{' '}
+          {state.error ? 'Past proposals' : 'Their votes'} could not be loaded right now ({state.error ?? tallyError}).{' '}
           <button type="button" className="btn btn-s" onClick={retry} data-testid="past-retry">
             Try again
           </button>
