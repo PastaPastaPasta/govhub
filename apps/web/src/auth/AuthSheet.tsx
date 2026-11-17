@@ -4,7 +4,7 @@
 import {
   addressOf, discardFunding, discoverIdentities, generatePhrase, lockTooSmall, nextCreateIndex, isValidPhrase, localPasskeys, MIN_CREATE_DEPOSIT_DUFFS, MIN_TOPUP_DEPOSIT_DUFFS, nextTopUpIndex, normalizePhrase,
   createFundingPath, SUGGESTED_CREATE_DEPOSIT_DUFFS, parseVoucher, pendingFundings, PhraseError, redeemVoucher, SeedWallet, signInWithKey, signInWithSeed, toBase64, wipe, type FoundIdentity, type FundingRecord,
-  type PhraseLength,
+  type PhraseLength, type Session,
 } from '@govhub/auth';
 import { lazy, Suspense, useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useApp } from '../app/context.tsx';
@@ -598,6 +598,19 @@ function PhraseSignIn() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [state, setState] = useState<{ phrase: string; found: FoundIdentity[]; resume?: FundingRecord; createIndex?: number } | null>(null);
+  // Back can leave this view while a lookup runs: a late result then ends its session instead of signing in and closing another view
+  const left = useRef(false);
+  useEffect(() => {
+    left.current = false;
+    return () => {
+      left.current = true;
+    };
+  }, []);
+  const finish = (s: Session) => {
+    if (left.current) return s.end();
+    signIn(s);
+    closeSheet();
+  };
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -630,9 +643,9 @@ function PhraseSignIn() {
       const found = await discoverIdentities(wallet, port);
       if (!found.length && resume) return setState({ phrase, found: [], resume });
       if (found.length === 1) {
-        signIn(await signInWithSeed(wallet, found[0]!, port));
+        const s = await signInWithSeed(wallet, found[0]!, port);
         handedOver = true;
-        closeSheet();
+        finish(s);
         return;
       }
       // a new identity skips an index whose payment was used to top up another identity
@@ -649,8 +662,7 @@ function PhraseSignIn() {
     setBusy(true);
     const wallet = SeedWallet.fromPhrase(state.phrase, network);
     try {
-      signIn(await signInWithSeed(wallet, f, await platform()));
-      closeSheet();
+      finish(await signInWithSeed(wallet, f, await platform()));
     } catch (err) {
       wallet.wipe();
       setError(plainErrorText(err));

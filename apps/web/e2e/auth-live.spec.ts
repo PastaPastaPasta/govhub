@@ -76,7 +76,7 @@ test('@live-auth create, fund, sign in with phrase, passkey and top up on testne
 
   // ---- 1. create: phrase, quiz, pay the QR address ----
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await page.getByRole('button', { name: /Create a new identity/ }).click();
+  await otherWay(page, /Create an account/);
   const phrase = (await page.getByTestId('phrase-words').locator('li').allInnerTexts()).map((t) => t.trim().split(/\s+/)[1]!);
   expect(phrase).toHaveLength(12);
   writePrivate(join(PHASE2_DIR, 'e2e-phrase.json'), { phrase: phrase.join(' '), at: new Date().toISOString() });
@@ -140,7 +140,7 @@ test('@live-auth create, fund, sign in with phrase, passkey and top up on testne
   results.voucherTxid = voucher.txid;
   results.voucherBurnVout = voucher.burnVout;
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await page.getByRole('button', { name: /Create a new identity/ }).click();
+  await otherWay(page, /Create an account/);
   const phrase2 = (await page.getByTestId('phrase-words').locator('li').allInnerTexts()).map((t) => t.trim().split(/\s+/)[1]!);
   writePrivate(join(PHASE2_DIR, 'e2e-phrase-voucher.json'), { phrase: phrase2.join(' '), at: new Date().toISOString() });
   await page.getByRole('button', { name: 'I wrote it down' }).click();
