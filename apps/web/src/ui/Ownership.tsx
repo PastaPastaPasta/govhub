@@ -341,7 +341,7 @@ function AcceptNaming({ p, own, poor }: { p: Proposal; own: Ownership; poor: boo
       {poor && <LowBalance what="the claim" balance={balance} needed={COSTS.claim} />}
       <p className="form-actions">
         <button type="button" className="btn btn-primary" disabled={busy || poor || done} onClick={accept} data-testid="accept-naming-button">
-          {busy ? 'Signing and broadcasting…' : done ? 'Accepted. Checking it…' : 'Accept ownership'}
+          {busy ? 'Accepting…' : done ? 'Accepted. Checking it…' : 'Accept ownership'}
         </button>
       </p>
       <WriteError error={error} needsTopUp={needsTopUp} />
@@ -438,7 +438,7 @@ export function OwnerPost({ govHash, ownerId, post, trustLevel = 'verified' }: {
       {!s.post && !editing && <h2 id="post-title" className="visually-hidden">Owner's description</h2>}
       {isOwner && !editing && (
         <p>
-          <button type="button" className="btn" onClick={() => setEditing(true)}>
+          <button type="button" className={s.post ? 'btn' : 'btn btn-primary'} onClick={() => setEditing(true)}>
             {s.post ? 'Edit the description' : 'Write a description for this proposal'}
           </button>
         </p>
@@ -519,7 +519,7 @@ function PostEditor({ govHash, existing, initialBody, onDone }: { govHash: strin
       <WriteError error={error} needsTopUp={needsTopUp} />
       <div className="form-actions">
         <button type="submit" className="btn btn-primary" disabled={busy || poor || !title.trim() || !packed || !('chunks' in packed)}>
-          {busy ? 'Signing and broadcasting…' : 'Publish description'}
+          {busy ? 'Publishing…' : 'Publish description'}
         </button>
         <button type="button" className="btn btn-quiet" onClick={() => onDone()}>
           Cancel

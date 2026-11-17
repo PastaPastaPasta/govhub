@@ -305,7 +305,7 @@ export function Discussion({ govHash, featured, composerNote }: { govHash: strin
           <Link to={{ search: '' }}>Show the whole discussion</Link>
         </p>
       )}
-      {reactions.error && <p className="error small">Scores could not be read: {reactions.error}</p>}
+      {reactions.error && <p className="muted small">Scores could not be loaded ({reactions.error}); comments are shown without them.</p>}
       {!moderation.ready && thread.data && count > 0 && (
         <p className="muted" aria-busy="true">
           <span className="spinner" aria-hidden="true" /> Applying block lists…
@@ -349,7 +349,7 @@ export function Discussion({ govHash, featured, composerNote }: { govHash: strin
 /** The filter note's last sentence: which lists hide spam, or that they are still being read or could not be read. */
 function listNote(m: ReturnType<typeof useForum>['moderation']): string {
   if (m.subs.defaultOff) return ' The default block list is off (Settings).';
-  if (!m.ready) return ' Reading the block lists…';
+  if (!m.ready) return '';
   const loaded = m.lists.map((l) => l.name).join(', ');
   if (loaded) return ` Spam is hidden by ${loaded}.`;
   return m.error ? ' The block lists could not be read.' : '';

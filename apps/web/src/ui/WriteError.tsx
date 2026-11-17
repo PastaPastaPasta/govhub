@@ -37,7 +37,7 @@ export function LowBalance({ what, balance, needed }: { what: string; balance: b
   if (balance === null) return null;
   return (
     <p className="error small" data-testid="low-balance">
-      Your balance is {formatCredits(balance)}, and {what} needs about {formatCredits(needed, true)} available. Top up the identity first.{' '}
+      Your balance is {formatCredits(balance)}, and {what} needs about {formatCredits(needed, true)} available. Top up your account first.{' '}
       <button type="button" className="btn btn-s" data-testid="low-balance-topup" onClick={() => openSheet('topup')}>
         Top up
       </button>

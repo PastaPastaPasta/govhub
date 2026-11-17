@@ -128,7 +128,14 @@ export function PastPage() {
           {searching && !loadingAll && !state.error && <ResultCount shown={rows.length} total={showFailed ? items.length : items.length - failedAll} what="past proposals" onClear={rows.length ? clear : undefined} />}
         </div>
       )}
-      {state.error && <p className="error">Platform could not be read: {state.error}</p>}
+      {state.error && (
+        <p className="error" role="alert">
+          Past proposals could not be loaded right now ({state.error}).{' '}
+          <button type="button" className="btn btn-s" onClick={() => void load(items.length && next ? next : undefined)} data-testid="past-retry">
+            Try again
+          </button>
+        </p>
+      )}
       {!state.loading && !state.error && items.length === 0 && (
         <p className="empty">
           No past proposals published yet. Proposals move here once their last payment date has passed. <Link to="/">See the active ones</Link>
