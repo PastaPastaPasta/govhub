@@ -292,7 +292,7 @@ export function SettingsPage() {
           <span className="group-title">
             Advanced: choose your own servers <Custom on={custom.size > 0} />
           </span>
-          <span className="small muted">Only needed to run your own. Each network starts with govhub's servers; a server you add here could show false numbers.</span>
+          <span className="small muted">For your own servers, another provider's nodes, or turning off the price feed. Each network starts with govhub's servers; a server you add here could show false numbers.</span>
         </summary>
         <form
           className="form"

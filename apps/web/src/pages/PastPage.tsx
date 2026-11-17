@@ -20,7 +20,8 @@ export function PastPage() {
   const [items, setItems] = useState<Sourced<Proposal>[]>([]);
   const [tallies, setTallies] = useState(new Map<string, Sourced<Tally>>());
   const [next, setNext] = useState<string | undefined>(undefined);
-  const [state, setState] = useState<{ loading: boolean; error?: string; done: boolean }>({ loading: true, done: false });
+  /** `tallies`: the error came from reading a page's tallies (its proposals did load), so a retry reads those again. */
+  const [state, setState] = useState<{ loading: boolean; error?: string; done: boolean; tallies?: boolean }>({ loading: true, done: false });
   const gen = useRef(0);
   const inFlight = useRef<number | null>(null);
 
@@ -41,7 +42,7 @@ export function PastPage() {
         if (page.items.length)
           source.tallies(page.items.map((i) => i.value.govHash)).then(
             (t) => g === gen.current && setTallies((prev) => new Map([...prev, ...t])),
-            (e) => g === gen.current && setState({ loading: false, done: true, error: errText(e) }),
+            (e) => g === gen.current && setState({ loading: false, done: true, error: errText(e), tallies: true }),
           );
       } catch (e) {
         if (g === gen.current) setState({ loading: false, done: true, error: errText(e) });
@@ -57,6 +58,21 @@ export function PastPage() {
     setTallies(new Map());
     void load();
   }, [load]);
+
+  const retry = () => {
+    if (!state.tallies) return void load(items.length && next ? next : undefined);
+    const missing = items.map((i) => i.value.govHash).filter((h) => !tallies.has(h));
+    const g = gen.current;
+    setState((s) => ({ ...s, loading: true }));
+    source.tallies(missing).then(
+      (t) => {
+        if (g !== gen.current) return;
+        setTallies((prev) => new Map([...prev, ...t]));
+        setState({ loading: false, done: !next });
+      },
+      (e) => g === gen.current && setState({ loading: false, done: true, error: errText(e), tallies: true }),
+    );
+  };
 
   const [query, setQuery] = useQueryState(readPast, writePast);
   const needsAll = pastNeedsAll(query);
@@ -131,7 +147,7 @@ export function PastPage() {
       {state.error && (
         <p className="error" role="alert">
           Past proposals could not be loaded right now ({state.error}).{' '}
-          <button type="button" className="btn btn-s" onClick={() => void load(items.length && next ? next : undefined)} data-testid="past-retry">
+          <button type="button" className="btn btn-s" onClick={retry} data-testid="past-retry">
             Try again
           </button>
         </p>
