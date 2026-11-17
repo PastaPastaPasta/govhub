@@ -24,6 +24,9 @@ export interface FundingPanelProps {
   onDone(identityId: string, identityIndex: number): void;
 }
 
+/** Free test coins (a testnet faucet that pays any testnet address). */
+const TESTNET_FAUCET_URL = 'https://faucet.thepasta.org';
+
 const STEPS: Array<{ id: FundingView['state'] | 'is'; label: string }> = [
   { id: 'awaiting-deposit', label: 'Waiting for your payment' },
   { id: 'locking', label: 'Payment received' },
@@ -165,7 +168,17 @@ export function FundingPanel(p: FundingPanelProps) {
             )}
             {network && network !== 'mainnet' && (
               <p className="small" data-testid="deposit-network">
-                This is a <b>{network}</b> address: send {network} DASH only. A mainnet wallet refuses it.
+                This is a <b>{network}</b> address: send {network === 'testnet' ? 'tDASH' : `${network} DASH`} only. A mainnet wallet refuses it.
+                {network === 'testnet' && (
+                  <>
+                    {' '}
+                    No test coins? Get free tDASH from the{' '}
+                    <a href={`${TESTNET_FAUCET_URL}/?amount=${formatDashNumber(view.suggestedDuffs)}`} target="_blank" rel="noopener noreferrer" data-testid="deposit-faucet">
+                      testnet faucet
+                    </a>{' '}
+                    and paste this address there.
+                  </>
+                )}
               </p>
             )}
             <p className="muted small">This page is watching the network. Keep it open until it finishes.</p>

@@ -13,7 +13,7 @@ import type { CoreNetwork, Proposal } from '../data/types.ts';
 import type { Step } from '../verify/collateral.ts';
 import { runVerification } from '../verify/client.ts';
 import type { DraftLock } from './draft.ts';
-import { HttpProposalRelay, type HeldProposalState, type ProposalRelayPort, type SubmitBody } from './relay.ts';
+import { HttpProposalRelay, relaysReadiness, type HeldProposalState, type ProposalRelayPort, type SubmitBody } from './relay.ts';
 
 export interface CollateralCheck {
   /**
@@ -51,6 +51,8 @@ export interface WizardServices {
   checkCollateral(lock: DraftLock, txid: string): Promise<CollateralCheck>;
   fundCollateral(o: FundCollateralOptions): Promise<{ txid: string }>;
   relays(): ProposalRelayPort[];
+  /** Whether at least one relay could submit a proposal now (checked before the fee is paid). */
+  relaysReady(): Promise<{ ok: true } | { ok: false; reason: string }>;
   /** Whether a bridge (another Core node) has the proposal; null when there is no bridge to ask. */
   seenByNetwork(govHash: string): Promise<boolean | null>;
   /** Whether the proposal is on Platform (govhub lists it). */
@@ -137,6 +139,7 @@ export function liveServices(source: DataSource): WizardServices {
     },
     fundCollateral: (o) => runCollateralFunding({ ...o, dapi: dapiFor(registry), network }),
     relays: () => relays,
+    relaysReady: async () => relaysReadiness(await Promise.all(relays.map((r) => r.ready(network)))),
     async seenByNetwork(govHash) {
       const d = source.bridgeDescriptor();
       if (!d) return null;
@@ -197,6 +200,9 @@ class DemoRelay implements ProposalRelayPort {
   async submitNow(): Promise<never> {
     throw new Error('the demo relay holds proposals');
   }
+  async ready() {
+    return { ok: true as const };
+  }
 }
 
 export function demoServices(network: CoreNetwork, o: { blockMs?: number; pollMs?: number } = {}): WizardServices {
@@ -249,6 +255,7 @@ export function demoServices(network: CoreNetwork, o: { blockMs?: number; pollMs
       return { txid: record.tx!.txid };
     },
     relays: () => [relay],
+    relaysReady: async () => ({ ok: true }),
     async seenByNetwork(govHash) {
       // "seen" one poll after the relay submitted
       if (seen.has(govHash)) return true;

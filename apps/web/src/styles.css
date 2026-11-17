@@ -3690,3 +3690,15 @@ details.advanced[open] > summary {
 .menu-name .author-alias {
   margin-inline-start: 0.4em;
 }
+
+/* Active list: this browser's paid proposals that are not listed yet. */
+.pending-list {
+  list-style: none;
+  margin: 0 0 var(--s-3);
+  padding: 0;
+  display: grid;
+  gap: var(--s-2);
+}
+.pending-list li {
+  display: block;
+}

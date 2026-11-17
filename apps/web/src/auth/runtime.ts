@@ -7,6 +7,7 @@ import { createWebDapi, type DapiConfig } from '../data/dapi.ts';
 import { getSdk } from '../data/platform.ts';
 import { beforeIdentityWrite, noteIdentityWrite } from '../badge/visit.ts';
 import { errText } from '../lib/format.ts';
+import { dashUnit } from '../lib/unit.ts';
 
 let port: { key: string; value: Promise<PlatformPort> } | null = null;
 
@@ -74,11 +75,11 @@ export const rpId = (): string => location.hostname;
 export function formatCredits(credits: bigint): string {
   const whole = credits / 100_000_000_000n;
   const frac = (credits % 100_000_000_000n).toString().padStart(11, '0').slice(0, 8);
-  return `${whole}.${frac} DASH`;
+  return `${whole}.${frac} ${dashUnit()}`;
 }
 
 export const formatDashNumber = (duffs: number | bigint): string => (Number(duffs) / 1e8).toFixed(8).replace(/0+$/, '').replace(/\.$/, '');
-export const formatDuffs = (duffs: number | bigint): string => `${formatDashNumber(duffs)} DASH`;
+export const formatDuffs = (duffs: number | bigint): string => `${formatDashNumber(duffs)} ${dashUnit()}`;
 
 /** Error text safe to show: no long hex / base58 runs (the SDK can echo transition bytes). */
 export function errorText(e: unknown): string {

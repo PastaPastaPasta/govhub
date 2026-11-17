@@ -9,7 +9,7 @@ import { useAuth } from '../auth/context.tsx';
 import { formatDateTime, shortHash } from '../lib/format.ts';
 import { superblockPhrase } from '../lib/governance.ts';
 import { CostSummary, DetailsStep, PaymentsStep, ReviewStep, usePlan, type EditProps } from '../proposal/EditSteps.tsx';
-import { BackupError, draftStage, draftStore, mergeDraft, newDraft, readBackup, type DraftInputs, type ProposalDraft } from '../proposal/draft.ts';
+import { BackupError, draftStage, feeUnit, paymentTotalText, draftStore, mergeDraft, newDraft, readBackup, type DraftInputs, type ProposalDraft } from '../proposal/draft.ts';
 import { PayStep } from '../proposal/PayStep.tsx';
 import { demoServices, liveServices, type WizardServices } from '../proposal/services.ts';
 import { SubmitStep } from '../proposal/SubmitStep.tsx';
@@ -50,7 +50,7 @@ export function NewProposalPage() {
         drafts={drafts}
         demo={services.demo}
         onOpen={(d) => setParams({ d: d.id })}
-        onNew={() => adopt(newDraft(network))}
+        onNew={() => adopt({ ...newDraft(network), ...(services.demo ? { demo: true } : {}) })}
         onRestored={(d) => adopt(mergeDraft(store.load(d.id), d))}
       />
     );
@@ -84,7 +84,7 @@ function Start({ drafts, demo, onOpen, onNew, onRestored }: { drafts: ProposalDr
         <li>Choose the amount and how many payments (one at each superblock).</li>
         <li>Review it against Dash Core's rules.</li>
         <li>Save a backup, then pay the fee from any wallet or from Dash Core.</li>
-        <li>govhub sends it to the network once the payment is ChainLocked (usually within a few minutes). It goes live after 6 confirmations (about 15 minutes).</li>
+        <li>govhub sends it to the network once the payment is final (usually within a few minutes). It goes live after 6 confirmations (about 15 minutes).</li>
       </ol>
       {drafts.length > 0 && (
         <section aria-labelledby="pw-drafts-title">
@@ -210,7 +210,7 @@ function Wizard({ initial, services, onChange }: { initial: ProposalDraft; servi
       {(stage === 'submit' || stage === 'done') && !walletSession && <SubmitStep draft={draft} commit={commit} services={services} />}
       {stage !== 'edit' && draft.lock && (
         <p className="muted small pw-foot">
-          {draft.lock.name}: {duffsToDash(BigInt(draft.lock.paymentDuffs))} DASH × {draft.lock.superblocks.length}, hash {shortHash(draft.lock.govHash, 8)}
+          {draft.lock.name}: {paymentTotalText(BigInt(draft.lock.paymentDuffs), draft.lock, feeUnit(draft.network))}, hash {shortHash(draft.lock.govHash, 8)}
         </p>
       )}
     </section>

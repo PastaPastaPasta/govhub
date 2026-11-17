@@ -43,7 +43,7 @@ test.describe('create a proposal (fixtures)', () => {
     expect(options.length).toBeGreaterThan(3);
     await first.selectOption(options[1]!);
     await page.getByTestId('p-count').fill('3');
-    await expect(page.getByTestId('p-total')).toHaveText('37.5 DASH');
+    await expect(page.getByTestId('p-total')).toHaveText('12.5 DASH × 3 = 37.5 DASH');
     await expect(page.getByTestId('p-summary').locator('.pw-dates li')).toHaveCount(3);
     await expect(page.getByTestId('p-deadline')).toContainText('Masternodes must vote yes before block');
     // more than a superblock can ever pay is refused
@@ -87,7 +87,12 @@ test.describe('create a proposal (fixtures)', () => {
     // Submit: confirmations, the relay holds it and sends it once the fee is ChainLocked, live at 6, seen by the network, on govhub → celebration
     await expect(page.getByTestId('p-submit')).toBeVisible();
     await expect(page.getByTestId('p-submit-cmd')).toHaveText(new RegExp(`^gobject submit 0 1 \\d+ [0-9a-f]+ [0-9a-f]{64}$`));
-    await expect(page.getByTestId('p-stage-submitted')).toContainText(/holds it and sends it to the network once the fee is ChainLocked|sent it to the network once the fee was ChainLocked/);
+    await expect(page.getByTestId('p-stage-submitted')).toContainText(/holds it and sends it to the network once the fee is final|sent it to the network once the fee was final|Submitted by/);
+    // the default path reads as handled; submitting with Dash Core is a fallback inside "If something goes wrong"
+    await expect(page.getByTestId('p-next-note')).toHaveAttribute('data-tone', 'ok');
+    await expect(page.getByTestId('p-next-note')).toContainText('You can close this page');
+    await expect(page.getByTestId('p-core-submit')).toHaveCount(0);
+    await expect(page.getByTestId('p-help').getByTestId('p-core-fallback')).toHaveCount(1);
     await expect(page.getByTestId('p-stage-confs')).toHaveAttribute('data-status', 'done', { timeout: 20_000 });
     await expect(page.getByTestId('p-live')).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId('p-stage-published')).toHaveAttribute('data-status', 'done');
@@ -96,6 +101,7 @@ test.describe('create a proposal (fixtures)', () => {
     await expect(page.getByTestId('p-claim')).toBeVisible();
 
     // the updated backup carries the collateral; restoring it in a fresh browser resumes the same proposal
+    await page.getByTestId('p-submit-details').locator('summary').click();
     const dl2 = page.waitForEvent('download');
     await page.getByTestId('p-backup-download').click();
     const paidPath = info.outputPath('backup-paid.json');

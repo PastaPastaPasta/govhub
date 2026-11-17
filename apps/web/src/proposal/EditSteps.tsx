@@ -9,10 +9,11 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { formatDate, formatDateTime, formatInt } from '../lib/format.ts';
+import { dashUnit } from '../lib/unit.ts';
 import { openSignIn } from '../ui/SignIn.tsx';
 import { ProvGlyph } from '../ui/Provenance.tsx';
 import type { Provenance } from '../data/types.ts';
-import { feeUnit, type DraftInputs, type DraftLock, type ProposalDraft } from './draft.ts';
+import { feeUnit, paymentCounts, paymentTotalText, type DraftInputs, type DraftLock, type ProposalDraft } from './draft.ts';
 
 /** The govhub page the default URL points at (claim method 1: the URL names the identity, PLAN 6.3). */
 export const GOVHUB_PORTAL = 'gov.dashhq.org';
@@ -70,7 +71,7 @@ export function usePlan(d: ProposalDraft): Plan {
     });
     const errors: Plan['errors'] = {};
     for (const e of check.errors) errors[e.field] ??= e.message;
-    if (i.amount.trim() && duffs === null) errors.paymentAmount = 'enter an amount in DASH, with at most 8 decimals';
+    if (i.amount.trim() && duffs === null) errors.paymentAmount = `enter an amount in ${dashUnit()}, with at most 8 decimals`;
     if (i.urlMode === 'govhub' && !identityId) errors.url = 'sign in to use a govhub page, or enter your own link';
     if (!schedule) errors.schedule ??= tip ? 'choose the first payment' : 'waiting for the current block height';
     return { tip, now, choices, schedule, duffs, url, check, errors };
@@ -154,7 +155,7 @@ export function DetailsStep({ draft, plan, setInputs, setStep }: EditProps) {
         <label className="check">
           <input type="radio" name="p-url-mode" checked={i.urlMode === 'govhub'} onChange={() => setInputs({ urlMode: 'govhub' })} data-testid="p-url-govhub" />
           <span>
-            <b>A page on govhub</b> (recommended). You write the description after submitting; the link proves the proposal is yours.
+            <b>A page on govhub</b> (recommended). You write the description after submitting; the link names you as the owner, and you confirm it once the proposal is live.
           </span>
         </label>
         {i.urlMode === 'govhub' &&
@@ -209,8 +210,8 @@ export function PaymentsStep({ draft, plan, setInputs, setStep }: EditProps) {
   const blocking = stepErrors(plan, 1);
   const cycle = gov.cycle.data;
   const s = plan.schedule;
-  const total = plan.duffs !== null && s ? plan.duffs * BigInt(s.superblocks.length) : null;
-  const maxTotal = plan.duffs !== null && s ? plan.duffs * BigInt(s.eligible.length) : null;
+  const counts = s ? paymentCounts(s) : { planned: 0, max: 0 };
+  const unit = dashUnit();
   const available = cycle ? cycle.value.budget - cycle.value.allocated : null;
   const firstChoice = plan.choices.find((c) => c.height === i.firstSuperblock);
   const testnet = source.coreNetwork === 'testnet';
@@ -223,7 +224,7 @@ export function PaymentsStep({ draft, plan, setInputs, setStep }: EditProps) {
         if (!blocking.length) setStep(2);
       }}
     >
-      <Field id="p-amount" label="Amount per payment (DASH)" error={touched || i.amount ? plan.errors.paymentAmount : undefined} hint="Paid at each superblock (the network's payout block) while the proposal has enough yes votes.">
+      <Field id="p-amount" label={`Amount per payment (${dashUnit()})`} error={touched || i.amount ? plan.errors.paymentAmount : undefined} hint="Paid at each superblock (the network's payout block) while the proposal has enough yes votes.">
         <input id="p-amount" data-testid="p-amount" inputMode="decimal" value={i.amount} autoComplete="off" onChange={(e) => setInputs({ amount: e.target.value })} />
       </Field>
       <div className="row2">
@@ -269,7 +270,7 @@ export function PaymentsStep({ draft, plan, setInputs, setStep }: EditProps) {
       {s && plan.duffs !== null && plan.duffs > 0n && (
         <section className="pw-summary" aria-label="Payment summary" data-testid="p-summary">
           <p>
-            <b>{duffsToDash(plan.duffs)} DASH</b> × {s.superblocks.length} {s.superblocks.length === 1 ? 'payment' : 'payments'} = <b data-testid="p-total">{duffsToDash(total!)} DASH</b>
+            <b data-testid="p-total">{paymentTotalText(plan.duffs, s, unit)}</b>
           </p>
           <ol className="pw-dates">
             {s.superblocks.map((b) => (
@@ -278,18 +279,18 @@ export function PaymentsStep({ draft, plan, setInputs, setStep }: EditProps) {
               </li>
             ))}
           </ol>
-          {s.eligible.length > s.superblocks.length && (
+          {counts.max > counts.planned && (
             <p className="notice-box small" data-testid="p-eligible">
-              {testnet ? 'Testnet pays every hour and Dash Core allows a 2-hour margin around the dates, so' : 'Dash Core allows a 2-hour margin around the dates, so'} this proposal can be paid at up to {s.eligible.length} superblocks:
-              up to {duffsToDash(maxTotal!)} DASH in total.
+              You chose {counts.planned} {counts.planned === 1 ? 'payment' : 'payments'}, but {testnet ? 'testnet pays every hour and ' : ''}Dash Core pays at every superblock within 2 hours of
+              these dates, so this proposal can be paid up to {counts.max} times while it has enough yes votes. govhub shows it that way once it is live.
             </p>
           )}
           <p className="muted small">
-            A superblock pays at most {duffsToDash(s.superblocks[0]!.budgetLimit)} DASH in total (Dash's consensus rules, computed here).
+            A superblock pays at most {duffsToDash(s.superblocks[0]!.budgetLimit)} {unit} in total (Dash's consensus rules, computed here).
             {available !== null && cycle && (
               <>
                 {' '}
-                Of the next one's {duffsToDash(BigInt(cycle.value.budget))} DASH, {duffsToDash(BigInt(Math.max(0, available)))} DASH are not yet promised to proposals that pass{' '}
+                Of the next one's {duffsToDash(BigInt(cycle.value.budget))} {unit}, {duffsToDash(BigInt(Math.max(0, available)))} {unit} are not yet promised to proposals that pass{' '}
                 <ProvNote prov={cycle.prov} />.
               </>
             )}
@@ -361,8 +362,7 @@ export function ReviewStep({ draft, plan, setStep, lock }: EditProps) {
         <div>
           <dt>Amount</dt>
           <dd>
-            {plan.duffs !== null ? `${duffsToDash(plan.duffs)} DASH` : '–'} × {s?.superblocks.length ?? '–'}
-            {s && plan.duffs !== null && <> = {duffsToDash(plan.duffs * BigInt(s.superblocks.length))} DASH</>}
+            {s && plan.duffs !== null ? paymentTotalText(plan.duffs, s, dashUnit()) : '–'}
           </dd>
         </div>
         <div>
@@ -395,7 +395,7 @@ export function ReviewStep({ draft, plan, setStep, lock }: EditProps) {
         <pre className="pw-code" data-testid="p-json">{json}</pre>
       </details>
       <p className="notice-box small">
-        Next, the proposal is fixed: the fee pays for these exact details and this moment's timestamp. Changing anything afterwards needs a new {duffsToDash(GOVERNANCE_PROPOSAL_FEE_DUFFS)} DASH fee.
+        Next, the proposal is fixed: the fee pays for these exact details and this moment's timestamp. Changing anything afterwards needs a new {duffsToDash(GOVERNANCE_PROPOSAL_FEE_DUFFS)} {dashUnit()} fee.
       </p>
       {error && <p className="error">{error}</p>}
       <div className="form-actions">
