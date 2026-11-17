@@ -41,7 +41,7 @@ export function PasskeySignIn() {
       ) : (
         <>
           <p>Choose the passkey you added to govhub. Your device unlocks the key it keeps; nothing is sent to a server.</p>
-          <div className="form-actions">
+          <div className="sheet-actions">
             <button type="button" className="btn btn-primary" onClick={go} disabled={busy}>
               {busy ? <><span className="spinner" aria-hidden="true" /> Opening…</> : 'Use a passkey'}
             </button>
