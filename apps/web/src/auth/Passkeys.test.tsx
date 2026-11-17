@@ -38,6 +38,7 @@ describe('D-073: remove a passkey', () => {
   it('drops its local marker, and the key once none is left', async () => {
     localPasskeys.add(localStorage, ID, toBase64(cred(1)));
     localPasskeys.add(localStorage, ID, toBase64(cred(2)));
+    const ask = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const r = await render(<Passkeys />);
     await flush();
     await click([...r.el.querySelectorAll('button')].filter((b) => /Remove/.test(b.textContent ?? ''))[0]!);
@@ -46,6 +47,8 @@ describe('D-073: remove a passkey', () => {
     await click(button(r.el, /Remove/));
     await flush();
     expect(localStorage.getItem(localPasskeys.key(ID))).toBeNull();
+    expect(ask).toHaveBeenCalledTimes(2);
+    ask.mockRestore();
     await r.unmount();
   });
 });

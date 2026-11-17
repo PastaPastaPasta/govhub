@@ -420,8 +420,7 @@ function ItemCard({ item, scan, secret, onBusy }: { item: RecoveryItem; scan: Re
           )}
           {busy && view?.state === 'awaiting-deposit' && view.remainingDuffs > 0n && (
             <p className="small">
-              This needs {formatDuffs(view.remainingDuffs)} more: send it to <span className="break mono-ish">{view.address}</span>, or stop and send these payments to an address
-              instead.
+              This needs {formatDuffs(view.remainingDuffs)} more: send it to <span className="break mono-ish">{view.address}</span>. Keep this page open until it finishes.
             </p>
           )}
           {error && (
@@ -446,9 +445,9 @@ function ItemCard({ item, scan, secret, onBusy }: { item: RecoveryItem; scan: Re
 
 const STATE_TEXT: Record<FundingView['state'], string> = {
   'awaiting-deposit': 'Checking the payments…',
-  locking: 'Making the asset lock…',
-  locked: 'Asset lock sent; waiting for InstantSend…',
-  registering: 'Registering on Dash Platform (a lock without its InstantSend lock waits for a ChainLock, a few minutes)…',
+  locking: 'Locking the payment for Dash Platform… Keep this page open.',
+  locked: 'Payment locked; waiting for the network to confirm it… Keep this page open.',
+  registering: 'Saving on Dash Platform (up to a few minutes)… Keep this page open.',
   done: 'Done',
 };
 
