@@ -94,7 +94,7 @@ for (const [vp, size] of [
       await openSheet(page);
       await page.getByTestId('wallet-signin').click();
       await expect(page.getByTestId('wallet-failed')).toBeVisible({ timeout: 45_000 });
-      await expect(page.getByRole('button', { name: 'Try again' })).toBeVisible();
+      await expect(page.getByTestId('wallet-failed').getByRole('button', { name: 'Try again' })).toBeVisible();
       await shoot(page, `error-${vp}`);
     });
   });

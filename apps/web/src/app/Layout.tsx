@@ -231,7 +231,7 @@ export function WalletSessionEnded() {
 }
 
 function ModeBanner() {
-  const { mode, setMode, source, gov, registry, switchProfile } = useApp();
+  const { mode, setMode, source, gov, registry, switchProfile, reload } = useApp();
   if (mode === 'fixtures') {
     return (
       <div className="banner banner-fixture" role="status">
@@ -265,17 +265,24 @@ function ModeBanner() {
       <p>
         {gov.active.error ? (
           <>
-            <b>Platform could not be read.</b> {gov.active.error}
+            <b>Proposals could not be loaded right now.</b> <span className="muted small">{gov.active.error}</span>
           </>
         ) : (
           <>
-            <b>No active proposals on Platform yet.</b> The bridge publishes mainnet proposals into contract {source.registry.govContractId.slice(0, 8)}… as it catches up.
+            <b>No active proposals yet.</b> New proposals appear here a few minutes after they go live.
           </>
         )}
       </p>
-      <button type="button" className="btn" onClick={() => setMode('fixtures')}>
-        View the fixture snapshot
-      </button>
+      <div className="form-actions">
+        {gov.active.error && (
+          <button type="button" className="btn" onClick={reload} data-testid="active-retry">
+            Try again
+          </button>
+        )}
+        <button type="button" className="btn btn-quiet" onClick={() => setMode('fixtures')}>
+          View demo data instead
+        </button>
+      </div>
     </div>
   );
 }

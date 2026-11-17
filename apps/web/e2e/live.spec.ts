@@ -15,9 +15,9 @@ test('@live reads the gov contract with proofs and verifies a collateral over ma
 
   // The SDK chunk loads lazily; either proposals or the "nothing published yet" banner appear.
   const cards = page.locator('article.prow');
-  const empty = page.getByText('No active proposals on Platform yet.');
+  const empty = page.getByText('No active proposals yet.');
   await expect(cards.first().or(empty)).toBeVisible({ timeout: 120_000 });
-  await expect(page.getByText('Platform could not be read.')).toHaveCount(0);
+  await expect(page.getByText('Proposals could not be loaded right now.')).toHaveCount(0);
 
   const n = await cards.count();
   console.log(`live: ${n} active proposals on Platform`);

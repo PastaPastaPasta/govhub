@@ -8,7 +8,7 @@ import { budgetView, countNames, proposalHref } from '../lib/view.ts';
 import { dashUnit } from '../lib/unit.ts';
 
 export function BudgetHeader() {
-  const { gov, source, params, activeRows } = useApp();
+  const { gov, source, params, activeRows, reload } = useApp();
   const cycle = gov.cycle.data;
   const now = source.now();
 
@@ -24,8 +24,22 @@ export function BudgetHeader() {
   if (!cycle) {
     return (
       <section className="budget" aria-label="Budget">
-        <p className="budget-line">No budget has been published yet.</p>
-        <p className="muted small">{gov.cycle.error ? `Platform read failed: ${gov.cycle.error}` : 'The bridge publishes one for every payout. Add a bridge in Settings to see live numbers.'}</p>
+        {gov.cycle.error ? (
+          <>
+            <p className="budget-line">The budget could not be loaded right now.</p>
+            <p className="muted small">
+              {gov.cycle.error}{' '}
+              <button type="button" className="btn btn-s" onClick={reload}>
+                Try again
+              </button>
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="budget-line">No budget has been published yet.</p>
+            <p className="muted small">One is published for every payout. Add a bridge in Settings to see live numbers.</p>
+          </>
+        )}
       </section>
     );
   }
