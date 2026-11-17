@@ -1,12 +1,12 @@
-// Sign-in sheet (a modal <dialog>): create a new identity, use an existing recovery phrase, paste a key, or use a passkey; plus the
-// signed-in views reached from the account menu (top-up, passkeys). Secrets are held in component state only while a view needs
+// Sign-in sheet (a modal <dialog>): a Dash wallet (App Connect) first, then a passkey; creating an identity, a recovery phrase and a
+// pasted key sit under "Other ways to sign in". Plus the signed-in views reached from the account menu (top-up, passkeys). Secrets are held in component state only while a view needs
 // them; the session takes ownership of the seed when sign-in completes, and closing the sheet drops the rest.
 import {
   addressOf, discardFunding, discoverIdentities, generatePhrase, lockTooSmall, nextCreateIndex, isValidPhrase, localPasskeys, MIN_CREATE_DEPOSIT_DUFFS, MIN_TOPUP_DEPOSIT_DUFFS, nextTopUpIndex, normalizePhrase,
   createFundingPath, SUGGESTED_CREATE_DEPOSIT_DUFFS, parseVoucher, pendingFundings, PhraseError, redeemVoucher, SeedWallet, signInWithKey, signInWithSeed, toBase64, wipe, type FoundIdentity, type FundingRecord,
-  type PhraseLength,
+  type PhraseLength, type Session,
 } from '@govhub/auth';
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { FIXTURE_IDS } from '../data/fixtureForum.ts';
@@ -25,7 +25,7 @@ const WalletSignIn = lazy(() => import('./WalletSignIn.tsx'));
 export { SecretField }; // moved to its own file (the Recover tool uses it too); tests import it from here
 
 const TITLES: Record<SheetView, string> = {
-  choose: 'Sign in or create an account',
+  choose: 'Sign in to govhub',
   create: 'Create an account',
   phrase: 'Sign in with a recovery phrase',
   key: 'Sign in with a key',
@@ -35,50 +35,101 @@ const TITLES: Record<SheetView, string> = {
   passkeys: 'Passkeys',
 };
 
+/** Views reached from the chooser while signed out: their header offers a way back to it. */
+const FROM_CHOOSER: ReadonlySet<SheetView> = new Set(['create', 'phrase', 'key', 'passkey', 'wallet']);
+const OTHER_WAYS: ReadonlySet<SheetView | null> = new Set(['create', 'phrase', 'key']);
+
 export function AuthSheet() {
-  const { sheet, closeSheet } = useAuth();
+  const { sheet, closeSheet, openSheet, session } = useAuth();
   const ref = useRef<HTMLDialogElement>(null);
   // What had focus when the sheet opened: focus goes back there when it closes (or to the account button, if that control is gone).
   const opener = useRef<HTMLElement | null>(null);
+  const shown = useRef<SheetView | null>(null);
+  // Back from one of the other ways keeps that section open
+  const backFrom = useRef<SheetView | null>(null);
   useEffect(() => {
     const d = ref.current;
     if (!d) return;
+    const prev = shown.current;
+    shown.current = sheet;
     if (sheet && !d.open) {
       const a = document.activeElement;
       // <body> is no opener (Safari does not focus a clicked button): the account button is the fallback
       opener.current = a instanceof HTMLElement && a !== document.body ? a : null;
       d.showModal();
+      (d.querySelector<HTMLElement>('[data-autofocus]') ?? document.getElementById('sheet-title'))?.focus();
+    } else if (sheet && prev && prev !== sheet) {
+      // another view replaced the one holding focus: start from its title, which a screen reader reads out
+      document.getElementById('sheet-title')?.focus();
     }
     if (!sheet && d.open) d.close();
   }, [sheet]);
   const onClose = () => {
     closeSheet();
+    backFrom.current = null;
     const back = opener.current?.isConnected && opener.current.getClientRects().length ? opener.current : document.getElementById('session-button');
     opener.current = null;
     back?.focus();
   };
+  const choose = sheet === 'choose';
+  const canGoBack = !!sheet && !session && FROM_CHOOSER.has(sheet);
   return (
-    <dialog ref={ref} className="sheet" aria-labelledby="sheet-title" onClose={onClose} onCancel={closeSheet}>
+    <dialog ref={ref} className={`sheet${choose ? ' sheet-choose-dialog' : ''}`} aria-labelledby="sheet-title" onClose={onClose} onCancel={closeSheet}>
       {sheet && (
         <div className="sheet-body">
-          <header className="sheet-head">
-            <h2 id="sheet-title">{TITLES[sheet]}</h2>
-            <button type="button" className="btn btn-quiet" onClick={closeSheet} aria-label="Close">
-              ✕
+          <header className={`sheet-head${choose ? ' sheet-head-hero' : ''}`}>
+            {canGoBack && (
+              <button type="button" className="btn btn-quiet sheet-icon-btn" onClick={() => {
+                  backFrom.current = sheet;
+                  openSheet('choose');
+                }}
+                aria-label="Back to sign-in options" data-testid="sheet-back">
+                <Icon name="back" />
+              </button>
+            )}
+            <h2 id="sheet-title" tabIndex={-1}>
+              {choose ? (
+                <>
+                  Sign in to <span className="brand-word">govhub</span>
+                </>
+              ) : (
+                TITLES[sheet]
+              )}
+            </h2>
+            <button type="button" className="btn btn-quiet sheet-icon-btn sheet-close" onClick={closeSheet} aria-label="Close">
+              <Icon name="close" />
             </button>
           </header>
           {/* key = view: switching views unmounts the previous one and drops what it held */}
-          <SheetContent key={sheet} view={sheet} />
+          {choose ? <Choose openMore={OTHER_WAYS.has(backFrom.current)} /> : <SheetContent key={sheet} view={sheet} />}
         </div>
       )}
     </dialog>
   );
 }
 
-function SheetContent({ view }: { view: SheetView }) {
+const ICONS = {
+  wallet: 'M4 7.5A2.5 2.5 0 0 1 6.5 5H17a1 1 0 0 1 1 1v1.5M4 7.5V17a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2.5M4 7.5A1.5 1.5 0 0 0 5.5 9H19a1 1 0 0 1 1 1v1.5M20 11.5h-3.5a1.5 1.5 0 0 0 0 3H20v-3Z',
+  passkey: 'M9.5 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM3.5 20v-.5a6 6 0 0 1 9-5.2M17.5 13.5a2.25 2.25 0 1 0 0 4.5 2.25 2.25 0 0 0 0-4.5ZM17.5 18v3m0-1.5h1.5',
+  plus: 'M12 5v14M5 12h14',
+  words: 'M5 6h14M5 10h14M5 14h9M5 18h6',
+  key: 'M14.5 9.5a4 4 0 1 1-1.2-2.8M14.5 9.5 20 15v3h-3v-2h-2v-2l-1.6-1.6M8.5 9.5h.01',
+  chevron: 'm6 9 6 6 6-6',
+  next: 'm9 6 6 6-6 6',
+  back: 'M19 12H5m6-6-6 6 6 6',
+  close: 'M6 6l12 12M18 6 6 18',
+} as const;
+
+function Icon({ name, size = 20 }: { name: keyof typeof ICONS; size?: number }) {
+  return (
+    <svg className="icon" width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d={ICONS[name]} fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function SheetContent({ view }: { view: Exclude<SheetView, 'choose'> }) {
   switch (view) {
-    case 'choose':
-      return <Choose />;
     case 'create':
       return <CreateFlow />;
     case 'phrase':
@@ -174,7 +225,7 @@ function RecoverableNotice({ records }: { records: FundingRecord[] }) {
 
 /**
  * The phrase or key is typed into a web page, so it should never guard real money: one made for govhub, holding only what govhub
- * needs. Shown wherever a phrase or key is made or entered. Once sign-in with a Dash wallet exists, that is the main path.
+ * needs. Shown inside the views where a phrase or key is entered, never on the chooser.
  */
 function SeedWarning({ what = 'phrase' }: { what?: 'phrase' | 'key' }) {
   return (
@@ -185,30 +236,37 @@ function SeedWarning({ what = 'phrase' }: { what?: 'phrase' | 'key' }) {
   );
 }
 
-function Choose() {
+const DASH_WALLET_URL = 'https://www.dash.org/download/';
+const BRIDGE_URL = 'https://bridge.dashhq.org/';
+
+function OutLink({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer">
+      {children}
+      <span className="visually-hidden"> (opens in a new tab)</span>
+    </a>
+  );
+}
+
+function Choose({ openMore }: { openMore: boolean }) {
   const { openSheet, store, network, appConnect } = useAuth();
   const { mode } = useApp();
   const [, rerender] = useState(0);
+  // With no wallet sign-in, the other ways are the only ones that work for most people: start with them open.
+  const [more, setMore] = useState(!appConnect || openMore);
+  const moreId = useId();
   const pending = pendingFundings(store, network).filter((r) => r.kind === 'create');
-  const main: Array<{ v: SheetView; title: string; text: string }> = [
-    { v: 'create', title: 'Create an account', text: `Pay a little DASH (${formatDuffs(SUGGESTED_CREATE_DEPOSIT_DUFFS)} is suggested) from any Dash wallet; it covers the account and your first comments.` },
-    { v: 'phrase', title: 'I have a recovery phrase', text: 'The 12 or 24 words of an account you made for govhub.' },
+  const recoverable = store.list().filter((r) => r.network === network && !r.discarded);
+  // A notice above the buttons is read first: the dialog then starts at its title, not past it
+  const autofocus = !pending.length && !recoverable.some((r) => stuckDuffs(r) > 0n) && mode !== 'fixtures';
+  const other: Array<{ v: SheetView; icon: keyof typeof ICONS; title: string; text: string }> = [
+    { v: 'create', icon: 'plus', title: 'Create an account', text: `Pay a little DASH (${formatDuffs(SUGGESTED_CREATE_DEPOSIT_DUFFS)} suggested) from any Dash wallet.` },
+    { v: 'phrase', icon: 'words', title: 'I have a recovery phrase', text: 'The 12 or 24 words of an account you made for govhub.' },
+    { v: 'key', icon: 'key', title: 'Paste a key', text: 'For developers: a private key of your identity.' },
   ];
-  const other: Array<{ v: SheetView; title: string; text: string }> = [
-    { v: 'passkey', title: 'Use a passkey', text: 'If you saved one on this device or another.' },
-    { v: 'key', title: 'Paste a key', text: 'For developers: a private key of your identity.' },
-  ];
-  const choice = (o: (typeof main)[number], big: boolean) => (
-    <li key={o.v}>
-      <button type="button" className={`choice${big ? ' choice-l' : ''}`} onClick={() => openSheet(o.v)}>
-        <b>{o.title}</b>
-        <span className="muted small">{o.text}</span>
-      </button>
-    </li>
-  );
   return (
     <div className="sheet-choose">
-      <p className="lede">Reading is free and needs no account. Sign in to comment, react, or vote with your masternodes.</p>
+      <p className="signin-lede">Reading is free and needs no account. Sign in to comment, react, or vote.</p>
       {mode === 'fixtures' && <SampleIdentities />}
       {pending.length > 0 && (
         <div className="notice-box" role="status">
@@ -244,39 +302,62 @@ function Choose() {
           </button>
         </div>
       )}
-      <RecoverableNotice records={store.list().filter((r) => r.network === network && !r.discarded)} />
-      <ul className="choices">
-        <li>
-          {appConnect ? (
-            <button type="button" className="choice choice-l" onClick={() => openSheet('wallet')} data-testid="wallet-signin">
-              <b>Sign in with a Dash wallet</b>
-              <span className="muted small">Scan a code with DashPay on your phone and approve there. No phrase is typed here.</span>
-            </button>
-          ) : (
-            <button type="button" className="choice choice-l" disabled aria-describedby="wallet-soon" data-testid="wallet-signin">
-              <span className="choice-soon">
-                <b>Sign in with a Dash wallet</b>
-                <span className="tag tag-info" id="wallet-soon">
-                  Coming soon
-                </span>
-              </span>
-              <span className="muted small">Approve from DashPay or another Dash wallet, with no phrase typed here. This will become the main way to sign in.</span>
-            </button>
+      <RecoverableNotice records={recoverable} />
+      <div className="signin-main">
+        <button type="button" className="btn btn-primary signin-btn" onClick={() => openSheet('wallet')} disabled={!appConnect} aria-describedby={appConnect ? undefined : 'wallet-soon'} data-testid="wallet-signin" data-autofocus={(appConnect && autofocus) || undefined}>
+          <Icon name="wallet" />
+          Sign in with Dash Wallet
+          {!appConnect && (
+            <span className="tag tag-info" id="wallet-soon">
+              Coming soon
+            </span>
           )}
-        </li>
-        {main.map((o) => choice(o, true))}
-      </ul>
-      <SeedWarning />
-      <p className="small muted choices-more">Other ways to sign in</p>
-      <ul className="choices choices-s">{other.map((o) => choice(o, false))}</ul>
-      <details className="learn">
-        <summary>What is an account here?</summary>
-        <p className="small">
-          Your account is a Dash Platform identity. Comments and reactions are stored on Dash Platform and paid for with a little credit from your account’s
-          balance (about 0.0005 DASH a comment). Your recovery phrase is the account: other Dash wallets (DashPay, Dash Evo Tool) can restore it. It stays in
-          this browser; govhub has no account server and can’t reset it for you.
+        </button>
+        <button type="button" className="btn signin-btn" onClick={() => openSheet('passkey')} data-testid="passkey-signin" data-autofocus={(!appConnect && autofocus) || undefined}>
+          <Icon name="passkey" />
+          Sign in with a passkey
+        </button>
+      </div>
+      <div className="signin-more">
+        <button type="button" className="signin-more-toggle" aria-expanded={more} aria-controls={moreId} onClick={() => setMore((m) => !m)} data-testid="signin-more">
+          Other ways to sign in
+          <Icon name="chevron" size={16} />
+        </button>
+        <div id={moreId} className="signin-more-panel" hidden={!more}>
+          <ul className="signin-alts">
+            {other.map((o) => (
+              <li key={o.v}>
+                <button type="button" className="signin-alt" onClick={() => openSheet(o.v)}>
+                  <span className="signin-alt-icon">
+                    <Icon name={o.icon} size={18} />
+                  </span>
+                  <span className="signin-alt-text">
+                    <b>{o.title}</b>
+                    <span className="muted small">{o.text}</span>
+                  </span>
+                  <Icon name="next" size={16} />
+                </button>
+              </li>
+            ))}
+          </ul>
+          <details className="learn signin-learn">
+            <summary>What is an account here?</summary>
+            <p className="small">
+              Your account is a Dash Platform identity. Comments and reactions are stored on Dash Platform and paid for with a little credit from your account’s
+              balance (about 0.0005 DASH a comment). Your recovery phrase is the account: other Dash wallets (DashPay, Dash Evo Tool) can restore it. It stays in
+              this browser; govhub has no account server and can’t reset it for you.
+            </p>
+          </details>
+        </div>
+      </div>
+      <div className="signin-foot">
+        <p>
+          New to Dash? <OutLink href={DASH_WALLET_URL}>Get Dash Wallet</OutLink>
         </p>
-      </details>
+        <p>
+          Easy setup: <OutLink href={BRIDGE_URL}>bridge.dashhq.org</OutLink>
+        </p>
+      </div>
     </div>
   );
 }
@@ -517,6 +598,19 @@ function PhraseSignIn() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [state, setState] = useState<{ phrase: string; found: FoundIdentity[]; resume?: FundingRecord; createIndex?: number } | null>(null);
+  // Back can leave this view while a lookup runs: a late result then ends its session instead of signing in and closing another view
+  const left = useRef(false);
+  useEffect(() => {
+    left.current = false;
+    return () => {
+      left.current = true;
+    };
+  }, []);
+  const finish = (s: Session) => {
+    if (left.current) return s.end();
+    signIn(s);
+    closeSheet();
+  };
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -549,9 +643,9 @@ function PhraseSignIn() {
       const found = await discoverIdentities(wallet, port);
       if (!found.length && resume) return setState({ phrase, found: [], resume });
       if (found.length === 1) {
-        signIn(await signInWithSeed(wallet, found[0]!, port));
+        const s = await signInWithSeed(wallet, found[0]!, port);
         handedOver = true;
-        closeSheet();
+        finish(s);
         return;
       }
       // a new identity skips an index whose payment was used to top up another identity
@@ -568,8 +662,7 @@ function PhraseSignIn() {
     setBusy(true);
     const wallet = SeedWallet.fromPhrase(state.phrase, network);
     try {
-      signIn(await signInWithSeed(wallet, f, await platform()));
-      closeSheet();
+      finish(await signInWithSeed(wallet, f, await platform()));
     } catch (err) {
       wallet.wipe();
       setError(plainErrorText(err));

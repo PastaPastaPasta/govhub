@@ -612,7 +612,9 @@ details.learn.inline > summary {
   border-color: var(--ink-3);
 }
 .btn:disabled,
-.btn-primary:disabled {
+.btn:disabled:hover,
+.btn-primary:disabled,
+.btn-primary:disabled:hover {
   background: var(--disabled-bg);
   border-color: var(--disabled-bg);
   color: var(--disabled-ink);
@@ -2276,12 +2278,191 @@ details summary {
 .choices-s {
   grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
 }
-.choices-more {
-  margin-block-start: var(--s-1);
-}
 .sheet-choose {
   display: grid;
+  gap: var(--s-4);
+}
+.sheet-icon-btn {
+  padding: 0.375rem;
+  border-radius: 50%;
+  color: var(--ink-3);
+  flex: none;
+}
+.sheet-icon-btn:hover {
+  color: var(--ink);
+}
+.sheet-head h2 {
+  flex: 1;
+  min-inline-size: 0;
+}
+.sheet-head h2:focus {
+  outline: none;
+}
+/* The chooser: a centered title like a welcome, then one obvious way in. */
+.sheet.sheet-choose-dialog {
+  inline-size: min(27rem, calc(100vw - 1.5rem));
+}
+.sheet-choose-dialog .sheet-body {
+  padding: var(--s-6) var(--s-5) var(--s-5);
+  gap: var(--s-2);
+}
+.sheet-head-hero {
+  position: relative;
+  justify-content: center;
+}
+.sheet-head-hero h2 {
+  text-align: center;
+  font-size: var(--t-xl);
+  padding-inline: var(--s-6);
+}
+.sheet-head-hero .sheet-close {
+  position: absolute;
+  inset-block-start: calc(-1 * var(--s-4));
+  inset-inline-end: calc(-1 * var(--s-3));
+}
+.brand-word {
+  color: var(--accent-ink);
+}
+.signin-lede {
+  text-align: center;
+  color: var(--ink-3);
+  font-size: var(--t-s);
+  text-wrap: balance;
+  margin-block-end: var(--s-2);
+}
+.signin-main {
+  display: grid;
   gap: var(--s-3);
+}
+.signin-btn {
+  inline-size: 100%;
+  min-block-size: 3rem;
+  font-size: var(--t-m);
+  border-radius: var(--radius-l);
+  gap: 0.625rem;
+}
+.signin-btn.btn-primary:not(:disabled) {
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08), 0 4px 14px color-mix(in srgb, var(--accent-fill) 28%, transparent);
+}
+.signin-btn:not(.btn-primary):not(:disabled):hover {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+}
+.signin-btn .tag {
+  margin-inline-start: var(--s-1);
+}
+.signin-more {
+  display: grid;
+  gap: var(--s-3);
+}
+.signin-more-toggle {
+  justify-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font: inherit;
+  font-size: var(--t-s);
+  color: var(--ink-3);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-m);
+  padding: 0.375rem 0.625rem;
+  cursor: pointer;
+}
+.signin-more-toggle:hover {
+  color: var(--ink);
+}
+.signin-more-toggle .icon {
+  transition: transform 0.18s ease;
+}
+.signin-more-toggle[aria-expanded='true'] .icon {
+  transform: rotate(180deg);
+}
+.signin-more-panel:not([hidden]) {
+  display: grid;
+  gap: var(--s-3);
+}
+.signin-alts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l);
+  overflow: hidden;
+}
+.signin-alts li + li {
+  border-block-start: 1px solid var(--line);
+}
+.signin-alt {
+  inline-size: 100%;
+  font: inherit;
+  text-align: start;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--s-3);
+  padding: 0.75rem 0.875rem;
+  border: 0;
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+.signin-alt:hover {
+  background: var(--sunk);
+}
+.signin-alt:focus-visible {
+  outline-offset: -3px;
+}
+.signin-alt > .icon {
+  color: var(--ink-3);
+}
+.signin-alt-icon {
+  display: grid;
+  place-items: center;
+  inline-size: 2rem;
+  block-size: 2rem;
+  border-radius: 50%;
+  background: var(--accent-wash);
+  color: var(--accent-ink);
+}
+.signin-alt-text {
+  display: grid;
+  gap: 0.0625rem;
+}
+.signin-learn {
+  padding-inline: var(--s-1);
+}
+.signin-foot {
+  margin-block-start: var(--s-3);
+  padding-block-start: var(--s-4);
+  border-block-start: 1px solid var(--line);
+  display: grid;
+  gap: var(--s-1);
+  text-align: center;
+  font-size: var(--t-s);
+  color: var(--ink-3);
+}
+.signin-foot a {
+  color: var(--accent-ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+.signin-foot a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+@media (max-width: 640px) {
+  .sheet.sheet-choose-dialog {
+    inline-size: 100vw;
+  }
+  .sheet-choose-dialog .sheet-body {
+    padding: var(--s-5) var(--s-4) max(var(--s-5), env(safe-area-inset-bottom));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .signin-more-toggle .icon {
+    transition: none;
+  }
 }
 /* "Save your phrase › Check it › Add credit": a real sequence, so it is numbered. */
 .steps-bar {
@@ -2726,11 +2907,6 @@ li[data-status='now'] > .fund-dot {
   border-radius: var(--radius-l);
   background: color-mix(in srgb, var(--warn-fill) 10%, transparent);
   font-size: 0.875rem;
-}
-.choice-soon {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
 }
 .choice:disabled:hover {
   border-color: var(--line);

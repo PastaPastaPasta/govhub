@@ -6,7 +6,7 @@ import { gotoFixtures, offline, watchPage } from './helpers.ts';
 
 const openSheet = async (page: Page) => {
   await page.getByTestId('session-button').click();
-  await expect(page.getByRole('dialog', { name: 'Sign in or create an account' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Sign in to govhub' })).toBeVisible();
 };
 
 const SHOTS = !!process.env.SCREENSHOTS;

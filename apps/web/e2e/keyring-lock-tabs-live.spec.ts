@@ -11,6 +11,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 import { profileRegistry } from '../src/config/registry.ts';
+import { otherWay } from './helpers.ts';
 
 test.skip(!process.env.GOVHUB_LIVE_AUTH, 'set GOVHUB_LIVE_AUTH=1 to run the live testnet keyring lock across tabs');
 test.setTimeout(15 * 60_000);
@@ -32,7 +33,7 @@ async function signInWithPhrase(page: Page) {
   await expect(button(page)).toHaveText('Sign in', { timeout: 30_000 });
   await button(page).click();
   const sheet = page.locator('dialog[open]');
-  await sheet.getByRole('button', { name: /I have a recovery phrase/ }).click();
+  await otherWay(sheet, /I have a recovery phrase/);
   await sheet.getByTestId('phrase-input').fill(PHRASE);
   await sheet.getByRole('button', { name: 'Sign in', exact: true }).last().click();
   await signedIn(page);

@@ -9,7 +9,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { createDapi } from '@govhub/dapi';
 import { decodeAddress } from '@govhub/verify';
 import { PHASE2_DIR, qaFunder, writePrivate } from '../../../packages/auth/scripts/qa-funder.ts';
-import { cspViolations, watchPage } from './helpers.ts';
+import { cspViolations, watchPage, otherWay } from './helpers.ts';
 
 test.skip(!process.env.GOVHUB_LIVE_AUTH, 'set GOVHUB_LIVE_AUTH=1 to run the live testnet sign-in flow (spends tDASH)');
 test.setTimeout(15 * 60_000);
@@ -76,7 +76,7 @@ test('@live-auth create, fund, sign in with phrase, passkey and top up on testne
 
   // ---- 1. create: phrase, quiz, pay the QR address ----
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await page.getByRole('button', { name: /Create a new identity/ }).click();
+  await otherWay(page, /Create an account/);
   const phrase = (await page.getByTestId('phrase-words').locator('li').allInnerTexts()).map((t) => t.trim().split(/\s+/)[1]!);
   expect(phrase).toHaveLength(12);
   writePrivate(join(PHASE2_DIR, 'e2e-phrase.json'), { phrase: phrase.join(' '), at: new Date().toISOString() });
@@ -96,7 +96,7 @@ test('@live-auth create, fund, sign in with phrase, passkey and top up on testne
   // ---- 2. sign out, sign in with the phrase ----
   await signOut(page);
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await page.getByRole('button', { name: /I have a recovery phrase/ }).click();
+  await otherWay(page, /I have a recovery phrase/);
   await page.getByTestId('phrase-input').fill(phrase.join(' '));
   await page.getByRole('button', { name: 'Sign in' }).last().click();
   await signedIn(page, 120_000);
@@ -117,7 +117,7 @@ test('@live-auth create, fund, sign in with phrase, passkey and top up on testne
   // ---- 4. sign out, sign in with the passkey ----
   await signOut(page);
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await page.getByRole('button', { name: /Use a passkey/ }).click();
+  await page.getByTestId('passkey-signin').click();
   await page.getByRole('button', { name: 'Use a passkey' }).click();
   await signedIn(page, 120_000);
   await openAccount(page);
@@ -140,7 +140,7 @@ test('@live-auth create, fund, sign in with phrase, passkey and top up on testne
   results.voucherTxid = voucher.txid;
   results.voucherBurnVout = voucher.burnVout;
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await page.getByRole('button', { name: /Create a new identity/ }).click();
+  await otherWay(page, /Create an account/);
   const phrase2 = (await page.getByTestId('phrase-words').locator('li').allInnerTexts()).map((t) => t.trim().split(/\s+/)[1]!);
   writePrivate(join(PHASE2_DIR, 'e2e-phrase-voucher.json'), { phrase: phrase2.join(' '), at: new Date().toISOString() });
   await page.getByRole('button', { name: 'I wrote it down' }).click();

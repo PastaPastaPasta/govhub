@@ -1,5 +1,5 @@
-// Topbar identity control. Signed out: opens the sign-in sheet (auth/AuthSheet.tsx: new identity, recovery phrase, passkey, pasted
-// key; sample identities in fixture mode). Signed in: identity, balance, profile editing, top-up and passkeys, and sign-out.
+// Topbar identity control. Signed out: opens the sign-in sheet (auth/AuthSheet.tsx: Dash wallet, passkey, and other ways: new
+// identity, recovery phrase, pasted key; sample identities in fixture mode). Signed in: identity, balance, profile editing, top-up and passkeys, and sign-out.
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { cleanName, COSTS, nameProblem, type Profile } from '@govhub/forum';
