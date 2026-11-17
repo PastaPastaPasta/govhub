@@ -187,8 +187,8 @@ describe('tracker', () => {
     expect(maybe.status).toBe('broadcast');
     expect(states(maybe)).toEqual(['done', 'done', 'done', 'active', 'todo']);
   });
-  it('a relay that cannot be reached stops at "accepted by relay"; a refusal after the relay took it stops at broadcast', () => {
-    expect(states(vote({ lastSendError: 'unreachable', nextSendAt: NOW + 5 }))).toEqual(['done', 'error', 'todo', 'todo', 'todo']);
+  it('a relay that cannot be reached keeps "accepted by relay" open (it is retried); a refusal after the relay took it stops at broadcast', () => {
+    expect(states(vote({ lastSendError: 'unreachable', nextSendAt: NOW + 5 }))).toEqual(['done', 'active', 'todo', 'todo', 'todo']);
     // one whose answer was lost may be at the relay: that step is still open, not stopped
     expect(states(vote({ lastSendError: 'no answer', maybeAt: [R1], nextSendAt: NOW + 5 }))).toEqual(['done', 'active', 'todo', 'todo', 'todo']);
     const failed = applyRelayState(vote(), R1, relayState({ status: 'failed', lastError: 'obsolete' }));

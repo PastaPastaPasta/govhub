@@ -210,8 +210,8 @@ export function trackerSteps(v: WatchedVote, now: number, fmt: TimeFmt): Step[] 
           : key === 'seen'
             ? 'Waiting for the bridge’s vote set to show it…'
             : 'Recounting the tally’s vote set…';
-    // the relay step stops (error) only when no relay may have the vote; one whose answer was lost may hold it
-    return { ...base, state: v.status === 'queued' && v.lastSendError && neverLeft(v) ? 'error' : 'active', detail };
+    // a send that no relay took yet is retried automatically: still in progress, as its "Retrying" badge says
+    return { ...base, state: 'active', detail };
   });
 }
 
