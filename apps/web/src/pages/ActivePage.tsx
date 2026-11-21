@@ -42,31 +42,6 @@ function useProfiles(ids: readonly string[]): ReadonlyMap<string, Profile> {
   return map;
 }
 
-type Sort = 'order' | 'new' | 'amount' | 'close';
-const SORTS: Array<{ id: Sort; label: string; note: string }> = [
-  { id: 'order', label: 'Payout order', note: 'Best-supported first: the order the treasury pays them in, as reported.' },
-  { id: 'close', label: 'Closest to the line', note: 'Closest to the passing line first, either side: where a few votes decide.' },
-  { id: 'new', label: 'Newest', note: 'Newest first, by when they were submitted.' },
-  { id: 'amount', label: 'Largest request', note: 'Largest payment first.' },
-];
-const sortOf = (v: string | null): Sort => (SORTS.some((x) => x.id === v) ? (v as Sort) : 'order');
-
-/** The list in another order; payout order is the bridge's own (already the list's). Stable, so ties keep payout order. */
-function sorted(rows: readonly Checked<Row>[], by: Sort): Checked<Row>[] {
-  if (by === 'order') return [...rows];
-  const key = ({ item: r }: Checked<Row>): number => {
-    switch (by) {
-      case 'new':
-        return -r.p.value.time;
-      case 'amount':
-        return -r.p.value.paymentAmount;
-      case 'close':
-        return r.absYes !== null && r.threshold ? Math.abs(r.absYes - r.threshold.value) : Infinity;
-    }
-  };
-  return [...rows].sort((a, b) => key(a) - key(b));
-}
-
 /** One line for the background checks that could not finish (instead of a mark on every row), with a way to run them again. */
 function UncheckedNote({ rows }: { rows: readonly Checked<Row>[] }) {
   const { checks } = useApp();
