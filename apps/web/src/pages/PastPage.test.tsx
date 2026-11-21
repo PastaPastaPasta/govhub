@@ -1,14 +1,16 @@
 // @vitest-environment happy-dom
-// The Past list's search and column sorting. Every page is read from Platform up front (the payments view names its payees from them).
+// The Past list's search, column sorting, tallies and outcomes. Every page is read from Platform up front (the payments view names its
+// payees from them); each page's tallies are read as it arrives.
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import type { Proposal, Sourced, Tally } from '../data/types.ts';
 import { flush, render, type } from '../test/render.tsx';
 import { act } from 'react';
 
-const hold = vi.hoisted(() => ({ ctx: null as unknown }));
+const NO_LEDGER = { slots: null, unavailable: 'not read in this test', canLoadMore: false, retry: () => {}, loadMore: () => {} };
+const hold = vi.hoisted(() => ({ ctx: null as unknown, ledger: null as unknown }));
 vi.mock('../app/context.tsx', () => ({ useApp: () => hold.ctx }));
-vi.mock('../ui/useLedger.ts', () => ({ useLedger: () => ({ slots: null, unavailable: 'not read in this test', canLoadMore: false, retry: () => {}, loadMore: () => {} }) }));
+vi.mock('../ui/useLedger.ts', () => ({ useLedger: () => hold.ledger }));
 
 const { PastPage } = await import('./PastPage.tsx');
 
@@ -28,10 +30,12 @@ const PAGES = [
   [proposal('mid-outreach', 500, 20e8), proposal('beta-tools', 100, 1e8)],
 ];
 
-function setup(o: { slowTallies?: boolean; third?: boolean } = {}) {
-  const pages = o.third ? [PAGES[0]!, PAGES[1]!, [proposal('gamma-tools', 50, 2e8)]] : PAGES;
+function setup(o: { slowTallies?: boolean; third?: boolean; pages?: Sourced<Proposal>[][]; endless?: boolean } = {}) {
+  hold.ledger = NO_LEDGER;
+  const pages = o.pages ?? (o.third ? [PAGES[0]!, PAGES[1]!, [proposal('gamma-tools', 50, 2e8)]] : PAGES);
   const pastPage = vi.fn(async (cursor?: string) => {
     const i = cursor ? Number(cursor.slice(1)) - 1 : 0;
+    if (o.endless) return { items: [proposal(`page-${i + 1}`, 1000 - i, 1e8)], next: `p${i + 2}` };
     return { items: pages[i]!, ...(i + 1 < pages.length ? { next: `p${i + 2}` } : {}) };
   });
   const wait = () => new Promise((r) => setTimeout(r, o.slowTallies ? 30 : 0));
@@ -149,5 +153,80 @@ describe('PastPage search and sort', () => {
     });
     expect(at).toBe('?sort=amount&dir=asc');
     expect(names(el)).toEqual(['beta-tools', 'zeta-tools', 'mid-outreach', 'alpha-docs']);
+  });
+});
+
+describe('PastPage reading', () => {
+  const netYes = (el: ParentNode) => Object.fromEntries([...el.querySelectorAll('[data-testid="past-row"]')].map((r) => [r.querySelector('[data-testid="proposal-slug"]')!.textContent, r.querySelector('[data-label="Net yes"]')!.textContent!.trim()]));
+
+  it("each page's tallies are read as it arrives: page one's votes show while page two is still loading", async () => {
+    const { pastPage } = setup();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const first = pastPage.getMockImplementation()!;
+    pastPage.mockImplementation(async (cursor?: string) => {
+      if (cursor) await gate;
+      return first(cursor);
+    });
+    const ctx = hold.ctx as { source: { tallies: (hs: string[]) => Promise<Map<string, Sourced<Tally>>> } };
+    const asked: string[][] = [];
+    const tallies = ctx.source.tallies;
+    ctx.source.tallies = (hs) => (asked.push([...hs]), tallies(hs));
+    const { el } = await render(page());
+    await settle();
+    expect(asked).toEqual([['zeta-tools', 'alpha-docs']]);
+    expect(netYes(el)).toEqual({ 'zeta-tools': '+10', 'alpha-docs': '+400' });
+    expect(el.textContent).toContain('Loading…');
+    await act(async () => release());
+    await settle();
+    expect(asked).toEqual([['zeta-tools', 'alpha-docs'], ['mid-outreach', 'beta-tools']]);
+    expect(netYes(el)).toEqual({ 'zeta-tools': '+10', 'alpha-docs': '+400', 'mid-outreach': '+50', 'beta-tools': '+5' });
+    expect(el.textContent).toContain("That's all 4 past proposals Governance has on record.");
+  });
+
+  it('a failed tally read of one page is "not read" only once every page is in; the others keep their votes', async () => {
+    setup();
+    const ctx = hold.ctx as { source: { tallies: (hs: string[]) => Promise<Map<string, Sourced<Tally>>> } };
+    const tallies = ctx.source.tallies;
+    ctx.source.tallies = async (hs) => (hs.includes('mid-outreach') ? Promise.reject(new Error('unreachable')) : tallies(hs));
+    const { el } = await render(page());
+    await settle();
+    expect(netYes(el)).toEqual({ 'zeta-tools': '+10', 'alpha-docs': '+400', 'mid-outreach': 'not read', 'beta-tools': 'not read' });
+    expect(el.querySelector('[data-testid="past-retry"]')).not.toBeNull();
+  });
+
+  it('at the page cap the list says it stops, never "That\'s all"', async () => {
+    const { pastPage } = setup({ endless: true });
+    const { el } = await render(page());
+    for (let i = 0; i < 10; i++) await settle();
+    expect(pastPage).toHaveBeenCalledTimes(20);
+    expect(el.querySelectorAll('[data-testid="past-row"]').length).toBe(20);
+    expect(el.textContent).not.toContain("That's all");
+    expect(el.textContent).toContain('These are the newest 20 past proposals Governance has on record: it reads at most 20 pages of them, so older ones aren\'t listed here.');
+  });
+
+  it('an outcome waits only for the superblocks that may fall in its payment window', async () => {
+    const DAY = 86_400;
+    const now = 2_000_000_000;
+    setup({ pages: [[proposal('recent-ask', now - 5 * DAY, 1e8), proposal('older-ask', now - 150 * DAY, 1e8), proposal('ancient-ask', now - 400 * DAY, 1e8)]] });
+    (hold.ctx as { params: unknown; gov: unknown }).params = { blockSeconds: 150, superblockCycle: 16616 };
+    const cycleS = 16616 * 150;
+    (hold.ctx as { gov: unknown }).gov = { active: { data: [] }, cycle: { data: { value: { superblockHeight: 100 * 16616, estTime: now + cycleS } } } };
+    const items = (hold.ctx as never as { source: { pastPage: () => Promise<{ items: Sourced<Proposal>[] }> } }).source;
+    const ask = (await items.pastPage()).items;
+    for (const it of ask) it.value.startEpoch = it.value.endEpoch - 60 * DAY;
+    // consecutive superblocks, newest first: the three newest read, the older ones still reading
+    const slots = Array.from({ length: 10 }, (_, i) => {
+      const height = (99 - i) * 16616;
+      return i < 3 ? { height, state: 'read', read: { height, blockHash: '00', time: now - i * cycleS, outputs: [], weak: null } } : { height, state: 'reading' };
+    });
+    hold.ledger = { ...NO_LEDGER, unavailable: null, slots };
+    const { el } = await render(page());
+    await settle();
+    const outcome = (name: string) => [...el.querySelectorAll('[data-testid="past-row"]')].find((r) => r.textContent!.includes(name))!.querySelector('[data-testid="past-outcome"]')!.textContent;
+    expect(outcome('recent-ask')).toContain('Not funded · paid 0 of 2');
+    expect(outcome('older-ask')).toBe('reading…');
+    // before every superblock asked for: what it says once they are all in
+    expect(outcome('ancient-ask')).toContain('Not checked · its window starts before the superblocks read');
   });
 });

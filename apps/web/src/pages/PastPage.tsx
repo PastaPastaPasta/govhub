@@ -25,14 +25,17 @@ import { useLedger, type Ledger, type SuperblockSlot } from '../ui/useLedger.ts'
 import { ChainProof } from '../ui/ProofTag.tsx';
 import { DashValue } from '../ui/DashValue.tsx';
 
-/** Ended proposals on Platform, every page (there are tens, not thousands), with their published tallies. */
+/** How many pages of ended proposals are read at most; past that the list says it stops. */
+const PAST_PAGES = 20;
+
+/** Ended proposals on Platform, every page (there are tens, not thousands), each page's tallies read as it arrives. */
 function usePastProposals() {
   const { source } = useApp();
   const [items, setItems] = useState<Sourced<Proposal>[]>([]);
   const [tallies, setTallies] = useState(new Map<string, Sourced<Tally>>());
   // the list's read and its tallies' read: a tally that wasn't read is never "not recorded"
   const [talliesRead, setTalliesRead] = useState<'loading' | 'ok' | 'failed'>('loading');
-  const [state, setState] = useState<{ loading: boolean; error?: string }>({ loading: true });
+  const [state, setState] = useState<{ loading: boolean; error?: string; capped?: boolean }>({ loading: true });
   const [attempt, setAttempt] = useState(0);
   const gen = useRef(0);
   useEffect(() => {
@@ -42,29 +45,49 @@ function usePastProposals() {
     setTallies(new Map());
     setTalliesRead('loading');
     setState({ loading: true });
+    let pending = 0;
+    let failed = false;
+    let listDone = false;
+    const settled = () => on && listDone && pending === 0 && setTalliesRead(failed ? 'failed' : 'ok');
+    const readTallies = (hashes: string[]) => {
+      if (!hashes.length) return;
+      pending++;
+      source
+        .tallies(hashes)
+        .then(
+          (t) => on && setTallies((prev) => new Map([...prev, ...t])),
+          () => void (failed = true),
+        )
+        .finally(() => {
+          pending--;
+          settled();
+        });
+    };
     (async () => {
       let cursor: string | undefined;
       const all: Sourced<Proposal>[] = [];
-      for (let page = 0; page < 20; page++) {
+      for (let page = 0; page < PAST_PAGES; page++) {
         const r = await source.pastPage(cursor);
+        if (!on) return false;
         all.push(...r.items);
-        if (on) setItems([...all]);
-        if (!r.next) break;
+        setItems([...all]);
+        readTallies(r.items.map((i) => i.value.govHash));
+        if (!r.next) return false;
         cursor = r.next;
       }
-      if (on) setState({ loading: false });
-      return all;
+      return true;
     })().then(
-      async (all) => {
-        if (!all.length) return on && setTalliesRead('ok');
-        try {
-          const t = await source.tallies(all.map((i) => i.value.govHash));
-          if (on) (setTallies(t), setTalliesRead('ok'));
-        } catch {
-          if (on) setTalliesRead('failed');
-        }
+      (capped) => {
+        listDone = true;
+        if (on) setState({ loading: false, capped });
+        settled();
       },
-      (e) => on && (setState({ loading: false, error: errText(e) }), setTalliesRead('failed')),
+      (e) => {
+        listDone = true;
+        failed = true;
+        if (on) setState({ loading: false, error: errText(e) });
+        settled();
+      },
     );
     return () => {
       on = false;
@@ -440,15 +463,24 @@ function ProposalsView({ past, ledger, known }: { past: ReturnType<typeof usePas
   const names = useMemo(() => countNames(past.items.map((i) => i.value)), [past.items]);
   useEffect(() => checks.ensure(ordered.slice(0, count + 12).map((i) => i.value)), [checks, ordered, count]);
   const reads = useMemo(() => (ledger.slots ?? []).flatMap((s): SuperblockRead[] => (s.state === 'read' ? [s.read] : [])), [ledger.slots]);
-  // outcomes wait for the superblocks: still to be found (the budget cycle names the last one), or still being read
-  const reading = !ledger.unavailable && (ledger.slots ? ledger.slots.some((s) => s.state === 'reading') : !gov.cycle.error);
+  // Outcomes wait for the superblocks: still to be found (the budget cycle names the last one), or still being read. Once one is read,
+  // a row waits only for those that may fall in its payment window (half a cycle's slack, a day at least), and the superblocks still
+  // being read count as covered, so a row shown early says what it will say once every one is in.
   const cover = useMemo(() => {
-    const oldest = reads.length ? Math.min(...reads.map((r) => r.time)) : null;
     // an unread superblock's time, estimated from a read one: enough to know which windows it falls in
     const ref = reads[0];
-    const unread = ref ? (ledger.slots ?? []).filter((s) => s.state === 'error').map((s) => ref.time + (s.height - ref.height) * params.blockSeconds) : [];
-    return { oldest, unread };
+    const at = (state: SuperblockSlot['state']) => (ref ? (ledger.slots ?? []).filter((s) => s.state === state).map((s) => ref.time + (s.height - ref.height) * params.blockSeconds) : []);
+    const pending = at('reading');
+    const oldest = reads.length ? Math.min(...reads.map((r) => r.time), ...pending) : null;
+    return { oldest, unread: at('error'), pending };
   }, [reads, ledger.slots, params.blockSeconds]);
+  const slack = Math.max((params.superblockCycle * params.blockSeconds) / 2, 86_400);
+  const readingFor = (p: Proposal): boolean => {
+    if (ledger.unavailable) return false;
+    if (!ledger.slots) return !gov.cycle.error;
+    if (!ledger.slots.some((s) => s.state === 'reading')) return false;
+    return !reads.length || cover.pending.some((t) => t >= p.startEpoch - slack && t <= p.endEpoch + slack);
+  };
   const outcomes = useMemo(
     () => (ledger.unavailable ? new Map<string, Outcome>() : new Map(past.items.map((i) => [i.value.govHash, outcomeOf(i.value, reads, source.coreNetwork, cover, known)]))),
     [ledger.unavailable, past.items, reads, source.coreNetwork, cover, known],
@@ -514,6 +546,7 @@ function ProposalsView({ past, ledger, known }: { past: ReturnType<typeof usePas
               const t = past.tallies.get(p.govHash);
               const reason = isFailed(check) ? check.reason : null;
               const o = outcomes.get(p.govHash) ?? null;
+              const reading = readingFor(p);
               return (
                 <tr key={p.govHash} className={reason ? 'row-invalid' : undefined} data-check={check.status} data-testid="past-row">
                   <td role="rowheader" data-label="Proposal" className="dh-rc-title">
@@ -560,7 +593,10 @@ function ProposalsView({ past, ledger, known }: { past: ReturnType<typeof usePas
       {past.loading && <p className="muted small center" role="status">Loading…</p>}
       {!past.loading && !past.error && rows.length > 0 && !searching && (
         <p className="muted small center">
-          That's all {formatInt(parts.shown.length)} past proposals Governance has on record. Outcomes come from the superblocks on the Payments view.
+          {past.capped
+            ? `These are the newest ${formatInt(parts.shown.length)} past proposals Governance has on record: it reads at most ${formatInt(PAST_PAGES)} pages of them, so older ones aren't listed here.`
+            : `That's all ${formatInt(parts.shown.length)} past proposals Governance has on record.`}{' '}
+          Outcomes come from the superblocks on the Payments view.
         </p>
       )}
       {!past.loading && parts.failed.length > 0 && <FailedProposalsToggle count={parts.failed.length} shown={showFailed} onToggle={() => setShowFailed((v) => !v)} />}
