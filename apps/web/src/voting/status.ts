@@ -4,7 +4,7 @@
 import { errText, formatDuration } from '../lib/format.ts';
 import { mayBeAtRelay, neverLeft, type RelayInfo, type WatchedVote } from './pending.ts';
 import { DEADLINE_MARGIN_S, deferredWindow, OUTCOME_NAME } from './plan.ts';
-import { relayHost, RelayError, RelayNotSentError, WRITES_OFF, type RelayVoteState } from './relay.ts';
+import { labPreview, relayHost, RelayError, RelayNotSentError, WRITES_OFF, type RelayVoteState } from './relay.ts';
 
 export type Tone = 'wait' | 'progress' | 'ok' | 'bad' | 'quiet';
 export type TimeFmt = (unixS: number) => string;
@@ -131,7 +131,7 @@ export function describeVote(v: WatchedVote, now: number, fmt: TimeFmt): VoteVie
         ? { badge: 'Counted', tone: 'ok', line: `The governance data service reports the network counted it: its vote set includes it, and the recount of that set matches.${corroboration(v)}` }
         : { badge: 'On the network', tone: 'ok', line: `The governance data service reports the network has it: its vote set includes it, signature checked here against your voting key.${corroboration(v)}` };
     case 'failed': {
-      if (v.failReason === WRITES_OFF && !v.maybeAt?.length) return { badge: 'Preview: not sent', tone: 'quiet', line: `Signed in your browser, then stopped: ${WRITES_OFF}. On gov.dashhq.org the relay sends it.` };
+      if (labPreview() && v.failReason === WRITES_OFF && !v.maybeAt?.length) return { badge: 'Preview: not sent', tone: 'quiet', line: `Signed in your browser, then stopped: ${WRITES_OFF}. On gov.dashhq.org the relay sends it.` };
       // refused by one relay after another may have stored it (its answer was lost): that relay could still release it
       const maybe = v.maybeAt?.length ? ` ${v.maybeAt.map(relayHost).join(' and ')} may still hold it from an earlier try whose answer was lost: cancel it to take it back there.` : '';
       return { badge: 'Failed', tone: 'bad', line: `${v.refs.length || maybe ? 'Did not reach the network' : 'Not sent'}: ${v.failReason ?? relayCodeText(lead?.info.lastError)}.${maybe}` };
@@ -255,7 +255,7 @@ export function classifySubmitError(e: unknown, relay: string): SubmitOutcome {
     return { kind: 'retry', text: lostAnswerText(e, host), ...after, tryOther: true, maybeReceived: true };
   }
   const code = e.code;
-  if (code === 'writes-disabled') return { kind: 'final', status: 'failed', text: WRITES_OFF };
+  if (code === 'writes-disabled' && labPreview()) return { kind: 'final', status: 'failed', text: WRITES_OFF };
   if (e.status === 429 || RELAY_BUSY.has(code)) {
     return { kind: 'retry', text: `${host}: ${e.message}`, ...(e.retryAfterS ? { afterS: e.retryAfterS } : {}), tryOther: true };
   }
