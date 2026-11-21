@@ -2841,6 +2841,26 @@ li[data-status='now'] > .fund-dot {
   background: transparent;
   border-radius: var(--radius-m);
 }
+/* its ways are radio labels: the family segment sizes only buttons and links */
+.dh-seg.profile-switch > label {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: calc(var(--dh-ctl-h) - 4px);
+  margin: 0;
+  padding: 0 12px;
+  border-radius: 4px;
+  color: var(--dh-ink-2);
+  white-space: nowrap;
+  font: var(--dh-w-ui) var(--dh-fs-sm)/1 var(--dh-font);
+  cursor: pointer;
+}
+@media (pointer: coarse) {
+  .dh-seg.profile-switch > label {
+    height: 40px;
+  }
+}
 .form .profile-switch label.disabled {
   color: var(--ink-3);
   cursor: not-allowed;
