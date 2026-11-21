@@ -18,7 +18,8 @@ test.describe('failed verification is hidden (fixtures)', () => {
     await expect(page.locator('article.prow[data-check="pending"]')).toHaveCount(0, { timeout: 30_000 });
     // 21 are listed; one of them starts paying at a later superblock, so it is not among the proposals the next budget is counted against
     await expect(page.locator('.budget-facts')).toContainText('of 20 proposals');
-    await expect(page.locator('.budget-facts')).toContainText('plus 1 that starts paying at a later superblock');
+    await expect(page.getByTestId('budget-in')).toContainText('of 20 proposals');
+    await expect(page.getByTestId('budget-in')).toContainText('Plus 1 that starts later');
     await expect(page.getByTestId('card-starts-later')).toHaveCount(1);
     await expect(page.getByRole('link', { name: /^Active/ }).locator('.count')).toHaveText('21');
     await expect(page.locator('article.prow', { hasText: 'govhub-fixture' })).toHaveCount(0);

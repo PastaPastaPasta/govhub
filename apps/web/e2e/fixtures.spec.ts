@@ -129,7 +129,9 @@ test.describe('fixture mode', () => {
   test('the badge opens "How do we know?"; Escape closes it and focus returns to the badge', async ({ page }) => {
     await gotoFixtures(page, '/p/OrchardPay');
     const badge = page.getByTestId('trust-badge');
-    await expect(badge).toHaveAccessibleName(/^Demo data: .*How do we know\?$/);
+    await expect(badge).toHaveAttribute('data-trust', 'demo');
+    await expect(badge).toHaveAccessibleName(/^Verification details: Demo data — \S/);
+    await expect(page.getByText('Chain verified')).toHaveCount(0);
     const drawer = await openDrawer(page);
     await expect(drawer.getByRole('heading', { name: 'How do we know?' })).toBeVisible();
     await expect(drawer.getByTestId('checks').locator('[data-check]')).toHaveCount(5);
@@ -256,14 +258,23 @@ test.describe('settings', () => {
     await expect(page).not.toHaveURL(/config=/);
   });
 
-  test('theme switch sets data-theme and persists', async ({ page }) => {
+  test("the shell's Theme menu sets data-theme and it persists", async ({ page }) => {
     await gotoFixtures(page);
     const bar = page.locator('dashhq-bar');
-    await bar.getByRole('button', { name: 'All dashhq tools' }).click();
-    await bar.getByRole('button', { name: 'Dark', exact: true }).click();
+    const button = bar.getByRole('button', { name: 'Theme', exact: true });
+    await button.click();
+    const menu = bar.getByRole('menu', { name: 'Theme' });
+    await menu.getByRole('menuitemradio', { name: 'Dark' }).click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await expect(page.locator('html')).toHaveAttribute('data-theme-pref', 'dark');
     await page.reload();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await bar.getByRole('button', { name: 'Theme', exact: true }).click();
+    await expect(bar.getByRole('menu', { name: 'Theme' }).getByRole('menuitemradio', { name: 'Dark' })).toHaveAttribute('aria-checked', 'true');
+    await bar.getByRole('menu', { name: 'Theme' }).getByRole('menuitemradio', { name: 'Light' }).click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+    await page.reload();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
   });
 });
 
