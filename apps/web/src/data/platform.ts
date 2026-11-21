@@ -12,12 +12,9 @@ import type { Cycle, Proposal, Tally } from './types.ts';
 type EvoModule = typeof import('@dashevo/evo-sdk');
 export type Sdk = InstanceType<EvoModule['EvoSDK']>;
 
-/**
- * Connected SDKs by network and endpoints: this profile's, and at most one more (a not-found page asking the other network), so that
- * question never drops this network's connection. Older ones are let go.
- */
+// A few at most: the profiles' two networks (a "not found" page asks the other one, see app/otherNetwork.tsx) and a custom override.
 const sdks = new Map<string, Promise<Sdk>>();
-const MAX_SDKS = 2;
+const MAX_SDKS = 3;
 
 const sdkKey = (r: Registry) => JSON.stringify([r.platformNetwork, r.platform]);
 

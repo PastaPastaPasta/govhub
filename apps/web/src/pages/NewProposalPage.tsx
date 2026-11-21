@@ -7,10 +7,11 @@ import { useSearchParams } from 'react-router-dom';
 import { Link } from '../ui/Link.tsx';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
-import { formatDateTime, shortHash, dashUnit } from '../lib/format.ts';
+import { useAuth } from '../auth/context.tsx';
+import { formatDateTime, shortHash } from '../lib/format.ts';
 import { superblockPhrase } from '../lib/governance.ts';
 import { CostSummary, DetailsStep, PaymentsStep, ReviewStep, usePlan, type EditProps } from '../proposal/EditSteps.tsx';
-import { BackupError, draftStage, draftStore, mergeDraft, newDraft, readBackup, type DraftInputs, type ProposalDraft } from '../proposal/draft.ts';
+import { BackupError, draftStage, feeUnit, paymentTotalText, draftStore, mergeDraft, newDraft, readBackup, type DraftInputs, type ProposalDraft } from '../proposal/draft.ts';
 import { PayStep } from '../proposal/PayStep.tsx';
 import { demoServices, liveServices, type WizardServices } from '../proposal/services.ts';
 import { SubmitStep } from '../proposal/SubmitStep.tsx';
@@ -52,7 +53,7 @@ export function NewProposalPage() {
         drafts={drafts}
         demo={services.demo}
         onOpen={(d) => setParams({ d: d.id })}
-        onNew={() => adopt(newDraft(network))}
+        onNew={() => adopt({ ...newDraft(network), ...(services.demo ? { demo: true } : {}) })}
         onRestored={(d) => adopt(mergeDraft(store.load(d.id), d))}
       />
     );
@@ -86,7 +87,7 @@ function Start({ drafts, demo, onOpen, onNew, onRestored }: { drafts: ProposalDr
         <li>Choose the amount and how many payments (one at each superblock).</li>
         <li>Review it against Dash Core's rules.</li>
         <li>Save a backup, then pay the fee from any wallet or from Dash Core.</li>
-        <li>Governance sends it to the network once the payment is ChainLocked (usually within a few minutes). It goes live after 6 confirmations (about 15 minutes).</li>
+        <li>Governance sends it to the network once the payment is final (usually within a few minutes). It goes live after 6 confirmations (about 15 minutes).</li>
       </ol>
       {drafts.length > 0 && (
         <section aria-labelledby="pw-drafts-title">
@@ -161,6 +162,9 @@ function Wizard({ initial, services, onChange }: { initial: ProposalDraft; servi
   );
   const plan = usePlan(draft);
   const stage = draftStage(draft);
+  // the payment's deposit keys derive from the signed-in phrase or key; a wallet sign-in's key is temporary, so it could not get the
+  // money back later
+  const walletSession = useAuth().session?.source === 'wallet' && !services.demo;
   const step = stage === 'edit' ? draft.editStep : stage === 'pay' ? 3 : 4;
   // each step starts at the top of the page
   useEffect(() => {
@@ -196,11 +200,17 @@ function Wizard({ initial, services, onChange }: { initial: ProposalDraft; servi
       {stage === 'edit' && draft.editStep === 0 && <DetailsStep {...edit} />}
       {stage === 'edit' && draft.editStep === 1 && <PaymentsStep {...edit} />}
       {stage === 'edit' && draft.editStep === 2 && <ReviewStep {...edit} />}
-      {stage === 'pay' && <PayStep draft={draft} commit={commit} services={services} />}
-      {(stage === 'submit' || stage === 'done') && <SubmitStep draft={draft} commit={commit} services={services} />}
+      {stage !== 'edit' && walletSession && (
+        <p className="notice-box dh-notice dh-notice--info" data-testid="pw-wallet-session">
+          Paying for and submitting a proposal needs a sign-in with a recovery phrase or key: the payment address comes from that sign-in, so the money
+          can always be recovered. Your wallet sign-in holds a temporary key. Sign out and sign in with your recovery phrase to continue.
+        </p>
+      )}
+      {stage === 'pay' && !walletSession && <PayStep draft={draft} commit={commit} services={services} />}
+      {(stage === 'submit' || stage === 'done') && !walletSession && <SubmitStep draft={draft} commit={commit} services={services} />}
       {stage !== 'edit' && draft.lock && (
         <p className="muted small pw-foot">
-          {draft.lock.name}: {duffsToDash(BigInt(draft.lock.paymentDuffs))} {dashUnit()} × {draft.lock.superblocks.length}, hash {shortHash(draft.lock.govHash, 8)}
+          {draft.lock.name}: {paymentTotalText(BigInt(draft.lock.paymentDuffs), draft.lock, feeUnit(draft.network))}, hash {shortHash(draft.lock.govHash, 8)}
         </p>
       )}
     </section>

@@ -9,6 +9,7 @@ import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { errText, formatInt } from '../lib/format.ts';
 import { openSignIn } from '../ui/SignIn.tsx';
+import { isWalletSession, WALLET_BADGE_TEXT } from '../session/authSession.ts';
 import { BadgeLeaks, PolicyLink } from './BadgeLeaks.tsx';
 import { isActive, isHeld, lapseHeight, nearLapse, requestWindow, type BadgeJob } from './client.ts';
 import { useBadgeCtx } from './context.tsx';
@@ -177,6 +178,10 @@ export function BadgePage() {
             Sign in
           </button>{' '}
           with the identity that should show the badge.
+        </p>
+      ) : isWalletSession(session) ? (
+        <p className="notice-box dh-notice dh-notice--info" data-testid="badge-wallet-session">
+          {WALLET_BADGE_TEXT}
         </p>
       ) : (
         <div className="form">

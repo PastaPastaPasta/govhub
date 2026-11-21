@@ -150,8 +150,20 @@ export interface NetworkProfile {
   /** Bridges whose dashd serves quorum proofs for this profile's Core network (before the public quorum list server). */
   proofBridges: string[];
   forum: ForumEndpoints | null;
+  /** Sign-in with a Dash wallet (App Connect, docs/app-connect.md). */
+  appConnect: AppConnectFlag;
   /** Not deployed: shown, but cannot be selected. */
   deployed: boolean;
+}
+
+/**
+ * App Connect for a profile. `appId` is the contract the wallet shows and binds the session key to: the profile's forum contract,
+ * so the key can write comments, reactions and posts and nothing else. Off: the "Sign in with a Dash wallet" button stays "Coming
+ * soon" and no App Connect code is loaded. The hidden `?appconnect=1` / `?appconnect=0` override wins for the tab (appConnectEnabled).
+ */
+export interface AppConnectFlag {
+  enabled: boolean;
+  appId: string;
 }
 
 export const PROFILES: Record<ProfileId, NetworkProfile> = {
@@ -167,6 +179,7 @@ export const PROFILES: Record<ProfileId, NetworkProfile> = {
     relays: [TESTNET_RELAY],
     proofBridges: ['https://gov-bridge-testnet.dashhq.org'],
     forum: TESTNET_FORUM,
+    appConnect: { enabled: false, appId: TESTNET_FORUM.contractId },
     deployed: true,
   },
   dev: {
@@ -182,6 +195,7 @@ export const PROFILES: Record<ProfileId, NetworkProfile> = {
     // its dashd runs v24 (24.0.0-rc.4) and serves quorum proofs; a bridge on Core 23.x answers 501 and chain facts fall back to proof of work
     proofBridges: ['https://gov-bridge.dashhq.org'],
     forum: TESTNET_FORUM,
+    appConnect: { enabled: false, appId: TESTNET_FORUM.contractId },
     deployed: true,
   },
   mainnet: {
@@ -197,9 +211,36 @@ export const PROFILES: Record<ProfileId, NetworkProfile> = {
     // both bridges run on the same v24 dashd; either one's proofs check out against the pinned checkpoint
     proofBridges: ['https://gov-bridge-mainnet.dashhq.org', 'https://gov-bridge.dashhq.org'],
     forum: MAINNET_FORUM,
+    appConnect: { enabled: true, appId: MAINNET_FORUM.contractId },
     deployed: true,
   },
 };
+
+/** The hidden per-tab override (kept across navigation): `?appconnect=1` turns App Connect on, `?appconnect=0` turns it off. */
+export const APP_CONNECT_OVERRIDE_PARAM = 'appconnect';
+const APP_CONNECT_OVERRIDE_KEY = 'govhub.appconnect';
+
+const overrideOf = (v: string | null | undefined): boolean | null => (v === '1' ? true : v === '0' ? false : null);
+
+/** Reads and remembers the override from the page URL: true/false, or null when the tab has none. Never throws (storage can be blocked). */
+export function appConnectOverride(search: string = globalThis.location?.search ?? '', storage: Pick<Storage, 'getItem' | 'setItem'> | undefined = globalThis.sessionStorage): boolean | null {
+  const v = overrideOf(new URLSearchParams(search).get(APP_CONNECT_OVERRIDE_PARAM));
+  try {
+    if (v !== null) storage?.setItem(APP_CONNECT_OVERRIDE_KEY, v ? '1' : '0');
+    return v ?? overrideOf(storage?.getItem(APP_CONNECT_OVERRIDE_KEY));
+  } catch {
+    return v;
+  }
+}
+
+/**
+ * Whether wallet sign-in is offered with these settings: the tab's override, else the profile's flag, and only while the forum contract
+ * in use is the profile's app id (a key bound to it could not write to a custom forum contract).
+ */
+export function appConnectEnabled(r: Pick<Registry, 'profile' | 'forum'>, override: boolean | null): boolean {
+  const f = PROFILES[r.profile].appConnect;
+  return (override ?? f.enabled) && r.forum.contractId === f.appId;
+}
 
 export const PROFILE_ORDER: readonly ProfileId[] = ['mainnet', 'testnet', 'dev'];
 

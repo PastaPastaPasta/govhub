@@ -11,7 +11,10 @@ export class ErrorBoundary extends Component<{ what: string; children: ReactNode
     if (this.state.error) {
       return (
         <p className="error" role="alert">
-          The {this.props.what} could not be shown: {this.state.error}
+          The {this.props.what} could not be shown ({this.state.error}).{' '}
+          <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={() => this.setState({ error: null })}>
+            Try again
+          </button>
         </p>
       );
     }

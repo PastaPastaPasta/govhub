@@ -9,7 +9,7 @@ const HASH = 'ab'.repeat(32);
 let reads: Array<() => Promise<unknown>> = [];
 let calls = 0;
 const source = { proposal: () => (calls++, (reads.shift() ?? (async () => null))()), byName: () => (calls++, (reads.shift() ?? (async () => []))()) };
-const app = { source, registry: { forum: { claimPortals: [] } } };
+const app = { source, mode: 'fixtures', registry: { profile: 'mainnet', forum: { claimPortals: [] } } };
 vi.mock('../app/context.tsx', () => ({ useApp: () => app }));
 const { ProposalByHash, ProposalByName } = await import('./ProposalPage.tsx');
 

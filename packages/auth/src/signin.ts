@@ -6,7 +6,8 @@ import { CREATE_KEYS, LATER_KEYS, MASTER_KEY_ID, type KeySpec } from './layout.t
 import type { PlatformPort, SigningKey } from './platform.ts';
 import { IDENTITY_GAP_LIMIT, KEY_PROBE_LIMIT, SeedWallet } from './seed.ts';
 
-export type SessionSource = 'seed' | 'key' | 'passkey';
+/** 'wallet': an App Connect grant (appconnect/), a contract-bound key with a budget and an expiry. */
+export type SessionSource = 'seed' | 'key' | 'passkey' | 'wallet';
 
 /**
  * A signed-in identity. The private key lives in memory only; `wallet` is present for seed sessions (it can derive MASTER for key
@@ -23,6 +24,8 @@ export interface Session {
   readonly wallet: SeedWallet | null;
   /** The passkey this session was opened with (source 'passkey'). */
   readonly credentialId?: Uint8Array;
+  /** The one contract the key may sign for (source 'wallet': its contract bounds). Writes to any other contract are refused here. */
+  readonly boundContractId?: string;
   /** True once `end()` ran: the key bytes are zero and must never be used again (refused by runFunding and storeInVault). */
   readonly ended: boolean;
   end(): void;

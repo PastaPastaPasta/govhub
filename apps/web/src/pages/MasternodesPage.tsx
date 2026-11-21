@@ -101,6 +101,11 @@ function Unlock({ onMemoryOnly }: { onMemoryOnly(): void }) {
           You signed in with a pasted key, which cannot open a saved keyring. Use your recovery phrase or a passkey, or memory-only keys.
         </p>
       )}
+      {session?.source === 'wallet' && (
+        <p className="small muted" data-testid="keyring-wallet">
+          You signed in with your Dash wallet, which cannot open a saved keyring. Use your recovery phrase or a passkey, or memory-only keys.
+        </p>
+      )}
       {!passkeyNot && (
         <button type="button" className="btn dh-btn btn-primary dh-btn--primary" onClick={() => void k.unlockWithPasskey().catch(() => {})} disabled={!!k.busy}>
           Unlock with a passkey
@@ -319,7 +324,7 @@ function AddMasternodes({ step, setStep, b, savedLocked, onAdded }: { step: Flow
                 {mns.map((m) => (
                   <li key={m.proTxHash}>
                     <span className="tag dh-badge tag-done">{m.type === 'evo' ? 'Evonode' : 'Regular'}</span> <dashhq-hash value={m.proTxHash} label="ProTx hash" href={window.dashhq?.href('radar', '/mn/' + m.proTxHash, { network: k.coreNetwork })}>{m.proTxHash}</dashhq-hash>
-                    {!m.valid && <span className="tag dh-badge tag-fail dh-badge--bad">PoSe-banned</span>}
+                    {!m.valid && <span className="tag dh-badge tag-fail dh-badge--bad" title="Banned by the network (PoSe)">Banned</span>}
                   </li>
                 ))}
               </ul>
@@ -339,7 +344,7 @@ function AddMasternodes({ step, setStep, b, savedLocked, onAdded }: { step: Flow
                 {badgeWanted && ' The badge request still keeps its own copy of the key in this browser, never in plain text, until it is sent.'}
               </p>
             )}
-            <label className="check small kr-dont-save dh-field__label">
+            <label className="check dh-check small kr-dont-save dh-field__label">
               <input
                 type="checkbox"
                 checked={!save}
@@ -492,7 +497,7 @@ function MnRow({ m, label }: { m: OwnedMasternode; label: string }) {
         <NodeLabel pro={m.proTxHash} value={label} />
         <span className="kr-mn-tags">
           <span className="tag dh-badge tag-done">{m.type === 'evo' ? 'Evonode ×4' : 'Regular'}</span>
-          {m.valid ? <span className={`tag dh-badge ${m.provenance.key === 'sml' ? 'tag-pass dh-badge--good' : 'tag-done'}`}>Can vote</span> : <span className="tag dh-badge tag-fail dh-badge--bad">PoSe-banned: cannot vote</span>}
+          {m.valid ? <span className={`tag dh-badge ${m.provenance.key === 'sml' ? 'tag-pass dh-badge--good' : 'tag-done'}`}>Can vote</span> : <span className="tag dh-badge tag-fail dh-badge--bad" title="Banned by the network (PoSe)">Banned: cannot vote</span>}
         </span>
       </div>
       <div className="kr-mn-facts small">
@@ -554,7 +559,7 @@ function BadgeRow({ b, celebrate }: { b: MnBadge; celebrate: boolean }) {
   let why: string | null = null;
   if (!k.demo) {
     if (k.mns.phase === 'loading' || k.mns.phase === 'idle') why = 'Finding your masternodes first…';
-    else if (!mn) why = 'None of your masternodes can ask for a badge (none found, or all PoSe-banned).';
+    else if (!mn) why = 'None of your masternodes can ask for a badge (none found, or all banned by the network).';
   }
   const request = mn && !why ? () => b.request(badgeWif(k.keyring?.content.keys[mn.keyIndex], k.coreNetwork), mn.proTxHash) : null;
   return <KeyringBadgeRow b={b} request={request} why={why} celebrate={celebrate} />;

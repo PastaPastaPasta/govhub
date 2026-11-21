@@ -1,12 +1,13 @@
-// Topbar identity control. Signed out: opens the sign-in sheet (auth/AuthSheet.tsx: new identity, recovery phrase, passkey, pasted
-// key; sample identities in fixture mode). Signed in: identity, balance, profile editing, top-up and passkeys, and sign-out.
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+// Topbar identity control. Signed out: opens the sign-in sheet (auth/AuthSheet.tsx: Dash wallet, passkey, and other ways: new
+// identity, recovery phrase, pasted key; sample identities in fixture mode). Signed in: identity, balance, profile editing, top-up and passkeys, and sign-out.
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { Link } from './Link.tsx';
 import { cleanName, COSTS, nameProblem, type Profile } from '@govhub/forum';
 import { useForum } from '../app/forum.tsx';
 import { OPEN_SIGNIN_EVENT, useAuth } from '../auth/context.tsx';
 import { formatCredits, shortHash } from '../lib/format.ts';
 import { Avatar } from './Identity.tsx';
+import { useDpnsNames } from './useDpnsNames.ts';
 import { useAction } from './useAction.ts';
 import { WriteError } from './WriteError.tsx';
 
@@ -23,6 +24,8 @@ export function SessionControl() {
   const menu = useRef<HTMLDivElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const [name, setName] = useState<string | null>(null);
+  const id = session?.identityId ?? '';
+  const dpns = useDpnsNames([id]).get(id) ?? null;
   const close = () => dialog.current?.close();
   const hide = () => menu.current?.hidePopover?.();
   // Signing out from elsewhere (leaving the page, another network) closes the panels.
@@ -55,9 +58,11 @@ export function SessionControl() {
   return (
     <div className="account">
       {session ? (
-        <button type="button" className="account-btn dh-btn dh-btn--quiet" popoverTarget="account-menu" id="session-button" data-testid="session-button">
+        <button type="button" className="account-btn dh-btn dh-btn--quiet" popoverTarget="account-menu" id="session-button" data-testid="session-button" title={`Identity ${session.identityId}`}>
           <Avatar id={session.identityId} size={22} />
-          <span className="account-name">{name ?? shortHash(session.identityId, 4)}</span>
+          <bdi className="account-name" data-testid="session-name">
+            {dpns ?? name ?? shortHash(session.identityId, 4)}
+          </bdi>
           <svg width="10" height="10" viewBox="0 0 10 10" className="account-chevron" aria-hidden="true">
             <path d="m2 3.5 3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.4" />
           </svg>
@@ -74,7 +79,10 @@ export function SessionControl() {
       <div ref={menu} id="account-menu" popover="auto" className="account-menu" aria-label="Account and settings">
         {session && (
           <div className="menu-id">
-            <p className="menu-name">{name ?? 'Your identity'}</p>
+            <p className="menu-name">
+              <bdi>{dpns ?? name ?? 'Your identity'}</bdi>
+              {dpns && name && <span className="author-alias">{name}</span>}
+            </p>
             <p className="small muted break mono-ish" data-testid="session-identity">
               {session.identityId}
             </p>
@@ -87,8 +95,8 @@ export function SessionControl() {
         )}
         {session && <Link className="menu-item" to="/polls?seg=mine" onClick={hide}>My polls</Link>}
         {session && item('Edit profile', () => dialog.current?.showModal())}
-        {session && auth.session && item('Top up', () => auth.openSheet('topup'))}
-        {session && auth.session && item('Add passkey', () => auth.openSheet('passkeys'))}
+        {session && auth.session && auth.session.source !== 'wallet' && item('Top up', () => auth.openSheet('topup'))}
+        {session && auth.session && auth.session.source !== 'wallet' && item('Add passkey', () => auth.openSheet('passkeys'))}
         {session && (
           <Link className="menu-item" to="/masternodes#mn-badge" onClick={hide} data-testid="menu-badge">
             Masternode badge

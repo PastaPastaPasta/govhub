@@ -5,7 +5,7 @@
 // proposals Platform holds (newest end first, keyset-paged on endEpoch: repo.ts pastPage) with their outcome from those superblocks.
 import { Slug } from '../ui/Slug.tsx';
 import { OwnerWordsNote, ProposalLabel } from '../ui/OwnerPage.tsx';
-import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useRouteTitle } from '../app/title.ts';
 import { Link } from '../ui/Link.tsx';
@@ -19,6 +19,8 @@ import { contentFailure, isFailed } from '../verify/checks.ts';
 import { FailedNote, FailedProposalsToggle } from '../ui/HiddenToggle.tsx';
 import { useReveal } from '../ui/hooks.ts';
 import { ProposalTabs } from '../ui/ProposalTabs.tsx';
+import { NoMatches, ResultCount, SearchField, useQueryState } from '../ui/ListControls.tsx';
+import { comparePast, matches, nextPastSort, proposalFields, readPast, writePast, type PastSort } from '../lib/listQuery.ts';
 import { useLedger, type Ledger, type SuperblockSlot } from '../ui/useLedger.ts';
 import { ChainProof } from '../ui/ProofTag.tsx';
 import { DashValue } from '../ui/DashValue.tsx';
@@ -32,8 +34,10 @@ function usePastProposals() {
   const [talliesRead, setTalliesRead] = useState<'loading' | 'ok' | 'failed'>('loading');
   const [state, setState] = useState<{ loading: boolean; error?: string }>({ loading: true });
   const [attempt, setAttempt] = useState(0);
+  const gen = useRef(0);
   useEffect(() => {
     let on = true;
+    gen.current++;
     setItems([]);
     setTallies(new Map());
     setTalliesRead('loading');
@@ -66,7 +70,18 @@ function usePastProposals() {
       on = false;
     };
   }, [source, attempt]);
-  return { items, tallies, talliesRead, ...state, retry: () => setAttempt((n) => n + 1) };
+  // a tally read that failed stays failed until it is retried: only the missing tallies are read again, the list stays
+  const retryTallies = () => {
+    const missing = items.map((i) => i.value.govHash).filter((h) => !tallies.has(h));
+    if (!missing.length) return setTalliesRead('ok');
+    setTalliesRead('loading');
+    const g = gen.current;
+    source.tallies(missing).then(
+      (t) => g === gen.current && (setTallies((prev) => new Map([...prev, ...t])), setTalliesRead('ok')),
+      () => g === gen.current && setTalliesRead('failed'),
+    );
+  };
+  return { items, tallies, talliesRead, ...state, retry: () => setAttempt((n) => n + 1), retryTallies };
 }
 
 type View = 'payments' | 'proposals';
@@ -371,16 +386,47 @@ function OutcomeCell({ o, reading }: { o: Outcome | null; reading: boolean }) {
 function ProposalsView({ past, ledger, known }: { past: ReturnType<typeof usePastProposals>; ledger: Ledger; known: Proposal[] }) {
   const { checks, params, source, gov } = useApp();
   const [showFailed, setShowFailed] = useState(false);
+  const [query, setQuery] = useQueryState(readPast, writePast);
+  const ordered = useMemo(() => {
+    const found = past.items.filter((i) => matches(query.q, proposalFields(i.value)));
+    if (query.sort === 'ended' && query.dir === 'desc') return found;
+    const yes = (p: Proposal) => {
+      const t = past.tallies.get(p.govHash);
+      return t ? absoluteYes(t.value) : null;
+    };
+    const cmp = comparePast(query.sort, query.dir, yes);
+    return found.sort((a, b) => cmp(a.value, b.value));
+  }, [past.items, past.tallies, query]);
   const checksVersion = useSyncExternalStore(checks.subscribe, checks.getVersion);
   const parts = useMemo(
-    () => partitionByCheck(past.items, (i) => checks.state(i.value)),
+    () => partitionByCheck(ordered, (i) => checks.state(i.value)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [ordered, checks, checksVersion],
+  );
+  const failedAll = useMemo(
+    () => past.items.filter((i) => isFailed(checks.state(i.value))).length,
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [past.items, checks, checksVersion],
   );
   const rows = showFailed ? [...parts.shown, ...parts.failed] : parts.shown;
+  const searching = !!query.q.trim();
+  const clear = () => setQuery({ q: '' });
+  const header = (col: PastSort, text: string, className?: string) => {
+    const on = query.sort === col;
+    return (
+      <th scope="col" className={className} aria-sort={on ? (query.dir === 'asc' ? 'ascending' : 'descending') : undefined}>
+        <button type="button" className={`sort-head${on ? ' on' : ''}`} onClick={() => setQuery(nextPastSort(query, col))} data-testid={`sort-${col}`}>
+          {text}
+          <span className="sort-arrow" aria-hidden="true">
+            {on ? (query.dir === 'asc' ? '↑' : '↓') : '↕'}
+          </span>
+        </button>
+      </th>
+    );
+  };
   const { count, sentinel } = useReveal(rows.length, 20, () => {});
   const names = useMemo(() => countNames(past.items.map((i) => i.value)), [past.items]);
-  useEffect(() => checks.ensure(past.items.slice(0, count + 12).map((i) => i.value)), [checks, past.items, count]);
+  useEffect(() => checks.ensure(ordered.slice(0, count + 12).map((i) => i.value)), [checks, ordered, count]);
   const reads = useMemo(() => (ledger.slots ?? []).flatMap((s): SuperblockRead[] => (s.state === 'read' ? [s.read] : [])), [ledger.slots]);
   // outcomes wait for the superblocks: still to be found (the budget cycle names the last one), or still being read
   const reading = !ledger.unavailable && (ledger.slots ? ledger.slots.some((s) => s.state === 'reading') : !gov.cycle.error);
@@ -399,10 +445,24 @@ function ProposalsView({ past, ledger, known }: { past: ReturnType<typeof usePas
 
   return (
     <>
+      {(past.items.length > 0 || searching) && (
+        <div className="list-tools" role="search" aria-label="Past proposals">
+          <SearchField label="Search past proposals" placeholder="Search by name, URL or address" value={query.q} onChange={(q, replace) => setQuery({ q }, { replace })} />
+          {searching && !past.loading && !past.error && <ResultCount shown={rows.length} total={showFailed ? past.items.length : past.items.length - failedAll} what="past proposals" onClear={rows.length ? clear : undefined} />}
+        </div>
+      )}
       {past.error && (
-        <p className="error">
-          Platform could not be read: {past.error}{' '}
-          <button type="button" className="linkish dh-btn dh-btn--link" onClick={past.retry}>
+        <p className="error" role="alert">
+          Past proposals could not be loaded right now ({past.error}).{' '}
+          <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={past.retry} data-testid="past-retry">
+            Try again
+          </button>
+        </p>
+      )}
+      {!past.error && past.talliesRead === 'failed' && (
+        <p className="error" role="alert">
+          Their votes could not be loaded right now.{' '}
+          <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={past.retryTallies} data-testid="past-retry">
             Try again
           </button>
         </p>
@@ -416,18 +476,14 @@ function ProposalsView({ past, ledger, known }: { past: ReturnType<typeof usePas
         <table className="past dh-table dh-table--cards">
           <thead>
             <tr>
-              <th scope="col">Proposal</th>
-              <th scope="col">Ended</th>
-              <th scope="col" className="r">
-                Requested
-              </th>
+              {header('name', 'Proposal')}
+              {header('ended', 'Ended')}
+              {header('amount', 'Requested', 'r')}
               <th scope="col">Outcome</th>
               <th scope="col" className="r">
                 Received
               </th>
-              <th scope="col" className="r">
-                Net yes
-              </th>
+              {header('yes', 'Net yes', 'r')}
             </tr>
           </thead>
           <tbody>
@@ -478,8 +534,9 @@ function ProposalsView({ past, ledger, known }: { past: ReturnType<typeof usePas
         </table>
       )}
       <div ref={sentinel} className="sentinel" aria-hidden="true" />
-      {past.loading && <p className="muted small center">Loading…</p>}
-      {!past.loading && !past.error && rows.length > 0 && (
+      {searching && !past.loading && !past.error && past.items.length > 0 && rows.length === 0 && <NoMatches query={query.q} onClear={clear} />}
+      {past.loading && <p className="muted small center" role="status">Loading…</p>}
+      {!past.loading && !past.error && rows.length > 0 && !searching && (
         <p className="muted small center">
           That's all {formatInt(parts.shown.length)} past proposals Governance has on record. Outcomes come from the superblocks on the Payments view.
         </p>

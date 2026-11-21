@@ -1,17 +1,18 @@
 // @vitest-environment happy-dom
 // The Active list with a lame duck among the proposals: it leaves the main list and the counts, and sits in a collapsed section at
 // the end with a neutral state in place of the funding bars.
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import type { Cycle, Proposal, Sourced, Tally } from '../data/types.ts';
 import { GOV_PARAMS } from '../lib/governance.ts';
 import { deriveRow } from '../lib/view.ts';
 import { LAME_DUCK_EXPLAINER } from '../ui/LameDuck.tsx';
-import { button, click, render } from '../test/render.tsx';
+import { button, click, flush, render, type } from '../test/render.tsx';
 import type { ActiveRows } from '../app/context.tsx';
 
-const hold = vi.hoisted(() => ({ ctx: null as unknown }));
+const hold = vi.hoisted(() => ({ ctx: null as unknown, keyring: null as unknown }));
 vi.mock('../app/context.tsx', () => ({ useApp: () => hold.ctx }));
+vi.mock('../voting/KeyringContext.tsx', () => ({ useKeyring: () => hold.keyring }));
 vi.mock('../app/forum.tsx', () => ({ useForum: () => ({ forum: { reader: { profiles: async () => new Map() } } }) }));
 vi.mock('../ui/useCommentCounts.ts', () => ({ useCommentCounts: () => new Map() }));
 vi.mock('../ui/BudgetHeader.tsx', () => ({ BudgetHeader: () => null }));
@@ -46,6 +47,7 @@ function setup(): { rows: ActiveRows } {
   expect(duck.item.lameDuck).toBe(true);
   expect(multi.item.lameDuck).toBe(false);
   const rows: ActiveRows = { shown: [live, multi], lameDucks: [duck], failed: [] };
+  hold.keyring = { status: 'signed-out', mns: { owned: [] }, watched: [], currentVotes: async () => new Map() };
   hold.ctx = {
     gov: { active: { loading: false }, cycle: { data: cycle } },
     activeRows: rows,
@@ -56,12 +58,21 @@ function setup(): { rows: ActiveRows } {
   return { rows };
 }
 
-const page = () => (
-  <MemoryRouter>
+let at = '';
+function Where() {
+  const l = useLocation();
+  at = l.search;
+  return null;
+}
+const page = (url = '/') => (
+  <MemoryRouter initialEntries={[url]}>
     <ActivePage />
+    <Where />
   </MemoryRouter>
 );
 const titles = (el: ParentNode) => [...el.querySelectorAll('[data-testid="proposal-card"] .prow-title a')].map((a) => a.textContent);
+// each card's exact on-chain name (its title reads it as words)
+const slugs = (el: ParentNode) => [...el.querySelectorAll('[data-testid="proposal-card"] [data-testid="card-slug"]')].map((x) => x.textContent!.split(' · ')[0]);
 
 describe('ActivePage with a lame duck', () => {
   it('lists it only in a collapsed section after the live proposals', async () => {
@@ -109,5 +120,77 @@ describe('ActivePage with a lame duck', () => {
     (hold.ctx as { activeRows: ActiveRows }).activeRows = { ...rows, lameDucks: [] };
     const { el } = await render(page());
     expect(el.querySelector('[data-testid="lameduck-section"]')).toBeNull();
+  });
+});
+
+describe('ActivePage search, filter and sort', () => {
+  /** live-one (passing, 100 DASH), partly-paid (passing, 300 DASH), cheap-and-failing (10 DASH), and the lame duck */
+  function setupMany() {
+    const { rows } = setup();
+    const tallies = new Map([['weak', tally('weak', { yesWeighted: 10, noWeighted: 50 })]]);
+    const weak = { item: deriveRow(proposal('weak', 'cheap-and-failing', { startEpoch: NOW - DAY, endEpoch: NOW + 20 * DAY, paymentAmount: 10e8, url: 'https://example.org/bob-proposal' }), tallies, new Map(), cycle, GOV_PARAMS.mainnet, NOW), check: { status: 'passed' } as never };
+    rows.shown[1]!.item.p.value.paymentAmount = 300e8;
+    (hold.ctx as { activeRows: ActiveRows }).activeRows = { ...rows, shown: [...rows.shown, weak] };
+  }
+  const chip = (el: ParentNode, name: RegExp) => [...el.querySelectorAll<HTMLLabelElement>('.list-chip')].find((l) => name.test(l.textContent ?? ''))!;
+
+  it('filters by status from the URL, with counts on the chips and a way back', async () => {
+    setupMany();
+    const { el } = await render(page('/?status=failing'));
+    expect(slugs(el)).toEqual(['cheap-and-failing']);
+    expect(chip(el, /^All/).textContent).toBe('All 3');
+    expect(chip(el, /^Passing/).textContent).toBe('Passing 2');
+    expect(chip(el, /^Not passing/).className).toContain('on');
+    // a status filter leaves the finished proposals out
+    expect(el.querySelector('[data-testid="lameduck-section"]')).toBeNull();
+    expect(el.querySelector('[data-testid="list-count"]')!.textContent).toContain('1 of 3 proposals');
+    await click(el.querySelector<HTMLButtonElement>('[data-testid="list-clear"]')!);
+    expect(at).toBe('');
+    expect(slugs(el)).toEqual(['live-one', 'partly-paid', 'cheap-and-failing']);
+  });
+
+  it('search matches name or URL words in any order, writes ?q= and says when nothing matches', async () => {
+    setupMany();
+    const { el } = await render(page());
+    const input = el.querySelector<HTMLInputElement>('[data-testid="list-search"]')!;
+    expect(input.closest('label')!.textContent).toContain('Search active proposals');
+    await type(input, 'proposal bob');
+    expect(at).toBe('?q=proposal+bob');
+    expect(slugs(el)).toEqual(['cheap-and-failing']);
+    await type(input, 'pshenmic');
+    // only a finished proposal matches: its section opens by itself
+    expect(slugs(el)).toEqual(['pshenmic-dev-dash-desktop-november-2026']);
+    await type(input, 'nothing-like-this');
+    expect(el.querySelector('[data-testid="list-no-matches"]')!.textContent).toContain('No proposals match “nothing-like-this”');
+    await click(button(el.querySelector('[data-testid="list-no-matches"]')!, /Clear filters/));
+    expect(input.value).toBe('');
+    expect(slugs(el)).toEqual(['live-one', 'partly-paid', 'cheap-and-failing']);
+  });
+
+  it('sorts by amount and says what order the list is in', async () => {
+    setupMany();
+    const { el } = await render(page('/?sort=amount'));
+    expect(slugs(el)).toEqual(['partly-paid', 'live-one', 'cheap-and-failing']);
+    expect(el.textContent).toContain('Largest payment requested first.');
+    const select = el.querySelector<HTMLSelectElement>('[data-testid="list-sort"]')!;
+    expect(select.value).toBe('amount');
+  });
+
+  it('"Not voted yet" only for a signed-in masternode owner, and hides what their masternodes voted on', async () => {
+    setupMany();
+    const { el } = await render(page('/?unvoted=1'));
+    // signed out: no chip, and the filter in the URL changes nothing
+    expect(el.querySelector('[data-testid="filter-unvoted"]')).toBeNull();
+    expect(slugs(el)).toEqual(['live-one', 'partly-paid', 'cheap-and-failing']);
+
+    const mn = { collateralTxid: 'CC', collateralIndex: 0 };
+    const currentVotes = vi.fn(async () => new Map([[`cc-0|live`, { outcome: 1, time: 1 }]]));
+    hold.keyring = { status: 'open', mns: { owned: [mn] }, watched: [{ govHash: 'weak', collateralTxid: 'cc', collateralIndex: 0, status: 'queued', refs: [] }], currentVotes };
+    const { el: el2 } = await render(page('/?unvoted=1'));
+    await flush();
+    expect(el2.querySelector<HTMLInputElement>('[data-testid="filter-unvoted"]')!.checked).toBe(true);
+    // live: voted on the network; weak: a vote on its way
+    expect(slugs(el2)).toEqual(['partly-paid']);
+    expect(currentVotes).toHaveBeenCalledWith(['live', 'multi', 'weak', 'duck']);
   });
 });

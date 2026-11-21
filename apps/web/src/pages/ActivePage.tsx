@@ -1,8 +1,6 @@
 import type { Profile } from '@govhub/forum';
 import { useRouteTitle } from '../app/title.ts';
-import { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { formatInt } from '../lib/format.ts';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { urlClaimIdentity } from '@govhub/verify';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
@@ -10,15 +8,23 @@ import { Link } from '../ui/Link.tsx';
 import { BudgetHeader } from '../ui/BudgetHeader.tsx';
 import { FailedProposalsToggle } from '../ui/HiddenToggle.tsx';
 import { LameDuckSection } from '../ui/LameDuck.tsx';
+import { PendingProposals } from '../proposal/Pending.tsx';
 import { ProposalCard } from '../ui/ProposalCard.tsx';
 import { ProposalTabs } from '../ui/ProposalTabs.tsx';
 import { useReveal } from '../ui/hooks.ts';
 import { useCommentCounts } from '../ui/useCommentCounts.ts';
-import { countNames, proposalHref, proposalMatches, type Checked, type Row } from '../lib/view.ts';
+import { useDpnsNames } from '../ui/useDpnsNames.ts';
+import { countNames, proposalHref, type Checked, type Row } from '../lib/view.ts';
 import { onlyUnreached, unfinishedReason } from '../lib/netError.ts';
 import { ownerPageOf, useOwnerPages } from '../lib/ownerPages.ts';
 import { OwnerWordsNote } from '../ui/OwnerPage.tsx';
 import { SlowRead } from '../ui/SlowRead.tsx';
+import { ACTIVE_SORT_LABEL, ACTIVE_SORT_NOTE, ACTIVE_SORTS, compareActive, isPassing, matches, proposalFields, readActive, STATUS_LABEL, STATUSES, statusOk, writeActive, type Status } from '../lib/listQuery.ts';
+import { authorLabel } from '../lib/social.ts';
+import { ChipChoice, ChipToggle, NoMatches, ResultCount, SearchField, SortSelect, useQueryState } from '../ui/ListControls.tsx';
+import { useUnvoted } from '../ui/useUnvoted.ts';
+
+const SORT_OPTIONS = ACTIVE_SORTS.map((value) => ({ value, text: ACTIVE_SORT_LABEL[value] }));
 
 /** Display names of these identities (self-chosen profiles), for the owners named in proposal URLs. */
 function useProfiles(ids: readonly string[]): ReadonlyMap<string, Profile> {
@@ -86,48 +92,70 @@ function UncheckedNote({ rows }: { rows: readonly Checked<Row>[] }) {
 export function ActivePage() {
   useRouteTitle('/');
   const { gov, activeRows, registry } = useApp();
+  const { moderation } = useForum();
   const [showFailed, setShowFailed] = useState(false);
-  const [showLameDucks, setShowLameDucks] = useState(false);
+  // null: closed, but opened by itself when only finished proposals match a filter
+  const [lameDucksOpen, setLameDucksOpen] = useState<boolean | null>(null);
+  const [query, setQuery] = useQueryState(readActive, writeActive);
   const all = useMemo(() => [...activeRows.shown, ...activeRows.failed], [activeRows]);
-  const [params, setParams] = useSearchParams();
-  const q = params.get('q') ?? '';
-  const sort = sortOf(params.get('sort'));
-  const setSort = (v: Sort) => {
-    const next = new URLSearchParams(params);
-    if (v === 'order') next.delete('sort');
-    else next.set('sort', v);
-    setParams(next, { replace: true });
-  };
-  const needle = q.trim().toLowerCase();
-  const setQ = (v: string) => {
-    const next = new URLSearchParams(params);
-    if (v) next.set('q', v);
-    else next.delete('q');
-    setParams(next, { replace: true });
-  };
   const listed = showFailed ? all : activeRows.shown;
   const ownerPages = useOwnerPages();
-  // the titles the cards show: only for a proposal that matches its hash and passed its checks
-  const find = (r: Checked<Row>) => proposalMatches(r.item.p.value, needle, r.item.content.ok && r.check.status !== 'failed' ? ownerPageOf(ownerPages, r.item.p.value)?.title : null);
-  const rows = useMemo(() => sorted(needle ? listed.filter(find) : listed, sort), [listed, needle, sort, ownerPages]);
-  // a search also finds the lame ducks, listed with the rest instead of behind their toggle
-  const lameDucks = useMemo(() => (needle ? activeRows.lameDucks.filter(find) : activeRows.lameDucks), [activeRows.lameDucks, needle, ownerPages]);
-  const names = useMemo(() => countNames([...all, ...activeRows.lameDucks].map((r) => r.item.p.value)), [all, activeRows.lameDucks]);
-  // 12 rows first; the rest in one go once the reader scrolls (rows are tall, so small steps would stall the observer). Search results all show.
-  const { count, sentinel, more: moreToReveal } = useReveal(rows.length, 40, undefined, 12);
-  const more = moreToReveal && !needle;
-  const shown = useMemo(() => (needle ? rows : rows.slice(0, count)), [rows, count, needle]);
-  // the lame ducks are few and listed once the reader opens them; their comment counts and owners are read with the rest
+  const everyRow = useMemo(() => [...all, ...activeRows.lameDucks], [all, activeRows.lameDucks]);
+  const names = useMemo(() => countNames(everyRow.map((r) => r.item.p.value)), [everyRow]);
+  // owners of every listed proposal (not only the revealed cards): a search finds proposals by their owner's name
+  const owners = useMemo(
+    () => new Map(everyRow.map(({ item: r }) => [r.p.value.govHash, r.content.ok ? urlClaimIdentity(r.p.value.url, r.p.value.name, registry.forum.claimPortals) : null])),
+    [everyRow, registry.forum.claimPortals],
+  );
+  const ownerIds = useMemo(() => [...owners.values()].filter((x): x is string => !!x), [owners]);
+  const profiles = useProfiles(ownerIds);
+  const ownerNames = useDpnsNames(ownerIds);
+  const shownOwner = useCallback(
+    (govHash: string) => {
+      const owner = owners.get(govHash) ?? null;
+      return owner && !moderation.index.identityHidden(owner) ? owner : null; // on a block list: no name, as on the proposal page
+    },
+    [owners, moderation],
+  );
+
+  const hashes = useMemo(() => everyRow.map((r) => r.item.p.value.govHash), [everyRow]);
+  const unvoted = useUnvoted(query.unvoted, hashes);
+  const unvotedOn = query.unvoted && unvoted.available;
+  const filtering = !!query.q.trim() || query.status !== 'all' || unvotedOn;
+  const view = useMemo(() => {
+    const keep = ({ item: r, check }: Checked<Row>) => {
+      if (unvotedOn && unvoted.voted?.has(r.p.value.govHash)) return false;
+      const owner = shownOwner(r.p.value.govHash);
+      const label = owner ? authorLabel(owner, profiles.get(owner), ownerNames.get(owner)) : null;
+      // the title the card shows: only for a proposal that matches its hash and passed its checks
+      const title = r.content.ok && check.status !== 'failed' ? ownerPageOf(ownerPages, r.p.value)?.title : null;
+      return matches(query.q, proposalFields(r.p.value, [label?.dpns, label?.name, title]));
+    };
+    const sort = compareActive(query.sort);
+    const ordered = (xs: Checked<Row>[]) => (query.sort === 'rank' ? xs : xs.sort((a, b) => sort(a.item, b.item)));
+    const matching = listed.filter(keep);
+    const passing = matching.filter((x) => isPassing(x.item)).length;
+    return {
+      counts: { all: matching.length, passing, failing: matching.length - passing } satisfies Record<Status, number>,
+      rows: ordered(matching.filter((x) => statusOk(x.item, query.status))),
+      // finished proposals are neither passing nor not passing in any way that matters: a status filter leaves them out
+      lameDucks: query.status === 'all' ? ordered(activeRows.lameDucks.filter(keep)) : [],
+    };
+  }, [listed, activeRows.lameDucks, query, unvotedOn, unvoted.voted, shownOwner, profiles, ownerNames, ownerPages]);
+  const { rows, lameDucks } = view;
+  const clear = () => setQuery({ q: '', status: 'all', unvoted: false });
+  const duckOpen = lameDucksOpen ?? (filtering && rows.length === 0);
+
+  // 12 rows first; the rest in one go once the reader scrolls (rows are tall, so small steps would stall the observer)
+  const { count, sentinel, more } = useReveal(rows.length, 40, undefined, 12);
+  const shown = useMemo(() => rows.slice(0, count), [rows, count]);
+  // the lame ducks are few and listed once the reader opens them; their comment counts are read with the rest
   const cards = useMemo(() => [...shown, ...lameDucks], [shown, lameDucks]);
   const counts = useCommentCounts(useMemo(() => cards.map((r) => r.item.p.value.govHash), [cards]));
-  const owners = useMemo(
-    () => new Map(cards.map(({ item: r }) => [r.p.value.govHash, r.content.ok ? urlClaimIdentity(r.p.value.url, r.p.value.name, registry.forum.claimPortals) : null])),
-    [cards, registry.forum.claimPortals],
-  );
-  const profiles = useProfiles([...owners.values()].filter((x): x is string => !!x));
   const failed = activeRows.failed.length;
   function card({ item: r, check }: Checked<Row>) {
     const owner = owners.get(r.p.value.govHash) ?? null;
+    const named = shownOwner(r.p.value.govHash);
     return (
       <ProposalCard
         key={r.p.value.govHash}
@@ -136,7 +164,8 @@ export function ActivePage() {
         href={proposalHref(r.p.value, names)}
         comments={counts.get(r.p.value.govHash)}
         urlOwner={owner}
-        ownerProfile={owner ? profiles.get(owner) : undefined}
+        ownerProfile={named ? profiles.get(named) : undefined}
+        ownerDpns={named ? ownerNames.get(named) : undefined}
       />
     );
   }
@@ -148,56 +177,71 @@ export function ActivePage() {
         <div className="list-head">
           <div className="dh-section__head gov-section-head">
             <h2 className="dh-section__title">Proposals <OwnerWordsNote proposals={cards.map((r) => r.item.p.value)} /></h2>
-            <p className="small muted" data-testid="list-order-note">{SORTS.find((x) => x.id === sort)!.note}</p>
+            <p className="small muted" data-testid="list-order-note">{ACTIVE_SORT_NOTE[query.sort]}</p>
             <Link to="/treasury" className="dh-link dh-link--go">Treasury history</Link>
           </div>
-          <div className="list-tools">
-            <ProposalTabs />
-            <label className="contests-search proposal-search dh-field__label">
-              <span className="visually-hidden">Find a proposal by name, title, payee address or website</span>
-              <input className="dh-input" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a proposal" autoComplete="off" spellCheck={false} data-testid="proposal-search" />
-            </label>
-            <label className="list-sort dh-field__label">
-              <span>Sort</span>
-              <select className="dh-input dh-select" value={sort} onChange={(e) => setSort(sortOf(e.target.value))} data-testid="proposal-sort">
-                {SORTS.map((x) => (
-                  <option key={x.id} value={x.id}>
-                    {x.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          {needle && (
-            <p className="small muted proposal-search-count" role="status" data-testid="proposal-search-count">
-              {rows.length + lameDucks.length === 0
-                ? `No active proposal matches “${q.trim()}”.`
-                : `${formatInt(rows.length + lameDucks.length)} of ${formatInt(listed.length + activeRows.lameDucks.length)} active proposals match “${q.trim()}”.`}
-            </p>
-          )}
+          <ProposalTabs />
         </div>
-        <UncheckedNote rows={[...all, ...activeRows.lameDucks]} />
+        <PendingProposals />
+        {everyRow.length > 0 && (
+          <div className="list-tools" role="search" aria-label="Active proposals">
+            <SearchField label="Search active proposals" placeholder="Search by name, owner or address" value={query.q} onChange={(q, replace) => setQuery({ q }, { replace })} />
+            <div className="list-tools-row">
+              <ChipChoice
+                name="status"
+                label="Funding status"
+                value={query.status}
+                onChange={(status) => setQuery({ status })}
+                options={STATUSES.map((value) => ({
+                  value,
+                  text: (
+                    <>
+                      {STATUS_LABEL[value]} <span className="count">{view.counts[value]}</span>
+                    </>
+                  ),
+                }))}
+              />
+              {unvoted.available && (
+                <ChipToggle checked={query.unvoted} onChange={(v) => setQuery({ unvoted: v })} title="Only proposals none of your masternodes has voted on" testId="filter-unvoted">
+                  Not voted yet
+                </ChipToggle>
+              )}
+              <SortSelect value={query.sort} options={SORT_OPTIONS} onChange={(sort) => setQuery({ sort })} />
+            </div>
+            {unvotedOn && unvoted.loading && (
+              <p className="small muted" role="status">
+                <span className="spinner" aria-hidden="true" /> Reading your masternodes' votes…
+              </p>
+            )}
+            {unvotedOn && unvoted.error && <p className="small error">Your votes couldn't be read, so every proposal is listed: {unvoted.error}</p>}
+            <ResultCount active={filtering} shown={rows.length} total={listed.length} what="proposals" onClear={rows.length + lameDucks.length ? clear : undefined} />
+          </div>
+        )}
+        <UncheckedNote rows={everyRow} />
         {(gov.active.loading || gov.talliesLoading || gov.cycle.loading) && <SlowRead />}
-        {gov.active.loading && rows.length === 0 ? (
+        {gov.active.loading && all.length === 0 ? (
           <div className="plist" aria-busy="true">
             {Array.from({ length: 6 }, (_, i) => (
               <div key={i} className="prow prow-skeleton" />
             ))}
           </div>
-        ) : rows.length === 0 && !needle ? (
-          // an unread list is not an empty one: the banner above says the read failed
-          gov.active.error && !gov.active.data ? null : <p className="empty dh-empty">No active proposals right now.</p>
-        ) : rows.length + lameDucks.length === 0 ? null : (
+        ) : rows.length === 0 ? (
+          !filtering ? (
+            // an unread list is not an empty one: the banner above says the read failed
+            gov.active.error && !gov.active.data ? null : <p className="empty dh-empty">No active proposals right now.</p>
+          ) : lameDucks.length === 0 ? (
+            <NoMatches query={query.q} onClear={clear} />
+          ) : null
+        ) : (
           <div className="plist plist-proposals">
             <div className="plist-columns" aria-hidden="true"><span>Proposal</span><span>Requests</span><span>Standing</span><span>Votes</span></div>
             {shown.map(card)}
-            {needle && lameDucks.map(card)}
           </div>
         )}
         <div ref={sentinel} className="sentinel" aria-hidden="true" />
         {more && <p className="muted small center">Scroll for more</p>}
-        {!more && !needle && (
-          <LameDuckSection count={lameDucks.length} open={showLameDucks} onToggle={() => setShowLameDucks((v) => !v)}>
+        {!more && (
+          <LameDuckSection count={lameDucks.length} open={duckOpen} onToggle={() => setLameDucksOpen(!duckOpen)}>
             {lameDucks.map(card)}
           </LameDuckSection>
         )}

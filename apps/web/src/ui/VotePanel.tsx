@@ -98,8 +98,11 @@ function trackedFor(watched: readonly WatchedVote[], govHashes: ReadonlySet<stri
     .sort((a, b) => (b.signedAt ?? b.time) - (a.signedAt ?? a.time));
 }
 
-/** `onlyMn`: start with just this masternode selected (when the keyring has it), e.g. from a masternode's own page. */
-export function VoteComposer({ proposals, onVerify, onlyMn }: { proposals: Proposal[]; onVerify?: () => void; onlyMn?: string }) {
+/**
+ * `onlyMn`: start with just this masternode selected (when the keyring has it), e.g. from a masternode's own page.
+ * `tracks`: follow the votes sent from here below the button (off where the page lists every vote anyway).
+ */
+export function VoteComposer({ proposals, onVerify, onlyMn, tracks = true }: { proposals: Proposal[]; onVerify?: () => void; onlyMn?: string; tracks?: boolean }) {
   const k = useKeyring();
   const deadline = useDeadline();
   const labels = useLabels();
@@ -151,7 +154,7 @@ export function VoteComposer({ proposals, onVerify, onlyMn }: { proposals: Propo
         ) : k.mns.phase === 'error' ? (
           <p className="error">Your masternodes could not be looked up: {k.mns.error}</p>
         ) : (
-          <p>None of your keyring’s masternodes can vote ({k.keyring?.content.keys.length ? 'none found for your keys, or all PoSe-banned' : 'no voting keys yet'}).</p>
+          <p>None of your keyring’s masternodes can vote ({k.keyring?.content.keys.length ? 'none found for your keys, or all banned by the network' : 'no voting keys yet'}).</p>
         )}
         <Link className="btn dh-btn btn-s dh-btn--sm" to="/masternodes">
           My masternodes
@@ -271,7 +274,7 @@ export function VoteComposer({ proposals, onVerify, onlyMn }: { proposals: Propo
           <span className="vcomp-change">Change</span>
         </summary>
         {usable.length > 1 && (
-          <label className="check vcomp-all dh-field__label">
+          <label className="check dh-check vcomp-all dh-field__label">
             <input type="checkbox" checked={chosen.length === usable.length} onChange={(e) => setSelected(e.target.checked ? null : new Set())} /> All masternodes
           </label>
         )}
@@ -296,7 +299,7 @@ export function VoteComposer({ proposals, onVerify, onlyMn }: { proposals: Propo
                     </span>
                     {pend && v && (
                       <span className="vmn-pend" data-testid="pending-vote">
-                        <span className="vmn-k">Sent</span> <OutcomeChip outcome={pend.outcome} muted /> <Badge tone={v.tone}>{v.badge}</Badge>
+                        <span className="vmn-k">Pending</span> <OutcomeChip outcome={pend.outcome} muted /> <Badge tone={v.tone}>{v.badge}</Badge>
                       </span>
                     )}
                   </div>
@@ -313,7 +316,7 @@ export function VoteComposer({ proposals, onVerify, onlyMn }: { proposals: Propo
             {repeats.length === 1
               ? `${mnName(repeats[0]!.intent.mn, labels)} ${repeats[0]!.same === 'pending' ? 'already has this vote on its way' : `already voted ${OUTCOME_NAME[repeats[0]!.intent.outcome].toUpperCase()}`}`
               : `${repeats.length} of these votes are already the current or pending vote`}
-            ; re-sending only updates the timestamp{repeats.some((r) => r.same === 'current') ? ' and restarts Core’s one-hour clock' : ''}.
+            ; re-sending only updates the timestamp{repeats.some((r) => r.same === 'current') ? ' and restarts the one-change-per-hour timer' : ''}.
             {differing.length > 0 && !resend && ' They are skipped.'}
           </p>
           <label className="check dh-check">
@@ -372,7 +375,7 @@ export function VoteComposer({ proposals, onVerify, onlyMn }: { proposals: Propo
         )}
         {hint && (
           <p className={`small ${currentError ? 'error' : 'muted'}`} id="vote-send-hint" data-testid="vote-send-hint">
-            {currentError ? `Your current votes could not be read from the governance data service (${currentError}); voting waits until they can.` : hint}
+            {currentError ? `Your current votes could not be read (${currentError}); voting waits until they can.` : hint}
           </p>
         )}
         {skipped.map((s) => (
@@ -385,7 +388,7 @@ export function VoteComposer({ proposals, onVerify, onlyMn }: { proposals: Propo
       {wins.map((w) => (
         <VoteSuccess key={w.voteHash} vote={w} name={mnName(w, labels)} proposalName={byHash.get(w.govHash)?.name ?? shortHash(w.govHash, 6)} {...(onVerify ? { onRecount: onVerify } : {})} />
       ))}
-      {tracked.length > 0 && (
+      {tracks && tracked.length > 0 && (
         <section className="vtracks" aria-label="Your votes on their way" data-testid="vote-tracks">
           {tracked.slice(0, 8).map((w) => (
             <VoteTracker key={w.voteHash} vote={w} name={`${mnName(w, labels)}${multi ? `, ${byHash.get(w.govHash)?.name ?? ''}` : ''}`} />

@@ -33,8 +33,23 @@ export function BudgetHeader() {
   if (!cycle) {
     return (
       <section className="budget gov-band dh-page-header" aria-label="Budget">
-        <BudgetTitle>Active proposals</BudgetTitle><p className="dh-page-header__lede">No budget has been published yet.</p>
-        <p className="muted small">{gov.cycle.error ? `Platform read failed: ${gov.cycle.error}` : 'The governance data service publishes one for every payout. Add a data service in Settings to see live numbers.'}</p>
+        <BudgetTitle>Active proposals</BudgetTitle>
+        {gov.cycle.error ? (
+          <>
+            <p className="dh-page-header__lede">The budget could not be loaded right now.</p>
+            <p className="muted small">
+              {gov.cycle.error}{' '}
+              <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={reload}>
+                Try again
+              </button>
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="dh-page-header__lede">No budget has been published yet.</p>
+            <p className="muted small">One is published for every payout. Add a governance data service in Settings to see live numbers.</p>
+          </>
+        )}
       </section>
     );
   }

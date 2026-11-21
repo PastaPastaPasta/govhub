@@ -1,10 +1,10 @@
 // What the wizard needs from the outside world, live (DAPI, the verification worker, relays, a bridge, Platform) or simulated for
 // the fixture demo (`?fixtures=1`: nothing leaves the browser, no money moves, a pretend payment and a pretend relay).
 import {
-  buildProposalCollateral, p2pkhScript, runCollateralFunding, sessionProposalDepositKey, type CollateralFundingRecord, type CollateralFundingView, type DepositKey, type DepositKeySource,
+  buildProposalCollateral, collateralFeeDuffs, MIN_COLLATERAL_DEPOSIT_DUFFS, p2pkhScript, runCollateralFunding, sessionProposalDepositKey, type CollateralFundingRecord, type CollateralFundingView, type DepositKey, type DepositKeySource,
 } from '@govhub/auth';
 import type { Dapi } from '@govhub/dapi';
-import { bytesToHex, checkCollateralTx, decodeAddress, GOVERNANCE_FEE_CONFIRMATIONS, hexToBytes, sha256d } from '@govhub/verify';
+import { bytesToHex, checkCollateralTx, decodeAddress, duffsToDash, GOVERNANCE_FEE_CONFIRMATIONS, GOVERNANCE_PROPOSAL_FEE_DUFFS, hexToBytes, sha256d } from '@govhub/verify';
 import type { Registry } from '../config/registry.ts';
 import { makeBridge } from '../data/bridgeFactory.ts';
 import { createWebDapi, dapiConfig } from '../data/dapi.ts';
@@ -13,7 +13,7 @@ import type { CoreNetwork, Proposal } from '../data/types.ts';
 import type { Step } from '../verify/collateral.ts';
 import { runVerification } from '../verify/client.ts';
 import type { DraftLock } from './draft.ts';
-import { HttpProposalRelay, type HeldProposalState, type ProposalRelayPort, type SubmitBody } from './relay.ts';
+import { HttpProposalRelay, relaysReadiness, type HeldProposalState, type ProposalRelayPort, type SubmitBody } from './relay.ts';
 
 export interface CollateralCheck {
   /**
@@ -51,6 +51,8 @@ export interface WizardServices {
   checkCollateral(lock: DraftLock, txid: string): Promise<CollateralCheck>;
   fundCollateral(o: FundCollateralOptions): Promise<{ txid: string }>;
   relays(): ProposalRelayPort[];
+  /** Whether at least one relay could submit a proposal now (checked before the fee is paid). */
+  relaysReady(): Promise<{ ok: true } | { ok: false; reason: string }>;
   /** Whether a bridge (another Core node) has the proposal; null when there is no bridge to ask. */
   seenByNetwork(govHash: string): Promise<boolean | null>;
   /** Whether the proposal is on Platform (govhub lists it). */
@@ -137,6 +139,7 @@ export function liveServices(source: DataSource): WizardServices {
     },
     fundCollateral: (o) => runCollateralFunding({ ...o, dapi: dapiFor(registry), network }),
     relays: () => relays,
+    relaysReady: async () => relaysReadiness(await Promise.all(relays.map((r) => r.ready(network)))),
     async seenByNetwork(govHash) {
       const d = source.bridgeDescriptor();
       if (!d) return null;
@@ -197,6 +200,9 @@ class DemoRelay implements ProposalRelayPort {
   async submitNow(): Promise<never> {
     throw new Error('the demo relay holds proposals');
   }
+  async ready() {
+    return { ok: true as const };
+  }
 }
 
 export function demoServices(network: CoreNetwork, o: { blockMs?: number; pollMs?: number } = {}): WizardServices {
@@ -216,8 +222,8 @@ export function demoServices(network: CoreNetwork, o: { blockMs?: number; pollMs
     },
     async fundCollateral({ record, key, save, signal, onUpdate }) {
       const view = (): CollateralFundingView => ({
-        state: record.state, address: record.address, uri: `dash:${record.address}?amount=1.00001`, neededDuffs: 100_001_000n, receivedDuffs: paid ? 120_000_000n : 0n, pendingDuffs: 0n,
-        remainingDuffs: paid ? 0n : 100_001_000n, lateDuffs: 0n, ...(record.tx ? { txid: record.tx.txid } : {}),
+        state: record.state, address: record.address, uri: `dash:${record.address}?amount=${duffsToDash(MIN_COLLATERAL_DEPOSIT_DUFFS)}`, neededDuffs: GOVERNANCE_PROPOSAL_FEE_DUFFS + collateralFeeDuffs(1), receivedDuffs: paid ? 120_000_000n : 0n, pendingDuffs: 0n,
+        remainingDuffs: paid ? 0n : MIN_COLLATERAL_DEPOSIT_DUFFS, lateDuffs: 0n, ...(record.tx ? { txid: record.tx.txid } : {}),
       });
       if (!record.tx) {
         save(record);
@@ -249,6 +255,7 @@ export function demoServices(network: CoreNetwork, o: { blockMs?: number; pollMs
       return { txid: record.tx!.txid };
     },
     relays: () => [relay],
+    relaysReady: async () => ({ ok: true }),
     async seenByNetwork(govHash) {
       // "seen" one poll after the relay submitted
       if (seen.has(govHash)) return true;

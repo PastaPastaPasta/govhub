@@ -1,10 +1,12 @@
 // A failed write as the user sees it: the message, and a Top up button when the reason is the identity's balance.
 import { useAuth } from '../auth/context.tsx';
 import { formatCredits } from '../lib/format.ts';
+import { WALLET_SESSION_ENDED_TEXT } from '../session/keyDisabled.ts';
 
 export function WriteError({ error, needsTopUp = false, onTopUp, inline = false }: { error: string | null; needsTopUp?: boolean; onTopUp?: () => void; inline?: boolean }) {
-  const { openSheet } = useAuth();
-  if (!error) return null;
+  const { openSheet, walletEnded } = useAuth();
+  // a revoked wallet session is said once, by the app-wide banner with its Reconnect button (app/Layout.tsx), while it shows
+  if (!error || (walletEnded && error === WALLET_SESSION_ENDED_TEXT)) return null;
   const Tag = inline ? 'span' : 'p'; // inline inside a <span> (the vote buttons)
   return (
     <Tag className="dh-error small" role="alert" data-testid="write-error">
@@ -35,7 +37,7 @@ export function LowBalance({ what, balance, needed }: { what: string; balance: b
   if (balance === null) return null;
   return (
     <p className="dh-error small" data-testid="low-balance">
-      Your balance is {formatCredits(balance)}, and {what} needs about {formatCredits(needed, true)} available. Top up the identity first.{' '}
+      Your balance is {formatCredits(balance)}, and {what} needs about {formatCredits(needed, true)} available. Top up your account first.{' '}
       <button type="button" className="btn dh-btn btn-s dh-btn--sm" data-testid="low-balance-topup" onClick={() => openSheet('topup')}>
         Top up
       </button>

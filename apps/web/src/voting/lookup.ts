@@ -47,9 +47,9 @@ export class LookupTimeout extends Error {
 }
 
 export const STEP_NAME: Record<LookupStep, string> = {
-  bridge: "reading the governance data service's masternode list",
-  sml: 'checking the masternode list with DAPI evonodes',
-  protx: 'proving each collateral from its registration transaction',
+  bridge: 'reading the masternode list',
+  sml: 'double-checking the masternode list with the network',
+  protx: 'checking each masternode’s registration',
 };
 
 /** Runs `fn` with a signal that aborts after `ms` or when `outer` aborts; rejects with LookupTimeout on the deadline. */

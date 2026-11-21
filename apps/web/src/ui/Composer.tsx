@@ -1,6 +1,6 @@
 // Comment editor: markdown with a live preview, the UTF-8 byte budget (5,000 B), the fee estimate and the balance
 // it will be paid from, shown before anything is signed.
-import { useState, type FormEvent } from 'react';
+import { useId, useState, type FormEvent } from 'react';
 import { commentCost, COMMENT_MAX_BYTES, isBlank, upfrontRequired } from '@govhub/forum';
 import { useForum } from '../app/forum.tsx';
 import { formatCredits, formatInt } from '../lib/format.ts';
@@ -11,8 +11,21 @@ import { LowBalance, WriteError } from './WriteError.tsx';
 
 const enc = new TextEncoder();
 
-export function Composer({ onSubmit, onCancel, label, autoFocus = false }: { onSubmit(body: string): Promise<void>; onCancel?: () => void; label: string; autoFocus?: boolean }) {
+export function Composer({
+  onSubmit,
+  onCancel,
+  label,
+  hint,
+  autoFocus = false,
+}: {
+  onSubmit(body: string): Promise<void>;
+  onCancel?: () => void;
+  label: string;
+  hint?: string;
+  autoFocus?: boolean;
+}) {
   const { balance } = useForum();
+  const hintId = useId();
   const [body, setBody] = useState('');
   const [preview, setPreview] = useState(false);
   const { busy, error, needsTopUp, run } = useAction();
@@ -36,6 +49,11 @@ export function Composer({ onSubmit, onCancel, label, autoFocus = false }: { onS
   };
   return (
     <form className="composer" onSubmit={submit}>
+      {hint && (
+        <p className="muted small" id={hintId} data-testid="composer-hint">
+          {hint}
+        </p>
+      )}
       <div className="composer-tabs dh-tabs" role="group" aria-label="Editor mode">
         <button type="button" className={`btn dh-btn btn-quiet dh-btn--quiet ${preview ? '' : 'on'}`} aria-pressed={!preview} onClick={() => setPreview(false)}>
           Write
@@ -49,11 +67,11 @@ export function Composer({ onSubmit, onCancel, label, autoFocus = false }: { onS
           <Markdown text={body} />
         </div>
       ) : (
-        <textarea className="dh-textarea" aria-label={label} value={body} onChange={(e) => (setBody(e.target.value), setPosted(false))} rows={4} placeholder="Markdown: **bold**, _italic_, `code`, links, lists, > quotes. No HTML, images are shown as links." autoFocus={autoFocus} />
+        <textarea className="dh-textarea" aria-label={label} aria-describedby={hint ? hintId : undefined} value={body} onChange={(e) => (setBody(e.target.value), setPosted(false))} rows={4} placeholder="Formatting: **bold**, _italic_, `code`, links, lists, > quotes. HTML is not shown; images appear as links." autoFocus={autoFocus} />
       )}
       <div className="composer-foot">
         <p className={`small ${over ? 'error' : 'muted'}`} data-testid="composer-meta">
-          {formatInt(bytes)} / {formatInt(COMMENT_MAX_BYTES)} bytes · costs about <b>{formatCredits(cost, true)}</b> · needs about <b>{formatCredits(required, true)}</b> available · your balance {balance === null ? '…' : formatCredits(balance)}
+          {bytes > COMMENT_MAX_BYTES * 0.8 && `${formatInt(bytes)} / ${formatInt(COMMENT_MAX_BYTES)} bytes · `}costs about <b>{formatCredits(cost, true)}</b> · your balance {balance === null ? '…' : formatCredits(balance)}
         </p>
         <div className="form-actions">
           {onCancel && (
@@ -62,15 +80,16 @@ export function Composer({ onSubmit, onCancel, label, autoFocus = false }: { onS
             </button>
           )}
           <button type="submit" className="btn dh-btn btn-primary dh-btn--primary" disabled={busy || blank || over || poor}>
-            {busy ? 'Signing and broadcasting…' : label}
+            {busy ? 'Posting…' : label}
           </button>
         </div>
       </div>
       {poor && <LowBalance what="this comment" balance={balance} needed={required} />}
-      <WriteError error={error} needsTopUp={needsTopUp} />
+      {/* the low-balance line above already offers Top up */}
+      <WriteError error={error} needsTopUp={needsTopUp && !poor} />
       {posted && !busy && !error && (
         <p className="notice small" role="status" data-testid="composer-posted">
-          Posted. It is on Platform; there is no need to post it again.
+          Posted. There is no need to post it again.
         </p>
       )}
     </form>

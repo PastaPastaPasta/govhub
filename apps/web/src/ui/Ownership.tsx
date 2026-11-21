@@ -9,11 +9,12 @@ import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { attestorsFor } from '../config/registry.ts';
 import type { Proposal } from '../data/types.ts';
-import { errText, formatCredits, formatInt, shortHash } from '../lib/format.ts';
+import { errText, formatCredits, formatInt, shortAddress } from '../lib/format.ts';
 import type { TrustLevel } from '../verify/aggregate.ts';
 import type { CollateralVerdict } from '../verify/collateral.ts';
 import { HiddenToggle, plural } from './HiddenToggle.tsx';
-import { AuthorName, Avatar } from './Identity.tsx';
+import { AuthorName, Avatar, IdentityName } from './Identity.tsx';
+import { useDpnsNames } from './useDpnsNames.ts';
 import { Markdown } from './Markdown.tsx';
 import { openSignIn } from './SignIn.tsx';
 import { costText, isShort } from '../voting/funds.ts';
@@ -78,18 +79,20 @@ const OWNER_HOW: Record<1 | 2 | 3 | 4, string> = {
 /** Profile and DPNS name of one identity, for the owner line. */
 function useIdentityNames(id: string | null) {
   const { forum } = useForum();
-  const [state, setState] = useState<{ id: string; profile: Profile | undefined; dpns: string | undefined } | null>(null);
+  const dpns = useDpnsNames([id]);
+  const [state, setState] = useState<{ id: string; profile: Profile | undefined } | null>(null);
   useEffect(() => {
     if (!id) return;
     let live = true;
-    Promise.all([forum.reader.profiles([id]).catch(() => new Map<string, Profile>()), forum.names([id]).catch(() => new Map<string, string>())]).then(([p, n]) => {
-      if (live) setState({ id, profile: p.get(id), dpns: n.get(id) });
-    });
+    forum.reader.profiles([id]).then(
+      (p) => live && setState({ id, profile: p.get(id) }),
+      () => live && setState({ id, profile: undefined }),
+    );
     return () => {
       live = false;
     };
   }, [forum, id]);
-  return state?.id === id ? state : null;
+  return id && state?.id === id ? { ...state, dpns: dpns.get(id) } : null;
 }
 
 /**
@@ -159,7 +162,7 @@ export function RejectedClaims({ own }: { own: Ownership }) {
         <ul className="invalid-note">
           {outranked.map((c) => (
             <li key={c.docId ?? `${c.method}:${c.identityId}`} data-testid="claim-outranked">
-              <span className="chip">Valid, outranked</span> <span className="mono-ish">{shortHash(c.identityId, 4)}</span> ({CLAIM_METHOD_LABEL[c.method]}): {c.detail}; the owner's claim ranks higher
+              <span className="chip">Valid, outranked</span> <IdentityName id={c.identityId} /> ({CLAIM_METHOD_LABEL[c.method]}): {c.detail}; the owner's claim ranks higher
               (claims rank by method, then by age).
             </li>
           ))}
@@ -167,7 +170,7 @@ export function RejectedClaims({ own }: { own: Ownership }) {
             const chip = rejectedChip(r.reason);
             return (
               <li key={r.docId} data-testid={chip.bad ? 'claim-failed' : 'claim-unchecked'}>
-                <span className={`chip ${chip.bad ? 'chip-bad' : ''}`}>{chip.text}</span> <span className="mono-ish">{shortHash(r.ownerId, 4)}</span> (
+                <span className={`chip ${chip.bad ? 'chip-bad' : ''}`}>{chip.text}</span> <IdentityName id={r.ownerId} /> (
                 {CLAIM_METHOD_LABEL[r.method as keyof typeof CLAIM_METHOD_LABEL] ?? `method ${r.method}`}): {r.reason}
               </li>
             );
@@ -221,7 +224,7 @@ export function ClaimPanel({ p, own, collateral }: { p: Proposal; own: Ownership
 
   return (
     <details className="claim-panel dh-disclosure" data-testid="claim-panel">
-      <summary>{o ? 'Claim this proposal (a stronger claim outranks the current one)' : 'Are you the proposal owner? Claim it'}</summary>
+      <summary>{o ? 'Claim this proposal (a stronger claim outranks the current one)' : 'Are you the proposal owner? Claim ownership to write the description'}</summary>
       <div className="claim-body">
         <p className="small">
           A claim links the proposal to your identity: your comments get the owner label and you can publish the description shown here. The strongest proof wins: an identity
@@ -335,7 +338,7 @@ function AcceptNaming({ p, own, poor }: { p: Proposal; own: Ownership; poor: boo
       {poor && <LowBalance what="the claim" balance={balance} needed={COSTS.claim} />}
       <p className="form-actions">
         <button type="button" className="btn dh-btn btn-primary dh-btn--primary" disabled={busy || poor || done} onClick={accept} data-testid="accept-naming-button">
-          {busy ? 'Signing and broadcasting…' : done ? 'Accepted. Checking it…' : 'Accept ownership'}
+          {busy ? 'Accepting…' : done ? 'Accepted. Checking it…' : 'Accept ownership'}
         </button>
       </p>
       <WriteError error={error} needsTopUp={needsTopUp} />
@@ -432,7 +435,7 @@ export function OwnerPost({ govHash, ownerId, post, trustLevel = 'verified' }: {
       {!s.post && !editing && <h2 id="post-title" className="visually-hidden">Owner's description</h2>}
       {isOwner && !editing && (
         <p>
-          <button type="button" className="btn dh-btn" onClick={() => setEditing(true)}>
+          <button type="button" className={s.post ? 'btn dh-btn' : 'btn dh-btn btn-primary dh-btn--primary'} onClick={() => setEditing(true)}>
             {s.post ? 'Edit the description' : 'Write a description for this proposal'}
           </button>
         </p>
@@ -513,7 +516,7 @@ function PostEditor({ govHash, existing, initialBody, onDone }: { govHash: strin
       <WriteError error={error} needsTopUp={needsTopUp} />
       <div className="form-actions">
         <button type="submit" className="btn dh-btn btn-primary dh-btn--primary" disabled={busy || poor || !title.trim() || !packed || !('chunks' in packed)}>
-          {busy ? 'Signing and broadcasting…' : 'Publish description'}
+          {busy ? 'Publishing…' : 'Publish description'}
         </button>
         <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet" onClick={() => onDone()}>
           Cancel

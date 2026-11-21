@@ -11,7 +11,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { base58, base64 } from '@scure/base';
 import { signMessageWif } from '@govhub/verify';
 import { connect, spikeIdentity } from '../scripts/live-lib.ts';
-import { cspViolations, watchPage } from './helpers.ts';
+import { cspViolations, watchPage, otherWay } from './helpers.ts';
 
 test.skip(!process.env.GOVHUB_LIVE, 'set GOVHUB_LIVE=1 to write to testnet');
 
@@ -34,10 +34,10 @@ async function signIn(page: Page, who: Who) {
   await page.getByTestId('session-button').click();
   const sheet = page.getByRole('dialog', { name: 'Sign in to govhub' });
   if ('phrase' in who) {
-    await sheet.getByRole('button', { name: /I have a recovery phrase/ }).click();
+    await otherWay(sheet, /I have a recovery phrase/);
     await page.getByTestId('phrase-input').fill(who.phrase);
   } else {
-    await sheet.getByRole('button', { name: /Paste a key/ }).click();
+    await otherWay(sheet, /Paste a key/);
     await page.getByTestId('key-input').fill(who.highKeyHex);
   }
   await page.locator('dialog.sheet').getByRole('button', { name: 'Sign in', exact: true }).click();
@@ -80,7 +80,7 @@ test('@live forum on testnet: comment, reply, react, flip, block, unblock, retra
   const stamp = new Date().toISOString();
   const text = `govhub live e2e ${stamp}: comment`;
   await d.getByRole('textbox', { name: 'Post comment' }).fill(`${text} with **markdown**`);
-  await expect(d.getByTestId('composer-meta').first()).toContainText(/costs about 0\.000\d+ DASH · needs about 0\.00\d+ DASH available · your balance 0\.\d+ DASH/);
+  await expect(d.getByTestId('composer-meta').first()).toContainText(/costs about 0\.000\d+ DASH · your balance 0\.\d+ DASH/);
   await d.getByRole('button', { name: 'Post comment' }).click();
   const c1 = comment(page, text);
   await expect(c1).toBeVisible(WRITE);

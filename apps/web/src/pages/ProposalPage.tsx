@@ -6,7 +6,7 @@ import { useNow } from '../ui/vote/common.tsx';
 import { formatUtc } from '../data/price.ts';
 import { Slug } from '../ui/Slug.tsx';
 import { useTitle } from '../app/title.ts';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useParams } from 'react-router-dom';
 import { Link } from '../ui/Link.tsx';
 import { urlClaimIdentity } from '@govhub/verify';
@@ -43,7 +43,8 @@ export function ProposalByHash() {
   const { hash = '' } = useParams();
   const { source } = useApp();
   const [attempt, setAttempt] = useState(0); // Retry re-runs the read in place: no reload, so memory-only keys stay
-  const load = useAsync(() => (/^[0-9a-fA-F]{64}$/.test(hash) ? source.proposal(hash.toLowerCase()) : Promise.resolve(null)), [source, hash, attempt]);
+  const h = /^[0-9a-fA-F]{64}$/.test(hash) ? hash.toLowerCase() : null;
+  const load = useAsync(() => (h ? source.proposal(h) : Promise.resolve(null)), [source, h, attempt]);
   if (load.loading) return <Loading />;
   if (load.error) return <ReadError error={load.error} what="Platform" lead="The proposal could not be read" onRetry={() => setAttempt((n) => n + 1)} />;
   if (!load.data) return <NotFound by={{ hash: hash.toLowerCase() }} />;
@@ -219,6 +220,17 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
   const ownerId = own.verdict?.owner?.identityId ?? null;
   const post = useOwnerPost(p.govHash, ownerId);
   const featured = useMemo(() => proposalOwner(ownerId), [ownerId]);
+  // Known to be unclaimed (owner read and collateral check done, as the latter can reveal a method-3 owner; not a failed read): the
+  // claim is how anyone gets to write the description, so it sits where the description goes rather than in the sidebar. The place is
+  // decided once per proposal and shown only then, since a form moved mid-edit (a recheck, a late owner) would reset.
+  const settled = !own.loading && (!!trust.collateral.verdict || !!trust.collateral.error);
+  const unclaimed = settled && !own.error && !ownerId;
+  const [claimPlace, setClaimPlace] = useState<{ govHash: string; about: boolean } | null>(null);
+  useEffect(() => {
+    if (settled && claimPlace?.govHash !== p.govHash) setClaimPlace({ govHash: p.govHash, about: unclaimed });
+  }, [settled, unclaimed, claimPlace, p.govHash]);
+  const claimAbout = claimPlace?.govHash === p.govHash ? claimPlace.about : null;
+  const claim = <ClaimPanel p={p} own={own} collateral={trust.collateral.verdict} />;
 
   const t = row.tally?.value;
   const active = p.endEpoch > now;
@@ -529,10 +541,15 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
                 )}
               </section>
             </div>
+            {claimAbout === true && claim}
           </section>
 
           <ErrorBoundary what="discussion">
-            <Discussion govHash={p.govHash} featured={featured} />
+            <Discussion
+              govHash={p.govHash}
+              featured={featured}
+              composerNote={unclaimed ? "This posts a comment in the discussion. Only the proposal's owner can write the description above." : undefined}
+            />
           </ErrorBoundary>
         </div>
 
@@ -561,7 +578,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
               Hashes, raw data and every check
             </button>
           </section>
-          <ClaimPanel p={p} own={own} collateral={trust.collateral.verdict} />
+          {claimAbout === false && claim}
         </aside>
       </div>
 

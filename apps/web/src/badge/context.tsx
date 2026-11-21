@@ -11,7 +11,7 @@ import { parsePrivacyMode, type PrivacyMode } from '@govhub/badge';
 import { signMessageWif } from '@govhub/verify';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
-import type { AppAuthSession } from '../session/authSession.ts';
+import { isWalletSession, WALLET_BADGE_TEXT, type AppAuthSession } from '../session/authSession.ts';
 import { BADGE_NETWORKS, loadTrustList, resetTrustList, saveTrustList, type TrustedIssuer } from './config.ts';
 import { createJob, isActive, type BadgeJob, type ClientDeps, type VotingSigner } from './client.ts';
 import { badgeQuery, badgesOfAuthors } from './queries.ts';
@@ -148,7 +148,8 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
   const authSession = session && 'auth' in session ? (session as AppAuthSession) : null;
 
   const deps = useMemo<ClientDeps | null>(() => {
-    if (!reader || !session) return null;
+    // a wallet key cannot write the badge contract: no requests, so no token is ever issued that it could not post
+    if (!reader || !session || isWalletSession(session)) return null;
     return {
       net,
       contractId,
@@ -271,7 +272,7 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
     async (voting, proTxHash, opts = {}) => {
       const commit = commitRef.current;
       if (storeError) throw new Error(storeError);
-      if (!deps || !reader || !commit) throw new Error(mode === 'live' ? 'Sign in to request a badge.' : 'Badges need live data (Settings).');
+      if (!deps || !reader || !commit) throw new Error(mode !== 'live' ? 'Badges need live data (Settings).' : isWalletSession(session) ? WALLET_BADGE_TEXT : 'Sign in to request a badge.');
       const issuer = opts.issuer ?? trust.find((t) => t.enabled);
       if (!issuer) throw new Error('Your trust list has no enabled issuer.');
       const height = await reader.coreHeight();
@@ -283,7 +284,7 @@ export function BadgeProvider({ children }: { children: ReactNode }) {
       if (job.mode === 'standard') wakeRef.current();
       return job;
     },
-    [deps, reader, trust, mode, storeError, privacy],
+    [deps, reader, trust, mode, storeError, privacy, session],
   );
 
   const registerVotingSigner = useCallback((proTxHash: string, signer: VotingSigner) => {

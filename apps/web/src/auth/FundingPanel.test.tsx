@@ -14,6 +14,11 @@ vi.mock('@govhub/auth', async (orig) => ({
   nextCreateIndex: () => 2,
 }));
 const closeSheet = vi.fn();
+// identity names (ui/IdentityName): none here, so the short id shows
+vi.mock('../app/forum.tsx', () => {
+  const value = { forum: { names: async () => new Map() }, moderation: { index: { identityHidden: () => false } } };
+  return { useForum: () => value };
+});
 vi.mock('./context.tsx', () => {
   const auth = { dapi: () => ({}), platform: async () => ({}), store: {}, network: 'testnet', closeSheet: () => closeSheet() };
   return { useAuth: () => auth };
@@ -175,7 +180,8 @@ describe('stuck funds: prevention and the way out', () => {
     script = async (o) => (o.onUpdate(view({})), never());
     const r = await render(<FundingPanel kind="create" wallet={null} identityIndex={0} onDone={() => {}} />);
     await flush();
-    expect(r.el.querySelector('[data-testid="deposit-network"]')!.textContent).toMatch(/testnet address: send testnet DASH only/);
+    expect(r.el.querySelector('[data-testid="deposit-network"]')!.textContent).toMatch(/testnet address: send tDASH only/);
+    expect(r.el.querySelector<HTMLAnchorElement>('[data-testid="deposit-faucet"]')!.href).toMatch(/^https:\/\/faucet\.thepasta\.org\//);
     expect(r.el.querySelector('[data-testid="deposit-rules"]')!.textContent).toMatch(/after that, or one too small to count, stays at this address: Settings, Recover funds/);
     await r.unmount();
   });

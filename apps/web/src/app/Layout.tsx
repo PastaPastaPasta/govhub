@@ -7,6 +7,7 @@ import { useAuth } from '../auth/context.tsx';
 import { SessionControl } from '../ui/SignIn.tsx';
 import { useApp } from './context.tsx';
 import { PRIVACY_DOC_URL } from '../pages/AboutPage.tsx';
+import { WALLET_SESSION_ENDED_TEXT } from '../session/keyDisabled.ts';
 
 // The sign-in sheet (BIP39 wordlist, BIP32, HPKE, tx building) loads when it is first opened.
 const AuthSheet = lazy(() => import('../auth/AuthSheet.tsx').then((m) => ({ default: m.AuthSheet })));
@@ -219,8 +220,29 @@ function SettingsProblem() {
   );
 }
 
+/** A wallet (App Connect) session ended because the wallet revoked its key: the one place that says so, with a way back in. */
+export function WalletSessionEnded() {
+  const { walletEnded, reconnectWallet, dismissWalletEnded } = useAuth();
+  if (!walletEnded) return null;
+  return (
+    <div className="banner dh-notice banner-empty dh-notice--warn" role="alert" data-testid="wallet-session-ended">
+      <p>
+        <b>{WALLET_SESSION_ENDED_TEXT}</b>
+      </p>
+      <div className="banner-actions">
+        <button type="button" className="btn dh-btn btn-primary dh-btn--primary" onClick={reconnectWallet} data-testid="wallet-reconnect">
+          Reconnect
+        </button>
+        <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet" onClick={dismissWalletEnded}>
+          Dismiss
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ModeBanner() {
-  const { mode, setMode, source, gov, registry, switchProfile } = useApp();
+  const { mode, setMode, source, gov, registry, switchProfile, reload } = useApp();
   if (mode === 'fixtures') {
     return (
       <div className="banner dh-notice banner-fixture dh-notice--info" role="status">
@@ -254,17 +276,24 @@ function ModeBanner() {
       <p>
         {gov.active.error ? (
           <>
-            <b>Platform could not be read.</b> {gov.active.error}
+            <b>Proposals could not be loaded right now.</b> <span className="muted small">{gov.active.error}</span>
           </>
         ) : (
           <>
-            <b>No active proposals on Platform yet.</b> The governance data service publishes mainnet proposals into contract {source.registry.govContractId.slice(0, 8)}… as it catches up.
+            <b>No active proposals yet.</b> New proposals appear here a few minutes after they go live.
           </>
         )}
       </p>
-      <button type="button" className="btn dh-btn" onClick={() => setMode('fixtures')}>
-        View the fixture snapshot
-      </button>
+      <div className="form-actions">
+        {gov.active.error && (
+          <button type="button" className="btn dh-btn" onClick={reload} data-testid="active-retry">
+            Try again
+          </button>
+        )}
+        <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet" onClick={() => setMode('fixtures')}>
+          View demo data instead
+        </button>
+      </div>
     </div>
   );
 }
@@ -318,6 +347,7 @@ export function Layout() {
         <Link to="/settings#network">Network settings</Link>
       </aside>}
       <LazyAuthSheet />
+      <WalletSessionEnded />
       <ConfigOffer />
       <SettingsProblem />
       {!polls && <ModeBanner />}

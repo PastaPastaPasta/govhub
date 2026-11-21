@@ -41,7 +41,7 @@ export function PasskeySignIn() {
       ) : (
         <>
           <p>Choose the passkey you added to Governance. Your device unlocks the key it keeps; nothing is sent to a server.</p>
-          <div className="form-actions">
+          <div className="sheet-actions">
             <button type="button" className="btn dh-btn btn-primary dh-btn--primary" onClick={go} disabled={busy}>
               {busy ? <><span className="spinner" aria-hidden="true" /> Opening…</> : 'Use a passkey'}
             </button>
@@ -109,7 +109,13 @@ export function Passkeys() {
                       <span className="mono-ish">{toBase64(e.credentialId).slice(0, 12)}…</span>
                     </span>
                   </div>
-                  <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet btn-s dh-btn--sm" onClick={() => remove(e)}>
+                  <button
+                    type="button"
+                    className="btn dh-btn btn-quiet dh-btn--quiet btn-s dh-btn--sm"
+                    onClick={() => {
+                      if (window.confirm(`Remove this passkey? It will no longer sign you in${here ? ' on this device' : ' on that device'}; your ${what} still does.`)) void remove(e);
+                    }}
+                  >
                     Remove
                   </button>
                 </li>

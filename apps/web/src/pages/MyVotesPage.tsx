@@ -35,7 +35,7 @@ export function MyVotesPage() {
         </p>
       )}
       <div className="kr-card dh-card">
-        {gov.active.loading && !active.length ? <p className="muted">Loading proposals…</p> : active.length ? <VoteComposer proposals={active} /> : <p className="muted">No active proposals.</p>}
+        {gov.active.loading && !active.length ? <p className="muted">Loading proposals…</p> : active.length ? <VoteComposer proposals={active} tracks={k.status !== 'open'} /> : <p className="muted">No active proposals.</p>}
       </div>
       {k.status === 'open' && <VotesList showWins={false} />}
     </section>

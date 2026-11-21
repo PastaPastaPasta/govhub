@@ -2,7 +2,7 @@
 // one of two ways to pay: from any wallet through a one-time deposit address this browser watches (path b), or with Dash Core's own
 // `gobject prepare` (path a), whose txid the browser then checks over DAPI.
 import {
-  addressOf, coinType, newCollateralFunding, proposalDepositKey, proposalDepositPath, publicKeyOf, wipe, type CollateralFundingView, type DepositKey, type DepositKeySource,
+  addressOf, coinType, MIN_COLLATERAL_DEPOSIT_DUFFS, newCollateralFunding, proposalDepositKey, proposalDepositPath, publicKeyOf, wipe, type CollateralFundingView, type DepositKey, type DepositKeySource,
 } from '@govhub/auth';
 import { duffsToDash, GOV_CHAIN_PARAMS, GOVERNANCE_PROPOSAL_FEE_DUFFS, gobjectPrepareCommand, isCollateralChangeAddress } from '@govhub/verify';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -84,6 +84,12 @@ export function PayStep({ draft, commit, services }: PayProps) {
   const ready = !!draft.backup;
   const method = draft.payment?.method;
   const problem = payNowProblem(draft.lock!, gov.height.data?.value ?? null, source.now(), GOV_CHAIN_PARAMS[services.network].maturityWindow);
+  // only before a way to pay is under way: once a deposit address is shown, or Dash Core's `gobject prepare` may have run, money may
+  // already have moved, and the txid must stay enterable
+  const gate = useRelayGate(services, !draft.payment?.funding && method !== 'core');
+  const [override, setOverride] = useState(false);
+  const blocked = !override && !draft.payment?.funding && method !== 'core' ? gate.blocked : null;
+  const recheck = gate.recheck;
   if (problem && !draft.payment?.funding) {
     return (
       <div className="pw-form" data-testid="p-pay">
@@ -98,9 +104,11 @@ export function PayStep({ draft, commit, services }: PayProps) {
     <div className="pw-form" data-testid="p-pay">
       <BackupBox draft={draft} commit={commit} />
       <section className={`pw-methods${ready ? '' : ' pw-locked'}`} aria-labelledby="pw-pay-title" aria-disabled={!ready}>
-        <h3 id="pw-pay-title">Pay the {duffsToDash(GOVERNANCE_PROPOSAL_FEE_DUFFS)} {feeUnit(services.network)} fee</h3>
+        <h3 id="pw-pay-title">Pay the fee</h3>
+        {method !== 'core' && !draft.payment?.funding && <FeeExplainer unit={feeUnit(services.network)} />}
         {!ready && <p className="muted small">Save the backup first.</p>}
-        {ready && !method && (
+        {ready && blocked && <RelayDown reason={blocked} recheck={recheck} checking={gate.checking} override={() => setOverride(true)} />}
+        {ready && !blocked && !method && (
           <div className="pw-choices">
             <button type="button" className="choice" data-testid="p-pay-browser" onClick={() => commit((d) => ({ ...d, payment: { method: 'browser' } }))}>
               <b>From any Dash wallet</b>
@@ -112,15 +120,84 @@ export function PayStep({ draft, commit, services }: PayProps) {
             </button>
           </div>
         )}
-        {ready && method === 'browser' && <BrowserPay draft={draft} commit={commit} services={services} />}
-        {ready && method === 'core' && <CorePay draft={draft} commit={commit} services={services} />}
-        {ready && method && !draft.payment?.funding && (
+        {ready && !blocked && method === 'browser' && <BrowserPay draft={draft} commit={commit} services={services} />}
+        {ready && !blocked && method === 'core' && <CorePay draft={draft} commit={commit} services={services} />}
+        {ready && !blocked && method && !draft.payment?.funding && (
           <button type="button" className="btn dh-btn btn-s dh-btn--sm btn-quiet dh-btn--quiet" onClick={() => commit((d) => ({ ...d, payment: undefined }))} data-testid="p-pay-change">
             Choose another way to pay
           </button>
         )}
       </section>
     </div>
+  );
+}
+
+/** Polls the relays (every minute while none is ready): `blocked` is why paying now would strand the proposal, null when fine. */
+function useRelayGate(services: WizardServices, active: boolean): { blocked: string | null; checking: boolean; recheck(): void } {
+  const [blocked, setBlocked] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [nonce, setNonce] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    let live = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const run = async () => {
+      setChecking(true);
+      try {
+        const r = await services.relaysReady();
+        if (!live) return;
+        setBlocked(r.ok ? null : r.reason);
+        if (!r.ok) timer = setTimeout(() => void run(), 60_000);
+      } catch {
+        // a check that could not run does not block (the submit step still offers Dash Core)
+        if (live) setBlocked(null);
+      } finally {
+        if (live) setChecking(false);
+      }
+    };
+    void run();
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [services, active, nonce]);
+  return { blocked, checking, recheck: () => setNonce((n) => n + 1) };
+}
+
+function RelayDown({ reason, recheck, checking, override }: { reason: string; recheck(): void; checking: boolean; override(): void }) {
+  return (
+    <div className="pw-form" data-testid="p-relay-down">
+      <div className="auth-error" role="alert">
+        <p>
+          <b>Don't pay yet:</b> {reason}, so your proposal could not be sent to the network after you pay. Nothing has been paid. This page checks again every minute.
+        </p>
+        <div className="form-actions">
+          <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={recheck} disabled={checking} data-testid="p-relay-recheck">
+            {checking ? 'Checking…' : 'Check again'}
+          </button>
+        </div>
+      </div>
+      <details className="pw-details">
+        <summary>Advanced: already paid, or submitting with your own Dash Core?</summary>
+        <p className="small">
+          If you already paid this fee, or you run Dash Core and will submit the proposal yourself (the next step shows the command), you can continue. Without a working relay, nothing
+          submits it for you.
+        </p>
+        <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={override} data-testid="p-relay-override">
+          Continue anyway
+        </button>
+      </details>
+    </div>
+  );
+}
+
+/** The total to send: the burn alone is not enough, the network fee comes on top. */
+function FeeExplainer({ unit }: { unit: string }) {
+  return (
+    <p className="small" data-testid="p-fee-explain">
+      Total <b data-testid="p-fee-recommended">{duffsToDash(MIN_COLLATERAL_DEPOSIT_DUFFS)} {unit}</b>: {duffsToDash(GOVERNANCE_PROPOSAL_FEE_DUFFS)} {unit} is burned, plus a tiny
+      network fee.
+    </p>
   );
 }
 
@@ -318,7 +395,7 @@ function Deposit({ draft, view, error, retry, services }: { draft: ProposalDraft
               </p>
             ) : (
               <p>
-                Send at least <b data-testid="p-deposit-amount">{fmt(view.neededDuffs)}</b> to this one-time address. More is fine: the rest comes back to {f.refundAddress}.
+                Send <b data-testid="p-deposit-amount">{fmt(view.remainingDuffs)}</b> to this one-time address. Any extra comes back to {f.refundAddress}.
               </p>
             )}
             <p className="muted small">Keep this page open until the fee transaction is sent (a few seconds after your payment is confirmed by InstantSend).</p>
@@ -437,7 +514,9 @@ function CorePay({ draft, commit, services }: PayProps) {
       )}
       {result && result.state === 'not-found' && <p className="notice-box dh-notice dh-notice--info small">No DAPI node knows this transaction yet. Wait a few seconds and check again, or check the id.</p>}
       {result && result.state === 'error' && <p className="error small">Could not check it: {result.message}</p>}
-      <p className="muted small">Dash Core keeps the proposal too: `gobject list-prepared` shows it, with the time and data, if you lose this page and the backup.</p>
+      <p className="muted small">
+        Dash Core keeps the proposal too: <code>gobject list-prepared</code> shows it, with the time and data, if you lose this page and the backup.
+      </p>
     </div>
   );
 }

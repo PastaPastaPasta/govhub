@@ -411,10 +411,10 @@ describe('D-067: a WIF of the other network gets its own message', () => {
 
 describe('D-070 / D-071: what "Vote now" says', () => {
   it('one relay, the others as fallbacks; warns when none answered; no "a minute or two"', () => {
-    expect(relaySummary([R1, R2], {}).text).toBe('Signed in your browser and sent through relay-one.example (another relay takes over if it fails).');
+    expect(relaySummary([R1, R2], {}).text).toBe('Your vote will be signed in your browser and sent through relay-one.example (another relay takes over if it fails).');
     expect(relaySummary([R1, R2], { [R1]: { ok: false }, [R2]: { ok: true } }).text).toMatch(/through relay-two\.example/);
     expect(relaySummary([R1, R2], { [R1]: { ok: false }, [R2]: { ok: false } })).toMatchObject({ warn: true, text: expect.stringMatching(/No relay answered/) });
-    expect(relaySummary([R1], {}).text).toBe('Signed in your browser and sent through relay-one.example.');
+    expect(relaySummary([R1], {}).text).toBe('Your vote will be signed in your browser and sent through relay-one.example.');
     expect(VOTE_NOW_DELAY_TEXT).not.toMatch(/minute or two/);
     expect(VOTE_NOW_DELAY_TEXT).toMatch(/few minutes/);
   });

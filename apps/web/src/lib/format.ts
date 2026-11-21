@@ -1,4 +1,5 @@
-// Display formatting. Pure; locale is a parameter so tests are stable.
+// Display formatting. Pure apart from the coin's unit (lib/unit.ts); locale is a parameter so tests are stable.
+import { dashUnit } from './unit.ts';
 
 export const DUFFS_PER_DASH = 100_000_000;
 
@@ -14,15 +15,10 @@ export function formatDashAmount(duffs: number, locale = 'en-US'): string {
   return nf(locale, 0, 8).format(dash);
 }
 
-let unit: 'DASH' | 'tDASH' = 'DASH';
-/** The unit governance amounts are shown in, set by the data's Core network: practice coins on Testnet are "tDASH" (design/PRICE.md). */
-export function setDashUnit(u: 'DASH' | 'tDASH'): void {
-  unit = u;
-}
-export const dashUnit = (): 'DASH' | 'tDASH' => unit;
+export { dashUnit };
 
 export function formatDash(duffs: number, locale = 'en-US'): string {
-  return `${formatDashAmount(duffs, locale)} ${unit}`;
+  return `${formatDashAmount(duffs, locale)} ${dashUnit()}`;
 }
 
 /** "no payments left" → "No payments left": a list's phrase heading a field of its own. */
@@ -90,7 +86,7 @@ export const CREDITS_PER_DUFF = 1000;
 export function formatCredits(credits: number | bigint, approx = false, locale = 'en-US'): string {
   const duffs = Number(credits) / CREDITS_PER_DUFF;
   if (!approx || duffs === 0) return formatDash(Math.round(duffs), locale);
-  return `${nf(locale, 0, 8).format(Number((duffs / DUFFS_PER_DASH).toPrecision(2)))} DASH`;
+  return `${nf(locale, 0, 8).format(Number((duffs / DUFFS_PER_DASH).toPrecision(2)))} ${dashUnit()}`;
 }
 
 /** "3 hours ago" for a Platform millisecond timestamp. */

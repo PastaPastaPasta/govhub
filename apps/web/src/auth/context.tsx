@@ -7,12 +7,13 @@
 import { storageFundingStore, type FundingStore, type Network, type PlatformPort, type Session } from '@govhub/auth';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useApp } from '../app/context.tsx';
+import { appConnectEnabled, appConnectOverride } from '../config/registry.ts';
 import { useForum } from '../app/forum.tsx';
 import { appSessionFromAuth, type AppAuthSession } from '../session/authSession.ts';
 import { createTabShare, type TabShare } from '../session/tabShare.ts';
 import { getAuthDapi, getPlatformPort } from './runtime.ts';
 
-export type SheetView = 'choose' | 'create' | 'phrase' | 'key' | 'passkey' | 'topup' | 'passkeys';
+export type SheetView = 'choose' | 'create' | 'phrase' | 'key' | 'passkey' | 'wallet' | 'topup' | 'passkeys';
 
 /** The masternode keyring's lock (voting/KeyringContext.tsx), one for the open tabs of the session (session/tabShare.ts, D-015). */
 export interface KeyringLockCtl {
@@ -42,10 +43,17 @@ interface AuthCtx {
   balance: bigint | null;
   network: Network;
   forumContractId: string;
+  /** Sign-in with a Dash wallet (App Connect) is offered: the profile's flag or the `?appconnect=1` opt-in (config/registry.ts). */
+  appConnect: boolean;
   /** Signs in this tab and the other open tabs of this profile. */
   signIn(s: Session): void;
   /** Signs out this tab and the other open tabs of this profile. */
   signOut(): void;
+  /** A wallet (App Connect) session was signed out because its key was disabled on Platform (revoked in the wallet). */
+  walletEnded: boolean;
+  /** Opens the App Connect sign-in again (and clears `walletEnded`). */
+  reconnectWallet(): void;
+  dismissWalletEnded(): void;
   keyringLock: KeyringLockCtl;
   refreshBalance(): void;
   platform(): Promise<PlatformPort>;
@@ -78,6 +86,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const forum = useForum();
   const [sheet, setSheet] = useState<SheetView | null>(null);
   const [restoring, setRestoring] = useState(false);
+  const [walletEnded, setWalletEnded] = useState(false);
+  const [override] = useState(() => appConnectOverride());
+  const appConnect = appConnectEnabled(registry, override);
   const share = useRef<TabShare | null>(null);
   const keyringHooks = useRef<KeyringHooks | null>(null);
   // No sharing (a sub-path): this tab's own lock (voting/gate.ts KeyringLock) is the only one. Sharing but no channel yet: locked.
@@ -101,11 +112,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const session = (forum.session as Partial<AppAuthSession> | null)?.auth ?? null;
   const { signIn: forumSignIn, signOut: forumSignOut } = forum;
-  const signInHere = useCallback((s: Session) => forumSignIn(appSessionFromAuth(s, platform)), [forumSignIn, platform]);
   const signOutHere = useCallback(() => {
     forumSignOut(); // closes the app session, which ends the auth session (wipes the key and the seed)
     setSheet(null);
   }, [forumSignOut]);
+  const current = useRef(session);
+  useEffect(() => {
+    current.current = session;
+  }, [session]);
+  // A wallet key disabled on Platform ends that session, in this tab only (wallet sessions are never shared with other tabs). A
+  // session already replaced or signed out was ended synchronously then, so its late failure changes nothing; a sign-in the user
+  // has started in the sheet meanwhile stays open.
+  const keyDisabled = useCallback(
+    (s: Session) => {
+      if (s.ended) return;
+      forumSignOut();
+      setSheet((v) => (v === 'topup' || v === 'passkeys' ? null : v));
+      setWalletEnded(true);
+    },
+    [forumSignOut],
+  );
+  const signInHere = useCallback(
+    (s: Session) => {
+      setWalletEnded(false);
+      forumSignIn(appSessionFromAuth(s, platform, () => keyDisabled(s)));
+    },
+    [forumSignIn, platform, keyDisabled],
+  );
+  const reconnectWallet = useCallback(() => {
+    setWalletEnded(false);
+    setSheet('wallet');
+  }, []);
+  const dismissWalletEnded = useCallback(() => setWalletEnded(false), []);
+  // another network or data mode signs out anyway: the banner was about a session of the old one
+  useEffect(() => setWalletEnded(false), [registry.platformNetwork, registry.forum.contractId, mode]);
   const signIn = useCallback((s: Session) => {
     signInHere(s);
     share.current?.announce(s);
@@ -117,10 +157,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // The other open tabs of this profile share the session (live data only: fixture tabs neither send nor adopt). A new channel per
   // profile asks the open tabs for theirs, so a new tab, or a profile switch to one another tab is signed in to, comes up signed in.
-  const current = useRef(session);
-  useEffect(() => {
-    current.current = session;
-  }, [session]);
   // another tab signed out: the views that need the session close, a sign-in in progress here stays
   const drop = useCallback(() => {
     forumSignOut();
@@ -175,10 +211,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AuthCtx>(
     () => ({
-      session, restoring: restoring && !session, balance: session ? forum.balance : null, network: registry.platformNetwork, forumContractId: registry.forum.contractId, signIn, signOut, keyringLock,
+      session, restoring: restoring && !session, balance: session ? forum.balance : null, network: registry.platformNetwork, forumContractId: registry.forum.contractId, appConnect, signIn, signOut, walletEnded, reconnectWallet, dismissWalletEnded, keyringLock,
       refreshBalance: forum.refreshBalance, platform, dapi, store, sheet, openSheet: setSheet, closeSheet: () => setSheet(null),
     }),
-    [session, restoring, forum.balance, forum.refreshBalance, registry.platformNetwork, registry.forum.contractId, signIn, signOut, keyringLock, platform, dapi, store, sheet],
+    [session, restoring, forum.balance, forum.refreshBalance, registry.platformNetwork, registry.forum.contractId, appConnect, signIn, signOut, walletEnded, reconnectWallet, dismissWalletEnded, keyringLock, platform, dapi, store, sheet],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

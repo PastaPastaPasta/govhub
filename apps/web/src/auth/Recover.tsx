@@ -12,6 +12,7 @@ import { SecretField } from './SecretField.tsx';
 import { useAuth } from './context.tsx';
 import { useLeaveWarning } from './leaveWarning.ts';
 import { errorText, formatDuffs, isTransientError, plainErrorText } from './runtime.ts';
+import { IdentityName } from '../ui/Identity.tsx';
 
 type Start = 'default' | 'month' | 'year' | 'custom';
 type Held = { secret: RecoverySecret; owned: boolean };
@@ -419,8 +420,7 @@ function ItemCard({ item, scan, secret, onBusy }: { item: RecoveryItem; scan: Re
           )}
           {busy && view?.state === 'awaiting-deposit' && view.remainingDuffs > 0n && (
             <p className="small">
-              This needs {formatDuffs(view.remainingDuffs)} more: send it to <span className="break mono-ish">{view.address}</span>, or stop and send these payments to an address
-              instead.
+              This needs {formatDuffs(view.remainingDuffs)} more: send it to <span className="break mono-ish">{view.address}</span>. Keep this page open until it finishes.
             </p>
           )}
           {error && (
@@ -445,9 +445,9 @@ function ItemCard({ item, scan, secret, onBusy }: { item: RecoveryItem; scan: Re
 
 const STATE_TEXT: Record<FundingView['state'], string> = {
   'awaiting-deposit': 'Checking the payments…',
-  locking: 'Making the asset lock…',
-  locked: 'Asset lock sent; waiting for InstantSend…',
-  registering: 'Registering on Dash Platform (a lock without its InstantSend lock waits for a ChainLock, a few minutes)…',
+  locking: 'Locking the payment for Dash Platform… Keep this page open.',
+  locked: 'Payment locked; waiting for the network to confirm it… Keep this page open.',
+  registering: 'Saving on Dash Platform (up to a few minutes)… Keep this page open.',
   done: 'Done',
 };
 
@@ -474,13 +474,13 @@ function UseOnPlatform({ opts, scan, busy, onFund }: { opts: ItemOptions; scan: 
       )}
       {own && (
         <button type="button" className="btn dh-btn" disabled={busy} onClick={() => onFund({ topUp: own })} data-testid="recover-topup-own">
-          Top up {short(own)}
+          Top up <IdentityName id={own} />
         </button>
       )}
       {opts.topUp === 'any' &&
         scan.identities.map((f) => (
           <button key={f.identityId} type="button" className="btn dh-btn" disabled={busy} onClick={() => onFund({ topUp: f.identityId })} data-testid="recover-topup-mine">
-            Top up identity #{f.identityIndex} ({short(f.identityId)})
+            Top up identity #{f.identityIndex} (<IdentityName id={f.identityId} />)
           </button>
         ))}
       {opts.topUp === 'any' && (

@@ -1,7 +1,7 @@
 // Sign-in sheet, offline: the create flow up to funding, the 3-word quiz, key-paste validation, and a clean CSP. Nothing here
 // touches the network for auth (the live flow is auth-live.spec.ts).
 import { expect, test } from '@playwright/test';
-import { cspViolations, gotoFixtures, watchPage } from './helpers.ts';
+import { cspViolations, gotoFixtures, watchPage, otherWay } from './helpers.ts';
 
 test('create flow shows a fresh phrase, checks three words, then offers funding', async ({ page }) => {
   const errors = await watchPage(page);
@@ -11,12 +11,12 @@ test('create flow shows a fresh phrase, checks three words, then offers funding'
   await expect(sheet).toBeVisible();
   // the family's sign-in help offers the same start as the first way in
   await expect(sheet.locator('dashhq-signin-help').getByRole('button', { name: 'Create an account', exact: true })).toBeVisible();
-  await sheet.getByTestId('choose-create').click();
+  await otherWay(sheet, /Create an account/);
 
   const words = page.getByTestId('phrase-words').locator('li');
   await expect(words).toHaveCount(12);
   const phrase = (await words.allInnerTexts()).map((t) => t.trim().split(/\s+/)[1]!);
-  await page.getByRole('button', { name: 'Use 24 words instead' }).click();
+  await page.getByRole('button', { name: /^Start over with 24 words/ }).click();
   await expect(words).toHaveCount(24);
   const phrase24 = (await words.allInnerTexts()).map((t) => t.trim().split(/\s+/)[1]!);
   expect(phrase24.slice(0, 12)).not.toEqual(phrase);
@@ -45,7 +45,7 @@ test('create flow shows a fresh phrase, checks three words, then offers funding'
 test('recovery phrase and key paste refuse bad input without echoing it', async ({ page }) => {
   await gotoFixtures(page);
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await page.getByRole('button', { name: /I have a recovery phrase/ }).click();
+  await otherWay(page, /I have a recovery phrase/);
   // D-033: masked until "Show"
   await expect(page.getByTestId('phrase-input')).toHaveCSS('-webkit-text-security', 'disc');
   await page.getByTestId('phrase-input').fill('abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon');
@@ -58,7 +58,7 @@ test('recovery phrase and key paste refuse bad input without echoing it', async 
 
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await page.getByRole('button', { name: /Paste a key/ }).click();
+  await otherWay(page, /Paste a key/);
   const secret = 'XBadKeyThatIsNotAWifAtAllXXXXXXXXXXXXXXXXXXXXXXXXXX';
   await page.getByTestId('key-input').fill(secret);
   await expect(page.getByTestId('key-input')).toHaveAttribute('type', 'password');
@@ -71,7 +71,7 @@ test('recovery phrase and key paste refuse bad input without echoing it', async 
 test('passkey sign-in explains itself when the browser has no passkey support', async ({ page }) => {
   await gotoFixtures(page);
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await page.getByRole('button', { name: /Use a passkey/ }).click();
+  await page.getByTestId('passkey-signin').click();
   // Headless Chromium without a virtual authenticator still exposes WebAuthn; the button is there and a cancelled prompt is not an error.
   await expect(page.getByRole('button', { name: 'Use a passkey' })).toBeVisible();
 });

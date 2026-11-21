@@ -1145,6 +1145,173 @@ table {
   border-collapse: collapse;
   inline-size: 100%;
 }
+/* Sortable column headings: the whole heading is the button. */
+.past thead .sort-head {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  cursor: pointer;
+  border-radius: 2px;
+}
+.past thead .sort-head:hover,
+.past thead .sort-head.on {
+  color: var(--ink);
+}
+.past thead .sort-head:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.sort-arrow {
+  font-size: var(--t-xs);
+  color: var(--ink-3);
+  inline-size: 0.75em;
+}
+.sort-head.on .sort-arrow {
+  color: var(--accent-ink);
+}
+
+/* ---- list search, filters and sort --------------------------------------------------------- */
+.list-tools {
+  display: grid;
+  gap: var(--s-2);
+  margin-block-end: var(--s-3);
+}
+.list-search {
+  position: relative;
+  display: block;
+}
+.list-search svg {
+  position: absolute;
+  inset-inline-start: 0.6875rem;
+  inset-block-start: 50%;
+  transform: translateY(-50%);
+  color: var(--ink-3);
+  pointer-events: none;
+}
+.list-search input {
+  font: inherit;
+  /* 16 px: iOS zooms into smaller inputs on focus */
+  font-size: 1rem;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-m);
+  padding: 0.5rem 0.75rem 0.5rem 2.125rem;
+  inline-size: 100%;
+  min-block-size: 44px;
+}
+.list-search input::placeholder {
+  color: var(--ink-3);
+}
+.list-search input:focus-visible {
+  border-color: var(--accent);
+  outline-offset: 0;
+}
+.list-tools-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+}
+.list-chips {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+.list-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 32px;
+  padding: 0 0.75rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-m);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: var(--t-s);
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.list-chip:hover {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+.list-chip.on {
+  background: var(--accent-wash);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.list-chip.on .count {
+  color: var(--accent-ink);
+}
+.list-chip input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.list-chip:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.list-sort {
+  margin-inline-start: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-size: var(--t-s);
+  color: var(--ink-2);
+}
+/* The browser's own arrow sits against the border; ours is drawn as far from the right edge as the text is from the left (the
+   chips' 12 px inside the border, where the first letter's ink starts 14 px in), with an 8 px gap before it. The arrow is a 7.5 px
+   square turned 45° whose drawn tip ends up about a pixel and a half outside its box. */
+.list-select {
+  position: relative;
+  display: inline-flex;
+}
+.list-select::after {
+  content: '';
+  position: absolute;
+  inset-inline-end: 15.5px;
+  inset-block-start: 50%;
+  inline-size: 6px;
+  block-size: 6px;
+  border-inline-end: 1.5px solid var(--ink-2);
+  border-block-end: 1.5px solid var(--ink-2);
+  transform: translateY(-70%) rotate(45deg);
+  pointer-events: none;
+}
+.list-sort select {
+  appearance: none;
+  font: inherit;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-m);
+  /* right: 14 px to the arrow's tip + 8 px arrow + 8 px gap, less the border */
+  padding: 0 29px 0 12px;
+  /* as wide as the chosen option, so the gap before the arrow is the same for each (where supported) */
+  field-sizing: content;
+  min-block-size: 32px;
+  cursor: pointer;
+}
+.list-sort select:hover {
+  border-color: var(--accent);
+}
+.list-count {
+  margin: 0;
+}
+/* iOS zooms into form controls under 16 px when they are tapped */
+@media (pointer: coarse) {
+  .list-sort select {
+    font-size: 1rem;
+  }
+}
 
 /* ---- proposal page ------------------------------------------------------------------------ */
 .proposal {
@@ -1621,6 +1788,10 @@ details summary {
   gap: 0.5rem;
   flex-wrap: wrap;
 }
+.elsewhere-actions {
+  align-items: center;
+}
+
 
 /* ---- sign-in, account, funding ------------------------------------------------------------- */
 .sheet {
@@ -1637,7 +1808,7 @@ details summary {
   background: rgb(6 18 28 / 0.42);
 }
 .sheet-body {
-  padding: var(--s-4) var(--s-5) var(--s-5);
+  padding: var(--s-5);
   display: grid;
   gap: var(--s-4);
 }
@@ -1658,7 +1829,18 @@ details summary {
 }
 .sheet .form {
   margin-block-start: 0;
-  gap: 0.75rem;
+  gap: var(--s-4);
+}
+/* Every view after the chooser shares one rhythm: blocks a step apart, then a row of full-size actions. */
+.sheet-view,
+.sheet-view > :is(div, form) {
+  display: grid;
+  gap: var(--s-4);
+}
+.sheet-actions {
+  display: grid;
+  gap: var(--s-2);
+  margin-block-start: var(--s-2);
 }
 .choices {
   list-style: none;
@@ -1690,12 +1872,201 @@ details summary {
 .choices-s {
   grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
 }
-.choices-more {
-  margin-block-start: var(--s-1);
-}
 .sheet-choose {
   display: grid;
+  gap: var(--s-4);
+}
+.sheet-icon-btn {
+  padding: 0.375rem;
+  border-radius: 50%;
+  color: var(--ink-3);
+  flex: none;
+}
+.sheet-icon-btn:hover {
+  color: var(--ink);
+}
+.sheet-head h2 {
+  flex: 1;
+  min-inline-size: 0;
+}
+.sheet-head h2:focus {
+  outline: none;
+}
+/* The chooser: a centered title like a welcome, then one obvious way in. */
+.sheet.sheet-choose-dialog {
+  inline-size: min(27rem, calc(100vw - 1.5rem));
+}
+.sheet-choose-dialog .sheet-body {
+  padding: var(--s-6) var(--s-5) var(--s-5);
+  gap: var(--s-2);
+}
+.sheet-head-hero {
+  position: relative;
+  justify-content: center;
+}
+.sheet-head-hero h2 {
+  text-align: center;
+  font-size: var(--t-xl);
+  padding-inline: var(--s-6);
+}
+.sheet-head-hero .sheet-close {
+  position: absolute;
+  inset-block-start: calc(-1 * var(--s-4));
+  inset-inline-end: calc(-1 * var(--s-3));
+}
+.brand-word {
+  color: var(--accent-ink);
+}
+.signin-lede {
+  text-align: center;
+  color: var(--ink-3);
+  font-size: var(--t-s);
+  text-wrap: balance;
+  margin-block-end: var(--s-2);
+}
+.signin-main {
+  display: grid;
   gap: var(--s-3);
+}
+.signin-btn,
+.sheet-actions > .btn,
+.wallet-steps .btn {
+  inline-size: 100%;
+  min-block-size: 3rem;
+  font-size: var(--t-m);
+  border-radius: var(--radius-l);
+  gap: 0.625rem;
+}
+.sheet-actions > .btn-quiet {
+  min-block-size: 2.5rem;
+  font-size: var(--t-s);
+}
+.signin-btn.btn-primary:not(:disabled),
+.sheet-actions > .btn-primary:not(:disabled),
+.wallet-steps .btn-primary {
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08), 0 4px 14px color-mix(in srgb, var(--accent-fill) 28%, transparent);
+}
+.signin-btn:not(.btn-primary):not(:disabled):hover,
+.sheet-actions > .btn:not(.btn-primary):not(.btn-quiet):not(:disabled):hover {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+}
+.signin-btn .tag {
+  margin-inline-start: var(--s-1);
+}
+.signin-more {
+  display: grid;
+  gap: var(--s-3);
+}
+.signin-more-toggle {
+  justify-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font: inherit;
+  font-size: var(--t-s);
+  color: var(--ink-3);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-m);
+  padding: 0.375rem 0.625rem;
+  cursor: pointer;
+}
+.signin-more-toggle:hover {
+  color: var(--ink);
+}
+.signin-more-toggle .icon {
+  transition: transform 0.18s ease;
+}
+.signin-more-toggle[aria-expanded='true'] .icon {
+  transform: rotate(180deg);
+}
+.signin-more-panel:not([hidden]) {
+  display: grid;
+  gap: var(--s-3);
+}
+.signin-alts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l);
+  overflow: hidden;
+}
+.signin-alts li + li {
+  border-block-start: 1px solid var(--line);
+}
+.signin-alt {
+  inline-size: 100%;
+  font: inherit;
+  text-align: start;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--s-3);
+  padding: 0.75rem 0.875rem;
+  border: 0;
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+.signin-alt:hover {
+  background: var(--sunk);
+}
+.signin-alt:focus-visible {
+  outline-offset: -3px;
+}
+.signin-alt > .icon {
+  color: var(--ink-3);
+}
+.signin-alt-icon {
+  display: grid;
+  place-items: center;
+  inline-size: 2rem;
+  block-size: 2rem;
+  border-radius: 50%;
+  background: var(--accent-wash);
+  color: var(--accent-ink);
+}
+.signin-alt-text {
+  display: grid;
+  gap: 0.0625rem;
+}
+.signin-learn {
+  padding-inline: var(--s-1);
+}
+.signin-foot {
+  margin-block-start: var(--s-3);
+  padding-block-start: var(--s-4);
+  border-block-start: 1px solid var(--line);
+  display: grid;
+  gap: var(--s-1);
+  text-align: center;
+  font-size: var(--t-s);
+  color: var(--ink-3);
+}
+.signin-foot a {
+  color: var(--accent-ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+.signin-foot a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+@media (max-width: 640px) {
+  .sheet.sheet-choose-dialog {
+    inline-size: 100vw;
+  }
+  .sheet-body,
+  .sheet-choose-dialog .sheet-body {
+    padding: var(--s-5) var(--s-4) max(var(--s-5), env(safe-area-inset-bottom));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .signin-more-toggle .icon {
+    transition: none;
+  }
 }
 /* "Save your phrase › Check it › Add credit": a real sequence, so it is numbered. */
 .choice:hover {
@@ -2061,11 +2432,6 @@ li[data-status='now'] > .fund-dot {
   margin: 0;
   color: var(--ink-2);
 }
-.choice-soon {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
 .choice:disabled:hover {
   border-color: var(--line);
 }
@@ -2388,6 +2754,16 @@ li[data-status='now'] > .fund-dot {
 .claim-panel > summary {
   margin-block: 0.625rem;
   font-weight: 600;
+}
+/* In the description's place on an unclaimed proposal: the way to write one, so it should not read as an aside. */
+.p-about .claim-panel {
+  margin-block-start: 0;
+  border-color: var(--accent);
+  background: var(--accent-wash);
+}
+.p-about .claim-panel > summary {
+  color: var(--accent-ink);
+  cursor: pointer;
 }
 .claim-body {
   display: grid;
@@ -2715,12 +3091,9 @@ dashhq-hash { vertical-align: middle; max-width: 100%; }
 .chain-unverified ul { margin: 0; padding-inline-start: 18px; }
 .p-status [data-testid="budget-reported"] { margin-inline-start: -2px; }
 
-.proposal-search-count { flex-basis: 100%; margin: 0; }
-.list-tools { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: end; gap: var(--s-2) var(--s-4); }
-.list-tools .proposal-search { flex: 1 1 18rem; margin: 0; }
-.list-tools .proposal-search input { inline-size: 100%; }
-.list-sort { display: inline-flex; align-items: center; gap: var(--s-2); margin: 0; font-size: var(--t-s); color: var(--ink-2); }
-.list-sort select { inline-size: auto; }
+.mnv-tools { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: end; gap: var(--s-2) var(--s-4); }
+.mnv-tools .proposal-search { flex: 1 1 18rem; margin: 0; }
+.mnv-tools .proposal-search input { inline-size: 100%; }
 .vote-ways-list { margin: 8px 0 0; padding-inline-start: 20px; display: grid; gap: 14px; }
 .vote-ways-list h3 { font-size: 15px; font-weight: 620; margin: 0 0 2px; }
 .vote-ways-list p { margin: 0 0 6px; }
@@ -2971,10 +3344,7 @@ details.tr-group > .tr-table { margin: 0; border-radius: 0; }
   .list-section > .list-head { margin-block-end: var(--s-2); }
   /* the sort menu names the order; its longer note is for wide screens */
   .list-head [data-testid="list-order-note"] { display: none; }
-  .list-tools { flex-wrap: nowrap; gap: var(--s-2); }
-  .list-tools .proposal-search { flex: 1 1 auto; min-inline-size: 0; }
-  .list-sort > span { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  .list-sort select { max-inline-size: 11rem; }
+  .mnv-tools .proposal-search { flex: 1 1 auto; min-inline-size: 0; }
 }
 
 /* ---- one masternode's work queue: search, filter, and phone cards that read as one line ------------------------- */
@@ -3122,9 +3492,7 @@ details.tr-group > .tr-table { margin: 0; border-radius: 0; }
   .budget-foot details.learn > summary { padding-block: 4px; }
   .gov-section-head { gap: 8px; padding-block-end: 8px; }
   .gov-section-head > a { font-size: 13px; }
-  .list-tools { flex-wrap: wrap; }
-  .list-tools .dh-seg { flex-basis: 100%; }
-  .list-tools .proposal-search { flex: 1 1 0; }
+  .mnv-tools .dh-seg { flex-basis: 100%; }
   .p-funds { padding: 0; }
 }
 .budget-facts .usd-value { color: var(--ink-2); }
@@ -3139,4 +3507,76 @@ details.tr-group > .tr-table { margin: 0; border-radius: 0; }
   .signin-button.dh-btn { inline-size: 36px; min-block-size: 40px; padding: 0; }
   .signin-label { display: none; }
   .signin-icon { display: block; }
+}
+
+/* Sign in with a Dash wallet (auth/WalletSignIn.tsx) */
+.wallet-signin {
+  display: grid;
+  gap: 0.75rem;
+}
+.wallet-code {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+.wallet-code .qr {
+  inline-size: 14rem;
+  block-size: 14rem;
+}
+.wallet-steps {
+  display: grid;
+  gap: 0.75rem;
+  align-content: start;
+}
+.wallet-steps ol {
+  margin: 0;
+  padding-inline-start: 1.25rem;
+  display: grid;
+  gap: 0.375rem;
+}
+@media (max-width: 34rem) {
+  .wallet-code {
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
+  .wallet-steps .btn {
+    justify-self: stretch;
+    text-align: center;
+  }
+}
+.wallet-grants {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+.wallet-grant {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  padding: 0.75rem;
+  display: grid;
+  gap: 0.375rem;
+}
+.wallet-grant p {
+  margin: 0;
+}
+.wallet-who {
+  font-size: 1.125rem;
+}
+.menu-name .author-alias {
+  margin-inline-start: 0.4em;
+}
+
+/* Active list: this browser's paid proposals that are not listed yet. */
+.pending-list {
+  list-style: none;
+  margin: 0 0 var(--s-3);
+  padding: 0;
+  display: grid;
+  gap: var(--s-2);
+}
+.pending-list li {
+  display: block;
 }

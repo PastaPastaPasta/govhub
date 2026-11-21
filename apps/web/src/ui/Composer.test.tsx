@@ -26,7 +26,7 @@ describe('F2: Composer balance check', () => {
     const r = await render(<Composer label="Post comment" onSubmit={async () => {}} />);
     await type(textarea(r.el), BODY);
     const meta = r.el.querySelector('[data-testid="composer-meta"]')!.textContent!;
-    expect(meta).toMatch(/costs about 0\.00043 DASH · needs about 0\.0023 DASH available · your balance 0\.00150438 DASH/);
+    expect(meta).toMatch(/costs about 0\.00043 DASH · your balance 0\.00150438 DASH/);
     expect(submitBtn(r.el).disabled).toBe(true);
     const low = r.el.querySelector('[data-testid="low-balance"]')!;
     expect(low.textContent).toMatch(/Your balance is 0\.00150438 DASH, and this comment needs about 0\.0023 DASH available/);
@@ -99,7 +99,7 @@ describe('F1: a posted comment is acknowledged', () => {
     await click(submitBtn(r.el));
     await flush();
     expect(textarea(r.el).value).toBe('');
-    expect(r.el.querySelector('[data-testid="composer-posted"]')!.textContent).toMatch(/Posted\. It is on Platform; there is no need to post it again/);
+    expect(r.el.querySelector('[data-testid="composer-posted"]')!.textContent).toMatch(/Posted\. There is no need to post it again/);
     await type(textarea(r.el), 'next');
     expect(r.el.querySelector('[data-testid="composer-posted"]')).toBeNull();
     await r.unmount();

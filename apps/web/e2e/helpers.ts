@@ -1,4 +1,4 @@
-import { expect, type BrowserContext, type Page } from '@playwright/test';
+import { expect, type BrowserContext, type Locator, type Page } from '@playwright/test';
 
 /** Aborts every request that leaves this machine: live mode with no backend. */
 export const offline = (context: BrowserContext) => context.route(/^https?:\/\/(?!localhost[:/]|127\.0\.0\.1[:/])/, (r) => r.abort());
@@ -36,4 +36,11 @@ export async function openGroup(page: Page, title: string) {
   const g = page.locator('details.group', { has: page.locator('.group-title', { hasText: title }) });
   if ((await g.getAttribute('open')) === null) await g.locator(':scope > summary').click();
   return g;
+}
+
+/** Clicks a sign-in way under "Other ways to sign in" (create, recovery phrase, key), opening that section first if it is closed. */
+export async function otherWay(scope: Page | Locator, name: RegExp) {
+  const toggle = scope.getByTestId('signin-more');
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
+  await scope.getByRole('button', { name }).click();
 }

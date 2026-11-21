@@ -1,12 +1,12 @@
-// Sign-in sheet (a modal <dialog>): create a new identity, use an existing recovery phrase, paste a key, or use a passkey; plus the
-// signed-in views reached from the account menu (top-up, passkeys). Secrets are held in component state only while a view needs
+// Sign-in sheet (a modal <dialog>): a Dash wallet (App Connect) first, then a passkey; creating an identity, a recovery phrase and a
+// pasted key sit under "Other ways to sign in". Plus the signed-in views reached from the account menu (top-up, passkeys). Secrets are held in component state only while a view needs
 // them; the session takes ownership of the seed when sign-in completes, and closing the sheet drops the rest.
 import {
   addressOf, discardFunding, discoverIdentities, generatePhrase, lockTooSmall, nextCreateIndex, isValidPhrase, localPasskeys, MIN_CREATE_DEPOSIT_DUFFS, MIN_TOPUP_DEPOSIT_DUFFS, nextTopUpIndex, normalizePhrase,
   createFundingPath, SUGGESTED_CREATE_DEPOSIT_DUFFS, parseVoucher, pendingFundings, PhraseError, redeemVoucher, SeedWallet, signInWithKey, signInWithSeed, toBase64, wipe, type FoundIdentity, type FundingRecord,
-  type PhraseLength,
+  type PhraseLength, type Session,
 } from '@govhub/auth';
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { lazy, Suspense, useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { FIXTURE_IDS } from '../data/fixtureForum.ts';
@@ -17,6 +17,10 @@ import { PasskeySignIn, Passkeys } from './Passkeys.tsx';
 import { RecoverLink } from './RecoverLink.tsx';
 import { SecretField } from './SecretField.tsx';
 import { formatDuffs, plainErrorText } from './runtime.ts';
+import { IdentityName } from '../ui/Identity.tsx';
+
+// App Connect is a separate chunk, loaded only when the wallet view opens (it is reachable only while the feature is on)
+const WalletSignIn = lazy(() => import('./WalletSignIn.tsx'));
 
 export { SecretField }; // moved to its own file (the Recover tool uses it too); tests import it from here
 
@@ -26,54 +30,112 @@ const TITLES: Record<SheetView, string> = {
   phrase: 'Sign in with a recovery phrase',
   key: 'Sign in with a key',
   passkey: 'Sign in with a passkey',
+  wallet: 'Sign in with a Dash wallet',
   topup: 'Top up',
   passkeys: 'Passkeys',
 };
 
+/** Views reached from the chooser while signed out: their header offers a way back to it. */
+const FROM_CHOOSER: ReadonlySet<SheetView> = new Set(['create', 'phrase', 'key', 'passkey', 'wallet']);
+const OTHER_WAYS: ReadonlySet<SheetView | null> = new Set(['create', 'phrase', 'key']);
+
 export function AuthSheet() {
-  const { sheet, closeSheet } = useAuth();
+  const { sheet, closeSheet, openSheet, session } = useAuth();
   const ref = useRef<HTMLDialogElement>(null);
   // What had focus when the sheet opened: focus goes back there when it closes (or to the account button, if that control is gone).
   const opener = useRef<HTMLElement | null>(null);
+  const shown = useRef<SheetView | null>(null);
+  // Back from one of the other ways keeps that section open
+  const backFrom = useRef<SheetView | null>(null);
   useEffect(() => {
     const d = ref.current;
     if (!d) return;
+    const prev = shown.current;
+    shown.current = sheet;
     if (sheet && !d.open) {
       const a = document.activeElement;
       // <body> is no opener (Safari does not focus a clicked button): the account button is the fallback
       opener.current = a instanceof HTMLElement && a !== document.body ? a : null;
       d.showModal();
+      (d.querySelector<HTMLElement>('[data-autofocus]') ?? document.getElementById('sheet-title'))?.focus();
+    } else if (sheet && prev && prev !== sheet) {
+      // another view replaced the one holding focus: start from its title, which a screen reader reads out
+      document.getElementById('sheet-title')?.focus();
     }
     if (!sheet && d.open) d.close();
   }, [sheet]);
   const onClose = () => {
     closeSheet();
+    backFrom.current = null;
     const back = opener.current?.isConnected && opener.current.getClientRects().length ? opener.current : document.getElementById('session-button');
     opener.current = null;
     back?.focus();
   };
+  const choose = sheet === 'choose';
+  const canGoBack = !!sheet && !session && FROM_CHOOSER.has(sheet);
   return (
-    <dialog ref={ref} className="sheet" aria-labelledby="sheet-title" onClose={onClose} onCancel={closeSheet}>
+    <dialog ref={ref} className={`sheet${choose ? ' sheet-choose-dialog' : ''}`} aria-labelledby="sheet-title" onClose={onClose} onCancel={closeSheet}>
       {sheet && (
         <div className="sheet-body">
-          <header className="sheet-head">
-            <h2 id="sheet-title">{TITLES[sheet]}</h2>
-            <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet" onClick={closeSheet} aria-label="Close">
-              ✕
+          <header className={`sheet-head${choose ? ' sheet-head-hero' : ''}`}>
+            {canGoBack && (
+              <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet sheet-icon-btn" onClick={() => {
+                  backFrom.current = sheet;
+                  openSheet('choose');
+                }}
+                aria-label="Back to sign-in options" data-testid="sheet-back">
+                <Icon name="back" />
+              </button>
+            )}
+            <h2 id="sheet-title" tabIndex={-1}>
+              {choose ? (
+                <>
+                  Sign in to <span className="brand-word">Governance</span>
+                </>
+              ) : (
+                TITLES[sheet]
+              )}
+            </h2>
+            <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet sheet-icon-btn sheet-close" onClick={closeSheet} aria-label="Close">
+              <Icon name="close" />
             </button>
           </header>
           {/* key = view: switching views unmounts the previous one and drops what it held */}
-          <SheetContent key={sheet} view={sheet} />
+          {choose ? (
+            <Choose openMore={OTHER_WAYS.has(backFrom.current)} />
+          ) : (
+            <div className="sheet-view" key={sheet}>
+              <SheetContent view={sheet} />
+            </div>
+          )}
         </div>
       )}
     </dialog>
   );
 }
 
-function SheetContent({ view }: { view: SheetView }) {
+const ICONS = {
+  wallet: 'M4 7.5A2.5 2.5 0 0 1 6.5 5H17a1 1 0 0 1 1 1v1.5M4 7.5V17a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2.5M4 7.5A1.5 1.5 0 0 0 5.5 9H19a1 1 0 0 1 1 1v1.5M20 11.5h-3.5a1.5 1.5 0 0 0 0 3H20v-3Z',
+  passkey: 'M9.5 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM3.5 20v-.5a6 6 0 0 1 9-5.2M17.5 13.5a2.25 2.25 0 1 0 0 4.5 2.25 2.25 0 0 0 0-4.5ZM17.5 18v3m0-1.5h1.5',
+  plus: 'M12 5v14M5 12h14',
+  words: 'M5 6h14M5 10h14M5 14h9M5 18h6',
+  key: 'M14.5 9.5a4 4 0 1 1-1.2-2.8M14.5 9.5 20 15v3h-3v-2h-2v-2l-1.6-1.6M8.5 9.5h.01',
+  chevron: 'm6 9 6 6 6-6',
+  next: 'm9 6 6 6-6 6',
+  back: 'M19 12H5m6-6-6 6 6 6',
+  close: 'M6 6l12 12M18 6 6 18',
+} as const;
+
+function Icon({ name, size = 20 }: { name: keyof typeof ICONS; size?: number }) {
+  return (
+    <svg className="icon" width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d={ICONS[name]} fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function SheetContent({ view }: { view: Exclude<SheetView, 'choose'> }) {
   switch (view) {
-    case 'choose':
-      return <Choose />;
     case 'create':
       return <CreateFlow />;
     case 'phrase':
@@ -82,11 +144,33 @@ function SheetContent({ view }: { view: SheetView }) {
       return <KeySignIn />;
     case 'passkey':
       return <PasskeySignIn />;
+    case 'wallet':
+      return (
+        <Suspense fallback={<p className="muted">Loading…</p>}>
+          <WalletSignIn />
+        </Suspense>
+      );
     case 'topup':
-      return <TopUp />;
+      return <WalletLimits what="topup" fallback={<TopUp />} />;
     case 'passkeys':
-      return <Passkeys />;
+      return <WalletLimits what="passkeys" fallback={<Passkeys />} />;
   }
+}
+
+/**
+ * A wallet sign-in holds a key the wallet granted for govhub's forum only, with its own budget and expiry: top-ups and passkeys
+ * (which derive from or store the signing key) belong in the wallet. Other sessions see the normal view.
+ */
+function WalletLimits({ what, fallback }: { what: 'topup' | 'passkeys'; fallback: ReactNode }) {
+  const { session } = useAuth();
+  if (session?.source !== 'wallet') return fallback;
+  return (
+    <p className="notice-box dh-notice dh-notice--info" data-testid="wallet-limits">
+      {what === 'topup'
+        ? 'You signed in with your Dash wallet. Top up your identity from the wallet; Governance spends at most the budget you approved there.'
+        : 'You signed in with your Dash wallet, which keeps your keys. A passkey here would store a temporary key; sign in from the wallet again instead.'}
+    </p>
+  );
 }
 
 /** Fixture mode: sample identities whose writes go into the in-memory fixture store (no keys, no network). */
@@ -147,7 +231,7 @@ function RecoverableNotice({ records }: { records: FundingRecord[] }) {
 
 /**
  * The phrase or key is typed into a web page, so it should never guard real money: one made for govhub, holding only what govhub
- * needs. Shown wherever a phrase or key is made or entered. Once sign-in with a Dash wallet exists, that is the main path.
+ * needs. Shown inside the views where a phrase or key is entered, never on the chooser.
  */
 function SeedWarning({ what = 'phrase' }: { what?: 'phrase' | 'key' }) {
   return (
@@ -158,34 +242,38 @@ function SeedWarning({ what = 'phrase' }: { what?: 'phrase' | 'key' }) {
   );
 }
 
-function Choose() {
-  const { openSheet, store, network } = useAuth();
+const DASH_WALLET_URL = 'https://www.dash.org/download/';
+
+function OutLink({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer">
+      {children}
+      <span className="visually-hidden"> (opens in a new tab)</span>
+    </a>
+  );
+}
+
+function Choose({ openMore }: { openMore: boolean }) {
+  const { openSheet, store, network, appConnect } = useAuth();
   const { mode } = useApp();
   const [, rerender] = useState(0);
+  // With no wallet sign-in, the other ways are the only ones that work for most people: start with them open.
+  const [more, setMore] = useState(!appConnect || openMore);
+  const moreId = useId();
   const pending = pendingFundings(store, network).filter((r) => r.kind === 'create');
-  const main: Array<{ v: SheetView; title: string; text: string; tag?: string }> = [
-    { v: 'create', title: 'Create an account', tag: 'New here? Start here', text: `A new Dash identity, made in this browser. Pay a little DASH (${formatDuffs(SUGGESTED_CREATE_DEPOSIT_DUFFS)} is suggested) from any Dash wallet; it covers the account and your first comments.` },
-    { v: 'phrase', title: 'I have a recovery phrase', text: 'The 12 or 24 words of an account you made for Governance.' },
+  const recoverable = store.list().filter((r) => r.network === network && !r.discarded);
+  // A notice above the buttons is read first: the dialog then starts at its title, not past it
+  const autofocus = !pending.length && !recoverable.some((r) => stuckDuffs(r) > 0n) && mode !== 'fixtures';
+  const other: Array<{ v: SheetView; icon: keyof typeof ICONS; title: string; text: string }> = [
+    { v: 'create', icon: 'plus', title: 'Create an account', text: `Pay a little DASH (${formatDuffs(SUGGESTED_CREATE_DEPOSIT_DUFFS)} suggested) from any Dash wallet.` },
+    { v: 'phrase', icon: 'words', title: 'I have a recovery phrase', text: 'The 12 or 24 words of an account you made for Governance.' },
+    { v: 'key', icon: 'key', title: 'Paste a key', text: 'For developers: a private key of your identity.' },
   ];
-  const other: Array<{ v: SheetView; title: string; text: string }> = [
-    { v: 'passkey', title: 'Use a passkey', text: 'If you saved one on this device or another.' },
-    { v: 'key', title: 'Paste a key', text: 'For developers: a private key of your identity.' },
-  ];
-  const choice = (o: (typeof main)[number]) => (
-    <button key={o.v} type="button" className="dh-choice" onClick={() => openSheet(o.v)} data-testid={`choose-${o.v}`}>
-      <span className="dh-choice__title">
-        {o.title}
-        {o.tag && <span className="dh-badge dh-badge--info">{o.tag}</span>}
-      </span>
-      <span className="dh-choice__desc">{o.text}</span>
-      {o.v === 'phrase' && <span className="dh-choice__meta">Other Dash wallets (DashPay, Dash Evo Tool) can restore it.</span>}
-    </button>
-  );
   return (
     <div className="sheet-choose">
-      <p className="lede">Reading needs no account. Sign in to ask and answer polls, comment, or keep your masternodes’ voting keys for next time.</p>
+      <p className="signin-lede">Reading needs no account. Sign in to ask and answer polls, comment, or keep your masternodes’ voting keys for next time.</p>
       <dashhq-signin-help compact="always"
-        asks="phrase passkey key voting-key"
+        asks={`${appConnect ? 'wallet ' : ''}passkey phrase key voting-key`}
         kept="memory"
         why="It signs your polls, answers, comments and reactions and unlocks your saved voting keys."
         kept-note="Voting keys you add are kept encrypted on Dash Platform, unless you choose memory only."
@@ -229,25 +317,62 @@ function Choose() {
           </button>
         </div>
       )}
-      <RecoverableNotice records={store.list().filter((r) => r.network === network && !r.discarded)} />
-      <div className="dh-choices">{main.map(choice)}</div>
-      <SeedWarning />
-      <p className="small muted choices-more">Other ways to sign in</p>
-      <div className="dh-choices dh-choices--2">
-        {other.map(choice)}
-        <button type="button" className="dh-choice" disabled aria-describedby="wallet-soon" data-testid="wallet-signin">
-          <span className="dh-choice__title">
-            A Dash wallet
-            <span className="dh-badge dh-badge--info" id="wallet-soon">
-              Not yet
+      <RecoverableNotice records={recoverable} />
+      <div className="signin-main">
+        <button type="button" className={`btn dh-btn signin-btn${appConnect ? ' btn-primary' : ''}`} onClick={() => openSheet('wallet')} disabled={!appConnect} aria-describedby={appConnect ? undefined : 'wallet-soon'} data-testid="wallet-signin" data-autofocus={(appConnect && autofocus) || undefined}>
+          <Icon name="wallet" />
+          Sign in with Dash Wallet
+          {!appConnect && (
+            <span className="tag dh-badge tag-info dh-badge--info" id="wallet-soon">
+              Coming soon
             </span>
-          </span>
-          <span className="dh-choice__desc">Approving from DashPay, with no phrase typed here, isn’t available yet.</span>
+          )}
         </button>
+        <button type="button" className={`btn dh-btn signin-btn${appConnect ? '' : ' btn-primary'}`} onClick={() => openSheet('passkey')} data-testid="passkey-signin" data-autofocus={(!appConnect && autofocus) || undefined}>
+          <Icon name="passkey" />
+          Sign in with a passkey
+        </button>
+      </div>
+      <div className="signin-more">
+        <button type="button" className="signin-more-toggle" aria-expanded={more} aria-controls={moreId} onClick={() => setMore((m) => !m)} data-testid="signin-more">
+          Other ways to sign in
+          <Icon name="chevron" size={16} />
+        </button>
+        <div id={moreId} className="signin-more-panel" hidden={!more}>
+          <ul className="signin-alts">
+            {other.map((o) => (
+              <li key={o.v}>
+                <button type="button" className="signin-alt" onClick={() => openSheet(o.v)}>
+                  <span className="signin-alt-icon">
+                    <Icon name={o.icon} size={18} />
+                  </span>
+                  <span className="signin-alt-text">
+                    <b>{o.title}</b>
+                    <span className="muted small">{o.text}</span>
+                  </span>
+                  <Icon name="next" size={16} />
+                </button>
+              </li>
+            ))}
+          </ul>
+          <details className="learn dh-disclosure signin-learn">
+            <summary>What is an account here?</summary>
+            <p className="small">
+              Your account is a Dash Platform identity. Comments and reactions are stored on Dash Platform and paid for with a little credit from your account’s
+              balance (about 0.0005 DASH a comment). Your recovery phrase is the account: other Dash wallets (DashPay, Dash Evo Tool) can restore it. It stays in
+              this browser; Governance has no account server and can’t reset it for you.
+            </p>
+          </details>
+        </div>
       </div>
       <p className="small sheet-vote-note" data-testid="signin-vote-note">
         <b>Only here for treasury voting?</b> You don’t need an account: every open proposal can be signed offline in Dash Core, or with a voting key kept in that tab only.
       </p>
+      <div className="signin-foot">
+        <p>
+          New to Dash? <OutLink href={DASH_WALLET_URL}>Get Dash Wallet</OutLink>
+        </p>
+      </div>
     </div>
   );
 }
@@ -295,7 +420,7 @@ export function CreateFlow() {
             </li>
           ))}
         </ol>
-        <div className="form-actions">
+        <div className="sheet-actions">
           <button type="button" className="btn dh-btn btn-primary dh-btn--primary" onClick={() => setStep('quiz')}>
             I wrote it down
           </button>
@@ -308,7 +433,7 @@ export function CreateFlow() {
               setPhrase(generatePhrase(n));
             }}
           >
-            Use {words === 12 ? 24 : 12} words instead
+            Start over with {words === 12 ? 24 : 12} words (replaces the words above)
           </button>
         </div>
       </div>
@@ -337,9 +462,9 @@ function Quiz({ words, positions, onPass, onBack }: { words: string[]; positions
       <p>Type these words from your written copy, to be sure you have it.</p>
       <div className="row3">
         {positions.map((p, i) => (
-          <label className="dh-field__label" key={p}>
+          <label key={p}>
             Word #{p + 1}
-            <input className="dh-input"
+            <input
               value={answers[i]}
               onChange={(e) => setAnswers((a) => a.map((x, j) => (j === i ? e.target.value : x)))}
               autoComplete="off"
@@ -351,7 +476,7 @@ function Quiz({ words, positions, onPass, onBack }: { words: string[]; positions
         ))}
       </div>
       {wrong && <p className="error" role="alert">That doesn't match. Check your written copy, or go back and look again.</p>}
-      <div className="form-actions">
+      <div className="sheet-actions">
         <button type="submit" className="btn dh-btn btn-primary dh-btn--primary">
           Continue
         </button>
@@ -471,7 +596,7 @@ function VoucherRedeem({ wallet, identityIndex, onDone }: { wallet: SeedWallet; 
         </p>
       )}
       {error && <p className="error" role="alert">{error}</p>}
-      <div className="form-actions">
+      <div className="sheet-actions">
         <button type="submit" className="btn dh-btn btn-primary dh-btn--primary" disabled={busy || !text.trim()}>
           {busy ? 'Redeeming…' : 'Redeem'}
         </button>
@@ -488,6 +613,19 @@ function PhraseSignIn() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [state, setState] = useState<{ phrase: string; found: FoundIdentity[]; resume?: FundingRecord; createIndex?: number } | null>(null);
+  // Back can leave this view while a lookup runs: a late result then ends its session instead of signing in and closing another view
+  const left = useRef(false);
+  useEffect(() => {
+    left.current = false;
+    return () => {
+      left.current = true;
+    };
+  }, []);
+  const finish = (s: Session) => {
+    if (left.current) return s.end();
+    signIn(s);
+    closeSheet();
+  };
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -520,9 +658,9 @@ function PhraseSignIn() {
       const found = await discoverIdentities(wallet, port);
       if (!found.length && resume) return setState({ phrase, found: [], resume });
       if (found.length === 1) {
-        signIn(await signInWithSeed(wallet, found[0]!, port));
+        const s = await signInWithSeed(wallet, found[0]!, port);
         handedOver = true;
-        closeSheet();
+        finish(s);
         return;
       }
       // a new identity skips an index whose payment was used to top up another identity
@@ -539,8 +677,7 @@ function PhraseSignIn() {
     setBusy(true);
     const wallet = SeedWallet.fromPhrase(state.phrase, network);
     try {
-      signIn(await signInWithSeed(wallet, f, await platform()));
-      closeSheet();
+      finish(await signInWithSeed(wallet, f, await platform()));
     } catch (err) {
       wallet.wipe();
       setError(plainErrorText(err));
@@ -565,8 +702,12 @@ function PhraseSignIn() {
           {state.found.map((f) => (
             <li key={f.identityId}>
               <button type="button" className="choice" disabled={busy} onClick={() => pick(f)}>
-                <b className="break">{f.identityId}</b>
-                <span className="muted small">identity #{f.identityIndex}</span>
+                <b>
+                  <IdentityName id={f.identityId} />
+                </b>
+                <span className="muted small break">
+                  identity #{f.identityIndex} · {f.identityId}
+                </span>
               </button>
             </li>
           ))}
@@ -581,7 +722,7 @@ function PhraseSignIn() {
       <SecretField label="Recovery phrase (12 or 24 words)" what="the recovery phrase" value={text} onChange={setText} testId="phrase-input" disabled={busy} />
       <p className="muted small">The phrase never leaves this browser. Governance finds your account by a public key fingerprint only.</p>
       {error && <p className="error" role="alert">{error}</p>}
-      <div className="form-actions">
+      <div className="sheet-actions">
         <button type="submit" className="btn dh-btn btn-primary dh-btn--primary" disabled={busy || !text.trim()}>
           {busy ? <><span className="spinner" aria-hidden="true" /> Looking up…</> : 'Sign in'}
         </button>
@@ -616,16 +757,16 @@ function KeySignIn() {
   return (
     <form className="form" onSubmit={submit}>
       <SeedWarning what="key" />
-      <label className="dh-field__label">
+      <label>
         Private key (WIF or 64 hex characters)
-        <input className="dh-input" type="password" value={text} onChange={(e) => setText(e.target.value)} autoComplete="off" spellCheck={false} data-testid="key-input" disabled={busy} />
+        <input type="password" value={text} onChange={(e) => setText(e.target.value)} autoComplete="off" spellCheck={false} data-testid="key-input" disabled={busy} />
       </label>
       <p className="muted small">Use your identity's HIGH (or CRITICAL) authentication key, never the MASTER key. It stays in memory (shared with your other open Governance tabs) and is gone when you sign out or close the browser.</p>
       <label className="check dh-check">
         <input type="checkbox" checked={keep} onChange={(e) => setKeep(e.target.checked)} /> Keep it with a passkey so I can sign in again without pasting
       </label>
       {error && <p className="error" role="alert">{error}</p>}
-      <div className="form-actions">
+      <div className="sheet-actions">
         <button type="submit" className="btn dh-btn btn-primary dh-btn--primary" disabled={busy || !text.trim()}>
           {busy ? 'Checking…' : 'Sign in'}
         </button>
@@ -663,9 +804,11 @@ function TopUp() {
     return (
       <div>
         <p className="notice">Top-up complete. Your balance is updated.</p>
-        <button type="button" className="btn dh-btn btn-primary dh-btn--primary" onClick={closeSheet}>
-          Close
-        </button>
+        <div className="sheet-actions">
+          <button type="button" className="btn dh-btn btn-primary dh-btn--primary" onClick={closeSheet}>
+            Close
+          </button>
+        </div>
       </div>
     );
   }

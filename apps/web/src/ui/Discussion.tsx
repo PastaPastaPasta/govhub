@@ -111,7 +111,7 @@ function useThread(govHash: string) {
  * The comments under one thread key: a proposal's govHash, or a username contest's key (contests/model.ts contestKey). `featured` are
  * the authors the default view always shows besides MN badge holders.
  */
-export function Discussion({ govHash, featured }: { govHash: string; featured: Featured }) {
+export function Discussion({ govHash, featured, composerNote }: { govHash: string; featured: Featured; composerNote?: string }) {
   const { source, registry, mode } = useApp();
   const { forum, session, write, moderation, reloadModeration } = useForum();
   const thread = useThread(govHash);
@@ -275,7 +275,7 @@ export function Discussion({ govHash, featured }: { govHash: string; featured: F
       </p>
 
       {session ? (
-        <Composer label="Post comment" onSubmit={(b) => post(b)} />
+        <Composer label="Post comment" hint={composerNote} onSubmit={(b) => post(b)} />
       ) : (
         <p className="signin-cta">
           <button type="button" className="dh-btn dh-btn--secondary" onClick={openSignIn}>
@@ -303,7 +303,7 @@ export function Discussion({ govHash, featured }: { govHash: string; featured: F
           <Link to={{ search: '' }} className="dh-link">Show the whole discussion</Link>
         </p>
       )}
-      {reactions.error && <p className="error small">Scores could not be read: {reactions.error}</p>}
+      {reactions.error && <p className="muted small">Scores could not be loaded ({reactions.error}); comments are shown without them.</p>}
       {!moderation.ready && thread.data && count > 0 && (
         <p className="muted" aria-busy="true">
           <span className="spinner" aria-hidden="true" /> Applying block lists…
@@ -347,7 +347,7 @@ export function Discussion({ govHash, featured }: { govHash: string; featured: F
 /** The filter note's last sentence: which lists hide spam, or that they are still being read or could not be read. */
 function listNote(m: ReturnType<typeof useForum>['moderation']): string {
   if (m.subs.defaultOff) return ' The default block list is off (Settings).';
-  if (!m.ready) return ' Reading the block lists…';
+  if (!m.ready) return '';
   const loaded = m.lists.map((l) => l.name).join(', ');
   if (loaded) return ` Spam is hidden by ${loaded}.`;
   return m.error ? ' The block lists could not be read.' : '';

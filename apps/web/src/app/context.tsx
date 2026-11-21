@@ -9,11 +9,12 @@ import { cacheDeleteWhere, cacheGet, cachePut } from '../data/cache.ts';
 import { REFRESH_MS, type UsdState } from '../data/price.ts';
 import { createSource, type DataSource } from '../data/repo.ts';
 import type { Cycle, Proposal, Sourced, Tally } from '../data/types.ts';
-import { errText, setDashUnit } from '../lib/format.ts';
+import { errText } from '../lib/format.ts';
 import type { GovParams } from '../lib/governance.ts';
 import { byRank, deriveRow, partitionByCheck, untalliedOf, type Checked, type Row, type TallyReads } from '../lib/view.ts';
 import { ProposalChecks, type CheckCache, type StoredCheck } from '../verify/checks.ts';
 import { runVerification } from '../verify/client.ts';
+import { setDashUnit } from '../lib/unit.ts';
 
 
 export interface Load<T> {
@@ -109,7 +110,7 @@ function useGovSnapshot(source: DataSource, nonce: number): GovSnapshot {
     let live = true;
     const guard = <A extends unknown[]>(f: (...a: A) => void) => (...a: A) => live && f(...a);
     const read = (which: keyof TallyReads, how: TallyReads[keyof TallyReads]) => live && setTallyReads((r) => ({ ...r, [which]: how }));
-    resetLoaded();
+    // a new source was reset during render; a reload of the same source keeps showing what it has until the new answers land
     source.params().then(guard(setParams), () => {});
     source.cycle(guard((c) => setCycle({ data: c, loading: true }))).then(guard((c) => setCycle({ data: c, loading: false })), guard((e) => setCycle({ error: errText(e), loading: false })));
     source.height().then(guard((h) => setHeight({ data: h, loading: false })), guard((e) => setHeight({ error: errText(e), loading: false })));
@@ -214,9 +215,12 @@ export function AppProvider({ children, initialMode }: { children: ReactNode; in
   const [settingsProblem, setSettingsProblem] = useState<string[] | null>(saved.errors.length ? saved.errors : null);
   const [mode, setModeState] = useState<DataMode>(() => initialMode ?? resolveMode(location.search, sessionStorage, import.meta.env.VITE_GOVHUB_FIXTURES));
   const [nonce, setNonce] = useState(0);
-  const source = useMemo(() => createSource(mode, registry), [mode, registry]);
   // before anything below renders an amount: Testnet's practice coins are tDASH
-  setDashUnit(source.coreNetwork === 'testnet' ? 'tDASH' : 'DASH');
+  const source = useMemo(() => {
+    const s = createSource(mode, registry);
+    setDashUnit(s.coreNetwork);
+    return s;
+  }, [mode, registry]);
   const gov = useGovSnapshot(source, nonce);
   const params = gov.params?.value ?? source.defaultParams;
   const checks = useMemo(() => makeChecks(source), [source]);

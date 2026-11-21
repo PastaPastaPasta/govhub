@@ -247,5 +247,39 @@
   background: var(--fail-fill);
   border-color: var(--fail-fill);
 }
-
+/* Submit step: one line on top says whether anything is left to do. */
+.pw-next {
+  margin: 0;
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--radius-l);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  font-weight: 600;
+}
+.pw-next-ok {
+  border-color: color-mix(in srgb, var(--pass-fill) 45%, var(--line));
+  background: color-mix(in srgb, var(--pass-fill) 9%, var(--surface));
+  color: var(--ink);
+}
+.pw-next-ok > span {
+  color: var(--pass);
+}
+.pw-next-act {
+  border-color: color-mix(in srgb, var(--warn-fill) 45%, var(--line));
+  background: color-mix(in srgb, var(--warn-fill) 9%, var(--surface));
+}
+.pw-h {
+  margin: 0 0 var(--s-2);
+  font-size: var(--t-s);
+}
+.pw-sub {
+  margin-block-start: var(--s-2);
+}
+.pw-sub > summary {
+  cursor: pointer;
+  font-size: var(--t-s);
+  color: var(--accent-ink);
+}
+.pw-sub[open] > summary {
+  margin-block-end: var(--s-2);
 }
