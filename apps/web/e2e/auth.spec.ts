@@ -9,8 +9,10 @@ test('create flow shows a fresh phrase, checks three words, then offers funding'
   await page.getByRole('button', { name: 'Sign in' }).click();
   const sheet = page.getByRole('dialog', { name: 'Sign in to Governance' });
   await expect(sheet).toBeVisible();
-  // the family's sign-in help offers the same start as the first way in
-  await expect(sheet.locator('dashhq-signin-help').getByRole('button', { name: 'Create an account', exact: true })).toBeVisible();
+  // the family's sign-in help, folded to one line, offers the same start as the first way in once opened
+  const help = sheet.locator('dashhq-signin-help');
+  await help.getByRole('button', { expanded: false }).click();
+  await expect(help.getByRole('button', { name: 'Create an account', exact: true })).toBeVisible();
   await otherWay(sheet, /Create an account/);
 
   const words = page.getByTestId('phrase-words').locator('li');
