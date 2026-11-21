@@ -22,8 +22,7 @@ import { StartsLaterPageStatus } from '../ui/StartsLater.tsx';
 import { ClaimPanel, OwnerPost, OwnerValue, RejectedClaims, useOwnership, useOwnerPost } from '../ui/Ownership.tsx';
 import { TrustBadge } from '../ui/trust/TrustBadge.tsx';
 import { useProposalTrust } from '../ui/trust/useProposalTrust.ts';
-import type { Aggregate } from '../verify/aggregate.ts';
-import { trustScope, useCachedTrust, type StoredTrust } from '../ui/trust/store.ts';
+import { LEVEL_LABEL, type Aggregate } from '../verify/aggregate.ts';
 import { VerificationDrawer } from '../ui/trust/VerificationDrawer.tsx';
 import { mnParam, ProposalVoteBlock, type VoteSubject } from '../ui/vote/VoteBlock.tsx';
 import { useOwnerPage } from '../lib/ownerPages.ts';
@@ -194,10 +193,14 @@ function Purpose({ page, hasPost, url, host }: { page: Found; hasPost: boolean; 
   );
 }
 
-function TrustStatus({ agg, cached, onOpen }: { agg: Aggregate; cached: StoredTrust | null; onOpen(): void }) {
-  const verified = agg.level === 'verified' || (agg.level === 'checking' && cached?.level === 'verified');
-  if (!verified) return <button type="button" className="dh-btn dh-btn--link" onClick={onOpen}>Verification details</button>;
-  return <span className="trust-status" data-testid="trust-status"><TrustBadge level="verified" label="Chain verified" reason="Checked in this browser. A first visit takes 10 to 40 seconds; open for the checks and their sources." onOpen={onOpen} /></span>;
+function TrustStatus({ agg, onOpen }: { agg: Aggregate; onOpen(): void }) {
+  if (agg.level === 'verified') return <span className="trust-status" data-testid="trust-status"><TrustBadge level="verified" label="Chain verified" reason="Checked in this browser. A first visit takes 10 to 40 seconds; open for the checks and their sources." onOpen={onOpen} /></span>;
+  const described = `Verification details: ${LEVEL_LABEL[agg.level]}${agg.reason ? ` — ${agg.reason}` : ''}`;
+  return (
+    <button type="button" className="dh-btn dh-btn--link" onClick={onOpen} data-testid="trust-badge" data-trust={agg.level} aria-label={described} title={agg.reason ?? undefined} aria-haspopup="dialog">
+      Verification details
+    </button>
+  );
 }
 
 export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
@@ -212,7 +215,6 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
   // The Platform tally document whenever there is one: the recount is checked against that proven record, not the bridge's own.
   const row = useMemo(() => deriveRow(sp, tallies.data ?? new Map(), gov.bridgeTallies, cycle, params, now, 'platform'), [sp, tallies.data, gov.bridgeTallies, cycle, params, now]);
   const trust = useProposalTrust(p, row, tallies.loading);
-  const cachedTrust = useCachedTrust(trustScope(source), p, row.tally?.value ?? null);
   const [drawer, setDrawer] = useState(false);
   const check = checks.state(p);
 
@@ -556,7 +558,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
         <aside className="p-side" aria-label="Summary">
           <section className="panel dh-card">
             <h2 className="panel-title">Summary</h2>
-            <TrustStatus agg={trust.aggregate} cached={cachedTrust} onOpen={() => setDrawer(true)} />
+            <TrustStatus agg={trust.aggregate} onOpen={() => setDrawer(true)} />
             <dl className="kv" data-testid="summary">
               {host && (
                 <div>

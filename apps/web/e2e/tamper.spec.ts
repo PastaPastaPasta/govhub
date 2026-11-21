@@ -265,6 +265,34 @@ test.describe('tamper (replayed Testnet session)', () => {
     expect(await glyphs(page, '[data-testid="votes-check"]')).not.toContain('glyph-mismatch');
   });
 
+  // A Verified result from an earlier visit is never shown while the page checks again: the figures it now shows may be another tally
+  test('warm load, then a tampered tally: the page never reads Verified while it checks again', async ({ browser }) => {
+    test.setTimeout(PER_LOAD_MS * 2);
+    let lie = false;
+    const { page, ctx } = await open(browser, (e) => (lie ? voteTampers['tally-number']!(e) : null));
+    expect((await settle(page)).level).toBe('verified');
+    await page.keyboard.press('Escape');
+    lie = true;
+    await ctx.addInitScript(() => {
+      const w = window as unknown as { __sawVerified?: string[] };
+      w.__sawVerified = [];
+      new MutationObserver(() => {
+        const b = document.querySelector('[data-testid="trust-badge"]');
+        const at = b?.getAttribute('data-trust');
+        const side = document.querySelector('.p-side')?.textContent ?? '';
+        if (at === 'verified' || /Chain verified/.test(side)) w.__sawVerified!.push(`${at ?? 'text'} at ${Math.round(performance.now())} ms`);
+      }).observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+    });
+    const s = await settle(page);
+    expect(s.level).not.toBe('verified');
+    expect(s.states.votes).toBe('error');
+    // and it stays so: nothing that settles later turns the tampered figures Verified
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(10_000);
+    await expect(page.getByTestId('trust-badge')).not.toHaveAttribute('data-trust', 'verified');
+    expect(await page.evaluate(() => (window as unknown as { __sawVerified: string[] }).__sawVerified)).toEqual([]);
+  });
+
   // S1-T3.5 (D-001, D-066): "in the next budget" never follows the tally's own flag or rank
   test('funded-flag: a flipped inNextBudget/rank changes nothing the page claims', async ({ browser }) => {
     test.setTimeout(PER_LOAD_MS * 2);
