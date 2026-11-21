@@ -1167,6 +1167,18 @@ table {
   color: var(--ink-3);
   inline-size: 0.75em;
 }
+/* the family table marks the sorted column itself */
+.dh-table .sort-head.on .sort-arrow {
+  display: none;
+}
+.past-phone-sort {
+  display: none;
+}
+@media (max-width: 640px) {
+  .past-phone-sort {
+    display: flex;
+  }
+}
 .sort-head.on .sort-arrow {
   color: var(--accent-ink);
 }

@@ -136,4 +136,18 @@ describe('PastPage search and sort', () => {
     expect(el.querySelector('[data-testid="past-retry"]')).toBeNull();
     expect(el.textContent).not.toContain('not read');
   });
+
+  it('the phone sort menu sets the same order as the column headings', async () => {
+    setup();
+    const { el } = await render(page());
+    await settle();
+    const select = el.querySelector<HTMLSelectElement>('[data-testid="list-sort"]')!;
+    expect(select.value).toBe('ended:desc');
+    await act(async () => {
+      select.value = 'amount:asc';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(at).toBe('?sort=amount&dir=asc');
+    expect(names(el)).toEqual(['beta-tools', 'zeta-tools', 'mid-outreach', 'alpha-docs']);
+  });
 });

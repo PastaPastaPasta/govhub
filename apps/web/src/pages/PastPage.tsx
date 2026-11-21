@@ -19,8 +19,8 @@ import { contentFailure, isFailed } from '../verify/checks.ts';
 import { FailedNote, FailedProposalsToggle } from '../ui/HiddenToggle.tsx';
 import { useReveal } from '../ui/hooks.ts';
 import { ProposalTabs } from '../ui/ProposalTabs.tsx';
-import { NoMatches, ResultCount, SearchField, useQueryState } from '../ui/ListControls.tsx';
-import { comparePast, matches, nextPastSort, proposalFields, readPast, writePast, type PastSort } from '../lib/listQuery.ts';
+import { NoMatches, ResultCount, SearchField, SortSelect, useQueryState } from '../ui/ListControls.tsx';
+import { comparePast, matches, nextPastSort, proposalFields, readPast, writePast, type Dir, type PastSort } from '../lib/listQuery.ts';
 import { useLedger, type Ledger, type SuperblockSlot } from '../ui/useLedger.ts';
 import { ChainProof } from '../ui/ProofTag.tsx';
 import { DashValue } from '../ui/DashValue.tsx';
@@ -85,6 +85,18 @@ function usePastProposals() {
 }
 
 type View = 'payments' | 'proposals';
+
+/** Phones list past proposals as cards, without column headings: the same orders as a menu. */
+const PHONE_SORTS: readonly { value: `${PastSort}:${Dir}`; text: string }[] = [
+  { value: 'ended:desc', text: 'Ended, newest first' },
+  { value: 'ended:asc', text: 'Ended, oldest first' },
+  { value: 'name:asc', text: 'Name, A to Z' },
+  { value: 'name:desc', text: 'Name, Z to A' },
+  { value: 'amount:desc', text: 'Largest amount' },
+  { value: 'amount:asc', text: 'Smallest amount' },
+  { value: 'yes:desc', text: 'Most net yes votes' },
+  { value: 'yes:asc', text: 'Fewest net yes votes' },
+];
 
 export function PastPage() {
   useRouteTitle('/past');
@@ -448,6 +460,16 @@ function ProposalsView({ past, ledger, known }: { past: ReturnType<typeof usePas
       {(past.items.length > 0 || searching) && (
         <div className="list-tools" role="search" aria-label="Past proposals">
           <SearchField label="Search past proposals" placeholder="Search by name, URL or address" value={query.q} onChange={(q, replace) => setQuery({ q }, { replace })} />
+          <div className="past-phone-sort">
+            <SortSelect
+              value={`${query.sort}:${query.dir}` as const}
+              options={PHONE_SORTS}
+              onChange={(v) => {
+                const [sort, dir] = v.split(':') as [PastSort, Dir];
+                setQuery({ sort, dir });
+              }}
+            />
+          </div>
           {searching && !past.loading && !past.error && <ResultCount shown={rows.length} total={showFailed ? past.items.length : past.items.length - failedAll} what="past proposals" onClear={rows.length ? clear : undefined} />}
         </div>
       )}
