@@ -9,10 +9,17 @@ test('create flow shows a fresh phrase, checks three words, then offers funding'
   await page.getByRole('button', { name: 'Sign in' }).click();
   const sheet = page.getByRole('dialog', { name: 'Sign in to Governance' });
   await expect(sheet).toBeVisible();
-  // the family's sign-in help, folded to one line, offers the same start as the first way in once opened
+  // the family's sign-in help, folded to one line, says the session is shared by the open tabs, and its "No identity yet?" leads to
+  // the one create action, under "Other ways to sign in"
   const help = sheet.locator('dashhq-signin-help');
   await help.getByRole('button', { expanded: false }).click();
-  await expect(help.getByRole('button', { name: 'Create an account', exact: true })).toBeVisible();
+  await expect(help).toContainText('shared with your other open Governance tabs: closing the last one signs you out');
+  await expect(help).not.toContainText('Closing the tab signs you out');
+  await help.getByRole('button', { name: 'Set one up here', exact: true }).click();
+  await expect(sheet.getByTestId('signin-more')).toHaveAttribute('aria-expanded', 'true');
+  const create = sheet.getByRole('button', { name: /Create an account/ });
+  await expect(create).toHaveCount(1);
+  await expect(create).toBeFocused();
   await otherWay(sheet, /Create an account/);
 
   const words = page.getByTestId('phrase-words').locator('li');

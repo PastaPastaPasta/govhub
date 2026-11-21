@@ -260,6 +260,19 @@ function Choose({ openMore }: { openMore: boolean }) {
   // With no wallet sign-in, the other ways are the only ones that work for most people: start with them open.
   const [more, setMore] = useState(!appConnect || openMore);
   const moreId = useId();
+  const createRef = useRef<HTMLButtonElement>(null);
+  const [focusCreate, setFocusCreate] = useState(false);
+  // The help's "No identity yet?" leads to the one create action, under "Other ways to sign in"
+  const showCreate = () => {
+    setMore(true);
+    setFocusCreate(true);
+  };
+  useEffect(() => {
+    if (!focusCreate || !more) return;
+    setFocusCreate(false);
+    createRef.current?.focus();
+    createRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [focusCreate, more]);
   const pending = pendingFundings(store, network).filter((r) => r.kind === 'create');
   const recoverable = store.list().filter((r) => r.network === network && !r.discarded);
   // A notice above the buttons is read first: the dialog then starts at its title, not past it
@@ -274,12 +287,11 @@ function Choose({ openMore }: { openMore: boolean }) {
       <p className="signin-lede">Reading needs no account. Sign in to ask and answer polls, comment, or keep your masternodes’ voting keys for next time.</p>
       <dashhq-signin-help compact="always"
         asks={`${appConnect ? 'wallet ' : ''}passkey phrase key voting-key`}
-        kept="memory"
         why="It signs your polls, answers, comments and reactions and unlocks your saved voting keys."
-        kept-note="Voting keys you add are kept encrypted on Dash Platform, unless you choose memory only."
+        kept-note="In memory only, shared with your other open Governance tabs: closing the last one signs you out. Voting keys you add are kept encrypted on Dash Platform, unless you choose memory only."
       >
-        <button type="button" slot="start" onClick={() => openSheet('create')}>
-          Create an account
+        <button type="button" slot="start" onClick={showCreate}>
+          Set one up here
         </button>
       </dashhq-signin-help>
       {mode === 'fixtures' && <SampleIdentities />}
@@ -342,7 +354,7 @@ function Choose({ openMore }: { openMore: boolean }) {
           <ul className="signin-alts">
             {other.map((o) => (
               <li key={o.v}>
-                <button type="button" className="signin-alt" onClick={() => openSheet(o.v)}>
+                <button type="button" className="signin-alt" onClick={() => openSheet(o.v)} ref={o.v === 'create' ? createRef : undefined}>
                   <span className="signin-alt-icon">
                     <Icon name={o.icon} size={18} />
                   </span>
