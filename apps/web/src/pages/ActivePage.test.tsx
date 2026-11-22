@@ -16,6 +16,7 @@ vi.mock('../voting/KeyringContext.tsx', () => ({ useKeyring: () => hold.keyring 
 vi.mock('../app/forum.tsx', () => ({ useForum: () => ({ forum: { reader: { profiles: async () => new Map() } } }) }));
 vi.mock('../ui/useCommentCounts.ts', () => ({ useCommentCounts: () => new Map() }));
 vi.mock('../ui/BudgetHeader.tsx', () => ({ BudgetHeader: () => null }));
+vi.mock('../ui/trust/ChainShield.tsx', () => ({ ChainShield: () => null }));
 
 const { ActivePage } = await import('./ActivePage.tsx');
 

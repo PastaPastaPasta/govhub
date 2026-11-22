@@ -1,0 +1,214 @@
+/* Governance visual pass (Nov 2026): one hierarchy on the landing page (payout, then budget, then proposals) and on a proposal
+   (ask and standing, then the vote, then the record). Unlayered on purpose: it sits after the vendored shell stylesheets and wins
+   over them and over the gov layer. The type-token overrides below are the values proposed for shell 1.9.6; once the shell ships
+   them they become no-ops. */
+
+:root {
+  --dh-fs-xs: 13px;
+  --dh-fs-sm: 14px;
+  --dh-fs-ui: 15px;
+  --dh-fs-body: 16px;
+  --dh-fs-lead: 18px;
+  --dh-fs-h3: 18px;
+  --dh-fs-h2: 22px;
+  --dh-fs-stat: 30px;
+  --dh-stretch-dense: 100%;
+}
+html { font-size: 16px; }
+
+/* ---- landing: payout, then budget ---------------------------------------------------------------------------- */
+.main:has(> .gov-hero) { padding-block-start: var(--dh-6); }
+.budget.gov-hero { display: grid; gap: var(--dh-5); margin-block: 0 var(--dh-7); }
+.gov-hero .dh-page-header__title { font-size: clamp(34px, 4.4vw, 48px); line-height: 1.08; }
+.gov-hero .dh-page-header__lede { font-size: var(--dh-fs-lead); }
+.gov-hero .dh-page-header__actions .dh-btn { min-block-size: 44px; padding-inline: 18px; font-size: 15px; }
+
+.budget-panel {
+  display: grid;
+  gap: var(--dh-5);
+  padding: var(--dh-5) var(--dh-6);
+  background: var(--dh-surface);
+  border: 1px solid var(--dh-line);
+  border-radius: var(--dh-r3, 10px);
+}
+.budget-panel .strip {
+  block-size: 12px;
+  gap: 2px;
+  margin: 0;
+  border-radius: 999px;
+  background: var(--dh-sunken);
+}
+.budget-panel .strip-seg { background: var(--dh-brand); }
+.budget-panel .strip-seg:hover { background: var(--dh-brand-ink); opacity: 1; }
+.budget-panel .strip-other { background: color-mix(in srgb, var(--dh-brand) 45%, var(--dh-sunken)); }
+.budget-panel .strip-free { background: transparent; }
+
+.budget-panel .budget-facts { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--dh-5) var(--dh-6); }
+.budget-panel .gov-stat { border: 0; padding: 0; }
+.budget-panel .gov-stat + .gov-stat { border-inline-start: 1px solid var(--dh-line); padding-inline-start: var(--dh-6); }
+.budget-panel .gov-stat dt { font-size: 15px; color: var(--dh-ink-2); margin-block-end: 6px; }
+.budget-panel .gov-stat .num { font-size: 30px; font-weight: 640; font-stretch: 104%; color: var(--dh-ink); line-height: 1.1; }
+.budget-panel .gov-stat--good .num { color: var(--dh-good); }
+.budget-panel .gov-stat small { font-size: 15px; }
+.budget-panel .gov-stat-note,
+.budget-panel .usd { display: block; margin-block-start: 6px; font-size: 14px; color: var(--dh-ink-2); line-height: 1.4; }
+.budget-panel .usd .usd-source { display: block; font-size: 13px; }
+
+.budget-panel .budget-foot {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--dh-2) var(--dh-6);
+  padding-block-start: var(--dh-4); border-block-start: 1px solid var(--dh-line);
+}
+.budget-panel .budget-line-links > a,
+.budget-panel details.learn > summary { font-size: 15px; }
+.budget-panel details.learn[open] { flex-basis: 100%; }
+.budget-panel details.learn p { font-size: 15px; max-inline-size: 72ch; }
+
+/* ---- the list --------------------------------------------------------------------------------------------- */
+.list-section .gov-section-head { padding-block-end: var(--dh-4); border: 0; }
+.list-section .gov-section-head h2 { border: 0; padding: 0; font-size: 26px; }
+.list-section .gov-section-head > p { font-size: 15px; }
+.list-section .gov-section-head > a { font-size: 15px; }
+.list-tools { gap: var(--dh-3); margin-block-end: var(--dh-4); }
+
+.plist { border-radius: var(--dh-r3, 10px); }
+.plist-proposals > .prow,
+.plist > .prow[data-govhash] {
+  grid-template-columns: minmax(0, 1fr) 12.5rem 15rem 8rem;
+  grid-template-areas: 'main ask fund meta';
+  column-gap: var(--dh-6);
+  padding: 20px 24px;
+  align-items: start;
+}
+.prow::before { inset-block: 16px; inline-size: 3px; }
+.prow-main { gap: 6px; }
+.prow-title { font-size: 18px; font-weight: 620; line-height: 1.3; }
+.prow-title a { color: var(--dh-ink); text-decoration: none; }
+.prow-title a:hover { text-decoration: underline; }
+.prow-title a:hover { color: var(--dh-brand-ink); }
+.prow-purpose { font-size: 15px; line-height: 1.45; color: var(--dh-ink-2); -webkit-line-clamp: 2; max-inline-size: 64ch; }
+.prow-slug { font-family: var(--dh-font); font-size: 14px; color: var(--dh-ink-2); }
+.prow-slug .slug, .prow-slug code { font-family: inherit; }
+
+.prow-ask { gap: 4px; }
+.prow-ask .num { font-size: 20px; font-weight: 640; }
+.prow-ask .small { font-size: 14px; }
+.prow-per { font-size: 15px; white-space: nowrap; }
+.prow-ask > p:first-of-type { white-space: nowrap; }
+
+.plist-proposals .prow-fund { gap: 6px; }
+.prow-fund .meter { gap: 8px; }
+.prow-fund .meter-text { font-size: 15px; font-weight: 620; }
+.prow-fund .meter-track { block-size: 8px; }
+/* the budget place is a quiet line under the standing, not a second badge */
+.prow-fund > .tag.dh-badge {
+  padding: 0; border: 0; background: none; box-shadow: none; min-block-size: 0; block-size: auto; height: auto;
+  font-size: 14px; font-weight: 400; color: var(--dh-ink-2); text-transform: none; letter-spacing: 0; text-decoration: none; cursor: default;
+}
+.prow-fund > .dh-badge--warn { color: var(--dh-warn); }
+
+.plist-proposals .prow-meta { gap: 6px; }
+.plist-proposals .prow-votes { font-size: 15px; color: var(--dh-ink-2); gap: 0; line-height: 1.4; }
+.prow-votes b { font-size: 16px; font-weight: 640; color: var(--dh-ink); }
+.prow-comments { font-size: 14px; }
+
+.list-foot { display: flex; justify-content: center; margin-block-start: var(--dh-5); }
+.list-foot .chainchip.dh-proof {
+  border: 0; background: none; box-shadow: none; min-block-size: 32px; padding: 4px 8px;
+  font-size: 14px; font-weight: 400; color: var(--dh-ink-2);
+}
+.list-foot .chainchip.dh-proof:hover { color: var(--dh-ink); background: var(--dh-hover); }
+
+/* the narrow layout: a card reads top to bottom, what, how much, where it stands, the votes */
+@media (max-width: 760px) {
+  .main:has(> .gov-hero) { padding-block-start: var(--dh-5); }
+  .budget.gov-hero { gap: var(--dh-4); margin-block-end: var(--dh-6); }
+  .gov-hero .dh-page-header__title { font-size: 32px; }
+  .gov-hero .dh-page-header__lede { font-size: 16px; line-height: 1.5; }
+  .gov-hero .dh-page-header__row { gap: var(--dh-4); }
+  .gov-hero .dh-page-header__actions { margin: 0; }
+  .gov-hero .dh-page-header__actions .dh-btn { block-size: 44px; min-block-size: 44px; font-size: 15px; padding-inline: 16px; }
+  .budget-panel { padding: var(--dh-4); gap: var(--dh-4); }
+  .budget-panel .budget-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--dh-4); }
+  .budget-panel .gov-stat + .gov-stat { border: 0; padding: 0; }
+  .budget-panel .gov-stat .num { font-size: 26px; }
+  .budget-panel .gov-stat dt { font-size: 14px; margin-block-end: 2px; }
+  .budget-panel .gov-stat small { font-size: 14px; }
+  .budget-panel .gov-stat-note { font-size: 13px; }
+  .budget-panel .budget-facts .usd { display: none; }
+  .budget-panel .budget-facts .gov-stat:last-child .gov-stat-note { display: none; }
+  .budget-panel .budget-foot { gap: var(--dh-2) var(--dh-5); padding-block-start: var(--dh-3); }
+  .budget-panel .budget-line-links > a, .budget-panel details.learn > summary { font-size: 15px; }
+
+  .list-section .gov-section-head h2 { font-size: 24px; }
+  .plist-proposals > .prow,
+  .plist > .prow[data-govhash] {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: 'main main' 'ask ask' 'fund fund' 'meta meta';
+    row-gap: 12px;
+    padding: 18px 16px 16px 20px;
+  }
+  .prow-title { font-size: 17px; }
+  .prow-ask { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; }
+  .prow-ask > p { margin: 0; }
+  .plist-proposals .prow-meta { flex-direction: row; align-items: baseline; justify-content: space-between; }
+  .plist-proposals .prow-votes { flex-direction: row; flex-wrap: wrap; gap: 4px 14px; }
+}
+
+/* ---- a proposal: the ask and where it stands, then the vote, then the record --------------------------------- */
+.proposal .p-hero { gap: 6px; margin-block-end: var(--dh-5); }
+.proposal .p-hero .dh-page-header__kicker { display: none; }
+.proposal .p-hero .dh-page-header__title { font-size: clamp(28px, 3.4vw, 38px); line-height: 1.15; }
+.p-sub { margin: 0; font-size: 15px; color: var(--dh-ink-2); overflow-wrap: anywhere; }
+
+.proposal .p-funds {
+  display: grid; gap: var(--dh-5);
+  padding: var(--dh-6);
+  margin-block-end: var(--dh-6);
+  background: var(--dh-surface);
+  border: 1px solid var(--dh-line);
+  border-radius: var(--dh-r3, 10px);
+}
+.p-lead { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: var(--dh-5) var(--dh-7); align-items: start; }
+.p-lead-ask, .p-lead-standing { display: grid; gap: 8px; align-content: start; }
+.proposal .p-amount { font-size: 18px; color: var(--dh-ink-2); line-height: 1.25; }
+.proposal .p-amount .num { font-size: 44px; font-weight: 660; font-stretch: 106%; color: var(--dh-ink); line-height: 1; }
+.proposal .p-amount small { font-size: 22px; font-weight: 600; color: var(--dh-ink); }
+.proposal .p-amount .p-total { display: block; margin-block-start: 10px; font-size: 16px; color: var(--dh-ink-2); }
+.proposal .p-amount .p-total b { font-size: 16px; color: var(--dh-ink); }
+.p-left { margin: 0; font-size: 16px; color: var(--dh-ink-2); }
+.p-lead-standing .meter { gap: 12px; }
+.p-lead-standing .meter-text { font-size: 22px; font-weight: 640; }
+.p-lead-standing .meter-track { block-size: 12px; }
+.p-lead-standing .meter-dot { inline-size: 10px; block-size: 10px; }
+.p-net { margin: 0; font-size: 15px; color: var(--dh-ink-2); }
+.p-net b { color: var(--dh-ink); font-weight: 620; }
+
+.proposal .p-standing { gap: 12px; padding-block-start: var(--dh-5); border-block-start: 1px solid var(--dh-line); }
+.proposal .p-status { font-size: 15px; }
+.proposal .p-votes { font-size: 17px; color: var(--dh-ink-2); gap: 6px 22px; }
+.proposal .p-votes b { font-size: 20px; font-weight: 650; color: var(--dh-ink); }
+.proposal .p-votes .small { font-size: 14px; }
+.p-tally-note { margin: 0; font-size: 14px; }
+.proposal .p-meta:empty { display: none; }
+@media (min-width: 961px) { .proposal .p-meta { display: none; } }
+
+.proposal .p-details .p-decision, .proposal .p-details .p-facts { font-size: 15px; }
+.proposal .panel-title { font-size: 18px; }
+.p-recorded > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; }
+.p-recorded > summary::-webkit-details-marker { display: none; }
+.p-recorded > summary::before { content: '›'; font-size: 18px; line-height: 1; color: var(--dh-ink-2); transition: transform .15s; }
+.p-recorded[open] > summary::before { transform: rotate(90deg); }
+.p-recorded > summary h3 { font-size: 15px; }
+.p-recorded[open] { display: grid; gap: 8px; }
+
+@media (max-width: 760px) {
+  .proposal .p-hero .dh-page-header__title { font-size: 26px; }
+  .proposal .p-funds { padding: var(--dh-4); gap: var(--dh-4); }
+  .p-lead { grid-template-columns: minmax(0, 1fr); gap: var(--dh-4); }
+  .proposal .p-amount .num { font-size: 34px; }
+  .proposal .p-amount small { font-size: 18px; }
+  .p-lead-standing .meter-text { font-size: 18px; }
+  .proposal .p-standing { padding-block-start: var(--dh-4); }
+  .proposal .p-votes { gap: 4px 16px; }
+  .proposal .p-votes b { font-size: 18px; }
+}

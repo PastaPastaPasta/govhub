@@ -64,7 +64,7 @@ export function askText(amountDuffs: number, s: PaymentSchedule | null, params: 
 export function ProposalCard({
   row, href, comments, urlOwner, ownerProfile, ownerDpns, check,
 }: { row: Row; href: string; comments?: number | undefined; urlOwner?: string | null; ownerProfile?: Profile | undefined; ownerDpns?: string | undefined; check?: CheckState }) {
-  const { params, source, registry, gov } = useApp();
+  const { params, source, gov } = useApp();
   const p = row.p.value;
   const t = row.tally?.value;
   const failed = check?.status === 'failed' ? check.reason : null;
@@ -86,21 +86,15 @@ export function ProposalCard({
   const words = useReadableTitle(p.name);
   // no tally: a read that failed or hasn't answered isn't "no votes"
   const noTally = gov?.talliesLoading ? 'Reading the votes…' : gov?.untallied?.has(p.govHash) ? 'Votes not read' : 'No votes yet';
-  const pays = () => (
-    <>
-      pays <dashhq-hash value={p.paymentAddress} label="Payee address" href={`https://${registry.coreNetwork === 'testnet' ? 'insight.testnet.networks.dash.org' : 'insight.dash.org'}/insight/address/${encodeURIComponent(p.paymentAddress)}`}>{p.paymentAddress}</dashhq-hash> ↗
-    </>
-  );
   return (
     <article className={`prow prow-${tone}`} data-govhash={p.govHash} data-check={check?.status} data-lameduck={ended ? 'true' : undefined} data-testid="proposal-card">
       <div className="prow-main">
         <h3 className="prow-title">
-          <Link to={href} className="dh-link">{page?.title ? <bdi>“{page.title}”</bdi> : words}</Link>
+          <Link to={href} className="dh-link">{page?.title ? <bdi>{page.title}</bdi> : words}</Link>
           {mark && <TrustBadge size="s" level={mark.level} reason={mark.reason} testId="card-trust" />}
         </h3>
         <p className="prow-slug small" data-testid="card-slug">
           <Slug name={p.name} />
-          {row.content.ok && <span className="prow-pays"> · {pays()}</span>}
         </p>
         {page && <PurposeLine page={page} />}
         {failed ? (
@@ -120,7 +114,6 @@ export function ProposalCard({
       </div>
 
       <div className="prow-ask">
-        <span className="prow-cell-label">Requests</span>
         <p>
           <span className="num">{ask.amount}</span> <span className="prow-per">{ask.per}</span>
         </p>
@@ -128,7 +121,6 @@ export function ProposalCard({
       </div>
 
       <div className="prow-fund">
-        <span className="prow-cell-label">Standing</span>
         {ended ? (
           <LameDuckCardStatus endEpoch={p.endEpoch} />
         ) : row.state && row.absYes !== null && row.threshold ? (
@@ -148,7 +140,6 @@ export function ProposalCard({
       </div>
 
       <p className="prow-meta small">
-        <span className="prow-cell-label">Votes</span>
         {t ? (
           <span className="prow-votes" aria-label={`Weighted votes: ${t.yesWeighted} yes, ${t.noWeighted} no, ${t.abstainWeighted} abstain`}>
             <span>
@@ -164,7 +155,7 @@ export function ProposalCard({
         ) : (
           <span className="muted">{noTally}</span>
         )}
-        <CommentsLink to={href} count={comments} />
+        {!!comments && <CommentsLink to={href} count={comments} />}
       </p>
     </article>
   );

@@ -231,7 +231,7 @@ describe('ProposalView before and without its record', () => {
     owner.page = { page: { source: '', url: 'https://www.dashcentral.org/p/x', host: 'dashcentral.org', title: 'Dash Desktop, November', description: null, excerpt: 'It funds the desktop wallet.' }, fetchedAt: NOW };
     const { el } = await view(open, { estTime: NOW + 5 * DAY, report: null });
     expect(el.querySelector('[data-testid="p-title"]')!.textContent).toBe('Dash Desktop, November');
-    expect(el.querySelector('.p-hero')!.textContent).toContain('Title from the owner’s page on dashcentral.org');
+    expect(el.querySelector('.p-hero')!.textContent).toContain('title from the owner’s page on dashcentral.org');
     expect(el.querySelector('.p-hero [data-testid="p-chain-name"]')).toBeNull();
     expect(el.querySelector('[data-testid="p-details"] blockquote')!.textContent).toBe('It funds the desktop wallet.');
     expect(el.querySelector('[data-testid="owner-page"] time')!.getAttribute('datetime')).toBe('2026-10-25T00:00:00.000Z');

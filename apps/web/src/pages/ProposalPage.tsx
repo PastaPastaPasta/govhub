@@ -265,8 +265,6 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
   // the verified chain's schedule once there is one (the deadline height is then proven, its time Core's own estimate)
   const untilDeadline = chain ? chain.schedule.deadlineEstTime - now : cycle ? votingDeadlineTime(cycle.value, params) - now : null;
   const recurring = !!sched && !sched.oneTime && sched.total > 0;
-  const paymentsLeft = lameDuck ? 0 : payments?.remainingEstimate ?? sched?.remaining;
-  const paymentsFit = !!sched && (!payments || payments.paid.length + payments.remainingEstimate <= sched.total);
   const paymentsText = paymentsLine(sched, paid && payments ? { made: paid.made.text, count: payments.paid.length, left: payments.remainingEstimate } : null);
   // the vote block names what it is voting on, in the words the lists use (the owner's title quoted as theirs)
   const voteSubject: VoteSubject = {
@@ -318,7 +316,10 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
             words
           )}
         </h1>
-        <p className="small muted">{trust.aggregate.level === 'verified' ? 'Checked against the chain in this browser.' : 'Standing is reported until this browser finishes its checks.'}{ownerTitle && ` Title from the owner’s page on ${page!.page.host}.`}</p>
+        <p className="p-sub">
+          <Slug name={p.name} />
+          {ownerTitle && <span className="muted"> · title from the owner’s page on {page!.page.host}</span>}
+        </p>
       </header>
       {(trust.aggregate.level === 'failed' || trust.aggregate.level === 'error') && <p className="dh-notice dh-notice--warn" role="status">{trust.aggregate.reason ?? 'Verification could not finish. Figures are shown as reported.'} <button type="button" className="dh-btn dh-btn--link" onClick={() => setDrawer(true)}>Review checks</button></p>}
 
@@ -326,9 +327,8 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
         <h2 id="funds-title" className="visually-hidden">
           Amount and standing
         </h2>
-        <div className="p-kpis">
-          <div className="gov-stat gov-stat--blue">
-            <h3 className="gov-stat-label">Requests</h3>
+        <div className="p-lead">
+          <div className="p-lead-ask">
             {row.content.ok ? (
               <p className="p-amount" data-testid="p-ask">
                 <span className="num">{formatDashAmount(p.paymentAmount)}</span> <small>{dashUnit()}</small> <span className="p-per">{sched?.oneTime ? 'one payment' : perPayment(params)}</span>
@@ -340,10 +340,9 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
                 )}
               </p>
             ) : <p className="small" data-testid="p-funds-mismatch">The fields published for this proposal don’t match the hash the network votes on ({row.content.problem}), so its amount, payee and dates aren’t shown as what it funds.</p>}
+            {row.content.ok && paymentsText && <p className="p-left">{capitalize(paymentsText)}</p>}
           </div>
-          <div className={`gov-stat${!lameDuck && state ? ` gov-stat--${state.light === 'pass' ? 'good' : state.light === 'warn' ? 'warn' : 'bad'}` : ''}`}>
-            <h3 className="gov-stat-label">Standing</h3>
-            {!lameDuck && state && <p className="gov-stat-value">{state.passing ? 'Passing' : 'Short by'} <span className="num">{formatInt(state.passing ? state.margin : state.needed)}</span></p>}
+          <div className="p-lead-standing">
             {lameDuck ? (
               <LameDuckPageStatus
                 total={sched?.total ?? 0}
@@ -356,16 +355,11 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
             ) : (
               <p className="muted">{tallies.loading ? 'Reading the votes…' : t ? 'Waiting for the budget cycle' : 'No votes counted yet'}</p>
             )}
-          </div>
-          <div className="gov-stat gov-stat--blue">
-            <h3 className="gov-stat-label">Net votes</h3>
-            <p className="gov-stat-value">{row.absYes !== null ? <><span className="num">{formatInt(row.absYes)}</span> <small>net yes</small></> : <span className="small muted">{tallies.loading ? 'Reading the votes…' : 'Not known'}</span>}</p>
-            {threshold && <p className="gov-stat-note">{formatInt(threshold.value)} to pass · {chain ? 'masternode list' : 'feed estimate'}</p>}
-          </div>
-          <div className="gov-stat">
-            <h3 className="gov-stat-label">Payments left</h3>
-            <p className="gov-stat-value">{row.content.ok && paymentsLeft !== undefined ? <><span className="num">{formatInt(paymentsLeft)}</span>{paymentsFit && <small> of {formatInt(sched!.total)}</small>}</> : <span className="small muted">Not known</span>}</p>
-            {row.content.ok && paymentsText && <p className="gov-stat-note">{capitalize(paymentsText)}</p>}
+            {!lameDuck && threshold && row.absYes !== null && (
+              <p className="p-net">
+                <b>{formatInt(row.absYes)}</b> net yes of <b>{formatInt(threshold.value)}</b> needed <span className="muted">({chain ? 'masternode list' : 'feed estimate'})</span>
+              </p>
+            )}
           </div>
         </div>
         <section className="p-standing" aria-labelledby="standing-title">
@@ -400,7 +394,14 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
           )}
 
           <EvidenceLine agg={trust.aggregate} onRetry={trust.recheck} />
-          {tallies.error && <ReadError error={tallies.error} what="Platform" lead="The tally could not be read" onRetry={() => setTalliesAttempt((n) => n + 1)} />}
+          {tallies.error && (t ? (
+            <p className="p-tally-note small muted" data-testid="tally-fallback">
+              The Platform tally record couldn’t be read, so these are the governance feed’s counts.{' '}
+              <button type="button" className="linkish dh-btn dh-btn--link" onClick={() => setTalliesAttempt((n) => n + 1)} title={tallies.error}>
+                Try again
+              </button>
+            </p>
+          ) : <ReadError error={tallies.error} what="Platform" lead="The tally could not be read" onRetry={() => setTalliesAttempt((n) => n + 1)} />)}
         </section>
         <div className="dh-page-header__meta p-meta">
           {active && !lameDuck && (
@@ -499,8 +500,8 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
                   </p>
                 )}
               </section>
-              <section className="p-claim p-recorded" aria-labelledby="network-records" data-testid="about-recorded">
-                <h3 id="network-records">What the network records</h3>
+              <details className="p-claim p-recorded" data-testid="about-recorded">
+                <summary><h3 id="network-records">What the network records</h3></summary>
                 {row.content.ok ? (
                   <>
                   <dl className="kv small">
@@ -541,7 +542,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
                     the network's record.
                   </p>
                 )}
-              </section>
+              </details>
             </div>
             {claimAbout === true && claim}
           </section>

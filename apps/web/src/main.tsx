@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { Link } from './ui/Link.tsx';
 import './styles.css';
+import './redesign.css';
 import { AppProvider, useApp } from './app/context.tsx';
 import { ForumProvider } from './app/forum.tsx';
 import { AuthProvider } from './auth/context.tsx';
