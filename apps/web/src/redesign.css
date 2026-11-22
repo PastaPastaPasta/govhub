@@ -243,3 +243,4 @@ html { font-size: 16px; }
   .proposal .p-votes b { font-size: 18px; }
 }
 .proposal .p-hero p.p-purpose { display: block; font-size: 15px; color: var(--dh-ink-2); }
+.mono-ish { overflow-wrap: anywhere; word-break: break-all; }
