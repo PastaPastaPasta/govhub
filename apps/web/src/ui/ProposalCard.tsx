@@ -87,7 +87,7 @@ export function ProposalCard({
   // no tally: a read that failed or hasn't answered isn't "no votes"
   const noTally = gov?.talliesLoading ? 'Reading the votes…' : gov?.untallied?.has(p.govHash) ? 'Votes not read' : 'No votes yet';
   return (
-    <article className={`prow prow-${tone}`} data-govhash={p.govHash} data-check={check?.status} data-lameduck={ended ? 'true' : undefined} data-testid="proposal-card">
+    <article className={`prow prow-${tone}${page?.title ? ' prow-titled' : ''}`} data-govhash={p.govHash} data-check={check?.status} data-lameduck={ended ? 'true' : undefined} data-testid="proposal-card">
       <div className="prow-main">
         <h3 className="prow-title">
           <Link to={href} className="dh-link">{page?.title ? <bdi>“{page.title}”</bdi> : words}</Link>

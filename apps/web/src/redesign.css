@@ -157,10 +157,28 @@ html { font-size: 16px; }
   .budget-panel details.learn { margin-inline-start: 0; order: 1; }
   .budget-new { display: inline-flex; margin-inline-start: auto; order: 2; }
   .budget-panel .chain-context { order: 3; flex-basis: 100%; }
-  .list-tools-row { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; gap: 8px; }
-  .list-tools-row > * { flex: none; }
-  .list-tools-row .list-chips { flex-wrap: nowrap; }
+  /* the active list's sort shares the heading's row, so the filters keep a full row and the first proposal stays in view */
+  .list-section[aria-label="Active proposals"] { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--dh-3); }
+  .list-section[aria-label="Active proposals"] > *,
+  .list-section[aria-label="Active proposals"] > :is(.list-head, .list-tools) > *,
+  .list-section[aria-label="Active proposals"] .list-tools-row > * { grid-column: 1 / -1; }
+  .list-section[aria-label="Active proposals"] > :is(.list-head, .list-tools),
+  .list-section[aria-label="Active proposals"] .list-tools-row { display: contents; }
+  .list-section[aria-label="Active proposals"] > .list-head > .gov-section-head { grid-column: 1; grid-row: 1; align-self: center; }
+  .list-section[aria-label="Active proposals"] .list-tools-row > .list-sort { grid-column: 2; grid-row: 1; align-self: center; }
+  .list-section[aria-label="Active proposals"] > * + * { margin-block-start: var(--dh-2); }
+  .list-section[aria-label="Active proposals"] .list-chips { margin-block-start: var(--dh-2); }
   .list-sort > span:first-child { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); }
+  /* the exact name only where the title is the owner's words; otherwise the title already is the name */
+  .prow:not(.prow-titled) .prow-slug { display: none; }
+  /* a card reads: what, how much, where it stands, then the owner's words and the votes */
+  .plist-proposals > .prow { display: flex; flex-direction: column; gap: 8px; }
+  .plist-proposals > .prow > .prow-main { display: contents; }
+  .plist-proposals > .prow :is(.prow-title, .prow-slug) { order: 0; }
+  .plist-proposals > .prow > .prow-ask { order: 1; }
+  .plist-proposals > .prow > .prow-fund { order: 2; }
+  .plist-proposals > .prow .prow-main > :not(.prow-title):not(.prow-slug) { order: 3; }
+  .plist-proposals > .prow > .prow-meta { order: 4; }
   .list-section > .list-head { gap: var(--dh-2); margin-block-end: var(--dh-2); }
   .list-tools { gap: var(--dh-2); }
   .list-tools-row { row-gap: var(--dh-2); }
