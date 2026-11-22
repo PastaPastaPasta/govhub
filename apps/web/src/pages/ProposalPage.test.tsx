@@ -180,13 +180,12 @@ describe('ProposalView reading order', () => {
     r.threshold.value = 331;
     r.threshold.validWeighted = 3310;
     const { el } = await view(open, { estTime: NOW + 5 * DAY, report: r });
-    expect(el.querySelector('[data-testid="p-decision"]')?.textContent).toContain('331 to pass (masternode list at block 1)');
+    expect(el.querySelector('[data-testid="p-funds"]')?.textContent).toContain('331 needed (masternode list at block 1)');
   });
   it('leads with the ask, full tally and vote entry before the details and owner’s words', async () => {
     const { el } = await view(open, { estTime: NOW + 5 * DAY, report: null });
     const summary = el.querySelector('[data-testid="p-decision"]')!;
-    expect(summary.textContent).toContain('Requested');
-    expect(summary.textContent).toContain('504 net yes; 332 to pass (feed estimate)');
+    expect(el.querySelector('[data-testid="p-funds"]')!.textContent).toContain('504 net yes of 332 needed (feed estimate)');
     expect(summary.textContent).toContain('next payout around');
     expect(el.querySelector('.p-hero [data-testid="p-chain-name"]')).toBeNull();
     const funds = el.querySelector('[data-testid="p-funds"]')!;
@@ -233,7 +232,7 @@ describe('ProposalView before and without its record', () => {
     expect(el.querySelector('[data-testid="p-title"]')!.textContent).toBe('Dash Desktop, November');
     expect(el.querySelector('.p-hero')!.textContent).toContain('title from the owner’s page on dashcentral.org');
     expect(el.querySelector('.p-hero [data-testid="p-chain-name"]')).toBeNull();
-    expect(el.querySelector('[data-testid="p-details"] blockquote')!.textContent).toBe('It funds the desktop wallet.');
+    expect(el.querySelector('.p-hero blockquote')!.textContent).toBe('It funds the desktop wallet.');
     expect(el.querySelector('[data-testid="owner-page"] time')!.getAttribute('datetime')).toBe('2026-10-25T00:00:00.000Z');
     expect(el.querySelector('[data-testid="owner-page"] time')!.getAttribute('title')).toBe('25 Oct 2026, 00:00 UTC');
   });

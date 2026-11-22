@@ -148,7 +148,7 @@ export function BudgetHeader() {
         <div className="gov-stat">
           <dt>To pass</dt>
           <dd>
-            <span className="num">{formatInt(threshold)}</span> <small>net yes votes</small><span className="gov-stat-note">Feed estimate, 10% of masternode weight</span>
+            <span className="num">{formatInt(threshold)}</span> <small>net yes votes</small><span className="gov-stat-note">Feed estimate, 10% of weight</span>
           </dd>
         </div>
       </dl>
@@ -157,6 +157,7 @@ export function BudgetHeader() {
         <div className="budget-line-links">
           <Link to="/treasury" data-testid="budget-treasury" className="dh-link dh-link--go">What the budget pays for</Link>
         </div>
+        <Link to="/create" className="budget-new dh-btn dh-btn--secondary dh-btn--sm">New proposal</Link>
         <details className="learn dh-disclosure">
         <summary>How funding works</summary>
         <p className="strip-legend small muted">

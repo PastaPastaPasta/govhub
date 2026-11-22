@@ -320,6 +320,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
           <Slug name={p.name} />
           {ownerTitle && <span className="muted"> · title from the owner’s page on {page!.page.host}</span>}
         </p>
+        {row.content.ok && <Purpose page={page} hasPost={hasPost} url={p.url} host={host} />}
       </header>
       {(trust.aggregate.level === 'failed' || trust.aggregate.level === 'error') && <p className="dh-notice dh-notice--warn" role="status">{trust.aggregate.reason ?? 'Verification could not finish. Figures are shown as reported.'} <button type="button" className="dh-btn dh-btn--link" onClick={() => setDrawer(true)}>Review checks</button></p>}
 
@@ -357,7 +358,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
             )}
             {!lameDuck && threshold && row.absYes !== null && (
               <p className="p-net">
-                <b>{formatInt(row.absYes)}</b> net yes of <b>{formatInt(threshold.value)}</b> needed <span className="muted">({chain ? 'masternode list' : 'feed estimate'})</span>
+                <b>{formatInt(row.absYes)}</b> net yes of <b>{formatInt(threshold.value)}</b> needed <span className="muted">({chain ? `masternode list at block ${formatInt(chain.threshold.height)}` : 'feed estimate'})</span>
               </p>
             )}
           </div>
@@ -423,8 +424,6 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
           <section className="panel dh-card p-details" aria-labelledby="details-title" data-testid="p-details">
             <h2 id="details-title" className="panel-title">Proposal details</h2>
             <dl className="p-decision small" aria-label="Decision summary" data-testid="p-decision">
-              {row.content.ok && <div><dt>Requested</dt><dd>{formatDash(p.paymentAmount)} {sched?.oneTime ? 'once' : perPayment(params)}{recurring && ` × ${formatInt(sched.total)} payments`}</dd></div>}
-              <div><dt>Standing</dt><dd>{check.status === 'failed' ? 'Unavailable: proposal failed verification' : lameDuck ? 'No payments remain' : !active ? 'Voting ended' : state && threshold && row.absYes !== null ? <>{voteSubject.standing?.text} — {formatInt(row.absYes)} net yes; {formatInt(threshold.value)} to pass ({chain ? `masternode list at block ${formatInt(chain.threshold.height)}` : 'feed estimate'}){later ? '. For a later payout' : inBudget ? '. In the next budget' : state.passing ? '. Next budget is full' : ''}</> : tallies.loading ? 'Reading the votes…' : tallies.error ? 'Vote standing unavailable' : t ? 'Waiting for the budget cycle' : 'No votes counted yet'}</dd></div>
               {row.content.ok && <div><dt>Timing</dt><dd>{decisionTime}</dd></div>}
             </dl>
             <dl className="kv p-facts small" data-testid="p-facts">
@@ -462,23 +461,21 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
               </div>
             </dl>
 
-            {row.content.ok && <Purpose page={page} hasPost={hasPost} url={p.url} host={host} />}
           </section>
 
           <section className="p-about" aria-labelledby="about-title">
             <h2 id="about-title">About this proposal</h2>
             <div className="p-claims">
-              <section className="p-claim" aria-labelledby="owner-says" data-testid="about-owner">
+              {(hasPost || ownerId || !page || short) && <section className="p-claim" aria-labelledby="owner-says" data-testid="about-owner">
                 <h3 id="owner-says">What the owner says</h3>
                 {ownerId && (
                   <ErrorBoundary what="owner's description">
                     <OwnerPost govHash={p.govHash} ownerId={ownerId} post={post} trustLevel={trust.aggregate.level} />
                   </ErrorBoundary>
                 )}
-                {!hasPost && (
+                {!hasPost && !page && (
                   <p className="small muted" data-testid="about-owner-none">
-                    {page ? `Their summary, quoted from ${page.page.host}, is in the proposal details above.` : 'The owner hasn’t posted a description here.'} The owner can post one here by
-                    claiming the proposal.
+                    The owner hasn’t posted a description here. The owner can post one here by claiming the proposal.
                   </p>
                 )}
                 {short && (
@@ -499,7 +496,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
                     )}
                   </p>
                 )}
-              </section>
+              </section>}
               <details className="p-claim p-recorded" data-testid="about-recorded">
                 <summary><h3 id="network-records">What the network records</h3></summary>
                 {row.content.ok ? (
