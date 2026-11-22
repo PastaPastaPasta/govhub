@@ -228,7 +228,7 @@ html { font-size: 16px; }
 .p-lead-standing .meter-track { block-size: 12px; }
 .p-lead-standing .meter-dot { inline-size: 10px; block-size: 10px; }
 .p-net { margin: 0; font-size: 15px; color: var(--dh-ink-2); }
-.p-reported, .p-ended { margin: 0; font-size: 14px; color: var(--dh-ink-2); }
+.p-reported, .p-ended, .p-closes { margin: 0; font-size: 14px; color: var(--dh-ink-2); }
 .p-net b { color: var(--dh-ink); font-weight: 620; }
 
 .proposal .p-standing { gap: 12px; padding-block-start: var(--dh-5); border-block-start: 1px solid var(--dh-line); }
@@ -250,7 +250,10 @@ html { font-size: 16px; }
 .p-recorded[open] { display: grid; gap: 8px; }
 
 @media (max-width: 760px) {
-  .proposal .p-hero .dh-page-header__title { font-size: 26px; }
+  .proposal .p-hero .dh-page-header__title { font-size: 24px; }
+  .proposal .p-hero { margin-block-end: var(--dh-4); }
+  .proposal .p-hero .p-purpose-quote p { font-size: 15px; -webkit-line-clamp: 3; }
+  .proposal .p-hero .p-purpose .small { font-size: 13px; }
   .proposal .p-funds { padding: var(--dh-4); gap: var(--dh-4); }
   .p-lead { grid-template-columns: minmax(0, 1fr); gap: var(--dh-4); }
   .proposal .p-amount .num { font-size: 34px; }

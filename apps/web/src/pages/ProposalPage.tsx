@@ -322,7 +322,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
         </p>
         {row.content.ok && <Purpose page={page} hasPost={hasPost} url={p.url} host={host} />}
       </header>
-      {(trust.aggregate.level === 'failed' || trust.aggregate.level === 'error') && <p className="dh-notice dh-notice--warn" role="status">{trust.aggregate.reason ?? 'Verification could not finish. Figures are shown as reported.'} <button type="button" className="dh-btn dh-btn--link" onClick={() => setDrawer(true)}>Review checks</button></p>}
+      {trust.aggregate.level === 'failed' && <p className="dh-notice dh-notice--warn" role="status">{trust.aggregate.reason ?? 'Verification could not finish. Figures are shown as reported.'} <button type="button" className="dh-btn dh-btn--link" onClick={() => setDrawer(true)}>Review checks</button></p>}
 
       <section className="panel p-funds" aria-labelledby="funds-title" data-testid="p-funds">
         <h2 id="funds-title" className="visually-hidden">
@@ -357,6 +357,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
               <p className="muted">{tallies.loading ? 'Reading the votes…' : t ? 'Waiting for the budget cycle' : 'No votes counted yet'}</p>
             )}
             {!active && !lameDuck && <p className="p-ended">Voting ended {formatDate(p.endEpoch)}</p>}
+            {active && !lameDuck && !later && untilDeadline !== null && untilDeadline > 0 && <p className="p-closes">Voting closes in {formatDuration(untilDeadline)}</p>}
             {!lameDuck && threshold && row.absYes !== null && (
               <p className="p-net">
                 <b>{formatInt(row.absYes)}</b> net yes of <b>{formatInt(threshold.value)}</b> needed <span className="muted">({chain ? `masternode list at block ${formatInt(chain.threshold.height)}` : 'feed estimate'})</span>
