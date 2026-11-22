@@ -182,7 +182,7 @@ describe('ProposalView reading order', () => {
     const { el } = await view(open, { estTime: NOW + 5 * DAY, report: r });
     expect(el.querySelector('[data-testid="p-funds"]')?.textContent).toContain('331 needed (masternode list at block 1)');
   });
-  it('leads with the ask, full tally and vote entry before the details and owner’s words', async () => {
+  it('leads with the ask, full tally and vote entry before the details', async () => {
     const { el } = await view(open, { estTime: NOW + 5 * DAY, report: null });
     const summary = el.querySelector('[data-testid="p-decision"]')!;
     expect(el.querySelector('[data-testid="p-funds"]')!.textContent).toContain('504 net yes of 332 needed (feed estimate)');

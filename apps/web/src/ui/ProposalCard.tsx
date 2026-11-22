@@ -90,7 +90,7 @@ export function ProposalCard({
     <article className={`prow prow-${tone}`} data-govhash={p.govHash} data-check={check?.status} data-lameduck={ended ? 'true' : undefined} data-testid="proposal-card">
       <div className="prow-main">
         <h3 className="prow-title">
-          <Link to={href} className="dh-link">{page?.title ? <bdi>{page.title}</bdi> : words}</Link>
+          <Link to={href} className="dh-link">{page?.title ? <bdi>“{page.title}”</bdi> : words}</Link>
           {mark && <TrustBadge size="s" level={mark.level} reason={mark.reason} testId="card-trust" />}
         </h3>
         <p className="prow-slug small" data-testid="card-slug">
@@ -155,7 +155,7 @@ export function ProposalCard({
         ) : (
           <span className="muted">{noTally}</span>
         )}
-        {!!comments && <CommentsLink to={href} count={comments} />}
+        {comments !== 0 && <CommentsLink to={href} count={comments} />}
       </p>
     </article>
   );

@@ -6,7 +6,6 @@ import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { Link } from '../ui/Link.tsx';
 import { BudgetHeader } from '../ui/BudgetHeader.tsx';
-import { ChainShield } from '../ui/trust/ChainShield.tsx';
 import { FailedProposalsToggle } from '../ui/HiddenToggle.tsx';
 import { LameDuckSection } from '../ui/LameDuck.tsx';
 import { PendingProposals } from '../proposal/Pending.tsx';
@@ -221,7 +220,6 @@ export function ActivePage() {
           </LameDuckSection>
         )}
         {!more && failed > 0 && <FailedProposalsToggle count={failed} shown={showFailed} onToggle={() => setShowFailed((v) => !v)} />}
-        <footer className="list-foot" data-testid="chain-foot"><ChainShield /></footer>
       </section>
     </>
   );

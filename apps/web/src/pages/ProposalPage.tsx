@@ -341,7 +341,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
                 )}
               </p>
             ) : <p className="small" data-testid="p-funds-mismatch">The fields published for this proposal don’t match the hash the network votes on ({row.content.problem}), so its amount, payee and dates aren’t shown as what it funds.</p>}
-            {row.content.ok && paymentsText && <p className="p-left">{capitalize(paymentsText)}</p>}
+            {row.content.ok && paymentsText && <p className="p-left" data-testid="p-paid">{capitalize(paymentsText)}</p>}
           </div>
           <div className="p-lead-standing">
             {lameDuck ? (
@@ -356,9 +356,15 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
             ) : (
               <p className="muted">{tallies.loading ? 'Reading the votes…' : t ? 'Waiting for the budget cycle' : 'No votes counted yet'}</p>
             )}
+            {!active && !lameDuck && <p className="p-ended">Voting ended {formatDate(p.endEpoch)}</p>}
             {!lameDuck && threshold && row.absYes !== null && (
               <p className="p-net">
                 <b>{formatInt(row.absYes)}</b> net yes of <b>{formatInt(threshold.value)}</b> needed <span className="muted">({chain ? `masternode list at block ${formatInt(chain.threshold.height)}` : 'feed estimate'})</span>
+              </p>
+            )}
+            {trust.aggregate.level !== 'verified' && trust.aggregate.level !== 'failed' && trust.aggregate.level !== 'error' && (
+              <p className="p-reported" data-testid="p-reported">
+                {trust.aggregate.level === 'checking' ? 'As reported, until this browser finishes checking it against the chain.' : 'As reported; not fully checked against the chain here.'}
               </p>
             )}
           </div>
@@ -427,12 +433,6 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
               {row.content.ok && <div><dt>Timing</dt><dd>{decisionTime}</dd></div>}
             </dl>
             <dl className="kv p-facts small" data-testid="p-facts">
-              {row.content.ok && (paid || recurring) && (
-                <div>
-                  <dt>Payments</dt>
-                  <dd data-testid="p-paid">{capitalize(paymentsText ?? '')}</dd>
-                </div>
-              )}
               {row.content.ok && (
                 <div>
                   <dt>Runs</dt>
@@ -497,7 +497,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
                   </p>
                 )}
               </section>}
-              <details className="p-claim p-recorded" data-testid="about-recorded">
+              <details className="p-claim p-recorded" data-testid="about-recorded" open={!row.content.ok}>
                 <summary><h3 id="network-records">What the network records</h3></summary>
                 {row.content.ok ? (
                   <>

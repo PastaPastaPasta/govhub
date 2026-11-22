@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 // The landing summary: when the next payout is, how much of the budget is promised, and what it takes to pass. The strip shows
 // each proposal in the next budget as a segment of the treasury.
 import { Link } from './Link.tsx';
+import { ChainShield } from './trust/ChainShield.tsx';
 import { UsdValue } from './UsdValue.tsx';
 import { useApp } from '../app/context.tsx';
 import { formatDash, formatDashAmount, formatDate, formatDuration, formatInt, formatPercent, dashUnit } from '../lib/format.ts';
@@ -157,6 +158,7 @@ export function BudgetHeader() {
         <div className="budget-line-links">
           <Link to="/treasury" data-testid="budget-treasury" className="dh-link dh-link--go">What the budget pays for</Link>
         </div>
+        <div className="chain-context" data-testid="chain-context"><ChainShield /></div>
         <Link to="/create" className="budget-new dh-btn dh-btn--secondary dh-btn--sm">New proposal</Link>
         <details className="learn dh-disclosure">
         <summary>How funding works</summary>
@@ -167,6 +169,9 @@ export function BudgetHeader() {
           <span className="legend-item">
             <span className="key key-free" /> still available
           </span>
+          {allocated > fundedSum && <span className="legend-item">
+            <span className="key key-other" /> other allocation, not listed here
+          </span>}
           <span className="legend-item">
             <span className="key key-notch" /> on each proposal, the pass line: {formatInt(threshold)} net yes votes
           </span>

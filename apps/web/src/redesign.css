@@ -118,12 +118,16 @@ html { font-size: 16px; }
 .prow-votes b { font-size: 16px; font-weight: 640; color: var(--dh-ink); }
 .prow-comments { font-size: 14px; }
 
-.list-foot { display: flex; justify-content: center; margin-block-start: var(--dh-5); }
-.list-foot .chainchip.dh-proof {
-  border: 0; background: none; box-shadow: none; min-block-size: 32px; padding: 4px 8px;
+/* the chain check: a quiet status in the budget panel's footer while it runs or once it has verified; a failure keeps its warning chip */
+.budget-panel .chain-context { margin: 0; }
+.budget-panel .chain-context .chainchip:is(.dh-proof--ok, .dh-proof--checking) {
+  border: 0; background: none; box-shadow: none; min-block-size: 32px; padding: 4px 6px; margin-inline: -6px;
   font-size: 14px; font-weight: 400; color: var(--dh-ink-2);
 }
-.list-foot .chainchip.dh-proof:hover { color: var(--dh-ink); background: var(--dh-hover); }
+.budget-panel .chain-context .chainchip:is(.dh-proof--ok, .dh-proof--checking):hover { color: var(--dh-ink); background: var(--dh-hover); }
+.budget-panel details.learn { margin-inline-start: auto; }
+.key.key-free { background: var(--dh-sunken); box-shadow: inset 0 0 0 1px var(--dh-line-2); }
+.key.key-other { background: color-mix(in srgb, var(--dh-brand) 45%, var(--dh-sunken)); }
 
 /* the narrow layout: a card reads top to bottom, what, how much, where it stands, the votes */
 @media (max-width: 760px) {
@@ -132,7 +136,7 @@ html { font-size: 16px; }
   .gov-hero .dh-page-header__title { font-size: 28px; }
   .gov-hero .dh-page-header__lede { font-size: 15px; line-height: 1.45; }
   .gov-hero .dh-page-header__row { gap: var(--dh-3); }
-  .gov-hero .dh-page-header__actions { display: none; }
+  .gov-hero:has(.budget-new) .dh-page-header__actions { display: none; }
   .budget-panel { padding: 14px 16px; gap: 14px; }
   .budget-panel .strip { block-size: 10px; }
   .budget-panel .budget-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px var(--dh-4); }
@@ -140,15 +144,19 @@ html { font-size: 16px; }
   .budget-panel .gov-stat .num { font-size: 24px; }
   .budget-panel .gov-stat dt { font-size: 14px; margin-block-end: 0; }
   .budget-panel .gov-stat small { font-size: 14px; }
-  .budget-panel .gov-stat-note, .budget-panel .budget-facts .usd { display: none; }
+  .budget-panel .gov-stat-note { font-size: 13px; margin-block-start: 2px; }
+  .budget-panel .budget-facts .usd { display: none; }
   .budget-panel .budget-foot { gap: var(--dh-2) var(--dh-5); }
   .budget-panel .budget-line-links { display: none; }
   .budget-panel details.learn > summary { font-size: 15px; padding-block: 2px; }
 
-  /* the tabs below name the list; the heading stays for screen readers */
-  .list-section .gov-section-head { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; padding: 0; }
-  .budget-panel .budget-foot { justify-content: space-between; }
-  .budget-new { display: inline-flex; order: 2; }
+  /* the Treasury tab below replaces the heading's link and order note on a phone */
+  .list-section .gov-section-head { padding: 0; }
+  .list-section .gov-section-head h2 { font-size: 20px; }
+  .list-section .gov-section-head > :is(p, a) { display: none; }
+  .budget-panel details.learn { margin-inline-start: 0; order: 1; }
+  .budget-new { display: inline-flex; margin-inline-start: auto; order: 2; }
+  .budget-panel .chain-context { order: 3; flex-basis: 100%; }
   .list-tools-row { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; gap: 8px; }
   .list-tools-row > * { flex: none; }
   .list-tools-row .list-chips { flex-wrap: nowrap; }
@@ -165,7 +173,6 @@ html { font-size: 16px; }
     padding: 16px 16px 14px 20px;
   }
   .prow-title { font-size: 17px; }
-  .prow-slug { display: none; }
   .prow-ask { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; }
   .prow-ask > p { margin: 0; }
   .plist-proposals .prow-meta { flex-direction: row; align-items: baseline; justify-content: space-between; }
@@ -176,7 +183,7 @@ html { font-size: 16px; }
 .proposal .p-hero .p-purpose { margin-block-start: var(--dh-2); max-inline-size: 72ch; }
 .proposal .p-hero .p-purpose-quote p { font-size: 17px; line-height: 1.5; color: var(--dh-ink); }
 .proposal .p-hero .p-purpose .small { font-size: 14px; }
-.proposal .pvote-subject-title { display: none; }
+.proposal .pvote-subject-title { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .proposal .p-hero { gap: 6px; margin-block-end: var(--dh-5); }
 .proposal .p-hero .dh-page-header__kicker { display: none; }
 .proposal .p-hero .dh-page-header__title { font-size: clamp(28px, 3.4vw, 38px); line-height: 1.15; }
@@ -203,6 +210,7 @@ html { font-size: 16px; }
 .p-lead-standing .meter-track { block-size: 12px; }
 .p-lead-standing .meter-dot { inline-size: 10px; block-size: 10px; }
 .p-net { margin: 0; font-size: 15px; color: var(--dh-ink-2); }
+.p-reported, .p-ended { margin: 0; font-size: 14px; color: var(--dh-ink-2); }
 .p-net b { color: var(--dh-ink); font-weight: 620; }
 
 .proposal .p-standing { gap: 12px; padding-block-start: var(--dh-5); border-block-start: 1px solid var(--dh-line); }
@@ -234,3 +242,4 @@ html { font-size: 16px; }
   .proposal .p-votes { gap: 4px 16px; }
   .proposal .p-votes b { font-size: 18px; }
 }
+.proposal .p-hero p.p-purpose { display: block; font-size: 15px; color: var(--dh-ink-2); }
