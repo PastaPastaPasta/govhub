@@ -893,7 +893,7 @@ function FindMasternode() {
     navigate({ pathname: `/masternodes/${pro}`, search: keptSearch(search) });
   };
   return (
-    <section className="kr-card dh-card mn-find" id="mn-find" aria-labelledby={`${id}-title`} data-testid="mn-find">
+    <section className="kr-card dh-card mn-find" aria-labelledby={`${id}-title`} data-testid="mn-find">
       <h2 id={`${id}-title`}>Look up one masternode’s votes</h2>
       <form className="mn-find-form" onSubmit={go}>
         <label className="dh-field__label" htmlFor={`${id}-pro`}>
@@ -942,10 +942,7 @@ function WaysToVote() {
   const k = useKeyring();
   return (
     <section className="kr-card dh-card kr-gate vote-ways" aria-labelledby="vote-ways-title" data-testid="vote-ways">
-      <div className="vote-ways-head">
-        <h2 id="vote-ways-title">Three ways to vote</h2>
-        <a href="#mn-find" className="dh-link small" data-testid="jump-find">Look up one masternode’s votes ↓</a>
-      </div>
+      <h2 id="vote-ways-title">Three ways to vote</h2>
       <ol className="vote-ways-list" role="list">
         <li>
           <h3>Proposals, from your account</h3>
@@ -1049,8 +1046,8 @@ export function MasternodesPage() {
       )}
       {k.status === 'signed-out' && (
         <>
-          <WaysToVote />
           <FindMasternode />
+          <WaysToVote />
         </>
       )}
       {k.status === 'checking' && (

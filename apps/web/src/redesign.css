@@ -456,9 +456,8 @@ html { font-size: 16px; }
 /* each way to vote's details are a clear link */
 
 /* jump links beside a section's heading, to the part a visitor may have come for */
-:is(.contests-open-head, .vote-ways-head) { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; }
+.contests-open-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; }
 .contests-to-ended { font-size: 15px; }
-#mn-find { scroll-margin-block-start: 80px; }
 #ended-contests { scroll-margin-block-start: 80px; }
 @media (max-width: 760px) {
   /* a way to vote on a phone: its name, what it needs, its button; the details fold under it */
