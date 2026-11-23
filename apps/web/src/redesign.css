@@ -422,9 +422,24 @@ html { font-size: 16px; }
 @media (max-width: 760px) {
   .past-page table.past.dh-table--cards tr { column-gap: 14px; }
   .past-page table.past.dh-table--cards tr > td[data-label]:not(.dh-rc-title):not(.dh-rc-end)::before { content: attr(data-label) " "; }
+  /* the outcome line: always its own row, under when it ended and what it asked */
+  .past-page table.past.dh-table--cards tr::before { content: ""; order: 3; flex-basis: 100%; }
+  .past-page table.past.dh-table--cards tr > :is(td.dh-rc-end, td[data-label="Received"], td[data-label="Net yes"]) { order: 4; margin-inline-start: 0; padding-inline-start: 0; }
 }
 /* the view switch under Past's heading reads as a second level, not a second tab bar */
 .past-head .dh-seg { background: none; border: 0; box-shadow: none; padding: 0; gap: 20px; }
 .past-head .dh-seg > .dh-btn { background: none; border: 0; box-shadow: none; padding: 6px 0; min-block-size: 36px; border-radius: 0; color: var(--dh-ink-2); font-weight: 560; border-block-end: 2px solid transparent; }
 .past-head .dh-seg > .dh-btn[aria-pressed="true"] { color: var(--dh-ink); border-block-end-color: var(--dh-brand); }
 .past-head .dh-seg > .dh-btn:hover { color: var(--dh-ink); background: none; }
+
+/* a proposal on a phone: the owner's words stay, the repeats go, so the ask and standing come sooner */
+@media (max-width: 760px) {
+  .main:has(> .proposal) { padding-block-start: var(--dh-3); }
+  .proposal .p-sub .muted { display: none; }
+  .proposal .p-hero .p-purpose-quote p { -webkit-line-clamp: 2; }
+  .proposal .p-hero .p-purpose-from { font-size: 13px; }
+  .proposal .p-amount .p-total { margin-block-start: 6px; font-size: 15px; }
+  .p-left { font-size: 15px; }
+}
+/* contests: the headline already gives the count */
+.contests .gov-section-title .dh-count, .contests .gov-section-title .count { display: none; }
