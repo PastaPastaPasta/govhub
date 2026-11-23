@@ -57,8 +57,8 @@ html { font-size: 16px; }
 .list-section .gov-section-head > :is(p, a) { font-size: 15px; }
 .list-tools { gap: var(--dh-3); margin-block-end: var(--dh-3); }
 @media (min-width: 1000px) {
-  .list-tools { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: var(--dh-4); }
-  .list-tools > :not(.list-search):not(.list-tools-row) { grid-column: 1 / -1; }
+  [aria-label="Active proposals"] > .list-tools { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: var(--dh-4); }
+  [aria-label="Active proposals"] > .list-tools > :not(.list-search):not(.list-tools-row) { grid-column: 1 / -1; }
   .list-tools-row { flex-wrap: nowrap; }
 }
 .budget-new { display: none; }
@@ -93,12 +93,9 @@ html { font-size: 16px; }
 .prow-fund .meter-track { block-size: 8px; }
 /* the budget place is a quiet line under the standing, not a second badge */
 .prow-fund > .tag.dh-badge {
-  padding: 0; border: 0; background: none; box-shadow: none; min-block-size: 0; block-size: auto; height: auto;
-  font-size: 14px; font-weight: 400; color: var(--dh-ink-2); text-transform: none; letter-spacing: 0; text-decoration: none; cursor: default;
+  justify-self: start; padding: 2px 8px; border: 0; box-shadow: none; min-block-size: 0; block-size: auto; height: auto; border-radius: var(--dh-r1);
+  font-size: 13px; font-weight: 560; text-transform: none; letter-spacing: 0; text-decoration: none; cursor: default;
 }
-.prow-fund > .tag.dh-badge--good { color: var(--dh-good); font-weight: 560; }
-.prow-fund > .tag.dh-badge--warn { color: var(--dh-warn); font-weight: 560; }
-.prow-fund > .tag.dh-badge--info { color: var(--dh-brand-ink); font-weight: 560; }
 
 .plist-proposals .prow-meta { gap: 6px; }
 .plist-proposals .prow-votes { font-size: 15px; color: var(--dh-ink-2); gap: 0; line-height: 1.4; }
@@ -124,9 +121,9 @@ html { font-size: 16px; }
   .gov-hero .dh-page-header__lede { font-size: 15px; line-height: 1.45; }
   .gov-hero .dh-page-header__row { gap: var(--dh-3); }
   .gov-hero:has(.budget-new) .dh-page-header__actions { display: none; }
-  .budget-panel { padding: 14px 16px; gap: 14px; }
+  .budget-panel { padding: 12px 14px; gap: 10px; }
   .budget-panel .strip { block-size: 10px; }
-  .budget-panel .budget-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px var(--dh-4); }
+  .budget-panel .budget-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px var(--dh-4); }
   .budget-panel .gov-stat + .gov-stat { border: 0; padding: 0; }
   .budget-panel .gov-stat .num { font-size: 24px; }
   .budget-panel .gov-stat dt { font-size: 14px; margin-block-end: 0; }
@@ -178,6 +175,11 @@ html { font-size: 16px; }
     padding: 16px 16px 14px 20px;
   }
   .prow-title { font-size: 17px; }
+  /* a phone card is the decision: what, how much, where it stands, the votes; the owner's words are on the proposal */
+  .plist-proposals .prow-purpose { display: none; }
+  .plist-proposals .prow-fund { position: relative; }
+  .plist-proposals .prow-fund > .tag.dh-badge { position: absolute; inset-block-start: 0; inset-inline-end: 0; }
+  .plist-proposals > .prow[data-govhash] { padding-block: 14px 12px; gap: 6px; }
   .prow-ask { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; }
   .prow-ask > p { margin: 0; }
   .plist-proposals .prow-meta { flex-direction: row; align-items: baseline; justify-content: space-between; }
@@ -269,7 +271,7 @@ html { font-size: 16px; }
 :is(.past-head, .tr-head, .kr-head, .contests > .dh-page-header) .dh-page-header__lede { font-size: 17px; max-inline-size: 70ch; }
 
 /* Past: a readable ledger */
-.past-page { gap: var(--dh-5); }
+.past-page { gap: var(--dh-4); }
 .past.dh-table { font-size: 15px; }
 .past.dh-table th { font-size: 14px; }
 @media (min-width: 761px) { .past.dh-table td { padding-block: 12px; vertical-align: middle; } .past .outcome { flex-wrap: nowrap; white-space: nowrap; } }
@@ -328,3 +330,6 @@ html { font-size: 16px; }
 .treasury .dh-table td { padding-block: 12px; }
 .treasury .p-slug { font-family: var(--dh-font); font-size: 14px; }
 .tr-budget-bar, .tr-share-bar { background: var(--track); }
+
+/* contest bars: the leader in brand blue, challengers a muted blue, so the legend tells them apart */
+:is(.crow, .contest-legend) { --cb-c0: var(--dh-brand); --cb-c1: color-mix(in srgb, var(--dh-brand) 40%, var(--dh-surface)); --cb-c2: var(--cb-c1); --cb-c3: var(--cb-c1); }
