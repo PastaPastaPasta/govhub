@@ -591,9 +591,9 @@ ol.dh-sources > li:target { color: var(--dh-ink); background: var(--dh-brand-sof
 .dh-notice--warn { --dh-tone: var(--dh-warn); --dh-tone-soft: var(--dh-warn-soft); }
 .dh-notice--error { --dh-tone: var(--dh-bad); --dh-tone-soft: var(--dh-bad-soft); }
 /* a partial-data note: one quiet line, not a box (some data couldn't refresh; the rest is fine) */
-.dh-notice--inline { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; padding: 0; border: 0; background: none;
+.dh-notice--inline { display: block; position: relative; padding: 0 0 0 16px; border: 0; background: none;
   color: var(--dh-ink-2); font-size: var(--dh-fs-sm); }
-.dh-notice--inline::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--dh-tone); transform: translateY(-1px); }
+.dh-notice--inline::before { content: ""; position: absolute; left: 0; top: .5em; width: 8px; height: 8px; border-radius: 50%; background: var(--dh-tone); }
 
 /* ================================================================ states: empty, loading, error */
 /* Empty: say what would be here and offer the one next step. Dashed = nothing real yet. */
