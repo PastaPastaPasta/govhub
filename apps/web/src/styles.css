@@ -807,9 +807,6 @@ button.trust-m:hover {
 .strip-free {
   background: repeating-linear-gradient(135deg, var(--sunk) 0 5px, var(--line) 5px 8px);
 }
-.budget-legend { margin: 0 0 6px; font-size: 13px; }
-.budget-legend .legend-item { white-space: normal; }
-.budget-legend .key { flex: none; }
 .budget-facts {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -3273,14 +3270,6 @@ dashhq-hash { vertical-align: middle; max-width: 100%; }
 .p-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3); }
 .p-jump { text-decoration: none; }
 .p-funds { gap: var(--s-3); margin-block-end: 24px; }
-.p-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px 24px; }
-.p-kpis .meter { margin-block-start: 8px; }
-.p-kpis .meter-text { display: none; }
-.p-kpis .p-amount .num { font-size: 26px; }
-.p-kpis .p-amount .p-total b { font-size: 13px; }
-.p-kpis .gov-stat--good .gov-stat-value { color: var(--pass); }
-.p-kpis .gov-stat--warn .gov-stat-value { color: var(--warn); }
-.p-kpis .gov-stat--bad .gov-stat-value { color: var(--fail); }
 .p-details { gap: var(--s-4); }
 .p-purpose { display: grid; gap: 6px; margin: 0; }
 .p-purpose-quote p { font-size: var(--t-m, 1rem); line-height: 1.5; }
@@ -3475,29 +3464,15 @@ details.tr-group > .tr-table { margin: 0; border-radius: 0; }
   grid-template-columns: minmax(0, 2.5fr) minmax(0, 1.2fr) minmax(0, 1.2fr) minmax(5.4rem, .55fr);
   column-gap: 20px;
 }
-.plist-columns {
-  display: grid;
-  padding: 10px 24px;
-  border-block-end: 1px solid var(--line);
-  font-size: 13px;
-  color: var(--ink-2);
-}
-.plist-columns > :last-child { text-align: end; }
 .plist-proposals > .prow { grid-template-areas: 'main ask fund meta'; }
 .plist-proposals .prow-meta { flex-direction: column; align-items: end; justify-content: start; gap: 8px; text-align: end; }
 .plist-proposals .prow-votes { flex-direction: column; gap: 0; }
-.prow-cell-label { display: none; }
 .plist-proposals .prow-fund { justify-items: stretch; }
 .plist-proposals .prow-fund > .tag { justify-self: start; }
 @media (max-width: 760px) {
-  .p-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-  .plist-columns { display: none; }
   .plist-proposals > .prow { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'main' 'ask' 'fund' 'meta'; }
   .plist-proposals .prow-meta { flex-direction: row; align-items: baseline; justify-content: space-between; flex-wrap: wrap; text-align: start; }
   .plist-proposals .prow-votes { flex-direction: row; flex-wrap: wrap; gap: 12px; }
-  .prow-cell-label { display: block; font-size: 12px; font-weight: 400; color: var(--ink-2); }
-  .prow-ask > .prow-cell-label { flex-basis: 100%; }
-  .prow-meta > .prow-cell-label { inline-size: 100%; }
 }
 @media (max-width: 640px) {
   .gov-band { padding-block: 16px 12px; margin-block-end: 16px; }
@@ -3516,7 +3491,6 @@ details.tr-group > .tr-table { margin: 0; border-radius: 0; }
   .budget-facts dt { gap: 4px; }
   .budget-facts .gov-stat:last-child .gov-stat-note { display: none; }
   .budget-facts .gov-source { padding-inline: 3px; }
-  .budget-legend { gap: 4px 12px; font-size: 12px; line-height: 1.35; }
   .budget-foot { gap: 4px 12px; }
   .budget-foot .chain-context { flex-basis: 100%; }
   .budget-foot .chainchip { block-size: 28px; min-block-size: 28px; font-size: 12px; padding: 2px 6px; }

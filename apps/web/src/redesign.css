@@ -65,8 +65,7 @@ html { font-size: 16px; }
 /* ---- the list --------------------------------------------------------------------------------------------- */
 .list-section .gov-section-head { padding-block-end: var(--dh-2); border: 0; }
 .list-section .gov-section-head h2 { border: 0; padding: 0; font-size: 26px; }
-.list-section .gov-section-head > p { font-size: 15px; }
-.list-section .gov-section-head > a { font-size: 15px; }
+.list-section .gov-section-head > :is(p, a) { font-size: 15px; }
 .list-tools { gap: var(--dh-3); margin-block-end: var(--dh-3); }
 @media (min-width: 1000px) {
   .list-tools { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: var(--dh-4); }
@@ -88,8 +87,7 @@ html { font-size: 16px; }
 .prow-main { gap: 6px; }
 .prow-title { font-size: 18px; font-weight: 620; line-height: 1.3; }
 .prow-title a { color: var(--dh-ink); text-decoration: none; }
-.prow-title a:hover { text-decoration: underline; }
-.prow-title a:hover { color: var(--dh-brand-ink); }
+.prow-title a:hover { text-decoration: underline; color: var(--dh-brand-ink); }
 .prow-purpose { font-size: 15px; line-height: 1.45; color: var(--dh-ink-2); -webkit-line-clamp: 2; max-inline-size: 64ch; }
 .prow-slug { font-family: var(--dh-font); font-size: 14px; color: var(--dh-ink-2); }
 .prow-slug .slug, .prow-slug code { font-family: inherit; }
@@ -172,7 +170,7 @@ html { font-size: 16px; }
   /* the exact name only where the title is the owner's words; otherwise the title already is the name */
   .prow:not(.prow-titled) .prow-slug { display: none; }
   /* a card reads: what, how much, where it stands, then the owner's words and the votes */
-  .plist-proposals > .prow { display: flex; flex-direction: column; gap: 8px; }
+  .plist-proposals > .prow[data-govhash] { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
   .plist-proposals > .prow > .prow-main { display: contents; }
   .plist-proposals > .prow :is(.prow-title, .prow-slug) { order: 0; }
   .plist-proposals > .prow > .prow-ask { order: 1; }
@@ -274,4 +272,7 @@ html { font-size: 16px; }
   .proposal .p-votes b { font-size: 18px; }
 }
 .proposal .p-hero p.p-purpose { display: block; font-size: 15px; color: var(--dh-ink-2); }
-.mono-ish { overflow-wrap: anywhere; word-break: break-all; }
+.mono-ish { overflow-wrap: anywhere; }
+/* a background check that couldn't reach the network: one quiet line with its retry, not a warning box (shell 1.9.6 .dh-notice--inline) */
+.list-section .list-note.dh-notice--warn { display: block; margin: 0 0 var(--dh-3); padding: 0 0 0 16px; border: 0; background: none; position: relative; font-size: 14px; color: var(--dh-ink-2); }
+.list-section .list-note.dh-notice--warn::before { content: ""; position: absolute; left: 0; top: .5em; width: 8px; height: 8px; border-radius: 50%; background: var(--dh-warn); }

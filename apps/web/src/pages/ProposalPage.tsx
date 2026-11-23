@@ -211,6 +211,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
   const now = source.now();
   const [talliesAttempt, setTalliesAttempt] = useState(0);
   const tallies = useAsync(() => source.tallies([p.govHash]), [source, p.govHash, talliesAttempt]);
+  const retryTallies = () => setTalliesAttempt((n) => n + 1);
   const cycle = gov.cycle.data ?? null;
   // The Platform tally document whenever there is one: the recount is checked against that proven record, not the bridge's own.
   const row = useMemo(() => deriveRow(sp, tallies.data ?? new Map(), gov.bridgeTallies, cycle, params, now, 'platform'), [sp, tallies.data, gov.bridgeTallies, cycle, params, now]);
@@ -405,11 +406,11 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
           {tallies.error && (t ? (
             <p className="p-tally-note small muted" data-testid="tally-fallback">
               The Platform tally record couldn’t be read, so these are the governance feed’s counts.{' '}
-              <button type="button" className="linkish dh-btn dh-btn--link" onClick={() => setTalliesAttempt((n) => n + 1)} title={tallies.error}>
+              <button type="button" className="linkish dh-btn dh-btn--link" onClick={retryTallies} title={tallies.error}>
                 Try again
               </button>
             </p>
-          ) : <ReadError error={tallies.error} what="Platform" lead="The tally could not be read" onRetry={() => setTalliesAttempt((n) => n + 1)} />)}
+          ) : <ReadError error={tallies.error} what="Platform" lead="The tally could not be read" onRetry={retryTallies} />)}
         </section>
         <div className="dh-page-header__meta p-meta">
           {active && !lameDuck && (
