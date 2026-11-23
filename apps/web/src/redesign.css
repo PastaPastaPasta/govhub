@@ -475,6 +475,7 @@ html { font-size: 16px; }
 
 /* colour roles: Dash blue fills the meters and stripes; selected filters take a blue tint, the section tab the solid fill */
 :root { --pass-fill: var(--dh-brand-fill); }
+.meter-pass .meter-dot { background: var(--pass-fill); }
 .list-chip { background: transparent; border-color: var(--dh-line-2); color: var(--dh-ink-2); font-weight: 560; }
 .list-chip:hover { border-color: var(--dh-line-2); background: var(--dh-hover); color: var(--dh-ink); }
 .list-chip.on, .list-chip.on:hover { background: color-mix(in srgb, var(--dh-brand) 16%, var(--dh-surface)); border-color: var(--dh-brand); color: var(--dh-ink); }
