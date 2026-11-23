@@ -424,7 +424,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
         <div className="p-main">
           {active && !lameDuck && (
             <ErrorBoundary what="masternode voting">
-              <ProposalVoteBlock proposal={p} subject={voteSubject} mn={mn} closesIn={later ? null : untilDeadline} onVerify={() => setDrawer(true)} />
+              <ProposalVoteBlock proposal={p} subject={voteSubject} mn={mn} closesIn={later || (untilDeadline !== null && untilDeadline > 0) ? null : untilDeadline} onVerify={() => setDrawer(true)} />
             </ErrorBoundary>
           )}
 
@@ -439,7 +439,6 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
                   <dt>Runs</dt>
                   <dd>
                     {formatDate(p.startEpoch)} to {formatDate(p.endEpoch)}
-                    {active && !lameDuck && !later && cycle && <span className="muted">; the next payout is around {formatDate(cycle.value.estTime)}</span>}
                   </dd>
                 </div>
               )}

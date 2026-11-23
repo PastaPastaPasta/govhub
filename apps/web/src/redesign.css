@@ -201,7 +201,8 @@ html { font-size: 16px; }
 .proposal .p-hero .p-purpose { margin-block-start: var(--dh-2); max-inline-size: 72ch; }
 .proposal .p-hero .p-purpose-quote p { font-size: 17px; line-height: 1.5; color: var(--dh-ink); }
 .proposal .p-hero .p-purpose .small { font-size: 14px; }
-.proposal .pvote-subject-title { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* the vote card names what is signed for screen readers; on screen the page above already says it */
+.proposal .pvote-subject { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .proposal .p-hero { gap: 6px; margin-block-end: var(--dh-5); }
 .proposal .p-hero .dh-page-header__kicker { display: none; }
 .proposal .p-hero .dh-page-header__title { font-size: clamp(28px, 3.4vw, 38px); line-height: 1.15; }
@@ -215,7 +216,16 @@ html { font-size: 16px; }
   border: 1px solid var(--dh-line);
   border-radius: var(--dh-r3, 10px);
 }
-.p-lead { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: var(--dh-5) var(--dh-7); align-items: start; }
+/* wide: the ask with the votes under it on the left, the standing on the right */
+@media (min-width: 761px) {
+  .proposal .p-funds { grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); column-gap: var(--dh-7); row-gap: var(--dh-4); align-items: start; }
+  .proposal .p-funds > .p-lead { display: contents; }
+  .proposal .p-funds > :not(.p-lead) { grid-column: 1 / -1; }
+  .proposal .p-funds .p-lead-ask { grid-column: 1; grid-row: 1; }
+  .proposal .p-funds .p-lead-standing { grid-column: 2; grid-row: 1 / span 2; }
+  .proposal .p-funds > .p-standing { grid-column: 1; grid-row: 2; padding-block-start: var(--dh-4); }
+}
+.p-lead { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--dh-4); }
 .p-lead-ask, .p-lead-standing { display: grid; gap: 8px; align-content: start; }
 .proposal .p-amount { font-size: 18px; color: var(--dh-ink-2); line-height: 1.25; }
 .proposal .p-amount .num { font-size: 44px; font-weight: 660; font-stretch: 106%; color: var(--dh-ink); line-height: 1; }

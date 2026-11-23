@@ -194,7 +194,7 @@ describe('ProposalView reading order', () => {
     expect(el.querySelector('[data-testid="p-ask"]')!.textContent).toMatch(/^100 DASH per month × \d+ payments = [\d,]+ DASH$/);
     const details = el.querySelector('[data-testid="p-details"]')!;
     expect(details.textContent).toContain('Pays');
-    expect(details.textContent).toContain(`the next payout is around ${formatDate(NOW + 5 * DAY)}`);
+    expect(details.textContent).toContain(`next payout around ${formatDate(NOW + 5 * DAY)}`);
     expect(funds.compareDocumentPosition(details) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(funds.querySelector('[data-testid="jump-vote"]')).not.toBeNull();
     expect(funds.querySelector('[data-testid="p-facts"]')).toBeNull();
