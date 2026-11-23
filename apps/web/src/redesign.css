@@ -474,13 +474,13 @@ html { font-size: 16px; }
 }
 
 /* colour roles: Dash blue marks the money and the standing (fills, dots, stripes); words stay in ink */
-:root { --pass-fill: var(--dh-brand); }
+:root { --pass-fill: var(--dh-brand-fill); }
 .meter-pass .meter-text { color: var(--dh-ink); }
-.meter-pass .meter-dot { background: var(--dh-brand); }
-.list-chip { background: transparent; border-color: var(--dh-line); color: var(--dh-ink-2); font-weight: 560; }
+.meter-pass .meter-dot { background: var(--pass-fill); }
+.list-chip { background: transparent; border-color: var(--dh-line-2); color: var(--dh-ink-2); font-weight: 560; }
 .list-chip:hover { border-color: var(--dh-line-2); background: var(--dh-hover); color: var(--dh-ink); }
 .list-chip.on, .list-chip.on:hover { background: var(--dh-seg-on); border-color: var(--dh-seg-on); color: var(--dh-seg-on-ink); }
 .list-chip.on .count { color: inherit; opacity: .75; }
 .tag.dh-badge--good { background: color-mix(in srgb, var(--dh-brand) 16%, var(--dh-surface)); color: var(--dh-ink); }
-.past tbody .dh-rc-title a { color: var(--dh-ink); text-decoration: none; }
-.past tbody .dh-rc-title a:hover { color: var(--dh-brand-ink); text-decoration: underline; }
+.past tbody .dh-rc-title a { color: var(--dh-ink); text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 30%, transparent); text-underline-offset: 3px; }
+.past tbody .dh-rc-title a:hover { color: var(--dh-brand-ink); text-decoration-color: currentColor; }
