@@ -902,17 +902,17 @@ function FindMasternode() {
         <label className="dh-field__label" htmlFor={`${id}-pro`}>
           ProTx hash
         </label>
+        <p className="dh-field__hint mn-find-hint" id={`${id}-hint`}>64 characters of 0–9 and a–f, from Dash Core or Radar.</p>
         <div className="form-actions">
           <input
             id={`${id}-pro`}
             className="dh-input mono-ish"
             value={text}
             onChange={(e) => (setText(e.target.value), setError(false))}
-            placeholder="64 characters, from Dash Core or Radar"
             autoComplete="off"
             spellCheck={false}
             aria-invalid={error || undefined}
-            aria-describedby={error ? `${id}-err` : undefined}
+            aria-describedby={error ? `${id}-hint ${id}-err` : `${id}-hint`}
             data-testid="mn-find-input"
           />
           <button type="submit" className="btn dh-btn dh-btn--secondary" data-testid="mn-find-go">

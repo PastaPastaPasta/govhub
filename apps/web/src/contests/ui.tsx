@@ -78,7 +78,7 @@ export function ContestCard({ label, endsAt, state, nowMs, comments }: { label: 
             <span className="tld">.dash</span>
           </Link>
         </h3>
-        <p className="small muted crow-contenders">{s ? (s.contenders.length === 1 ? '1 contender' : `${formatInt(s.contenders.length)} contenders`) : failed ? 'Could not be read' : ' '}</p>
+        <p className="small muted crow-contenders">{s ? (s.contenders.length === 1 ? '' : `${formatInt(s.contenders.length)} contenders`) : failed ? 'Could not be read' : ' '}</p>
       </div>
       <div className="crow-status">
         <span className={`tag dh-badge ctag-${tag.tone}`}>{tag.text}</span>

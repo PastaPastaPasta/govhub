@@ -490,3 +490,13 @@ html { font-size: 16px; }
   .p-closes { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; }
   .p-closes-vote { display: inline; font-weight: 600; }
 }
+.crow .prow-title a { color: var(--dh-brand-ink); }
+.crow .crow-contenders:empty { display: none; }
+:is(.crow, .contest-legend) .cb-lock { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--cb-lock) 70%, var(--dh-surface)) 0 4px, color-mix(in srgb, var(--cb-lock) 35%, var(--dh-surface)) 4px 8px); }
+.mn-find-hint { margin: 0 0 var(--dh-2); font-size: 14px; color: var(--dh-ink-2); }
+@media (min-width: 761px) {
+  .past.dh-table, .treasury .dh-table { font-size: 16px; }
+  .proposal .p-details .kv { font-size: 16px; }
+  .crow .crow-contenders, .crow .crow-lead { font-size: 15px; }
+}
+.p-about .p-recorded, .p-about .claim-panel { background: var(--dh-surface); border-color: var(--dh-line); }

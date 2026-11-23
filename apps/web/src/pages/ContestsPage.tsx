@@ -173,7 +173,7 @@ export function ContestsPage() {
         <span><i className="cb-c0" aria-hidden="true" />Leader</span>
         <span><i className="cb-c1" aria-hidden="true" />Challengers</span>
         <span><i className="cb-abstain" aria-hidden="true" />Abstain</span>
-        <span><i className="cb-lock" aria-hidden="true" />Lock</span>
+        <span><i className="cb-lock" aria-hidden="true" />Lock: nobody gets the name</span>
       </p>
       {open.loading ? (
         <div className="plist" aria-busy="true">

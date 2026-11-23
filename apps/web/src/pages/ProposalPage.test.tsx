@@ -186,7 +186,8 @@ describe('ProposalView reading order', () => {
     const { el } = await view(open, { estTime: NOW + 5 * DAY, report: null });
     const summary = el.querySelector('[data-testid="p-decision"]')!;
     expect(el.querySelector('[data-testid="p-funds"]')!.textContent).toContain('504 net yes of 332 needed (feed estimate)');
-    expect(summary.textContent).toContain('next payout around');
+    expect(summary.textContent).toContain('Votes close');
+    expect(el.querySelector('[data-testid="p-next-payout"]')!.textContent).toContain('Next payout');
     expect(el.querySelector('.p-hero [data-testid="p-chain-name"]')).toBeNull();
     const funds = el.querySelector('[data-testid="p-funds"]')!;
     const vote = el.querySelector('[data-testid="vote-panel"]')!;
@@ -194,7 +195,7 @@ describe('ProposalView reading order', () => {
     expect(el.querySelector('[data-testid="p-ask"]')!.textContent).toMatch(/^100 DASH per month × \d+ payments = [\d,]+ DASH$/);
     const details = el.querySelector('[data-testid="p-details"]')!;
     expect(details.textContent).toContain('Pays');
-    expect(details.textContent).toContain(`next payout around ${formatDate(NOW + 5 * DAY)}`);
+    expect(details.textContent).toContain(`Next payoutaround ${formatDate(NOW + 5 * DAY)}`);
     expect(funds.compareDocumentPosition(details) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(funds.querySelector('[data-testid="jump-vote"]')).not.toBeNull();
     expect(funds.querySelector('[data-testid="p-facts"]')).toBeNull();

@@ -532,10 +532,10 @@ function ProposalsView({ past, ledger, known }: { past: ReturnType<typeof usePas
             <tr>
               {header('name', 'Proposal')}
               {header('ended', 'Ended')}
-              {header('amount', 'Requested', 'r')}
+              {header('amount', 'Asked per month', 'r')}
               <th scope="col">Outcome</th>
               <th scope="col" className="r">
-                Received
+                Received in total
               </th>
               {header('yes', 'Net yes', 'r')}
             </tr>
@@ -556,7 +556,7 @@ function ProposalsView({ past, ledger, known }: { past: ReturnType<typeof usePas
                   <td data-label="Ended">
                     {formatDate(p.endEpoch)}
                   </td>
-                  <td className="r" data-label="Requested ">
+                  <td className="r" data-label="Asked ">
                     {formatDash(p.paymentAmount)} <span className="muted small">{per}</span>
                   </td>
                   <td data-label="Outcome" className="dh-rc-end" data-testid="past-outcome">

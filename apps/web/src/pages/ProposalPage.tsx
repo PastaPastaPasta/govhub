@@ -275,11 +275,16 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
     standing: state ? { text: state.passing ? `Passing by ${formatInt(state.margin)}` : `Needs ${formatInt(state.needed)} more`, tone: state.light } : null,
   };
 
+  let decisionLabel = 'Timing';
   let decisionTime = `${active ? 'Payment window ends' : 'Ended'} ${formatDate(p.endEpoch)}`;
+  let nextPayout: string | null = null;
   if (later) decisionTime = `Starts at a later payout; runs ${formatDate(p.startEpoch)} to ${formatDate(p.endEpoch)}`;
   else if (active && !lameDuck && untilDeadline !== null) {
-    decisionTime = untilDeadline > 0 ? `Votes close around ${formatDate(now + untilDeadline)}` : 'Voting for this payout has closed';
-    if (cycle) decisionTime += `; next payout around ${formatDate(cycle.value.estTime)}`;
+    if (untilDeadline > 0) {
+      decisionLabel = 'Votes close';
+      decisionTime = `around ${formatDate(now + untilDeadline)}`;
+    } else decisionTime = 'Voting for this payout has closed';
+    if (cycle) nextPayout = `around ${formatDate(cycle.value.estTime)}`;
   }
 
   return (
@@ -433,7 +438,8 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
             <h2 id="details-title" className="panel-title">Summary</h2>
             <TrustStatus agg={trust.aggregate} onOpen={() => setDrawer(true)} />
             <dl className="kv p-facts small" data-testid="p-facts">
-              {row.content.ok && <div data-testid="p-decision"><dt>Timing</dt><dd>{decisionTime}</dd></div>}
+              {row.content.ok && <div data-testid="p-decision"><dt>{decisionLabel}</dt><dd>{decisionTime}</dd></div>}
+              {row.content.ok && nextPayout && <div data-testid="p-next-payout"><dt>Next payout</dt><dd>{nextPayout}</dd></div>}
               {row.content.ok && (
                 <div>
                   <dt>Runs</dt>
