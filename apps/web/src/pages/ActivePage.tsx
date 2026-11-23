@@ -54,7 +54,7 @@ function UncheckedNote({ rows }: { rows: readonly Checked<Row>[] }) {
   const reasons = new Set(unfinished.map((u) => u.why));
   const why = reasons.size === 1 ? unfinished[0]!.why : "this browser couldn't reach the network just now";
   return (
-    <p className="list-note dh-notice dh-notice--warn small" data-testid="unchecked-note">
+    <p className="list-note dh-notice dh-notice--warn dh-notice--inline small" data-testid="unchecked-note">
       {unfinished.length === rows.length ? 'These proposals' : `${unfinished.length} of these proposals`} couldn't be checked against the chain: {why}. Their amounts and
       votes are shown as reported.{' '}
       <button type="button" className="linkish dh-btn dh-btn--link" onClick={() => checks.retryUnfinished(unfinished.map((u) => u.p))} data-testid="unchecked-retry">

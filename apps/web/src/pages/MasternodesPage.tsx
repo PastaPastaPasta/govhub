@@ -943,14 +943,15 @@ function WaysToVote() {
   return (
     <section className="kr-card dh-card kr-gate vote-ways" aria-labelledby="vote-ways-title" data-testid="vote-ways">
       <h2 id="vote-ways-title">Three ways to vote</h2>
-      <ol className="vote-ways-list">
+      <ol className="vote-ways-list" role="list">
         <li>
           <h3>Proposals, from your account</h3>
           <p>
-            Needs an account here and each masternode's voting key. The account is a Dash Platform identity (about 0.005 DASH, or one you
-            have); it keeps your voting keys encrypted, or only in this tab's memory. Votes are signed in your browser.
+            Needs an account here and each masternode's voting key. The account is a Dash Platform identity: create one for about 0.005 DASH,
+            or sign in with one you have. Your voting keys come back, encrypted, whenever you sign in again, or stay only in this tab's memory.
+            Votes are signed in your browser.
           </p>
-          <button type="button" className="btn dh-btn" onClick={openSignIn} data-testid="vote-ways-signin">
+          <button type="button" className="btn dh-btn dh-btn--lead" onClick={openSignIn} data-testid="vote-ways-signin">
             Sign in or create an account
           </button>
         </li>

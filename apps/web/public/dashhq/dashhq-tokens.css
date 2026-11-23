@@ -18,7 +18,7 @@
   --dh-page: #EDF2F5;          /* page background: cool plan paper */
   --dh-surface: #FFFFFF;       /* panels, cards, inputs, the bar */
   --dh-sunken: #E2E9EE;        /* wells, table header, code */
-  --dh-track: #E2E9EE;         /* meter, progress and segmented-control tracks: never darker than the page */
+  --dh-track: #E2E9EE;         /* meter, progress and segmented-control tracks; in dark, a step above the surface, never a hole */
   --dh-hover: rgba(12, 29, 43, .045);
   --dh-raised: var(--dh-surface);
   --dh-raised-hover: var(--dh-sunken);
@@ -164,8 +164,6 @@
     --dh-page: #06131B;
     --dh-surface: #0C1E2A;
     --dh-sunken: #030C12;
-  --dh-track: color-mix(in srgb, var(--dh-surface) 86%, var(--dh-ink));
-  --dh-cat-1: #3987E5; --dh-cat-2: #D95926; --dh-cat-3: #199E70; --dh-cat-4: #C98500; --dh-cat-5: #D55181;
     --dh-track: color-mix(in srgb, var(--dh-surface) 86%, var(--dh-ink));
     --dh-cat-1: #3987E5; --dh-cat-2: #D95926; --dh-cat-3: #199E70; --dh-cat-4: #C98500; --dh-cat-5: #D55181;
     --dh-raised: #193342;
@@ -202,6 +200,8 @@
   --dh-page: #06131B;
   --dh-surface: #0C1E2A;
   --dh-sunken: #030C12;
+  --dh-track: color-mix(in srgb, var(--dh-surface) 86%, var(--dh-ink));
+  --dh-cat-1: #3987E5; --dh-cat-2: #D95926; --dh-cat-3: #199E70; --dh-cat-4: #C98500; --dh-cat-5: #D55181;
   --dh-raised: #193342;
   --dh-raised-hover: #234353;
   --dh-raised-line: #557384;
