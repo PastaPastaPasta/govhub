@@ -569,16 +569,18 @@ function ProposalsView({ past, ledger, known }: { past: ReturnType<typeof usePas
                     {t ? (
                       formatSigned(absoluteYes(t.value))
                     ) : past.talliesRead === 'ok' ? (
-                      <span className="muted" aria-label="not recorded" title="No vote tally was published on Platform for this proposal: it ended before the governance data service was recording votes">
-                        —
+                      <span className="muted" title="No vote tally was published on Platform for this proposal: it ended before the governance data service was recording votes">
+                        <span aria-hidden="true">—</span>
+                        <span className="visually-hidden">not recorded</span>
                       </span>
                     ) : past.talliesRead === 'failed' ? (
                       <span className="muted nowrap" title="The tallies couldn't be read just now">
                         not read
                       </span>
                     ) : (
-                      <span className="muted" aria-label="Reading the tally">
-                        …
+                      <span className="muted">
+                        <span aria-hidden="true">…</span>
+                        <span className="visually-hidden">Reading the tally</span>
                       </span>
                     )}
                   </td>
@@ -596,7 +598,7 @@ function ProposalsView({ past, ledger, known }: { past: ReturnType<typeof usePas
           {past.capped
             ? `These are the newest ${formatInt(parts.shown.length)} past proposals Governance has on record: it reads at most ${formatInt(PAST_PAGES)} pages of them, so older ones aren't listed here.`
             : `That's all ${formatInt(parts.shown.length)} past proposals Governance has on record.`}{' '}
-          Outcomes come from the superblocks on the Payments view.{past.talliesRead === 'ok' && ' A — under Net yes means no tally was recorded: the proposal ended before votes were being recorded.'}
+          Outcomes come from the superblocks on the Payments view.{past.talliesRead === 'ok' && rows.some(({ item }) => !past.tallies.has(item.value.govHash)) && ' A — under Net yes means no tally was recorded: the proposal ended before votes were being recorded.'}
         </p>
       )}
       {!past.loading && parts.failed.length > 0 && <FailedProposalsToggle count={parts.failed.length} shown={showFailed} onToggle={() => setShowFailed((v) => !v)} />}

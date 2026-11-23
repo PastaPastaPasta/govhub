@@ -240,7 +240,7 @@ html { font-size: 16px; }
 .proposal .p-meta:empty { display: none; }
 @media (min-width: 961px) { .proposal .p-meta { display: none; } }
 
-.proposal .p-details .p-decision, .proposal .p-details .p-facts { font-size: 15px; }
+.proposal .p-details .p-facts { font-size: 15px; }
 .proposal .panel-title { font-size: 18px; }
 .p-recorded > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; }
 .p-recorded > summary::-webkit-details-marker { display: none; }
@@ -321,7 +321,6 @@ html { font-size: 16px; }
 .vote-ways-list .vote-way-lead { color: var(--dh-ink); font-size: 16px; }
 .vote-ways-list .vote-way-needs { font-size: 14px; }
 .vote-way-more { font-size: 14px; color: var(--dh-ink-2); margin-block-end: 8px; }
-.vote-way-more > summary { cursor: pointer; color: var(--dh-brand-ink); min-block-size: 32px; display: flex; align-items: center; }
 .vote-way-more > p { margin-block-start: 4px; font-size: 14px; }
 .vote-ways > .small { margin-block-start: 0; font-size: 14px; }
 .vote-ways.kr-gate { max-inline-size: none; inline-size: 100%; }
@@ -378,13 +377,13 @@ html { font-size: 16px; }
 .treasury > .list-head { margin: 0; }
 .treasury > .tr-head.dh-page-header { margin: 0; }
 
-/* one details card beside the vote; on a narrow screen it follows the vote, ahead of the owner's words and the discussion */
+/* one Summary card after the vote in reading order; wide, it sits beside the vote, the owner's words and the discussion */
 .proposal .p-details .kv > div { grid-template-columns: 6rem minmax(0, 1fr); column-gap: 12px; }
-@media (max-width: 960px) {
-  .proposal .p-layout { display: flex; flex-direction: column; gap: var(--gv-section); }
-  .proposal .p-main { display: contents; }
-  .proposal .p-side { order: 1; }
-  .proposal .p-main > .p-about, .proposal .p-main > .p-about ~ * { order: 2; }
+.p-layout--proposal { row-gap: var(--gv-section); }
+@media (min-width: 961px) {
+  .p-layout--proposal { grid-template-rows: auto auto 1fr; }
+  .p-layout--proposal > * { grid-column: 1; }
+  .p-layout--proposal > .p-side { grid-column: 2; grid-row: 1 / span 3; }
 }
 
 /* Past: number headers sit over their numbers; the long note is for the wide layout */
@@ -397,14 +396,16 @@ html { font-size: 16px; }
 /* the price's source is its own quiet line, so no separator dangles at the end of the first */
 .budget-panel .usd > .usd-value::after { content: none; }
 /* the exact name only where the title is the owner's words; otherwise the title already is the name */
-.prow:not(.prow-titled) .prow-slug { display: none; }
-.plist-proposals .prow-slug { font-size: 13px; color: var(--dh-ink-3); }
+@media (max-width: 760px) { .prow:not(.prow-titled) .prow-slug { display: none; } }
+.plist-proposals .prow-slug { font-size: 13px; color: var(--dh-ink-2); }
 
 /* a phone's first screen holds the countdown, the budget and one whole proposal above the tab bar */
 @media (max-width: 760px) {
   .budget.gov-hero { padding-block-end: 0; }
+  .budget-panel { gap: 8px; padding-block: 10px; }
+  .budget-panel .budget-facts { row-gap: 6px; }
+  .budget-panel .gov-stat-note { margin-block-start: 0; font-size: 13px; }
   .plist-proposals > .prow[data-govhash] { padding-block: 14px 12px; }
-  .budget-panel .gov-stat-note { display: none; }
   .list-section--active > .plist-proposals { margin-block-start: 0; }
   .budget-panel .chain-context .chainchip:is(.dh-proof--ok, .dh-proof--checking) { min-block-size: 24px; padding-block: 2px; }
 }
@@ -415,8 +416,6 @@ html { font-size: 16px; }
 .meter-notch { inline-size: 3px; margin-inline-start: -1.5px; background: var(--dh-ink); box-shadow: 0 0 0 1.5px var(--dh-surface); }
 /* when each contest closes is what a voter scans for */
 .crow-status > .tag.dh-badge:not(.ctag-soon):not(.ctag-won) { color: var(--dh-ink); }
-/* a contest's own page names each contender with its own colour; its leader matches the list's */
-.contest { --cb-c0: var(--dh-brand); }
 
 /* Past on a phone: each fact is its own item, so a wrapped line never starts with a separator */
 @media (max-width: 760px) {
@@ -455,4 +454,22 @@ html { font-size: 16px; }
   .past-page table.past.dh-table--cards td:not(.dh-rc-title) { color: var(--dh-ink); }
 }
 /* each way to vote's details are a clear link */
-.vote-way-more > summary { font-size: 15px; font-weight: 560; text-decoration: underline; text-underline-offset: 3px; }
+
+/* jump links beside a section's heading, to the part a visitor may have come for */
+:is(.contests-open-head, .vote-ways-head) { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; }
+.contests-to-ended { font-size: 15px; }
+#mn-find { scroll-margin-block-start: 80px; }
+#ended-contests { scroll-margin-block-start: 80px; }
+@media (max-width: 760px) {
+  /* a way to vote on a phone: its name, what it needs, its button; the details fold under it */
+  .vote-ways-list > li { padding: 16px; gap: 6px; }
+  .vote-ways-list .vote-way-lead { display: none; }
+  .vote-ways-list > li > :is(.btn, .dh-btn, a) { order: 3; margin-block-start: 6px; }
+  .vote-way-more { order: 4; margin: 0; }
+}
+
+/* between phone and desktop a row puts the title on its own line, the figures under it */
+@media (min-width: 761px) and (max-width: 1100px) {
+  .plist-proposals > .prow,
+  .plist > .prow[data-govhash] { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) auto; grid-template-areas: 'main main main' 'ask fund meta'; row-gap: 12px; }
+}

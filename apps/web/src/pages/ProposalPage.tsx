@@ -421,106 +421,15 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
         </div>
       </section>
 
-      <div className="p-layout">
-        <div className="p-main">
-          {active && !lameDuck && (
-            <ErrorBoundary what="masternode voting">
-              <ProposalVoteBlock proposal={p} subject={voteSubject} mn={mn} closesIn={later || (untilDeadline !== null && untilDeadline > 0) ? null : untilDeadline} onVerify={() => setDrawer(true)} />
-            </ErrorBoundary>
-          )}
-
-          <section className="p-about" aria-labelledby="about-title">
-            <h2 id="about-title">About this proposal</h2>
-            <div className="p-claims">
-              {(hasPost || ownerId || !page || short) && <section className="p-claim" aria-labelledby="owner-says" data-testid="about-owner">
-                <h3 id="owner-says">What the owner says</h3>
-                {ownerId && (
-                  <ErrorBoundary what="owner's description">
-                    <OwnerPost govHash={p.govHash} ownerId={ownerId} post={post} trustLevel={trust.aggregate.level} />
-                  </ErrorBoundary>
-                )}
-                {!hasPost && !page && (
-                  <p className="small muted" data-testid="about-owner-none">
-                    The owner hasn’t posted a description here. The owner can post one here by claiming the proposal.
-                  </p>
-                )}
-                {short && (
-                  <p className="small p-short" data-testid="about-short">
-                    {resolved ? (
-                      <>
-                        <b>{host} is a link shortener.</b> When this site was built ({formatDate(resolved.at)}) it led to{' '}
-                        <a href={resolved.to} target="_blank" rel="noopener noreferrer nofollow ugc" className="ext break dh-link" data-testid="about-short-to">
-                          {resolved.to}
-                          <span className="visually-hidden"> (opens another site)</span>
-                        </a>
-                        . Whoever made the short link can point it elsewhere, so check where it leads when you open it.
-                      </>
-                    ) : (
-                      <>
-                        <b>{host} is a link shortener</b>, so where it leads shows only once you open it.
-                      </>
-                    )}
-                  </p>
-                )}
-              </section>}
-              <details className="p-claim p-recorded" data-testid="about-recorded" open={!row.content.ok}>
-                <summary><h3 id="network-records">What the network records</h3></summary>
-                {row.content.ok ? (
-                  <>
-                  <dl className="kv small">
-                    <div>
-                      <dt>Name</dt>
-                      <dd className="break" data-testid="p-chain-name">{p.name}</dd>
-                    </div>
-                    <div>
-                      <dt>Requests</dt>
-                      <dd>
-                        {formatDash(p.paymentAmount)} {sched?.oneTime ? 'once' : perPayment(params)}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Payment window</dt>
-                      <dd>
-                        {formatDate(p.startEpoch)} to {formatDate(p.endEpoch)}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Pays</dt>
-                      <dd>
-                        <dashhq-hash value={p.paymentAddress} full="" label="payment address">
-                          {p.paymentAddress}
-                        </dashhq-hash>
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Link</dt>
-                      <dd className="break">{p.url}</dd>
-                    </div>
-                  </dl>
-                  <p className="small muted">That is all a Dash proposal holds. Each field above matches the hash the network votes on.</p>
-                  </>
-                ) : (
-                  <p className="small" data-testid="about-recorded-mismatch">
-                    The fields published for this proposal don't match the hash the network votes on ({row.content.problem}), so none of them is shown here as
-                    the network's record.
-                  </p>
-                )}
-              </details>
-            </div>
-            {claimAbout === true && claim}
-          </section>
-
-          <ErrorBoundary what="discussion">
-            <Discussion
-              govHash={p.govHash}
-              featured={featured}
-              composerNote={unclaimed ? "This posts a comment in the discussion. Only the proposal's owner can write the description above." : undefined}
-            />
+      <div className="p-layout p-layout--proposal">
+        {active && !lameDuck && (
+          <ErrorBoundary what="masternode voting">
+            <ProposalVoteBlock proposal={p} subject={voteSubject} mn={mn} closesIn={later || (untilDeadline !== null && untilDeadline > 0) ? null : untilDeadline} onVerify={() => setDrawer(true)} />
           </ErrorBoundary>
-        </div>
+        )}
 
-        <aside className="p-side" aria-label="Summary">
-          <section className="panel dh-card p-details" aria-labelledby="details-title" data-testid="p-details">
+        <aside className="p-side" aria-labelledby="details-title">
+          <section className="panel dh-card p-details" data-testid="p-details">
             <h2 id="details-title" className="panel-title">Summary</h2>
             <TrustStatus agg={trust.aggregate} onOpen={() => setDrawer(true)} />
             <dl className="kv p-facts small" data-testid="p-facts">
@@ -572,6 +481,95 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
           </section>
           {claimAbout === false && claim}
         </aside>
+
+        <section className="p-about" aria-labelledby="about-title">
+          <h2 id="about-title">About this proposal</h2>
+          <div className="p-claims">
+            {(hasPost || ownerId || !page || short) && <section className="p-claim" aria-labelledby="owner-says" data-testid="about-owner">
+              <h3 id="owner-says">What the owner says</h3>
+              {ownerId && (
+                <ErrorBoundary what="owner's description">
+                  <OwnerPost govHash={p.govHash} ownerId={ownerId} post={post} trustLevel={trust.aggregate.level} />
+                </ErrorBoundary>
+              )}
+              {!hasPost && !page && (
+                <p className="small muted" data-testid="about-owner-none">
+                  The owner hasn’t posted a description here. The owner can post one here by claiming the proposal.
+                </p>
+              )}
+              {short && (
+                <p className="small p-short" data-testid="about-short">
+                  {resolved ? (
+                    <>
+                      <b>{host} is a link shortener.</b> When this site was built ({formatDate(resolved.at)}) it led to{' '}
+                      <a href={resolved.to} target="_blank" rel="noopener noreferrer nofollow ugc" className="ext break dh-link" data-testid="about-short-to">
+                        {resolved.to}
+                        <span className="visually-hidden"> (opens another site)</span>
+                      </a>
+                      . Whoever made the short link can point it elsewhere, so check where it leads when you open it.
+                    </>
+                  ) : (
+                    <>
+                      <b>{host} is a link shortener</b>, so where it leads shows only once you open it.
+                    </>
+                  )}
+                </p>
+              )}
+            </section>}
+            <details className="p-claim p-recorded" data-testid="about-recorded" open={!row.content.ok}>
+              <summary><h3 id="network-records">What the network records</h3></summary>
+              {row.content.ok ? (
+                <>
+                <dl className="kv small">
+                  <div>
+                    <dt>Name</dt>
+                    <dd className="break" data-testid="p-chain-name">{p.name}</dd>
+                  </div>
+                  <div>
+                    <dt>Requests</dt>
+                    <dd>
+                      {formatDash(p.paymentAmount)} {sched?.oneTime ? 'once' : perPayment(params)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Payment window</dt>
+                    <dd>
+                      {formatDate(p.startEpoch)} to {formatDate(p.endEpoch)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Pays</dt>
+                    <dd>
+                      <dashhq-hash value={p.paymentAddress} full="" label="payment address">
+                        {p.paymentAddress}
+                      </dashhq-hash>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Link</dt>
+                    <dd className="break">{p.url}</dd>
+                  </div>
+                </dl>
+                <p className="small muted">That is all a Dash proposal holds. Each field above matches the hash the network votes on.</p>
+                </>
+              ) : (
+                <p className="small" data-testid="about-recorded-mismatch">
+                  The fields published for this proposal don't match the hash the network votes on ({row.content.problem}), so none of them is shown here as
+                  the network's record.
+                </p>
+              )}
+            </details>
+          </div>
+          {claimAbout === true && claim}
+        </section>
+
+        <ErrorBoundary what="discussion">
+          <Discussion
+            govHash={p.govHash}
+            featured={featured}
+            composerNote={unclaimed ? "This posts a comment in the discussion. Only the proposal's owner can write the description above." : undefined}
+          />
+        </ErrorBoundary>
       </div>
 
       <VerificationDrawer sp={sp} trust={trust} cycle={cycle?.value ?? null} open={drawer} onClose={() => setDrawer(false)} />

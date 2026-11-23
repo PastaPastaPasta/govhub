@@ -102,6 +102,11 @@ export function ContestsPage() {
       window.scrollTo({ top: 0 });
     }
   }, [hash]);
+  const [endedOpen, setEndedOpen] = useState(false);
+  const showEnded = () => {
+    setEndedOpen(() => true);
+    requestAnimationFrame(() => document.getElementById('ended-contests')?.scrollIntoView({ block: 'start' }));
+  };
   const src = useContestSource();
   const nowMs = useClockMs();
   const [attempt, setAttempt] = useState(0);
@@ -156,9 +161,14 @@ export function ContestsPage() {
         </label>
       </header>
 
-      <h2 className="dh-section__title gov-section-title">
-        Open for voting{open.data && <span className="count">{formatInt(still.length)}</span>}
-      </h2>
+      <div className="contests-open-head">
+        <h2 className="dh-section__title gov-section-title">
+          Open for voting{open.data && <span className="count">{formatInt(still.length)}</span>}
+        </h2>
+        <button type="button" className="dh-btn dh-btn--link contests-to-ended" onClick={showEnded} data-testid="jump-ended">
+          Ended contests ↓
+        </button>
+      </div>
       <p className="contest-legend small muted" aria-label="Vote bar legend">
         <span><i className="cb-c0" aria-hidden="true" />Leader</span>
         <span><i className="cb-c1" aria-hidden="true" />Challengers</span>
@@ -187,7 +197,7 @@ export function ContestsPage() {
         </div>
       )}
 
-      <EndedContests src={src} openLabels={open.data ? openLabels : null} query={q} nowMs={nowMs} />
+      <EndedContests src={src} openLabels={open.data ? openLabels : null} query={q} nowMs={nowMs} open={endedOpen} setOpen={setEndedOpen} />
     </section>
   );
 }
@@ -196,13 +206,12 @@ export function ContestsPage() {
  * Every contested name that is not open, in name order. Collapsed, and nothing is read until it is opened. With a search, it starts at
  * that name and stops where the names no longer begin with it (the index is in name order, so this costs one page).
  */
-function EndedContests({ src, openLabels, query, nowMs }: { src: ContestSource; openLabels: ReadonlySet<string> | null; query: string; nowMs: number }) {
+function EndedContests({ src, openLabels, query, nowMs, open, setOpen }: { src: ContestSource; openLabels: ReadonlySet<string> | null; query: string; nowMs: number; open: boolean; setOpen: (f: (v: boolean) => boolean) => void }) {
   const id = useId();
-  const [open, setOpen] = useState(false);
   // only a settled search reaches Platform (not every keystroke)
   const prefix = useSettled(normalizeLabel(query).replace(/[^a-z01-]/g, ''), 300);
   return (
-    <section className="lameduck contests-ended" aria-labelledby={`${id}-title`} data-testid="ended-section">
+    <section className="lameduck contests-ended" id="ended-contests" aria-labelledby={`${id}-title`} data-testid="ended-section">
       <h2 className="lameduck-title" id={`${id}-title`}>
         <button type="button" className="lameduck-toggle" aria-expanded={open} aria-controls={id} onClick={() => setOpen((v) => !v)} data-testid="toggle-ended">
           <span className="lameduck-caret" aria-hidden="true" />

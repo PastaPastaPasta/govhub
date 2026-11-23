@@ -893,7 +893,7 @@ function FindMasternode() {
     navigate({ pathname: `/masternodes/${pro}`, search: keptSearch(search) });
   };
   return (
-    <section className="kr-card dh-card mn-find" aria-labelledby={`${id}-title`} data-testid="mn-find">
+    <section className="kr-card dh-card mn-find" id="mn-find" aria-labelledby={`${id}-title`} data-testid="mn-find">
       <h2 id={`${id}-title`}>Look up one masternode’s votes</h2>
       <form className="mn-find-form" onSubmit={go}>
         <label className="dh-field__label" htmlFor={`${id}-pro`}>
@@ -942,14 +942,17 @@ function WaysToVote() {
   const k = useKeyring();
   return (
     <section className="kr-card dh-card kr-gate vote-ways" aria-labelledby="vote-ways-title" data-testid="vote-ways">
-      <h2 id="vote-ways-title">Three ways to vote</h2>
+      <div className="vote-ways-head">
+        <h2 id="vote-ways-title">Three ways to vote</h2>
+        <a href="#mn-find" className="dh-link small" data-testid="jump-find">Look up one masternode’s votes ↓</a>
+      </div>
       <ol className="vote-ways-list" role="list">
         <li>
           <h3>Proposals, from your account</h3>
           <p className="vote-way-lead">Vote on every open proposal with all your masternodes at once.</p>
           <p className="vote-way-needs">Needs an account here and each masternode's voting key.</p>
-          <details className="vote-way-more">
-            <summary>How it works</summary>
+          <details className="vote-way-more dh-disclosure">
+            <summary>How it works<span className="visually-hidden">: voting from your account</span></summary>
             <p>
               The account is a Dash Platform identity: create one for about 0.005 DASH, or sign in with one you have. Your voting keys come back,
               encrypted, whenever you sign in again, or stay only in this tab's memory. Votes are signed in your browser.
@@ -963,8 +966,8 @@ function WaysToVote() {
           <h3>Proposals, without an account</h3>
           <p className="vote-way-lead">Vote on one proposal from its page, with <b>Vote on this proposal</b>.</p>
           <p className="vote-way-needs">Sign the vote offline, or paste the voting key there.</p>
-          <details className="vote-way-more">
-            <summary>How it works</summary>
+          <details className="vote-way-more dh-disclosure">
+            <summary>How it works<span className="visually-hidden">: voting without an account</span></summary>
             <p>
               {k.coreNetwork === 'testnet'
                 ? 'On Testnet, sign its vote hash with your own tooling (Dash Core’s signmessage can’t make that signature), or broadcast it yourself with voteraw.'
