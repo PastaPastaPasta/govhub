@@ -7,14 +7,14 @@ html { font-size: 16px; }
 
 /* ---- landing: payout, then budget ---------------------------------------------------------------------------- */
 .main:has(> .gov-hero) { padding-block-start: var(--dh-5); }
-.budget.gov-hero { display: grid; gap: var(--dh-4); margin-block: 0 var(--dh-6); }
+.budget.gov-hero { display: grid; gap: var(--gv-group); margin-block: 0 var(--gv-section); }
 .gov-hero .dh-page-header__title { font-size: clamp(34px, 4.4vw, 48px); line-height: 1.08; }
 .gov-hero .dh-page-header__lede { font-size: var(--dh-fs-lead); }
 .gov-hero .dh-page-header__actions .dh-btn { min-block-size: 44px; padding-inline: 18px; font-size: 15px; }
 
 .budget-panel {
   display: grid;
-  gap: 20px;
+  gap: var(--gv-group);
   padding: 20px var(--dh-6);
   background: var(--dh-surface);
   border: 1px solid var(--dh-line);
@@ -35,16 +35,16 @@ html { font-size: 16px; }
 .budget-panel .budget-facts { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--dh-5) var(--dh-6); }
 .budget-panel .gov-stat { border: 0; padding: 0; }
 .budget-panel .gov-stat + .gov-stat { border-inline-start: 1px solid var(--dh-line); padding-inline-start: var(--dh-6); }
-.budget-panel .gov-stat dt { font-size: 15px; color: var(--dh-ink-2); margin-block-end: 6px; }
+.budget-panel .gov-stat dt { font-size: 15px; color: var(--dh-ink-2); margin-block-end: 4px; }
 .budget-panel .gov-stat .num { font-size: 30px; font-weight: 640; font-stretch: 104%; color: var(--dh-ink); line-height: 1.1; }
 .budget-panel .gov-stat--good .num { color: var(--dh-good); }
 .budget-panel .gov-stat small { font-size: 15px; }
 .budget-panel .gov-stat-note,
-.budget-panel .usd { display: block; margin-block-start: 6px; font-size: 14px; color: var(--dh-ink-2); line-height: 1.4; }
+.budget-panel .usd { display: block; margin-block-start: 4px; font-size: 14px; color: var(--dh-ink-2); line-height: 1.4; }
 .budget-panel .usd .usd-source { display: block; font-size: 13px; }
 
 .budget-panel .budget-foot {
-  display: flex; flex-wrap: wrap; align-items: center; gap: var(--dh-2) var(--dh-6);
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--gv-tight) var(--dh-6);
 }
 .budget-panel .budget-line-links > a,
 .budget-panel details.learn > summary { font-size: 15px; }
@@ -98,7 +98,8 @@ html { font-size: 16px; }
 }
 
 .plist-proposals .prow-meta { gap: 6px; }
-.plist-proposals .prow-votes { font-size: 15px; color: var(--dh-ink-2); gap: 0; line-height: 1.4; }
+.plist-proposals .prow-votes { display: grid; grid-template-columns: auto auto; justify-content: end; font-size: 15px; color: var(--dh-ink-2); gap: 0 10px; line-height: 1.4; }
+.plist-proposals .prow-votes > span:first-child { grid-column: 1 / -1; justify-self: end; }
 .prow-votes b { font-size: 16px; font-weight: 640; color: var(--dh-ink); }
 .prow-comments { font-size: 14px; }
 
@@ -116,21 +117,20 @@ html { font-size: 16px; }
 /* the narrow layout: a card reads top to bottom, what, how much, where it stands, the votes */
 @media (max-width: 760px) {
   .main:has(> .gov-hero) { padding-block-start: var(--dh-4); }
-  .budget.gov-hero { gap: var(--dh-3); margin-block-end: var(--dh-3); }
   .gov-hero .dh-page-header__title { font-size: 28px; }
   .gov-hero .dh-page-header__lede { font-size: 15px; line-height: 1.45; }
   .gov-hero .dh-page-header__row { gap: var(--dh-3); }
   .gov-hero:has(.budget-new) .dh-page-header__actions { display: none; }
-  .budget-panel { padding: 12px 14px; gap: 10px; }
+  .budget-panel { padding: 12px 14px; }
   .budget-panel .strip { block-size: 10px; }
   .budget-panel .budget-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px var(--dh-4); }
   .budget-panel .gov-stat + .gov-stat { border: 0; padding: 0; }
   .budget-panel .gov-stat .num { font-size: 24px; }
-  .budget-panel .gov-stat dt { font-size: 14px; margin-block-end: 0; }
+  .budget-panel .gov-stat dt { font-size: 14px; }
   .budget-panel .gov-stat small { font-size: 14px; }
-  .budget-panel .gov-stat-note { font-size: 13px; margin-block-start: 2px; }
+  .budget-panel .gov-stat-note { font-size: 13px; }
   .budget-panel .budget-facts .usd { display: none; }
-  .budget-panel .budget-foot { gap: var(--dh-2) var(--dh-5); }
+  .budget-panel .budget-foot { column-gap: var(--dh-5); }
   .budget-panel .budget-line-links { display: none; }
   .budget-panel details.learn > summary { font-size: 15px; padding-block: 2px; }
 
@@ -151,10 +151,8 @@ html { font-size: 16px; }
   .list-section--active > .list-head > .gov-section-head { grid-column: 1; grid-row: 1; align-self: center; }
   .list-section--active .list-tools-row > .list-sort { grid-column: 2; grid-row: 1; align-self: center; }
   .list-sort > span:first-child { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); }
-  /* the exact name only where the title is the owner's words; otherwise the title already is the name */
-  .prow:not(.prow-titled) .prow-slug { display: none; }
   /* a card reads: what, how much, where it stands, then the owner's words and the votes */
-  .plist-proposals > .prow[data-govhash] { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
+  .plist-proposals > .prow[data-govhash] { display: flex; flex-direction: column; align-items: stretch; }
   .plist-proposals > .prow > .prow-main { display: contents; }
   .plist-proposals > .prow :is(.prow-title, .prow-slug) { order: 0; }
   .plist-proposals > .prow > .prow-ask { order: 1; }
@@ -181,20 +179,20 @@ html { font-size: 16px; }
   .plist-proposals .prow-fund .meter-text { order: 0; flex: 1 0 auto; margin: 0; }
   .plist-proposals .prow-fund > .tag.dh-badge { order: 1; margin-inline-start: auto; }
   .plist-proposals .prow-fund .meter-track { order: 2; flex: 1 0 100%; }
-  .plist-proposals > .prow[data-govhash] { padding-block: 14px 12px; gap: 6px; }
+  .plist-proposals > .prow[data-govhash] { gap: 6px; }
   .prow-ask { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; }
   .prow-ask > p { margin: 0; }
   .plist-proposals .prow-meta { flex-direction: row; align-items: baseline; justify-content: space-between; }
-  .plist-proposals .prow-votes { flex-direction: row; flex-wrap: wrap; gap: 4px 14px; }
+  .plist-proposals .prow-votes { display: flex; flex-direction: row; flex-wrap: wrap; justify-content: start; gap: 4px 14px; }
 }
 
 /* ---- a proposal: the ask and where it stands, then the vote, then the record --------------------------------- */
-.proposal .p-hero .p-purpose { margin-block-start: var(--dh-2); max-inline-size: 72ch; }
+.proposal .p-hero .p-purpose { margin-block-start: var(--gv-tight); max-inline-size: 72ch; }
 .proposal .p-hero .p-purpose-quote p { font-size: 17px; line-height: 1.5; color: var(--dh-ink); }
 .proposal .p-hero .p-purpose .small { font-size: 14px; }
 /* the vote card names what is signed for screen readers; on screen the page above already says it */
 .proposal .pvote-subject { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.proposal .p-hero { gap: 6px; margin-block-end: var(--dh-5); }
+.proposal .p-hero { margin: 0; gap: var(--gv-tight); }
 .proposal .p-hero .dh-page-header__kicker { display: none; }
 .proposal .p-hero .dh-page-header__title { font-size: clamp(28px, 3.4vw, 38px); line-height: 1.15; }
 .p-sub { margin: 0; font-size: 15px; color: var(--dh-ink-2); overflow-wrap: anywhere; }
@@ -202,7 +200,7 @@ html { font-size: 16px; }
 .proposal .p-funds {
   display: grid; gap: var(--dh-5);
   padding: var(--dh-6);
-  margin-block-end: var(--dh-6);
+  margin: 0;
   background: var(--dh-surface);
   border: 1px solid var(--dh-line);
   border-radius: var(--dh-r3, 10px);
@@ -217,14 +215,16 @@ html { font-size: 16px; }
   .proposal .p-funds > .p-standing { grid-column: 2; grid-row: 2; padding-block-start: var(--dh-4); }
 }
 .p-lead { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--dh-4); }
-.p-lead-ask, .p-lead-standing { display: grid; gap: 8px; align-content: start; }
+.p-lead-ask, .p-lead-standing { display: grid; align-content: start; }
+.p-lead-ask { gap: 8px; }
+.p-lead-standing { gap: var(--gv-tight); }
 .proposal .p-amount { font-size: 18px; color: var(--dh-ink-2); line-height: 1.25; }
 .proposal .p-amount .num { font-size: 44px; font-weight: 660; font-stretch: 106%; color: var(--dh-ink); line-height: 1; }
 .proposal .p-amount small { font-size: 22px; font-weight: 600; color: var(--dh-ink); }
 .proposal .p-amount .p-total { display: block; margin-block-start: 10px; font-size: 16px; color: var(--dh-ink-2); }
 .proposal .p-amount .p-total b { font-size: 16px; color: var(--dh-ink); }
 .p-left { margin: 0; font-size: 16px; color: var(--dh-ink-2); }
-.p-lead-standing .meter { gap: 12px; }
+.p-lead-standing .meter { gap: 10px; }
 .p-lead-standing .meter-text { font-size: 22px; font-weight: 640; }
 .p-lead-standing .meter-track { block-size: 12px; }
 .p-lead-standing .meter-dot { inline-size: 10px; block-size: 10px; }
@@ -232,7 +232,7 @@ html { font-size: 16px; }
 .p-reported, .p-ended, .p-closes { margin: 0; font-size: 14px; color: var(--dh-ink-2); }
 .p-net b { color: var(--dh-ink); font-weight: 620; }
 
-.proposal .p-standing { gap: 12px; padding-block-start: var(--dh-5); border-block-start: 1px solid var(--dh-line); }
+.proposal .p-standing { gap: var(--gv-tight); padding-block-start: var(--dh-5); border-block-start: 1px solid var(--dh-line); }
 .proposal .p-status { font-size: 15px; }
 .proposal .p-votes { font-size: 17px; color: var(--dh-ink-2); gap: 6px 22px; }
 .proposal .p-votes b { font-size: 20px; font-weight: 650; color: var(--dh-ink); }
@@ -252,11 +252,9 @@ html { font-size: 16px; }
 
 @media (max-width: 760px) {
   .proposal .p-hero .dh-page-header__title { font-size: 24px; }
-  .proposal .p-hero { margin-block-end: var(--dh-4); }
   .proposal .p-hero .p-purpose-quote p { font-size: 15px; -webkit-line-clamp: 3; }
   .proposal .p-hero .p-purpose .small { font-size: 13px; }
   .proposal .p-funds { padding: var(--dh-4); gap: var(--dh-4); }
-  .p-lead { grid-template-columns: minmax(0, 1fr); gap: var(--dh-4); }
   .proposal .p-amount .num { font-size: 34px; }
   .proposal .p-amount small { font-size: 18px; }
   .p-lead-standing .meter-text { font-size: 18px; }
@@ -273,7 +271,7 @@ html { font-size: 16px; }
 :is(.past-head, .tr-head, .kr-head, .contests > .dh-page-header) .dh-page-header__lede { font-size: 17px; max-inline-size: 70ch; }
 
 /* Past: a readable ledger */
-.past-page { gap: var(--dh-4); }
+.past-page { gap: var(--gv-section); }
 .past.dh-table { font-size: 15px; }
 .past.dh-table th { font-size: 14px; }
 @media (min-width: 761px) { .past.dh-table td { padding-block: 12px; vertical-align: middle; } .past .outcome { flex-wrap: nowrap; white-space: nowrap; } }
@@ -286,8 +284,8 @@ html { font-size: 16px; }
 .contests > .dh-page-header.gov-band::before { display: none; }
 .contests > .dh-page-header .dh-page-header__kicker { display: none; }
 .contests-search input { inline-size: 100%; max-inline-size: none; min-block-size: 44px; font-size: 16px; }
-.contests .gov-section-title { border: 0; padding: 0; font-size: 24px; }
-.contest-legend { font-size: 14px; gap: 4px 18px; margin-block: 4px 12px; }
+.contests .gov-section-title { border: 0; padding: 0; font-size: 24px; margin-block: 0 var(--gv-tight); }
+.contest-legend { font-size: 14px; gap: 4px 18px; margin-block: 0 var(--gv-group); }
 .contest-legend i { inline-size: 10px; block-size: 10px; border-radius: 50%; }
 :is(.crow, .contest-legend) :is(.cb-c1, .cb-c2, .cb-c3) { background-image: none; }
 /* Lock keeps a faint hatch so it never relies on hue alone */
@@ -309,13 +307,14 @@ html { font-size: 16px; }
   .plist .crow { padding: 14px 16px; row-gap: 8px; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'main main' 'bar bar' 'status meta'; }
   .crow-status { justify-content: start; }
   .contests .gov-section-title { font-size: 20px; }
+  .contests > .dh-page-header.gov-band { padding-block-start: var(--dh-4); }
 }
 
 /* My masternodes, signed out: the three ways side by side, the ProTx lookup after them */
-.kr-page { display: grid; gap: var(--dh-5); }
-.vote-ways.kr-card { padding: 0; border: 0; background: none; box-shadow: none; }
-.vote-ways > h2 { font-size: 22px; margin: 0 0 4px; }
-.vote-ways-list { list-style: none; padding: 0; margin: var(--dh-3) 0 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: var(--dh-4); }
+.kr-page { display: grid; gap: var(--gv-section); }
+.vote-ways.kr-card { padding: 0; border: 0; background: none; box-shadow: none; gap: var(--gv-group); }
+.vote-ways > h2 { font-size: 22px; margin: 0; }
+.vote-ways-list { list-style: none; padding: 0; margin: 0; justify-self: stretch; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: var(--dh-4); }
 .vote-ways-list > li { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 20px; background: var(--dh-surface); border: 1px solid var(--dh-line); border-radius: var(--dh-r3, 10px); }
 .vote-ways-list h3 { font-size: 17px; margin: 0; }
 .vote-ways-list p { margin: 0; font-size: 15px; color: var(--dh-ink-2); }
@@ -325,7 +324,7 @@ html { font-size: 16px; }
 .vote-way-more { font-size: 14px; color: var(--dh-ink-2); margin-block-end: 8px; }
 .vote-way-more > summary { cursor: pointer; color: var(--dh-brand-ink); min-block-size: 32px; display: flex; align-items: center; }
 .vote-way-more > p { margin-block-start: 4px; font-size: 14px; }
-.vote-ways > .small { margin-block-start: var(--dh-3); font-size: 14px; }
+.vote-ways > .small { margin-block-start: 0; font-size: 14px; }
 .vote-ways.kr-gate { max-inline-size: none; inline-size: 100%; }
 .mn-find { margin: 0; padding: 20px; }
 .mn-find h2 { font-size: 18px; }
@@ -346,40 +345,25 @@ html { font-size: 16px; }
 @media (max-width: 760px) { :root { --gv-section: 24px; --gv-group: 12px; --gv-tight: 6px; } }
 
 /* landing */
-.budget.gov-hero { gap: var(--gv-group); margin-block-end: var(--gv-section); }
 .gov-hero .dh-page-header__text { gap: var(--gv-tight); }
-.budget-panel { gap: var(--gv-group); }
-.budget-panel .gov-stat dt { margin-block-end: 4px; }
-.budget-panel .gov-stat-note, .budget-panel .usd { margin-block-start: 4px; }
-.budget-panel .budget-foot { row-gap: var(--gv-tight); }
 .list-section--active > .list-head { gap: var(--gv-group); margin-block-end: var(--gv-group); }
 .list-section--active .gov-section-head { padding-block-end: 0; }
 .list-section--active > .list-tools { gap: var(--gv-group); margin-block-end: var(--gv-group); }
 .plist-proposals > .prow[data-govhash] { padding-block: 18px; }
-.plist-proposals .prow-votes { display: grid; grid-template-columns: auto auto; justify-content: end; column-gap: 10px; }
-.plist-proposals .prow-votes > span:first-child { grid-column: 1 / -1; justify-self: end; }
 @media (max-width: 760px) {
   .list-section--active { row-gap: var(--gv-group); }
   .list-section--active > .list-head,
   .list-section--active > .list-tools { margin: 0; }
   .list-section--active .list-chips { margin: 0; }
-  .plist-proposals .prow-votes { display: flex; justify-content: start; gap: 4px 14px; }
 }
 
 /* a proposal: the back link sits with the title; the sections below are one rhythm apart */
 .proposal { display: grid; gap: var(--gv-section); }
 .proposal > * { margin-block: 0; }
 .proposal > .crumbs { margin-block-end: calc(var(--gv-tight) - var(--gv-section)); }
-.proposal .p-hero { margin: 0; gap: var(--gv-tight); }
-.proposal .p-hero .p-purpose { margin-block-start: var(--gv-tight); }
-.proposal .p-funds { margin: 0; }
-.p-lead-standing { gap: var(--gv-tight); }
-.p-lead-standing .meter { gap: 10px; }
-.proposal .p-standing { gap: var(--gv-tight); }
 .p-main, .p-side { gap: var(--gv-section); }
 
 /* Past */
-.past-page { gap: var(--gv-section); }
 .past-page > * { margin-block: 0; }
 .past-page > .list-head { margin: 0; }
 .past-head.dh-page-header { margin: 0; gap: var(--gv-tight); }
@@ -387,22 +371,12 @@ html { font-size: 16px; }
 .past-page .list-tools { gap: var(--gv-tight); margin: 0 0 calc(var(--gv-group) - var(--gv-section)); }
 .past-page table.past { margin-block-start: 0; }
 
-/* Name contests */
-@media (max-width: 760px) { .contests > .dh-page-header.gov-band { padding-block-start: var(--dh-4); } }
-.contests .gov-section-title { margin-block: 0 var(--gv-tight); }
-.contest-legend { margin-block: 0 var(--gv-group); }
-
 /* My masternodes */
-.kr-page { gap: var(--gv-section); }
 .kr-page > .kr-head.dh-page-header { margin: 0; }
-.vote-ways > h2 { margin: 0; }
-.vote-ways.kr-card { gap: var(--gv-group); }
-.vote-ways-list { margin-block-start: 0; justify-self: stretch; }
-.vote-ways > .small { margin-block-start: 0; }
-.treasury > .list-head { margin: 0; }
 
 /* Treasury */
 .treasury { gap: var(--gv-section); }
+.treasury > .list-head { margin: 0; }
 .treasury > .tr-head.dh-page-header { margin: 0; }
 
 /* one details card beside the vote; on a narrow screen it follows the vote, ahead of the owner's words and the discussion */
