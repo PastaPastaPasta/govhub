@@ -50,7 +50,7 @@ export function TreasuryPage() {
       <div className="list-head">
         <ProposalTabs />
       </div>
-      <header className="dh-page-header">
+      <header className="dh-page-header tr-head">
         <h1 className="dh-page-header__title" id="treasury-title">
           What the treasury funds
         </h1>

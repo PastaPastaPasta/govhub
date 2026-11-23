@@ -894,7 +894,7 @@ function FindMasternode() {
   };
   return (
     <section className="kr-card dh-card mn-find" aria-labelledby={`${id}-title`} data-testid="mn-find">
-      <h2 id={`${id}-title`}>Your masternode’s votes</h2>
+      <h2 id={`${id}-title`}>Look up one masternode’s votes</h2>
       <form className="mn-find-form" onSubmit={go}>
         <label className="dh-field__label" htmlFor={`${id}-pro`}>
           ProTx hash
@@ -947,9 +947,8 @@ function WaysToVote() {
         <li>
           <h3>Proposals, from your account</h3>
           <p>
-            Needs an account here and each masternode's voting key. The account is a Dash Platform identity: create one for about 0.005 DASH,
-            or sign in with one you have. It keeps your voting keys in an encrypted keyring that comes back when you sign in again, or only in
-            this tab's memory if you prefer. Votes are signed in your browser.
+            Needs an account here and each masternode's voting key. The account is a Dash Platform identity (about 0.005 DASH, or one you
+            have); it keeps your voting keys encrypted, or only in this tab's memory. Votes are signed in your browser.
           </p>
           <button type="button" className="btn dh-btn" onClick={openSignIn} data-testid="vote-ways-signin">
             Sign in or create an account
@@ -1037,8 +1036,8 @@ export function MasternodesPage() {
       )}
       {k.status === 'signed-out' && (
         <>
-          <FindMasternode />
           <WaysToVote />
+          <FindMasternode />
         </>
       )}
       {k.status === 'checking' && (
