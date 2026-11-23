@@ -521,7 +521,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
 
         <aside className="p-side" aria-label="Summary">
           <section className="panel dh-card p-details" aria-labelledby="details-title" data-testid="p-details">
-            <h2 id="details-title" className="panel-title">Proposal details</h2>
+            <h2 id="details-title" className="panel-title">Summary</h2>
             <TrustStatus agg={trust.aggregate} onOpen={() => setDrawer(true)} />
             <dl className="kv p-facts small" data-testid="p-facts">
               {row.content.ok && <div data-testid="p-decision"><dt>Timing</dt><dd>{decisionTime}</dd></div>}
