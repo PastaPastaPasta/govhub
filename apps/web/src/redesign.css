@@ -1,6 +1,6 @@
 /* Governance visual pass (Nov 2026): one hierarchy on the landing page (payout, then budget, then proposals) and on a proposal
    (ask and standing, then the vote, then the record). Unlayered on purpose: it sits after the vendored shell stylesheets and wins
-   over them and over the gov layer. Type tokens come from the vendored shell (1.9.6 proposal). */
+   over them and over the gov layer. Type tokens come from the vendored shell. */
 
 html { font-size: 16px; }
 :root { --track: var(--dh-track, var(--dh-sunken)); }
@@ -66,7 +66,7 @@ html { font-size: 16px; }
 .plist { border-radius: var(--dh-r3, 10px); }
 .plist-proposals > .prow,
 .plist > .prow[data-govhash] {
-  grid-template-columns: minmax(0, 1fr) 12.5rem 15rem 8rem;
+  grid-template-columns: minmax(0, 1fr) 12rem 13rem 12.5rem;
   grid-template-areas: 'main ask fund meta';
   column-gap: var(--dh-6);
   padding: 20px 24px;
@@ -98,8 +98,7 @@ html { font-size: 16px; }
 }
 
 .plist-proposals .prow-meta { gap: 6px; }
-.plist-proposals .prow-votes { display: grid; grid-template-columns: auto auto; justify-content: end; font-size: 15px; color: var(--dh-ink-2); gap: 0 10px; line-height: 1.4; }
-.plist-proposals .prow-votes > span:first-child { grid-column: 1 / -1; justify-self: end; }
+.plist-proposals .prow-votes { display: flex; flex-direction: row; flex-wrap: wrap; justify-content: end; font-size: 15px; color: var(--dh-ink-2); gap: 0 12px; line-height: 1.4; }
 .prow-votes b { font-size: 16px; font-weight: 640; color: var(--dh-ink); }
 .prow-comments { font-size: 14px; }
 
@@ -174,10 +173,10 @@ html { font-size: 16px; }
   /* a phone card is the decision: what, how much, where it stands, the votes; the owner's words are on the proposal */
   .plist-proposals .prow-purpose { display: none; }
   /* the standing and the budget place share a line when they fit; otherwise the place wraps under the standing */
-  .plist-proposals .prow-fund { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+  .plist-proposals .prow-fund { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; }
   .plist-proposals .prow-fund > .meter { display: contents; }
-  .plist-proposals .prow-fund .meter-text { order: 0; flex: 1 0 auto; margin: 0; }
-  .plist-proposals .prow-fund > .tag.dh-badge { order: 1; margin-inline-start: auto; }
+  .plist-proposals .prow-fund .meter-text { order: 0; margin: 0; }
+  .plist-proposals .prow-fund > .tag.dh-badge { order: 1; }
   .plist-proposals .prow-fund .meter-track { order: 2; flex: 1 0 100%; }
   .plist-proposals > .prow[data-govhash] { gap: 6px; }
   .prow-ask { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; }
@@ -205,14 +204,14 @@ html { font-size: 16px; }
   border: 1px solid var(--dh-line);
   border-radius: var(--dh-r3, 10px);
 }
-/* wide: the ask on the left; the standing with the votes under it on the right */
+/* wide: the ask with the votes under it on the left, the standing on the right */
 @media (min-width: 761px) {
   .proposal .p-funds { grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); column-gap: var(--dh-7); row-gap: var(--dh-4); align-items: start; }
   .proposal .p-funds > .p-lead { display: contents; }
   .proposal .p-funds > :not(.p-lead) { grid-column: 1 / -1; }
-  .proposal .p-funds .p-lead-ask { grid-column: 1; grid-row: 1 / span 2; }
-  .proposal .p-funds .p-lead-standing { grid-column: 2; grid-row: 1; }
-  .proposal .p-funds > .p-standing { grid-column: 2; grid-row: 2; padding-block-start: var(--dh-4); }
+  .proposal .p-funds .p-lead-ask { grid-column: 1; grid-row: 1; }
+  .proposal .p-funds .p-lead-standing { grid-column: 2; grid-row: 1 / span 2; }
+  .proposal .p-funds > .p-standing { grid-column: 1; grid-row: 2; padding-block-start: var(--dh-4); }
 }
 .p-lead { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--dh-4); }
 .p-lead-ask, .p-lead-standing { display: grid; align-content: start; }
@@ -418,3 +417,14 @@ html { font-size: 16px; }
 .crow-status > .tag.dh-badge:not(.ctag-soon):not(.ctag-won) { color: var(--dh-ink); }
 /* a contest's own page names each contender with its own colour; its leader matches the list's */
 .contest { --cb-c0: var(--dh-brand); }
+
+/* Past on a phone: each fact is its own item, so a wrapped line never starts with a separator */
+@media (max-width: 760px) {
+  .past-page table.past.dh-table--cards tr { column-gap: 14px; }
+  .past-page table.past.dh-table--cards tr > td[data-label]:not(.dh-rc-title):not(.dh-rc-end)::before { content: attr(data-label) " "; }
+}
+/* the view switch under Past's heading reads as a second level, not a second tab bar */
+.past-head .dh-seg { background: none; border: 0; box-shadow: none; padding: 0; gap: 20px; }
+.past-head .dh-seg > .dh-btn { background: none; border: 0; box-shadow: none; padding: 6px 0; min-block-size: 36px; border-radius: 0; color: var(--dh-ink-2); font-weight: 560; border-block-end: 2px solid transparent; }
+.past-head .dh-seg > .dh-btn[aria-pressed="true"] { color: var(--dh-ink); border-block-end-color: var(--dh-brand); }
+.past-head .dh-seg > .dh-btn:hover { color: var(--dh-ink); background: none; }

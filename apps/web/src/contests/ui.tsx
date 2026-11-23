@@ -61,7 +61,7 @@ export function statusTag(s: ContestState | null, endsAt: number | null, nowMs: 
   if (endsAt === null) return { text: 'No result yet', tone: 'done' };
   if (phaseOf(s, endsAt, nowMs) === 'closing') return { text: 'Voting closed', tone: 'done' };
   const left = (endsAt - nowMs) / 1000;
-  return { text: `Closes in ${formatDuration(left)}`, tone: left < 86_400 ? 'soon' : 'open' };
+  return { text: `Closes in ${formatDuration(left)}`, tone: left < 3 * 86_400 ? 'soon' : 'open' };
 }
 
 export function ContestCard({ label, endsAt, state, nowMs, comments }: { label: string; endsAt: number | null; state: StateEntry; nowMs: number; comments?: number | undefined }) {
