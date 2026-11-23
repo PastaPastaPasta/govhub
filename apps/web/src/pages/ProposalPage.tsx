@@ -358,7 +358,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
               <p className="muted">{tallies.loading ? 'Reading the votes…' : t ? 'Waiting for the budget cycle' : 'No votes counted yet'}</p>
             )}
             {!active && !lameDuck && <p className="p-ended">Voting ended {formatDate(p.endEpoch)}</p>}
-            {active && !lameDuck && !later && untilDeadline !== null && untilDeadline > 0 && <p className="p-closes">Voting closes in {formatDuration(untilDeadline)}</p>}
+            {active && !lameDuck && !later && untilDeadline !== null && untilDeadline > 0 && <p className="p-closes">Voting closes in {formatDuration(untilDeadline)}<a href="#vote" className="p-closes-vote dh-link">Go to the vote ↓</a></p>}
             {!lameDuck && threshold && row.absYes !== null && (
               <p className="p-net">
                 <b>{formatInt(row.absYes)}</b> net yes of <b>{formatInt(threshold.value)}</b> needed <span className="muted">({chain ? `masternode list at block ${formatInt(chain.threshold.height)}` : 'feed estimate'})</span>

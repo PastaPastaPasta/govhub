@@ -37,7 +37,7 @@ html { font-size: 16px; }
 .budget-panel .gov-stat + .gov-stat { border-inline-start: 1px solid var(--dh-line); padding-inline-start: var(--dh-6); }
 .budget-panel .gov-stat dt { font-size: 15px; color: var(--dh-ink-2); margin-block-end: 4px; }
 .budget-panel .gov-stat .num { font-size: 30px; font-weight: 640; font-stretch: 104%; color: var(--dh-ink); line-height: 1.1; }
-.budget-panel .gov-stat--good .num { color: var(--dh-good); }
+.budget-panel .gov-stat--good .num { color: var(--dh-brand-ink); }
 .budget-panel .gov-stat small { font-size: 15px; }
 .budget-panel .gov-stat-note,
 .budget-panel .usd { display: block; margin-block-start: 4px; font-size: 14px; color: var(--dh-ink-2); line-height: 1.4; }
@@ -69,7 +69,7 @@ html { font-size: 16px; }
   grid-template-columns: minmax(0, 1fr) 12rem 13rem 12.5rem;
   grid-template-areas: 'main ask fund meta';
   column-gap: var(--dh-6);
-  padding: 20px 24px;
+  padding: 16px 24px;
   align-items: start;
 }
 .prow::before { inset-block: 16px; inline-size: 3px; }
@@ -347,7 +347,7 @@ html { font-size: 16px; }
 .list-section--active > .list-head { gap: var(--gv-group); margin-block-end: var(--gv-group); }
 .list-section--active .gov-section-head { padding-block-end: 0; }
 .list-section--active > .list-tools { gap: var(--gv-group); margin-block-end: var(--gv-group); }
-.plist-proposals > .prow[data-govhash] { padding-block: 18px; }
+.plist-proposals > .prow[data-govhash] { padding-block: 16px; }
 @media (max-width: 760px) {
   .list-section--active { row-gap: var(--gv-group); }
   .list-section--active > .list-head,
@@ -444,7 +444,7 @@ html { font-size: 16px; }
 .contests .gov-section-title .dh-count, .contests .gov-section-title .count { display: none; }
 
 /* a contest with no comments shows none, and its column stays aligned */
-.crow .prow-comments[data-count="0"] { visibility: hidden; }
+.crow .prow-comments:is([data-count="0"], :not([data-count])) { visibility: hidden; }
 /* the selected tab's count reads on its fill */
 .subtabs > [aria-current="page"] .count { color: inherit; opacity: .8; }
 /* Past: sort marks sit apart from their headings; on a phone the values read in ink, their labels quieter */
@@ -481,9 +481,12 @@ html { font-size: 16px; }
 .list-chip.on, .list-chip.on:hover { background: color-mix(in srgb, var(--dh-brand) 16%, var(--dh-surface)); border-color: var(--dh-brand); color: var(--dh-ink); }
 .list-chip.on .count { color: inherit; opacity: .8; }
 .tag.dh-badge--good { background: color-mix(in srgb, var(--dh-brand) 16%, var(--dh-surface)); color: var(--dh-ink); }
-.past tbody .dh-rc-title a { color: var(--dh-ink); text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 30%, transparent); text-underline-offset: 3px; }
-.past tbody .dh-rc-title a:hover { color: var(--dh-brand-ink); text-decoration-color: currentColor; }
 
 .list-more { display: flex; justify-content: center; margin: var(--dh-4) 0 0; }
 @media (max-width: 760px) { .proposal .p-meta { display: none; } }
-.crow-single { --cb-c0: color-mix(in srgb, var(--dh-brand) 45%, var(--dh-track)); }
+.mn-key-rule { margin: var(--dh-2) 0 0; font-size: 15px; color: var(--dh-ink); }
+.p-closes-vote { display: none; }
+@media (max-width: 760px) {
+  .p-closes { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; }
+  .p-closes-vote { display: inline; font-weight: 600; }
+}

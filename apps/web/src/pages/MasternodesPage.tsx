@@ -58,7 +58,10 @@ function Header({ adding, badgeKeyKept }: { adding: boolean; badgeKeyKept: boole
             {statusLine(k, badgeKeyKept)}
           </p>
         ) : (
-          <p className="dh-page-header__lede">Vote on proposals and name contests with your masternodes' voting keys. Never the owner or collateral key.</p>
+          <>
+            <p className="dh-page-header__lede">Vote on proposals and name contests with your masternodes' voting keys.</p>
+            <p className="mn-key-rule"><strong>Use only the voting key</strong>, never the owner or collateral key.</p>
+          </>
         )}
       </div>
       {open && (
@@ -955,7 +958,7 @@ function WaysToVote() {
               encrypted, whenever you sign in again, or stay only in this tab's memory. Votes are signed in your browser.
             </p>
           </details>
-          <button type="button" className="btn dh-btn dh-btn--lead" onClick={openSignIn} data-testid="vote-ways-signin">
+          <button type="button" className="btn dh-btn dh-btn--secondary" onClick={openSignIn} data-testid="vote-ways-signin">
             Sign in or create an account
           </button>
         </li>
