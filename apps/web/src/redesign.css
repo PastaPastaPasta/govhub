@@ -472,3 +472,13 @@ html { font-size: 16px; }
   .plist-proposals > .prow,
   .plist > .prow[data-govhash] { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) auto; grid-template-areas: 'main main main' 'ask fund meta'; row-gap: 12px; }
 }
+
+/* colour roles: Dash blue marks the money and the standing (fills, dots, stripes); words stay in ink */
+:root { --pass-fill: var(--dh-brand); }
+.meter-pass .meter-text { color: var(--dh-ink); }
+.meter-pass .meter-dot { background: var(--dh-brand); }
+.list-chip { background: transparent; border-color: var(--dh-line); color: var(--dh-ink-2); font-weight: 560; }
+.list-chip:hover { border-color: var(--dh-line-2); background: var(--dh-hover); color: var(--dh-ink); }
+.list-chip.on, .list-chip.on:hover { background: var(--dh-seg-on); border-color: var(--dh-seg-on); color: var(--dh-seg-on-ink); }
+.list-chip.on .count { color: inherit; opacity: .75; }
+.tag.dh-badge--good { background: color-mix(in srgb, var(--dh-brand) 16%, var(--dh-surface)); color: var(--dh-ink); }
