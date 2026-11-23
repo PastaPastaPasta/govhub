@@ -10,7 +10,7 @@ test.describe('fixture mode', () => {
 
     // Budget summary (DashCentral parity, in plain words).
     await expect(page.getByRole('heading', { name: /Next payout in 27 days/ })).toBeVisible();
-    await expect(page.getByText('Masternodes can vote for another')).toBeVisible();
+    await expect(page.getByText(/^Voting closes in .+, on /)).toBeVisible();
     await expect(page.locator('.budget-facts')).toContainText('To pass');
     await expect(page.locator('.budget-facts')).toContainText('332');
 

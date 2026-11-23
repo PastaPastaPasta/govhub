@@ -946,30 +946,39 @@ function WaysToVote() {
       <ol className="vote-ways-list" role="list">
         <li>
           <h3>Proposals, from your account</h3>
-          <p>
-            Needs an account here and each masternode's voting key. The account is a Dash Platform identity: create one for about 0.005 DASH,
-            or sign in with one you have. Your voting keys come back, encrypted, whenever you sign in again, or stay only in this tab's memory.
-            Votes are signed in your browser.
-          </p>
+          <p className="vote-way-lead">Vote on every open proposal with all your masternodes at once.</p>
+          <p className="vote-way-needs">Needs an account here and each masternode's voting key.</p>
+          <details className="vote-way-more">
+            <summary>How it works</summary>
+            <p>
+              The account is a Dash Platform identity: create one for about 0.005 DASH, or sign in with one you have. Your voting keys come back,
+              encrypted, whenever you sign in again, or stay only in this tab's memory. Votes are signed in your browser.
+            </p>
+          </details>
           <button type="button" className="btn dh-btn dh-btn--lead" onClick={openSignIn} data-testid="vote-ways-signin">
             Sign in or create an account
           </button>
         </li>
         <li>
           <h3>Proposals, without an account</h3>
-          <p>
-            Each open proposal has <b>Vote on this proposal</b>. Sign the vote offline:{' '}
-            {k.coreNetwork === 'testnet'
-              ? 'on Testnet, sign its vote hash with your own tooling (Dash Core’s signmessage can’t make that signature), or broadcast it yourself with voteraw.'
-              : 'the page gives the Dash Core signmessage command, or the text for a hardware wallet.'}{' '}
-            Or paste the voting key there: it stays in that tab’s memory and is forgotten after 15 minutes idle.
-          </p>
-          <Link to="/" className="dh-link">Choose a proposal</Link>
+          <p className="vote-way-lead">Vote on one proposal from its page, with <b>Vote on this proposal</b>.</p>
+          <p className="vote-way-needs">Sign the vote offline, or paste the voting key there.</p>
+          <details className="vote-way-more">
+            <summary>How it works</summary>
+            <p>
+              {k.coreNetwork === 'testnet'
+                ? 'On Testnet, sign its vote hash with your own tooling (Dash Core’s signmessage can’t make that signature), or broadcast it yourself with voteraw.'
+                : 'The page gives the Dash Core signmessage command, or the text for a hardware wallet.'}{' '}
+              A pasted key stays in that tab’s memory and is forgotten after 15 minutes idle.
+            </p>
+          </details>
+          <Link to="/" className="dh-btn dh-btn--secondary">Choose a proposal</Link>
         </li>
         <li>
           <h3>Name contests, without an account</h3>
-          <p>Paste a voting key on a contest's page. It stays in this tab's memory, signs only votes, and is wiped after 15 minutes idle.</p>
-          <Link to="/names" className="dh-link">Open name contests</Link>
+          <p className="vote-way-lead">Vote on a contested username from its contest page.</p>
+          <p className="vote-way-needs">Paste a voting key there. It stays in this tab's memory, signs only votes, and is wiped after 15 minutes idle.</p>
+          <Link to="/names" className="dh-btn dh-btn--secondary">Open name contests</Link>
         </li>
       </ol>
       <p className="small muted">Masternode owners with an account can also show an MN badge next to their name in discussions.</p>

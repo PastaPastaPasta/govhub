@@ -149,7 +149,7 @@ export function PastPage() {
       </div>
       <header className="past-head dh-page-header">
         <div className="past-title-line"><h1 className="dh-page-header__title" id="past-title">Past proposals</h1><OwnerWordsNote proposals={view === 'payments' ? known : past.items.map((i) => i.value)} /></div>
-        <p className="dh-page-header__lede">Ended proposals, newest first, with their requested amounts and final reported votes. Payments by superblock are read from the chain in this browser.</p>
+        <p className="dh-page-header__lede">Ended proposals, newest first: what each asked for, what it received and its final votes.<span className="past-lede-more"> Payments by superblock are read from the chain in this browser.</span></p>
         <div className="dh-seg" role="group" aria-label="Show">
           <button className="dh-btn" type="button" aria-pressed={view === 'payments'} onClick={() => setView('payments')} data-testid="view-payments">
             Payments by superblock
@@ -569,8 +569,8 @@ function ProposalsView({ past, ledger, known }: { past: ReturnType<typeof usePas
                     {t ? (
                       formatSigned(absoluteYes(t.value))
                     ) : past.talliesRead === 'ok' ? (
-                      <span className="muted nowrap" title="No vote tally was published on Platform for this proposal: it ended before the governance data service was recording votes">
-                        not recorded
+                      <span className="muted" aria-label="not recorded" title="No vote tally was published on Platform for this proposal: it ended before the governance data service was recording votes">
+                        —
                       </span>
                     ) : past.talliesRead === 'failed' ? (
                       <span className="muted nowrap" title="The tallies couldn't be read just now">
@@ -596,7 +596,7 @@ function ProposalsView({ past, ledger, known }: { past: ReturnType<typeof usePas
           {past.capped
             ? `These are the newest ${formatInt(parts.shown.length)} past proposals Governance has on record: it reads at most ${formatInt(PAST_PAGES)} pages of them, so older ones aren't listed here.`
             : `That's all ${formatInt(parts.shown.length)} past proposals Governance has on record.`}{' '}
-          Outcomes come from the superblocks on the Payments view.
+          Outcomes come from the superblocks on the Payments view.{past.talliesRead === 'ok' && ' A — under Net yes means no tally was recorded: the proposal ended before votes were being recorded.'}
         </p>
       )}
       {!past.loading && parts.failed.length > 0 && <FailedProposalsToggle count={parts.failed.length} shown={showFailed} onToggle={() => setShowFailed((v) => !v)} />}

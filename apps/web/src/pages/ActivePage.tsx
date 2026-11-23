@@ -148,7 +148,7 @@ export function ActivePage() {
   return (
     <>
       <BudgetHeader />
-      <section aria-label="Active proposals" className="list-section">
+      <section aria-label="Active proposals" className="list-section list-section--active">
         <div className="list-head">
           <div className="dh-section__head gov-section-head">
             <h2 className="dh-section__title">Proposals <OwnerWordsNote proposals={cards.map((r) => r.item.p.value)} /></h2>

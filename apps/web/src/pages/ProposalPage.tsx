@@ -429,41 +429,6 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
             </ErrorBoundary>
           )}
 
-          <section className="panel dh-card p-details" aria-labelledby="details-title" data-testid="p-details">
-            <h2 id="details-title" className="panel-title">Proposal details</h2>
-            <dl className="p-decision small" aria-label="Decision summary" data-testid="p-decision">
-              {row.content.ok && <div><dt>Timing</dt><dd>{decisionTime}</dd></div>}
-            </dl>
-            <dl className="kv p-facts small" data-testid="p-facts">
-              {row.content.ok && (
-                <div>
-                  <dt>Runs</dt>
-                  <dd>
-                    {formatDate(p.startEpoch)} to {formatDate(p.endEpoch)}
-                  </dd>
-                </div>
-              )}
-              {row.content.ok && (
-                <div>
-                  <dt>Pays</dt>
-                  <dd>
-                    <dashhq-hash value={p.paymentAddress} label="payment address" href={`https://${source.coreNetwork === 'testnet' ? 'insight.testnet.networks.dash.org' : 'insight.dash.org'}/insight/address/${encodeURIComponent(p.paymentAddress)}`}>
-                      {p.paymentAddress}
-                    </dashhq-hash>
-                  </dd>
-                </div>
-              )}
-              <div>
-                <dt>Owner</dt>
-                <dd className="p-owner">
-                  <OwnerValue own={own} />
-                  <RejectedClaims own={own} />
-                </dd>
-              </div>
-            </dl>
-
-          </section>
-
           <section className="p-about" aria-labelledby="about-title">
             <h2 id="about-title">About this proposal</h2>
             <div className="p-claims">
@@ -555,10 +520,36 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
         </div>
 
         <aside className="p-side" aria-label="Summary">
-          <section className="panel dh-card">
-            <h2 className="panel-title">Summary</h2>
+          <section className="panel dh-card p-details" aria-labelledby="details-title" data-testid="p-details">
+            <h2 id="details-title" className="panel-title">Proposal details</h2>
             <TrustStatus agg={trust.aggregate} onOpen={() => setDrawer(true)} />
-            <dl className="kv" data-testid="summary">
+            <dl className="kv p-facts small" data-testid="p-facts">
+              {row.content.ok && <div data-testid="p-decision"><dt>Timing</dt><dd>{decisionTime}</dd></div>}
+              {row.content.ok && (
+                <div>
+                  <dt>Runs</dt>
+                  <dd>
+                    {formatDate(p.startEpoch)} to {formatDate(p.endEpoch)}
+                  </dd>
+                </div>
+              )}
+              {row.content.ok && (
+                <div>
+                  <dt>Pays</dt>
+                  <dd>
+                    <dashhq-hash value={p.paymentAddress} label="payment address" href={`https://${source.coreNetwork === 'testnet' ? 'insight.testnet.networks.dash.org' : 'insight.dash.org'}/insight/address/${encodeURIComponent(p.paymentAddress)}`}>
+                      {p.paymentAddress}
+                    </dashhq-hash>
+                  </dd>
+                </div>
+              )}
+              <div>
+                <dt>Owner</dt>
+                <dd className="p-owner">
+                  <OwnerValue own={own} />
+                  <RejectedClaims own={own} />
+                </dd>
+              </div>
               {host && (
                 <div>
                   <dt>Website</dt>

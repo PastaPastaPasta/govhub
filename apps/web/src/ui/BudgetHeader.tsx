@@ -82,7 +82,7 @@ export function BudgetHeader() {
   return (
     <section className="budget gov-hero dh-page-header" aria-labelledby="budget-title">
       <BudgetTitle id="budget-title" lede={untilDeadline > 0 ? <>
-        Masternodes can vote for another <b>{formatDuration(untilDeadline)}</b>, until {formatDate(deadline)}.
+        Voting closes in <b>{formatDuration(untilDeadline)}</b>, on {formatDate(deadline)}.
       </> : 'Voting for this payout has closed.'}>
         {untilSb > 0 ? <>
           Next payout in <span className="num budget-countdown">{formatDuration(untilSb)}</span>
