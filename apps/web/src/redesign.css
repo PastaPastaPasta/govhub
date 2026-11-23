@@ -150,8 +150,6 @@ html { font-size: 16px; }
   .list-section[aria-label="Active proposals"] .list-tools-row { display: contents; }
   .list-section[aria-label="Active proposals"] > .list-head > .gov-section-head { grid-column: 1; grid-row: 1; align-self: center; }
   .list-section[aria-label="Active proposals"] .list-tools-row > .list-sort { grid-column: 2; grid-row: 1; align-self: center; }
-  .list-section[aria-label="Active proposals"] > * + * { margin-block-start: var(--dh-2); }
-  .list-section[aria-label="Active proposals"] .list-chips { margin-block-start: var(--dh-2); }
   .list-sort > span:first-child { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); }
   /* the exact name only where the title is the owner's words; otherwise the title already is the name */
   .prow:not(.prow-titled) .prow-slug { display: none; }
@@ -333,3 +331,66 @@ html { font-size: 16px; }
 
 /* contest bars: the leader in brand blue, challengers a muted blue, so the legend tells them apart */
 :is(.crow, .contest-legend) { --cb-c0: var(--dh-brand); --cb-c1: color-mix(in srgb, var(--dh-brand) 40%, var(--dh-surface)); --cb-c2: var(--cb-c1); --cb-c3: var(--cb-c1); }
+
+/* ---- one vertical rhythm for every page: 32px between sections, 16px within a group, 8px between related lines (24/12/6 on a phone) */
+:root { --gv-section: 32px; --gv-group: 16px; --gv-tight: 8px; }
+@media (max-width: 760px) { :root { --gv-section: 24px; --gv-group: 12px; --gv-tight: 6px; } }
+
+/* landing */
+.budget.gov-hero { gap: var(--gv-group); margin-block-end: var(--gv-section); }
+.gov-hero .dh-page-header__text { gap: var(--gv-tight); }
+.budget-panel { gap: var(--gv-group); }
+.budget-panel .gov-stat dt { margin-block-end: 4px; }
+.budget-panel .gov-stat-note, .budget-panel .usd { margin-block-start: 4px; }
+.budget-panel .budget-foot { row-gap: var(--gv-tight); }
+.list-section[aria-label="Active proposals"] > .list-head { gap: var(--gv-group); margin-block-end: var(--gv-group); }
+.list-section[aria-label="Active proposals"] .gov-section-head { padding-block-end: 0; }
+.list-section[aria-label="Active proposals"] > .list-tools { gap: var(--gv-group); margin-block-end: var(--gv-group); }
+.plist-proposals > .prow[data-govhash] { padding-block: 18px; }
+.plist-proposals .prow-votes { display: grid; grid-template-columns: auto auto; justify-content: end; column-gap: 10px; }
+.plist-proposals .prow-votes > span:first-child { grid-column: 1 / -1; justify-self: end; }
+@media (max-width: 760px) {
+  .list-section[aria-label="Active proposals"] { row-gap: var(--gv-group); }
+  .list-section[aria-label="Active proposals"] > .list-head,
+  .list-section[aria-label="Active proposals"] > .list-tools { margin: 0; }
+  .list-section[aria-label="Active proposals"] .list-chips { margin: 0; }
+  .plist-proposals .prow-votes { display: flex; justify-content: start; gap: 4px 14px; }
+}
+
+/* a proposal: the back link sits with the title; the sections below are one rhythm apart */
+.proposal { display: grid; gap: var(--gv-section); }
+.proposal > * { margin-block: 0; }
+.proposal > .crumbs { margin-block-end: calc(var(--gv-tight) - var(--gv-section)); }
+.proposal .p-hero { margin: 0; gap: var(--gv-tight); }
+.proposal .p-hero .p-purpose { margin-block-start: var(--gv-tight); }
+.proposal .p-funds { margin: 0; }
+.p-lead-standing { gap: var(--gv-tight); }
+.p-lead-standing .meter { gap: 10px; }
+.proposal .p-standing { gap: var(--gv-tight); }
+.p-main, .p-side { gap: var(--gv-section); }
+
+/* Past */
+.past-page { gap: var(--gv-section); }
+.past-page > * { margin-block: 0; }
+.past-page > .list-head { margin: 0; }
+.past-head.dh-page-header { margin: 0; gap: var(--gv-tight); }
+.past-head > .dh-seg { margin-block-start: var(--gv-tight); }
+.past-page .list-tools { gap: var(--gv-tight); margin: 0 0 calc(var(--gv-group) - var(--gv-section)); }
+.past-page table.past { margin-block-start: 0; }
+
+/* Name contests */
+.contests > .dh-page-header.gov-band { padding-block-start: 0; margin-block-end: var(--gv-section); gap: var(--gv-group); }
+.contests > .dh-page-header .dh-page-header__text, .contests > .dh-page-header { row-gap: var(--gv-tight); }
+.contests .gov-section-title { margin-block: 0 var(--gv-tight); }
+.contest-legend { margin-block: 0 var(--gv-group); }
+
+/* My masternodes */
+.kr-page { gap: var(--gv-section); }
+.kr-page > .kr-head.dh-page-header { margin: 0; }
+.vote-ways > h2 { margin: 0; }
+.vote-ways-list { margin-block-start: var(--gv-group); }
+.vote-ways > .small { margin-block-start: var(--gv-group); }
+
+/* Treasury */
+.treasury { gap: var(--gv-section); }
+.treasury > .tr-head.dh-page-header { margin: 0; }
