@@ -421,7 +421,7 @@ html { font-size: 16px; }
 /* Past on a phone: each fact is its own item, so a wrapped line never starts with a separator */
 @media (max-width: 760px) {
   .past-page table.past.dh-table--cards tr { column-gap: 14px; }
-  .past-page table.past.dh-table--cards tr > td[data-label]:not(.dh-rc-title):not(.dh-rc-end)::before { content: attr(data-label) " "; }
+  .past-page table.past.dh-table--cards tr > td[data-label]:not(.dh-rc-title):not(.dh-rc-end)::before { content: attr(data-label) " "; color: var(--dh-ink-2); }
   /* the outcome line: always its own row, under when it ended and what it asked */
   .past-page table.past.dh-table--cards tr::before { content: ""; order: 3; flex-basis: 100%; }
   .past-page table.past.dh-table--cards tr > :is(td.dh-rc-end, td[data-label="Received"], td[data-label="Net yes"]) { order: 4; margin-inline-start: 0; padding-inline-start: 0; }
@@ -443,3 +443,16 @@ html { font-size: 16px; }
 }
 /* contests: the headline already gives the count */
 .contests .gov-section-title .dh-count, .contests .gov-section-title .count { display: none; }
+
+/* a contest with no comments shows none, and its column stays aligned */
+.crow .prow-comments[data-count="0"] { visibility: hidden; }
+/* the selected tab's count reads on its fill */
+.subtabs > [aria-current="page"] .count { color: inherit; opacity: .8; }
+/* Past: sort marks sit apart from their headings; on a phone the values read in ink, their labels quieter */
+.past thead .sort-head { gap: 6px; }
+.past thead .sort-arrow { color: var(--dh-ink-2); font-size: .9em; }
+@media (max-width: 760px) {
+  .past-page table.past.dh-table--cards td:not(.dh-rc-title) { color: var(--dh-ink); }
+}
+/* each way to vote's details are a clear link */
+.vote-way-more > summary { font-size: 15px; font-weight: 560; text-decoration: underline; text-underline-offset: 3px; }

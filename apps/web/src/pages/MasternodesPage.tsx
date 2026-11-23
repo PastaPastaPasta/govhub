@@ -912,7 +912,7 @@ function FindMasternode() {
             aria-describedby={error ? `${id}-err` : undefined}
             data-testid="mn-find-input"
           />
-          <button type="submit" className="btn dh-btn" disabled={!text.trim()} data-testid="mn-find-go">
+          <button type="submit" className="btn dh-btn dh-btn--secondary" data-testid="mn-find-go">
             Show its votes
           </button>
         </div>
