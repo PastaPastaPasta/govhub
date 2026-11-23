@@ -397,7 +397,7 @@ html { font-size: 16px; }
 .budget-panel .usd > .usd-value::after { content: none; }
 /* the exact name only where the title is the owner's words; otherwise the title already is the name */
 @media (max-width: 760px) { .prow:not(.prow-titled) .prow-slug { display: none; } }
-.plist-proposals .prow-slug { font-size: 13px; color: var(--dh-ink-2); }
+.plist-proposals .prow-slug { font-size: 14px; color: var(--dh-ink-2); }
 
 /* a phone's first screen holds the countdown, the budget and one whole proposal above the tab bar */
 @media (max-width: 760px) {
@@ -473,14 +473,16 @@ html { font-size: 16px; }
   .plist > .prow[data-govhash] { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) auto; grid-template-areas: 'main main main' 'ask fund meta'; row-gap: 12px; }
 }
 
-/* colour roles: Dash blue marks the money and the standing (fills, dots, stripes); words stay in ink */
+/* colour roles: Dash blue fills the meters and stripes; selected filters take a blue tint, the section tab the solid fill */
 :root { --pass-fill: var(--dh-brand-fill); }
-.meter-pass .meter-text { color: var(--dh-ink); }
-.meter-pass .meter-dot { background: var(--pass-fill); }
 .list-chip { background: transparent; border-color: var(--dh-line-2); color: var(--dh-ink-2); font-weight: 560; }
 .list-chip:hover { border-color: var(--dh-line-2); background: var(--dh-hover); color: var(--dh-ink); }
-.list-chip.on, .list-chip.on:hover { background: var(--dh-seg-on); border-color: var(--dh-seg-on); color: var(--dh-seg-on-ink); }
-.list-chip.on .count { color: inherit; opacity: .75; }
+.list-chip.on, .list-chip.on:hover { background: color-mix(in srgb, var(--dh-brand) 16%, var(--dh-surface)); border-color: var(--dh-brand); color: var(--dh-ink); }
+.list-chip.on .count { color: inherit; opacity: .8; }
 .tag.dh-badge--good { background: color-mix(in srgb, var(--dh-brand) 16%, var(--dh-surface)); color: var(--dh-ink); }
 .past tbody .dh-rc-title a { color: var(--dh-ink); text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 30%, transparent); text-underline-offset: 3px; }
 .past tbody .dh-rc-title a:hover { color: var(--dh-brand-ink); text-decoration-color: currentColor; }
+
+.list-more { display: flex; justify-content: center; margin: var(--dh-4) 0 0; }
+@media (max-width: 760px) { .proposal .p-meta { display: none; } }
+.crow-single { --cb-c0: color-mix(in srgb, var(--dh-brand) 45%, var(--dh-track)); }

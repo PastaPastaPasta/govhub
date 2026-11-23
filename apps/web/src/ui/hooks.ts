@@ -52,7 +52,7 @@ export function useReveal(total: number, step = 12, onExhausted?: () => void, in
     io.observe(el);
     return () => io.disconnect();
   }, [total, step, count]);
-  return { count: Math.min(count, total), sentinel: ref, more: count < total };
+  return { count: Math.min(count, total), sentinel: ref, more: count < total, showAll: () => setCount(total) };
 }
 
 /**

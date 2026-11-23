@@ -69,7 +69,7 @@ export function ContestCard({ label, endsAt, state, nowMs, comments }: { label: 
   const failed = state === 'error';
   const tag = statusTag(s, endsAt, nowMs);
   return (
-    <article className={`prow crow crow-${tag.tone}`} data-label={label} data-testid="contest-card">
+    <article className={`prow crow crow-${tag.tone}${s?.contenders.length === 1 ? ' crow-single' : ''}`} data-label={label} data-testid="contest-card">
       <div className="prow-main">
         {/* h3: the list sits under "Open for voting" or "Ended contests" */}
         <h3 className="prow-title">

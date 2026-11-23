@@ -228,7 +228,7 @@
     --dh-act-hover: #085FB3;
     --dh-seg-on: #E6E8EC;
     --dh-seg-on-ink: #0A0B0D;
-    --dh-chrome: #0C1C4A;
+    --dh-chrome: #131519;
     --dh-foot: #111214;
     --dh-foot-ink: #F3F4F6;
     --dh-foot-ink-2: #AEB2BA;
@@ -236,8 +236,12 @@
     --dh-foot-link: #45A8F5;
     --dh-foot-grid: transparent;
     --dh-flow: #F0B44C;
-    --dh-chrome-raised: #172B66;
-    --dh-chrome-line: #34477D;
+    --dh-chrome-raised: #1F2227;
+    --dh-chrome-line: #34383F;
+    --dh-chrome-ink-2: #B4B8C0;
+    --dh-chrome-line-2: #71757E;
+    --dh-chrome-accent: #45A8F5;
+    --dh-chrome-hover: rgba(255, 255, 255, .07);
     --dh-warn: #F2BE62;  --dh-warn-soft: #2B2314;
     --dh-bad:  #F48A80;  --dh-bad-soft:  #3A1818;
     --dh-plate: #0E2050;
@@ -288,7 +292,7 @@
   --dh-act-hover: #085FB3;
   --dh-seg-on: #E6E8EC;
   --dh-seg-on-ink: #0A0B0D;
-  --dh-chrome: #0C1C4A;
+  --dh-chrome: #131519;
   --dh-foot: #111214;
   --dh-foot-ink: #F3F4F6;
   --dh-foot-ink-2: #AEB2BA;
@@ -296,8 +300,12 @@
   --dh-foot-link: #45A8F5;
   --dh-foot-grid: transparent;
   --dh-flow: #F0B44C;
-  --dh-chrome-raised: #172B66;
-  --dh-chrome-line: #34477D;
+  --dh-chrome-raised: #1F2227;
+  --dh-chrome-line: #34383F;
+  --dh-chrome-ink-2: #B4B8C0;
+  --dh-chrome-line-2: #71757E;
+  --dh-chrome-accent: #45A8F5;
+  --dh-chrome-hover: rgba(255, 255, 255, .07);
   --dh-warn: #F2BE62;  --dh-warn-soft: #2B2314;
   --dh-bad:  #F48A80;  --dh-bad-soft:  #3A1818;
   --dh-plate: #0E2050;

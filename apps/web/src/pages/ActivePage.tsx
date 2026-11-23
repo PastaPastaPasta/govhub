@@ -122,7 +122,7 @@ export function ActivePage() {
   const duckOpen = lameDucksOpen ?? (filtering && rows.length === 0);
 
   // 12 rows first; the rest in one go once the reader scrolls (rows are tall, so small steps would stall the observer)
-  const { count, sentinel, more } = useReveal(rows.length, 40, undefined, 12);
+  const { count, sentinel, more, showAll } = useReveal(rows.length, 40, undefined, 12);
   const shown = useMemo(() => rows.slice(0, count), [rows, count]);
   // the lame ducks are few and listed once the reader opens them; their comment counts are read with the rest
   const cards = useMemo(() => [...shown, ...lameDucks], [shown, lameDucks]);
@@ -213,7 +213,13 @@ export function ActivePage() {
           </div>
         )}
         <div ref={sentinel} className="sentinel" aria-hidden="true" />
-        {more && <p className="muted small center">Scroll for more</p>}
+        {more && (
+          <p className="list-more">
+            <button type="button" className="dh-btn dh-btn--secondary" onClick={showAll}>
+              Show {rows.length - count} more
+            </button>
+          </p>
+        )}
         {!more && (
           <LameDuckSection count={lameDucks.length} open={duckOpen} onToggle={() => setLameDucksOpen(!duckOpen)}>
             {lameDucks.map(card)}
