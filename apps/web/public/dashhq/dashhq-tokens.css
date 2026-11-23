@@ -17,7 +17,8 @@
   /* surfaces */
   --dh-page: #EDF2F5;          /* page background: cool plan paper */
   --dh-surface: #FFFFFF;       /* panels, cards, inputs, the bar */
-  --dh-sunken: #E2E9EE;        /* wells, segmented-control track, table header, code */
+  --dh-sunken: #E2E9EE;        /* wells, table header, code */
+  --dh-track: #E2E9EE;         /* meter, progress and segmented-control tracks: never darker than the page */
   --dh-hover: rgba(12, 29, 43, .045);
   --dh-raised: var(--dh-surface);
   --dh-raised-hover: var(--dh-sunken);
@@ -77,6 +78,9 @@
   --dh-plate-hair: rgba(166, 216, 247, .22);
   --dh-mark-edge: transparent;  /* the mark gets a hairline edge on dark pages */
 
+  /* categorical series (unordered sets: providers, countries, networks); --dh-ramp-* stays for ordered data */
+  --dh-cat-1: #2A78D6; --dh-cat-2: #EB6834; --dh-cat-3: #1BAF7A; --dh-cat-4: #EDA100; --dh-cat-5: #E87BA4;
+
   /* chart ramp for ordered categories (versions, epochs): 1 = newest or largest. Unordered sets: top 4 + "Other" in --dh-line-2. */
   --dh-ramp-1: #005A96; --dh-ramp-2: #0080D0; --dh-ramp-3: #39A2E8; --dh-ramp-4: #86C4F0; --dh-ramp-5: #C2E0F7;
 
@@ -86,16 +90,16 @@
   /* type */
   --dh-font: "Archivo", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --dh-mono: ui-monospace, "SF Mono", "Cascadia Mono", "Segoe UI Mono", Menlo, Consolas, "Liberation Mono", monospace;
-  --dh-fs-xs: 12px;            /* pills, footnotes */
-  --dh-fs-sm: 13px;            /* labels, captions, table headers */
-  --dh-fs-ui: 14px;            /* controls, tables, dense UI */
-  --dh-fs-body: 15px;          /* body */
-  --dh-fs-lead: 17px;          /* intro paragraph under a page title */
-  --dh-fs-h3: 17px;
-  --dh-fs-h2: 21px;
+  --dh-fs-xs: 13px;            /* pills, footnotes */
+  --dh-fs-sm: 14px;            /* labels, captions, table headers */
+  --dh-fs-ui: 15px;            /* controls, tables, dense UI */
+  --dh-fs-body: 16px;          /* body */
+  --dh-fs-lead: 18px;          /* intro paragraph under a page title */
+  --dh-fs-h3: 18px;
+  --dh-fs-h2: 22px;
   --dh-fs-h1: 30px;
   --dh-fs-display: clamp(30px, 4.2vw, 46px);
-  --dh-fs-stat: 26px;
+  --dh-fs-stat: 30px;
   --dh-lh-body: 1.5;
   --dh-lh-head: 1.2;
   --dh-lh-display: 1.06;
@@ -106,7 +110,7 @@
   --dh-stretch-display: 116%;
   --dh-stretch-head: 110%;
   --dh-stretch-stat: 108%;
-  --dh-stretch-dense: 88%;
+  --dh-stretch-dense: 100%;
 
   /* space (4px base) */
   --dh-1: 4px;  --dh-2: 8px;  --dh-3: 12px; --dh-4: 16px;
@@ -160,6 +164,10 @@
     --dh-page: #06131B;
     --dh-surface: #0C1E2A;
     --dh-sunken: #030C12;
+  --dh-track: color-mix(in srgb, var(--dh-surface) 86%, var(--dh-ink));
+  --dh-cat-1: #3987E5; --dh-cat-2: #D95926; --dh-cat-3: #199E70; --dh-cat-4: #C98500; --dh-cat-5: #D55181;
+    --dh-track: color-mix(in srgb, var(--dh-surface) 86%, var(--dh-ink));
+    --dh-cat-1: #3987E5; --dh-cat-2: #D95926; --dh-cat-3: #199E70; --dh-cat-4: #C98500; --dh-cat-5: #D55181;
     --dh-raised: #193342;
     --dh-raised-hover: #234353;
     --dh-raised-line: #557384;

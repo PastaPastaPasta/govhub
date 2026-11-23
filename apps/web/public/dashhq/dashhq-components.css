@@ -121,6 +121,7 @@
 /* ================================================================ buttons
    .dh-btn                    secondary (the default): navigation and everything that doesn't commit
    .dh-btn--primary           the one committing action in view: Vote, Get tDASH, Create identity, Send (--act: alias)
+   .dh-btn--lead              "go here first" navigation (Open the map, Start): brand fill, never amber
    .dh-btn--quiet             toolbars, Cancel, icon buttons
    .dh-btn--link              an action that reads as a link ("Show all 25", "Copy")
    .dh-btn--destructive       remove, revoke, delete; always behind a confirm that names the thing (--danger: alias)
@@ -147,6 +148,9 @@
    this button. */
 .dh-btn--primary, .dh-btn--act { border-color: transparent; background-color: var(--dh-act); color: var(--dh-act-ink);
   font-weight: var(--dh-w-strong); }
+/* "go here first" navigation (Open the map, Start): brand fill, never amber, which stays for the committing action */
+.dh-btn--lead { border-color: transparent; background-color: var(--dh-brand-fill); color: #FFFFFF; font-weight: var(--dh-w-strong); }
+.dh-btn--lead:hover { background-image: linear-gradient(var(--dh-shade-1), var(--dh-shade-1)); }
 .dh-btn--primary:hover, .dh-btn--act:hover {
   background-color: var(--dh-act); color: var(--dh-act-ink);
   background-image: linear-gradient(var(--dh-shade-1), var(--dh-shade-1));
@@ -263,7 +267,7 @@
 
 /* ================================================================ segmented control
    2 to 5 mutually exclusive views of the same data. Buttons with aria-pressed, or links with aria-current. */
-.dh-seg { box-sizing: border-box; display: inline-flex; gap: 2px; padding: 2px; border-radius: var(--dh-r2); background: var(--dh-sunken);
+.dh-seg { box-sizing: border-box; display: inline-flex; gap: 2px; padding: 2px; border-radius: var(--dh-r2); background: var(--dh-track);
   max-width: 100%; overflow-x: auto; scrollbar-width: none; }
 .dh-seg > button, .dh-seg > a {
   box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
@@ -373,19 +377,20 @@
 @media (max-width: 640px) { .dh-dialog { padding: var(--dh-4); } }
 
 /* ================================================================ stats */
-.dh-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
-.dh-stat { display: grid; gap: 2px; align-content: start; padding: 18px; border: 1px solid var(--dh-line); border-radius: 10px; background: var(--dh-surface); min-width: 0; }
-.dh-stat--key { border-left: 3px solid var(--dh-select); padding-left: 16px; }
-.dh-stat--good { border-left: 3px solid var(--dh-good); padding-left: 16px; }
-.dh-stat--warn { border-left: 3px solid var(--dh-warn); padding-left: 16px; }
+.dh-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 16px; }
+.dh-stat { display: grid; gap: 6px; align-content: start; padding: 20px; border: 1px solid var(--dh-line); border-radius: 10px; background: var(--dh-surface); min-width: 0; }
+/* tone is carried by the value, not a coloured edge */
+.dh-stat--key .dh-stat__value { color: var(--dh-brand-ink); }
+.dh-stat--good .dh-stat__value { color: var(--dh-good); }
+.dh-stat--warn .dh-stat__value { color: var(--dh-warn); }
 .dh-stat__label { font-size: var(--dh-fs-sm); color: var(--dh-ink-2); }
 .dh-stat__value { font: var(--dh-w-head) var(--dh-fs-stat)/1.15 var(--dh-font); font-stretch: var(--dh-stretch-stat);
   letter-spacing: -.015em; font-variant-numeric: tabular-nums; }
-.dh-stat__value small { font-size: 14px; font-weight: var(--dh-w-ui); font-stretch: 100%; color: var(--dh-ink-2); letter-spacing: 0; }
-.dh-stat__note { font-size: 12.5px; color: var(--dh-ink-2); }
+.dh-stat__value small { font-size: var(--dh-fs-ui); font-weight: var(--dh-w-ui); font-stretch: 100%; color: var(--dh-ink-2); letter-spacing: 0; }
+.dh-stat__note { font-size: var(--dh-fs-sm); line-height: 1.4; color: var(--dh-ink-2); }
 @media (max-width: 480px) {
   .dh-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-  .dh-stat__value { font-size: 22px; }
+  .dh-stat__value { font-size: 26px; }
 }
 
 /* ================================================================ tables */
@@ -400,7 +405,7 @@
 .dh-table tbody tr[aria-selected="true"] td, .dh-table tbody tr.is-selected td { background: var(--dh-select-soft); }
 .dh-table tbody tr:last-child td { border-bottom: 0; }
 .dh-table .dh-r, .dh-table th.dh-r { text-align: right; }
-.dh-table td .dh-sub { display: block; font-size: 12.5px; color: var(--dh-ink-2); }
+.dh-table td .dh-sub { display: block; font-size: var(--dh-fs-sm); color: var(--dh-ink-2); }
 .dh-table th[aria-sort] { color: var(--dh-ink); }
 .dh-table th[aria-sort="ascending"]::after { content: " ↑"; }
 .dh-table th[aria-sort="descending"]::after { content: " ↓"; }
@@ -499,7 +504,7 @@
 /* ================================================================ badges and status
    Status, never actions: never clickable. Always a word, never colour alone. .dh-pill is the same thing. */
 .dh-badge, .dh-pill {
-  box-sizing: border-box; display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 7px; border-radius: var(--dh-r1);
+  box-sizing: border-box; display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; border-radius: var(--dh-r1);
   font: var(--dh-w-ui) var(--dh-fs-xs)/1 var(--dh-font); text-transform: none; letter-spacing: 0; white-space: nowrap; vertical-align: middle;
   background: var(--dh-chip); color: var(--dh-ink-2); box-shadow: inset 0 0 0 1px var(--dh-chip-line);
 }
@@ -576,7 +581,7 @@ ol.dh-sources > li:target { color: var(--dh-ink); background: var(--dh-brand-sof
    <div class="dh-notice__actions">…</div> </div> */
 .dh-notice { --dh-tone: var(--dh-info); --dh-tone-soft: var(--dh-info-soft);
   box-sizing: border-box; display: grid; gap: 4px; padding: var(--dh-3) var(--dh-4); border-radius: var(--dh-r2);
-  border-left: 3px solid var(--dh-tone); background: var(--dh-tone-soft); color: var(--dh-ink); font-size: var(--dh-fs-ui); }
+  border: 1px solid color-mix(in srgb, var(--dh-tone) 45%, transparent); background: var(--dh-tone-soft); color: var(--dh-ink); font-size: var(--dh-fs-ui); }
 .dh-notice p { margin: 0; }
 .dh-notice strong, .dh-notice__title { font-weight: var(--dh-w-strong); color: var(--dh-ink); }
 .dh-notice :where(a:not(.dh-btn)) { color: var(--dh-ink); text-decoration: underline; text-underline-offset: 3px; }
@@ -585,6 +590,10 @@ ol.dh-sources > li:target { color: var(--dh-ink); background: var(--dh-brand-sof
 .dh-notice--success { --dh-tone: var(--dh-good); --dh-tone-soft: var(--dh-good-soft); }
 .dh-notice--warn { --dh-tone: var(--dh-warn); --dh-tone-soft: var(--dh-warn-soft); }
 .dh-notice--error { --dh-tone: var(--dh-bad); --dh-tone-soft: var(--dh-bad-soft); }
+/* a partial-data note: one quiet line, not a box (some data couldn't refresh; the rest is fine) */
+.dh-notice--inline { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; padding: 0; border: 0; background: none;
+  color: var(--dh-ink-2); font-size: var(--dh-fs-sm); }
+.dh-notice--inline::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--dh-tone); transform: translateY(-1px); }
 
 /* ================================================================ states: empty, loading, error */
 /* Empty: say what would be here and offer the one next step. Dashed = nothing real yet. */
@@ -617,9 +626,9 @@ ol.dh-sources > li:target { color: var(--dh-ink); background: var(--dh-brand-sof
     animation: dh-shimmer 1.4s linear infinite; }
 }
 /* Progress for long checks: "Checking 300 of 1,044 older masternode entries". */
-.dh-progress { display: block; width: 100%; height: 6px; border: 0; border-radius: 3px; background: var(--dh-sunken); color: var(--dh-brand);
+.dh-progress { display: block; width: 100%; height: 6px; border: 0; border-radius: 3px; background: var(--dh-track); color: var(--dh-brand);
   -webkit-appearance: none; appearance: none; overflow: hidden; }
-.dh-progress::-webkit-progress-bar { background: var(--dh-sunken); }
+.dh-progress::-webkit-progress-bar { background: var(--dh-track); }
 .dh-progress::-webkit-progress-value { background: var(--dh-brand); border-radius: 3px; }
 .dh-progress::-moz-progress-bar { background: var(--dh-brand); border-radius: 3px; }
 
@@ -714,9 +723,9 @@ ol.dh-sources > li:target { color: var(--dh-ink); background: var(--dh-brand-sof
 /* ---------- the blueprint plate (hub map, architecture diagrams) ---------- */
 .dh-plate { position: relative; background: var(--dh-plate); color: var(--dh-plate-line); border: 1px solid var(--dh-plate-edge);
   border-radius: 4px; overflow: hidden; }
-.dh-plate::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .08;
+.dh-plate::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .035;
   background-image: radial-gradient(var(--dh-plate-line) 1px, transparent 1px); background-size: 16px 16px; }
-.dh-plate__label { font: 600 13px/1.2 var(--dh-font); font-stretch: var(--dh-stretch-dense); color: var(--dh-plate-ink); }
+.dh-plate__label { font: 600 var(--dh-fs-sm)/1.2 var(--dh-font); font-stretch: var(--dh-stretch-dense); color: var(--dh-plate-ink); }
 
 @keyframes dh-rot { to { transform: rotate(360deg); } }
 /* Reduced motion: spinners hold still; the words beside them ("Checking…", "Sending…") say it is working. */
