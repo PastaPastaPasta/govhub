@@ -958,7 +958,7 @@ function WaysToVote() {
               encrypted, whenever you sign in again, or stay only in this tab's memory. Votes are signed in your browser.
             </p>
           </details>
-          <button type="button" className="btn dh-btn dh-btn--secondary" onClick={openSignIn} data-testid="vote-ways-signin">
+          <button type="button" className="btn dh-btn dh-btn--primary" onClick={openSignIn} data-testid="vote-ways-signin">
             Sign in or create an account
           </button>
         </li>

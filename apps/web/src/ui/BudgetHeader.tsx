@@ -12,7 +12,7 @@ import { budgetView, countNames, proposalHref } from '../lib/view.ts';
 function BudgetTitle({ children, id, lede }: { children: ReactNode; id?: string; lede?: ReactNode }) {
   return <div className="dh-page-header__row">
     <div className="dh-page-header__text"><h1 id={id} className="dh-page-header__title">{children}</h1>{lede && <p className="dh-page-header__lede">{lede}</p>}</div>
-    <div className="dh-page-header__actions"><Link to="/create" className="dh-btn dh-btn--secondary">New proposal</Link></div>
+    <div className="dh-page-header__actions"><Link to="/create" className="dh-btn dh-btn--primary">New proposal</Link></div>
   </div>;
 }
 
@@ -159,7 +159,7 @@ export function BudgetHeader() {
           <Link to="/treasury" data-testid="budget-treasury" className="dh-link dh-link--go">What the budget pays for</Link>
         </div>
         <div className="chain-context" data-testid="chain-context"><ChainShield /></div>
-        <Link to="/create" className="budget-new dh-btn dh-btn--secondary dh-btn--sm">New proposal</Link>
+        <Link to="/create" className="budget-new dh-btn dh-btn--primary dh-btn--sm">New proposal</Link>
         <details className="learn dh-disclosure">
         <summary>How funding works</summary>
         <p className="strip-legend small muted">

@@ -38,7 +38,7 @@ dashhq-not-found:not(:defined) { padding: 20px 24px; border: 1px dashed var(--dh
    Mark the current one with aria-current="page". The bar sets the --dh-nav-* variables: a row on wide screens,
    44px rows in the phone menu, or a bottom tab bar with phone-nav="tabs". On the wide bar the links sit on the navy
    chrome: the bar hands them the chrome's values under the usual token names (--dh-ink, --dh-brand-ink, --dh-hover…),
-   so draw them with tokens, never literal colours. Inactive links are ink; the current one is brand.
+   so draw them with tokens, never literal colours. The current link is marked in ink, not blue.
    Inside an item, an element with class="dh-nav-icon" shows only in the tab bar.
    data-dh-phone on an item shows it only in the phone layouts; data-dh-desktop only in the wide row. */
 dashhq-bar > [slot="nav"] {
