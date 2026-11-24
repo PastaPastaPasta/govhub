@@ -55,20 +55,21 @@
      and selected or highlighted rows (--dh-select-soft). Dash blue, unless an app sets its accent below. */
   --dh-select: var(--dh-brand);
   --dh-select-soft: var(--dh-brand-soft);
-  /* the chosen segment of a segmented control: a clearly different fill (1.5:1 or more on the track) */
-  --dh-seg-on: #0A1A3F;
-  --dh-seg-on-ink: #FFFFFF;
+  /* the chosen segment of a segmented control: neutral, never blue. Light: a white tab ringed in the control border, as on Radar */
+  --dh-seg-on: #FFFFFF;
+  --dh-seg-on-ink: #0A1A3F;
+  --dh-seg-on-ring: #6E7A92;
 
-  /* chrome: the bar is Dash navy in light; in dark it sits on Radar's card surface, as Radar's does */
-  --dh-chrome: #0B1C4B;
-  --dh-chrome-raised: #15296A;  /* a control on the chrome */
-  --dh-chrome-ink: #FFFFFF;
-  --dh-chrome-ink-2: #B9C6E4;
-  --dh-chrome-line: #34477D;    /* hairlines on the chrome */
-  --dh-chrome-line-2: #7487BD;  /* control borders on the chrome (3:1) */
-  --dh-chrome-hover: rgba(255, 255, 255, .09);
-  --dh-chrome-accent: #5CB9F8;  /* the current section on the chrome */
-  --dh-chrome-real: #F2BE62;    /* the Mainnet dot on the chrome: real funds */
+  /* chrome: the bar sits on the card surface in both themes, as Radar's does */
+  --dh-chrome: #FFFFFF;
+  --dh-chrome-raised: #E9EBF0;  /* a control on the chrome, and the current section's chip */
+  --dh-chrome-ink: #0A1A3F;
+  --dh-chrome-ink-2: #435069;
+  --dh-chrome-line: #C3CBDA;    /* hairlines on the chrome */
+  --dh-chrome-line-2: #78849C;  /* control borders on the chrome (3:1) */
+  --dh-chrome-hover: rgba(10, 26, 63, .05);
+  --dh-chrome-accent: #0061AE;  /* the wordmark's accent and focus on the chrome */
+  --dh-chrome-real: var(--dh-good);  /* the Mainnet dot: live and healthy, as on Radar */
 
   /* footer: one step off the page in both themes; the bar alone carries the navy */
   --dh-foot: #EBEDF2;
@@ -228,6 +229,7 @@
     --dh-act-hover: #005DAA;
     --dh-seg-on: #305567;
     --dh-seg-on-ink: #DCE8F0;
+    --dh-seg-on-ring: transparent;
     --dh-chrome: #0C1E2A;
     --dh-foot: #0C1E2A;
     --dh-foot-ink: #DCE8F0;
@@ -294,6 +296,7 @@
   --dh-act-hover: #005DAA;
   --dh-seg-on: #305567;
   --dh-seg-on-ink: #DCE8F0;
+  --dh-seg-on-ring: transparent;
   --dh-chrome: #0C1E2A;
   --dh-foot: #0C1E2A;
   --dh-foot-ink: #DCE8F0;

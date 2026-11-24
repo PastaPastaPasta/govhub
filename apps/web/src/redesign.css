@@ -477,7 +477,7 @@ html { font-size: 16px; }
 .meter-pass .meter-dot { background: var(--pass-fill); }
 .list-chip { background: transparent; border-color: var(--dh-line-2); color: var(--dh-ink-2); font-weight: 560; }
 .list-chip:hover { border-color: var(--dh-line-2); background: var(--dh-hover); color: var(--dh-ink); }
-.list-chip.on, .list-chip.on:hover { background: var(--dh-seg-on); border-color: var(--dh-seg-on); color: var(--dh-seg-on-ink); }
+.list-chip.on, .list-chip.on:hover { background: var(--dh-seg-on); border-color: var(--dh-ink-2); color: var(--dh-seg-on-ink); font-weight: 640; }
 .list-chip.on .count { color: inherit; opacity: .8; }
 
 .list-more { display: flex; justify-content: center; margin: var(--dh-4) 0 0; }
@@ -525,3 +525,14 @@ html { font-size: 16px; }
 /* Treasury: paid-out amounts are funded proposals, in the same green as the budget strip */
 :is(.tr-seg, .tr-key-seg, .tr-key-paid, .tr-share-bar > span, .tr-bar) { background: var(--pass-fill); }
 .tr-seg:hover, .tr-col:hover .tr-bar { background: color-mix(in srgb, var(--pass-fill) 80%, var(--dh-ink)); }
+/* no full-bleed band behind page headers: it overflowed the page by a scrollbar's width and was a one-off blue */
+.gov-band::before { display: none; }
+@media (min-width: 641px) { .gov-band { padding-block: var(--dh-5) 0; margin-block-end: var(--gv-section); } }
+.polls-head { margin-block-end: var(--gv-section); }
+/* section titles carry no network-blue edge; poll titles read in ink like proposal titles */
+.gov-section-title, .gov-section-head h2 { border-inline-start: 0; padding-inline-start: 0; }
+.polls-preview h3 a, .poll-title-link:hover { color: var(--dh-ink); text-decoration-color: var(--dh-line-2); text-underline-offset: 3px; }
+.polls-preview h3 a:hover { text-decoration-color: currentColor; }
+.poll-bar::-webkit-progress-value { background: var(--dh-ink-2); }
+.poll-bar::-moz-progress-bar { background: var(--dh-ink-2); }
+.poll-answer--leader { border-color: var(--dh-ink-2); }
