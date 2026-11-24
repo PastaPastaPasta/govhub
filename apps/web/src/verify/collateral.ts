@@ -80,10 +80,14 @@ export interface CollateralVerdict {
   absent?: true;
   /** Why the verified chain could not be built (the old per-transaction proof was used instead). */
   anchorError?: string;
+  /** The lookup (`throttled`) or the anchoring (`anchorThrottled`) failed only because the nodes refused for rate: not yet checked. */
+  throttled?: true;
+  anchorThrottled?: true;
 }
 
 /** A failed lookup: `notFound` when several distinct DAPI nodes answered NOT_FOUND (they didn't return it: not proof it is missing). */
-export type LookupError = { error: string; notFound?: boolean };
+/** `throttled`: the lookup failed only because the nodes refused for rate (verify/throttle.ts). */
+export type LookupError = { error: string; notFound?: boolean; throttled?: true };
 
 /**
  * Steps whose failure can be a fact about the proposal itself, when it does not rest on nodes' word (`basis: 'reported'`). The
@@ -208,7 +212,7 @@ export function verifyCollateral(p: ProposalCore, lookup: TxLookup | LookupError
       id: 'tx', status: 'fail', basis: 'reported', label: 'Collateral transaction',
       detail: lookup.notFound ? `${ABSENT}: every DAPI node asked answered NOT_FOUND, which can't prove it doesn't exist (${lookup.error})` : `not fetched: ${lookup.error}`,
     });
-    return { ok: false, inconclusive: true, steps, ...(govHashComputed ? { govHashComputed } : {}), ...(lookup.notFound ? { absent: true as const } : {}) };
+    return { ok: false, inconclusive: true, steps, ...(govHashComputed ? { govHashComputed } : {}), ...(lookup.notFound ? { absent: true as const } : {}), ...(lookup.throttled && !lookup.notFound ? { throttled: true as const } : {}) };
   }
   const { proof } = lookup;
   steps.push({ id: 'tx', status: 'ok', label: 'Collateral transaction', detail: `${lookup.raw.length} bytes from DAPI node ${lookup.node}` });

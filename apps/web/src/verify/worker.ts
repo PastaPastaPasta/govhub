@@ -18,12 +18,16 @@ import { withShippedRegistrations } from './registrations.ts';
 import { loadVerifiers } from './verifiers.ts';
 import { recountSnapshots, snapshotOf, voteSetFor } from './snapshot.ts';
 import { problemCounts, verifyVotes, type ProReg, type SmlEntry } from './votes.ts';
+import { allRateLimited, createGate, DAPI_CONCURRENCY, isRateLimited, throttleDapi } from './throttle.ts';
 
 declare const self: DedicatedWorkerGlobalScope;
 const post = (m: WorkerResponse) => self.postMessage(m);
 
 /** ProRegTx facts: the build's table first (verify/registrations.ts), then what this browser proved itself. */
 const proRegCache = (network: string) => withShippedRegistrations(network, ownProRegCache(network));
+
+/** Every live client's DAPI calls (not its header streams) share one gate: adaptive concurrency, paused together on a refusal. */
+const gate = createGate({ max: DAPI_CONCURRENCY });
 
 /** One client per DAPI setting: the anchored chain (and its proven SML) is reused by every check for a minute. */
 const clients = new Map<string, Dapi>();
@@ -38,7 +42,7 @@ async function dapiFor(d: DapiDescriptor): Promise<Dapi> {
       await installRecordedDapi();
       c = createDapi({ network: 'mainnet', nodes: [RECORDED_NODE] });
     } else {
-      c = createWebDapi(d.cfg, loadVerifiers);
+      c = throttleDapi(createWebDapi(d.cfg, loadVerifiers), gate);
       proofSources.set(c, (d.cfg.proofSources ?? []).map((s) => (s.kind === 'bridge' ? bridgeProofSource(s.url) : quorumListProofSource(s.url))));
     }
     clients.set(key, c);
@@ -104,10 +108,18 @@ function smlEntries(a: AnchoredChain): { entries: Map<string, SmlEntry>; used: S
 async function proRegFor(dapi: Dapi, network: CoreNetwork, votes: BridgeVotes, list: BridgeMnList, proven: ReadonlyMap<string, SmlEntry>, progress: (m: string) => void): Promise<Map<string, ProReg>> {
   const byOutpoint = new Map(list.masternodes.map((m) => [`${m.collateralTxid.toLowerCase()}-${m.collateralIndex}`, m.proTxHash.toLowerCase()]));
   const hashes = [...new Set(votes.votes.map((v) => byOutpoint.get(`${v.collateralTxid.toLowerCase()}-${v.collateralIndex}`)).filter((h): h is string => !!h && proven.has(h)))];
-  return dapi.getProRegInfo(hashes, {
-    cache: proRegCache(network),
-    onProgress: (done, total) => { if (done === 1 || done % 50 === 0 || done === total) progress(`Checking ${total.toLocaleString('en-US')} masternode registrations (${done.toLocaleString('en-US')} done; cached afterwards)`); },
-  });
+  // once one lookup has failed the rest are not needed: they stop instead of calling the nodes for nothing
+  const stop = new AbortController();
+  try {
+    return await dapi.getProRegInfo(hashes, {
+      cache: proRegCache(network),
+      parallel: DAPI_CONCURRENCY,
+      signal: stop.signal,
+      onProgress: (done, total) => { if (done === 1 || done % 50 === 0 || done === total) progress(`Checking ${total.toLocaleString('en-US')} masternode registrations (${done.toLocaleString('en-US')} done; cached afterwards)`); },
+    });
+  } finally {
+    stop.abort();
+  }
 }
 
 async function handle(req: WorkerRequest): Promise<void> {
@@ -116,6 +128,8 @@ async function handle(req: WorkerRequest): Promise<void> {
     progress('Finding DAPI nodes');
     let lookup: Parameters<typeof verifyCollateral>[1];
     let anchorError: string | null = null;
+    /** Every anchoring failure of this check: "not yet checked" only when each one was only a rate refusal. */
+    let anchorFailures: unknown[] = [];
     try {
       const dapi = await dapiFor(req.dapi);
       const verify = req.dapi.kind === 'live' && !req.light;
@@ -129,11 +143,15 @@ async function handle(req: WorkerRequest): Promise<void> {
             a = await anchor(dapi, progress, from);
             break;
           } catch (e) {
-            anchorError = (e as Error).message;
+            anchorError = errText(e);
+            anchorFailures.push(e);
             if (from === undefined) progress('The chain could not be verified; falling back to the block and ChainLock proof');
           }
         }
-        if (a) anchorError = null;
+        if (a) {
+          anchorError = null;
+          anchorFailures = [];
+        }
       }
       progress(verify ? 'Fetching the collateral transaction and proving it into a block' : 'Fetching the collateral transaction');
       lookup = await lookupCollateral(dapi, req.proposal.collateralTxid, { verify, onProgress: progress, ...(a ? { anchor: a } : {}) });
@@ -143,14 +161,18 @@ async function handle(req: WorkerRequest): Promise<void> {
           a = await anchor(dapi, progress, lookup.height);
           lookup = await lookupCollateral(dapi, req.proposal.collateralTxid, { verify, onProgress: progress, anchor: a });
         } catch (e) {
-          anchorError = (e as Error).message; // keep the first lookup (its own ChainLock proof, or the node's word)
+          anchorError = errText(e);
+          anchorFailures.push(e); // keep the first lookup (its own ChainLock proof, or the node's word)
         }
       }
     } catch (e) {
-      lookup = { error: (e as Error).message, ...(isNotFound(e, req.dapi.kind === 'recorded') ? { notFound: true } : {}) };
+      lookup = { error: errText(e), ...(isNotFound(e, req.dapi.kind === 'recorded') ? { notFound: true } : {}), ...(isRateLimited(e) ? { throttled: true as const } : {}) };
     }
     const verdict = verifyCollateral(req.proposal, lookup, req.dapi.kind === 'live' ? req.dapi.cfg.network : 'mainnet'); // recorded data is mainnet
-    if (anchorError) verdict.anchorError = anchorError;
+    if (anchorError) {
+      verdict.anchorError = anchorError;
+      if (allRateLimited(anchorFailures)) verdict.anchorThrottled = true;
+    }
     post({ id: req.id, kind: 'collateral', verdict });
     return;
   }
@@ -253,6 +275,8 @@ async function ranking(req: Extract<WorkerRequest, { kind: 'ranking' }>, bridge:
       const problem = a.weak ? `not secure: ${a.weak}` : r.keysFrom !== 'sml' ? unproven : !tally ? missing : !matches ? 'the recount differs from the published tally' : null;
       recounts.push({ ...base, absYes: r.weighted.yes - r.weighted.no, proven: problem === null, ...(problem ? { problem } : {}) });
     } catch (e) {
+      // the nodes asked to slow down: the whole order is tried again later rather than ranked with this proposal unproven
+      if (isRateLimited(e)) throw e;
       recounts.push({ ...base, absYes: 0, proven: false, problem: `not recounted: ${(e as Error).message}` });
     }
   }
@@ -261,5 +285,5 @@ async function ranking(req: Extract<WorkerRequest, { kind: 'ranking' }>, bridge:
 }
 
 self.onmessage = (ev: MessageEvent<WorkerRequest>) => {
-  handle(ev.data).catch((e: unknown) => post({ id: ev.data.id, kind: 'error', message: errText(e) }));
+  handle(ev.data).catch((e: unknown) => post({ id: ev.data.id, kind: 'error', message: errText(e), ...(isRateLimited(e) ? { throttled: true as const } : {}) }));
 };

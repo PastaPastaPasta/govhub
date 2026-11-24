@@ -2,9 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState, type DependencyList 
 import { useApp, type Load } from '../app/context.tsx';
 import type { Proposal } from '../data/types.ts';
 import { errText } from '../lib/format.ts';
+import { notYetChecked, retryWhenThrottled, workerErrorText } from '../lib/netError.ts';
 import type { ChainReport, PaymentsFact } from '../verify/chain.ts';
 import { runVerification } from '../verify/client.ts';
-import type { CollateralVerdict } from '../verify/collateral.ts';
+import { verdictFailure, type CollateralVerdict } from '../verify/collateral.ts';
 
 /**
  * Runs `fn` whenever deps change; ignores results from superseded runs, and never returns a previous run's data (not even in the
@@ -80,10 +81,16 @@ export function useCollateralCheck(p: Proposal | undefined, nonce = 0) {
     clearVerdict();
     clearError();
     setProgress('');
-    runVerification({ kind: 'collateral', proposal: p, dapi: source.dapiDescriptor() }, (m) => live && setProgress(m)).then(
-      (r) => live && setVerdict(r.verdict),
-      (e: Error) => live && setError(e.message),
-    );
+    // a verdict the nodes' rate limits held up (the lookup or the anchoring) is shown, and asked again later
+    const held = new Error(workerErrorText('collateral check held up', true));
+    retryWhenThrottled(
+      async () => {
+        const r = await runVerification({ kind: 'collateral', proposal: p, dapi: source.dapiDescriptor() }, (m) => live && setProgress(m));
+        if (live) setVerdict(r.verdict);
+        if (heldVerdict(r.verdict)) throw held;
+      },
+      { live: () => live, onWait: () => live && setProgress(notYetChecked('The submission fee', true)) },
+    ).catch((e: Error) => live && e !== held && setError(e.message));
     return () => {
       live = false;
     };
@@ -92,6 +99,9 @@ export function useCollateralCheck(p: Proposal | undefined, nonce = 0) {
 }
 
 export type CollateralCheck = ReturnType<typeof useCollateralCheck>;
+
+/** The collateral lookup or the anchoring failed only because the nodes refused for rate (verify/worker.ts sets the flags). */
+export const heldVerdict = (v: CollateralVerdict | null): boolean => !!v && !verdictFailure(v) && (!!v.throttled || !!v.anchorThrottled);
 
 /**
  * Chain facts for the proposal page (threshold, superblock schedule and budget, payments), once the collateral check has placed the
@@ -118,7 +128,7 @@ export function useChainReport(p: Proposal | undefined, verdict: CollateralVerdi
     let on = true;
     clearChain();
     clearError();
-    runVerification({ kind: 'chain', from, dapi: source.dapiDescriptor(), network: source.coreNetwork, now: source.now() }, (m) => on && setProgress(m)).then(
+    retryWhenThrottled(() => runVerification({ kind: 'chain', from, dapi: source.dapiDescriptor(), network: source.coreNetwork, now: source.now() }, (m) => on && setProgress(m)), { live: () => on, onWait: () => on && setProgress(notYetChecked('The chain', true)) }).then(
       (r) => on && setChain(r.report),
       (e: Error) => on && setError(e.message),
     );
@@ -150,7 +160,7 @@ export function useChainReport(p: Proposal | undefined, verdict: CollateralVerdi
     void (async () => {
       const { others, complete } = await listedProposals(source, gov.active, p);
       const twins = others.filter((o) => o.govHash !== p.govHash).map(({ govHash, paymentAddress, paymentAmount, startEpoch, endEpoch }) => ({ govHash, paymentAddress, paymentAmount, startEpoch, endEpoch }));
-      return runVerification({ kind: 'payments', proposal: p, from, others: twins, othersComplete: complete, dapi: source.dapiDescriptor(), network: source.coreNetwork, now: source.now() }, (m) => on && setPayProgress(m));
+      return retryWhenThrottled(() => runVerification({ kind: 'payments', proposal: p, from, others: twins, othersComplete: complete, dapi: source.dapiDescriptor(), network: source.coreNetwork, now: source.now() }, (m) => on && setPayProgress(m)), { live: () => on, onWait: () => on && setPayProgress(notYetChecked("The proposal's payment history", true)) });
     })().then(
       (r) => on && setPaid(r.payments),
       (e: Error) => on && setPayError(e.message),
@@ -167,7 +177,9 @@ export function useChainReport(p: Proposal | undefined, verdict: CollateralVerdi
   const unavailable = !live
     ? "demo data can't be checked against the live chain"
     : verdict && from === null
-      ? (!verdict.ok ? 'the collateral check did not pass' : (verdict.anchorError ?? 'the collateral could not be placed in the verified chain'))
+      ? heldVerdict(verdict)
+        ? notYetChecked('The chain')
+        : (!verdict.ok ? 'the collateral check did not pass' : (verdict.anchorError ?? 'the collateral could not be placed in the verified chain'))
       : null;
   return { report, progress, error, unavailable, payments };
 }

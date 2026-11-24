@@ -11,7 +11,8 @@ import { fileURLToPath } from 'node:url';
  */
 export const CSP = [
   "default-src 'self'",
-  "script-src 'self' 'wasm-unsafe-eval'",
+  // Cloudflare's edge injects its Web Analytics beacon into the page on the dashhq.org hosts
+  "script-src 'self' 'wasm-unsafe-eval' https://static.cloudflareinsights.com/beacon.min.js/",
   // the verification and badge workers; evo-sdk's WASM is a separate asset now, so its blob: decompress worker is gone
   "worker-src 'self'",
   "style-src 'self'",

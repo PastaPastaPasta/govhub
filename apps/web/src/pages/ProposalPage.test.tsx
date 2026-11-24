@@ -185,7 +185,7 @@ describe('ProposalView reading order', () => {
   it('leads with the ask, full tally and vote entry before the details', async () => {
     const { el } = await view(open, { estTime: NOW + 5 * DAY, report: null });
     const summary = el.querySelector('[data-testid="p-decision"]')!;
-    expect(el.querySelector('[data-testid="p-funds"]')!.textContent).toContain('504 net yes of 332 needed (feed estimate)');
+    expect(el.querySelector('[data-testid="p-funds"]')!.textContent).toContain('504 net yes of 332 needed (estimated)');
     expect(summary.textContent).toContain('Votes close');
     expect(el.querySelector('[data-testid="p-next-payout"]')!.textContent).toContain('Next payout');
     expect(el.querySelector('.p-hero [data-testid="p-chain-name"]')).toBeNull();

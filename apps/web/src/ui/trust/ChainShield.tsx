@@ -7,7 +7,7 @@ import { useApp } from '../../app/context.tsx';
 import { customFields, PROFILES } from '../../config/registry.ts';
 import type { DataSource } from '../../data/repo.ts';
 import { errText, formatInt, formatRelative } from '../../lib/format.ts';
-import { isNetworkReason, unfinishedReason } from '../../lib/netError.ts';
+import { isNetworkReason, isThrottled, notYetChecked, retryWhenThrottled, unfinishedReason } from '../../lib/netError.ts';
 import type { TrustLevel } from '../../verify/aggregate.ts';
 import type { AnchorSummary } from '../../verify/chain.ts';
 import { runVerification } from '../../verify/client.ts';
@@ -27,7 +27,7 @@ function anchorOnce(source: DataSource, onProgress: (m: string) => void): Promis
   const key = JSON.stringify(dapi);
   const hit = runs.get(key);
   if (hit && Date.now() - hit.at < TTL_MS) return hit.promise;
-  const promise = runVerification({ kind: 'anchor', dapi }, onProgress).then((r) => r.anchor);
+  const promise = retryWhenThrottled(() => runVerification({ kind: 'anchor', dapi }, onProgress), { onWait: () => onProgress(notYetChecked('The chain', true)) }).then((r) => r.anchor);
   runs.set(key, { at: Date.now(), promise });
   // only a chain verified outright counts as "last verified" (testnet's proof of work is only checked)
   promise.then((anchor) => anchor.weak || lastGood.set(key, { anchor, at: Date.now() }), () => runs.delete(key));
@@ -76,7 +76,7 @@ function headline(level: TrustLevel, s: State, notice: string | null, nowS: numb
     const a = s.anchor;
     return a.weak ? `Chain checked to block ${formatInt(a.tip)}, but only proof of work protects it here` : `Chain verified to block ${formatInt(a.tip)}, ChainLocked ${formatRelative(a.chainLock.time, nowS)}`;
   }
-  if (s.error) return `Couldn't check the chain: ${unfinishedReason(s.error)}`;
+  if (s.error) return isThrottled(s.error) ? notYetChecked('The chain') : `Couldn't check the chain: ${unfinishedReason(s.error)}`;
   return `${s.progress || 'Checking the chain'}…`;
 }
 

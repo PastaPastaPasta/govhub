@@ -149,7 +149,7 @@ export function BudgetHeader() {
         <div className="gov-stat">
           <dt>To pass</dt>
           <dd>
-            <span className="num">{formatInt(threshold)}</span> <small>net yes votes</small><span className="gov-stat-note">Feed estimate, 10% of weight</span>
+            <span className="num">{formatInt(threshold)}</span> <small>net yes votes</small><span className="gov-stat-note" title="Estimated from the governance data service: 10% of all masternode voting weight, where an evonode counts 4 times.">10% of all masternode votes</span>
           </dd>
         </div>
       </dl>
