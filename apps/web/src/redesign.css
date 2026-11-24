@@ -27,9 +27,9 @@ html { font-size: 16px; }
   border-radius: 999px;
   background: var(--track);
 }
-.budget-panel .strip-seg { background: var(--dh-brand); }
-.budget-panel .strip-seg:hover { background: var(--dh-brand-ink); opacity: 1; }
-.budget-panel .strip-other { background: color-mix(in srgb, var(--dh-brand) 45%, var(--dh-sunken)); }
+.budget-panel .strip-seg { background: var(--pass-fill); }
+.budget-panel .strip-seg:hover { background: color-mix(in srgb, var(--pass-fill) 80%, var(--dh-ink)); opacity: 1; }
+.budget-panel .strip-other { background: color-mix(in srgb, var(--pass-fill) 45%, var(--dh-surface)); }
 .budget-panel .strip-free { background: transparent; }
 
 .budget-panel .budget-facts { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--dh-5) var(--dh-6); }
@@ -37,7 +37,6 @@ html { font-size: 16px; }
 .budget-panel .gov-stat + .gov-stat { border-inline-start: 1px solid var(--dh-line); padding-inline-start: var(--dh-6); }
 .budget-panel .gov-stat dt { font-size: 15px; color: var(--dh-ink-2); margin-block-end: 4px; }
 .budget-panel .gov-stat .num { font-size: 30px; font-weight: 640; font-stretch: 104%; color: var(--dh-ink); line-height: 1.1; }
-.budget-panel .gov-stat--good .num { color: var(--dh-brand-ink); }
 .budget-panel .gov-stat small { font-size: 15px; }
 .budget-panel .gov-stat-note,
 .budget-panel .usd { display: block; margin-block-start: 4px; font-size: 14px; color: var(--dh-ink-2); line-height: 1.4; }
@@ -76,7 +75,7 @@ html { font-size: 16px; }
 .prow-main { gap: 6px; }
 .prow-title { font-size: 18px; font-weight: 620; line-height: 1.3; }
 .prow-title a { color: var(--dh-ink); text-decoration: none; }
-.prow-title a:hover { text-decoration: underline; color: var(--dh-brand-ink); }
+.prow-title a:hover { text-decoration: underline; color: var(--dh-ink); }
 .prow-purpose { font-size: 15px; line-height: 1.45; color: var(--dh-ink-2); -webkit-line-clamp: 2; max-inline-size: 64ch; }
 .prow-slug { font-family: var(--dh-font); font-size: 14px; color: var(--dh-ink-2); }
 .prow-slug .slug, .prow-slug code { font-family: inherit; }
@@ -111,7 +110,7 @@ html { font-size: 16px; }
 .budget-panel .chain-context .chainchip:is(.dh-proof--ok, .dh-proof--checking):hover { color: var(--dh-ink); background: var(--dh-hover); }
 .budget-panel details.learn { margin-inline-start: auto; }
 .key.key-free { background: var(--dh-sunken); box-shadow: inset 0 0 0 1px var(--dh-line-2); }
-.key.key-other { background: color-mix(in srgb, var(--dh-brand) 45%, var(--dh-sunken)); }
+.key.key-other { background: color-mix(in srgb, var(--pass-fill) 45%, var(--dh-surface)); }
 
 /* the narrow layout: a card reads top to bottom, what, how much, where it stands, the votes */
 @media (max-width: 760px) {
@@ -293,7 +292,7 @@ html { font-size: 16px; }
 .plist .crow { padding: 14px 20px; }
 .crow .prow-title { font-size: 17px; font-weight: 620; }
 .crow .prow-title a { color: var(--dh-ink); text-decoration: none; }
-.crow .prow-title a:hover { color: var(--dh-brand-ink); text-decoration: underline; }
+.crow .prow-title a:hover { color: var(--dh-ink); text-decoration: underline; }
 .crow .crow-contenders, .crow .crow-lead { font-size: 14px; }
 .crow .prow-meta { font-size: 14px; }
 .crow-status > .tag.dh-badge { padding: 0; border: 0; background: none; box-shadow: none; height: auto; font-size: 14px; font-weight: 560; color: var(--dh-ink-2); }
@@ -335,8 +334,8 @@ html { font-size: 16px; }
 .treasury .p-slug { font-family: var(--dh-font); font-size: 14px; }
 .tr-budget-bar, .tr-share-bar { background: var(--track); }
 
-/* contest bars: the leader in brand blue, challengers a muted blue, so the legend tells them apart */
-:is(.crow, .contest-legend) { --cb-c0: var(--dh-brand); --cb-c1: color-mix(in srgb, var(--dh-brand) 40%, var(--dh-surface)); --cb-c2: var(--cb-c1); --cb-c3: var(--cb-c1); }
+/* contest bars: the leader in the secondary ink, challengers a quieter step of it, so the legend tells them apart without blue */
+:is(.crow, .contest-legend) { --cb-c0: var(--dh-ink-2); --cb-c1: color-mix(in srgb, var(--dh-ink-2) 40%, var(--dh-surface)); --cb-c2: var(--cb-c1); --cb-c3: var(--cb-c1); }
 
 /* ---- one vertical rhythm for every page: 32px between sections, 16px within a group, 8px between related lines (24/12/6 on a phone) */
 :root { --gv-section: 32px; --gv-group: 16px; --gv-tight: 8px; }
@@ -428,7 +427,7 @@ html { font-size: 16px; }
 /* the view switch under Past's heading reads as a second level, not a second tab bar */
 .past-head .dh-seg { background: none; border: 0; box-shadow: none; padding: 0; gap: 20px; }
 .past-head .dh-seg > .dh-btn { background: none; border: 0; box-shadow: none; padding: 6px 0; min-block-size: 36px; border-radius: 0; color: var(--dh-ink-2); font-weight: 560; border-block-end: 2px solid transparent; }
-.past-head .dh-seg > .dh-btn[aria-pressed="true"] { color: var(--dh-ink); border-block-end-color: var(--dh-brand); }
+.past-head .dh-seg > .dh-btn[aria-pressed="true"] { color: var(--dh-ink); border-block-end-color: var(--dh-ink); }
 .past-head .dh-seg > .dh-btn:hover { color: var(--dh-ink); background: none; }
 
 /* a proposal on a phone: the owner's words stay, the repeats go, so the ask and standing come sooner */
@@ -473,14 +472,13 @@ html { font-size: 16px; }
   .plist > .prow[data-govhash] { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) auto; grid-template-areas: 'main main main' 'ask fund meta'; row-gap: 12px; }
 }
 
-/* colour roles: Dash blue fills the meters and stripes; selected filters take a blue tint, the section tab the solid fill */
-:root { --pass-fill: var(--dh-brand-fill); }
+/* colour roles: green means passing (meters, stripes, the budget place); solid blue is only the primary action; the rest is ink */
+:root { --pass-fill: var(--dh-good); }
 .meter-pass .meter-dot { background: var(--pass-fill); }
 .list-chip { background: transparent; border-color: var(--dh-line-2); color: var(--dh-ink-2); font-weight: 560; }
 .list-chip:hover { border-color: var(--dh-line-2); background: var(--dh-hover); color: var(--dh-ink); }
-.list-chip.on, .list-chip.on:hover { background: color-mix(in srgb, var(--dh-brand) 16%, var(--dh-surface)); border-color: var(--dh-brand); color: var(--dh-ink); }
+.list-chip.on, .list-chip.on:hover { background: var(--dh-seg-on); border-color: var(--dh-ink-2); color: var(--dh-seg-on-ink); font-weight: 640; }
 .list-chip.on .count { color: inherit; opacity: .8; }
-.tag.dh-badge--good { background: color-mix(in srgb, var(--dh-brand) 16%, var(--dh-surface)); color: var(--dh-ink); }
 
 .list-more { display: flex; justify-content: center; margin: var(--dh-4) 0 0; }
 @media (max-width: 760px) { .proposal .p-meta { display: none; } }
@@ -490,7 +488,7 @@ html { font-size: 16px; }
   .p-closes { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; }
   .p-closes-vote { display: inline; font-weight: 600; }
 }
-.crow .prow-title a { color: var(--dh-brand-ink); }
+.crow .prow-title a { color: var(--dh-ink); }
 .crow .crow-contenders:empty { display: none; }
 :is(.crow, .contest-legend) .cb-lock { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--cb-lock) 70%, var(--dh-surface)) 0 4px, color-mix(in srgb, var(--cb-lock) 35%, var(--dh-surface)) 4px 8px); }
 .mn-find-hint { margin: 0 0 var(--dh-2); font-size: 14px; color: var(--dh-ink-2); }
@@ -501,3 +499,40 @@ html { font-size: 16px; }
 }
 .p-about .p-recorded, .p-about .claim-panel { background: var(--dh-surface); border-color: var(--dh-line); }
 :is(.mnv-pass, .outcome-pass) .dot { background: var(--pass-fill); }
+
+/* blue is for the primary action: key numbers, section links and disclosures read in ink, with an underline for the links */
+.budget-countdown { color: var(--dh-ink); }
+.budget-panel :is(.dh-link--go, .budget-line-links > a), .list-section .gov-section-head > a,
+.contests-to-ended {
+  color: var(--dh-ink); text-decoration: underline; text-decoration-color: var(--dh-line-2); text-underline-offset: 3px;
+}
+.budget-panel :is(.dh-link--go, .budget-line-links > a):hover, .list-section .gov-section-head > a:hover,
+.contests-to-ended:hover { color: var(--dh-ink); text-decoration-color: currentColor; }
+.past a.p-label, .past a.p-label bdi { color: var(--dh-ink); text-decoration: none; }
+.past a.p-label:hover bdi { text-decoration: underline; }
+:is(.budget-panel details.learn, .contests details, .vote-ways details) > summary { color: var(--dh-ink); }
+.owner-words-info { color: var(--dh-ink-2); }
+.prow-fund > .tag.dh-badge--info, .tag.tag-info { background: var(--dh-chip); color: var(--dh-ink-2); }
+.key.key-seg { background: var(--pass-fill); }
+.proposal :is(.dh-btn--link, .linkish) { color: var(--dh-ink); text-decoration: underline; text-decoration-color: var(--dh-line-2); text-underline-offset: 3px; }
+.proposal :is(.dh-btn--link, .linkish):hover { text-decoration-color: currentColor; }
+.proposal .p-about details > summary, .proposal .crumbs a.dh-link { color: var(--dh-ink-2); }
+/* abstain is hollow, so it never reads as a third shade of the contenders */
+:is(.crow, .contest-legend) .cb-abstain { background: transparent; box-shadow: inset 0 0 0 1.5px var(--dh-line-2); }
+/* green is passing: owner and saved states stay ink (a comment up-vote keeps green, opposite the red down-vote) */
+.chip-owner, .notice { color: var(--dh-ink); }
+.comment-owner > article { border-inline-start-color: var(--dh-line-2); }
+/* Treasury: paid-out amounts are funded proposals, in the same green as the budget strip */
+:is(.tr-seg, .tr-key-seg, .tr-key-paid, .tr-share-bar > span, .tr-bar) { background: var(--pass-fill); }
+.tr-seg:hover, .tr-col:hover .tr-bar { background: color-mix(in srgb, var(--pass-fill) 80%, var(--dh-ink)); }
+/* no full-bleed band behind page headers: it overflowed the page by a scrollbar's width and was a one-off blue */
+.gov-band::before { display: none; }
+@media (min-width: 641px) { .gov-band { padding-block: var(--dh-5) 0; margin-block-end: var(--gv-section); } }
+.polls-head { margin-block-end: var(--gv-section); }
+/* section titles carry no network-blue edge; poll titles read in ink like proposal titles */
+.gov-section-title, .gov-section-head h2 { border-inline-start: 0; padding-inline-start: 0; }
+.polls-preview h3 a, .poll-title-link:hover { color: var(--dh-ink); text-decoration-color: var(--dh-line-2); text-underline-offset: 3px; }
+.polls-preview h3 a:hover { text-decoration-color: currentColor; }
+.poll-bar::-webkit-progress-value { background: var(--dh-ink-2); }
+.poll-bar::-moz-progress-bar { background: var(--dh-ink-2); }
+.poll-answer--leader { border-color: var(--dh-ink-2); }

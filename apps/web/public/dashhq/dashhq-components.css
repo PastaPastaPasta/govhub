@@ -286,7 +286,7 @@
 }
 .dh-seg > :hover { color: var(--dh-ink); }
 .dh-seg > [aria-pressed="true"], .dh-seg > [aria-current="page"], .dh-seg > [aria-current="true"], .dh-seg > [aria-selected="true"] {
-  background: var(--dh-seg-on); color: var(--dh-seg-on-ink); font-weight: var(--dh-w-strong); box-shadow: none;
+  background: var(--dh-seg-on); color: var(--dh-seg-on-ink); font-weight: var(--dh-w-strong); box-shadow: 0 0 0 1px var(--dh-seg-on-ring, transparent);
 }
 .dh-seg > :is([aria-pressed="true"], [aria-current="page"], [aria-current="true"], [aria-selected="true"]) .dh-count { color: inherit; opacity: .8; }
 .dh-seg > :focus-visible { outline: var(--dh-ring-w) solid var(--dh-focus); outline-offset: 0; }
