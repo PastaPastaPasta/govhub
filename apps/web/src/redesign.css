@@ -37,7 +37,6 @@ html { font-size: 16px; }
 .budget-panel .gov-stat + .gov-stat { border-inline-start: 1px solid var(--dh-line); padding-inline-start: var(--dh-6); }
 .budget-panel .gov-stat dt { font-size: 15px; color: var(--dh-ink-2); margin-block-end: 4px; }
 .budget-panel .gov-stat .num { font-size: 30px; font-weight: 640; font-stretch: 104%; color: var(--dh-ink); line-height: 1.1; }
-.budget-panel .gov-stat--good .num { color: var(--dh-ink); }
 .budget-panel .gov-stat small { font-size: 15px; }
 .budget-panel .gov-stat-note,
 .budget-panel .usd { display: block; margin-block-start: 4px; font-size: 14px; color: var(--dh-ink-2); line-height: 1.4; }
@@ -474,13 +473,12 @@ html { font-size: 16px; }
 }
 
 /* colour roles: green means passing (meters, stripes, the budget place); solid blue is only the primary action; the rest is ink */
-:root { --pass: var(--dh-good); --pass-fill: var(--dh-good); }
+:root { --pass-fill: var(--dh-good); }
 .meter-pass .meter-dot { background: var(--pass-fill); }
 .list-chip { background: transparent; border-color: var(--dh-line-2); color: var(--dh-ink-2); font-weight: 560; }
 .list-chip:hover { border-color: var(--dh-line-2); background: var(--dh-hover); color: var(--dh-ink); }
-.list-chip.on, .list-chip.on:hover { background: var(--dh-raised); border-color: var(--dh-ink-2); color: var(--dh-ink); }
+.list-chip.on, .list-chip.on:hover { background: var(--dh-seg-on); border-color: var(--dh-seg-on); color: var(--dh-seg-on-ink); }
 .list-chip.on .count { color: inherit; opacity: .8; }
-.tag.dh-badge--good { background: var(--dh-good-soft); color: var(--dh-good); }
 
 .list-more { display: flex; justify-content: center; margin: var(--dh-4) 0 0; }
 @media (max-width: 760px) { .proposal .p-meta { display: none; } }
@@ -503,14 +501,14 @@ html { font-size: 16px; }
 :is(.mnv-pass, .outcome-pass) .dot { background: var(--pass-fill); }
 
 /* blue is for the primary action: key numbers, section links and disclosures read in ink, with an underline for the links */
-.budget-countdown, .budget-panel .gov-stat .num { color: var(--dh-ink); }
+.budget-countdown { color: var(--dh-ink); }
 .budget-panel :is(.dh-link--go, .budget-line-links > a), .list-section .gov-section-head > a,
-.past a.p-label, .past a.p-label bdi, .contests-to-ended {
+.contests-to-ended {
   color: var(--dh-ink); text-decoration: underline; text-decoration-color: var(--dh-line-2); text-underline-offset: 3px;
 }
 .budget-panel :is(.dh-link--go, .budget-line-links > a):hover, .list-section .gov-section-head > a:hover,
-.past a.p-label:hover, .contests-to-ended:hover { color: var(--dh-ink); text-decoration-color: currentColor; }
-.past a.p-label, .past a.p-label bdi { text-decoration: none; }
+.contests-to-ended:hover { color: var(--dh-ink); text-decoration-color: currentColor; }
+.past a.p-label, .past a.p-label bdi { color: var(--dh-ink); text-decoration: none; }
 .past a.p-label:hover bdi { text-decoration: underline; }
 :is(.budget-panel details.learn, .contests details, .vote-ways details) > summary { color: var(--dh-ink); }
 .owner-words-info { color: var(--dh-ink-2); }
@@ -519,3 +517,11 @@ html { font-size: 16px; }
 .proposal :is(.dh-btn--link, .linkish) { color: var(--dh-ink); text-decoration: underline; text-decoration-color: var(--dh-line-2); text-underline-offset: 3px; }
 .proposal :is(.dh-btn--link, .linkish):hover { text-decoration-color: currentColor; }
 .proposal .p-about details > summary, .proposal .crumbs a.dh-link { color: var(--dh-ink-2); }
+/* abstain is hollow, so it never reads as a third shade of the contenders */
+:is(.crow, .contest-legend) .cb-abstain { background: transparent; box-shadow: inset 0 0 0 1.5px var(--dh-line-2); }
+/* green is passing: owner and saved states stay ink (a comment up-vote keeps green, opposite the red down-vote) */
+.chip-owner, .notice { color: var(--dh-ink); }
+.comment-owner > article { border-inline-start-color: var(--dh-line-2); }
+/* Treasury: paid-out amounts are funded proposals, in the same green as the budget strip */
+:is(.tr-seg, .tr-key-seg, .tr-key-paid, .tr-share-bar > span, .tr-bar) { background: var(--pass-fill); }
+.tr-seg:hover, .tr-col:hover .tr-bar { background: color-mix(in srgb, var(--pass-fill) 80%, var(--dh-ink)); }

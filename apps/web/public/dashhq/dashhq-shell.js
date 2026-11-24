@@ -388,7 +388,7 @@
     '.ic{display:block;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}' +
     '.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}';
 
-  // The bar is Dash navy chrome in both themes. Its row (and what a product slots into it) draws with the chrome's
+  // The bar is the chrome: Dash navy in light, Radar's card surface in dark. Its row (and what a product slots into it) draws with the chrome's
   // values under the usual token names; menus, the phone sheet and the tab bar get the page's values back.
   const CHROME = {
     page: 'chrome', surface: 'chrome', sunken: 'chrome', raised: 'chrome-raised',
@@ -409,11 +409,11 @@
     ':host{display:block;position:relative;z-index:40}' +
     ':host([sticky]){position:sticky;top:0}' +
     `.bar{position:relative;background:var(--dh-chrome);color:var(--dh-chrome-ink);${CHROME_SAVE};` +
-    'box-shadow:inset 0 -1px 0 color-mix(in srgb,var(--dh-brand) 55%,var(--dh-chrome));' +
+    'box-shadow:inset 0 -1px 0 var(--dh-chrome-line);' +
     '--dh-nav-dir:row;--dh-nav-h:32px;--dh-nav-fs:14px;--dh-nav-pad:10px;--dh-nav-align:center;' +
     '--dh-nav-only-phone:none;--dh-nav-only-desk:flex}' +
     `.row{${CHROME_ON};--dh-nav-ink:var(--dh-chrome-ink-2);--dh-nav-current-ink:var(--dh-chrome-ink);` +
-    '--dh-nav-current-bg:var(--dh-chrome-raised);--dh-nav-current-mark:inset 0 -2px 0 var(--dh-chrome-accent)}' +
+    '--dh-nav-current-bg:var(--dh-chrome-raised);--dh-nav-current-mark:inset 0 -2px 0 var(--dh-chrome-ink)}' +
     `.pop,.bar.compact .sheet,.bar.compact.tabs .nav{${CHROME_OFF};color:var(--dh-ink)}` +
     '.bar.compact{--dh-nav-only-phone:flex;--dh-nav-only-desk:none}' +
     '.row{position:relative;color:var(--dh-ink);max-width:var(--dh-shell-max,var(--dh-max));margin:0 auto;' +
