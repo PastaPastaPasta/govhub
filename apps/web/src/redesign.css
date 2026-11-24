@@ -528,7 +528,6 @@ html { font-size: 16px; }
 /* no full-bleed band behind page headers: it overflowed the page by a scrollbar's width and was a one-off blue */
 .gov-band::before { display: none; }
 @media (min-width: 641px) { .gov-band { padding-block: var(--dh-5) 0; margin-block-end: var(--gv-section); } }
-.polls-head { margin-block-end: var(--gv-section); }
 /* section titles carry no network-blue edge; poll titles read in ink like proposal titles */
 .gov-section-title, .gov-section-head h2 { border-inline-start: 0; padding-inline-start: 0; }
 .polls-preview h3 a, .poll-title-link:hover { color: var(--dh-ink); text-decoration-color: var(--dh-line-2); text-underline-offset: 3px; }

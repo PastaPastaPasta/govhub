@@ -26,9 +26,8 @@ function TestnetOnly({ children, preview = false }: { children: ReactNode; previ
   params.set('network', 'testnet'); params.delete('profile'); params.delete('fixtures');
   if (registry.platformNetwork === 'testnet') return children;
   return <section className="polls-page">
-    <header className="dh-page-header polls-head"><h1 className="dh-page-header__title">Community polls</h1><p className="dh-page-header__lede">Questions asked on Dash Platform, and how Dash identities answered. Polls run on Testnet while the poll contract is tested.</p><p className="dh-page-header__actions"><a href={`${location.pathname}?${params}`} className="dh-btn dh-btn--secondary">Open Polls on Testnet</a></p></header>
+    <header className="dh-page-header polls-head"><h1 className="dh-page-header__title">Community polls</h1><p className="dh-page-header__lede">Questions asked on Dash Platform, and how Dash identities answered. Polls run on Testnet while the poll contract is tested; sign in there to ask or answer one. Polls gather opinions: treasury funding is decided by masternode votes on proposals.</p><p className="dh-page-header__actions"><a href={`${location.pathname}?${params}`} className="dh-btn dh-btn--secondary">Open Polls on Testnet</a></p></header>
     {preview && <TestnetPreview />}
-    <section className="dh-section polls-intro" aria-labelledby="polls-about"><h2 id="polls-about" className="dh-h2 gov-section-title">Community opinions, on record</h2><p>Browse open questions and recent closed polls, with answer counts and results for each option. Sign in on Testnet when you want to ask or answer a question.</p><p className="muted">Polls gather opinions. Treasury funding is decided separately by masternode votes on proposals.</p></section>
   </section>;
 }
 function TestnetPreview() {

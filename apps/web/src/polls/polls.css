@@ -54,9 +54,19 @@
   .poll-answer-label { flex-wrap: wrap; }
 }
 
-.polls-intro { margin-block-start: 32px; max-inline-size: 65ch; }
-
-.polls-preview { margin-block-start: 32px; }
-.poll-preview-list article { padding-block: 16px; border-block-start: 1px solid var(--dh-line); overflow-wrap: anywhere; }
-.poll-preview-list h3 { margin: 0 0 6px; }
-.poll-preview-list .poll-meta { margin-block-end: 6px; }
+/* the recent questions sit in one card like the proposal list, rows tight, the provenance line under it at full width */
+.polls-head { margin-block-end: 16px; }
+.polls-preview { display: grid; gap: 8px; }
+.polls-preview > h2 { margin: 0; font-size: 22px; }
+.polls-preview > .muted { margin: 0 0 8px; font-size: 15px; }
+.poll-preview-list { background: var(--dh-surface); border: 1px solid var(--dh-line); border-radius: var(--dh-r3, 10px); overflow: hidden; }
+.poll-preview-list article { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 24px; align-items: baseline; padding: 14px 20px; border-block-start: 1px solid var(--dh-line); overflow-wrap: anywhere; }
+.poll-preview-list article:first-child { border-block-start: 0; }
+.poll-preview-list h3 { grid-column: 1; margin: 0 0 4px; font-size: 17px; }
+.poll-preview-list .poll-meta { grid-column: 2; grid-row: 1 / span 2; margin: 0; text-align: end; }
+.poll-preview-list .small { grid-column: 1; margin: 0; }
+.polls-preview > .dh-sources { max-inline-size: none; margin-block-start: 8px; }
+@media (max-width: 760px) {
+  .poll-preview-list article { grid-template-columns: minmax(0, 1fr); padding: 12px 16px; }
+  .poll-preview-list .poll-meta { grid-column: 1; grid-row: auto; text-align: start; margin-block: 2px 4px; }
+}

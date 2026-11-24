@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Link } from '../ui/Link.tsx';
 import { configParamUrl, DAMAGED_CONFIG, fetchConfig, PROFILES, readInlineConfig, registryDiff, registryRows, saveErrorText, type Registry } from '../config/registry.ts';
@@ -318,13 +318,23 @@ export function Layout() {
   const unsupportedNetwork = requestedNetwork && !['mainnet', 'testnet', 'main', 'test'].includes(requestedNetwork);
   const coreLabel = registry.coreNetwork === 'mainnet' ? 'Mainnet' : 'Testnet';
   const platformLabel = registry.platformNetwork === 'mainnet' ? 'Mainnet' : 'Testnet';
-  const proposals = loc.pathname === '/' || loc.pathname.startsWith('/past') || loc.pathname.startsWith('/treasury') || loc.pathname.startsWith('/p/');
+  // the router commits a navigation in a transition, after the next page renders: the clicked section is current at once
+  const [clicked, setClicked] = useState<string | null>(null);
+  useEffect(() => setClicked(null), [loc.key, loc.pathname]);
+  useEffect(() => {
+    const reset = () => setClicked(null);
+    window.addEventListener('popstate', reset);
+    return () => window.removeEventListener('popstate', reset);
+  }, []);
+  const at = clicked ?? loc.pathname;
+  const clickTo = (path: string) => (e: MouseEvent) => { if (e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) setClicked(path); };
+  const proposals = at === '/' || at.startsWith('/past') || at.startsWith('/treasury') || at.startsWith('/p/');
   // a masternode's own votes page (/masternodes/<proTx>) is public, usually someone else's: not "My masternodes"
-  const masternodes = loc.pathname === '/masternodes' || loc.pathname.startsWith('/votes');
-  const polls = loc.pathname.startsWith('/polls');
+  const masternodes = at === '/masternodes' || at.startsWith('/votes');
+  const polls = at.startsWith('/polls');
   const node = /^\/masternodes\/([0-9a-f]{64})$/i.exec(loc.pathname)?.[1] ?? new URLSearchParams(loc.search).get('mn');
   const proposalsHref = node && /^[0-9a-f]{64}$/i.test(node) ? `/?mn=${node.toLowerCase()}` : '/';
-  const names = loc.pathname.startsWith('/names');
+  const names = at.startsWith('/names');
   return (
     <div className="shell">
       <a className="skip" href="#main">
@@ -333,10 +343,10 @@ export function Layout() {
       <dashhq-bar ref={bar} product="gov" phone-nav="tabs" network={registry.platformNetwork} networks="mainnet testnet" product-href={'/' + profileSearch('', registry.profile)} network-settings={'/settings' + profileSearch('', registry.profile) + '#network'} sticky="">
         <img slot="logo" src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" width="22" height="22" />
         <nav slot="nav" aria-label="Governance">
-          <Link to={proposalsHref} aria-current={proposals ? 'page' : undefined}><svg className="dh-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M6 3h9l3 3v15H6z" /><path d="M9 9h6M9 13h6M9 17h4" /></svg>Proposals</Link>
-          <Link to="/polls" aria-current={polls ? 'page' : undefined}><svg className="dh-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M4 20V4M4 20h17M9 17v-6M14 17V6M19 17v-9" /></svg>Polls</Link>
-          <Link to="/names" aria-current={names ? 'page' : undefined} data-testid="nav-names"><svg className="dh-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M20 12v-2a8 8 0 1 0-3 8M16 10v4a2 2 0 0 0 4 0v-2" /><circle cx="12" cy="10" r="4" /></svg>Name contests</Link>
-          <Link to="/masternodes" aria-current={masternodes ? 'page' : undefined}><svg className="dh-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><rect x="4" y="3" width="16" height="7" rx="1" /><rect x="4" y="14" width="16" height="7" rx="1" /><path d="M7 6.5h2M7 17.5h2M12 10v4" /></svg>My masternodes</Link>
+          <Link to={proposalsHref} onClick={clickTo('/')} aria-current={proposals ? 'page' : undefined}><svg className="dh-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M6 3h9l3 3v15H6z" /><path d="M9 9h6M9 13h6M9 17h4" /></svg>Proposals</Link>
+          <Link to="/polls" onClick={clickTo('/polls')} aria-current={polls ? 'page' : undefined}><svg className="dh-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M4 20V4M4 20h17M9 17v-6M14 17V6M19 17v-9" /></svg>Polls</Link>
+          <Link to="/names" onClick={clickTo('/names')} aria-current={names ? 'page' : undefined} data-testid="nav-names"><svg className="dh-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M20 12v-2a8 8 0 1 0-3 8M16 10v4a2 2 0 0 0 4 0v-2" /><circle cx="12" cy="10" r="4" /></svg>Name contests</Link>
+          <Link to="/masternodes" onClick={clickTo('/masternodes')} aria-current={masternodes ? 'page' : undefined}><svg className="dh-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><rect x="4" y="3" width="16" height="7" rx="1" /><rect x="4" y="14" width="16" height="7" rx="1" /><path d="M7 6.5h2M7 17.5h2M12 10v4" /></svg>My masternodes</Link>
         </nav>
         <div slot="actions"><SessionControl /></div>
       </dashhq-bar>
