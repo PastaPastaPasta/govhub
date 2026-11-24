@@ -7,6 +7,7 @@ import { Link } from '../Link.tsx';
 import { useApp } from '../../app/context.tsx';
 import type { Cycle, Proposal, Sourced } from '../../data/types.ts';
 import { formatDash, formatDateTime, formatInt, formatRelative, shortHash } from '../../lib/format.ts';
+import { isThrottled, notYetChecked } from '../../lib/netError.ts';
 import { CHECK_LABEL, LEVEL_LABEL, VERIFIED_LINE, type CheckId, type Component, type ComponentState } from '../../verify/aggregate.ts';
 import { isLowerBound, type ChainReport } from '../../verify/chain.ts';
 import { checkContent, verdictFailure, type CollateralVerdict, type StepBasis, type StepStatus } from '../../verify/collateral.ts';
@@ -199,11 +200,11 @@ function ChainBlock({ chain, cycle, nowS, demo }: { chain: ChainCheck; cycle: Cy
           </p>
           <Steps steps={chainRows(report, cycle, nowS)} demo={demo} />
           {chain.payments.pending && <Pending text={chain.payments.progress || "Reading this proposal's superblock payments"} />}
-          {chain.payments.error && <p className="small muted">The proposal's payments couldn't be read: {chain.payments.error}</p>}
+          {chain.payments.error && <p className="small muted">{isThrottled(chain.payments.error) ? `${notYetChecked("The proposal's payment history")}.` : `The proposal's payments couldn't be read: ${chain.payments.error}`}</p>}
         </>
       ) : error ? (
         <p className="verdict verdict-partial" data-chain="error">
-          <ProvGlyph kind="reported" /> Chain facts could not be verified: {error}. Threshold, schedule and payments are as the governance data service reports them.
+          <ProvGlyph kind="reported" /> {isThrottled(error) ? notYetChecked('The chain') : `Chain facts could not be verified: ${error}`}. Threshold, schedule and payments are as the governance data service reports them.
         </p>
       ) : unavailable ? (
         <p className="muted small" data-chain="unavailable">
@@ -251,13 +252,13 @@ function CollateralBlock({ check, state, demo }: { check: CollateralCheck; state
         </p>
       ) : error ? (
         <p className="verdict verdict-partial" data-verdict="error">
-          <ProvGlyph kind="reported" /> Collateral check could not run: {error}
+          <ProvGlyph kind="reported" /> {isThrottled(error) ? `${notYetChecked('The submission fee')}.` : `Collateral check could not run: ${error}`}
         </p>
       ) : (
         <Pending text={progress || 'Checking the collateral'} />
       )}
       {verdict && <Steps steps={verdict.steps} demo={demo} />}
-      {verdict?.anchorError && <p className="small muted">The chain could not be anchored: {verdict.anchorError}</p>}
+      {verdict?.anchorError && <p className="small muted">{verdict.anchorThrottled ? `${notYetChecked('The chain')}.` : `The chain could not be anchored: ${verdict.anchorError}`}</p>}
     </div>
   );
 }
@@ -591,7 +592,7 @@ function RawData({ p, sp }: { p: Proposal; sp: Sourced<Proposal> }) {
 /** What the funding row says while there is no ranking to show: its progress, why it failed, or why it may not run at all. */
 function rankingNote(ranking: ProposalTrust['ranking']): string {
   if (ranking?.running) return `${ranking.progress || 'Ranking every active proposal'}…`;
-  if (ranking?.error) return `The funding order couldn't be recounted: ${ranking.error}`;
+  if (ranking?.error) return isThrottled(ranking.error) ? `${notYetChecked('The funding order')}.` : `The funding order couldn't be recounted: ${ranking.error}`;
   return "A proposal that is not passing on the recounted votes and the proven threshold is not funded; one that is passing is ranked against every active proposal, by Core's rules. The ranking leaves out proposals that failed verification, as Core does, and can't include a proposal the governance data service never published.";
 }
 
@@ -658,6 +659,8 @@ export function VerificationDrawer({ sp, trust, cycle, open, onClose }: { sp: So
           </p>
         ) : trust.votes.result ? (
           <VotesResult done={trust.votes.result} fixtures={demo} proven={!demo && byId(a.components, 'votes').state.status === 'proven'} />
+        ) : trust.votes.error && isThrottled(trust.votes.error) ? (
+          <p className="muted small">{notYetChecked('The vote count')}.</p>
         ) : trust.votes.error ? (
           <p className="error small">The votes couldn't be recounted: {trust.votes.error}</p>
         ) : (

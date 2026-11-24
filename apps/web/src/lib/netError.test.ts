@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isNetworkReason, onlyUnreached, unfinishedReason } from './netError.ts';
+import { isNetworkReason, isNotYetChecked, isThrottled, notYetChecked, onlyUnreached, retryWhenThrottled, unfinishedReason, workerErrorText } from './netError.ts';
 
 describe('why a check did not finish, in words', () => {
   it('network and node failures become one plain sentence', () => {
@@ -20,5 +20,50 @@ describe('why a check did not finish, in words', () => {
     expect(onlyUnreached('Mismatch: the signed votes the governance data service served contradict the Platform tally for block 1')).toBe(false);
     expect(onlyUnreached("Couldn't verify the submission fee (every DAPI node asked answered NOT_FOUND)")).toBe(false);
     expect(onlyUnreached(null)).toBe(false);
+  });
+  it('a rate refusal reads as "not yet checked", never as a failure', () => {
+    expect(isThrottled(new Error(workerErrorText('all 4 node attempts failed: HTTP 429', true)))).toBe(true);
+    // only the worker's structured flag counts: the last of several failed attempts may be a 429 after a node whose answer did not
+    // check out, and an error's message ends with a node's own words
+    for (const raw of ['all 3 node attempts failed: HTTP 429', 'gov-bridge HTTP 429', 'all 4 node attempts failed: fetch failed', 'all 2 node attempts failed: rate limited: x']) {
+      expect(isThrottled(raw)).toBe(false);
+      expect(isThrottled(workerErrorText(raw, false))).toBe(false);
+    }
+    expect(isThrottled(workerErrorText('rate limited: a node wrote this', false))).toBe(false);
+    expect(workerErrorText('rate limited: a node wrote this', false)).toBe('node said: rate limited: a node wrote this');
+    const line = notYetChecked('The vote count');
+    expect(line).toMatch(/^The vote count isn't checked in this browser yet/);
+    expect(line).not.toMatch(/fail|error|couldn't/i);
+    expect(isNotYetChecked(line) && onlyUnreached(line) && isNotYetChecked(notYetChecked('The chain', true))).toBe(true);
+    expect(isNotYetChecked("The chain couldn't be checked: proof invalid")).toBe(false);
+  });
+});
+
+describe('trying a throttled check again later', () => {
+  it('waits and retries only while the nodes ask to slow down, then lets the last error stand', async () => {
+    const waits: number[] = [];
+    const sleep = async (ms: number) => void waits.push(ms);
+    let n = 0;
+    await expect(retryWhenThrottled(() => (++n < 3 ? Promise.reject(new Error('rate limited: HTTP 429')) : Promise.resolve(n)), { sleep, delays: [5, 6, 7], onWait: () => {} })).resolves.toBe(3);
+    expect(waits).toEqual([5, 6]);
+
+    n = 0;
+    await expect(retryWhenThrottled(() => (n++, Promise.reject(new Error('rate limited: HTTP 429'))), { sleep, delays: [1] })).rejects.toThrow('HTTP 429');
+    expect(n).toBe(2);
+
+    n = 0;
+    await expect(retryWhenThrottled(() => (n++, Promise.reject(new Error('signature invalid'))), { sleep })).rejects.toThrow('signature invalid');
+    expect(n).toBe(1);
+
+    n = 0;
+    await expect(retryWhenThrottled(() => (n++, Promise.reject(new Error('rate limited: HTTP 429'))), { sleep, live: () => false })).rejects.toThrow('HTTP 429');
+    expect(n).toBe(1);
+
+    // nobody waits any more by the time the wait is over: no new attempt
+    n = 0;
+    let watching = true;
+    const leave = async () => void (watching = false);
+    await expect(retryWhenThrottled(() => (n++, Promise.reject(new Error('rate limited: HTTP 429'))), { sleep: leave, live: () => watching })).rejects.toThrow('HTTP 429');
+    expect(n).toBe(1);
   });
 });

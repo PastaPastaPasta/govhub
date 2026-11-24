@@ -31,10 +31,51 @@ export const isTransientError = (e: unknown): boolean => TRANSIENT_ERROR.test(er
 /** The verification worker's own words for "no node answered": the node list, the pool, a node it could not reach. */
 const UNREACHED = /node list|no usable nodes|all nodes failed|node attempts failed|\bfetch failed\b|no nodes? (?:left|available)|unreachable|\btimeout\b/i;
 const THROTTLED = /(?:HTTP|status)[ :]+429\b|rate.?limit|too many requests/i;
+/** Leads an error's text only when the verification worker flagged it as the nodes refusing for rate (`workerErrorText`). */
+const RATE_LIMITED_MARK = 'rate limited: ';
 
 const NODES = "this browser couldn't reach the Dash network's nodes just now";
 const BRIDGE = "this browser couldn't reach the governance data service just now";
 const SLOW_DOWN = 'the Dash network nodes asked this browser to slow down';
+const BUSY = "isn't checked in this browser yet: the Dash network's nodes are busy";
+
+/**
+ * A worker error as the page keeps it: led by the mark exactly when the worker's structured `throttled` flag is set. Text a node chose
+ * (an error's message ends with the last node's own words) can't pass for the mark: a message that starts with it otherwise is set off.
+ */
+export const workerErrorText = (message: string, throttled: boolean): string =>
+  throttled ? `${RATE_LIMITED_MARK}${message}` : message.startsWith(RATE_LIMITED_MARK) ? `node said: ${message}` : message;
+
+/** The Dash network's nodes refused for rate and nothing else went wrong (the worker flags only those): wait and try again. */
+export const isThrottled = (e: unknown): boolean => errText(e).startsWith(RATE_LIMITED_MARK);
+
+/** A check the nodes' rate limits held up, as a calm sentence about `what` ("The vote count"): still to do, not failed. */
+export const notYetChecked = (what: string, retrying = false): string => `${what} ${BUSY}${retrying ? '; trying again in a moment' : '. The figures shown are as reported; re-check in a few minutes'}`;
+
+/** Whether a check's reason only says the nodes' rate limits held it up (`notYetChecked`). */
+export const isNotYetChecked = (reason: string | null | undefined): boolean => !!reason?.includes(BUSY);
+
+/** Waits before each retry of a check the nodes' rate limits held up (then the last error stands). */
+export const THROTTLE_RETRY_MS: readonly number[] = [20_000, 60_000, 180_000];
+
+/** `start`, run again after each wait in `delays` while it fails only because the nodes asked to slow down (and `live()` holds). */
+export async function retryWhenThrottled<T>(
+  start: () => Promise<T>,
+  o: { delays?: readonly number[]; onWait?: (ms: number) => void; live?: () => boolean; sleep?: (ms: number) => Promise<void> } = {},
+): Promise<T> {
+  const delays = o.delays ?? THROTTLE_RETRY_MS, sleep = o.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  for (let i = 0; ; i++) {
+    try {
+      return await start();
+    } catch (e) {
+      const ms = delays[i];
+      if (ms === undefined || !isThrottled(e) || o.live?.() === false) throw e;
+      o.onWait?.(ms);
+      await sleep(ms);
+      if (o.live?.() === false) throw e;
+    }
+  }
+}
 
 /**
  * Why a check stopped, as the end of a sentence ("The chain couldn't be checked: <this>"). Only failures of the network, a node or
@@ -54,4 +95,4 @@ export const isNetworkReason = (e: unknown): boolean => unfinishedReason(e) !== 
  * Whether a check's reason (as aggregate.ts words it) only says the network didn't answer. Such a result says nothing about the
  * proposal; a mismatch, an absent transaction or a node answer that didn't check out never reads like this.
  */
-export const onlyUnreached = (reason: string | null | undefined): boolean => !!reason && [NODES, BRIDGE, SLOW_DOWN].some((t) => reason.includes(t));
+export const onlyUnreached = (reason: string | null | undefined): boolean => !!reason && [NODES, BRIDGE, SLOW_DOWN, BUSY].some((t) => reason.includes(t));

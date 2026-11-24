@@ -43,7 +43,7 @@ test.describe('fixture mode', () => {
     await expect(page).toHaveURL(url => url.pathname === '/p/OrchardPay' && url.searchParams.get('fixtures') === '1');
     await expect(page.getByRole('heading', { level: 1, name: 'OrchardPay' })).toBeVisible();
     await expect(page.getByTestId('p-votes')).toContainText('197 yes22 no9 abstain');
-    await expect(page.getByTestId('p-voters')).toHaveText('228 masternodes voted; evonodes count 4 times');
+    await expect(page.getByTestId('p-voters')).toHaveText('228 masternodes voted');
 
     // Fixture data is "Demo data", never "Verified", whatever the checks find.
     const badge = page.getByTestId('trust-badge');

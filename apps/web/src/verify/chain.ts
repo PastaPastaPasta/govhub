@@ -115,9 +115,12 @@ export async function threshold(dapi: Dapi, a: AnchoredChain, network: CoreNetwo
     const v = claimedWeight(sml.masternodes);
     return { ...base, status: 'reported', validWeighted: v, value: fundingThreshold(v, network), reason: `${sml.mnCount - sml.masternodes.length} list entries could not be read` };
   }
+  // once one lookup has failed the rest are not needed: they stop instead of calling the nodes for nothing
+  const stop = new AbortController();
   try {
     const info = await dapi.getProRegInfo(legacy, {
       cache,
+      signal: stop.signal,
       onProgress: (done, total) => { if (done === 1 || done % 50 === 0 || done === total) progress(`Proving the type of ${total.toLocaleString('en-US')} older masternode entries from their registrations (${done.toLocaleString('en-US')} done; cached afterwards)`); },
     });
     for (const h of legacy) w += weight(info.get(h)!.type);
@@ -126,6 +129,8 @@ export async function threshold(dapi: Dapi, a: AnchoredChain, network: CoreNetwo
     // fall back to the list's claimed types for the unproven entries, and say so
     const claimed = claimedWeight(sml.masternodes);
     return { ...base, status: 'reported', validWeighted: claimed, value: fundingThreshold(claimed, network), reason: `the type of ${legacy.length} older entries could not be proven (${(e as Error).message}); their weight is as the list states it` };
+  } finally {
+    stop.abort();
   }
 }
 

@@ -70,7 +70,8 @@ export type WorkerResponse =
       sml: SmlUsed | null;
     }
   | { id: number; kind: 'ranking'; result: RankingResult }
-  | { id: number; kind: 'error'; message: string };
+  /** `throttled`: only the nodes refusing for rate (verify/throttle.ts), never an answer that did not check out. */
+  | { id: number; kind: 'error'; message: string; throttled?: true };
 
 export type VotesDone = Extract<WorkerResponse, { kind: 'votes' }>;
 export type ChainDone = Extract<WorkerResponse, { kind: 'chain' }>;

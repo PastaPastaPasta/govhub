@@ -9,12 +9,12 @@ import {
   aggregate, chainComponent, collateralComponent, contentComponent, fundingComponent, needsRanking, provenFunded, provenNetYes, votesComponent, type Aggregate, type ShownTally,
 } from '../../verify/aggregate.ts';
 import { contentFailure } from '../../verify/checks.ts';
-import { runVerification } from '../../verify/client.ts';
 import type { RankingDone, VotesDone } from '../../verify/protocol.ts';
 import { BRIDGE_TARGET, otherSnapshot, PLATFORM_TARGET } from '../../verify/verdict.ts';
 import type { VoteTarget } from '../../verify/votes.ts';
 import { useChainReport, useCollateralCheck, type ChainCheck, type CollateralCheck } from '../hooks.ts';
-import { saveTrust, sharedRanking, trustScope } from './store.ts';
+import { isNotYetChecked, isThrottled, notYetChecked } from '../../lib/netError.ts';
+import { saveTrust, sharedRanking, sharedRecount, trustScope } from './store.ts';
 
 export interface Run<T> {
   result: T | null;
@@ -81,19 +81,26 @@ export function useProposalTrust(p: Proposal, row: Row, talliesLoading: boolean)
   // eslint-disable-next-line react-hooks/exhaustive-deps -- a new identity per run
   const votesRun = useMemo(() => ({}), [p.govHash, source, mode, collateralDone, talliesLoading, targetsKey, nonce, !!bridge]);
   const [votes, setVotes] = useTaggedRun<VotesDone>(votesRun);
+  const recounted = useRef(0);
   useEffect(() => {
     if (!bridge || !collateralDone || talliesLoading || targets.length === 0) return;
     let on = true;
+    const stop = new AbortController();
+    // the same recount from this session is reused; only "Re-check" runs it again
+    const force = recounted.current !== nonce;
+    recounted.current = nonce;
     setVotes(() => started('Recounting the signed votes'));
-    runVerification(
+    sharedRecount(
+      trustScope(source),
       { kind: 'votes', govHash: p.govHash, targets, bridge, dapi: source.dapiDescriptor(), network: source.coreNetwork, now: source.now(), crossCheckSml: mode === 'live' },
-      (m) => on && setVotes((v) => ({ ...v, progress: m })),
+      { force, signal: stop.signal, onProgress: (m) => on && setVotes((v) => ({ ...v, progress: m })) },
     ).then(
       (result) => on && setVotes(() => finished(result)),
       (e: Error) => on && setVotes(() => errored(e.message)),
     );
     return () => {
       on = false;
+      stop.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- votesRun stands for its inputs
   }, [votesRun]);
@@ -115,16 +122,18 @@ export function useProposalTrust(p: Proposal, row: Row, talliesLoading: boolean)
   useEffect(() => {
     if (!wantRanking || !bridge) return;
     let on = true;
+    const stop = new AbortController();
     // only the run right after "Re-check" skips the shared result
     const force = forced.current !== forceRanking;
     forced.current = forceRanking;
     setRanking(() => started('Ranking every active proposal'));
-    sharedRanking(source, activeList, { force, onProgress: (m) => on && setRanking((r) => ({ ...r, progress: m })) }).then(
+    sharedRanking(source, activeList, { force, signal: stop.signal, onProgress: (m) => on && setRanking((r) => ({ ...r, progress: m })) }).then(
       (result) => on && setRanking(() => finished(result)),
       (e: Error) => on && setRanking(() => errored(e.message)),
     );
     return () => {
       on = false;
+      stop.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- rankingRun stands for its inputs
   }, [rankingRun]);
@@ -135,7 +144,9 @@ export function useProposalTrust(p: Proposal, row: Row, talliesLoading: boolean)
     // the chain check waits for the collateral (it anchors the chain): when that could not run, neither can this
     const ch =
       collateral.error && !chain.report
-        ? ({ status: 'error', reason: "The chain wasn't checked: the collateral check couldn't run" } as const)
+        ? isThrottled(collateral.error)
+          ? ({ status: 'reported', reason: notYetChecked('The chain') } as const)
+          : ({ status: 'error', reason: "The chain wasn't checked: the collateral check couldn't run" } as const)
         : chainComponent({ report: chain.report, error: chain.error, unavailable: chain.unavailable, progress: chain.progress });
     const vt = votesComponent({
       shown, live: row.bridgeTally?.value ?? null, tip: chain.report?.anchor.tip ?? null, talliesLoading, bridge: !!bridge, result: votes.result, error: votes.error, progress: votes.progress,
@@ -157,11 +168,12 @@ export function useProposalTrust(p: Proposal, row: Row, talliesLoading: boolean)
     return { agg, funded: agg.level === 'verified' ? provenFunded({ funding: fund, govHash: p.govHash, netYes, report: chain.report, ranking: ranking.result }) : null };
   }, [p, collateral, chain, shown, row.bridgeTally, talliesLoading, bridge, votes, nowS, netYes, wantRanking, ranking, mode]);
 
-  // the last full result, for the list cards
+  // the last full result, for the list cards (not one the nodes' rate limits held up: it is retried, and says nothing about the proposal)
   useEffect(() => {
     if (agg.level === 'checking' || agg.level === 'demo') return;
+    if (agg.level !== 'failed' && agg.components.some((c) => 'reason' in c.state && isNotYetChecked(c.state.reason))) return;
     saveTrust(trustScope(source), p, { level: agg.level, reason: agg.reason, tallyHeight: shown?.tally.asOfHeight ?? null, voteSetHash: shown?.tally.voteSetHash ?? null, funded, at: Date.now() });
-  }, [agg.level, agg.reason, source, p, shown, funded]);
+  }, [agg.level, agg.reason, agg.components, source, p, shown, funded]);
 
   // When the bridge served another vote set than a tally's, recounting the same tally again rarely helps: read the tallies again too.
   const snapshotMoved = !!votes.result?.runs.some((run) => run.result.targets.some((t) => otherSnapshot(run, t)));

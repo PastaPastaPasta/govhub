@@ -366,7 +366,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
             {active && !lameDuck && !later && untilDeadline !== null && untilDeadline > 0 && <p className="p-closes">Voting closes in {formatDuration(untilDeadline)}<a href="#vote" className="p-closes-vote dh-link">Go to the vote ↓</a></p>}
             {!lameDuck && threshold && row.absYes !== null && (
               <p className="p-net">
-                <b>{formatInt(row.absYes)}</b> net yes of <b>{formatInt(threshold.value)}</b> needed <span className="muted">({chain ? `masternode list at block ${formatInt(chain.threshold.height)}` : 'feed estimate'})</span>
+                <b>{formatInt(row.absYes)}</b> net yes of <b>{formatInt(threshold.value)}</b> needed <span className="muted">({chain ? `masternode list at block ${formatInt(chain.threshold.height)}` : <span title="Estimated from the governance data service until this browser reads the masternode list">estimated</span>})</span>
               </p>
             )}
             {trust.aggregate.level !== 'verified' && trust.aggregate.level !== 'failed' && trust.aggregate.level !== 'error' && (
@@ -400,8 +400,8 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
               <span>
                 <b>{formatInt(t.abstainWeighted)}</b> abstain
               </span>
-              <span className="muted small" data-testid="p-voters" title={`${formatInt(t.yesCount)} yes, ${formatInt(t.noCount)} no, ${formatInt(t.abstainCount)} abstain; counted at block ${formatInt(t.asOfHeight)}`}>
-                {formatInt(t.yesCount + t.noCount + t.abstainCount)} masternodes voted; evonodes count 4 times
+              <span className="muted small" data-testid="p-voters" title={`${formatInt(t.yesCount)} yes, ${formatInt(t.noCount)} no, ${formatInt(t.abstainCount)} abstain; counted at block ${formatInt(t.asOfHeight)}. An evonode's vote counts 4 times.`}>
+                {formatInt(t.yesCount + t.noCount + t.abstainCount)} masternodes voted
               </span>
               {lameDuck && <span className="small muted">These votes no longer affect payment.</span>}
             </p>
@@ -467,7 +467,7 @@ export function ProposalView({ sp }: { sp: Sourced<Proposal> }) {
               </div>
               {host && (
                 <div>
-                  <dt>Website</dt>
+                  <dt>Proposal link</dt>
                   <dd>
                     <a href={p.url} target="_blank" rel="noopener noreferrer nofollow ugc" className="ext dh-link">
                       {host}

@@ -1,7 +1,14 @@
 // Page-side wrapper around the verification worker: one shared worker, promise per request.
+import { workerErrorText } from '../lib/netError.ts';
 import type { WorkerRequest, WorkerResponse } from './protocol.ts';
 
 type Pending = { resolve: (r: WorkerResponse) => void; reject: (e: Error) => void; onProgress?: (m: string) => void };
+
+/**
+ * This build of the page-side verification code (its chunk's URL, hashed in production; the chunk names the worker's hashed file, so
+ * it changes with the worker too). Results kept across reloads are tied to it: a new build recounts.
+ */
+export const VERIFIER_BUILD = import.meta.url;
 
 let worker: Worker | null = null;
 let nextId = 1;
@@ -16,7 +23,7 @@ function getWorker(): Worker {
     if (!p) return;
     if (m.kind === 'progress') return p.onProgress?.(m.message);
     pending.delete(m.id);
-    if (m.kind === 'error') p.reject(new Error(m.message));
+    if (m.kind === 'error') p.reject(new Error(workerErrorText(m.message, !!m.throttled)));
     else p.resolve(m);
   };
   worker.onerror = (ev) => {

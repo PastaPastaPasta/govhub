@@ -17,6 +17,7 @@ import type { RankingDone, VotesDone } from './protocol.ts';
 import type { RankingResult } from './ranking.ts';
 import { BRIDGE_TARGET, PLATFORM_TARGET } from './verdict.ts';
 import { verifyVotes, type VoteCheckResult } from './votes.ts';
+import { notYetChecked } from '../lib/netError.ts';
 
 // ---- exhaustive aggregation ----------------------------------------------------------------------------------------------------
 
@@ -111,13 +112,20 @@ const anchoredTx = (tx: TxLookup, o: { final?: boolean; weak?: string | null; tr
 };
 
 describe('collateral: only an anchored, final, height-matching collateral is proven', () => {
-  const comp = (p: Proposal, tx: TxLookup | { error: string; notFound?: boolean }, network: 'mainnet' | 'testnet' = 'mainnet', publishedHeight = p.collateralHeight) =>
+  const comp = (p: Proposal, tx: TxLookup | { error: string; notFound?: boolean; throttled?: true }, network: 'mainnet' | 'testnet' = 'mainnet', publishedHeight = p.collateralHeight) =>
     collateralComponent({ verdict: verifyCollateral(p, tx, network), error: null, publishedHeight });
 
   it('anchored on mainnet proof of work, final, same height: proven', async () => {
     const p = byName('OrchardPay');
     const tx = await recorded(p.collateralTxid);
     expect(comp(p, anchoredTx(tx)).status).toBe('proven');
+  });
+
+  it('a lookup the worker flagged as only refused for rate is "not yet checked"; the same text without the flag is an error', () => {
+    const p = byName('OrchardPay');
+    expect(comp(p, { error: 'all 4 node attempts failed: HTTP 429', throttled: true })).toMatchObject({ status: 'reported', reason: expect.stringMatching(/^The submission fee isn't checked in this browser yet/) });
+    expect(comp(p, { error: 'all 2 node attempts failed: rate limited: x' }).status).toBe('error');
+    expect(comp(p, { error: 'every node said NOT_FOUND', notFound: true, throttled: true }).status).toBe('error');
   });
 
   it('anchored on testnet quorum-proven ChainLocks: proven', async () => {
@@ -267,6 +275,10 @@ describe('chain', () => {
     expect(chainComponent({ report: null, error: null, unavailable: 'needs live DAPI nodes' }).status).toBe('reported');
     expect(chainComponent({ report: null, error: 'all nodes failed', unavailable: null }).status).toBe('error');
     expect(chainComponent({ report: null, error: null, unavailable: null }).status).toBe('pending');
+    const held = chainComponent({ report: null, error: 'rate limited: all 4 node attempts failed: HTTP 429', unavailable: null });
+    expect(held).toMatchObject({ status: 'reported', reason: expect.stringMatching(/^The chain isn't checked in this browser yet/) });
+    expect(chainComponent({ report: null, error: 'all 2 node attempts failed: rate limited: x', unavailable: null }).status).toBe('error');
+    expect(chainComponent({ report: null, error: null, unavailable: notYetChecked('The chain') })).toEqual({ status: 'reported', reason: notYetChecked('The chain') });
   });
 });
 
@@ -304,6 +316,13 @@ describe('votes', () => {
     expect(c.status === 'reported' && c.reason).toContain('governance data service lists');
     expect(comp(done(verifyVotes({ ...base, proReg: null }))).status).toBe('reported');
     expect(provenNetYes(done(verifyVotes({ ...base, sml: null })), { name: PLATFORM_TARGET, tally })).toBeNull();
+  });
+
+  it('nodes asking to slow down hold the recount up: reported as not yet checked, never an error and never proven', () => {
+    const c = comp(null, PLATFORM_TARGET, { error: 'rate limited: all 4 node attempts failed: HTTP 429' });
+    expect(c).toMatchObject({ status: 'reported', reason: expect.stringMatching(/^The vote count isn't checked in this browser yet/) });
+    expect(aggregate(REQUIRED.map((id) => ({ id, state: id === 'votes' ? c : ({ status: 'proven', summary: 'ok' } as const) }))).level).toBe('partial');
+    expect(comp(null, PLATFORM_TARGET, { error: 'all 4 node attempts failed: fetch failed' }).status).toBe('error');
   });
 
   it('testnet list protected only by proof of work: partly verified even with every key matching', () => {

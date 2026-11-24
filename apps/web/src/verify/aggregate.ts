@@ -8,7 +8,7 @@ import { ABSENT, verdictFailure, type CollateralVerdict, type Step } from './col
 import type { RankingDone, VotesDone } from './protocol.ts';
 import { contradicts, isTally, otherSnapshot, PLATFORM_TARGET } from './verdict.ts';
 import { excludedText } from './votes.ts';
-import { unfinishedReason } from '../lib/netError.ts';
+import { isNotYetChecked, isThrottled, notYetChecked, unfinishedReason } from '../lib/netError.ts';
 
 export type CheckId = 'content' | 'collateral' | 'chain' | 'votes' | 'funding';
 export const REQUIRED: readonly CheckId[] = ['content', 'collateral', 'chain', 'votes', 'funding'];
@@ -62,6 +62,9 @@ export const LEVEL_LABEL: Record<TrustLevel, string> = {
 export const VERIFIED_LINE = 'Content, collateral, votes and funding checked in your browser';
 export const DEMO_LINE = 'Sample data recorded from mainnet. Nothing here is live';
 
+/** A check the nodes' rate limits held up: not done yet, which says nothing about the proposal (never an error, never proven). */
+const held = (what: string): ComponentState => ({ status: 'reported', reason: notYetChecked(what) });
+
 const reasonOf = (s: ComponentState): string | null => ('reason' in s ? s.reason : null);
 const first = (cs: readonly Component[], status: ComponentState['status']) => cs.find((c) => c.state.status === status);
 
@@ -103,7 +106,7 @@ const COLLATERAL_STEPS: readonly Step['id'][] = ['hash', 'fields', 'tx', 'block'
 const CHAIN_STEPS: readonly Step['id'][] = ['block', 'confirmations', 'chainlock', 'height'];
 
 export function collateralComponent(i: { verdict: CollateralVerdict | null; error: string | null; progress?: string; publishedHeight: number }): ComponentState {
-  if (i.error) return { status: 'error', reason: `The submission fee couldn't be checked: ${unfinishedReason(i.error)}` };
+  if (i.error) return isThrottled(i.error) ? held('The submission fee') : { status: 'error', reason: `The submission fee couldn't be checked: ${unfinishedReason(i.error)}` };
   const v = i.verdict;
   if (!v) return { status: 'pending', note: i.progress || 'Checking the collateral' };
   // A published height the verified chain contradicts is a fact about the published data; an unproven one is one node's word.
@@ -114,6 +117,7 @@ export function collateralComponent(i: { verdict: CollateralVerdict | null; erro
   // the reason names what happened: an unreachable network, a node whose answer did not check out, a height only a node contradicts
   if (v.absent) return { status: 'error', reason: `Couldn't verify the submission fee (${ABSENT}; nodes can't prove a transaction doesn't exist)` };
   if (v.inconclusive) {
+    if (v.throttled) return held('The submission fee');
     const tx = v.steps.find((s) => s.id === 'tx' && s.status === 'fail');
     return { status: 'error', reason: tx ? `The submission fee couldn't be fetched: ${unfinishedReason(tx.detail)}` : "The submission fee couldn't be fetched and checked" };
   }
@@ -148,8 +152,8 @@ export function collateralComponent(i: { verdict: CollateralVerdict | null; erro
 // ---- 3. chain -----------------------------------------------------------------------------------------------------------------
 
 export function chainComponent(i: { report: ChainReport | null; error: string | null; unavailable: string | null; progress?: string }): ComponentState {
-  if (i.error) return { status: 'error', reason: `The chain couldn't be checked: ${unfinishedReason(i.error)}` };
-  if (i.unavailable) return { status: 'reported', reason: `Not checked: ${i.unavailable}` };
+  if (i.error) return isThrottled(i.error) ? held('The chain') : { status: 'error', reason: `The chain couldn't be checked: ${unfinishedReason(i.error)}` };
+  if (i.unavailable) return { status: 'reported', reason: isNotYetChecked(i.unavailable) ? i.unavailable : `Not checked: ${i.unavailable}` };
   const r = i.report;
   if (!r) return { status: 'pending', note: i.progress || 'Verifying the chain' };
   if (r.anchor.weak) return { status: 'reported', reason: 'Testnet: the chain is only protected by proof of work, which is too weak there' };
@@ -185,7 +189,7 @@ export function votesComponent(i: {
 }): ComponentState {
   if (!i.shown) return i.talliesLoading ? { status: 'pending', note: 'Reading the vote tally' } : { status: 'reported', reason: 'No vote tally has been published for this proposal yet' };
   if (!i.bridge) return { status: 'reported', reason: 'Votes not recounted: no data service is configured to fetch the signed votes' };
-  if (i.error) return { status: 'error', reason: `The votes couldn't be recounted: ${unfinishedReason(i.error)}` };
+  if (i.error) return isThrottled(i.error) ? held('The vote count') : { status: 'error', reason: `The votes couldn't be recounted: ${unfinishedReason(i.error)}` };
   const d = i.result;
   if (!d) return { status: 'pending', note: i.progress || 'Recounting the signed votes' };
   const pairs = d.runs.flatMap((run) => run.result.targets.map((t) => ({ run, t })));
@@ -266,7 +270,7 @@ export function fundingComponent(i: {
   if (up.some((s) => s.status !== 'proven') || !i.report) return { status: 'reported', reason: 'Not fully checked: it depends on the checks above' };
   if (i.payments?.pending) return { status: 'pending', note: i.payments.progress || "Reading this proposal's superblock payments" };
   const p = i.report.payments;
-  if (i.payments?.error) return { status: 'reported', reason: `The proposal's payments couldn't be read: ${unfinishedReason(i.payments.error)}` };
+  if (i.payments?.error) return isThrottled(i.payments.error) ? held("The proposal's payment history") : { status: 'reported', reason: `The proposal's payments couldn't be read: ${unfinishedReason(i.payments.error)}` };
   if (p?.anchor?.weak) return { status: 'reported', reason: "Testnet: the proposal's payments were read from a chain only proof of work protects" };
   if (p?.skipped) return { status: 'reported', reason: `The proposal's payment history isn't fully read yet: ${p.skipped.toLocaleString('en-US')} superblocks of its window are left for the next visit` };
   if (p && (p.unread.length || p.ambiguous.length || p.othersComplete === false)) return { status: 'reported', reason: "The proposal's payment history couldn't be fully proven" };
@@ -280,7 +284,7 @@ export function fundingComponent(i: {
   if (i.netYes < threshold) return { status: 'proven', summary: `Not passing: ${(threshold - i.netYes).toLocaleString('en-US')} more net yes votes needed` };
   const rk = i.ranking;
   if (!rk) return { status: 'pending', note: 'Ranking every active proposal' };
-  if (rk.error) return { status: 'error', reason: `The funding order couldn't be recounted: ${unfinishedReason(rk.error)}` };
+  if (rk.error) return isThrottled(rk.error) ? held('The funding order') : { status: 'error', reason: `The funding order couldn't be recounted: ${unfinishedReason(rk.error)}` };
   if (!rk.result) return { status: 'pending', note: rk.progress || 'Ranking every active proposal' };
   const r = rk.result.result;
   const e = r.entries.find((x) => x.govHash === i.proposal.govHash);
