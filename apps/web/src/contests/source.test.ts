@@ -59,6 +59,21 @@ describe('liveContests', () => {
     expect((await liveContests(r).open()).map((c) => c.label)).toEqual(['late']);
   });
 
+  it('reads a voter\'s abstain or lock from its votes, each with its vote count', async () => {
+    const voter = 'Voter1111111111111111111111111111111111111';
+    const vote = (label: string, $type: string) => ({ voteCount: 1, resourceVote: { toJSON: () => ({ votePoll: { contractId: DPNS_CONTRACT_ID, indexValues: ['dash', label] }, resourceVoteChoice: { $type } }) } });
+    fake.sdk = {
+      version: () => 15,
+      contracts: { fetch: async () => undefined },
+      voting: {
+        contestedResourceVoteStateWithProof: async () => ({ data: { contenders: [], abstainVoteTally: 1, lockVoteTally: 1 }, metadata: {} }),
+        contestedResourceIdentityVotesWithProof: async () => ({ data: new Map([['a', vote('other', 'abstain')], ['b', vote('mine', 'lock')]]), metadata: {} }),
+      },
+    };
+    const r = { ...registry, platform: { trusted: true, addresses: [`t${Math.random()}`] } } as Registry;
+    expect((await liveContests(r).votesOf('mine', [voter])).get(voter)).toEqual({ kind: 'lock' });
+  });
+
   it('pages names from the last entry Platform returned', async () => {
     const labels = Array.from({ length: NAMES_PAGE }, (_, i) => `a${String(i).padStart(3, '0')}`);
     const contestedResourcesWithProof = vi.fn(async () => ({ data: [...labels.slice(0, -1), 42], metadata: {} }));

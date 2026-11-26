@@ -252,7 +252,7 @@ export function liveContests(r: Registry): ContestSource {
         let last: string | undefined;
         for (const [k, rv] of res.data) {
           last = k;
-          const j = (rv as { toJSON(): unknown }).toJSON() as { votePoll?: { contractId?: string; indexValues?: unknown[] }; resourceVoteChoice?: unknown };
+          const j = rv.resourceVote.toJSON() as { votePoll?: { contractId?: string; indexValues?: unknown[] }; resourceVoteChoice?: unknown };
           if (j.votePoll?.contractId === DPNS_CONTRACT_ID && j.votePoll.indexValues?.[1] === label) {
             out.set(v, choiceFromJson(j.resourceVoteChoice));
             return;
