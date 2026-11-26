@@ -18,7 +18,7 @@
     "e2e:vote": "GOVHUB_LIVE_VOTE=1 playwright test --grep @live-vote"
   },
   "dependencies": {
-    "@dashevo/evo-sdk": "5.0.0-rc.8",
+    "@dashevo/evo-sdk": "5.1.0-rc.2",
     "@fontsource-variable/archivo": "^5.2.6",
     "@govhub/auth": "*",
     "@govhub/badge": "*",
