@@ -1,7 +1,8 @@
 // What creating a masternode poll writes: the documents' data, checked against the contract's rules first (Platform would refuse them
 // and still charge its fees). Pure; the pages sign them with the session's key (session.signAndBroadcastDocument, `fund`).
 import { base58 } from '@scure/base';
-import { CHOICE_FUND_DUFFS, DECISIONS_CONTRACT_ID, DESCRIPTION_MAX, DURATION_MS, MULTIPLE_CHOICE_FEE_DUFFS, PASS_PERCENT, TITLE_MAX, TURNOUT_PERCENT, URL_MAX, YES_NO_FUND_DUFFS } from './model.ts';
+import { CREDITS_PER_DUFF } from '../lib/format.ts';
+import { CHOICE_FUND_DUFFS, DECISIONS_CONTRACT_ID, DESCRIPTION_MAX, DURATION_MS, MULTIPLE_CHOICE_FEE_DUFFS, PASS_PERCENT, TITLE_MAX, TURNOUT_PERCENT, URL_MAX } from './model.ts';
 
 type DocValue = Uint8Array | number | string | boolean;
 export interface CreateOp {
@@ -147,6 +148,11 @@ export function choiceOp(proposalId: string, c: ChoiceDraft): CreateOp {
   return { action: 'create', contractId: DECISIONS_CONTRACT_ID, type: 'choice', data: { proposalId: base58.decode(proposalId), title: oneLine(c.title), ...(description ? { description } : {}) }, fund: true };
 }
 
-/** What creating costs, besides Platform's processing fees (a small fraction of a DASH), in duffs. */
-export const yesNoCost = (): number => YES_NO_FUND_DUFFS;
+/** What creating a multiple choice poll costs, besides Platform's processing fees (a small fraction of a DASH), in duffs. */
 export const choicePollCost = (choices: number): number => MULTIPLE_CHOICE_FEE_DUFFS + choices * CHOICE_FUND_DUFFS;
+
+/** Kept free above a create's fund for Platform's fees and the up-front check (about a hundredth of a DASH). */
+const FEE_MARGIN_CREDITS = 1_000_000_000n;
+
+/** Credits a create costing `duffs` (fund and fee) needs available. */
+export const needCredits = (duffs: number): bigint => BigInt(duffs) * BigInt(CREDITS_PER_DUFF) + FEE_MARGIN_CREDITS;

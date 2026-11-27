@@ -14,7 +14,7 @@ import type { CoreNetwork } from '../data/types.ts';
 import { openVotePolls, TtlCache } from '../contests/source.ts';
 import { resourceChoice, signMasternodeVote, type Choice, type VoteToSign } from '../contests/vote.ts';
 import { FIXTURE_POLLS, FIXTURE_TOTAL_POWER, type FixturePoll } from './fixtures.ts';
-import { DECISIONS_CONTRACT_ID, totalVotingPower, type ChoicePoll, type ChoiceState, type Poll, type PollChoice, type PollKind, type YesNoPoll, type YesNoState } from './model.ts';
+import { DECISIONS_CONTRACT_ID, requiredPower, totalVotingPower, type ChoicePoll, type ChoiceState, type Poll, type PollChoice, type PollKind, type YesNoPoll, type YesNoState } from './model.ts';
 
 type EvoModule = typeof import('@dashevo/evo-sdk');
 
@@ -148,10 +148,8 @@ export function toYesNoState(raw: RawYesNoState): YesNoState {
   return { status: 'open', tally: { yes: num(raw.yesVotingPower) ?? 0, no: num(raw.noVotingPower) ?? 0, abstain: num(raw.abstainVotingPower) ?? 0 }, result: null };
 }
 
-const sortChoices = (c: PollChoice[]) => c.sort((a, b) => b.votes - a.votes || a.id.localeCompare(b.id));
-
 function finishChoiceState(choices: PollChoice[], abstain: number, none: number, result: ChoiceState['result']): ChoiceState {
-  sortChoices(choices);
+  choices.sort((a, b) => b.votes - a.votes || a.id.localeCompare(b.id));
   return { choices, abstain, none, total: choices.reduce((s, c) => s + c.votes, 0) + abstain + none, result };
 }
 
@@ -168,7 +166,7 @@ function multipleChoice(v: unknown): Choice | null {
 }
 
 /** The SDK's own vote for a yes/no poll, named by its poll id. */
-export function yesNoVote(mod: EvoModule, pollId: string, c: Choice): InstanceType<EvoModule['Vote']> {
+function yesNoVote(mod: EvoModule, pollId: string, c: Choice): InstanceType<EvoModule['Vote']> {
   if (c.kind !== 'yes' && c.kind !== 'no' && c.kind !== 'abstain') throw new Error('A yes/no poll takes yes, no or abstain.');
   return mod.Vote.fromJSON({ $type: 'yesNoVote', $formatVersion: '0', votePollId: pollId, voteChoice: c.kind });
 }
@@ -388,7 +386,7 @@ export function fixtureDecisions(): DecisionSource {
       const f = x.f;
       return f.endsInMs > 0
         ? { status: 'open', tally: f.tally, result: null }
-        : { status: 'finished', tally: f.tally, result: { passed: f.passed ?? false, required: Math.ceil((FIXTURE_TOTAL_POWER * f.minimumTurnoutPercent) / 100), at: x.now + f.endsInMs } };
+        : { status: 'finished', tally: f.tally, result: { passed: f.passed ?? false, required: requiredPower(FIXTURE_TOTAL_POWER, f.minimumTurnoutPercent), at: x.now + f.endsInMs } };
     },
     async choiceState(id) {
       const x = await find(id);

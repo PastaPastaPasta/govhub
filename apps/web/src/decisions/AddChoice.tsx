@@ -6,15 +6,8 @@ import { useForum } from '../app/forum.tsx';
 import { errText, formatCredits, formatDash } from '../lib/format.ts';
 import { TopUpError } from '../voting/funds.ts';
 import { WriteError } from '../ui/WriteError.tsx';
-import { choiceOp, textProblem, titleProblem } from './create.ts';
+import { choiceOp, needCredits, textProblem, titleProblem } from './create.ts';
 import { CHOICE_FUND_DUFFS, type ChoicePoll } from './model.ts';
-import { CREDITS_PER_DUFF } from '../lib/format.ts';
-
-/** Kept free above a create's fund for Platform's fees and the up-front check (about a hundredth of a DASH). */
-export const FEE_MARGIN_CREDITS = 1_000_000_000n;
-
-/** Credits a create costing `duffs` (fund and fee) needs available. */
-export const needCredits = (duffs: number): bigint => BigInt(duffs) * BigInt(CREDITS_PER_DUFF) + FEE_MARGIN_CREDITS;
 
 export function AddChoice({ poll, onAdded }: { poll: ChoicePoll; onAdded(): void }) {
   const { mode } = useApp();

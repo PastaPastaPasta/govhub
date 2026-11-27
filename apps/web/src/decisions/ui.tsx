@@ -53,14 +53,14 @@ const closesIn = (endsAt: number, nowMs: number): { text: string; tone: Tone } =
 };
 
 /** Short status of a yes/no poll for a card or the page: "Closes in 3 days", "Passed", "Did not pass". */
-export function yesNoTag(poll: YesNoPoll, state: YesNoState | null, nowMs: number): { text: string; tone: Tone } {
+function yesNoTag(poll: YesNoPoll, state: YesNoState | null, nowMs: number): { text: string; tone: Tone } {
   const phase = yesNoPhase(poll, state, nowMs);
   if (phase === 'ended') return state?.result?.passed ? { text: 'Passed', tone: 'pass' } : { text: 'Did not pass', tone: 'fail' };
   if (phase === 'closing') return { text: 'Voting closed', tone: 'done' };
   return closesIn(poll.endDate, nowMs);
 }
 
-export function choiceTag(state: ChoiceState | null, endsAt: number | null, nowMs: number): { text: string; tone: Tone } {
+function choiceTag(state: ChoiceState | null, endsAt: number | null, nowMs: number): { text: string; tone: Tone } {
   const phase = choicePhase(state, endsAt, nowMs);
   if (phase === 'ended') return state?.result?.keptId ? { text: 'Decided', tone: 'pass' } : { text: 'No choice kept', tone: 'fail' };
   if (phase === 'nochoices') return { text: 'No choices yet', tone: 'done' };
@@ -83,7 +83,7 @@ export function outlook(poll: YesNoPoll, o: YesNoOutlook, ended: boolean): { lab
 }
 
 /** The same in one line, for a card. */
-export function outlookText(poll: YesNoPoll, o: YesNoOutlook, ended: boolean): string {
+function outlookText(poll: YesNoPoll, o: YesNoOutlook, ended: boolean): string {
   const x = outlook(poll, o, ended);
   return `${x.label}: ${x.why}`;
 }

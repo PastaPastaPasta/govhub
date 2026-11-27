@@ -6,9 +6,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { useAuth } from '../auth/context.tsx';
-import { needCredits } from '../decisions/AddChoice.tsx';
-import { choiceOp, choicePollCost, choicePollOp, choicePollProblems, endDateFor, hasProblems, MAX_CHOICES, yesNoCost, yesNoOp, yesNoProblems, type ChoiceDraft, type ChoicePollDraft, type YesNoDraft } from '../decisions/create.ts';
-import { CHOICE_FUND_DUFFS, MULTIPLE_CHOICE_FEE_DUFFS, PASS_PERCENT, pollHref, TURNOUT_PERCENT, YES_NO_FUND_DUFFS } from '../decisions/model.ts';
+import { choiceOp, choicePollCost, choicePollOp, choicePollProblems, endDateFor, hasProblems, MAX_CHOICES, needCredits, yesNoOp, yesNoProblems, type ChoiceDraft, type ChoicePollDraft, type YesNoDraft } from '../decisions/create.ts';
+import { CHOICE_FUND_DUFFS, MULTIPLE_CHOICE_FEE_DUFFS, PASS_PERCENT, pollHref, TURNOUT_PERCENT, YES_NO_FUND_DUFFS, type PollKind } from '../decisions/model.ts';
 import { PollsNotYet } from '../decisions/ui.tsx';
 import { useDecisionSource, usePollsAvailable } from '../decisions/useDecisions.ts';
 import { errText, formatCredits, formatDash, formatDateTime } from '../lib/format.ts';
@@ -18,7 +17,6 @@ import { WriteError } from '../ui/WriteError.tsx';
 import { TopUpError } from '../voting/funds.ts';
 import '../decisions/decisions.css';
 
-type Kind = 'yn' | 'mc';
 const EMPTY_CHOICE: ChoiceDraft = { title: '', description: '' };
 
 export function NewPollPage() {
@@ -60,7 +58,7 @@ function PollForm() {
   const { mode } = useApp();
   const { write, balance } = useForum();
   const navigate = useNavigate();
-  const [kind, setKind] = useState<Kind>('yn');
+  const [kind, setKind] = useState<PollKind>('yn');
   const [yn, setYn] = useState<YesNoDraft>({ title: '', description: '', url: '', passPercent: 60, minimumTurnoutPercent: 10, days: 14 });
   const [mc, setMc] = useState<ChoicePollDraft>({ title: '', url: '', open: true, choices: [{ ...EMPTY_CHOICE }, { ...EMPTY_CHOICE }] });
   const [touched, setTouched] = useState(false);
@@ -73,7 +71,7 @@ function PollForm() {
   const ynProblems = yesNoProblems(yn);
   const mcProblems = choicePollProblems(mc);
   const filled = mc.choices.filter((c) => c.title.trim());
-  const cost = kind === 'yn' ? yesNoCost() : choicePollCost(filled.length);
+  const cost = kind === 'yn' ? YES_NO_FUND_DUFFS : choicePollCost(filled.length);
   const need = needCredits(cost);
   const short = balance !== null && balance < need;
   const invalid = kind === 'yn' ? Object.keys(ynProblems).length > 0 : hasProblems(mcProblems);

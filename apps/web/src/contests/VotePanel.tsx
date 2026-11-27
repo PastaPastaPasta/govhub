@@ -62,7 +62,11 @@ export interface VoteTarget {
   prepare(): Promise<(mod: EvoModule, v: VoteToSign & { choice: Choice }) => Uint8Array>;
 }
 
-const answerText = (c: Choice | null | undefined, text: (c: Choice) => string): string => (c === undefined ? 'unknown' : c ? text(c) : 'No vote');
+function answerText(c: Choice | null | undefined, text: (c: Choice) => string): string {
+  if (c === undefined) return 'unknown';
+  if (!c) return 'No vote';
+  return text(c);
+}
 
 function heldLine(v: HeldVote, now: number): { badge: string; tone: Tone } {
   if (v.status === 'sent') return { badge: v.note ?? 'Sent', tone: 'ok' };
@@ -96,7 +100,18 @@ export function ContestVotePanel({ label, state, endsAt, nameOf }: { label: stri
         { c: { kind: 'abstain' }, text: 'Abstain', sub: 'Counted, but for nobody' },
         { c: { kind: 'lock' }, text: 'Lock', sub: 'Nobody gets the name' },
       ],
-      choiceText: (c) => (c.kind === 'abstain' ? 'Abstain' : c.kind === 'lock' ? 'Lock' : c.kind === 'contender' ? nameOf(c.identityId) : c.kind),
+      choiceText(c) {
+        switch (c.kind) {
+          case 'contender':
+            return nameOf(c.identityId);
+          case 'abstain':
+            return 'Abstain';
+          case 'lock':
+            return 'Lock';
+          default:
+            return c.kind;
+        }
+      },
       prompt: 'Choose who gets the name, abstain or lock.',
       rules: `Each masternode can change its vote on a name up to ${VOTE_CHANGES} times; its last vote counts. Its vote is public on Platform.`,
       current,
@@ -207,16 +222,9 @@ function Composer({ target, signer }: { target: VoteTarget; signer: Signer }) {
   }, [usable, signer.keyInfos]);
   const voterKey = [...voterOf].map(([pro, voter]) => `${pro}:${voter}`).join(',');
   // a vote that went out from here re-reads them (the sender dropped the cached state)
-  const readCurrent = target.current;
   const current = useAsync(
-    () =>
-      voterKey
-        ? readCurrent(voterKey.split(',').map((x) => {
-            const [proTxHash = '', voterId = ''] = x.split(':');
-            return { proTxHash, voterId };
-          }))
-        : Promise.resolve(new Map<string, Choice | null>()),
-    [readCurrent, voterKey, sentCount],
+    () => (voterOf.size ? target.current([...voterOf].map(([proTxHash, voterId]) => ({ proTxHash, voterId }))) : Promise.resolve(new Map<string, Choice | null>())),
+    [target.current, voterKey, sentCount],
   );
 
   const [choice, setChoice] = useState<Choice | null>(null);
@@ -323,7 +331,6 @@ function Composer({ target, signer }: { target: VoteTarget; signer: Signer }) {
     else s.delete(m.proTxHash);
     setSelected(s);
   };
-  const options = target.options;
   const n = toSend.length;
   const buttonText = busy ? 'Signing…' : [mode === 'spread' ? 'Schedule' : 'Sign and send', n || null, n === 1 ? 'vote' : 'votes'].filter(Boolean).join(' ');
 
@@ -331,7 +338,7 @@ function Composer({ target, signer }: { target: VoteTarget; signer: Signer }) {
     <>
       <fieldset className="cvote-choices" data-testid="contest-choice">
         <legend className="visually-hidden">Your vote</legend>
-        {options.map((o) => (
+        {target.options.map((o) => (
           <label key={choiceKey(o.c)} className={`cvote-opt${choice && sameChoice(choice, o.c) ? ' on' : ''}`}>
             <input type="radio" name={`cvote-${label}`} checked={!!choice && sameChoice(choice, o.c)} onChange={() => setChoice(o.c)} />
             <span>

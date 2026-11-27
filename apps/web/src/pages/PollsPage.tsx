@@ -38,7 +38,7 @@ const SHOWS: ReadonlyArray<{ id: Show; label: string }> = [
 ];
 
 /** States of these polls, read a few at a time in the given order. A failed read is 'error'; null: Platform has none. */
-export function usePollStates(src: DecisionSource, polls: readonly Poll[]): ReadonlyMap<string, PollStateEntry> {
+function usePollStates(src: DecisionSource, polls: readonly Poll[]): ReadonlyMap<string, PollStateEntry> {
   const [data, setData] = useState<{ src: DecisionSource; states: ReadonlyMap<string, PollStateEntry> }>(() => ({ src, states: new Map() }));
   if (data.src !== src) setData({ src, states: new Map() });
   const runner = useRef<{ src: DecisionSource; asked: Set<string>; queue: Poll[]; running: number } | null>(null);
@@ -269,7 +269,8 @@ function EndedList({ src, nowMs, totalPower }: { src: DecisionSource; nowMs: num
   };
   const unread = (k: PollKind) => streams[k].next !== null;
   // the newest poll a stream with pages left could still hold is no newer than its last one read
-  const frontier = Math.max(...(['yn', 'mc'] as const).filter(unread).map((k) => (streams[k].next === undefined ? Infinity : (streams[k].items.at(-1)?.createdAt ?? Infinity))), -Infinity);
+  const reach = (k: PollKind) => (streams[k].next === undefined ? Infinity : (streams[k].items.at(-1)?.createdAt ?? Infinity));
+  const frontier = Math.max(...(['yn', 'mc'] as const).filter(unread).map(reach), -Infinity);
   const ends = openChoices.data ?? NO_ENDS;
   const polls = useMemo(
     () =>
@@ -287,7 +288,7 @@ function EndedList({ src, nowMs, totalPower }: { src: DecisionSource; nowMs: num
   const [target, setTarget] = useState(STEP);
   useEffect(() => {
     if (loading || error || exhausted || polls.length >= target) return;
-    for (const k of ['yn', 'mc'] as const) if (unread(k) && (streams[k].next === undefined || (streams[k].items.at(-1)?.createdAt ?? Infinity) >= frontier)) load(k, streams[k].next ?? undefined);
+    for (const k of ['yn', 'mc'] as const) if (unread(k) && reach(k) >= frontier) load(k, streams[k].next ?? undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, error, exhausted, polls.length, target, streams, frontier]);
 

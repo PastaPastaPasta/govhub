@@ -27,7 +27,18 @@ export function PollVotePanel({ poll, state, endsAt }: { poll: Poll; state: Choi
           { c: { kind: 'no' }, text: 'No', sub: 'Counts for no' },
           { c: { kind: 'abstain' }, text: 'Abstain', sub: 'Counted, but on neither side: not part of the pass share or the turnout' },
         ],
-        choiceText: (c: Choice) => (c.kind === 'yes' ? 'Yes' : c.kind === 'no' ? 'No' : c.kind === 'abstain' ? 'Abstain' : c.kind),
+        choiceText(c: Choice) {
+          switch (c.kind) {
+            case 'yes':
+              return 'Yes';
+            case 'no':
+              return 'No';
+            case 'abstain':
+              return 'Abstain';
+            default:
+              return c.kind;
+          }
+        },
         prompt: 'Choose yes, no or abstain.',
         rules: `Each masternode can vote on a poll up to ${VOTE_CHANGES} times, never twice the same way in a row; its last vote counts. An evonode's vote counts ${EVONODE_WEIGHT} times. Votes are public on Platform.`,
       };
@@ -38,7 +49,18 @@ export function PollVotePanel({ poll, state, endsAt }: { poll: Poll; state: Choi
         { c: { kind: 'abstain' }, text: 'Abstain', sub: 'Counted, but for no choice' },
         { c: { kind: 'lock' }, text: 'None of the choices', sub: 'If these votes outnumber the leading choice, no choice is kept' },
       ],
-      choiceText: (c: Choice) => (c.kind === 'abstain' ? 'Abstain' : c.kind === 'lock' ? 'None of the choices' : c.kind === 'contender' ? (names.get(c.identityId) ?? 'A choice') : c.kind),
+      choiceText(c: Choice) {
+        switch (c.kind) {
+          case 'contender':
+            return names.get(c.identityId) ?? 'A choice';
+          case 'abstain':
+            return 'Abstain';
+          case 'lock':
+            return 'None of the choices';
+          default:
+            return c.kind;
+        }
+      },
       prompt: 'Choose an answer, abstain, or none of the choices.',
       rules: `Each masternode can change its vote up to ${VOTE_CHANGES} times; its last vote counts. An evonode's vote counts ${EVONODE_WEIGHT} times. Votes are public on Platform.`,
     };
