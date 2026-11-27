@@ -16,7 +16,7 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.scripts.json"
   },
   "dependencies": {
-    "@dashevo/evo-sdk": "5.0.0-rc.8",
+    "@dashevo/evo-sdk": "5.1.0",
     "@govhub/auth": "*",
     "@govhub/badge": "*",
     "@govhub/contracts-v1": "*",

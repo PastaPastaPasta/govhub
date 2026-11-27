@@ -31,7 +31,7 @@
     "@scure/bip39": "^2.0.0"
   },
   "devDependencies": {
-    "@dashevo/evo-sdk": "5.0.0-rc.8",
+    "@dashevo/evo-sdk": "5.1.0",
     "@types/node": "^22.0.0",
     "typescript": "^5.6.0",
     "vitest": "^3.0.0"

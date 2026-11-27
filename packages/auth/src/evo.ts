@@ -136,7 +136,6 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
     DocumentDeleteTransition: typeof Evo.DocumentDeleteTransition;
     BatchedTransition: typeof Evo.BatchedTransition;
     BatchTransition: typeof Evo.BatchTransition;
-    PlatformVersion: { latest(): unknown };
   };
 
   const pk = (priv: Uint8Array) => w.PrivateKey.fromBytes(priv, network);
@@ -219,7 +218,7 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
     // F13 / F13b through the PV13 lint like every other query (a bad shape is a silent [] on PV13: "no vault entry")
     assertQuery(forumSchemas as unknown as ContractSchemas, { documentTypeName: 'vault', where: where as DocQuery['where'], ...(orderBy ? { orderBy: orderBy as DocQuery['orderBy'] } : {}), limit: 100 });
     const res = await sdk.documents.queryWithProof({ dataContractId: contractId, documentTypeName: 'vault', where, ...(orderBy ? { orderBy } : {}), limit: 100 } as never);
-    return [...res.data.values()].filter((x): x is Evo.Document => !!x).map((x) => toEntry(x.toJSON(w.PlatformVersion.latest() as never) as Record<string, unknown>));
+    return [...res.data.values()].filter((x): x is Evo.Document => !!x).map((x) => toEntry(x.toJSON(sdk.version() as never) as Record<string, unknown>));
   };
 
   // ---- the one document writer (govhub's forum writes, the passkey vault) ----
@@ -273,7 +272,8 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
     if (keyInfo(idKey).disabled) throw new Error(`Identity key ${key.id} is disabled`);
     const owner = identifierBytes(ownerId);
     const contract = identifierBytes(op.contractId);
-    const latest = w.PlatformVersion.latest() as never;
+    // Documents are stamped with the network's protocol version (never the SDK's newest: mainnet can be behind it).
+    const stamp = () => sdk.version() as never;
     /** A proved read reduced to plain values (the WASM document is freed). */
     const readDoc = async <T>(id: string, view: (d: Evo.Document) => T) => {
       const r = await sdk.documents.getWithProof(op.contractId, op.type, id);
@@ -301,7 +301,7 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
         build(nonce, pv) {
           const document = w.Document.fromObject(
             { $formatVersion: '0', $id: new Uint8Array(32), $ownerId: owner, $dataContractId: contract, $type: op.type, $revision: 1n, $entropy: entropy, ...toSdk(op.data) } as never,
-            latest,
+            pv as never,
           );
           const t = new w.DocumentCreateTransition({ document, identityContractNonce: nonce, platformVersion: pv });
           id = t.base.id.toString();
@@ -324,7 +324,7 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
           // The transition carries the document's revision + 1.
           const document = w.Document.fromObject(
             { $formatVersion: '0', $id: identifierBytes(op.id), $ownerId: owner, $dataContractId: contract, $type: op.type, $revision: BigInt(op.revision), ...toSdk(op.data) } as never,
-            latest,
+            stamp(),
           );
           const t = new w.DocumentReplaceTransition({ document, identityContractNonce: nonce });
           free(document);
