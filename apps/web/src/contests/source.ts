@@ -150,7 +150,8 @@ export function openVotePolls(r: Registry, fresh = false): Promise<OpenVotePoll[
         for (const raw of Array.from(b.votePolls ?? [])) {
           polls++;
           const p = (raw as { toJSON(): OpenVotePoll['poll'] }).toJSON();
-          const key = JSON.stringify([p.contractId, p.documentTypeName, p.indexName, p.indexValues]);
+          // the whole poll: a yes/no poll (protocol 15) has none of a contested poll's fields, only its purpose
+          const key = JSON.stringify(p);
           if (seen.has(key)) continue;
           seen.add(key);
           added++;
