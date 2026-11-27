@@ -197,7 +197,7 @@ export class PlatformClient {
       ...(requiredSystem.updatedAt ? { $updatedAt: now } : {}),
       ...props,
     };
-    const doc = this.w.Document.fromObject(obj as any, this.w.PlatformVersion.latest());
+    const doc = this.w.Document.fromObject(obj as any, this.protocolVersion);
     const created = await this.sdk.documents.create({ document: doc, identityKey: this.identityKey, signer: this.signer });
     return { id: created.id.toString() };
   }
@@ -214,7 +214,7 @@ export class PlatformClient {
       $updatedAt: BigInt(Date.now()),
       ...props,
     };
-    const doc = this.w.Document.fromObject(obj as any, this.w.PlatformVersion.latest());
+    const doc = this.w.Document.fromObject(obj as any, this.protocolVersion);
     await this.sdk.documents.replace({ document: doc, identityKey: this.identityKey, signer: this.signer });
   }
 

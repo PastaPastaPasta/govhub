@@ -45,13 +45,12 @@ export function keyringDocFromJson(d: Record<string, unknown>): KeyringDoc {
 }
 
 export function createEvoKeyringStore(evo: EvoModule, sdk: Sdk, platform: PlatformPort, contractId: string): KeyringStore {
-  const version = (evo as unknown as { PlatformVersion: { latest(): unknown } }).PlatformVersion;
   return {
     async get(ownerId, kind) {
       const q = keyringQuery(contractId, ownerId, kind);
       assertQuery(forumSchemas as unknown as ContractSchemas, q); // K1 through the PV13 lint like every other query
       const res = await sdk.documents.queryWithProof(q as never);
-      const docs = [...res.data.values()].filter((x): x is Evo.Document => !!x).map((x) => keyringDocFromJson(x.toJSON(version.latest() as never) as Record<string, unknown>));
+      const docs = [...res.data.values()].filter((x): x is Evo.Document => !!x).map((x) => keyringDocFromJson(x.toJSON(sdk.version() as never) as Record<string, unknown>));
       return docs.find((d) => d.ownerId === ownerId && d.kind === kind) ?? null;
     },
     async put({ ownerId, key, kind, sealed, existing }) {
