@@ -149,3 +149,33 @@ The browser payment needs one of these two sign-ins.
 
 `?fixtures=1` simulates the payment and the relay (`demoServices`). `e2e/proposal-wizard.spec.ts` runs
 the whole flow that way.
+
+## Masternode polls (`/polls`)
+
+Dash Platform's decision proposals (protocol version 15, `@dashevo/evo-sdk` 5.1): questions any identity puts to the
+masternodes. Code: `src/decisions/` and `src/pages/Poll*.tsx`; the trust side is in `docs/TRUST.md` (section 5).
+
+- **Kinds.** A yes/no poll (`proposal`) carries its rule: yes must be strictly more than `passPercent` (50 to 80) of yes and
+  no, and yes and no together must reach `minimumTurnoutPercent` (0 to 50) of all masternode voting power when it closes,
+  1 to 4 weeks out. A multiple choice poll (`multipleChoiceProposal`) is a contest among its `choice` documents: most votes
+  wins, an earliest-choice tiebreak, and "none of the choices" (a lock) keeps none when it leads. It holds no description,
+  only a link. A masternode counts 1 and an evonode 4. Results are signaling only.
+- **When it appears.** `available()` reads the decision proposals contract with a proof: present from protocol 15, and
+  its absence is proved too. Until then every polls page shows "arrives with Dash Platform 5.1" and reads it again every
+  five minutes, so mainnet lights up by itself when it activates; no redeploy. `sdk.version()` is no signal (the SDK
+  starts at 14 everywhere and moves up only after a verified answer from a newer network).
+- **Lists.** Open: every open yes/no poll (`byEndDate` from now) and the multiple choice polls whose contest is open (the
+  same end-date scan as open username contests), closing soonest first. Ended: both kinds' `byCreatedAt` pages merged
+  newest first, read as the list scrolls (no pages). Mine: the signed-in identity's polls. Tallies are read only for the
+  cards on screen.
+- **Turnout.** Before a poll closes its turnout requirement is an estimate from the current masternode list (DAPI, agreed
+  by several nodes), shown as "about N"; afterwards Platform's recorded figure. Profiles whose Core network is not the
+  Platform network (Dev) show no estimate.
+- **Voting.** The contest vote panel (`contests/VotePanel.tsx`, `MasternodeVotePanel`) with the poll's answers: keyring
+  or pasted voting keys, signed in JS (`signMasternodeVote`), sent now or spread out. Poll and contest votes share one
+  held-vote list, since a masternode signs both as the same voter identity and so with the same nonces. Each masternode's
+  current answer is read back with `masternodeVote`.
+- **Asking.** `/polls/new` signs with the session's key (not a wallet sign-in, whose key is bound to the forum contract).
+  The cost is shown before signing; the yes/no fund and each choice's contest fund are stated by the SDK's builder
+  (`fund: true` in `@govhub/auth`'s writer). A multiple choice poll is one create, then one per choice; choices can also
+  be added on its page while the vote takes them.

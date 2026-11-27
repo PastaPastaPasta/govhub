@@ -95,6 +95,17 @@ export function AboutPage() {
         servers.
       </p>
 
+      <h2>Masternode polls</h2>
+      <p>
+        Anyone can put a question to the masternodes on Dash Platform: a yes or no, with its own pass threshold, minimum turnout and closing date, or a choice
+        among several answers. The <Link to="/polls">Polls</Link> page lists the open ones and the ones that ended. A result is a signal: nothing on the
+        network acts on it. Asking costs 0.5 DASH for a yes or no, or 0.2 DASH and 0.1 DASH a choice; that pays for the masternodes’ votes.
+      </p>
+      <p>
+        Your browser reads the polls and their tallies from Dash Platform and checks the network’s proofs. Masternode owners vote as on usernames, with their
+        voting keys, from the browser straight to Platform. Polls come with Platform 5.1; until a network runs it, the page says so and keeps checking.
+      </p>
+
       <h2>Your account</h2>
       <p>
         A govhub account is a Dash Platform identity, so it isn’t stored by us. You sign in with its recovery phrase, a private key, or a passkey. Your phrase and
