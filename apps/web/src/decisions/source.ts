@@ -6,6 +6,7 @@
 // read it again every few minutes: mainnet lights up by itself when it moves to version 15. (`sdk.version()` cannot tell: the SDK
 // starts at 14 on every network and only moves up once a verified answer says the network is newer.)
 import { mapLimit } from '@govhub/forum';
+import { CREDITS_PER_DUFF } from '../lib/format.ts';
 import type { Registry } from '../config/registry.ts';
 import { createWebDapi, dapiConfig } from '../data/dapi.ts';
 import { loadFixtures } from '../data/fixtures.ts';
@@ -14,7 +15,7 @@ import type { CoreNetwork } from '../data/types.ts';
 import { openVotePolls, TtlCache } from '../contests/source.ts';
 import { resourceChoice, signMasternodeVote, type Choice, type VoteToSign } from '../contests/vote.ts';
 import { FIXTURE_POLLS, FIXTURE_TOTAL_POWER, type FixturePoll } from './fixtures.ts';
-import { DECISIONS_CONTRACT_ID, requiredPower, totalVotingPower, type ChoicePoll, type ChoiceState, type Poll, type PollChoice, type PollKind, type YesNoPoll, type YesNoState } from './model.ts';
+import { CHOICE_FUND_DUFFS, DECISIONS_CONTRACT_ID, requiredPower, totalVotingPower, type ChoicePoll, type ChoiceState, type Poll, type PollChoice, type PollKind, type YesNoPoll, type YesNoState } from './model.ts';
 
 type EvoModule = typeof import('@dashevo/evo-sdk');
 
@@ -45,14 +46,16 @@ export interface DecisionSource {
   available(): Promise<boolean>;
   /** Yes/no polls still open, closing soonest first. */
   openYesNo(): Promise<YesNoPoll[]>;
-  /** Multiple choice polls whose vote is open: poll id → when it closes (ms). */
-  openChoices(): Promise<Map<string, number>>;
+  /** Multiple choice polls whose vote is open: poll id → when it closes (ms). `fresh`: not from the minute-long cache. */
+  openChoices(fresh?: boolean): Promise<Map<string, number>>;
   /** One page of every poll of a kind, newest first. */
   page(kind: PollKind, after?: string): Promise<PollPage>;
   /** An identity's polls, both kinds, newest first. */
   byOwner(ownerId: string): Promise<Poll[]>;
   /** A poll by id, of either kind; null when there is none. */
   get(id: string): Promise<Poll | null>;
+  /** What entering a choice now costs (the contest's fund to join), in duffs. */
+  choiceFund(id: string): Promise<number>;
   /** A yes/no poll's state (cached for a minute); null when Platform has none. */
   yesNoState(id: string): Promise<YesNoState | null>;
   /** The vote among a multiple choice poll's choices (cached for a minute). */
@@ -232,9 +235,9 @@ export function liveDecisions(r: Registry): DecisionSource {
           (d) => toYesNo(jsonOf(d)),
         ),
       ),
-    async openChoices() {
+    async openChoices(fresh) {
       const out = new Map<string, number>();
-      for (const { poll: p, endsAt } of await openVotePolls(r)) {
+      for (const { poll: p, endsAt } of await openVotePolls(r, fresh)) {
         if (p.contractId !== DECISIONS_CONTRACT_ID || p.documentTypeName !== 'choice') continue;
         const id = idStr(p.indexValues?.[0]);
         if (id) out.set(id, endsAt);
@@ -260,7 +263,15 @@ export function liveDecisions(r: Registry): DecisionSource {
       ]);
       return [...yn, ...mc].sort((a, b) => b.createdAt - a.createdAt);
     },
-    get: (id) => cache.polls.get(id, () => readPoll(id)),
+    // a poll not found is not kept: a node that lags behind its create may answer that for a moment
+    get: (id) =>
+      cache.polls.get(id, () => readPoll(id)).then((p) => {
+        if (!p) cache.polls.delete(id);
+        return p;
+      }),
+    async choiceFund(id) {
+      return Number((await (await sdk()).decisionProposals.multipleChoice.choiceFund(id)) / BigInt(CREDITS_PER_DUFF));
+    },
     yesNoState: (id) =>
       cache.yn.get(id, async () => {
         const st = await (await sdk()).decisionProposals.pollState(id);
@@ -380,6 +391,7 @@ export function fixtureDecisions(): DecisionSource {
       return (await all()).map((x) => x.p).filter((p) => p.ownerId === ownerId);
     },
     get: async (id) => (await find(id))?.p ?? null,
+    choiceFund: async () => CHOICE_FUND_DUFFS,
     async yesNoState(id) {
       const x = await find(id);
       if (!x || x.f.kind !== 'yn') return null;

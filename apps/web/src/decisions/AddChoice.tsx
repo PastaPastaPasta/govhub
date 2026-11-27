@@ -1,11 +1,13 @@
 // Entering a choice for a multiple choice poll (anyone, for an open poll; only the asker otherwise), while its vote takes choices.
-// Each choice pays the contest's fund, 0.1 DASH, from the signed-in identity's credits.
+// Each choice pays the contest's fund to join (0.1 DASH, doubling past 250 choices), read from Platform, from the signed-in identity's credits.
 import { useState } from 'react';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { errText, formatCredits, formatDash } from '../lib/format.ts';
 import { TopUpError } from '../voting/funds.ts';
 import { WriteError } from '../ui/WriteError.tsx';
+import { useAsync } from '../ui/hooks.ts';
+import { useDecisionSource } from './useDecisions.ts';
 import { choiceOp, needCredits, textProblem, titleProblem } from './create.ts';
 import { CHOICE_FUND_DUFFS, type ChoicePoll } from './model.ts';
 
@@ -17,9 +19,14 @@ export function AddChoice({ poll, onAdded }: { poll: ChoicePoll; onAdded(): void
   const [description, setDescription] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ text: string; topUp: boolean } | null>(null);
+  // after an add that may have landed, adding again could pay for a duplicate choice
+  const [unconfirmed, setUnconfirmed] = useState(false);
+  const src = useDecisionSource();
+  const fundRead = useAsync(() => src.choiceFund(poll.id), [src, poll.id, open]);
+  const fund = fundRead.data ?? CHOICE_FUND_DUFFS;
   const tp = title ? titleProblem(title) : null;
   const dp = textProblem(description, false);
-  const need = needCredits(CHOICE_FUND_DUFFS);
+  const need = needCredits(fund);
   const short = balance !== null && balance < need;
   if (!open)
     return (
@@ -27,7 +34,7 @@ export function AddChoice({ poll, onAdded }: { poll: ChoicePoll; onAdded(): void
         <button type="button" className="btn btn-s" onClick={() => setOpen(true)} data-testid="add-choice-open">
           Add a choice
         </button>{' '}
-        <span className="muted">Costs {formatDash(CHOICE_FUND_DUFFS)}, paid into the vote.</span>
+        <span className="muted">Costs {formatDash(fund)}, paid into the vote.</span>
       </p>
     );
   const go = async () => {
@@ -42,7 +49,9 @@ export function AddChoice({ poll, onAdded }: { poll: ChoicePoll; onAdded(): void
       setOpen(false);
       onAdded();
     } catch (e) {
-      setError({ text: errText(e), topUp: e instanceof TopUpError });
+      const text = errText(e);
+      setError({ text, topUp: e instanceof TopUpError });
+      if (/may still appear|not confirmed/i.test(text)) setUnconfirmed(true);
     } finally {
       setBusy(false);
     }
@@ -63,19 +72,22 @@ export function AddChoice({ poll, onAdded }: { poll: ChoicePoll; onAdded(): void
       </label>
       {dp && <p className="error small">{dp}</p>}
       <p className="small muted">
-        It costs {formatDash(CHOICE_FUND_DUFFS)}, paid into the vote to cover the masternodes’ votes, plus Platform’s fee. Choices can never be changed or removed.
+        It costs {formatDash(fund)}, paid into the vote to cover the masternodes’ votes, plus Platform’s fee. Choices can never be changed or removed.
         {balance !== null && ` Your identity has ${formatCredits(balance)}.`}
       </p>
       <div className="cvote-acts">
-        <button type="button" className="btn btn-primary" disabled={busy || !title.trim() || !!tp || !!dp || short} onClick={() => void go()} data-testid="add-choice-send">
-          {busy ? 'Adding…' : `Pay ${formatDash(CHOICE_FUND_DUFFS)} and add it`}
-        </button>
+        {!unconfirmed && (
+          <button type="button" className="btn btn-primary" disabled={busy || fundRead.loading || !title.trim() || !!tp || !!dp || short} onClick={() => void go()} data-testid="add-choice-send">
+            {busy ? 'Adding…' : `Pay ${formatDash(fund)} and add it`}
+          </button>
+        )}
         <button type="button" className="btn" onClick={() => setOpen(false)} disabled={busy}>
           Cancel
         </button>
       </div>
       {short && <WriteError error={`Your identity needs about ${formatCredits(need)} available for this.`} needsTopUp />}
       <WriteError error={error?.text ?? null} needsTopUp={error?.topUp ?? false} />
+      {unconfirmed && <p className="small">It may still have been added: reload the poll and check its choices before adding it again, so you don’t pay twice.</p>}
     </section>
   );
 }

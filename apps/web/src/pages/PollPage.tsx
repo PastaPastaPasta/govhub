@@ -289,7 +289,9 @@ const textEditLine = (poll: Poll, nowMs: number): string => {
 
 function ChoiceBody({ poll, src }: { poll: ChoicePoll; src: DecisionSource }) {
   const nowMs = useClockMs();
-  const ends = useAsync(() => src.openChoices().catch(() => new Map<string, number>()), [src]);
+  // the end comes from the open contests: read again when the choices change (the first choice opens the vote)
+  const [endsRead, setEndsRead] = useState(0);
+  const ends = useAsync(() => src.openChoices(endsRead > 0).catch(() => new Map<string, number>()), [src, endsRead]);
   const endsAt = ends.data?.get(poll.id) ?? null;
   const st = usePollState(src, poll, () => src.choiceState(poll.id), (d) => !!d && !d.result && endsAt !== null && endsAt <= nowMs);
   const s: ChoiceState | null = st.data ?? null;
@@ -297,7 +299,13 @@ function ChoiceBody({ poll, src }: { poll: ChoicePoll; src: DecisionSource }) {
   const { session } = useForum();
   const run = contestRun(src.network);
   // choices join while the vote's join window is open: from its first choice (its end, less the vote's length, gives that)
-  const joinOpen = phase === 'nochoices' || (phase === 'open' && endsAt !== null && nowMs < endsAt - run.voteMs + run.joinMs);
+  const choiceCount = s?.choices.length ?? 0;
+  useEffect(() => {
+    if (choiceCount && endsAt === null) setEndsRead((n) => n + 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [choiceCount]);
+  // an open vote whose end is not known yet is taken as still joining: Platform refuses a choice after its join window anyway
+  const joinOpen = phase === 'nochoices' || (phase === 'open' && (endsAt === null || nowMs < endsAt - run.voteMs + run.joinMs));
   const mayAdd = !!session && !isWalletSession(session) && (poll.open || session.identityId === poll.ownerId);
   return (
     <div className="p-layout">

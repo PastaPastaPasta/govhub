@@ -20,8 +20,9 @@ import { useCommentCounts } from '../ui/useCommentCounts.ts';
 const STATE_CONCURRENCY = 4;
 /** How far back the open list looks for multiple choice polls still waiting for their first choice. */
 const WAITING_LOOKBACK_MS = 14 * 86_400_000;
-/** A multiple choice poll still waiting for its first choice: open, not ended. */
-const waitingForChoices = (p: Poll, s: PollStateEntry): boolean => p.kind === 'mc' && !!s && s !== 'error' && 'choices' in s && !s.result && s.choices.length === 0;
+/** A recent multiple choice poll still waiting for its first choice: listed as open, so not among the ended (older ones stay there). */
+const waitingForChoices = (p: Poll, s: PollStateEntry): boolean =>
+  p.kind === 'mc' && p.createdAt >= Date.now() - WAITING_LOOKBACK_MS && !!s && s !== 'error' && 'choices' in s && !s.result && s.choices.length === 0;
 const STEP = 20;
 type Show = 'open' | 'ended' | 'mine';
 const sourceIds = new WeakMap<DecisionSource, number>();
@@ -242,7 +243,8 @@ function EndedList({ src, nowMs, totalPower }: { src: DecisionSource; nowMs: num
   const [streams, setStreams] = useState<Record<PollKind, Stream>>({ yn: { items: [], next: undefined }, mc: { items: [], next: undefined } });
   const [busy, setBusy] = useState<Record<PollKind, boolean>>({ yn: false, mc: false });
   const [error, setError] = useState<string | null>(null);
-  const openChoices = useAsync(() => src.openChoices(), [src]);
+  const [scanAttempt, setScanAttempt] = useState(0);
+  const openChoices = useAsync(() => src.openChoices(), [src, scanAttempt]);
   const run = useRef(0);
   useEffect(
     () => () => {
@@ -282,15 +284,17 @@ function EndedList({ src, nowMs, totalPower }: { src: DecisionSource; nowMs: num
     [streams, frontier, nowMs, openChoices.data, ends],
   );
   const loading = busy.yn || busy.mc || openChoices.loading;
+  // without the open contests no multiple choice poll can be placed: say so, rather than page through everything finding none
+  const scanError = openChoices.error;
   const exhausted = !unread('yn') && !unread('mc');
   // how many polls the list wants: it grows as the list scrolls to its end, and pages are read until it has them (a page whose
   // polls are all still open adds nothing to show, so reading goes on) or there are none left
   const [target, setTarget] = useState(STEP);
   useEffect(() => {
-    if (loading || error || exhausted || polls.length >= target) return;
+    if (loading || error || scanError || exhausted || polls.length >= target) return;
     for (const k of ['yn', 'mc'] as const) if (unread(k) && reach(k) >= frontier) load(k, streams[k].next ?? undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, error, exhausted, polls.length, target, streams, frontier]);
+  }, [loading, error, scanError, exhausted, polls.length, target, streams, frontier]);
 
   return (
     <>
@@ -302,7 +306,8 @@ function EndedList({ src, nowMs, totalPower }: { src: DecisionSource; nowMs: num
         </p>
       )}
       {error && <ReadError error={error} what="Platform" lead="The ended polls could not be read" onRetry={() => setError(null)} />}
-      {!loading && !error && exhausted && polls.length === 0 && (
+      {scanError && !error && <ReadError error={scanError} what="Platform" lead="The open votes could not be read, so the ended polls can't be told apart" onRetry={() => setScanAttempt((n) => n + 1)} />}
+      {!loading && !error && !scanError && exhausted && polls.length === 0 && (
         <p className="empty" role="status">
           No masternode poll has ended yet.
         </p>

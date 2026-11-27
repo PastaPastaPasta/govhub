@@ -49,7 +49,9 @@ describe('a multiple choice poll', () => {
   });
 
   it('writes the proposal and each choice, the choice naming the proposal by its id bytes', () => {
-    expect(choicePollOp({ title: 'Which?', url: 'https://x.org', open: true, choices: [] }).data).toEqual({ title: 'Which?', url: 'https://x.org', open: true });
+    // stored in the URL parser's form, which Platform's `format: uri` takes
+    expect(choicePollOp({ title: 'Which?', url: 'https://x.org/a b', open: true, choices: [] }).data).toEqual({ title: 'Which?', url: 'https://x.org/a%20b', open: true });
+    expect(urlProblem(`https://x.org/${'é'.repeat(300)}`, true)).toMatch(/512/);
     const id = '6Gne8CbK4x4cYz1nzpk7hpXS5PuCELMeURkeEfrJjbtj';
     const op = choiceOp(id, { title: 'Green', description: '' });
     expect(op.type).toBe('choice');

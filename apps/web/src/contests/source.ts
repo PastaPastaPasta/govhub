@@ -127,8 +127,10 @@ const scans = new Map<string, TtlCache<OpenVotePoll[]>>();
  * Every contested vote poll still open, of any contract (usernames, multiple choice polls, other apps'), soonest closing first: one
  * proof-verified scan of the end-date index, cached for a minute and shared by the contest and poll pages.
  */
-export function openVotePolls(r: Registry): Promise<OpenVotePoll[]> {
-  return cacheFor(scans, `scan:${r.platformNetwork}:${JSON.stringify(r.platform)}`).get('open', async () => {
+export function openVotePolls(r: Registry, fresh = false): Promise<OpenVotePoll[]> {
+  const cache = cacheFor(scans, `scan:${r.platformNetwork}:${JSON.stringify(r.platform)}`);
+  if (fresh) cache.delete('open');
+  return cache.get('open', async () => {
     const sdk = await getSdk(r);
     const out: OpenVotePoll[] = [];
     const seen = new Set<string>();

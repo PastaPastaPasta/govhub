@@ -37,12 +37,22 @@ export function textProblem(t: string, required: boolean): string | null {
   return null;
 }
 const formatK = (n: number) => n.toLocaleString('en-US');
+const canParse = (u: string): boolean => {
+  try {
+    new URL(u);
+    return true;
+  } catch {
+    return false;
+  }
+};
+/** A checked link as Platform should store it: the URL parser's form (spaces and the like escaped), or '' for none. */
+const storedUrl = (u: string): string => (u.trim() ? new URL(u.trim()).href : '');
 
 /** A link, if any: http(s) only, at most 512 characters. */
 export function urlProblem(u: string, required: boolean): string | null {
   const v = u.trim();
   if (!v) return required ? 'Give the page that says what is being decided.' : null;
-  if (v.length > URL_MAX) return `Keep the link to ${URL_MAX} characters.`;
+  if (v.length > URL_MAX || utf8(v) > URL_MAX || (canParse(v) && utf8(new URL(v).href) > URL_MAX)) return `Keep the link to ${URL_MAX} characters.`;
   try {
     const p = new URL(v);
     if (p.protocol !== 'https:' && p.protocol !== 'http:') return 'Use an http or https link.';
@@ -84,7 +94,7 @@ export function endDateFor(days: number, nowMs: number): number {
 
 /** The `proposal` document of a yes/no poll. */
 export function yesNoOp(d: YesNoDraft, nowMs: number): CreateOp {
-  const url = d.url.trim();
+  const url = storedUrl(d.url);
   return {
     action: 'create',
     contractId: DECISIONS_CONTRACT_ID,
@@ -139,7 +149,7 @@ export const hasProblems = (p: ReturnType<typeof choicePollProblems>): boolean =
 
 /** The `multipleChoiceProposal` document (described at a url; Platform charges its 0.2 DASH fee as processing, unstated). */
 export function choicePollOp(d: ChoicePollDraft): CreateOp {
-  return { action: 'create', contractId: DECISIONS_CONTRACT_ID, type: 'multipleChoiceProposal', data: { title: oneLine(d.title), url: d.url.trim(), open: d.open } };
+  return { action: 'create', contractId: DECISIONS_CONTRACT_ID, type: 'multipleChoiceProposal', data: { title: oneLine(d.title), url: storedUrl(d.url), open: d.open } };
 }
 
 /** A `choice` document for a multiple choice poll (it states the contest's fund to join). */
