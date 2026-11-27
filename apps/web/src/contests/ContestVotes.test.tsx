@@ -6,10 +6,11 @@ import { render } from '../test/render.tsx';
 import { storageKey, type HeldVote } from './held.ts';
 import type { ContestSource } from './source.ts';
 
-const hold = vi.hoisted(() => ({ src: null as unknown as ContestSource, forum: { session: null as null | { identityId: string } } }));
+const hold = vi.hoisted(() => ({ src: null as unknown as ContestSource, forum: { session: null as null | { identityId: string } }, polls: { forget: (_id: string) => {}, votesOf: async (_k: string, _id: string, _p: readonly string[]) => new Map<string, unknown>() } }));
 vi.mock('../app/context.tsx', () => ({ useApp: () => ({ registry: { platformNetwork: 'testnet' } }) }));
 vi.mock('../app/forum.tsx', () => ({ useForum: () => hold.forum }));
 vi.mock('./useContests.ts', () => ({ useContestSource: () => hold.src }));
+vi.mock('../decisions/useDecisions.ts', () => ({ useDecisionSource: () => hold.polls }));
 const { ContestVotesProvider, useContestVotes } = await import('./ContestVotes.tsx');
 
 type Api = ReturnType<typeof useContestVotes>;
@@ -228,6 +229,32 @@ describe('the contest vote sender', () => {
     await act(async () => api.add([vote({ id: 'a' })]));
     await wait();
     expect(api.held.find((x) => x.id === 'a')).toMatchObject({ status: 'waiting', checks: 1, note: 'Checking whether this vote counts…' });
+    await r.unmount();
+  });
+
+  it('reads a poll vote back from the poll, by masternode', async () => {
+    const POLL = 'Bx4sgMPNXuZxZwnHa42sT7NKvzZsMpywSX9zDiYp69bK';
+    const forget = vi.fn();
+    const votesOf = vi.fn(async () => new Map<string, unknown>([['p1', { kind: 'yes' }]]));
+    hold.polls = { forget, votesOf };
+    const { src } = fakeSource({ broadcast: vi.fn(async () => Promise.reject({ code: 40204, message: 'nonce already present at tip' })) });
+    const r = await mount();
+    await act(async () => api.add([vote({ id: 'y', label: `yn:${POLL}`, choice: { kind: 'yes' } })]));
+    await wait();
+    // the nonce was used by this very vote: the poll says this masternode votes yes, so it counts
+    expect(votesOf).toHaveBeenCalledWith('yn', POLL, ['p1']);
+    expect(forget).toHaveBeenCalledWith(POLL);
+    expect(src.votesOf).not.toHaveBeenCalled();
+    expect(api.held.find((x) => x.id === 'y')!.status).toBe('sent');
+    await r.unmount();
+  });
+
+  it('says a refused poll vote in a poll\'s words', async () => {
+    fakeSource({ broadcast: vi.fn(async () => Promise.reject({ code: 40308, message: 'closed' })) });
+    const r = await mount();
+    await act(async () => api.add([vote({ id: 'z', label: 'mc:Bx4sgMPNXuZxZwnHa42sT7NKvzZsMpywSX9zDiYp69bK', choice: { kind: 'lock' } })]));
+    await wait();
+    expect(api.held.find((x) => x.id === 'z')).toMatchObject({ status: 'failed', note: 'Voting on this poll had closed.' });
     await r.unmount();
   });
 });

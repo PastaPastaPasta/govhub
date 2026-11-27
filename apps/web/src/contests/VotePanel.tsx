@@ -1,9 +1,10 @@
-// Masternode voting on one username contest: pick a choice and masternodes, then send now or spread the votes out. The keys come from
-// the open keyring, or (without an account) from voting keys pasted into this tab (GuestKeys.tsx). Either way they are copied for the
-// signing only (voting/gate.ts castKeys: wiped right after, and by a sign-out), so the keyring's lock rules (D-015, D-029) hold as for
-// proposal votes. What leaves the signing is signed votes, never keys.
+// Masternode voting on Platform: one username contest (ContestVotePanel) or one masternode poll (decisions/PollVotePanel.tsx), both on
+// MasternodeVotePanel: pick a choice and masternodes, then send now or spread the votes out. The keys come from the open keyring, or
+// (without an account) from voting keys pasted into this tab (GuestKeys.tsx). Either way they are copied for the signing only
+// (voting/gate.ts castKeys: wiped right after, and by a sign-out), so the keyring's lock rules (D-015, D-029) hold as for proposal
+// votes. What leaves the signing is signed votes, never keys.
 import { base64 } from '@scure/base';
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useApp } from '../app/context.tsx';
 import { SecretField } from '../auth/SecretField.tsx';
@@ -20,7 +21,7 @@ import { useGuestKeys } from './GuestKeys.tsx';
 import { DEFAULT_SPREAD_MS, GUEST_OWNER, nextNonce, releaseTimes, spreadWindow, type HeldVote } from './held.ts';
 import { VOTE_CHANGES, type ContestState } from './model.ts';
 import { useContestSource } from './useContests.ts';
-import { choiceKey, NONCE_MASK, NONCE_WINDOW, sameChoice, signVote, voterIdOf, votingKeyHash, type Choice } from './vote.ts';
+import { choiceKey, NONCE_MASK, NONCE_WINDOW, sameChoice, signVote, voterIdOf, votingKeyHash, type Choice, type VoteToSign } from './vote.ts';
 import '../voting/voting.css';
 
 /** Where the keys come from: the open keyring, or keys pasted into this tab. */
@@ -32,12 +33,39 @@ interface Signer {
   copyKeys(): ReturnType<typeof castKeys> | null;
 }
 
-function choiceText(c: Choice | null | undefined, nameOf: (identityId: string) => string): string {
+type EvoModule = typeof import('@dashevo/evo-sdk');
+
+export interface VoteOption {
+  c: Choice;
+  text: string;
+  sub: string;
+}
+
+/** What one vote panel votes on. Its functions must be stable (memoized): they are read again when they change. */
+export interface VoteTarget {
+  /** the held-vote key (held.ts `label`): a contest's label, or a poll's key */
+  key: string;
+  /** what a profile with different Core and Platform networks cannot vote on */
+  things: string;
+  options: readonly VoteOption[];
+  /** ms, when voting closes (null: not known) */
+  endsAt: number | null;
+  /** an answer in words */
+  choiceText(c: Choice): string;
+  /** the hint while nothing is chosen */
+  prompt: string;
+  /** the rules line at the bottom */
+  rules: string;
+  /** current answers of these masternodes, by proTxHash: a choice, null for none (left out: not known) */
+  current(mns: readonly { proTxHash: string; voterId: string }[]): Promise<Map<string, Choice | null>>;
+  /** Reads what signing needs (live only), then returns a signer that never awaits. */
+  prepare(): Promise<(mod: EvoModule, v: VoteToSign & { choice: Choice }) => Uint8Array>;
+}
+
+function answerText(c: Choice | null | undefined, text: (c: Choice) => string): string {
   if (c === undefined) return 'unknown';
   if (!c) return 'No vote';
-  if (c.kind === 'abstain') return 'Abstain';
-  if (c.kind === 'lock') return 'Lock';
-  return nameOf(c.identityId);
+  return text(c);
 }
 
 function heldLine(v: HeldVote, now: number): { badge: string; tone: Tone } {
@@ -49,13 +77,62 @@ function heldLine(v: HeldVote, now: number): { badge: string; tone: Tone } {
 }
 
 export function ContestVotePanel({ label, state, endsAt, nameOf }: { label: string; state: ContestState; endsAt: number | null; nameOf: (identityId: string) => string }) {
+  const src = useContestSource();
+  // the options follow the contenders and their names (DPNS names and profiles arrive after the contest)
+  const names = state.contenders.map((x) => `${x.identityId}=${nameOf(x.identityId)}`).join('\n');
+  const current = useCallback(
+    async (mns: readonly { proTxHash: string; voterId: string }[]) => {
+      const byVoter = await src.votesOf(label, mns.map((m) => m.voterId));
+      const out = new Map<string, Choice | null>();
+      for (const m of mns) if (byVoter.has(m.voterId)) out.set(m.proTxHash, byVoter.get(m.voterId)!);
+      return out;
+    },
+    [src, label],
+  );
+  const prepare = useCallback(async () => (mod: EvoModule, v: VoteToSign & { choice: Choice }) => signVote(mod, { ...v, label }), [label]);
+  const target = useMemo<VoteTarget>(
+    () => ({
+      key: label,
+      things: 'contests',
+      endsAt,
+      options: [
+        ...state.contenders.map((x) => ({ c: { kind: 'contender', identityId: x.identityId } as Choice, text: nameOf(x.identityId), sub: x.requested ? `Asked for ${x.requested}` : 'Contender' })),
+        { c: { kind: 'abstain' }, text: 'Abstain', sub: 'Counted, but for nobody' },
+        { c: { kind: 'lock' }, text: 'Lock', sub: 'Nobody gets the name' },
+      ],
+      choiceText(c) {
+        switch (c.kind) {
+          case 'contender':
+            return nameOf(c.identityId);
+          case 'abstain':
+            return 'Abstain';
+          case 'lock':
+            return 'Lock';
+          default:
+            return c.kind;
+        }
+      },
+      prompt: 'Choose who gets the name, abstain or lock.',
+      rules: `Each masternode can change its vote on a name up to ${VOTE_CHANGES} times; its last vote counts. Its vote is public on Platform.`,
+      current,
+      prepare,
+    }),
+    // nameOf is a new function on every render of the page: `names` stands for what it returns
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [label, endsAt, names, current, prepare],
+  );
+  return <MasternodeVotePanel target={target} />;
+}
+
+/** The vote panel of one contest or poll: who can vote, the composer, and the votes this browser holds for it. */
+export function MasternodeVotePanel({ target }: { target: VoteTarget }) {
   const { registry } = useApp();
   const k = useKeyring();
   const guest = useGuestKeys();
   const votes = useContestVotes();
   const labels = useLabels();
   const now = useNow(10_000);
-  const mine = votes.held.filter((v) => v.label === label);
+  const mine = votes.held.filter((v) => v.label === target.key);
   const shell = (body: ReactNode) => (
     <section className="panel mnvote" aria-labelledby="cvote-title" data-testid="contest-vote-panel">
       <header className="mnvote-head">
@@ -63,12 +140,12 @@ export function ContestVotePanel({ label, state, endsAt, nameOf }: { label: stri
         {k.demo && k.status === 'open' && <span className="tag tag-demo">Demo: votes aren't sent</span>}
       </header>
       {body}
-      {mine.length > 0 && <KeptVotes votes={mine} now={now} nameOf={nameOf} labels={labels} onCancel={(id) => void votes.cancel(id)} onSendNow={(ids) => void votes.sendNow(ids)} />}
+      {mine.length > 0 && <KeptVotes votes={mine} now={now} text={target.choiceText} labels={labels} onCancel={(id) => void votes.cancel(id)} onSendNow={(ids) => void votes.sendNow(ids)} />}
     </section>
   );
 
   if (registry.coreNetwork !== registry.platformNetwork) {
-    return shell(<p className="muted">This profile reads masternodes from {registry.coreNetwork} but contests from {registry.platformNetwork} Platform, so its masternodes cannot vote here. Switch to the Mainnet or Testnet profile in Settings to vote.</p>);
+    return shell(<p className="muted">This profile reads masternodes from {registry.coreNetwork} but {target.things} from {registry.platformNetwork} Platform, so its masternodes cannot vote here. Switch to the Mainnet or Testnet profile in Settings to vote.</p>);
   }
 
   const keyring: Signer | null =
@@ -115,10 +192,11 @@ export function ContestVotePanel({ label, state, endsAt, nameOf }: { label: stri
       </div>,
     );
   }
-  return shell(<Composer label={label} state={state} endsAt={endsAt} nameOf={nameOf} signer={signer} />);
+  return shell(<Composer target={target} signer={signer} />);
 }
 
-function Composer({ label, state, endsAt, nameOf, signer }: { label: string; state: ContestState; endsAt: number | null; nameOf: (identityId: string) => string; signer: Signer }) {
+function Composer({ target, signer }: { target: VoteTarget; signer: Signer }) {
+  const { key: label, endsAt } = target;
   const { registry } = useApp();
   const k = useKeyring();
   const guest = useGuestKeys();
@@ -142,9 +220,12 @@ function Composer({ label, state, endsAt, nameOf, signer }: { label: string; sta
     }
     return m;
   }, [usable, signer.keyInfos]);
-  const voterKey = [...voterOf.values()].join(',');
-  // a vote that went out from here re-reads them (the sender dropped the cached contest)
-  const current = useAsync(() => (voterKey ? src.votesOf(label, voterKey.split(',')) : Promise.resolve(new Map<string, Choice | null>())), [src, label, voterKey, sentCount]);
+  const voterKey = [...voterOf].map(([pro, voter]) => `${pro}:${voter}`).join(',');
+  // a vote that went out from here re-reads them (the sender dropped the cached state)
+  const current = useAsync(
+    () => (voterOf.size ? target.current([...voterOf].map(([proTxHash, voterId]) => ({ proTxHash, voterId }))) : Promise.resolve(new Map<string, Choice | null>())),
+    [target.current, voterKey, sentCount],
+  );
 
   const [choice, setChoice] = useState<Choice | null>(null);
   const [selected, setSelected] = useState<Set<string> | null>(null); // null = all
@@ -161,7 +242,7 @@ function Composer({ label, state, endsAt, nameOf, signer }: { label: string; sta
     if (!choice) return false;
     const w = waitingFor(m);
     if (w) return sameChoice(w.choice, choice);
-    const cur = current.data?.get(voterOf.get(m.proTxHash) ?? '');
+    const cur = current.data?.get(m.proTxHash);
     return !!cur && sameChoice(cur, choice);
   };
   const toSend = choice ? chosen.filter((m) => voterOf.has(m.proTxHash) && !already(m)) : [];
@@ -170,11 +251,11 @@ function Composer({ label, state, endsAt, nameOf, signer }: { label: string; sta
   const latest = win ? Math.min(win.latest, now + (withinH ? Number(withinH) * 3_600_000 : DEFAULT_SPREAD_MS)) : null;
 
   const hint = (() => {
-    if (!choice) return 'Choose who gets the name, abstain or lock.';
+    if (!choice) return target.prompt;
     if (!chosen.length) return 'Select at least one masternode.';
     if (current.loading) return 'Reading your masternodes’ current votes…';
     if (!toSend.length) return 'Your selected masternodes already vote this way.';
-    if (mode === 'spread' && !(win && latest !== null && latest > win.earliest)) return 'The contest closes too soon to spread votes out. Send them now instead.';
+    if (mode === 'spread' && !(win && latest !== null && latest > win.earliest)) return 'Voting closes too soon to spread votes out. Send them now instead.';
     return null;
   })();
 
@@ -191,6 +272,7 @@ function Composer({ label, state, endsAt, nameOf, signer }: { label: string; sta
       const onChain = new Map<string, bigint>();
       if (src.live) await Promise.all(toSend.map(async (m) => onChain.set(m.proTxHash, await src.nonceOf(voterOf.get(m.proTxHash)!))));
       const mod = src.live ? await import('@dashevo/evo-sdk') : null;
+      const sign = mod ? await target.prepare() : null;
       // from here on nothing awaits until the votes are signed and the copies wiped
       const keys = signerRef.current.copyKeys();
       if (!keys) throw new Error(signer.kind === 'keyring' ? 'The keyring locked. Unlock it and vote again.' : 'The pasted keys were forgotten. Paste them again to vote.');
@@ -215,7 +297,7 @@ function Composer({ label, state, endsAt, nameOf, signer }: { label: string; sta
             proTxHash: m.proTxHash,
             voterId,
             choice,
-            st: mod ? base64.encode(signVote(mod, { proTxHash: m.proTxHash, privateKey: key.privateKey, compressed: key.compressed, label, choice, nonce })) : '',
+            st: mod && sign ? base64.encode(sign(mod, { proTxHash: m.proTxHash, privateKey: key.privateKey, compressed: key.compressed, choice, nonce })) : '',
             nonce: nonce.toString(),
             mode,
             releaseAt: times[i]!,
@@ -249,11 +331,6 @@ function Composer({ label, state, endsAt, nameOf, signer }: { label: string; sta
     else s.delete(m.proTxHash);
     setSelected(s);
   };
-  const options: Array<{ c: Choice; text: string; sub: string }> = [
-    ...state.contenders.map((x) => ({ c: { kind: 'contender', identityId: x.identityId } as Choice, text: nameOf(x.identityId), sub: x.requested ? `Asked for ${x.requested}` : 'Contender' })),
-    { c: { kind: 'abstain' }, text: 'Abstain', sub: 'Counted, but for nobody' },
-    { c: { kind: 'lock' }, text: 'Lock', sub: 'Nobody gets the name' },
-  ];
   const n = toSend.length;
   const buttonText = busy ? 'Signing…' : [mode === 'spread' ? 'Schedule' : 'Sign and send', n || null, n === 1 ? 'vote' : 'votes'].filter(Boolean).join(' ');
 
@@ -261,7 +338,7 @@ function Composer({ label, state, endsAt, nameOf, signer }: { label: string; sta
     <>
       <fieldset className="cvote-choices" data-testid="contest-choice">
         <legend className="visually-hidden">Your vote</legend>
-        {options.map((o) => (
+        {target.options.map((o) => (
           <label key={choiceKey(o.c)} className={`cvote-opt${choice && sameChoice(choice, o.c) ? ' on' : ''}`}>
             <input type="radio" name={`cvote-${label}`} checked={!!choice && sameChoice(choice, o.c)} onChange={() => setChoice(o.c)} />
             <span>
@@ -294,11 +371,11 @@ function Composer({ label, state, endsAt, nameOf, signer }: { label: string; sta
                 </label>
                 <div className="vmn-state">
                   <span className="vmn-cur" data-testid="current-vote">
-                    <span className="vmn-k">Now</span> {current.loading ? <span className="muted">…</span> : current.error ? <span className="muted">unknown</span> : choiceText(current.data?.get(voterOf.get(m.proTxHash) ?? ''), nameOf)}
+                    <span className="vmn-k">Now</span> {current.loading ? <span className="muted">…</span> : current.error ? <span className="muted">unknown</span> : answerText(current.data?.get(m.proTxHash), target.choiceText)}
                   </span>
                   {w && (
                     <span className="vmn-pend" data-testid="pending-vote">
-                      <span className="vmn-k">Waiting</span> {choiceText(w.choice, nameOf)}
+                      <span className="vmn-k">Waiting</span> {target.choiceText(w.choice)}
                     </span>
                   )}
                 </div>
@@ -338,7 +415,7 @@ function Composer({ label, state, endsAt, nameOf, signer }: { label: string; sta
               <span className="small muted">
                 {win
                   ? 'Each masternode votes at its own random time, so the votes do not land on Platform together. There is no relay for these votes: this browser sends them, so they only go out while govhub is open here.'
-                  : 'The contest closes too soon to spread votes out.'}
+                  : 'Voting closes too soon to spread votes out.'}
               </span>
             </span>
           </label>
@@ -381,7 +458,7 @@ function Composer({ label, state, endsAt, nameOf, signer }: { label: string; sta
           </p>
         )}
       </div>
-      <p className="small muted">Each masternode can change its vote on a name up to {VOTE_CHANGES} times; its last vote counts. Its vote is public on Platform.</p>
+      <p className="small muted">{target.rules}</p>
     </>
   );
 }
@@ -422,7 +499,7 @@ function GuestKeyForm() {
   );
 }
 
-function KeptVotes({ votes, now, nameOf, labels, onCancel, onSendNow }: { votes: readonly HeldVote[]; now: number; nameOf: (id: string) => string; labels: ReadonlyMap<string, string>; onCancel(id: string): void; onSendNow(ids: readonly string[]): void }) {
+function KeptVotes({ votes, now, text, labels, onCancel, onSendNow }: { votes: readonly HeldVote[]; now: number; text: (c: Choice) => string; labels: ReadonlyMap<string, string>; onCancel(id: string): void; onSendNow(ids: readonly string[]): void }) {
   const waiting = votes.filter((v) => v.status === 'waiting' && v.releaseAt > now);
   return (
     <div className="cvote-kept" data-testid="kept-votes">
@@ -433,7 +510,7 @@ function KeptVotes({ votes, now, nameOf, labels, onCancel, onSendNow }: { votes:
           return (
             <li key={v.id} className="vmn" data-testid="kept-vote">
               <span className="vmn-name">{mnName({ proTxHash: v.proTxHash }, labels)}</span>
-              <span>{choiceText(v.choice, nameOf)}</span>
+              <span>{text(v.choice)}</span>
               <Badge tone={l.tone}>{l.badge}</Badge>
               {v.status === 'waiting' && (
                 <span className="cvote-acts">

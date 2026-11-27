@@ -21,7 +21,17 @@ export type DocValue = Uint8Array | number | string | boolean;
  * replace is the stored revision (the writer sends revision + 1). This is the single document writer of the app (evo.ts).
  */
 export type DocumentWrite =
-  | { action: 'create'; contractId: string; type: string; data: Record<string, DocValue> }
+  | {
+      action: 'create';
+      contractId: string;
+      type: string;
+      data: Record<string, DocValue>;
+      /**
+       * The create pays a fund Platform requires it to state (a decision proposal's 0.5 DASH, a contested document's contest fund):
+       * the contract is read and the SDK's transition builder states it. Only for documents that need one.
+       */
+      fund?: true;
+    }
   | { action: 'replace'; contractId: string; type: string; id: string; revision: number; data: Record<string, DocValue> }
   | { action: 'delete'; contractId: string; type: string; id: string };
 

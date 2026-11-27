@@ -293,6 +293,7 @@ export function Layout() {
   const masternodes = loc.pathname.startsWith('/masternodes') || loc.pathname.startsWith('/votes');
   const create = loc.pathname.startsWith('/create');
   const names = loc.pathname.startsWith('/names');
+  const polls = loc.pathname.startsWith('/polls');
   return (
     <div className="shell">
       <a className="skip" href="#main">
@@ -315,6 +316,9 @@ export function Layout() {
             </Link>
             <Link to="/names" className={names ? 'active' : undefined} aria-current={names ? 'page' : undefined} data-testid="nav-names">
               Usernames
+            </Link>
+            <Link to="/polls" className={polls ? 'active' : undefined} aria-current={polls ? 'page' : undefined} data-testid="nav-polls">
+              Polls
             </Link>
             <Link to="/masternodes" className={masternodes ? 'active' : undefined} aria-current={masternodes ? 'page' : undefined}>
               <span className="nav-more">My masternodes</span>

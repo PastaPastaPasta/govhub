@@ -1,5 +1,5 @@
-// Masternode votes on username contests. Each vote is a Platform state transition signed in this browser with the masternode's
-// voting key and sent straight to Platform: no relay and no Core. The voter is the masternode's voting identity, which Platform
+// Masternode votes on Platform: username contests and masternode polls (decisions/). Each vote is a Platform state transition signed
+// in this browser with the masternode's voting key and sent straight to Platform: no relay and no Core. The voter is the masternode's voting identity, which Platform
 // derives from the proTxHash and the voting key (it needs no credits). A vote is signed with an explicit identity nonce, so it can
 // be kept and sent later (the "spread out" option): what is kept is the signed vote, never the key.
 import { hash160, sha256d, signCompactHash } from '@govhub/verify';
@@ -10,7 +10,11 @@ import { base58 } from '@scure/base';
 import { errText } from '../lib/format.ts';
 import { DPNS_POLL, PARENT_DOMAIN } from './model.ts';
 
-export type Choice = { kind: 'contender'; identityId: string } | { kind: 'abstain' } | { kind: 'lock' };
+/**
+ * A masternode's answer. On a contest: a contender (on a multiple choice poll, a choice's document id), abstain or lock (on a poll,
+ * "none of the choices"). On a yes/no poll: yes, no or abstain.
+ */
+export type Choice = { kind: 'contender'; identityId: string } | { kind: 'abstain' } | { kind: 'lock' } | { kind: 'yes' } | { kind: 'no' };
 
 export const choiceKey = (c: Choice): string => (c.kind === 'contender' ? `c:${c.identityId}` : c.kind);
 export const sameChoice = (a: Choice, b: Choice): boolean => choiceKey(a) === choiceKey(b);
@@ -39,27 +43,24 @@ export interface VoteToSign {
   proTxHash: string;
   privateKey: Uint8Array;
   compressed: boolean;
-  label: string;
-  choice: Choice;
   /** the voter identity's next nonce */
   nonce: bigint;
 }
 
+type Vote = InstanceType<EvoModule['Vote']>;
+
 /**
- * Builds one vote with the SDK and signs it here (secp256k1 in JS: the key never enters the SDK's WASM memory) the way Platform
- * signs: a compact recoverable signature over the double SHA-256 of the signable bytes. Returns the signed transition's bytes.
+ * Signs one masternode vote here (secp256k1 in JS: the key never enters the SDK's WASM memory) the way Platform signs: a compact
+ * recoverable signature over the double SHA-256 of the signable bytes. `vote` is built by the caller with the SDK and consumed here.
+ * Returns the signed transition's bytes.
  */
-export function signVote(mod: EvoModule, v: VoteToSign): Uint8Array {
-  // Core voting keys are compressed; the old uncompressed form would hash to another key id than the one Platform holds
-  if (!v.compressed) throw new Error('This voting key is in the old uncompressed form, which Platform does not accept for votes.');
-  const keyHash = votingKeyHash(v.privateKey);
-  const voterId = voterIdOf(v.proTxHash, keyHash);
-  const owned: Array<{ free(): void }> = [];
+export function signMasternodeVote(mod: EvoModule, v: VoteToSign, vote: Vote): Uint8Array {
+  const owned: Array<{ free(): void }> = [vote];
   const keep = <T extends { free(): void }>(o: T): T => (owned.push(o), o);
   try {
-    const poll = new mod.VotePoll({ contractId: DPNS_POLL.dataContractId, documentTypeName: DPNS_POLL.documentTypeName, indexName: DPNS_POLL.indexName, indexValues: [PARENT_DOMAIN, v.label] });
-    const choice = v.choice.kind === 'contender' ? mod.ResourceVoteChoice.TowardsIdentity(v.choice.identityId) : v.choice.kind === 'lock' ? mod.ResourceVoteChoice.Lock() : mod.ResourceVoteChoice.Abstain();
-    const vote = new mod.Vote(poll, choice);
+    // Core voting keys are compressed; the old uncompressed form would hash to another key id than the one Platform holds
+    if (!v.compressed) throw new Error('This voting key is in the old uncompressed form, which Platform does not accept for votes.');
+    const voterId = voterIdOf(v.proTxHash, votingKeyHash(v.privateKey));
     const mvt = keep(new mod.MasternodeVoteTransition({ proTxHash: hexToBytes(v.proTxHash), voterIdentityId: base58.decode(voterId), vote, nonce: v.nonce }));
     const st = keep(mvt.toStateTransition());
     st.signaturePublicKeyId = 0;
@@ -74,6 +75,20 @@ export function signVote(mod: EvoModule, v: VoteToSign): Uint8Array {
       }
     }
   }
+}
+
+/** A contest choice as the SDK's resource vote choice (on a multiple choice poll, `contender` carries the choice's document id). */
+export function resourceChoice(mod: EvoModule, c: Choice): ReturnType<EvoModule['ResourceVoteChoice']['Abstain']> {
+  if (c.kind === 'contender') return mod.ResourceVoteChoice.TowardsIdentity(c.identityId);
+  if (c.kind === 'lock') return mod.ResourceVoteChoice.Lock();
+  if (c.kind === 'abstain') return mod.ResourceVoteChoice.Abstain();
+  throw new Error('Yes and no are answers on a yes/no poll, not in a contest.');
+}
+
+/** A vote on a username contest, signed (see signMasternodeVote). */
+export function signVote(mod: EvoModule, v: VoteToSign & { label: string; choice: Choice }): Uint8Array {
+  const poll = new mod.VotePoll({ contractId: DPNS_POLL.dataContractId, documentTypeName: DPNS_POLL.documentTypeName, indexName: DPNS_POLL.indexName, indexValues: [PARENT_DOMAIN, v.label] });
+  return signMasternodeVote(mod, v, new mod.Vote(poll, resourceChoice(mod, v.choice)));
 }
 
 /** A vote choice as Platform's JSON gives it: `{ $type: 'towardsIdentity', identity }`, `{ $type: 'abstain' }` or `{ $type: 'lock' }`. */
@@ -106,26 +121,30 @@ const codeOf = (e: unknown): number | null => {
   return m ? Number(m[1]) : null;
 };
 
-/** Platform's answer to a vote, in words (consensus errors 40300-40307, 40204 for the nonce, 20002 for the signature). */
-export function classifySendError(e: unknown): SendOutcome {
+/**
+ * Platform's answer to a vote, in words (consensus errors 40300-40308, 40204 for the nonce, 20002 for the signature). `on` names what
+ * was voted on: a username contest ('name') or a masternode poll ('poll').
+ */
+export function classifySendError(e: unknown, on: 'name' | 'poll' = 'name'): SendOutcome {
   const code = codeOf(e);
   const msg = errText(e);
   switch (code) {
     case 40300:
       return { kind: 'final', text: 'Platform does not list this masternode.' };
     case 40301:
-      return { kind: 'final', text: 'Platform has no vote on this name.' };
+      return { kind: 'final', text: `Platform has no vote on this ${on}.` };
     case 40302:
-      return { kind: 'final', text: 'Voting on this name had closed.' };
+    case 40308:
+      return { kind: 'final', text: `Voting on this ${on} had closed.` };
     case 40303:
-      return { kind: 'final', text: 'This masternode has used all its vote changes on this name.' };
+      return { kind: 'final', text: `This masternode has used all its vote changes on this ${on}.` };
     case 40304:
       return { kind: 'same', text: 'This masternode already votes this way.' };
     case 40305:
     case 40306:
       return { kind: 'final', text: "This masternode's voting key changed on the network. Add its new voting key." };
     case 40307:
-      return { kind: 'final', text: 'This choice is not allowed on this name.' };
+      return { kind: 'final', text: `This choice is not allowed on this ${on}.` };
     case 40204:
       if (/too far in future/i.test(msg)) return { kind: 'final', text: 'Too many votes of this masternode were waiting at once. Vote again.' };
       if (/too far in past/i.test(msg)) return { kind: 'final', text: 'Newer votes of this masternode went out first, so Platform no longer takes this one. Vote again.' };

@@ -30,6 +30,10 @@ const NewProposalPage = lazy(() => import('./pages/NewProposalPage.tsx').then((m
 // Username contests: loaded when /names is opened.
 const ContestsPage = lazy(() => import('./pages/ContestsPage.tsx').then((m) => ({ default: m.ContestsPage })));
 const ContestPage = lazy(() => import('./pages/ContestPage.tsx').then((m) => ({ default: m.ContestPage })));
+// Masternode polls: loaded when /polls is opened.
+const PollsPage = lazy(() => import('./pages/PollsPage.tsx').then((m) => ({ default: m.PollsPage })));
+const PollPage = lazy(() => import('./pages/PollPage.tsx').then((m) => ({ default: m.PollPage })));
+const NewPollPage = lazy(() => import('./pages/NewPollPage.tsx').then((m) => ({ default: m.NewPollPage })));
 
 /** Starts downloading evo-sdk (big WASM chunk) once the first paint is done, in live mode only. */
 function SdkWarmup() {
@@ -86,6 +90,11 @@ createRoot(document.getElementById('root')!).render(
                 <Route path="names">
                   <Route index element={<Suspense fallback={<p className="page-narrow muted">Loading…</p>}><ContestsPage /></Suspense>} />
                   <Route path=":label" element={<Suspense fallback={<p className="page-narrow muted">Loading…</p>}><ContestPage /></Suspense>} />
+                </Route>
+                <Route path="polls">
+                  <Route index element={<Suspense fallback={<p className="page-narrow muted">Loading…</p>}><PollsPage /></Suspense>} />
+                  <Route path="new" element={<Suspense fallback={<p className="page-narrow muted">Loading…</p>}><NewPollPage /></Suspense>} />
+                  <Route path=":id" element={<Suspense fallback={<p className="page-narrow muted">Loading…</p>}><PollPage /></Suspense>} />
                 </Route>
                 <Route path="settings" element={<SettingsPage />} />
                 <Route path="masternodes" element={<MasternodesPage />} />

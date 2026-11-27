@@ -29,6 +29,9 @@ describe('Platform answers', () => {
   const err = (code: number, message = 'x') => ({ code, message });
   it('maps the voting errors to final, same, check or retry', () => {
     expect(classifySendError(err(40302))).toEqual({ kind: 'final', text: 'Voting on this name had closed.' });
+    // a masternode poll: its own words, and the yes/no poll's "closed" code
+    expect(classifySendError(err(40308), 'poll')).toEqual({ kind: 'final', text: 'Voting on this poll had closed.' });
+    expect(classifySendError(err(40301), 'poll').text).toBe('Platform has no vote on this poll.');
     expect(classifySendError(err(40303)).kind).toBe('final');
     expect(classifySendError(err(40304)).kind).toBe('same');
     expect(classifySendError(err(40305)).text).toMatch(/voting key changed/);

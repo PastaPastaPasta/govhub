@@ -38,7 +38,7 @@ Some things are saved in the browser's local storage so the app works the next t
 - a cache of public data the app has already checked, so it doesn't download it again;
 - encrypted records: votes you're following, and badge requests in progress. The key to open them comes from your own
   signing key, so they're unreadable without it;
-- username contest votes that are signed but not sent yet (see below). These are not encrypted.
+- masternode votes on usernames and polls that are signed but not sent yet (see below). These are not encrypted.
 
 Signing out clears the session, but not this saved data. Some of the saved items are named after your identity, so
 someone with access to your browser can tell which identity was used there. To remove all of it, clear the site data
@@ -46,9 +46,9 @@ for gov.dashhq.org in your browser's settings.
 
 If you use a passkey, the encrypted copy of your keys is stored on Dash Platform, and only your passkey can open it.
 
-### Username contest votes
+### Masternode votes on Platform
 
-A masternode vote on a contested username is signed in your browser and sent straight to Dash Platform. No govhub server
+A masternode vote on a contested username or a masternode poll is signed in your browser and sent straight to Dash Platform. No govhub server
 is involved, so there is no relay to hold a vote until later. "Spread out" therefore keeps the signed votes in this
 browser's local storage, unencrypted, until each one's time comes, and sends them from whichever govhub tab is open then.
 They are kept there even after you sign out, and removed as soon as they are sent or cancelled. Someone with access to
@@ -69,7 +69,8 @@ tied to your identity.
 | Reactions, your profile, owner posts on your proposal | Yes | Yes, you can change or delete them |
 | Your block lists | Yes | Yes |
 | Masternode badges | Yes. It says "MN · vouched by X", not which masternode | No. Badges can't be deleted |
-| Masternode votes on contested usernames | Yes, with the masternode that cast each one | No. A masternode can change its vote up to 5 times; the last one counts |
+| Masternode votes on contested usernames and masternode polls | Yes, with the masternode that cast each one | No. A masternode can change its vote up to 5 times; the last one counts |
+| Masternode polls you ask | Yes, with your identity. Every version of the text is kept | No. A yes/no poll's text can be edited for a day, a multiple choice poll's title and link for two hours; polls and choices can't be deleted |
 | Your keyring and passkey backup | Encrypted. Others can see that it exists, roughly how big it is, and when it changes | Yes |
 
 Writing to Platform costs a small fee, paid from your identity's balance. Nobody at govhub sees or handles that money.
@@ -162,7 +163,7 @@ Even with all our servers replaced, the app talks to parts of the Dash network d
 - Asking for badges with several masternodes from one identity tells the issuer they belong together.
 - Don't fund your govhub identity from a wallet tied to your masternode.
 - Votes and proposals become public on the Dash network once they're sent. The relay only controls when.
-- Username contest votes are public with the masternode that cast them. "Spread out" sends each masternode's vote at its
+- Username contest and masternode poll votes are public with the masternode that cast them. "Spread out" sends each masternode's vote at its
   own random time, so they don't land on Platform together. The Platform node your browser sends through still sees
   them all come from one browser, and so does anyone who can read the browser's storage before they go out.
 

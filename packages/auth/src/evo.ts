@@ -132,6 +132,7 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
     ContractBounds: typeof Evo.ContractBounds;
     Document: typeof Evo.Document;
     DocumentCreateTransition: typeof Evo.DocumentCreateTransition;
+    PrefundedVotingBalance: typeof Evo.PrefundedVotingBalance;
     DocumentReplaceTransition: typeof Evo.DocumentReplaceTransition;
     DocumentDeleteTransition: typeof Evo.DocumentDeleteTransition;
     BatchedTransition: typeof Evo.BatchedTransition;
@@ -296,14 +297,37 @@ export function createEvoPlatform(evo: EvoModule, sdk: Sdk, network: Network, op
     let plan: Plan;
     if (op.action === 'create') {
       const entropy = randomBytes(32);
+      const doc = (version: never) =>
+        w.Document.fromObject(
+          { $formatVersion: '0', $id: new Uint8Array(32), $ownerId: owner, $dataContractId: contract, $type: op.type, $revision: 1n, $entropy: entropy, ...toSdk(op.data) } as never,
+          version,
+        );
+      // A funded create states what it pays, as the SDK's own creates do: a decision proposal's fund (the builder takes it from the
+      // contract), or the fund to join the contest a contested document enters, read now (proved reads of its contenders).
+      const dataContract = op.fund ? await sdk.contracts.fetch(op.contractId) : undefined;
+      if (op.fund && !dataContract) throw new Error(`Contract ${op.contractId} is not on Platform.`);
+      let join: { indexName: string; credits: bigint } | undefined;
+      if (op.fund) {
+        const probe = doc(stamp());
+        try {
+          const f = await sdk.documents.contestFundToJoin(probe);
+          if (f) join = { indexName: f.indexName, credits: f.credits };
+          free(f);
+        } finally {
+          free(probe);
+        }
+      }
       let id = '';
       plan = {
         build(nonce, pv) {
-          const document = w.Document.fromObject(
-            { $formatVersion: '0', $id: new Uint8Array(32), $ownerId: owner, $dataContractId: contract, $type: op.type, $revision: 1n, $entropy: entropy, ...toSdk(op.data) } as never,
-            pv as never,
-          );
-          const t = new w.DocumentCreateTransition({ document, identityContractNonce: nonce, platformVersion: pv });
+          const document = doc(pv as never);
+          const t = new w.DocumentCreateTransition({
+            document,
+            identityContractNonce: nonce,
+            platformVersion: pv,
+            ...(dataContract ? { dataContract } : {}),
+            ...(join ? { prefundedVotingBalance: new w.PrefundedVotingBalance(join) } : {}),
+          });
           id = t.base.id.toString();
           free(document);
           return batch(t);

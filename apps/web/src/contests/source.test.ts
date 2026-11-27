@@ -86,4 +86,18 @@ describe('liveContests', () => {
     await liveContests(registry).names({ after: 'a099' });
     expect(contestedResourcesWithProof).toHaveBeenLastCalledWith(expect.objectContaining({ startAtValue: 'a099', startAtValueIncluded: false }));
   });
+
+  it('counts every yes/no poll in the end-date index as its own, so a page of them does not end the read', async () => {
+    const yesNo = (i: number) => ({ toJSON: () => ({ $type: 'yesNoVotePoll', purpose: { $type: 'decisionProposal', documentId: `D${i}` } }) });
+    // two full pages of yes/no polls before the contest: keyed alike, the second would add nothing and end the read
+    const pages = [
+      Array.from({ length: 100 }, (_, i) => ({ timestampMs: BigInt(NOW + 1000 + i), votePolls: [yesNo(i)] })),
+      Array.from({ length: 100 }, (_, i) => ({ timestampMs: BigInt(NOW + 1099 + i), votePolls: [yesNo(99 + i)] })),
+      [{ timestampMs: BigInt(NOW + 1198), votePolls: [yesNo(198)] }, { timestampMs: BigInt(NOW + 5000), votePolls: [poll('late')] }],
+    ];
+    const q = vi.fn(async () => ({ data: pages.shift() ?? [], metadata: {} }));
+    fake.sdk = { voting: { votePollsByEndDateWithProof: q } };
+    const r = { ...registry, platform: { trusted: true, addresses: [`t${Math.random()}`] } } as Registry;
+    expect((await liveContests(r).open()).map((c) => c.label)).toEqual(['late']);
+  });
 });

@@ -349,6 +349,13 @@ that the content is true.
 | Username contests: open, ended, tallies | `voting.votePollsByEndDateWithProof` (open), `group.contestedResourcesWithProof` (ended, read only when that section is opened) and `voting.contestedResourceVoteStateWithProof` (contenders, tally, result), all in `liveContests` (`apps/web/src/contests/source.ts`). An awarded name's spelling is the winner's `domain` document (`registeredSpelling`). | 6.6. | — |
 | Your masternodes' votes on a contest | `votesOf` (`source.ts`): the voters of each contender (`group.contestedResourceVotersForIdentityWithProof`), then each voter's own votes (`voting.contestedResourceIdentityVotesWithProof`) only when abstain or lock have votes. | 6.6. | "unknown" when they can't be read. |
 | Your contest vote: sent | Signed in the browser (`signVote`, `apps/web/src/contests/vote.ts`) and broadcast straight to Platform; no govhub server is involved. "Sent": Platform accepted it, or answered that the masternode already votes this way, or, after a used-nonce answer, the proven read-back above shows this vote (`ContestVotesProvider`, `apps/web/src/contests/ContestVotes.tsx`). | Platform nodes: can withhold or drop it; it is retried until voting closes (about two hours when the close time couldn't be read), and a read-back gives up after five tries. | Network errors are retried; a refusal is shown. |
+| Masternode polls: whether the network has them | A proved read of the decision proposals system contract (`contracts.fetch`, `available` in `liveDecisions`, `apps/web/src/decisions/source.ts`). It exists from Platform protocol version 15; its absence is proved too. `sdk.version()` is not used: the SDK starts at 14 on every network until a verified answer moves it up. "Not yet" is read again every five minutes while a polls page is open. | 6.6. | "Masternode polls arrive with Dash Platform 5.1 on mainnet" until the contract is there. A failed read is an error with Retry, never "not yet". |
+| Masternode polls: lists, text, rule, edit history | `decisionProposals.byEndDate` (open yes/no), `byCreatedAt` (ended, newest first), `byOwner` (Mine), `get`, the multiple choice counterparts, and `documents.history` (every earlier version), all proved (`liveDecisions`). Open multiple choice polls come from the same `voting.votePollsByEndDateWithProof` scan as open username contests (`openVotePolls`, `apps/web/src/contests/source.ts`). | 6.6. The asker chose the text and the link; links are shown only when they are http(s). | — |
+| Masternode polls: tallies and results | `decisionProposals.pollState` (yes/no voting power, and once finished the recorded result with the voting power it needed) and `multipleChoice.voteState` / `keptChoice` (each choice's votes, abstain, none of the choices, the kept choice), proved. | 6.6. | — |
+| A yes/no poll's turnout requirement before it closes | Estimated: the minimum share of the voting power (1 per masternode, 4 per evonode, PoSe-banned left out) of the current masternode list that DAPI nodes agree on (`totalPower`, `source.ts`). Platform uses the list in the block that closes the poll; once it has, the recorded requirement replaces the estimate. | DAPI: as for your masternodes (row above); the list also moves on before the close. Not shown on a profile whose Core network differs from its Platform network. | "about N", and the page says it is an estimate. |
+| Your masternodes' votes on a poll | `decisionProposals.masternodeVote` / `multipleChoice.masternodeVote` per masternode, proved (`votesOf`, `source.ts`). | 6.6. | "unknown" when they can't be read. |
+| Your poll vote: sent | Signed in the browser (`signMasternodeVote`, `apps/web/src/contests/vote.ts`: a yes/no vote names its poll by the id the SDK derives; a multiple choice vote is a contest vote on the poll the SDK builds, towards the choice's document id) and broadcast straight to Platform, held and sent with contest votes in one list (a masternode votes both as the same voter identity, so they share its nonces). "Sent" as for contest votes, with the proven read-back above. | Platform nodes, as for contest votes. | As for contest votes. |
+| Creating a poll: what it costs | The page shows the fund or fee (0.5 DASH for a yes/no poll, 0.2 DASH plus 0.1 DASH a choice for a multiple choice one) before anything is signed; the yes/no fund and each choice's contest fund are stated in the create by the SDK's transition builder (`fund`, `packages/auth/src/evo.ts`). Platform refuses a yes/no create that states another fund, and a choice that states less than the fund to join (it charges only the fund to join). The 0.2 DASH fee of a multiple choice poll is charged as processing and not stated. | Platform: charges what the protocol says, not what the page says. | — |
 | "MN · vouched by X" chip | RSA blind signature from issuer X, whose key is published on Platform before the epoch (`packages/badge/src/reader.ts:71-116`). | Issuer X: can vouch for a non-masternode. 6.6 for the key documents. | Only what X claims. |
 | Hidden comments and authors | Block lists read with Platform proofs (`apps/web/src/app/moderationLoad.ts:42-69`). | The list owner decides what is hidden; 6.6. | "Show hidden" toggle; lists can be turned off. |
 | Reaction scores | Counted in the browser from Platform-proven reactions (`apps/web/src/ui/Votes.tsx:1-3`). | 6.6. Anyone can create identities, so scores are not sybil-resistant. | — |
@@ -648,10 +655,11 @@ anchored one (`apps/web/src/voting/masternodes.ts:3-6`). So does the collateral 
 
 **How Platform reads work.**
 
-- Every Platform read uses an evo-sdk `*WithProof` call. These include `documents.queryWithProof`,
-  `identities.balanceWithProof` and `dpns.usernameWithProof`. evo-sdk verifies the GroveDB proof and the quorum's BLS
+- Every Platform read is proved: an evo-sdk `*WithProof` call, such as `documents.queryWithProof`,
+  `identities.balanceWithProof` and `dpns.usernameWithProof`, or one of the SDK's helpers that read with proofs by default
+  (the masternode poll reads: `decisionProposals.*`, `contracts.fetch`, `documents.history`). evo-sdk verifies the GroveDB proof and the quorum's BLS
   signature over it.
-- The app runs evo-sdk 5.0.0-rc.8 with `trusted: true` (`apps/web/src/config/registry.ts:232`; `getSdk`, `platform.ts:20-39`). In that
+- The app runs evo-sdk 5.1.0 with `trusted: true` (`apps/web/src/config/registry.ts:232`; `getSdk`, `platform.ts:20-39`). In that
   mode the SDK downloads the **quorum public keys** from `https://quorums.<network>.networks.dash.org`.
 - With no Platform addresses set (the default), it also takes its **Platform node list** from there
   (`node_modules/@dashevo/evo-sdk/dist/sdk.js`, `connect()`).
@@ -768,7 +776,7 @@ Privacy is separate from correctness: a backend that can't lie can still learn t
 | Badge issuer | Which masternode asked, when, and from which IP. In Standard mode, a short list of identities that could hold the badge, from the public times of their writes; with Register now, likely the identity, by timing (6.3, PLAN §8.10). |
 | Faucet | Which identity its voucher funded (6.4). |
 | DAPI evonodes | Your IP. The bloom filter of a funding or proposal-deposit address you watch; in Recover, one filter covering all your one-time keys, which links them. The transactions you look up and broadcast (proposal collaterals, Recover sweeps). |
-| Platform nodes | Your IP. Every document, identity and name you read. The state transitions you sign. Username contest votes go to them directly, so the node they go through sees which masternodes vote from one browser, even with "Spread out" (`docs/privacy.md`, "Username contest votes"). In Recover, the key hashes it looks up and the asset-lock outpoints it checks (6.10). |
+| Platform nodes | Your IP. Every document, identity and name you read. The state transitions you sign. Username contest and masternode poll votes go to them directly, so the node they go through sees which masternodes vote from one browser, even with "Spread out" (`docs/privacy.md`, "Masternode votes on Platform"). In Recover, the key hashes it looks up and the asset-lock outpoints it checks (6.10). |
 | Quorum list service | Your IP, when the app starts. On testnet, also each quorum-proof request during verification. |
 | CoinGecko | Your IP, whenever the Core network is mainnet (Dev profile included). |
 
@@ -869,7 +877,10 @@ privacy").
     (`apps/web/src/ui/trust/ChainShield.tsx:133`), but not that the quorum keys come from the quorum service (6.6).
 14. **Recover's scan is not anchored** (6.10). Its block headers are a node's word, so nodes can hide stuck funds or a spend
     from it. It can't be made to send your money anywhere you didn't type.
-15. **A relay can sit on a paid proposal** (6.2). While it says "waiting", no other relay is asked; the backup's `gobject submit`
+15. **A poll's turnout requirement is an estimate until it closes** (section 5). It comes from the current masternode list,
+    not the one Platform counts at the close, and the page says "about". Masternode polls are signaling only: nothing on the
+    network acts on a result, and govhub shows none as binding.
+16. **A relay can sit on a paid proposal** (6.2). While it says "waiting", no other relay is asked; the backup's `gobject submit`
     command on your own node is the way around it.
 
 ## 9. Planned work (not on main)

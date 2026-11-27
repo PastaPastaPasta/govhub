@@ -111,3 +111,6 @@ export const proposalOwner = (owner: string | null): Featured => ({ ids: owner ?
 
 /** A username contest's contenders (from the proved vote state), in a fixed order. */
 export const contenders = (ids: readonly string[]): Featured => ({ ids: [...ids].sort(), chip: 'contender', view: 'Contenders', who: 'the contenders', whoHere: 'the contenders on their own contest' });
+
+/** A masternode poll's asker: the owner of its document (a proved read). */
+export const pollAsker = (owner: string): Featured => ({ ids: [owner], chip: 'asked the poll', view: 'Asker', who: 'the asker', whoHere: 'the asker on their own poll' });
