@@ -14,8 +14,9 @@ import { PollVotePanel } from '../decisions/PollVotePanel.tsx';
 import type { DecisionSource } from '../decisions/source.ts';
 import { ChoiceBar, choiceName, kindLabel, outlook, PollsNotYet, turnoutText, YesNoBar } from '../decisions/ui.tsx';
 import { useDecisionSource, usePollsAvailable } from '../decisions/useDecisions.ts';
-import { formatDateTime, formatDuration, formatInt } from '../lib/format.ts';
+import { errText, formatDateTime, formatDuration, formatInt } from '../lib/format.ts';
 import { pollAsker } from '../lib/social.ts';
+import { isWalletSession } from '../session/authSession.ts';
 import { Discussion } from '../ui/Discussion.tsx';
 import { ErrorBoundary } from '../ui/ErrorBoundary.tsx';
 import { useAsync } from '../ui/hooks.ts';
@@ -77,47 +78,46 @@ function PollView({ id, src }: { id: string; src: DecisionSource }) {
   return <PollBody poll={poll.data} src={src} />;
 }
 
-/** A poll's state, kept fresh: read again once voting has closed (for the result) and after a vote from this browser went out. */
-function usePollState<T>(src: DecisionSource, poll: Poll, read: () => Promise<T>, closing: boolean) {
-  const [attempt, setAttempt] = useState(0);
-  const state = useAsync(() => {
-    if (attempt) src.forget(poll.id);
-    return read();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [src, poll.id, attempt]);
-  const [fresh, setFresh] = useState<T | undefined>(undefined);
-  const [rereads, setRereads] = useState(0);
+/**
+ * A poll's state, kept fresh: read again while voting has closed and the result is not recorded yet (`closing`, every 20 s), after a
+ * vote from this browser went out, and on `refresh`. A background read that fails keeps the last good one on screen.
+ */
+function usePollState<T>(src: DecisionSource, poll: Poll, read: () => Promise<T>, closing: (data: T | undefined) => boolean) {
+  const [reads, setReads] = useState(0);
+  const [st, setSt] = useState<{ data?: T; error?: string; loading: boolean; settled: number }>({ loading: true, settled: 0 });
   useEffect(() => {
-    if (!closing) return;
     let live = true;
-    const t = setTimeout(() => {
-      src.forget(poll.id);
-      read().then(
-        (x) => live && setFresh(() => x),
-        () => live && setRereads((n) => n + 1),
-      );
-    }, CLOSING_REREAD_MS);
-    return () => {
-      live = false;
-      clearTimeout(t);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [closing, src, poll.id, fresh, rereads]);
-  const key = pollVoteKey(poll.kind, poll.id);
-  const sentHere = useContestVotes().held.filter((v) => v.label === key && v.status === 'sent').length;
-  useEffect(() => {
-    if (!sentHere) return;
-    let live = true;
+    if (reads) src.forget(poll.id);
     read().then(
-      (x) => live && setFresh(() => x),
-      () => {},
+      (data) => live && setSt((p) => ({ data, loading: false, settled: p.settled + 1 })),
+      (e: unknown) => live && setSt((p) => (p.data !== undefined ? { ...p, loading: false, settled: p.settled + 1 } : { error: errText(e), loading: false, settled: p.settled + 1 })),
     );
     return () => {
       live = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sentHere, src, poll.id]);
-  return { ...state, data: fresh !== undefined && state.data !== undefined ? fresh : state.data, retry: () => setAttempt((n) => n + 1) };
+  }, [src, poll.id, reads]);
+  const refresh = () => setReads((n) => n + 1);
+  const waiting = closing(st.data);
+  useEffect(() => {
+    if (!waiting) return;
+    const t = setTimeout(() => setReads((n) => n + 1), CLOSING_REREAD_MS);
+    return () => clearTimeout(t);
+  }, [waiting, st.settled]);
+  const key = pollVoteKey(poll.kind, poll.id);
+  const sentHere = useContestVotes().held.filter((v) => v.label === key && v.status === 'sent').length;
+  useEffect(() => {
+    if (sentHere) setReads((n) => n + 1);
+  }, [sentHere]);
+  return {
+    data: st.data,
+    loading: st.loading,
+    error: st.error,
+    retry: () => {
+      setSt((p) => (p.data !== undefined ? p : { loading: true, settled: p.settled }));
+      refresh();
+    },
+  };
 }
 
 function useAsker(id: string): { dpns?: string | undefined; profile?: Profile | undefined } {
@@ -173,8 +173,7 @@ function PollBody({ poll, src }: { poll: Poll; src: DecisionSource }) {
 
 function YesNoBody({ poll, src }: { poll: YesNoPoll; src: DecisionSource }) {
   const nowMs = useClockMs();
-  const closing = poll.endDate <= nowMs;
-  const st = usePollState(src, poll, () => src.yesNoState(poll.id), closing);
+  const st = usePollState(src, poll, () => src.yesNoState(poll.id), (d) => !!d && d.status !== 'finished' && poll.endDate <= nowMs);
   const power = useAsync(() => src.totalPower().catch(() => null), [src]);
   const s: YesNoState | null = st.data ?? null;
   const phase = yesNoPhase(poll, s, nowMs);
@@ -292,14 +291,14 @@ function ChoiceBody({ poll, src }: { poll: ChoicePoll; src: DecisionSource }) {
   const nowMs = useClockMs();
   const ends = useAsync(() => src.openChoices().catch(() => new Map<string, number>()), [src]);
   const endsAt = ends.data?.get(poll.id) ?? null;
-  const st = usePollState(src, poll, () => src.choiceState(poll.id), endsAt !== null && endsAt <= nowMs);
+  const st = usePollState(src, poll, () => src.choiceState(poll.id), (d) => !!d && !d.result && endsAt !== null && endsAt <= nowMs);
   const s: ChoiceState | null = st.data ?? null;
   const phase = choicePhase(s, endsAt, nowMs);
   const { session } = useForum();
   const run = contestRun(src.network);
   // choices join while the vote's join window is open: from its first choice (its end, less the vote's length, gives that)
   const joinOpen = phase === 'nochoices' || (phase === 'open' && endsAt !== null && nowMs < endsAt - run.voteMs + run.joinMs);
-  const mayAdd = !!session && (poll.open || session.identityId === poll.ownerId);
+  const mayAdd = !!session && !isWalletSession(session) && (poll.open || session.identityId === poll.ownerId);
   return (
     <div className="p-layout">
       <div className="p-main">

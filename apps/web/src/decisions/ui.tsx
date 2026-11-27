@@ -105,6 +105,8 @@ export function choiceLead(s: ChoiceState): string {
   if (!top) return 'Waiting for its first choice';
   if (s.total === 0) return 'No votes yet';
   if (s.none > top.votes) return `None of the choices leads with ${pct(s.none, s.total)}`;
+  // Platform breaks a tie by the earliest choice, which the vote state does not say: no leader is named
+  if (s.choices[1] && s.choices[1].votes === top.votes) return `Tied at ${pct(top.votes, s.total)}`;
   return `${choiceName(top)} leads with ${pct(top.votes, s.total)}`;
 }
 

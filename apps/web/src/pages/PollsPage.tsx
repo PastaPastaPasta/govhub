@@ -18,8 +18,19 @@ import { useAsync, useReveal } from '../ui/hooks.ts';
 import { useCommentCounts } from '../ui/useCommentCounts.ts';
 
 const STATE_CONCURRENCY = 4;
+/** How far back the open list looks for multiple choice polls still waiting for their first choice. */
+const WAITING_LOOKBACK_MS = 14 * 86_400_000;
+/** A multiple choice poll still waiting for its first choice: open, not ended. */
+const waitingForChoices = (p: Poll, s: PollStateEntry): boolean => p.kind === 'mc' && !!s && s !== 'error' && 'choices' in s && !s.result && s.choices.length === 0;
 const STEP = 20;
 type Show = 'open' | 'ended' | 'mine';
+const sourceIds = new WeakMap<DecisionSource, number>();
+let nextSourceId = 0;
+const sourceKey = (src: DecisionSource): number => {
+  let n = sourceIds.get(src);
+  if (n === undefined) sourceIds.set(src, (n = nextSourceId++));
+  return n;
+};
 const SHOWS: ReadonlyArray<{ id: Show; label: string }> = [
   { id: 'open', label: 'Open' },
   { id: 'ended', label: 'Ended' },
@@ -130,11 +141,11 @@ function PollLists({ src }: { src: DecisionSource }) {
           </label>
         ))}
       </fieldset>
-      {/* a new source starts every list afresh */}
+      {/* a new source (profile, data mode) starts every list afresh */}
       {show === 'open' ? (
-        <OpenList key={src.network} src={src} nowMs={nowMs} totalPower={totalPower} />
+        <OpenList key={sourceKey(src)} src={src} nowMs={nowMs} totalPower={totalPower} />
       ) : show === 'ended' ? (
-        <EndedList key={src.network} src={src} nowMs={nowMs} totalPower={totalPower} />
+        <EndedList key={sourceKey(src)} src={src} nowMs={nowMs} totalPower={totalPower} />
       ) : (
         <MineList src={src} nowMs={nowMs} totalPower={totalPower} />
       )}
@@ -143,7 +154,7 @@ function PollLists({ src }: { src: DecisionSource }) {
 }
 
 /** The cards of a list, revealed as it scrolls (no pages): tallies and comment counts only for the cards on screen. */
-function Cards({ polls, src, endsAt, nowMs, totalPower, onEnd, testId }: { polls: readonly Poll[]; src: DecisionSource; endsAt: ReadonlyMap<string, number>; nowMs: number; totalPower: number | null; onEnd?: () => void; testId: string }) {
+function Cards({ polls, src, endsAt, nowMs, totalPower, onEnd, hide, testId }: { polls: readonly Poll[]; src: DecisionSource; endsAt: ReadonlyMap<string, number>; nowMs: number; totalPower: number | null; onEnd?: () => void; hide?: (p: Poll, s: PollStateEntry) => boolean; testId: string }) {
   const { count, sentinel } = useReveal(polls.length, STEP, onEnd);
   const revealed = useMemo(() => polls.slice(0, count), [polls, count]);
   const states = usePollStates(src, revealed);
@@ -152,7 +163,7 @@ function Cards({ polls, src, endsAt, nowMs, totalPower, onEnd, testId }: { polls
     <>
       {revealed.length > 0 && (
         <div className="plist" data-testid={testId}>
-          {revealed.map((p) => (
+          {revealed.filter((p) => !hide?.(p, states.get(p.id))).map((p) => (
             <PollCard key={p.id} poll={p} state={states.get(p.id)} endsAt={p.kind === 'yn' ? p.endDate : (endsAt.get(p.id) ?? null)} nowMs={nowMs} totalPower={totalPower} comments={counts.get(pollDiscussionKey(p.id))} />
           ))}
         </div>
@@ -173,12 +184,22 @@ const Skeleton = () => (
 function OpenList({ src, nowMs, totalPower }: { src: DecisionSource; nowMs: number; totalPower: number | null }) {
   const [attempt, setAttempt] = useState(0);
   const open = useAsync(async () => {
-    const [yn, ends] = await Promise.all([src.openYesNo(), src.openChoices()]);
+    const [yn, ends, recent] = await Promise.all([src.openYesNo(), src.openChoices(), src.page('mc')]);
     const mc: Poll[] = [];
     await mapLimit([...ends.keys()], STATE_CONCURRENCY, async (id) => {
       const p = await src.get(id);
       if (p?.kind === 'mc') mc.push(p);
     });
+    // a recent multiple choice poll with no choice yet has no vote to list, but can still take its first choice
+    const since = Date.now() - WAITING_LOOKBACK_MS;
+    await mapLimit(
+      recent.polls.filter((p) => p.createdAt >= since && !ends.has(p.id)),
+      STATE_CONCURRENCY,
+      async (p) => {
+        const s = await src.choiceState(p.id).catch(() => null);
+        if (s && !s.result && s.choices.length === 0) mc.push(p);
+      },
+    );
     return { polls: [...yn, ...mc], ends };
   }, [src, attempt]);
   const polls = useMemo(() => {
@@ -273,7 +294,7 @@ function EndedList({ src, nowMs, totalPower }: { src: DecisionSource; nowMs: num
   return (
     <>
       <h2 className="contests-h2">Ended</h2>
-      {polls.length > 0 && <Cards polls={polls} src={src} endsAt={ends} nowMs={nowMs} totalPower={totalPower} onEnd={() => setTarget(polls.length + STEP)} testId="ended-polls" />}
+      {polls.length > 0 && <Cards polls={polls} src={src} endsAt={ends} nowMs={nowMs} totalPower={totalPower} onEnd={() => setTarget(polls.length + STEP)} hide={waitingForChoices} testId="ended-polls" />}
       {loading && (
         <p className="muted small center" aria-busy="true">
           <span className="spinner" aria-hidden="true" /> Reading polls…

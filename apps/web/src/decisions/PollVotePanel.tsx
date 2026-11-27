@@ -18,7 +18,7 @@ export function PollVotePanel({ poll, state, endsAt }: { poll: Poll; state: Choi
   const choiceKey = state ? state.choices.map((c) => `${c.id}:${c.title ?? ''}`).join(',') : '';
   const target = useMemo<VoteTarget>(() => {
     const names = new Map((state?.choices ?? []).map((c) => [c.id, choiceName(c)]));
-    const common = { key: pollVoteKey(kind, id), on: 'poll' as const, things: 'polls', endsAt, current, prepare };
+    const common = { key: pollVoteKey(kind, id), things: 'polls', endsAt, current, prepare };
     if (kind === 'yn')
       return {
         ...common,

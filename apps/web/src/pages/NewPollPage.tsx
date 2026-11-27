@@ -67,6 +67,8 @@ function PollForm() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<{ text: string; topUp: boolean; created?: string } | null>(null);
   const [confirming, setConfirming] = useState(false);
+  // after a write that did or may have landed, asking again could pay for a second poll: the form locks
+  const [locked, setLocked] = useState<{ created?: string } | null>(null);
 
   const ynProblems = yesNoProblems(yn);
   const mcProblems = choicePollProblems(mc);
@@ -96,8 +98,10 @@ function PollForm() {
       }
       navigate(pollHref(created));
     } catch (e) {
+      const text = errText(e);
       // a poll created before a choice failed is there: its page takes the rest of the choices
-      setError({ text: errText(e), topUp: e instanceof TopUpError, ...(created ? { created } : {}) });
+      setError({ text, topUp: e instanceof TopUpError, ...(created ? { created } : {}) });
+      if (created || /may still appear|not confirmed/i.test(text)) setLocked(created ? { created } : {});
     } finally {
       setBusy(null);
       setConfirming(false);
@@ -231,7 +235,7 @@ function PollForm() {
           {kind === 'mc' && filled.length > 0 && ` That is ${filled.length + 1} transactions, signed one after another.`}
         </p>
         {short && <WriteError error={`Your identity needs about ${formatCredits(need)} available for this.`} needsTopUp />}
-        {!confirming ? (
+        {locked ? null : !confirming ? (
           <button type="button" className="btn btn-primary" onClick={review} disabled={!!busy} data-testid="new-poll-review">
             Review
           </button>
@@ -246,9 +250,14 @@ function PollForm() {
           </div>
         )}
         <WriteError error={error?.text ?? null} needsTopUp={error?.topUp ?? false} />
-        {error?.created && (
-          <p className="small">
-            The poll itself was created. <Link to={pollHref(error.created)}>Open it</Link> to add the remaining choices.
+        {locked?.created && (
+          <p className="small" data-testid="new-poll-partial">
+            The poll itself was created, so asking again would pay for a second one. <Link to={pollHref(locked.created)}>Open it</Link> to add the remaining choices.
+          </p>
+        )}
+        {locked && !locked.created && (
+          <p className="small" data-testid="new-poll-unconfirmed">
+            It may still have been created: look in <Link to="/polls?show=mine">your polls</Link> before asking again, so you don’t pay twice.
           </p>
         )}
       </section>

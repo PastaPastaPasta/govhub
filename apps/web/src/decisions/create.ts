@@ -9,7 +9,7 @@ export interface CreateOp {
   contractId: string;
   type: string;
   data: Record<string, DocValue>;
-  fund: true;
+  fund?: true;
 }
 
 const DAY_MS = 86_400_000;
@@ -136,9 +136,9 @@ export function choicePollProblems(d: ChoicePollDraft): { title?: string; url?: 
 
 export const hasProblems = (p: ReturnType<typeof choicePollProblems>): boolean => !!(p.title || p.url || p.count || p.choices.some((c) => c.title || c.description));
 
-/** The `multipleChoiceProposal` document (described at a url; it pays the 0.2 DASH fee, which the create does not state). */
+/** The `multipleChoiceProposal` document (described at a url; Platform charges its 0.2 DASH fee as processing, unstated). */
 export function choicePollOp(d: ChoicePollDraft): CreateOp {
-  return { action: 'create', contractId: DECISIONS_CONTRACT_ID, type: 'multipleChoiceProposal', data: { title: oneLine(d.title), url: d.url.trim(), open: d.open }, fund: true };
+  return { action: 'create', contractId: DECISIONS_CONTRACT_ID, type: 'multipleChoiceProposal', data: { title: oneLine(d.title), url: d.url.trim(), open: d.open } };
 }
 
 /** A `choice` document for a multiple choice poll (it states the contest's fund to join). */

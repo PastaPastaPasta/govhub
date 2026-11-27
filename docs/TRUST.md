@@ -355,7 +355,7 @@ that the content is true.
 | A yes/no poll's turnout requirement before it closes | Estimated: the minimum share of the voting power (1 per masternode, 4 per evonode, PoSe-banned left out) of the current masternode list that DAPI nodes agree on (`totalPower`, `source.ts`). Platform uses the list in the block that closes the poll; once it has, the recorded requirement replaces the estimate. | DAPI: as for your masternodes (row above); the list also moves on before the close. Not shown on a profile whose Core network differs from its Platform network. | "about N", and the page says it is an estimate. |
 | Your masternodes' votes on a poll | `decisionProposals.masternodeVote` / `multipleChoice.masternodeVote` per masternode, proved (`votesOf`, `source.ts`). | 6.6. | "unknown" when they can't be read. |
 | Your poll vote: sent | Signed in the browser (`signMasternodeVote`, `apps/web/src/contests/vote.ts`: a yes/no vote names its poll by the id the SDK derives; a multiple choice vote is a contest vote on the poll the SDK builds, towards the choice's document id) and broadcast straight to Platform, held and sent with contest votes in one list (a masternode votes both as the same voter identity, so they share its nonces). "Sent" as for contest votes, with the proven read-back above. | Platform nodes, as for contest votes. | As for contest votes. |
-| Creating a poll: what it costs | The page shows the fund or fee (0.5 DASH for a yes/no poll, 0.2 DASH plus 0.1 DASH a choice for a multiple choice one) before anything is signed; the yes/no fund and each choice's contest fund are stated in the create by the SDK's transition builder (`fund`, `packages/auth/src/evo.ts`), and Platform refuses a create that states another. | Platform: charges what the protocol says, not what the page says. | — |
+| Creating a poll: what it costs | The page shows the fund or fee (0.5 DASH for a yes/no poll, 0.2 DASH plus 0.1 DASH a choice for a multiple choice one) before anything is signed; the yes/no fund and each choice's contest fund are stated in the create by the SDK's transition builder (`fund`, `packages/auth/src/evo.ts`). Platform refuses a yes/no create that states another fund, and a choice that states less than the fund to join (it charges only the fund to join). The 0.2 DASH fee of a multiple choice poll is charged as processing and not stated. | Platform: charges what the protocol says, not what the page says. | — |
 | "MN · vouched by X" chip | RSA blind signature from issuer X, whose key is published on Platform before the epoch (`packages/badge/src/reader.ts:71-116`). | Issuer X: can vouch for a non-masternode. 6.6 for the key documents. | Only what X claims. |
 | Hidden comments and authors | Block lists read with Platform proofs (`apps/web/src/app/moderationLoad.ts:42-69`). | The list owner decides what is hidden; 6.6. | "Show hidden" toggle; lists can be turned off. |
 | Reaction scores | Counted in the browser from Platform-proven reactions (`apps/web/src/ui/Votes.tsx:1-3`). | 6.6. Anyone can create identities, so scores are not sybil-resistant. | — |
@@ -655,8 +655,9 @@ anchored one (`apps/web/src/voting/masternodes.ts:3-6`). So does the collateral 
 
 **How Platform reads work.**
 
-- Every Platform read uses an evo-sdk `*WithProof` call. These include `documents.queryWithProof`,
-  `identities.balanceWithProof` and `dpns.usernameWithProof`. evo-sdk verifies the GroveDB proof and the quorum's BLS
+- Every Platform read is proved: an evo-sdk `*WithProof` call, such as `documents.queryWithProof`,
+  `identities.balanceWithProof` and `dpns.usernameWithProof`, or one of the SDK's helpers that read with proofs by default
+  (the masternode poll reads: `decisionProposals.*`, `contracts.fetch`, `documents.history`). evo-sdk verifies the GroveDB proof and the quorum's BLS
   signature over it.
 - The app runs evo-sdk 5.1.0 with `trusted: true` (`apps/web/src/config/registry.ts:232`; `getSdk`, `platform.ts:20-39`). In that
   mode the SDK downloads the **quorum public keys** from `https://quorums.<network>.networks.dash.org`.

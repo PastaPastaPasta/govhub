@@ -99,7 +99,8 @@ export function AboutPage() {
       <p>
         Anyone can put a question to the masternodes on Dash Platform: a yes or no, with its own pass threshold, minimum turnout and closing date, or a choice
         among several answers. The <Link to="/polls">Polls</Link> page lists the open ones and the ones that ended. A result is a signal: nothing on the
-        network acts on it. Asking costs 0.5 DASH for a yes or no, or 0.2 DASH and 0.1 DASH a choice; that pays for the masternodes’ votes.
+        network acts on it. Asking a yes or no costs 0.5 DASH, which pays for the masternodes’ votes; a multiple choice poll costs a 0.2 DASH fee, and each choice
+        0.1 DASH paid into its vote.
       </p>
       <p>
         Your browser reads the polls and their tallies from Dash Platform and checks the network’s proofs. Masternode owners vote as on usernames, with their

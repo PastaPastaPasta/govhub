@@ -45,8 +45,6 @@ export interface VoteOption {
 export interface VoteTarget {
   /** the held-vote key (held.ts `label`): a contest's label, or a poll's key */
   key: string;
-  /** what is voted on, in the panel's words */
-  on: 'name' | 'poll';
   /** what a profile with different Core and Platform networks cannot vote on */
   things: string;
   options: readonly VoteOption[];
@@ -76,7 +74,8 @@ function heldLine(v: HeldVote, now: number): { badge: string; tone: Tone } {
 
 export function ContestVotePanel({ label, state, endsAt, nameOf }: { label: string; state: ContestState; endsAt: number | null; nameOf: (identityId: string) => string }) {
   const src = useContestSource();
-  const ids = state.contenders.map((x) => x.identityId).join(',');
+  // the options follow the contenders and their names (DPNS names and profiles arrive after the contest)
+  const names = state.contenders.map((x) => `${x.identityId}=${nameOf(x.identityId)}`).join('\n');
   const current = useCallback(
     async (mns: readonly { proTxHash: string; voterId: string }[]) => {
       const byVoter = await src.votesOf(label, mns.map((m) => m.voterId));
@@ -90,7 +89,6 @@ export function ContestVotePanel({ label, state, endsAt, nameOf }: { label: stri
   const target = useMemo<VoteTarget>(
     () => ({
       key: label,
-      on: 'name',
       things: 'contests',
       endsAt,
       options: [
@@ -104,9 +102,9 @@ export function ContestVotePanel({ label, state, endsAt, nameOf }: { label: stri
       current,
       prepare,
     }),
-    // the options follow the contenders; nameOf is a new function on every render of the page
+    // nameOf is a new function on every render of the page: `names` stands for what it returns
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [label, endsAt, ids, current, prepare],
+    [label, endsAt, names, current, prepare],
   );
   return <MasternodeVotePanel target={target} />;
 }

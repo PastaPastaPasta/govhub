@@ -83,3 +83,13 @@ describe('keys and links', () => {
     expect(linkUrl(null)).toBeNull();
   });
 });
+
+describe('the leading choice', async () => {
+  const { choiceLead } = await import('./ui.tsx');
+  const s = (votes: number[]) => ({ choices: votes.map((v, i) => ({ id: `c${i}`, title: `C${i}`, votes: v })), abstain: 0, none: 0, total: votes.reduce((a, b) => a + b, 0), result: null });
+  it('names a leader only when it is ahead: Platform breaks ties by the earliest choice, which the state does not say', () => {
+    expect(choiceLead(s([3, 1]))).toBe('C0 leads with 75%');
+    expect(choiceLead(s([2, 2]))).toBe('Tied at 50%');
+    expect(choiceLead(s([]))).toBe('Waiting for its first choice');
+  });
+});
