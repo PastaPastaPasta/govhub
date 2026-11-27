@@ -17,7 +17,8 @@ export type DocValue = string | number | boolean | Uint8Array;
 export type DocData = Record<string, DocValue>;
 
 export type DocumentOp =
-  | { action: 'create'; contractId: string; type: string; data: DocData }
+  /** `fund`: the create pays a fund Platform requires it to state (a decision proposal's, a contested document's): see @govhub/auth */
+  | { action: 'create'; contractId: string; type: string; data: DocData; fund?: true }
   /** `revision` is the stored revision being replaced; the signer writes revision + 1. `data` is the full new document. */
   | { action: 'replace'; contractId: string; type: string; id: string; revision: number; data: DocData }
   | { action: 'delete'; contractId: string; type: string; id: string };
