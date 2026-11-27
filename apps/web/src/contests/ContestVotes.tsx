@@ -1,4 +1,4 @@
-// Holds and sends this browser's signed contest votes (contests/held.ts) on every page, so a spread-out vote goes out whichever govhub
+// Holds and sends this browser's signed Platform votes (contests/held.ts: username contests and masternode polls) on every page, so a spread-out vote goes out whichever govhub
 // page is open at its time. Storage is the truth for votes still to send: every change is a read-modify-write under an exclusive
 // Web Lock (tabs never overwrite each other), and one tab sends at a time (a second lock). A vote is claimed ("sending", with the
 // time) before it is sent, so no other tab sends, cancels or replaces it meanwhile. Sent and failed votes are kept in memory only.
@@ -9,7 +9,9 @@ import { useForum } from '../app/forum.tsx';
 import { cryptoRand32 } from '../voting/plan.ts';
 import { dueVotes, GUEST_OWNER, loadHeld, OLD_KEYS, OVERDUE_MS, reclaimCutOff, respreadOverdue, retryDelayMs, saveHeld, storageKey, type HeldVote } from './held.ts';
 import { useContestSource } from './useContests.ts';
-import { classifySendError, sameChoice } from './vote.ts';
+import { classifySendError, sameChoice, type Choice } from './vote.ts';
+import { parsePollVoteKey } from '../decisions/model.ts';
+import { useDecisionSource } from '../decisions/useDecisions.ts';
 
 interface Ctx {
   /** this reader's votes on this network: still to send, and those sent or failed in this tab */
@@ -62,8 +64,30 @@ async function withStoreLock<T>(fn: () => T): Promise<T> {
 export function ContestVotesProvider({ children }: { children: ReactNode }) {
   const { registry } = useApp();
   const { session } = useForum();
-  const src = useContestSource();
-  const live = src.live;
+  const contests = useContestSource();
+  // read through a ref: the sender restarts only when the contest source changes (a profile or mode switch changes both)
+  const pollSource = useDecisionSource();
+  const polls = useRef(pollSource);
+  polls.current = pollSource;
+  const live = contests.live;
+  // what a vote is on decides where its state is dropped and its read-back is done
+  const src = useMemo(
+    () => ({
+      live: contests.live,
+      broadcast: (st: Uint8Array) => contests.broadcast(st),
+      forget(key: string) {
+        const p = parsePollVoteKey(key);
+        if (p) polls.current.forget(p.id);
+        else contests.forget(key);
+      },
+      async readBack(v: HeldVote): Promise<Choice | null | undefined> {
+        const p = parsePollVoteKey(v.label);
+        if (p) return (await polls.current.votesOf(p.kind, p.id, [v.proTxHash])).get(v.proTxHash);
+        return (await contests.votesOf(v.label, [v.voterId])).get(v.voterId);
+      },
+    }),
+    [contests],
+  );
   const network = registry.platformNetwork;
   const owner = session?.identityId ?? GUEST_OWNER;
   const scopeKey = storageKey(live, network);
@@ -153,7 +177,7 @@ export function ContestVotesProvider({ children }: { children: ReactNode }) {
         src.forget(v.label);
         await finish(v.id, 'sent');
       } catch (e) {
-        const o = classifySendError(e);
+        const o = classifySendError(e, parsePollVoteKey(v.label) ? 'poll' : 'name');
         if (o.kind === 'same') {
           src.forget(v.label);
           return finish(v.id, 'sent', o.text);
@@ -164,7 +188,7 @@ export function ContestVotesProvider({ children }: { children: ReactNode }) {
         src.forget(v.label);
         let counted;
         try {
-          counted = (await src.votesOf(v.label, [v.voterId])).get(v.voterId);
+          counted = await src.readBack(v);
         } catch {
           counted = undefined;
         }

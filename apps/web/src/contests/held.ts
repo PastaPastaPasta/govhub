@@ -1,7 +1,9 @@
-// Signed contest votes waiting to go out, and when. "Now" votes go at once, one after another. "Spread out" votes each get their own
-// random time before the contest closes, so watchers of Platform do not see one operator's masternodes vote together. There is no
-// relay for Platform votes: this browser sends them, so they only go out while govhub is open here. A vote whose time passed while
-// govhub was closed (or the computer slept) gets a new random time soon after, so overdue votes never go out as one burst.
+// Signed Platform votes (username contests and masternode polls) waiting to go out, and when. "Now" votes go at once, one after
+// another. "Spread out" votes each get their own random time before voting closes, so watchers of Platform do not see one
+// operator's masternodes vote together. There is no relay for Platform votes: this browser sends them, so they only go out while
+// govhub is open here. A vote whose time passed while govhub was closed (or the computer slept) gets a new random time soon after,
+// so overdue votes never go out as one burst.
+// Contest and poll votes share one list: a masternode signs both as the same voter identity, so they take their nonces in turn.
 // Only votes still to send (or being sent) are stored, in localStorage, per data mode and network; a sent or failed one is dropped
 // from storage at once. Each vote names its owner (the signed-in identity, or "guest" for pasted keys): pages show a reader only
 // their own, though the sender sends every stored vote (they were signed to go out).
@@ -16,6 +18,7 @@ export interface HeldVote {
   network: CoreNetwork;
   /** the signed-in identity that signed it, or GUEST_OWNER (keys pasted without an account) */
   owner: string;
+  /** what the vote is on: a contest's normalized label, or a poll's key (decisions/model.ts pollVoteKey) */
   label: string;
   proTxHash: string;
   /** the masternode's voting identity (base58) */
@@ -94,7 +97,7 @@ export const storageKey = (live: boolean, network: CoreNetwork) => `govhub.conte
 
 const isChoice = (c: unknown): c is Choice => {
   const x = c as { kind?: unknown; identityId?: unknown } | null;
-  return !!x && (x.kind === 'abstain' || x.kind === 'lock' || (x.kind === 'contender' && typeof x.identityId === 'string'));
+  return !!x && (x.kind === 'abstain' || x.kind === 'lock' || x.kind === 'yes' || x.kind === 'no' || (x.kind === 'contender' && typeof x.identityId === 'string'));
 };
 
 const isHeld = (v: unknown): v is HeldVote => {

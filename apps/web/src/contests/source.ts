@@ -114,21 +114,23 @@ async function registeredSpelling(sdk: Sdk, label: string, ownerId: string): Pro
   return undefined;
 }
 
-export function liveContests(r: Registry): ContestSource {
-  const scope = `contests:${r.platformNetwork}:${JSON.stringify(r.platform)}`;
-  const stateCache = cacheFor(states, scope);
-  const openCache = cacheFor(opens, scope);
-  let dpns: Promise<unknown> | null = null;
-  const dpnsContract = async () => {
-    dpns ??= getSdk(r).then((sdk) => sdk.contracts.fetch(DPNS_CONTRACT_ID));
-    dpns.catch(() => (dpns = null));
-    return dpns;
-  };
+/** A contested vote poll as Platform's end-date index lists it (JSON: identifiers in base58). */
+export interface OpenVotePoll {
+  poll: { contractId?: string; documentTypeName?: string; indexName?: string; indexValues?: unknown[] };
+  /** ms of Platform block time */
+  endsAt: number;
+}
 
-  async function readOpen(): Promise<OpenContest[]> {
+const scans = new Map<string, TtlCache<OpenVotePoll[]>>();
+
+/**
+ * Every contested vote poll still open, of any contract (usernames, multiple choice polls, other apps'), soonest closing first: one
+ * proof-verified scan of the end-date index, cached for a minute and shared by the contest and poll pages.
+ */
+export function openVotePolls(r: Registry): Promise<OpenVotePoll[]> {
+  return cacheFor(scans, `scan:${r.platformNetwork}:${JSON.stringify(r.platform)}`).get('open', async () => {
     const sdk = await getSdk(r);
-    const out: OpenContest[] = [];
-    // every poll seen, of any contract: the end-date index holds other apps' contested polls too, and they count as progress
+    const out: OpenVotePoll[] = [];
     const seen = new Set<string>();
     // Whether Drive's limit counts end times or polls, a full page means "maybe more": the next one starts AT the last end time
     // (polls of one end time may be split across pages; `seen` drops the repeats) and the read stops once a page brings nothing new.
@@ -143,20 +145,40 @@ export function liveContests(r: Registry): ContestSource {
         const endsAt = num(b.timestampMs);
         if (endsAt === null) continue;
         start = Math.max(start, endsAt);
-        for (const poll of Array.from(b.votePolls ?? [])) {
+        for (const raw of Array.from(b.votePolls ?? [])) {
           polls++;
-          const p = (poll as { toJSON(): { contractId?: string; documentTypeName?: string; indexName?: string; indexValues?: unknown[] } }).toJSON();
+          const p = (raw as { toJSON(): OpenVotePoll['poll'] }).toJSON();
           const key = JSON.stringify([p.contractId, p.documentTypeName, p.indexName, p.indexValues]);
           if (seen.has(key)) continue;
           seen.add(key);
           added++;
-          if (p.contractId !== DPNS_CONTRACT_ID || p.documentTypeName !== DPNS_POLL.documentTypeName || p.indexName !== DPNS_POLL.indexName) continue;
-          const [parent, label] = p.indexValues ?? [];
-          if (parent !== PARENT_DOMAIN || typeof label !== 'string') continue;
-          out.push({ label, endsAt });
+          out.push({ poll: p, endsAt });
         }
       }
       if ((buckets.length < OPEN_PAGE && polls < OPEN_PAGE) || added === 0) break;
+    }
+    return out;
+  });
+}
+
+export function liveContests(r: Registry): ContestSource {
+  const scope = `contests:${r.platformNetwork}:${JSON.stringify(r.platform)}`;
+  const stateCache = cacheFor(states, scope);
+  const openCache = cacheFor(opens, scope);
+  let dpns: Promise<unknown> | null = null;
+  const dpnsContract = async () => {
+    dpns ??= getSdk(r).then((sdk) => sdk.contracts.fetch(DPNS_CONTRACT_ID));
+    dpns.catch(() => (dpns = null));
+    return dpns;
+  };
+
+  async function readOpen(): Promise<OpenContest[]> {
+    const out: OpenContest[] = [];
+    for (const { poll: p, endsAt } of await openVotePolls(r)) {
+      if (p.contractId !== DPNS_CONTRACT_ID || p.documentTypeName !== DPNS_POLL.documentTypeName || p.indexName !== DPNS_POLL.indexName) continue;
+      const [parent, label] = p.indexValues ?? [];
+      if (parent !== PARENT_DOMAIN || typeof label !== 'string') continue;
+      out.push({ label, endsAt });
     }
     return out.sort((a, b) => a.endsAt - b.endsAt || a.label.localeCompare(b.label));
   }
