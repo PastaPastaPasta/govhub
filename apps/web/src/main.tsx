@@ -1,8 +1,10 @@
 import { StrictMode } from 'react';
+import { useTitle } from './app/title.ts';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Link, Route, Routes } from 'react-router-dom';
-import '@fontsource-variable/archivo/wdth.css';
+import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { Link } from './ui/Link.tsx';
 import './styles.css';
+import './redesign.css';
 import { AppProvider, useApp } from './app/context.tsx';
 import { ForumProvider } from './app/forum.tsx';
 import { AuthProvider } from './auth/context.tsx';
@@ -11,18 +13,22 @@ import { BadgeProvider } from './badge/context.tsx';
 import { FramedNotice, isFramed } from './app/frame.tsx';
 import { Layout } from './app/Layout.tsx';
 import { preloadSdk } from './data/platform.ts';
+import { preloadOwnerPages } from './lib/ownerPages.ts';
 import { AboutPage } from './pages/AboutPage.tsx';
 import { VerificationPage } from './pages/VerificationPage.tsx';
 import { ActivePage } from './pages/ActivePage.tsx';
 import { ContestVotesProvider } from './contests/ContestVotes.tsx';
 import { GuestKeysProvider } from './contests/GuestKeys.tsx';
 import { PastPage } from './pages/PastPage.tsx';
+import { TreasuryPage } from './pages/TreasuryPage.tsx';
 import { ProposalByHash, ProposalByName } from './pages/ProposalPage.tsx';
 import { SettingsPage } from './pages/SettingsPage.tsx';
 import { TrustPage } from './pages/TrustPage.tsx';
 import { MasternodesPage } from './pages/MasternodesPage.tsx';
+import { MasternodePage } from './pages/MasternodePage.tsx';
 import { MyVotesPage } from './pages/MyVotesPage.tsx';
 import { KeyringProvider } from './voting/KeyringContext.tsx';
+import { PollsPage, NewPollPage, PollPage } from './polls/Pages.tsx';
 import { lazy, Suspense, useEffect } from 'react';
 
 // The wizard brings key derivation and transaction building (@govhub/auth): loaded when it is opened.
@@ -42,16 +48,28 @@ function SdkWarmup() {
   return null;
 }
 
+/** While a page's code loads: what is opening, not a bare "Loading…". */
+function Opening({ what }: { what: string }) {
+  return (
+    <p className="page-narrow muted" aria-busy="true">
+      <span className="spinner" aria-hidden="true" /> Opening {what}…
+    </p>
+  );
+}
+
 function NotFoundPage() {
+  useTitle('Page not found');
   return (
     <section className="page-narrow">
-      <h1>Page not found</h1>
+      <h1 className="dh-page-header__title">Page not found</h1>
       <p>
         <Link to="/">Back to active proposals</Link>
       </p>
     </section>
   );
 }
+
+if (!isFramed()) preloadOwnerPages();
 
 createRoot(document.getElementById('root')!).render(
   // inside another page's frame: no app at all (no data, no storage, nothing to click), only a way out
@@ -72,23 +90,29 @@ createRoot(document.getElementById('root')!).render(
               <Route element={<Layout />}>
                 <Route index element={<ActivePage />} />
                 <Route path="past" element={<PastPage />} />
+                <Route path="treasury" element={<TreasuryPage />} />
                 <Route path="p/h/:hash" element={<ProposalByHash />} />
                 <Route path="p/:name" element={<ProposalByName />} />
                 <Route path="p/:identity/:name" element={<ProposalByName />} />
                 <Route
                   path="create"
                   element={
-                    <Suspense fallback={<p className="page-narrow muted">Loading…</p>}>
+                    <Suspense fallback={<Opening what="the proposal form" />}>
                       <NewProposalPage />
                     </Suspense>
                   }
                 />
                 <Route path="names">
-                  <Route index element={<Suspense fallback={<p className="page-narrow muted">Loading…</p>}><ContestsPage /></Suspense>} />
-                  <Route path=":label" element={<Suspense fallback={<p className="page-narrow muted">Loading…</p>}><ContestPage /></Suspense>} />
+                  <Route index element={<Suspense fallback={<Opening what="name contests" />}><ContestsPage /></Suspense>} />
+                  <Route path=":label" element={<Suspense fallback={<Opening what="the name contest" />}><ContestPage /></Suspense>} />
                 </Route>
+                <Route path="polls" element={<PollsPage />} />
+                <Route path="polls/new" element={<NewPollPage />} />
+                <Route path="polls/archive" element={<PollsPage archive />} />
+                <Route path="polls/:id" element={<PollPage />} />
                 <Route path="settings" element={<SettingsPage />} />
                 <Route path="masternodes" element={<MasternodesPage />} />
+                <Route path="masternodes/:proTx" element={<MasternodePage />} />
                 <Route path="votes" element={<MyVotesPage />} />
                 <Route path="badge" element={<BadgePage />} />
                 <Route path="about" element={<AboutPage />} />

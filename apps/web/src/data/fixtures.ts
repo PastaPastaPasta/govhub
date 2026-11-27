@@ -148,7 +148,7 @@ function invalidProposals(now: number, height: number, someoneElsesCollateral: s
 
 /** A bridge that answers from the snapshot, including synthetic signed votes and MN list. */
 export class FixtureBridge implements Bridge {
-  readonly name = 'fixture bridge';
+  readonly name = 'fixture data service';
   private snap = loadFixtures();
 
   async status(): Promise<BridgeStatus> {
@@ -168,9 +168,9 @@ export class FixtureBridge implements Bridge {
     const none = { govHash, asOfHeight: s.height, tallyHeight: s.height, mnListHash: null, voteSetHash: null, votes: [] };
     if (!p || !t) return none;
     // Like the real API: the set behind the tally in force at `height`; nothing recorded below the tally's own height.
-    if (opts.height !== undefined && opts.height < t.asOfHeight) throw new BridgeError(`the bridge has no vote set at or below block ${opts.height}`, 404);
+    if (opts.height !== undefined && opts.height < t.asOfHeight) throw new BridgeError(`the governance data service has no vote set at or below block ${opts.height}`, 404);
     // ...and asked by hash, only the set with that hash (one per proposal here)
-    if (opts.voteSetHash !== undefined && opts.voteSetHash.toLowerCase() !== t.voteSetHash.toLowerCase()) throw new BridgeError('the bridge has no vote set with that hash', 404);
+    if (opts.voteSetHash !== undefined && opts.voteSetHash.toLowerCase() !== t.voteSetHash.toLowerCase()) throw new BridgeError('the governance data service has no vote set with that hash', 404);
     const asOfHeight = opts.height ?? t.asOfHeight;
     const rec = s.recorded.proposals.get(govHash);
     if (rec) return { govHash, asOfHeight, tallyHeight: t.asOfHeight, mnListHash: s.recorded.listHash, voteSetHash: t.voteSetHash, votes: rec.votes, origin: 'recorded' };

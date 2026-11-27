@@ -18,7 +18,7 @@ test.describe('MN badge, live testnet', () => {
     await expect(comment.locator('.chip-mn')).toHaveText('MN · vouched by govhub', { timeout: 120_000 });
     // without a deep link, the filter default flips to "Owner and masternodes" once a trusted badge is live
     await page.goto(`/p/h/${st.comment.govHash}`);
-    await expect(page.getByRole('radio', { name: 'Owner and masternodes' })).toBeChecked({ timeout: 180_000 });
+    await expect(page.getByRole('button', { name: 'Owner and masternodes' })).toHaveAttribute('aria-pressed', 'true', { timeout: 180_000 });
     await expect(page.locator(`#comment-${st.comment.id} .chip-mn`)).toHaveText('MN · vouched by govhub', { timeout: 120_000 });
   });
 });

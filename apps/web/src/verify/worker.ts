@@ -8,18 +8,22 @@ import type { Bridge, BridgeMnList, BridgeVotes } from '../data/bridge.ts';
 import { makeBridge } from '../data/bridgeFactory.ts';
 import type { CoreNetwork } from '../data/types.ts';
 import { errText } from '../lib/format.ts';
-import { claimedWeight, payments, scheduleAndBudget, summarize, threshold, EST_BLOCK_SECONDS } from './chain.ts';
+import { claimedWeight, payments, readCoinbase, scheduleAndBudget, summarize, threshold, EST_BLOCK_SECONDS } from './chain.ts';
 import { verifyCollateral } from './collateral.ts';
 import type { DapiDescriptor, SmlUsed, WorkerRequest, WorkerResponse } from './protocol.ts';
 import { rankRecounts, type RecountedProposal } from './ranking.ts';
 import { BRIDGE_TARGET, comparable, otherSnapshot } from './verdict.ts';
-import { headerStore, proRegCache, superblockCache } from './stores.ts';
+import { headerStore, proRegCache as ownProRegCache, superblockCache } from './stores.ts';
+import { withShippedRegistrations } from './registrations.ts';
 import { loadVerifiers } from './verifiers.ts';
 import { recountSnapshots, snapshotOf, voteSetFor } from './snapshot.ts';
 import { problemCounts, verifyVotes, type ProReg, type SmlEntry } from './votes.ts';
 
 declare const self: DedicatedWorkerGlobalScope;
 const post = (m: WorkerResponse) => self.postMessage(m);
+
+/** ProRegTx facts: the build's table first (verify/registrations.ts), then what this browser proved itself. */
+const proRegCache = (network: string) => withShippedRegistrations(network, ownProRegCache(network));
 
 /** One client per DAPI setting: the anchored chain (and its proven SML) is reused by every check for a minute. */
 const clients = new Map<string, Dapi>();
@@ -157,6 +161,18 @@ async function handle(req: WorkerRequest): Promise<void> {
     return;
   }
 
+  if (req.kind === 'superblock') {
+    if (req.dapi.kind !== 'live') throw new Error('the treasury ledger needs live DAPI nodes (recorded data has no header chain)');
+    const dapi = await dapiFor(req.dapi);
+    let a = await anchor(dapi, progress);
+    // below the contiguous run and not pinned (between the checkpoint and the run): headers down to it first
+    if (!a.chain.hashHexAt?.(req.height) && req.height < a.chain.lo) a = await anchor(dapi, progress, req.height);
+    progress(`Reading superblock ${req.height.toLocaleString('en-US')}`);
+    const c = (await readCoinbase(dapi, a, req.height, superblockCache(req.network)))!;
+    post({ id: req.id, kind: 'superblock', read: { height: req.height, blockHash: c.blockHash, time: c.time, outputs: c.outputs, weak: a.weak } });
+    return;
+  }
+
   if (req.kind === 'chain') {
     if (req.dapi.kind !== 'live') throw new Error('chain facts need live DAPI nodes (recorded data has no header chain)');
     const dapi = await dapiFor(req.dapi);
@@ -232,8 +248,8 @@ async function ranking(req: Extract<WorkerRequest, { kind: 'ranking' }>, bridge:
       const r = verifyVotes({ govHash: p.govHash, votes: votes.votes, masternodes: list.masternodes, network: req.network, now: req.now, targets: tally ? [{ name: BRIDGE_TARGET, tally }] : [], sml: entries, proReg });
       const matches = !!tally && r.targets[0]!.matches;
       const bad = problemCounts(r.problems).map(([k, n]) => `${n} ${k.replace(/-/g, ' ')}`);
-      const unproven = bad.length ? `not every vote proven (${bad.join(', ')})` : `the bridge's masternode list differs from the proven one for ${r.listDiffers} voters`;
-      const missing = want && otherSnapshot(run, want) ? "the bridge served another vote set than its tally's (usually a vote arrived while recounting); re-check" : `no published tally at block ${votes.tallyHeight}`;
+      const unproven = bad.length ? `not every vote proven (${bad.join(', ')})` : `the governance data service's masternode list differs from the proven one for ${r.listDiffers} voters`;
+      const missing = want && otherSnapshot(run, want) ? "the governance data service served another vote set than its tally's (usually a vote arrived while recounting); re-check" : `no published tally at block ${votes.tallyHeight}`;
       const problem = a.weak ? `not secure: ${a.weak}` : r.keysFrom !== 'sml' ? unproven : !tally ? missing : !matches ? 'the recount differs from the published tally' : null;
       recounts.push({ ...base, absYes: r.weighted.yes - r.weighted.no, proven: problem === null, ...(problem ? { problem } : {}) });
     } catch (e) {

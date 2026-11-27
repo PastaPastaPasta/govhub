@@ -19,7 +19,7 @@ export function startsLaterDetail(s: StartsLater): string {
 /** A card's budget tag for a proposal that is not due yet. */
 export function StartsLaterTag({ later }: { later: StartsLater }) {
   return (
-    <span className="tag tag-info" data-testid="card-starts-later" title={`${startsLaterDetail(later)} ${STARTS_LATER_ESTIMATE}.`}>
+    <span className="tag dh-badge tag-info dh-badge--info" data-testid="card-starts-later" title={`${startsLaterDetail(later)} ${STARTS_LATER_ESTIMATE}.`}>
       {startsLaterLabel(later)}
     </span>
   );
@@ -30,7 +30,7 @@ export function StartsLaterPageStatus({ later }: { later: StartsLater }) {
   return (
     <div className="p-startslater" data-testid="startslater-status">
       <p>
-        <span className="tag tag-info">{startsLaterLabel(later)}</span>
+        <span className="tag dh-badge tag-info dh-badge--info">{startsLaterLabel(later)}</span>
       </p>
       <p>{startsLaterDetail(later)}</p>
       <p className="small muted">{STARTS_LATER_ESTIMATE}; the day is approximate.</p>

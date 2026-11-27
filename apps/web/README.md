@@ -5,7 +5,7 @@ over DAPI, and checks it in a background Worker. Layout and visual system: [`DES
 
 ```sh
 npm run dev            # http://localhost:5317
-npm run build          # typecheck + production build (the strict CSP is only in the built index.html)
+npm run build          # typecheck + production build (the strict CSP is only in the built index.html), then entry pages
 npm test               # unit tests (vitest)
 npx playwright test    # fixture end-to-end tests, headless; starts and stops its own server
 npm run screenshots    # SCREENSHOTS=1: refreshes screenshots/
@@ -13,6 +13,13 @@ npm run e2e:live       # GOVHUB_LIVE=1: against live Platform and DAPI (Dev and 
 ```
 
 Add `?fixtures=1` to any URL for the recorded mainnet snapshot ("Demo data").
+
+The build ends with `scripts/prerender.mjs`: one static copy of `index.html` per route (`past.html`, `about/trust.html`,
+`p/<name>.html` and `p/h/<hash>.html` for every proposal the Mainnet bridge lists, `names/<label>.html` for every contested
+name on Platform), each with its own title, description and Open Graph/Twitter tags, plus `404.html` for everything else.
+GitHub Pages serves them with HTTP 200, so shared links unfurl. The Pages workflow rebuilds every three hours so newer
+proposals and contests get theirs; until then they load through `404.html`. `GOVHUB_PRERENDER_OFFLINE=1` writes the static
+routes only.
 
 ## What "Verified" means
 

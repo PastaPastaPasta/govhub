@@ -1,9 +1,8 @@
 // Topbar identity control. Signed out: opens the sign-in sheet (auth/AuthSheet.tsx: Dash wallet, passkey, and other ways: new
 // identity, recovery phrase, pasted key; sample identities in fixture mode). Signed in: identity, balance, profile editing, top-up and passkeys, and sign-out.
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from './Link.tsx';
 import { cleanName, COSTS, nameProblem, type Profile } from '@govhub/forum';
-import { useApp, type Theme } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { OPEN_SIGNIN_EVENT, useAuth } from '../auth/context.tsx';
 import { formatCredits, shortHash } from '../lib/format.ts';
@@ -15,32 +14,9 @@ import { WriteError } from './WriteError.tsx';
 /** Opens the sign-in sheet from anywhere ("Sign in to comment"). */
 export const openSignIn = () => window.dispatchEvent(new Event(OPEN_SIGNIN_EVENT));
 
-const THEMES: Array<{ id: Theme; label: string }> = [
-  { id: 'system', label: 'System' },
-  { id: 'light', label: 'Light' },
-  { id: 'dark', label: 'Dark' },
-];
-
-export function ThemeSwitch() {
-  const { theme, setTheme } = useApp();
-  // the menu and Settings can both show one: each needs its own radio group
-  const group = useId();
-  return (
-    <fieldset className="seg theme-switch">
-      <legend className="visually-hidden">Theme</legend>
-      {THEMES.map((t) => (
-        <label key={t.id} className={theme === t.id ? 'on' : ''}>
-          <input type="radio" name={group} value={t.id} checked={theme === t.id} onChange={() => setTheme(t.id)} />
-          {t.label}
-        </label>
-      ))}
-    </fieldset>
-  );
-}
-
 /**
- * The account control. Signed out: "Sign in" (opens the sheet) and a small menu for settings. Signed in: the identity, which opens
- * the account menu (balance, profile, top-up, passkeys, settings, theme, sign out).
+ * The account control, in the shell bar's account slot. Signed out: "Sign in" alone (Settings and About are in the footer). Signed in:
+ * the identity, which opens the account menu (balance, profile, top-up, passkeys, settings, sign out).
  */
 export function SessionControl() {
   const { forum, session, balance } = useForum();
@@ -82,26 +58,23 @@ export function SessionControl() {
   return (
     <div className="account">
       {session ? (
-        <button type="button" className="account-btn" popoverTarget="account-menu" id="session-button" data-testid="session-button" title={`Identity ${session.identityId}`}>
+        <button type="button" className="account-btn dh-btn dh-btn--quiet" popoverTarget="account-menu" id="session-button" data-testid="session-button" title={`Identity ${session.identityId}`}>
           <Avatar id={session.identityId} size={22} />
           <bdi className="account-name" data-testid="session-name">
             {dpns ?? name ?? shortHash(session.identityId, 4)}
           </bdi>
-          <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+          <svg width="10" height="10" viewBox="0 0 10 10" className="account-chevron" aria-hidden="true">
             <path d="m2 3.5 3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.4" />
           </svg>
         </button>
       ) : (
-        <>
-          <button type="button" className="btn btn-primary" onClick={openSignIn} id="session-button" data-testid="session-button">
-            {auth.restoring ? 'Signing in…' : 'Sign in'}
-          </button>
-          <button type="button" className="icon-btn" popoverTarget="account-menu" aria-label="Menu: settings, theme, about" data-testid="menu-button">
-            <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-              <path d="M3 5h12M3 9h12M3 13h12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-            </svg>
-          </button>
-        </>
+        <button type="button" className="signin-button dh-btn dh-btn--secondary" onClick={openSignIn} aria-label={auth.restoring ? 'Signing in…' : 'Sign in'} title="Sign in" id="session-button" data-testid="session-button">
+          <span className="signin-label" aria-hidden="true">{auth.restoring ? 'Signing in…' : 'Sign in'}</span>
+          <svg className="signin-icon" width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
+            <circle cx="10" cy="6.5" r="3.25" fill="none" stroke="currentColor" strokeWidth="1.6" />
+            <path d="M3.75 17c.6-3.3 3.1-5.25 6.25-5.25s5.65 1.95 6.25 5.25" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+          </svg>
+        </button>
       )}
       <div ref={menu} id="account-menu" popover="auto" className="account-menu" aria-label="Account and settings">
         {session && (
@@ -117,13 +90,13 @@ export function SessionControl() {
               Balance <b data-testid="session-balance">{balance === null ? 'reading…' : formatCredits(balance)}</b>{' '}
               <span className="muted">(pays for posts and votes on Platform)</span>
             </p>
-            <p className="small muted">Signed in with {session.label}. The key stays in memory, shared with your other open govhub tabs: closing the browser (or the last govhub tab) signs you out.</p>
+            <p className="small muted">Signed in with {session.label}. The key stays in memory, shared with your other open Governance tabs: closing the browser (or the last Governance tab) signs you out.</p>
           </div>
         )}
+        {session && <Link className="menu-item" to="/polls?seg=mine" onClick={hide}>My polls</Link>}
         {session && item('Edit profile', () => dialog.current?.showModal())}
         {session && auth.session && auth.session.source !== 'wallet' && item('Top up', () => auth.openSheet('topup'))}
         {session && auth.session && auth.session.source !== 'wallet' && item('Add passkey', () => auth.openSheet('passkeys'))}
-        {!session && item('Sign in or create an account', openSignIn)}
         {session && (
           <Link className="menu-item" to="/masternodes#mn-badge" onClick={hide} data-testid="menu-badge">
             Masternode badge
@@ -133,12 +106,8 @@ export function SessionControl() {
           Settings
         </Link>
         <Link className="menu-item" to="/about" onClick={hide}>
-          About govhub
+          About Governance
         </Link>
-        <div className="menu-theme">
-          <span className="small muted">Theme</span>
-          <ThemeSwitch />
-        </div>
         {session && item('Sign out', auth.signOut)}
       </div>
       <dialog ref={dialog} className="dialog" aria-labelledby="session-title" onClick={(e) => e.target === dialog.current && close()}>
@@ -190,27 +159,27 @@ function SessionPanel({ onDone, onSaved }: { onDone(): void; onSaved(name: strin
     <form className="form" onSubmit={save}>
       <h2 id="session-title">Your profile</h2>
       <p className="small muted">Your name and picture next to your comments. Anyone can read them; they're stored on Dash Platform.</p>
-      <label>
+      <label className="dh-field__label">
         Display name
-        <input value={name} onChange={(e) => setName(e.target.value)} maxLength={64} required aria-describedby="name-problem" />
+        <input className="dh-input" value={name} onChange={(e) => setName(e.target.value)} maxLength={64} required aria-describedby="name-problem" />
       </label>
       {problem && (
         <p className="error small" id="name-problem" data-testid="name-problem">
           {problem}
         </p>
       )}
-      <label>
+      <label className="dh-field__label">
         Picture <span className="small muted">(a small data: image; others see a pattern from your identity otherwise, and web images are never loaded)</span>
-        <input value={avatar} onChange={(e) => setAvatar(e.target.value)} maxLength={512} spellCheck={false} />
+        <input className="dh-input" value={avatar} onChange={(e) => setAvatar(e.target.value)} maxLength={512} spellCheck={false} />
       </label>
       <p className="muted small">Saving costs about {formatCredits(profile ? COSTS.profileReplace : COSTS.profileCreate, true)} from your balance.</p>
       {saved && <p className="notice">Profile saved on Platform.</p>}
       <WriteError error={error} needsTopUp={needsTopUp} onTopUp={onDone} />
       <div className="form-actions">
-        <button type="submit" className="btn btn-primary" disabled={busy || profile === undefined || !name.trim() || !!problem}>
+        <button type="submit" className="btn dh-btn btn-primary dh-btn--primary" disabled={busy || profile === undefined || !name.trim() || !!problem}>
           {busy ? 'Saving…' : profile ? 'Save profile' : 'Create profile'}
         </button>
-        <button type="button" className="btn btn-quiet" onClick={onDone}>
+        <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet" onClick={onDone}>
           Close
         </button>
       </div>

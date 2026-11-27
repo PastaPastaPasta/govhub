@@ -12,7 +12,7 @@ describe('About page', () => {
         <AboutPage />
       </MemoryRouter>,
     );
-    expect(r.el.querySelector('h1')?.textContent).toBe('About govhub');
+    expect(r.el.querySelector('h1')?.textContent).toBe('About Governance');
     const hrefs = [...r.el.querySelectorAll<HTMLAnchorElement>('a')].map((a) => a.getAttribute('href'));
     for (const h of ['/about/verification', '/about/trust', '/settings', PRIVACY_DOC_URL, SELF_HOSTING_DOC_URL]) expect(hrefs).toContain(h);
     expect(PRIVACY_DOC_URL).toBe('https://github.com/PastaPastaPasta/govhub/blob/main/docs/privacy.md');

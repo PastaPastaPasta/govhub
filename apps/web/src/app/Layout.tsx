@@ -1,9 +1,10 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
-import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Link } from '../ui/Link.tsx';
 import { configParamUrl, DAMAGED_CONFIG, fetchConfig, PROFILES, readInlineConfig, registryDiff, registryRows, saveErrorText, type Registry } from '../config/registry.ts';
+import { profileSearch } from '../config/network.ts';
 import { useAuth } from '../auth/context.tsx';
 import { SessionControl } from '../ui/SignIn.tsx';
-import { ChainShield } from '../ui/trust/ChainShield.tsx';
 import { useApp } from './context.tsx';
 import { PRIVACY_DOC_URL } from '../pages/AboutPage.tsx';
 import { WALLET_SESSION_ENDED_TEXT } from '../session/keyDisabled.ts';
@@ -12,7 +13,17 @@ import { WALLET_SESSION_ENDED_TEXT } from '../session/keyDisabled.ts';
 const AuthSheet = lazy(() => import('../auth/AuthSheet.tsx').then((m) => ({ default: m.AuthSheet })));
 
 function LazyAuthSheet() {
-  const { sheet } = useAuth();
+  const { sheet, openSheet } = useAuth();
+  const loc = useLocation();
+  const navigate = useNavigate();
+  const signIn = new URLSearchParams(loc.search).get('signin') === '1';
+  useEffect(() => {
+    if (!signIn) return;
+    openSheet('choose');
+    const search = new URLSearchParams(loc.search);
+    search.delete('signin');
+    navigate({ pathname: loc.pathname, search: search.toString(), hash: loc.hash }, { replace: true });
+  }, [signIn, loc.pathname, loc.search, loc.hash, navigate, openSheet]);
   // Once loaded it stays mounted: unmounting the open <dialog> skipped close(), and focus fell to <body> instead of going back.
   const [loaded, setLoaded] = useState(false);
   if (sheet && !loaded) setLoaded(true);
@@ -81,26 +92,26 @@ function ConfigOffer() {
       setLoading(null);
     });
   };
-  const clear = () => {
+  const clear = (profile: Registry['profile'] = registry.profile) => {
     const sp = new URLSearchParams(loc.search);
     sp.delete('config');
-    nav({ pathname: loc.pathname, search: sp.toString() }, { replace: true });
+    nav({ pathname: loc.pathname, search: profileSearch(sp.toString(), profile) }, { replace: true });
     setOffer(null);
   };
   const current = offer?.param === param ? offer : null;
   if (!current) {
     if (!url) return null; // inline settings: shown once read (no network)
     return (
-      <div className="banner banner-config" role="alertdialog" aria-labelledby="cfg-title" data-testid="config-offer">
+      <div className="banner dh-notice banner-config dh-notice--info" role="alertdialog" aria-labelledby="cfg-title" data-testid="config-offer">
         <p id="cfg-title">
-          <b>This link points to endpoint settings in a file at {url.host}.</b> govhub has not contacted that host. Loading the file shows the settings
+          <b>This link points to endpoint settings in a file at {url.host}.</b> Governance has not contacted that host. Loading the file shows the settings
           before anything changes; the request tells {url.host} that you opened this link.
         </p>
         <div className="banner-actions">
-          <button type="button" className="btn" disabled={loading === param} onClick={() => load(param, url)}>
+          <button type="button" className="btn dh-btn" disabled={loading === param} onClick={() => load(param, url)}>
             {loading === param ? `Loading from ${url.host}…` : `Load settings from ${url.host}`}
           </button>
-          <button type="button" className="btn btn-quiet" onClick={clear}>
+          <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet" onClick={() => clear()}>
             Ignore this link
           </button>
         </div>
@@ -112,7 +123,7 @@ function ConfigOffer() {
   const diff = ok ? registryDiff(registry, current.registry) : [];
   const changed = new Set(diff.map((d) => d.label));
   return (
-    <div className="banner banner-config" role="alertdialog" aria-labelledby="cfg-title" data-testid="config-offer">
+    <div className="banner dh-notice banner-config dh-notice--info" role="alertdialog" aria-labelledby="cfg-title" data-testid="config-offer">
       <p id="cfg-title">
         {damaged ? (
           <b>{DAMAGED_CONFIG}</b>
@@ -126,7 +137,7 @@ function ConfigOffer() {
           : !ok
             ? `They can't be used: ${current.errors.join('; ').replace(/\.+$/, '')}.`
             : diff.length
-              ? `Using them changes ${diff.length === 1 ? 'one setting' : `${diff.length} settings`}; everything else stays as it is. Check every host: a bridge or DAPI node you do not trust can report false numbers.`
+              ? `Using them changes ${diff.length === 1 ? 'one setting' : `${diff.length} settings`}; everything else stays as it is. Check every host: a data service or DAPI node you do not trust can report false numbers.`
               : 'They are the settings you already use: nothing would change.'}
       </p>
       {diff.length > 0 && (
@@ -145,7 +156,7 @@ function ConfigOffer() {
       )}
       {ok && (
         // every other setting too, hosts included: what the user would be running on, not only what moves
-        <details className="config-unchanged">
+        <details className="config-unchanged dh-disclosure">
           <summary className="small">{diff.length ? 'Settings that stay the same' : 'The settings'}</summary>
           <dl className="config-summary">
             {registryRows(current.registry)
@@ -164,12 +175,12 @@ function ConfigOffer() {
         {diff.length > 0 && (
           <button
             type="button"
-            className="btn btn-primary"
+            className="btn dh-btn"
             disabled={!armed}
             onClick={() => {
               try {
                 setRegistry(current.registry);
-                clear();
+                clear(current.registry.profile);
               } catch (e) {
                 setSaveError(saveErrorText(e));
               }
@@ -178,7 +189,7 @@ function ConfigOffer() {
             Use these settings
           </button>
         )}
-        <button type="button" className="btn" onClick={clear}>
+        <button type="button" className="btn dh-btn" onClick={() => clear()}>
           {diff.length > 0 ? 'Keep my settings' : 'Close'}
         </button>
       </div>
@@ -192,16 +203,16 @@ function SettingsProblem() {
   if (!settingsProblem) return null;
   const shown = settingsProblem.slice(0, 3).join('; ') + (settingsProblem.length > 3 ? `; and ${settingsProblem.length - 3} more` : '');
   return (
-    <div className="banner banner-empty" role="alert" data-testid="settings-problem">
+    <div className="banner dh-notice banner-empty dh-notice--warn" role="alert" data-testid="settings-problem">
       <p>
-        <b>Your saved settings could not be used:</b> {shown}. govhub shows the {PROFILES[registry.profile].label} profile's defaults instead; your saved settings
+        <b>Your saved settings could not be used:</b> {shown}. Governance shows the {PROFILES[registry.profile].label} profile's defaults instead; your saved settings
         stay in this browser until you save new ones.
       </p>
       <div className="banner-actions">
-        <Link className="btn" to="/settings">
-          Open Settings
+        <Link className="btn dh-btn" to="/settings">
+          Open settings
         </Link>
-        <button type="button" className="btn btn-quiet" onClick={dismissSettingsProblem}>
+        <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet" onClick={dismissSettingsProblem}>
           Dismiss
         </button>
       </div>
@@ -214,15 +225,15 @@ export function WalletSessionEnded() {
   const { walletEnded, reconnectWallet, dismissWalletEnded } = useAuth();
   if (!walletEnded) return null;
   return (
-    <div className="banner banner-empty" role="alert" data-testid="wallet-session-ended">
+    <div className="banner dh-notice banner-empty dh-notice--warn" role="alert" data-testid="wallet-session-ended">
       <p>
         <b>{WALLET_SESSION_ENDED_TEXT}</b>
       </p>
       <div className="banner-actions">
-        <button type="button" className="btn btn-primary" onClick={reconnectWallet} data-testid="wallet-reconnect">
+        <button type="button" className="btn dh-btn btn-primary dh-btn--primary" onClick={reconnectWallet} data-testid="wallet-reconnect">
           Reconnect
         </button>
-        <button type="button" className="btn btn-quiet" onClick={dismissWalletEnded}>
+        <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet" onClick={dismissWalletEnded}>
           Dismiss
         </button>
       </div>
@@ -234,11 +245,11 @@ function ModeBanner() {
   const { mode, setMode, source, gov, registry, switchProfile, reload } = useApp();
   if (mode === 'fixtures') {
     return (
-      <div className="banner banner-fixture" role="status">
+      <div className="banner dh-notice banner-fixture dh-notice--info" role="status">
         <div className="banner-text">
           <b>Demo data.</b> <span className="banner-more">A recorded mainnet snapshot from Oct 23, 2026, with sample voters.</span> Nothing here is live.
         </div>
-        <button type="button" className="btn btn-s" onClick={() => setMode('live')} title="28 real mainnet proposals as Core saw them at block 2,560,391, with recorded DAPI answers, real recorded votes for three proposals and sample voters for the rest, plus two made-up proposals that fail verification">
+        <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={() => setMode('live')} title="28 real mainnet proposals as Core saw them at block 2,560,391, with recorded DAPI answers, real recorded votes for three proposals and sample voters for the rest, plus two made-up proposals that fail verification">
           Switch to live data
         </button>
       </div>
@@ -246,13 +257,13 @@ function ModeBanner() {
   }
   if (source.notice) {
     return (
-      <div className="banner banner-empty" role="status" data-testid="backend-notice">
+      <div className="banner dh-notice banner-empty dh-notice--warn" role="status" data-testid="backend-notice">
         <p>
-          <b>{source.notice}.</b> The {PROFILES[registry.profile].label} profile has no governance contract yet, so nothing is read; govhub never shows another network's proposals in its place.
+          <b>{source.notice}.</b> The {PROFILES[registry.profile].label} profile has no governance contract yet, so nothing is read; Governance never shows another network's proposals in its place.
         </p>
         {registry.profile !== 'dev' && (
-          <button type="button" className="btn" onClick={() => switchProfile('dev')}>
-            Switch to Dev
+          <button type="button" className="btn dh-btn" onClick={() => switchProfile('dev')}>
+            Use mainnet proposals on Testnet Platform
           </button>
         )}
       </div>
@@ -261,7 +272,7 @@ function ModeBanner() {
   const empty = !gov.active.loading && !gov.active.error && (gov.active.data?.length ?? 0) === 0;
   if (!empty && !gov.active.error) return null;
   return (
-    <div className="banner banner-empty" role="status">
+    <div className="banner dh-notice banner-empty dh-notice--warn" role="status">
       <p>
         {gov.active.error ? (
           <>
@@ -275,11 +286,11 @@ function ModeBanner() {
       </p>
       <div className="form-actions">
         {gov.active.error && (
-          <button type="button" className="btn" onClick={reload} data-testid="active-retry">
+          <button type="button" className="btn dh-btn" onClick={reload} data-testid="active-retry">
             Try again
           </button>
         )}
-        <button type="button" className="btn btn-quiet" onClick={() => setMode('fixtures')}>
+        <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet" onClick={() => setMode('fixtures')}>
           View demo data instead
         </button>
       </div>
@@ -289,66 +300,64 @@ function ModeBanner() {
 
 export function Layout() {
   const loc = useLocation();
-  const proposals = loc.pathname === '/' || loc.pathname.startsWith('/past') || loc.pathname.startsWith('/p/');
-  const masternodes = loc.pathname.startsWith('/masternodes') || loc.pathname.startsWith('/votes');
-  const create = loc.pathname.startsWith('/create');
+  const { registry } = useApp();
+  const navigate = useNavigate();
+  const bar = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const change = (event: Event) => {
+      const e = event as CustomEvent<{ href: string }>;
+      e.preventDefault();
+      const url = new URL(e.detail.href);
+      url.searchParams.delete('profile');
+      navigate(`${url.pathname}${url.search}${url.hash}`);
+    };
+    bar.current?.addEventListener('dashhq-network', change);
+    return () => bar.current?.removeEventListener('dashhq-network', change);
+  }, [navigate]);
+  const requestedNetwork = new URLSearchParams(loc.search).get('network');
+  const unsupportedNetwork = requestedNetwork && !['mainnet', 'testnet', 'main', 'test'].includes(requestedNetwork);
+  const coreLabel = registry.coreNetwork === 'mainnet' ? 'Mainnet' : 'Testnet';
+  const platformLabel = registry.platformNetwork === 'mainnet' ? 'Mainnet' : 'Testnet';
+  const proposals = loc.pathname === '/' || loc.pathname.startsWith('/past') || loc.pathname.startsWith('/treasury') || loc.pathname.startsWith('/p/');
+  // a masternode's own votes page (/masternodes/<proTx>) is public, usually someone else's: not "My masternodes"
+  const masternodes = loc.pathname === '/masternodes' || loc.pathname.startsWith('/votes');
+  const polls = loc.pathname.startsWith('/polls');
+  const node = /^\/masternodes\/([0-9a-f]{64})$/i.exec(loc.pathname)?.[1] ?? new URLSearchParams(loc.search).get('mn');
+  const proposalsHref = node && /^[0-9a-f]{64}$/i.test(node) ? `/?mn=${node.toLowerCase()}` : '/';
   const names = loc.pathname.startsWith('/names');
   return (
     <div className="shell">
       <a className="skip" href="#main">
         Skip to content
       </a>
-      <header className="topbar">
-        <div className="topbar-inner">
-          <NavLink to="/" className="wordmark" aria-label="govhub home">
-            <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true">
-              <rect width="32" height="32" rx="8" className="wordmark-tile" />
-              <rect x="7" y="18" width="4" height="7" rx="1" fill="#fff" />
-              <rect x="14" y="12" width="4" height="13" rx="1" fill="#fff" />
-              <rect x="21" y="7" width="4" height="18" rx="1" fill="#fff" />
-            </svg>
-            <span>govhub</span>
-          </NavLink>
-          <nav aria-label="Main" className="mainnav">
-            <Link to="/" className={proposals ? 'active' : undefined} aria-current={proposals ? 'page' : undefined}>
-              Proposals
-            </Link>
-            <Link to="/names" className={names ? 'active' : undefined} aria-current={names ? 'page' : undefined} data-testid="nav-names">
-              Usernames
-            </Link>
-            <Link to="/masternodes" className={masternodes ? 'active' : undefined} aria-current={masternodes ? 'page' : undefined}>
-              <span className="nav-more">My masternodes</span>
-              <span className="nav-short">Masternodes</span>
-            </Link>
-            <Link to="/create" className={create ? 'active' : undefined} aria-current={create ? 'page' : undefined} data-testid="nav-create">
-              New<span className="nav-more"> proposal</span>
-            </Link>
-          </nav>
-          <div className="topbar-end">
-            <ChainShield />
-            <SessionControl />
-          </div>
-        </div>
-      </header>
+      <dashhq-bar ref={bar} product="gov" phone-nav="tabs" network={registry.platformNetwork} networks="mainnet testnet" product-href={'/' + profileSearch('', registry.profile)} network-settings={'/settings' + profileSearch('', registry.profile) + '#network'} sticky="">
+        <img slot="logo" src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" width="22" height="22" />
+        <nav slot="nav" aria-label="Governance">
+          <Link to={proposalsHref} aria-current={proposals ? 'page' : undefined}><svg className="dh-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M6 3h9l3 3v15H6z" /><path d="M9 9h6M9 13h6M9 17h4" /></svg>Proposals</Link>
+          <Link to="/polls" aria-current={polls ? 'page' : undefined}><svg className="dh-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M4 20V4M4 20h17M9 17v-6M14 17V6M19 17v-9" /></svg>Polls</Link>
+          <Link to="/names" aria-current={names ? 'page' : undefined} data-testid="nav-names"><svg className="dh-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M20 12v-2a8 8 0 1 0-3 8M16 10v4a2 2 0 0 0 4 0v-2" /><circle cx="12" cy="10" r="4" /></svg>Name contests</Link>
+          <Link to="/masternodes" aria-current={masternodes ? 'page' : undefined}><svg className="dh-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><rect x="4" y="3" width="16" height="7" rx="1" /><rect x="4" y="14" width="16" height="7" rx="1" /><path d="M7 6.5h2M7 17.5h2M12 10v4" /></svg>My masternodes</Link>
+        </nav>
+        <div slot="actions"><SessionControl /></div>
+      </dashhq-bar>
+      <div className="dh-container">
+      {unsupportedNetwork && <aside className="network-context dh-notice dh-notice--info" role="alert">This Governance build supports Mainnet and Testnet. The requested network <bdi>{requestedNetwork}</bdi> is unavailable; showing Mainnet.</aside>}
+      {registry.coreNetwork !== registry.platformNetwork && <aside className="network-context dh-notice dh-notice--info" role="status">
+        <b>{coreLabel} proposals · {platformLabel} Platform.</b> This {registry.profile === 'dev' ? 'development' : 'custom'} profile reads {coreLabel} governance through {platformLabel} Platform. Name contests use {platformLabel}.
+        <Link to="/settings#network">Network settings</Link>
+      </aside>}
       <LazyAuthSheet />
       <WalletSessionEnded />
       <ConfigOffer />
       <SettingsProblem />
-      <ModeBanner />
-      <main id="main" className="main">
+      {!polls && <ModeBanner />}
+      </div>
+      <main id="main" className="main dh-container dh-page">
         <Outlet />
       </main>
-      <footer className="footer">
-        <div className="footer-inner">
-          <p className="small muted">
-            Checked in your browser against Dash Platform and the Dash chain. <Link to="/about">About</Link> ·{' '}
-            <a href={PRIVACY_DOC_URL} target="_blank" rel="noopener noreferrer">
-              Privacy
-            </a>{' '}
-            · <Link to="/settings">Settings</Link> · Open source (MIT)
-          </p>
-        </div>
-      </footer>
+      <dashhq-footer product="gov" source="https://github.com/PastaPastaPasta/govhub">
+        <Link to="/about">About</Link><a href={PRIVACY_DOC_URL}>Privacy ↗</a><Link to="/settings">Settings</Link>
+      </dashhq-footer>
     </div>
   );
 }

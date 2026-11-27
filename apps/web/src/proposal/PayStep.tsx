@@ -54,7 +54,7 @@ export function BackupBox({ draft, commit, compact = false }: Pick<PayProps, 'dr
       <div className="form-actions">
         <button
           type="button"
-          className={done ? 'btn btn-s' : 'btn btn-primary'}
+          className={done ? 'btn dh-btn btn-s dh-btn--sm' : 'btn dh-btn btn-primary dh-btn--primary'}
           data-testid="p-backup-download"
           onClick={() => {
             downloadBackup(draft);
@@ -63,13 +63,13 @@ export function BackupBox({ draft, commit, compact = false }: Pick<PayProps, 'dr
         >
           Download backup
         </button>
-        <button type="button" className="btn btn-s btn-quiet" onClick={() => setShowText((v) => !v)}>
+        <button type="button" className="btn dh-btn btn-s dh-btn--sm btn-quiet dh-btn--quiet" onClick={() => setShowText((v) => !v)}>
           {showText ? 'Hide the text' : "Can't download? Copy it instead"}
         </button>
       </div>
       {showText && (
         <div className="pw-backup-text">
-          <textarea readOnly rows={6} value={backupFile(draft).text} aria-label="Backup file contents" />
+          <textarea className="dh-textarea" readOnly rows={6} value={backupFile(draft).text} aria-label="Backup file contents" />
           <span className="vwin-copy" onClick={mark}>
             Copy <CopyButton text={backupFile(draft).text} label="Copy the backup" />
           </span>
@@ -123,7 +123,7 @@ export function PayStep({ draft, commit, services }: PayProps) {
         {ready && !blocked && method === 'browser' && <BrowserPay draft={draft} commit={commit} services={services} />}
         {ready && !blocked && method === 'core' && <CorePay draft={draft} commit={commit} services={services} />}
         {ready && !blocked && method && !draft.payment?.funding && (
-          <button type="button" className="btn btn-s btn-quiet" onClick={() => commit((d) => ({ ...d, payment: undefined }))} data-testid="p-pay-change">
+          <button type="button" className="btn dh-btn btn-s dh-btn--sm btn-quiet dh-btn--quiet" onClick={() => commit((d) => ({ ...d, payment: undefined }))} data-testid="p-pay-change">
             Choose another way to pay
           </button>
         )}
@@ -172,7 +172,7 @@ function RelayDown({ reason, recheck, checking, override }: { reason: string; re
           <b>Don't pay yet:</b> {reason}, so your proposal could not be sent to the network after you pay. Nothing has been paid. This page checks again every minute.
         </p>
         <div className="form-actions">
-          <button type="button" className="btn btn-s" onClick={recheck} disabled={checking} data-testid="p-relay-recheck">
+          <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={recheck} disabled={checking} data-testid="p-relay-recheck">
             {checking ? 'Checking…' : 'Check again'}
           </button>
         </div>
@@ -183,7 +183,7 @@ function RelayDown({ reason, recheck, checking, override }: { reason: string; re
           If you already paid this fee, or you run Dash Core and will submit the proposal yourself (the next step shows the command), you can continue. Without a working relay, nothing
           submits it for you.
         </p>
-        <button type="button" className="btn btn-s" onClick={override} data-testid="p-relay-override">
+        <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={override} data-testid="p-relay-override">
           Continue anyway
         </button>
       </details>
@@ -288,16 +288,16 @@ function BrowserPay({ draft, commit, services }: PayProps) {
 
   if ('error' in signer) {
     return signer.error === 'network' ? (
-      <p className="notice-box small" data-testid="p-pay-network">
+      <p className="notice-box dh-notice dh-notice--info small" data-testid="p-pay-network">
         Paying from the browser needs a network profile whose Platform and Core networks match (Testnet or Mainnet in Settings). Pay with Dash Core instead.
       </p>
     ) : (
-      <div className="notice-box" data-testid="p-pay-signin">
+      <div className="notice-box dh-notice dh-notice--info" data-testid="p-pay-signin">
         <p className="small">
-          Paying from the browser needs a govhub sign-in: the one-time deposit address is derived from your recovery phrase (or signed-in key), so whatever is sent to it can
+          Paying from the browser needs a sign-in here: the one-time deposit address is derived from your recovery phrase (or signed-in key), so whatever is sent to it can
           always be recovered, on any device.
         </p>
-        <button type="button" className="btn btn-s" onClick={openSignIn}>
+        <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={openSignIn}>
           Sign in
         </button>
       </div>
@@ -340,8 +340,8 @@ function BrowserPay({ draft, commit, services }: PayProps) {
     return (
       <div className="pw-form">
         <div className="pw-field">
-          <label htmlFor="p-refund">Send what is left over to</label>
-          <input id="p-refund" data-testid="p-refund" value={value} spellCheck={false} autoComplete="off" onChange={(e) => setRefund(e.target.value)} />
+          <label className="dh-field__label" htmlFor="p-refund">Send what is left over to</label>
+          <input className="dh-input" id="p-refund" data-testid="p-refund" value={value} spellCheck={false} autoComplete="off" onChange={(e) => setRefund(e.target.value)} />
           {refundOk ? (
             <p className="muted small">{value === signer.refund ? `Default: ${signer.refundLabel}.` : 'Your address.'} Anything above the fee comes back here in the same transaction.</p>
           ) : (
@@ -350,7 +350,7 @@ function BrowserPay({ draft, commit, services }: PayProps) {
         </div>
         {error && <p className="error">{error}</p>}
         <div className="form-actions">
-          <button type="button" className="btn btn-primary" disabled={!refundOk} onClick={start} data-testid="p-pay-start">
+          <button type="button" className="btn dh-btn btn-primary dh-btn--primary" disabled={!refundOk} onClick={start} data-testid="p-pay-start">
             Show the payment address
           </button>
         </div>
@@ -408,14 +408,14 @@ function Deposit({ draft, view, error, retry, services }: { draft: ProposalDraft
             {view.address}
           </p>
           <div className="form-actions">
-            <button type="button" className="btn btn-s" onClick={() => navigator.clipboard?.writeText(view.address)}>
+            <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={() => navigator.clipboard?.writeText(view.address)}>
               Copy address
             </button>
-            <a className="btn btn-s" href={view.uri}>
+            <a className="btn dh-btn btn-s dh-btn--sm" href={view.uri}>
               Open in wallet
             </a>
             {services.simulatePayment && (
-              <button type="button" className="btn btn-s btn-primary" onClick={services.simulatePayment} data-testid="p-demo-pay">
+              <button type="button" className="btn dh-btn btn-s dh-btn--sm btn-primary dh-btn--primary" onClick={services.simulatePayment} data-testid="p-demo-pay">
                 Simulate the payment (demo)
               </button>
             )}
@@ -438,7 +438,7 @@ function Deposit({ draft, view, error, retry, services }: { draft: ProposalDraft
         </p>
       )}
       {view && view.lateDuffs > 0n && (
-        <p className="notice-box small">
+        <p className="notice-box dh-notice dh-notice--info small">
           {fmt(view.lateDuffs)} arrived after the fee transaction was made and is still at {view.address}. Your sign-in controls it: Settings → Recover funds finds it and sends it back.
         </p>
       )}
@@ -446,15 +446,15 @@ function Deposit({ draft, view, error, retry, services }: { draft: ProposalDraft
         <div className="auth-error" role="alert">
           <p>{error}</p>
           <p className="muted small">Progress is saved. Trying again continues where it stopped; the fee is never paid twice.</p>
-          <button type="button" className="btn" onClick={retry}>
+          <button type="button" className="btn dh-btn" onClick={retry}>
             Try again
           </button>
         </div>
       )}
-      <details className="pw-details">
+      <details className="pw-details dh-disclosure">
         <summary>Details</summary>
         <p className="small muted">
-          The deposit address is derived from your {f.source.kind === 'seed' ? `recovery phrase at ${proposalDepositPath(services.network, f.source.index)}` : `signed-in key (govhub derivation, index ${f.source.index})`}.
+          The deposit address is derived from your {f.source.kind === 'seed' ? `recovery phrase at ${proposalDepositPath(services.network, f.source.index)}` : `signed-in key (Governance derivation, index ${f.source.index})`}.
           Only payments that InstantSend locked or a block confirmed are spent. The fee transaction is [OP_RETURN with the proposal hash, worth {duffsToDash(GOVERNANCE_PROPOSAL_FEE_DUFFS)} {unit}] plus your change, and it is saved in this
           browser before it is sent.
         </p>
@@ -500,8 +500,8 @@ function CorePay({ draft, commit, services }: PayProps) {
         <li>
           Paste the transaction id:
           <div className="pw-inline">
-            <input aria-label="Collateral transaction id" data-testid="p-txid" value={txid} onChange={(e) => setTxid(e.target.value)} spellCheck={false} autoComplete="off" placeholder="64 hex characters" />
-            <button type="button" className="btn btn-primary" disabled={!valid || busy} onClick={() => void check()} data-testid="p-txid-check">
+            <input className="dh-input" aria-label="Collateral transaction id" data-testid="p-txid" value={txid} onChange={(e) => setTxid(e.target.value)} spellCheck={false} autoComplete="off" placeholder="64 hex characters" />
+            <button type="button" className="btn dh-btn btn-primary dh-btn--primary" disabled={!valid || busy} onClick={() => void check()} data-testid="p-txid-check">
               {busy ? 'Checking…' : 'Check'}
             </button>
           </div>
@@ -512,7 +512,7 @@ function CorePay({ draft, commit, services }: PayProps) {
           This transaction does not pay the fee for this proposal: {result.message}. Run the exact command above: any change to the time or the data is a different proposal.
         </p>
       )}
-      {result && result.state === 'not-found' && <p className="notice-box small">No DAPI node knows this transaction yet. Wait a few seconds and check again, or check the id.</p>}
+      {result && result.state === 'not-found' && <p className="notice-box dh-notice dh-notice--info small">No DAPI node knows this transaction yet. Wait a few seconds and check again, or check the id.</p>}
       {result && result.state === 'error' && <p className="error small">Could not check it: {result.message}</p>}
       <p className="muted small">
         Dash Core keeps the proposal too: <code>gobject list-prepared</code> shows it, with the time and data, if you lose this page and the backup.

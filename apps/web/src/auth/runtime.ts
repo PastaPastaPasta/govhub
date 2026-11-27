@@ -7,6 +7,7 @@ import { createWebDapi, type DapiConfig } from '../data/dapi.ts';
 import { getSdk } from '../data/platform.ts';
 import { beforeIdentityWrite, noteIdentityWrite } from '../badge/visit.ts';
 import { errText } from '../lib/format.ts';
+import { isTransientError } from '../lib/netError.ts';
 import { dashUnit } from '../lib/unit.ts';
 
 let port: { key: string; value: Promise<PlatformPort> } | null = null;
@@ -86,31 +87,7 @@ export function errorText(e: unknown): string {
   return errText(e).replace(/[0-9a-fA-F]{64,}/g, '[…]').replace(/[1-9A-HJ-NP-Za-km-z]{50,}/g, '[…]').slice(0, 400);
 }
 
-/**
- * Errors that mean "the network or a node failed just now" rather than "this cannot work": the SDK's quorum prefetch, its WASM streaming
- * fetch, DAPI transport and timeouts. Retrying is the right answer to these, and nothing the user holds is affected.
- */
-const TRANSIENT_ERROR = new RegExp(
-  [
-    'failed to prefetch quorums',
-    'webassembly (?:compilation|instantiation) aborted:? network',
-    '\\bnetwork ?error\\b',
-    'http request error',
-    // the browser's own fetch failure, not the SDK's "Failed to fetch identity: <any cause>" wrapper
-    '\\bfailed to fetch\\b(?! \\w)',
-    '\\bload failed\\b',
-    // gRPC and HTTP transport trouble, with a transport word after it: the SDK also reports refused requests as "transport error"
-    'transport error[^\\n]*\\b(?:connect|connection|timed out|dns|reset|refused|unreachable)',
-    '\\btimed out\\b',
-    '\\bdeadline exceeded\\b',
-    '\\bERR_(?:NETWORK|INTERNET|CONNECTION|ABORTED|TIMED)',
-    '\\btemporarily unavailable\\b',
-    '\\b(?:HTTP|status)[ :]+50[234]\\b',
-  ].join('|'),
-  'i',
-);
-
-export const isTransientError = (e: unknown): boolean => TRANSIENT_ERROR.test(errText(e));
+export { isTransientError };
 
 /**
  * `errorText`, except that a transient network failure is put in plain words ("could not reach ..., try again") with the technical

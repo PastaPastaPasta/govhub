@@ -123,7 +123,7 @@ describe('profiles', () => {
     expect([...customFields(t)]).toEqual(['priceFeed']);
   });
 
-  it('an empty contract means "being set up": the source reads nothing, from Platform, a bridge or DAPI', async () => {
+  it('an empty contract means "being set up": the source reads nothing, from Platform, a data service or DAPI', async () => {
     const t = { ...profileRegistry('testnet'), govContractId: '' };
     expect(backendNotice(t)).toBe('Testnet backend is being set up');
     expect(backendNotice({ ...defaultRegistry(), govContractId: '' })).toBe('No governance contract is configured');
@@ -140,19 +140,20 @@ describe('profiles', () => {
     fetchSpy.mockRestore();
   });
 
-  it('a bridge for another contract is never asked', () => {
+  it('a data service for another contract is never asked', () => {
     const r: Registry = { ...profileRegistry('dev'), bridges: [...profileRegistry('dev').bridges, { name: 'other', httpBase: 'https://other.example.org', govContractId: 'CWJ5PyMMKwchk5H3FjX9enVQToWZUFA1xQaRn8zNZVjY', bridgeIdentityId: '', enabled: true }] };
     expect(enabledBridges(r).map((b) => b.name)).toEqual(['gov-bridge.dashhq.org']);
   });
 
-  it('a bridge whose status names another Core network is skipped', async () => {
+  it('a data service whose status names another Core network is skipped', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
       if (url.endsWith('/v1/status')) return new Response(JSON.stringify({ network: 'testnet', height: 1, govContractId: DEV_GOV_CONTRACT_ID }), { status: 200 });
       return new Response(JSON.stringify({ tallies: [] }), { status: 200 });
     });
     const s = createSource('live', defaultRegistry());
-    expect((await s.bridgeTallies()).size).toBe(0);
+    // no coherent bridge answered: a failed read (never "no tallies", which the lists would read as "no votes")
+    await expect(s.bridgeTallies()).rejects.toThrow('no governance data service answered');
     // Only the status was asked: the tallies of a testnet bridge never reach a mainnet-Core profile.
     expect(fetchSpy.mock.calls.map((c) => new URL(String(c[0])).pathname)).toEqual(['/v1/status']);
     // And the governance parameters fall back to mainnet's chain parameters, not the testnet bridge's.
@@ -221,7 +222,7 @@ describe('migration from version 1', () => {
   });
 
   it('a profile contract cannot be read under other networks (the reported bug, as an override)', () => {
-    expect(parseRegistry({ ...profileRegistry('dev'), coreNetwork: 'testnet' }).errors.join()).toMatch(/Dev governance contract holds Core mainnet data/);
+    expect(parseRegistry({ ...profileRegistry('dev'), coreNetwork: 'testnet' }).errors.join()).toMatch(/Mainnet on Testnet governance contract holds Core mainnet data/);
     expect(parseRegistry({ ...defaultRegistry(), platformNetwork: 'testnet' }).errors.join()).toMatch(/Mainnet governance contract holds Core mainnet data on Platform mainnet/);
     // A version 1 user on the Dev contract with odd networks lands on the Dev networks.
     const { registry, errors } = parseRegistry(v1({ coreNetwork: 'testnet', platformNetwork: 'mainnet', dapi: { source: 'quorum', quorumUrl: QUORUM_SERVICE.testnet, nodes: [] } }));

@@ -3,10 +3,11 @@
 // more render still runs with the old keyring object. The page must render from the keys' public info, never derive from a private
 // key (noble throws `invalid scalar: out of range` for the all-zero key).
 import { emptyKeyring, type OpenedKeyring } from '@govhub/auth';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { fixtureMnKey } from '../data/fixtureVotes.ts';
-import { render } from '../test/render.tsx';
+import { render, type } from '../test/render.tsx';
+import { act } from 'react';
 import { votingAddressOfInfo, votingKeyInfos, ZeroedKeyError } from '../voting/masternodes.ts';
 import type { useKeyring } from '../voting/KeyringContext.tsx';
 
@@ -17,7 +18,7 @@ vi.mock('../voting/KeyringContext.tsx', () => ({ useKeyring: () => hold.ctx }));
 vi.mock('../auth/context.tsx', () => ({ useAuth: () => ({ openSheet: () => {} }) }));
 vi.mock('../ui/vote/VotesList.tsx', () => ({ VotesList: () => null }));
 vi.mock('../ui/SignIn.tsx', () => ({ openSignIn: () => {} }));
-vi.mock('../app/context.tsx', () => ({ useApp: () => ({ registry: { platformNetwork: 'testnet' }, mode: 'fixtures' }) }));
+vi.mock('../app/context.tsx', () => ({ useApp: () => ({ registry: { platformNetwork: 'testnet', coreNetwork: 'testnet' }, mode: 'fixtures', gov: { active: { data: [] } }, source: { bridgeDescriptor: () => null } }) }));
 vi.mock('../app/forum.tsx', () => ({ useForum: () => ({ session: null }) }));
 vi.mock('../badge/context.tsx', () => ({
   useBadgeCtx: () => ({ contractId: '', trust: [], reader: null, jobs: [], coreHeight: null, privacy: 'standard', setPrivacy: () => {}, requestBadge: async () => ({}), removeJob: () => {}, retryJob: () => {} }),
@@ -25,6 +26,11 @@ vi.mock('../badge/context.tsx', () => ({
 }));
 
 const { MasternodesPage } = await import('./MasternodesPage.tsx');
+
+function LocationProbe() {
+  const loc = useLocation();
+  return <p data-testid="probe">{loc.pathname + loc.search}</p>;
+}
 
 function openKeyring(): OpenedKeyring {
   const ring = emptyKeyring('9CVk5ytx8oD7WQq3R2s3PxDbpT5Skg13Xjbh2tTdmnbv', []);
@@ -93,5 +99,67 @@ describe('votingKeyInfos', () => {
     const ring = openKeyring();
     ring.close();
     expect(() => votingKeyInfos(ring.content.keys)).toThrow(ZeroedKeyError);
+  });
+});
+
+describe('Radar handoff', () => {
+  const at = (entry: string) => (
+    <MemoryRouter initialEntries={[entry]}>
+      <Routes>
+        <Route path="/masternodes" element={<MasternodesPage />} />
+        <Route path="/masternodes/:proTx" element={<LocationProbe />} />
+      </Routes>
+    </MemoryRouter>
+  );
+  it("sends Radar's /masternodes?proTx= links to the masternode's own page, keeping the network", async () => {
+    hold.ctx = ctxFor(openKeyring(), 'testnet');
+    const hash = 'AB'.repeat(32);
+    const r = await render(at(`/masternodes?network=testnet&proTx=${hash}`));
+    expect(r.el.querySelector('[data-testid="probe"]')?.textContent).toBe(`/masternodes/${'ab'.repeat(32)}?network=testnet`);
+    await r.unmount();
+  });
+  it('ignores malformed public record identifiers', async () => {
+    hold.ctx = ctxFor(openKeyring(), 'mainnet');
+    const r = await render(at('/masternodes?proTx=invalid'));
+    expect(r.el.querySelector('[data-testid="probe"]')).toBeNull();
+    expect(r.el.querySelector('#mn-page-title')).not.toBeNull();
+    await r.unmount();
+  });
+});
+
+describe('signed out', () => {
+  it("opens a masternode's own page from its ProTx hash, keeping the network, and refuses anything else", async () => {
+    hold.ctx = { ...ctxFor(openKeyring(), 'testnet'), status: 'signed-out', keyring: null } as unknown as Ctx;
+    const r = await render(
+      <MemoryRouter initialEntries={['/masternodes?network=testnet']}>
+        <Routes>
+          <Route path="/masternodes" element={<MasternodesPage />} />
+          <Route path="/masternodes/:proTx" element={<LocationProbe />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    const input = r.el.querySelector<HTMLInputElement>('[data-testid="mn-find-input"]')!;
+    const submit = () => act(async () => r.el.querySelector('[data-testid="mn-find"] form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+    await type(input, 'not-a-hash');
+    await submit();
+    expect(r.el.querySelector('[data-testid="mn-find"] [role="alert"]')?.textContent).toContain('64 characters');
+    expect(r.el.querySelector('[data-testid="probe"]')).toBeNull();
+    await type(input, ` ${'AB'.repeat(32)} `);
+    await submit();
+    expect(r.el.querySelector('[data-testid="probe"]')?.textContent).toBe(`/masternodes/${'ab'.repeat(32)}?network=testnet`);
+    await r.unmount();
+  });
+
+  it('says what each way of voting needs before asking for anything', async () => {
+    hold.ctx = { ...ctxFor(openKeyring(), 'mainnet'), status: 'signed-out', keyring: null } as unknown as Ctx;
+    const r = await render(page());
+    const ways = r.el.querySelector('[data-testid="vote-ways"]');
+    expect(ways?.textContent).toContain('Proposals, from your account');
+    expect(ways?.textContent).toContain('paste the voting key there');
+    expect(ways?.textContent).toContain('Needs an account here');
+    expect(ways?.textContent).toContain('Proposals, without an account');
+    expect(ways?.textContent).toContain('Name contests, without an account');
+    expect(r.el.textContent).not.toContain('Only the voting key is needed');
+    await r.unmount();
   });
 });

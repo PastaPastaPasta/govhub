@@ -1,5 +1,5 @@
 // Contest pieces shared by the list and the contest page: the ballot bar, status wording and the list card.
-import { Link } from 'react-router-dom';
+import { Link } from '../ui/Link.tsx';
 import { formatDate, formatDuration, formatInt } from '../lib/format.ts';
 import { CommentsLink } from '../ui/CommentsLink.tsx';
 import { displayName, percent, phaseOf, type ContestState } from './model.ts';
@@ -36,7 +36,7 @@ export function leadText(s: ContestState): string {
       const got = s.contenders.find((c) => c.identityId === w);
       return got ? `Won with ${percent(got.votes, s.total)} of the votes` : 'Awarded';
     }
-    if (s.outcome.kind === 'locked') return `Locked by ${percent(s.lock, s.total)} of the votes`;
+    if (s.outcome.kind === 'locked') return `Locked: nobody gets it (${percent(s.lock, s.total)} of the votes)`;
     return s.total === 0 ? 'No votes' : 'No winner';
   }
   if (s.total === 0) return 'No votes yet';
@@ -61,7 +61,7 @@ export function statusTag(s: ContestState | null, endsAt: number | null, nowMs: 
   if (endsAt === null) return { text: 'No result yet', tone: 'done' };
   if (phaseOf(s, endsAt, nowMs) === 'closing') return { text: 'Voting closed', tone: 'done' };
   const left = (endsAt - nowMs) / 1000;
-  return { text: `Closes in ${formatDuration(left)}`, tone: left < 86_400 ? 'soon' : 'open' };
+  return { text: `Closes in ${formatDuration(left)}`, tone: left < 3 * 86_400 ? 'soon' : 'open' };
 }
 
 export function ContestCard({ label, endsAt, state, nowMs, comments }: { label: string; endsAt: number | null; state: StateEntry; nowMs: number; comments?: number | undefined }) {
@@ -78,17 +78,17 @@ export function ContestCard({ label, endsAt, state, nowMs, comments }: { label: 
             <span className="tld">.dash</span>
           </Link>
         </h3>
-        <p className="small muted">{s ? (s.contenders.length === 1 ? '1 contender' : `${formatInt(s.contenders.length)} contenders`) : failed ? 'Could not be read' : ' '}</p>
+        <p className="small muted crow-contenders">{s ? (s.contenders.length === 1 ? '' : `${formatInt(s.contenders.length)} contenders`) : failed ? 'Could not be read' : ' '}</p>
       </div>
       <div className="crow-status">
-        <span className={`tag ctag-${tag.tone}`}>{tag.text}</span>
+        <span className={`tag dh-badge ctag-${tag.tone}`}>{tag.text}</span>
         {s?.outcome?.at ? <p className="small muted">{formatDate(s.outcome.at / 1000)}</p> : null}
       </div>
       <div className="crow-bar">
         {s ? (
           <>
             <BallotBar state={s} size="s" />
-            <p className="small muted">{leadText(s)}</p>
+            <p className="small muted crow-lead">{leadText(s)}</p>
           </>
         ) : failed ? (
           <p className="small muted">The tally could not be read</p>

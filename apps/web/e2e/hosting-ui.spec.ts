@@ -47,7 +47,7 @@ test.describe('?config= links', () => {
     cfg.bridges[0].bridgeIdentityId = '24tL6v5jMR1H9dtUoTgbedePsMJtYPk4Q4bo6h8jTdK9';
     await page.goto(`/settings?config=${b64(cfg)}`);
     const diff = page.getByTestId('config-diff');
-    await expect(diff.locator('dt')).toHaveText(['Bridges', 'Quorum proof sources']);
+    await expect(diff.locator('dt')).toHaveText(['Data services', 'Quorum proof sources']);
     await expect(diff).toContainText('https://proofs.attacker.example/proofs');
     await expect(diff).toContainText('24tL6v5jMR1H9dtUoTgbedePsMJtYPk4Q4bo6h8jTdK9');
     await expect(diff).toContainText('gov-bridge.dashhq.org'); // what it replaces (the Dev profile's only proof source)
@@ -68,7 +68,7 @@ test.describe('?config= links', () => {
     await page.setContent(`<iframe src="${baseURL}/settings?fixtures=1&config=${b64({ ...cfg, relays: [] })}" width="1000" height="700"></iframe>`);
     const frame = page.frameLocator('iframe');
     await expect(frame.getByTestId('framed-notice')).toContainText('only works in its own tab');
-    await expect(frame.getByRole('link', { name: 'Open govhub in its own tab' })).toHaveAttribute('target', '_blank');
+    await expect(frame.getByRole('link', { name: 'Open Governance in its own tab' })).toHaveAttribute('target', '_blank');
     await expect(frame.getByRole('button')).toHaveCount(0);
     await expect(frame.getByTestId('config-offer')).toHaveCount(0);
   });
@@ -104,7 +104,7 @@ test.describe('settings', () => {
     await expect(page.getByRole('alert')).toBeInViewport();
 
     await page.locator('input[type=file]').setInputFiles({ name: 'big.json', mimeType: 'application/json', buffer: Buffer.alloc(12 * 1024 * 1024, 0x20) });
-    await expect(page.getByRole('alert')).toContainText('Too large to be govhub settings: 12.0 MB');
+    await expect(page.getByRole('alert')).toContainText('Too large to be Governance settings: 12.0 MB');
     await expect(page.getByRole('alert')).toBeInViewport();
 
     await g.getByLabel(JSON_BOX).fill(' '.repeat(70 * 1024) + '{}');
@@ -115,24 +115,24 @@ test.describe('settings', () => {
   test('D-058: arrow keys move through the profile radios without switching; the switch needs a confirmation', async ({ page, context }) => {
     await offline(context);
     await page.goto('/settings?fixtures=0');
-    const label = page.getByTestId('profile-label');
+    const label = page.getByTestId('profile-description');
     await expect(label).toContainText('Mainnet');
-    await page.getByRole('radio', { name: 'Mainnet' }).focus();
+    await page.getByRole('radio', { name: 'Mainnet', exact: true }).focus();
     await page.keyboard.press('ArrowRight');
-    await expect(page.getByRole('radio', { name: 'Testnet' })).toBeChecked();
+    await expect(page.getByRole('radio', { name: 'Testnet', exact: true })).toBeChecked();
     await page.keyboard.press('ArrowRight');
     await page.keyboard.press('ArrowLeft');
-    await expect(page.getByRole('radio', { name: 'Testnet' })).toBeChecked();
+    await expect(page.getByRole('radio', { name: 'Testnet', exact: true })).toBeChecked();
     await expect(label).toContainText('Mainnet');
     expect(await savedProfile(page)).not.toBe('testnet');
     await page.getByRole('button', { name: 'Stay on Mainnet' }).click();
-    await expect(page.getByRole('radio', { name: 'Mainnet' })).toBeChecked();
-    await expect(page.getByRole('radio', { name: 'Mainnet' })).toBeFocused();
-    await page.locator('.profile-switch label', { hasText: 'Testnet' }).click();
+    await expect(page.getByRole('radio', { name: 'Mainnet', exact: true })).toBeChecked();
+    await expect(page.getByRole('radio', { name: 'Mainnet', exact: true })).toBeFocused();
+    await page.locator('.profile-switch').getByText('Testnet', { exact: true }).click();
     await page.getByRole('button', { name: 'Switch to Testnet' }).click();
     await expect(label).toContainText('Testnet');
     expect(await savedProfile(page)).toBe('testnet');
-    await expect(page.getByRole('radio', { name: 'Testnet' })).toBeFocused();
+    await expect(page.getByRole('radio', { name: 'Testnet', exact: true })).toBeFocused();
     await expect(page.getByRole('status').filter({ hasText: 'Switched to Testnet' })).toBeInViewport();
   });
 
@@ -171,7 +171,8 @@ test.describe('accessibility', () => {
   });
 
   test('D-061: primary buttons and muted text meet AA contrast in the light theme', async ({ page }) => {
-    await page.addInitScript(() => localStorage.setItem('govhub.theme', 'light'));
+    await page.addInitScript(() => localStorage.setItem('dh-theme', 'light'));
+    await page.emulateMedia({ colorScheme: 'light' });
     await gotoFixtures(page, '/settings');
     const ratios = await page.evaluate(() => {
       const rgb = (s: string) => (s.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
@@ -183,7 +184,7 @@ test.describe('accessibility', () => {
         const [x, y] = [lum(rgb(a)), lum(rgb(b))].sort((p, q) => q - p);
         return (x! + 0.05) / (y! + 0.05);
       };
-      const btn = getComputedStyle(document.querySelector('.btn-primary')!);
+      const btn = getComputedStyle(document.querySelector('.btn-primary:not(:disabled)')!);
       const probe = document.createElement('span');
       probe.style.color = 'var(--ink-3)';
       document.body.append(probe);
@@ -197,13 +198,14 @@ test.describe('accessibility', () => {
     expect(ratios.mutedOnSunk).toBeGreaterThanOrEqual(4.5);
   });
 
-  test('D-085: the budget strip is not an image wrapping links; card titles follow the page heading', async ({ page }) => {
+  test('D-085: the budget strip is not an image wrapping links; card titles follow the section heading', async ({ page }) => {
     await gotoFixtures(page);
     await expect(page.locator('.strip')).toHaveAttribute('aria-hidden', 'true');
     await expect(page.locator('.strip')).not.toHaveAttribute('role', 'img');
     await expect(page.locator('.budget p.visually-hidden')).toContainText('Allocated');
-    await expect(page.locator('article.prow h2.prow-title').first()).toBeVisible();
-    await expect(page.locator('article.prow h3')).toHaveCount(0);
+    await expect(page.getByRole('heading', { level: 2, name: 'Proposals', exact: true })).toBeVisible();
+    await expect(page.locator('article.prow h3.prow-title').first()).toBeVisible();
+    await expect(page.locator('article.prow h2')).toHaveCount(0);
   });
 });
 

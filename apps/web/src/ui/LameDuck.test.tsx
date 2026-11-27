@@ -10,7 +10,7 @@ describe('lameDuckSummary', () => {
   it('paid in full: every payment of its window has been made', () => {
     expect(lameDuckSummary({ total: 1, paid: { count: 1, atLeast: false, firm: true }, endEpoch: OCT27 })).toEqual({
       headline: 'Paid in full',
-      detail: '1 of 1 payment made. No more payments are possible; it leaves the network on Oct 27, 2026.',
+      detail: '1 of 1 payment made. No more payments are possible; it leaves the network on 27 Oct 2026.',
     });
     // a count that is only a lower bound but already reaches the total is still in full; more than estimated counts as what was paid
     expect(lameDuckSummary({ total: 2, paid: { count: 3, atLeast: true, firm: true }, endEpoch: OCT27 }).detail).toContain('3 of 3 payments made');
@@ -35,7 +35,7 @@ describe('lameDuckSummary', () => {
     const s = lameDuckSummary({ total: 1, paid: null, endEpoch: OCT27 });
     expect(s.headline).toBe('No more payments possible');
     expect(s.detail).not.toMatch(/paid|made/i);
-    expect(s.detail).toContain('Oct 27, 2026');
+    expect(s.detail).toContain('27 Oct 2026');
   });
 });
 
@@ -44,7 +44,7 @@ describe('LameDuckPageStatus', () => {
     const { el } = await render(<LameDuckPageStatus total={1} paid={{ count: 1, atLeast: false, firm: true }} endEpoch={OCT27} counting={false} />);
     const text = el.textContent ?? '';
     expect(text).toContain('Paid in full');
-    expect(text).toContain('1 of 1 payment made. No more payments are possible; it leaves the network on Oct 27, 2026.');
+    expect(text).toContain('1 of 1 payment made. No more payments are possible; it leaves the network on 27 Oct 2026.');
     expect(text).toMatch(/is an estimate/);
     expect(text).not.toMatch(/Passing|next budget|Voting closes|Voting for this payout/);
     expect(text).not.toContain('Counting the payments made');

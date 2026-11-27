@@ -1,5 +1,5 @@
 // Your signed votes, grouped by proposal: what each one is doing now (in plain words), which relay holds it, and cancel / retry.
-import { Link } from 'react-router-dom';
+import { Link } from '../Link.tsx';
 import { useApp } from '../../app/context.tsx';
 import { shortHash } from '../../lib/format.ts';
 import { useKeyring } from '../../voting/KeyringContext.tsx';
@@ -18,7 +18,7 @@ function RelayAlert() {
   return (
     <p className="vwarn small vrelays-wait">
       {waiting} vote{waiting === 1 ? '' : 's'} waiting in this browser for a relay.{' '}
-      <button type="button" className="btn btn-s btn-primary" onClick={k.retryNow} data-testid="relays-retry">
+      <button type="button" className="btn dh-btn btn-s dh-btn--sm btn-primary dh-btn--primary" onClick={k.retryNow} data-testid="relays-retry">
         Retry now
       </button>
     </p>
@@ -58,7 +58,7 @@ function VoteRow({ v, name, now }: { v: WatchedVote; name: string; now: number }
   return (
     <li className={`vrow vrow-${view.tone}`} data-testid="watched-row" data-status={v.status}>
       <div className="vrow-main">
-        <span className="vrow-name">{name}</span>
+        <a className="vrow-name dh-link" href={window.dashhq?.href('radar', '/mn/' + v.proTxHash, { network: k.coreNetwork })}>{name}</a>
         <OutcomeChip outcome={v.outcome} />
         <Badge tone={view.tone} testId="watched-badge">
           {view.badge}
@@ -74,12 +74,12 @@ function VoteRow({ v, name, now }: { v: WatchedVote; name: string; now: number }
       {(cancelText || sendError) && (
         <div className="vrow-actions">
           {sendError && (
-            <button type="button" className="btn btn-s btn-primary" onClick={k.retryNow} data-testid="vote-retry">
+            <button type="button" className="btn dh-btn btn-s dh-btn--sm btn-primary dh-btn--primary" onClick={k.retryNow} data-testid="vote-retry">
               Retry now
             </button>
           )}
           {cancelText && (
-            <button type="button" className="btn btn-s" onClick={() => void k.cancel(v.voteHash).catch(() => {})} disabled={!!k.busy} data-testid="vote-cancel">
+            <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={() => void k.cancel(v.voteHash).catch(() => {})} disabled={!!k.busy} data-testid="vote-cancel">
               {cancelText}
             </button>
           )}
@@ -100,7 +100,7 @@ export function VotesList({ title = 'Votes', showWins = true }: { title?: string
   for (const v of [...k.watched].sort((a, b) => (b.signedAt ?? b.time) - (a.signedAt ?? a.time))) groups.set(v.govHash, [...(groups.get(v.govHash) ?? []), v]);
   const wins = !showWins ? [] : k.celebrations.map((h) => k.watched.find((w) => w.voteHash === h)).filter((w): w is WatchedVote => !!w);
   return (
-    <section className="kr-card" aria-labelledby="votes-title" data-testid="votes-section">
+    <section className="kr-card dh-card" aria-labelledby="votes-title" data-testid="votes-section">
       <header className="kr-card-head">
         <h2 id="votes-title">{title}</h2>
         {k.watched.length > 0 && <span className="small muted">{k.watched.filter(isOpen).length} on the way</span>}
@@ -118,7 +118,7 @@ export function VotesList({ title = 'Votes', showWins = true }: { title?: string
           {[...groups].map(([h, list]) => (
             <section key={h} className="vgroup" aria-label={names.get(h) ?? `Proposal ${shortHash(h, 6)}`}>
               <h3 className="vgroup-title">
-                <Link to={`/p/h/${h}`}>{names.get(h) ?? <span className="mono-ish">{shortHash(h, 8)}</span>}</Link>
+                <Link to={`/p/h/${h}`} className="dh-link">{names.get(h) ?? <span className="mono-ish">{shortHash(h, 8)}</span>}</Link>
               </h3>
               <ul className="vrows">
                 {list.map((v) => (
@@ -131,10 +131,10 @@ export function VotesList({ title = 'Votes', showWins = true }: { title?: string
       )}
       <footer className="vfoot">
         <RelayStrip />
-        <details className="vdeliver small">
+        <details className="vdeliver small dh-disclosure">
           <summary>How votes are delivered</summary>
           <p>
-            Each vote stays in this browser until the bridge reports the network counted it. If a relay doesn't deliver it, it is sent again, through another relay when you have more than one. Cancelling a held vote relies on the relay; to be sure you
+            Each vote stays in this browser until the governance data service reports the network counted it. If a relay doesn't deliver it, it is sent again, through another relay when you have more than one. Cancelling a held vote relies on the relay; to be sure you
             change your mind, cast the new vote too: the later vote wins.
           </p>
         </details>

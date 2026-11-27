@@ -1,7 +1,7 @@
 // Trust list of badge issuers (PLAN §8.6): only issuers on it are shown; anyone may run one. Ours is the only default. Each issuer's
 // current epoch is audited: verified badges against the issuer's own issuerReport.
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from '../ui/Link.tsx';
 import { displayEpochsAt, EPOCH_PARAMS, epochStart, type EpochParams } from '@govhub/badge';
 import { useApp } from '../app/context.tsx';
 import { errText, formatInt } from '../lib/format.ts';
@@ -95,7 +95,7 @@ export function BadgeSettings() {
       <ul className="badge-trust">
         {trust.map((t, i) => (
           <li key={t.identityId}>
-            <label className="check">
+            <label className="check dh-check">
               <input type="checkbox" checked={t.enabled} onChange={(e) => update(trust.map((x, j) => (j === i ? { ...x, enabled: e.target.checked } : x)), 'Saved in this browser.')} /> <b>{t.name}</b>{' '}
               {isDefaultIssuer(net, t.identityId) ? <span className="chip">default</span> : <span className="chip chip-over">added by you</span>}
             </label>
@@ -114,7 +114,7 @@ export function BadgeSettings() {
                   {auditText(a)}
                 </div>
               ))}
-            <button type="button" className="btn btn-s btn-quiet" onClick={() => update(trust.filter((_, j) => j !== i), `Removed ${t.name}.`)}>
+            <button type="button" className="btn dh-btn btn-s dh-btn--sm btn-quiet dh-btn--quiet" onClick={() => update(trust.filter((_, j) => j !== i), `Removed ${t.name}.`)}>
               Remove
             </button>
           </li>
@@ -123,23 +123,23 @@ export function BadgeSettings() {
       {error && <p className="error small">Audit could not be read: {error}</p>}
       <fieldset>
         <legend>Add an issuer</legend>
-        <label>
+        <label className="dh-field__label">
           Name (shown as “vouched by …”)
-          <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} maxLength={40} />
+          <input className="dh-input" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} maxLength={40} />
         </label>
-        <label>
+        <label className="dh-field__label">
           Issuer identity id
-          <input value={draft.identityId} onChange={(e) => setDraft({ ...draft, identityId: e.target.value.trim() })} spellCheck={false} />
+          <input className="dh-input" value={draft.identityId} onChange={(e) => setDraft({ ...draft, identityId: e.target.value.trim() })} spellCheck={false} />
         </label>
-        <label>
+        <label className="dh-field__label">
           Issuer URL (https, its own origin)
-          <input value={draft.url} onChange={(e) => setDraft({ ...draft, url: e.target.value.trim() })} spellCheck={false} placeholder="https://issuer.example.org" />
+          <input className="dh-input" value={draft.url} onChange={(e) => setDraft({ ...draft, url: e.target.value.trim() })} spellCheck={false} placeholder="https://issuer.example.org" />
         </label>
         <div className="form-actions">
-          <button type="button" className="btn" disabled={!draft.name || !draft.identityId || !draft.url} onClick={() => (update([...trust, { ...draft, enabled: true }], `Added ${draft.name}.`), setDraft({ name: '', identityId: '', url: '' }))}>
+          <button type="button" className="btn dh-btn" disabled={!draft.name || !draft.identityId || !draft.url} onClick={() => (update([...trust, { ...draft, enabled: true }], `Added ${draft.name}.`), setDraft({ name: '', identityId: '', url: '' }))}>
             Add issuer
           </button>
-          <button type="button" className="btn btn-quiet" onClick={() => (resetTrust(), setMsg({ kind: 'ok', text: 'Back to the default list.' }))}>
+          <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet" onClick={() => (resetTrust(), setMsg({ kind: 'ok', text: 'Back to the default list.' }))}>
             Reset to default
           </button>
         </div>

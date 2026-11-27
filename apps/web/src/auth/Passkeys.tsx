@@ -37,12 +37,12 @@ export function PasskeySignIn() {
   return (
     <div>
       {support === 'no' ? (
-        <p className="notice-box">This browser can't use passkeys to keep a govhub sign-in. Use your recovery phrase instead.</p>
+        <p className="notice-box dh-notice dh-notice--info">This browser can't use passkeys to keep a Governance sign-in. Use your recovery phrase instead.</p>
       ) : (
         <>
-          <p>Choose the passkey you added to govhub. Your device unlocks the key it keeps; nothing is sent to a server.</p>
+          <p>Choose the passkey you added to Governance. Your device unlocks the key it keeps; nothing is sent to a server.</p>
           <div className="sheet-actions">
-            <button type="button" className="btn btn-primary" onClick={go} disabled={busy}>
+            <button type="button" className="btn dh-btn btn-primary dh-btn--primary" onClick={go} disabled={busy}>
               {busy ? <><span className="spinner" aria-hidden="true" /> Opening…</> : 'Use a passkey'}
             </button>
           </div>
@@ -86,7 +86,7 @@ export function Passkeys() {
           Your {what} is stored encrypted on Platform, and only the passkey can open it. Adding one costs about 0.0005 DASH from your balance.
         </p>
       </div>
-      {support === 'no' && <p className="notice-box">{PRF_UNAVAILABLE_MESSAGE}</p>}
+      {support === 'no' && <p className="notice-box dh-notice dh-notice--info">{PRF_UNAVAILABLE_MESSAGE}</p>}
 
       <section className="passkeys-box" aria-labelledby="passkeys-mine">
         <h3 id="passkeys-mine">Your passkeys</h3>
@@ -111,7 +111,7 @@ export function Passkeys() {
                   </div>
                   <button
                     type="button"
-                    className="btn btn-quiet btn-s"
+                    className="btn dh-btn btn-quiet dh-btn--quiet btn-s dh-btn--sm"
                     onClick={() => {
                       if (window.confirm(`Remove this passkey? It will no longer sign you in${here ? ' on this device' : ' on that device'}; your ${what} still does.`)) void remove(e);
                     }}
@@ -129,9 +129,9 @@ export function Passkeys() {
       )}
 
       {step === 'confirm' && (
-        <div className="notice-box">
-          <p>Passkey created. Confirm it once more so govhub can lock your key to it.</p>
-          <button type="button" className="btn btn-primary" onClick={confirm}>
+        <div className="notice-box dh-notice dh-notice--info">
+          <p>Passkey created. Confirm it once more so Governance can lock your key to it.</p>
+          <button type="button" className="btn dh-btn btn-primary dh-btn--primary" onClick={confirm}>
             Confirm with the passkey
           </button>
         </div>
@@ -145,7 +145,7 @@ export function Passkeys() {
       {error && <p className="error" role="alert">{error}</p>}
       {step === 'idle' && support !== 'no' && (
         <div className="form-actions passkeys-actions">
-          <button type="button" className="btn btn-primary" onClick={create}>
+          <button type="button" className="btn dh-btn btn-primary dh-btn--primary" onClick={create}>
             Add a passkey
           </button>
         </div>

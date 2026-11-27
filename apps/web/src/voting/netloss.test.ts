@@ -100,7 +100,10 @@ const ports: Record<string, RelayPort> = { [R1]: new RelayClient(R1, 2000), [R2]
 const sendDeps = { relayFor: (u: string) => ports[u]!, network: 'testnet' as const, now: () => NOW };
 const wdDeps: WithdrawDeps = { relayFor: (u) => ports[u]!, network: 'testnet', cancelSig: () => 'c2ln', now: () => NOW };
 
-afterEach(() => void vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});
 
 describe('B-S1-1: the relay stored the vote, the browser lost its answer as a network error', () => {
   it('"Failed to fetch" after the relay stored it: maybe at the relay, never "Not sent yet", Discard is a real cancel', async () => {
@@ -181,6 +184,42 @@ describe('B-S1-1: the relay stored the vote, the browser lost its answer as a ne
     // a proxy's 403 page (no relay code): the relay may have seen it
     r.answer({ status: 403, html: '<html>Forbidden</html>' });
     expect((await submitToRelays(vote(), [R1], sendDeps)).maybeAt).toEqual([R1]);
+  });
+
+  it('in a lab build, the read-only preview answering the write with its stub: stopped for good, never "maybe at the relay"', async () => {
+    vi.stubEnv('VITE_GOVHUB_LAB_PREVIEW', '1');
+    const r = httpRelay(R1);
+    stubFetch(r);
+    r.answer({ status: 200, body: { ok: false, success: false, localPreview: true, error: 'LOCAL_PREVIEW_READ_ONLY', message: 'local lab: writes disabled' } });
+    const v = await submitToRelays(vote(), [R1], sendDeps);
+    expect(v.status).toBe('failed');
+    expect(v.maybeAt).toBeUndefined();
+    const view = describeVote(v, NOW, fmt);
+    expect(view.badge).toBe('Preview: not sent');
+    expect(view.line).toMatch(/nothing reached a relay or the network/);
+    // a 5xx carrying the flag (the preview's own proxy failing) proves nothing: retried, maybe at the relay
+    r.answer({ status: 502, body: { localPreview: true, error: 'LAB_PROXY_ERROR' } });
+    expect((await submitToRelays(vote(), [R1], sendDeps)).maybeAt).toEqual([R1]);
+  });
+
+  it('in a prod build, a relay answering with the preview stub never ends the vote: the next relay takes it', async () => {
+    const r1 = httpRelay(R1);
+    const r2 = httpRelay(R2);
+    stubFetch(r1, r2);
+    const stub = { ok: false, success: false, localPreview: true, error: 'LOCAL_PREVIEW_READ_ONLY', message: 'local lab: writes disabled' };
+    for (const status of [200, 403]) {
+      r1.answer({ status, body: stub });
+      const signed = vote();
+      r2.know(signed);
+      const v = await submitToRelays(signed, [R1, R2], sendDeps);
+      expect(v.status, `HTTP ${status}`).toBe('held');
+      expect(v.refs.map((x) => x.relay), `HTTP ${status}`).toEqual([R2]);
+      expect(v.failReason).toBeUndefined();
+    }
+    r1.answer({ status: 200, body: stub });
+    const alone = await submitToRelays(vote(), [R1], sendDeps);
+    expect(alone.status).not.toBe('failed');
+    expect(alone.lastSendError).not.toContain('preview');
   });
 
   it('a request that was never made (an unusable relay URL) is not sent', async () => {

@@ -23,7 +23,7 @@ const keys = [{ index: 0, keyId: KEY_ID }];
 const T = { bridgeMs: 50, smlMs: 50, protxMs: 50 };
 
 describe('lookupMasternodes', () => {
-  it('finds masternode-27 for its voting key (SML decides, ProRegTx unreachable keeps the bridge outpoint, labelled)', async () => {
+  it('finds masternode-27 for its voting key (SML decides, ProRegTx unreachable keeps the governance data service outpoint, labelled)', async () => {
     const deps: LookupDeps = { mnlist: async () => LIST, sml: async () => SML, rawTx: async () => Promise.reject(new Error('down')), network: 'testnet' };
     const steps: string[] = [];
     // the ProRegTx step paces its reads (with decoys, D-026): give it room to see every read fail
@@ -34,7 +34,7 @@ describe('lookupMasternodes', () => {
     expect(r.smlNodes).toBe(2);
     expect(r.warning).toMatch(/could not be proved/);
   });
-  it('a DAPI SML that never answers times out and falls back to the bridge list, with a warning', async () => {
+  it('a DAPI SML that never answers times out and falls back to the governance data service list, with a warning', async () => {
     const deps: LookupDeps = { mnlist: async () => LIST, sml: never, rawTx: (_txid, signal) => never(signal), network: 'testnet' };
     const t0 = Date.now();
     const r = await lookupMasternodes(keys, deps, { signal: new AbortController().signal, timeouts: T });
@@ -43,7 +43,7 @@ describe('lookupMasternodes', () => {
     expect(r.owned[0]!.provenance.key).toBe('bridge');
     expect(r.warning).toMatch(/Could not confirm with DAPI evonodes \(double-checking the masternode list with the network took longer than 0 s\)/);
   });
-  it('a bridge that never answers is an error that names the step', async () => {
+  it('a data service that never answers is an error that names the step', async () => {
     const deps: LookupDeps = { mnlist: never, sml: async () => SML, rawTx: null, network: 'testnet' };
     await expect(lookupMasternodes(keys, deps, { signal: new AbortController().signal, timeouts: T })).rejects.toBeInstanceOf(LookupTimeout);
   });
@@ -54,7 +54,7 @@ describe('lookupMasternodes', () => {
     setTimeout(() => ctrl.abort(new Error('gone')), 20);
     await expect(p).rejects.toThrow('gone');
   });
-  it('no DAPI (fixtures): the bridge list, labelled as such, and keys with no masternode find none', async () => {
+  it('no DAPI (fixtures): the governance data service list, labelled as such, and keys with no masternode find none', async () => {
     const deps: LookupDeps = { mnlist: async () => LIST, sml: null, rawTx: null, network: 'testnet' };
     const r = await lookupMasternodes([{ index: 0, keyId: '00'.repeat(20) }], deps, { signal: new AbortController().signal, timeouts: T });
     expect(r).toMatchObject({ owned: [], missing: [], smlNodes: 0 });

@@ -142,7 +142,7 @@ export function useProposalTrust(p: Proposal, row: Row, talliesLoading: boolean)
     });
     const fund = fundingComponent({
       proposal: p, nowS, chain: ch, votes: vt, report: chain.report, payments: chain.payments, netYes,
-      ranking: wantRanking ? (bridge ? { result: ranking.result, error: ranking.error, progress: ranking.progress } : { result: null, error: 'no bridge is configured' }) : null,
+      ranking: wantRanking ? (bridge ? { result: ranking.result, error: ranking.error, progress: ranking.progress } : { result: null, error: 'no data service is configured' }) : null,
     });
     const agg = aggregate(
       [

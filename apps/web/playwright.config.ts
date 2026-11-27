@@ -21,7 +21,7 @@ export default defineConfig({
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], headless: true } }],
   webServer: {
-    command: `npx vite build --logLevel warn && npx vite preview --port ${PORT} --strictPort`,
+    command: `npx vite build --outDir .e2e-dist --logLevel warn && npx vite preview --outDir .e2e-dist --port ${PORT} --strictPort`,
     url: `http://localhost:${PORT}`,
     reuseExistingServer: false,
     timeout: 180_000,

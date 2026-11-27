@@ -1,8 +1,10 @@
 // Create a proposal (replaces proposal.dash.org; PLAN 6.1). Step by step in plain words, the cost up front, technical detail behind
 // "Details". Drafts stay in this browser (and in the backup file); nothing is published until the proposal is submitted.
+import { useRouteTitle } from '../app/title.ts';
 import { duffsToDash } from '@govhub/verify';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
+import { Link } from '../ui/Link.tsx';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
 import { useAuth } from '../auth/context.tsx';
@@ -20,6 +22,7 @@ const STEP_LABELS = ['Details', 'Payments', 'Review', 'Pay the fee', 'Submit'];
 const MAX_BACKUP_BYTES = 64 * 1024;
 
 export function NewProposalPage() {
+  useRouteTitle('/create');
   const { source, mode } = useApp();
   const network = source.coreNetwork;
   const services = useMemo<WizardServices>(() => (mode === 'fixtures' ? demoServices(network) : liveServices(source)), [mode, network, source]);
@@ -39,8 +42,8 @@ export function NewProposalPage() {
   if (draft && draft.network !== network) {
     return (
       <section className="page-narrow">
-        <h1>Create a proposal</h1>
-        <p className="notice-box">This draft is for Dash {draft.network}; govhub is set to {network}. Switch the network profile in Settings to continue it.</p>
+        <h1 className="dh-page-header__title">Create a proposal</h1>
+        <p className="notice-box dh-notice dh-notice--info">This draft is for Dash {draft.network}; Governance is set to {network}. Switch the network profile in Settings to continue it.</p>
       </section>
     );
   }
@@ -75,16 +78,16 @@ function Start({ drafts, demo, onOpen, onNew, onRestored }: { drafts: ProposalDr
   };
   return (
     <section className="page-narrow pw" aria-labelledby="pw-title" data-testid="p-start">
-      <h1 id="pw-title">Create a proposal</h1>
+      <h1 className="dh-page-header__title" id="pw-title">Create a proposal</h1>
       <p className="pw-lede">Ask the Dash treasury to fund your work. Masternodes vote on proposals; those with enough yes votes are paid at each {superblockPhrase(params)}.</p>
-      {demo && <p className="notice-box small">Demo data: payments and the relay are simulated, nothing is sent anywhere.</p>}
+      {demo && <p className="notice-box dh-notice dh-notice--info small">Demo data: payments and the relay are simulated, nothing is sent anywhere.</p>}
       <CostSummary />
       <ol className="pw-overview small">
         <li>Describe it: a short name, the address that gets paid, a link to the full description.</li>
         <li>Choose the amount and how many payments (one at each superblock).</li>
         <li>Review it against Dash Core's rules.</li>
         <li>Save a backup, then pay the fee from any wallet or from Dash Core.</li>
-        <li>govhub sends it to the network once the payment is final (usually within a few minutes). It goes live after 6 confirmations (about 15 minutes).</li>
+        <li>Governance sends it to the network once the payment is final (usually within a few minutes). It goes live after 6 confirmations (about 15 minutes).</li>
       </ol>
       {drafts.length > 0 && (
         <section aria-labelledby="pw-drafts-title">
@@ -105,10 +108,10 @@ function Start({ drafts, demo, onOpen, onNew, onRestored }: { drafts: ProposalDr
         </section>
       )}
       <div className="form-actions">
-        <button type="button" className="btn btn-primary btn-l" onClick={onNew} data-testid="p-new">
+        <button type="button" className="btn dh-btn btn-primary dh-btn--primary" onClick={onNew} data-testid="p-new">
           Start a new proposal
         </button>
-        <button type="button" className="btn" onClick={() => fileRef.current?.click()} data-testid="p-restore">
+        <button type="button" className="btn dh-btn" onClick={() => fileRef.current?.click()} data-testid="p-restore">
           Restore from a backup file
         </button>
         <input
@@ -178,16 +181,13 @@ function Wizard({ initial, services, onChange }: { initial: ProposalDraft; servi
   return (
     <section className="page-narrow pw" aria-labelledby="pw-title" data-testid="p-wizard" data-stage={stage}>
       <p className="small">
-        <Link to="/create">← All proposals in progress</Link>
+        <Link to="/create" className="dh-link">← All proposals in progress</Link>
       </p>
-      <h1 id="pw-title">{draft.lock?.name ?? (draft.inputs.name || 'Create a proposal')}</h1>
-      {services.demo && <p className="notice-box small">Demo: payments and the relay are simulated, nothing is sent anywhere.</p>}
-      <ol className="pw-steps" aria-label="Steps">
+      <h1 className="dh-page-header__title" id="pw-title">{draft.lock?.name ?? (draft.inputs.name || 'Create a proposal')}</h1>
+      {services.demo && <p className="notice-box dh-notice dh-notice--info small">Demo: payments and the relay are simulated, nothing is sent anywhere.</p>}
+      <ol className="pw-steps dh-steps" aria-label="Steps">
         {STEP_LABELS.map((l, i) => (
           <li key={l} data-status={i < step || stage === 'done' ? 'done' : i === step ? 'now' : 'todo'} aria-current={i === step ? 'step' : undefined}>
-            <span className="pw-step-n" aria-hidden="true">
-              {i + 1}
-            </span>
             <span className="pw-step-l">{l}</span>
           </li>
         ))}
@@ -201,7 +201,7 @@ function Wizard({ initial, services, onChange }: { initial: ProposalDraft; servi
       {stage === 'edit' && draft.editStep === 1 && <PaymentsStep {...edit} />}
       {stage === 'edit' && draft.editStep === 2 && <ReviewStep {...edit} />}
       {stage !== 'edit' && walletSession && (
-        <p className="notice-box" data-testid="pw-wallet-session">
+        <p className="notice-box dh-notice dh-notice--info" data-testid="pw-wallet-session">
           Paying for and submitting a proposal needs a sign-in with a recovery phrase or key: the payment address comes from that sign-in, so the money
           can always be recovered. Your wallet sign-in holds a temporary key. Sign out and sign in with your recovery phrase to continue.
         </p>

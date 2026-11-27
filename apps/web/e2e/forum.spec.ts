@@ -36,7 +36,7 @@ test.describe('discussion (fixtures)', () => {
     await expect(d).not.toContainText('FREE DASH!!!');
     await d.getByTestId('toggle-hidden').click();
     const spam = comment(page, 'FREE DASH!!!');
-    await expect(spam).toContainText('author on govhub moderation (spam)');
+    await expect(spam).toContainText('author on Governance moderation (spam)');
     await d.getByTestId('toggle-hidden').click();
     await expect(spam).toHaveCount(0);
 
@@ -52,7 +52,7 @@ test.describe('discussion (fixtures)', () => {
     await gotoFixtures(page, `/p/OrchardPay?comment=${spamId}`);
     const linked = page.locator(`#comment-${spamId}`);
     await expect(linked).toHaveClass(/comment-focus/);
-    await expect(linked).toContainText('Hidden: on govhub moderation');
+    await expect(linked).toContainText('Hidden: on Governance moderation');
     await expect(linked).not.toContainText('FREE DASH!!!');
     await linked.getByRole('button', { name: 'Show this comment' }).click();
     await expect(page.locator(`#comment-${spamId}`)).toContainText('FREE DASH!!!');
@@ -134,7 +134,7 @@ test.describe('discussion (fixtures)', () => {
     await expect(d.getByTestId('toggle-hidden')).toHaveText('Show hidden (2)');
     await d.getByTestId('toggle-hidden').click();
     const hidden = comment(page, 'Quick test');
-    await expect(hidden).toContainText('comment on govhub moderation');
+    await expect(hidden).toContainText('comment on Governance moderation');
     await hidden.locator(':scope > article').getByText('Hide…').click();
     await hidden.getByRole('button', { name: 'Remove from the default list' }).click();
     await expect(d.getByTestId('toggle-hidden')).toHaveText(/\(1\)/);
@@ -143,8 +143,8 @@ test.describe('discussion (fixtures)', () => {
   test('ownership: attestation owner, owner label, owner post and its editor; claim UI checks signatures', async ({ page }) => {
     const errors = await watchPage(page);
     // the fixture attestation is the Dev bridge's: counted on the Dev profile (each profile trusts its own gov owner)
-    await page.addInitScript(() => localStorage.setItem('govhub.registry.v2', JSON.stringify({ version: 2, profile: 'dev', overrides: {} })));
-    await gotoFixtures(page, '/p/dash-growth-q4-2026');
+
+    await gotoFixtures(page, '/p/dash-growth-q4-2026?network=testnet&profile=dev');
     const owner = page.getByTestId('owner');
     await expect(owner).toHaveAttribute('data-method', '4');
     await expect(owner).toContainText('Dash Growth team');
@@ -168,7 +168,7 @@ test.describe('discussion (fixtures)', () => {
     // Claim UI on an unclaimed proposal: the exact string, and a pasted signature is checked before publishing.
     await page.getByTestId('session-button').click();
     await page.getByRole('button', { name: 'Sign out' }).click();
-    await gotoFixtures(page, '/p/OrchardPay');
+    await gotoFixtures(page, '/p/OrchardPay?network=testnet&profile=dev');
     await signInAs(page, /^Alice$/);
     // Unclaimed: the claim sits where the description goes, and the comment box says it is not the description.
     const panel = page.getByRole('region', { name: 'About this proposal' }).getByTestId('claim-panel');
@@ -193,7 +193,7 @@ test.describe('discussion (fixtures)', () => {
     await page.getByRole('link', { name: 'Settings' }).click();
     await openGroup(page, 'Hidden comments');
     const lists = page.getByRole('region', { name: 'Block lists' });
-    await expect(lists).toContainText('govhub moderation: 1 block');
+    await expect(lists).toContainText('Governance moderation: 1 block');
     await lists.getByLabel(/The default list/).uncheck();
     await lists.getByRole('button', { name: 'Save in this browser' }).click();
     await expect(lists).toContainText('Saved in this browser.');

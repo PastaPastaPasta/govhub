@@ -42,16 +42,16 @@ describe('F4: the proposal page retries a failed read', () => {
     await flush();
     expect(calls).toBe(2);
     expect(r.el.querySelector('[data-testid="read-error"]')).toBeNull();
-    expect(r.el.textContent).toMatch(/Not found/); // the second read answered: no such proposal
+    expect(r.el.querySelector('[data-testid="record-missing"]')).not.toBeNull(); // the second read answered: no such proposal
     await r.unmount();
   });
 
   it('another failure keeps its text, after "The proposal could not be read", and also has Retry', async () => {
-    reads = [async () => Promise.reject(new Error('the bridge answered HTTP 418'))];
+    reads = [async () => Promise.reject(new Error('the governance data service answered HTTP 418'))];
     const r = await at(`/p/h/${HASH}`, <ProposalByHash />, '/p/h/:hash');
     await flush();
     const err = r.el.querySelector('[data-testid="read-error"]')!;
-    expect(err.textContent).toContain('The proposal could not be read: the bridge answered HTTP 418');
+    expect(err.textContent).toContain('The proposal could not be read: the governance data service answered HTTP 418');
     expect(err.querySelector('[data-testid="read-retry"]')).toBeTruthy();
     await r.unmount();
   });
@@ -64,7 +64,7 @@ describe('F4: the proposal page retries a failed read', () => {
     await click(r.el.querySelector<HTMLButtonElement>('[data-testid="read-retry"]')!);
     await flush();
     expect(calls).toBe(2);
-    expect(r.el.textContent).toMatch(/Not found/);
+    expect(r.el.querySelector('[data-testid="record-missing"]')).not.toBeNull();
     await r.unmount();
   });
 });

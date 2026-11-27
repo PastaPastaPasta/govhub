@@ -112,7 +112,7 @@ export function FundingPanel(p: FundingPanelProps) {
         <p className="notice" role="status" data-testid="recovered">
           Done: the payment was added to identity <span className="break">{recovered}</span>. Sign in with that identity to use it.
         </p>
-        <button type="button" className="btn btn-primary" onClick={closeSheet}>
+        <button type="button" className="btn dh-btn btn-primary dh-btn--primary" onClick={closeSheet}>
           Close
         </button>
       </div>
@@ -193,10 +193,10 @@ export function FundingPanel(p: FundingPanelProps) {
             {view.address}
           </p>
           <div className="form-actions">
-            <button type="button" className="btn" onClick={() => navigator.clipboard?.writeText(view.address)}>
+            <button type="button" className="btn dh-btn" onClick={() => navigator.clipboard?.writeText(view.address)}>
               Copy address
             </button>
-            <a className="btn" href={view.uri}>
+            <a className="btn dh-btn" href={view.uri}>
               Open in wallet
             </a>
           </div>
@@ -205,7 +205,7 @@ export function FundingPanel(p: FundingPanelProps) {
               {formatDuffs(view.pendingDuffs)} seen; it counts once the network confirms it (seconds, sometimes a few minutes).
             </p>
           )}
-          <details className="learn small" data-testid="deposit-rules">
+          <details className="learn small dh-disclosure" data-testid="deposit-rules">
             <summary>Sent too much, too little, or too late?</summary>
             <p className="muted">
               What arrives before your payment is locked becomes Platform credits; anything above the minimum stays in your account's balance. A payment that
@@ -231,7 +231,7 @@ export function FundingPanel(p: FundingPanelProps) {
       )}
       {view.note && <p className="muted small" data-testid="funding-note">{view.note}</p>}
       {view.lateDuffs > 0n && (
-        <div className="notice-box" role="status" data-testid="late-payment">
+        <div className="notice-box dh-notice dh-notice--info" role="status" data-testid="late-payment">
           <p>
             {formatDuffs(view.lateDuffs)} arrived at {view.address} after the asset lock was made. It was not used and is still there; only your recovery phrase
             (or key) controls that address, and ordinary wallets don't show it.
@@ -296,7 +296,7 @@ function TooSmall(p: {
       {offerTopUp && mine.length > 0 && (
         <div className="form-actions">
           {mine.map((f) => (
-            <button key={f.identityId} type="button" className="btn" onClick={() => onTopUp(f.identityId)} data-testid="recover-mine">
+            <button key={f.identityId} type="button" className="btn dh-btn" onClick={() => onTopUp(f.identityId)} data-testid="recover-mine">
               Top up this phrase's identity #{f.identityIndex} (<IdentityName id={f.identityId} />)
             </button>
           ))}
@@ -305,9 +305,9 @@ function TooSmall(p: {
       {offerTopUp &&
         (open ? (
           <form className="form" onSubmit={submit}>
-            <label>
+            <label className="dh-field__label">
               Identity to top up
-              <input value={id} onChange={(e) => {
+              <input className="dh-input" value={id} onChange={(e) => {
                   setId(e.target.value);
                   setBad(false);
                 }} placeholder="identity id (base58)" spellCheck={false} autoComplete="off" data-testid="recover-identity" />
@@ -316,18 +316,18 @@ function TooSmall(p: {
             {problem && !bad && <p className="error small">{problem}</p>}
             <p className="muted small">Anyone can top up any identity: check the id. The whole amount goes to that identity's balance.</p>
             <div className="form-actions">
-              <button type="submit" className="btn btn-primary" disabled={!id.trim()}>
+              <button type="submit" className="btn dh-btn btn-primary dh-btn--primary" disabled={!id.trim()}>
                 Top up this identity
               </button>
             </div>
           </form>
         ) : (
-          <button type="button" className="btn" onClick={() => setOpen(true)}>
+          <button type="button" className="btn dh-btn" onClick={() => setOpen(true)}>
             Use these funds to top up {mine.length ? 'another' : 'an existing'} identity
           </button>
         ))}
       {p.onPayAgain && p.error instanceof LockTooSmallError && p.error.kind === 'create' && (
-        <button type="button" className="btn btn-quiet" onClick={p.onPayAgain} data-testid="pay-again">
+        <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet" onClick={p.onPayAgain} data-testid="pay-again">
           Pay again for a new account
         </button>
       )}
@@ -343,7 +343,7 @@ function ErrorBox({ text, retry, onRecover }: { text: string; retry(): void; onR
       <p className="small">
         On another device, or if this keeps failing: <RecoverLink onClick={onRecover}>Recover funds</RecoverLink> finds the payment from your recovery phrase alone.
       </p>
-      <button type="button" className="btn" onClick={retry}>
+      <button type="button" className="btn dh-btn" onClick={retry}>
         Try again
       </button>
     </div>

@@ -3,7 +3,7 @@
 export function HiddenToggle({ count, shown, onToggle, show, hide, testId = 'toggle-hidden' }: { count: number; shown: boolean; onToggle(): void; show: string; hide: string; testId?: string }) {
   if (count === 0) return null;
   return (
-    <button type="button" className="btn btn-quiet" aria-pressed={shown} onClick={onToggle} data-testid={testId}>
+    <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet" aria-pressed={shown} onClick={onToggle} data-testid={testId}>
       {shown ? hide : show}
     </button>
   );

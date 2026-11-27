@@ -28,6 +28,8 @@ export interface ContestSource {
   names(at?: { after?: string; from?: string }): Promise<NamesPage>;
   /** Tallies, contenders and outcome of one contest. Cached for a minute. */
   state(label: string): Promise<ContestState>;
+  /** Up to 100 proven voter identities for one contender. */
+  voters(label: string, identityId: string): Promise<string[]>;
   /** The cached state, if it is still fresh. */
   peek(label: string): ContestState | undefined;
   /** Drops the cached state of one contest, so the next read is fresh. */
@@ -273,6 +275,13 @@ export function liveContests(r: Registry): ContestSource {
     network: r.platformNetwork,
     live: true,
     votesOf,
+    async voters(label, identityId) {
+      const sdk = await getSdk(r);
+      const res = await sdk.group.contestedResourceVotersForIdentityWithProof({
+        ...DPNS_POLL, indexValues: [PARENT_DOMAIN, label], contestantId: identityId, limit: 100,
+      });
+      return (res.data as Array<{ toString(): string }>).map(id => id.toString());
+    },
     async nonceOf(voterId) {
       return ((await (await getSdk(r)).identities.nonce(voterId)) ?? 0n) & NONCE_MASK;
     },
@@ -318,6 +327,7 @@ export function fixtureContests(): ContestSource {
   return {
     network: 'mainnet',
     live: false,
+    voters: async () => [],
     async votesOf(_label, voterIds) {
       return new Map(voterIds.map((v) => [v, null]));
     },

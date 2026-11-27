@@ -8,8 +8,7 @@ import {
 import { useMemo, useState, type ReactNode } from 'react';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
-import { formatDate, formatDateTime, formatInt } from '../lib/format.ts';
-import { dashUnit } from '../lib/unit.ts';
+import { formatDate, formatDateTime, formatInt, dashUnit } from '../lib/format.ts';
 import { openSignIn } from '../ui/SignIn.tsx';
 import { ProvGlyph } from '../ui/Provenance.tsx';
 import type { Provenance } from '../data/types.ts';
@@ -72,7 +71,7 @@ export function usePlan(d: ProposalDraft): Plan {
     const errors: Plan['errors'] = {};
     for (const e of check.errors) errors[e.field] ??= e.message;
     if (i.amount.trim() && duffs === null) errors.paymentAmount = `enter an amount in ${dashUnit()}, with at most 8 decimals`;
-    if (i.urlMode === 'govhub' && !identityId) errors.url = 'sign in to use a govhub page, or enter your own link';
+    if (i.urlMode === 'govhub' && !identityId) errors.url = 'sign in to use a Governance page, or enter your own link';
     if (!schedule) errors.schedule ??= tip ? 'choose the first payment' : 'waiting for the current block height';
     return { tip, now, choices, schedule, duffs, url, check, errors };
   }, [tip, now, network, identityId, i.name, i.paymentAddress, i.amount, i.urlMode, i.customUrl, i.firstSuperblock, i.payments]);
@@ -88,15 +87,15 @@ export function stepErrors(plan: Plan, step: number): string[] {
 
 function Field({ label, hint, error, children, id }: { label: string; hint?: ReactNode; error?: string | undefined; children: ReactNode; id: string }) {
   return (
-    <div className="pw-field">
-      <label htmlFor={id}>{label}</label>
+    <div className="pw-field dh-field">
+      <label className="dh-field__label" htmlFor={id}>{label}</label>
       {children}
       {error ? (
-        <p className="error small" id={`${id}-err`} data-testid={`${id}-error`}>
+        <p className="error dh-field__error small" id={`${id}-err`} data-testid={`${id}-error`}>
           {error}
         </p>
       ) : hint ? (
-        <p className="muted small" id={`${id}-hint`}>
+        <p className="dh-field__help" id={`${id}-hint`}>
           {hint}
         </p>
       ) : null}
@@ -128,8 +127,10 @@ export function DetailsStep({ draft, plan, setInputs, setStep }: EditProps) {
       }}
     >
       <Field id="p-name" label="Short name" error={show('name', 'name')} hint="Up to 40 characters: letters, digits, - and _. It is how the proposal is listed, e.g. dash-docs-2027.">
-        <input
+        <input className="dh-input"
           id="p-name"
+          aria-invalid={Boolean(show('name', 'name'))}
+          aria-describedby={show('name', 'name') ? 'p-name-err' : 'p-name-hint'}
           data-testid="p-name"
           value={i.name}
           maxLength={60}
@@ -140,8 +141,10 @@ export function DetailsStep({ draft, plan, setInputs, setStep }: EditProps) {
         />
       </Field>
       <Field id="p-address" label="Dash address that receives the payments" error={show('paymentAddress', 'address')} hint="A normal Dash address or a multisig (P2SH) address of this network. Double-check it: payments can't be redirected later.">
-        <input
+        <input className="dh-input"
           id="p-address"
+          aria-invalid={Boolean(show('paymentAddress', 'address'))}
+          aria-describedby={show('paymentAddress', 'address') ? 'p-address-err' : 'p-address-hint'}
           data-testid="p-address"
           value={i.paymentAddress}
           autoComplete="off"
@@ -152,10 +155,10 @@ export function DetailsStep({ draft, plan, setInputs, setStep }: EditProps) {
       </Field>
       <fieldset className="pw-fieldset">
         <legend>Where voters read about it</legend>
-        <label className="check">
+        <label className="check dh-check">
           <input type="radio" name="p-url-mode" checked={i.urlMode === 'govhub'} onChange={() => setInputs({ urlMode: 'govhub' })} data-testid="p-url-govhub" />
           <span>
-            <b>A page on govhub</b> (recommended). You write the description after submitting; the link names you as the owner, and you confirm it once the proposal is live.
+            <b>A page on Governance</b> (recommended). You write the description after submitting; the link names you as the owner, and you confirm it once the proposal is live.
           </span>
         </label>
         {i.urlMode === 'govhub' &&
@@ -164,14 +167,14 @@ export function DetailsStep({ draft, plan, setInputs, setStep }: EditProps) {
               {plan.url || govhubUrl(session.identityId, '<name>')}
             </p>
           ) : (
-            <div className="notice-box">
-              <p className="small">This needs a govhub sign-in: the link names your Dash identity, which is what lets you publish the description later.</p>
-              <button type="button" className="btn btn-s" onClick={openSignIn}>
+            <div className="notice-box dh-notice dh-notice--info">
+              <p className="small">This needs a sign-in here: the link names your Dash identity, which is what lets you publish the description later.</p>
+              <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={openSignIn}>
                 Sign in
               </button>
             </div>
           ))}
-        <label className="check">
+        <label className="check dh-check">
           <input type="radio" name="p-url-mode" checked={i.urlMode === 'custom'} onChange={() => setInputs({ urlMode: 'custom' })} data-testid="p-url-custom" />
           <span>
             <b>My own link</b> (a forum post or document)
@@ -179,8 +182,10 @@ export function DetailsStep({ draft, plan, setInputs, setStep }: EditProps) {
         </label>
         {i.urlMode === 'custom' && (
           <Field id="p-url" label="Link" error={touched.url ? plan.errors.url : undefined} hint="No spaces. It is fixed once the fee is paid.">
-            <input
+            <input className="dh-input"
               id="p-url"
+          aria-invalid={Boolean(touched.url && plan.errors.url)}
+          aria-describedby={touched.url && plan.errors.url ? 'p-url-err' : 'p-url-hint'}
               data-testid="p-url"
               type="url"
               value={i.customUrl}
@@ -195,7 +200,7 @@ export function DetailsStep({ draft, plan, setInputs, setStep }: EditProps) {
         {i.urlMode === 'govhub' && plan.errors.url && session && <p className="error small">{plan.errors.url}</p>}
       </fieldset>
       <div className="form-actions">
-        <button type="submit" className="btn btn-primary" data-testid="p-next">
+        <button type="submit" className="btn dh-btn btn-primary dh-btn--primary" data-testid="p-next">
           Next: payments
         </button>
       </div>
@@ -225,12 +230,14 @@ export function PaymentsStep({ draft, plan, setInputs, setStep }: EditProps) {
       }}
     >
       <Field id="p-amount" label={`Amount per payment (${dashUnit()})`} error={touched || i.amount ? plan.errors.paymentAmount : undefined} hint="Paid at each superblock (the network's payout block) while the proposal has enough yes votes.">
-        <input id="p-amount" data-testid="p-amount" inputMode="decimal" value={i.amount} autoComplete="off" onChange={(e) => setInputs({ amount: e.target.value })} />
+        <input className="dh-input" id="p-amount" aria-invalid={Boolean((touched || i.amount) && plan.errors.paymentAmount)} aria-describedby={(touched || i.amount) && plan.errors.paymentAmount ? 'p-amount-err' : 'p-amount-hint'} data-testid="p-amount" inputMode="decimal" value={i.amount} autoComplete="off" onChange={(e) => setInputs({ amount: e.target.value })} />
       </Field>
       <div className="row2">
         <Field id="p-first" label="First payment" error={touched && plan.errors.schedule === 'choose the first payment' ? plan.errors.schedule : undefined}>
-          <select
+          <select className="dh-select"
             id="p-first"
+          aria-invalid={Boolean(touched && plan.errors.schedule === 'choose the first payment')}
+          aria-describedby={touched && plan.errors.schedule === 'choose the first payment' ? 'p-first-err' : undefined}
             data-testid="p-first"
             value={i.firstSuperblock ?? ''}
             onChange={(e) => setInputs({ firstSuperblock: e.target.value ? Number(e.target.value) : null })}
@@ -245,7 +252,7 @@ export function PaymentsStep({ draft, plan, setInputs, setStep }: EditProps) {
           </select>
         </Field>
         <Field id="p-count" label="Number of payments">
-          <input
+          <input className="dh-input"
             id="p-count"
             data-testid="p-count"
             type="number"
@@ -262,7 +269,7 @@ export function PaymentsStep({ draft, plan, setInputs, setStep }: EditProps) {
         </p>
       )}
       {firstChoice && (
-        <p className={firstChoice.state === 'tight' ? 'notice-box small' : 'muted small'} data-testid="p-deadline">
+        <p className={firstChoice.state === 'tight' ? 'notice-box dh-notice dh-notice--info small' : 'muted small'} data-testid="p-deadline">
           Masternodes must vote yes before block {formatInt(firstChoice.votingDeadline)} (about {formatDateTime(firstChoice.votingDeadlineEstTime)}) for the first payment.
           {firstChoice.state === 'tight' && ' That is soon: the proposal goes live 6 blocks after the fee is paid (about 15 minutes), and voters need time. A later first payment is safer.'}
         </p>
@@ -280,9 +287,9 @@ export function PaymentsStep({ draft, plan, setInputs, setStep }: EditProps) {
             ))}
           </ol>
           {counts.max > counts.planned && (
-            <p className="notice-box small" data-testid="p-eligible">
+            <p className="notice-box dh-notice dh-notice--info small" data-testid="p-eligible">
               You chose {counts.planned} {counts.planned === 1 ? 'payment' : 'payments'}, but {testnet ? 'testnet pays every hour and ' : ''}Dash Core pays at every superblock within 2 hours of
-              these dates, so this proposal can be paid up to {counts.max} times while it has enough yes votes. govhub shows it that way once it is live.
+              these dates, so this proposal can be paid up to {counts.max} times while it has enough yes votes. Governance shows it that way once it is live.
             </p>
           )}
           <p className="muted small">
@@ -296,7 +303,7 @@ export function PaymentsStep({ draft, plan, setInputs, setStep }: EditProps) {
             )}
           </p>
           {available !== null && plan.duffs > BigInt(Math.max(0, available)) && plan.duffs <= s.superblocks[0]!.budgetLimit && (
-            <p className="notice-box small" data-testid="p-budget-warn">
+            <p className="notice-box dh-notice dh-notice--info small" data-testid="p-budget-warn">
               That is more than is unpromised in the next payout right now. Dash Core pays passing proposals in order of their net yes votes until the budget runs out, so
               this one would need more yes votes than some that are passing today.
             </p>
@@ -304,10 +311,10 @@ export function PaymentsStep({ draft, plan, setInputs, setStep }: EditProps) {
         </section>
       )}
       <div className="form-actions">
-        <button type="button" className="btn" onClick={() => setStep(0)}>
+        <button type="button" className="btn dh-btn" onClick={() => setStep(0)}>
           Back
         </button>
-        <button type="submit" className="btn btn-primary" data-testid="p-next">
+        <button type="submit" className="btn dh-btn btn-primary dh-btn--primary" data-testid="p-next">
           Next: review
         </button>
       </div>
@@ -386,7 +393,7 @@ export function ReviewStep({ draft, plan, setStep, lock }: EditProps) {
           ))}
         </ul>
       )}
-      <details className="pw-details">
+      <details className="pw-details dh-disclosure">
         <summary>Details: the exact data</summary>
         <p className="small muted">
           Dash Core checks and hashes exactly these bytes (keys in alphabetical order, no spaces). Start {s ? formatDateTime(s.startEpoch) : '–'}, end {s ? formatDateTime(s.endEpoch) : '–'}: halfway
@@ -394,15 +401,15 @@ export function ReviewStep({ draft, plan, setStep, lock }: EditProps) {
         </p>
         <pre className="pw-code" data-testid="p-json">{json}</pre>
       </details>
-      <p className="notice-box small">
+      <p className="notice-box dh-notice dh-notice--info small">
         Next, the proposal is fixed: the fee pays for these exact details and this moment's timestamp. Changing anything afterwards needs a new {duffsToDash(GOVERNANCE_PROPOSAL_FEE_DUFFS)} {dashUnit()} fee.
       </p>
       {error && <p className="error">{error}</p>}
       <div className="form-actions">
-        <button type="button" className="btn" onClick={() => setStep(1)}>
+        <button type="button" className="btn dh-btn" onClick={() => setStep(1)}>
           Back
         </button>
-        <button type="button" className="btn btn-primary" disabled={!ok} onClick={doLock} data-testid="p-lock">
+        <button type="button" className="btn dh-btn btn-primary dh-btn--primary" disabled={!ok} onClick={doLock} data-testid="p-lock">
           Fix the details and continue to payment
         </button>
       </div>

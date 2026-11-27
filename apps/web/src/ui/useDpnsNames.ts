@@ -6,14 +6,19 @@ import { useForum } from '../app/forum.tsx';
 const NONE: ReadonlyMap<string, string> = new Map();
 
 export function useDpnsNames(ids: readonly (string | null | undefined)[]): ReadonlyMap<string, string> {
+  return useDpnsNamesRead(ids).names;
+}
+
+/** The names, and whether the answer for exactly these ids has arrived (so "no username" can be said). */
+export function useDpnsNamesRead(ids: readonly (string | null | undefined)[]): { names: ReadonlyMap<string, string>; read: boolean } {
   const { forum } = useForum();
   const key = [...new Set(ids.filter((x): x is string => !!x))].sort().join(',');
-  const [state, setState] = useState<{ forum: unknown; names: ReadonlyMap<string, string> }>({ forum, names: NONE });
+  const [state, setState] = useState<{ forum: unknown; key: string; names: ReadonlyMap<string, string> }>({ forum, key: '', names: NONE });
   useEffect(() => {
     if (!key) return;
     let live = true;
     forum.names(key.split(',')).then(
-      (names) => live && setState({ forum, names }),
+      (names) => live && setState({ forum, key, names }),
       () => {},
     );
     return () => {
@@ -21,5 +26,6 @@ export function useDpnsNames(ids: readonly (string | null | undefined)[]): Reado
     };
   }, [forum, key]);
   // answers for another source (a network switch) are never shown; a changed id list keeps the names it still has meanwhile
-  return state.forum === forum ? state.names : NONE;
+  if (state.forum !== forum) return { names: NONE, read: false };
+  return { names: state.names, read: state.key === key };
 }

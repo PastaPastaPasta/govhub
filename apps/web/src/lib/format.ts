@@ -15,9 +15,14 @@ export function formatDashAmount(duffs: number, locale = 'en-US'): string {
   return nf(locale, 0, 8).format(dash);
 }
 
+export { dashUnit };
+
 export function formatDash(duffs: number, locale = 'en-US'): string {
   return `${formatDashAmount(duffs, locale)} ${dashUnit()}`;
 }
+
+/** "no payments left" → "No payments left": a list's phrase heading a field of its own. */
+export const capitalize = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
 
 export function formatInt(n: number, locale = 'en-US'): string {
   return nf(locale, 0, 0).format(n);
@@ -59,7 +64,7 @@ export function formatRelative(targetS: number, nowS: number): string {
   return delta >= 0 ? `in ${formatDuration(delta)}` : `${formatDuration(delta)} ago`;
 }
 
-export function formatDate(unixS: number, locale = 'en-US', timeZone?: string): string {
+export function formatDate(unixS: number, locale = 'en-GB', timeZone = 'UTC'): string {
   return new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'short', day: 'numeric', ...(timeZone ? { timeZone } : {}) }).format(unixS * 1000);
 }
 
@@ -68,9 +73,9 @@ export function formatMonth(unixS: number, locale = 'en-US', timeZone?: string):
   return new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'short', ...(timeZone ? { timeZone } : {}) }).format(unixS * 1000);
 }
 
-export function formatDateTime(unixS: number, locale = 'en-US', timeZone?: string): string {
+export function formatDateTime(unixS: number, locale = 'en-GB', timeZone = 'UTC'): string {
   return new Intl.DateTimeFormat(locale, {
-    year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', ...(timeZone ? { timeZone, timeZoneName: 'short' } : {}),
+    year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', ...(timeZone ? { timeZone, timeZoneName: 'short' } : {}),
   }).format(unixS * 1000);
 }
 

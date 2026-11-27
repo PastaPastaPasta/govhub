@@ -51,7 +51,7 @@ export function mnName(m: Pick<OwnedMasternode, 'proTxHash'> | Pick<WatchedVote,
 
 export function Badge({ tone, children, testId }: { tone: Tone; children: React.ReactNode; testId?: string }) {
   return (
-    <span className={`vbadge vbadge-${tone}`} data-testid={testId}>
+    <span className={`vbadge dh-badge vbadge-${tone}`} data-testid={testId}>
       {children}
     </span>
   );

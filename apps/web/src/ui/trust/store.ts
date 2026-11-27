@@ -87,7 +87,7 @@ const rankings = new Map<string, { at: number; promise: Promise<RankingDone>; pr
 /** The funding order of these active proposals, recounted once per data source and list for 10 minutes (or again with `force`). */
 export function sharedRanking(source: DataSource, proposals: readonly Proposal[], o: { force?: boolean; onProgress?: (m: string) => void } = {}): Promise<RankingDone> {
   const bridge = source.bridgeDescriptor();
-  if (!bridge) return Promise.reject(new Error('no bridge is configured'));
+  if (!bridge) return Promise.reject(new Error('no data service is configured'));
   const key = `${source.scope}:${JSON.stringify(bridge)}:${JSON.stringify(source.dapiDescriptor())}:${proposals.map((p) => p.govHash).sort().join(',')}`;
   const hit = rankings.get(key);
   if (hit && !o.force && Date.now() - hit.at < RANKING_TTL_MS) {

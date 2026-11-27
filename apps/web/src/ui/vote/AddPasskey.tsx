@@ -14,22 +14,22 @@ export function AddPasskey() {
       }),
   });
   const working = step === 'confirm' || step === 'saving';
-  if (support === 'no') return <p className="notice-box small">{PRF_UNAVAILABLE_MESSAGE}</p>;
+  if (support === 'no') return <p className="notice-box dh-notice dh-notice--info small">{PRF_UNAVAILABLE_MESSAGE}</p>;
   return (
     <>
       {!working && (
         <>
           <p className="small muted">A new passkey keeps your sign-in encrypted on Platform too. Saving costs about 0.0005 DASH of credit.</p>
           {k.needsConfirm && <p className="small muted">Confirm the list above first.</p>}
-          <button type="button" className="btn btn-s" onClick={() => void create()} disabled={!!k.busy || k.needsConfirm || !entries} data-testid="create-passkey">
+          <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={() => void create()} disabled={!!k.busy || k.needsConfirm || !entries} data-testid="create-passkey">
             Add a passkey
           </button>
         </>
       )}
       {step === 'confirm' && (
-        <div className="notice-box small">
-          <p>Passkey created. Confirm it once more so govhub can lock your key to it.</p>
-          <button type="button" className="btn btn-s btn-primary" onClick={() => void confirm()} disabled={!!k.busy}>
+        <div className="notice-box dh-notice dh-notice--info small">
+          <p>Passkey created. Confirm it once more so Governance can lock your key to it.</p>
+          <button type="button" className="btn dh-btn btn-s dh-btn--sm btn-primary dh-btn--primary" onClick={() => void confirm()} disabled={!!k.busy}>
             Confirm with the passkey
           </button>
         </div>
@@ -50,12 +50,12 @@ export function AddPasskey() {
         </p>
       )}
       {!entries && error && (
-        <button type="button" className="btn btn-s btn-quiet" onClick={() => (setError(null), reload())}>
+        <button type="button" className="btn dh-btn btn-s dh-btn--sm btn-quiet dh-btn--quiet" onClick={() => (setError(null), reload())}>
           Try again
         </button>
       )}
       {!working && (
-        <button type="button" className="btn btn-s btn-quiet" onClick={() => void k.addPasskeyUnlocker().catch(() => {})} disabled={!!k.busy} data-testid="existing-passkey">
+        <button type="button" className="btn dh-btn btn-s dh-btn--sm btn-quiet dh-btn--quiet" onClick={() => void k.addPasskeyUnlocker().catch(() => {})} disabled={!!k.busy} data-testid="existing-passkey">
           Use a passkey I already have
         </button>
       )}

@@ -159,6 +159,22 @@ export interface SuperblockCache {
   put(height: number, value: SuperblockCoinbase): Promise<void>;
 }
 
+/**
+ * The coinbase of block `h` of the verified chain `a`: from `cache` when it holds one for the block hash `a` has there, else read from
+ * a node and proven to be that block (merkle root, header hash), then cached. `mayFetch`: asked before a read from the network;
+ * false leaves it (null).
+ */
+export async function readCoinbase(dapi: Dapi, a: AnchoredChain, h: number, cache?: SuperblockCache, mayFetch: () => boolean = () => true): Promise<SuperblockCoinbase | null> {
+  const hash = a.chain.hashHexAt?.(h) ?? null;
+  const c = cache && hash ? await cache.get(h).catch(() => undefined) : undefined;
+  if (c && c.blockHash === hash) return c;
+  if (!mayFetch()) return null;
+  const { block } = await dapi.getAnchoredBlock(a, h);
+  const v = { blockHash: hash ?? '', time: block.header.time, outputs: block.txs[0]!.outputs.map((x) => ({ script: bytesToHex(x.script), value: x.value.toString() })) };
+  if (cache && hash) void cache.put(h, v).catch(() => {});
+  return v;
+}
+
 /** Block reads per payments run (testnet has a superblock an hour: a long-running proposal spans thousands). */
 export const MAX_SUPERBLOCK_READS = 100;
 
@@ -210,20 +226,13 @@ export async function payments(
       if (budget && budget.left <= 0) return null; // left for later: no headers fetched for a block that will not be read
       if (!(await reach(h))) return memo.get(h)!;
     }
-    const hash = cur.chain.hashHexAt?.(h) ?? null;
-    const c = opts.cache && hash ? await opts.cache.get(h).catch(() => undefined) : undefined;
-    let v: SuperblockCoinbase | Error;
-    if (c && c.blockHash === hash) v = c;
-    else {
-      if (budget && budget.left-- <= 0) return null;
-      try {
-        const { block } = await dapi.getAnchoredBlock(cur, h);
-        v = { blockHash: hash ?? '', time: block.header.time, outputs: block.txs[0]!.outputs.map((x) => ({ script: bytesToHex(x.script), value: x.value.toString() })) };
-        if (opts.cache && hash) void opts.cache.put(h, v).catch(() => {});
-      } catch (e) {
-        v = asError(e);
-      }
+    let v: SuperblockCoinbase | Error | null;
+    try {
+      v = await readCoinbase(dapi, cur, h, opts.cache, () => !budget || budget.left-- > 0);
+    } catch (e) {
+      v = asError(e);
     }
+    if (!v) return null;
     memo.set(h, v);
     return v;
   };

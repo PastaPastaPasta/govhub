@@ -75,7 +75,7 @@ export function VoteSuccess({ vote, name, proposalName, onRecount }: { vote: Wat
     if (!a || a === document.body || a.closest('[data-testid="vote-composer"]')) ref.current?.focus({ preventScroll: true });
   }, []);
   const outcomeName = OUTCOME_NAME[vote.outcome];
-  const word = outcomeName.toUpperCase();
+  const word = outcomeName;
   const signed = useMemo(
     () =>
       JSON.stringify({ collateralTxid: vote.collateralTxid, collateralIndex: vote.collateralIndex, govHash: vote.govHash, signal: 'funding', outcome: outcomeName, time: vote.time, sig: vote.sig }, null, 2) +
@@ -98,7 +98,7 @@ export function VoteSuccess({ vote, name, proposalName, onRecount }: { vote: Wat
     <section ref={ref} tabIndex={-1} className="vwin" role="status" data-testid="vote-success" aria-labelledby={`win-${vote.voteHash}`}>
       <WinMark />
       <div className="vwin-body">
-        <h3 id={`win-${vote.voteHash}`}>The bridge reports your vote is on the network</h3>
+        <h3 id={`win-${vote.voteHash}`}>The governance data service reports your vote is on the network</h3>
         <p className="small muted" data-testid="vote-success-source">
           {corroboration(vote).trim()}
         </p>
@@ -116,10 +116,10 @@ export function VoteSuccess({ vote, name, proposalName, onRecount }: { vote: Wat
             <span className="spinner" aria-hidden="true" /> Recounting the tally with your vote…
           </p>
         )}
-        <details className="vwin-yourself" data-testid="vote-yourself">
+        <details className="vwin-yourself dh-disclosure" data-testid="vote-yourself">
           <summary>Check it yourself</summary>
           <div className="vwin-actions">
-            <button type="button" className="btn btn-s" onClick={() => void check()} disabled={checking} data-testid="vote-verify">
+            <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={() => void check()} disabled={checking} data-testid="vote-verify">
               {checking ? 'Checking…' : proof ? 'Check again' : 'Verify this vote'}
             </button>
             <span className="vwin-copy">
@@ -129,12 +129,12 @@ export function VoteSuccess({ vote, name, proposalName, onRecount }: { vote: Wat
               Core command <CopyButton text={coreCmd} label="Copy the gobject getcurrentvotes command" />
             </span>
             {k.bridgeBase && (
-              <a className="small" href={`${k.bridgeBase}/v1/proposals/${vote.govHash}/votes`} target="_blank" rel="noopener noreferrer">
-                Open in the bridge API
+              <a className="small dh-link" href={`${k.bridgeBase}/v1/proposals/${vote.govHash}/votes`} target="_blank" rel="noopener noreferrer">
+                Open in the governance data service API
               </a>
             )}
             {onRecount && (
-              <button type="button" className="btn btn-s btn-quiet" onClick={onRecount}>
+              <button type="button" className="btn dh-btn btn-s dh-btn--sm btn-quiet dh-btn--quiet" onClick={onRecount}>
                 See the full recount
               </button>
             )}

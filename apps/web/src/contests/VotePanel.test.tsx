@@ -121,12 +121,19 @@ describe('ContestVotePanel', () => {
     expect(el.querySelector('[role="alert"]')!.textContent).toMatch(/wiped/);
   });
 
-  it('points to My masternodes while the keyring is not open, and offers pasting a voting key instead', async () => {
+  it('signed out, leads with pasting a voting key (no account), and points to an account for keeping keys', async () => {
     (hold.k as { status: string }).status = 'signed-out';
     const { el } = await mount();
-    expect(el.querySelector('[data-testid="vote-cta"]')!.textContent).toMatch(/sign in and add your voting keys/);
-    await click(el.querySelector<HTMLButtonElement>('[data-testid="guest-open"]')!);
     expect(el.querySelector('[data-testid="guest-form"]')!.textContent).toMatch(/this tab’s memory only: never saved, never sent/);
+    expect(el.querySelector('[data-testid="vote-cta"]')!.textContent).toMatch(/keep your voting keys in an account/);
+  });
+
+  it('points to My masternodes while the keyring is locked, and offers pasting a voting key instead', async () => {
+    (hold.k as { status: string }).status = 'locked';
+    const { el } = await mount();
+    expect(el.querySelector('[data-testid="vote-cta"]')!.textContent).toMatch(/Unlock your masternode keyring/);
+    await click(el.querySelector<HTMLButtonElement>('[data-testid="guest-open"]')!);
+    expect(el.querySelector('[data-testid="guest-form"]')).not.toBeNull();
   });
 
   it('signs with pasted keys when there is no keyring, as the guest', async () => {

@@ -6,7 +6,7 @@ import { gotoFixtures, offline, watchPage } from './helpers.ts';
 
 const openSheet = async (page: Page) => {
   await page.getByTestId('session-button').click();
-  await expect(page.getByRole('dialog', { name: 'Sign in to govhub' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Sign in to Governance' })).toBeVisible();
 };
 
 const SHOTS = !!process.env.SCREENSHOTS;
@@ -61,7 +61,7 @@ for (const [vp, size] of [
       await shoot(page, `qr-waiting-${vp}`);
 
       await page.getByRole('button', { name: 'Send a bad answer' }).click();
-      await expect(page.getByTestId('wallet-note')).toContainText('was refused: it holds a key govhub did not ask for');
+      await expect(page.getByTestId('wallet-note')).toContainText('was refused: it holds a key Governance did not ask for');
       await shoot(page, `refused-${vp}`);
 
       await page.getByRole('button', { name: 'Approve as Alice' }).click();

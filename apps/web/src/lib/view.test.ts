@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { Proposal, Sourced, Tally } from '../data/types.ts';
-import { askText, paymentsLeft } from '../ui/ProposalCard.tsx';
+import { askText, paymentsLeft, paymentsLine } from '../ui/ProposalCard.tsx';
 import { GOV_PARAMS, parseGovParams, perPayment, perSuperblock, superblockCadence } from './governance.ts';
-import { byRank, countNames, deriveRow, pickTally, proposalHref, weakest } from './view.ts';
+import { byRank, countNames, deriveRow, pickTally, proposalHref, untalliedOf, weakest } from './view.ts';
 
 const prov = { kind: 'proof', source: 'test' } as const;
 const tally = (govHash: string, over: Partial<Tally> = {}): Sourced<Tally> => ({
@@ -71,9 +71,19 @@ describe('view model', () => {
     expect(askText(200e8, { total: 5, remaining: 2, oneTime: false }, test)).toEqual({ amount: '200 DASH', per: 'per hour' });
     expect(askText(1e8, { total: 1, remaining: 1, oneTime: true }, test)).toEqual({ amount: '1 DASH', per: 'once' });
     expect(paymentsLeft({ total: 5, remaining: 2, oneTime: false })).toBe('2 of 5 payments left');
-    expect(paymentsLeft({ total: 5, remaining: 0, oneTime: false })).toBe('final payment made');
+    expect(paymentsLeft({ total: 5, remaining: 0, oneTime: false })).toBe('no payments left');
     expect(paymentsLeft({ total: 1, remaining: 1, oneTime: true })).toBe('one-time payment');
     expect(paymentsLeft(null)).toBeNull();
+    // the page adds what the verified chain shows paid, and never totals less than paid plus left
+    expect(paymentsLine({ total: 4, remaining: 1, oneTime: false }, null)).toBe('1 of 4 payments left');
+    expect(paymentsLine({ total: 4, remaining: 1, oneTime: false }, { made: '3', count: 3, left: 1 })).toBe('1 of 4 payments left · 3 paid');
+    expect(paymentsLine({ total: 4, remaining: 1, oneTime: false }, { made: '2', count: 2, left: 1 })).toBe('1 of 4 payments left · 2 paid');
+    expect(paymentsLine({ total: 2, remaining: 2, oneTime: false }, { made: '0', count: 0, left: 2 })).toBe('2 of 2 payments left');
+    expect(paymentsLine({ total: 2, remaining: 1, oneTime: false }, { made: '0', count: 0, left: 1 })).toBe('1 of 2 payments left · 0 paid');
+    expect(paymentsLine({ total: 1, remaining: 0, oneTime: true }, { made: '1', count: 1, left: 1 })).toBe('1 more possible · 1 paid');
+    expect(paymentsLine({ total: 4, remaining: 2, oneTime: false }, { made: '3', count: 3, left: 2 })).toBe('2 more possible · 3 paid');
+    expect(paymentsLine({ total: 3, remaining: 0, oneTime: false }, { made: '3 or more', count: 3, left: 0 })).toBe('no payments left · 3 or more paid');
+    expect(paymentsLine(null, { made: '1', count: 1, left: 1 })).toBe('1 more possible · 1 paid');
     expect(perPayment({ superblockCycle: Math.round((3 * 86400) / main.blockSeconds), blockSeconds: main.blockSeconds })).toBe('per payment (every ~3 days)');
   });
 
@@ -154,3 +164,15 @@ describe('view model with testnet parameters', () => {
   });
 });
 
+
+describe('untalliedOf', () => {
+  const listed = ['a', 'b', 'c'];
+  const has = (...hs: string[]) => new Map(hs.map((h) => [h, true]));
+  it('is empty when every read answered: a proposal with no tally then has no votes yet', () => {
+    expect([...untalliedOf(listed, has('a'), has(), { platform: 'ok', bridge: 'ok' })]).toEqual([]);
+  });
+  it('names the proposals a failed read may have had a tally for', () => {
+    expect([...untalliedOf(listed, has('a'), has(), { platform: 'ok', bridge: 'failed' })]).toEqual(['b', 'c']);
+    expect([...untalliedOf(listed, has(), has('b'), { platform: 'failed', bridge: 'ok' })]).toEqual(['a', 'c']);
+  });
+});

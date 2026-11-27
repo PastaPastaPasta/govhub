@@ -1,6 +1,7 @@
 // /about/trust: what the people running govhub's servers could and couldn't lie about, in plain words. The full, code-cited
 // version is docs/TRUST.md; keep the two in step.
-import { Link } from 'react-router-dom';
+import { useRouteTitle } from '../app/title.ts';
+import { Link } from '../ui/Link.tsx';
 
 export const TRUST_DOC_URL = 'https://github.com/PastaPastaPasta/govhub/blob/main/docs/TRUST.md';
 
@@ -11,15 +12,15 @@ const POINTS: Array<[string, string]> = [
   ],
   [
     'Votes can’t be forged, but they can be left out.',
-    'Every vote is signed by a masternode’s voting key and recounted in your browser. Only votes from masternodes in the masternode list your browser proved, signed with the voting key that list gives them, are counted; any other vote is left out of the count and flagged as excluded. The “How do we know?” drawer gives the reason for each kind and lists the first few such votes. A server can’t change a signed vote. But it can leave votes or whole proposals out, or show an older vote instead of a newer one, and nothing here detects that. Compare with another bridge or your own Dash Core node.',
+    'Every vote is signed by a masternode’s voting key and recounted in your browser. Only votes from masternodes in the masternode list your browser proved, signed with the voting key that list gives them, are counted; any other vote is left out of the count and flagged as excluded. The “How do we know?” drawer gives the reason for each kind and lists the first few such votes. A server can’t change a signed vote. But it can leave votes or whole proposals out, or show an older vote instead of a newer one, and nothing here detects that. Compare with another data service or your own Dash Core node.',
   ],
   [
     'Your vote can be delayed, not changed.',
-    'A relay holds your signed vote until it sends it. It can hold it back or drop it, and it sees your IP address, the time and how you voted, but it can’t change the vote. Once sent, the status says what the bridge reports (“the bridge reports the network counted it”), and names any other bridge or relay you configured that agrees. Check your own node if it matters.',
+    'A relay holds your signed vote until it sends it. It can hold it back or drop it, and it sees your IP address, the time and how you voted, but it can’t change the vote. Once sent, the status says what the governance data service reports (“…reports the network counted it”), and names any other data service or relay you configured that agrees. Check your own node if it matters.',
   ],
   [
     'The chain is checked from checkpoints built into this app.',
-    'Blocks, the masternode list and the votes a proposal needs are proven from checkpoints in govhub’s code, through ChainLocks or, when no quorum proof is available, proof of work. Nodes can refuse to answer, but can’t fake the chain without the Dash network’s own signing quorums or mining power. On testnet, mining power protects little, and the app says so.',
+    'Blocks, the masternode list and the votes a proposal needs are proven from checkpoints in this app’s code, through ChainLocks or, when no quorum proof is available, proof of work. Nodes can refuse to answer, but can’t fake the chain without the Dash network’s own signing quorums or mining power. On testnet, mining power protects little, and the app says so.',
   ],
   [
     '“MN · vouched by X” is X’s word.',
@@ -31,16 +32,17 @@ const POINTS: Array<[string, string]> = [
   ],
   [
     'The app itself is the biggest trust.',
-    'Whoever serves this website could serve different code. To remove that trust, build govhub from its source and run it yourself, with your own backends.',
+    'Whoever serves this website could serve different code. To remove that trust, build Governance from its source (the govhub repository) and run it yourself, with your own backends.',
   ],
 ];
 
 export function TrustPage() {
+  useRouteTitle('/about/trust');
   return (
     <article className="page-narrow about" aria-labelledby="about-t-title">
-      <h1 id="about-t-title">What we can and can’t lie about</h1>
+      <h1 className="dh-page-header__title" id="about-t-title">What we can and can’t lie about</h1>
       <p className="lede">
-        govhub checks most of what it shows in your browser. Some things still rest on someone’s word: here is what the people running govhub’s servers could get wrong
+        Governance checks most of what it shows in your browser. Some things still rest on someone’s word: here is what the people running Governance’s servers could get wrong
         or hide, and what they couldn’t.
       </p>
       <ul className="about-checks" data-testid="trust-points">
@@ -52,10 +54,10 @@ export function TrustPage() {
       </ul>
       <p>
         The details, with every server and what it could do, are in{' '}
-        <a href={TRUST_DOC_URL} target="_blank" rel="noopener noreferrer" data-testid="trust-doc-link">
+        <a href={TRUST_DOC_URL} target="_blank" rel="noopener noreferrer" data-testid="trust-doc-link" className="dh-link">
           the trust model on GitHub
         </a>
-        . What each badge state means is on <Link to="/about/verification">How govhub checks what it shows</Link>.
+        . What each badge state means is on <Link to="/about/verification" className="dh-link">How Governance checks what it shows</Link>.
       </p>
     </article>
   );

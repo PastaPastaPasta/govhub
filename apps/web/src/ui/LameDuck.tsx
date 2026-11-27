@@ -31,7 +31,7 @@ export function LameDuckSection({ count, open, onToggle, children }: { count: nu
 export function LameDuckCardStatus({ endEpoch }: { endEpoch: number }) {
   return (
     <>
-      <span className="tag tag-done" data-testid="card-lameduck" title="Estimated from the superblock schedule (2.62 minutes per block, as Core estimates it)">
+      <span className="tag dh-badge tag-done" data-testid="card-lameduck" title="Estimated from the superblock schedule (2.62 minutes per block, as Core estimates it)">
         No more payments possible
       </span>
       <p className="small muted">Ends {formatDate(endEpoch)}</p>
@@ -70,7 +70,7 @@ export function LameDuckPageStatus({ total, paid, endEpoch, counting }: { total:
   return (
     <div className="p-lameduck" data-testid="lameduck-status">
       <p>
-        <span className="tag tag-done">{headline}</span>
+        <span className="tag dh-badge tag-done">{headline}</span>
       </p>
       <p>
         {detail}

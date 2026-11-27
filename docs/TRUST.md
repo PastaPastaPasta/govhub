@@ -133,6 +133,25 @@ the pinned hash. A run that disagrees with the ChainLocked run wherever both hav
 (`PinConflictError`). A DAPI node can withhold such a run but cannot substitute one. A block more than 5,000 blocks below the
 lowest pin is out of reach, and the old walk down from the ChainLock applies, up to 400,000 blocks ("too old to verify here").
 
+### 2.2b Masternode registrations shipped with the build
+
+`dist/verify/registrations-mainnet.bin` holds the registration facts of every masternode in the bridge's list when the app was
+built: its type (regular or evonode) and its collateral outpoint. The build step `apps/web/scripts/registrations.mjs` fetches
+each masternode's ProRegTx from DAPI by proTxHash and keeps a fact only when the transaction hashes to that proTxHash
+(`@govhub/dapi` `getProRegInfo`, the same function the browser uses). A DAPI node can withhold a transaction there, not
+substitute one. The bridge's list only chooses which masternodes to cover.
+
+In the browser (`apps/web/src/verify/registrations.ts`), the verification worker answers ProRegTx lookups from this table first,
+then from what the browser proved itself, and fetches and proves the rest as before. An entry is used only for a masternode in
+the masternode list the browser proved (the funding threshold's older list entries, and the voters of a recount).
+
+**What you trust:** the build, as for the code (2.1). The file is served from the app's own origin next to the scripts that read it;
+whoever can change it can change the code. It is a function of proTxHashes, which the proven masternode list commits to, so it adds
+no new external party. **What it saves:** a first visit no longer fetches and hashes about 1,000 to 3,000 transactions one by one
+(96 of 130 s in the lab's cold proposal check; about 16 s in production). **Limits:** masternodes registered after the build are
+proven in the browser. A build made offline (`GOVHUB_PRERENDER_OFFLINE=1`) ships no table; the app then behaves as before. Testnet
+has no table.
+
 ### 2.3 The header checkpoint and proof of work (fallback)
 
 `CHECKPOINTS` in `packages/dapi/src/headerchain.ts:49-52` pins a second block per network for the proof-of-work path:

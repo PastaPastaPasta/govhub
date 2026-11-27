@@ -19,6 +19,8 @@ const forum = vi.hoisted(() => ({
   forum: { names: async () => new Map([['eUJLdV1mRNVYAMdHYV3nSiwKu2EBB1jGfVKUuCDeUE2', 'alice.dash']]), reader: { profiles: async () => new Map() } },
 }));
 vi.mock('../app/forum.tsx', () => ({ useForum: () => forum }));
+// demo data: there is no other network to look in
+vi.mock('../app/context.tsx', () => ({ useApp: () => ({ mode: 'fixtures', registry: { profile: 'mainnet' } }) }));
 vi.mock('../contests/ContestVotes.tsx', () => ({ useContestVotes: () => ({ held: [] }) }));
 vi.mock('../contests/VotePanel.tsx', () => ({ ContestVotePanel: () => <section data-testid="contest-vote-panel" /> }));
 vi.mock('../ui/useCommentCounts.ts', () => ({ useCommentCounts: (keys: string[]) => new Map(keys.map((k, i) => [k, i])) }));
@@ -60,6 +62,15 @@ const settle = async () => {
 };
 
 describe('ContestsPage', () => {
+  it('opens and scrolls the explanation for an About link', async () => {
+    const scroll = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+    const { el } = await render(at('/names#name-contests-about'));
+    await settle();
+    expect((el.querySelector('#name-contests-about') as HTMLDetailsElement).open).toBe(true);
+    expect(scroll).toHaveBeenCalledWith({ top: 0 });
+    scroll.mockRestore();
+  });
+
   it('lists open contests soonest first and reads no ended ones until asked', async () => {
     const { el } = await render(at('/names'));
     await settle();
@@ -79,7 +90,7 @@ describe('ContestsPage', () => {
     // the first page only (StrictMode asks for it twice in development; the first answer is dropped)
     expect(names.mock.calls.every(([q]) => JSON.stringify(q) === '{}')).toBe(true);
     expect(cards(el, '[data-testid="ended-contests"]')).toEqual(['a1pha', 'dashpay', 'free-m0ney', 'w0r1d']);
-    expect(el.textContent).toContain('Locked by 98% of the votes');
+    expect(el.textContent).toContain('Locked: nobody gets it (98% of the votes)');
   });
 
   it('narrows both lists with a search, starting the ended list at that name', async () => {
@@ -135,6 +146,7 @@ describe('ContestPage', () => {
     expect(other.el.textContent).toContain('Only names of 3 to 19 letters');
     const none = await render(at('/names/zzzz'));
     await settle();
-    expect(none.el.textContent).toContain('No contest for zzzz.dash');
+    expect(none.el.querySelector('[data-testid="contest-missing"] h1')!.textContent).toBe('zzzz.dash');
+    expect(none.el.querySelector('[data-testid="not-found-plain"]')!.textContent).toContain('There’s no name contest with this name here.');
   });
 });

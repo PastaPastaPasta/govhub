@@ -35,6 +35,12 @@ export interface RelayHealth {
   checkedAt: number;
 }
 
+/** A lab build (VITE_GOVHUB_LAB_PREVIEW=1): its read-only stub answers relay writes. Never set for gov.dashhq.org. */
+export const labPreview = (): boolean => import.meta.env?.VITE_GOVHUB_LAB_PREVIEW === '1';
+
+/** A preview build's relay refused the write without passing it on. */
+export const WRITES_OFF = 'this preview has writes switched off, so nothing reached a relay or the network';
+
 export class RelayError extends Error {
   constructor(
     message: string,
@@ -130,6 +136,8 @@ export class RelayClient {
     } catch {
       /* empty or non-JSON body */
     }
+    // a read-only preview (the local lab) answers every write with this stub instead of passing it on: nothing was stored or sent
+    if (labPreview() && body !== undefined && res.status < 500 && isObj(json) && json.localPreview === true) throw new RelayError(WRITES_OFF, res.status, 'writes-disabled');
     if (!res.ok) {
       const o = isObj(json) ? json : {};
       throw new RelayError(typeof o.error === 'string' ? o.error.slice(0, 200) : `relay answered HTTP ${res.status}`, res.status, typeof o.code === 'string' ? o.code : undefined, typeof o.status === 'string' ? o.status : undefined, Number(res.headers.get('retry-after')) || undefined);

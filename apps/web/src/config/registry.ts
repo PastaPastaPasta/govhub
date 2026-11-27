@@ -5,6 +5,7 @@
 // Settings start from a network PROFILE (Testnet, Dev, Mainnet): one coherent set of Core network, Platform network,
 // `gov` contract, bridge, DAPI node source and forum contracts. Any field can still be overridden ("custom") under
 // Advanced, but switching profile is one action and never mixes one network's data with another's parameters.
+import { COINBASE_SPOT } from '../data/price.ts';
 import type { CoreNetwork } from '../data/types.ts';
 
 /**
@@ -113,7 +114,7 @@ export const TESTNET_FORUM: ForumEndpoints = {
   contractId: 'HfLWUEWnp4YCQ9Mzp9DexG58WPKvHm7SahMVSuzKSQRw',
   modContractId: 'CWJ5PyMMKwchk5H3FjX9enVQToWZUFA1xQaRn8zNZVjY',
   moderationIdentityId: DEV_BRIDGE_IDENTITY_ID,
-  moderationName: 'govhub moderation',
+  moderationName: 'Governance moderation',
   claimPortals: ['gov.dashhq.org'],
 };
 
@@ -127,7 +128,7 @@ export const MAINNET_FORUM: ForumEndpoints = {
   contractId: '4EcYtwedNjTm4iGmx47GkLX2uNkCUWS4tt1KHhgGkjR3',
   modContractId: '65CSJ6tnKFJR6T4C2TMYFsusD7scZqLkpXgjEqpKdu2P',
   moderationIdentityId: '96f4TbboxsG4SNx711fvaemSKzsTG72M2pEYLdpPrG2M',
-  moderationName: 'govhub moderation',
+  moderationName: 'Governance moderation',
   claimPortals: ['gov.dashhq.org'],
 };
 
@@ -183,8 +184,8 @@ export const PROFILES: Record<ProfileId, NetworkProfile> = {
   },
   dev: {
     id: 'dev',
-    label: 'Dev',
-    title: 'Dev: mainnet data on testnet Platform',
+    label: 'Mainnet on Testnet',
+    title: 'Mainnet proposals · Testnet Platform',
     description: 'Mainnet governance (real Core mainnet proposals, votes and superblocks) published on testnet Platform, for development.',
     coreNetwork: 'mainnet',
     platformNetwork: 'testnet',
@@ -272,8 +273,10 @@ function profileBridges(p: NetworkProfile): BridgeEndpoint[] {
   return [{ name: url.replace(/^[a-z]+:\/\//i, ''), httpBase: url, govContractId: p.govContractId, bridgeIdentityId: p.bridge.identityId, enabled: true }];
 }
 
-const PRICE_FEED: NamedUrl = { name: 'CoinGecko', url: 'https://api.coingecko.com/api/v3/simple/price?ids=dash&vs_currencies=usd' };
-const EMPTY_FORUM: ForumEndpoints = { contractId: '', modContractId: '', moderationIdentityId: '', moderationName: 'govhub moderation', claimPortals: [] };
+const PRICE_FEED: NamedUrl = COINBASE_SPOT;
+/** The default before the family price rule (design/PRICE.md): saved settings that still name it get the new default. */
+const OLD_DEFAULT_PRICE_FEED = 'https://api.coingecko.com/api/v3/simple/price?ids=dash&vs_currencies=usd';
+const EMPTY_FORUM: ForumEndpoints = { contractId: '', modContractId: '', moderationIdentityId: '', moderationName: 'Governance moderation', claimPortals: [] };
 
 /** A profile's settings, with no overrides. */
 export function profileRegistry(id: ProfileId): Registry {
@@ -443,11 +446,11 @@ export function parseRegistry(input: unknown): { registry: Registry; errors: str
     const x = (b ?? {}) as Record<string, unknown>;
     const govId = typeof x.govContractId === 'string' ? x.govContractId : '';
     const idId = typeof x.bridgeIdentityId === 'string' ? x.bridgeIdentityId : '';
-    if (govId && !B58_ID.test(govId)) errors.push(`bridge ${i + 1}: govContractId must be base58`);
-    if (idId && !B58_ID.test(idId)) errors.push(`bridge ${i + 1}: bridgeIdentityId must be base58`);
+    if (govId && !B58_ID.test(govId)) errors.push(`data service ${i + 1}: govContractId must be base58`);
+    if (idId && !B58_ID.test(idId)) errors.push(`data service ${i + 1}: identity must be base58`);
     return {
-      name: cleanName(x.name) || `bridge ${i + 1}`,
-      httpBase: httpsUrl(x.httpBase, `bridge ${i + 1} URL`, errors),
+      name: cleanName(x.name) || `data service ${i + 1}`,
+      httpBase: httpsUrl(x.httpBase, `data service ${i + 1} URL`, errors),
       govContractId: govId,
       bridgeIdentityId: idId,
       enabled: x.enabled !== false,
@@ -488,7 +491,7 @@ export function parseRegistry(input: unknown): { registry: Registry; errors: str
         if (kind !== 'bridge' && kind !== 'quorum-list') errors.push(`quorum proof source ${i + 1}: kind must be "bridge" or "quorum-list"`);
         return { ...q, kind: kind === 'quorum-list' ? 'quorum-list' : 'bridge' };
       }),
-    priceFeed: pf && typeof pf === 'object' ? { name: cleanName(pf.name) || 'price feed', url: httpsUrl(pf.url, 'price feed URL', errors) } : null,
+    priceFeed: pf && typeof pf === 'object' ? (pf.url === OLD_DEFAULT_PRICE_FEED ? { ...PRICE_FEED } : { name: cleanName(pf.name) || 'price feed', url: httpsUrl(pf.url, 'price feed URL', errors) }) : null,
     accounts: optionalNamed(o.accounts, d.accounts, 'accounts service'),
     faucet: optionalNamed(o.faucet, d.faucet, 'faucet'),
     forum: parseForum(o.forum, d.forum, errors),
@@ -563,7 +566,7 @@ export const loadRegistry = (storage: Store | undefined = globalThis.localStorag
 /** What a failed save says: a full storage quota is not a problem with the settings themselves. */
 export function saveErrorText(e: unknown): string {
   const name = (e as { name?: unknown } | null)?.name;
-  if (name === 'QuotaExceededError' || name === 'NS_ERROR_DOM_QUOTA_REACHED') return "Not saved: this browser's storage for govhub is full. Clear some site data and try again.";
+  if (name === 'QuotaExceededError' || name === 'NS_ERROR_DOM_QUOTA_REACHED') return "Not saved: this browser's storage for Governance is full. Clear some site data and try again.";
   return `Not saved: ${(e as Error)?.message ?? String(e)}`;
 }
 
@@ -574,7 +577,7 @@ export const MAX_IMPORT_BYTES = 64 * 1024;
 export function importSizeError(bytes: number): string | null {
   if (bytes <= MAX_IMPORT_BYTES) return null;
   const size = bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.ceil(bytes / 1024)} KB`;
-  return `Too large to be govhub settings: ${size} (the limit is ${MAX_IMPORT_BYTES / 1024} KB). Nothing was imported.`;
+  return `Too large to be Governance settings: ${size} (the limit is ${MAX_IMPORT_BYTES / 1024} KB). Nothing was imported.`;
 }
 
 export function saveRegistry(r: Registry, storage: Pick<Storage, 'setItem'> | undefined = globalThis.localStorage): void {
@@ -639,7 +642,7 @@ const ROWS: Row[] = [
   // both lists, even the one not in use: switching the source in Settings later would use it
   ['DAPI nodes', (r) => r.dapi, (r) => `from ${r.dapi.source === 'manual' ? 'my own nodes' : 'the quorum service'}; quorum service ${r.dapi.quorumUrl || 'none'}; my own nodes ${list(r.dapi.nodes)}`],
   ['Platform', (r) => r.platform, (r) => `${r.platform.trusted ? 'trusted quorum keys' : 'untrusted mode'}, ${r.platform.addresses.length ? `nodes ${list(r.platform.addresses)}` : 'SDK default nodes'}`],
-  ['Bridges', (r) => r.bridges, (r) => list(r.bridges.map((b) => `${b.name}: ${b.httpBase} (contract ${b.govContractId || 'any'}, identity ${b.bridgeIdentityId || 'none'}${b.enabled ? '' : ', off'})`))],
+  ['Data services', (r) => r.bridges, (r) => list(r.bridges.map((b) => `${b.name}: ${b.httpBase} (contract ${b.govContractId || 'any'}, identity ${b.bridgeIdentityId || 'none'}${b.enabled ? '' : ', off'})`))],
   ['Relays', (r) => r.relays, (r) => list(r.relays.map(urlText))],
   ['Quorum proof sources', (r) => r.quorumProofs, (r) => list(r.quorumProofs.map((q) => `${urlText(q)} (${q.kind})`))],
   ['Price feed', (r) => r.priceFeed, (r) => urlText(r.priceFeed)],

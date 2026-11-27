@@ -8,6 +8,7 @@ import { HttpBridge, type Bridge } from './bridge.ts';
 import { cacheGet, cachePut } from './cache.ts';
 import { createWebDapi, dapiConfig } from './dapi.ts';
 import { loadFixtures } from './fixtures.ts';
+import { fetchSpot, type UsdQuote } from './price.ts';
 import { docToCycle, docToProposal, docToTally, docToTallySet, govDocTypes, queryDocs } from './platform.ts';
 import { activeProposals, latestCycles, pastProposals, proposalByHash, proposalsByName, talliesFor, tallySetPages, PAGE } from './queries.ts';
 import type { BridgeDescriptor, DapiDescriptor } from '../verify/protocol.ts';
@@ -48,11 +49,12 @@ export interface DataSource {
    * document (ended proposals, and every tally on older testnet contracts), whichever is newer; the packed one on a tie.
    */
   tallies(govHashes: readonly string[]): Promise<Map<string, Sourced<Tally>>>;
-  /** Live tallies from the first reachable bridge (reported). Empty without a bridge. */
+  /** Live tallies from the first reachable bridge (reported). Empty without a bridge; throws when bridges are set but none answered. */
   bridgeTallies(): Promise<Map<string, Sourced<Tally>>>;
   /** Core best height. */
   height(): Promise<Sourced<number> | null>;
-  usdPrice(): Promise<Sourced<number> | null>;
+  /** The DASH/USD spot quote (design/PRICE.md); null when there is none to fetch (no feed, or not Mainnet). Throws when the fetch fails. */
+  usdPrice(): Promise<UsdQuote | null>;
   bridgeDescriptor(): BridgeDescriptor | null;
   dapiDescriptor(): DapiDescriptor;
 }
@@ -105,7 +107,7 @@ export function fixtureSource(registry: Registry): DataSource {
       for (const h of hashes) {
         const t = s.tallies.get(h);
         if (!t) continue;
-        out.set(h, wrap(t, s.recorded.proposals.has(h) ? `tally recorded from a mainnet bridge (block ${formatInt(t.asOfHeight)}); signed votes recorded` : 'vote counts from gobject list; voters synthetic'));
+        out.set(h, wrap(t, s.recorded.proposals.has(h) ? `tally recorded from a mainnet data service (block ${formatInt(t.asOfHeight)}); signed votes recorded` : 'vote counts from gobject list; voters synthetic'));
       }
       return out;
     },
@@ -251,7 +253,7 @@ export function liveSource(registry: Registry): DataSource {
     // Consensus constants of the profile's Core network (chainparams.cpp), never a bridge's getgovernanceinfo: a lying bridge must not
     // set the superblock cycle, maturity window or minimum quorum the page computes thresholds and schedules with.
     async params() {
-      return chainParams(registry.coreNetwork, 'consensus constants (chainparams.cpp), not a bridge report');
+      return chainParams(registry.coreNetwork, 'consensus constants (chainparams.cpp), not a data service report');
     },
 
     async cycle(onStale) {
@@ -300,7 +302,7 @@ export function liveSource(registry: Registry): DataSource {
       const seen = new Set(fromPlatform.map((p) => p.govHash));
       const b = await firstBridge((x) => x.proposals());
       for (const p of b?.value ?? []) if (p.endEpoch > now && !seen.has(p.govHash)) out.push({ value: p, prov: reported(b!.bridge, platformError ? 'Platform could not be read' : 'not yet published on Platform') });
-      if (platformError && !b) throw platformError;
+      if (platformError && out.length === 0) throw platformError;
       return out;
     },
 
@@ -378,6 +380,8 @@ export function liveSource(registry: Registry): DataSource {
 
     async bridgeTallies() {
       const b = await firstBridge((x) => x.tallies());
+      // no bridge set up is no tallies; bridges set up and none answering is a failed read, which the lists must not read as "no votes"
+      if (!b && bridges.length) throw new Error('no governance data service answered');
       return new Map((b?.value ?? []).map((t) => [t.govHash, { value: t, prov: reported(b!.bridge, `live tally as of Core block ${formatInt(t.asOfHeight)}`) }]));
     },
 
@@ -394,16 +398,9 @@ export function liveSource(registry: Registry): DataSource {
 
     async usdPrice() {
       const pf = registry.priceFeed;
-      // testnet DASH has no price: a USD figure next to a testnet budget would be made up
-      if (!pf?.url || registry.coreNetwork === 'testnet') return null;
-      try {
-        const res = await fetch(pf.url, { credentials: 'omit', referrerPolicy: 'no-referrer', signal: AbortSignal.timeout(8000) });
-        const j = (await res.json()) as { dash?: { usd?: unknown } };
-        const usd = j.dash?.usd;
-        return typeof usd === 'number' && usd > 0 ? { value: usd, prov: { kind: 'reported', source: pf.name } } : null;
-      } catch {
-        return null;
-      }
+      // practice coins have no USD value: never a dollar figure off Mainnet, whatever feed is configured
+      if (!pf?.url || registry.coreNetwork !== 'mainnet') return null;
+      return fetchSpot(pf);
     },
 
     bridgeDescriptor() {

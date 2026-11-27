@@ -99,7 +99,7 @@ function useIdentityNames(id: string | null) {
  * Who owns the proposal: the verified owner's name and how they proved it, or "Unclaimed proposal". An identity the proposal URL
  * names but that has not accepted is shown as named by the creator, never as the verified owner (naming is not consent).
  */
-export function OwnerValue({ p, own }: { p: Proposal; own: Ownership }) {
+export function OwnerValue({ own }: { own: Ownership }) {
   const { moderation } = useForum();
   const o = own.verdict?.owner ?? null;
   const n = own.verdict?.named;
@@ -128,11 +128,8 @@ export function OwnerValue({ p, own }: { p: Proposal; own: Ownership }) {
   if (own.loading || !o) {
     return (
       <span className="owner-value owner-none" data-testid="owner-none">
-        <span>{own.loading ? 'Checking who owns it…' : 'Unclaimed proposal'}</span>
+        <span title={own.loading ? undefined : 'Nobody has proved on Governance that they own this proposal (by signing with its collateral or its URL). The owner can claim it.'}>{own.loading ? 'Checking who owns it…' : 'No verified owner yet'}</span>
         {namedNote}
-        <span className="muted small">
-          pays <span className="mono-ish break" title={p.paymentAddress}>{shortAddress(p.paymentAddress)}</span>
-        </span>
       </span>
     );
   }
@@ -226,7 +223,7 @@ export function ClaimPanel({ p, own, collateral }: { p: Proposal; own: Ownership
   };
 
   return (
-    <details className="claim-panel" data-testid="claim-panel">
+    <details className="claim-panel dh-disclosure" data-testid="claim-panel">
       <summary>{o ? 'Claim this proposal (a stronger claim outranks the current one)' : 'Are you the proposal owner? Claim ownership to write the description'}</summary>
       <div className="claim-body">
         <p className="small">
@@ -237,7 +234,7 @@ export function ClaimPanel({ p, own, collateral }: { p: Proposal; own: Ownership
         </p>
         {!session ? (
           <p>
-            <button type="button" className="btn" onClick={openSignIn}>
+            <button type="button" className="btn dh-btn" onClick={openSignIn}>
               Sign in to claim
             </button>
           </p>
@@ -245,17 +242,17 @@ export function ClaimPanel({ p, own, collateral }: { p: Proposal; own: Ownership
           <form className="form claim-form" onSubmit={submit}>
             <fieldset>
               <legend>1. Choose the key that signs</legend>
-              <label className="check">
+              <label className="check dh-check">
                 <input type="radio" name="claim-method" checked={method === 2} disabled={!payP2pkh} onChange={() => setMethod(2)} /> Payment address{' '}
                 <span className="mono-ish break">{p.paymentAddress}</span>
                 {!payP2pkh && <span className="muted small"> (not a P2PKH address on {network}: it cannot sign messages)</span>}
               </label>
-              <label className="check">
+              <label className="check dh-check">
                 <input type="radio" name="claim-method" checked={method === 3} disabled={inputAddrs.length === 0} onChange={() => setMethod(3)} /> A collateral input key{' '}
                 {inputAddrs.length === 0 ? (
                   <span className="muted small">(available once the collateral check above has verified the transaction)</span>
                 ) : (
-                  <select value={address} onChange={(e) => setInputAddr(e.target.value)} disabled={method !== 3} aria-label="Collateral input address">
+                  <select className="dh-select" value={address} onChange={(e) => setInputAddr(e.target.value)} disabled={method !== 3} aria-label="Collateral input address">
                     {inputAddrs.map((a) => (
                       <option key={a}>{a}</option>
                     ))}
@@ -280,9 +277,9 @@ export function ClaimPanel({ p, own, collateral }: { p: Proposal; own: Ownership
             </fieldset>
             <fieldset>
               <legend>3. Paste the signature</legend>
-              <label>
+              <label className="dh-field__label">
                 Signature (base64, as Dash Core prints it)
-                <textarea rows={2} className="code" value={sig} onChange={(e) => setSig(e.target.value)} spellCheck={false} />
+                <textarea rows={2} className="code dh-textarea" value={sig} onChange={(e) => setSig(e.target.value)} spellCheck={false} />
               </label>
               {sig.trim() && (
                 <p className={sigOk ? 'notice' : 'error'} data-testid="claim-sig-status">
@@ -294,15 +291,15 @@ export function ClaimPanel({ p, own, collateral }: { p: Proposal; own: Ownership
               </p>
               {poor && <LowBalance what="the claim" balance={balance} needed={COSTS.claim} />}
               {warning && (
-                <div className="notice-warn small" role="alert" data-testid="claim-warning">
+                <div className="notice-warn dh-notice dh-notice--warn small" role="alert" data-testid="claim-warning">
                   <p>{warning}</p>
-                  <label className="check">
+                  <label className="check dh-check">
                     <input type="checkbox" checked={anyway} onChange={(e) => setAckFor(e.target.checked ? warning : null)} data-testid="claim-anyway" /> I understand; publish it anyway
                   </label>
                 </div>
               )}
               <div className="form-actions">
-                <button type="submit" className="btn btn-primary" disabled={!sigOk || busy || blocked}>
+                <button type="submit" className="btn dh-btn btn-primary dh-btn--primary" disabled={!sigOk || busy || blocked}>
                   {busy ? 'Publishing…' : 'Publish claim'}
                 </button>
               </div>
@@ -340,7 +337,7 @@ function AcceptNaming({ p, own, poor }: { p: Proposal; own: Ownership; poor: boo
       </p>
       {poor && <LowBalance what="the claim" balance={balance} needed={COSTS.claim} />}
       <p className="form-actions">
-        <button type="button" className="btn btn-primary" disabled={busy || poor || done} onClick={accept} data-testid="accept-naming-button">
+        <button type="button" className="btn dh-btn btn-primary dh-btn--primary" disabled={busy || poor || done} onClick={accept} data-testid="accept-naming-button">
           {busy ? 'Accepting…' : done ? 'Accepted. Checking it…' : 'Accept ownership'}
         </button>
       </p>
@@ -396,7 +393,7 @@ export function OwnerPost({ govHash, ownerId, post, trustLevel = 'verified' }: {
       <section className="owner-post" data-testid="owner-post">
         <p className="muted small">
           The owner's description is hidden: on {reasons.map((r) => r.list).join(', ')}.{' '}
-          <button type="button" className="linkish" onClick={() => setReveal(true)}>
+          <button type="button" className="linkish dh-btn dh-btn--link" onClick={() => setReveal(true)}>
             Show it
           </button>
         </p>
@@ -409,7 +406,7 @@ export function OwnerPost({ govHash, ownerId, post, trustLevel = 'verified' }: {
       <section className="owner-post" data-testid="owner-post">
         <p className="muted small" data-testid="owner-post-invalid">
           The owner's description failed verification: {s.error}.{' '}
-          <button type="button" className="linkish" onClick={() => setReveal(true)}>
+          <button type="button" className="linkish dh-btn dh-btn--link" onClick={() => setReveal(true)}>
             Show it
           </button>
         </p>
@@ -429,8 +426,8 @@ export function OwnerPost({ govHash, ownerId, post, trustLevel = 'verified' }: {
           <h2 id="post-title">{s.post.title}</h2>
           <p className="muted small" data-testid="owner-post-byline">
             {ownerVerified(trustLevel)
-              ? 'Written by the verified proposal owner; stored on Platform. govhub does not check what it says.'
-              : "Written by the identity that claimed this proposal; stored on Platform. The proposal itself isn't fully verified here, and govhub does not check what the description says."}
+              ? 'Written by the verified proposal owner; stored on Platform. Governance does not check what it says.'
+              : "Written by the identity that claimed this proposal; stored on Platform. The proposal itself isn't fully verified here, and Governance does not check what the description says."}
           </p>
           <Markdown text={s.body} />
         </>
@@ -438,7 +435,7 @@ export function OwnerPost({ govHash, ownerId, post, trustLevel = 'verified' }: {
       {!s.post && !editing && <h2 id="post-title" className="visually-hidden">Owner's description</h2>}
       {isOwner && !editing && (
         <p>
-          <button type="button" className={s.post ? 'btn' : 'btn btn-primary'} onClick={() => setEditing(true)}>
+          <button type="button" className={s.post ? 'btn dh-btn' : 'btn dh-btn btn-primary dh-btn--primary'} onClick={() => setEditing(true)}>
             {s.post ? 'Edit the description' : 'Write a description for this proposal'}
           </button>
         </p>
@@ -494,13 +491,13 @@ function PostEditor({ govHash, existing, initialBody, onDone }: { govHash: strin
   return (
     <form className="form post-editor" onSubmit={save}>
       <h2 id="post-title">{existing ? 'Edit the description' : 'Describe your proposal'}</h2>
-      <label>
+      <label className="dh-field__label">
         Title
-        <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} required />
+        <input className="dh-input" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} required />
       </label>
-      <label>
+      <label className="dh-field__label">
         Description (markdown)
-        <textarea rows={14} value={body} onChange={(e) => setBody(e.target.value)} />
+        <textarea className="dh-textarea" rows={14} value={body} onChange={(e) => setBody(e.target.value)} />
       </label>
       <p className={`small ${packed && 'error' in packed ? 'error' : 'muted'}`} data-testid="post-meta">
         {packed && 'error' in packed
@@ -508,7 +505,7 @@ function PostEditor({ govHash, existing, initialBody, onDone }: { govHash: strin
           : `${formatInt(new TextEncoder().encode(body).length)} bytes, ${formatInt(compressed)} of ${formatInt(POST_MAX_COMPRESSED)} bytes after compression (${packed && 'chunks' in packed ? packed.chunks.length : 0} of 3 fields) · ${costText(cost)} · your balance ${balance === null ? '…' : formatCredits(balance)}`}
       </p>
       {body.trim() && (
-        <details>
+        <details className="dh-disclosure">
           <summary>Preview</summary>
           <div className="composer-preview">
             <Markdown text={body} />
@@ -518,10 +515,10 @@ function PostEditor({ govHash, existing, initialBody, onDone }: { govHash: strin
       {poor && <LowBalance what="this description" balance={balance} needed={cost} />}
       <WriteError error={error} needsTopUp={needsTopUp} />
       <div className="form-actions">
-        <button type="submit" className="btn btn-primary" disabled={busy || poor || !title.trim() || !packed || !('chunks' in packed)}>
+        <button type="submit" className="btn dh-btn btn-primary dh-btn--primary" disabled={busy || poor || !title.trim() || !packed || !('chunks' in packed)}>
           {busy ? 'Publishing…' : 'Publish description'}
         </button>
-        <button type="button" className="btn btn-quiet" onClick={() => onDone()}>
+        <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet" onClick={() => onDone()}>
           Cancel
         </button>
       </div>

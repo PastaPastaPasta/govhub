@@ -118,7 +118,7 @@ describe('isLameDuck', () => {
     expect(bare(p, cycleAt(NOW + 3 * DAY), MAIN, NOW).lameDuck).toBe(true);
   });
 
-  it('a custom 3-day cycle (a bridge may report any): lame once the next superblock is past end + 2 h + the slack', () => {
+  it('a custom 3-day cycle (a data service may report any): lame once the next superblock is past end + 2 h + the slack', () => {
     const params = { ...TEST, superblockCycle: Math.round((3 * DAY) / TEST.blockSeconds) };
     const p = proposal('a', { startEpoch: NOW - 12 * 3600, endEpoch: NOW + 3600 });
     expect(bare(p, cycleAt(NOW + 20 * 3600), params, NOW).lameDuck).toBe(false);
@@ -161,7 +161,7 @@ describe('startsLater', () => {
     expect(row).toMatchObject({ lameDuck: false, startsLater: { nextTime: NEXT } });
   });
 
-  it('is judged by votes alone: passing is not a warning, and a bridge flag does not change what the schedule says', () => {
+  it('is judged by votes alone: passing is not a warning, and a data service flag does not change what the schedule says', () => {
     const cycle = cycleAt(NEXT);
     // 3320 weighted valid -> threshold 332; 348 net yes passes by 16 (the card read "Passing by 16", yellow, "Not in the next budget")
     const row = (over: Partial<Tally>) => deriveRow(dash(), new Map([['dpn', tally('dpn', { yesWeighted: 348, noWeighted: 0, ...over })]]), new Map(), cycle, MAIN, NOW);

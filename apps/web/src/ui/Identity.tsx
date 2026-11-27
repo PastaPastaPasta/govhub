@@ -49,13 +49,13 @@ export function Avatar({ id, profile, size = 28 }: { id: string; profile?: Profi
 export function AuthorName({ id, profile, dpns }: { id: string; profile?: Profile | undefined; dpns?: string | undefined }) {
   const a = authorLabel(id, profile, dpns);
   const name = a.name && (
-    <bdi className={a.quoted ? 'author-quoted' : undefined} title={a.quoted ? 'Self-chosen name; it is not a govhub label' : 'Self-chosen name'}>
+    <bdi className={a.quoted ? 'author-quoted' : undefined} title={a.quoted ? 'Self-chosen name; it is not a Governance label' : 'Self-chosen name'}>
       {a.quoted ? `“${a.name}”` : a.name}
     </bdi>
   );
   return (
     <span className="author">
-      <b className="author-name">
+      <a className="author-name dh-link" href={window.dashhq?.href('explorer', '/identity?id=' + encodeURIComponent(id))}>
         {a.dpns ? (
           <bdi className="author-dpns-name" title="DPNS username, proven by Platform">
             {a.dpns}
@@ -67,7 +67,7 @@ export function AuthorName({ id, profile, dpns }: { id: string; profile?: Profil
             </span>
           ))
         )}
-      </b>
+      </a>
       {a.dpns && name && <span className="author-alias">{name}</span>}
       {(a.dpns || a.name) && (
         <span className="author-id mono-ish" title={id}>

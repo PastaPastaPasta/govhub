@@ -46,9 +46,9 @@ test.describe('keyring page (fixtures, demo keyring)', () => {
     await signIn(page);
     await expect(page.getByTestId('key-group')).toHaveCount(2);
     await page.getByRole('link', { name: 'Settings', exact: true }).click();
-    await page.locator('.profile-switch label', { hasText: 'Testnet' }).click();
+    await page.locator('.profile-switch').getByText('Testnet', { exact: true }).click();
     await page.getByRole('button', { name: 'Switch to Testnet' }).click();
-    await expect(page.getByTestId('profile-label')).toContainText('Testnet');
+    await expect(page.getByTestId('profile-description')).toContainText('Testnet');
     // back on the page after the switch (it ended the demo session): still no error
     await page.getByRole('link', { name: 'My masternodes', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'My masternodes' })).toBeVisible();
@@ -58,7 +58,7 @@ test.describe('keyring page (fixtures, demo keyring)', () => {
   test('masternodes grouped by voting key, empty votes, add-key warning, privacy collapsed', async ({ page }) => {
     const errors = await watchPage(page);
     await gotoFixtures(page, '/masternodes');
-    await expect(page.getByRole('heading', { name: 'Sign in to add your masternodes' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Three ways to vote' })).toBeVisible();
     await signIn(page);
     await expect(page.getByTestId('keyring-status')).toContainText('Demo keyring');
     const groups = page.getByTestId('key-group');
@@ -67,7 +67,7 @@ test.describe('keyring page (fixtures, demo keyring)', () => {
     await expect(groups.nth(1).getByTestId('key-count')).toHaveText('controls 1 masternode');
     await expect(groups.nth(1).getByTestId('mn-row')).toContainText('Evonode ×4');
     await expect(page.getByTestId('mn-row').first()).toContainText('Can vote');
-    await expect(page.getByTestId('mn-row').first().getByRole('button', { name: 'Copy masternode ID' })).toBeVisible();
+    await expect(page.getByTestId('mn-row').first().getByRole('button', { name: 'Copy ProTx hash' })).toBeVisible();
     await expect(page.getByTestId('votes-empty')).toBeVisible();
     // adding a key is a button that opens the form
     await expect(page.getByTestId('voting-key-input')).toHaveCount(0);
@@ -153,8 +153,8 @@ test.describe('vote panel (fixtures)', () => {
     await advance(page);
     const win = page.getByTestId('vote-success');
     await expect(win).toBeVisible({ timeout: 15_000 });
-    await expect(win.getByRole('heading')).toHaveText('The bridge reports your vote is on the network');
-    await expect(win).toContainText('voted ABSTAIN on OrchardPay');
+    await expect(win.getByRole('heading')).toHaveText('The governance data service reports your vote is on the network');
+    await expect(win).toContainText('voted abstain on OrchardPay');
     await expect(step('seen')).toHaveAttribute('data-state', 'done');
     await expect(tracker).toHaveAttribute('data-counted', 'yes', { timeout: 15_000 });
     await expect(step('counted')).toHaveAttribute('data-state', 'done');
@@ -165,7 +165,7 @@ test.describe('vote panel (fixtures)', () => {
     const proof = win.getByTestId('vote-proof');
     await expect(proof.locator('li.ok')).toHaveCount(3);
     await expect(proof).toContainText('The signature is valid');
-    await expect(proof).toContainText('The bridge reports the network has it as the current vote');
+    await expect(proof).toContainText('The governance data service reports the network has it as the current vote');
     await expect(win.getByRole('button', { name: 'Copy the gobject getcurrentvotes command' })).toBeVisible();
     await win.getByRole('button', { name: 'Dismiss' }).click();
     await expect(win).toHaveCount(0);
@@ -216,7 +216,7 @@ test.describe('vote panel (fixtures)', () => {
     const tracker = await voteWithFirst(page, 'Abstain');
     await expect(tracker).toHaveAttribute('data-status', 'held');
     // an hour later can be tomorrow (after 23:00 local): then the time carries the date ("Oct 26, 2026, 12:09 AM")
-    await expect(tracker.getByTestId('vote-tracker-line')).toContainText(/Core allows one vote change per hour per masternode; relay-(one|two)\.example sends this at (?:[A-Z][a-z]{2} \d{1,2}, \d{4}, )?\d{1,2}:\d{2}/);
+    await expect(tracker.getByTestId('vote-tracker-line')).toContainText(/Core allows one vote change per hour per masternode; relay-(one|two)\.example sends this at (?:\d{1,2} [A-Z][a-z]{2,4} \d{4}, )?\d{1,2}:\d{2}/); // the date only when it is another day (the family's "6 Nov 2026")
     await openMns(page);
     await expect(page.getByTestId('mn-vote-panel').getByTestId('pending-vote').first()).toContainText('Held by relay');
     await tracker.getByTestId('vote-cancel').click();

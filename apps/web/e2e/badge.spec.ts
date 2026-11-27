@@ -32,7 +32,7 @@ test.describe('MN badge (fixtures)', () => {
     // the standalone badge page stays, and points back to the unified flow
     await gotoFixtures(page, '/badge');
     await expect(page.getByRole('heading', { name: 'MN owner badge' })).toBeVisible();
-    await expect(page.getByTestId('badge-main-path').getByRole('link', { name: 'add your masternodes' })).toHaveAttribute('href', /\/masternodes#mn-badge$/);
+    await expect(page.getByTestId('badge-main-path').getByRole('link', { name: 'add your masternodes' })).toHaveAttribute('href', /\/masternodes\?fixtures=1#mn-badge$/);
     const main = page.locator('#main');
     await expect(main).not.toContainText('never learns which identity');
     await expect(main).not.toContainText('cannot tell by timing');
@@ -45,7 +45,7 @@ test.describe('MN badge (fixtures)', () => {
     await gotoFixtures(page, '/settings');
     await openGroup(page, 'Masternode badges');
     const s = page.locator('#badge-trust');
-    await expect(s.getByText('govhub', { exact: true })).toBeVisible();
+    await expect(s.getByText('dashhq', { exact: true })).toBeVisible();
     await expect(s.getByText('9MJV17bn7C9xu1n3nopcZzScTnac3TNUjR17HmpKY4Cr')).toBeVisible();
     await s.getByLabel('Name (shown as “vouched by …”)').fill('evil');
     await s.getByLabel('Issuer identity id').fill('not-an-id');

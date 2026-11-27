@@ -1,20 +1,21 @@
-// App-wide state: endpoint registry, data mode, the data source built from them, theme, and the
+import { useLocation, useNavigate } from 'react-router-dom';
+import { profileFromSearch, profileSearch } from '../config/network.ts';
+// App-wide state: endpoint registry, data mode, the data source built from them, and the
 // governance snapshot (cycle, height, active proposals, tallies) shared by the header and lists.
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { loadSavedRegistry, registryScope, saveRegistry, registryForProfile, type ProfileId, type Registry } from '../config/registry.ts';
 import { resolveMode, setMode as persistMode, type DataMode } from '../config/mode.ts';
 import { cacheDeleteWhere, cacheGet, cachePut } from '../data/cache.ts';
+import { REFRESH_MS, type UsdState } from '../data/price.ts';
 import { createSource, type DataSource } from '../data/repo.ts';
 import type { Cycle, Proposal, Sourced, Tally } from '../data/types.ts';
 import { errText } from '../lib/format.ts';
 import type { GovParams } from '../lib/governance.ts';
-import { byRank, deriveRow, partitionByCheck, type Checked, type Row } from '../lib/view.ts';
+import { byRank, deriveRow, partitionByCheck, untalliedOf, type Checked, type Row, type TallyReads } from '../lib/view.ts';
 import { ProposalChecks, type CheckCache, type StoredCheck } from '../verify/checks.ts';
 import { runVerification } from '../verify/client.ts';
 import { setDashUnit } from '../lib/unit.ts';
 
-export type Theme = 'system' | 'light' | 'dark';
-const THEME_KEY = 'govhub.theme';
 
 export interface Load<T> {
   data?: T;
@@ -28,7 +29,14 @@ export interface GovSnapshot {
   active: Load<Sourced<Proposal>[]>;
   tallies: Map<string, Sourced<Tally>>;
   bridgeTallies: Map<string, Sourced<Tally>>;
-  usd: Sourced<number> | null;
+  /** True until both tally reads (Platform's and the bridge's) have answered or failed: counts over the tallies wait for it. */
+  talliesLoading: boolean;
+  /** Listed proposals with no tally because a read failed (lib/view.ts untalliedOf): "votes not read", and counts are lower bounds. */
+  untallied: ReadonlySet<string>;
+  /** A read failed and no listed proposal has a tally: nothing about the votes is known. */
+  talliesFailed: boolean;
+  /** The DASH/USD quote and whether its latest refresh failed (design/PRICE.md); empty off Mainnet. */
+  usd: UsdState;
   /** Governance parameters reported for the data's Core network, once known. */
   params: Sourced<GovParams> | null;
 }
@@ -56,8 +64,6 @@ interface Ctx {
   setMode(m: DataMode): void;
   source: DataSource;
   params: GovParams;
-  theme: Theme;
-  setTheme(t: Theme): void;
   gov: GovSnapshot;
   checks: ProposalChecks;
   activeRows: ActiveRows;
@@ -72,13 +78,16 @@ export function useApp(): Ctx {
   return c;
 }
 
+const NO_USD: UsdState = { quote: null, failedAt: null };
+
 function useGovSnapshot(source: DataSource, nonce: number): GovSnapshot {
   const [cycle, setCycle] = useState<Load<Sourced<Cycle> | null>>({ loading: true });
   const [height, setHeight] = useState<Load<Sourced<number> | null>>({ loading: true });
   const [active, setActive] = useState<Load<Sourced<Proposal>[]>>({ loading: true });
   const [tallies, setTallies] = useState(new Map<string, Sourced<Tally>>());
   const [bridgeTallies, setBridgeTallies] = useState(new Map<string, Sourced<Tally>>());
-  const [usd, setUsd] = useState<Sourced<number> | null>(null);
+  const [tallyReads, setTallyReads] = useState<TallyReads>({ platform: 'loading', bridge: 'loading' });
+  const [usd, setUsd] = useState<UsdState>(NO_USD);
   const [params, setParams] = useState<Sourced<GovParams> | null>(null);
   // A new source (profile, network, endpoints) must not render, or start checks on, the previous source's data for even one frame.
   const resetLoaded = () => {
@@ -88,17 +97,19 @@ function useGovSnapshot(source: DataSource, nonce: number): GovSnapshot {
     setParams(null);
     setTallies(new Map());
     setBridgeTallies(new Map());
+    setTallyReads({ platform: 'loading', bridge: 'loading' });
   };
   const [shownSource, setShownSource] = useState(source);
   if (shownSource !== source) {
     setShownSource(source);
     resetLoaded();
-    setUsd(null);
+    setUsd(NO_USD);
   }
 
   useEffect(() => {
     let live = true;
     const guard = <A extends unknown[]>(f: (...a: A) => void) => (...a: A) => live && f(...a);
+    const read = (which: keyof TallyReads, how: TallyReads[keyof TallyReads]) => live && setTallyReads((r) => ({ ...r, [which]: how }));
     // a new source was reset during render; a reload of the same source keeps showing what it has until the new answers land
     source.params().then(guard(setParams), () => {});
     source.cycle(guard((c) => setCycle({ data: c, loading: true }))).then(guard((c) => setCycle({ data: c, loading: false })), guard((e) => setCycle({ error: errText(e), loading: false })));
@@ -108,21 +119,56 @@ function useGovSnapshot(source: DataSource, nonce: number): GovSnapshot {
       .then(
         guard(async (ps) => {
           setActive({ data: ps, loading: false });
-          if (!ps.length) return;
+          if (!ps.length) return read('platform', 'ok');
           const t = await source.tallies(ps.map((p) => p.value.govHash));
           if (live) setTallies(t);
+          read('platform', 'ok');
         }),
-        guard((e) => setActive({ error: errText(e), loading: false })),
+        guard((e) => {
+          setActive({ error: errText(e), loading: false });
+          read('platform', 'ok'); // no list: nothing for tallies to be missing from
+        }),
       )
-      .catch(() => {});
-    source.bridgeTallies().then(guard(setBridgeTallies), () => {});
-    source.usdPrice().then(guard(setUsd), () => {});
+      .catch(() => read('platform', 'failed'));
+    source.bridgeTallies().then(
+      (m) => {
+        if (!live) return;
+        setBridgeTallies(m);
+        read('bridge', 'ok');
+      },
+      () => read('bridge', 'failed'),
+    );
     return () => {
       live = false;
     };
   }, [source, nonce]);
 
-  return useMemo(() => ({ cycle, height, active, tallies, bridgeTallies, usd, params }), [cycle, height, active, tallies, bridgeTallies, usd, params]);
+  // the price refreshes on its own clock while the page is open; a failed refresh keeps the last good quote, marked as such
+  useEffect(() => {
+    let live = true;
+    const refresh = () =>
+      source.usdPrice().then(
+        (quote) => live && setUsd(quote ? { quote, failedAt: null } : NO_USD),
+        () => live && setUsd((s) => ({ quote: s.quote, failedAt: Date.now() })),
+      );
+    void refresh();
+    const t = setInterval(() => void refresh(), REFRESH_MS);
+    return () => {
+      live = false;
+      clearInterval(t);
+    };
+  }, [source]);
+
+  const talliesLoading = tallyReads.platform === 'loading' || tallyReads.bridge === 'loading';
+  const untallied = useMemo(
+    () => (talliesLoading ? new Set<string>() : untalliedOf((active.data ?? []).map((p) => p.value.govHash), tallies, bridgeTallies, tallyReads)),
+    [talliesLoading, active.data, tallies, bridgeTallies, tallyReads],
+  );
+  const talliesFailed = untallied.size > 0 && untallied.size === (active.data?.length ?? 0);
+  return useMemo(
+    () => ({ cycle, height, active, tallies, bridgeTallies, talliesLoading, untallied, talliesFailed, usd, params }),
+    [cycle, height, active, tallies, bridgeTallies, talliesLoading, untallied, talliesFailed, usd, params],
+  );
 }
 
 const checkCache: CheckCache = {
@@ -160,12 +206,16 @@ function makeChecks(source: DataSource): ProposalChecks {
 }
 
 export function AppProvider({ children, initialMode }: { children: ReactNode; initialMode?: DataMode }) {
+  const loc = useLocation();
+  const navigate = useNavigate();
   const [saved] = useState(() => loadSavedRegistry());
-  const [registry, setRegistryState] = useState<Registry>(saved.registry);
+  const [configuredRegistry, setRegistryState] = useState<Registry>(saved.registry);
+  const profile = profileFromSearch(loc.search);
+  const registry = useMemo(() => configuredRegistry.profile === profile ? configuredRegistry : registryForProfile(configuredRegistry, profile), [configuredRegistry, profile]);
   const [settingsProblem, setSettingsProblem] = useState<string[] | null>(saved.errors.length ? saved.errors : null);
   const [mode, setModeState] = useState<DataMode>(() => initialMode ?? resolveMode(location.search, sessionStorage, import.meta.env.VITE_GOVHUB_FIXTURES));
-  const [theme, setThemeState] = useState<Theme>(() => (localStorage.getItem(THEME_KEY) as Theme | null) ?? 'system');
   const [nonce, setNonce] = useState(0);
+  // before anything below renders an amount: Testnet's practice coins are tDASH
   const source = useMemo(() => {
     const s = createSource(mode, registry);
     setDashUnit(s.coreNetwork);
@@ -188,25 +238,17 @@ export function AppProvider({ children, initialMode }: { children: ReactNode; in
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gov.active.data, gov.tallies, gov.bridgeTallies, gov.cycle.data, params, now, checks, checksVersion]);
 
-  useEffect(() => {
-    const el = document.documentElement;
-    if (theme === 'system') el.removeAttribute('data-theme');
-    else el.setAttribute('data-theme', theme);
-  }, [theme]);
-
   const setRegistry = useCallback((r: Registry) => {
     saveRegistry(r);
     setRegistryState(r);
     setSettingsProblem(null);
-  }, []);
+    const search = profileSearch(loc.search, r.profile);
+    if (search !== loc.search) navigate({ pathname: loc.pathname, search, hash: loc.hash }, { replace: true });
+  }, [loc, navigate]);
   const dismissSettingsProblem = useCallback(() => setSettingsProblem(null), []);
   const setMode = useCallback((m: DataMode) => {
     persistMode(m);
     setModeState(m);
-  }, []);
-  const setTheme = useCallback((t: Theme) => {
-    localStorage.setItem(THEME_KEY, t);
-    setThemeState(t);
   }, []);
   const reload = useCallback(() => setNonce((n) => n + 1), []);
   const switchProfile = useCallback(
@@ -221,8 +263,8 @@ export function AppProvider({ children, initialMode }: { children: ReactNode; in
   );
 
   const value = useMemo<Ctx>(
-    () => ({ registry, setRegistry, settingsProblem, dismissSettingsProblem, switchProfile, mode, setMode, source, params, theme, setTheme, gov, checks, activeRows, reload }),
-    [registry, setRegistry, settingsProblem, dismissSettingsProblem, switchProfile, mode, setMode, source, params, theme, setTheme, gov, checks, activeRows, reload],
+    () => ({ registry, setRegistry, settingsProblem, dismissSettingsProblem, switchProfile, mode, setMode, source, params, gov, checks, activeRows, reload }),
+    [registry, setRegistry, settingsProblem, dismissSettingsProblem, switchProfile, mode, setMode, source, params, gov, checks, activeRows, reload],
   );
   return <AppCtx.Provider value={value}>{children}</AppCtx.Provider>;
 }

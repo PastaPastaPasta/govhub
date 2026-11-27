@@ -10,7 +10,7 @@ test.describe('fixture mode', () => {
 
     // Budget summary (DashCentral parity, in plain words).
     await expect(page.getByRole('heading', { name: /Next payout in 27 days/ })).toBeVisible();
-    await expect(page.getByText('Masternodes can vote for another')).toBeVisible();
+    await expect(page.getByText(/^Voting closes in .+, on /)).toBeVisible();
     await expect(page.locator('.budget-facts')).toContainText('To pass');
     await expect(page.locator('.budget-facts')).toContainText('332');
 
@@ -40,7 +40,7 @@ test.describe('fixture mode', () => {
 
     // Open a proposal.
     await page.getByRole('link', { name: 'OrchardPay', exact: true }).click();
-    await expect(page).toHaveURL(/\/p\/OrchardPay$/);
+    await expect(page).toHaveURL(url => url.pathname === '/p/OrchardPay' && url.searchParams.get('fixtures') === '1');
     await expect(page.getByRole('heading', { level: 1, name: 'OrchardPay' })).toBeVisible();
     await expect(page.getByTestId('p-votes')).toContainText('197 yes22 no9 abstain');
     await expect(page.getByTestId('p-voters')).toHaveText('228 masternodes voted; evonodes count 4 times');
@@ -79,7 +79,7 @@ test.describe('fixture mode', () => {
     const votes = drawer.getByTestId('votes-check');
     await expect(votes.locator('[data-votes]')).toHaveAttribute('data-votes', 'keys-reported', { timeout: 30_000 });
     await expect(votes).toContainText('Recount matches the Platform tally: 229 of 229 votes counted');
-    await expect(votes).toContainText('fixture bridge (synthetic voters)');
+    await expect(votes).toContainText('fixture data service (synthetic voters)');
     await expect(votes.locator('table.compare td.bad')).toHaveCount(0);
     // Keys as the fixture bridge reports them: not proven.
     await expect(drawer.locator('[data-check="votes"]')).toHaveAttribute('data-state', 'reported');
@@ -98,7 +98,8 @@ test.describe('fixture mode', () => {
   test('recount of recorded mainnet votes reproduces the tally and voteSetHash', async ({ page }) => {
     const errors = await watchPage(page);
     await gotoFixtures(page, '/p/dash-growth-q4-2026');
-    await expect(page.getByRole('heading', { level: 1, name: 'dash-growth-q4-2026' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Dash growth q4 2026' })).toBeVisible();
+    await expect(page.getByTestId('p-chain-name')).toHaveText('dash-growth-q4-2026');
     // Evonodes weigh 4: 298 yes masternodes are 673 weighted votes.
     await expect(page.getByTestId('p-votes')).toContainText('673 yes');
     await expect(page.getByTestId('p-votes')).toContainText('475 no');
@@ -121,18 +122,20 @@ test.describe('fixture mode', () => {
     await expect(table.locator('tr', { hasText: 'voteSetHash' }).locator('.visually-hidden').last()).toHaveText('matches');
     // A bridge match on bridge-supplied keys is not "verified".
     await expect(drawer.locator('[data-check="votes"]')).toHaveAttribute('data-state', 'reported');
-    await expect(drawer.locator('[data-check="votes"]')).toContainText("the voters' keys are as the bridge lists them");
+    await expect(drawer.locator('[data-check="votes"]')).toContainText("the voters' keys are as the governance data service lists them");
     expect(errors).toEqual([]);
   });
 
   test('the badge opens "How do we know?"; Escape closes it and focus returns to the badge', async ({ page }) => {
     await gotoFixtures(page, '/p/OrchardPay');
     const badge = page.getByTestId('trust-badge');
-    await expect(badge).toHaveAccessibleName(/^Demo data: .*How do we know\?$/);
+    await expect(badge).toHaveAttribute('data-trust', 'demo');
+    await expect(badge).toHaveAccessibleName(/^Verification details: Demo data — \S/);
+    await expect(page.getByText('Chain verified')).toHaveCount(0);
     const drawer = await openDrawer(page);
     await expect(drawer.getByRole('heading', { name: 'How do we know?' })).toBeVisible();
     await expect(drawer.getByTestId('checks').locator('[data-check]')).toHaveCount(5);
-    await expect(drawer).toContainText("votes the bridge didn't serve can't be detected");
+    await expect(drawer).toContainText("so votes it didn't serve can't be detected");
     await drawer.getByText('Proposal data and hashes').click();
     await expect(drawer.getByTestId('raw-data')).toContainText('"name": "OrchardPay"');
     await page.keyboard.press('Escape');
@@ -142,7 +145,9 @@ test.describe('fixture mode', () => {
 
   test('offline signing is there without a keyring; the drawer can rank every active proposal on request', async ({ page }) => {
     await gotoFixtures(page, '/p/OrchardPay');
-    await expect(page.getByText('Sign offline instead (Dash Core, hardware wallet)')).toBeVisible();
+    const vote = page.getByTestId('mn-vote-panel');
+    await expect(vote.getByRole('heading', { name: 'Vote on this proposal' })).toBeVisible();
+    await expect(vote.getByRole('button', { name: 'Sign offline' })).toHaveAttribute('aria-pressed', 'true');
     const drawer = await openDrawer(page);
     // fixture data: the votes are not proven, so the funding order did not run on its own
     await drawer.locator('[data-check="funding"] .check-more > summary').click();
@@ -151,7 +156,7 @@ test.describe('fixture mode', () => {
 
   test('About verification explains every state', async ({ page }) => {
     await gotoFixtures(page, '/about/verification');
-    await expect(page.getByRole('heading', { level: 1, name: 'How govhub checks what it shows' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'How Governance checks what it shows' })).toBeVisible();
     for (const s of ['Verified', 'Checking…', 'Partly verified', "Couldn't verify", 'Failed verification', 'Demo data']) await expect(page.locator('.about-states')).toContainText(s);
   });
 
@@ -161,8 +166,8 @@ test.describe('fixture mode', () => {
     const links = page.locator('.chooser a');
     await expect(links).toHaveCount(2);
     await links.first().click();
-    await expect(page).toHaveURL(/\/p\/h\/[0-9a-f]{64}$/);
-    await expect(page.getByRole('heading', { level: 1, name: 'Dash-Mass-Organic-Content-Attraction' })).toBeVisible();
+    await expect(page).toHaveURL(url => /^\/p\/h\/[0-9a-f]{64}$/.test(url.pathname) && url.searchParams.get('fixtures') === '1');
+    await expect(page.getByRole('heading', { level: 1, name: 'Dash Mass Organic Content Attraction' })).toBeVisible();
     const drawer = await openDrawer(page);
     await expect(drawer.getByTestId('collateral-check').locator('[data-verdict]')).toHaveAttribute('data-verdict', 'demo');
   });
@@ -171,32 +176,40 @@ test.describe('fixture mode', () => {
     await gotoFixtures(page);
     await page.locator('.sentinel').scrollIntoViewIfNeeded();
     // one of the two is a lame duck (its October payment was the only one it can get): it is in the collapsed section
-    const dupLinks = page.locator('article.prow h2 a', { hasText: 'Dash-Mass-Organic-Content-Attraction' });
+    const dupLinks = page.locator('article.prow', { has: page.getByTestId('card-slug').filter({ hasText: /^Dash-Mass-Organic-Content-Attraction( ·|$)/ }) }).locator('.prow-title a');
     await expect(dupLinks).toHaveCount(1);
     await page.getByTestId('toggle-lameduck').click();
     await expect(dupLinks).toHaveCount(2);
-    for (const href of await dupLinks.evaluateAll((as) => as.map((a) => a.getAttribute('href')))) expect(href).toMatch(/^\/p\/h\/[0-9a-f]{64}$/);
+    for (const href of await dupLinks.evaluateAll((as) => as.map((a) => (a as HTMLAnchorElement).href))) {
+      const url = new URL(href);
+      expect(url.pathname).toMatch(/^\/p\/h\/[0-9a-f]{64}$/);
+      expect(url.searchParams.get('fixtures')).toBe('1');
+    }
   });
 
   test('a lame duck proposal page shows its outcome instead of passing, budget and deadline', async ({ page }) => {
     await gotoFixtures(page, '/p/pshenmic-dev-dash-desktop-november-2026');
-    await expect(page.getByRole('heading', { level: 1, name: 'pshenmic-dev-dash-desktop-november-2026' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Pshenmic dev dash desktop november 2026' })).toBeVisible();
     const status = page.getByTestId('lameduck-status');
     await expect(status).toContainText('No more payments are possible');
     await expect(status).toContainText('it leaves the network on');
-    await expect(page.locator('.p-ask')).not.toContainText(/Passing|next budget|Voting closes|Voting for this payout/);
+    await expect(page.locator('.p-standing')).not.toContainText(/Passing|next budget|Voting closes|Voting for this payout/);
+    await expect(page.getByTestId('jump-vote')).toHaveCount(0);
     await expect(page.getByTestId('p-votes')).toContainText('These votes no longer affect payment.');
   });
 
-  test('past proposals: empty state at the snapshot time', async ({ page }) => {
+  test('past proposals: empty state at the snapshot time, and no ledger without a chain', async ({ page }) => {
     await gotoFixtures(page, '/past');
     await expect(page.getByRole('heading', { name: 'Past proposals' })).toBeVisible();
+    await expect(page.getByTestId('view-proposals')).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByText('No past proposals published yet.')).toBeVisible();
+    await page.getByTestId('view-payments').click();
+    await expect(page.getByText('The demo snapshot has no chain to read superblocks from')).toBeVisible();
   });
 
   test('unknown proposal hash shows not found', async ({ page }) => {
     await gotoFixtures(page, `/p/h/${'ab'.repeat(32)}`);
-    await expect(page.getByRole('heading', { name: 'Not found' })).toBeVisible();
+    await expect(page.getByTestId('not-found-plain')).toContainText('There’s no proposal with this hash here.');
   });
 });
 
@@ -239,17 +252,29 @@ test.describe('settings', () => {
     await expect(offer).toContainText('3ueAfbVe8LvCxYWk7bKvXxc5uHe7E1TDJHzN3k3ZDehZ');
     await offer.getByRole('button', { name: 'Use these settings' }).click();
     await expect(offer).toHaveCount(0);
+    await expect(page).toHaveURL(url => url.searchParams.get('network') === 'testnet' && url.searchParams.get('profile') === 'dev' && !url.searchParams.has('config'));
+    await expect(page.locator('dashhq-bar')).toHaveAttribute('network', 'testnet');
     await expect(page.getByLabel('Nodes (host:port, one per line)')).toHaveValue('1.2.3.4:443');
     await expect(page).not.toHaveURL(/config=/);
   });
 
-  test('theme switch sets data-theme and persists', async ({ page }) => {
+  test("the shell's Theme menu sets data-theme and it persists", async ({ page }) => {
     await gotoFixtures(page);
-    await page.getByTestId('menu-button').click();
-    await page.locator('#account-menu').getByText('Dark', { exact: true }).click();
+    const bar = page.locator('dashhq-bar');
+    const button = bar.getByRole('button', { name: 'Theme', exact: true });
+    await button.click();
+    const menu = bar.getByRole('menu', { name: 'Theme' });
+    await menu.getByRole('menuitemradio', { name: 'Dark' }).click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await expect(page.locator('html')).toHaveAttribute('data-theme-pref', 'dark');
     await page.reload();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await bar.getByRole('button', { name: 'Theme', exact: true }).click();
+    await expect(bar.getByRole('menu', { name: 'Theme' }).getByRole('menuitemradio', { name: 'Dark' })).toHaveAttribute('aria-checked', 'true');
+    await bar.getByRole('menu', { name: 'Theme' }).getByRole('menuitemradio', { name: 'Light' }).click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+    await page.reload();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
   });
 });
 

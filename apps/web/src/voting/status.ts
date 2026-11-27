@@ -4,7 +4,7 @@
 import { errText, formatDuration } from '../lib/format.ts';
 import { mayBeAtRelay, neverLeft, type RelayInfo, type WatchedVote } from './pending.ts';
 import { DEADLINE_MARGIN_S, deferredWindow, OUTCOME_NAME } from './plan.ts';
-import { relayHost, RelayError, RelayNotSentError, type RelayVoteState } from './relay.ts';
+import { labPreview, relayHost, RelayError, RelayNotSentError, WRITES_OFF, type RelayVoteState } from './relay.ts';
 
 export type Tone = 'wait' | 'progress' | 'ok' | 'bad' | 'quiet';
 export type TimeFmt = (unixS: number) => string;
@@ -77,11 +77,11 @@ export interface VoteView {
  */
 export function corroboration(v: WatchedVote): string {
   const relays = Object.entries(v.relayStatus ?? {}).filter(([, s]) => s === 'confirmed').map(([r]) => relayHost(r));
-  const others = [...(v.alsoSeenBy ?? []).map((b) => `bridge ${b} (its vote set has it, checked here)`), ...relays.map((r) => `relay ${r} (it reports its Dash Core node lists it)`)];
+  const others = [...(v.alsoSeenBy ?? []).map((b) => `data service ${b} (its vote set has it, checked here)`), ...relays.map((r) => `relay ${r} (it reports its Dash Core node lists it)`)];
   // A source run by the same operator as the bridge agrees just as easily, so the way to be sure is always named.
   return others.length
     ? ` Also seen by ${others.join(' and ')}. To be sure, check your own Dash Core node.`
-    : ' That is the bridge’s word: no other bridge or relay you configured confirms it. To be sure, check your own Dash Core node.';
+    : ' That is the data service’s word: no other data service or relay you configured confirms it. To be sure, check your own Dash Core node.';
 }
 
 /** The relays that hold the vote or may hold it, for display ("a.org and b.org"). */
@@ -113,7 +113,7 @@ export function describeVote(v: WatchedVote, now: number, fmt: TimeFmt): VoteVie
       if (v.restored) return { badge: 'Signed elsewhere', tone: 'quiet', line: 'Signed on another device. This browser does not send it; only a relay that already holds it can.' };
       if (v.lastSendError) {
         const when = v.nextSendAt && v.nextSendAt > now ? `Trying again at ${fmt(v.nextSendAt)}.` : 'Trying again now.';
-        return { badge: 'Retrying', tone: 'wait', line: `No relay has taken it yet (${v.lastSendError}). It is kept in this browser and retried automatically while govhub is open. ${when}` };
+        return { badge: 'Retrying', tone: 'wait', line: `No relay has taken it yet (${v.lastSendError}). It is kept in this browser and retried automatically while Governance is open. ${when}` };
       }
       return { badge: 'Sending', tone: 'progress', line: 'Signed in this browser, sending to the relay…' };
     case 'held': {
@@ -128,9 +128,10 @@ export function describeVote(v: WatchedVote, now: number, fmt: TimeFmt): VoteVie
     }
     case 'confirmed':
       return v.countedAt
-        ? { badge: 'Counted', tone: 'ok', line: `The bridge reports the network counted it: its vote set includes it, and the recount of that set matches.${corroboration(v)}` }
-        : { badge: 'On the network', tone: 'ok', line: `The bridge reports the network has it: its vote set includes it, signature checked here against your voting key.${corroboration(v)}` };
+        ? { badge: 'Counted', tone: 'ok', line: `The governance data service reports the network counted it: its vote set includes it, and the recount of that set matches.${corroboration(v)}` }
+        : { badge: 'On the network', tone: 'ok', line: `The governance data service reports the network has it: its vote set includes it, signature checked here against your voting key.${corroboration(v)}` };
     case 'failed': {
+      if (labPreview() && v.failReason === WRITES_OFF && !v.maybeAt?.length) return { badge: 'Preview: not sent', tone: 'quiet', line: `Signed in your browser, then stopped: ${WRITES_OFF}. On gov.dashhq.org the relay sends it.` };
       // refused by one relay after another may have stored it (its answer was lost): that relay could still release it
       const maybe = v.maybeAt?.length ? ` ${v.maybeAt.map(relayHost).join(' and ')} may still hold it from an earlier try whose answer was lost: cancel it to take it back there.` : '';
       return { badge: 'Failed', tone: 'bad', line: `${v.refs.length || maybe ? 'Did not reach the network' : 'Not sent'}: ${v.failReason ?? relayCodeText(lead?.info.lastError)}.${maybe}` };
@@ -208,7 +209,7 @@ export function trackerSteps(v: WatchedVote, now: number, fmt: TimeFmt): Step[] 
         : key === 'broadcast'
           ? holdText(v, now, fmt)
           : key === 'seen'
-            ? 'Waiting for the bridge’s vote set to show it…'
+            ? 'Waiting for the governance data service’s vote set to show it…'
             : 'Recounting the tally’s vote set…';
     // a send that no relay took yet is retried automatically: still in progress, as its "Retrying" badge says
     return { ...base, state: 'active', detail };
@@ -254,6 +255,7 @@ export function classifySubmitError(e: unknown, relay: string): SubmitOutcome {
     return { kind: 'retry', text: lostAnswerText(e, host), ...after, tryOther: true, maybeReceived: true };
   }
   const code = e.code;
+  if (code === 'writes-disabled' && labPreview()) return { kind: 'final', status: 'failed', text: WRITES_OFF };
   if (e.status === 429 || RELAY_BUSY.has(code)) {
     return { kind: 'retry', text: `${host}: ${e.message}`, ...(e.retryAfterS ? { afterS: e.retryAfterS } : {}), tryOther: true };
   }

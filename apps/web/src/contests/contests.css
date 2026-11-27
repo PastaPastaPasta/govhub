@@ -1,27 +1,12 @@
+@layer gov {
 /* ---- username contests ------------------------------------------------------------------- */
 :root {
-  --cb-c0: var(--accent);
-  --cb-c1: #1f9d8b;
-  --cb-c2: #8a63d2;
-  --cb-c3: #c47a2c;
-  --cb-abstain: #9fb0bf;
-  --cb-lock: #3d5163;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    --cb-c1: #34b8a5;
-    --cb-c2: #a585e6;
-    --cb-c3: #d9944a;
-    --cb-abstain: #5d7387;
-    --cb-lock: #9fb3c6;
-  }
-}
-:root[data-theme='dark'] {
-  --cb-c1: #34b8a5;
-  --cb-c2: #a585e6;
-  --cb-c3: #d9944a;
-  --cb-abstain: #5d7387;
-  --cb-lock: #9fb3c6;
+  --cb-c0: var(--dh-ramp-1);
+  --cb-c1: var(--dh-ramp-2);
+  --cb-c2: var(--dh-ramp-3);
+  --cb-c3: var(--dh-ramp-4);
+  --cb-abstain: var(--dh-line-2);
+  --cb-lock: var(--dh-bad);
 }
 
 .cb-c0 {
@@ -36,11 +21,14 @@
 .cb-c3 {
   background: var(--cb-c3);
 }
+.cb-c1, .cb-c2, .cb-c3 {
+  background-image: repeating-linear-gradient(0deg, transparent 0 2px, var(--dh-surface) 2px 4px);
+}
 .cb-abstain {
   background: var(--cb-abstain);
 }
 .cb-lock {
-  background: repeating-linear-gradient(135deg, var(--cb-lock) 0 3px, color-mix(in srgb, var(--cb-lock) 55%, transparent) 3px 6px);
+  background: repeating-linear-gradient(135deg, var(--cb-lock) 0 3px, var(--dh-bad-soft) 3px 6px);
 }
 
 /* the whole vote in one bar; segments are separated by a hairline of surface */
@@ -90,16 +78,7 @@
   max-inline-size: var(--measure);
   margin: 0;
 }
-.contests-search input {
-  font: inherit;
-  font-size: 0.9375rem;
-  color: var(--ink);
-  background: var(--surface);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-m);
-  padding: 0.4375rem 0.75rem;
-  inline-size: min(22rem, 100%);
-}
+.contests-search input { inline-size: min(22rem, 100%); }
 .contests-search {
   inline-size: 100%;
 }
@@ -113,6 +92,9 @@
     'main status bar'
     'meta meta meta';
 }
+.crow .prow-main { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; }
+.crow-contenders { margin: 0; }
+.crow .crow-contenders, .crow .crow-lead { font-size: 12px; color: var(--dh-ink-2); }
 .crow-status {
   grid-area: status;
   display: grid;
@@ -123,7 +105,7 @@
 .crow-bar {
   grid-area: bar;
   display: grid;
-  gap: var(--s-2);
+  gap: 4px;
   align-content: start;
 }
 .crow-bar p,
@@ -155,24 +137,40 @@
   color: var(--ink-2);
   background: color-mix(in srgb, var(--ink-3) 14%, transparent);
 }
+
+.contest-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-block: 8px; }
+.contest-legend > span { display: inline-flex; align-items: center; gap: 6px; }
+.contest-legend i { inline-size: 10px; block-size: 10px; border-radius: 2px; }
+.contest-rules { max-inline-size: var(--measure); display: grid; gap: 20px; padding-block: 12px; }
+.contest-rules h2 { font-size: var(--t-m); margin: 0 0 8px; }
+.contest-rules p { margin: 0; }
+.contest-rules p + p { margin-block-start: 8px; }
 @media (max-width: 760px) {
   .crow {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-areas:
-      'main'
-      'status'
-      'bar'
-      'meta';
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: 'main status' 'bar meta';
+    gap: 6px 12px;
+    padding: 10px 12px;
+    align-items: center;
   }
-  .crow .cbar-s {
-    max-inline-size: none;
+  .crow .prow-title { font-size: 15px; }
+  .crow-status { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s-3); justify-content: end; }
+  .crow .cbar-s { max-inline-size: none; }
+  .crow .prow-meta { margin: 0; gap: 12px; white-space: nowrap; }
+}
+@media (min-width: 761px) {
+  .crow {
+    grid-template-columns: minmax(10rem, 1fr) minmax(12rem, 1fr) auto minmax(11rem, auto);
+    grid-template-areas: 'main bar meta status';
+    align-items: center;
+    gap: 16px;
+    padding: 8px 16px;
+    min-block-size: 42px;
   }
-  .crow-status {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 0 var(--s-3);
-  }
+  .crow .prow-title { font-size: 15px; }
+  .crow .prow-meta { flex-wrap: nowrap; white-space: nowrap; }
+  .crow-status { justify-items: end; }
+  .crow .cbar-s { max-inline-size: none; }
 }
 
 /* contest page */
@@ -296,4 +294,11 @@
 }
 .cvote-guest p {
   margin: 0;
+}
+/* the panel's first content when signed out: no rule above it */
+.cvote-guest-lead {
+  border-block-start: 0;
+  padding-block-start: 0;
+}
+
 }

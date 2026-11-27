@@ -58,9 +58,9 @@ const REJECTED: Partial<Record<RejectReason, string>> = {
   'key-expired': 'its key expires within the hour',
   'budget-exhausted': 'its key has no budget left',
   'key-limits': 'its key has no budget or no expiry',
-  'key-unmatched': 'it holds a key govhub did not ask for',
+  'key-unmatched': 'it holds a key Governance did not ask for',
   'key-level': 'its key has the wrong security level',
-  'primary-missing': 'it holds no key for govhub',
+  'primary-missing': 'it holds no key for Governance',
 };
 
 type Phase = { kind: 'starting' } | { kind: 'waiting'; uri: string } | { kind: 'failed'; message: string };
@@ -194,14 +194,14 @@ export default function WalletSignIn() {
                 </p>
                 <p className="small muted break mono-ish">{g.identityId}</p>
                 <p className="small">
-                  govhub may spend up to <b>{k.remainingBudget === undefined ? 'its budget' : formatCredits(k.remainingBudget)}</b> of this identity’s credits on comments,
+                  Governance may spend up to <b>{k.remainingBudget === undefined ? 'its budget' : formatCredits(k.remainingBudget)}</b> of this identity’s credits on comments,
                   reactions and posts{k.key.expiresAt ? <>, until {formatDateTime(Math.floor(k.key.expiresAt / 1000))}</> : null}. It cannot move your money or change your keys.
                 </p>
                 <div className="sheet-actions">
-                  <button type="button" className="btn btn-primary" onClick={() => accept(g)} data-testid="wallet-continue">
+                  <button type="button" className="btn dh-btn btn-primary dh-btn--primary" onClick={() => accept(g)} data-testid="wallet-continue">
                     Continue
                   </button>
-                  <button type="button" className="btn" onClick={() => decline(g)} data-testid="wallet-not-me">
+                  <button type="button" className="btn dh-btn" onClick={() => decline(g)} data-testid="wallet-not-me">
                     Not me
                   </button>
                 </div>
@@ -221,7 +221,7 @@ export default function WalletSignIn() {
           {phase.message}
         </p>
         <div className="sheet-actions">
-          <button type="button" className="btn btn-primary" onClick={() => setAttempt((n) => n + 1)}>
+          <button type="button" className="btn dh-btn btn-primary dh-btn--primary" onClick={() => setAttempt((n) => n + 1)}>
             Try again
           </button>
         </div>
@@ -235,10 +235,10 @@ export default function WalletSignIn() {
         <div className="wallet-steps">
           <ol className="small">
             <li>Open DashPay on your phone and scan this code (or tap the button on this phone).</li>
-            <li>Check the request: govhub asks for one key that can only post here, with a spending limit and an end date.</li>
+            <li>Check the request: Governance asks for one key that can only post here, with a spending limit and an end date.</li>
             <li>Approve it. This page signs you in once Platform has your answer.</li>
           </ol>
-          <a className="btn btn-primary" href={phase.uri} data-testid="wallet-open">
+          <a className="btn dh-btn btn-primary dh-btn--primary" href={phase.uri} data-testid="wallet-open">
             Open in DashPay
           </a>
         </div>
@@ -246,32 +246,32 @@ export default function WalletSignIn() {
       <p className="muted small" aria-live="polite" data-testid="wallet-status">
         <span className="spinner" aria-hidden="true" /> Waiting for your wallet… The code works for 10 minutes.
       </p>
-      {note && <p className="small notice-box" data-testid="wallet-note">{note}</p>}
+      {note && <p className="small notice-box dh-notice dh-notice--info" data-testid="wallet-note">{note}</p>}
       {sim && (
-        <div className="notice-box small" data-testid="wallet-demo">
+        <div className="notice-box dh-notice dh-notice--info small" data-testid="wallet-demo">
           <p>
             <b>Demo:</b> no wallet is needed. Answer this code as a sample person, the way DashPay would.
           </p>
           <div className="signin-picks">
-            <button type="button" className="btn" onClick={() => (sim.wallet.approve(sim.request, FIXTURE_IDS.alice), poller.current?.poke())}>
+            <button type="button" className="btn dh-btn" onClick={() => (sim.wallet.approve(sim.request, FIXTURE_IDS.alice), poller.current?.poke())}>
               Approve as Alice
             </button>
-            <button type="button" className="btn" onClick={() => (sim.wallet.answerBadly(sim.request, FIXTURE_IDS.bob), poller.current?.poke())}>
+            <button type="button" className="btn dh-btn" onClick={() => (sim.wallet.answerBadly(sim.request, FIXTURE_IDS.bob), poller.current?.poke())}>
               Send a bad answer
             </button>
           </div>
         </div>
       )}
       {trouble && <p className="small error">{trouble} Still trying.</p>}
-      <details className="learn">
-        <summary>What does the wallet give govhub?</summary>
+      <details className="learn dh-disclosure">
+        <summary>What does the wallet give Governance?</summary>
         <p className="small">
-          A new key of your identity, made for govhub ({shortHash(contractId, 5)}): Dash Platform lets it write only to govhub’s forum contract, spend at most the
+          A new key of your identity, made for Governance ({shortHash(contractId, 5)}): Dash Platform lets it write only to Governance’s forum contract, spend at most the
           budget you approve (0.1 DASH is suggested) and work only until the date you pick (90 days is suggested). It stays in this tab’s memory and is forgotten when
           you sign out. If your wallet says it needs an update, update DashPay and scan a new code.
         </p>
       </details>
-      <button type="button" className="btn btn-quiet" onClick={() => setAttempt((n) => n + 1)}>
+      <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet" onClick={() => setAttempt((n) => n + 1)}>
         New code
       </button>
     </div>

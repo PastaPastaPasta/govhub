@@ -100,6 +100,11 @@ export function proposalHref(p: Proposal, nameCounts?: ReadonlyMap<string, numbe
   return nameCounts && (nameCounts.get(p.name) ?? 0) > 1 ? `/p/h/${p.govHash}` : `/p/${encodeURIComponent(p.name)}`;
 }
 
+/** A search over what a proposal is known by: its name, the owner's title for it, its payee address, its website. */
+export function proposalMatches(p: Proposal, needle: string, title: string | null | undefined): boolean {
+  return p.name.toLowerCase().includes(needle) || !!title?.toLowerCase().includes(needle) || p.paymentAddress.toLowerCase().startsWith(needle) || p.url.toLowerCase().includes(needle);
+}
+
 export function countNames(ps: readonly Proposal[]): Map<string, number> {
   const m = new Map<string, number>();
   for (const p of ps) m.set(p.name, (m.get(p.name) ?? 0) + 1);
@@ -148,4 +153,20 @@ export function budgetView(shown: readonly Row[], cycle: Pick<Cycle, 'allocated'
   const funded = live.filter((r) => r.tally?.value.inNextBudget);
   const fundedSum = funded.reduce((sum, r) => sum + r.p.value.paymentAmount, 0);
   return { funded, fundedSum, allocated: cycle.allocated, active: live.length, later: shown.filter((r) => !r.lameDuck && r.startsLater).length };
+}
+
+/** How each tally read ended: Platform's (proved) and the bridge's (live; 'ok' with no bridge set up). */
+export interface TallyReads {
+  platform: 'loading' | 'ok' | 'failed';
+  bridge: 'loading' | 'ok' | 'failed';
+}
+
+/**
+ * The listed proposals with no tally because a read failed (a tally one of the failed reads might have had), not because none was
+ * published: they read "votes not read", never "no votes", and counts over the tallies become lower bounds. Empty while reading,
+ * and when every read answered.
+ */
+export function untalliedOf(listed: readonly string[], platform: ReadonlyMap<string, unknown>, bridge: ReadonlyMap<string, unknown>, reads: TallyReads): ReadonlySet<string> {
+  if (reads.platform !== 'failed' && reads.bridge !== 'failed') return new Set();
+  return new Set(listed.filter((h) => !platform.has(h) && !bridge.has(h)));
 }

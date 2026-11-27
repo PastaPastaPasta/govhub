@@ -101,7 +101,7 @@ describe('storage migration (v1 -> v2)', () => {
 });
 
 describe('replacing votes', () => {
-  it('a newer vote only drops an older one that never left; one that left waits for the bridge', () => {
+  it('a newer vote only drops an older one that never left; one that left waits for the governance data service', () => {
     const old = vote({}, 1, NOW - 100);
     const newer = vote({}, 2, NOW);
     expect(mergeWatched([old], [newer]).find((x) => x.voteHash === old.voteHash)).toMatchObject({ status: 'dropped', replacedBy: newer.voteHash });
@@ -115,7 +115,7 @@ describe('replacing votes', () => {
     const now = vote({ signedAt: NOW }, 2, NOW);
     expect(mergeWatched([deferred], [now]).find((x) => x.voteHash === deferred.voteHash)!.status).toBe('dropped');
   });
-  it('replaced only when the newer vote wins in the bridge (Core keeps the latest nTime)', () => {
+  it('replaced only when the newer vote wins in the governance data service (Core keeps the latest nTime)', () => {
     const old = vote({ status: 'broadcast', refs: [{ relay: R1, id: 'ab'.repeat(16) }] }, 1, NOW - 100);
     const mine = vote({ status: 'broadcast', refs: [{ relay: R1, id: 'ef'.repeat(16) }] }, 2, NOW);
     expect(bridgeVerdict(old, { outcome: 1, time: NOW - 100 }, [old, mine])).toEqual({ status: 'confirmed' });
@@ -133,7 +133,7 @@ describe('what each state says', () => {
     const failed = vote({ lastSendError: 'gov-relay-testnet.dashhq.org is unreachable', nextSendAt: NOW + 20 });
     const d = describeVote(failed, NOW, fmt);
     expect(d).toMatchObject({ badge: 'Retrying', tone: 'wait' });
-    expect(d.line).toBe('No relay has taken it yet (gov-relay-testnet.dashhq.org is unreachable). It is kept in this browser and retried automatically while govhub is open. Trying again at T20.');
+    expect(d.line).toBe('No relay has taken it yet (gov-relay-testnet.dashhq.org is unreachable). It is kept in this browser and retried automatically while Governance is open. Trying again at T20.');
     // its answer was lost: never "Not sent yet"
     const lost = describeVote({ ...failed, maybeAt: [R1], lastSendError: 'the connection to gov-relay-testnet.dashhq.org failed before its answer arrived: Failed to fetch' }, NOW, fmt);
     expect(lost).toMatchObject({ badge: 'May be at the relay', tone: 'wait' });
@@ -156,9 +156,9 @@ describe('what each state says', () => {
     expect(describeVote(vote({ status: 'confirmed' }), NOW, fmt).badge).toBe('On the network');
     expect(describeVote(vote({ status: 'confirmed', countedAt: NOW }), NOW, fmt).badge).toBe('Counted');
     // confirmed is the bridge's report: the line says so, and names any other configured source that agrees
-    expect(describeVote(vote({ status: 'confirmed', countedAt: NOW }), NOW, fmt).line).toMatch(/^The bridge reports the network counted it.*That is the bridge’s word/);
+    expect(describeVote(vote({ status: 'confirmed', countedAt: NOW }), NOW, fmt).line).toMatch(/^The governance data service reports the network counted it.*That is the data service’s word/);
     const agreed = describeVote(vote({ status: 'confirmed', alsoSeenBy: ['b2.example'], relayStatus: { 'https://relay-one.example': 'confirmed' } }), NOW, fmt).line;
-    expect(agreed).toContain('Also seen by bridge b2.example (its vote set has it, checked here) and relay relay-one.example (it reports its Dash Core node lists it).');
+    expect(agreed).toContain('Also seen by data service b2.example (its vote set has it, checked here) and relay relay-one.example (it reports its Dash Core node lists it).');
     expect(agreed).not.toContain('bridge’s word');
     expect(agreed).toContain('To be sure, check your own Dash Core node.');
     expect(describeVote(vote({ status: 'failed', failReason: 'gov-relay-testnet.dashhq.org refused it: the masternode is PoSe-banned' }), NOW, fmt).line).toBe('Not sent: gov-relay-testnet.dashhq.org refused it: the masternode is PoSe-banned.');

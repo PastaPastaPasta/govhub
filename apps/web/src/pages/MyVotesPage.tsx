@@ -1,4 +1,5 @@
 // /votes: "my votes" across every active proposal, for all or selected masternodes of the keyring.
+import { useRouteTitle } from '../app/title.ts';
 import { useApp } from '../app/context.tsx';
 import { fmtTime } from '../ui/vote/common.tsx';
 import { VotesList } from '../ui/vote/VotesList.tsx';
@@ -7,15 +8,16 @@ import { useKeyring } from '../voting/KeyringContext.tsx';
 import '../voting/voting.css';
 
 export function MyVotesPage() {
+  useRouteTitle('/votes');
   const { gov } = useApp();
   const k = useKeyring();
   const deadline = useDeadline();
   const active = (gov.active.data ?? []).map((s) => s.value);
   return (
     <section className="kr-page" aria-labelledby="myvotes-title">
-      <header className="kr-head">
+      <header className="kr-head dh-page-header">
         <div className="kr-head-text">
-          <h1 id="myvotes-title">My votes</h1>
+          <h1 className="dh-page-header__title" id="myvotes-title">My votes</h1>
           <p className="kr-state muted">
             Pick a vote for each proposal you care about, then sign once for all of them.
             {deadline && <> Voting for the next superblock closes {fmtTime(deadline)}.</>}
@@ -32,7 +34,7 @@ export function MyVotesPage() {
           {k.error}
         </p>
       )}
-      <div className="kr-card">
+      <div className="kr-card dh-card">
         {gov.active.loading && !active.length ? <p className="muted">Loading proposals…</p> : active.length ? <VoteComposer proposals={active} tracks={k.status !== 'open'} /> : <p className="muted">No active proposals.</p>}
       </div>
       {k.status === 'open' && <VotesList showWins={false} />}

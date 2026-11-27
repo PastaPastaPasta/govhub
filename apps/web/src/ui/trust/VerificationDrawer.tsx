@@ -3,7 +3,7 @@
 // proposal's raw data and hashes; and what no check here can detect. Everything runs automatically (ui/trust/useProposalTrust.ts).
 import { parseProposalData } from '@govhub/verify';
 import { useMemo, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from '../Link.tsx';
 import { useApp } from '../../app/context.tsx';
 import type { Cycle, Proposal, Sourced } from '../../data/types.ts';
 import { formatDash, formatDateTime, formatInt, formatRelative, shortHash } from '../../lib/format.ts';
@@ -75,7 +75,7 @@ function Steps({ steps, demo }: { steps: Row[]; demo: boolean }) {
 
 function How({ rows }: { rows: Array<[string, string]> }) {
   return (
-    <details className="how">
+    <details className="how dh-disclosure">
       <summary>How this was checked</summary>
       <dl>
         {rows.map(([k, v]) => (
@@ -203,11 +203,11 @@ function ChainBlock({ chain, cycle, nowS, demo }: { chain: ChainCheck; cycle: Cy
         </>
       ) : error ? (
         <p className="verdict verdict-partial" data-chain="error">
-          <ProvGlyph kind="reported" /> Chain facts could not be verified: {error}. Threshold, schedule and payments are as the bridge reports them.
+          <ProvGlyph kind="reported" /> Chain facts could not be verified: {error}. Threshold, schedule and payments are as the governance data service reports them.
         </p>
       ) : unavailable ? (
         <p className="muted small" data-chain="unavailable">
-          Chain facts are not verified here: {unavailable}. Threshold, schedule and payments are as the bridge reports them.
+          Chain facts are not verified here: {unavailable}. Threshold, schedule and payments are as the governance data service reports them.
         </p>
       ) : (
         <Pending text={progress || 'Verifying the chain'} />
@@ -315,7 +315,7 @@ function RankingBlock({ done, govHash }: { done: RankingDone; govHash: string })
         </tbody>
       </table>
       <p className="muted small">
-        Threshold {n(r.threshold.value)}, budget {formatDash(Number(r.budget.limit))} for superblock {n(r.budget.height)}, {formatDash(r.allocated)} allocated. Ranked by net yes votes, then hash, filled greedily within the budget and each proposal's payment window, as Core builds the superblock. Each recount uses the votes the bridge served and must reproduce its published tally; a vote or proposal the bridge withholds would not show.
+        Threshold {n(r.threshold.value)}, budget {formatDash(Number(r.budget.limit))} for superblock {n(r.budget.height)}, {formatDash(r.allocated)} allocated. Ranked by net yes votes, then hash, filled greedily within the budget and each proposal's payment window, as Core builds the superblock. Each recount uses the votes the governance data service served and must reproduce its published tally; a vote or proposal the data service withholds would not show.
       </p>
     </div>
   );
@@ -339,17 +339,17 @@ function verdictText(level: VoteLevel, r: VoteCheckResult, matched: string | und
     case 'verified':
       return `Tally verified: ${sigs} and the recount matches the ${matched}`;
     case 'keys-reported':
-      if (fixtures) return `Recount matches the ${matched}: ${sigs}. Voting keys come from the fixture bridge (${origin === 'recorded' ? 'recorded mainnet votes and masternodes' : 'synthetic voters'})`;
+      if (fixtures) return `Recount matches the ${matched}: ${sigs}. Voting keys come from the fixture data service (${origin === 'recorded' ? 'recorded mainnet votes and masternodes' : 'synthetic voters'})`;
       if (weak && !excluded) return `Recount matches the ${matched}: ${sigs}, keys checked against the masternode list, but not secure: ${weak}`;
       if (excluded) return `Recount matches the ${matched}: ${sigs}, but ${excluded}`;
-      if (r.listDiffers > 0) return `Recount matches the ${matched}: ${sigs}, keys proven, but the bridge's masternode list differs from the proven one for ${formatInt(r.listDiffers)} voters (key or type)`;
-      return `Recount matches the ${matched}: ${sigs}, but the voting keys are only as the bridge reports them. Check them against the proven masternode list for a verified result`;
+      if (r.listDiffers > 0) return `Recount matches the ${matched}: ${sigs}, keys proven, but the governance data service's masternode list differs from the proven one for ${formatInt(r.listDiffers)} voters (key or type)`;
+      return `Recount matches the ${matched}: ${sigs}, but the voting keys are only as the governance data service reports them. Check them against the proven masternode list for a verified result`;
     case 'excluded':
-      return `Not verified: ${excluded}. The ${matched} counts them; the count here, without them, differs (a masternode may have left or changed its key since the tally, or the bridge reports one that doesn't exist)`;
+      return `Not verified: ${excluded}. The ${matched} counts them; the count here, without them, differs (a masternode may have left or changed its key since the tally, or the governance data service reports one that doesn't exist)`;
     case 'different-height':
-      return `Not compared: the votes the bridge served are for another block than the published tallies (${sigs}), so this recount neither confirms nor contradicts them. Re-check later`;
+      return `Not compared: the votes the governance data service served are for another block than the published tallies (${sigs}), so this recount neither confirms nor contradicts them. Re-check later`;
     case 'changed':
-      return `Not compared yet: for the tally's block the bridge served another vote set (voteSetHash) than the one behind the tally (${sigs}), usually because a vote arrived while checking; if this persists, the bridge isn't serving that tally's votes. This recount neither confirms nor contradicts it. Re-check in a moment`;
+      return `Not compared yet: for the tally's block the governance data service served another vote set (voteSetHash) than the one behind the tally (${sigs}), usually because a vote arrived while checking; if this persists, the data service isn't serving that tally's votes. This recount neither confirms nor contradicts it. Re-check in a moment`;
     case 'mismatch':
       return `Tally mismatch: the recount from ${formatInt(verified)} valid votes differs from a tally at the same height`;
     case 'no-tally':
@@ -368,7 +368,7 @@ function RunResult({ run, bridge, sml, proven, demo }: { run: VoteRun; bridge: s
         {sml && `. Counted only where the masternode is in the masternode list ${sml.weak ? 'checked (not secure on this network)' : 'proven'} by block ${formatInt(sml.height)}, the signature recovers to the voting key that list gives it, and its registration transaction proves the collateral and type (${formatInt(r.collateralProven)} of ${formatInt(r.smlChecked)} voters)`}
         {r.rejectedTime > 0 && `, ${r.rejectedTime} dropped for a time Core would reject`}
         {r.otherSignal > 0 && `, ${r.otherSignal} votes on other signals skipped`}. Superseded votes are counted once, latest wins.
-        {run.listMatches === false && ' The masternode list served for this height is not the one the bridge built its tally from; a mismatch may come from that.'}
+        {run.listMatches === false && ' The masternode list served for this height is not the one the governance data service built its tally from; a mismatch may come from that.'}
       </p>
       {problems.length > 0 && (
         <>
@@ -425,7 +425,7 @@ function RunResult({ run, bridge, sml, proven, demo }: { run: VoteRun; bridge: s
         </table>
       )}
       {r.examples.length > 0 && (
-        <details>
+        <details className="dh-disclosure">
           <summary data-testid="problem-votes-summary">
             Excluded votes and why ({r.examples.length < r.excluded ? `the first ${formatInt(r.examples.length)} of ${formatInt(r.excluded)}` : formatInt(r.examples.length)})
           </summary>
@@ -511,7 +511,7 @@ function CheckRow({ c, demo, children }: { c: Component; demo: boolean; children
         </div>
       </div>
       {children && (
-        <details className="check-more">
+        <details className="check-more dh-disclosure">
           <summary>Details</summary>
           {children}
         </details>
@@ -543,7 +543,7 @@ function YourselfCommands({ govHash, bridgeBase }: { govHash: string; bridgeBase
       {bridgeBase && (
         <p className="small">
           The signed votes this recount used, as JSON:{' '}
-          <a href={`${bridgeBase}/v1/proposals/${govHash}/votes`} target="_blank" rel="noopener noreferrer">
+          <a href={`${bridgeBase}/v1/proposals/${govHash}/votes`} target="_blank" rel="noopener noreferrer" className="dh-link">
             {bridgeBase.replace(/^https?:\/\//, '')}/v1/proposals/…/votes
           </a>
         </p>
@@ -578,9 +578,9 @@ function RawData({ p, sp }: { p: Proposal; sp: Sourced<Proposal> }) {
           </div>
         ))}
       </dl>
-      <p className="small muted">Exactly what the governance hash commits to ({formatInt(parsed.dataBytes)} bytes). The URL is the owner's own page; govhub doesn't host or check its content.</p>
+      <p className="small muted">Exactly what the governance hash commits to ({formatInt(parsed.dataBytes)} bytes). The URL is the owner's own page; Governance doesn't host or check its content.</p>
       <pre className="code">{json}</pre>
-      <details>
+      <details className="dh-disclosure">
         <summary>dataHex</summary>
         <pre className="code break">{p.dataHex}</pre>
       </details>
@@ -592,7 +592,7 @@ function RawData({ p, sp }: { p: Proposal; sp: Sourced<Proposal> }) {
 function rankingNote(ranking: ProposalTrust['ranking']): string {
   if (ranking?.running) return `${ranking.progress || 'Ranking every active proposal'}…`;
   if (ranking?.error) return `The funding order couldn't be recounted: ${ranking.error}`;
-  return "A proposal that is not passing on the recounted votes and the proven threshold is not funded; one that is passing is ranked against every active proposal, by Core's rules. The ranking leaves out proposals that failed verification, as Core does, and can't include a proposal the bridge never published.";
+  return "A proposal that is not passing on the recounted votes and the proven threshold is not funded; one that is passing is ranked against every active proposal, by Core's rules. The ranking leaves out proposals that failed verification, as Core does, and can't include a proposal the governance data service never published.";
 }
 
 const byId = (cs: readonly Component[], id: CheckId) => cs.find((c) => c.id === id)!;
@@ -613,7 +613,7 @@ export function VerificationDrawer({ sp, trust, cycle, open, onClose }: { sp: So
           <p className="drawer-verdict-title">{LEVEL_LABEL[a.level]}</p>
           <p className="drawer-verdict-line">{a.level === 'verified' ? VERIFIED_LINE : a.reason}</p>
         </div>
-        <button type="button" className="btn btn-s" onClick={trust.recheck} data-testid="recheck">
+        <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={trust.recheck} data-testid="recheck">
           Re-check
         </button>
       </section>
@@ -641,7 +641,7 @@ export function VerificationDrawer({ sp, trust, cycle, open, onClose }: { sp: So
             <>
               <p className="small muted">{rankingNote(trust.ranking)}</p>
               {trust.rankNow && (
-                <button type="button" className="btn btn-s" onClick={trust.rankNow} data-testid="rank-now">
+                <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={trust.rankNow} data-testid="rank-now">
                   Rank every active proposal
                 </button>
               )}
@@ -650,11 +650,11 @@ export function VerificationDrawer({ sp, trust, cycle, open, onClose }: { sp: So
         </CheckRow>
       </ol>
 
-      <details className="drawer-section" data-testid="votes-check" open={a.level === 'failed' && byId(a.components, 'votes').state.status === 'failed'}>
+      <details className="drawer-section dh-disclosure" data-testid="votes-check" open={a.level === 'failed' && byId(a.components, 'votes').state.status === 'failed'}>
         <summary>Check the votes yourself</summary>
         {!bridge ? (
           <p className="muted small">
-            Signed votes come from a bridge, because DAPI has no governance calls. <Link to="/settings">Add a bridge in Settings</Link> to recount them.
+            Signed votes come from a data service, because DAPI has no governance calls. <Link to="/settings" className="dh-link">Add a data service in Settings</Link> to recount them.
           </p>
         ) : trust.votes.result ? (
           <VotesResult done={trust.votes.result} fixtures={demo} proven={!demo && byId(a.components, 'votes').state.status === 'proven'} />
@@ -666,7 +666,7 @@ export function VerificationDrawer({ sp, trust, cycle, open, onClose }: { sp: So
         <YourselfCommands govHash={p.govHash} bridgeBase={bridgeBase} />
       </details>
 
-      <details className="drawer-section">
+      <details className="drawer-section dh-disclosure">
         <summary>Proposal data and hashes</summary>
         <RawData p={p} sp={sp} />
       </details>
@@ -674,16 +674,16 @@ export function VerificationDrawer({ sp, trust, cycle, open, onClose }: { sp: So
       <section className="drawer-note" aria-labelledby="cant-title">
         <h3 id="cant-title">What this can't detect</h3>
         <p className="small">
-          A bridge can withhold. The recount proves the votes it was given, so votes the bridge didn't serve can't be detected, and neither can a proposal it never
-          published. Switch to another bridge in Settings, or compare with your own Dash Core node using the commands above.
+          A data service can withhold. The recount proves the votes it was given, so votes it didn't serve can't be detected, and neither can a proposal it never
+          published. Switch to another data service in Settings, or compare with your own Dash Core node using the commands above.
         </p>
       </section>
       <p className="small">
-        <Link to="/about/verification" onClick={onClose}>
+        <Link to="/about/verification" onClick={onClose} className="dh-link">
           About verification: what each state means
         </Link>
         {' · '}
-        <Link to="/about/trust" onClick={onClose} data-testid="trust-page-link">
+        <Link to="/about/trust" onClick={onClose} data-testid="trust-page-link" className="dh-link">
           What we can and can't lie about
         </Link>
       </p>

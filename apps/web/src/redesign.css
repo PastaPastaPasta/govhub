@@ -1,0 +1,503 @@
+/* Governance visual pass (Nov 2026): one hierarchy on the landing page (payout, then budget, then proposals) and on a proposal
+   (ask and standing, then the vote, then the record). Unlayered on purpose: it sits after the vendored shell stylesheets and wins
+   over them and over the gov layer. Type tokens come from the vendored shell. */
+
+html { font-size: 16px; }
+:root { --track: var(--dh-track, var(--dh-sunken)); }
+
+/* ---- landing: payout, then budget ---------------------------------------------------------------------------- */
+.main:has(> .gov-hero) { padding-block-start: var(--dh-5); }
+.budget.gov-hero { display: grid; gap: var(--gv-group); margin-block: 0 var(--gv-section); }
+.gov-hero .dh-page-header__title { font-size: clamp(34px, 4.4vw, 48px); line-height: 1.08; }
+.gov-hero .dh-page-header__lede { font-size: var(--dh-fs-lead); }
+.gov-hero .dh-page-header__actions .dh-btn { min-block-size: 44px; padding-inline: 18px; font-size: 15px; }
+
+.budget-panel {
+  display: grid;
+  gap: var(--gv-group);
+  padding: 20px var(--dh-6);
+  background: var(--dh-surface);
+  border: 1px solid var(--dh-line);
+  border-radius: var(--dh-r3, 10px);
+}
+.budget-panel .strip {
+  block-size: 12px;
+  gap: 2px;
+  margin: 0;
+  border-radius: 999px;
+  background: var(--track);
+}
+.budget-panel .strip-seg { background: var(--dh-brand); }
+.budget-panel .strip-seg:hover { background: var(--dh-brand-ink); opacity: 1; }
+.budget-panel .strip-other { background: color-mix(in srgb, var(--dh-brand) 45%, var(--dh-sunken)); }
+.budget-panel .strip-free { background: transparent; }
+
+.budget-panel .budget-facts { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--dh-5) var(--dh-6); }
+.budget-panel .gov-stat { border: 0; padding: 0; }
+.budget-panel .gov-stat + .gov-stat { border-inline-start: 1px solid var(--dh-line); padding-inline-start: var(--dh-6); }
+.budget-panel .gov-stat dt { font-size: 15px; color: var(--dh-ink-2); margin-block-end: 4px; }
+.budget-panel .gov-stat .num { font-size: 30px; font-weight: 640; font-stretch: 104%; color: var(--dh-ink); line-height: 1.1; }
+.budget-panel .gov-stat--good .num { color: var(--dh-brand-ink); }
+.budget-panel .gov-stat small { font-size: 15px; }
+.budget-panel .gov-stat-note,
+.budget-panel .usd { display: block; margin-block-start: 4px; font-size: 14px; color: var(--dh-ink-2); line-height: 1.4; }
+.budget-panel .usd .usd-source { display: block; font-size: 13px; }
+
+.budget-panel .budget-foot {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--gv-tight) var(--dh-6);
+}
+.budget-panel .budget-line-links > a,
+.budget-panel details.learn > summary { font-size: 15px; }
+.budget-panel details.learn[open] { flex-basis: 100%; }
+.budget-panel details.learn p { font-size: 15px; max-inline-size: 72ch; }
+
+/* ---- the list --------------------------------------------------------------------------------------------- */
+.list-section .gov-section-head { padding-block-end: var(--dh-2); border: 0; }
+.list-section .gov-section-head h2 { border: 0; padding: 0; font-size: 26px; }
+.list-section .gov-section-head > :is(p, a) { font-size: 15px; }
+.list-tools { gap: var(--dh-3); margin-block-end: var(--dh-3); }
+@media (min-width: 1000px) {
+  .list-section--active > .list-tools { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: var(--dh-4); }
+  .list-section--active > .list-tools > :not(.list-search):not(.list-tools-row) { grid-column: 1 / -1; }
+  .list-tools-row { flex-wrap: nowrap; }
+}
+.budget-new { display: none; }
+
+.plist { border-radius: var(--dh-r3, 10px); }
+.plist-proposals > .prow,
+.plist > .prow[data-govhash] {
+  grid-template-columns: minmax(0, 1fr) 12rem 13rem 12.5rem;
+  grid-template-areas: 'main ask fund meta';
+  column-gap: var(--dh-6);
+  padding: 16px 24px;
+  align-items: start;
+}
+.prow::before { inset-block: 16px; inline-size: 3px; }
+.prow-main { gap: 6px; }
+.prow-title { font-size: 18px; font-weight: 620; line-height: 1.3; }
+.prow-title a { color: var(--dh-ink); text-decoration: none; }
+.prow-title a:hover { text-decoration: underline; color: var(--dh-brand-ink); }
+.prow-purpose { font-size: 15px; line-height: 1.45; color: var(--dh-ink-2); -webkit-line-clamp: 2; max-inline-size: 64ch; }
+.prow-slug { font-family: var(--dh-font); font-size: 14px; color: var(--dh-ink-2); }
+.prow-slug .slug, .prow-slug code { font-family: inherit; }
+
+.prow-ask { gap: 4px; }
+.prow-ask .num { font-size: 20px; font-weight: 640; }
+.prow-ask .small { font-size: 14px; }
+.prow-per { font-size: 15px; white-space: nowrap; }
+.prow-ask > p:first-of-type { white-space: nowrap; }
+
+.plist-proposals .prow-fund { gap: 6px; }
+.prow-fund .meter { gap: 8px; }
+.prow-fund .meter-text { font-size: 15px; font-weight: 620; }
+.prow-fund .meter-track { block-size: 8px; }
+/* the budget place: a small tinted label with the standing, never a second full badge */
+.prow-fund > .tag.dh-badge {
+  justify-self: start; padding: 2px 8px; border: 0; box-shadow: none; min-block-size: 0; block-size: auto; height: auto; border-radius: var(--dh-r1);
+  font-size: 13px; font-weight: 560; text-transform: none; letter-spacing: 0; text-decoration: none; cursor: default;
+}
+
+.plist-proposals .prow-meta { gap: 6px; }
+.plist-proposals .prow-votes { display: flex; flex-direction: row; flex-wrap: wrap; justify-content: end; font-size: 15px; color: var(--dh-ink-2); gap: 0 12px; line-height: 1.4; }
+.prow-votes b { font-size: 16px; font-weight: 640; color: var(--dh-ink); }
+.prow-comments { font-size: 14px; }
+
+/* the chain check: a quiet status in the budget panel's footer while it runs or once it has verified; a failure keeps its warning chip */
+.budget-panel .chain-context { margin: 0; }
+.budget-panel .chain-context .chainchip:is(.dh-proof--ok, .dh-proof--checking) {
+  border: 0; background: none; box-shadow: none; min-block-size: 32px; padding: 4px 6px; margin-inline: -6px;
+  font-size: 14px; font-weight: 400; color: var(--dh-ink-2);
+}
+.budget-panel .chain-context .chainchip:is(.dh-proof--ok, .dh-proof--checking):hover { color: var(--dh-ink); background: var(--dh-hover); }
+.budget-panel details.learn { margin-inline-start: auto; }
+.key.key-free { background: var(--dh-sunken); box-shadow: inset 0 0 0 1px var(--dh-line-2); }
+.key.key-other { background: color-mix(in srgb, var(--dh-brand) 45%, var(--dh-sunken)); }
+
+/* the narrow layout: a card reads top to bottom, what, how much, where it stands, the votes */
+@media (max-width: 760px) {
+  .main:has(> .gov-hero) { padding-block-start: var(--dh-4); }
+  .gov-hero .dh-page-header__title { font-size: 28px; }
+  .gov-hero .dh-page-header__lede { font-size: 15px; line-height: 1.45; }
+  .gov-hero .dh-page-header__row { gap: var(--dh-3); }
+  .gov-hero:has(.budget-new) .dh-page-header__actions { display: none; }
+  .budget-panel { padding: 12px 14px; }
+  .budget-panel .strip { block-size: 10px; }
+  .budget-panel .budget-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px var(--dh-4); }
+  .budget-panel .gov-stat + .gov-stat { border: 0; padding: 0; }
+  .budget-panel .gov-stat .num { font-size: 24px; }
+  .budget-panel .gov-stat dt { font-size: 14px; }
+  .budget-panel .gov-stat small { font-size: 14px; }
+  .budget-panel .gov-stat-note { font-size: 13px; }
+  .budget-panel .budget-facts .usd { display: none; }
+  .budget-panel .budget-foot { column-gap: var(--dh-5); }
+  .budget-panel .budget-line-links { display: none; }
+  .budget-panel details.learn > summary { font-size: 15px; padding-block: 2px; }
+
+  /* the Treasury tab below replaces the heading's link and order note on a phone */
+  .list-section .gov-section-head { padding: 0; }
+  .list-section .gov-section-head h2 { font-size: 20px; }
+  .list-section .gov-section-head > :is(p, a) { display: none; }
+  .budget-panel details.learn { margin-inline-start: 0; order: 1; }
+  .budget-new { display: inline-flex; margin-inline-start: auto; order: 2; }
+  .budget-panel .chain-context { order: 3; flex-basis: 100%; }
+  /* the active list's sort shares the heading's row, so the filters keep a full row and the first proposal stays in view */
+  .list-section--active { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--dh-3); }
+  .list-section--active > *,
+  .list-section--active > :is(.list-head, .list-tools) > *,
+  .list-section--active .list-tools-row > * { grid-column: 1 / -1; }
+  .list-section--active > :is(.list-head, .list-tools),
+  .list-section--active .list-tools-row { display: contents; }
+  .list-section--active > .list-head > .gov-section-head { grid-column: 1; grid-row: 1; align-self: center; }
+  .list-section--active .list-tools-row > .list-sort { grid-column: 2; grid-row: 1; align-self: center; }
+  .list-sort > span:first-child { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); }
+  /* a card reads: what, how much, where it stands, then the owner's words and the votes */
+  .plist-proposals > .prow[data-govhash] { display: flex; flex-direction: column; align-items: stretch; }
+  .plist-proposals > .prow > .prow-main { display: contents; }
+  .plist-proposals > .prow :is(.prow-title, .prow-slug) { order: 0; }
+  .plist-proposals > .prow > .prow-ask { order: 1; }
+  .plist-proposals > .prow > .prow-fund { order: 2; }
+  .plist-proposals > .prow .prow-main > :not(.prow-title):not(.prow-slug) { order: 3; }
+  .plist-proposals > .prow > .prow-meta { order: 4; }
+  .list-section > .list-head { gap: var(--dh-2); margin-block-end: var(--dh-2); }
+  .list-tools { gap: var(--dh-2); }
+  .list-tools-row { row-gap: var(--dh-2); }
+
+  .plist-proposals > .prow,
+  .plist > .prow[data-govhash] {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: 'main main' 'ask ask' 'fund fund' 'meta meta';
+    row-gap: 10px;
+    padding: 16px 16px 14px 20px;
+  }
+  .prow-title { font-size: 17px; }
+  /* a phone card is the decision: what, how much, where it stands, the votes; the owner's words are on the proposal */
+  .plist-proposals .prow-purpose { display: none; }
+  /* the standing and the budget place share a line when they fit; otherwise the place wraps under the standing */
+  .plist-proposals .prow-fund { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; }
+  .plist-proposals .prow-fund > .meter { display: contents; }
+  .plist-proposals .prow-fund .meter-text { order: 0; margin: 0; }
+  .plist-proposals .prow-fund > .tag.dh-badge { order: 1; }
+  .plist-proposals .prow-fund .meter-track { order: 2; flex: 1 0 100%; }
+  .plist-proposals > .prow[data-govhash] { gap: 6px; }
+  .prow-ask { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; }
+  .prow-ask > p { margin: 0; }
+  .plist-proposals .prow-meta { flex-direction: row; align-items: baseline; justify-content: space-between; }
+  .plist-proposals .prow-votes { display: flex; flex-direction: row; flex-wrap: wrap; justify-content: start; gap: 4px 14px; }
+}
+
+/* ---- a proposal: the ask and where it stands, then the vote, then the record --------------------------------- */
+.proposal .p-hero .p-purpose { margin-block-start: var(--gv-tight); max-inline-size: 72ch; }
+.proposal .p-hero .p-purpose-quote p { font-size: 17px; line-height: 1.5; color: var(--dh-ink); }
+.proposal .p-hero .p-purpose .small { font-size: 14px; }
+/* the vote card names what is signed for screen readers; on screen the page above already says it */
+.proposal .pvote-subject { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.proposal .p-hero { margin: 0; gap: var(--gv-tight); }
+.proposal .p-hero .dh-page-header__kicker { display: none; }
+.proposal .p-hero .dh-page-header__title { font-size: clamp(28px, 3.4vw, 38px); line-height: 1.15; }
+.p-sub { margin: 0; font-size: 15px; color: var(--dh-ink-2); overflow-wrap: anywhere; }
+
+.proposal .p-funds {
+  display: grid; gap: var(--dh-5);
+  padding: var(--dh-6);
+  margin: 0;
+  background: var(--dh-surface);
+  border: 1px solid var(--dh-line);
+  border-radius: var(--dh-r3, 10px);
+}
+/* wide: the ask with the votes under it on the left, the standing on the right */
+@media (min-width: 761px) {
+  .proposal .p-funds { grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); column-gap: var(--dh-7); row-gap: var(--dh-4); align-items: start; }
+  .proposal .p-funds > .p-lead { display: contents; }
+  .proposal .p-funds > :not(.p-lead) { grid-column: 1 / -1; }
+  .proposal .p-funds .p-lead-ask { grid-column: 1; grid-row: 1; }
+  .proposal .p-funds .p-lead-standing { grid-column: 2; grid-row: 1 / span 2; }
+  .proposal .p-funds > .p-standing { grid-column: 1; grid-row: 2; padding-block-start: var(--dh-4); }
+}
+.p-lead { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--dh-4); }
+.p-lead-ask, .p-lead-standing { display: grid; align-content: start; }
+.p-lead-ask { gap: 8px; }
+.p-lead-standing { gap: var(--gv-tight); }
+.proposal .p-amount { font-size: 18px; color: var(--dh-ink-2); line-height: 1.25; }
+.proposal .p-amount .num { font-size: 44px; font-weight: 660; font-stretch: 106%; color: var(--dh-ink); line-height: 1; }
+.proposal .p-amount small { font-size: 22px; font-weight: 600; color: var(--dh-ink); }
+.proposal .p-amount .p-total { display: block; margin-block-start: 10px; font-size: 16px; color: var(--dh-ink-2); }
+.proposal .p-amount .p-total b { font-size: 16px; color: var(--dh-ink); }
+.p-left { margin: 0; font-size: 16px; color: var(--dh-ink-2); }
+.p-lead-standing .meter { gap: 10px; }
+.p-lead-standing .meter-text { font-size: 22px; font-weight: 640; }
+.p-lead-standing .meter-track { block-size: 12px; }
+.p-lead-standing .meter-dot { inline-size: 10px; block-size: 10px; }
+.p-net { margin: 0; font-size: 15px; color: var(--dh-ink-2); }
+.p-reported, .p-ended, .p-closes { margin: 0; font-size: 14px; color: var(--dh-ink-2); }
+.p-net b { color: var(--dh-ink); font-weight: 620; }
+
+.proposal .p-standing { gap: var(--gv-tight); padding-block-start: var(--dh-5); border-block-start: 1px solid var(--dh-line); }
+.proposal .p-status { font-size: 15px; }
+.proposal .p-votes { font-size: 17px; color: var(--dh-ink-2); gap: 6px 22px; }
+.proposal .p-votes b { font-size: 20px; font-weight: 650; color: var(--dh-ink); }
+.proposal .p-votes .small { font-size: 14px; }
+.p-tally-note { margin: 0; font-size: 14px; }
+.proposal .p-meta:empty { display: none; }
+@media (min-width: 961px) { .proposal .p-meta { display: none; } }
+
+.proposal .p-details .p-facts { font-size: 15px; }
+.proposal .panel-title { font-size: 18px; }
+.p-recorded > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; }
+.p-recorded > summary::-webkit-details-marker { display: none; }
+.p-recorded > summary::before { content: '›'; font-size: 18px; line-height: 1; color: var(--dh-ink-2); transition: transform .15s; }
+.p-recorded[open] > summary::before { transform: rotate(90deg); }
+.p-recorded > summary h3 { font-size: 15px; }
+.p-recorded[open] { display: grid; gap: 8px; }
+
+@media (max-width: 760px) {
+  .proposal .p-hero .dh-page-header__title { font-size: 24px; }
+  .proposal .p-hero .p-purpose-quote p { font-size: 15px; -webkit-line-clamp: 3; }
+  .proposal .p-hero .p-purpose .small { font-size: 13px; }
+  .proposal .p-funds { padding: var(--dh-4); gap: var(--dh-4); }
+  .proposal .p-amount .num { font-size: 34px; }
+  .proposal .p-amount small { font-size: 18px; }
+  .p-lead-standing .meter-text { font-size: 18px; }
+  .proposal .p-standing { padding-block-start: var(--dh-4); }
+  .proposal .p-votes { gap: 4px 16px; }
+  .proposal .p-votes b { font-size: 18px; }
+}
+.proposal .p-hero p.p-purpose { display: block; font-size: 15px; color: var(--dh-ink-2); }
+.mono-ish { overflow-wrap: anywhere; }
+.list-section .list-note.dh-notice--inline { margin: 0 0 var(--dh-3); }
+
+/* ---- the other pages: one page title, quiet sections, the same type scale -------------------------------------- */
+:is(.past-head, .tr-head, .kr-head, .contests > .dh-page-header) .dh-page-header__title { font-size: clamp(28px, 3.4vw, 40px); line-height: 1.12; }
+:is(.past-head, .tr-head, .kr-head, .contests > .dh-page-header) .dh-page-header__lede { font-size: 17px; max-inline-size: 70ch; }
+
+/* Past: a readable ledger */
+.past-page { gap: var(--gv-section); }
+.past.dh-table { font-size: 15px; }
+.past.dh-table th { font-size: 14px; }
+@media (min-width: 761px) { .past.dh-table td { padding-block: 12px; vertical-align: middle; } .past .outcome { flex-wrap: nowrap; white-space: nowrap; } }
+.past .p-label { font-weight: 560; }
+.sb-head { padding: 16px 20px; }
+.sb-date.dh-h3 { font-size: 18px; }
+
+/* Name contests: no band, solid bars, status as text */
+.contests > .dh-page-header.gov-band { padding-block: var(--dh-5) 0; margin-block-end: var(--gv-section); gap: var(--gv-group); }
+.contests > .dh-page-header.gov-band::before { display: none; }
+.contests > .dh-page-header .dh-page-header__kicker { display: none; }
+.contests-search input { inline-size: 100%; max-inline-size: none; min-block-size: 44px; font-size: 16px; }
+.contests .gov-section-title { border: 0; padding: 0; font-size: 24px; margin-block: 0 var(--gv-tight); }
+.contest-legend { font-size: 14px; gap: 4px 18px; margin-block: 0 var(--gv-group); }
+.contest-legend i { inline-size: 10px; block-size: 10px; border-radius: 50%; }
+:is(.crow, .contest-legend) :is(.cb-c1, .cb-c2, .cb-c3) { background-image: none; }
+/* Lock keeps a faint hatch so it never relies on hue alone */
+:is(.crow, .contest-legend) .cb-lock { background: repeating-linear-gradient(135deg, var(--cb-lock) 0 5px, color-mix(in srgb, var(--cb-lock) 62%, var(--dh-surface)) 5px 7px); }
+.crow .cbar-s { block-size: 8px; }
+.plist .crow { padding: 14px 20px; }
+.crow .prow-title { font-size: 17px; font-weight: 620; }
+.crow .prow-title a { color: var(--dh-ink); text-decoration: none; }
+.crow .prow-title a:hover { color: var(--dh-brand-ink); text-decoration: underline; }
+.crow .crow-contenders, .crow .crow-lead { font-size: 14px; }
+.crow .prow-meta { font-size: 14px; }
+.crow-status > .tag.dh-badge { padding: 0; border: 0; background: none; box-shadow: none; height: auto; font-size: 14px; font-weight: 560; color: var(--dh-ink-2); }
+.crow-status > .tag.ctag-soon { color: var(--dh-warn); }
+.crow-status > .tag.ctag-won { color: var(--dh-good); }
+@media (min-width: 761px) {
+  .crow { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr) 9.5rem 9rem; min-block-size: 56px; column-gap: 24px; }
+}
+@media (max-width: 760px) {
+  .plist .crow { padding: 14px 16px; row-gap: 8px; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'main main' 'bar bar' 'status meta'; }
+  .crow-status { justify-content: start; }
+  .contests .gov-section-title { font-size: 20px; }
+  .contests > .dh-page-header.gov-band { padding-block-start: var(--dh-4); }
+}
+
+/* My masternodes, signed out: the three ways side by side, the ProTx lookup after them */
+.kr-page { display: grid; gap: var(--gv-section); }
+.vote-ways.kr-card { padding: 0; border: 0; background: none; box-shadow: none; gap: var(--gv-group); }
+.vote-ways > h2 { font-size: 22px; margin: 0; }
+.vote-ways-list { list-style: none; padding: 0; margin: 0; justify-self: stretch; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: var(--dh-4); }
+.vote-ways-list > li { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 20px; background: var(--dh-surface); border: 1px solid var(--dh-line); border-radius: var(--dh-r3, 10px); }
+.vote-ways-list h3 { font-size: 17px; margin: 0; }
+.vote-ways-list p { margin: 0; font-size: 15px; color: var(--dh-ink-2); }
+.vote-ways-list > li > :is(.btn, .dh-btn, a) { margin-block-start: auto; }
+.vote-ways-list .vote-way-lead { color: var(--dh-ink); font-size: 16px; }
+.vote-ways-list .vote-way-needs { font-size: 14px; }
+.vote-way-more { font-size: 14px; color: var(--dh-ink-2); margin-block-end: 8px; }
+.vote-way-more > p { margin-block-start: 4px; font-size: 14px; }
+.vote-ways > .small { margin-block-start: 0; font-size: 14px; }
+.vote-ways.kr-gate { max-inline-size: none; inline-size: 100%; }
+.mn-find { margin: 0; padding: 20px; }
+.mn-find h2 { font-size: 18px; }
+.mn-find p.small { font-size: 14px; }
+
+/* Treasury: tiles without coloured edges come from the shell; the tables read at body size */
+.tr-stats { gap: var(--dh-4); }
+.treasury .dh-table { font-size: 15px; }
+.treasury .dh-table td { padding-block: 12px; }
+.treasury .p-slug { font-family: var(--dh-font); font-size: 14px; }
+.tr-budget-bar, .tr-share-bar { background: var(--track); }
+
+/* contest bars: the leader in brand blue, challengers a muted blue, so the legend tells them apart */
+:is(.crow, .contest-legend) { --cb-c0: var(--dh-brand); --cb-c1: color-mix(in srgb, var(--dh-brand) 40%, var(--dh-surface)); --cb-c2: var(--cb-c1); --cb-c3: var(--cb-c1); }
+
+/* ---- one vertical rhythm for every page: 32px between sections, 16px within a group, 8px between related lines (24/12/6 on a phone) */
+:root { --gv-section: 32px; --gv-group: 16px; --gv-tight: 8px; }
+@media (max-width: 760px) { :root { --gv-section: 24px; --gv-group: 12px; --gv-tight: 6px; } }
+
+/* landing */
+.gov-hero .dh-page-header__text { gap: var(--gv-tight); }
+.list-section--active > .list-head { gap: var(--gv-group); margin-block-end: var(--gv-group); }
+.list-section--active .gov-section-head { padding-block-end: 0; }
+.list-section--active > .list-tools { gap: var(--gv-group); margin-block-end: var(--gv-group); }
+.plist-proposals > .prow[data-govhash] { padding-block: 16px; }
+@media (max-width: 760px) {
+  .list-section--active { row-gap: var(--gv-group); }
+  .list-section--active > .list-head,
+  .list-section--active > .list-tools { margin: 0; }
+  .list-section--active .list-chips { margin: 0; }
+}
+
+/* a proposal: the back link sits with the title; the sections below are one rhythm apart */
+.proposal { display: grid; gap: var(--gv-section); }
+.proposal > * { margin-block: 0; }
+.proposal > .crumbs { margin-block-end: calc(var(--gv-tight) - var(--gv-section)); }
+.p-main, .p-side { gap: var(--gv-section); }
+
+/* Past */
+.past-page > * { margin-block: 0; }
+.past-page > .list-head { margin: 0; }
+.past-head.dh-page-header { margin: 0; gap: var(--gv-tight); }
+.past-head > .dh-seg { margin-block-start: var(--gv-tight); }
+.past-page .list-tools { gap: var(--gv-tight); margin: 0 0 calc(var(--gv-group) - var(--gv-section)); }
+.past-page table.past { margin-block-start: 0; }
+
+/* My masternodes */
+.kr-page > .kr-head.dh-page-header { margin: 0; }
+
+/* Treasury */
+.treasury { gap: var(--gv-section); }
+.treasury > .list-head { margin: 0; }
+.treasury > .tr-head.dh-page-header { margin: 0; }
+
+/* one Summary card after the vote in reading order; wide, it sits beside the vote, the owner's words and the discussion */
+.proposal .p-details .kv > div { grid-template-columns: 6rem minmax(0, 1fr); column-gap: 12px; }
+.p-layout--proposal { row-gap: var(--gv-section); }
+@media (min-width: 961px) {
+  .p-layout--proposal { grid-template-rows: auto auto 1fr; }
+  .p-layout--proposal > * { grid-column: 1; }
+  .p-layout--proposal > .p-side { grid-column: 2; grid-row: 1 / span 3; }
+}
+
+/* Past: number headers sit over their numbers; the long note is for the wide layout */
+@media (min-width: 761px) {
+  .past thead th.r { text-align: end; }
+  .past thead th.r .sort-head { margin-inline-start: auto; }
+}
+@media (max-width: 760px) { .past-lede-more { display: none; } }
+
+/* the price's source is its own quiet line, so no separator dangles at the end of the first */
+.budget-panel .usd > .usd-value::after { content: none; }
+/* the exact name only where the title is the owner's words; otherwise the title already is the name */
+@media (max-width: 760px) { .prow:not(.prow-titled) .prow-slug { display: none; } }
+.plist-proposals .prow-slug { font-size: 14px; color: var(--dh-ink-2); }
+
+/* a phone's first screen holds the countdown, the budget and one whole proposal above the tab bar */
+@media (max-width: 760px) {
+  .budget.gov-hero { padding-block-end: 0; }
+  .budget-panel { gap: 8px; padding-block: 10px; }
+  .budget-panel .budget-facts { row-gap: 6px; }
+  .budget-panel .gov-stat-note { margin-block-start: 0; font-size: 13px; }
+  .plist-proposals > .prow[data-govhash] { padding-block: 14px 12px; }
+  .list-section--active > .plist-proposals { margin-block-start: 0; }
+  .budget-panel .chain-context .chainchip:is(.dh-proof--ok, .dh-proof--checking) { min-block-size: 24px; padding-block: 2px; }
+}
+/* an empty count stays a live region but takes no row (and no extra gap) until it has something to say */
+.list-count:empty { position: absolute; }
+
+/* the threshold tick reads on the fill and on the empty track, in both themes */
+.meter-notch { inline-size: 3px; margin-inline-start: -1.5px; background: var(--dh-ink); box-shadow: 0 0 0 1.5px var(--dh-surface); }
+/* when each contest closes is what a voter scans for */
+.crow-status > .tag.dh-badge:not(.ctag-soon):not(.ctag-won) { color: var(--dh-ink); }
+
+/* Past on a phone: each fact is its own item, so a wrapped line never starts with a separator */
+@media (max-width: 760px) {
+  .past-page table.past.dh-table--cards tr { column-gap: 14px; }
+  .past-page table.past.dh-table--cards tr > td[data-label]:not(.dh-rc-title):not(.dh-rc-end)::before { content: attr(data-label) " "; color: var(--dh-ink-2); }
+  /* the outcome line: always its own row, under when it ended and what it asked */
+  .past-page table.past.dh-table--cards tr::before { content: ""; order: 3; flex-basis: 100%; }
+  .past-page table.past.dh-table--cards tr > :is(td.dh-rc-end, td[data-label="Received"], td[data-label="Net yes"]) { order: 4; margin-inline-start: 0; padding-inline-start: 0; }
+}
+/* the view switch under Past's heading reads as a second level, not a second tab bar */
+.past-head .dh-seg { background: none; border: 0; box-shadow: none; padding: 0; gap: 20px; }
+.past-head .dh-seg > .dh-btn { background: none; border: 0; box-shadow: none; padding: 6px 0; min-block-size: 36px; border-radius: 0; color: var(--dh-ink-2); font-weight: 560; border-block-end: 2px solid transparent; }
+.past-head .dh-seg > .dh-btn[aria-pressed="true"] { color: var(--dh-ink); border-block-end-color: var(--dh-brand); }
+.past-head .dh-seg > .dh-btn:hover { color: var(--dh-ink); background: none; }
+
+/* a proposal on a phone: the owner's words stay, the repeats go, so the ask and standing come sooner */
+@media (max-width: 760px) {
+  .main:has(> .proposal) { padding-block-start: var(--dh-3); }
+  .proposal .p-sub .muted { display: none; }
+  .proposal .p-hero .p-purpose-quote p { -webkit-line-clamp: 2; }
+  .proposal .p-hero .p-purpose-from { font-size: 13px; }
+  .proposal .p-amount .p-total { margin-block-start: 6px; font-size: 15px; }
+  .p-left { font-size: 15px; }
+}
+/* contests: the headline already gives the count */
+.contests .gov-section-title .dh-count, .contests .gov-section-title .count { display: none; }
+
+/* a contest with no comments shows none, and its column stays aligned */
+.crow .prow-comments:is([data-count="0"], :not([data-count])) { visibility: hidden; }
+/* the selected tab's count reads on its fill */
+.subtabs > [aria-current="page"] .count { color: inherit; opacity: .8; }
+/* Past: sort marks sit apart from their headings; on a phone the values read in ink, their labels quieter */
+.past thead .sort-head { gap: 6px; }
+.past thead .sort-arrow { color: var(--dh-ink-2); font-size: .9em; }
+@media (max-width: 760px) {
+  .past-page table.past.dh-table--cards td:not(.dh-rc-title) { color: var(--dh-ink); }
+}
+/* each way to vote's details are a clear link */
+
+/* jump links beside a section's heading, to the part a visitor may have come for */
+.contests-open-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; }
+.contests-to-ended { font-size: 15px; }
+#ended-contests { scroll-margin-block-start: 80px; }
+@media (max-width: 760px) {
+  /* a way to vote on a phone: its name, what it needs, its button; the details fold under it */
+  .vote-ways-list > li { padding: 16px; gap: 6px; }
+  .vote-ways-list .vote-way-lead { display: none; }
+  .vote-ways-list > li > :is(.btn, .dh-btn, a) { order: 3; margin-block-start: 6px; }
+  .vote-way-more { order: 4; margin: 0; }
+}
+
+/* between phone and desktop a row puts the title on its own line, the figures under it */
+@media (min-width: 761px) and (max-width: 1100px) {
+  .plist-proposals > .prow,
+  .plist > .prow[data-govhash] { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) auto; grid-template-areas: 'main main main' 'ask fund meta'; row-gap: 12px; }
+}
+
+/* colour roles: Dash blue fills the meters and stripes; selected filters take a blue tint, the section tab the solid fill */
+:root { --pass-fill: var(--dh-brand-fill); }
+.meter-pass .meter-dot { background: var(--pass-fill); }
+.list-chip { background: transparent; border-color: var(--dh-line-2); color: var(--dh-ink-2); font-weight: 560; }
+.list-chip:hover { border-color: var(--dh-line-2); background: var(--dh-hover); color: var(--dh-ink); }
+.list-chip.on, .list-chip.on:hover { background: color-mix(in srgb, var(--dh-brand) 16%, var(--dh-surface)); border-color: var(--dh-brand); color: var(--dh-ink); }
+.list-chip.on .count { color: inherit; opacity: .8; }
+.tag.dh-badge--good { background: color-mix(in srgb, var(--dh-brand) 16%, var(--dh-surface)); color: var(--dh-ink); }
+
+.list-more { display: flex; justify-content: center; margin: var(--dh-4) 0 0; }
+@media (max-width: 760px) { .proposal .p-meta { display: none; } }
+.mn-key-rule { margin: var(--dh-2) 0 0; font-size: 15px; color: var(--dh-ink); }
+.p-closes-vote { display: none; }
+@media (max-width: 760px) {
+  .p-closes { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; }
+  .p-closes-vote { display: inline; font-weight: 600; }
+}
+.crow .prow-title a { color: var(--dh-brand-ink); }
+.crow .crow-contenders:empty { display: none; }
+:is(.crow, .contest-legend) .cb-lock { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--cb-lock) 70%, var(--dh-surface)) 0 4px, color-mix(in srgb, var(--cb-lock) 35%, var(--dh-surface)) 4px 8px); }
+.mn-find-hint { margin: 0 0 var(--dh-2); font-size: 14px; color: var(--dh-ink-2); }
+@media (min-width: 761px) {
+  .treasury .dh-table { font-size: 16px; }
+  .proposal .p-details .kv { font-size: 16px; }
+  .crow .crow-contenders, .crow .crow-lead { font-size: 15px; }
+}
+.p-about .p-recorded, .p-about .claim-panel { background: var(--dh-surface); border-color: var(--dh-line); }
+:is(.mnv-pass, .outcome-pass) .dot { background: var(--pass-fill); }

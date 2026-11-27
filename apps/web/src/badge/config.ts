@@ -44,7 +44,7 @@ export interface BadgeNetworkConfig {
 export const BADGE_NETWORKS: Readonly<Record<CoreNetwork, BadgeNetworkConfig>> = {
   testnet: {
     contractId: '2aYj4Dkix7xXBUTZFCDBjpcqqLi9Tg5oUwBgHUJBNGCU',
-    defaultIssuers: [{ name: 'govhub', identityId: 'H62hSf5TpKbUSMov85GMhPQahZDbqsTipeoBsYPgveUH', url: 'https://gov-issuer-testnet.dashhq.org', enabled: true }],
+    defaultIssuers: [{ name: 'dashhq', identityId: 'H62hSf5TpKbUSMov85GMhPQahZDbqsTipeoBsYPgveUH', url: 'https://gov-issuer-testnet.dashhq.org', enabled: true }],
     minAnonymitySet: 5,
     // testnet has about 150 masternodes (2026-10)
     maxPlausibleTokens: 500,
@@ -53,7 +53,7 @@ export const BADGE_NETWORKS: Readonly<Record<CoreNetwork, BadgeNetworkConfig>> =
   // About 2,400 masternodes (2026-10); the bound needs updating if that grows a lot.
   mainnet: {
     contractId: 'Acfd9ZKRFdAAxpSab5kb9zP2P5bKQQ4kZVqeBnck3pZi',
-    defaultIssuers: [{ name: 'govhub', identityId: '9MJV17bn7C9xu1n3nopcZzScTnac3TNUjR17HmpKY4Cr', url: 'https://gov-issuer.dashhq.org', enabled: true }],
+    defaultIssuers: [{ name: 'dashhq', identityId: '9MJV17bn7C9xu1n3nopcZzScTnac3TNUjR17HmpKY4Cr', url: 'https://gov-issuer.dashhq.org', enabled: true }],
     minAnonymitySet: 20,
     maxPlausibleTokens: 4_000,
   },
@@ -61,7 +61,8 @@ export const BADGE_NETWORKS: Readonly<Record<CoreNetwork, BadgeNetworkConfig>> =
 
 const KEY = (net: CoreNetwork) => `govhub.badge.trust.v1.${net}`;
 const ALL_DEFAULTS = Object.values(BADGE_NETWORKS).flatMap((n) => n.defaultIssuers);
-const DEFAULT_NAMES = new Set(ALL_DEFAULTS.map((i) => i.name.toLowerCase()));
+// 'govhub' is the default issuers' earlier name: still reserved, so no other issuer can pass for them under it
+const DEFAULT_NAMES = new Set([...ALL_DEFAULTS.map((i) => i.name.toLowerCase()), 'govhub']);
 const DEFAULT_IDS = new Set(ALL_DEFAULTS.map((i) => i.identityId));
 
 function httpsUrl(s: unknown): string | null {

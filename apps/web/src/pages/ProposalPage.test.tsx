@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // The proposal page for a lame duck (still on the network, nothing left that can pay it) against a proposal that has payments left.
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Cycle, Proposal, Sourced, Tally } from '../data/types.ts';
 import { formatDate } from '../lib/format.ts';
 import { GOV_PARAMS } from '../lib/governance.ts';
@@ -22,14 +22,19 @@ vi.mock('../app/context.tsx', () => ({
   }),
 }));
 vi.mock('../app/forum.tsx', () => ({ useForum: () => ({ session: null }) }));
-vi.mock('../voting/KeyringContext.tsx', () => ({ useKeyring: () => ({ status: hold.keyring }) }));
 vi.mock('../ui/Discussion.tsx', () => ({ Discussion: () => null }));
 vi.mock('../ui/ReadError.tsx', () => ({ ReadError: () => null }));
 vi.mock('../ui/WriteError.tsx', () => ({ WriteError: () => null }));
 vi.mock('../ui/SignIn.tsx', () => ({ openSignIn: () => {} }));
 vi.mock('../ui/trust/TrustBadge.tsx', () => ({ TrustBadge: () => null }));
 vi.mock('../ui/trust/VerificationDrawer.tsx', () => ({ VerificationDrawer: () => null }));
-vi.mock('../ui/VotePanel.tsx', () => ({ OfflineSign: () => null, ProposalVotePanel: () => <div data-testid="vote-panel" /> }));
+vi.mock('../ui/vote/VoteBlock.tsx', () => ({ mnParam: () => null, ProposalVoteBlock: ({ closesIn }: { closesIn: number | null }) => <div data-testid="vote-panel">{closesIn !== null && 'Voting closes in (the block)'}</div> }));
+const owner = vi.hoisted(() => ({ page: null as unknown }));
+vi.mock('../lib/ownerPages.ts', () => ({ useOwnerPage: () => owner.page }));
+// these records stand for ones whose fields match their hash, unless a test says otherwise
+const content = vi.hoisted(() => ({ problem: null as string | null }));
+vi.mock('../verify/checks.ts', async (orig) => ({ ...(await orig<typeof import('../verify/checks.ts')>()), contentFailure: () => content.problem }));
+vi.mock('../ui/trust/store.ts', () => ({ trustScope: () => 'test', useCachedTrust: () => null }));
 vi.mock('../ui/Ownership.tsx', () => ({
   ClaimPanel: () => null,
   OwnerPost: () => null,
@@ -40,7 +45,7 @@ vi.mock('../ui/Ownership.tsx', () => ({
 }));
 vi.mock('../ui/trust/useProposalTrust.ts', () => ({
   useProposalTrust: () => ({
-    aggregate: { level: 'verified', reason: null },
+    aggregate: { level: 'verified', reason: null, components: [] },
     collateral: { verdict: null },
     chain: { report: hold.report, error: null, unavailable: false },
     funded: hold.funded,
@@ -52,6 +57,10 @@ vi.mock('../ui/hooks.ts', async (orig) => ({
 }));
 
 const { ProposalView } = await import('./ProposalPage.tsx');
+afterEach(() => {
+  owner.page = null;
+  content.problem = null;
+});
 
 const cycle = (estTime: number): Sourced<Cycle> => ({ value: { superblockHeight: 1, budget: 6000e8, allocated: 250e8, votingDeadlineHeight: 0, estTime, validWeighted: 3320, paid: 0 }, prov });
 const proposal = (over: Partial<Proposal>): Sourced<Proposal> => ({
@@ -85,10 +94,10 @@ describe('ProposalView for a lame duck', () => {
     const { el } = await view(pshenmic, { estTime: NOW + 23 * DAY, report: report({ paid: 1, remainingEstimate: 0 }) });
     const status = el.querySelector('[data-testid="lameduck-status"]')!;
     expect(status.textContent).toContain('Paid in full');
-    expect(status.textContent).toContain('1 of 1 payment made. No more payments are possible; it leaves the network on Oct 27, 2026.');
+    expect(status.textContent).toContain('1 of 1 payment made. No more payments are possible; it leaves the network on 27 Oct 2026.');
     const text = el.textContent ?? '';
     expect(text).not.toMatch(/Passing by|next budget is full|In the next budget|Voting closes|Voting for this payout/);
-    expect(el.querySelector('[data-testid="summary"]')!.textContent).toContain('1, 0 more possible');
+    expect(el.querySelector('[data-testid="p-paid"]')!.textContent).toBe('No payments left · 1 paid');
     // votes stay, de-emphasised
     const votes = el.querySelector('[data-testid="p-votes"]')!;
     expect(votes.className).toContain('p-votes-dim');
@@ -124,7 +133,7 @@ describe('ProposalView for a proposal with payments left', () => {
   it('is not a lame duck when the verified chain still counts a payment possible (the page never contradicts its own summary)', async () => {
     const { el } = await view(pshenmic, { estTime: NOW + 23 * DAY, report: report({ paid: 1, remainingEstimate: 1 }) });
     expect(el.querySelector('[data-testid="lameduck-status"]')).toBeNull();
-    expect(el.querySelector('[data-testid="summary"]')!.textContent).toContain('1, 1 more possible');
+    expect(el.querySelector('[data-testid="p-paid"]')!.textContent).toBe('1 more possible · 1 paid');
   });
 
   it('is not a lame duck when the next superblock is flagged to pay it', async () => {
@@ -160,5 +169,81 @@ describe('ProposalView for a proposal that starts paying at a later superblock',
     const { el } = await view(later, { estTime: NEXT, report: null, inNextBudget: true });
     expect(el.querySelector('[data-testid="startslater-status"]')).toBeNull();
     expect(el.textContent).toContain('In the next budget');
+  });
+});
+
+describe('ProposalView reading order', () => {
+  const open = proposal({ startEpoch: NOW - 10 * DAY, endEpoch: NOW + 80 * DAY });
+
+  it('identifies the masternode-list block behind the proposal threshold', async () => {
+    const r = report({ paid: 0, remainingEstimate: 3 });
+    r.threshold.value = 331;
+    r.threshold.validWeighted = 3310;
+    const { el } = await view(open, { estTime: NOW + 5 * DAY, report: r });
+    expect(el.querySelector('[data-testid="p-funds"]')?.textContent).toContain('331 needed (masternode list at block 1)');
+  });
+  it('leads with the ask, full tally and vote entry before the details', async () => {
+    const { el } = await view(open, { estTime: NOW + 5 * DAY, report: null });
+    const summary = el.querySelector('[data-testid="p-decision"]')!;
+    expect(el.querySelector('[data-testid="p-funds"]')!.textContent).toContain('504 net yes of 332 needed (feed estimate)');
+    expect(summary.textContent).toContain('Votes close');
+    expect(el.querySelector('[data-testid="p-next-payout"]')!.textContent).toContain('Next payout');
+    expect(el.querySelector('.p-hero [data-testid="p-chain-name"]')).toBeNull();
+    const funds = el.querySelector('[data-testid="p-funds"]')!;
+    const vote = el.querySelector('[data-testid="vote-panel"]')!;
+    expect(funds.compareDocumentPosition(vote) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(el.querySelector('[data-testid="p-ask"]')!.textContent).toMatch(/^100 DASH per month × \d+ payments = [\d,]+ DASH$/);
+    const details = el.querySelector('[data-testid="p-details"]')!;
+    expect(details.textContent).toContain('Pays');
+    expect(details.textContent).toContain(`Next payoutaround ${formatDate(NOW + 5 * DAY)}`);
+    expect(funds.compareDocumentPosition(details) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(funds.querySelector('[data-testid="jump-vote"]')).not.toBeNull();
+    expect(funds.querySelector('[data-testid="p-facts"]')).toBeNull();
+    expect(funds.querySelector('[data-testid="p-votes"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="jump-vote"]')!.getAttribute('href')).toBe('#vote');
+  });
+
+  it('heads an unclaimed proposal with its name as words and keeps the exact name in the record', async () => {
+    const { el } = await view(open, { estTime: NOW + 5 * DAY, report: null });
+    expect(el.querySelector('[data-testid="p-title"]')!.textContent).toBe('Pshenmic dev dash desktop november 2026');
+    expect(el.querySelector('[data-testid="p-chain-name"]')!.textContent).toBe('pshenmic-dev-dash-desktop-november-2026');
+  });
+
+  it('has no jump to a vote it no longer shows', async () => {
+    const { el } = await view(proposal({ startEpoch: NOW - 40 * DAY, endEpoch: NOW - DAY }), { estTime: NOW + 5 * DAY, report: null });
+    expect(el.querySelector('[data-testid="jump-vote"]')).toBeNull();
+  });
+});
+
+describe('ProposalView before and without its record', () => {
+  const open = proposal({ startEpoch: NOW - 10 * DAY, endEpoch: NOW + 80 * DAY });
+
+  it('holds the heading while owners.json is read, with the name for screen readers, instead of swapping it later', async () => {
+    owner.page = undefined;
+    const { el } = await view(open, { estTime: NOW + 5 * DAY, report: null });
+    const h1 = el.querySelector('[data-testid="p-title"]')!;
+    expect(h1.getAttribute('aria-busy')).toBe('true');
+    expect(h1.querySelector('.dh-skel')).not.toBeNull();
+    expect(h1.textContent).toBe('pshenmic-dev-dash-desktop-november-2026');
+  });
+
+  it('heads with the owner’s title once read, with attribution and the exact name in the record', async () => {
+    owner.page = { page: { source: '', url: 'https://www.dashcentral.org/p/x', host: 'dashcentral.org', title: 'Dash Desktop, November', description: null, excerpt: 'It funds the desktop wallet.' }, fetchedAt: NOW };
+    const { el } = await view(open, { estTime: NOW + 5 * DAY, report: null });
+    expect(el.querySelector('[data-testid="p-title"]')!.textContent).toBe('Dash Desktop, November');
+    expect(el.querySelector('.p-hero')!.textContent).toContain('title from the owner’s page on dashcentral.org');
+    expect(el.querySelector('.p-hero [data-testid="p-chain-name"]')).toBeNull();
+    expect(el.querySelector('.p-hero blockquote')!.textContent).toBe('It funds the desktop wallet.');
+    expect(el.querySelector('[data-testid="owner-page"] time')!.getAttribute('datetime')).toBe('2026-10-25T00:00:00.000Z');
+    expect(el.querySelector('[data-testid="owner-page"] time')!.getAttribute('title')).toBe('25 Oct 2026, 00:00 UTC');
+  });
+
+  it('does not show fields that don’t match the hash as what it funds', async () => {
+    content.problem = 'url';
+    const { el } = await view(open, { estTime: NOW + 5 * DAY, report: null });
+    const funds = el.querySelector('[data-testid="p-funds"]')!;
+    expect(funds.querySelector('[data-testid="p-funds-mismatch"]')!.textContent).toContain('don’t match the hash the network votes on (url)');
+    expect(funds.querySelector('[data-testid="p-ask"]')).toBeNull();
+    expect(funds.textContent).not.toContain('Pays');
   });
 });

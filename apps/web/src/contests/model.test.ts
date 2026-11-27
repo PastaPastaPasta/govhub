@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { contestKey, displayName, isContestedLabel, normalizeLabel, percent, phaseOf, registersAs, toOutcome, type ContestState } from './model.ts';
+import { contestAliases, contestKey, displayName, isContestedLabel, normalizeLabel, percent, phaseOf, registersAs, toOutcome, type ContestState } from './model.ts';
 import { TtlCache } from './source.ts';
 import { leadText, statusTag } from './ui.tsx';
 
@@ -31,6 +31,20 @@ describe('labels', () => {
     expect(displayName(state(), 'sat0sh1')).toBe('sat0sh1');
     expect(registersAs('Satoshi', 'sat0sh1')).toBe('sat0sh1');
     expect(registersAs('DashPay', 'dashpay')).toBeNull();
+  });
+});
+
+describe('contest aliases', () => {
+  it('serves each spelling as written and in lower case, never the label itself', () => {
+    expect(contestAliases('a11ce', ['Alice'])).toEqual(['Alice', 'alice']);
+    expect(contestAliases('ther0adn0ttaken', ['Theroadnottaken', 'TheRoadNotTaken'])).toEqual(['Theroadnottaken', 'theroadnottaken', 'TheRoadNotTaken']);
+    expect(contestAliases('dash', ['dash'])).toEqual([]);
+    expect(contestAliases('b0b', ['b0b', 'Bob'])).toEqual(['Bob', 'bob']);
+  });
+  it('drops spellings that are not this label or not a plain file name', () => {
+    expect(contestAliases('a11ce', ['Alicia', 'al1ce/../x', '-alice', 'alice.dash', '../a11ce', 'ALICE '])).toEqual([]);
+    expect(contestAliases('a11ce', [])).toEqual([]);
+    expect(contestAliases('1ndex', ['Index', 'index', 'iNDEX'])).toEqual([]);
   });
 });
 
@@ -74,12 +88,13 @@ describe('card wording', () => {
   });
   it('says how it ended once decided', () => {
     expect(leadText(state({ contenders: [{ identityId: A, votes: 9 }], abstain: 1, outcome: { kind: 'won', identityId: A, at: 1 } }))).toBe('Won with 90% of the votes');
-    expect(leadText(state({ contenders: [{ identityId: A, votes: 1 }], lock: 3, outcome: { kind: 'locked', at: 1 } }))).toBe('Locked by 75% of the votes');
+    expect(leadText(state({ contenders: [{ identityId: A, votes: 1 }], lock: 3, outcome: { kind: 'locked', at: 1 } }))).toBe('Locked: nobody gets it (75% of the votes)');
     expect(leadText(state({ contenders: [{ identityId: B, votes: 1 }], outcome: { kind: 'won', identityId: A, at: 1 } }))).toBe('Awarded');
   });
   it('tags the status, urgent under a day', () => {
     const now = 1_000_000_000;
     expect(statusTag(null, now + 3 * 86_400_000, now)).toEqual({ text: 'Closes in 3 days', tone: 'open' });
+    expect(statusTag(null, now + 2 * 86_400_000, now)).toEqual({ text: 'Closes in 2 days', tone: 'soon' });
     expect(statusTag(null, now + 5 * 3_600_000, now)).toEqual({ text: 'Closes in 5 hours', tone: 'soon' });
     expect(statusTag(null, now, now).text).toBe('Voting closed');
     expect(statusTag(state(), null, now).text).toBe('No result yet');

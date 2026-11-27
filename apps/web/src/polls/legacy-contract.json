@@ -1,0 +1,125 @@
+{
+  "poll": {
+    "type": "object",
+    "indices": [
+      {
+        "name": "byCreatedAt",
+        "properties": [
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      },
+      {
+        "name": "ownerAndTime",
+        "properties": [
+          {
+            "$ownerId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      }
+    ],
+    "mutable": false,
+    "required": [
+      "$createdAt",
+      "question",
+      "options",
+      "pollType"
+    ],
+    "properties": {
+      "question": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 1024,
+        "position": 0,
+        "byteArray": true,
+        "description": "UTF-8 encoded poll question (binary for longer content support)"
+      },
+      "options": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 4096,
+        "position": 1,
+        "byteArray": true,
+        "description": "JSON-encoded array of option strings (binary for flexibility)"
+      },
+      "pollType": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 1,
+        "position": 2,
+        "description": "0 = single choice, 1 = multiple choice"
+      }
+    },
+    "description": "A poll with a question and options",
+    "additionalProperties": false
+  },
+  "vote": {
+    "type": "object",
+    "indices": [
+      {
+        "name": "pollAndVoter",
+        "unique": true,
+        "properties": [
+          {
+            "pollId": "asc"
+          },
+          {
+            "$ownerId": "asc"
+          }
+        ]
+      },
+      {
+        "name": "pollVotes",
+        "properties": [
+          {
+            "pollId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      }
+    ],
+    "mutable": false,
+    "required": [
+      "$createdAt",
+      "pollId",
+      "pollOwnerId",
+      "selectedOptions"
+    ],
+    "properties": {
+      "pollId": {
+        "type": "array",
+        "minItems": 32,
+        "maxItems": 32,
+        "position": 0,
+        "byteArray": true,
+        "description": "ID of the poll being voted on",
+        "contentMediaType": "application/x.dash.dpp.identifier"
+      },
+      "pollOwnerId": {
+        "type": "array",
+        "minItems": 32,
+        "maxItems": 32,
+        "position": 1,
+        "byteArray": true,
+        "description": "Identity ID of the poll owner",
+        "contentMediaType": "application/x.dash.dpp.identifier"
+      },
+      "selectedOptions": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 10,
+        "position": 2,
+        "byteArray": true,
+        "description": "Selected option indices as bytes (each byte = one option index 0-9)"
+      }
+    },
+    "description": "A vote on a poll (unique per user per poll)",
+    "additionalProperties": false
+  }
+}

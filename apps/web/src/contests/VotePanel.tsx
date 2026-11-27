@@ -4,7 +4,7 @@
 // proposal votes. What leaves the signing is signed votes, never keys.
 import { base64 } from '@scure/base';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from '../ui/Link.tsx';
 import { useApp } from '../app/context.tsx';
 import { SecretField } from '../auth/SecretField.tsx';
 import { errText, formatInt } from '../lib/format.ts';
@@ -57,10 +57,10 @@ export function ContestVotePanel({ label, state, endsAt, nameOf }: { label: stri
   const now = useNow(10_000);
   const mine = votes.held.filter((v) => v.label === label);
   const shell = (body: ReactNode) => (
-    <section className="panel mnvote" aria-labelledby="cvote-title" data-testid="contest-vote-panel">
+    <section className="panel dh-card mnvote" aria-labelledby="cvote-title" data-testid="contest-vote-panel">
       <header className="mnvote-head">
-        <h2 id="cvote-title">Your vote</h2>
-        {k.demo && k.status === 'open' && <span className="tag tag-demo">Demo: votes aren't sent</span>}
+        <h2 id="cvote-title">Vote on this name</h2>
+        {k.demo && k.status === 'open' && <span className="tag dh-badge tag-demo">Demo: votes aren't sent</span>}
       </header>
       {body}
       {mine.length > 0 && <KeptVotes votes={mine} now={now} nameOf={nameOf} labels={labels} onCancel={(id) => void votes.cancel(id)} onSendNow={(ids) => void votes.sendNow(ids)} />}
@@ -84,11 +84,21 @@ export function ContestVotePanel({ label, state, endsAt, nameOf }: { label: stri
   const signer = keyring ?? pasted;
 
   if (!signer) {
+    // signed out, the way that needs nothing more comes first: the masternode's voting key, for this tab only
+    if (k.status === 'signed-out')
+      return shell(
+        <>
+          <GuestKeyForm open />
+          <p className="small muted" data-testid="vote-cta">
+            Or keep your voting keys in an account, so they’re back next time: <Link to="/masternodes">ways to vote</Link>.
+          </p>
+        </>,
+      );
     return shell(
       <>
-        <div className="vempty" data-testid="vote-cta">
-          <p>{k.status === 'signed-out' ? 'Masternode owners: sign in and add your voting keys to vote here.' : 'Unlock your masternode keyring to vote here.'}</p>
-          <Link className="btn" to="/masternodes">
+        <div className="vempty dh-empty" data-testid="vote-cta">
+          <p>Unlock your masternode keyring to vote here.</p>
+          <Link className="btn dh-btn" to="/masternodes">
             My masternodes
           </Link>
         </div>
@@ -99,7 +109,7 @@ export function ContestVotePanel({ label, state, endsAt, nameOf }: { label: stri
   if (signer.kind === 'keyring' && !signer.owned.some((m) => m.valid)) {
     const finding = k.mns.phase === 'loading' || k.mns.phase === 'idle';
     return shell(
-      <div className="vempty" data-testid="vote-none">
+      <div className="vempty dh-empty" data-testid="vote-none">
         {finding ? (
           <p>
             <span className="spinner" aria-hidden="true" /> Finding your masternodes…
@@ -109,7 +119,7 @@ export function ContestVotePanel({ label, state, endsAt, nameOf }: { label: stri
         ) : (
           <p>None of your keyring’s masternodes can vote.</p>
         )}
-        <Link className="btn btn-s" to="/masternodes">
+        <Link className="btn dh-btn btn-s dh-btn--sm" to="/masternodes">
           My masternodes
         </Link>
       </div>,
@@ -262,7 +272,7 @@ function Composer({ label, state, endsAt, nameOf, signer }: { label: string; sta
       <fieldset className="cvote-choices" data-testid="contest-choice">
         <legend className="visually-hidden">Your vote</legend>
         {options.map((o) => (
-          <label key={choiceKey(o.c)} className={`cvote-opt${choice && sameChoice(choice, o.c) ? ' on' : ''}`}>
+          <label key={choiceKey(o.c)} className={[`cvote-opt${choice && sameChoice(choice, o.c) ? ' on' : ''}`, "dh-field__label"].join(" ")}>
             <input type="radio" name={`cvote-${label}`} checked={!!choice && sameChoice(choice, o.c)} onChange={() => setChoice(o.c)} />
             <span>
               <b>{o.text}</b>
@@ -272,13 +282,13 @@ function Composer({ label, state, endsAt, nameOf, signer }: { label: string; sta
         ))}
       </fieldset>
 
-      <details className="vcomp-mns" data-testid="vote-mns">
+      <details className="vcomp-mns dh-disclosure" data-testid="vote-mns">
         <summary>
           <span>{chosen.length === usable.length ? `With ${usable.length === 1 ? 'your masternode' : usable.length === 2 ? 'both your masternodes' : `all ${usable.length} of your masternodes`}` : `With ${chosen.length} of ${usable.length} masternodes`}</span>
           <span className="vcomp-change">Change</span>
         </summary>
         {usable.length > 1 && (
-          <label className="check vcomp-all">
+          <label className="check vcomp-all dh-field__label">
             <input type="checkbox" checked={chosen.length === usable.length} onChange={(e) => setSelected(e.target.checked ? null : new Set())} /> All masternodes
           </label>
         )}
@@ -287,11 +297,12 @@ function Composer({ label, state, endsAt, nameOf, signer }: { label: string; sta
             const w = waitingFor(m);
             return (
               <li key={m.proTxHash} className={`vmn${sel(m) ? ' vmn-on' : ''}`} data-testid="vote-mn-row" data-protx={m.proTxHash}>
-                <label className="vmn-pick">
+                <label className="vmn-pick dh-field__label">
                   <input type="checkbox" checked={sel(m)} onChange={(e) => toggle(m, e.target.checked)} aria-label={`Vote with ${mnName(m, labels)}`} />
                   <span className="vmn-name">{mnName(m, labels)}</span>
                   {m.type === 'evo' && <span className="chip vmn-evo">Evonode ×4</span>}
                 </label>
+                <a className="small" href={window.dashhq?.href('radar', '/mn/' + m.proTxHash, { network: k.coreNetwork })}>View in Radar</a>
                 <div className="vmn-state">
                   <span className="vmn-cur" data-testid="current-vote">
                     <span className="vmn-k">Now</span> {current.loading ? <span className="muted">…</span> : current.error ? <span className="muted">unknown</span> : choiceText(current.data?.get(voterOf.get(m.proTxHash) ?? ''), nameOf)}
@@ -310,28 +321,28 @@ function Composer({ label, state, endsAt, nameOf, signer }: { label: string; sta
         {signer.kind === 'guest' && (
           <p className="small muted">
             From voting keys pasted into this tab.{' '}
-            <button type="button" className="linkish" onClick={guest.forget} data-testid="guest-forget">
+            <button type="button" className="linkish dh-btn dh-btn--link" onClick={guest.forget} data-testid="guest-forget">
               Forget the keys
             </button>
           </p>
         )}
       </details>
 
-      <details className="vwhen">
+      <details className="vwhen dh-disclosure">
         <summary>
           <span>{mode === 'spread' ? 'Spread out over time' : 'Send now'}</span>
           <span className="vcomp-change">Options</span>
         </summary>
         <fieldset className="vwhen-opts">
           <legend className="visually-hidden">When to send</legend>
-          <label className={`vwhen-opt${mode === 'now' ? ' on' : ''}`}>
+          <label className={[`vwhen-opt${mode === 'now' ? ' on' : ''}`, "dh-field__label"].join(" ")}>
             <input type="radio" name={`cvote-when-${label}`} checked={mode === 'now'} onChange={() => setMode('now')} />
             <span>
               <b>Now</b>
               <span className="small muted">Platform counts each vote within seconds.</span>
             </span>
           </label>
-          <label className={`vwhen-opt${mode === 'spread' ? ' on' : ''}${win ? '' : ' off'}`}>
+          <label className={[`vwhen-opt${mode === 'spread' ? ' on' : ''}${win ? '' : ' off'}`, "dh-field__label"].join(" ")}>
             <input type="radio" name={`cvote-when-${label}`} checked={mode === 'spread'} onChange={() => setMode('spread')} disabled={!win} data-testid="vote-spread" />
             <span>
               <b>Spread out (more private)</b>
@@ -345,9 +356,9 @@ function Composer({ label, state, endsAt, nameOf, signer }: { label: string; sta
         </fieldset>
         {mode === 'spread' && win && (
           <div className="vwhen-more">
-            <label>
+            <label className="dh-field__label">
               Send within the next{' '}
-              <input type="number" min={0.1} step={0.1} value={withinH} onChange={(e) => setWithinH(e.target.value)} placeholder={String(Math.round((Math.min(win.latest - now, DEFAULT_SPREAD_MS) / 3_600_000) * 10) / 10)} className="vote-hours" data-testid="vote-within" /> hours
+              <input type="number" min={0.1} step={0.1} value={withinH} onChange={(e) => setWithinH(e.target.value)} placeholder={String(Math.round((Math.min(win.latest - now, DEFAULT_SPREAD_MS) / 3_600_000) * 10) / 10)} className="vote-hours dh-input" data-testid="vote-within" /> hours
             </label>
             <p className="small muted">
               The longer the window, the harder they are to link. The signed votes wait in this browser’s storage until they go out, even if you sign out; one whose time passes while govhub is closed goes out soon after you open it again, before voting closes. The Platform node your browser sends through still sees all of them come from you.
@@ -357,7 +368,8 @@ function Composer({ label, state, endsAt, nameOf, signer }: { label: string; sta
       </details>
 
       <div className="vgo">
-        <button type="button" className="btn btn-primary btn-l vgo-btn" disabled={busy || !!hint} onClick={go} data-testid="vote-send">
+        {src.network === 'mainnet' && <p className="small muted">Mainnet · real DASH</p>}
+        <button type="button" className="btn dh-btn btn-primary dh-btn--primary vgo-btn" disabled={busy || !!hint} onClick={go} data-testid="vote-send">
           {buttonText}
         </button>
         {!hint && (
@@ -387,15 +399,15 @@ function Composer({ label, state, endsAt, nameOf, signer }: { label: string; sta
 }
 
 /** Pasting voting keys without an account, as vote.dashhq.org allowed. */
-function GuestKeyForm() {
+function GuestKeyForm({ open: startOpen = false }: { open?: boolean }) {
   const guest = useGuestKeys();
   const [text, setText] = useState('');
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(startOpen);
   if (!open)
     return (
       <p className="small muted">
         No account?{' '}
-        <button type="button" className="linkish" onClick={() => setOpen(true)} data-testid="guest-open">
+        <button type="button" className="linkish dh-btn dh-btn--link" onClick={() => setOpen(true)} data-testid="guest-open">
           Vote with a voting key instead
         </button>
       </p>
@@ -405,11 +417,12 @@ function GuestKeyForm() {
     setText('');
   };
   return (
-    <div className="form cvote-guest" data-testid="guest-form">
+    <div className={`form cvote-guest${startOpen ? ' cvote-guest-lead' : ''}`} data-testid="guest-form">
+      {startOpen && <p className="small">Masternodes vote with their voting key. No account needed: paste it here.</p>}
       <SecretField label="Voting keys" what="voting key" value={text} onChange={setText} testId="guest-key" placeholder="One voting private key per line (WIF or hex)" />
       <p className="small muted">The keys stay in this tab’s memory only: never saved, never sent. They are forgotten after 15 minutes without use, when you close the tab, or when you click Forget.</p>
       <div className="cvote-acts">
-        <button type="button" className="btn" onClick={() => void find()} disabled={guest.status === 'looking' || !text.trim()} data-testid="guest-find">
+        <button type="button" className="btn dh-btn" onClick={() => void find()} disabled={guest.status === 'looking' || !text.trim()} data-testid="guest-find">
           {guest.status === 'looking' ? 'Finding your masternodes…' : 'Find my masternodes'}
         </button>
       </div>
@@ -438,11 +451,11 @@ function KeptVotes({ votes, now, nameOf, labels, onCancel, onSendNow }: { votes:
               {v.status === 'waiting' && (
                 <span className="cvote-acts">
                   {v.releaseAt > now && (
-                    <button type="button" className="btn btn-s" onClick={() => onSendNow([v.id])}>
+                    <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={() => onSendNow([v.id])}>
                       Send now
                     </button>
                   )}
-                  <button type="button" className="btn btn-s" onClick={() => onCancel(v.id)}>
+                  <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={() => onCancel(v.id)}>
                     Cancel
                   </button>
                 </span>
@@ -452,7 +465,7 @@ function KeptVotes({ votes, now, nameOf, labels, onCancel, onSendNow }: { votes:
         })}
       </ul>
       {waiting.length > 1 && (
-        <button type="button" className="linkish small" onClick={() => onSendNow(waiting.map((v) => v.id))}>
+        <button type="button" className="linkish dh-btn dh-btn--link small" onClick={() => onSendNow(waiting.map((v) => v.id))}>
           Send all {waiting.length} now
         </button>
       )}

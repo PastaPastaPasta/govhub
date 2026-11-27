@@ -2,6 +2,9 @@ name: pages
 on:
   push:
     branches: [main]
+  # the build writes an entry page per proposal and name contest (scripts/prerender.mjs): rebuilt so new ones get theirs
+  schedule:
+    - cron: '23 */3 * * *'
   workflow_dispatch:
 permissions:
   contents: read
@@ -27,8 +30,9 @@ jobs:
         run: npm run build -w @govhub/web
         env:
           GOVHUB_BASE: ${{ steps.pages.outputs.base_path }}/
-      # SPA fallback: GitHub Pages serves 404.html for unknown paths, so deep links like /p/<name> load the app.
-      - run: cp apps/web/dist/index.html apps/web/dist/404.html
+          GOVHUB_SITE_URL: ${{ steps.pages.outputs.origin }}
+      # The build writes an entry page per route (title, description, share tags; HTTP 200), plus 404.html: GitHub Pages
+      # serves it for any other path, so a proposal or contest newer than the build still loads the app (with HTTP 404).
       - uses: actions/upload-pages-artifact@v3
         with:
           path: apps/web/dist

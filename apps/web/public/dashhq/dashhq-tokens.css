@@ -1,0 +1,332 @@
+/* dashhq family tokens 2.0. Vendor unchanged; override nothing here, map your own variables onto these.
+   Light is the default. Dark applies under prefers-color-scheme unless <html data-theme="light">,
+   and always under <html data-theme="dark">. dashhq-shell.js keeps data-theme set to the resolved theme.
+
+   The palette is Dash's own: Dash blue (#008DE4) is the one accent and the committing action, Dash navy is the
+   chrome (the bar and the footer, in both themes) and the ink. Nothing is green, teal or purple. "OK" is not a
+   colour: status colour marks the exception (a warning, a failure, real mainnet funds), never the normal state. */
+
+@font-face {
+  font-family: "Archivo";
+  src: url("fonts/archivo-latin-var.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400 700;
+  font-stretch: 75% 125%;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: light dark;
+
+  /* surfaces */
+  --dh-page: #F3F4F7;          /* page background: cool paper */
+  --dh-surface: #FFFFFF;       /* panels, cards, inputs */
+  --dh-sunken: #E9EBF0;        /* wells, table header, code */
+  --dh-track: #E2E5EC;         /* meter, progress and segmented-control tracks; in dark, a step above the surface, never a hole */
+  --dh-hover: rgba(10, 26, 63, .05);
+  --dh-raised: var(--dh-surface);
+  --dh-raised-hover: var(--dh-sunken);
+  --dh-raised-line: var(--dh-line-2);
+  --dh-chip: var(--dh-sunken);
+  --dh-chip-line: transparent;
+  --dh-disabled: var(--dh-sunken);
+
+  /* ink: Dash navy, not grey */
+  --dh-ink: #0A1A3F;           /* text */
+  --dh-ink-2: #435069;         /* secondary text, labels (AA on every surface, track and chip) */
+  --dh-ink-3: #6C7891;         /* disabled and decorative only, never for text a user must read */
+
+  /* lines: visible edges (1.6:1 on the surface in light, 1.5:1 in dark; contrast.test.mjs holds the floor) */
+  --dh-line: #C3CBDA;          /* hairlines, panel borders, table rules */
+  --dh-line-2: #78849C;        /* control borders (3:1 on surface and page) */
+
+  /* brand: Dash blue. Where you are, where you can go, and the one thing you commit to. */
+  --dh-brand: #008DE4;         /* fills and indicators (selected tab rule, mark, chart series) */
+  --dh-brand-ink: #0061AE;     /* links and brand-coloured text */
+  --dh-brand-fill: #006CC4;    /* a blue fill that carries white text: the primary button */
+  --dh-brand-soft: #E5F0FC;    /* selected rows, info pills */
+
+  /* action: the primary button is Dash blue with white text, in every product. The names stay for compatibility. */
+  --dh-act: var(--dh-brand-fill);
+  --dh-act-hover: #005DAA;
+  --dh-act-ink: #FFFFFF;
+
+  /* selection: the current tab's rule, a chosen card's ring, checked boxes (--dh-select, 3:1 on page and surface),
+     and selected or highlighted rows (--dh-select-soft). Dash blue, unless an app sets its accent below. */
+  --dh-select: var(--dh-brand);
+  --dh-select-soft: var(--dh-brand-soft);
+  /* the chosen segment of a segmented control: a clearly different fill (1.5:1 or more on the track) */
+  --dh-seg-on: #0A1A3F;
+  --dh-seg-on-ink: #FFFFFF;
+
+  /* chrome: the bar and the footer are Dash navy in both themes, so every product opens and closes the same way */
+  --dh-chrome: #0B1C4B;
+  --dh-chrome-raised: #15296A;  /* a control on the chrome */
+  --dh-chrome-ink: #FFFFFF;
+  --dh-chrome-ink-2: #B9C6E4;
+  --dh-chrome-line: #34477D;    /* hairlines on the chrome */
+  --dh-chrome-line-2: #7487BD;  /* control borders on the chrome (3:1) */
+  --dh-chrome-hover: rgba(255, 255, 255, .09);
+  --dh-chrome-accent: #5CB9F8;  /* the current section on the chrome */
+  --dh-chrome-real: #F2BE62;    /* the Mainnet dot on the chrome: real funds */
+
+  /* footer: one step off the page in both themes; the bar alone carries the navy */
+  --dh-foot: #EBEDF2;
+  --dh-foot-ink: #0A1A3F;
+  --dh-foot-ink-2: #3F4A5E;
+  --dh-foot-line: #C7CCD6;
+  --dh-foot-link: #0061AE;
+  --dh-foot-grid: transparent;
+
+  /* accent: an app's own colour (Forge ember, Pollr rose, Yappr sky), for its brand mark, selection and highlights,
+     inside that app only. Never the committing button, never text, and never borrowed by a core tool. An app turns
+     it on with one attribute, <html data-dh-accent="forge|pollr|yappr">; core tools leave it off. */
+  --dh-accent: var(--dh-brand);          /* the app's colour as a fill: its glyph, a highlight rule */
+  --dh-accent-ink: #FFFFFF;              /* text on an accent fill */
+  --dh-accent-forge: #F58A4F;  --dh-accent-forge-select: #C67040;  --dh-accent-forge-soft: #FDECE3;  /* ember */
+  --dh-accent-pollr: #C4446F;  --dh-accent-pollr-select: #B23F69;  --dh-accent-pollr-soft: #FBE8EF;  /* rose (was teal before 2.0) */
+  --dh-accent-yappr: #38BDF8;  --dh-accent-yappr-select: #2B90BC;  --dh-accent-yappr-soft: #DFF4FE;  /* sky */
+  --dh-shade-1: rgba(6, 14, 36, .10);   /* hover and press overlays on filled buttons */
+  --dh-shade-2: rgba(6, 14, 36, .18);
+
+  /* status: for the exception only. A state that is the same on every row gets no colour. */
+  --dh-good: var(--dh-ink);  --dh-good-soft: var(--dh-chip);             /* the normal state is not a colour: ink, with a tick */
+  --dh-warn: #8A5300;  --dh-warn-soft: #FBF0DA;                            /* amber-gold, not orange */
+  --dh-bad:  #B4302A;  --dh-bad-soft:  #FBE6E4;
+  --dh-info: var(--dh-brand-ink); --dh-info-soft: var(--dh-brand-soft);
+  --dh-real: var(--dh-warn);  --dh-real-soft: var(--dh-warn-soft);       /* real mainnet funds: caution, never "good" */
+  --dh-neutral: var(--dh-ink-2);  --dh-neutral-soft: var(--dh-chip);     /* a status that needs no colour */
+
+  /* the blueprint plate (hub map, architecture diagrams). Paper with blue linework in light, navy in dark. */
+  --dh-plate: #F6F8FC;
+  --dh-plate-edge: #C3CBDA;
+  --dh-plate-line: #0061AE;
+  --dh-plate-ink: #0A1A3F;
+  --dh-plate-ink-2: #435069;
+  --dh-plate-hair: rgba(0, 97, 174, .16);
+  --dh-mark-edge: transparent;  /* the mark gets a hairline edge on dark pages */
+
+  /* layers of the stack (hub map, architecture): navy for apps, Dash blue for the network, indigo for Platform and
+     the client side, grey for reference. Grounds, tiles and swatches only; always with the layer's name beside them. */
+  --dh-tier-apps: #0B1C4B;      --dh-tier-apps-ink: #FFFFFF;      --dh-tier-apps-soft: #E6EAF3;
+  --dh-tier-net: #006CC4;       --dh-tier-net-ink: #FFFFFF;       --dh-tier-net-soft: #E5F0FC;
+  --dh-tier-platform: #7C8CEC;  --dh-tier-platform-ink: #0A1A3F;  --dh-tier-platform-soft: #EDF0FD;
+  --dh-tier-ref: #C3CBDA;       --dh-tier-ref-ink: #0A1A3F;       --dh-tier-ref-soft: #EEF1F6;
+
+  /* categorical series (unordered sets: providers, countries, networks); --dh-ramp-* stays for ordered data.
+     Blue, orange, indigo, gold, rose: no green, teal or purple. */
+  --dh-cat-1: #2A78D6; --dh-cat-2: #DD5F2B; --dh-cat-3: #4F48C9; --dh-cat-4: #B07D00; --dh-cat-5: #D2507F;
+
+  /* chart ramp for ordered categories (versions, epochs): 1 = newest or largest. Unordered sets: top 4 + "Other" in --dh-line-2. */
+  --dh-ramp-1: #005A96; --dh-ramp-2: #0080D0; --dh-ramp-3: #39A2E8; --dh-ramp-4: #86C4F0; --dh-ramp-5: #C2E0F7;
+
+  /* flow: what moves between layers (funding paths, sequence arrows, proof paths). The one warm accent. */
+  --dh-flow: #B26A00;
+  /* a tile nested in a card: a step away from the card's own fill */
+  --dh-inset: var(--dh-page);
+
+  --dh-focus: #0061AE;
+  --dh-shadow-pop: 0 12px 32px -14px rgba(6, 14, 36, .38), 0 0 0 1px var(--dh-line);
+  --dh-shadow-card: 0 1px 2px rgba(6, 14, 36, .05);
+
+  /* type: nothing a user must read or act on is set below --dh-fs-xs (13px) */
+  --dh-font: "Archivo", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --dh-mono: ui-monospace, "SF Mono", "Cascadia Mono", "Segoe UI Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --dh-fs-xs: 13px;            /* pills, footnotes: the floor */
+  --dh-fs-sm: 14px;            /* labels, captions, table headers */
+  --dh-fs-ui: 15px;            /* controls, tables, dense UI */
+  --dh-fs-body: 16px;          /* body */
+  --dh-fs-lead: 18px;          /* intro paragraph under a page title */
+  --dh-fs-h3: 18px;
+  --dh-fs-h2: 22px;
+  --dh-fs-h1: 30px;
+  --dh-fs-display: clamp(30px, 4.2vw, 46px);
+  --dh-fs-stat: 30px;
+  --dh-fs-code: 13px;
+  --dh-lh-body: 1.5;
+  --dh-lh-head: 1.2;
+  --dh-lh-display: 1.06;
+  --dh-w-body: 400;
+  --dh-w-ui: 520;
+  --dh-w-strong: 620;
+  --dh-w-head: 660;
+  --dh-stretch-display: 116%;
+  --dh-stretch-head: 110%;
+  --dh-stretch-stat: 108%;
+  --dh-stretch-dense: 100%;
+
+  /* space (4px base) */
+  --dh-1: 4px;  --dh-2: 8px;  --dh-3: 12px; --dh-4: 16px;
+  --dh-5: 24px; --dh-6: 32px; --dh-7: 48px; --dh-8: 64px;
+  --dh-gutter: clamp(16px, 4vw, 40px);
+  --dh-max: 1200px;            /* the bar's row and .dh-container: border-box, so content starts one gutter in */
+  --dh-w-narrow: 760px;        /* forms and reading columns, left-aligned inside the container */
+
+  /* shape */
+  --dh-r1: 3px;   /* pills, kbd */
+  --dh-r2: 6px;   /* buttons, inputs, segmented controls */
+  --dh-r3: 10px;  /* panels, cards, popovers */
+
+  /* controls: one height scale; touch screens step every size up */
+  --dh-ctl-h-sm: 28px;
+  --dh-ctl-h: 34px;
+  --dh-ctl-h-lg: 42px;
+  --dh-bar-h: 52px;
+
+  /* focus: one ring for everything. --dh-ring-shadow is the same ring as a box-shadow, for frameworks
+     that draw focus with shadows (Chakra's shadows.outline). */
+  --dh-ring-w: 2px;
+  --dh-ring-offset: 2px;
+  --dh-ring-shadow: 0 0 0 2px var(--dh-surface), 0 0 0 4px var(--dh-focus);
+
+  /* motion */
+  --dh-ease: cubic-bezier(.2, .7, .2, 1);
+  --dh-dur-1: 90ms;
+  --dh-dur-2: 160ms;
+}
+
+@media (pointer: coarse) {
+  :root { --dh-ctl-h-sm: 40px; --dh-ctl-h: 42px; --dh-ctl-h-lg: 48px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --dh-dur-1: 0ms; --dh-dur-2: 0ms; }
+}
+
+/* An app's accent: <html data-dh-accent="forge|pollr|yappr">. The shades follow the theme by themselves. */
+:root[data-dh-accent="forge"] { --dh-accent: var(--dh-accent-forge); --dh-accent-ink: #0A1A3F; --dh-select: var(--dh-accent-forge-select); --dh-select-soft: var(--dh-accent-forge-soft); }
+:root[data-dh-accent="pollr"] { --dh-accent: var(--dh-accent-pollr); --dh-accent-ink: #FFFFFF; --dh-select: var(--dh-accent-pollr-select); --dh-select-soft: var(--dh-accent-pollr-soft); }
+:root[data-dh-accent="yappr"] { --dh-accent: var(--dh-accent-yappr); --dh-accent-ink: #0A1A3F; --dh-select: var(--dh-accent-yappr-select); --dh-select-soft: var(--dh-accent-yappr-soft); }
+
+:root[data-theme="light"] { color-scheme: light; }
+
+/* The dark set is written twice: once for the system setting, once for an explicit choice. Keep them identical
+   (contrast.test.mjs fails if they drift). */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --dh-page: #0A0B0D;
+    --dh-surface: #222428;
+    --dh-sunken: #050506;
+    --dh-track: #30333A;
+    --dh-raised: #2C2F35;
+    --dh-raised-hover: #35383F;
+    --dh-raised-line: #61656E;
+    --dh-chip: var(--dh-raised);
+    --dh-chip-line: var(--dh-line);
+    --dh-disabled: var(--dh-surface);
+    --dh-hover: rgba(255, 255, 255, .05);
+    --dh-ink: #F3F4F6;
+    --dh-ink-2: #AEB2BA;
+    --dh-ink-3: #767A83;
+    --dh-line: #474A51;
+    --dh-line-2: #71757E;
+    --dh-brand: #1C93EE;
+    --dh-brand-ink: #45A8F5;
+    --dh-brand-fill: #0A6FCF;
+    --dh-brand-soft: #0F2840;
+    --dh-act-hover: #085FB3;
+    --dh-seg-on: #2C5A8C;
+    --dh-seg-on-ink: #FFFFFF;
+    --dh-chrome: #131519;
+    --dh-foot: #111214;
+    --dh-foot-ink: #F3F4F6;
+    --dh-foot-ink-2: #AEB2BA;
+    --dh-foot-line: #26282D;
+    --dh-foot-link: #45A8F5;
+    --dh-foot-grid: transparent;
+    --dh-flow: #F0B44C;
+    --dh-chrome-raised: #1F2227;
+    --dh-chrome-line: #34383F;
+    --dh-chrome-ink-2: #B4B8C0;
+    --dh-chrome-line-2: #71757E;
+    --dh-chrome-accent: #45A8F5;
+    --dh-chrome-hover: rgba(255, 255, 255, .07);
+    --dh-warn: #F2BE62;  --dh-warn-soft: #2B2314;
+    --dh-bad:  #F48A80;  --dh-bad-soft:  #3A1818;
+    --dh-plate: #0E2050;
+    --dh-plate-edge: #2B4683;
+    --dh-plate-line: #A6D3F7;
+    --dh-plate-ink: #E6F0FC;
+    --dh-plate-ink-2: #A3B7D8;
+    --dh-plate-hair: rgba(166, 211, 247, .2);
+    --dh-mark-edge: rgba(125, 193, 247, .38);
+    --dh-tier-apps: #C2D2F2;      --dh-tier-apps-ink: #0A1A3F;      --dh-tier-apps-soft: #1C2233;
+    --dh-tier-net: #2E9BF0;       --dh-tier-net-ink: #06122B;       --dh-tier-net-soft: #102846;
+    --dh-tier-platform: #A7B3F7;  --dh-tier-platform-ink: #0A1A3F;  --dh-tier-platform-soft: #1E2347;
+    --dh-tier-ref: #5B6476;       --dh-tier-ref-ink: #EDF0F5;       --dh-tier-ref-soft: #22262F;
+    --dh-cat-1: #4C93EC; --dh-cat-2: #EB7746; --dh-cat-3: #8C85F2; --dh-cat-4: #D9A21C; --dh-cat-5: #E46F9A;
+    --dh-ramp-1: #A9D9FA; --dh-ramp-2: #62B8F3; --dh-ramp-3: #2B90DA; --dh-ramp-4: #1F6CA3; --dh-ramp-5: #1A4A6E;
+    --dh-accent-forge-select: #F58A4F; --dh-accent-forge-soft: #363131;
+    --dh-accent-pollr-select: #E46F9A; --dh-accent-pollr-soft: #3A1A27;
+    --dh-accent-yappr-select: #38BDF8; --dh-accent-yappr-soft: #143B4F;
+    --dh-focus: #6BB8F6;
+    --dh-shade-1: rgba(255, 255, 255, .08);
+    --dh-shade-2: rgba(0, 0, 0, .18);
+    --dh-shadow-pop: 0 14px 36px -12px rgba(0, 0, 0, .7), 0 0 0 1px var(--dh-line);
+    --dh-shadow-card: none;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --dh-page: #0A0B0D;
+  --dh-surface: #222428;
+  --dh-sunken: #050506;
+  --dh-track: #30333A;
+  --dh-raised: #2C2F35;
+  --dh-raised-hover: #35383F;
+  --dh-raised-line: #61656E;
+  --dh-chip: var(--dh-raised);
+  --dh-chip-line: var(--dh-line);
+  --dh-disabled: var(--dh-surface);
+  --dh-hover: rgba(255, 255, 255, .05);
+  --dh-ink: #F3F4F6;
+  --dh-ink-2: #AEB2BA;
+  --dh-ink-3: #767A83;
+  --dh-line: #474A51;
+  --dh-line-2: #71757E;
+  --dh-brand: #1C93EE;
+  --dh-brand-ink: #45A8F5;
+  --dh-brand-fill: #0A6FCF;
+  --dh-brand-soft: #0F2840;
+  --dh-act-hover: #085FB3;
+  --dh-seg-on: #2C5A8C;
+  --dh-seg-on-ink: #FFFFFF;
+  --dh-chrome: #131519;
+  --dh-foot: #111214;
+  --dh-foot-ink: #F3F4F6;
+  --dh-foot-ink-2: #AEB2BA;
+  --dh-foot-line: #26282D;
+  --dh-foot-link: #45A8F5;
+  --dh-foot-grid: transparent;
+  --dh-flow: #F0B44C;
+  --dh-chrome-raised: #1F2227;
+  --dh-chrome-line: #34383F;
+  --dh-chrome-ink-2: #B4B8C0;
+  --dh-chrome-line-2: #71757E;
+  --dh-chrome-accent: #45A8F5;
+  --dh-chrome-hover: rgba(255, 255, 255, .07);
+  --dh-warn: #F2BE62;  --dh-warn-soft: #2B2314;
+  --dh-bad:  #F48A80;  --dh-bad-soft:  #3A1818;
+  --dh-plate: #0E2050;
+  --dh-plate-edge: #2B4683;
+  --dh-plate-line: #A6D3F7;
+  --dh-plate-ink: #E6F0FC;
+  --dh-plate-ink-2: #A3B7D8;
+  --dh-plate-hair: rgba(166, 211, 247, .2);
+  --dh-mark-edge: rgba(125, 193, 247, .38);
+  --dh-tier-apps: #C2D2F2;      --dh-tier-apps-ink: #0A1A3F;      --dh-tier-apps-soft: #1C2233;
+  --dh-tier-net: #2E9BF0;       --dh-tier-net-ink: #06122B;       --dh-tier-net-soft: #102846;
+  --dh-tier-platform: #A7B3F7;  --dh-tier-platform-ink: #0A1A3F;  --dh-tier-platform-soft: #1E2347;
+  --dh-tier-ref: #5B6476;       --dh-tier-ref-ink: #EDF0F5;       --dh-tier-ref-soft: #22262F;
+  --dh-cat-1: #4C93EC; --dh-cat-2: #EB7746; --dh-cat-3: #8C85F2; --dh-cat-4: #D9A21C; --dh-cat-5: #E46F9A;
+  --dh-ramp-1: #A9D9FA; --dh-ramp-2: #62B8F3; --dh-ramp-3: #2B90DA; --dh-ramp-4: #1F6CA3; --dh-ramp-5: #1A4A6E;
+  --dh-accent-forge-select: #F58A4F; --dh-accent-forge-soft: #363131;
+  --dh-accent-pollr-select: #E46F9A; --dh-accent-pollr-soft: #3A1A27;
+  --dh-accent-yappr-select: #38BDF8; --dh-accent-yappr-soft: #143B4F;
+  --dh-focus: #6BB8F6;
+  --dh-shade-1: rgba(255, 255, 255, .08);
+  --dh-shade-2: rgba(0, 0, 0, .18);
+  --dh-shadow-pop: 0 14px 36px -12px rgba(0, 0, 0, .7), 0 0 0 1px var(--dh-line);
+  --dh-shadow-card: none;
+}

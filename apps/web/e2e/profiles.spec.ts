@@ -18,7 +18,8 @@ test.describe('failed verification is hidden (fixtures)', () => {
     await expect(page.locator('article.prow[data-check="pending"]')).toHaveCount(0, { timeout: 30_000 });
     // 21 are listed; one of them starts paying at a later superblock, so it is not among the proposals the next budget is counted against
     await expect(page.locator('.budget-facts')).toContainText('of 20 proposals');
-    await expect(page.locator('.budget-facts')).toContainText('plus 1 that starts paying at a later superblock');
+    await expect(page.getByTestId('budget-in')).toContainText('of 20 proposals');
+    await expect(page.getByTestId('budget-in')).toContainText('Plus 1 that starts later');
     await expect(page.getByTestId('card-starts-later')).toHaveCount(1);
     await expect(page.getByRole('link', { name: /^Active/ }).locator('.count')).toHaveText('21');
     await expect(page.locator('article.prow', { hasText: 'govhub-fixture' })).toHaveCount(0);
@@ -43,7 +44,7 @@ test.describe('failed verification is hidden (fixtures)', () => {
 
   test('a hidden proposal opened directly is shown under a failed-verification banner', async ({ page }) => {
     await gotoFixtures(page, '/p/govhub-fixture-tampered');
-    await expect(page.getByRole('heading', { level: 1, name: 'govhub-fixture-tampered' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Govhub fixture tampered' })).toBeVisible();
     await expect(page.getByTestId('invalid-banner')).toContainText('This proposal failed verification: Displayed fields: differ from the hashed data: url');
     // The published (tampered) URL is not linked.
     await expect(page.locator('a.ext')).toHaveCount(0);
@@ -66,22 +67,24 @@ test.describe('failed verification is hidden (fixtures)', () => {
 });
 
 test.describe('network profiles', () => {
-  test('switching profile is one action; the header always names the active profile', async ({ page, context }) => {
+  test('switching profile is one action; the shell and settings name the active network', async ({ page, context }) => {
     await offline(context);
     const errors = await watchPage(page);
     await page.goto('/settings?fixtures=0');
-    const label = page.getByTestId('profile-label');
+    const label = page.getByTestId('profile-description');
     await expect(label).toContainText('Mainnet');
-    const mainnet = page.getByRole('radio', { name: /Mainnet/ });
+    await expect(page.locator('dashhq-bar')).toHaveAttribute('network', 'mainnet');
+    const mainnet = page.getByRole('radio', { name: 'Mainnet', exact: true });
     await expect(mainnet).toBeChecked();
     await expect(page.locator('.profile-switch')).not.toContainText('not yet deployed');
 
-    await page.locator('.profile-switch label', { hasText: 'Testnet' }).click();
-    await expect(page.getByRole('radio', { name: 'Testnet' })).toBeChecked();
+    await page.locator('.profile-switch').getByText('Testnet', { exact: true }).click();
+    await expect(page.getByRole('radio', { name: 'Testnet', exact: true })).toBeChecked();
     // picking is not switching: the switch waits for the confirmation (D-058)
     await expect(label).toContainText('Mainnet');
     await page.getByRole('button', { name: 'Switch to Testnet' }).click();
     await expect(label).toContainText('Testnet');
+    await expect(page.locator('dashhq-bar')).toHaveAttribute('network', 'testnet');
     await expect(label).not.toContainText('Dev');
     await expect(page.getByTestId('profile-description')).toContainText('Core testnet, Platform testnet');
     // Saved as the profile with no overrides (rebuilt from the profile on load).
@@ -110,12 +113,12 @@ test.describe('network profiles', () => {
     await offline(context);
     await page.goto('/settings?fixtures=1');
     await page.getByText('Advanced: choose your own servers').click();
-    await page.getByLabel('Price feed URL (JSON with dash.usd; empty turns it off)').fill('https://price.example.org/dash');
+    await page.getByLabel(/^Price feed URL/).fill('https://price.example.org/dash');
     await page.getByRole('button', { name: 'Save settings' }).click();
-    await expect(page.getByTestId('profile-label').locator('.chip-custom')).toBeVisible();
+    await expect(page.locator('#network .chip-custom')).toBeVisible();
     await expect(page.locator('fieldset', { hasText: 'Relays and price feed' }).locator('.chip-custom')).toBeVisible();
     await page.getByRole('button', { name: "Use the profile's settings" }).click();
-    await expect(page.getByTestId('profile-label').locator('.chip-custom')).toHaveCount(0);
+    await expect(page.locator('#network .chip-custom')).toHaveCount(0);
   });
 
   test('version 1 settings that switched Core to testnet migrate to the Testnet profile', async ({ page, context }) => {
@@ -138,8 +141,8 @@ test.describe('network profiles', () => {
         }),
       );
     });
-    await page.goto('/?fixtures=0');
-    await expect(page.getByTestId('profile-label')).toContainText('Testnet');
+    await page.goto('/?fixtures=0&network=testnet');
+    await expect(page.locator('dashhq-bar')).toHaveAttribute('network', 'testnet');
     const keys = await page.evaluate(() => ({ v1: localStorage.getItem('govhub.registry.v1'), v2: JSON.parse(localStorage.getItem('govhub.registry.v2') ?? 'null') }));
     expect(keys.v1).toBeNull();
     expect(keys.v2).toMatchObject({ version: 2, profile: 'testnet' });

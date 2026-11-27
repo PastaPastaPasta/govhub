@@ -26,7 +26,7 @@ test('@live reads the gov contract with proofs and verifies a collateral over ma
   // documents on testnet carry a "do not match" chip and are skipped.
   const real = cards.filter({ hasNot: page.locator('.chip-bad, .tag-fail') });
   if ((await real.count()) > 0) {
-    await real.first().locator('h2 a').click();
+    await real.first().locator('.prow-title a').click();
     const drawer = await openDrawer(page);
     const collateral = drawer.getByTestId('collateral-check');
     await expect(collateral.locator('[data-verdict]')).toBeAttached({ timeout: 90_000 });
@@ -93,6 +93,7 @@ test('@live Dev profile: spike proposals are hidden, counts and remaining paymen
 
   await page.getByRole('link', { name: 'Past', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Past proposals' })).toBeVisible();
+  await page.getByTestId('view-proposals').click();
   const pastToggle = page.getByTestId('toggle-failed');
   await expect(pastToggle).toBeVisible({ timeout: 120_000 });
   await expect(page.locator('table.past tr', { hasText: 'govhub-claim-test' })).toHaveCount(0);
@@ -166,7 +167,7 @@ test('@live voting keys of recorded votes are confirmed by the masternode list t
   );
   const errors = await watchPage(page);
   await page.goto(`/p/h/${GROWTH}?fixtures=0`);
-  await expect(page.getByRole('heading', { level: 1, name: 'dash-growth-q4-2026' })).toBeVisible({ timeout: 120_000 });
+  await expect(page.getByTestId('p-chain-name')).toContainText('dash-growth-q4-2026', { timeout: 120_000 });
 
   // The recount runs on its own once the tallies are read; it targets the Platform tally's height.
   await expect(page.getByTestId('p-votes')).toContainText(/\d+ yes/, { timeout: 120_000 });

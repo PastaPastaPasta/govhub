@@ -4,7 +4,7 @@
 // as an accepted vote.
 import { duffsToDash, GOVERNANCE_FEE_CONFIRMATIONS, gobjectSubmitCommand } from '@govhub/verify';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from '../ui/Link.tsx';
 import { useApp } from '../app/context.tsx';
 import { formatInt, shortHash } from '../lib/format.ts';
 import { CopyButton } from '../ui/vote/common.tsx';
@@ -98,7 +98,7 @@ export function SubmitStep({ draft, commit, services }: PayProps) {
           Copy <CopyButton text={submitCmd} label="Copy the gobject submit command" />
         </span>
         {!sub?.submittedAt && (
-          <button type="button" className="btn btn-s" onClick={() => commit(markManualSubmit)} data-testid="p-manual-done">
+          <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={() => commit(markManualSubmit)} data-testid="p-manual-done">
             I submitted it with Dash Core
           </button>
         )}
@@ -131,8 +131,8 @@ export function SubmitStep({ draft, commit, services }: PayProps) {
         <Stage status={seenStatus} title="Seen by the network" testId="p-stage-seen">
           <p className="small muted">{sub?.seenAt ? 'Another Dash node has it.' : 'Checked on another Dash node.'}</p>
         </Stage>
-        <Stage status={pubStatus} title="On govhub" testId="p-stage-published">
-          <p className="small muted">{sub?.publishedAt ? 'Listed on govhub.' : `govhub lists it once it has ${GOVERNANCE_FEE_CONFIRMATIONS} confirmations.`}</p>
+        <Stage status={pubStatus} title="On Governance" testId="p-stage-published">
+          <p className="small muted">{sub?.publishedAt ? 'Listed on Governance.' : `Governance lists it once it has ${GOVERNANCE_FEE_CONFIRMATIONS} confirmations.`}</p>
         </Stage>
       </ol>
 
@@ -145,7 +145,7 @@ export function SubmitStep({ draft, commit, services }: PayProps) {
           ))}
           <button
             type="button"
-            className="btn btn-s"
+            className="btn dh-btn btn-s dh-btn--sm"
             onClick={() => {
               commit(resetRelays);
               setNonce((x) => x + 1);
@@ -172,7 +172,7 @@ export function SubmitStep({ draft, commit, services }: PayProps) {
       )}
 
       {!done && (
-        <details className="pw-details" data-testid="p-help">
+        <details className="pw-details dh-disclosure" data-testid="p-help">
           <summary>If something goes wrong</summary>
           <ul className="small pw-help">
             <li>
@@ -184,14 +184,14 @@ export function SubmitStep({ draft, commit, services }: PayProps) {
             </li>
             <li>
               <b>Dash Core refuses the proposal.</b> The reason is shown above. A refusal because the fee is not confirmed yet ("rejected -- try again later") clears itself;
-              govhub checks the data against Core's rules before you pay, so a data refusal should not happen. If it does, keep the backup and ask for help in the Dash forum: the fee is spent.
+              Governance checks the data against Core's rules before you pay, so a data refusal should not happen. If it does, keep the backup and ask for help in the Dash forum: the fee is spent.
             </li>
             <li>
               <b>You closed the page.</b> The relay submits it anyway. Come back to Create a proposal, or restore the backup file, to follow it.
             </li>
           </ul>
           {!(allFailed || stuck) && (
-            <details className="pw-sub" data-testid="p-core-fallback">
+            <details className="pw-sub dh-disclosure" data-testid="p-core-fallback">
               <summary>Submit it yourself with Dash Core</summary>
               {coreSubmit}
             </details>
@@ -204,7 +204,7 @@ export function SubmitStep({ draft, commit, services }: PayProps) {
         </details>
       )}
 
-      <details className="pw-details" data-testid="p-submit-details">
+      <details className="pw-details dh-disclosure" data-testid="p-submit-details">
         <summary>Details</summary>
         <dl className="kv small">
           <div>
@@ -256,7 +256,7 @@ function NextNote({ sub, holder, allFailed, stuck }: { sub: DraftSubmission | un
     tone = 'ok';
     text = sub?.submittedAt || holder?.sent
       ? `Nothing more to do: the network has your proposal and makes it live at ${GOVERNANCE_FEE_CONFIRMATIONS} confirmations. You can close this page.`
-      : 'Nothing more to do: a govhub relay has your proposal and sends it to the network by itself. It goes live in about 15 minutes. You can close this page.';
+      : 'Nothing more to do: a Governance relay has your proposal and sends it to the network by itself. It goes live in about 15 minutes. You can close this page.';
   } else if (holder?.legacy) {
     tone = 'act';
     text = 'Keep this page open until the proposal is sent to the network (a few minutes).';
@@ -278,7 +278,7 @@ function BackupLink({ draft, commit, label = 'Download the updated backup' }: Pi
     <span className="pw-backup-link">
       <button
         type="button"
-        className="btn btn-s"
+        className="btn dh-btn btn-s dh-btn--sm"
         data-testid="p-backup-download"
         onClick={() => {
           downloadBackup(draft);
@@ -333,13 +333,13 @@ function Live({ draft }: { draft: ProposalDraft }) {
       <div className="vwin-body">
         <h3 id="pw-live-title">Your proposal is live</h3>
         <p className="vwin-sub">
-          <b>{lock.name}</b> is on the network and on govhub. Masternodes can vote on it now.
+          <b>{lock.name}</b> is on the network and in Governance. Masternodes can vote on it now.
         </p>
         <div className="vwin-actions">
-          <Link className="btn btn-s btn-primary" to={`/p/h/${lock.govHash}`} data-testid="p-view">
-            View it on govhub
+          <Link className="btn dh-btn btn-s dh-btn--sm btn-primary dh-btn--primary" to={`/p/h/${lock.govHash}`} data-testid="p-view">
+            View it in Governance
           </Link>
-          <Link className="btn btn-s" to={`/p/h/${lock.govHash}#ownership`} data-testid="p-claim">
+          <Link className="btn dh-btn btn-s dh-btn--sm" to={`/p/h/${lock.govHash}#ownership`} data-testid="p-claim">
             Write the description
           </Link>
         </div>

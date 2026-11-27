@@ -12,7 +12,7 @@ import type { Cycle, Proposal, Tally } from './types.ts';
 type EvoModule = typeof import('@dashevo/evo-sdk');
 export type Sdk = InstanceType<EvoModule['EvoSDK']>;
 
-// A few at most: the profiles' two networks (a "not found" page asks the other one, see data/elsewhere.ts) and a custom override.
+// A few at most: the profiles' two networks (a "not found" page asks the other one, see app/otherNetwork.tsx) and a custom override.
 const sdks = new Map<string, Promise<Sdk>>();
 const MAX_SDKS = 3;
 
@@ -20,11 +20,11 @@ const sdkKey = (r: Registry) => JSON.stringify([r.platformNetwork, r.platform]);
 
 export function getSdk(r: Registry): Promise<Sdk> {
   const key = sdkKey(r);
-  const have = sdks.get(key);
-  if (have) {
-    sdks.delete(key);
-    sdks.set(key, have);
-    return have;
+  const hit = sdks.get(key);
+  if (hit) {
+    sdks.delete(key); // most recently used last
+    sdks.set(key, hit);
+    return hit;
   }
   const sdk = (async () => {
     const mod: EvoModule = await import('@dashevo/evo-sdk');
@@ -39,7 +39,7 @@ export function getSdk(r: Registry): Promise<Sdk> {
     return s;
   })();
   sdks.set(key, sdk);
-  if (sdks.size > MAX_SDKS) sdks.delete(sdks.keys().next().value!);
+  while (sdks.size > MAX_SDKS) sdks.delete(sdks.keys().next().value!);
   sdk.catch(() => {
     if (sdks.get(key) === sdk) sdks.delete(key);
   });

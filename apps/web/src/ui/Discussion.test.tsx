@@ -154,14 +154,14 @@ describe('on a username contest', () => {
     expect(r.el.textContent).toContain('Showing the contenders and masternode owners.');
     expect([...r.el.querySelectorAll('.chip-owner')].map((x) => x.textContent)).toEqual(['contender', 'contender']);
     expect(r.el.textContent).not.toContain('proposal owner');
-    expect(r.el.querySelector('label[title]')!.getAttribute('title')).toMatch(/plus the contenders on their own contest$/);
+    expect(r.el.querySelector('[data-testid="comment-filter"] button[title]')!.getAttribute('title')).toMatch(/plus the contenders on their own contest$/);
     await r.unmount();
   });
 
   it('keeps the proposal tooltip word for word', async () => {
     const r = await mount();
     await flush();
-    expect(r.el.querySelector('label[title]')!.getAttribute('title')).toBe('Authors with an MN badge from an issuer you trust (Settings), plus the proposal owner on their own proposal');
+    expect(r.el.querySelector('[data-testid="comment-filter"] button[title]')!.getAttribute('title')).toBe('Authors with an MN badge from an issuer you trust (Settings), plus the proposal owner on their own proposal');
     await r.unmount();
   });
 });

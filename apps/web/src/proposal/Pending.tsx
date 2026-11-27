@@ -41,7 +41,7 @@ export function PendingProposals() {
   return (
     <ul className="pending-list" data-testid="pending-proposals">
       {pending.map((d) => (
-        <li key={d.id} className="notice-box small">
+        <li key={d.id} className="notice-box dh-notice dh-notice--info small">
           <b>{d.lock!.name}</b>{' '}
           {draftStage(d) === 'done' ? 'is live; it appears in this list in a moment.' : 'is on its way: it appears here once the network makes it live (about 15 minutes after payment).'}{' '}
           <Link to={`/create?d=${d.id}`}>Follow it</Link>

@@ -1,6 +1,7 @@
 // The way into Settings, Recover funds, from the funding screens (kept apart from the tool so the sign-in sheet stays small).
 import type { ReactNode } from 'react';
-import { Link, useInRouterContext } from 'react-router-dom';
+import { useInRouterContext } from 'react-router-dom';
+import { Link } from '../ui/Link.tsx';
 
 export const RECOVER_PATH = '/settings#recover';
 

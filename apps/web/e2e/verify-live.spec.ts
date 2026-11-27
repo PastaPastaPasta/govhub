@@ -41,7 +41,7 @@ test('@live a deep collateral: height, confirmations, ChainLock, threshold and c
 
   // ---- cold: empty IndexedDB, ~45,000 headers to download, every older masternode registration to prove
   const cold = await openAndVerify(page, DCG);
-  await expect(page.getByRole('heading', { level: 1, name: 'DCG-Operations-Aug-Nov-26' })).toBeVisible();
+  await expect(page.getByTestId('p-chain-name')).toContainText('DCG-Operations-Aug-Nov-26 is its name on the network');
   await expect(cold.collateral.locator('[data-verdict]')).toHaveAttribute('data-verdict', 'ok');
   for (const id of ['block', 'height', 'confirmations', 'chainlock']) {
     const step = cold.collateral.locator(`[data-step="${id}"]`);

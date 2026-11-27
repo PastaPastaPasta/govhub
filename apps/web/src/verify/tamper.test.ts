@@ -164,7 +164,7 @@ describe('D-007 / D-002: a tampered tally or vote set reads as a mismatch, never
     expect(voteVerdict(d.runs).level).toBe('mismatch');
   });
 
-  it('the set "in force" at the tally\'s height (the bridge\'s newest record below it, asked for that height) is compared: a tamper there is a mismatch', () => {
+  it('the set "in force" at the tally\'s height (the governance data service\'s newest record below it, asked for that height) is compared: a tamper there is a mismatch', () => {
     // the bridge stores a tally record only when it changes: asked for block H it serves the record of block H - 8, the set in force at H
     const tampered = { ...tally, yesWeighted: tally.yesWeighted + 100 };
     const run = (asked: number | null): VotesDone => ({
@@ -186,7 +186,7 @@ describe('D-007 / D-002: a tampered tally or vote set reads as a mismatch, never
     expect(comp(done([{ name: PLATFORM_TARGET, tally }], dropped))).toMatchObject({ status: 'error', mismatch: true });
   });
 
-  it('D-002: a bridge that withholds votes and serves a live tally matching them is not verified against the Platform tally', () => {
+  it('D-002: a data service that withholds votes and serves a live tally matching them is not verified against the Platform tally', () => {
     const dropped = base.votes.filter((v) => v.outcome !== 2).concat(base.votes.filter((v) => v.outcome === 2).slice(5));
     const consistent = verifyVotes({ ...base, votes: dropped, targets: [] });
     const lie: Tally = { ...tally, asOfHeight: tally.asOfHeight + 20, yesWeighted: consistent.weighted.yes, noWeighted: consistent.weighted.no, abstainWeighted: consistent.weighted.abstain, yesCount: consistent.unweighted.yes, noCount: consistent.unweighted.no, abstainCount: consistent.unweighted.abstain, voteSetHash: consistent.voteSetHash };
@@ -206,7 +206,7 @@ describe('D-007 / D-002: a tampered tally or vote set reads as a mismatch, never
     expect(comp(d, { name: BRIDGE_TARGET, tally: lie }).status).not.toBe('proven');
   });
 
-  it('a bridge adds a masternode the proven list lacks, with a vote it signed, and a tally that counts it: excluded here, never verified or counted', () => {
+  it('a data service adds a masternode the proven list lacks, with a vote it signed, and a tally that counts it: excluded here, never verified or counted', () => {
     const key = secp256k1.utils.randomSecretKey();
     const fake = { proTxHash: 'fa'.repeat(32), collateralTxid: 'fb'.repeat(32), collateralIndex: 0, votingAddress: p2pkhAddress(hash160(secp256k1.getPublicKey(key, true)), 'mainnet'), type: 'evo' as const, valid: true };
     const fields = { collateralTxid: fake.collateralTxid, collateralIndex: 0, govHashDisplay: p.govHash, signal: 1, outcome: 1, time: snap.now - 60 };
@@ -312,7 +312,7 @@ describe('packed talliesSet: a tampered, missing or re-dated entry is never veri
     expect(comp(shown, d)).toMatchObject({ status: 'error', mismatch: true });
   });
 
-  it('wrong asOfHeight: dated where the bridge has no record, the live set it falls back to proves nothing once the votes changed', () => {
+  it('wrong asOfHeight: dated where the governance data service has no record, the live set it falls back to proves nothing once the votes changed', () => {
     const shown = shownFrom(page(tally.asOfHeight + 5000, [tally, ...others]))!;
     const changed = base.votes.filter((v) => v.outcome !== 2).concat(base.votes.filter((v) => v.outcome === 2).slice(5));
     // 404 at that height: the worker falls back to the live set (asked = null), whose recount differs from the entry
@@ -422,8 +422,8 @@ describe('D-013: payments read only the proposal\'s window, at most MAX_SUPERBLO
   });
 });
 
-describe('D-014: governance parameters are consensus constants, never a bridge\'s report', () => {
-  it('a bridge reporting other getgovernanceinfo values does not change them', async () => {
+describe('D-014: governance parameters are consensus constants, never a data service\'s report', () => {
+  it('a data service reporting other getgovernanceinfo values does not change them', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
       new Response(JSON.stringify({ network: 'testnet', governance: { superblockcycle: 8000, superblockmaturitywindow: 100, governanceminquorum: 500 } }), { status: 200 }),
     );

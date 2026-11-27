@@ -114,7 +114,7 @@ export function ResultCount({ active = true, shown, total, what, onClear }: { ac
       {active && onClear && (
         <>
           {' · '}
-          <button type="button" className="linkish" onClick={onClear} data-testid="list-clear">
+          <button type="button" className="linkish dh-btn dh-btn--link" onClick={onClear} data-testid="list-clear">
             Clear filters
           </button>
         </>
@@ -125,9 +125,9 @@ export function ResultCount({ active = true, shown, total, what, onClear }: { ac
 
 export function NoMatches({ query, onClear }: { query: string; onClear(): void }) {
   return (
-    <div className="empty" data-testid="list-no-matches">
+    <div className="empty dh-empty" data-testid="list-no-matches">
       <p>{query.trim() ? <>No proposals match “{query.trim()}” with these filters.</> : 'No proposals match these filters.'}</p>
-      <button type="button" className="btn btn-quiet" onClick={onClear}>
+      <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet" onClick={onClear}>
         Clear filters
       </button>
     </div>

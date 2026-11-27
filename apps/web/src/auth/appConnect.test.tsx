@@ -90,7 +90,7 @@ describe('the sign-in sheet', () => {
   it('flag on: wallet first, passkey second, the rest folded away, and no phrase warning until a phrase is asked for', async () => {
     auth.value = { ...auth.value, appConnect: true };
     const r = await render(<AuthSheet />);
-    expect(r.el.querySelector('#sheet-title')?.textContent).toBe('Sign in to govhub');
+    expect(r.el.querySelector('#sheet-title')?.textContent).toBe('Sign in to Governance');
     const main = [...r.el.querySelectorAll('.signin-main button')].map((b) => b.textContent);
     expect(main).toEqual(['Sign in with Dash Wallet', 'Sign in with a passkey']);
     expect(r.el.querySelector('[data-testid="seed-warning"]')).toBeNull();
@@ -114,7 +114,7 @@ describe('the sign-in sheet', () => {
     expect(r.el.querySelector('.sheet-view .sheet-actions button[type="submit"]')?.textContent).toBe('Sign in');
     await click(button(r.el, /Back to sign-in options/));
     await r.rerender(<AuthSheet />);
-    expect(r.el.querySelector('#sheet-title')?.textContent).toBe('Sign in to govhub');
+    expect(r.el.querySelector('#sheet-title')?.textContent).toBe('Sign in to Governance');
     // back from one of the other ways: that section is still open
     expect(r.el.querySelector('[data-testid="signin-more"]')?.getAttribute('aria-expanded')).toBe('true');
     await r.unmount();

@@ -54,11 +54,11 @@ export function Composer({
           {hint}
         </p>
       )}
-      <div className="composer-tabs" role="group" aria-label="Editor mode">
-        <button type="button" className={`btn btn-quiet ${preview ? '' : 'on'}`} aria-pressed={!preview} onClick={() => setPreview(false)}>
+      <div className="composer-tabs dh-tabs" role="group" aria-label="Editor mode">
+        <button type="button" className={`btn dh-btn btn-quiet dh-btn--quiet ${preview ? '' : 'on'}`} aria-pressed={!preview} onClick={() => setPreview(false)}>
           Write
         </button>
-        <button type="button" className={`btn btn-quiet ${preview ? 'on' : ''}`} aria-pressed={preview} onClick={() => setPreview(true)} disabled={blank}>
+        <button type="button" className={`btn dh-btn btn-quiet dh-btn--quiet ${preview ? 'on' : ''}`} aria-pressed={preview} onClick={() => setPreview(true)} disabled={blank}>
           Preview
         </button>
       </div>
@@ -67,7 +67,7 @@ export function Composer({
           <Markdown text={body} />
         </div>
       ) : (
-        <textarea aria-label={label} aria-describedby={hint ? hintId : undefined} value={body} onChange={(e) => (setBody(e.target.value), setPosted(false))} rows={4} placeholder="Formatting: **bold**, _italic_, `code`, links, lists, > quotes. HTML is not shown; images appear as links." autoFocus={autoFocus} />
+        <textarea className="dh-textarea" aria-label={label} aria-describedby={hint ? hintId : undefined} value={body} onChange={(e) => (setBody(e.target.value), setPosted(false))} rows={4} placeholder="Formatting: **bold**, _italic_, `code`, links, lists, > quotes. HTML is not shown; images appear as links." autoFocus={autoFocus} />
       )}
       <div className="composer-foot">
         <p className={`small ${over ? 'error' : 'muted'}`} data-testid="composer-meta">
@@ -75,11 +75,11 @@ export function Composer({
         </p>
         <div className="form-actions">
           {onCancel && (
-            <button type="button" className="btn btn-quiet" onClick={onCancel}>
+            <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet" onClick={onCancel}>
               Cancel
             </button>
           )}
-          <button type="submit" className="btn btn-primary" disabled={busy || blank || over || poor}>
+          <button type="submit" className="btn dh-btn btn-primary dh-btn--primary" disabled={busy || blank || over || poor}>
             {busy ? 'Posting…' : label}
           </button>
         </div>

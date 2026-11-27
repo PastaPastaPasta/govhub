@@ -276,7 +276,7 @@ export class HttpBridge implements Bridge {
     const o = await this.get(`/v1/proposals/${encodeURIComponent(govHash)}/votes${q}`);
     if (o === null) {
       const what = opts.voteSetHash === undefined ? 'vote set' : `vote set ${opts.voteSetHash.slice(0, 12)}…`;
-      throw new BridgeError(opts.height === undefined ? `the bridge has no ${what} for this proposal` : `the bridge has no ${what} at or below block ${opts.height}`, 404);
+      throw new BridgeError(opts.height === undefined ? `the governance data service has no ${what} for this proposal` : `the governance data service has no ${what} at or below block ${opts.height}`, 404);
     }
     return parseVotes(o, { govHash, ...(opts.height === undefined ? {} : { height: opts.height }) });
   }
@@ -305,7 +305,7 @@ export class HttpBridge implements Bridge {
   }
   async mnlist(height?: number): Promise<BridgeMnList> {
     const o = await this.get(height === undefined ? '/v1/mnlist' : `/v1/mnlist/${encodeURIComponent(String(height))}`);
-    if (o === null) throw new BridgeError(height === undefined ? 'the bridge has no masternode list' : `the bridge has no masternode list at or below block ${height}`, 404);
+    if (o === null) throw new BridgeError(height === undefined ? 'the governance data service has no masternode list' : `the governance data service has no masternode list at or below block ${height}`, 404);
     return parseMnList(o);
   }
 }

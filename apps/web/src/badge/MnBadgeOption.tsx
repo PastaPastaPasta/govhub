@@ -3,7 +3,7 @@
 // ~N min, ready and waiting for the next post with Register now, about to lapse, issuer unreachable with a retry, already
 // showing, success). Everything runs through the badge client (flow.ts useMnBadge).
 import { useState, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from '../ui/Link.tsx';
 import { epochLength } from '@govhub/badge';
 import { useApp } from '../app/context.tsx';
 import { errText, formatInt } from '../lib/format.ts';
@@ -21,7 +21,7 @@ function clock(ms: number): string {
 }
 
 /** What the badge request keeps of the voting key, and for how long (the job store: badge/store.ts, wiped by client.ts). */
-const KEY_COPY = 'To send that request, govhub keeps a copy of the voting key in this browser, never in plain text, until the request is sent, then deletes it.';
+const KEY_COPY = 'To send that request, Governance keeps a copy of the voting key in this browser, never in plain text, until the request is sent, then deletes it.';
 
 /** When the issuer can issue in the chosen mode, before anything is requested. `offer`: the switch is still off (keyring card). */
 function ReadinessLine({ b, offer = false }: { b: MnBadge; offer?: boolean }) {
@@ -37,7 +37,7 @@ function ReadinessLine({ b, offer = false }: { b: MnBadge; offer?: boolean }) {
     return (
       <p className="small" data-testid="mnb-ready" data-state="error">
         Couldn’t check {name}’s badge keys on Platform just now.{' '}
-        <button type="button" className="btn btn-s btn-quiet" onClick={a.retry}>
+        <button type="button" className="btn dh-btn btn-s dh-btn--sm btn-quiet dh-btn--quiet" onClick={a.retry}>
           Try again
         </button>
       </p>
@@ -79,7 +79,7 @@ function ReadinessLine({ b, offer = false }: { b: MnBadge; offer?: boolean }) {
 function PrivacyOptions({ b, name, testId, children }: { b: MnBadge; name: string; testId?: string; children?: ReactNode }) {
   const { registry } = useApp();
   return (
-    <details className="mnb-privacy" data-testid={testId}>
+    <details className="mnb-privacy dh-disclosure" data-testid={testId}>
       <summary>
         Privacy options: <b>{MODES[b.privacy].label}</b>
       </summary>
@@ -92,10 +92,10 @@ function PrivacyOptions({ b, name, testId, children }: { b: MnBadge; name: strin
 /** The switch and what it means; the privacy mode under "Privacy options". `on` is the user's choice (default on). */
 export function BadgeChoice({ b, on, onChange }: { b: MnBadge; on: boolean; onChange(v: boolean): void }) {
   const { registry } = useApp();
-  const name = b.issuer?.name ?? 'govhub';
+  const name = b.issuer?.name ?? 'dashhq';
   return (
     <div className="mnb-choice" data-testid="mnb-choice">
-      <label className="mnb-switch">
+      <label className="mnb-switch dh-field__label">
         <input type="checkbox" role="switch" checked={on && b.usable} onChange={(e) => onChange(e.target.checked)} disabled={!b.usable} data-testid="mnb-toggle" />
         <span>
           <b>Show the MN badge next to your name</b>
@@ -170,7 +170,7 @@ export function BadgeProgress({ b, celebrate = false, onAgain }: { b: MnBadge; c
     const fetchWait = j.state === 'scheduled' ? b.fetchWait(j) : 0;
     const spacing = !scheduled && fetchWait > 0;
     const cancel = (
-      <button type="button" className="btn btn-s btn-quiet" onClick={() => void b.cancel(j)} data-testid="mnb-cancel">
+      <button type="button" className="btn dh-btn btn-s dh-btn--sm btn-quiet dh-btn--quiet" onClick={() => void b.cancel(j)} data-testid="mnb-cancel">
         {j.state === 'token' ? 'Cancel: don’t post it' : 'Cancel'}
       </button>
     );
@@ -191,13 +191,13 @@ export function BadgeProgress({ b, celebrate = false, onAgain }: { b: MnBadge; c
               <p className="small">{j.note}</p>
             )}
             <div className="badge-job-actions">
-              <button type="button" className="btn btn-s" onClick={() => b.retry(j)} data-testid="mnb-retry">
+              <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={() => b.retry(j)} data-testid="mnb-retry">
                 Try again now
               </button>
               {cancel}
             </div>
             {unreachable && (
-              <details className="small muted">
+              <details className="small muted dh-disclosure">
                 <summary>Details</summary>
                 {j.note}
               </details>
@@ -247,7 +247,7 @@ export function BadgeProgress({ b, celebrate = false, onAgain }: { b: MnBadge; c
             Your last badge request (epoch {formatInt(s.last.epoch)}) ended: {s.last.note}
           </p>
           {onAgain && (
-            <button type="button" className="btn btn-s" onClick={onAgain} data-testid="mnb-again">
+            <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={onAgain} data-testid="mnb-again">
               Ask again
             </button>
           )}
@@ -271,7 +271,7 @@ function HeldBadge({ b, job, lapseAt, lapsing }: { b: MnBadge; job: BadgeJob; la
         </p>
       )}
       <RegisterNow issuer={job.issuer.name} onRegister={() => b.registerNow(job)}>
-        <button type="button" className="btn btn-s btn-quiet" onClick={() => void b.cancel(job)} data-testid="mnb-cancel">
+        <button type="button" className="btn dh-btn btn-s dh-btn--sm btn-quiet dh-btn--quiet" onClick={() => void b.cancel(job)} data-testid="mnb-cancel">
           Cancel: don’t post it
         </button>
       </RegisterNow>
@@ -286,7 +286,7 @@ function HeldBadge({ b, job, lapseAt, lapsing }: { b: MnBadge; job: BadgeJob; la
 /** The badge card's fine print, folded under "Details". */
 function More({ children }: { children: ReactNode }) {
   return (
-    <details className="mnb-more small">
+    <details className="mnb-more small dh-disclosure">
       <summary>Details</summary>
       {children}
     </details>
@@ -307,7 +307,7 @@ export function RegisterNow({ issuer, onRegister, children }: { issuer: string; 
   return (
     <>
       <div className="badge-job-actions">
-        <button type="button" className="btn btn-s" onClick={() => void go()} disabled={busy} data-testid="mnb-register-now">
+        <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={() => void go()} disabled={busy} data-testid="mnb-register-now">
           {busy ? 'Posting…' : 'Register now'}
         </button>
         {children}
@@ -369,11 +369,11 @@ export function KeyringBadgeRow({ b, request, why, celebrate = false }: { b: MnB
   };
   const won = asked || celebrate;
   return (
-    <section className="kr-card mnb-row" id="mn-badge" data-testid="mnb-row" data-state={s.kind} aria-labelledby="mnb-row-title">
+    <section className="kr-card dh-card mnb-row" id="mn-badge" data-testid="mnb-row" data-state={s.kind} aria-labelledby="mnb-row-title">
       <div className="mnb-row-head">
         <h2 id="mnb-row-title">MN badge</h2>
         {s.kind === 'shown' && <MnBadges issuers={[s.issuer]} />}
-        <label className="mnb-switch">
+        <label className="mnb-switch dh-field__label">
           <input
             type="checkbox"
             role="switch"

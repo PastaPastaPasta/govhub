@@ -25,7 +25,7 @@ const WalletSignIn = lazy(() => import('./WalletSignIn.tsx'));
 export { SecretField }; // moved to its own file (the Recover tool uses it too); tests import it from here
 
 const TITLES: Record<SheetView, string> = {
-  choose: 'Sign in to govhub',
+  choose: 'Sign in to Governance',
   create: 'Create an account',
   phrase: 'Sign in with a recovery phrase',
   key: 'Sign in with a key',
@@ -79,7 +79,7 @@ export function AuthSheet() {
         <div className="sheet-body">
           <header className={`sheet-head${choose ? ' sheet-head-hero' : ''}`}>
             {canGoBack && (
-              <button type="button" className="btn btn-quiet sheet-icon-btn" onClick={() => {
+              <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet sheet-icon-btn" onClick={() => {
                   backFrom.current = sheet;
                   openSheet('choose');
                 }}
@@ -90,13 +90,13 @@ export function AuthSheet() {
             <h2 id="sheet-title" tabIndex={-1}>
               {choose ? (
                 <>
-                  Sign in to <span className="brand-word">govhub</span>
+                  Sign in to <span className="brand-word">Governance</span>
                 </>
               ) : (
                 TITLES[sheet]
               )}
             </h2>
-            <button type="button" className="btn btn-quiet sheet-icon-btn sheet-close" onClick={closeSheet} aria-label="Close">
+            <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet sheet-icon-btn sheet-close" onClick={closeSheet} aria-label="Close">
               <Icon name="close" />
             </button>
           </header>
@@ -165,9 +165,9 @@ function WalletLimits({ what, fallback }: { what: 'topup' | 'passkeys'; fallback
   const { session } = useAuth();
   if (session?.source !== 'wallet') return fallback;
   return (
-    <p className="notice-box" data-testid="wallet-limits">
+    <p className="notice-box dh-notice dh-notice--info" data-testid="wallet-limits">
       {what === 'topup'
-        ? 'You signed in with your Dash wallet. Top up your identity from the wallet; govhub spends at most the budget you approved there.'
+        ? 'You signed in with your Dash wallet. Top up your identity from the wallet; Governance spends at most the budget you approved there.'
         : 'You signed in with your Dash wallet, which keeps your keys. A passkey here would store a temporary key; sign in from the wallet again instead.'}
     </p>
   );
@@ -185,19 +185,19 @@ function SampleIdentities() {
     closeSheet();
   };
   return (
-    <div className="notice-box">
+    <div className="notice-box dh-notice dh-notice--info">
       <p>
         <b>Demo:</b> sign in as a sample person. What you post stays in this tab and costs pretend credit. A real account can sign in below, but can't post
         while demo data is shown.
       </p>
       <div className="signin-picks">
-        <button type="button" className="btn" onClick={() => pick(FIXTURE_IDS.alice, 'fixture identity')}>
+        <button type="button" className="btn dh-btn" onClick={() => pick(FIXTURE_IDS.alice, 'fixture identity')}>
           Alice
         </button>
-        <button type="button" className="btn" onClick={() => pick(FIXTURE_IDS.growth, 'fixture identity')}>
+        <button type="button" className="btn dh-btn" onClick={() => pick(FIXTURE_IDS.growth, 'fixture identity')}>
           Dash Growth team (owns dash-growth-q4-2026)
         </button>
-        <button type="button" className="btn" onClick={() => pick(registry.forum.moderationIdentityId, 'fixture moderator')}>
+        <button type="button" className="btn dh-btn" onClick={() => pick(registry.forum.moderationIdentityId, 'fixture moderator')}>
           Moderator (default block list)
         </button>
       </div>
@@ -219,7 +219,7 @@ function RecoverableNotice({ records }: { records: FundingRecord[] }) {
   const stuck = records.map(stuckDuffs).filter((d) => d > 0n);
   if (!stuck.length) return null;
   return (
-    <div className="notice-box" role="status" data-testid="recoverable">
+    <div className="notice-box dh-notice dh-notice--info" role="status" data-testid="recoverable">
       <p>
         <b>{formatDuffs(stuck.reduce((a, d) => a + d, 0n))}</b> is waiting at {stuck.length === 1 ? 'a deposit address' : 'deposit addresses'} from an earlier
         payment (paid after an account setup or top-up, or too small for it).
@@ -236,7 +236,7 @@ function RecoverableNotice({ records }: { records: FundingRecord[] }) {
 function SeedWarning({ what = 'phrase' }: { what?: 'phrase' | 'key' }) {
   return (
     <p className="seed-warning" role="note" data-testid="seed-warning">
-      <b>Use a {what === 'key' ? 'key from an account' : 'recovery phrase'} just for govhub.</b> You type it into a web page, so never use one that holds
+      <b>Use a {what === 'key' ? 'key from an account' : 'recovery phrase'} just for Governance.</b> You type it into a web page, so never use one that holds
       real money, or one you couldn’t afford to see leaked.
     </p>
   );
@@ -260,21 +260,43 @@ function Choose({ openMore }: { openMore: boolean }) {
   // With no wallet sign-in, the other ways are the only ones that work for most people: start with them open.
   const [more, setMore] = useState(!appConnect || openMore);
   const moreId = useId();
+  const createRef = useRef<HTMLButtonElement>(null);
+  const [focusCreate, setFocusCreate] = useState(false);
+  // The help's "No identity yet?" leads to the one create action, under "Other ways to sign in"
+  const showCreate = () => {
+    setMore(true);
+    setFocusCreate(true);
+  };
+  useEffect(() => {
+    if (!focusCreate || !more) return;
+    setFocusCreate(false);
+    createRef.current?.focus();
+    createRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [focusCreate, more]);
   const pending = pendingFundings(store, network).filter((r) => r.kind === 'create');
   const recoverable = store.list().filter((r) => r.network === network && !r.discarded);
   // A notice above the buttons is read first: the dialog then starts at its title, not past it
   const autofocus = !pending.length && !recoverable.some((r) => stuckDuffs(r) > 0n) && mode !== 'fixtures';
   const other: Array<{ v: SheetView; icon: keyof typeof ICONS; title: string; text: string }> = [
     { v: 'create', icon: 'plus', title: 'Create an account', text: `Pay a little DASH (${formatDuffs(SUGGESTED_CREATE_DEPOSIT_DUFFS)} suggested) from any Dash wallet.` },
-    { v: 'phrase', icon: 'words', title: 'I have a recovery phrase', text: 'The 12 or 24 words of an account you made for govhub.' },
+    { v: 'phrase', icon: 'words', title: 'I have a recovery phrase', text: 'The 12 or 24 words of an account you made for Governance.' },
     { v: 'key', icon: 'key', title: 'Paste a key', text: 'For developers: a private key of your identity.' },
   ];
   return (
     <div className="sheet-choose">
-      <p className="signin-lede">Reading is free and needs no account. Sign in to comment, react, or vote.</p>
+      <p className="signin-lede">Reading needs no account. Sign in to ask and answer polls, comment, or keep your masternodes’ voting keys for next time.</p>
+      <dashhq-signin-help compact="always"
+        asks={`${appConnect ? 'wallet ' : ''}passkey phrase key voting-key`}
+        why="It signs your polls, answers, comments and reactions and unlocks your saved voting keys."
+        kept-note="In memory only, shared with your other open Governance tabs: closing the last one signs you out. Voting keys you add are kept encrypted on Dash Platform, unless you choose memory only."
+      >
+        <button type="button" slot="start" onClick={showCreate}>
+          Set one up here
+        </button>
+      </dashhq-signin-help>
       {mode === 'fixtures' && <SampleIdentities />}
       {pending.length > 0 && (
-        <div className="notice-box" role="status">
+        <div className="notice-box dh-notice dh-notice--info" role="status">
           <p>
             <b>{pending.length === 1 ? 'An account setup is' : `${pending.length} account setups are`} in progress.</b> Enter its recovery phrase to continue.
           </p>
@@ -288,7 +310,7 @@ function Choose({ openMore }: { openMore: boolean }) {
                 {!r.deposits.length && !r.lock && (
                   <button
                     type="button"
-                    className="btn btn-quiet"
+                    className="btn dh-btn btn-quiet dh-btn--quiet"
                     onClick={() => {
                       // A payment made while no tab was watching is not visible here yet; the record is only hidden, never deleted.
                       if (!confirm(`Hide this setup? Only do this if you never sent DASH to ${r.address}. Continuing with the same phrase later still finds any payment.`)) return;
@@ -302,23 +324,23 @@ function Choose({ openMore }: { openMore: boolean }) {
               </li>
             ))}
           </ul>
-          <button type="button" className="btn" onClick={() => openSheet('phrase')}>
+          <button type="button" className="btn dh-btn" onClick={() => openSheet('phrase')}>
             Continue
           </button>
         </div>
       )}
       <RecoverableNotice records={recoverable} />
       <div className="signin-main">
-        <button type="button" className={`btn signin-btn${appConnect ? ' btn-primary' : ''}`} onClick={() => openSheet('wallet')} disabled={!appConnect} aria-describedby={appConnect ? undefined : 'wallet-soon'} data-testid="wallet-signin" data-autofocus={(appConnect && autofocus) || undefined}>
+        <button type="button" className={`btn dh-btn signin-btn${appConnect ? ' btn-primary dh-btn--primary' : ''}`} onClick={() => openSheet('wallet')} disabled={!appConnect} aria-describedby={appConnect ? undefined : 'wallet-soon'} data-testid="wallet-signin" data-autofocus={(appConnect && autofocus) || undefined}>
           <Icon name="wallet" />
           Sign in with Dash Wallet
           {!appConnect && (
-            <span className="tag tag-info" id="wallet-soon">
+            <span className="tag dh-badge tag-info dh-badge--info" id="wallet-soon">
               Coming soon
             </span>
           )}
         </button>
-        <button type="button" className={`btn signin-btn${appConnect ? '' : ' btn-primary'}`} onClick={() => openSheet('passkey')} data-testid="passkey-signin" data-autofocus={(!appConnect && autofocus) || undefined}>
+        <button type="button" className={`btn dh-btn signin-btn${appConnect ? '' : ' btn-primary dh-btn--primary'}`} onClick={() => openSheet('passkey')} data-testid="passkey-signin" data-autofocus={(!appConnect && autofocus) || undefined}>
           <Icon name="passkey" />
           Sign in with a passkey
         </button>
@@ -332,7 +354,7 @@ function Choose({ openMore }: { openMore: boolean }) {
           <ul className="signin-alts">
             {other.map((o) => (
               <li key={o.v}>
-                <button type="button" className="signin-alt" onClick={() => openSheet(o.v)}>
+                <button type="button" className="signin-alt" onClick={() => openSheet(o.v)} ref={o.v === 'create' ? createRef : undefined}>
                   <span className="signin-alt-icon">
                     <Icon name={o.icon} size={18} />
                   </span>
@@ -345,16 +367,19 @@ function Choose({ openMore }: { openMore: boolean }) {
               </li>
             ))}
           </ul>
-          <details className="learn signin-learn">
+          <details className="learn dh-disclosure signin-learn">
             <summary>What is an account here?</summary>
             <p className="small">
               Your account is a Dash Platform identity. Comments and reactions are stored on Dash Platform and paid for with a little credit from your account’s
               balance (about 0.0005 DASH a comment). Your recovery phrase is the account: other Dash wallets (DashPay, Dash Evo Tool) can restore it. It stays in
-              this browser; govhub has no account server and can’t reset it for you.
+              this browser; Governance has no account server and can’t reset it for you.
             </p>
           </details>
         </div>
       </div>
+      <p className="small sheet-vote-note" data-testid="signin-vote-note">
+        <b>Only here for treasury voting?</b> You don’t need an account: every open proposal can be signed offline in Dash Core, or with a voting key kept in that tab only.
+      </p>
       <div className="signin-foot">
         <p>
           New to Dash? <OutLink href={DASH_WALLET_URL}>Get Dash Wallet</OutLink>
@@ -388,17 +413,17 @@ export function CreateFlow() {
   if (step === 'show') {
     return (
       <div className="create">
-        <ol className="steps-bar" aria-label="Creating an account">
+        <ol className="steps-bar dh-steps" aria-label="Creating an account">
           <li aria-current="step">Save your phrase</li>
           <li>Check it</li>
           <li>Add credit</li>
         </ol>
         <p>
           These words are your <b>recovery phrase</b>. They <i>are</i> your account: write them down in order and keep them somewhere safe, offline. Anyone who
-          has them can use your account, and nobody, govhub included, can recover it if you lose them.
+          has them can use your account, and nobody, Governance included, can recover it if you lose them.
         </p>
         <p className="seed-warning" role="note">
-          <b>Keep this phrase for govhub only.</b> Don’t reuse it in a wallet, and don’t keep more DASH in it than govhub needs.
+          <b>Keep this phrase for Governance only.</b> Don’t reuse it in a wallet, and don’t keep more DASH in it than Governance needs.
         </p>
         <ol className="words" data-testid="phrase-words">
           {list.map((w, i) => (
@@ -408,12 +433,12 @@ export function CreateFlow() {
           ))}
         </ol>
         <div className="sheet-actions">
-          <button type="button" className="btn btn-primary" onClick={() => setStep('quiz')}>
+          <button type="button" className="btn dh-btn btn-primary dh-btn--primary" onClick={() => setStep('quiz')}>
             I wrote it down
           </button>
           <button
             type="button"
-            className="btn btn-quiet"
+            className="btn dh-btn btn-quiet dh-btn--quiet"
             onClick={() => {
               const n: PhraseLength = words === 12 ? 24 : 12;
               setWords(n);
@@ -441,7 +466,7 @@ function Quiz({ words, positions, onPass, onBack }: { words: string[]; positions
   };
   return (
     <form className="form quiz" onSubmit={submit}>
-      <ol className="steps-bar" aria-label="Creating an account">
+      <ol className="steps-bar dh-steps" aria-label="Creating an account">
         <li>Save your phrase</li>
         <li aria-current="step">Check it</li>
         <li>Add credit</li>
@@ -464,10 +489,10 @@ function Quiz({ words, positions, onPass, onBack }: { words: string[]; positions
       </div>
       {wrong && <p className="error" role="alert">That doesn't match. Check your written copy, or go back and look again.</p>}
       <div className="sheet-actions">
-        <button type="submit" className="btn btn-primary">
+        <button type="submit" className="btn dh-btn btn-primary dh-btn--primary">
           Continue
         </button>
-        <button type="button" className="btn btn-quiet" onClick={onBack}>
+        <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet" onClick={onBack}>
           Show the phrase again
         </button>
       </div>
@@ -510,7 +535,7 @@ function FundNewIdentity({ phrase, identityIndex, resume }: { phrase: string; id
   if (how === 'choose') {
     return (
       <div className="fund-choice">
-        <ol className="steps-bar" aria-label="Creating an account">
+        <ol className="steps-bar dh-steps" aria-label="Creating an account">
           <li>Save your phrase</li>
           <li>Check it</li>
           <li aria-current="step">Add credit</li>
@@ -584,7 +609,7 @@ function VoucherRedeem({ wallet, identityIndex, onDone }: { wallet: SeedWallet; 
       )}
       {error && <p className="error" role="alert">{error}</p>}
       <div className="sheet-actions">
-        <button type="submit" className="btn btn-primary" disabled={busy || !text.trim()}>
+        <button type="submit" className="btn dh-btn btn-primary dh-btn--primary" disabled={busy || !text.trim()}>
           {busy ? 'Redeeming…' : 'Redeem'}
         </button>
       </div>
@@ -707,10 +732,10 @@ function PhraseSignIn() {
     <form className="form" onSubmit={submit}>
       <SeedWarning />
       <SecretField label="Recovery phrase (12 or 24 words)" what="the recovery phrase" value={text} onChange={setText} testId="phrase-input" disabled={busy} />
-      <p className="muted small">The phrase never leaves this browser. govhub finds your account by a public key fingerprint only.</p>
+      <p className="muted small">The phrase never leaves this browser. Governance finds your account by a public key fingerprint only.</p>
       {error && <p className="error" role="alert">{error}</p>}
       <div className="sheet-actions">
-        <button type="submit" className="btn btn-primary" disabled={busy || !text.trim()}>
+        <button type="submit" className="btn dh-btn btn-primary dh-btn--primary" disabled={busy || !text.trim()}>
           {busy ? <><span className="spinner" aria-hidden="true" /> Looking up…</> : 'Sign in'}
         </button>
       </div>
@@ -748,13 +773,13 @@ function KeySignIn() {
         Private key (WIF or 64 hex characters)
         <input type="password" value={text} onChange={(e) => setText(e.target.value)} autoComplete="off" spellCheck={false} data-testid="key-input" disabled={busy} />
       </label>
-      <p className="muted small">Use your identity's HIGH (or CRITICAL) authentication key, never the MASTER key. It stays in memory (shared with your other open govhub tabs) and is gone when you sign out or close the browser.</p>
-      <label className="check">
+      <p className="muted small">Use your identity's HIGH (or CRITICAL) authentication key, never the MASTER key. It stays in memory (shared with your other open Governance tabs) and is gone when you sign out or close the browser.</p>
+      <label className="check dh-check">
         <input type="checkbox" checked={keep} onChange={(e) => setKeep(e.target.checked)} /> Keep it with a passkey so I can sign in again without pasting
       </label>
       {error && <p className="error" role="alert">{error}</p>}
       <div className="sheet-actions">
-        <button type="submit" className="btn btn-primary" disabled={busy || !text.trim()}>
+        <button type="submit" className="btn dh-btn btn-primary dh-btn--primary" disabled={busy || !text.trim()}>
           {busy ? 'Checking…' : 'Sign in'}
         </button>
       </div>
@@ -776,12 +801,12 @@ function TopUp() {
   if (!session) return <p className="muted">Sign in first.</p>;
   if (foreignPasskey && !acknowledged) {
     return (
-      <div className="notice-box" role="alert">
+      <div className="notice-box dh-notice dh-notice--info" role="alert">
         <p>
           You signed in with a passkey that was not added in this browser. Only continue if you added it yourself: anyone who once held one of your keys could have
           added a passkey, and its key decides where this top-up is paid.
         </p>
-        <button type="button" className="btn" onClick={() => setAcknowledged(true)}>
+        <button type="button" className="btn dh-btn" onClick={() => setAcknowledged(true)}>
           I added this passkey, continue
         </button>
       </div>
@@ -792,7 +817,7 @@ function TopUp() {
       <div>
         <p className="notice">Top-up complete. Your balance is updated.</p>
         <div className="sheet-actions">
-          <button type="button" className="btn btn-primary" onClick={closeSheet}>
+          <button type="button" className="btn dh-btn btn-primary dh-btn--primary" onClick={closeSheet}>
             Close
           </button>
         </div>

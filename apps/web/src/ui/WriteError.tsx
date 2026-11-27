@@ -9,14 +9,14 @@ export function WriteError({ error, needsTopUp = false, onTopUp, inline = false 
   if (!error || (walletEnded && error === WALLET_SESSION_ENDED_TEXT)) return null;
   const Tag = inline ? 'span' : 'p'; // inline inside a <span> (the vote buttons)
   return (
-    <Tag className="error small" role="alert" data-testid="write-error">
+    <Tag className="dh-error small" role="alert" data-testid="write-error">
       {error}
       {needsTopUp && (
         <>
           {' '}
           <button
             type="button"
-            className="btn btn-s"
+            className="btn dh-btn btn-s dh-btn--sm"
             data-testid="write-topup"
             onClick={() => {
               onTopUp?.();
@@ -36,9 +36,9 @@ export function LowBalance({ what, balance, needed }: { what: string; balance: b
   const { openSheet } = useAuth();
   if (balance === null) return null;
   return (
-    <p className="error small" data-testid="low-balance">
+    <p className="dh-error small" data-testid="low-balance">
       Your balance is {formatCredits(balance)}, and {what} needs about {formatCredits(needed, true)} available. Top up your account first.{' '}
-      <button type="button" className="btn btn-s" data-testid="low-balance-topup" onClick={() => openSheet('topup')}>
+      <button type="button" className="btn dh-btn btn-s dh-btn--sm" data-testid="low-balance-topup" onClick={() => openSheet('topup')}>
         Top up
       </button>
     </p>

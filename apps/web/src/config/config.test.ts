@@ -47,7 +47,7 @@ describe('endpoint registry', () => {
   it('rejects insecure or malformed endpoints', () => {
     const r = defaultRegistry() as unknown as Record<string, unknown>;
     const errs = parseRegistry({ ...r, bridges: [{ httpBase: 'http://evil.example' }], dapi: { source: 'manual', nodes: ['not a node'], quorumUrl: 'ftp://x' }, govContractId: 'xyz' }).errors.join('\n');
-    expect(errs).toContain('bridge 1 URL must be an https URL');
+    expect(errs).toContain('data service 1 URL must be an https URL');
     expect(errs).toContain('must be host:port');
     expect(errs).toContain('quorum service URL must be an https URL');
     expect(errs).toContain('govContractId');
@@ -164,7 +164,7 @@ describe('hosting and settings fixes (fix-hosting-ui)', () => {
     expect(d.map((x) => x.label)).toEqual(['Quorum proof sources']);
     expect(d[0]!.now).toContain('gov-bridge.dashhq.org');
     expect(d[0]!.offered).toContain('https://evil.example/proofs');
-    expect(registryDiff(now, { ...now, bridges: [{ ...now.bridges[0]!, bridgeIdentityId: '24tL6v5jMR1H9dtUoTgbedePsMJtYPk4Q4bo6h8jTdK9' }] }).map((x) => x.label)).toEqual(['Bridges']);
+    expect(registryDiff(now, { ...now, bridges: [{ ...now.bridges[0]!, bridgeIdentityId: '24tL6v5jMR1H9dtUoTgbedePsMJtYPk4Q4bo6h8jTdK9' }] }).map((x) => x.label)).toEqual(['Data services']);
   });
 
   it('D-052: a host cannot hide behind user info, a look-alike Unicode name, or a free-text name', () => {
@@ -182,7 +182,7 @@ describe('hosting and settings fixes (fix-hosting-ui)', () => {
     expect(registryDiff(now, offered).map((d) => d.label)).toEqual(['Relays']);
     // every boolean is a change too
     expect(registryDiff(now, { ...now, platform: { ...now.platform, trusted: false } }).map((d) => d.label)).toEqual(['Platform']);
-    expect(registryDiff(now, { ...now, bridges: [{ ...now.bridges[0]!, enabled: false }] }).map((d) => d.label)).toEqual(['Bridges']);
+    expect(registryDiff(now, { ...now, bridges: [{ ...now.bridges[0]!, enabled: false }] }).map((d) => d.label)).toEqual(['Data services']);
   });
 
   it('D-054: a fetched config is capped, time-limited and stays on the host the user agreed to', async () => {
@@ -200,7 +200,7 @@ describe('hosting and settings fixes (fix-hosting-ui)', () => {
     expect(importSizeError(12 * 1024 * 1024)).toMatch(/Too large .*12\.0 MB/);
     expect(importSizeError(MAX_IMPORT_BYTES + 1)).toMatch(/Too large/);
     const quota = Object.assign(new Error('The quota has been exceeded.'), { name: 'QuotaExceededError' });
-    expect(saveErrorText(quota)).toMatch(/storage for govhub is full/);
+    expect(saveErrorText(quota)).toMatch(/storage for Governance is full/);
     expect(saveErrorText(quota)).not.toMatch(/JSON/);
   });
 

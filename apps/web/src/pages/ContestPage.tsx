@@ -3,9 +3,11 @@
 import type { Profile } from '@govhub/forum';
 import { EVONODE_WEIGHT } from '@govhub/verify';
 import { useEffect, useMemo, useState } from 'react';
-import { Link, Navigate, useParams } from 'react-router-dom';
+import { Navigate, useLocation, useParams } from 'react-router-dom';
+import { useTitle } from '../app/title.ts';
+import { Link } from '../ui/Link.tsx';
 import { useForum } from '../app/forum.tsx';
-import { useDpnsNames } from '../ui/useDpnsNames.ts';
+import { useDpnsNamesRead } from '../ui/useDpnsNames.ts';
 import { AuthorName, Avatar } from '../ui/Identity.tsx';
 import { Discussion } from '../ui/Discussion.tsx';
 import { contenders } from '../lib/social.ts';
@@ -19,14 +21,17 @@ import { ContestVotePanel } from '../contests/VotePanel.tsx';
 import { useContestVotes } from '../contests/ContestVotes.tsx';
 import { authorLabel } from '../lib/social.ts';
 import { useClockMs, useContestSource } from '../contests/useContests.ts';
+import { liveContests } from '../contests/source.ts';
+import { NetworkProbeNotice, useOtherNetwork, useProbe } from '../app/otherNetwork.tsx';
 
 /** How long after voting closes the page reads the contest again, for the result. */
 const CLOSING_REREAD_MS = 20_000;
 
 export function ContestPage() {
   const { label: raw = '' } = useParams();
+  const { search } = useLocation();
   const label = normalizeLabel(raw);
-  if (label !== raw) return <Navigate replace to={contestHref(label)} />;
+  if (label !== raw) return <Navigate replace to={contestHref(label) + search} />;
   if (!isContestedLabel(label))
     return (
       <Missing label={label}>
@@ -36,21 +41,57 @@ export function ContestPage() {
   return <ContestView label={label} />;
 }
 
+const networkLabel = (n: string) => (n === 'testnet' ? 'Testnet' : 'Mainnet');
+
+/** A name that can't be contested: what can be. */
 function Missing({ label, children }: { label: string; children: string }) {
+  useTitle(`No contest for ${label}.dash`);
   return (
-    <section className="page-narrow">
-      <h1>No contest for {label}.dash</h1>
+    <section className="page-narrow" data-testid="contest-missing">
+      <h1 className="dh-page-header__title">No contest for {label}.dash</h1>
       <p>
-        {children} <Link to="/names">All contested usernames</Link>
+        {children} <Link to="/names" className="dh-link">All name contests</Link>
       </p>
     </section>
   );
 }
 
+/**
+ * No vote on this name on this network: the other network is asked before saying so (an old EvoVote bookmark carries no network,
+ * so a Testnet contest lands on Mainnet).
+ */
+function NoContestHere({ label, network }: { label: string; network: string }) {
+  const other = useOtherNetwork();
+  const probe = useProbe(other, async (o) => contestExists(await liveContests(o.registry).state(label)), label);
+  return (
+    <section className="page-narrow" data-testid="contest-missing" data-probe={probe}>
+      <header className="dh-page-header">
+        <p className="dh-page-header__kicker">Name contest</p>
+        <h1 className="dh-page-header__title">
+          <bdi>{label}</bdi>
+          <span className="tld">.dash</span>
+        </h1>
+      </header>
+      <NetworkProbeNotice
+        thing="name contest"
+        record={`${label}.dash`}
+        idLabel="name"
+        probe={probe}
+        other={other}
+        absent="A name goes to a vote only when two or more identities ask for it."
+        list={{ path: '/names', label: `Browse ${networkLabel(network)} name contests` }}
+      />
+    </section>
+  );
+}
+
+const contestExists = (s: ContestState) => !(s.contenders.length === 0 && s.total === 0 && !s.outcome);
+
+
 /** DPNS names and self-chosen profiles of these identities, best effort (an identity without either shows its short id). */
-function useIdentities(ids: readonly string[]): { names: ReadonlyMap<string, string>; profiles: ReadonlyMap<string, Profile> } {
+function useIdentities(ids: readonly string[]): { names: ReadonlyMap<string, string>; namesRead: boolean; profiles: ReadonlyMap<string, Profile> } {
   const { forum } = useForum();
-  const names = useDpnsNames(ids);
+  const { names, read: namesRead } = useDpnsNamesRead(ids);
   const [profiles, setProfiles] = useState<ReadonlyMap<string, Profile>>(new Map());
   const key = [...ids].sort().join(',');
   useEffect(() => {
@@ -61,7 +102,7 @@ function useIdentities(ids: readonly string[]): { names: ReadonlyMap<string, str
       live = false;
     };
   }, [forum, key]);
-  return { names, profiles };
+  return { names, namesRead, profiles };
 }
 
 function statusLine(phase: Phase, s: ContestState, endsAt: number | null, nowMs: number): string {
@@ -90,21 +131,23 @@ function ContestView({ label }: { label: string }) {
   const open = useAsync(() => src.open().catch(() => []), [src]);
   const endsAt = open.data?.find((c) => c.label === label)?.endsAt ?? null;
   // while a closed contest waits for its result it is read again in the background: the page keeps showing the last good read
-  const [fresh, setFresh] = useState<{ key: string; s: ContestState } | null>(null);
+  const [fresh, setFresh] = useState<{ src: typeof src; key: string; s: ContestState } | null>(null);
   const [rereads, setRereads] = useState(0);
-  const s = fresh?.key === label && state.data ? fresh.s : state.data;
+  const s = fresh?.src === src && fresh.key === label && state.data ? fresh.s : state.data;
   const who = useIdentities(s ? s.contenders.map((c) => c.identityId) : []);
   // the contenders are this discussion's featured authors, as a proposal's owner is on its page
   const contenderKey = s ? s.contenders.map((c) => c.identityId).sort().join(',') : '';
   const featured = useMemo(() => contenders(contenderKey ? contenderKey.split(',') : []), [contenderKey]);
   const phase = s ? phaseOf(s, endsAt, nowMs) : null;
+  const none = !!s && !contestExists(s);
+  useTitle(none ? `No contest for ${label}.dash` : `${s ? displayName(s, label) : label}.dash name contest`);
   useEffect(() => {
     if (phase !== 'closing') return;
     let live = true;
     const t = setTimeout(() => {
       src.forget(label);
       src.state(label).then(
-        (x) => live && setFresh({ key: label, s: x }),
+        (x) => live && setFresh({ src, key: label, s: x }),
         () => live && setRereads((n) => n + 1), // try again in a while
       );
     }, CLOSING_REREAD_MS);
@@ -119,7 +162,7 @@ function ContestView({ label }: { label: string }) {
     if (!sentHere) return;
     let live = true;
     src.state(label).then(
-      (x) => live && setFresh({ key: label, s: x }),
+      (x) => live && setFresh({ src, key: label, s: x }),
       () => {},
     );
     return () => {
@@ -129,12 +172,28 @@ function ContestView({ label }: { label: string }) {
 
   if (state.loading)
     return (
-      <p className="muted center pad" aria-busy="true">
-        <span className="spinner" aria-hidden="true" /> Reading the contest from Platform…
-      </p>
+      <article className="proposal contest" aria-busy="true">
+        <p className="crumbs dh-crumbs">
+          <Link to="/names" className="dh-link">‹ Name contests</Link>
+        </p>
+        <header className="p-hero dh-page-header">
+          <div className="p-title dh-page-header__text">
+            <h1 className="dh-page-header__title">
+              <bdi>{label}</bdi>
+              <span className="tld">.dash</span>
+            </h1>
+          </div>
+        </header>
+        <p className="muted">
+          <span className="spinner" aria-hidden="true" /> Reading who wants this name and how masternodes voted, from Platform…
+        </p>
+      </article>
     );
   if (!s) return <ReadError error={state.error ?? 'no answer'} what="Platform" lead="The contest could not be read" onRetry={() => setAttempt((n) => n + 1)} />;
-  if (s.contenders.length === 0 && s.total === 0 && !s.outcome) return <Missing label={label}>{`Platform has no record of a vote on this name on ${src.network}.`}</Missing>;
+  if (none)
+    return (
+      <NoContestHere label={label} network={src.network} />
+    );
 
   const name = displayName(s, label);
   const regAs = registersAs(name, label);
@@ -142,12 +201,12 @@ function ContestView({ label }: { label: string }) {
 
   return (
     <article className="proposal contest" data-testid="contest-page">
-      <p className="crumbs">
-        <Link to="/names">‹ Usernames</Link>
+      <p className="crumbs dh-crumbs">
+        <Link to="/names" className="dh-link">‹ Name contests</Link>
       </p>
-      <header className="p-hero">
-        <div className="p-title">
-          <h1>
+      <header className="p-hero dh-page-header">
+        <div className="p-title dh-page-header__text">
+          <h1 className="dh-page-header__title">
             <bdi>{name}</bdi>
             <span className="tld">.dash</span>
           </h1>
@@ -157,7 +216,7 @@ function ContestView({ label }: { label: string }) {
 
       <div className="p-layout">
         <div className="p-main">
-          <section className="panel c-ballot" aria-labelledby="c-votes-title">
+          <section className="panel dh-card c-ballot" aria-labelledby="c-votes-title">
             <h2 id="c-votes-title" className="panel-title">
               Votes
             </h2>
@@ -167,7 +226,7 @@ function ContestView({ label }: { label: string }) {
             <BallotBar state={s} />
             <ol className="c-choices" data-testid="contenders">
               {s.contenders.map((c, i) => (
-                <ContenderRow key={c.identityId} c={c} rank={i} total={s.total} won={winner === c.identityId} dpns={who.names.get(c.identityId)} profile={who.profiles.get(c.identityId)} />
+                <ContenderRow key={c.identityId} label={label} c={c} rank={i} total={s.total} won={winner === c.identityId} dpns={who.names.get(c.identityId)} namesRead={who.namesRead} profile={who.profiles.get(c.identityId)} />
               ))}
               <li className="c-choice">
                 <span className="c-swatch cb-abstain" aria-hidden="true" />
@@ -203,7 +262,7 @@ function ContestView({ label }: { label: string }) {
         </div>
 
         <aside className="p-side" aria-label="Summary">
-          <section className="panel">
+          <section className="panel dh-card">
             <h2 className="panel-title">Summary</h2>
             <dl className="kv" data-testid="summary">
               <div>
@@ -220,6 +279,9 @@ function ContestView({ label }: { label: string }) {
               </div>
             </dl>
             <p className="small muted">{s.height !== null ? `Read from Dash Platform with proofs, at Platform block ${formatInt(s.height)}.` : 'Read from Dash Platform with proofs.'}</p>
+            <a className="small dh-link dh-link--go" href={window.dashhq?.href('explorer', '/dpns?name=' + encodeURIComponent(label))} data-testid="contest-explorer">
+              This name in Explorer
+            </a>
           </section>
         </aside>
       </div>
@@ -242,7 +304,7 @@ function Tally({ n, total }: { n: number; total: number }) {
   );
 }
 
-function ContenderRow({ c, rank, total, won, dpns, profile }: { c: Contender; rank: number; total: number; won: boolean; dpns?: string | undefined; profile?: Profile | undefined }) {
+function ContenderRow({ label, c, rank, total, won, dpns, namesRead, profile }: { label: string; c: Contender; rank: number; total: number; won: boolean; dpns?: string | undefined; namesRead: boolean; profile?: Profile | undefined }) {
   return (
     <li className={`c-choice${won ? ' c-won' : ''}`} data-testid="contender">
       <span className={`c-swatch ${contenderClass(rank)}`} aria-hidden="true" />
@@ -250,15 +312,36 @@ function ContenderRow({ c, rank, total, won, dpns, profile }: { c: Contender; ra
         <span className="c-ident">
           <Avatar id={c.identityId} profile={profile} size={22} />
           <AuthorName id={c.identityId} profile={profile} dpns={dpns} />
-          {won && <span className="tag ctag-won">Got the name</span>}
+          {won && <span className="tag dh-badge ctag-won">Got the name</span>}
         </span>
-        {c.requested && (
-          <span className="small muted">
-            Asked for <bdi className="c-requested">{c.requested}</bdi>
-          </span>
-        )}
+        <span className="small muted" data-testid="contender-facts">
+          {c.requested && (
+            <>
+              Asked for <bdi className="c-requested">{c.requested}</bdi>
+              {' · '}
+            </>
+          )}
+          {/* who is asking, when the identity has no name to show: say so, and where to look it up */}
+          {!dpns && namesRead && 'no other username yet · '}
+          <a href={window.dashhq?.href('explorer', '/identity?id=' + encodeURIComponent(c.identityId))} className="dh-link">its identity in Explorer</a>
+        </span>
+        <ContestVoters label={label} identityId={c.identityId} />
       </div>
       <Tally n={c.votes} total={total} />
     </li>
   );
+}
+
+function ContestVoters({ label, identityId }: { label: string; identityId: string }) {
+  const src = useContestSource();
+  const [load, setLoad] = useState(false);
+  const voters = useAsync(() => load ? src.voters(label, identityId) : Promise.resolve(null), [src, label, identityId, load]);
+  if (!load) return <button type="button" className="btn dh-btn btn-quiet dh-btn--quiet btn-s dh-btn--sm" onClick={() => setLoad(true)}>Show voters</button>;
+  if (voters.loading) return <p className="small muted" role="status">Reading voter identities…</p>;
+  if (voters.error) return <p className="small error" role="alert">Voters could not be read. <button type="button" className="btn dh-btn btn-s dh-btn--sm" onClick={() => setLoad(false)}>Try again</button></p>;
+  const ids = voters.data ?? [];
+  return <div className="contest-voters">
+    <p className="small muted">{!src.live ? 'No voter identities in this demo.' : `${formatInt(ids.length)} voter identities${ids.length === 100 ? ' (first 100)' : ''}. Voter identities are distinct from masternode ProTx hashes.`}</p>
+    <ul>{ids.map(id => <li key={id}><dashhq-hash value={id} label="Voter identity" href={window.dashhq?.href('explorer', '/identity?id=' + encodeURIComponent(id))}>{id}</dashhq-hash></li>)}</ul>
+  </div>;
 }

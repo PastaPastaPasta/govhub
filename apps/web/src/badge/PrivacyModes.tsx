@@ -29,7 +29,7 @@ export function PrivacyModes({ value, onChange, av, net, name = 'badge-mode' }: 
       <legend>Privacy</legend>
       {PRIVACY_MODES.map((m) => (
         <div key={m} className="badge-mode">
-          <label className="check">
+          <label className="check dh-check">
             <input type="radio" name={name} checked={value === m} onChange={() => onChange(m)} data-testid={`${name}-${m}`} />
             <span>
               <b>{MODES[m].label}</b>
@@ -37,7 +37,7 @@ export function PrivacyModes({ value, onChange, av, net, name = 'badge-mode' }: 
               {modeBlocked(av, m) && <span className="muted"> · not available yet ({modeBlocked(av, m)})</span>}: {MODES[m].summary}
             </span>
           </label>
-          <details className="badge-mode-more" data-testid={`${name}-more-${m}`}>
+          <details className="badge-mode-more dh-disclosure" data-testid={`${name}-more-${m}`}>
             <summary>Learn more about {MODES[m].label}</summary>
             <p className="small">
               <ModeDetails mode={m} net={net} />

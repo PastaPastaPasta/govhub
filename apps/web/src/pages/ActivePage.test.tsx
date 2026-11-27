@@ -71,12 +71,15 @@ const page = (url = '/') => (
   </MemoryRouter>
 );
 const titles = (el: ParentNode) => [...el.querySelectorAll('[data-testid="proposal-card"] .prow-title a')].map((a) => a.textContent);
+// each card's exact on-chain name (its title reads it as words)
+const slugs = (el: ParentNode) => [...el.querySelectorAll('[data-testid="proposal-card"] [data-testid="card-slug"]')].map((x) => x.textContent!.split(' · ')[0]);
 
 describe('ActivePage with a lame duck', () => {
   it('lists it only in a collapsed section after the live proposals', async () => {
     setup();
     const { el } = await render(page());
-    expect(titles(el)).toEqual(['live-one', 'partly-paid']);
+    expect(titles(el)).toEqual(['Live one', 'Partly paid']); // the names as words; the exact names are under them
+    expect([...el.querySelectorAll('[data-testid="card-slug"]')].map((x) => x.textContent)).toEqual(['live-one', 'partly-paid']);
     const toggle = el.querySelector('[data-testid="toggle-lameduck"]') as HTMLButtonElement;
     expect(toggle.textContent).toBe('Finished, still on the network (1)');
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
@@ -98,7 +101,7 @@ describe('ActivePage with a lame duck', () => {
     expect(card.dataset.lameduck).toBe('true');
     expect(card.textContent).toContain('pshenmic-dev-dash-desktop-november-2026');
     expect(card.textContent).toContain('No more payments possible');
-    expect(card.textContent).toContain('Ends Oct 27, 2026');
+    expect(card.textContent).toContain('Ends 27 Oct 2026');
     expect(card.textContent).not.toMatch(/Passing by|In the next budget|Not in the next budget|payments left|final payment/);
     expect(card.querySelector('.fund, [role="meter"], meter, progress')).toBeNull();
     expect(card.className).toContain('prow-ended');
@@ -134,7 +137,7 @@ describe('ActivePage search, filter and sort', () => {
   it('filters by status from the URL, with counts on the chips and a way back', async () => {
     setupMany();
     const { el } = await render(page('/?status=failing'));
-    expect(titles(el)).toEqual(['cheap-and-failing']);
+    expect(slugs(el)).toEqual(['cheap-and-failing']);
     expect(chip(el, /^All/).textContent).toBe('All 3');
     expect(chip(el, /^Passing/).textContent).toBe('Passing 2');
     expect(chip(el, /^Not passing/).className).toContain('on');
@@ -143,7 +146,7 @@ describe('ActivePage search, filter and sort', () => {
     expect(el.querySelector('[data-testid="list-count"]')!.textContent).toContain('1 of 3 proposals');
     await click(el.querySelector<HTMLButtonElement>('[data-testid="list-clear"]')!);
     expect(at).toBe('');
-    expect(titles(el)).toEqual(['live-one', 'partly-paid', 'cheap-and-failing']);
+    expect(slugs(el)).toEqual(['live-one', 'partly-paid', 'cheap-and-failing']);
   });
 
   it('search matches name or URL words in any order, writes ?q= and says when nothing matches', async () => {
@@ -153,21 +156,21 @@ describe('ActivePage search, filter and sort', () => {
     expect(input.closest('label')!.textContent).toContain('Search active proposals');
     await type(input, 'proposal bob');
     expect(at).toBe('?q=proposal+bob');
-    expect(titles(el)).toEqual(['cheap-and-failing']);
+    expect(slugs(el)).toEqual(['cheap-and-failing']);
     await type(input, 'pshenmic');
     // only a finished proposal matches: its section opens by itself
-    expect(titles(el)).toEqual(['pshenmic-dev-dash-desktop-november-2026']);
+    expect(slugs(el)).toEqual(['pshenmic-dev-dash-desktop-november-2026']);
     await type(input, 'nothing-like-this');
     expect(el.querySelector('[data-testid="list-no-matches"]')!.textContent).toContain('No proposals match “nothing-like-this”');
     await click(button(el.querySelector('[data-testid="list-no-matches"]')!, /Clear filters/));
     expect(input.value).toBe('');
-    expect(titles(el)).toEqual(['live-one', 'partly-paid', 'cheap-and-failing']);
+    expect(slugs(el)).toEqual(['live-one', 'partly-paid', 'cheap-and-failing']);
   });
 
   it('sorts by amount and says what order the list is in', async () => {
     setupMany();
     const { el } = await render(page('/?sort=amount'));
-    expect(titles(el)).toEqual(['partly-paid', 'live-one', 'cheap-and-failing']);
+    expect(slugs(el)).toEqual(['partly-paid', 'live-one', 'cheap-and-failing']);
     expect(el.textContent).toContain('Largest payment requested first.');
     const select = el.querySelector<HTMLSelectElement>('[data-testid="list-sort"]')!;
     expect(select.value).toBe('amount');
@@ -178,7 +181,7 @@ describe('ActivePage search, filter and sort', () => {
     const { el } = await render(page('/?unvoted=1'));
     // signed out: no chip, and the filter in the URL changes nothing
     expect(el.querySelector('[data-testid="filter-unvoted"]')).toBeNull();
-    expect(titles(el)).toEqual(['live-one', 'partly-paid', 'cheap-and-failing']);
+    expect(slugs(el)).toEqual(['live-one', 'partly-paid', 'cheap-and-failing']);
 
     const mn = { collateralTxid: 'CC', collateralIndex: 0 };
     const currentVotes = vi.fn(async () => new Map([[`cc-0|live`, { outcome: 1, time: 1 }]]));
@@ -187,7 +190,7 @@ describe('ActivePage search, filter and sort', () => {
     await flush();
     expect(el2.querySelector<HTMLInputElement>('[data-testid="filter-unvoted"]')!.checked).toBe(true);
     // live: voted on the network; weak: a vote on its way
-    expect(titles(el2)).toEqual(['partly-paid']);
+    expect(slugs(el2)).toEqual(['partly-paid']);
     expect(currentVotes).toHaveBeenCalledWith(['live', 'multi', 'weak', 'duck']);
   });
 });

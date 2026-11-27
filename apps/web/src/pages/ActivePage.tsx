@@ -1,8 +1,10 @@
 import type { Profile } from '@govhub/forum';
+import { useRouteTitle } from '../app/title.ts';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { urlClaimIdentity } from '@govhub/verify';
 import { useApp } from '../app/context.tsx';
 import { useForum } from '../app/forum.tsx';
+import { Link } from '../ui/Link.tsx';
 import { BudgetHeader } from '../ui/BudgetHeader.tsx';
 import { FailedProposalsToggle } from '../ui/HiddenToggle.tsx';
 import { LameDuckSection } from '../ui/LameDuck.tsx';
@@ -13,6 +15,10 @@ import { useReveal } from '../ui/hooks.ts';
 import { useCommentCounts } from '../ui/useCommentCounts.ts';
 import { useDpnsNames } from '../ui/useDpnsNames.ts';
 import { countNames, proposalHref, type Checked, type Row } from '../lib/view.ts';
+import { onlyUnreached, unfinishedReason } from '../lib/netError.ts';
+import { ownerPageOf, useOwnerPages } from '../lib/ownerPages.ts';
+import { OwnerWordsNote } from '../ui/OwnerPage.tsx';
+import { SlowRead } from '../ui/SlowRead.tsx';
 import { ACTIVE_SORT_LABEL, ACTIVE_SORT_NOTE, ACTIVE_SORTS, compareActive, isPassing, matches, proposalFields, readActive, STATUS_LABEL, STATUSES, statusOk, writeActive, type Status } from '../lib/listQuery.ts';
 import { authorLabel } from '../lib/social.ts';
 import { ChipChoice, ChipToggle, NoMatches, ResultCount, SearchField, SortSelect, useQueryState } from '../ui/ListControls.tsx';
@@ -36,7 +42,30 @@ function useProfiles(ids: readonly string[]): ReadonlyMap<string, Profile> {
   return map;
 }
 
+/** One line for the background checks that could not finish (instead of a mark on every row), with a way to run them again. */
+function UncheckedNote({ rows }: { rows: readonly Checked<Row>[] }) {
+  const { checks } = useApp();
+  // only the network failures (each card shows any other reason itself), with the reason of the rows counted
+  const unfinished = rows.flatMap((r) => {
+    const why = r.check.status === 'inconclusive' ? unfinishedReason(r.check.reason) : null;
+    return why && onlyUnreached(why) ? [{ p: r.item.p.value, why }] : [];
+  });
+  if (!unfinished.length) return null;
+  const reasons = new Set(unfinished.map((u) => u.why));
+  const why = reasons.size === 1 ? unfinished[0]!.why : "this browser couldn't reach the network just now";
+  return (
+    <p className="list-note dh-notice dh-notice--warn dh-notice--inline small" data-testid="unchecked-note">
+      {unfinished.length === rows.length ? 'These proposals' : `${unfinished.length} of these proposals`} couldn't be checked against the chain: {why}. Their amounts and
+      votes are shown as reported.{' '}
+      <button type="button" className="linkish dh-btn dh-btn--link" onClick={() => checks.retryUnfinished(unfinished.map((u) => u.p))} data-testid="unchecked-retry">
+        Try again
+      </button>
+    </p>
+  );
+}
+
 export function ActivePage() {
+  useRouteTitle('/');
   const { gov, activeRows, registry } = useApp();
   const { moderation } = useForum();
   const [showFailed, setShowFailed] = useState(false);
@@ -45,6 +74,7 @@ export function ActivePage() {
   const [query, setQuery] = useQueryState(readActive, writeActive);
   const all = useMemo(() => [...activeRows.shown, ...activeRows.failed], [activeRows]);
   const listed = showFailed ? all : activeRows.shown;
+  const ownerPages = useOwnerPages();
   const everyRow = useMemo(() => [...all, ...activeRows.lameDucks], [all, activeRows.lameDucks]);
   const names = useMemo(() => countNames(everyRow.map((r) => r.item.p.value)), [everyRow]);
   // owners of every listed proposal (not only the revealed cards): a search finds proposals by their owner's name
@@ -68,11 +98,13 @@ export function ActivePage() {
   const unvotedOn = query.unvoted && unvoted.available;
   const filtering = !!query.q.trim() || query.status !== 'all' || unvotedOn;
   const view = useMemo(() => {
-    const keep = ({ item: r }: Checked<Row>) => {
+    const keep = ({ item: r, check }: Checked<Row>) => {
       if (unvotedOn && unvoted.voted?.has(r.p.value.govHash)) return false;
       const owner = shownOwner(r.p.value.govHash);
       const label = owner ? authorLabel(owner, profiles.get(owner), ownerNames.get(owner)) : null;
-      return matches(query.q, proposalFields(r.p.value, [label?.dpns, label?.name]));
+      // the title the card shows: only for a proposal that matches its hash and passed its checks
+      const title = r.content.ok && check.status !== 'failed' ? ownerPageOf(ownerPages, r.p.value)?.title : null;
+      return matches(query.q, proposalFields(r.p.value, [label?.dpns, label?.name, title]));
     };
     const sort = compareActive(query.sort);
     const ordered = (xs: Checked<Row>[]) => (query.sort === 'rank' ? xs : xs.sort((a, b) => sort(a.item, b.item)));
@@ -84,13 +116,13 @@ export function ActivePage() {
       // finished proposals are neither passing nor not passing in any way that matters: a status filter leaves them out
       lameDucks: query.status === 'all' ? ordered(activeRows.lameDucks.filter(keep)) : [],
     };
-  }, [listed, activeRows.lameDucks, query, unvotedOn, unvoted.voted, shownOwner, profiles, ownerNames]);
+  }, [listed, activeRows.lameDucks, query, unvotedOn, unvoted.voted, shownOwner, profiles, ownerNames, ownerPages]);
   const { rows, lameDucks } = view;
   const clear = () => setQuery({ q: '', status: 'all', unvoted: false });
   const duckOpen = lameDucksOpen ?? (filtering && rows.length === 0);
 
   // 12 rows first; the rest in one go once the reader scrolls (rows are tall, so small steps would stall the observer)
-  const { count, sentinel, more } = useReveal(rows.length, 40, undefined, 12);
+  const { count, sentinel, more, showAll } = useReveal(rows.length, 40, undefined, 12);
   const shown = useMemo(() => rows.slice(0, count), [rows, count]);
   // the lame ducks are few and listed once the reader opens them; their comment counts are read with the rest
   const cards = useMemo(() => [...shown, ...lameDucks], [shown, lameDucks]);
@@ -116,13 +148,14 @@ export function ActivePage() {
   return (
     <>
       <BudgetHeader />
-      <section aria-labelledby="active-title" className="list-section">
+      <section aria-label="Active proposals" className="list-section list-section--active">
         <div className="list-head">
-          <h1 id="active-title" className="visually-hidden">
-            Active proposals
-          </h1>
+          <div className="dh-section__head gov-section-head">
+            <h2 className="dh-section__title">Proposals <OwnerWordsNote proposals={cards.map((r) => r.item.p.value)} /></h2>
+            <p className="small muted" data-testid="list-order-note">{ACTIVE_SORT_NOTE[query.sort]}</p>
+            <Link to="/treasury" className="dh-link dh-link--go">Treasury history</Link>
+          </div>
           <ProposalTabs />
-          <p className="small muted">{ACTIVE_SORT_NOTE[query.sort]}</p>
         </div>
         <PendingProposals />
         {everyRow.length > 0 && (
@@ -159,6 +192,8 @@ export function ActivePage() {
             <ResultCount active={filtering} shown={rows.length} total={listed.length} what="proposals" onClear={rows.length + lameDucks.length ? clear : undefined} />
           </div>
         )}
+        <UncheckedNote rows={everyRow} />
+        {(gov.active.loading || gov.talliesLoading || gov.cycle.loading) && <SlowRead />}
         {gov.active.loading && all.length === 0 ? (
           <div className="plist" aria-busy="true">
             {Array.from({ length: 6 }, (_, i) => (
@@ -166,12 +201,25 @@ export function ActivePage() {
             ))}
           </div>
         ) : rows.length === 0 ? (
-          !filtering ? <p className="empty">No active proposals right now.</p> : lameDucks.length === 0 ? <NoMatches query={query.q} onClear={clear} /> : null
+          !filtering ? (
+            // an unread list is not an empty one: the banner above says the read failed
+            gov.active.error && !gov.active.data ? null : <p className="empty dh-empty">No active proposals right now.</p>
+          ) : lameDucks.length === 0 ? (
+            <NoMatches query={query.q} onClear={clear} />
+          ) : null
         ) : (
-          <div className="plist">{shown.map(card)}</div>
+          <div className="plist plist-proposals">
+            {shown.map(card)}
+          </div>
         )}
         <div ref={sentinel} className="sentinel" aria-hidden="true" />
-        {more && <p className="muted small center">Scroll for more</p>}
+        {more && (
+          <p className="list-more">
+            <button type="button" className="dh-btn dh-btn--secondary" onClick={showAll}>
+              Show {rows.length - count} more
+            </button>
+          </p>
+        )}
         {!more && (
           <LameDuckSection count={lameDucks.length} open={duckOpen} onToggle={() => setLameDucksOpen(!duckOpen)}>
             {lameDucks.map(card)}
