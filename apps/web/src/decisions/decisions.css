@@ -1,0 +1,195 @@
+/* ---- masternode polls (decision proposals) ------------------------------------------------ */
+/* the bars, rows and vote panel come from contests.css; this adds yes/no colours, status tags and the forms */
+.pb-yes {
+  background: var(--pass-fill);
+}
+.pb-no {
+  background: var(--fail-fill);
+}
+
+.ptag-open {
+  color: var(--accent-ink);
+  background: var(--accent-wash);
+}
+.ptag-soon {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn-fill) 16%, transparent);
+}
+.ptag-pass {
+  color: var(--pass);
+  background: color-mix(in srgb, var(--pass-fill) 13%, transparent);
+}
+.ptag-fail {
+  color: var(--fail);
+  background: color-mix(in srgb, var(--fail-fill) 12%, transparent);
+}
+.ptag-done {
+  color: var(--ink-2);
+  background: color-mix(in srgb, var(--ink-3) 14%, transparent);
+}
+
+.pcard-kind {
+  margin: 0 0 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: var(--t-xs, 0.75rem);
+}
+.pcard .prow-title {
+  overflow-wrap: anywhere;
+}
+.polls .list-head .btn {
+  margin-block-start: var(--s-1, 0.25rem);
+}
+.polls-seg {
+  margin-block: var(--s-4) 0;
+}
+.polls-soon {
+  max-inline-size: var(--measure);
+  margin-block-start: var(--s-4);
+}
+.polls-soon h2 {
+  font-size: var(--t-m);
+  margin-block-start: 0;
+}
+
+/* poll page */
+.poll .p-title {
+  display: grid;
+  gap: var(--s-1, 0.25rem);
+}
+.poll .p-title h1 {
+  overflow-wrap: anywhere;
+  margin: 0;
+}
+.poll-asker {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  margin: 0;
+}
+.poll-outlook {
+  margin: 0;
+}
+.poll-outlook .tag {
+  margin-inline-end: var(--s-1, 0.25rem);
+}
+.poll-desc {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.poll-text .ext {
+  overflow-wrap: anywhere;
+}
+.poll-choice-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.poll-history summary {
+  cursor: pointer;
+  color: var(--ink-2);
+}
+.poll-history ol {
+  list-style: none;
+  padding: 0;
+  margin: var(--s-3) 0 0;
+  display: grid;
+  gap: var(--s-3);
+}
+.poll-history li {
+  border-inline-start: 2px solid var(--line);
+  padding-inline-start: var(--s-3);
+}
+.poll-history li p {
+  margin: 0;
+}
+.poll-after {
+  margin-block-start: var(--s-4);
+}
+.poll-add {
+  display: grid;
+  gap: var(--s-2);
+}
+.poll-add p {
+  margin: 0;
+}
+
+/* new poll */
+.poll-form {
+  display: grid;
+  gap: var(--s-3);
+}
+.poll-form label {
+  display: grid;
+  gap: var(--s-1, 0.25rem);
+}
+.poll-form label.check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-2);
+}
+.poll-form input:not([type='checkbox']):not([type='radio']),
+.poll-form textarea {
+  font: inherit;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-m);
+  padding: 0.4375rem 0.75rem;
+  inline-size: 100%;
+  box-sizing: border-box;
+}
+.poll-form .error {
+  margin: 0;
+}
+.poll-rule {
+  display: grid;
+  gap: var(--s-3);
+  border-block-start: 1px solid var(--line);
+  padding-block-start: var(--s-3);
+}
+.poll-rule p {
+  margin: 0;
+}
+.poll-num {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  color: var(--ink-2);
+}
+.poll-form .poll-num input {
+  inline-size: 5.5rem;
+}
+.poll-choices {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  padding: var(--s-3);
+  margin: 0;
+  display: grid;
+  gap: var(--s-3);
+}
+.poll-choices legend {
+  font-weight: 600;
+  padding-inline: var(--s-1, 0.25rem);
+}
+.poll-choices > .btn {
+  justify-self: start;
+}
+.poll-choice-in {
+  display: grid;
+  gap: var(--s-2);
+  padding-block-end: var(--s-3);
+  border-block-end: 1px solid var(--line);
+}
+.poll-cost {
+  display: grid;
+  gap: var(--s-2);
+  justify-items: start;
+}
+.poll-cost p {
+  margin: 0;
+}
+.poll-new .seg {
+  justify-self: start;
+}
