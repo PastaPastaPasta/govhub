@@ -6,7 +6,7 @@
 // read it again every few minutes: mainnet lights up by itself when it moves to version 15. (`sdk.version()` cannot tell: the SDK
 // starts at 14 on every network and only moves up once a verified answer says the network is newer.)
 import { mapLimit } from '@govhub/forum';
-import { CREDITS_PER_DUFF } from '../lib/format.ts';
+import { CREDITS_PER_DUFF, errText } from '../lib/format.ts';
 import type { Registry } from '../config/registry.ts';
 import { createWebDapi, dapiConfig } from '../data/dapi.ts';
 import { loadFixtures } from '../data/fixtures.ts';
@@ -174,6 +174,22 @@ function yesNoVote(mod: EvoModule, pollId: string, c: Choice): InstanceType<EvoM
   return mod.Vote.fromJSON({ $type: 'yesNoVote', $formatVersion: '0', votePollId: pollId, voteChoice: c.kind });
 }
 
+/**
+ * A Platform node not yet serving the decision proposals contract (behind on protocol 15; about one in five on testnet now, and
+ * on mainnet while nodes catch up after activation) refuses a poll query with "contract not found", and the SDK does not ask
+ * another node. Such a read is asked again: each request goes to another node.
+ */
+const LAGGING_NODE = /contract not found/i;
+export async function onAnyNode<T>(read: () => Promise<T>, tries = 5): Promise<T> {
+  for (let i = 1; ; i++) {
+    try {
+      return await read();
+    } catch (e) {
+      if (i >= tries || !LAGGING_NODE.test(errText(e))) throw e;
+    }
+  }
+}
+
 // one cache per source scope, so a profile switch never shows another network's polls
 const caches = new Map<string, { avail: TtlCache<boolean>; yn: TtlCache<YesNoState | null>; mc: TtlCache<ChoiceState>; polls: TtlCache<Poll | null>; pollIds: Map<string, Promise<string>>; power: TtlCache<number | null> }>();
 
@@ -202,14 +218,14 @@ export function liveDecisions(r: Registry): DecisionSource {
 
   const readPoll = async (id: string): Promise<Poll | null> => {
     const s = await sdk();
-    const [yn, mc] = await Promise.all([s.decisionProposals.get(id), s.decisionProposals.multipleChoice.get(id)]);
+    const [yn, mc] = await Promise.all([onAnyNode(() => s.decisionProposals.get(id)), onAnyNode(() => s.decisionProposals.multipleChoice.get(id))]);
     return toYesNo(jsonOf(yn)) ?? toChoicePoll(jsonOf(mc));
   };
 
   const pollId = (id: string): Promise<string> => {
     let p = cache.pollIds.get(id);
     if (!p) {
-      p = sdk().then(async (s) => (await s.decisionProposals.pollId(id)).toString());
+      p = sdk().then(async (s) => (await onAnyNode(() => s.decisionProposals.pollId(id))).toString());
       cache.pollIds.set(id, p);
       p.catch(() => cache.pollIds.delete(id));
     }
@@ -231,7 +247,7 @@ export function liveDecisions(r: Registry): DecisionSource {
     openYesNo: () =>
       sdk().then((s) =>
         pages(
-          (after) => s.decisionProposals.byEndDate({ endDateFrom: Date.now(), limit: 100, ...(after ? { startAfter: after } : {}) }),
+          (after) => onAnyNode(() => s.decisionProposals.byEndDate({ endDateFrom: Date.now(), limit: 100, ...(after ? { startAfter: after } : {}) })),
           (d) => toYesNo(jsonOf(d)),
         ),
       ),
@@ -247,7 +263,7 @@ export function liveDecisions(r: Registry): DecisionSource {
     async page(kind, after) {
       const s = await sdk();
       const q = { limit: PAGE, ...(after ? { startAfter: after } : {}) };
-      const m = kind === 'yn' ? await s.decisionProposals.byCreatedAt(q) : await s.decisionProposals.multipleChoice.byCreatedAt(q);
+      const m = await onAnyNode(() => (kind === 'yn' ? s.decisionProposals.byCreatedAt(q) : s.decisionProposals.multipleChoice.byCreatedAt(q)));
       const polls: Poll[] = [];
       for (const d of m.values()) {
         const p = kind === 'yn' ? toYesNo(jsonOf(d)) : toChoicePoll(jsonOf(d));
@@ -258,8 +274,8 @@ export function liveDecisions(r: Registry): DecisionSource {
     async byOwner(ownerId) {
       const s = await sdk();
       const [yn, mc] = await Promise.all([
-        pages((after) => s.decisionProposals.byOwner({ ownerId, limit: 100, ...(after ? { startAfter: after } : {}) }), (d) => toYesNo(jsonOf(d))),
-        pages((after) => s.decisionProposals.multipleChoice.byOwner({ ownerId, limit: 100, ...(after ? { startAfter: after } : {}) }), (d) => toChoicePoll(jsonOf(d))),
+        pages((after) => onAnyNode(() => s.decisionProposals.byOwner({ ownerId, limit: 100, ...(after ? { startAfter: after } : {}) })), (d) => toYesNo(jsonOf(d))),
+        pages((after) => onAnyNode(() => s.decisionProposals.multipleChoice.byOwner({ ownerId, limit: 100, ...(after ? { startAfter: after } : {}) })), (d) => toChoicePoll(jsonOf(d))),
       ]);
       return [...yn, ...mc].sort((a, b) => b.createdAt - a.createdAt);
     },
@@ -270,20 +286,22 @@ export function liveDecisions(r: Registry): DecisionSource {
         return p;
       }),
     async choiceFund(id) {
-      return Number((await (await sdk()).decisionProposals.multipleChoice.choiceFund(id)) / BigInt(CREDITS_PER_DUFF));
+      const s = await sdk();
+      return Number((await onAnyNode(() => s.decisionProposals.multipleChoice.choiceFund(id))) / BigInt(CREDITS_PER_DUFF));
     },
     yesNoState: (id) =>
       cache.yn.get(id, async () => {
-        const st = await (await sdk()).decisionProposals.pollState(id);
+        const s = await sdk();
+        const st = await onAnyNode(() => s.decisionProposals.pollState(id));
         return st ? toYesNoState(st as unknown as RawYesNoState) : null;
       }),
     choiceState: (id) =>
       cache.mc.get(id, async () => {
         const s = await sdk();
-        const v = await s.decisionProposals.multipleChoice.voteState(id);
+        const v = await onAnyNode(() => s.decisionProposals.multipleChoice.voteState(id));
         const keptId = v.result ? idStr(v.result.keptChoiceId) : null;
         // once the vote ended only the kept choice's text is still in state
-        const kept = keptId ? jsonOf(await s.decisionProposals.multipleChoice.keptChoice(id).catch(() => undefined)) : null;
+        const kept = keptId ? jsonOf(await onAnyNode(() => s.decisionProposals.multipleChoice.keptChoice(id)).catch(() => undefined)) : null;
         const choices: PollChoice[] = [];
         for (const [cid, entry] of v.choices) {
           const j = jsonOf(entry.choice) ?? (cid === keptId ? kept : null);
@@ -307,13 +325,13 @@ export function liveDecisions(r: Registry): DecisionSource {
       const out: Revision[] = [];
       let after: { timeMs: bigint; revision: bigint } | undefined;
       for (let i = 0; i < HISTORY_MAX_PAGES; i++) {
-        const res = await s.documents.history({
+        const res = await onAnyNode(() => s.documents.history({
           dataContractId: DECISIONS_CONTRACT_ID,
           documentTypeName: poll.kind === 'yn' ? 'proposal' : 'multipleChoiceProposal',
           documentId: poll.id,
           limit: HISTORY_PAGE,
           ...(after ? { startAfter: after } : {}),
-        });
+        }));
         for (const e of res.entries) {
           const j = jsonOf(e.document);
           const title = str(j?.title);
@@ -330,7 +348,7 @@ export function liveDecisions(r: Registry): DecisionSource {
       const s = await sdk();
       const out = new Map<string, Choice | null>();
       await mapLimit([...proTxHashes], 4, async (pro) => {
-        const v = kind === 'yn' ? yesNoChoice(await s.decisionProposals.masternodeVote(pro, id)) : multipleChoice(await s.decisionProposals.multipleChoice.masternodeVote(pro, id));
+        const v = kind === 'yn' ? yesNoChoice(await onAnyNode(() => s.decisionProposals.masternodeVote(pro, id))) : multipleChoice(await onAnyNode(() => s.decisionProposals.multipleChoice.masternodeVote(pro, id)));
         out.set(pro, v);
       });
       return out;

@@ -291,7 +291,7 @@ function ChoiceBody({ poll, src }: { poll: ChoicePoll; src: DecisionSource }) {
   const nowMs = useClockMs();
   // the end comes from the open contests: read again when the choices change (the first choice opens the vote)
   const [endsRead, setEndsRead] = useState(0);
-  const ends = useAsync(() => src.openChoices(endsRead > 0).catch(() => new Map<string, number>()), [src, endsRead]);
+  const ends = useAsync(() => src.openChoices(endsRead > 0), [src, endsRead]);
   const endsAt = ends.data?.get(poll.id) ?? null;
   const st = usePollState(src, poll, () => src.choiceState(poll.id), (d) => !!d && !d.result && endsAt !== null && endsAt <= nowMs);
   const s: ChoiceState | null = st.data ?? null;
@@ -301,11 +301,13 @@ function ChoiceBody({ poll, src }: { poll: ChoicePoll; src: DecisionSource }) {
   // choices join while the vote's join window is open: from its first choice (its end, less the vote's length, gives that)
   const choiceCount = s?.choices.length ?? 0;
   useEffect(() => {
-    if (choiceCount && endsAt === null) setEndsRead((n) => n + 1);
+    // only a vote that just opened here: an ended one is never among the open, and a scan still loading is no answer
+    if (choiceCount && endsAt === null && !ends.loading && !ends.error && phase === 'open') setEndsRead((n) => n + 1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [choiceCount]);
-  // an open vote whose end is not known yet is taken as still joining: Platform refuses a choice after its join window anyway
-  const joinOpen = phase === 'nochoices' || (phase === 'open' && (endsAt === null || nowMs < endsAt - run.voteMs + run.joinMs));
+  // an open vote whose end is not known yet (just opened) is taken as still joining: Platform refuses a choice after its join window
+  // anyway; when the open votes could not be read nothing is offered
+  const joinOpen = phase === 'nochoices' || (phase === 'open' && !ends.error && (endsAt === null || nowMs < endsAt - run.voteMs + run.joinMs));
   const mayAdd = !!session && !isWalletSession(session) && (poll.open || session.identityId === poll.ownerId);
   return (
     <div className="p-layout">

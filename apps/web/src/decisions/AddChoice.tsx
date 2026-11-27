@@ -51,7 +51,10 @@ export function AddChoice({ poll, onAdded }: { poll: ChoicePoll; onAdded(): void
     } catch (e) {
       const text = errText(e);
       setError({ text, topUp: e instanceof TopUpError });
-      if (/may still appear|not confirmed/i.test(text)) setUnconfirmed(true);
+      if (/may still appear|not confirmed/i.test(text)) {
+        setUnconfirmed(true);
+        onAdded(); // it may have landed: read the choices again
+      }
     } finally {
       setBusy(false);
     }

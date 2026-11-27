@@ -107,4 +107,29 @@ describe('liveDecisions', () => {
   it('has no voting power estimate where Core and Platform are different networks', async () => {
     expect(await liveDecisions({ ...registry(), coreNetwork: 'mainnet' } as Registry).totalPower()).toBeNull();
   });
+
+  it('does not keep a poll it could not find (a node behind the create may answer that for a moment)', async () => {
+    const get = vi.fn(async () => undefined as unknown);
+    const mcGet = vi.fn(async () => undefined as unknown);
+    fake.sdk = { decisionProposals: { get, multipleChoice: { get: mcGet } } };
+    const src = liveDecisions(registry());
+    expect(await src.get(ID)).toBeNull();
+    get.mockResolvedValue(doc({ $id: ID, $ownerId: OWNER, title: 'Q', description: 'd', endDate: 5, minimumTurnoutPercent: 0, passPercent: 50, $createdAt: 1 }));
+    expect((await src.get(ID))?.id).toBe(ID);
+    expect(get).toHaveBeenCalledTimes(2);
+  });
+
+  it('asks another node when one does not serve the contract yet, and only then', async () => {
+    const { onAnyNode } = await import('./source.ts');
+    const lag = { message: "grpc error: code: 'Client specified an invalid argument', message: \"contract not found error: contract not found when querying from value with contract info\"" };
+    const read = vi.fn().mockRejectedValueOnce(lag).mockRejectedValueOnce(lag).mockResolvedValue('ok');
+    expect(await onAnyNode(read)).toBe('ok');
+    expect(read).toHaveBeenCalledTimes(3);
+    const other = vi.fn().mockRejectedValue(new Error('timeout'));
+    await expect(onAnyNode(other)).rejects.toThrow('timeout');
+    expect(other).toHaveBeenCalledTimes(1);
+    const always = vi.fn().mockRejectedValue(lag);
+    await expect(onAnyNode(always, 3)).rejects.toBe(lag);
+    expect(always).toHaveBeenCalledTimes(3);
+  });
 });
